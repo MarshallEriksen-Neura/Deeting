@@ -1,10 +1,10 @@
 import { z } from "zod"
 
-import { getAuthToken, request } from "@/lib/http"
+import { request } from "@/lib/http"
+
+import { syncLocalSystemAssetsFromCloud } from "./desktop-system-assets"
 
 const PLUGIN_MARKET_BASE = "/api/v1/plugin-market"
-const LIGHT_SYNC_COOLDOWN_MS = 15_000
-let lastLightSyncAt = 0
 
 export const PluginMarketSkillItemSchema = z.object({
   id: z.string(),
@@ -64,11 +64,6 @@ const isTauriRuntime = () =>
   typeof window !== "undefined" &&
   ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
 
-async function invokeTauri<T>(command: string, args?: Record<string, unknown>): Promise<T> {
-  const { invoke } = await import("@tauri-apps/api/core")
-  return invoke<T>(command, args)
-}
-
 type LocalSkillSyncOptions = {
   reinstallMissing?: boolean
   force?: boolean
@@ -85,29 +80,21 @@ export async function syncLocalSkillInstallsFromCloud(
     return null
   }
 
-  const reinstallMissing = options.reinstallMissing ?? false
-  if (!reinstallMissing && !options.force) {
-    const now = Date.now()
-    if (now - lastLightSyncAt < LIGHT_SYNC_COOLDOWN_MS) {
-      return null
-    }
-    lastLightSyncAt = now
-  }
-
-  const tokenResolver = typeof getAuthToken === "function" ? getAuthToken : () => null
-  const token = (tokenResolver() ?? "").trim()
-  if (!token) {
+  const result = await syncLocalSystemAssetsFromCloud({
+    force: options.reinstallMissing || Boolean(options.force),
+    reinstallMissing: options.reinstallMissing ?? false,
+  })
+  if (!result) {
     return null
   }
 
-  const data = await invokeTauri<LocalSkillInstallSyncResponse>(
-    "sync_local_skill_installs_from_cloud",
-    {
-      accessToken: token,
-      reinstallMissing,
-    }
-  )
-  return LocalSkillInstallSyncResponseSchema.parse(data)
+  return LocalSkillInstallSyncResponseSchema.parse({
+    fetched_count: result.skill_install_fetched_count,
+    upserted_count: result.skill_install_upserted_count,
+    reinstalled_count: result.skill_reinstalled_count,
+    failed_count: result.skill_failed_count,
+    items: [],
+  })
 }
 
 async function trySyncLocalSkillInstallsFromCloud(

@@ -12,6 +12,7 @@ import {
 type BridgeToolCallRequestPayload = {
   type: string
   call_id?: string
+  tool_id?: string
   tool_name?: string
   arguments?: Record<string, unknown>
   execution_token?: string
@@ -45,6 +46,7 @@ export function useBridgeMonitor() {
           
           if (payload.type === "TOOL_CALL_REQUEST") {
             const call_id = payload.call_id ?? ""
+            const tool_id = payload.tool_id
             const tool_name = payload.tool_name ?? ""
             const toolArgs = payload.arguments ?? {}
             const execution_token = payload.execution_token
@@ -70,6 +72,7 @@ export function useBridgeMonitor() {
               } else {
                 // 1. Initial attempt to execute
                 const executionResult = await invoke<Record<string, unknown>>("execute_mcp_tool_raw", {
+                  toolId: tool_id,
                   toolName: tool_name,
                   arguments: toolArgs,
                   callId: call_id,
@@ -88,6 +91,10 @@ export function useBridgeMonitor() {
                   }
                   useBridgeApprovalStore.getState().setPending(createBridgeToolApproval({
                     approval_token: approvalToken,
+                    tool_id:
+                      typeof executionResult.tool_id === "string"
+                        ? executionResult.tool_id
+                        : tool_id,
                     tool_name:
                       typeof executionResult.tool_name === "string"
                         ? executionResult.tool_name

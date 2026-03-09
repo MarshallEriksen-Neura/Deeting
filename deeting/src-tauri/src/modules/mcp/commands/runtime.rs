@@ -15,6 +15,7 @@ mod summary_generation;
 mod text_utils;
 mod tool_execution;
 mod tool_feedback;
+mod tool_resolution;
 mod tool_result_blocks;
 mod tool_schemas;
 mod tool_trace;
@@ -46,13 +47,22 @@ pub(crate) use summary_generation::{
     request_local_auxiliary_text, LOCAL_CONVERSATION_SUMMARY_WORKER_IDLE_INTERVAL_SECS,
 };
 pub(crate) use tool_execution::{
-    approve_mcp_tool_inner_with_context, execute_or_queue_mcp_tool_call_with_context,
-    reject_mcp_tool_inner,
+    approve_mcp_tool_inner_with_context, execute_local_mcp_tool,
+    execute_or_queue_mcp_tool_call_with_tool_ref, reject_mcp_tool_inner,
 };
+pub(crate) use tool_resolution::{
+    build_db_tool_availability_catalog, build_desktop_mcp_tool_views,
+    fallback_local_tool_availability, resolve_callable_mcp_tool_by_name,
+    resolve_callable_mcp_tool_by_ref, DesktopMcpToolView, ToolAvailability,
+    ToolAvailabilityCatalog, ToolResolutionError,
+};
+
 pub(crate) use tool_feedback::{
     build_auto_code_mode_tool_feedback, build_local_tool_call_install_gate_error_meta,
     extract_chat_tool_calls, LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
 };
+#[cfg(test)]
+pub(crate) use tool_resolution::{build_desktop_mcp_tool_view, DesktopMcpToolIndexStatus};
 pub(crate) use tool_schemas::merge_wrapped_tool_payload;
 pub(crate) use tool_trace::{
     append_streamable_local_tool_result_blocks, build_local_tool_trace_blocks,

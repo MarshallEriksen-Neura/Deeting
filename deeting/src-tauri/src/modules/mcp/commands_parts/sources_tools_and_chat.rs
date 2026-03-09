@@ -1,7 +1,10 @@
 use super::{
     assistants_knowledge_admin_impl::index_mcp_tools,
     common_impl::to_string,
-    runtime::{apply_config_payload, execute_or_queue_mcp_tool_call_with_context},
+    runtime::{
+        apply_config_payload, execute_or_queue_mcp_tool_call_with_tool_ref,
+        resolve_callable_mcp_tool_by_ref,
+    },
     support::*,
 };
 
@@ -215,25 +218,32 @@ pub async fn stop_mcp_tool(state: State<'_, AppState>, tool_id: String) -> Resul
 pub async fn execute_mcp_tool_raw(
     _app: AppHandle,
     state: State<'_, AppState>,
-    tool_name: String,
+    tool_id: Option<String>,
+    #[allow(non_snake_case)] toolId: Option<String>,
+    tool_name: Option<String>,
+    #[allow(non_snake_case)] toolName: Option<String>,
     arguments: Value,
     call_id: Option<String>,
     #[allow(non_snake_case)] callId: Option<String>,
     execution_token: Option<String>,
     #[allow(non_snake_case)] executionToken: Option<String>,
 ) -> Result<Value, String> {
-    let normalized_tool_name = tool_name.trim().to_string();
-    if normalized_tool_name.is_empty() {
-        return Err("tool name is required".to_string());
-    }
+    let normalized_tool_id = tool_id
+        .or(toolId)
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let normalized_tool_name = tool_name
+        .or(toolName)
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
 
-    let tool = state
-        .mcp
-        .store
-        .get_tool_by_name(&normalized_tool_name)
-        .await
-        .map_err(to_string)?
-        .ok_or_else(|| format!("tool {} not found", normalized_tool_name))?;
+    let tool = resolve_callable_mcp_tool_by_ref(
+        state.mcp.store.as_ref(),
+        normalized_tool_id.as_deref(),
+        normalized_tool_name.as_deref(),
+    )
+    .await
+    .map_err(|err| err.to_string())?;
 
     let risk = state.mcp.assess_tool_risk(&tool, &arguments);
     let approval_context = state.mcp.build_approval_context(
@@ -241,14 +251,15 @@ pub async fn execute_mcp_tool_raw(
         execution_token.or(executionToken).as_deref(),
     );
 
-    execute_or_queue_mcp_tool_call_with_context(
+    execute_or_queue_mcp_tool_call_with_tool_ref(
         &approval_context,
         Some(risk.risk_level),
         risk.reasons,
         Some(&state.mcp),
         state.mcp.store.as_ref(),
         state.mcp.pending_tool_calls.as_ref(),
-        normalized_tool_name,
+        Some(tool.id),
+        Some(tool.name),
         arguments,
         risk.requires_approval,
     )

@@ -74,7 +74,11 @@ pub(crate) use runtime::{
 };
 #[cfg(test)]
 pub(crate) use skill_registry_impl::{
-    normalize_skill_dir_name, sync_local_skill_installs_from_cloud_inner,
+    normalize_skill_dir_name, register_local_skills_from_scan_targets_inner,
+};
+#[cfg(test)]
+pub(crate) use source_management_impl::{
+    local_skill_registration_self_heal_needed, sync_local_system_assets_inner,
 };
 
 #[cfg(test)]

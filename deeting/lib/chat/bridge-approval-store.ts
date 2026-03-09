@@ -3,6 +3,7 @@ import { create } from "zustand"
 export interface BasePendingApproval {
   kind: "bridge_mcp" | "local_code_mode"
   approval_token: string
+  tool_id?: string
   tool_name: string
   arguments: Record<string, unknown>
   description?: string

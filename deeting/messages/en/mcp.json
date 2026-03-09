@@ -46,7 +46,9 @@
       "id": "ID",
       "error": "Error",
       "status": "Status",
-      "latency": "Latency"
+      "latency": "Latency",
+      "runtime": "Runtime",
+      "index": "Index"
     },
     "status": {
       "pending": "pending",
@@ -58,6 +60,13 @@
       "updating": "updating",
       "error": "error",
       "orphaned": "orphaned"
+    },
+    "runtime": {
+      "disabled": "Disabled",
+      "startRequired": "Needs start",
+      "waiting": "Waiting for runtime",
+      "review": "Needs review",
+      "indexMissing": "Not indexed"
     }
   },
   "logs": {

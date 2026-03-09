@@ -1,8 +1,8 @@
 use super::super::{common_impl::to_string, support::*};
+use super::tool_resolution::resolve_callable_mcp_tool_by_ref;
 
 const TOOL_CALL_MARKER: &str = "__DEETING_TOOL_CALL_REQUEST__";
 const MAX_MARKER_REEXEC: usize = 8;
-const DESKTOP_CONFIG_SCOUT_BASE_URL_KEY: &str = "scout.base_url";
 
 fn parse_timeout_from_tool(tool: &McpTool) -> u64 {
     serde_json::from_str::<serde_json::Value>(&tool.config_json)
@@ -11,7 +11,7 @@ fn parse_timeout_from_tool(tool: &McpTool) -> u64 {
         .unwrap_or(60)
 }
 
-async fn execute_local_mcp_tool(
+pub(crate) async fn execute_local_mcp_tool(
     store: &crate::modules::mcp::store::McpStore,
     tool: &McpTool,
     arguments: &Value,
@@ -126,23 +126,12 @@ pub(crate) async fn resolve_skill_env(
         .unwrap_or(false)
         || matches!(tool.name.as_str(), "fetch_web_content" | "crawl_website");
     if is_official_crawler_tool {
-        env.remove("SCOUT_SERVICE_URL");
-        let override_url = store
-            .get_desktop_config(DESKTOP_CONFIG_SCOUT_BASE_URL_KEY)
+        env.remove(SCOUT_SERVICE_URL_ENV_KEY);
+        let override_url = resolve_effective_desktop_scout_base_url(store)
             .await
             .map_err(to_string)?;
-        if let Some(normalized) = override_url
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(|value| value.trim_end_matches('/').to_string())
-        {
-            env.insert("SCOUT_SERVICE_URL".to_string(), normalized);
-        } else if let Ok(runtime_env) = std::env::var("SCOUT_SERVICE_URL") {
-            let normalized = runtime_env.trim().trim_end_matches('/').to_string();
-            if !normalized.is_empty() {
-                env.insert("SCOUT_SERVICE_URL".to_string(), normalized);
-            }
+        if let Some(normalized) = override_url {
+            env.insert(SCOUT_SERVICE_URL_ENV_KEY.to_string(), normalized);
         }
     }
     if env.is_empty() {
@@ -202,16 +191,42 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_context(
     arguments: Value,
     require_approval: bool,
 ) -> Result<Value, String> {
-    let tool = store
-        .get_tool_by_name(&tool_name)
+    execute_or_queue_mcp_tool_call_with_tool_ref(
+        approval_context,
+        risk_level,
+        risk_reasons,
+        runtime_state,
+        store,
+        pending_tool_calls,
+        None,
+        Some(tool_name),
+        arguments,
+        require_approval,
+    )
+    .await
+}
+
+pub(crate) async fn execute_or_queue_mcp_tool_call_with_tool_ref(
+    approval_context: &crate::modules::mcp::ToolApprovalContext,
+    risk_level: Option<&str>,
+    risk_reasons: Vec<String>,
+    runtime_state: Option<&crate::modules::mcp::McpRuntimeState>,
+    store: &crate::modules::mcp::store::McpStore,
+    pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
+    tool_id: Option<String>,
+    tool_name: Option<String>,
+    arguments: Value,
+    require_approval: bool,
+) -> Result<Value, String> {
+    let tool = resolve_callable_mcp_tool_by_ref(store, tool_id.as_deref(), tool_name.as_deref())
         .await
-        .map_err(to_string)?
-        .ok_or_else(|| format!("tool {} not found", tool_name))?;
+        .map_err(|err| err.to_string())?;
     if require_approval {
         let approval_token = Uuid::new_v4().to_string();
         let pending = if let Some(runtime) = runtime_state {
             runtime.build_pending_tool_call(
-                tool_name.clone(),
+                Some(tool.id.clone()),
+                tool.name.clone(),
                 arguments.clone(),
                 runtime.tool_fingerprint(&tool),
                 approval_context.clone(),
@@ -219,7 +234,8 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_context(
         } else {
             let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
             crate::modules::mcp::PendingToolCall {
-                tool_name: tool_name.clone(),
+                tool_id: Some(tool.id.clone()),
+                tool_name: tool.name.clone(),
                 arguments: arguments.clone(),
                 call_id: approval_context.call_id.clone(),
                 execution_token: approval_context.execution_token.clone(),
@@ -236,7 +252,8 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_context(
             .await
             .insert(approval_token.clone(), pending);
         return Ok(serde_json::json!({
-            "status": "REQUIRES_APPROVAL", "approval_token": approval_token, "tool_name": tool_name,
+            "status": "REQUIRES_APPROVAL", "approval_token": approval_token,
+            "tool_id": tool.id, "tool_name": tool.name,
             "arguments": arguments, "description": tool.description, "risk_level": risk_level.unwrap_or("HIGH"),
             "risk_reasons": risk_reasons, "expires_in_ms": expires_in_ms,
         }));
@@ -286,11 +303,13 @@ pub(crate) async fn approve_mcp_tool_inner_with_context(
             return Err("approval context mismatch (execution_token)".to_string());
         }
     }
-    let tool = store
-        .get_tool_by_name(&pending.tool_name)
-        .await
-        .map_err(to_string)?
-        .ok_or_else(|| format!("tool {} not found", pending.tool_name))?;
+    let tool = resolve_callable_mcp_tool_by_ref(
+        store,
+        pending.tool_id.as_deref(),
+        Some(pending.tool_name.as_str()),
+    )
+    .await
+    .map_err(|err| err.to_string())?;
     if let Some(runtime) = runtime_state {
         let current_fingerprint = runtime.tool_fingerprint(&tool);
         if current_fingerprint != pending.tool_fingerprint {

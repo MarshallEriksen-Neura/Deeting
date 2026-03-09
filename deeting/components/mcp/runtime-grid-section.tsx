@@ -10,6 +10,19 @@ import { ServerCard } from "./server-card"
 import { MCPTool } from "@/types/mcp"
 import { useTranslations } from "next-intl"
 
+const isRuntimeTransitioning = (tool: MCPTool) => tool.status === "starting" || tool.status === "updating"
+
+const isRuntimeLive = (tool: MCPTool) => tool.runtimeReady ?? (tool.status === "healthy" || tool.status === "degraded")
+
+const isToolRunningForUi = (tool: MCPTool) => {
+  if (tool.desiredEnabled === false) {
+    return false
+  }
+  return isRuntimeLive(tool) || isRuntimeTransitioning(tool)
+}
+
+const isToolStoppedForUi = (tool: MCPTool) => !isToolRunningForUi(tool)
+
 interface RuntimeGridSectionProps {
   tools: MCPTool[]
   conflictCount: number
@@ -42,13 +55,13 @@ export function RuntimeGridSection({
 
   const filteredTools = tools.filter(tool => {
       if (activeTab === 'all') return true
-      if (activeTab === 'running') return tool.status === 'healthy' || tool.status === 'degraded' || tool.status === 'starting'
-      if (activeTab === 'stopped') return tool.status === 'stopped' || tool.status === 'crashed' || tool.status === 'error' || tool.status === 'pending' || tool.status === 'orphaned'
+      if (activeTab === 'running') return isToolRunningForUi(tool)
+      if (activeTab === 'stopped') return isToolStoppedForUi(tool)
       if (activeTab === 'conflicts') return tool.conflictStatus !== 'none'
       return true
   })
 
-  const runningCount = tools.filter(t => t.status === 'healthy' || t.status === 'degraded' || t.status === 'starting').length
+  const runningCount = tools.filter(isToolRunningForUi).length
 
   return (
     <section className="space-y-4">

@@ -330,7 +330,8 @@ impl MemoryService {
             .await?
             .ok_or_else(|| MemoryError::Validation(format!("memory not found: {}", id)))?;
 
-        payload.meta_info = merge_memory_update_meta(existing.meta_info.as_ref(), payload.meta_info);
+        payload.meta_info =
+            merge_memory_update_meta(existing.meta_info.as_ref(), payload.meta_info);
 
         let old_metadata = serialize_memory_metadata(&existing)?;
         let new_metadata = serialize_memory_update_metadata(&existing, &payload)?;
@@ -470,11 +471,9 @@ impl MemoryService {
         let old_content = snapshot.old_content.as_deref().ok_or_else(|| {
             MemoryError::Validation("snapshot has no old_content to restore".to_string())
         })?;
-        let existing = self
-            .store
-            .get(&snapshot.memory_id)
-            .await?
-            .ok_or_else(|| MemoryError::Validation(format!("memory not found: {}", snapshot.memory_id)))?;
+        let existing = self.store.get(&snapshot.memory_id).await?.ok_or_else(|| {
+            MemoryError::Validation(format!("memory not found: {}", snapshot.memory_id))
+        })?;
 
         let mut restore_payload = snapshot_restore_payload(snapshot.old_metadata.as_deref())?;
         restore_payload.content = old_content.to_string();
@@ -750,7 +749,9 @@ fn merge_memory_update_meta(existing: Option<&Value>, incoming: Option<Value>) -
     }
 }
 
-fn snapshot_restore_payload(metadata: Option<&str>) -> Result<UpdateLocalMemoryRequest, MemoryError> {
+fn snapshot_restore_payload(
+    metadata: Option<&str>,
+) -> Result<UpdateLocalMemoryRequest, MemoryError> {
     let mut request = UpdateLocalMemoryRequest {
         content: String::new(),
         meta_info: None,
@@ -763,19 +764,25 @@ fn snapshot_restore_payload(metadata: Option<&str>) -> Result<UpdateLocalMemoryR
         return Ok(request);
     };
     let value: Value = serde_json::from_str(raw_metadata).map_err(|error| {
-        MemoryError::Storage(format!("failed to deserialize snapshot metadata: {}", error))
+        MemoryError::Storage(format!(
+            "failed to deserialize snapshot metadata: {}",
+            error
+        ))
     })?;
     let Some(object) = value.as_object() else {
         return Ok(request);
     };
 
-    request.meta_info = object.get("meta_info").cloned().and_then(|value| {
-        if value.is_null() {
-            None
-        } else {
-            Some(value)
-        }
-    });
+    request.meta_info =
+        object.get("meta_info").cloned().and_then(
+            |value| {
+                if value.is_null() {
+                    None
+                } else {
+                    Some(value)
+                }
+            },
+        );
     request.category = object
         .get("category")
         .and_then(|value| value.as_str())

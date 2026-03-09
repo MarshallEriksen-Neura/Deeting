@@ -22,6 +22,7 @@ use crate::modules::mcp::types::{McpSourceType, McpTool};
 
 #[derive(Clone)]
 pub struct PendingToolCall {
+    pub tool_id: Option<String>,
     pub tool_name: String,
     pub arguments: Value,
     pub call_id: Option<String>,
@@ -228,6 +229,7 @@ impl McpRuntimeState {
 
     pub fn build_pending_tool_call(
         &self,
+        tool_id: Option<String>,
         tool_name: String,
         arguments: Value,
         tool_fingerprint: String,
@@ -235,6 +237,7 @@ impl McpRuntimeState {
     ) -> PendingToolCall {
         let created_at = now_unix_ms();
         PendingToolCall {
+            tool_id,
             tool_name,
             arguments,
             call_id: approval_context.call_id,

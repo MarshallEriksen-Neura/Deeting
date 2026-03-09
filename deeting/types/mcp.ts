@@ -44,6 +44,10 @@ export type MCPToolStatus =
 
 export type MCPConflictStatus = "none" | "update_available" | "conflict"
 
+export type MCPToolAvailabilityLane = "callable_now" | "installable" | "advisory"
+
+export type MCPToolIndexStatus = "indexed" | "missing" | "unknown"
+
 export interface McpToolRecord {
   id: string
   identifier?: string | null
@@ -67,6 +71,15 @@ export interface McpToolRecord {
   is_new: boolean
   created_at: string
   updated_at: string
+  desired_enabled?: boolean
+  runtime_ready?: boolean
+  runtime_status_reason?: string
+  availability_lane?: MCPToolAvailabilityLane
+  recommended_action?: string
+  activation_required?: boolean
+  install_required?: boolean
+  index_status?: MCPToolIndexStatus
+  index_status_reason?: string
 }
 
 export interface MCPEnvConfigItem {
@@ -108,6 +121,15 @@ export interface MCPTool {
   isNew: boolean
   createdAt?: string
   updatedAt?: string
+  desiredEnabled?: boolean
+  runtimeReady?: boolean
+  runtimeStatusReason?: string
+  availabilityLane?: MCPToolAvailabilityLane
+  recommendedAction?: string
+  activationRequired?: boolean
+  installRequired?: boolean
+  indexStatus?: MCPToolIndexStatus
+  indexStatusReason?: string
   envConfig?: MCPEnvConfigItem[]
   conflict?: MCPToolConflict
 }

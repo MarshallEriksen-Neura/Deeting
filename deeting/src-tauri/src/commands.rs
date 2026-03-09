@@ -3,6 +3,7 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         // MCP Commands
         crate::modules::mcp::commands::config_and_skills_impl::set_cloud_base_url,
         crate::modules::mcp::commands::config_and_skills_impl::get_desktop_config,
+        crate::modules::mcp::commands::config_and_skills_impl::get_effective_desktop_scout_base_url,
         crate::modules::mcp::commands::config_and_skills_impl::set_desktop_config,
         crate::modules::mcp::commands::source_management_impl::list_mcp_sources,
         crate::modules::mcp::commands::source_management_impl::create_mcp_source,
@@ -78,8 +79,7 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::mcp::commands::sources_tools_and_chat_impl::get_desktop_config_value,
         crate::modules::mcp::commands::sources_tools_and_chat_impl::set_desktop_config_value,
         crate::modules::mcp::commands::source_management_impl::sync_cloud_subscriptions,
-        crate::modules::mcp::commands::skill_registry_impl::sync_local_skill_installs_from_cloud,
-        crate::modules::mcp::commands::source_management_impl::sync_local_system_assistants,
+        crate::modules::mcp::commands::source_management_impl::sync_local_system_assets,
         crate::modules::mcp::commands::skill_registry_impl::register_local_skills,
         crate::modules::mcp::commands::skill_registry_impl::install_skill_from_repo,
         crate::modules::mcp::commands::skill_registry_impl::uninstall_skill,

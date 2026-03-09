@@ -172,15 +172,13 @@ pub async fn approve_pending_local_code_mode_execution(
         return Err("approval token expired; please retry the action".to_string());
     }
 
-    let response = crate::modules::mcp::commands::runtime::approve_pending_local_code_mode_execution(
-        &app,
-        &state,
-        pending,
-    )
-    .await?;
+    let response =
+        crate::modules::mcp::commands::runtime::approve_pending_local_code_mode_execution(
+            &app, &state, pending,
+        )
+        .await?;
 
-    if let Some((response_text, assistant_blocks)) =
-        extract_local_chat_approval_message(&response)
+    if let Some((response_text, assistant_blocks)) = extract_local_chat_approval_message(&response)
     {
         state
             .mcp

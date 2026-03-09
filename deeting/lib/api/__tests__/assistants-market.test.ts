@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core"
 
 jest.mock("@/lib/http", () => ({
   request: jest.fn(),
+  getAuthToken: jest.fn(() => "desktop-token"),
 }))
 
 jest.mock("@tauri-apps/api/core", () => ({
@@ -31,6 +32,23 @@ describe("assistant market api", () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
     mockInvoke.mockImplementation(async (command: string) => {
+      if (command === "sync_local_system_assets") {
+        return {
+          fetched_count: 1,
+          upserted_count: 1,
+          hidden_count: 0,
+          metadata_only_count: 0,
+          executable_count: 1,
+          archived_count: 0,
+          skill_install_fetched_count: 0,
+          skill_install_upserted_count: 0,
+          skill_reinstalled_count: 0,
+          skill_failed_count: 0,
+          disabled_skill_count: 0,
+          archived_assistant_count: 0,
+          disabled_assistant_install_count: 0,
+        }
+      }
       if (command === "list_local_assistant_entities") {
         return [
           {
@@ -116,6 +134,11 @@ describe("assistant market api", () => {
     expect(result.items).toHaveLength(1)
     expect(result.items[0].assistant_id).toBe("ca8c65e1-ffdd-45aa-8f58-b7709ed318de")
     expect(result.items[0].installed).toBe(true)
+    expect(mockInvoke).toHaveBeenCalledWith("sync_local_system_assets", {
+      accessToken: "desktop-token",
+      limit: 500,
+      reinstallMissing: false,
+    })
     expect(mockRequest).not.toHaveBeenCalled()
   })
 

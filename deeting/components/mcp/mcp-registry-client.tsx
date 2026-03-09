@@ -148,6 +148,15 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
       isNew: tool.is_new,
       createdAt: tool.created_at,
       updatedAt: tool.updated_at,
+      desiredEnabled: tool.desired_enabled,
+      runtimeReady: tool.runtime_ready,
+      runtimeStatusReason: tool.runtime_status_reason,
+      availabilityLane: tool.availability_lane,
+      recommendedAction: tool.recommended_action,
+      activationRequired: tool.activation_required,
+      installRequired: tool.install_required,
+      indexStatus: tool.index_status,
+      indexStatusReason: tool.index_status_reason,
       envConfig,
     }
 
@@ -357,7 +366,7 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
 
     const setup = async () => {
       try {
-        const entries = await invoke<MCPLogEntry[]>("get_mcp_logs", { tool_id: toolId })
+        const entries = await invoke<MCPLogEntry[]>("get_mcp_logs", { toolId })
         if (active) {
           setLogsByTool((prev) => ({ ...prev, [toolId]: entries }))
         }
@@ -435,11 +444,12 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
       )
     )
     try {
-      const updated = enabled
-        ? await invoke<McpToolRecord>("start_mcp_tool", { tool_id: tool.id })
-        : await invoke<McpToolRecord>("stop_mcp_tool", { tool_id: tool.id })
-      const mapped = mapTool(updated)
-      setTools((prev) => prev.map((item) => (item.id === mapped.id ? mapped : item)))
+      if (enabled) {
+        await invoke("start_mcp_tool", { toolId: tool.id })
+      } else {
+        await invoke("stop_mcp_tool", { toolId: tool.id })
+      }
+      await refreshAll()
     } catch (err) {
       addNotification({
         type: "error",
@@ -453,7 +463,6 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
     addNotification,
     isTauri,
     mapServerTool,
-    mapTool,
     refreshTools,
     refreshAll,
     t,
@@ -816,7 +825,7 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
 
   const handleClearLogs = useCallback(async (tool: MCPTool) => {
     if (!isTauri) return
-    await invoke("clear_mcp_logs", { tool_id: tool.id })
+    await invoke("clear_mcp_logs", { toolId: tool.id })
     setLogsByTool((prev) => ({ ...prev, [tool.id]: [] }))
   }, [isTauri])
 

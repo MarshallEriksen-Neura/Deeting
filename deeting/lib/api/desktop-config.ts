@@ -20,7 +20,10 @@ export const DESKTOP_CONFIG_KEYS = {
 
 export async function getDesktopScoutBaseUrl(): Promise<string> {
   if (!isTauriRuntime()) return "";
-  return (await getDesktopConfig(DESKTOP_CONFIG_KEYS.scoutBaseUrl)) ?? "";
+  const { invoke } = await import("@tauri-apps/api/core");
+  return (
+    (await invoke<string | null>("get_effective_desktop_scout_base_url")) ?? ""
+  );
 }
 
 export async function setDesktopScoutBaseUrl(value: string): Promise<void> {

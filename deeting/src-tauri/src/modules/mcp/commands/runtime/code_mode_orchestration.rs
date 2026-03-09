@@ -169,8 +169,9 @@ async fn continue_local_chat_complete_with_auto_code_mode(
                 serde_json::json!({"content": "Tool execution reached the maximum number of rounds."})
             });
             if !state.all_tool_call_meta.is_empty() {
-                fallback["tool_trace_blocks"] =
-                    serde_json::Value::Array(build_local_tool_trace_blocks(&state.all_tool_call_meta));
+                fallback["tool_trace_blocks"] = serde_json::Value::Array(
+                    build_local_tool_trace_blocks(&state.all_tool_call_meta),
+                );
             }
             if state.realtime_emitter.emitted_any {
                 fallback["tool_trace_streamed"] = serde_json::json!(true);
@@ -202,8 +203,9 @@ async fn continue_local_chat_complete_with_auto_code_mode(
         if extract_chat_tool_calls(&response).is_empty() {
             let mut enriched = response;
             if !state.all_tool_call_meta.is_empty() {
-                enriched["tool_trace_blocks"] =
-                    serde_json::Value::Array(build_local_tool_trace_blocks(&state.all_tool_call_meta));
+                enriched["tool_trace_blocks"] = serde_json::Value::Array(
+                    build_local_tool_trace_blocks(&state.all_tool_call_meta),
+                );
             }
             if state.realtime_emitter.emitted_any {
                 enriched["tool_trace_streamed"] = serde_json::json!(true);
@@ -288,19 +290,22 @@ async fn continue_local_chat_complete_with_auto_code_mode(
                             partial_tool_call_meta: approval.partial_tool_call_meta,
                             partial_results: approval.partial_results,
                             pending_call_id: approval.call_id.clone(),
-                            execute_request: crate::modules::code_mode::types::ExecuteLocalCodeModeRequest {
-                                code: approval.code.clone(),
-                                session_id: Some(state.chat_ctx.session_id.clone()),
-                                language: Some(approval.language.clone()),
-                                execution_timeout: approval.execution_timeout,
-                                dry_run: Some(false),
-                                context: None,
-                                max_calls: Some(16),
-                                allowed_tools: Some(approval.execution_contract.allowed_tools.clone()),
-                                capability_snapshot: Some(
-                                    approval.execution_contract.capability_snapshot.clone(),
-                                ),
-                            },
+                            execute_request:
+                                crate::modules::code_mode::types::ExecuteLocalCodeModeRequest {
+                                    code: approval.code.clone(),
+                                    session_id: Some(state.chat_ctx.session_id.clone()),
+                                    language: Some(approval.language.clone()),
+                                    execution_timeout: approval.execution_timeout,
+                                    dry_run: Some(false),
+                                    context: None,
+                                    max_calls: Some(16),
+                                    allowed_tools: Some(
+                                        approval.execution_contract.allowed_tools.clone(),
+                                    ),
+                                    capability_snapshot: Some(
+                                        approval.execution_contract.capability_snapshot.clone(),
+                                    ),
+                                },
                             execution_section_emitted: state
                                 .realtime_emitter
                                 .emitted_execution_section,
@@ -1030,7 +1035,8 @@ pub(crate) async fn approve_pending_local_code_mode_execution(
         .all_tool_call_meta
         .extend(round_tool_call_meta.iter().cloned());
 
-    let output = continue_local_chat_complete_with_auto_code_mode(app, app_state, next_state).await?;
+    let output =
+        continue_local_chat_complete_with_auto_code_mode(app, app_state, next_state).await?;
     Ok(serde_json::json!({
         "response": output.response,
         "blocks": output.streamed_blocks,

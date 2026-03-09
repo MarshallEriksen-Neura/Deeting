@@ -18,3 +18,28 @@ pub(crate) use crate::modules::mcp::store::{
 pub(crate) use crate::modules::mcp::types::*;
 pub(crate) use crate::modules::mcp::McpRuntimeState;
 pub(crate) use crate::state::AppState;
+
+pub(crate) const DESKTOP_CONFIG_SCOUT_BASE_URL_KEY: &str = "scout.base_url";
+pub(crate) const SCOUT_SERVICE_URL_ENV_KEY: &str = "SCOUT_SERVICE_URL";
+
+pub(crate) async fn resolve_effective_desktop_scout_base_url(
+    store: &crate::modules::mcp::store::McpStore,
+) -> Result<Option<String>, McpError> {
+    let configured = store
+        .get_desktop_config(DESKTOP_CONFIG_SCOUT_BASE_URL_KEY)
+        .await?;
+    if let Some(normalized) = configured
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.trim_end_matches('/').to_string())
+    {
+        return Ok(Some(normalized));
+    }
+
+    let runtime_env = std::env::var(SCOUT_SERVICE_URL_ENV_KEY)
+        .ok()
+        .map(|value| value.trim().trim_end_matches('/').to_string())
+        .filter(|value| !value.is_empty());
+    Ok(runtime_env)
+}

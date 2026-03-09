@@ -48,8 +48,7 @@ pub(crate) struct PendingLocalCodeModeExecution {
 pub struct CodeModeState {
     pub bridge: Arc<CodeModeBridgeState>,
     pub execution_store: Arc<CodeModeExecutionStore>,
-    pub(crate) pending_local_approvals:
-        Arc<RwLock<HashMap<String, PendingLocalCodeModeExecution>>>,
+    pub(crate) pending_local_approvals: Arc<RwLock<HashMap<String, PendingLocalCodeModeExecution>>>,
 }
 
 impl CodeModeState {

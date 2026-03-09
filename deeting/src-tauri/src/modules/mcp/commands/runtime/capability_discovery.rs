@@ -4,6 +4,10 @@ use serde_json::{json, Value};
 
 use super::core_tool_contracts::build_core_tool_assets;
 use super::search_ranking::lexical_asset_match_score;
+use super::{
+    build_db_tool_availability_catalog, fallback_local_tool_availability, ToolAvailability,
+    ToolAvailabilityCatalog,
+};
 
 const MAX_LIMIT: usize = 20;
 const SEMANTIC_SCORE_FLOOR: f64 = 0.30;
@@ -60,6 +64,9 @@ pub(crate) async fn build_capability_search_result(
         .list_enabled_local_skill_ids()
         .await
         .unwrap_or_else(|_| HashSet::new());
+    let tool_availability_catalog = build_db_tool_availability_catalog(mcp_store)
+        .await
+        .unwrap_or_default();
     let tool_contracts = load_tool_contract_sources(mcp_store).await;
     let profile = QueryProfile::from_query(query);
     let limit = limit.clamp(1, MAX_LIMIT);
@@ -75,6 +82,7 @@ pub(crate) async fn build_capability_search_result(
                 &semantic_scores,
                 &enabled_assistant_ids,
                 &enabled_skill_ids,
+                &tool_availability_catalog,
                 &tool_contracts,
             )
         })
@@ -163,6 +171,7 @@ fn rank_asset(
     semantic_scores: &HashMap<String, f64>,
     enabled_assistant_ids: &HashSet<String>,
     enabled_skill_ids: &HashSet<String>,
+    tool_availability_catalog: &ToolAvailabilityCatalog,
     tool_contracts: &HashMap<String, ToolContractSource>,
 ) -> Option<RankedCapability> {
     let id = asset.get("id")?.as_str()?.trim().to_string();
@@ -198,9 +207,11 @@ fn rank_asset(
         asset_type,
         source_type,
         &id,
+        name,
         pkg_name.as_deref(),
         enabled_assistant_ids,
         enabled_skill_ids,
+        tool_availability_catalog,
     );
     let combined_text = format!("{}\n{}", name.to_lowercase(), description.to_lowercase());
     let domain_hit = matches_domain(profile.domain, &combined_text);
@@ -863,9 +874,11 @@ impl Availability {
         asset_type: &str,
         source_type: &str,
         asset_id: &str,
+        tool_name: &str,
         pkg_name: Option<&str>,
         enabled_assistant_ids: &HashSet<String>,
         enabled_skill_ids: &HashSet<String>,
+        tool_availability_catalog: &ToolAvailabilityCatalog,
     ) -> Self {
         if source_type == "cloud_mirror" {
             let recommended_action = if asset_type == "assistant" {
@@ -894,28 +907,17 @@ impl Availability {
                         status_reason: "core_code_mode_tool",
                     };
                 }
-                let enabled = pkg_name
-                    .map(|pkg| enabled_skill_ids.contains(pkg.trim()))
-                    .unwrap_or(true);
-                if enabled {
-                    Self {
-                        lane: "callable_now",
-                        callable_now: true,
-                        install_required: false,
-                        activation_required: false,
-                        recommended_action: "execute",
-                        status_reason: "ready_in_local_runtime",
-                    }
-                } else {
-                    Self {
-                        lane: "installable",
-                        callable_now: false,
-                        install_required: false,
-                        activation_required: true,
-                        recommended_action: "enable_skill",
-                        status_reason: "skill_installed_but_disabled",
+                if source_type == "mcp" {
+                    if let Some(availability) =
+                        tool_availability_catalog.get_for_asset(asset_id, tool_name)
+                    {
+                        return Self::from_tool_availability(availability);
                     }
                 }
+                Self::from_tool_availability(&fallback_local_tool_availability(
+                    pkg_name,
+                    enabled_skill_ids,
+                ))
             }
             "assistant" => {
                 if enabled_assistant_ids.contains(asset_id) {
@@ -946,6 +948,17 @@ impl Availability {
                 recommended_action: "review",
                 status_reason: "non_callable_catalog_item",
             },
+        }
+    }
+
+    fn from_tool_availability(availability: &ToolAvailability) -> Self {
+        Self {
+            lane: availability.lane,
+            callable_now: availability.callable_now,
+            install_required: availability.install_required,
+            activation_required: availability.activation_required,
+            recommended_action: availability.recommended_action,
+            status_reason: availability.status_reason,
         }
     }
 }

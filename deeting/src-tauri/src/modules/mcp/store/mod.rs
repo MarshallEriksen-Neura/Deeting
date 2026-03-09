@@ -10,15 +10,16 @@ use uuid::Uuid;
 
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::types::{
-    CloudSystemAssistantSnapshot, CreateAssistantMessageRequest, CreateConversationMessageRequest,
-    CreateLocalAssistantRequest, CreateLocalKnowledgeFolderRequest, CreateLocalUserDocumentRequest,
-    LocalAdminConversationItem, LocalAdminConversationListResponse,
-    LocalAdminConversationMessageItem, LocalAdminConversationMessageListResponse,
-    LocalAdminConversationMessageQuery, LocalAdminConversationQuery,
-    LocalAdminConversationSummaryItem, LocalAdminConversationSummaryListResponse, LocalAssistant,
-    LocalAssistantEntity, LocalAssistantInstallCreateRequest, LocalAssistantInstallItem,
-    LocalAssistantInstallPage, LocalAssistantInstallQuery, LocalAssistantInstallUpdateRequest,
-    LocalAssistantMessage, LocalAssistantRatingRequest, LocalAssistantRatingResponse,
+    CloudSystemAssetSyncItem, CloudSystemAssistantSnapshot, CreateAssistantMessageRequest,
+    CreateConversationMessageRequest, CreateLocalAssistantRequest,
+    CreateLocalKnowledgeFolderRequest, CreateLocalUserDocumentRequest, LocalAdminConversationItem,
+    LocalAdminConversationListResponse, LocalAdminConversationMessageItem,
+    LocalAdminConversationMessageListResponse, LocalAdminConversationMessageQuery,
+    LocalAdminConversationQuery, LocalAdminConversationSummaryItem,
+    LocalAdminConversationSummaryListResponse, LocalAssistant, LocalAssistantEntity,
+    LocalAssistantInstallCreateRequest, LocalAssistantInstallItem, LocalAssistantInstallPage,
+    LocalAssistantInstallQuery, LocalAssistantInstallUpdateRequest, LocalAssistantMessage,
+    LocalAssistantRatingRequest, LocalAssistantRatingResponse,
     LocalAssistantRoutingFeedbackRequest, LocalAssistantRoutingReportItem,
     LocalAssistantRoutingReportQuery, LocalAssistantRoutingReportResponse,
     LocalAssistantRoutingReportSummary, LocalAssistantRoutingState, LocalAssistantSummary,
@@ -87,6 +88,7 @@ mod conversations;
 mod helpers;
 mod knowledge;
 mod source_tools;
+mod system_assets;
 
 #[cfg(test)]
 mod tests;
@@ -505,6 +507,46 @@ impl McpStore {
             r#"
             CREATE INDEX IF NOT EXISTS idx_local_skill_install_user_enabled
             ON local_skill_install(user_id, is_enabled);
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS system_asset (
+              asset_id TEXT PRIMARY KEY,
+              title TEXT NOT NULL,
+              description TEXT,
+              asset_kind TEXT NOT NULL,
+              owner_scope TEXT NOT NULL,
+              source_kind TEXT NOT NULL,
+              version TEXT NOT NULL,
+              artifact_ref TEXT,
+              checksum TEXT,
+              metadata_json TEXT NOT NULL,
+              visibility_scope TEXT NOT NULL,
+              local_sync_policy TEXT NOT NULL,
+              execution_policy TEXT NOT NULL,
+              permission_grants_json TEXT NOT NULL,
+              allowed_role_names_json TEXT NOT NULL,
+              materialization_state TEXT NOT NULL,
+              sync_source TEXT NOT NULL,
+              status TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_system_asset_status_kind
+            ON system_asset(status, asset_kind);
             "#,
         )
         .execute(&self.pool)

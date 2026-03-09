@@ -1,8 +1,10 @@
 use super::{
-    assistant_management_impl::index_local_assistants,
     assistants_knowledge_admin_impl::{index_mcp_tools, sync_cloud_subscriptions_inner},
     common_impl::to_string,
-    runtime::{now_rfc3339, sync_source_inner},
+    runtime::{build_desktop_mcp_tool_views, now_rfc3339, sync_source_inner, DesktopMcpToolView},
+    skill_registry_impl::{
+        register_local_skills_inner, resolve_local_skill_scan_targets, try_clone_skill_repo,
+    },
     support::*,
 };
 
@@ -23,34 +25,513 @@ pub(crate) struct CloudSubscriptionItem {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-struct CloudAssistantMarketPage {
-    items: Vec<CloudAssistantMarketItem>,
-    next_page: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct CloudAssistantMarketItem {
-    assistant_id: String,
-    owner_user_id: Option<String>,
-    icon_id: Option<String>,
-    share_slug: Option<String>,
-    summary: Option<String>,
-    published_at: Option<String>,
-    install_count: Option<i64>,
-    rating_avg: Option<f64>,
-    rating_count: Option<i64>,
-    version: CloudAssistantMarketVersion,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct CloudAssistantMarketVersion {
-    id: String,
-    version: String,
-    name: String,
+struct CloudSystemAssetAssistantMetadataVersion {
+    id: Option<String>,
+    version: Option<String>,
+    name: Option<String>,
     description: Option<String>,
     system_prompt: Option<String>,
     tags: Option<Vec<String>>,
     published_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CloudSystemAssetAssistantMetadata {
+    registry_entity: Option<String>,
+    assistant_id: Option<String>,
+    current_version_id: Option<String>,
+    summary: Option<String>,
+    icon_id: Option<String>,
+    share_slug: Option<String>,
+    published_at: Option<String>,
+    install_count: Option<i64>,
+    rating_avg: Option<f64>,
+    rating_count: Option<i64>,
+    version: Option<CloudSystemAssetAssistantMetadataVersion>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CloudSystemAssetSkillUserInstallMetadata {
+    alias: Option<String>,
+    #[serde(default)]
+    config_json: Value,
+    #[serde(default)]
+    granted_permissions: Vec<String>,
+    installed_revision: Option<String>,
+    is_enabled: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CloudSystemAssetSkillMetadata {
+    registry_entity: Option<String>,
+    skill_id: Option<String>,
+    runtime: Option<String>,
+    #[serde(default)]
+    manifest: Value,
+    user_install: Option<CloudSystemAssetSkillUserInstallMetadata>,
+}
+
+fn assistant_snapshot_from_system_asset(
+    item: &CloudSystemAssetSyncItem,
+) -> Option<CloudSystemAssistantSnapshot> {
+    let assistant_id = item
+        .asset_id
+        .strip_prefix("assistant:")
+        .map(str::to_string)
+        .filter(|raw| !raw.trim().is_empty())?;
+    let metadata: CloudSystemAssetAssistantMetadata =
+        serde_json::from_value(item.metadata_json.clone()).ok()?;
+    if metadata.registry_entity.as_deref() != Some("assistant") {
+        return None;
+    }
+
+    let version = metadata.version?;
+    let version_id = metadata
+        .current_version_id
+        .or_else(|| version.id.clone())?
+        .trim()
+        .to_string();
+    if version_id.is_empty() {
+        return None;
+    }
+
+    let version_name = version
+        .name
+        .clone()
+        .unwrap_or_else(|| item.title.clone())
+        .trim()
+        .to_string();
+    if version_name.is_empty() {
+        return None;
+    }
+
+    Some(CloudSystemAssistantSnapshot {
+        assistant_id: metadata
+            .assistant_id
+            .unwrap_or(assistant_id)
+            .trim()
+            .to_string(),
+        icon_id: metadata.icon_id,
+        share_slug: metadata.share_slug,
+        summary: metadata.summary.or_else(|| item.description.clone()),
+        published_at: metadata
+            .published_at
+            .clone()
+            .or_else(|| version.published_at.clone()),
+        install_count: metadata.install_count.unwrap_or_default(),
+        rating_avg: metadata.rating_avg.unwrap_or_default(),
+        rating_count: metadata.rating_count.unwrap_or_default(),
+        version: CloudSystemAssistantVersionSnapshot {
+            id: version_id,
+            version: version.version.unwrap_or_else(|| item.version.clone()),
+            name: version_name,
+            description: version.description.or_else(|| item.description.clone()),
+            system_prompt: version.system_prompt,
+            tags: version.tags.unwrap_or_default(),
+            published_at: version.published_at.or(metadata.published_at),
+        },
+    })
+}
+
+fn skill_metadata_from_system_asset(
+    item: &CloudSystemAssetSyncItem,
+) -> Option<(String, CloudSystemAssetSkillMetadata)> {
+    let skill_id = item
+        .asset_id
+        .strip_prefix("skill:")
+        .map(str::to_string)
+        .filter(|raw| !raw.trim().is_empty())?;
+    let metadata: CloudSystemAssetSkillMetadata =
+        serde_json::from_value(item.metadata_json.clone()).ok()?;
+    if metadata.registry_entity.as_deref() != Some("skill") {
+        return None;
+    }
+    let metadata_skill_id = metadata.skill_id.clone().unwrap_or(skill_id.clone());
+    if metadata_skill_id.trim().is_empty() {
+        return None;
+    }
+    Some((metadata_skill_id.trim().to_string(), metadata))
+}
+
+fn read_skill_manifest_json(manifest_path: &Path) -> Option<Value> {
+    let raw = std::fs::read_to_string(manifest_path).ok()?;
+    serde_json::from_str::<Value>(&raw).ok()
+}
+
+fn read_skill_tool_identifiers(skill_path: &Path, skill_id: &str) -> Vec<String> {
+    let llm_tool_path = skill_path.join("llm-tool.yaml");
+    let raw = match std::fs::read_to_string(llm_tool_path) {
+        Ok(raw) => raw,
+        Err(_) => return Vec::new(),
+    };
+    let parsed: Value = match serde_yaml::from_str(&raw) {
+        Ok(parsed) => parsed,
+        Err(_) => return Vec::new(),
+    };
+    let mut seen = HashSet::new();
+    parsed
+        .get("tools")
+        .and_then(|value| value.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|tool| tool.get("name").and_then(|value| value.as_str()))
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .filter_map(|name| {
+            let identifier = format!("{}/{}", skill_id, name);
+            if seen.insert(identifier.clone()) {
+                Some(identifier)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+async fn local_skill_registration_needs_reindex(
+    store: &crate::modules::mcp::store::McpStore,
+    memory_service: Option<&crate::modules::memory::service::MemoryService>,
+    skill_id: &str,
+    skill_path: &Path,
+) -> Result<bool, String> {
+    let source_name = format!("skill:{}", skill_id);
+    let Some(source) = store
+        .find_source_by_name(&source_name)
+        .await
+        .map_err(to_string)?
+    else {
+        return Ok(true);
+    };
+
+    for identifier in read_skill_tool_identifiers(skill_path, skill_id) {
+        let Some(tool) = store
+            .get_tool_by_source_identifier(&source.id, &identifier)
+            .await
+            .map_err(to_string)?
+        else {
+            return Ok(true);
+        };
+
+        if let Some(memory_service) = memory_service {
+            if memory_service
+                .get_asset_by_id(&tool.id)
+                .await
+                .map_err(to_string)?
+                .is_none()
+            {
+                return Ok(true);
+            }
+        }
+    }
+
+    Ok(false)
+}
+
+pub(crate) async fn local_skill_registration_self_heal_needed(
+    store: &crate::modules::mcp::store::McpStore,
+    memory_service: Option<&crate::modules::memory::service::MemoryService>,
+    skill_roots: &[std::path::PathBuf],
+) -> Result<bool, String> {
+    for skills_root in skill_roots {
+        if !skills_root.exists() {
+            continue;
+        }
+
+        let entries = std::fs::read_dir(skills_root).map_err(to_string)?;
+        for entry in entries {
+            let path = match entry.map_err(to_string) {
+                Ok(entry) => entry.path(),
+                Err(err) => return Err(err),
+            };
+            if !path.is_dir() {
+                continue;
+            }
+
+            let Some(skill_id) =
+                read_skill_manifest_json(&path.join("deeting.json")).and_then(|manifest| {
+                    manifest
+                        .get("id")
+                        .and_then(|value| value.as_str())
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(str::to_string)
+                })
+            else {
+                continue;
+            };
+
+            if local_skill_registration_needs_reindex(store, memory_service, &skill_id, &path)
+                .await?
+            {
+                return Ok(true);
+            }
+        }
+    }
+
+    Ok(false)
+}
+
+pub(crate) async fn sync_local_system_assets_inner(
+    store: &crate::modules::mcp::store::McpStore,
+    client: &reqwest::Client,
+    base_url: &str,
+    access_token: &str,
+    limit: i64,
+    skills_dir: Option<&Path>,
+    reinstall_missing: bool,
+) -> Result<LocalSystemAssetSyncResponse, String> {
+    let url = format!(
+        "{}/api/v1/system-assets/sync",
+        base_url.trim_end_matches('/')
+    );
+    let response: CloudSystemAssetSyncResponse = client
+        .get(&url)
+        .bearer_auth(access_token)
+        .query(&[("limit", limit.to_string())])
+        .send()
+        .await
+        .map_err(to_string)?
+        .error_for_status()
+        .map_err(to_string)?
+        .json()
+        .await
+        .map_err(to_string)?;
+
+    let mut upserted_count = 0_i64;
+    let mut hidden_count = 0_i64;
+    let mut metadata_only_count = 0_i64;
+    let mut executable_count = 0_i64;
+    let mut skill_install_fetched_count = 0_i64;
+    let mut skill_install_upserted_count = 0_i64;
+    let mut skill_reinstalled_count = 0_i64;
+    let mut skill_failed_count = 0_i64;
+    let mut asset_ids = Vec::new();
+    let mut skill_ids_to_disable: HashSet<String> = HashSet::new();
+    let mut cloud_installed_skill_ids: Vec<String> = Vec::new();
+    let mut assistant_ids_to_disable: HashSet<String> = HashSet::new();
+    let mut active_assistant_snapshots: Vec<CloudSystemAssistantSnapshot> = Vec::new();
+    let mut active_assistant_ids: HashSet<String> = HashSet::new();
+
+    for item in &response.items {
+        store
+            .upsert_cloud_system_asset(item)
+            .await
+            .map_err(to_string)?;
+        upserted_count += 1;
+        asset_ids.push(item.asset_id.clone());
+
+        let state = item.policy_snapshot.materialization_state.trim();
+        match state {
+            "hidden" => hidden_count += 1,
+            "metadata_only" => metadata_only_count += 1,
+            _ => executable_count += 1,
+        }
+
+        if let Some(skill_id) = item.asset_id.strip_prefix("skill:") {
+            if let Some((installed_skill_id, skill_metadata)) =
+                skill_metadata_from_system_asset(item)
+            {
+                if let Some(user_install) = skill_metadata.user_install {
+                    skill_install_fetched_count += 1;
+                    cloud_installed_skill_ids.push(installed_skill_id.clone());
+
+                    if let Some(skills_root) = skills_dir {
+                        let install_path = skills_root.join(&installed_skill_id);
+                        let install_path_str = install_path.to_string_lossy().to_string();
+                        let is_enabled = user_install.is_enabled.unwrap_or(true);
+                        let mut status = "synced".to_string();
+                        let mut reinstalled = false;
+                        let installed_revision = user_install
+                            .installed_revision
+                            .clone()
+                            .or_else(|| item.checksum.clone());
+
+                        if reinstall_missing && is_enabled && !install_path.exists() {
+                            if let Some(repo_url) = item
+                                .artifact_ref
+                                .as_deref()
+                                .filter(|raw| !raw.trim().is_empty())
+                            {
+                                match try_clone_skill_repo(
+                                    &install_path,
+                                    repo_url,
+                                    installed_revision.as_deref(),
+                                )
+                                .await
+                                {
+                                    Ok(_) => {
+                                        reinstalled = true;
+                                        skill_reinstalled_count += 1;
+                                    }
+                                    Err(_err) => {
+                                        status = "failed_reinstall".to_string();
+                                    }
+                                }
+                            } else {
+                                status = "failed_reinstall".to_string();
+                            }
+                        }
+
+                        let manifest_path = install_path.join("deeting.json");
+                        let manifest =
+                            read_skill_manifest_json(&manifest_path).unwrap_or_else(|| {
+                                let mut manifest = match skill_metadata.manifest.clone() {
+                                    Value::Object(map) => Value::Object(map),
+                                    _ => serde_json::json!({}),
+                                };
+                                if let Some(obj) = manifest.as_object_mut() {
+                                    obj.entry("id")
+                                        .or_insert_with(|| serde_json::json!(installed_skill_id));
+                                    obj.entry("name")
+                                        .or_insert_with(|| serde_json::json!(item.title));
+                                    if let Some(description) = item.description.as_ref() {
+                                        obj.entry("description")
+                                            .or_insert_with(|| serde_json::json!(description));
+                                    }
+                                    if !item.version.trim().is_empty() {
+                                        obj.entry("version")
+                                            .or_insert_with(|| serde_json::json!(item.version));
+                                    }
+                                    if let Some(repo_url) = item.artifact_ref.as_ref() {
+                                        obj.entry("source_repo")
+                                            .or_insert_with(|| serde_json::json!(repo_url));
+                                    }
+                                    if let Some(revision) =
+                                        installed_revision.as_ref().or(item.checksum.as_ref())
+                                    {
+                                        obj.entry("source_revision")
+                                            .or_insert_with(|| serde_json::json!(revision));
+                                    }
+                                    if let Some(runtime) = skill_metadata.runtime.as_ref() {
+                                        obj.entry("runtime")
+                                            .or_insert_with(|| serde_json::json!(runtime));
+                                    }
+                                }
+                                manifest
+                            });
+                        let manifest_json = serde_json::to_string(&manifest).map_err(to_string)?;
+                        let runtime = manifest
+                            .get("runtime")
+                            .and_then(|value| value.as_str())
+                            .or(skill_metadata.runtime.as_deref());
+                        let installed_version = installed_revision
+                            .clone()
+                            .or_else(|| {
+                                manifest
+                                    .get("version")
+                                    .and_then(|value| value.as_str())
+                                    .map(|value| value.to_string())
+                            })
+                            .or_else(|| {
+                                let value = item.version.trim();
+                                if value.is_empty() {
+                                    None
+                                } else {
+                                    Some(value.to_string())
+                                }
+                            });
+                        let user_settings = serde_json::json!({
+                            "alias": user_install.alias,
+                            "config_json": user_install.config_json,
+                            "granted_permissions": user_install.granted_permissions,
+                            "sync_source": "cloud_plugin_market",
+                        });
+
+                        match store
+                            .upsert_local_skill_install_state(
+                                &installed_skill_id,
+                                installed_version.as_deref(),
+                                is_enabled,
+                                runtime,
+                                &manifest_json,
+                                &install_path_str,
+                                Some(&user_settings),
+                            )
+                            .await
+                        {
+                            Ok(_) => {
+                                skill_install_upserted_count += 1;
+                                if status == "synced" && !is_enabled {
+                                    status = "disabled_synced".to_string();
+                                } else if status == "synced" && reinstalled {
+                                    status = "reinstalled".to_string();
+                                } else if status == "synced" && !install_path.exists() {
+                                    status = "metadata_synced".to_string();
+                                }
+                            }
+                            Err(_err) => {
+                                status = "failed".to_string();
+                            }
+                        }
+
+                        if status.starts_with("failed") {
+                            skill_failed_count += 1;
+                        }
+                    }
+                }
+            }
+            if matches!(state, "hidden" | "metadata_only") {
+                skill_ids_to_disable.insert(skill_id.to_string());
+            }
+        } else if let Some(assistant_id) = item.asset_id.strip_prefix("assistant:") {
+            if state != "hidden" {
+                if let Some(snapshot) = assistant_snapshot_from_system_asset(item) {
+                    active_assistant_ids.insert(snapshot.assistant_id.clone());
+                    active_assistant_snapshots.push(snapshot);
+                }
+            }
+            if matches!(state, "hidden" | "metadata_only") {
+                assistant_ids_to_disable.insert(assistant_id.to_string());
+            }
+        }
+    }
+
+    store
+        .upsert_cloud_system_assistants(&active_assistant_snapshots)
+        .await
+        .map_err(to_string)?;
+
+    let archived_count = store
+        .archive_missing_cloud_system_assets(&asset_ids)
+        .await
+        .map_err(to_string)?;
+    let disabled_hidden_skill_count = store
+        .disable_local_skills_by_ids(&skill_ids_to_disable.into_iter().collect::<Vec<_>>())
+        .await
+        .map_err(to_string)?;
+    let disabled_missing_skill_count = store
+        .disable_missing_cloud_managed_local_skills(&cloud_installed_skill_ids)
+        .await
+        .map_err(to_string)?;
+    let disabled_skill_count = disabled_hidden_skill_count + disabled_missing_skill_count;
+    let archived_assistant_count = store
+        .archive_missing_cloud_system_assistants_by_ids(
+            &active_assistant_ids.into_iter().collect::<Vec<_>>(),
+        )
+        .await
+        .map_err(to_string)?;
+    let disabled_assistant_install_count = store
+        .disable_local_assistant_installs_by_ids(
+            &assistant_ids_to_disable.into_iter().collect::<Vec<_>>(),
+        )
+        .await
+        .map_err(to_string)?;
+
+    Ok(LocalSystemAssetSyncResponse {
+        fetched_count: response.items.len() as i64,
+        upserted_count,
+        hidden_count,
+        metadata_only_count,
+        executable_count,
+        archived_count,
+        skill_install_fetched_count,
+        skill_install_upserted_count,
+        skill_reinstalled_count,
+        skill_failed_count,
+        disabled_skill_count,
+        archived_assistant_count,
+        disabled_assistant_install_count,
+    })
 }
 
 #[tauri::command]
@@ -63,105 +544,67 @@ pub async fn sync_cloud_subscriptions(
 }
 
 #[tauri::command]
-pub async fn sync_local_system_assistants(
+pub async fn sync_local_system_assets(
+    app: AppHandle,
     state: State<'_, AppState>,
     access_token: String,
-    size: Option<i64>,
-) -> Result<LocalSystemAssistantSyncResponse, String> {
+    limit: Option<i64>,
+    reinstall_missing: Option<bool>,
+) -> Result<LocalSystemAssetSyncResponse, String> {
     let normalized_token = access_token.trim().to_string();
     if normalized_token.is_empty() {
         return Err("access token is required".to_string());
     }
+    let page_limit = limit.unwrap_or(500).clamp(1, 500);
+    let enable_reinstall = reinstall_missing.unwrap_or(false);
+    let base_url = state.mcp.cloud_base_url.read().await.clone();
+    let skills_dir = app.path().app_data_dir().map_err(to_string)?.join("skills");
+    std::fs::create_dir_all(&skills_dir).map_err(to_string)?;
+    let skill_scan_roots = resolve_local_skill_scan_targets(&app)?
+        .into_iter()
+        .map(|(path, _)| path)
+        .collect::<Vec<_>>();
+    let response = sync_local_system_assets_inner(
+        state.mcp.store.as_ref(),
+        &state.mcp.client,
+        &base_url,
+        normalized_token.as_str(),
+        page_limit,
+        Some(&skills_dir),
+        enable_reinstall,
+    )
+    .await?;
 
-    let page_size = size.unwrap_or(100).clamp(1, 200);
-    let mut cursor: Option<String> = None;
-    let mut page_guard = 0_i32;
-    let mut fetched_count = 0_i64;
-    let mut system_items: Vec<CloudSystemAssistantSnapshot> = Vec::new();
-    let mut dedupe_ids: HashSet<String> = HashSet::new();
-
-    loop {
-        page_guard += 1;
-        if page_guard > 30 {
-            break;
-        }
-
-        let base_url = state.mcp.cloud_base_url.read().await.clone();
-        let url = format!(
-            "{}/api/v1/assistants/market",
-            base_url.trim_end_matches('/')
-        );
-        let mut request = state
-            .mcp
-            .client
-            .get(&url)
-            .bearer_auth(normalized_token.as_str())
-            .query(&[("size", page_size.to_string())]);
-        if let Some(cursor_value) = cursor.as_deref() {
-            request = request.query(&[("cursor", cursor_value)]);
-        }
-
-        let response = request.send().await.map_err(to_string)?;
-        if !response.status().is_success() {
-            return Err(format!(
-                "failed to sync system assistants: {}",
-                response.status()
-            ));
-        }
-
-        let page: CloudAssistantMarketPage = response.json().await.map_err(to_string)?;
-        fetched_count += page.items.len() as i64;
-
-        for item in page.items {
-            if item.owner_user_id.is_some() || !dedupe_ids.insert(item.assistant_id.clone()) {
-                continue;
-            }
-            system_items.push(CloudSystemAssistantSnapshot {
-                assistant_id: item.assistant_id,
-                icon_id: item.icon_id,
-                share_slug: item.share_slug,
-                summary: item.summary,
-                published_at: item.published_at,
-                install_count: item.install_count.unwrap_or(0),
-                rating_avg: item.rating_avg.unwrap_or(0.0),
-                rating_count: item.rating_count.unwrap_or(0),
-                version: CloudSystemAssistantVersionSnapshot {
-                    id: item.version.id,
-                    version: item.version.version,
-                    name: item.version.name,
-                    description: item.version.description,
-                    system_prompt: item.version.system_prompt,
-                    tags: item.version.tags.unwrap_or_default(),
-                    published_at: item.version.published_at,
-                },
-            });
-        }
-
-        cursor = page.next_page;
-        if cursor.is_none() {
-            break;
-        }
-    }
-
-    let (synced_count, archived_count) = state
-        .mcp
-        .store
-        .sync_cloud_system_assistants(&system_items)
+    let needs_skill_reindex = if response.skill_reinstalled_count > 0 {
+        true
+    } else if response.skill_install_fetched_count > 0 {
+        match local_skill_registration_self_heal_needed(
+            state.mcp.store.as_ref(),
+            Some(&state.memory.service),
+            &skill_scan_roots,
+        )
         .await
-        .map_err(to_string)?;
+        {
+            Ok(value) => value,
+            Err(err) => {
+                warn!("sync_local_system_assets self-heal check failed: {}", err);
+                false
+            }
+        }
+    } else {
+        false
+    };
 
-    if let Ok(assistants) = state.mcp.store.list_local_assistants().await {
-        let app_state_clone = state.inner().clone();
-        tauri::async_runtime::spawn(async move {
-            index_local_assistants(&app_state_clone, &assistants).await;
-        });
+    if needs_skill_reindex {
+        if let Err(err) = register_local_skills_inner(app, state.inner()).await {
+            warn!(
+                "sync_local_system_assets register_local_skills failed: {}",
+                err
+            );
+        }
     }
 
-    Ok(LocalSystemAssistantSyncResponse {
-        fetched_count,
-        synced_count,
-        archived_count,
-    })
+    Ok(response)
 }
 
 #[tauri::command]
@@ -244,6 +687,20 @@ pub async fn sync_mcp_source(
 }
 
 #[tauri::command]
-pub async fn list_mcp_tools(state: State<'_, AppState>) -> Result<Vec<McpTool>, String> {
-    state.mcp.store.list_tools().await.map_err(to_string)
+pub async fn list_mcp_tools(state: State<'_, AppState>) -> Result<Vec<DesktopMcpToolView>, String> {
+    let indexed_tool_ids = match state.memory.service.list_assets_catalog().await {
+        Ok(assets) => Some(
+            assets
+                .into_iter()
+                .filter(|asset| asset.get("asset_type").and_then(Value::as_str) == Some("tool"))
+                .filter_map(|asset| asset.get("id").and_then(Value::as_str).map(str::to_string))
+                .collect::<HashSet<_>>(),
+        ),
+        Err(err) => {
+            warn!("failed to read local MCP asset index status: {}", err);
+            None
+        }
+    };
+
+    build_desktop_mcp_tool_views(&state.mcp.store, indexed_tool_ids.as_ref()).await
 }

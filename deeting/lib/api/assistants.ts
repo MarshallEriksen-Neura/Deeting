@@ -1,6 +1,8 @@
 import { z } from "zod"
 
-import { getAuthToken, request } from "@/lib/http"
+import { request } from "@/lib/http"
+
+import { trySyncLocalSystemAssetsFromCloud } from "./desktop-system-assets"
 
 const ASSISTANTS_BASE = "/api/v1/assistants"
 const assistantMessageResponseSchema = z.object({
@@ -233,23 +235,6 @@ const includeBySearch = (item: AssistantMarketItem, queryText: string) => {
   return fields.some((field) => field.toLowerCase().includes(text))
 }
 
-async function syncLocalSystemAssistantsFromCloud() {
-  if (!isTauriRuntime()) return
-  const tokenResolver =
-    typeof getAuthToken === "function" ? getAuthToken : () => null
-  const token = (tokenResolver() ?? "").trim()
-  if (!token) return
-
-  await invokeTauri<{
-    fetched_count: number
-    synced_count: number
-    archived_count: number
-  }>("sync_local_system_assistants", {
-    accessToken: token,
-    size: 100,
-  })
-}
-
 async function listAllInstalledAssistantIds(): Promise<Set<string>> {
   const installedIds = new Set<string>()
   let cursor: string | null = null
@@ -270,11 +255,7 @@ async function listAllInstalledAssistantIds(): Promise<Set<string>> {
 
 export async function fetchAssistantMarket(query: AssistantMarketQuery) {
   if (isTauriRuntime()) {
-    try {
-      await syncLocalSystemAssistantsFromCloud()
-    } catch (error) {
-      console.warn("[assistants] sync system assistants from cloud failed", error)
-    }
+    await trySyncLocalSystemAssetsFromCloud()
 
     const [entities, versions, installedIds] = await Promise.all([
       invokeTauri<LocalAssistantEntityPayload[]>("list_local_assistant_entities"),

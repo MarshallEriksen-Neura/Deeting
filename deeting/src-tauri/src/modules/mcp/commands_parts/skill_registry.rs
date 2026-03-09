@@ -17,14 +17,260 @@ pub(crate) fn normalize_skill_dir_name(skill_id: &str) -> String {
     }
 }
 
+pub(crate) fn resolve_local_skill_scan_targets(
+    app: &AppHandle,
+) -> Result<Vec<(std::path::PathBuf, &'static str)>, String> {
+    let official_skills_dir = app
+        .path()
+        .resource_dir()
+        .ok()
+        .map(|p| p.join("official-skills"))
+        .filter(|p| p.exists())
+        .unwrap_or_else(|| {
+            std::env::current_dir()
+                .unwrap_or_default()
+                .join("packages")
+                .join("official-skills")
+        });
+    let user_skills_dir = app.path().app_data_dir().map_err(to_string)?.join("skills");
+    if !user_skills_dir.exists() {
+        let _ = std::fs::create_dir_all(&user_skills_dir);
+    }
+
+    Ok(vec![
+        (official_skills_dir, "system_plugin"),
+        (user_skills_dir, "user_skill"),
+    ])
+}
+
+async fn index_local_skill_tool_asset(
+    provider_state: std::sync::Arc<crate::modules::providers::ProviderState>,
+    memory_state: std::sync::Arc<crate::modules::memory::MemoryState>,
+    tool_id: String,
+    tool_name: String,
+    tool_desc: String,
+    final_pkg_name: String,
+    final_source_type: String,
+) {
+    let text = format!("name: {}\ndescription: {}", tool_name, tool_desc);
+    if let Ok(vector) = provider_state.embedding.embed_text(&text).await {
+        let _ = memory_state
+            .store
+            .upsert_asset(
+                tool_id,
+                tool_name,
+                tool_desc,
+                "tool".to_string(),
+                final_source_type,
+                Some(final_pkg_name),
+                vector,
+                None,
+            )
+            .await;
+    }
+}
+
+pub(crate) async fn register_local_skills_from_scan_targets_inner(
+    scan_targets: &[(std::path::PathBuf, &'static str)],
+    sdk_pythonpath: &str,
+    store: &crate::modules::mcp::store::McpStore,
+    provider_state: std::sync::Arc<crate::modules::providers::ProviderState>,
+    memory_state: std::sync::Arc<crate::modules::memory::MemoryState>,
+    wait_for_vector_index: bool,
+) -> Result<usize, String> {
+    let mut total_indexed = 0;
+
+    for (dir_path, source_prefix) in scan_targets {
+        if !dir_path.exists() {
+            continue;
+        }
+        for entry in std::fs::read_dir(dir_path).map_err(to_string)? {
+            let skill_path = entry.map_err(to_string)?.path();
+            if !skill_path.is_dir() {
+                continue;
+            }
+            let deeting_json_path = skill_path.join("deeting.json");
+            if !deeting_json_path.exists() {
+                continue;
+            }
+
+            let deeting_json_str =
+                std::fs::read_to_string(&deeting_json_path).map_err(to_string)?;
+            let manifest = match parse_deeting_manifest(&deeting_json_str) {
+                Ok(m) => m,
+                Err(e) => {
+                    warn!("skipping skill at {}: {}", skill_path.display(), e);
+                    continue;
+                }
+            };
+
+            let id = &manifest.id;
+            if id.trim().is_empty() {
+                continue;
+            }
+            let tool_desc_prefix = manifest.description.as_deref().unwrap_or("");
+            let version = manifest.version.as_deref();
+            let runtime_str = manifest.runtime.join(",");
+            let runtime = Some(runtime_str.as_str());
+            let mut skill_capabilities = vec![source_prefix.to_string()];
+            if manifest.restricted {
+                skill_capabilities.push("restricted".to_string());
+                for role in &manifest.allowed_roles {
+                    skill_capabilities.push(format!("role:{}", role));
+                }
+            }
+
+            store
+                .upsert_local_skill_install(
+                    id,
+                    version,
+                    runtime,
+                    &deeting_json_str,
+                    &skill_path.to_string_lossy(),
+                )
+                .await
+                .map_err(to_string)?;
+
+            let source_name = format!("skill:{}", id);
+            let trust_level = if *source_prefix == "system_plugin" {
+                McpTrustLevel::Official
+            } else {
+                McpTrustLevel::Community
+            };
+            let is_read_only = *source_prefix == "system_plugin";
+            let skill_source = store
+                .upsert_skill_source(
+                    &source_name,
+                    &skill_path.to_string_lossy(),
+                    trust_level,
+                    is_read_only,
+                )
+                .await
+                .map_err(to_string)?;
+            let source_id = skill_source.id.clone();
+
+            let llm_tool_path = skill_path.join("llm-tool.yaml");
+            if !llm_tool_path.exists() {
+                continue;
+            }
+            let llm_tool_str = std::fs::read_to_string(llm_tool_path).map_err(to_string)?;
+            let llm_tools: serde_json::Value =
+                serde_yaml::from_str(&llm_tool_str).map_err(to_string)?;
+
+            let mut env = HashMap::new();
+            let existing_pypath = std::env::var("PYTHONPATH").unwrap_or_default();
+            let pathsep = if cfg!(windows) { ";" } else { ":" };
+            let pypath = if existing_pypath.is_empty() {
+                sdk_pythonpath.to_string()
+            } else {
+                format!("{}{}{}", sdk_pythonpath, pathsep, &existing_pypath)
+            };
+            env.insert("PYTHONPATH".to_string(), pypath);
+            for env_name in &manifest.env_requirements {
+                if let Ok(val) = std::env::var(env_name) {
+                    env.insert(env_name.to_string(), val);
+                }
+            }
+            if manifest
+                .env_requirements
+                .iter()
+                .any(|name| name == SCOUT_SERVICE_URL_ENV_KEY)
+            {
+                env.remove(SCOUT_SERVICE_URL_ENV_KEY);
+                if let Ok(Some(val)) = resolve_effective_desktop_scout_base_url(store).await {
+                    env.insert(SCOUT_SERVICE_URL_ENV_KEY.to_string(), val);
+                }
+            }
+
+            if let Some(tools_array) = llm_tools.get("tools").and_then(|v| v.as_array()) {
+                for tool_def in tools_array {
+                    let tool_name = tool_def["name"].as_str().unwrap();
+                    let tool_desc = tool_def["description"].as_str().unwrap_or(tool_desc_prefix);
+                    let mut enriched_tool_def = tool_def.clone();
+                    enriched_tool_def["execution"] = serde_json::json!({
+                        "timeout_seconds": manifest.execution.timeout_seconds
+                    });
+                    let config_json = serde_json::to_string(&enriched_tool_def).unwrap();
+                    let full_main_path = skill_path.join("main.py");
+
+                    let upsert = ToolUpsert {
+                        id: None,
+                        source_id: source_id.clone(),
+                        identifier: Some(format!("{}/{}", id, tool_name)),
+                        name: tool_name.to_string(),
+                        source_type: McpSourceType::Local,
+                        status: McpToolStatus::Healthy,
+                        ping_ms: None,
+                        capabilities: skill_capabilities.clone(),
+                        description: tool_desc.to_string(),
+                        error: None,
+                        command: Some("python3".to_string()),
+                        args: Some(vec![full_main_path.to_string_lossy().to_string()]),
+                        env: if env.is_empty() {
+                            None
+                        } else {
+                            Some(env.clone())
+                        },
+                        config_json,
+                        config_hash: "system_builtin".to_string(),
+                        pending_config_json: None,
+                        pending_config_hash: None,
+                        conflict_status: McpConflictStatus::None,
+                        is_read_only: true,
+                        is_new: false,
+                    };
+
+                    if let Ok(tool) = store.upsert_tool(upsert).await {
+                        total_indexed += 1;
+                        let final_pkg_name = id.to_string();
+                        let final_source_type = if *source_prefix == "system_plugin" {
+                            "builtin"
+                        } else {
+                            "user"
+                        }
+                        .to_string();
+                        if wait_for_vector_index {
+                            index_local_skill_tool_asset(
+                                provider_state.clone(),
+                                memory_state.clone(),
+                                tool.id.clone(),
+                                tool.name.clone(),
+                                tool.description.clone(),
+                                final_pkg_name,
+                                final_source_type,
+                            )
+                            .await;
+                        } else {
+                            let provider_state_clone = provider_state.clone();
+                            let memory_state_clone = memory_state.clone();
+                            let tool_id = tool.id.clone();
+                            let tool_name = tool.name.clone();
+                            let tool_desc = tool.description.clone();
+                            tauri::async_runtime::spawn(async move {
+                                index_local_skill_tool_asset(
+                                    provider_state_clone,
+                                    memory_state_clone,
+                                    tool_id,
+                                    tool_name,
+                                    tool_desc,
+                                    final_pkg_name,
+                                    final_source_type,
+                                )
+                                .await;
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(total_indexed)
+}
+
 fn is_allowed_skill_repo_url(repo_url: &str) -> bool {
     let normalized = repo_url.trim().to_ascii_lowercase();
     normalized.starts_with("https://github.com/") || normalized.starts_with("git@github.com:")
-}
-
-fn read_manifest_json(manifest_path: &Path) -> Option<serde_json::Value> {
-    let raw = std::fs::read_to_string(manifest_path).ok()?;
-    serde_json::from_str::<serde_json::Value>(&raw).ok()
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -81,96 +327,7 @@ fn parse_deeting_manifest(raw: &str) -> Result<DeetingManifest, String> {
     serde_json::from_str::<DeetingManifest>(raw).map_err(|e| format!("invalid deeting.json: {}", e))
 }
 
-#[derive(Debug, Clone, Deserialize)]
-struct CloudPluginInstallItem {
-    skill_id: String,
-    alias: Option<String>,
-    #[serde(default)]
-    config_json: serde_json::Value,
-    #[serde(default)]
-    granted_permissions: Vec<String>,
-    installed_revision: Option<String>,
-    is_enabled: bool,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct CloudPluginMarketSkillItem {
-    id: String,
-    name: String,
-    description: Option<String>,
-    version: Option<String>,
-    source_repo: Option<String>,
-    source_revision: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct LocalSkillInstallSyncItem {
-    pub skill_id: String,
-    pub is_enabled: bool,
-    pub installed_revision: Option<String>,
-    pub install_path: String,
-    pub status: String,
-    pub reinstalled: bool,
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct LocalSkillInstallSyncResponse {
-    pub fetched_count: i64,
-    pub upserted_count: i64,
-    pub reinstalled_count: i64,
-    pub failed_count: i64,
-    pub items: Vec<LocalSkillInstallSyncItem>,
-}
-
-async fn fetch_cloud_plugin_market_skill(
-    client: &reqwest::Client,
-    base_url: &str,
-    access_token: &str,
-    skill_id: &str,
-) -> Result<Option<CloudPluginMarketSkillItem>, String> {
-    let url = format!(
-        "{}/api/v1/plugin-market/plugins",
-        base_url.trim_end_matches('/')
-    );
-    let rows: Vec<CloudPluginMarketSkillItem> = client
-        .get(&url)
-        .bearer_auth(access_token)
-        .query(&[("q", skill_id), ("limit", "20")])
-        .send()
-        .await
-        .map_err(to_string)?
-        .error_for_status()
-        .map_err(to_string)?
-        .json()
-        .await
-        .map_err(to_string)?;
-    Ok(rows.into_iter().find(|row| row.id == skill_id))
-}
-
-async fn fetch_cloud_plugin_installs(
-    client: &reqwest::Client,
-    base_url: &str,
-    access_token: &str,
-) -> Result<Vec<CloudPluginInstallItem>, String> {
-    let installs_url = format!(
-        "{}/api/v1/plugin-market/installs",
-        base_url.trim_end_matches('/')
-    );
-    client
-        .get(&installs_url)
-        .bearer_auth(access_token)
-        .send()
-        .await
-        .map_err(to_string)?
-        .error_for_status()
-        .map_err(to_string)?
-        .json()
-        .await
-        .map_err(to_string)
-}
-
-async fn try_clone_skill_repo(
+pub(crate) async fn try_clone_skill_repo(
     target_dir: &Path,
     repo_url: &str,
     revision: Option<&str>,
@@ -385,158 +542,6 @@ pub(crate) async fn uninstall_local_skill(
     Ok(())
 }
 
-pub(crate) async fn sync_local_skill_installs_from_cloud_inner(
-    store: &crate::modules::mcp::store::McpStore,
-    client: &reqwest::Client,
-    base_url: &str,
-    access_token: &str,
-    skills_dir: &Path,
-    reinstall_missing: bool,
-) -> Result<LocalSkillInstallSyncResponse, String> {
-    let installs = fetch_cloud_plugin_installs(client, base_url, access_token).await?;
-    let enable_reinstall = reinstall_missing;
-    let mut upserted_count = 0_i64;
-    let mut reinstalled_count = 0_i64;
-    let mut failed_count = 0_i64;
-    let mut items = Vec::new();
-    let mut cloud_installed_skill_ids = Vec::new();
-
-    for install in installs.iter() {
-        let skill_id = install.skill_id.trim().to_string();
-        if skill_id.is_empty() {
-            continue;
-        }
-        cloud_installed_skill_ids.push(skill_id.clone());
-        let install_path = skills_dir.join(&skill_id);
-        let install_path_str = install_path.to_string_lossy().to_string();
-        let mut status = "synced".to_string();
-        let mut reinstalled = false;
-        let mut error: Option<String> = None;
-
-        let market_skill =
-            fetch_cloud_plugin_market_skill(client, base_url, access_token, &skill_id)
-                .await
-                .ok()
-                .flatten();
-
-        if enable_reinstall && install.is_enabled && !install_path.exists() {
-            if let Some(cloud_skill) = market_skill.as_ref() {
-                if let Some(repo_url) = cloud_skill.source_repo.as_deref() {
-                    let revision = install
-                        .installed_revision
-                        .as_deref()
-                        .or(cloud_skill.source_revision.as_deref());
-                    match try_clone_skill_repo(&install_path, repo_url, revision).await {
-                        Ok(_) => {
-                            reinstalled = true;
-                            reinstalled_count += 1;
-                        }
-                        Err(err) => {
-                            status = "failed_reinstall".to_string();
-                            error = Some(err);
-                        }
-                    }
-                } else {
-                    status = "failed_reinstall".to_string();
-                    error = Some("market skill source_repo is missing".to_string());
-                }
-            } else {
-                status = "failed_reinstall".to_string();
-                error = Some("market skill metadata not found".to_string());
-            }
-        }
-
-        let manifest_path = install_path.join("deeting.json");
-        let manifest = read_manifest_json(&manifest_path).unwrap_or_else(|| {
-            serde_json::json!({
-                "id": skill_id,
-                "name": market_skill.as_ref().map(|s| s.name.clone()).unwrap_or_else(|| install.skill_id.clone()),
-                "description": market_skill.as_ref().and_then(|s| s.description.clone()),
-                "version": market_skill.as_ref().and_then(|s| s.version.clone()),
-                "source_repo": market_skill.as_ref().and_then(|s| s.source_repo.clone()),
-                "source_revision": install.installed_revision.clone().or_else(|| market_skill.as_ref().and_then(|s| s.source_revision.clone())),
-            })
-        });
-        let manifest_json = serde_json::to_string(&manifest).map_err(to_string)?;
-        let runtime = manifest.get("runtime").and_then(|v| v.as_str());
-        let installed_version = install
-            .installed_revision
-            .clone()
-            .or_else(|| {
-                manifest
-                    .get("version")
-                    .and_then(|v| v.as_str())
-                    .map(|v| v.to_string())
-            })
-            .or_else(|| market_skill.as_ref().and_then(|s| s.version.clone()));
-        let user_settings = serde_json::json!({
-            "alias": install.alias,
-            "config_json": install.config_json,
-            "granted_permissions": install.granted_permissions,
-            "sync_source": "cloud_plugin_market",
-        });
-
-        match store
-            .upsert_local_skill_install_state(
-                &skill_id,
-                installed_version.as_deref(),
-                install.is_enabled,
-                runtime,
-                &manifest_json,
-                &install_path_str,
-                Some(&user_settings),
-            )
-            .await
-        {
-            Ok(_) => {
-                upserted_count += 1;
-                if status == "synced" && !install.is_enabled {
-                    status = "disabled_synced".to_string();
-                } else if status == "synced" && reinstalled {
-                    status = "reinstalled".to_string();
-                } else if status == "synced" && !install_path.exists() {
-                    status = "metadata_synced".to_string();
-                }
-            }
-            Err(err) => {
-                status = "failed".to_string();
-                error = Some(err.to_string());
-            }
-        }
-
-        if status.starts_with("failed") {
-            failed_count += 1;
-        }
-        items.push(LocalSkillInstallSyncItem {
-            skill_id,
-            is_enabled: install.is_enabled,
-            installed_revision: installed_version,
-            install_path: install_path_str,
-            status,
-            reinstalled,
-            error,
-        });
-    }
-
-    if let Err(err) = store
-        .disable_missing_cloud_managed_local_skills(&cloud_installed_skill_ids)
-        .await
-    {
-        warn!(
-            "sync_local_skill_installs_from_cloud disable missing cloud installs failed: {}",
-            err
-        );
-    }
-
-    Ok(LocalSkillInstallSyncResponse {
-        fetched_count: installs.len() as i64,
-        upserted_count,
-        reinstalled_count,
-        failed_count,
-        items,
-    })
-}
-
 #[tauri::command]
 pub async fn register_local_skills(
     app: AppHandle,
@@ -568,22 +573,7 @@ pub(crate) async fn register_local_skills_inner(
     app: AppHandle,
     app_state: &AppState,
 ) -> Result<usize, String> {
-    let official_skills_dir = app
-        .path()
-        .resource_dir()
-        .ok()
-        .map(|p| p.join("official-skills"))
-        .filter(|p| p.exists())
-        .unwrap_or_else(|| {
-            std::env::current_dir()
-                .unwrap_or_default()
-                .join("packages")
-                .join("official-skills")
-        });
-    let user_skills_dir = app.path().app_data_dir().map_err(to_string)?.join("skills");
-    if !user_skills_dir.exists() {
-        let _ = std::fs::create_dir_all(&user_skills_dir);
-    }
+    let scan_targets = resolve_local_skill_scan_targets(&app)?;
     let sdk_dir = app
         .path()
         .resource_dir()
@@ -597,235 +587,13 @@ pub(crate) async fn register_local_skills_inner(
                 .join("deeting-sdk")
         });
     let sdk_pythonpath = sdk_dir.to_string_lossy().to_string();
-    let scan_targets = vec![
-        (official_skills_dir, "system_plugin"),
-        (user_skills_dir, "user_skill"),
-    ];
-    let store = &app_state.mcp.store;
-    let mut total_indexed = 0;
-
-    for (dir_path, source_prefix) in scan_targets {
-        if !dir_path.exists() {
-            continue;
-        }
-        for entry in std::fs::read_dir(dir_path).map_err(to_string)? {
-            let skill_path = entry.map_err(to_string)?.path();
-            if !skill_path.is_dir() {
-                continue;
-            }
-            let deeting_json_path = skill_path.join("deeting.json");
-            if !deeting_json_path.exists() {
-                continue;
-            }
-
-            let deeting_json_str =
-                std::fs::read_to_string(&deeting_json_path).map_err(to_string)?;
-            let manifest = match parse_deeting_manifest(&deeting_json_str) {
-                Ok(m) => m,
-                Err(e) => {
-                    warn!("skipping skill at {}: {}", skill_path.display(), e);
-                    continue;
-                }
-            };
-
-            let id = &manifest.id;
-            if id.trim().is_empty() {
-                continue;
-            }
-            let tool_desc_prefix = manifest.description.as_deref().unwrap_or("");
-            let version = manifest.version.as_deref();
-            let runtime_str = manifest.runtime.join(",");
-            let runtime = Some(runtime_str.as_str());
-            let mut skill_capabilities = vec![source_prefix.to_string()];
-            if manifest.restricted {
-                skill_capabilities.push("restricted".to_string());
-                for role in &manifest.allowed_roles {
-                    skill_capabilities.push(format!("role:{}", role));
-                }
-            }
-
-            store
-                .upsert_local_skill_install(
-                    id,
-                    version,
-                    runtime,
-                    &deeting_json_str,
-                    &skill_path.to_string_lossy(),
-                )
-                .await
-                .map_err(to_string)?;
-
-            let source_name = format!("skill:{}", id);
-            let trust_level = if source_prefix == "system_plugin" {
-                McpTrustLevel::Official
-            } else {
-                McpTrustLevel::Community
-            };
-            let is_read_only = source_prefix == "system_plugin";
-            let skill_source = store
-                .upsert_skill_source(
-                    &source_name,
-                    &skill_path.to_string_lossy(),
-                    trust_level,
-                    is_read_only,
-                )
-                .await
-                .map_err(to_string)?;
-            let source_id = skill_source.id.clone();
-
-            let llm_tool_path = skill_path.join("llm-tool.yaml");
-            if !llm_tool_path.exists() {
-                continue;
-            }
-            let llm_tool_str = std::fs::read_to_string(llm_tool_path).map_err(to_string)?;
-            let llm_tools: serde_json::Value =
-                serde_yaml::from_str(&llm_tool_str).map_err(to_string)?;
-
-            let mut env = HashMap::new();
-            let existing_pypath = std::env::var("PYTHONPATH").unwrap_or_default();
-            let pathsep = if cfg!(windows) { ";" } else { ":" };
-            let pypath = if existing_pypath.is_empty() {
-                sdk_pythonpath.clone()
-            } else {
-                format!("{}{}{}", sdk_pythonpath, pathsep, &existing_pypath)
-            };
-            env.insert("PYTHONPATH".to_string(), pypath);
-            for env_name in &manifest.env_requirements {
-                if let Ok(val) = std::env::var(env_name) {
-                    env.insert(env_name.to_string(), val);
-                }
-            }
-            if manifest
-                .env_requirements
-                .iter()
-                .any(|name| name == "SCOUT_SERVICE_URL")
-                && !env.contains_key("SCOUT_SERVICE_URL")
-            {
-                if let Ok(Some(val)) = app_state
-                    .mcp
-                    .store
-                    .get_desktop_config("scout.base_url")
-                    .await
-                {
-                    let normalized = val.trim().trim_end_matches('/').to_string();
-                    if !normalized.is_empty() {
-                        env.insert("SCOUT_SERVICE_URL".to_string(), normalized);
-                    }
-                }
-            }
-
-            if let Some(tools_array) = llm_tools.get("tools").and_then(|v| v.as_array()) {
-                for tool_def in tools_array {
-                    let tool_name = tool_def["name"].as_str().unwrap();
-                    let tool_desc = tool_def["description"].as_str().unwrap_or(tool_desc_prefix);
-                    let mut enriched_tool_def = tool_def.clone();
-                    enriched_tool_def["execution"] = serde_json::json!({
-                        "timeout_seconds": manifest.execution.timeout_seconds
-                    });
-                    let config_json = serde_json::to_string(&enriched_tool_def).unwrap();
-                    let full_main_path = skill_path.join("main.py");
-
-                    let upsert = ToolUpsert {
-                        id: None,
-                        source_id: source_id.clone(),
-                        identifier: Some(format!("{}/{}", id, tool_name)),
-                        name: tool_name.to_string(),
-                        source_type: McpSourceType::Local,
-                        status: McpToolStatus::Healthy,
-                        ping_ms: None,
-                        capabilities: skill_capabilities.clone(),
-                        description: tool_desc.to_string(),
-                        error: None,
-                        command: Some("python3".to_string()),
-                        args: Some(vec![full_main_path.to_string_lossy().to_string()]),
-                        env: if env.is_empty() {
-                            None
-                        } else {
-                            Some(env.clone())
-                        },
-                        config_json,
-                        config_hash: "system_builtin".to_string(),
-                        pending_config_json: None,
-                        pending_config_hash: None,
-                        conflict_status: McpConflictStatus::None,
-                        is_read_only: true,
-                        is_new: false,
-                    };
-
-                    if let Ok(tool) = store.upsert_tool(upsert).await {
-                        total_indexed += 1;
-                        let app_state_clone = app_state.clone();
-                        let tool_id = tool.id.clone();
-                        let tool_name = tool.name.clone();
-                        let tool_desc = tool.description.clone();
-                        let final_pkg_name = id.to_string();
-                        let final_source_type = if source_prefix == "system_plugin" {
-                            "builtin"
-                        } else {
-                            "user"
-                        };
-                        tauri::async_runtime::spawn(async move {
-                            let text = format!("name: {}\ndescription: {}", tool_name, tool_desc);
-                            if let Ok(vector) =
-                                app_state_clone.providers.embedding.embed_text(&text).await
-                            {
-                                let _ = app_state_clone
-                                    .memory
-                                    .store
-                                    .upsert_asset(
-                                        tool_id,
-                                        tool_name,
-                                        tool_desc,
-                                        "tool".to_string(),
-                                        final_source_type.to_string(),
-                                        Some(final_pkg_name),
-                                        vector,
-                                        None,
-                                    )
-                                    .await;
-                            }
-                        });
-                    }
-                }
-            }
-        }
-    }
-    Ok(total_indexed)
-}
-
-#[tauri::command]
-pub async fn sync_local_skill_installs_from_cloud(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    access_token: String,
-    reinstall_missing: Option<bool>,
-) -> Result<LocalSkillInstallSyncResponse, String> {
-    let normalized_token = access_token.trim().to_string();
-    if normalized_token.is_empty() {
-        return Err("access token is required".to_string());
-    }
-
-    let app_state = state.inner();
-    let base_url = app_state.mcp.cloud_base_url.read().await.clone();
-    let enable_reinstall = reinstall_missing.unwrap_or(false);
-    let skills_dir = app.path().app_data_dir().map_err(to_string)?.join("skills");
-    std::fs::create_dir_all(&skills_dir).map_err(to_string)?;
-    let response = sync_local_skill_installs_from_cloud_inner(
+    register_local_skills_from_scan_targets_inner(
+        &scan_targets,
+        &sdk_pythonpath,
         app_state.mcp.store.as_ref(),
-        &app_state.mcp.client,
-        &base_url,
-        normalized_token.as_str(),
-        &skills_dir,
-        enable_reinstall,
+        app_state.providers.clone(),
+        app_state.memory.clone(),
+        false,
     )
-    .await?;
-
-    if let Err(err) = register_local_skills_inner(app, app_state).await {
-        warn!(
-            "sync_local_skill_installs_from_cloud register_local_skills failed: {}",
-            err
-        );
-    }
-
-    Ok(response)
+    .await
 }

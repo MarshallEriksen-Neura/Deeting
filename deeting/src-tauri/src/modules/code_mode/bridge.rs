@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -10,13 +9,15 @@ use axum::{Json, Router};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{Mutex, RwLock};
 use uuid::Uuid;
 
 use crate::modules::code_mode::contract::BRIDGE_EXECUTION_TOKEN_HEADER;
 use crate::modules::code_mode::error::CodeModeError;
+use crate::modules::mcp::commands::runtime::{
+    execute_local_mcp_tool, resolve_callable_mcp_tool_by_name, ToolResolutionError,
+};
 use crate::modules::mcp::McpRuntimeState;
 use crate::modules::memory::types::{
     CreateLocalMemoryRequest, LocalMemoryClearRequest, LocalMemoryListQuery,
@@ -643,88 +644,35 @@ async fn dispatch_tool_call(
         }
         _ => {
             // Attempt to resolve as an MCP or System Plugin tool
-            let tool = state
-                .deps
-                .mcp
-                .store
-                .get_tool_by_name(tool_name)
-                .await
-                .map_err(|err| ("MCP_STORE_ERROR".to_string(), err.to_string()))?;
-
-            if let Some(tool) = tool {
-                let argument_value = serde_json::to_value(&arguments).unwrap_or_else(|_| json!({}));
-                let risk = state.deps.mcp.assess_tool_risk(&tool, &argument_value);
-                if risk.requires_approval {
-                    return Err((
-                        "CODE_MODE_BRIDGE_TOOL_REQUIRES_APPROVAL".to_string(),
-                        format!(
-                            "tool '{}' blocked by security policy (risk={}): {}",
-                            tool_name,
-                            risk.risk_level,
-                            risk.reasons.join("; ")
-                        ),
-                    ));
-                }
-                if let Some(command) = tool.command {
-                    let mut cmd = tokio::process::Command::new(command);
-                    if let Some(args) = tool.args {
-                        cmd.args(args);
-                    }
-                    if let Some(env) = tool.env {
-                        cmd.envs(env);
-                    }
-                    cmd.stdin(Stdio::piped());
-                    cmd.stdout(Stdio::piped());
-                    cmd.stderr(Stdio::piped());
-
-                    let mut child = cmd
-                        .spawn()
-                        .map_err(|err| ("PROCESS_SPAWN_ERROR".to_string(), err.to_string()))?;
-
-                    let mut stdin = child.stdin.take().unwrap();
-                    let payload = json!({
-                        "method": tool_name,
-                        "arguments": arguments,
-                    });
-                    let payload_bytes = serde_json::to_vec(&payload).unwrap();
-
-                    stdin
-                        .write_all(&payload_bytes)
-                        .await
-                        .map_err(|err| ("PROCESS_IO_ERROR".to_string(), err.to_string()))?;
-                    drop(stdin);
-
-                    let output = child
-                        .wait_with_output()
-                        .await
-                        .map_err(|err| ("PROCESS_WAIT_ERROR".to_string(), err.to_string()))?;
-
-                    if !output.status.success() {
-                        let stderr = String::from_utf8_lossy(&output.stderr);
+            match resolve_callable_mcp_tool_by_name(state.deps.mcp.store.as_ref(), tool_name).await
+            {
+                Ok(tool) => {
+                    let argument_value =
+                        serde_json::to_value(&arguments).unwrap_or_else(|_| json!({}));
+                    let risk = state.deps.mcp.assess_tool_risk(&tool, &argument_value);
+                    if risk.requires_approval {
                         return Err((
-                            "PROCESS_EXECUTION_FAILED".to_string(),
-                            format!("tool execution failed (exit {}): {}", output.status, stderr),
+                            "CODE_MODE_BRIDGE_TOOL_REQUIRES_APPROVAL".to_string(),
+                            format!(
+                                "tool '{}' blocked by security policy (risk={}): {}",
+                                tool_name,
+                                risk.risk_level,
+                                risk.reasons.join("; ")
+                            ),
                         ));
                     }
-
-                    let result: Value = serde_json::from_slice(&output.stdout).map_err(|err| {
-                        (
-                            "PROCESS_OUTPUT_PARSE_ERROR".to_string(),
-                            format!("failed to parse tool output: {}", err),
-                        )
-                    })?;
-                    Ok(result)
-                } else {
-                    Err((
-                        "CODE_MODE_BRIDGE_TOOL_NOT_RUNNABLE".to_string(),
-                        format!("tool '{}' has no executable command", tool_name),
-                    ))
+                    execute_local_mcp_tool(state.deps.mcp.store.as_ref(), &tool, &argument_value)
+                        .await
+                        .map_err(|err| ("PROCESS_EXECUTION_FAILED".to_string(), err))
                 }
-            } else {
-                Err((
+                Err(ToolResolutionError::ToolNotFound { .. }) => Err((
                     "CODE_MODE_BRIDGE_TOOL_NOT_ALLOWED".to_string(),
                     format!("tool '{}' is not supported by local bridge", tool_name),
-                ))
+                )),
+                Err(err) => Err((
+                    "CODE_MODE_BRIDGE_TOOL_NOT_RUNNABLE".to_string(),
+                    err.to_string(),
+                )),
             }
         }
     }

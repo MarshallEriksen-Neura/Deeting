@@ -592,8 +592,8 @@ impl InjectedMemory {
         let recall_when = memory_meta_string(&item.meta_info, "recall_when");
         let memory_tier = memory_meta_string(&item.meta_info, "memory_tier");
         let is_boot = memory_meta_bool(&item.meta_info, "is_boot");
-        let is_core = memory_meta_bool(&item.meta_info, "is_core")
-            || memory_tier.as_deref() == Some("core");
+        let is_core =
+            memory_meta_bool(&item.meta_info, "is_core") || memory_tier.as_deref() == Some("core");
         Self {
             id: item.id,
             content: item.content,
@@ -608,8 +608,8 @@ impl InjectedMemory {
         let recall_when = memory_meta_string(&item.meta_info, "recall_when");
         let memory_tier = memory_meta_string(&item.meta_info, "memory_tier");
         let is_boot = memory_meta_bool(&item.meta_info, "is_boot");
-        let is_core = memory_meta_bool(&item.meta_info, "is_core")
-            || memory_tier.as_deref() == Some("core");
+        let is_core =
+            memory_meta_bool(&item.meta_info, "is_core") || memory_tier.as_deref() == Some("core");
         Self {
             id: item.id,
             content: item.content,
@@ -709,7 +709,10 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SemanticMemoryInjectionStep {
                 ctx.push_system_message(format!("## Core Memories\n{}", core_lines.join("\n")));
             }
             if !semantic_lines.is_empty() {
-                ctx.push_system_message(format!("## Semantic Memories\n{}", semantic_lines.join("\n")));
+                ctx.push_system_message(format!(
+                    "## Semantic Memories\n{}",
+                    semantic_lines.join("\n")
+                ));
             }
 
             ctx.emit_status(

@@ -46,7 +46,9 @@
       "id": "ID",
       "error": "错误",
       "status": "状态",
-      "latency": "延迟"
+      "latency": "延迟",
+      "runtime": "运行态",
+      "index": "索引"
     },
     "status": {
       "pending": "待配置",
@@ -58,6 +60,13 @@
       "updating": "更新中",
       "error": "异常",
       "orphaned": "孤立"
+    },
+    "runtime": {
+      "disabled": "已禁用",
+      "startRequired": "需启动",
+      "waiting": "等待运行时",
+      "review": "需检查",
+      "indexMissing": "未进入索引"
     }
   },
   "logs": {

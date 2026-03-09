@@ -141,13 +141,13 @@ impl McpStore {
         row.map(|row| row_to_assistant_version(&row)).transpose()
     }
 
-    pub async fn sync_cloud_system_assistants(
+    async fn upsert_cloud_system_assistants_internal(
         &self,
         assistants: &[CloudSystemAssistantSnapshot],
-    ) -> Result<(i64, i64), McpError> {
+    ) -> Result<(i64, Vec<String>), McpError> {
         let now = now_rfc3339()?;
         let mut tx = self.pool.begin().await?;
-        let mut snapshot_ids: HashSet<String> = HashSet::new();
+        let mut snapshot_ids: Vec<String> = Vec::new();
         let mut upserted_count = 0_i64;
         let mut tag_jobs: Vec<(String, Option<String>)> = Vec::new();
 
@@ -195,7 +195,7 @@ impl McpStore {
                 0.0
             };
 
-            snapshot_ids.insert(assistant_id.clone());
+            snapshot_ids.push(assistant_id.clone());
 
             sqlx::query(
                 r#"
@@ -271,7 +271,54 @@ impl McpStore {
             upserted_count += 1;
         }
 
-        let archived_count = if snapshot_ids.is_empty() {
+        tx.commit().await?;
+
+        for (assistant_id, tags_json) in tag_jobs {
+            self.sync_local_assistant_tags(&assistant_id, tags_json.as_deref(), &now)
+                .await?;
+        }
+
+        Ok((upserted_count, snapshot_ids))
+    }
+
+    pub async fn upsert_cloud_system_assistants(
+        &self,
+        assistants: &[CloudSystemAssistantSnapshot],
+    ) -> Result<i64, McpError> {
+        let (upserted_count, _) = self
+            .upsert_cloud_system_assistants_internal(assistants)
+            .await?;
+        Ok(upserted_count)
+    }
+
+    pub async fn sync_cloud_system_assistants(
+        &self,
+        assistants: &[CloudSystemAssistantSnapshot],
+    ) -> Result<(i64, i64), McpError> {
+        let (upserted_count, snapshot_ids) = self
+            .upsert_cloud_system_assistants_internal(assistants)
+            .await?;
+        let archived_count = self
+            .archive_missing_cloud_system_assistants_by_ids(&snapshot_ids)
+            .await?;
+
+        Ok((upserted_count, archived_count))
+    }
+
+    pub async fn archive_missing_cloud_system_assistants_by_ids(
+        &self,
+        assistant_ids: &[String],
+    ) -> Result<i64, McpError> {
+        let now = now_rfc3339()?;
+        let mut ids: Vec<String> = assistant_ids
+            .iter()
+            .map(|raw| raw.trim().to_string())
+            .filter(|raw| !raw.is_empty())
+            .collect();
+        ids.sort();
+        ids.dedup();
+
+        let result = if ids.is_empty() {
             sqlx::query(
                 r#"
                 UPDATE assistant
@@ -284,13 +331,11 @@ impl McpStore {
                 "#,
             )
             .bind(&now)
-            .execute(&mut *tx)
+            .execute(&self.pool)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?
             .rows_affected() as i64
         } else {
-            let mut ids: Vec<String> = snapshot_ids.into_iter().collect();
-            ids.sort();
             let placeholders = vec!["?"; ids.len()].join(", ");
             let sql = format!(
                 "UPDATE assistant
@@ -307,20 +352,13 @@ impl McpStore {
                 query = query.bind(id);
             }
             query
-                .execute(&mut *tx)
+                .execute(&self.pool)
                 .await
                 .map_err(|err| McpError::Storage(err.to_string()))?
                 .rows_affected() as i64
         };
 
-        tx.commit().await?;
-
-        for (assistant_id, tags_json) in tag_jobs {
-            self.sync_local_assistant_tags(&assistant_id, tags_json.as_deref(), &now)
-                .await?;
-        }
-
-        Ok((upserted_count, archived_count))
+        Ok(result)
     }
 
     pub async fn list_enabled_local_assistant_ids(&self) -> Result<HashSet<String>, McpError> {
@@ -345,6 +383,64 @@ impl McpStore {
             }
         }
         Ok(ids)
+    }
+
+    pub async fn disable_local_assistant_installs_by_ids(
+        &self,
+        assistant_ids: &[String],
+    ) -> Result<i64, McpError> {
+        let normalized_assistant_ids: Vec<String> = assistant_ids
+            .iter()
+            .map(|raw| raw.trim().to_string())
+            .filter(|raw| !raw.is_empty())
+            .collect();
+        if normalized_assistant_ids.is_empty() {
+            return Ok(0);
+        }
+
+        let now = now_rfc3339()?;
+        let placeholders = vec!["?"; normalized_assistant_ids.len()].join(", ");
+        let sql = format!(
+            "UPDATE assistant_install\n             SET is_enabled = 0, updated_at = ?\n             WHERE user_id = ?\n               AND is_enabled = 1\n               AND assistant_id IN ({placeholders});"
+        );
+        let mut query = sqlx::query(&sql).bind(&now).bind(LOCAL_DESKTOP_USER_ID);
+        for assistant_id in normalized_assistant_ids {
+            query = query.bind(assistant_id);
+        }
+        let result = query
+            .execute(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+        Ok(result.rows_affected() as i64)
+    }
+
+    pub async fn archive_cloud_system_assistants_by_ids(
+        &self,
+        assistant_ids: &[String],
+    ) -> Result<i64, McpError> {
+        let normalized_assistant_ids: Vec<String> = assistant_ids
+            .iter()
+            .map(|raw| raw.trim().to_string())
+            .filter(|raw| !raw.is_empty())
+            .collect();
+        if normalized_assistant_ids.is_empty() {
+            return Ok(0);
+        }
+
+        let now = now_rfc3339()?;
+        let placeholders = vec!["?"; normalized_assistant_ids.len()].join(", ");
+        let sql = format!(
+            "UPDATE assistant\n             SET status = 'archived', published_at = NULL, updated_at = ?\n             WHERE owner_user_id IS NULL\n               AND visibility = 'public'\n               AND status <> 'archived'\n               AND id IN ({placeholders});"
+        );
+        let mut query = sqlx::query(&sql).bind(&now);
+        for assistant_id in normalized_assistant_ids {
+            query = query.bind(assistant_id);
+        }
+        let result = query
+            .execute(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+        Ok(result.rows_affected() as i64)
     }
 
     pub async fn is_local_assistant_enabled_install(

@@ -1,14 +1,24 @@
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{extract::State as AxumState, routing::{get, post}, Json, Router};
+    use axum::{
+        extract::State as AxumState,
+        routing::{get, post},
+        Json, Router,
+    };
     use serde::Deserialize;
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
     use std::path::Path;
     use std::path::PathBuf;
+    use std::sync::{Mutex, OnceLock};
     use std::time::Duration;
     use tokio::net::TcpListener;
     use tokio::sync::RwLock;
+
+    fn env_lock() -> &'static Mutex<()> {
+        static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        ENV_LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     async fn create_test_store(test_name: &str) -> crate::modules::mcp::store::McpStore {
         let mut db_path = std::env::temp_dir();
@@ -117,7 +127,11 @@ mod tests {
         let instance_id = insert_embedding_instance(state.store.as_ref(), base_url).await;
         state
             .store
-            .quick_add_models(&instance_id, vec!["text-embedding-3-small".to_string()], None)
+            .quick_add_models(
+                &instance_id,
+                vec!["text-embedding-3-small".to_string()],
+                None,
+            )
             .await
             .expect("quick add embedding model");
         let models = state
@@ -255,6 +269,15 @@ mod tests {
         name: &str,
         command: &str,
     ) -> McpTool {
+        upsert_test_tool_with_identifier(store, name, command, Some(format!("test/{name}"))).await
+    }
+
+    async fn upsert_test_tool_with_identifier(
+        store: &crate::modules::mcp::store::McpStore,
+        name: &str,
+        command: &str,
+        identifier: Option<String>,
+    ) -> McpTool {
         let source = store
             .ensure_local_source()
             .await
@@ -270,7 +293,7 @@ mod tests {
             .upsert_tool(ToolUpsert {
                 id: None,
                 source_id: source.id.clone(),
-                identifier: Some(format!("test/{name}")),
+                identifier,
                 name: name.to_string(),
                 source_type: McpSourceType::Local,
                 status: McpToolStatus::Healthy,
@@ -294,46 +317,31 @@ mod tests {
     }
 
     #[derive(Clone)]
-    struct MockPluginMarketServerState {
-        installs_payload: serde_json::Value,
-        plugins_payload: serde_json::Value,
+    struct MockSystemAssetsServerState {
+        payload: serde_json::Value,
     }
 
-    async fn mock_plugin_installs_handler(
-        AxumState(state): AxumState<MockPluginMarketServerState>,
+    async fn mock_system_assets_handler(
+        AxumState(state): AxumState<MockSystemAssetsServerState>,
     ) -> Json<serde_json::Value> {
-        Json(state.installs_payload)
+        Json(state.payload)
     }
 
-    async fn mock_plugin_market_handler(
-        AxumState(state): AxumState<MockPluginMarketServerState>,
-    ) -> Json<serde_json::Value> {
-        Json(state.plugins_payload)
-    }
-
-    async fn start_mock_plugin_market_server(
-        installs_payload: serde_json::Value,
-        plugins_payload: serde_json::Value,
+    async fn start_mock_system_assets_server(
+        payload: serde_json::Value,
     ) -> (String, tokio::task::JoinHandle<()>) {
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
-            .expect("bind mock plugin market listener");
+            .expect("bind mock system assets listener");
         let addr = listener
             .local_addr()
-            .expect("read mock plugin market listener addr");
+            .expect("read mock system assets listener addr");
         let app = Router::new()
             .route(
-                "/api/v1/plugin-market/installs",
-                get(mock_plugin_installs_handler),
+                "/api/v1/system-assets/sync",
+                get(mock_system_assets_handler),
             )
-            .route(
-                "/api/v1/plugin-market/plugins",
-                get(mock_plugin_market_handler),
-            )
-            .with_state(MockPluginMarketServerState {
-                installs_payload,
-                plugins_payload,
-            });
+            .with_state(MockSystemAssetsServerState { payload });
         let server = tokio::spawn(async move {
             let _ = axum::serve(listener, app).await;
         });
@@ -563,7 +571,11 @@ mod tests {
         result
             .get(lane)
             .and_then(|value| value.as_array())
-            .map(|items| items.iter().any(|item| item["name"] == serde_json::json!(name)))
+            .map(|items| {
+                items
+                    .iter()
+                    .any(|item| item["name"] == serde_json::json!(name))
+            })
             .unwrap_or(false)
     }
 
@@ -625,9 +637,10 @@ mod tests {
                 .and_then(|value| value.get("domain"))
                 .and_then(|value| value.as_str())
                 .map(|value| value.to_string());
-            let false_positive = case.forbidden_lanes.iter().any(|lane| {
-                lane_contains_name(&result, lane, &case.expected_name)
-            });
+            let false_positive = case
+                .forbidden_lanes
+                .iter()
+                .any(|lane| lane_contains_name(&result, lane, &case.expected_name));
 
             if top1_name.as_deref() == Some(case.expected_name.as_str()) {
                 top1_hits += 1;
@@ -796,17 +809,25 @@ mod tests {
         )
         .await;
 
-        let callable = result["callable_now"].as_array().expect("callable_now array");
+        let callable = result["callable_now"]
+            .as_array()
+            .expect("callable_now array");
         let matched = callable
             .iter()
             .find(|item| item["name"] == serde_json::json!("search_web"))
             .expect("matched tool");
-        assert_eq!(result["format_version"], serde_json::json!("sdk_capability_search.v1"));
+        assert_eq!(
+            result["format_version"],
+            serde_json::json!("sdk_capability_search.v1")
+        );
         assert_eq!(matched["source"], serde_json::json!("local_mcp"));
         assert_eq!(matched["callable_now"], serde_json::json!(true));
         assert_eq!(matched["pkg_name"], serde_json::json!("skill.web-tools"));
         assert_eq!(matched["recommended_action"], serde_json::json!("execute"));
-        assert_eq!(result["normalized_query"]["intent"], serde_json::json!("web_fetch"));
+        assert_eq!(
+            result["normalized_query"]["intent"],
+            serde_json::json!("web_fetch")
+        );
         assert_eq!(matched["required_parameters"], serde_json::json!(["url"]));
         assert_eq!(matched["parameters"][0]["name"], serde_json::json!("url"));
         assert!(matched["signature"]
@@ -821,7 +842,10 @@ mod tests {
             matched["example_arguments"]["url"],
             serde_json::json!("https://example.com")
         );
-        assert_eq!(matched["output_schema"]["type"], serde_json::json!("object"));
+        assert_eq!(
+            matched["output_schema"]["type"],
+            serde_json::json!("object")
+        );
         assert_eq!(matched["risk_level"], serde_json::json!("MEDIUM"));
         assert_eq!(matched["read_only"], serde_json::json!(true));
         assert_eq!(matched["mutating"], serde_json::json!(false));
@@ -870,9 +894,7 @@ mod tests {
         )
         .await;
 
-        let installable = result["installable"]
-            .as_array()
-            .expect("installable array");
+        let installable = result["installable"].as_array().expect("installable array");
         let hint = installable
             .iter()
             .find(|item| item["name"] == serde_json::json!("Weather Skill"))
@@ -880,7 +902,10 @@ mod tests {
         assert_eq!(hint["install_required"], serde_json::json!(true));
         assert_eq!(hint["callable_now"], serde_json::json!(false));
         assert_eq!(hint["asset_type"], serde_json::json!("skill"));
-        assert_eq!(hint["recommended_action"], serde_json::json!("install_skill"));
+        assert_eq!(
+            hint["recommended_action"],
+            serde_json::json!("install_skill")
+        );
 
         server_handle.abort();
     }
@@ -933,21 +958,191 @@ mod tests {
         )
         .await;
 
-        let callable = result["callable_now"].as_array().expect("callable_now array");
+        let callable = result["callable_now"]
+            .as_array()
+            .expect("callable_now array");
         assert!(callable
             .iter()
             .all(|item| item["name"] != serde_json::json!("stock_quotes")));
-        let installable = result["installable"]
-            .as_array()
-            .expect("installable array");
+        let installable = result["installable"].as_array().expect("installable array");
         let disabled = installable
             .iter()
             .find(|item| item["name"] == serde_json::json!("stock_quotes"))
             .expect("disabled stock tool surfaced as installable");
         assert_eq!(disabled["activation_required"], serde_json::json!(true));
-        assert_eq!(disabled["recommended_action"], serde_json::json!("enable_skill"));
+        assert_eq!(
+            disabled["recommended_action"],
+            serde_json::json!("enable_skill")
+        );
 
         server_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn search_sdk_uses_db_tool_status_for_mcp_assets() {
+        let query = "帮我执行本地 demo 工具";
+        let (base_url, server_handle) = start_mock_embedding_server(HashMap::from([(
+            query.to_lowercase(),
+            vec![0.5, 0.5, 0.5],
+        )]))
+        .await;
+        let provider_state = create_test_provider_state("sdk-db-status", &base_url).await;
+        let memory_state = create_test_memory_state("sdk-db-status", 3).await;
+        let store = create_test_store("sdk-db-status").await;
+
+        let tool = upsert_test_tool(&store, "demo_tool", "cat").await;
+        store
+            .set_tool_status(&tool.id, McpToolStatus::Stopped, None, None)
+            .await
+            .expect("set tool stopped");
+        memory_state
+            .store
+            .upsert_asset(
+                tool.id.clone(),
+                tool.name.clone(),
+                tool.description.clone(),
+                "tool".to_string(),
+                "mcp".to_string(),
+                tool.identifier.clone(),
+                vec![0.5, 0.5, 0.5],
+                None,
+            )
+            .await
+            .expect("insert db-backed tool asset");
+
+        let result = build_local_sdk_search_result_with_runtime(
+            &store,
+            &provider_state.embedding,
+            memory_state.service.as_ref(),
+            query,
+            8,
+        )
+        .await;
+
+        let callable = result["callable_now"]
+            .as_array()
+            .expect("callable_now array");
+        assert!(callable
+            .iter()
+            .all(|item| item["name"] != serde_json::json!("demo_tool")));
+        let installable = result["installable"].as_array().expect("installable array");
+        let stopped = installable
+            .iter()
+            .find(|item| item["name"] == serde_json::json!("demo_tool"))
+            .expect("stopped tool surfaced outside callable_now");
+        assert_eq!(stopped["activation_required"], serde_json::json!(true));
+        assert_eq!(
+            stopped["recommended_action"],
+            serde_json::json!("start_tool")
+        );
+        assert_eq!(
+            stopped["callable_status_reason"],
+            serde_json::json!("tool_installed_but_stopped")
+        );
+
+        server_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn desktop_tool_view_marks_healthy_tool_as_desired_runtime_ready_and_indexed() {
+        let store = create_test_store("desktop-tool-view-healthy").await;
+        let tool = upsert_test_tool(&store, "healthy_demo", "cat").await;
+        let indexed_tool_ids = HashSet::from([tool.id.clone()]);
+
+        let view = crate::modules::mcp::commands::runtime::build_desktop_mcp_tool_view(
+            tool,
+            &HashSet::new(),
+            Some(&indexed_tool_ids),
+        );
+
+        assert!(view.desired_enabled);
+        assert!(view.runtime_ready);
+        assert_eq!(view.runtime_status_reason, "ready_in_local_runtime");
+        assert_eq!(view.availability_lane, "callable_now");
+        assert_eq!(view.recommended_action, "execute");
+        assert_eq!(
+            view.index_status,
+            crate::modules::mcp::commands::runtime::DesktopMcpToolIndexStatus::Indexed
+        );
+        assert_eq!(view.index_status_reason, "indexed_in_local_memory");
+    }
+
+    #[tokio::test]
+    async fn desktop_tool_view_marks_stopped_tool_as_not_runtime_ready() {
+        let store = create_test_store("desktop-tool-view-stopped").await;
+        let tool = upsert_test_tool(&store, "stopped_demo_view", "cat").await;
+        store
+            .set_tool_status(&tool.id, McpToolStatus::Stopped, None, None)
+            .await
+            .expect("set tool stopped");
+        let stopped_tool = store
+            .get_tool(&tool.id)
+            .await
+            .expect("load stopped tool")
+            .expect("stopped tool exists");
+
+        let view = crate::modules::mcp::commands::runtime::build_desktop_mcp_tool_view(
+            stopped_tool,
+            &HashSet::new(),
+            Some(&HashSet::new()),
+        );
+
+        assert!(view.desired_enabled);
+        assert!(!view.runtime_ready);
+        assert_eq!(view.runtime_status_reason, "tool_installed_but_stopped");
+        assert_eq!(view.availability_lane, "installable");
+        assert_eq!(view.recommended_action, "start_tool");
+        assert!(view.activation_required);
+        assert_eq!(
+            view.index_status,
+            crate::modules::mcp::commands::runtime::DesktopMcpToolIndexStatus::Missing
+        );
+    }
+
+    #[tokio::test]
+    async fn desktop_tool_views_mark_disabled_skill_as_not_desired_enabled() {
+        let store = create_test_store("desktop-tool-view-disabled-skill").await;
+        store
+            .upsert_local_skill_install_state(
+                "skill.stocks",
+                Some("1.0.0"),
+                false,
+                Some("python"),
+                "{\"id\":\"skill.stocks\"}",
+                "/tmp/skill.stocks",
+                None,
+            )
+            .await
+            .expect("insert disabled local stock skill");
+        let tool = upsert_test_tool_with_identifier(
+            &store,
+            "stock_quotes_view",
+            "cat",
+            Some("skill.stocks/stock_quotes".to_string()),
+        )
+        .await;
+
+        let views = crate::modules::mcp::commands::runtime::build_desktop_mcp_tool_views(
+            &store,
+            Some(&HashSet::from([tool.id.clone()])),
+        )
+        .await
+        .expect("build tool views");
+        let view = views
+            .into_iter()
+            .find(|item| item.tool.id == tool.id)
+            .expect("find disabled skill tool view");
+
+        assert!(!view.desired_enabled);
+        assert!(!view.runtime_ready);
+        assert_eq!(view.runtime_status_reason, "skill_installed_but_disabled");
+        assert_eq!(view.availability_lane, "installable");
+        assert_eq!(view.recommended_action, "enable_skill");
+        assert!(view.activation_required);
+        assert_eq!(
+            view.index_status,
+            crate::modules::mcp::commands::runtime::DesktopMcpToolIndexStatus::Indexed
+        );
     }
 
     #[tokio::test]
@@ -1135,7 +1330,10 @@ mod tests {
         assert_eq!(summary.top3_hits, summary.total_cases, "{debug_payload}");
         assert_eq!(summary.lane_hits, summary.total_cases, "{debug_payload}");
         assert_eq!(summary.intent_hits, summary.total_cases, "{debug_payload}");
-        assert_eq!(summary.domain_hits, summary.domain_case_count, "{debug_payload}");
+        assert_eq!(
+            summary.domain_hits, summary.domain_case_count,
+            "{debug_payload}"
+        );
         assert_eq!(summary.false_positive_cases, 0, "{debug_payload}");
     }
 
@@ -1179,11 +1377,13 @@ mod tests {
         write_search_sdk_benchmark_summary(&path, &summary).expect("write summary file");
 
         let written = std::fs::read_to_string(&path).expect("read summary file");
-        let parsed: serde_json::Value =
-            serde_json::from_str(&written).expect("parse summary json");
+        let parsed: serde_json::Value = serde_json::from_str(&written).expect("parse summary json");
         assert_eq!(parsed["top1_accuracy"], serde_json::json!(0.5));
         assert_eq!(parsed["top3_coverage"], serde_json::json!(1.0));
-        assert_eq!(parsed["cases"][0]["expected_name"], serde_json::json!("search_web"));
+        assert_eq!(
+            parsed["cases"][0]["expected_name"],
+            serde_json::json!("search_web")
+        );
 
         let _ = std::fs::remove_file(path);
     }
@@ -1372,8 +1572,7 @@ mod tests {
         );
         assert!(blocks.iter().any(|block| {
             block.get("type").and_then(|v| v.as_str()) == Some("tool_call")
-                && block.get("toolName").and_then(|v| v.as_str())
-                    == Some("install_skill_from_git")
+                && block.get("toolName").and_then(|v| v.as_str()) == Some("install_skill_from_git")
         }));
         assert!(blocks.iter().any(|block| {
             block.get("type").and_then(|v| v.as_str()) == Some("tool_result")
@@ -1685,10 +1884,7 @@ mod tests {
             .await
             .expect_err("empty conversation should fail");
         let error_text = err.to_string();
-        assert!(
-            error_text.contains("content is empty")
-                || error_text.contains("has no messages")
-        );
+        assert!(error_text.contains("content is empty") || error_text.contains("has no messages"));
 
         let jobs = store
             .list_local_conversation_summary_jobs(LocalConversationSummaryJobQuery {
@@ -1703,10 +1899,7 @@ mod tests {
         assert_eq!(jobs.total, 1);
         assert_eq!(jobs.items[0].status, "pending");
         let last_error = jobs.items[0].last_error.as_deref().unwrap_or("");
-        assert!(
-            last_error.contains("content is empty")
-                || last_error.contains("has no messages")
-        );
+        assert!(last_error.contains("content is empty") || last_error.contains("has no messages"));
     }
 
     #[tokio::test]
@@ -1829,7 +2022,10 @@ mod tests {
         assert_eq!(response.message.role, "assistant");
         let meta = response.message.meta_info.expect("winner meta info");
         assert_eq!(meta["model_id"], serde_json::json!("compare-model"));
-        assert_eq!(meta["provider_model_id"], serde_json::json!("provider-compare"));
+        assert_eq!(
+            meta["provider_model_id"],
+            serde_json::json!("provider-compare")
+        );
         assert_eq!(meta["compare_winner"], serde_json::json!(true));
 
         let history = store
@@ -1862,7 +2058,10 @@ mod tests {
         );
         let meta = runtime_window.meta.expect("runtime window meta");
         assert_eq!(meta["last_model_id"], serde_json::json!("compare-model"));
-        assert_eq!(meta["last_provider_model_id"], serde_json::json!("provider-compare"));
+        assert_eq!(
+            meta["last_provider_model_id"],
+            serde_json::json!("provider-compare")
+        );
     }
 
     #[tokio::test]
@@ -1902,7 +2101,9 @@ mod tests {
             .await
             .expect_err("should require latest assistant");
 
-        assert!(error.to_string().contains("latest assistant message not found"));
+        assert!(error
+            .to_string()
+            .contains("latest assistant message not found"));
     }
 
     #[tokio::test]
@@ -2080,7 +2281,7 @@ mod tests {
     #[tokio::test]
     async fn approval_flow_reject_and_approve_execute_paths_work() {
         let store = create_test_store("approval-flow").await;
-        let _ = upsert_test_tool(&store, "execute_demo", "cat").await;
+        let tool = upsert_test_tool(&store, "execute_demo", "cat").await;
         let pending_tool_calls =
             RwLock::new(HashMap::<String, crate::modules::mcp::PendingToolCall>::new());
 
@@ -2102,6 +2303,18 @@ mod tests {
             queued.get("status").and_then(|value| value.as_str()),
             Some("REQUIRES_APPROVAL")
         );
+        assert_eq!(
+            queued.get("tool_id").and_then(|value| value.as_str()),
+            Some(tool.id.as_str())
+        );
+
+        let queued_pending = pending_tool_calls
+            .read()
+            .await
+            .get(&token)
+            .cloned()
+            .expect("queued pending tool call");
+        assert_eq!(queued_pending.tool_id.as_deref(), Some(tool.id.as_str()));
 
         let removed = reject_mcp_tool_inner(&pending_tool_calls, &token).await;
         assert!(removed);
@@ -2136,6 +2349,81 @@ mod tests {
                 .and_then(|value| value.as_i64()),
             Some(2)
         );
+        assert!(pending_tool_calls.read().await.is_empty());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[tokio::test]
+    async fn approval_flow_replays_by_tool_id_before_stale_tool_name() {
+        let store = create_test_store("approval-flow-tool-id").await;
+        let tool = upsert_test_tool(&store, "execute_demo_by_id", "cat").await;
+        let pending_tool_calls =
+            RwLock::new(HashMap::<String, crate::modules::mcp::PendingToolCall>::new());
+
+        let queued = execute_or_queue_mcp_tool_call(
+            &store,
+            &pending_tool_calls,
+            "execute_demo_by_id".to_string(),
+            serde_json::json!({"x": 3}),
+            true,
+        )
+        .await
+        .expect("queue pending approval");
+        let token = queued
+            .get("approval_token")
+            .and_then(|value| value.as_str())
+            .expect("approval token")
+            .to_string();
+
+        {
+            let mut guard = pending_tool_calls.write().await;
+            let pending = guard
+                .get_mut(&token)
+                .expect("pending tool call should exist");
+            assert_eq!(pending.tool_id.as_deref(), Some(tool.id.as_str()));
+            pending.tool_name = "stale_execute_demo_name".to_string();
+        }
+
+        let approved = approve_mcp_tool_inner(&store, &pending_tool_calls, &token)
+            .await
+            .expect("approve and execute with tool id");
+        assert_eq!(
+            approved.get("method").and_then(|value| value.as_str()),
+            Some("execute_demo_by_id")
+        );
+        assert_eq!(
+            approved
+                .get("arguments")
+                .and_then(|value| value.get("x"))
+                .and_then(|value| value.as_i64()),
+            Some(3)
+        );
+        assert!(pending_tool_calls.read().await.is_empty());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[tokio::test]
+    async fn execute_or_queue_rejects_stopped_tool_before_execution() {
+        let store = create_test_store("execute-stopped-tool").await;
+        let tool = upsert_test_tool(&store, "stopped_demo", "cat").await;
+        store
+            .set_tool_status(&tool.id, McpToolStatus::Stopped, None, None)
+            .await
+            .expect("set stopped status");
+        let pending_tool_calls =
+            RwLock::new(HashMap::<String, crate::modules::mcp::PendingToolCall>::new());
+
+        let err = execute_or_queue_mcp_tool_call(
+            &store,
+            &pending_tool_calls,
+            "stopped_demo".to_string(),
+            serde_json::json!({"x": 1}),
+            false,
+        )
+        .await
+        .expect_err("stopped tool should be blocked before execution");
+
+        assert!(err.contains("tool_installed_but_stopped"), "{err}");
         assert!(pending_tool_calls.read().await.is_empty());
     }
 
@@ -2285,7 +2573,10 @@ mod tests {
 
         assert_eq!(updated.id, assistant_id);
         assert_eq!(updated.name, "Trip Concierge");
-        assert_eq!(updated.description.as_deref(), Some("curates premium itineraries"));
+        assert_eq!(
+            updated.description.as_deref(),
+            Some("curates premium itineraries")
+        );
         assert_eq!(updated.visibility, "public");
         assert_eq!(updated.tags, vec!["travel", "concierge"]);
 
@@ -2306,7 +2597,10 @@ mod tests {
             .find(|item| item.id == assistant_id)
             .expect("assistant entity exists");
         assert_eq!(entity.visibility, "public");
-        assert_eq!(entity.summary.as_deref(), Some("curates premium itineraries"));
+        assert_eq!(
+            entity.summary.as_deref(),
+            Some("curates premium itineraries")
+        );
 
         let versions = store
             .list_local_assistant_versions(Some(&assistant_id))
@@ -2461,198 +2755,765 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sync_local_skill_installs_from_cloud_inner_applies_light_sync_and_disable_missing() {
-        let store = create_test_store("cloud-skill-sync-inner").await;
-        let cloud_settings_stale = serde_json::json!({
-            "sync_source": "cloud_plugin_market",
-            "alias": "stale",
-        });
-        let local_settings = serde_json::json!({
-            "sync_source": "manual_local",
-            "alias": "local-only",
-        });
+    async fn sync_local_system_assets_inner_persists_registry_and_disables_non_executable_assets() {
+        let store = create_test_store("system-assets-sync-inner").await;
 
+        let cloud_settings = serde_json::json!({"sync_source": "cloud_plugin_market"});
+        store
+            .upsert_local_skill_install_state(
+                "skill.hidden",
+                Some("1.0.0"),
+                true,
+                Some("python"),
+                r#"{"id":"skill.hidden"}"#,
+                "/tmp/skill.hidden",
+                Some(&cloud_settings),
+            )
+            .await
+            .expect("seed hidden skill install");
+        store
+            .upsert_local_skill_install_state(
+                "skill.meta",
+                Some("1.0.0"),
+                true,
+                Some("python"),
+                r#"{"id":"skill.meta"}"#,
+                "/tmp/skill.meta",
+                Some(&cloud_settings),
+            )
+            .await
+            .expect("seed metadata skill install");
+
+        let assistant = CloudSystemAssistantSnapshot {
+            assistant_id: "assistant.hidden".to_string(),
+            icon_id: None,
+            share_slug: None,
+            summary: Some("hidden assistant".to_string()),
+            published_at: None,
+            install_count: 0,
+            rating_avg: 0.0,
+            rating_count: 0,
+            version: CloudSystemAssistantVersionSnapshot {
+                id: "assistant.hidden.v1".to_string(),
+                version: "1.0.0".to_string(),
+                name: "Hidden Assistant".to_string(),
+                description: Some("desc".to_string()),
+                system_prompt: Some("prompt".to_string()),
+                tags: vec![],
+                published_at: None,
+            },
+        };
+        store
+            .sync_cloud_system_assistants(&[assistant])
+            .await
+            .expect("seed cloud assistant");
+        store
+            .install_local_assistant(
+                "assistant.hidden",
+                LocalAssistantInstallCreateRequest {
+                    follow_latest: Some(true),
+                    pinned_version_id: None,
+                },
+            )
+            .await
+            .expect("install assistant.hidden");
+
+        let payload = serde_json::json!({
+            "items": [
+                {
+                    "asset_id": "skill:skill.hidden",
+                    "title": "Hidden Skill",
+                    "description": "no local exec",
+                    "asset_kind": "capability",
+                    "owner_scope": "system",
+                    "source_kind": "official",
+                    "version": "1.0.0",
+                    "artifact_ref": null,
+                    "checksum": null,
+                    "metadata_json": {"registry_entity": "skill", "manifest": {"id": "skill.hidden"}},
+                    "policy_snapshot": {
+                        "visibility_scope": "authenticated",
+                        "local_sync_policy": "hidden",
+                        "execution_policy": "allowed",
+                        "permission_grants": [],
+                        "allowed_role_names": [],
+                        "materialization_state": "hidden"
+                    }
+                },
+                {
+                    "asset_id": "skill:skill.meta",
+                    "title": "Meta Skill",
+                    "description": "metadata only",
+                    "asset_kind": "capability",
+                    "owner_scope": "system",
+                    "source_kind": "official",
+                    "version": "1.0.0",
+                    "artifact_ref": null,
+                    "checksum": null,
+                    "metadata_json": {"registry_entity": "skill", "manifest": {"id": "skill.meta"}},
+                    "policy_snapshot": {
+                        "visibility_scope": "authenticated",
+                        "local_sync_policy": "metadata_only",
+                        "execution_policy": "approval_required",
+                        "permission_grants": [],
+                        "allowed_role_names": [],
+                        "materialization_state": "metadata_only"
+                    }
+                },
+                {
+                    "asset_id": "assistant:assistant.hidden",
+                    "title": "Hidden Assistant",
+                    "description": "no local exec",
+                    "asset_kind": "capability",
+                    "owner_scope": "system",
+                    "source_kind": "official",
+                    "version": "1.0.0",
+                    "artifact_ref": null,
+                    "checksum": null,
+                    "metadata_json": {
+                        "registry_entity": "assistant",
+                        "assistant_id": "assistant.hidden",
+                        "current_version_id": "assistant.hidden.v1",
+                        "summary": "hidden assistant",
+                        "icon_id": null,
+                        "share_slug": null,
+                        "published_at": null,
+                        "install_count": 0,
+                        "rating_avg": 0.0,
+                        "rating_count": 0,
+                        "version": {
+                            "id": "assistant.hidden.v1",
+                            "version": "1.0.0",
+                            "name": "Hidden Assistant",
+                            "description": "desc",
+                            "system_prompt": "prompt",
+                            "tags": [],
+                            "published_at": null
+                        }
+                    },
+                    "policy_snapshot": {
+                        "visibility_scope": "superuser",
+                        "local_sync_policy": "hidden",
+                        "execution_policy": "allowed",
+                        "permission_grants": [],
+                        "allowed_role_names": [],
+                        "materialization_state": "hidden"
+                    }
+                },
+                {
+                    "asset_id": "assistant:assistant.exec",
+                    "title": "Executable Assistant",
+                    "description": "ok",
+                    "asset_kind": "capability",
+                    "owner_scope": "system",
+                    "source_kind": "official",
+                    "version": "1.0.0",
+                    "artifact_ref": null,
+                    "checksum": null,
+                    "metadata_json": {
+                        "registry_entity": "assistant",
+                        "assistant_id": "assistant.exec",
+                        "current_version_id": "assistant.exec.v1",
+                        "summary": "Executable assistant summary",
+                        "icon_id": "lucide:bot",
+                        "share_slug": "assistant-exec",
+                        "published_at": "2024-01-02T00:00:00Z",
+                        "install_count": 12,
+                        "rating_avg": 4.5,
+                        "rating_count": 3,
+                        "version": {
+                            "id": "assistant.exec.v1",
+                            "version": "1.0.0",
+                            "name": "Executable Assistant",
+                            "description": "ok",
+                            "system_prompt": "be helpful",
+                            "tags": ["utility", "system"],
+                            "published_at": "2024-01-02T00:00:00Z"
+                        }
+                    },
+                    "policy_snapshot": {
+                        "visibility_scope": "authenticated",
+                        "local_sync_policy": "full",
+                        "execution_policy": "allowed",
+                        "permission_grants": [],
+                        "allowed_role_names": [],
+                        "materialization_state": "executable"
+                    }
+                }
+            ]
+        });
+        let (mock_base_url, server_handle) = start_mock_system_assets_server(payload).await;
+
+        let response = sync_local_system_assets_inner(
+            &store,
+            &reqwest::Client::new(),
+            &mock_base_url,
+            "test-access-token",
+            200,
+            None,
+            false,
+        )
+        .await
+        .expect("sync local system assets");
+
+        assert_eq!(response.fetched_count, 4);
+        assert_eq!(response.upserted_count, 4);
+        assert_eq!(response.hidden_count, 2);
+        assert_eq!(response.metadata_only_count, 1);
+        assert_eq!(response.executable_count, 1);
+        assert_eq!(response.disabled_skill_count, 2);
+        assert_eq!(response.archived_assistant_count, 1);
+        assert_eq!(response.disabled_assistant_install_count, 1);
+
+        let enabled_skills = store
+            .list_enabled_local_skill_ids()
+            .await
+            .expect("list enabled skills");
+        assert!(!enabled_skills.contains("skill.hidden"));
+        assert!(!enabled_skills.contains("skill.meta"));
+
+        let assistant_ids = store
+            .list_enabled_local_assistant_ids()
+            .await
+            .expect("list enabled assistants");
+        assert!(!assistant_ids.contains("assistant.hidden"));
+
+        let archived_status: String = sqlx::query_scalar(
+            "SELECT status FROM assistant WHERE id = 'assistant.hidden' LIMIT 1;",
+        )
+        .fetch_one(&store.pool)
+        .await
+        .expect("read assistant status");
+        assert_eq!(archived_status, "archived");
+
+        let materialization_state: String = sqlx::query_scalar(
+            "SELECT materialization_state FROM system_asset WHERE asset_id = 'assistant:assistant.exec' LIMIT 1;",
+        )
+        .fetch_one(&store.pool)
+        .await
+        .expect("read system asset state");
+        assert_eq!(materialization_state, "executable");
+
+        let current_version_id: String = sqlx::query_scalar(
+            "SELECT current_version_id FROM assistant WHERE id = 'assistant.exec' LIMIT 1;",
+        )
+        .fetch_one(&store.pool)
+        .await
+        .expect("read assistant current version");
+        assert_eq!(current_version_id, "assistant.exec.v1");
+
+        let version_name: String = sqlx::query_scalar(
+            "SELECT name FROM assistant_version WHERE id = 'assistant.exec.v1' LIMIT 1;",
+        )
+        .fetch_one(&store.pool)
+        .await
+        .expect("read assistant version name");
+        assert_eq!(version_name, "Executable Assistant");
+
+        server_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn sync_local_system_assets_inner_archives_missing_registry_rows() {
+        let store = create_test_store("system-assets-sync-archive-missing").await;
+        store
+            .sync_cloud_system_assistants(&[CloudSystemAssistantSnapshot {
+                assistant_id: "assistant.stale".to_string(),
+                icon_id: None,
+                share_slug: None,
+                summary: Some("stale assistant".to_string()),
+                published_at: Some("2024-01-01T00:00:00Z".to_string()),
+                install_count: 0,
+                rating_avg: 0.0,
+                rating_count: 0,
+                version: CloudSystemAssistantVersionSnapshot {
+                    id: "assistant.stale.v1".to_string(),
+                    version: "1.0.0".to_string(),
+                    name: "Stale Assistant".to_string(),
+                    description: Some("desc".to_string()),
+                    system_prompt: Some("prompt".to_string()),
+                    tags: vec![],
+                    published_at: Some("2024-01-01T00:00:00Z".to_string()),
+                },
+            }])
+            .await
+            .expect("seed stale cloud assistant");
+        sqlx::query(
+            r#"
+            INSERT INTO system_asset (
+              asset_id, title, description, asset_kind, owner_scope, source_kind, version,
+              artifact_ref, checksum, metadata_json, visibility_scope, local_sync_policy,
+              execution_policy, permission_grants_json, allowed_role_names_json,
+              materialization_state, sync_source, status, created_at, updated_at
+            ) VALUES (
+              'skill.stale', 'Stale Skill', NULL, 'capability', 'system', 'official', '1.0.0',
+              NULL, NULL, '{}', 'authenticated', 'full', 'allowed', '[]', '[]',
+              'executable', 'cloud_system_assets', 'active', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z'
+            );
+            "#,
+        )
+        .execute(&store.pool)
+        .await
+        .expect("seed stale system asset");
+
+        let payload = serde_json::json!({
+            "items": [{
+                "asset_id": "skill:skill.keep",
+                "title": "Keep Skill",
+                "description": null,
+                "asset_kind": "capability",
+                "owner_scope": "system",
+                "source_kind": "official",
+                "version": "1.0.0",
+                "artifact_ref": null,
+                "checksum": null,
+                "metadata_json": {"registry_entity": "skill", "manifest": {"id": "skill.keep"}},
+                "policy_snapshot": {
+                    "visibility_scope": "authenticated",
+                    "local_sync_policy": "full",
+                    "execution_policy": "allowed",
+                    "permission_grants": [],
+                    "allowed_role_names": [],
+                    "materialization_state": "executable"
+                }
+            }]
+        });
+        let (mock_base_url, server_handle) = start_mock_system_assets_server(payload).await;
+
+        let response = sync_local_system_assets_inner(
+            &store,
+            &reqwest::Client::new(),
+            &mock_base_url,
+            "test-access-token",
+            100,
+            None,
+            false,
+        )
+        .await
+        .expect("sync local system assets");
+
+        assert_eq!(response.archived_count, 1);
+        assert_eq!(response.archived_assistant_count, 1);
+        let stale_status: String = sqlx::query_scalar(
+            "SELECT status FROM system_asset WHERE asset_id = 'skill.stale' LIMIT 1;",
+        )
+        .fetch_one(&store.pool)
+        .await
+        .expect("read stale status");
+        assert_eq!(stale_status, "archived");
+
+        let stale_assistant_status: String = sqlx::query_scalar(
+            "SELECT status FROM assistant WHERE id = 'assistant.stale' LIMIT 1;",
+        )
+        .fetch_one(&store.pool)
+        .await
+        .expect("read stale assistant status");
+        assert_eq!(stale_assistant_status, "archived");
+
+        server_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn sync_local_system_assets_inner_syncs_skill_install_state_from_unified_feed() {
+        let store = create_test_store("system-assets-sync-skill-installs").await;
+        let stale_cloud_settings = serde_json::json!({
+            "sync_source": "cloud_plugin_market",
+            "alias": "stale"
+        });
         store
             .upsert_local_skill_install_state(
                 "skill.stale",
                 Some("0.9.0"),
                 true,
                 Some("python"),
-                "{\"id\":\"skill.stale\"}",
+                r#"{"id":"skill.stale"}"#,
                 "/tmp/skill.stale",
-                Some(&cloud_settings_stale),
+                Some(&stale_cloud_settings),
             )
             .await
-            .expect("insert stale cloud-managed skill");
-        store
-            .upsert_local_skill_install_state(
-                "skill.local_only",
-                Some("1.0.0"),
-                true,
-                Some("python"),
-                "{\"id\":\"skill.local_only\"}",
-                "/tmp/skill.local_only",
-                Some(&local_settings),
-            )
-            .await
-            .expect("insert local-only skill");
+            .expect("seed stale cloud skill install");
 
-        let installs_payload = serde_json::json!([
-            {
-                "skill_id": "skill.keep",
-                "alias": "keep",
-                "config_json": {"temperature": 0.2},
-                "granted_permissions": ["network"],
-                "installed_revision": "rev-keep",
-                "is_enabled": true
-            },
-            {
-                "skill_id": "skill.disabled",
-                "alias": "disabled",
-                "config_json": {},
-                "granted_permissions": [],
-                "installed_revision": "rev-disabled",
-                "is_enabled": false
-            }
-        ]);
-        let plugins_payload = serde_json::json!([
-            {
-                "id": "skill.keep",
-                "name": "Keep Skill",
-                "description": "keep me installed",
-                "version": "1.2.0",
-                "source_repo": null,
-                "source_revision": "main"
-            },
-            {
-                "id": "skill.disabled",
-                "name": "Disabled Skill",
-                "description": "disabled from cloud",
-                "version": "2.0.0",
-                "source_repo": null,
-                "source_revision": "main"
-            }
-        ]);
-        let (mock_base_url, server_handle) =
-            start_mock_plugin_market_server(installs_payload, plugins_payload).await;
+        let payload = serde_json::json!({
+            "items": [{
+                "asset_id": "skill:skill.installed",
+                "title": "Installed Skill",
+                "description": "projected via system assets",
+                "asset_kind": "capability",
+                "owner_scope": "system",
+                "source_kind": "official",
+                "version": "1.2.3",
+                "artifact_ref": "https://github.com/example/installed-skill",
+                "checksum": "rev-123",
+                "metadata_json": {
+                    "registry_entity": "skill",
+                    "skill_id": "skill.installed",
+                    "runtime": "python",
+                    "manifest": {
+                        "id": "skill.installed",
+                        "name": "Installed Skill",
+                        "version": "1.2.3",
+                        "permissions": ["network_read"]
+                    },
+                    "user_install": {
+                        "alias": "desktop-installed",
+                        "config_json": {"region": "global"},
+                        "granted_permissions": ["network_read"],
+                        "installed_revision": "rev-123",
+                        "is_enabled": true
+                    }
+                },
+                "policy_snapshot": {
+                    "visibility_scope": "authenticated",
+                    "local_sync_policy": "full",
+                    "execution_policy": "allowed",
+                    "permission_grants": ["network_read"],
+                    "allowed_role_names": [],
+                    "materialization_state": "executable"
+                }
+            }]
+        });
+        let (mock_base_url, server_handle) = start_mock_system_assets_server(payload).await;
 
         let mut skills_dir = std::env::temp_dir();
-        skills_dir.push(format!("deeting-cloud-sync-inner-{}", Uuid::new_v4()));
-        std::fs::create_dir_all(&skills_dir).expect("create temporary skills dir");
+        skills_dir.push(format!(
+            "deeting-system-assets-skill-installs-{}",
+            Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&skills_dir).expect("create system-assets skills dir");
 
-        let response = sync_local_skill_installs_from_cloud_inner(
+        let response = sync_local_system_assets_inner(
             &store,
             &reqwest::Client::new(),
             &mock_base_url,
             "test-access-token",
-            &skills_dir,
+            100,
+            Some(&skills_dir),
             false,
         )
         .await
-        .expect("sync local skill installs from cloud");
+        .expect("sync unified skill installs");
 
-        assert_eq!(response.fetched_count, 2);
-        assert_eq!(response.upserted_count, 2);
-        assert_eq!(response.reinstalled_count, 0);
-        assert_eq!(response.failed_count, 0);
-        assert_eq!(response.items.len(), 2);
-
-        let mut status_by_skill_id = HashMap::new();
-        for item in response.items {
-            status_by_skill_id.insert(item.skill_id, item.status);
-        }
-        assert_eq!(
-            status_by_skill_id.get("skill.keep").map(String::as_str),
-            Some("metadata_synced")
-        );
-        assert_eq!(
-            status_by_skill_id.get("skill.disabled").map(String::as_str),
-            Some("disabled_synced")
-        );
+        assert_eq!(response.skill_install_fetched_count, 1);
+        assert_eq!(response.skill_install_upserted_count, 1);
+        assert_eq!(response.skill_reinstalled_count, 0);
+        assert_eq!(response.skill_failed_count, 0);
+        assert_eq!(response.disabled_skill_count, 1);
 
         let enabled = store
             .list_enabled_local_skill_ids()
             .await
-            .expect("list enabled local skill ids");
-        assert!(enabled.contains("skill.keep"));
-        assert!(enabled.contains("skill.local_only"));
-        assert!(!enabled.contains("skill.disabled"));
+            .expect("list enabled local skills");
+        assert!(enabled.contains("skill.installed"));
         assert!(!enabled.contains("skill.stale"));
+
+        let installed_version: String = sqlx::query_scalar(
+            "SELECT installed_version FROM local_skill_install WHERE skill_id = 'skill.installed' LIMIT 1;",
+        )
+        .fetch_one(&store.pool)
+        .await
+        .expect("read installed skill version");
+        assert_eq!(installed_version, "rev-123");
+
+        let user_settings_json: String = sqlx::query_scalar(
+            "SELECT user_settings_json FROM local_skill_install WHERE skill_id = 'skill.installed' LIMIT 1;",
+        )
+        .fetch_one(&store.pool)
+        .await
+        .expect("read installed skill settings");
+        assert!(user_settings_json.contains("desktop-installed"));
 
         server_handle.abort();
         let _ = std::fs::remove_dir_all(&skills_dir);
     }
 
     #[tokio::test]
-    async fn sync_local_skill_installs_from_cloud_inner_marks_failed_reinstall_when_source_repo_missing(
-    ) {
-        let store = create_test_store("cloud-skill-sync-failed-reinstall").await;
-
-        let installs_payload = serde_json::json!([
-            {
-                "skill_id": "skill.needs_repo",
-                "alias": "repo-missing",
-                "config_json": {},
-                "granted_permissions": [],
-                "installed_revision": "rev-1",
-                "is_enabled": true
-            }
-        ]);
-        let plugins_payload = serde_json::json!([
-            {
-                "id": "skill.needs_repo",
-                "name": "Needs Repo Skill",
-                "description": "cannot reinstall without source repo",
-                "version": "1.0.0",
-                "source_repo": null,
-                "source_revision": "main"
-            }
-        ]);
-        let (mock_base_url, server_handle) =
-            start_mock_plugin_market_server(installs_payload, plugins_payload).await;
+    async fn local_skill_registration_self_heal_needed_detects_missing_db_and_vector_index() {
+        let store = create_test_store("system-assets-self-heal-scan").await;
+        let memory_state = create_test_memory_state("system-assets-self-heal-scan", 3).await;
 
         let mut skills_dir = std::env::temp_dir();
         skills_dir.push(format!(
-            "deeting-cloud-sync-failed-reinstall-{}",
+            "deeting-system-assets-self-heal-{}",
             Uuid::new_v4()
         ));
-        std::fs::create_dir_all(&skills_dir).expect("create temporary skills dir");
+        let skill_dir = skills_dir.join("skill.self-heal");
+        std::fs::create_dir_all(&skill_dir).expect("create self-heal skill dir");
+        std::fs::write(
+            skill_dir.join("deeting.json"),
+            r#"{"id":"skill.self-heal","name":"Self Heal Skill","runtime":"python"}"#,
+        )
+        .expect("write self-heal manifest");
+        std::fs::write(
+            skill_dir.join("llm-tool.yaml"),
+            "tools:\n  - name: diagnose\n    description: Diagnose installation gaps\n",
+        )
+        .expect("write self-heal tool spec");
 
-        let response = sync_local_skill_installs_from_cloud_inner(
+        assert!(local_skill_registration_self_heal_needed(
             &store,
-            &reqwest::Client::new(),
-            &mock_base_url,
-            "test-access-token",
-            &skills_dir,
+            Some(&memory_state.service),
+            std::slice::from_ref(&skills_dir),
+        )
+        .await
+        .expect("detect missing skill source"));
+
+        let source = store
+            .upsert_skill_source(
+                "skill:skill.self-heal",
+                skill_dir.to_string_lossy().as_ref(),
+                McpTrustLevel::Community,
+                false,
+            )
+            .await
+            .expect("upsert self-heal source");
+
+        assert!(local_skill_registration_self_heal_needed(
+            &store,
+            Some(&memory_state.service),
+            std::slice::from_ref(&skills_dir),
+        )
+        .await
+        .expect("detect missing skill tool row"));
+
+        let config_json = serde_json::json!({
+            "command": "python3",
+            "args": ["main.py"],
+            "description": "Diagnose installation gaps",
+        })
+        .to_string();
+        let tool = store
+            .upsert_tool(ToolUpsert {
+                id: None,
+                source_id: source.id.clone(),
+                identifier: Some("skill.self-heal/diagnose".to_string()),
+                name: "diagnose".to_string(),
+                source_type: McpSourceType::Local,
+                status: McpToolStatus::Healthy,
+                ping_ms: None,
+                capabilities: vec!["diagnostics".to_string()],
+                description: "Diagnose installation gaps".to_string(),
+                error: None,
+                command: Some("python3".to_string()),
+                args: Some(vec!["main.py".to_string()]),
+                env: None,
+                config_json: config_json.clone(),
+                config_hash: hash_config(&config_json),
+                pending_config_json: None,
+                pending_config_hash: None,
+                conflict_status: McpConflictStatus::None,
+                is_read_only: false,
+                is_new: false,
+            })
+            .await
+            .expect("upsert self-heal tool");
+
+        assert!(local_skill_registration_self_heal_needed(
+            &store,
+            Some(&memory_state.service),
+            std::slice::from_ref(&skills_dir),
+        )
+        .await
+        .expect("detect missing vector asset"));
+
+        memory_state
+            .store
+            .upsert_asset(
+                tool.id.clone(),
+                tool.name.clone(),
+                tool.description.clone(),
+                "tool".to_string(),
+                "mcp".to_string(),
+                Some("skill.self-heal".to_string()),
+                vec![1.0, 0.0, 0.0],
+                Some(serde_json::json!({
+                    "source_name": "skill:skill.self-heal",
+                    "identifier": "skill.self-heal/diagnose",
+                })),
+            )
+            .await
+            .expect("upsert self-heal vector asset");
+
+        assert!(!local_skill_registration_self_heal_needed(
+            &store,
+            Some(&memory_state.service),
+            std::slice::from_ref(&skills_dir),
+        )
+        .await
+        .expect("self-heal no longer needed after db/vector repair"));
+
+        let _ = std::fs::remove_dir_all(&skills_dir);
+    }
+
+    #[tokio::test]
+    async fn local_skill_registration_self_heal_needed_scans_official_skill_roots_too() {
+        let store = create_test_store("system-assets-self-heal-official-root").await;
+        let memory_state =
+            create_test_memory_state("system-assets-self-heal-official-root", 3).await;
+
+        let mut official_root = std::env::temp_dir();
+        official_root.push(format!(
+            "deeting-system-assets-official-root-{}",
+            Uuid::new_v4()
+        ));
+        let mut user_root = std::env::temp_dir();
+        user_root.push(format!(
+            "deeting-system-assets-user-root-{}",
+            Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&official_root).expect("create official root");
+        std::fs::create_dir_all(&user_root).expect("create user root");
+
+        let skill_dir = official_root.join("skill.official-heal");
+        std::fs::create_dir_all(&skill_dir).expect("create official skill dir");
+        std::fs::write(
+            skill_dir.join("deeting.json"),
+            r#"{"id":"skill.official-heal","name":"Official Heal Skill","runtime":"python"}"#,
+        )
+        .expect("write official skill manifest");
+        std::fs::write(
+            skill_dir.join("llm-tool.yaml"),
+            "tools:\n  - name: inspect\n    description: Inspect official skill coverage\n",
+        )
+        .expect("write official tool spec");
+
+        let roots = vec![official_root.clone(), user_root.clone()];
+        assert!(local_skill_registration_self_heal_needed(
+            &store,
+            Some(&memory_state.service),
+            &roots
+        )
+        .await
+        .expect("detect missing official-root skill source"));
+
+        let _ = std::fs::remove_dir_all(&official_root);
+        let _ = std::fs::remove_dir_all(&user_root);
+    }
+
+    #[tokio::test]
+    async fn register_local_skills_from_scan_targets_inner_restores_deleted_skill_indices() {
+        let test_name = "system-assets-self-heal-restore";
+        let store = create_test_store(test_name).await;
+        let (base_url, server_handle) = start_mock_embedding_server(HashMap::from([(
+            "name: repair\ndescription: repair the local skill index".to_string(),
+            vec![0.31, 0.32, 0.33],
+        )]))
+        .await;
+        let provider_state =
+            std::sync::Arc::new(create_test_provider_state(test_name, &base_url).await);
+        let memory_state = std::sync::Arc::new(create_test_memory_state(test_name, 3).await);
+
+        let mut skill_root = std::env::temp_dir();
+        skill_root.push(format!(
+            "deeting-system-assets-restore-root-{}",
+            Uuid::new_v4()
+        ));
+        let skill_dir = skill_root.join("skill.restore");
+        std::fs::create_dir_all(&skill_dir).expect("create restore skill dir");
+        std::fs::write(
+            skill_dir.join("deeting.json"),
+            r#"{"id":"skill.restore","name":"Restore Skill","description":"Repair the local skill index","runtime":"python"}"#,
+        )
+        .expect("write restore manifest");
+        std::fs::write(
+            skill_dir.join("llm-tool.yaml"),
+            "tools:\n  - name: repair\n    description: Repair the local skill index\n",
+        )
+        .expect("write restore tool spec");
+        std::fs::write(skill_dir.join("main.py"), "print('restore skill')\n")
+            .expect("write restore main.py");
+
+        let scan_targets = vec![(skill_root.clone(), "user_skill")];
+        let indexed = register_local_skills_from_scan_targets_inner(
+            &scan_targets,
+            "/tmp/deeting-sdk",
+            &store,
+            provider_state.clone(),
+            memory_state.clone(),
             true,
         )
         .await
-        .expect("sync local skill installs from cloud");
+        .expect("initial skill registration");
+        assert_eq!(indexed, 1);
 
-        assert_eq!(response.fetched_count, 1);
-        assert_eq!(response.upserted_count, 1);
-        assert_eq!(response.reinstalled_count, 0);
-        assert_eq!(response.failed_count, 1);
-        assert_eq!(response.items.len(), 1);
-
-        let item = &response.items[0];
-        assert_eq!(item.skill_id, "skill.needs_repo");
-        assert_eq!(item.status, "failed_reinstall");
-        assert!(!item.reinstalled);
-        assert!(item
-            .error
-            .as_deref()
-            .unwrap_or("")
-            .contains("source_repo is missing"));
-
-        let enabled = store
-            .list_enabled_local_skill_ids()
+        let source_name = "skill:skill.restore";
+        let identifier = "skill.restore/repair";
+        let source = store
+            .find_source_by_name(source_name)
             .await
-            .expect("list enabled local skill ids");
-        assert!(enabled.contains("skill.needs_repo"));
+            .expect("find initial source")
+            .expect("initial source exists");
+        let tool = store
+            .get_tool_by_source_identifier(&source.id, identifier)
+            .await
+            .expect("find initial tool")
+            .expect("initial tool exists");
+        assert!(memory_state
+            .service
+            .get_asset_by_id(&tool.id)
+            .await
+            .expect("get initial vector asset")
+            .is_some());
+
+        memory_state
+            .service
+            .delete_assets_by_package("skill.restore")
+            .await
+            .expect("delete restore vector asset");
+        store
+            .delete_tools_by_source_id(&source.id)
+            .await
+            .expect("delete restore tools");
+        store
+            .delete_source(&source.id)
+            .await
+            .expect("delete restore source");
+
+        assert!(local_skill_registration_self_heal_needed(
+            &store,
+            Some(memory_state.service.as_ref()),
+            std::slice::from_ref(&skill_root),
+        )
+        .await
+        .expect("detect deleted restore indices"));
+
+        let restored = register_local_skills_from_scan_targets_inner(
+            &scan_targets,
+            "/tmp/deeting-sdk",
+            &store,
+            provider_state.clone(),
+            memory_state.clone(),
+            true,
+        )
+        .await
+        .expect("restore skill registration");
+        assert_eq!(restored, 1);
+
+        let restored_source = store
+            .find_source_by_name(source_name)
+            .await
+            .expect("find restored source")
+            .expect("restored source exists");
+        let restored_tool = store
+            .get_tool_by_source_identifier(&restored_source.id, identifier)
+            .await
+            .expect("find restored tool")
+            .expect("restored tool exists");
+        assert!(memory_state
+            .service
+            .get_asset_by_id(&restored_tool.id)
+            .await
+            .expect("get restored vector asset")
+            .is_some());
+        assert!(!local_skill_registration_self_heal_needed(
+            &store,
+            Some(memory_state.service.as_ref()),
+            std::slice::from_ref(&skill_root),
+        )
+        .await
+        .expect("self-heal cleared after restore"));
 
         server_handle.abort();
-        let _ = std::fs::remove_dir_all(&skills_dir);
+        let _ = std::fs::remove_dir_all(&skill_root);
     }
 
     #[test]
@@ -2691,6 +3552,46 @@ mod tests {
             env.get("SCOUT_SERVICE_URL").map(String::as_str),
             Some("https://scout.example.com")
         );
+    }
+
+    #[tokio::test]
+    async fn resolve_effective_desktop_scout_base_url_falls_back_to_runtime_env() {
+        let _env_guard = env_lock().lock().expect("lock env");
+        std::env::remove_var(SCOUT_SERVICE_URL_ENV_KEY);
+
+        let store = create_test_store("effective-scout-env-fallback").await;
+        std::env::set_var(SCOUT_SERVICE_URL_ENV_KEY, "https://env-scout.example.com/");
+
+        let resolved = resolve_effective_desktop_scout_base_url(&store)
+            .await
+            .expect("resolve effective scout base url");
+
+        assert_eq!(resolved.as_deref(), Some("https://env-scout.example.com"));
+
+        std::env::remove_var(SCOUT_SERVICE_URL_ENV_KEY);
+    }
+
+    #[tokio::test]
+    async fn resolve_effective_desktop_scout_base_url_prefers_persisted_override() {
+        let _env_guard = env_lock().lock().expect("lock env");
+        std::env::set_var(SCOUT_SERVICE_URL_ENV_KEY, "https://env-scout.example.com/");
+
+        let store = create_test_store("effective-scout-persisted-preferred").await;
+        store
+            .set_desktop_config("scout.base_url", "https://persisted-scout.example.com/")
+            .await
+            .expect("set persisted desktop scout base url");
+
+        let resolved = resolve_effective_desktop_scout_base_url(&store)
+            .await
+            .expect("resolve effective scout base url");
+
+        assert_eq!(
+            resolved.as_deref(),
+            Some("https://persisted-scout.example.com")
+        );
+
+        std::env::remove_var(SCOUT_SERVICE_URL_ENV_KEY);
     }
 
     #[tokio::test]
