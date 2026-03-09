@@ -20,10 +20,10 @@ use tokio::sync::{mpsc, RwLock};
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use uuid::Uuid;
 
-use crate::modules::mcp::store::LocalConversationRuntimeWindow;
 use crate::modules::mcp::local_orchestrator::{
     execute_local_orchestrated_chat, extract_user_text_from_messages, LocalOrchestratorInput,
 };
+use crate::modules::mcp::store::LocalConversationRuntimeWindow;
 use crate::modules::mcp::types::{
     LocalConversationCompareFinalizeRequest, LocalConversationCompareFinalizeResponse,
 };
@@ -616,15 +616,13 @@ fn normalize_optional_string(value: Option<&str>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{build_fact_rebuild_conversation_text, clear_session_auto_extraction_memories};
-    use crate::modules::mcp::types::LocalConversationHistoryMessage;
     use crate::modules::mcp::store::LocalConversationRuntimeWindow;
+    use crate::modules::mcp::types::LocalConversationHistoryMessage;
     use crate::modules::memory::types::{CreateLocalMemoryRequest, LocalMemoryListQuery};
     use serde_json::json;
     use uuid::Uuid;
 
-    async fn create_test_memory_state(
-        test_name: &str,
-    ) -> crate::modules::memory::MemoryState {
+    async fn create_test_memory_state(test_name: &str) -> crate::modules::memory::MemoryState {
         let mut lancedb_path = std::env::temp_dir();
         lancedb_path.push(format!(
             "deeting-tauri-gateway-lancedb-{test_name}-{}",
@@ -674,12 +672,10 @@ mod tests {
                 .expect("append manual memory");
         }
 
-        let deleted = clear_session_auto_extraction_memories(
-            memory_state.service.as_ref(),
-            session_id,
-        )
-        .await
-        .expect("clear auto-extracted memories");
+        let deleted =
+            clear_session_auto_extraction_memories(memory_state.service.as_ref(), session_id)
+                .await
+                .expect("clear auto-extracted memories");
 
         assert_eq!(deleted, 35);
 

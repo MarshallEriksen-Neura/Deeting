@@ -4,6 +4,7 @@ import * as React from "react"
 import dynamic from "next/dynamic"
 import { ProviderMarketClient } from "@/components/market/provider-market-client"
 import type { ProviderPresetConfig } from "@/components/providers/connect-provider-drawer"
+import type { ProviderCard } from "@/lib/api/providers"
 
 const ConnectProviderDrawer = dynamic(
   () => import("@/components/providers/connect-provider-drawer"),
@@ -14,13 +15,13 @@ export function DashboardMarketClient() {
   const [drawerOpen, setDrawerOpen] = React.useState(false)
   const [selectedPreset, setSelectedPreset] = React.useState<ProviderPresetConfig | null>(null)
 
-  const handleSelect = (provider: any) => {
+  const handleSelect = (provider: ProviderCard) => {
     const preset: ProviderPresetConfig = {
       slug: provider.slug,
       name: provider.name,
       type: provider.slug === "custom" ? "custom" : "system",
+      provider: provider.provider,
       default_endpoint: provider.base_url || undefined,
-      protocol: "openai",
       brand_color: provider.theme_color || "#3b82f6",
       icon_key: provider.icon || "lucide:server",
     }

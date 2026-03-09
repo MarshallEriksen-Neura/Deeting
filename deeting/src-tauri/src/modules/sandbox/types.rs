@@ -45,6 +45,7 @@ pub enum SandboxReadinessStatus {
     Ready,
     NeedsWsl,
     NeedsPython,
+    #[serde(rename = "needs_boxlite")]
     NeedsBoxLite,
     RepairNeeded,
     Unsupported,
@@ -97,4 +98,15 @@ pub struct SandboxInstallGuide {
     pub description: String,
     pub steps: Vec<String>,
     pub primary_command: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SandboxReadinessStatus;
+
+    #[test]
+    fn needs_boxlite_serializes_without_extra_underscore() {
+        let value = serde_json::to_string(&SandboxReadinessStatus::NeedsBoxLite).unwrap();
+        assert_eq!(value, "\"needs_boxlite\"");
+    }
 }

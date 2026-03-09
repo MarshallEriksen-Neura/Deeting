@@ -261,26 +261,32 @@ impl ProviderStore {
         instance_id: &str,
     ) -> Result<Option<crate::modules::providers::store::ProviderConnection>, ProviderError> {
         let instance_row = sqlx::query(
-            "SELECT base_url, meta, COALESCE(credential_source, 'local') AS credential_source FROM provider_instances WHERE id = ?",
+            "SELECT i.base_url, i.meta,
+                    COALESCE(i.credential_source, 'local') AS credential_source,
+                    p.provider AS preset_provider
+             FROM provider_instances i
+             LEFT JOIN provider_presets p ON p.slug = i.preset_slug
+             WHERE i.id = ?",
         )
         .bind(instance_id)
         .fetch_optional(&self.pool)
         .await?;
 
-        let (base_url, meta, credential_source) = match instance_row {
+        let (base_url, meta, credential_source, preset_provider) = match instance_row {
             Some(row) => (
                 row.try_get::<String, _>("base_url")?,
                 parse_json_object_text(row.try_get::<Option<String>, _>("meta")?),
                 row.try_get::<String, _>("credential_source")
                     .unwrap_or_else(|_| "local".to_string()),
+                row.try_get::<Option<String>, _>("preset_provider")?,
             ),
             None => return Ok(None),
         };
-        let protocol = meta
-            .get("protocol")
-            .and_then(|value| value.as_str())
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty());
+        let protocol = resolve_instance_protocol(
+            meta.get("protocol").and_then(|value| value.as_str()),
+            preset_provider.as_deref(),
+            &base_url,
+        );
         let auto_append_v1 = meta.get("auto_append_v1").and_then(|value| match value {
             serde_json::Value::Bool(item) => Some(*item),
             serde_json::Value::String(item) => match item.trim().to_ascii_lowercase().as_str() {
@@ -324,6 +330,118 @@ impl ProviderStore {
             credential_source: None,
         }))
     }
+
+    pub(crate) async fn normalize_provider_instance_protocol_data(
+        &self,
+    ) -> Result<(), ProviderError> {
+        let rows = sqlx::query(
+            "SELECT i.id, i.base_url, i.meta, p.provider AS preset_provider
+             FROM provider_instances i
+             LEFT JOIN provider_presets p ON p.slug = i.preset_slug",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        if rows.is_empty() {
+            return Ok(());
+        }
+
+        let now = now_rfc3339()?;
+        let mut tx = self.pool.begin().await?;
+
+        for row in rows {
+            let instance_id: String = row.try_get("id")?;
+            let base_url: String = row.try_get("base_url")?;
+            let preset_provider = row.try_get::<Option<String>, _>("preset_provider")?;
+            let mut meta = parse_json_object_text(row.try_get::<Option<String>, _>("meta")?);
+            let stored_protocol = meta.get("protocol").and_then(|value| value.as_str());
+            let repaired_protocol = repair_instance_protocol_for_persistence(
+                stored_protocol,
+                preset_provider.as_deref(),
+                &base_url,
+            );
+
+            if let Some(protocol) = repaired_protocol {
+                let current_protocol = normalize_protocol_text(stored_protocol);
+                if current_protocol.as_deref() != Some(protocol.as_str()) {
+                    if let Some(meta_object) = meta.as_object_mut() {
+                        meta_object.insert("protocol".to_string(), Value::String(protocol));
+                    }
+                    sqlx::query(
+                        "UPDATE provider_instances SET meta = ?, updated_at = ? WHERE id = ?",
+                    )
+                    .bind(meta.to_string())
+                    .bind(&now)
+                    .bind(&instance_id)
+                    .execute(&mut *tx)
+                    .await?;
+                }
+            }
+        }
+
+        tx.commit().await?;
+        Ok(())
+    }
+}
+
+fn normalize_protocol_text(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string())
+}
+
+fn resolve_instance_protocol(
+    stored_protocol: Option<&str>,
+    preset_protocol: Option<&str>,
+    base_url: &str,
+) -> Option<String> {
+    let stored_protocol = normalize_protocol_text(stored_protocol);
+    let preset_protocol = normalize_protocol_text(preset_protocol);
+
+    match stored_protocol {
+        Some(value)
+            if value.eq_ignore_ascii_case("openai")
+                && preset_protocol
+                    .as_deref()
+                    .map(is_anthropic_protocol)
+                    .unwrap_or(false)
+                && is_official_anthropic_base_url(base_url) =>
+        {
+            preset_protocol.clone()
+        }
+        Some(value) => Some(value),
+        None => preset_protocol,
+    }
+}
+
+fn repair_instance_protocol_for_persistence(
+    stored_protocol: Option<&str>,
+    preset_protocol: Option<&str>,
+    base_url: &str,
+) -> Option<String> {
+    let preset_protocol = normalize_protocol_text(preset_protocol)
+        .filter(|value| is_anthropic_protocol(value.as_str()))?;
+
+    match normalize_protocol_text(stored_protocol) {
+        None => Some(preset_protocol),
+        Some(value)
+            if value.eq_ignore_ascii_case("openai")
+                && is_official_anthropic_base_url(base_url) =>
+        {
+            Some(preset_protocol)
+        }
+        _ => None,
+    }
+}
+
+fn is_anthropic_protocol(value: &str) -> bool {
+    let normalized = value.trim().to_ascii_lowercase();
+    normalized.contains("anthropic") || normalized.contains("claude")
+}
+
+fn is_official_anthropic_base_url(value: &str) -> bool {
+    value.trim().to_ascii_lowercase().contains("anthropic.com")
 }
 
 fn build_update_instance_meta(update_payload: &UpdateInstanceRequest, existing: Value) -> Value {

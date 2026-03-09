@@ -37,6 +37,7 @@ import { usePlatform } from "@/lib/platform/provider"
 import { Switch } from "@/components/ui/switch"
 import { VisuallyHidden } from "@/components/ui/visually-hidden"
 import { getIconComponent } from "@/lib/constants/provider-icons"
+import { resolveProviderProtocol } from "@/lib/providers/protocol"
 
 const CHAT_COMPLETIONS_PATH = "chat/completions"
 const RESPONSES_PATH = "responses"
@@ -45,6 +46,7 @@ export interface ProviderPresetConfig {
   slug: string
   name: string
   type: "system" | "custom"
+  provider?: string | null
   protocol?: string | null
   default_endpoint?: string | null
   brand_color?: string | null
@@ -100,13 +102,17 @@ export function ConnectProviderDrawer({
   const { create } = useCreateProviderInstance()
   const { update } = useUpdateProviderInstance()
   const { model: modelPlatform } = usePlatform()
+  const resolvedInitialProtocol = React.useMemo(
+    () => resolveProviderProtocol(initialValues?.protocol, preset?.protocol, preset?.provider, preset?.slug),
+    [initialValues?.protocol, preset?.protocol, preset?.provider, preset?.slug]
+  )
 
   const [presetSlug, setPresetSlug] = React.useState(preset?.slug || "custom")
   const [name, setName] = React.useState(initialValues?.name || preset?.name || "")
   const [description, setDescription] = React.useState(initialValues?.description || "")
   const [baseUrl, setBaseUrl] = React.useState(initialValues?.base_url || preset?.default_endpoint || "")
   const [apiKey, setApiKey] = React.useState(initialValues?.api_key || "")
-  const [protocol, setProtocol] = React.useState(initialValues?.protocol || preset?.protocol || "openai")
+  const [protocol, setProtocol] = React.useState(resolvedInitialProtocol)
   const protocolValue = (protocol || "").toLowerCase()
   const isOpenAIProtocol = protocolValue.includes("openai")
   const isAnthropicProtocol = protocolValue.includes("anthropic")
@@ -168,7 +174,12 @@ export function ConnectProviderDrawer({
   React.useEffect(() => {
     if (!isOpen) return
     const nextPresetSlug = preset?.slug || "custom"
-    const nextProtocol = initialValues?.protocol || preset?.protocol || "openai"
+    const nextProtocol = resolveProviderProtocol(
+      initialValues?.protocol,
+      preset?.protocol,
+      preset?.provider,
+      preset?.slug
+    )
     const nextIsOpenAI = (nextProtocol || "").toLowerCase().includes("openai")
     setPresetSlug(nextPresetSlug)
     setName(initialValues?.name || preset?.name || "")

@@ -126,6 +126,122 @@ async fn update_instance_persists_protocol_meta_fields() {
 }
 
 #[tokio::test]
+async fn get_instance_connection_falls_back_to_preset_provider_protocol() {
+    let store = init_store().await;
+    let now = now_rfc3339().expect("time");
+    let instance_id = Uuid::new_v4().to_string();
+
+    store
+        .replace_presets(vec![crate::modules::providers::types::ProviderPreset {
+            slug: "anthropic".to_string(),
+            name: "Anthropic".to_string(),
+            provider: "anthropic".to_string(),
+            base_url: "https://api.anthropic.com".to_string(),
+            icon: None,
+            theme_color: None,
+            category: Some("cloud".to_string()),
+            url_template: None,
+            auth_type: "api_key".to_string(),
+            auth_config: json!({}),
+            protocol_schema_version: None,
+            protocol_profiles: json!({}),
+            version: 1,
+            is_active: true,
+        }])
+        .await
+        .expect("replace presets");
+
+    sqlx::query(
+        "INSERT INTO provider_instances (
+            id, preset_slug, name, base_url, description, icon, priority, meta,
+            is_enabled, is_local, credentials_ref, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&instance_id)
+    .bind("anthropic")
+    .bind("Claude")
+    .bind("https://api.anthropic.com")
+    .bind::<Option<&str>>(None)
+    .bind::<Option<&str>>(None)
+    .bind(0_i64)
+    .bind("{}")
+    .bind(1_i64)
+    .bind(0_i64)
+    .bind(format!("db:{instance_id}"))
+    .bind(&now)
+    .bind(&now)
+    .execute(&store.pool)
+    .await
+    .expect("insert provider instance");
+
+    let connection = store
+        .get_instance_connection(&instance_id)
+        .await
+        .expect("get instance connection")
+        .expect("connection should exist");
+
+    assert_eq!(connection.protocol.as_deref(), Some("anthropic"));
+}
+
+#[tokio::test]
+async fn get_instance_connection_prefers_anthropic_preset_for_official_base_url() {
+    let store = init_store().await;
+    let now = now_rfc3339().expect("time");
+    let instance_id = Uuid::new_v4().to_string();
+
+    store
+        .replace_presets(vec![crate::modules::providers::types::ProviderPreset {
+            slug: "anthropic".to_string(),
+            name: "Anthropic".to_string(),
+            provider: "anthropic".to_string(),
+            base_url: "https://api.anthropic.com".to_string(),
+            icon: None,
+            theme_color: None,
+            category: Some("cloud".to_string()),
+            url_template: None,
+            auth_type: "api_key".to_string(),
+            auth_config: json!({}),
+            protocol_schema_version: None,
+            protocol_profiles: json!({}),
+            version: 1,
+            is_active: true,
+        }])
+        .await
+        .expect("replace presets");
+
+    sqlx::query(
+        "INSERT INTO provider_instances (
+            id, preset_slug, name, base_url, description, icon, priority, meta,
+            is_enabled, is_local, credentials_ref, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&instance_id)
+    .bind("anthropic")
+    .bind("Claude Official")
+    .bind("https://api.anthropic.com")
+    .bind::<Option<&str>>(None)
+    .bind::<Option<&str>>(None)
+    .bind(0_i64)
+    .bind(r#"{"protocol":"openai"}"#)
+    .bind(1_i64)
+    .bind(0_i64)
+    .bind(format!("db:{instance_id}"))
+    .bind(&now)
+    .bind(&now)
+    .execute(&store.pool)
+    .await
+    .expect("insert provider instance");
+
+    let connection = store
+        .get_instance_connection(&instance_id)
+        .await
+        .expect("get instance connection")
+        .expect("connection should exist");
+
+    assert_eq!(connection.protocol.as_deref(), Some("anthropic"));
+}
+
+#[tokio::test]
 async fn init_migrates_legacy_provider_models_before_index_creation() {
     let store = ProviderStore::new("sqlite::memory:")
         .await
@@ -215,6 +331,120 @@ async fn init_rebuilds_provider_presets_without_legacy_columns() {
     assert!(!names.iter().any(|name| name == "default_headers"));
     assert!(!names.iter().any(|name| name == "default_params"));
     assert!(!names.iter().any(|name| name == "capability_configs"));
+}
+
+#[tokio::test]
+async fn init_backfills_anthropic_protocol_meta_for_official_instances() {
+    let store = ProviderStore::new("sqlite::memory:")
+        .await
+        .expect("failed to create provider store");
+
+    sqlx::query(
+        "CREATE TABLE provider_presets (
+            slug TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            base_url TEXT NOT NULL,
+            icon TEXT,
+            auth_type TEXT NOT NULL DEFAULT 'api_key',
+            auth_config TEXT NOT NULL DEFAULT '{}',
+            is_active BOOLEAN DEFAULT 1
+        )",
+    )
+    .execute(&store.pool)
+    .await
+    .expect("failed to create provider_presets");
+
+    sqlx::query(
+        "CREATE TABLE provider_instances (
+            id TEXT PRIMARY KEY,
+            preset_slug TEXT NOT NULL,
+            name TEXT NOT NULL,
+            base_url TEXT NOT NULL,
+            meta TEXT NOT NULL DEFAULT '{}',
+            is_enabled BOOLEAN NOT NULL DEFAULT 1,
+            is_local BOOLEAN DEFAULT 0,
+            credentials_ref TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )",
+    )
+    .execute(&store.pool)
+    .await
+    .expect("failed to create provider_instances");
+
+    sqlx::query(
+        "INSERT INTO provider_presets (slug, name, provider, base_url, icon, auth_type, auth_config, is_active)
+         VALUES ('anthropic', 'Anthropic', 'anthropic', 'https://api.anthropic.com', NULL, 'api_key', '{}', 1)",
+    )
+    .execute(&store.pool)
+    .await
+    .expect("insert preset");
+
+    let now = now_rfc3339().expect("time");
+    let missing_protocol_id = Uuid::new_v4().to_string();
+    let wrong_protocol_id = Uuid::new_v4().to_string();
+    let proxy_protocol_id = Uuid::new_v4().to_string();
+
+    for (instance_id, base_url, meta) in [
+        (&missing_protocol_id, "https://api.anthropic.com", "{}"),
+        (
+            &wrong_protocol_id,
+            "https://api.anthropic.com/v1",
+            r#"{"protocol":"openai"}"#,
+        ),
+        (
+            &proxy_protocol_id,
+            "https://anthropic-proxy.example.com/v1",
+            r#"{"protocol":"openai"}"#,
+        ),
+    ] {
+        sqlx::query(
+            "INSERT INTO provider_instances (
+                id, preset_slug, name, base_url, meta, is_enabled, is_local, credentials_ref, created_at, updated_at
+            ) VALUES (?, 'anthropic', 'Claude', ?, ?, 1, 0, ?, ?, ?)",
+        )
+        .bind(instance_id)
+        .bind(base_url)
+        .bind(meta)
+        .bind(format!("db:{instance_id}"))
+        .bind(&now)
+        .bind(&now)
+        .execute(&store.pool)
+        .await
+        .expect("insert instance");
+    }
+
+    store.init().await.expect("provider init should backfill protocol");
+
+    let missing_protocol = store
+        .get_instance(&missing_protocol_id)
+        .await
+        .expect("fetch missing protocol instance")
+        .expect("missing protocol instance should exist");
+    let wrong_protocol = store
+        .get_instance(&wrong_protocol_id)
+        .await
+        .expect("fetch wrong protocol instance")
+        .expect("wrong protocol instance should exist");
+    let proxy_protocol = store
+        .get_instance(&proxy_protocol_id)
+        .await
+        .expect("fetch proxy protocol instance")
+        .expect("proxy protocol instance should exist");
+
+    assert_eq!(
+        missing_protocol.meta.get("protocol").and_then(|value| value.as_str()),
+        Some("anthropic")
+    );
+    assert_eq!(
+        wrong_protocol.meta.get("protocol").and_then(|value| value.as_str()),
+        Some("anthropic")
+    );
+    assert_eq!(
+        proxy_protocol.meta.get("protocol").and_then(|value| value.as_str()),
+        Some("openai")
+    );
 }
 
 #[tokio::test]

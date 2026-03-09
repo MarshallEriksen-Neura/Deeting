@@ -41,6 +41,7 @@ import type { ConversationMessage } from "@/lib/api/conversations"
 import { signAssets } from "@/lib/api/media-assets"
 import { useChatStore, type CompareCandidate, type Message } from "@/store/chat-store"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
+import { extractAssistantTextFromBlocks } from "@/lib/chat/message-blocks"
 
 function createMessageId() {
   const cryptoObj = typeof globalThis !== "undefined" ? globalThis.crypto : undefined
@@ -182,6 +183,56 @@ function extractAssistantResponseBlocks(responseBody: Record<string, unknown>): 
   }
 
   return nextBlocks
+}
+
+export function shouldAppendFinalResponseBlocks({
+  currentBlocks,
+  responseBlocks,
+  receivedStructuredBlocks,
+}: {
+  currentBlocks: MessageBlock[]
+  responseBlocks: MessageBlock[]
+  receivedStructuredBlocks: boolean
+}): boolean {
+  if (responseBlocks.length === 0) return false
+  if (receivedStructuredBlocks) return false
+
+  const responseHasOnlyText = responseBlocks.every((block) => block.type === "text")
+  if (!responseHasOnlyText) return true
+
+  const currentText = extractAssistantTextFromBlocks(currentBlocks).trim()
+  const responseText = extractAssistantTextFromBlocks(responseBlocks).trim()
+  if (!responseText) return false
+
+  return currentText !== responseText
+}
+
+export function filterIncomingStructuredBlocks({
+  currentBlocks,
+  incomingBlocks,
+  preferLocalRoute,
+  isStreaming,
+}: {
+  currentBlocks: MessageBlock[]
+  incomingBlocks: MessageBlock[]
+  preferLocalRoute: boolean
+  isStreaming: boolean
+}): MessageBlock[] {
+  if (!preferLocalRoute || !isStreaming || incomingBlocks.length === 0) {
+    return incomingBlocks
+  }
+
+  const currentText = extractAssistantTextFromBlocks(currentBlocks).trim()
+  if (!currentText) {
+    return incomingBlocks
+  }
+
+  const incomingText = extractAssistantTextFromBlocks(incomingBlocks).trim()
+  if (!incomingText || incomingText !== currentText) {
+    return incomingBlocks
+  }
+
+  return incomingBlocks.filter((block) => block.type !== "text")
 }
 
 function createErrorBlock(messageId: string, message: string): MessageBlock {
@@ -495,6 +546,7 @@ export function useChatMessagingService() {
     onRequestError: (message: string, errorCode?: string | null) => void
   }) => {
     const streamFn = preferLocalRoute ? streamDesktopLocalChatCompletion : streamChatCompletion
+    let receivedStructuredBlocks = false
     const streamedText = await streamFn(
       {
         ...payload,
@@ -542,7 +594,19 @@ export function useChatMessagingService() {
             }
             if (streamMessage.type === "blocks") {
               if (Array.isArray(streamMessage.blocks)) {
-                onBlocks(streamMessage.blocks.filter(isValidBlock) as MessageBlock[])
+                const blocks = streamMessage.blocks.filter(isValidBlock) as MessageBlock[]
+                if (blocks.length > 0) {
+                  receivedStructuredBlocks = true
+                  const filteredBlocks = filterIncomingStructuredBlocks({
+                    currentBlocks: getCurrentBlocks(),
+                    incomingBlocks: blocks,
+                    preferLocalRoute,
+                    isStreaming: streamEnabled,
+                  })
+                  if (filteredBlocks.length > 0) {
+                    onBlocks(filteredBlocks)
+                  }
+                }
               }
               return
             }
@@ -559,7 +623,13 @@ export function useChatMessagingService() {
           }
 
           const responseBlocks = extractAssistantResponseBlocks(responseBody)
-          if (responseBlocks.length > 0) {
+          if (
+            shouldAppendFinalResponseBlocks({
+              currentBlocks: getCurrentBlocks(),
+              responseBlocks,
+              receivedStructuredBlocks,
+            })
+          ) {
             onBlocks(responseBlocks)
           }
         },

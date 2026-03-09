@@ -206,6 +206,19 @@ type StreamOpenCallbacks = {
   onClose: () => void
 }
 
+export function extractStreamDeltaContent(data: unknown): string {
+  if (!data || typeof data !== "object") return ""
+  const parsedMessage = data as {
+    choices?: Array<{
+      delta?: {
+        content?: string
+      }
+    }>
+  }
+
+  return parsedMessage?.choices?.[0]?.delta?.content ?? ""
+}
+
 async function streamViaSse(
   open: (callbacks: StreamOpenCallbacks) => () => void,
   payload: ChatCompletionRequest,
@@ -254,9 +267,6 @@ async function streamViaSse(
                 delta?: {
                   content?: string
                 }
-                message?: {
-                  content?: string
-                }
               }>
             }
           | null
@@ -278,10 +288,7 @@ async function streamViaSse(
           }).catch((error) => console.warn("[ChatAPI] Local log backfill failed", error))
         }
 
-        const delta =
-          parsedMessage?.choices?.[0]?.delta?.content ??
-          parsedMessage?.choices?.[0]?.message?.content ??
-          ""
+        const delta = extractStreamDeltaContent(parsed)
         if (delta) {
           fullText += delta
           handlers.onDelta?.(delta, fullText)

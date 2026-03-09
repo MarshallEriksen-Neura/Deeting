@@ -478,6 +478,7 @@ impl ProviderStore {
         .execute(&self.pool)
         .await?;
 
+        self.normalize_provider_instance_protocol_data().await?;
         self.normalize_model_capability_data().await?;
         self.migrate_legacy_secrets_to_keychain().await?;
 
