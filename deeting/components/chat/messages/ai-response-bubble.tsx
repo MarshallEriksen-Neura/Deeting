@@ -50,6 +50,13 @@ type SkillInstallInsight =
       indexedTools: number | null;
     };
 
+type CodeModeApprovalInsight = {
+  state: "pending_approval";
+  language: string | null;
+  approvalToken: string | null;
+  expiresInMs: number | null;
+};
+
 function toRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object") return null;
   return value as Record<string, unknown>;
@@ -162,6 +169,19 @@ function extractSkillInstallInsight(toolName?: string, result?: unknown): SkillI
   return null;
 }
 
+function extractCodeModeApprovalInsight(toolName?: string, result?: unknown): CodeModeApprovalInsight | null {
+  if (toolName !== "execute_code_plan") return null;
+  const payload = toRecord(result);
+  if (!payload) return null;
+  if (asTrimmedString(payload.action) !== "code_mode_pending_approval") return null;
+  return {
+    state: "pending_approval",
+    language: asTrimmedString(payload.language),
+    approvalToken: asTrimmedString(payload.approval_token),
+    expiresInMs: toNumber(payload.expires_in_ms),
+  };
+}
+
 const SkillInstallStatusCard = memo<{ insight: SkillInstallInsight }>(function SkillInstallStatusCard({
   insight,
 }) {
@@ -208,6 +228,32 @@ const SkillInstallStatusCard = memo<{ insight: SkillInstallInsight }>(function S
     </div>
   );
 });
+
+const CodeModeApprovalStatusCard = memo<{ insight: CodeModeApprovalInsight }>(
+  function CodeModeApprovalStatusCard({ insight }) {
+    return (
+      <div className="rounded-lg border border-amber-300 bg-amber-50/70 p-3 dark:border-amber-900 dark:bg-amber-900/20">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="text-xs font-semibold text-amber-800 dark:text-amber-200">
+            Local code execution pending approval
+          </div>
+          <Badge variant="outline" className="h-5 text-[10px] font-normal text-amber-700 dark:text-amber-300">
+            APPROVAL
+          </Badge>
+        </div>
+        <div className="space-y-1 text-[11px] text-amber-900/90 dark:text-amber-200/90">
+          {insight.language ? <div>Language: <span className="font-mono">{insight.language}</span></div> : null}
+          {insight.approvalToken ? (
+            <div>Token: <span className="font-mono">{insight.approvalToken.slice(0, 8)}...</span></div>
+          ) : null}
+          {insight.expiresInMs !== null ? (
+            <div>Expires: <span className="font-mono">{Math.round(insight.expiresInMs / 1000)}s</span></div>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+);
 
 function ToolDebugPanel({ debug }: { debug?: Record<string, unknown> }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -995,6 +1041,10 @@ const ToolResultBlock = memo<{
     () => extractSkillInstallInsight(name, result),
     [name, result]
   );
+  const codeModeApprovalInsight = useMemo(
+    () => extractCodeModeApprovalInsight(name, result),
+    [name, result]
+  );
 
   // Special Handling for System Skills (Live Tasks)
   if (
@@ -1054,6 +1104,8 @@ const ToolResultBlock = memo<{
           )}>
             {skillInstallInsight ? (
               <SkillInstallStatusCard insight={skillInstallInsight} />
+            ) : codeModeApprovalInsight ? (
+              <CodeModeApprovalStatusCard insight={codeModeApprovalInsight} />
             ) : content ? (
               <div className="overflow-x-auto">
                 <MarkdownViewer content={content} className="chat-markdown chat-markdown-assistant text-sm" />

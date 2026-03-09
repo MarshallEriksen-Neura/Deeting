@@ -1,0 +1,78 @@
+{
+  "cases": [
+    {
+      "actual_domain": "web",
+      "actual_intent": "web_fetch",
+      "expected_lane": "callable_now",
+      "expected_name": "search_web",
+      "false_positive": false,
+      "found_in_top3": true,
+      "found_rank": 1,
+      "lane_match": true,
+      "query": "search_web 抓取网页标题",
+      "top1_name": "search_web"
+    },
+    {
+      "actual_domain": "weather",
+      "actual_intent": "install_or_enable",
+      "expected_lane": "installable",
+      "expected_name": "Weather Skill",
+      "false_positive": false,
+      "found_in_top3": true,
+      "found_rank": 2,
+      "lane_match": true,
+      "query": "Weather Skill 天气预报降雨提醒",
+      "top1_name": "stock_quotes"
+    },
+    {
+      "actual_domain": "finance",
+      "actual_intent": "realtime_lookup",
+      "expected_lane": "installable",
+      "expected_name": "stock_quotes",
+      "false_positive": false,
+      "found_in_top3": true,
+      "found_rank": 2,
+      "lane_match": true,
+      "query": "stock_quotes 股票实时行情",
+      "top1_name": "Weather Skill"
+    },
+    {
+      "actual_domain": "general",
+      "actual_intent": "install_or_enable",
+      "expected_lane": "callable_now",
+      "expected_name": "sys_submit_onboarding_request",
+      "false_positive": false,
+      "found_in_top3": true,
+      "found_rank": 2,
+      "lane_match": true,
+      "query": "sys_submit_onboarding_request 安装本地 skill",
+      "top1_name": "search_web"
+    },
+    {
+      "actual_domain": "general",
+      "actual_intent": "general_lookup",
+      "expected_lane": "callable_now",
+      "expected_name": "execute_code_plan",
+      "false_positive": false,
+      "found_in_top3": true,
+      "found_rank": 2,
+      "lane_match": true,
+      "query": "execute_code_plan python code",
+      "top1_name": "search_web"
+    }
+  ],
+  "domain_accuracy": 1.0,
+  "domain_case_count": 2,
+  "domain_hits": 2,
+  "false_positive_cases": 0,
+  "false_positive_rate": 0.0,
+  "intent_accuracy": 1.0,
+  "intent_hits": 5,
+  "lane_accuracy": 1.0,
+  "lane_hits": 5,
+  "top1_accuracy": 0.2,
+  "top1_hits": 1,
+  "top3_coverage": 1.0,
+  "top3_hits": 5,
+  "total_cases": 5
+}

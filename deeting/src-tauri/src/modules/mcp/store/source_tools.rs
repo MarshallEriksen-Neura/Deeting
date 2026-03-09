@@ -946,10 +946,9 @@ impl McpStore {
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
 
-            return self
-                .get_source(&existing.id)
-                .await?
-                .ok_or_else(|| McpError::NotFound("skill source missing after update".to_string()));
+            return self.get_source(&existing.id).await?.ok_or_else(|| {
+                McpError::NotFound("skill source missing after update".to_string())
+            });
         }
         self.insert_source(NewSource {
             name: name.to_string(),

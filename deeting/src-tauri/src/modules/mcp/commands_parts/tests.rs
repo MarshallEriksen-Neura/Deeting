@@ -2,7 +2,9 @@
 mod tests {
     use super::*;
     use axum::{extract::State as AxumState, routing::{get, post}, Json, Router};
+    use serde::Deserialize;
     use std::collections::HashMap;
+    use std::path::Path;
     use std::path::PathBuf;
     use std::time::Duration;
     use tokio::net::TcpListener;
@@ -339,6 +341,345 @@ mod tests {
         (format!("http://{}", addr), server)
     }
 
+    #[derive(Clone, Debug, Deserialize)]
+    struct SearchSdkBenchmarkCase {
+        query: String,
+        embedding: Vec<f32>,
+        expected_name: String,
+        expected_lane: String,
+        expected_intent: String,
+        expected_domain: Option<String>,
+        forbidden_lanes: Vec<String>,
+    }
+
+    #[derive(Debug)]
+    struct SearchSdkBenchmarkCaseResult {
+        query: String,
+        expected_name: String,
+        expected_lane: String,
+        top1_name: Option<String>,
+        found_rank: Option<usize>,
+        found_in_top3: bool,
+        lane_match: bool,
+        actual_intent: Option<String>,
+        actual_domain: Option<String>,
+        false_positive: bool,
+    }
+
+    #[derive(Debug)]
+    struct SearchSdkBenchmarkSummary {
+        total_cases: usize,
+        top1_hits: usize,
+        top3_hits: usize,
+        lane_hits: usize,
+        intent_hits: usize,
+        domain_hits: usize,
+        domain_case_count: usize,
+        false_positive_cases: usize,
+        case_results: Vec<SearchSdkBenchmarkCaseResult>,
+    }
+
+    impl SearchSdkBenchmarkSummary {
+        fn top1_accuracy(&self) -> f64 {
+            ratio(self.top1_hits, self.total_cases)
+        }
+
+        fn top3_coverage(&self) -> f64 {
+            ratio(self.top3_hits, self.total_cases)
+        }
+
+        fn lane_accuracy(&self) -> f64 {
+            ratio(self.lane_hits, self.total_cases)
+        }
+
+        fn intent_accuracy(&self) -> f64 {
+            ratio(self.intent_hits, self.total_cases)
+        }
+
+        fn domain_accuracy(&self) -> f64 {
+            ratio(self.domain_hits, self.domain_case_count)
+        }
+
+        fn false_positive_rate(&self) -> f64 {
+            ratio(self.false_positive_cases, self.total_cases)
+        }
+
+        fn as_debug_json(&self) -> serde_json::Value {
+            serde_json::json!({
+                "total_cases": self.total_cases,
+                "top1_hits": self.top1_hits,
+                "top1_accuracy": self.top1_accuracy(),
+                "top3_hits": self.top3_hits,
+                "top3_coverage": self.top3_coverage(),
+                "lane_hits": self.lane_hits,
+                "lane_accuracy": self.lane_accuracy(),
+                "intent_hits": self.intent_hits,
+                "intent_accuracy": self.intent_accuracy(),
+                "domain_hits": self.domain_hits,
+                "domain_case_count": self.domain_case_count,
+                "domain_accuracy": self.domain_accuracy(),
+                "false_positive_cases": self.false_positive_cases,
+                "false_positive_rate": self.false_positive_rate(),
+                "cases": self.case_results.iter().map(|item| serde_json::json!({
+                    "query": item.query,
+                    "expected_name": item.expected_name,
+                    "expected_lane": item.expected_lane,
+                    "top1_name": item.top1_name,
+                    "found_rank": item.found_rank,
+                    "found_in_top3": item.found_in_top3,
+                    "lane_match": item.lane_match,
+                    "actual_intent": item.actual_intent,
+                    "actual_domain": item.actual_domain,
+                    "false_positive": item.false_positive,
+                })).collect::<Vec<_>>()
+            })
+        }
+    }
+
+    fn ratio(numerator: usize, denominator: usize) -> f64 {
+        if denominator == 0 {
+            0.0
+        } else {
+            numerator as f64 / denominator as f64
+        }
+    }
+
+    fn default_search_sdk_benchmark_cases() -> Vec<SearchSdkBenchmarkCase> {
+        serde_json::from_str(include_str!("fixtures/search_sdk_benchmark_cases.json"))
+            .expect("parse search_sdk benchmark fixtures")
+    }
+
+    fn write_search_sdk_benchmark_summary(
+        path: &Path,
+        summary: &SearchSdkBenchmarkSummary,
+    ) -> std::io::Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let payload = serde_json::to_vec_pretty(&summary.as_debug_json())
+            .expect("serialize benchmark summary");
+        std::fs::write(path, payload)
+    }
+
+    fn maybe_export_search_sdk_benchmark_summary_from_env(
+        summary: &SearchSdkBenchmarkSummary,
+    ) -> Option<PathBuf> {
+        let output_path = std::env::var("DEETING_SEARCH_SDK_BENCHMARK_SUMMARY_PATH")
+            .ok()
+            .map(PathBuf::from)?;
+        if output_path.as_os_str().is_empty() {
+            return None;
+        }
+        write_search_sdk_benchmark_summary(&output_path, summary)
+            .expect("write benchmark summary artifact");
+        Some(output_path)
+    }
+
+    async fn seed_search_sdk_benchmark_catalog(
+        store: &crate::modules::mcp::store::McpStore,
+        memory_state: &crate::modules::memory::MemoryState,
+    ) {
+        store
+            .upsert_local_skill_install_state(
+                "skill.web-tools",
+                Some("1.0.0"),
+                true,
+                Some("python"),
+                "{\"id\":\"skill.web-tools\"}",
+                "/tmp/skill.web-tools",
+                None,
+            )
+            .await
+            .expect("enable local web skill");
+        store
+            .upsert_local_skill_install_state(
+                "skill.stocks",
+                Some("1.0.0"),
+                false,
+                Some("python"),
+                "{\"id\":\"skill.stocks\"}",
+                "/tmp/skill.stocks",
+                None,
+            )
+            .await
+            .expect("insert disabled local stock skill");
+
+        memory_state
+            .store
+            .upsert_asset(
+                "tool.search_web".to_string(),
+                "search_web".to_string(),
+                "抓取网页内容并提取标题".to_string(),
+                "tool".to_string(),
+                "mcp".to_string(),
+                Some("skill.web-tools".to_string()),
+                vec![1.0, 0.0, 0.0, 0.0, 0.0],
+                Some(serde_json::json!({
+                    "read_only": true,
+                    "permission_scope": ["network_read"],
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "url": {"type": "string", "description": "Page URL", "example": "https://example.com"},
+                            "timeout": {"type": "integer", "default": 30}
+                        },
+                        "required": ["url"]
+                    }
+                })),
+            )
+            .await
+            .expect("insert web tool asset");
+        memory_state
+            .store
+            .upsert_asset(
+                "skill.weather".to_string(),
+                "Weather Skill".to_string(),
+                "查询天气预报与降雨提醒".to_string(),
+                "skill".to_string(),
+                "cloud_mirror".to_string(),
+                None,
+                vec![0.0, 1.0, 0.0, 0.0, 0.0],
+                Some(serde_json::json!({"id": "skill.weather"})),
+            )
+            .await
+            .expect("insert weather cloud skill asset");
+        memory_state
+            .store
+            .upsert_asset(
+                "tool.stock_quotes".to_string(),
+                "stock_quotes".to_string(),
+                "查询股票实时行情".to_string(),
+                "tool".to_string(),
+                "mcp".to_string(),
+                Some("skill.stocks".to_string()),
+                vec![0.0, 0.0, 1.0, 0.0, 0.0],
+                None,
+            )
+            .await
+            .expect("insert disabled stock tool asset");
+    }
+
+    fn lane_contains_name(result: &serde_json::Value, lane: &str, name: &str) -> bool {
+        result
+            .get(lane)
+            .and_then(|value| value.as_array())
+            .map(|items| items.iter().any(|item| item["name"] == serde_json::json!(name)))
+            .unwrap_or(false)
+    }
+
+    async fn run_search_sdk_benchmark_suite(
+        test_name: &str,
+        cases: &[SearchSdkBenchmarkCase],
+    ) -> SearchSdkBenchmarkSummary {
+        let vectors = cases
+            .iter()
+            .map(|case| (case.query.to_lowercase(), case.embedding.clone()))
+            .collect::<HashMap<_, _>>();
+        let (base_url, server_handle) = start_mock_embedding_server(vectors).await;
+        let provider_state = create_test_provider_state(test_name, &base_url).await;
+        let memory_state = create_test_memory_state(test_name, 5).await;
+        let store = create_test_store(test_name).await;
+        seed_search_sdk_benchmark_catalog(&store, &memory_state).await;
+
+        let mut top1_hits = 0_usize;
+        let mut top3_hits = 0_usize;
+        let mut lane_hits = 0_usize;
+        let mut intent_hits = 0_usize;
+        let mut domain_hits = 0_usize;
+        let mut domain_case_count = 0_usize;
+        let mut false_positive_cases = 0_usize;
+        let mut case_results = Vec::with_capacity(cases.len());
+
+        for case in cases {
+            let result = build_local_sdk_search_result_with_runtime(
+                &store,
+                &provider_state.embedding,
+                memory_state.service.as_ref(),
+                &case.query,
+                8,
+            )
+            .await;
+            let lane_items = result
+                .get(&case.expected_lane)
+                .and_then(|value| value.as_array())
+                .cloned()
+                .unwrap_or_default();
+            let found_rank = lane_items
+                .iter()
+                .position(|item| item["name"] == serde_json::json!(case.expected_name))
+                .map(|index| index + 1);
+            let top1_name = lane_items
+                .first()
+                .and_then(|item| item.get("name"))
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string());
+            let found_in_top3 = found_rank.map(|rank| rank <= 3).unwrap_or(false);
+            let lane_match = found_rank.is_some();
+            let actual_intent = result
+                .get("normalized_query")
+                .and_then(|value| value.get("intent"))
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string());
+            let actual_domain = result
+                .get("normalized_query")
+                .and_then(|value| value.get("domain"))
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string());
+            let false_positive = case.forbidden_lanes.iter().any(|lane| {
+                lane_contains_name(&result, lane, &case.expected_name)
+            });
+
+            if top1_name.as_deref() == Some(case.expected_name.as_str()) {
+                top1_hits += 1;
+            }
+            if found_in_top3 {
+                top3_hits += 1;
+            }
+            if lane_match {
+                lane_hits += 1;
+            }
+            if actual_intent.as_deref() == Some(case.expected_intent.as_str()) {
+                intent_hits += 1;
+            }
+            if let Some(expected_domain) = case.expected_domain.as_deref() {
+                domain_case_count += 1;
+                if actual_domain.as_deref() == Some(expected_domain) {
+                    domain_hits += 1;
+                }
+            }
+            if false_positive {
+                false_positive_cases += 1;
+            }
+
+            case_results.push(SearchSdkBenchmarkCaseResult {
+                query: case.query.clone(),
+                expected_name: case.expected_name.clone(),
+                expected_lane: case.expected_lane.clone(),
+                top1_name,
+                found_rank,
+                found_in_top3,
+                lane_match,
+                actual_intent,
+                actual_domain,
+                false_positive,
+            });
+        }
+
+        server_handle.abort();
+
+        SearchSdkBenchmarkSummary {
+            total_cases: cases.len(),
+            top1_hits,
+            top3_hits,
+            lane_hits,
+            intent_hits,
+            domain_hits,
+            domain_case_count,
+            false_positive_cases,
+            case_results,
+        }
+    }
+
     #[test]
     fn extract_chat_tool_calls_works() {
         let payload = serde_json::json!({
@@ -393,6 +734,7 @@ mod tests {
         assert!(names.contains(&"activate_assistant"));
         assert!(names.contains(&"deactivate_assistant"));
         assert!(names.contains(&"execute_code_plan"));
+        assert!(names.contains(&"sys_submit_onboarding_request"));
     }
 
     #[tokio::test]
@@ -429,7 +771,18 @@ mod tests {
                 "mcp".to_string(),
                 Some("skill.web-tools".to_string()),
                 vec![1.0, 0.0, 0.0],
-                None,
+                Some(serde_json::json!({
+                    "read_only": true,
+                    "permission_scope": ["network_read"],
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "url": {"type": "string", "description": "Page URL", "example": "https://example.com"},
+                            "timeout": {"type": "integer", "default": 30}
+                        },
+                        "required": ["url"]
+                    }
+                })),
             )
             .await
             .expect("insert tool asset");
@@ -439,19 +792,44 @@ mod tests {
             &provider_state.embedding,
             memory_state.service.as_ref(),
             query,
+            8,
         )
         .await;
 
-        let tools = result["tools"].as_array().expect("tools array");
-        let matched = tools
+        let callable = result["callable_now"].as_array().expect("callable_now array");
+        let matched = callable
             .iter()
             .find(|item| item["name"] == serde_json::json!("search_web"))
             .expect("matched tool");
-        assert_eq!(result["format_version"], serde_json::json!("sdk_toolcard.v2"));
+        assert_eq!(result["format_version"], serde_json::json!("sdk_capability_search.v1"));
         assert_eq!(matched["source"], serde_json::json!("local_mcp"));
-        assert_eq!(matched["callable"], serde_json::json!(true));
+        assert_eq!(matched["callable_now"], serde_json::json!(true));
         assert_eq!(matched["pkg_name"], serde_json::json!("skill.web-tools"));
-        assert_eq!(result["skill_install_gate"]["filtered_out_count"], serde_json::json!(0));
+        assert_eq!(matched["recommended_action"], serde_json::json!("execute"));
+        assert_eq!(result["normalized_query"]["intent"], serde_json::json!("web_fetch"));
+        assert_eq!(matched["required_parameters"], serde_json::json!(["url"]));
+        assert_eq!(matched["parameters"][0]["name"], serde_json::json!("url"));
+        assert!(matched["signature"]
+            .as_str()
+            .expect("signature")
+            .contains("search_web(url:string"));
+        assert!(matched["python_stub"]
+            .as_str()
+            .expect("python stub")
+            .contains("def search_web(url: str, timeout: int = 30)"));
+        assert_eq!(
+            matched["example_arguments"]["url"],
+            serde_json::json!("https://example.com")
+        );
+        assert_eq!(matched["output_schema"]["type"], serde_json::json!("object"));
+        assert_eq!(matched["risk_level"], serde_json::json!("MEDIUM"));
+        assert_eq!(matched["read_only"], serde_json::json!(true));
+        assert_eq!(matched["mutating"], serde_json::json!(false));
+        assert!(matched["permission_scope"]
+            .as_array()
+            .expect("permission scope")
+            .iter()
+            .any(|item| item == "source:mcp"));
 
         server_handle.abort();
     }
@@ -488,19 +866,21 @@ mod tests {
             &provider_state.embedding,
             memory_state.service.as_ref(),
             query,
+            8,
         )
         .await;
 
-        let install_hints = result["install_hints"]
+        let installable = result["installable"]
             .as_array()
-            .expect("install hints array");
-        let hint = install_hints
+            .expect("installable array");
+        let hint = installable
             .iter()
             .find(|item| item["name"] == serde_json::json!("Weather Skill"))
             .expect("weather skill hint");
-        assert_eq!(hint["needs_provisioning"], serde_json::json!(true));
-        assert_eq!(hint["callable"], serde_json::json!(false));
+        assert_eq!(hint["install_required"], serde_json::json!(true));
+        assert_eq!(hint["callable_now"], serde_json::json!(false));
         assert_eq!(hint["asset_type"], serde_json::json!("skill"));
+        assert_eq!(hint["recommended_action"], serde_json::json!("install_skill"));
 
         server_handle.abort();
     }
@@ -549,14 +929,303 @@ mod tests {
             &provider_state.embedding,
             memory_state.service.as_ref(),
             query,
+            8,
         )
         .await;
 
-        let tools = result["tools"].as_array().expect("tools array");
-        assert!(tools
+        let callable = result["callable_now"].as_array().expect("callable_now array");
+        assert!(callable
             .iter()
             .all(|item| item["name"] != serde_json::json!("stock_quotes")));
-        assert_eq!(result["skill_install_gate"]["filtered_out_count"], serde_json::json!(1));
+        let installable = result["installable"]
+            .as_array()
+            .expect("installable array");
+        let disabled = installable
+            .iter()
+            .find(|item| item["name"] == serde_json::json!("stock_quotes"))
+            .expect("disabled stock tool surfaced as installable");
+        assert_eq!(disabled["activation_required"], serde_json::json!(true));
+        assert_eq!(disabled["recommended_action"], serde_json::json!("enable_skill"));
+
+        server_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn search_sdk_regression_matrix_preserves_lanes_and_intents() {
+        let web_query = "帮我抓取网页并提取标题";
+        let weather_skill_query = "帮我找个天气 skill";
+        let stock_query = "帮我查股票行情";
+        let realtime_weather_query = "天津今日天气";
+        let (base_url, server_handle) = start_mock_embedding_server(HashMap::from([
+            (web_query.to_lowercase(), vec![1.0, 0.0, 0.0, 0.0]),
+            (weather_skill_query.to_lowercase(), vec![0.0, 1.0, 0.0, 0.0]),
+            (stock_query.to_lowercase(), vec![0.0, 0.0, 1.0, 0.0]),
+            (
+                realtime_weather_query.to_lowercase(),
+                vec![0.0, 1.0, 0.0, 0.0],
+            ),
+        ]))
+        .await;
+        let provider_state = create_test_provider_state("sdk-regression-matrix", &base_url).await;
+        let memory_state = create_test_memory_state("sdk-regression-matrix", 4).await;
+        let store = create_test_store("sdk-regression-matrix").await;
+
+        store
+            .upsert_local_skill_install_state(
+                "skill.web-tools",
+                Some("1.0.0"),
+                true,
+                Some("python"),
+                "{\"id\":\"skill.web-tools\"}",
+                "/tmp/skill.web-tools",
+                None,
+            )
+            .await
+            .expect("enable local web skill");
+        store
+            .upsert_local_skill_install_state(
+                "skill.stocks",
+                Some("1.0.0"),
+                false,
+                Some("python"),
+                "{\"id\":\"skill.stocks\"}",
+                "/tmp/skill.stocks",
+                None,
+            )
+            .await
+            .expect("insert disabled local stock skill");
+        memory_state
+            .store
+            .upsert_asset(
+                "tool.search_web".to_string(),
+                "search_web".to_string(),
+                "抓取网页内容并提取标题".to_string(),
+                "tool".to_string(),
+                "mcp".to_string(),
+                Some("skill.web-tools".to_string()),
+                vec![1.0, 0.0, 0.0, 0.0],
+                None,
+            )
+            .await
+            .expect("insert web tool asset");
+        memory_state
+            .store
+            .upsert_asset(
+                "skill.weather".to_string(),
+                "Weather Skill".to_string(),
+                "查询天气预报与降雨提醒".to_string(),
+                "skill".to_string(),
+                "cloud_mirror".to_string(),
+                None,
+                vec![0.0, 1.0, 0.0, 0.0],
+                Some(serde_json::json!({"id": "skill.weather"})),
+            )
+            .await
+            .expect("insert weather cloud skill asset");
+        memory_state
+            .store
+            .upsert_asset(
+                "tool.stock_quotes".to_string(),
+                "stock_quotes".to_string(),
+                "查询股票实时行情".to_string(),
+                "tool".to_string(),
+                "mcp".to_string(),
+                Some("skill.stocks".to_string()),
+                vec![0.0, 0.0, 1.0, 0.0],
+                None,
+            )
+            .await
+            .expect("insert disabled stock tool asset");
+
+        let web_result = build_local_sdk_search_result_with_runtime(
+            &store,
+            &provider_state.embedding,
+            memory_state.service.as_ref(),
+            web_query,
+            8,
+        )
+        .await;
+        assert_eq!(
+            web_result["normalized_query"]["intent"],
+            serde_json::json!("web_fetch")
+        );
+        assert!(web_result["callable_now"]
+            .as_array()
+            .expect("web callable array")
+            .iter()
+            .any(|item| item["name"] == serde_json::json!("search_web")));
+
+        let weather_skill_result = build_local_sdk_search_result_with_runtime(
+            &store,
+            &provider_state.embedding,
+            memory_state.service.as_ref(),
+            weather_skill_query,
+            8,
+        )
+        .await;
+        assert_eq!(
+            weather_skill_result["normalized_query"]["intent"],
+            serde_json::json!("install_or_enable")
+        );
+        assert!(weather_skill_result["installable"]
+            .as_array()
+            .expect("weather installable array")
+            .iter()
+            .any(|item| {
+                item["name"] == serde_json::json!("Weather Skill")
+                    && item["recommended_action"] == serde_json::json!("install_skill")
+            }));
+
+        let stock_result = build_local_sdk_search_result_with_runtime(
+            &store,
+            &provider_state.embedding,
+            memory_state.service.as_ref(),
+            stock_query,
+            8,
+        )
+        .await;
+        assert_eq!(
+            stock_result["normalized_query"]["domain"],
+            serde_json::json!("finance")
+        );
+        assert!(stock_result["installable"]
+            .as_array()
+            .expect("stock installable array")
+            .iter()
+            .any(|item| {
+                item["name"] == serde_json::json!("stock_quotes")
+                    && item["recommended_action"] == serde_json::json!("enable_skill")
+            }));
+
+        let realtime_weather_result = build_local_sdk_search_result_with_runtime(
+            &store,
+            &provider_state.embedding,
+            memory_state.service.as_ref(),
+            realtime_weather_query,
+            8,
+        )
+        .await;
+        assert_eq!(
+            realtime_weather_result["normalized_query"]["domain"],
+            serde_json::json!("weather")
+        );
+        assert_eq!(
+            realtime_weather_result["normalized_query"]["intent"],
+            serde_json::json!("realtime_lookup")
+        );
+        assert!(realtime_weather_result["installable"]
+            .as_array()
+            .expect("realtime weather installable array")
+            .iter()
+            .any(|item| item["name"] == serde_json::json!("Weather Skill")));
+
+        server_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn search_sdk_benchmark_replay_suite_meets_quality_thresholds() {
+        let cases = default_search_sdk_benchmark_cases();
+        let summary = run_search_sdk_benchmark_suite("sdk-benchmark-suite", &cases).await;
+        let _ = maybe_export_search_sdk_benchmark_summary_from_env(&summary);
+        let debug_payload = serde_json::to_string_pretty(&summary.as_debug_json())
+            .expect("serialize benchmark summary");
+
+        assert_eq!(summary.total_cases, cases.len(), "{debug_payload}");
+        assert!(summary.top1_accuracy() >= 0.20, "{debug_payload}");
+        assert_eq!(summary.top3_hits, summary.total_cases, "{debug_payload}");
+        assert_eq!(summary.lane_hits, summary.total_cases, "{debug_payload}");
+        assert_eq!(summary.intent_hits, summary.total_cases, "{debug_payload}");
+        assert_eq!(summary.domain_hits, summary.domain_case_count, "{debug_payload}");
+        assert_eq!(summary.false_positive_cases, 0, "{debug_payload}");
+    }
+
+    #[test]
+    fn search_sdk_benchmark_fixture_file_parses() {
+        let cases = default_search_sdk_benchmark_cases();
+        assert!(!cases.is_empty());
+        assert_eq!(cases[0].expected_name, "search_web");
+    }
+
+    #[test]
+    fn write_search_sdk_benchmark_summary_emits_machine_readable_json() {
+        let summary = SearchSdkBenchmarkSummary {
+            total_cases: 2,
+            top1_hits: 1,
+            top3_hits: 2,
+            lane_hits: 2,
+            intent_hits: 2,
+            domain_hits: 1,
+            domain_case_count: 1,
+            false_positive_cases: 0,
+            case_results: vec![SearchSdkBenchmarkCaseResult {
+                query: "demo query".to_string(),
+                expected_name: "search_web".to_string(),
+                expected_lane: "callable_now".to_string(),
+                top1_name: Some("search_web".to_string()),
+                found_rank: Some(1),
+                found_in_top3: true,
+                lane_match: true,
+                actual_intent: Some("web_fetch".to_string()),
+                actual_domain: Some("web".to_string()),
+                false_positive: false,
+            }],
+        };
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "deeting-search-sdk-benchmark-summary-{}.json",
+            Uuid::new_v4()
+        ));
+
+        write_search_sdk_benchmark_summary(&path, &summary).expect("write summary file");
+
+        let written = std::fs::read_to_string(&path).expect("read summary file");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&written).expect("parse summary json");
+        assert_eq!(parsed["top1_accuracy"], serde_json::json!(0.5));
+        assert_eq!(parsed["top3_coverage"], serde_json::json!(1.0));
+        assert_eq!(parsed["cases"][0]["expected_name"], serde_json::json!("search_web"));
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn search_sdk_surfaces_core_onboarding_and_execution_tools() {
+        let query = "帮我安装一个本地 skill 并执行代码计划";
+        let (base_url, server_handle) = start_mock_embedding_server(HashMap::from([(
+            query.to_lowercase(),
+            vec![0.0, 0.0, 0.0],
+        )]))
+        .await;
+        let provider_state = create_test_provider_state("sdk-core-tools", &base_url).await;
+        let memory_state = create_test_memory_state("sdk-core-tools", 3).await;
+        let store = create_test_store("sdk-core-tools").await;
+
+        let result = build_local_sdk_search_result_with_runtime(
+            &store,
+            &provider_state.embedding,
+            memory_state.service.as_ref(),
+            query,
+            8,
+        )
+        .await;
+
+        let callable = result["callable_now"].as_array().expect("callable array");
+        let onboarding = callable
+            .iter()
+            .find(|item| item["name"] == serde_json::json!("sys_submit_onboarding_request"))
+            .expect("onboarding core tool");
+        let execute = callable
+            .iter()
+            .find(|item| item["name"] == serde_json::json!("execute_code_plan"))
+            .expect("execute core tool");
+        assert_eq!(onboarding["risk_level"], serde_json::json!("HIGH"));
+        assert_eq!(onboarding["mutating"], serde_json::json!(true));
+        assert_eq!(execute["risk_level"], serde_json::json!("HIGH"));
+        assert!(execute["permission_scope"]
+            .as_array()
+            .expect("execute permission scope")
+            .iter()
+            .any(|item| item == "sandbox_execution"));
 
         server_handle.abort();
     }

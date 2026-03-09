@@ -33,7 +33,7 @@ export default function RootLayout({
             <DownloadAppModal />
             {isTauri && <DesktopUpdateGuard />}
             {isTauri && isDesktopUserCloudSyncEnabled && <BridgeMonitor />}
-            {isTauri && isDesktopUserCloudSyncEnabled && <ToolApprovalDialog />}
+            {isTauri && <ToolApprovalDialog />}
           </ThemeProvider>
         </PlatformProvider>
       </body>

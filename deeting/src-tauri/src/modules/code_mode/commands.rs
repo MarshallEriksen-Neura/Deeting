@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::time::Instant;
 
 use serde_json::{json, Value};
@@ -124,6 +125,11 @@ pub async fn replay_local_code_mode_execution(
             dry_run: payload.dry_run,
             context: None,
             max_calls: Some(16),
+            allowed_tools: source
+                .request_meta
+                .get("allowed_tools")
+                .and_then(value_to_string_vec),
+            capability_snapshot: source.request_meta.get("capability_snapshot").cloned(),
         },
         None,
     )
@@ -136,6 +142,130 @@ pub async fn replay_local_code_mode_execution(
         source_execution_id: source.execution_id,
         result,
     })
+}
+
+#[tauri::command]
+pub async fn approve_pending_local_code_mode_execution(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    approval_token: Option<String>,
+    #[allow(non_snake_case)] approvalToken: Option<String>,
+) -> Result<Value, String> {
+    let token = approval_token
+        .or(approvalToken)
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "approval token is required".to_string())?;
+    let pending = state
+        .code_mode
+        .pending_local_approvals
+        .write()
+        .await
+        .remove(&token)
+        .ok_or_else(|| "approval token not found".to_string())?;
+    let session_id = pending.chat_ctx.session_id.clone();
+    let model_id = pending.model_connection.model_id.clone();
+    let provider_model_id = pending.model_connection.provider_model_id.clone();
+
+    let now_unix_ms = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+    if pending.expires_at_unix_ms < now_unix_ms as i128 {
+        return Err("approval token expired; please retry the action".to_string());
+    }
+
+    let response = crate::modules::mcp::commands::runtime::approve_pending_local_code_mode_execution(
+        &app,
+        &state,
+        pending,
+    )
+    .await?;
+
+    if let Some((response_text, assistant_blocks)) =
+        extract_local_chat_approval_message(&response)
+    {
+        state
+            .mcp
+            .store
+            .append_local_conversation_message(
+                crate::modules::mcp::types::CreateConversationMessageRequest {
+                    session_id,
+                    role: "assistant".to_string(),
+                    content: response_text,
+                    name: None,
+                    meta_info: build_local_chat_approval_meta(
+                        assistant_blocks,
+                        &model_id,
+                        &provider_model_id,
+                    ),
+                    is_truncated: Some(false),
+                    parent_message_id: None,
+                },
+            )
+            .await
+            .map_err(|err| err.to_string())?;
+    }
+
+    Ok(response)
+}
+
+#[tauri::command]
+pub async fn reject_pending_local_code_mode_execution(
+    state: State<'_, AppState>,
+    approval_token: Option<String>,
+    #[allow(non_snake_case)] approvalToken: Option<String>,
+) -> Result<bool, String> {
+    let token = approval_token
+        .or(approvalToken)
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "approval token is required".to_string())?;
+    Ok(state
+        .code_mode
+        .pending_local_approvals
+        .write()
+        .await
+        .remove(&token)
+        .is_some())
+}
+
+fn extract_local_chat_approval_message(payload: &Value) -> Option<(String, Vec<Value>)> {
+    let response = payload.get("response")?;
+    let response_text = response
+        .get("content")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let mut assistant_blocks = payload
+        .get("blocks")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    if !response_text.trim().is_empty() {
+        assistant_blocks.push(json!({
+            "type": "text",
+            "content": response_text,
+        }));
+    }
+    if response_text.trim().is_empty() && assistant_blocks.is_empty() {
+        return None;
+    }
+    Some((response_text, assistant_blocks))
+}
+
+fn build_local_chat_approval_meta(
+    assistant_blocks: Vec<Value>,
+    model_id: &str,
+    provider_model_id: &str,
+) -> Option<Value> {
+    let mut meta = serde_json::Map::new();
+    if !assistant_blocks.is_empty() {
+        meta.insert("blocks".to_string(), Value::Array(assistant_blocks));
+    }
+    meta.insert("model_id".to_string(), Value::String(model_id.to_string()));
+    meta.insert(
+        "provider_model_id".to_string(),
+        Value::String(provider_model_id.to_string()),
+    );
+    Some(Value::Object(meta))
 }
 
 async fn run_execute_local_code_mode(
@@ -215,17 +345,29 @@ async fn run_execute_local_code_mode(
         .await?;
 
     let max_calls = payload.max_calls.unwrap_or(16).max(1);
-    let context = payload.context.clone().unwrap_or_else(|| {
-        json!({
-            "identity": {
-                "user_id": LOCAL_DEFAULT_USER_ID,
-            },
-            "request": {
-                "channel": "desktop",
-                "session_id": session_id.clone(),
-            }
-        })
-    });
+    let allowed_tools = resolve_allowed_tools(
+        payload.allowed_tools.as_ref(),
+        payload.capability_snapshot.as_ref(),
+    );
+    let capability_snapshot = payload
+        .capability_snapshot
+        .clone()
+        .filter(|value| value.is_object());
+    let context = with_capability_contract(
+        payload.context.clone().unwrap_or_else(|| {
+            json!({
+                "identity": {
+                    "user_id": LOCAL_DEFAULT_USER_ID,
+                },
+                "request": {
+                    "channel": "desktop",
+                    "session_id": session_id.clone(),
+                }
+            })
+        }),
+        allowed_tools.as_ref(),
+        capability_snapshot.as_ref(),
+    );
     let issued = state
         .code_mode
         .bridge
@@ -234,6 +376,7 @@ async fn run_execute_local_code_mode(
                 user_id: LOCAL_DEFAULT_USER_ID.to_string(),
                 session_id: session_id.clone(),
                 max_calls,
+                allowed_tools: allowed_tools.clone(),
             },
             context,
             Some(600),
@@ -338,6 +481,7 @@ async fn persist_execution(
             "code": source_code,
             "bridge_endpoint": response.bridge_endpoint,
             "runtime_mode": response.runtime_mode,
+            "capability_snapshot": request.capability_snapshot.clone().unwrap_or(Value::Null),
         }),
         tool_plan_results: json!({}),
         runtime_tool_calls: RuntimeToolCallsEnvelope {
@@ -352,6 +496,8 @@ async fn persist_execution(
             "dry_run": request.dry_run.unwrap_or(false),
             "execution_timeout": request.execution_timeout,
             "runtime_mode": response.runtime_mode,
+            "allowed_tools": request.allowed_tools.clone().unwrap_or_default(),
+            "capability_snapshot": request.capability_snapshot.clone().unwrap_or(Value::Null),
         }),
         created_at: Some(created_at),
     };
@@ -365,6 +511,112 @@ fn now_rfc3339() -> String {
     time::OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_else(|_| "".to_string())
+}
+
+fn resolve_allowed_tools(
+    request_allowed_tools: Option<&Vec<String>>,
+    capability_snapshot: Option<&Value>,
+) -> Option<Vec<String>> {
+    let mut names = BTreeSet::new();
+    if let Some(items) = request_allowed_tools {
+        for item in items {
+            let normalized = item.trim().to_lowercase();
+            if !normalized.is_empty() {
+                names.insert(normalized);
+            }
+        }
+    }
+    if let Some(snapshot) = capability_snapshot {
+        if let Some(callable_now) = snapshot
+            .get("callable_now")
+            .and_then(|value| value.as_array())
+        {
+            for item in callable_now {
+                if let Some(name) = item.get("name").and_then(|value| value.as_str()) {
+                    let normalized = name.trim().to_lowercase();
+                    if !normalized.is_empty() {
+                        names.insert(normalized);
+                    }
+                }
+            }
+        }
+    }
+    if names.is_empty() {
+        None
+    } else {
+        Some(names.into_iter().collect())
+    }
+}
+
+fn with_capability_contract(
+    mut context: Value,
+    allowed_tools: Option<&Vec<String>>,
+    capability_snapshot: Option<&Value>,
+) -> Value {
+    let contract = json!({
+        "allowed_tools": allowed_tools.cloned().unwrap_or_default(),
+        "capability_snapshot": capability_snapshot.cloned().unwrap_or(Value::Null),
+    });
+    if let Some(object) = context.as_object_mut() {
+        object.insert("capability_contract".to_string(), contract);
+        context
+    } else {
+        json!({
+            "request_context": context,
+            "capability_contract": contract,
+        })
+    }
+}
+
+fn value_to_string_vec(value: &Value) -> Option<Vec<String>> {
+    let array = value.as_array()?;
+    let items = array
+        .iter()
+        .filter_map(|item| item.as_str())
+        .map(|item| item.trim().to_lowercase())
+        .filter(|item| !item.is_empty())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    if items.is_empty() {
+        None
+    } else {
+        Some(items)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_allowed_tools_merges_request_and_snapshot() {
+        let request_allowed = vec!["search_web".to_string(), "search_web".to_string()];
+        let snapshot = json!({
+            "callable_now": [
+                { "name": "fetch_page" },
+                { "name": "search_web" }
+            ]
+        });
+        assert_eq!(
+            resolve_allowed_tools(Some(&request_allowed), Some(&snapshot)),
+            Some(vec!["fetch_page".to_string(), "search_web".to_string()])
+        );
+    }
+
+    #[test]
+    fn with_capability_contract_embeds_contract_into_context() {
+        let context = json!({"request": {"channel": "desktop"}});
+        let result = with_capability_contract(
+            context,
+            Some(&vec!["search_web".to_string()]),
+            Some(&json!({"callable_now": [{"name": "search_web"}]})),
+        );
+        assert_eq!(
+            result["capability_contract"]["allowed_tools"],
+            json!(["search_web"])
+        );
+    }
 }
 
 fn build_sandbox_blocked_response(

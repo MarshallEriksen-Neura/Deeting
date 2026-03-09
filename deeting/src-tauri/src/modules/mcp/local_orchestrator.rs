@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use futures_util::future::BoxFuture;
@@ -12,7 +13,7 @@ use crate::modules::mcp::commands::{
     run_local_chat_complete_with_auto_code_mode,
 };
 use crate::modules::mcp::types::{CreateConversationMessageRequest, LocalChatInputMessage};
-use crate::modules::memory::types::LocalMemoryListQuery;
+use crate::modules::memory::types::{LocalMemoryItem, LocalMemoryListQuery, LocalMemorySearchItem};
 use crate::modules::providers::model_guard::ensure_required_local_models_configured;
 use crate::state::AppState;
 
@@ -541,6 +542,85 @@ impl LocalWorkflowStep<LocalWorkflowContext> for AssistantPromptInjectionStep {
 
 struct SemanticMemoryInjectionStep;
 
+#[derive(Debug, Clone)]
+struct InjectedMemory {
+    id: String,
+    content: String,
+    recall_when: Option<String>,
+    memory_tier: Option<String>,
+    is_core: bool,
+    is_boot: bool,
+}
+
+fn memory_meta_string(meta_info: &Option<Value>, key: &str) -> Option<String> {
+    meta_info
+        .as_ref()
+        .and_then(|value| value.get(key))
+        .and_then(|value| value.as_str())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn memory_meta_bool(meta_info: &Option<Value>, key: &str) -> bool {
+    meta_info
+        .as_ref()
+        .and_then(|value| value.get(key))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false)
+}
+
+fn matches_recall_when(query: &str, recall_when: Option<&str>) -> bool {
+    let hint = recall_when.unwrap_or("").trim().to_lowercase();
+    if hint.is_empty() {
+        return true;
+    }
+    let query_text = query.trim().to_lowercase();
+    if query_text.is_empty() {
+        return false;
+    }
+    if query_text.contains(&hint) || hint.contains(&query_text) {
+        return true;
+    }
+    hint.replace([';', ',', '|'], " ")
+        .split_whitespace()
+        .filter(|token| token.len() > 1)
+        .any(|token| query_text.contains(token))
+}
+
+impl InjectedMemory {
+    fn from_item(item: LocalMemoryItem) -> Self {
+        let recall_when = memory_meta_string(&item.meta_info, "recall_when");
+        let memory_tier = memory_meta_string(&item.meta_info, "memory_tier");
+        let is_boot = memory_meta_bool(&item.meta_info, "is_boot");
+        let is_core = memory_meta_bool(&item.meta_info, "is_core")
+            || memory_tier.as_deref() == Some("core");
+        Self {
+            id: item.id,
+            content: item.content,
+            recall_when,
+            memory_tier,
+            is_core,
+            is_boot,
+        }
+    }
+
+    fn from_search_item(item: LocalMemorySearchItem) -> Self {
+        let recall_when = memory_meta_string(&item.meta_info, "recall_when");
+        let memory_tier = memory_meta_string(&item.meta_info, "memory_tier");
+        let is_boot = memory_meta_bool(&item.meta_info, "is_boot");
+        let is_core = memory_meta_bool(&item.meta_info, "is_core")
+            || memory_tier.as_deref() == Some("core");
+        Self {
+            id: item.id,
+            content: item.content,
+            recall_when,
+            memory_tier,
+            is_core,
+            is_boot,
+        }
+    }
+}
+
 impl LocalWorkflowStep<LocalWorkflowContext> for SemanticMemoryInjectionStep {
     fn name(&self) -> &'static str {
         "semantic_memory_injection"
@@ -559,10 +639,12 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SemanticMemoryInjectionStep {
                 .find(|m| m.role == "user")
                 .map(|m| m.content.clone());
 
-            let memory_items: Vec<(String, String)> = if let Some(query_text) = user_text {
+            let query_text = user_text.unwrap_or_default();
+            let core_memories = self.load_core_memories(ctx, &query_text).await?;
+            let semantic_memories: Vec<InjectedMemory> = if !query_text.is_empty() {
                 // Attempt semantic search
                 let search_query = crate::modules::memory::types::LocalMemorySearchQuery {
-                    query: query_text,
+                    query: query_text.clone(),
                     limit: Some(5),
                     session_id: Some(ctx.session_id.clone()),
                     assistant_id: ctx.assistant_id.clone(),
@@ -574,7 +656,7 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SemanticMemoryInjectionStep {
                     Ok(result) if !result.items.is_empty() => result
                         .items
                         .into_iter()
-                        .map(|i| (i.id, i.content))
+                        .map(InjectedMemory::from_search_item)
                         .collect(),
                     Ok(_) | Err(_) => {
                         // Fallback to list (no embeddings yet or embedding service unavailable)
@@ -585,7 +667,34 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SemanticMemoryInjectionStep {
                 self.fallback_list(ctx).await?
             };
 
-            if memory_items.is_empty() {
+            let mut seen = HashSet::new();
+            let mut core_lines = Vec::new();
+            let mut semantic_lines = Vec::new();
+
+            for memory in core_memories {
+                if !seen.insert(memory.id.clone()) {
+                    continue;
+                }
+                let text = memory.content.trim();
+                if text.is_empty() {
+                    continue;
+                }
+                core_lines.push(format!("- {}", text));
+            }
+
+            for memory in semantic_memories {
+                if !seen.insert(memory.id.clone()) {
+                    continue;
+                }
+                let text = memory.content.trim();
+                if text.is_empty() {
+                    continue;
+                }
+                semantic_lines.push(format!("- {}", text));
+            }
+
+            let total_count = core_lines.len() + semantic_lines.len();
+            if total_count == 0 {
                 ctx.emit_status(
                     "remember",
                     Some("semantic_memory_injection"),
@@ -596,19 +705,11 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SemanticMemoryInjectionStep {
                 return Ok(());
             }
 
-            let lines = memory_items
-                .iter()
-                .filter_map(|(_id, content)| {
-                    let text = content.trim();
-                    if text.is_empty() {
-                        None
-                    } else {
-                        Some(format!("- {}", text))
-                    }
-                })
-                .collect::<Vec<String>>();
-            if !lines.is_empty() {
-                ctx.push_system_message(format!("## Semantic Memories\n{}", lines.join("\n")));
+            if !core_lines.is_empty() {
+                ctx.push_system_message(format!("## Core Memories\n{}", core_lines.join("\n")));
+            }
+            if !semantic_lines.is_empty() {
+                ctx.push_system_message(format!("## Semantic Memories\n{}", semantic_lines.join("\n")));
             }
 
             ctx.emit_status(
@@ -616,7 +717,7 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SemanticMemoryInjectionStep {
                 Some("semantic_memory_injection"),
                 "success",
                 "semantic.memory.loaded",
-                Some(json!({ "count": memory_items.len() })),
+                Some(json!({ "count": total_count })),
             );
             Ok(())
         })
@@ -624,10 +725,55 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SemanticMemoryInjectionStep {
 }
 
 impl SemanticMemoryInjectionStep {
+    async fn load_core_memories(
+        &self,
+        ctx: &LocalWorkflowContext,
+        query_text: &str,
+    ) -> Result<Vec<InjectedMemory>, String> {
+        let query = LocalMemoryListQuery {
+            cursor: None,
+            limit: Some(20),
+            session_id: Some(ctx.session_id.clone()),
+            assistant_id: ctx.assistant_id.clone(),
+        };
+        let memories = ctx
+            .app_state
+            .memory
+            .service
+            .list(query)
+            .await
+            .map_err(|e| e.to_string())?;
+        let mut items = memories
+            .items
+            .into_iter()
+            .map(InjectedMemory::from_item)
+            .filter(|item| {
+                if item.is_boot {
+                    return true;
+                }
+                if !(item.is_core || item.memory_tier.as_deref() == Some("core")) {
+                    return false;
+                }
+                matches_recall_when(query_text, item.recall_when.as_deref())
+            })
+            .collect::<Vec<InjectedMemory>>();
+        items.sort_by_key(|item| {
+            (
+                if item.is_boot { 0 } else { 1 },
+                if item.is_core || item.memory_tier.as_deref() == Some("core") {
+                    0
+                } else {
+                    1
+                },
+            )
+        });
+        Ok(items)
+    }
+
     async fn fallback_list(
         &self,
         ctx: &LocalWorkflowContext,
-    ) -> Result<Vec<(String, String)>, String> {
+    ) -> Result<Vec<InjectedMemory>, String> {
         let query = LocalMemoryListQuery {
             cursor: None,
             limit: Some(5),
@@ -644,7 +790,7 @@ impl SemanticMemoryInjectionStep {
         Ok(memories
             .items
             .into_iter()
-            .map(|i| (i.id, i.content))
+            .map(InjectedMemory::from_item)
             .collect())
     }
 }
@@ -1723,5 +1869,45 @@ mod tests {
 
         let error = build_compare_only_messages(messages).expect_err("missing baseline answer");
         assert!(error.contains("latest assistant answer"));
+    }
+
+    #[test]
+    fn recall_when_matching_uses_substring_and_keywords() {
+        assert!(matches_recall_when(
+            "Please keep the response style concise for this reply",
+            Some("response style concise")
+        ));
+        assert!(matches_recall_when(
+            "Need architecture help for the current project",
+            Some("project architecture")
+        ));
+        assert!(!matches_recall_when(
+            "Discuss the user's favorite movies",
+            Some("response style concise")
+        ));
+    }
+
+    #[test]
+    fn injected_memory_promotes_core_tier_to_core_flag() {
+        let memory = InjectedMemory::from_item(LocalMemoryItem {
+            id: "memory-1".to_string(),
+            content: "remember this".to_string(),
+            session_id: None,
+            assistant_id: None,
+            meta_info: Some(json!({ "memory_tier": "core", "recall_when": "architecture" })),
+            embedding_model: None,
+            category: None,
+            source: None,
+            tags: None,
+            vitality: None,
+            last_accessed_at: None,
+            created_at: "2026-03-09T00:00:00Z".to_string(),
+            updated_at: "2026-03-09T00:00:00Z".to_string(),
+        });
+
+        assert!(memory.is_core);
+        assert!(!memory.is_boot);
+        assert_eq!(memory.memory_tier.as_deref(), Some("core"));
+        assert_eq!(memory.recall_when.as_deref(), Some("architecture"));
     }
 }

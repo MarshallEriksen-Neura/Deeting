@@ -35,7 +35,38 @@
     "score": "Score",
     "vitality": "Vitality",
     "category": "Category",
-    "tags": "Tags"
+    "tags": "Tags",
+    "memoryTier": "Memory Tier",
+    "recallWhen": "Recall Condition",
+    "recallWhenPlaceholder": "e.g. when the user asks about response style",
+    "isCore": "Core Memory",
+    "isCoreDescription": "Prioritize this memory during runtime injection and retention.",
+    "isBoot": "Boot Memory",
+    "isBootDescription": "Load this memory at conversation startup."
+  },
+  "tier": {
+    "boot": "Boot",
+    "core": "Core",
+    "standard": "Standard",
+    "episodic": "Episodic"
+  },
+  "groups": {
+    "boot": {
+      "title": "Boot Memories",
+      "description": "Identity anchors and constraints that should load first."
+    },
+    "core": {
+      "title": "Core Memories",
+      "description": "High-value memories that should be retained and injected first."
+    },
+    "episodic": {
+      "title": "Episodic Memories",
+      "description": "Event-oriented or phase-specific memories."
+    },
+    "standard": {
+      "title": "Standard Memories",
+      "description": "General memories used in normal semantic retrieval."
+    }
   },
   "source": {
     "autoExtracted": "Auto-Extracted",
@@ -58,6 +89,7 @@
   "snapshot": {
     "title": "Memory History",
     "empty": "No history for this memory",
+    "metadataTitle": "Metadata Changes",
     "action": {
       "update": "Updated",
       "delete": "Deleted",

@@ -1,7 +1,6 @@
 import useSWR from "swr"
 import useSWRInfinite from "swr/infinite"
-import { fetchMemories, toMemoryItem } from "@/lib/api/memory"
-import { searchLocalMemories } from "@/lib/api/local-memory"
+import { fetchMemories, searchMemories } from "@/lib/api/memory"
 import type { MemoryListResponse, MemoryItem } from "@/types/memory"
 
 type MemorySearchFilters = {
@@ -13,16 +12,15 @@ type MemorySearchFilters = {
 export function useMemorySearch(query: string, limit: number = 10, filters?: MemorySearchFilters) {
   const filterKey = JSON.stringify(filters ?? {})
   const { data, error, isValidating, mutate } = useSWR(
-    query ? ["local-memory-search", query, limit, filterKey] : null,
+    query ? ["memory-search", query, limit, filterKey] : null,
     async () => {
-      const result = await searchLocalMemories({
+      return searchMemories({
         query,
         limit,
         category: filters?.category ?? null,
         source: filters?.source ?? null,
         tags: filters?.tags ?? null,
       })
-      return result.items.map(toMemoryItem)
     },
     { revalidateOnFocus: false, dedupingInterval: 500 }
   )

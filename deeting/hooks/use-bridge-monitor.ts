@@ -4,7 +4,10 @@ import { useEffect, useRef } from "react"
 import { useAuthStore } from "@/store/auth-store"
 import { subscribeBridgeEvents, bridgeCallTool } from "@/lib/api/bridge"
 import { invoke } from "@tauri-apps/api/core"
-import { useBridgeApprovalStore } from "@/lib/chat/bridge-approval-store"
+import {
+  createBridgeToolApproval,
+  useBridgeApprovalStore,
+} from "@/lib/chat/bridge-approval-store"
 
 type BridgeToolCallRequestPayload = {
   type: string
@@ -83,7 +86,7 @@ export function useBridgeMonitor() {
                   if (!approvalToken) {
                     throw new Error("missing approval token in approval-required response")
                   }
-                  useBridgeApprovalStore.getState().setPending({
+                  useBridgeApprovalStore.getState().setPending(createBridgeToolApproval({
                     approval_token: approvalToken,
                     tool_name:
                       typeof executionResult.tool_name === "string"
@@ -111,7 +114,7 @@ export function useBridgeMonitor() {
                         : undefined,
                     // Pass these through so the Dialog component can finish the Bridge call
                     meta: { call_id, execution_token },
-                  })
+                  }))
                   return // Stop here, Dialog will resume
                 }
 

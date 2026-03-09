@@ -40,6 +40,10 @@ export const MemoryCard = memo(function MemoryCard({
     ? rawTags.filter((tag): tag is string => typeof tag === "string")
     : undefined
   const vitality = item.vitality ?? (typeof item.payload?.vitality === "number" ? item.payload.vitality : undefined)
+  const memoryTier = item.memory_tier ?? (typeof item.payload?.memory_tier === "string" ? item.payload.memory_tier : null)
+  const recallWhen = item.recall_when ?? (typeof item.payload?.recall_when === "string" ? item.payload.recall_when : null)
+  const isCore = item.is_core ?? (typeof item.payload?.is_core === "boolean" ? item.payload.is_core : false)
+  const isBoot = item.is_boot ?? (typeof item.payload?.is_boot === "boolean" ? item.payload.is_boot : false)
   const categoryColor = category ? CATEGORY_COLORS[category] ?? CATEGORY_COLORS.fact : null
   const categoryLabel = category
     ? {
@@ -70,6 +74,21 @@ export const MemoryCard = memo(function MemoryCard({
                 {categoryLabel}
               </span>
             )}
+            {isBoot && (
+              <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full border bg-amber-500/15 text-amber-400 border-amber-500/30">
+                {t("tier.boot")}
+              </span>
+            )}
+            {isCore && !isBoot && (
+              <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full border bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30">
+                {t("tier.core")}
+              </span>
+            )}
+            {memoryTier && memoryTier !== "core" && (
+              <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full border bg-white/10 text-gray-300 border-white/10">
+                {t(`tier.${memoryTier}` as never, { default: memoryTier })}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             {item.score != null && (
@@ -98,6 +117,13 @@ export const MemoryCard = memo(function MemoryCard({
             {tags.length > 4 && (
               <span className="text-[10px] text-gray-400">+{tags.length - 4}</span>
             )}
+          </div>
+        )}
+
+        {recallWhen && (
+          <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+            <p className="text-[10px] uppercase tracking-wider text-gray-400">{t("fields.recallWhen")}</p>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-300 line-clamp-2">{recallWhen}</p>
           </div>
         )}
 

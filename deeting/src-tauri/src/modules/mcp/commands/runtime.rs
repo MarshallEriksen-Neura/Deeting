@@ -1,11 +1,13 @@
 mod activation;
 pub(crate) mod asset_indexing;
 mod background_workers;
+mod capability_discovery;
 mod chat_completion;
 mod code_mode_catalog;
 mod code_mode_orchestration;
 mod config;
 mod consult;
+mod core_tool_contracts;
 mod onboarding;
 mod search_ranking;
 mod summary_format;
@@ -28,9 +30,11 @@ pub(crate) use chat_completion::{
     request_provider_chat_completion, resolve_local_model_connection,
 };
 pub(crate) use code_mode_catalog::{
-    build_local_code_mode_entry_tools, build_local_sdk_search_result,
+    build_local_code_mode_entry_tools, build_local_sdk_search_result_with_runtime,
 };
-pub(crate) use code_mode_orchestration::run_local_chat_complete_with_auto_code_mode;
+pub(crate) use code_mode_orchestration::{
+    approve_pending_local_code_mode_execution, run_local_chat_complete_with_auto_code_mode,
+};
 pub(crate) use config::{apply_config_payload, now_rfc3339, read_local_mcp_config};
 pub(crate) use consult::{
     build_local_consult_expert_network_result, LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
@@ -58,8 +62,6 @@ pub(crate) use tool_trace::{
 pub(crate) use background_workers::process_next_local_conversation_summary_job_with_store;
 #[cfg(test)]
 pub(crate) use chat_completion::normalize_chat_completion_response;
-#[cfg(test)]
-pub(crate) use code_mode_catalog::build_local_sdk_search_result_with_runtime;
 #[cfg(test)]
 pub(crate) use config::hash_config;
 #[cfg(test)]

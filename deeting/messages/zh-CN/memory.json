@@ -35,7 +35,38 @@
     "score": "分数",
     "vitality": "活力值",
     "category": "分类",
-    "tags": "标签"
+    "tags": "标签",
+    "memoryTier": "记忆层级",
+    "recallWhen": "召回条件",
+    "recallWhenPlaceholder": "例如：当用户询问回答风格时",
+    "isCore": "核心记忆",
+    "isCoreDescription": "优先参与运行时注入与长期保持。",
+    "isBoot": "启动记忆",
+    "isBootDescription": "在对话开始时优先加载。"
+  },
+  "tier": {
+    "boot": "启动",
+    "core": "核心",
+    "standard": "普通",
+    "episodic": "情节"
+  },
+  "groups": {
+    "boot": {
+      "title": "启动记忆",
+      "description": "进入对话时应优先加载的长期约束与身份锚点。"
+    },
+    "core": {
+      "title": "核心记忆",
+      "description": "高价值、需要稳定保留并优先参与检索的记忆。"
+    },
+    "episodic": {
+      "title": "情节记忆",
+      "description": "偏向具体事件或阶段性上下文的记忆。"
+    },
+    "standard": {
+      "title": "普通记忆",
+      "description": "常规语义检索和管理的记忆内容。"
+    }
   },
   "source": {
     "autoExtracted": "自动提取",
@@ -58,6 +89,7 @@
   "snapshot": {
     "title": "记忆历史",
     "empty": "此条记忆暂无历史记录",
+    "metadataTitle": "Metadata 变更",
     "action": {
       "update": "已更新",
       "delete": "已删除",

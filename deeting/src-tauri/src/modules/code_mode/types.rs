@@ -12,6 +12,8 @@ pub struct ExecuteLocalCodeModeRequest {
     pub dry_run: Option<bool>,
     pub context: Option<Value>,
     pub max_calls: Option<i64>,
+    pub allowed_tools: Option<Vec<String>>,
+    pub capability_snapshot: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

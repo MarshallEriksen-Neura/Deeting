@@ -1,0 +1,47 @@
+[
+  {
+    "query": "search_web 抓取网页标题",
+    "embedding": [1.0, 0.0, 0.0, 0.0, 0.0],
+    "expected_name": "search_web",
+    "expected_lane": "callable_now",
+    "expected_intent": "web_fetch",
+    "expected_domain": null,
+    "forbidden_lanes": ["installable", "advisory"]
+  },
+  {
+    "query": "Weather Skill 天气预报降雨提醒",
+    "embedding": [0.0, 1.0, 0.0, 0.0, 0.0],
+    "expected_name": "Weather Skill",
+    "expected_lane": "installable",
+    "expected_intent": "install_or_enable",
+    "expected_domain": "weather",
+    "forbidden_lanes": ["callable_now"]
+  },
+  {
+    "query": "stock_quotes 股票实时行情",
+    "embedding": [0.0, 0.0, 1.0, 0.0, 0.0],
+    "expected_name": "stock_quotes",
+    "expected_lane": "installable",
+    "expected_intent": "realtime_lookup",
+    "expected_domain": "finance",
+    "forbidden_lanes": ["callable_now"]
+  },
+  {
+    "query": "sys_submit_onboarding_request 安装本地 skill",
+    "embedding": [0.0, 0.0, 0.0, 1.0, 0.0],
+    "expected_name": "sys_submit_onboarding_request",
+    "expected_lane": "callable_now",
+    "expected_intent": "install_or_enable",
+    "expected_domain": null,
+    "forbidden_lanes": ["installable", "advisory"]
+  },
+  {
+    "query": "execute_code_plan python code",
+    "embedding": [0.0, 0.0, 0.0, 0.0, 1.0],
+    "expected_name": "execute_code_plan",
+    "expected_lane": "callable_now",
+    "expected_intent": "general_lookup",
+    "expected_domain": null,
+    "forbidden_lanes": ["installable", "advisory"]
+  }
+]

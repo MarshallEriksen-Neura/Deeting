@@ -31,7 +31,10 @@ pub(crate) fn lexical_rank_asset_hits(
     ranked
 }
 
-fn lexical_asset_match_score(normalized_query: &str, item: &serde_json::Value) -> Option<f64> {
+pub(crate) fn lexical_asset_match_score(
+    normalized_query: &str,
+    item: &serde_json::Value,
+) -> Option<f64> {
     if normalized_query.trim().is_empty() {
         return None;
     }

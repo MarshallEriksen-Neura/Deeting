@@ -23,12 +23,29 @@ import {
 } from "@/components/ui/alert-dialog"
 import { GlassButton } from "@/components/ui/glass-button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import {
-  listMemorySnapshots,
-  rollbackMemory,
-  type LocalMemorySnapshot,
-} from "@/lib/api/local-memory"
+import { listMemorySnapshots, rollbackMemory } from "@/lib/api/memory"
+import type { MemorySnapshotItem } from "@/types/memory"
 import { MemoryDiffView } from "./memory-diff-view"
+
+function normalizeMetadata(value: unknown) {
+  if (!value) return null
+  if (typeof value === "string") {
+    try {
+      return normalizeMetadata(JSON.parse(value))
+    } catch {
+      return null
+    }
+  }
+  if (typeof value !== "object" || Array.isArray(value)) return null
+  return value as Record<string, unknown>
+}
+
+function formatMetadataValue(value: unknown) {
+  if (typeof value === "string") return value
+  if (typeof value === "number" || typeof value === "boolean") return String(value)
+  if (value == null) return "—"
+  return JSON.stringify(value)
+}
 
 interface MemorySnapshotsDialogProps {
   memoryId: string | null
@@ -50,10 +67,10 @@ export function MemorySnapshotsDialog({
   onRollbackSuccess,
 }: MemorySnapshotsDialogProps) {
   const t = useTranslations("memory")
-  const [snapshots, setSnapshots] = useState<LocalMemorySnapshot[]>([])
+  const [snapshots, setSnapshots] = useState<MemorySnapshotItem[]>([])
   const [isLoading, setIsLoading] = useState(false)
-  const [selectedSnapshot, setSelectedSnapshot] = useState<LocalMemorySnapshot | null>(null)
-  const [rollbackConfirm, setRollbackConfirm] = useState<LocalMemorySnapshot | null>(null)
+  const [selectedSnapshot, setSelectedSnapshot] = useState<MemorySnapshotItem | null>(null)
+  const [rollbackConfirm, setRollbackConfirm] = useState<MemorySnapshotItem | null>(null)
   const [isRollingBack, setIsRollingBack] = useState(false)
 
   const loadSnapshots = useCallback(async () => {
@@ -81,10 +98,10 @@ export function MemorySnapshotsDialog({
   )
 
   const handleRollback = async () => {
-    if (!rollbackConfirm) return
+    if (!rollbackConfirm || !memoryId) return
     setIsRollingBack(true)
     try {
-      await rollbackMemory(rollbackConfirm.id)
+      await rollbackMemory(memoryId, rollbackConfirm.id)
       toast.success(t("snapshot.rollbackSuccess"))
       onRollbackSuccess?.()
       onOpenChange(false)
@@ -102,6 +119,45 @@ export function MemorySnapshotsDialog({
     } catch {
       return ts
     }
+  }
+
+  const renderMetadataChanges = (snapshot: MemorySnapshotItem) => {
+    const oldMetadata = normalizeMetadata(snapshot.old_metadata)
+    const newMetadata = normalizeMetadata(snapshot.new_metadata)
+    const keys = Array.from(
+      new Set([...Object.keys(oldMetadata ?? {}), ...Object.keys(newMetadata ?? {})])
+    )
+    const changedKeys = keys.filter(
+      (key) => JSON.stringify(oldMetadata?.[key]) !== JSON.stringify(newMetadata?.[key])
+    )
+
+    if (changedKeys.length === 0) {
+      return null
+    }
+
+    return (
+      <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3 space-y-3">
+        <p className="text-xs font-medium text-gray-500 dark:text-gray-300">{t("snapshot.metadataTitle")}</p>
+        <div className="space-y-2">
+          {changedKeys.map((key) => (
+            <div key={key} className="grid gap-2 md:grid-cols-2">
+              <div className="rounded-lg bg-black/10 px-3 py-2">
+                <p className="text-[10px] uppercase tracking-wider text-gray-400">{key}</p>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-300 break-words">
+                  {formatMetadataValue(oldMetadata?.[key])}
+                </p>
+              </div>
+              <div className="rounded-lg bg-blue-500/10 px-3 py-2">
+                <p className="text-[10px] uppercase tracking-wider text-blue-300">{key}</p>
+                <p className="mt-1 text-xs text-gray-700 dark:text-gray-100 break-words">
+                  {formatMetadataValue(newMetadata?.[key])}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -174,12 +230,15 @@ export function MemorySnapshotsDialog({
                         )}
                       </button>
 
-                      {isSelected && (snap.old_content || snap.new_content) && (
+                      {isSelected && (snap.old_content || snap.new_content || snap.old_metadata || snap.new_metadata) && (
                         <div className="ml-4">
-                          <MemoryDiffView
-                            oldContent={snap.old_content ?? ""}
-                            newContent={snap.new_content ?? ""}
-                          />
+                          {(snap.old_content || snap.new_content) && (
+                            <MemoryDiffView
+                              oldContent={snap.old_content ?? ""}
+                              newContent={snap.new_content ?? ""}
+                            />
+                          )}
+                          {renderMetadataChanges(snap)}
                         </div>
                       )}
                     </div>

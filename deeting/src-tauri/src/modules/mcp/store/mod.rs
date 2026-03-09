@@ -1315,6 +1315,7 @@ pub struct LocalConversationRegenerateContext {
     pub messages: Vec<LocalChatInputMessage>,
 }
 
+#[derive(Clone)]
 pub struct LocalConversationChatContext {
     pub session_id: String,
     pub assistant_id: Option<String>,

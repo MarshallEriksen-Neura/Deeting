@@ -46,4 +46,56 @@ jobs:
 
       - run: cargo check
 
-      - run: cargo test
+      - name: Run Rust test suite without dedicated benchmark gates
+        run: |
+          cargo test -- \
+            --skip search_sdk_benchmark_replay_suite_meets_quality_thresholds \
+            --skip search_sdk_regression_matrix_preserves_lanes_and_intents
+
+  search-sdk-benchmark:
+    runs-on: ubuntu-22.04
+    env:
+      SEARCH_SDK_BENCHMARK_SUMMARY_PATH: ${{ runner.temp }}/search-sdk-benchmark-summary.json
+      SEARCH_SDK_BENCHMARK_DIFF_REPORT_PATH: ${{ runner.temp }}/search-sdk-benchmark-diff-report.json
+    defaults:
+      run:
+        working-directory: deeting/src-tauri
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: 'deeting/src-tauri -> target'
+
+      - name: Run search_sdk benchmark replay suite
+        env:
+          DEETING_SEARCH_SDK_BENCHMARK_SUMMARY_PATH: ${{ env.SEARCH_SDK_BENCHMARK_SUMMARY_PATH }}
+        run: cargo test search_sdk_benchmark_replay_suite_meets_quality_thresholds --quiet
+
+      - name: Run search_sdk regression matrix
+        run: cargo test search_sdk_regression_matrix_preserves_lanes_and_intents --quiet
+
+      - name: Compare search_sdk benchmark against baseline
+        working-directory: .
+        run: |
+          python3 .github/scripts/compare_search_sdk_benchmark.py \
+            --baseline .github/benchmarks/search_sdk_baseline.json \
+            --current "$SEARCH_SDK_BENCHMARK_SUMMARY_PATH" \
+            --report "$SEARCH_SDK_BENCHMARK_DIFF_REPORT_PATH"
+
+      - name: Upload search_sdk benchmark summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: search-sdk-benchmark-artifacts
+          path: |
+            ${{ env.SEARCH_SDK_BENCHMARK_SUMMARY_PATH }}
+            ${{ env.SEARCH_SDK_BENCHMARK_DIFF_REPORT_PATH }}
+          if-no-files-found: ignore

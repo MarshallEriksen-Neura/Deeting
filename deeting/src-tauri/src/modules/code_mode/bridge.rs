@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
@@ -38,6 +38,7 @@ pub struct RuntimeBridgeClaims {
     pub user_id: String,
     pub session_id: String,
     pub max_calls: i64,
+    pub allowed_tools: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -534,6 +535,28 @@ async fn dispatch_tool_call(
     tool_name: &str,
     arguments: HashMap<String, Value>,
 ) -> Result<Value, (String, String)> {
+    if !tool_allowed_by_claims(claims, tool_name) {
+        let allowed = claims
+            .allowed_tools
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|name| !name.trim().is_empty())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err((
+            "CODE_MODE_BRIDGE_TOOL_NOT_IN_CAPABILITY_SNAPSHOT".to_string(),
+            format!(
+                "tool '{}' is not allowed for this execution contract; allowed tools: {}",
+                tool_name.trim(),
+                if allowed.is_empty() {
+                    "<none>"
+                } else {
+                    allowed.as_str()
+                }
+            ),
+        ));
+    }
     match tool_name.trim() {
         "list_local_memories" | "list_user_memories" | "search_user_memories" => {
             let query = LocalMemoryListQuery {
@@ -707,6 +730,22 @@ async fn dispatch_tool_call(
     }
 }
 
+fn tool_allowed_by_claims(claims: &RuntimeBridgeClaims, tool_name: &str) -> bool {
+    let Some(allowed_tools) = claims.allowed_tools.as_ref() else {
+        return true;
+    };
+    let normalized = tool_name.trim().to_lowercase();
+    if normalized.is_empty() {
+        return false;
+    }
+    let allowed = allowed_tools
+        .iter()
+        .map(|name| name.trim().to_lowercase())
+        .filter(|name| !name.is_empty())
+        .collect::<HashSet<_>>();
+    allowed.contains(&normalized)
+}
+
 fn value_to_string(value: Option<&Value>) -> Option<String> {
     value
         .and_then(|v| v.as_str())
@@ -729,4 +768,32 @@ fn now_rfc3339_offset_seconds(offset_seconds: i64) -> Result<String, CodeModeErr
     let now = time::OffsetDateTime::now_utc() + time::Duration::seconds(offset_seconds);
     now.format(&time::format_description::well_known::Rfc3339)
         .map_err(|err| CodeModeError::Internal(err.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tool_allowed_by_claims_allows_anything_without_contract() {
+        let claims = RuntimeBridgeClaims {
+            user_id: "user".to_string(),
+            session_id: "session".to_string(),
+            max_calls: 4,
+            allowed_tools: None,
+        };
+        assert!(tool_allowed_by_claims(&claims, "search_web"));
+    }
+
+    #[test]
+    fn tool_allowed_by_claims_enforces_allowlist() {
+        let claims = RuntimeBridgeClaims {
+            user_id: "user".to_string(),
+            session_id: "session".to_string(),
+            max_calls: 4,
+            allowed_tools: Some(vec!["search_web".to_string(), "fetch_page".to_string()]),
+        };
+        assert!(tool_allowed_by_claims(&claims, "search_web"));
+        assert!(!tool_allowed_by_claims(&claims, "list_tools"));
+    }
 }

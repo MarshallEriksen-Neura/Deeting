@@ -34,6 +34,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import { useMemories, useMemorySearch } from "@/lib/swr"
 import { updateMemory, deleteMemory, clearAllMemories } from "@/lib/api/memory"
 import type { MemoryItem } from "@/types/memory"
@@ -41,6 +43,33 @@ import { MemoryCard } from "./memory-card"
 import { MemorySnapshotsDialog } from "./memory-snapshots-dialog"
 
 const CATEGORIES = ["all", "fact", "preference", "event", "relation"] as const
+const MEMORY_GROUP_ORDER = ["boot", "core", "episodic", "standard"] as const
+const MEMORY_TIERS = ["standard", "core", "episodic"] as const
+
+function readStringField(item: MemoryItem, key: "recall_when" | "memory_tier") {
+  const topLevelValue = item[key]
+  if (typeof topLevelValue === "string" && topLevelValue.trim().length > 0) {
+    return topLevelValue
+  }
+  const payloadValue = item.payload?.[key]
+  return typeof payloadValue === "string" && payloadValue.trim().length > 0 ? payloadValue : ""
+}
+
+function readBooleanField(item: MemoryItem, key: "is_core" | "is_boot") {
+  const topLevelValue = item[key]
+  if (typeof topLevelValue === "boolean") {
+    return topLevelValue
+  }
+  const payloadValue = item.payload?.[key]
+  return typeof payloadValue === "boolean" ? payloadValue : false
+}
+
+function getMemoryGroupKey(item: MemoryItem) {
+  if (readBooleanField(item, "is_boot")) return "boot"
+  if (readBooleanField(item, "is_core") || readStringField(item, "memory_tier") === "core") return "core"
+  if (readStringField(item, "memory_tier") === "episodic") return "episodic"
+  return "standard"
+}
 
 function useDebounce(value: string, delay: number) {
   const [debounced, setDebounced] = useState(value)
@@ -72,6 +101,10 @@ export function MemoryClient() {
   // Edit state
   const [editingItem, setEditingItem] = useState<MemoryItem | null>(null)
   const [editContent, setEditContent] = useState("")
+  const [editRecallWhen, setEditRecallWhen] = useState("")
+  const [editMemoryTier, setEditMemoryTier] = useState<string>("standard")
+  const [editIsCore, setEditIsCore] = useState(false)
+  const [editIsBoot, setEditIsBoot] = useState(false)
   const [isUpdating, setIsUpdating] = useState(false)
 
   // Delete state
@@ -93,12 +126,39 @@ export function MemoryClient() {
     return source.filter((m) => (m.category ?? m.payload?.category) === category)
   }, [isSearchMode, searchResults, memories, category])
 
+  const groupedMemories = useMemo(() => {
+    const groups = new Map<string, MemoryItem[]>()
+    for (const item of filteredMemories) {
+      const key = getMemoryGroupKey(item)
+      groups.set(key, [...(groups.get(key) ?? []), item])
+    }
+    return MEMORY_GROUP_ORDER.map((key) => ({
+      key,
+      items: groups.get(key) ?? [],
+    })).filter((group) => group.items.length > 0)
+  }, [filteredMemories])
+
+  const openEditDialog = useCallback((item: MemoryItem) => {
+    setEditingItem(item)
+    setEditContent(item.content)
+    setEditRecallWhen(readStringField(item, "recall_when"))
+    setEditMemoryTier(readStringField(item, "memory_tier") || "standard")
+    setEditIsCore(readBooleanField(item, "is_core") || readStringField(item, "memory_tier") === "core")
+    setEditIsBoot(readBooleanField(item, "is_boot"))
+  }, [])
+
   // Handlers
   const handleUpdate = async () => {
     if (!editingItem) return
     setIsUpdating(true)
     try {
-      await updateMemory(editingItem.id, { content: editContent })
+      await updateMemory(editingItem.id, {
+        content: editContent,
+        recall_when: editRecallWhen,
+        memory_tier: editMemoryTier,
+        is_core: editIsCore,
+        is_boot: editIsBoot,
+      })
       toast.success(t("success.updated"))
       await refreshAll()
       setEditingItem(null)
@@ -108,6 +168,37 @@ export function MemoryClient() {
       setIsUpdating(false)
     }
   }
+
+  const renderMemoryGroups = (items: typeof groupedMemories) => (
+    <div className="space-y-6">
+      {items.map((group) => (
+        <section key={group.key} className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                {t(`groups.${group.key}.title`)}
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {t(`groups.${group.key}.description`)}
+              </p>
+            </div>
+            <span className="text-xs text-gray-400">{group.items.length}</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+            {group.items.map((item) => (
+              <MemoryCard
+                key={item.id}
+                item={item}
+                onEdit={openEditDialog}
+                onDelete={setDeleteId}
+                onHistory={setSnapshotMemoryId}
+              />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  )
 
   const handleDelete = useCallback(async (id: string) => {
     try {
@@ -227,20 +318,7 @@ export function MemoryClient() {
           </p>
         </div>
       ) : isSearchMode ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-          {filteredMemories.map((item) => (
-            <MemoryCard
-              key={item.id}
-              item={item}
-              onEdit={(item) => {
-                setEditingItem(item)
-                setEditContent(item.content)
-              }}
-              onDelete={setDeleteId}
-              onHistory={setSnapshotMemoryId}
-            />
-          ))}
-        </div>
+        renderMemoryGroups(groupedMemories)
       ) : (
         <InfiniteList
           hasMore={!isReachedEnd}
@@ -249,20 +327,7 @@ export function MemoryClient() {
           useScrollArea={false}
           noMoreDisplay="— 没有更多记忆了 —"
         >
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-            {filteredMemories.map((item) => (
-              <MemoryCard
-                key={item.id}
-                item={item}
-                onEdit={(item) => {
-                  setEditingItem(item)
-                  setEditContent(item.content)
-                }}
-                onDelete={setDeleteId}
-                onHistory={setSnapshotMemoryId}
-              />
-            ))}
-          </div>
+          {renderMemoryGroups(groupedMemories)}
         </InfiniteList>
       )}
 
@@ -276,12 +341,72 @@ export function MemoryClient() {
             </DialogDescription>
           </DialogHeader>
           <div className="py-6">
-            <Textarea
-              value={editContent}
-              onChange={(e) => setEditContent(e.target.value)}
-              className="min-h-[180px] bg-white/50 dark:bg-black/20 border-white/20 dark:border-white/10 text-base resize-none focus:ring-blue-500/50"
-              placeholder="Enter memory content..."
-            />
+            <div className="space-y-5">
+              <div className="space-y-2">
+                <Label htmlFor="memory-content">{t("fields.content")}</Label>
+                <Textarea
+                  id="memory-content"
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  className="min-h-[180px] bg-white/50 dark:bg-black/20 border-white/20 dark:border-white/10 text-base resize-none focus:ring-blue-500/50"
+                  placeholder="Enter memory content..."
+                />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="memory-tier">{t("fields.memoryTier")}</Label>
+                  <Select value={editMemoryTier} onValueChange={setEditMemoryTier}>
+                    <SelectTrigger id="memory-tier" className="bg-white/50 dark:bg-black/20 border-white/20 dark:border-white/10">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MEMORY_TIERS.map((tier) => (
+                        <SelectItem key={tier} value={tier}>
+                          {t(`tier.${tier}`)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="memory-recall-when">{t("fields.recallWhen")}</Label>
+                  <Input
+                    id="memory-recall-when"
+                    value={editRecallWhen}
+                    onChange={(e) => setEditRecallWhen(e.target.value)}
+                    className="bg-white/50 dark:bg-black/20 border-white/20 dark:border-white/10"
+                    placeholder={t("fields.recallWhenPlaceholder")}
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-gray-800 dark:text-gray-100">{t("fields.isCore")}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{t("fields.isCoreDescription")}</p>
+                  </div>
+                  <Switch
+                    checked={editIsCore}
+                    onCheckedChange={(checked) => {
+                      setEditIsCore(checked)
+                      if (checked && editMemoryTier === "standard") {
+                        setEditMemoryTier("core")
+                      }
+                    }}
+                  />
+                </div>
+                <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-gray-800 dark:text-gray-100">{t("fields.isBoot")}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{t("fields.isBootDescription")}</p>
+                  </div>
+                  <Switch checked={editIsBoot} onCheckedChange={setEditIsBoot} />
+                </div>
+              </div>
+            </div>
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
             <GlassButton variant="ghost" className="h-11" onClick={() => setEditingItem(null)}>

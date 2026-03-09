@@ -9,6 +9,7 @@ use crate::modules::memory::types::{
     UpdateLocalMemoryRequest, WriteAction, WriteGuardResult,
 };
 use crate::modules::providers::embedding::EmbeddingService;
+use serde_json::Value;
 
 /// Write Guard thresholds (cosine similarity).
 const WRITE_GUARD_NOOP_THRESHOLD: f32 = 0.95;
@@ -322,11 +323,14 @@ impl MemoryService {
         id: &str,
         payload: UpdateLocalMemoryRequest,
     ) -> Result<LocalMemoryItem, MemoryError> {
+        let mut payload = payload;
         let existing = self
             .store
             .get(id)
             .await?
             .ok_or_else(|| MemoryError::Validation(format!("memory not found: {}", id)))?;
+
+        payload.meta_info = merge_memory_update_meta(existing.meta_info.as_ref(), payload.meta_info);
 
         let old_metadata = serialize_memory_metadata(&existing)?;
         let new_metadata = serialize_memory_update_metadata(&existing, &payload)?;
@@ -448,7 +452,7 @@ impl MemoryService {
     }
 
     /// Rollback a memory to a previous snapshot state.
-    /// Restores old_content from the snapshot and re-embeds.
+    /// Restores content and metadata from the snapshot and re-embeds.
     pub async fn rollback_memory(
         &self,
         snapshot_id: &str,
@@ -466,6 +470,16 @@ impl MemoryService {
         let old_content = snapshot.old_content.as_deref().ok_or_else(|| {
             MemoryError::Validation("snapshot has no old_content to restore".to_string())
         })?;
+        let existing = self
+            .store
+            .get(&snapshot.memory_id)
+            .await?
+            .ok_or_else(|| MemoryError::Validation(format!("memory not found: {}", snapshot.memory_id)))?;
+
+        let mut restore_payload = snapshot_restore_payload(snapshot.old_metadata.as_deref())?;
+        restore_payload.content = old_content.to_string();
+        let old_metadata = serialize_memory_metadata(&existing)?;
+        let new_metadata = serialize_memory_update_metadata(&existing, &restore_payload)?;
 
         // Re-embed the restored content
         let new_embedding = if let Some(ref embedding_svc) = self.embedding {
@@ -479,17 +493,17 @@ impl MemoryService {
             .record(
                 &snapshot.memory_id,
                 "rollback",
-                None, // current content will be overwritten
+                Some(existing.content.as_str()),
                 Some(old_content),
-                None,
-                None,
+                old_metadata.as_deref(),
+                new_metadata.as_deref(),
             )
             .await;
 
         self.store
-            .update_memory_content(
+            .update_memory(
                 &snapshot.memory_id,
-                old_content,
+                restore_payload,
                 new_embedding,
                 Some("rollback".to_string()),
             )
@@ -710,6 +724,77 @@ fn serialize_memory_update_metadata(
     })
 }
 
+fn merge_memory_update_meta(existing: Option<&Value>, incoming: Option<Value>) -> Option<Value> {
+    let Some(incoming_value) = incoming else {
+        return existing.cloned();
+    };
+
+    let Some(incoming_map) = incoming_value.as_object() else {
+        return Some(incoming_value);
+    };
+
+    let mut merged = existing
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    for (key, value) in incoming_map {
+        if value.is_null() {
+            merged.remove(key);
+        } else {
+            merged.insert(key.clone(), value.clone());
+        }
+    }
+    if merged.is_empty() {
+        None
+    } else {
+        Some(Value::Object(merged))
+    }
+}
+
+fn snapshot_restore_payload(metadata: Option<&str>) -> Result<UpdateLocalMemoryRequest, MemoryError> {
+    let mut request = UpdateLocalMemoryRequest {
+        content: String::new(),
+        meta_info: None,
+        category: None,
+        source: None,
+        tags: None,
+    };
+
+    let Some(raw_metadata) = metadata else {
+        return Ok(request);
+    };
+    let value: Value = serde_json::from_str(raw_metadata).map_err(|error| {
+        MemoryError::Storage(format!("failed to deserialize snapshot metadata: {}", error))
+    })?;
+    let Some(object) = value.as_object() else {
+        return Ok(request);
+    };
+
+    request.meta_info = object.get("meta_info").cloned().and_then(|value| {
+        if value.is_null() {
+            None
+        } else {
+            Some(value)
+        }
+    });
+    request.category = object
+        .get("category")
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string());
+    request.source = object
+        .get("source")
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string());
+    request.tags = object.get("tags").and_then(|value| {
+        value.as_array().map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(|text| text.to_string()))
+                .collect::<Vec<String>>()
+        })
+    });
+    Ok(request)
+}
+
 fn touched_vitality(current: Option<f32>) -> f32 {
     (current.unwrap_or(1.0) + VITALITY_TOUCH_INCREMENT).min(1.0)
 }
@@ -804,6 +889,82 @@ mod tests {
         assert_eq!(
             snapshots[0].new_content.as_deref(),
             Some("prefers black coffee")
+        );
+    }
+
+    #[tokio::test]
+    async fn rollback_restores_metadata_from_snapshot() {
+        let service = create_service_with_snapshots().await;
+        let created = service
+            .append(CreateLocalMemoryRequest {
+                content: "prefers coffee".into(),
+                session_id: None,
+                assistant_id: None,
+                meta_info: Some(serde_json::json!({
+                    "recall_when": "when discussing drinks",
+                    "is_core": true
+                })),
+                category: Some("preference".into()),
+                source: Some("manual".into()),
+                tags: Some(vec!["coffee".into()]),
+            })
+            .await
+            .expect("append memory");
+
+        let _updated = service
+            .update(
+                &created.id,
+                UpdateLocalMemoryRequest {
+                    content: "prefers tea".into(),
+                    meta_info: Some(serde_json::json!({
+                        "recall_when": "when discussing tea",
+                        "is_core": false,
+                        "is_boot": true
+                    })),
+                    category: Some("event".into()),
+                    source: Some("auto".into()),
+                    tags: Some(vec!["tea".into()]),
+                },
+            )
+            .await
+            .expect("update memory");
+
+        let snapshots = service
+            .list_snapshots(&created.id, 10)
+            .await
+            .expect("list snapshots");
+        let rolled_back = service
+            .rollback_memory(&snapshots[0].id)
+            .await
+            .expect("rollback memory")
+            .expect("rolled back item");
+
+        assert_eq!(rolled_back.content, "prefers coffee");
+        assert_eq!(rolled_back.category.as_deref(), Some("preference"));
+        assert_eq!(rolled_back.source.as_deref(), Some("manual"));
+        assert_eq!(rolled_back.tags, Some(vec!["coffee".to_string()]));
+        assert_eq!(
+            rolled_back
+                .meta_info
+                .as_ref()
+                .and_then(|value| value.get("recall_when"))
+                .and_then(|value| value.as_str()),
+            Some("when discussing drinks")
+        );
+        assert_eq!(
+            rolled_back
+                .meta_info
+                .as_ref()
+                .and_then(|value| value.get("is_core"))
+                .and_then(|value| value.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            rolled_back
+                .meta_info
+                .as_ref()
+                .and_then(|value| value.get("is_boot")),
+            None
         );
     }
 
