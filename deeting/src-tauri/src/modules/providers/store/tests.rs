@@ -415,7 +415,10 @@ async fn init_backfills_anthropic_protocol_meta_for_official_instances() {
         .expect("insert instance");
     }
 
-    store.init().await.expect("provider init should backfill protocol");
+    store
+        .init()
+        .await
+        .expect("provider init should backfill protocol");
 
     let missing_protocol = store
         .get_instance(&missing_protocol_id)
@@ -434,15 +437,24 @@ async fn init_backfills_anthropic_protocol_meta_for_official_instances() {
         .expect("proxy protocol instance should exist");
 
     assert_eq!(
-        missing_protocol.meta.get("protocol").and_then(|value| value.as_str()),
+        missing_protocol
+            .meta
+            .get("protocol")
+            .and_then(|value| value.as_str()),
         Some("anthropic")
     );
     assert_eq!(
-        wrong_protocol.meta.get("protocol").and_then(|value| value.as_str()),
+        wrong_protocol
+            .meta
+            .get("protocol")
+            .and_then(|value| value.as_str()),
         Some("anthropic")
     );
     assert_eq!(
-        proxy_protocol.meta.get("protocol").and_then(|value| value.as_str()),
+        proxy_protocol
+            .meta
+            .get("protocol")
+            .and_then(|value| value.as_str()),
         Some("openai")
     );
 }

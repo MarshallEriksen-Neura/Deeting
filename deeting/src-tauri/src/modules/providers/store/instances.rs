@@ -426,8 +426,7 @@ fn repair_instance_protocol_for_persistence(
     match normalize_protocol_text(stored_protocol) {
         None => Some(preset_protocol),
         Some(value)
-            if value.eq_ignore_ascii_case("openai")
-                && is_official_anthropic_base_url(base_url) =>
+            if value.eq_ignore_ascii_case("openai") && is_official_anthropic_base_url(base_url) =>
         {
             Some(preset_protocol)
         }

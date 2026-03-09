@@ -241,8 +241,8 @@ pub fn diagnose_wsl_availability() -> SandboxWslStatus {
             recommended_command: None,
         },
         Ok(output) => {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let stderr = decode_wsl_text(&output.stderr);
+            let stdout = decode_wsl_text(&output.stdout);
             let detail = if !stderr.is_empty() {
                 stderr
             } else if !stdout.is_empty() {
@@ -274,12 +274,12 @@ pub fn resolve_wsl_home_dir() -> Result<String, SandboxError> {
         .output()
         .map_err(|err| SandboxError::Unavailable(format!("failed to resolve WSL home: {err}")))?;
     if !output.status.success() {
-        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let detail = decode_wsl_text(&output.stderr);
         return Err(SandboxError::Unavailable(format!(
             "failed to resolve WSL home directory: {detail}"
         )));
     }
-    let home = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let home = decode_wsl_text(&output.stdout);
     if home.is_empty() {
         return Err(SandboxError::Unavailable(
             "failed to resolve WSL home directory".to_string(),
@@ -299,12 +299,12 @@ pub fn detect_wsl_python_abi(python_bin: &str) -> Result<String, SandboxError> {
         .output()
         .map_err(|err| SandboxError::Unavailable(format!("failed to inspect WSL python: {err}")))?;
     if !output.status.success() {
-        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let detail = decode_wsl_text(&output.stderr);
         return Err(SandboxError::Unavailable(format!(
             "WSL python3 is required for BoxLite installation: {detail}"
         )));
     }
-    let abi = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let abi = decode_wsl_text(&output.stdout);
     if abi.is_empty() {
         return Err(SandboxError::Unavailable(
             "failed to detect the WSL Python ABI".to_string(),
@@ -342,7 +342,7 @@ pub fn inspect_wsl_python(python_bin: &str) -> SandboxPythonStatus {
 
 pub fn windows_path_to_wsl(path: &Path) -> Result<String, SandboxError> {
     ensure_wsl_available()?;
-    let raw = path.display().to_string();
+    let raw = normalize_windows_path_for_wsl(&path.display().to_string());
     let output = Command::new("wsl.exe")
         .args(["--", "wslpath", "-a", raw.as_str()])
         .output()
@@ -350,16 +350,52 @@ pub fn windows_path_to_wsl(path: &Path) -> Result<String, SandboxError> {
             SandboxError::Unavailable(format!("failed to convert Windows path for WSL: {err}"))
         })?;
     if !output.status.success() {
-        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let detail = decode_wsl_text(&output.stderr);
         return Err(SandboxError::Unavailable(format!(
             "failed to convert Windows path for WSL: {detail}"
         )));
     }
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    Ok(decode_wsl_text(&output.stdout))
 }
 
 pub fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+fn normalize_windows_path_for_wsl(raw: &str) -> String {
+    raw.trim().replace('\\', "/")
+}
+
+fn decode_wsl_text(bytes: &[u8]) -> String {
+    let trimmed_bytes = if bytes.len() >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE {
+        &bytes[2..]
+    } else {
+        bytes
+    };
+
+    if should_decode_as_utf16le(trimmed_bytes) {
+        let mut units = Vec::with_capacity(trimmed_bytes.len() / 2);
+        for chunk in trimmed_bytes.chunks_exact(2) {
+            units.push(u16::from_le_bytes([chunk[0], chunk[1]]));
+        }
+        let decoded = String::from_utf16_lossy(&units);
+        return decoded.trim_matches(char::from(0)).trim().to_string();
+    }
+
+    String::from_utf8_lossy(trimmed_bytes).trim().to_string()
+}
+
+fn should_decode_as_utf16le(bytes: &[u8]) -> bool {
+    if bytes.len() < 2 || bytes.len() % 2 != 0 {
+        return false;
+    }
+    let zero_bytes = bytes
+        .iter()
+        .skip(1)
+        .step_by(2)
+        .filter(|byte| **byte == 0)
+        .count();
+    zero_bytes * 2 >= bytes.len() / 2
 }
 
 fn split_output_lines(raw: String) -> Vec<String> {
@@ -416,4 +452,31 @@ struct SyncExecResponse {
     stderr: String,
     exit_code: i32,
     error: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{decode_wsl_text, normalize_windows_path_for_wsl};
+
+    #[test]
+    fn normalize_windows_path_replaces_backslashes() {
+        assert_eq!(
+            normalize_windows_path_for_wsl(
+                r"C:\Users\timeline\AppData\Roaming\com.deeting.app\boxrun\sandbox\downloads\boxlite.whl"
+            ),
+            "C:/Users/timeline/AppData/Roaming/com.deeting.app/boxrun/sandbox/downloads/boxlite.whl"
+        );
+    }
+
+    #[test]
+    fn decode_wsl_text_supports_utf16le_output() {
+        let utf16: Vec<u8> = "wslpath: C:/Users/timeline/boxlite.whl"
+            .encode_utf16()
+            .flat_map(|unit| unit.to_le_bytes())
+            .collect();
+        assert_eq!(
+            decode_wsl_text(&utf16),
+            "wslpath: C:/Users/timeline/boxlite.whl"
+        );
+    }
 }
