@@ -3,7 +3,8 @@ use super::{
     common_impl::to_string,
     runtime::{build_desktop_mcp_tool_views, now_rfc3339, sync_source_inner, DesktopMcpToolView},
     skill_registry_impl::{
-        register_local_skills_inner, resolve_local_skill_scan_targets, try_clone_skill_repo,
+        materialize_skill_repo_to_dir, register_local_skills_inner, resolve_local_skill_definition,
+        resolve_local_skill_scan_targets,
     },
     support::*,
 };
@@ -247,21 +248,19 @@ pub(crate) async fn local_skill_registration_self_heal_needed(
                 continue;
             }
 
-            let Some(skill_id) =
-                read_skill_manifest_json(&path.join("deeting.json")).and_then(|manifest| {
-                    manifest
-                        .get("id")
-                        .and_then(|value| value.as_str())
-                        .map(str::trim)
-                        .filter(|value| !value.is_empty())
-                        .map(str::to_string)
-                })
+            let Some(skill_def) =
+                resolve_local_skill_definition(&path, "reindex", None, None).map_err(to_string)?
             else {
                 continue;
             };
 
-            if local_skill_registration_needs_reindex(store, memory_service, &skill_id, &path)
-                .await?
+            if local_skill_registration_needs_reindex(
+                store,
+                memory_service,
+                &skill_def.skill_id,
+                &path,
+            )
+            .await?
             {
                 return Ok(true);
             }
@@ -352,10 +351,12 @@ pub(crate) async fn sync_local_system_assets_inner(
                                 .as_deref()
                                 .filter(|raw| !raw.trim().is_empty())
                             {
-                                match try_clone_skill_repo(
-                                    &install_path,
+                                match materialize_skill_repo_to_dir(
+                                    skills_root,
                                     repo_url,
                                     installed_revision.as_deref(),
+                                    "user_skill",
+                                    Some(&installed_skill_id),
                                 )
                                 .await
                                 {

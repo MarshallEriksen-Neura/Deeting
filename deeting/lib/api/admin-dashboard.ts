@@ -34,11 +34,6 @@ const AssistantListSchema = z.object({
   size: z.number().int().nonnegative().optional(),
 })
 
-const CursorLikeSchema = z.object({
-  items: z.array(z.unknown()).default([]),
-  total: z.number().int().nonnegative().optional(),
-}).passthrough()
-
 export async function fetchAdminUsersTotal(params?: {
   is_active?: boolean
 }): Promise<number> {
@@ -89,36 +84,23 @@ export async function fetchAdminAssistantsTotal(params?: {
   }
 }
 
+const PendingReviewCountsSchema = z.object({
+  assistant_reviews: z.number(),
+  knowledge_reviews: z.number(),
+  plugin_reviews: z.number(),
+})
+
 export async function fetchAdminPendingReviewCounts(): Promise<{
   assistant_reviews: number
   knowledge_reviews: number
+  plugin_reviews: number
 }> {
-  const [assistantRes, knowledgeRes] = await Promise.all([
-    request<unknown>({
-      url: `${ADMIN_BASE}/assistant-reviews`,
-      method: "GET",
-      params: {
-        size: 100,
-        status_filter: "pending",
-      },
-    }),
-    request<unknown>({
-      url: `${ADMIN_BASE}/spec-knowledge-candidates`,
-      method: "GET",
-      params: {
-        size: 100,
-        status_filter: "pending_review",
-      },
-    }),
-  ])
+  const data = await request<unknown>({
+    url: `${ADMIN_BASE}/pending-reviews`,
+    method: "GET",
+  })
 
-  const assistantParsed = CursorLikeSchema.parse(assistantRes)
-  const knowledgeParsed = CursorLikeSchema.parse(knowledgeRes)
-
-  return {
-    assistant_reviews: assistantParsed.total ?? assistantParsed.items.length,
-    knowledge_reviews: knowledgeParsed.total ?? knowledgeParsed.items.length,
-  }
+  return PendingReviewCountsSchema.parse(data)
 }
 
 const ConversationItemSchema = z.object({
@@ -1229,6 +1211,46 @@ export const AssistantReviewPageSchema = CursorPageSchema.extend({
 
 export type AssistantReviewTask = z.infer<typeof ReviewTaskSchema>
 
+const PluginMarketReviewFindingSchema = z.object({
+  severity: z.string().nullable().optional(),
+  category: z.string().nullable().optional(),
+  message: z.string().nullable().optional(),
+  file: z.string().nullable().optional(),
+})
+
+const PluginMarketReviewItemSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  status: z.string(),
+  runtime: z.string().nullable().optional(),
+  version: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  source_repo: z.string().nullable().optional(),
+  source_revision: z.string().nullable().optional(),
+  source_subdir: z.string().nullable().optional(),
+  risk_level: z.string().nullable().optional(),
+  submission_channel: z.string().nullable().optional(),
+  requires_admin_approval: z.boolean().default(false),
+  submitter_user_id: z.string().nullable().optional(),
+  reviewer_user_id: z.string().nullable().optional(),
+  reviewed_at: z.string().nullable().optional(),
+  review_reason: z.string().nullable().optional(),
+  security_review_decision: z.string().nullable().optional(),
+  security_review_summary: z.string().nullable().optional(),
+  network_targets: z.array(z.string()).default([]),
+  destructive_actions: z.array(z.string()).default([]),
+  privacy_risks: z.array(z.string()).default([]),
+  findings: z.array(PluginMarketReviewFindingSchema).default([]),
+  created_at: z.string(),
+  updated_at: z.string(),
+})
+
+export const PluginMarketReviewListSchema = createOffsetPageSchema(
+  PluginMarketReviewItemSchema
+)
+
+export type PluginMarketReviewItem = z.infer<typeof PluginMarketReviewItemSchema>
+
 export async function fetchAdminAssistantReviews(params?: {
   status_filter?: string
 }) {
@@ -1264,6 +1286,41 @@ export async function rejectAdminAssistantReview(
     data: { reason: reason ?? "rejected by admin dashboard" },
   })
   return ReviewTaskSchema.parse(data)
+}
+
+export async function fetchAdminPluginMarketReviews(params?: {
+  skip?: number
+  limit?: number
+  status_filter?: string
+}) {
+  const data = await request<unknown>({
+    url: `${ADMIN_BASE}/plugin-reviews`,
+    method: "GET",
+    params: {
+      skip: params?.skip ?? 0,
+      limit: params?.limit ?? 100,
+      status_filter: params?.status_filter,
+    },
+  })
+  return PluginMarketReviewListSchema.parse(data)
+}
+
+export async function approveAdminPluginReview(skillId: string, reason?: string) {
+  const data = await request<unknown>({
+    url: `${ADMIN_BASE}/plugin-reviews/${skillId}/approve`,
+    method: "POST",
+    data: { reason: reason ?? "approved by admin dashboard" },
+  })
+  return PluginMarketReviewItemSchema.parse(data)
+}
+
+export async function rejectAdminPluginReview(skillId: string, reason?: string) {
+  const data = await request<unknown>({
+    url: `${ADMIN_BASE}/plugin-reviews/${skillId}/reject`,
+    method: "POST",
+    data: { reason: reason ?? "rejected by admin dashboard" },
+  })
+  return PluginMarketReviewItemSchema.parse(data)
 }
 
 const SpecKnowledgeCandidateSchema = z.object({
@@ -1821,7 +1878,7 @@ export async function fetchProviderWishes(params?: {
   status?: string
   limit?: number
 }) {
-  return request<any[]>({
+  return request<unknown[]>({
     url: `${INTERNAL_ADMIN_BASE}/provider-presets/wishes`,
     method: "GET",
     params,
@@ -1834,7 +1891,7 @@ export async function createProviderWish(payload: {
   reason?: string
   priority?: number
 }) {
-  return request<any>({
+  return request<Record<string, unknown>>({
     url: `${INTERNAL_ADMIN_BASE}/provider-presets/wishes`,
     method: "POST",
     data: payload,

@@ -49,6 +49,33 @@ pub async fn sync_official_skills_index(app_state: State<'_, AppState>) -> Resul
 }
 
 #[tauri::command]
+pub async fn enable_local_skill(
+    state: State<'_, AppState>,
+    skill_id: Option<String>,
+    #[allow(non_snake_case)] skillId: Option<String>,
+) -> Result<(), String> {
+    let normalized_skill_id = skillId.or(skill_id).unwrap_or_default().trim().to_string();
+    if normalized_skill_id.is_empty() {
+        return Err("skillId is required".to_string());
+    }
+
+    let updated = state
+        .mcp
+        .store
+        .enable_local_skills_by_ids(&[normalized_skill_id.clone()])
+        .await
+        .map_err(to_string)?;
+    if updated <= 0 {
+        return Err(format!(
+            "local skill {} is not installed and cannot be enabled",
+            normalized_skill_id
+        ));
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn set_cloud_base_url(state: State<'_, AppState>, url: String) -> Result<(), String> {
     let normalized = url.trim().trim_end_matches('/').to_string();
     if normalized.is_empty() {

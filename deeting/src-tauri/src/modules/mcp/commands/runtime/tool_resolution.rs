@@ -18,6 +18,7 @@ pub enum DesktopMcpToolIndexStatus {
 pub struct DesktopMcpToolView {
     #[serde(flatten)]
     pub tool: McpTool,
+    pub backing_skill_id: Option<String>,
     pub desired_enabled: bool,
     pub runtime_ready: bool,
     pub runtime_status_reason: &'static str,
@@ -150,6 +151,11 @@ pub(crate) fn build_desktop_mcp_tool_view(
     enabled_skill_ids: &HashSet<String>,
     indexed_tool_ids: Option<&HashSet<String>>,
 ) -> DesktopMcpToolView {
+    let backing_skill_id = tool
+        .identifier
+        .as_deref()
+        .and_then(derive_skill_id)
+        .map(str::to_string);
     let availability = tool_availability_from_tool(&tool, enabled_skill_ids);
     let (index_status, index_status_reason) = match indexed_tool_ids {
         Some(ids) if ids.contains(tool.id.as_str()) => (
@@ -167,6 +173,7 @@ pub(crate) fn build_desktop_mcp_tool_view(
     };
 
     DesktopMcpToolView {
+        backing_skill_id,
         desired_enabled: desired_enabled_from_tool(&tool, enabled_skill_ids),
         runtime_ready: availability.callable_now,
         runtime_status_reason: availability.status_reason,

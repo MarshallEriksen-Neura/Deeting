@@ -9,47 +9,27 @@ import { Switch } from "@/components/ui/switch"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 import { GlassDropdownMenu, GlassDropdownMenuContent, GlassDropdownMenuItem, GlassDropdownMenuTrigger } from "@/components/ui/glass-dropdown"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import {
+  type McpUiToggleMode,
+  getMcpIndexLabelKey,
+  getMcpPrimaryActionLabelKey,
+  getMcpRuntimeHintKey,
+  getMcpRuntimeLabelKey,
+  isMcpIndexMissing,
+  isMcpRuntimeLive,
+  isMcpRuntimeTransitioning,
+  isMcpToolSwitchChecked,
+  isMcpToolSwitchDisabled,
+} from "@/components/mcp/tool-semantics"
 import { cn } from "@/lib/utils"
 import { MCPTool, MCPToolStatus } from "@/types/mcp"
 import { useTranslations } from "next-intl"
 
-const isRuntimeTransitioning = (tool: MCPTool) => tool.status === "starting" || tool.status === "updating"
-
-const isRuntimeLive = (tool: MCPTool) => tool.runtimeReady ?? (tool.status === "healthy" || tool.status === "degraded")
-
-const isRuntimeSwitchChecked = (tool: MCPTool) => {
-  if (tool.desiredEnabled === false) {
-    return false
-  }
-  return isRuntimeLive(tool) || tool.status === "starting"
-}
-
-const isRuntimeToggleDisabled = (tool: MCPTool) => {
-  if (tool.status === "updating") {
-    return true
-  }
-  return tool.recommendedAction === "enable_skill" || tool.installRequired === true
-}
-
-const getRuntimeHintKey = (tool: MCPTool) => {
-  if (tool.desiredEnabled === false || tool.recommendedAction === "enable_skill") {
-    return "disabled"
-  }
-  if (tool.recommendedAction === "start_tool") {
-    return "startRequired"
-  }
-  if (tool.recommendedAction === "wait_for_runtime") {
-    return "waiting"
-  }
-  if (tool.recommendedAction === "review") {
-    return "review"
-  }
-  return null
-}
-
 interface ServerCardProps {
   tool: MCPTool
+  toggleMode?: McpUiToggleMode
   onToggle?: (tool: MCPTool, enabled: boolean) => void
+  onPrimaryAction?: () => void
   onClick?: () => void
   onResolveConflict?: () => void
   onSync?: () => void
@@ -149,7 +129,9 @@ const StatusDot = ({ status }: { status: MCPToolStatus }) => {
 
 export function ServerCard({
   tool,
+  toggleMode = "runtime",
   onToggle,
+  onPrimaryAction,
   onClick,
   onResolveConflict,
   onSync,
@@ -160,15 +142,19 @@ export function ServerCard({
   const t = useTranslations("mcp")
   const [confirmOpen, setConfirmOpen] = useState(false)
   const isSynced = tool.source !== "local"
-  const isRunning = isRuntimeLive(tool)
+  const isRunning = isMcpRuntimeLive(tool)
   const showConflict = tool.conflictStatus === "conflict"
   const showUpdate = tool.conflictStatus === "update_available"
   const showNew = tool.isNew && !showConflict && !showUpdate
   const showMenu = Boolean(onEdit || onDelete)
   const theme = statusTheme[tool.status]
-  const isActive = isRunning || isRuntimeTransitioning(tool)
-  const runtimeHintKey = getRuntimeHintKey(tool)
-  const showIndexMissing = tool.indexStatus === "missing"
+  const isActive = isRunning || isMcpRuntimeTransitioning(tool)
+  const runtimeHintKey = getMcpRuntimeHintKey(tool)
+  const runtimeLabelKey = getMcpRuntimeLabelKey(tool)
+  const showIndexMissing = isMcpIndexMissing(tool)
+  const indexLabelKey = getMcpIndexLabelKey(tool)
+  const primaryActionLabelKey = getMcpPrimaryActionLabelKey(tool)
+  const showPrimaryAction = Boolean(primaryActionLabelKey && onPrimaryAction)
 
   return (
     <GlassCard
@@ -276,7 +262,7 @@ export function ServerCard({
                   variant="outline"
                   className="text-[10px] h-5 px-1.5 border-slate-200/80 bg-slate-50/80 text-slate-600 shrink-0"
                 >
-                  {t(`tool.runtime.${runtimeHintKey}`)}
+                  {t(runtimeLabelKey)}
                 </Badge>
               )}
               {!showConflict && !showUpdate && !runtimeHintKey && showIndexMissing && (
@@ -284,7 +270,7 @@ export function ServerCard({
                   variant="outline"
                   className="text-[10px] h-5 px-1.5 border-purple-200/80 bg-purple-50/80 text-purple-700 shrink-0"
                 >
-                  {t("tool.runtime.indexMissing")}
+                  {t(indexLabelKey)}
                 </Badge>
               )}
             </div>
@@ -315,10 +301,22 @@ export function ServerCard({
 
           {/* Actions - switch always visible, others on hover */}
           <div className="flex items-center gap-2 shrink-0" data-mcp-action>
+            {showPrimaryAction && primaryActionLabelKey && (
+              <GlassButton
+                size="sm"
+                variant={tool.recommendedAction === "review" ? "secondary" : "outline"}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onPrimaryAction?.()
+                }}
+              >
+                {t(primaryActionLabelKey)}
+              </GlassButton>
+            )}
             <Switch
-              checked={isRuntimeSwitchChecked(tool)}
+              checked={isMcpToolSwitchChecked(tool, toggleMode)}
               onCheckedChange={(checked) => onToggle?.(tool, checked)}
-              disabled={isRuntimeToggleDisabled(tool)}
+              disabled={isMcpToolSwitchDisabled(tool, toggleMode)}
               className="data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-purple-600 data-[state=checked]:to-purple-500"
             />
             {isSynced && onSync && (
@@ -410,12 +408,12 @@ export function ServerCard({
           <p className="text-sm text-[var(--muted)] line-clamp-2 leading-relaxed">{tool.description}</p>
           {tool.runtimeStatusReason && runtimeHintKey && (
             <div className="mt-2 text-slate-600 text-xs bg-slate-50/80 backdrop-blur-sm border border-slate-200/60 px-3 py-1.5 rounded-lg shadow-sm">
-              <span className="font-semibold">{t("tool.labels.runtime")}:</span> {t(`tool.runtime.${runtimeHintKey}`)}
+              <span className="font-semibold">{t("tool.labels.runtime")}:</span> {t(runtimeLabelKey)}
             </div>
           )}
           {tool.indexStatus === "missing" && (
             <div className="mt-2 text-purple-700 text-xs bg-purple-50/80 backdrop-blur-sm border border-purple-200/60 px-3 py-1.5 rounded-lg shadow-sm">
-              <span className="font-semibold">{t("tool.labels.index")}:</span> {t("tool.runtime.indexMissing")}
+              <span className="font-semibold">{t("tool.labels.index")}:</span> {t(indexLabelKey)}
             </div>
           )}
           {(tool.status === "crashed" || tool.status === "error") && tool.error && (

@@ -1135,6 +1135,7 @@ mod tests {
 
         assert!(!view.desired_enabled);
         assert!(!view.runtime_ready);
+        assert_eq!(view.backing_skill_id.as_deref(), Some("skill.stocks"));
         assert_eq!(view.runtime_status_reason, "skill_installed_but_disabled");
         assert_eq!(view.availability_lane, "installable");
         assert_eq!(view.recommended_action, "enable_skill");
@@ -1143,6 +1144,35 @@ mod tests {
             view.index_status,
             crate::modules::mcp::commands::runtime::DesktopMcpToolIndexStatus::Indexed
         );
+    }
+
+    #[tokio::test]
+    async fn enable_local_skills_by_ids_reenables_disabled_skill_rows() {
+        let store = create_test_store("enable-local-skill-row").await;
+        store
+            .upsert_local_skill_install_state(
+                "skill.stocks",
+                Some("1.0.0"),
+                false,
+                Some("python"),
+                "{\"id\":\"skill.stocks\"}",
+                "/tmp/skill.stocks",
+                None,
+            )
+            .await
+            .expect("insert disabled local stock skill");
+
+        let updated = store
+            .enable_local_skills_by_ids(&["skill.stocks".to_string()])
+            .await
+            .expect("enable local skill");
+
+        assert_eq!(updated, 1);
+        let enabled_skill_ids = store
+            .list_enabled_local_skill_ids()
+            .await
+            .expect("list enabled local skill ids");
+        assert!(enabled_skill_ids.contains("skill.stocks"));
     }
 
     #[tokio::test]
@@ -3411,7 +3441,7 @@ mod tests {
         std::fs::create_dir_all(&skill_dir).expect("create restore skill dir");
         std::fs::write(
             skill_dir.join("deeting.json"),
-            r#"{"id":"skill.restore","name":"Restore Skill","description":"Repair the local skill index","runtime":"python"}"#,
+            r#"{"id":"skill.restore","name":"Restore Skill","description":"Repair the local skill index","runtime":["local"]}"#,
         )
         .expect("write restore manifest");
         std::fs::write(

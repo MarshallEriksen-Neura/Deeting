@@ -196,7 +196,11 @@
       "tools": {
         "title": "工具列表",
         "description": "可在此禁用或启用该服务下的工具。",
-        "empty": "暂无工具。"
+        "empty": "暂无工具。",
+        "runtimeReady": "运行时已就绪",
+        "indexIndexed": "已进入索引",
+        "indexUnknown": "索引状态未知",
+        "suggestedAction": "建议操作"
       }
     },
     "delete": {
@@ -207,8 +211,12 @@
     }
   },
   "actions": {
+    "enable": "启用",
     "start": "启动",
     "stop": "停止",
+    "enableSkill": "启用 skill",
+    "review": "查看",
+    "reviewLogs": "查看日志",
     "configure": "配置",
     "sync": "同步",
     "applyUpdate": "应用更新"
@@ -255,7 +263,15 @@
     "updateFailed": "更新服务失败",
     "deleteSuccess": "服务已删除",
     "deleteFailed": "删除服务失败",
-    "toggleUnsupported": "仅远程 SSE 服务支持启用或停用"
+    "toggleUnsupported": "仅远程 SSE 服务支持启用或停用",
+    "actionUnavailable": "当前无法执行该操作",
+    "installRequired": "该工具仍需安装或补充配置后才能运行。",
+    "runtimeBusy": "运行时仍在变更中",
+    "runtimeBusyDesc": "请等待运行时完成启动或更新后再重试。",
+    "enableSkillSuccess": "Skill 已启用",
+    "enableSkillSuccessDesc": "本地 skill 已重新启用。现在可以继续启动工具。",
+    "enableSkillFailed": "启用 skill 失败",
+    "enableSkillMissingId": "该工具缺少对应的 skill 标识，无法在这里重新启用。"
   }
 }
 }

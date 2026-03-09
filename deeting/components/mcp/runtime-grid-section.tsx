@@ -26,7 +26,9 @@ const isToolStoppedForUi = (tool: MCPTool) => !isToolRunningForUi(tool)
 interface RuntimeGridSectionProps {
   tools: MCPTool[]
   conflictCount: number
+  toggleMode?: "runtime" | "desired"
   onToggleTool?: (tool: MCPTool, enabled: boolean) => void
+  onPrimaryAction?: (tool: MCPTool) => void
   onShowLogs?: (tool: MCPTool) => void
   onResolveConflict?: (tool: MCPTool) => void
   onEditServer?: (tool: MCPTool) => void
@@ -40,7 +42,9 @@ interface RuntimeGridSectionProps {
 export function RuntimeGridSection({ 
   tools, 
   conflictCount,
+  toggleMode = "runtime",
   onToggleTool, 
+  onPrimaryAction,
   onShowLogs, 
   onResolveConflict,
   onEditServer,
@@ -115,7 +119,9 @@ export function RuntimeGridSection({
               <ServerCard 
                   key={tool.id} 
                   tool={tool} 
+                  toggleMode={toggleMode}
                   onToggle={onToggleTool ? (item, enabled) => onToggleTool(item, enabled) : undefined}
+                  onPrimaryAction={onPrimaryAction ? () => onPrimaryAction(tool) : undefined}
                   onClick={onShowLogs ? () => onShowLogs(tool) : undefined}
                   onResolveConflict={onResolveConflict ? () => onResolveConflict(tool) : undefined}
                   onSync={onSyncTool ? () => onSyncTool(tool) : undefined}

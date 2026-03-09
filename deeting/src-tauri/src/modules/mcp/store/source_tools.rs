@@ -268,6 +268,32 @@ impl McpStore {
         Ok(result.rows_affected() as i64)
     }
 
+    pub async fn enable_local_skills_by_ids(&self, skill_ids: &[String]) -> Result<i64, McpError> {
+        let normalized_skill_ids: Vec<String> = skill_ids
+            .iter()
+            .map(|raw| raw.trim().to_string())
+            .filter(|raw| !raw.is_empty())
+            .collect();
+        if normalized_skill_ids.is_empty() {
+            return Ok(0);
+        }
+
+        let now = now_rfc3339()?;
+        let placeholders = vec!["?"; normalized_skill_ids.len()].join(", ");
+        let sql = format!(
+            "UPDATE local_skill_install\n             SET is_enabled = 1, updated_at = ?\n             WHERE user_id = ?\n               AND skill_id IN ({placeholders});"
+        );
+        let mut query = sqlx::query(&sql).bind(&now).bind(LOCAL_DESKTOP_USER_ID);
+        for skill_id in normalized_skill_ids {
+            query = query.bind(skill_id);
+        }
+        let result = query
+            .execute(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+        Ok(result.rows_affected() as i64)
+    }
+
     pub async fn ensure_local_source(&self) -> Result<McpSource, McpError> {
         if let Some(source) = self.find_source_by_type(McpSourceType::Local).await? {
             return Ok(source);

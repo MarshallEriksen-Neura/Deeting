@@ -1,27 +1,41 @@
 ---
 name: skill_manager
-description: "Autonomous skill installer and local environment manager. Supports git clone and symlinking."
+description: "Manage Deeting skills through npx skills and keep them linked into Deeting's local skills directory."
 ---
 
 # Skill Manager
 
 ## Overview
 
-The Skill Manager is a core Deeting skill responsible for extending the system's capabilities by installing, updating, and indexing new skills from remote git repositories. It handles the low-level file system operations (cloning and symlinking) and ensures that newly added skills are semantically indexed and ready for use.
+This skill is Deeting's bridge to the `npx skills` ecosystem.
 
-## Core Tools
+It should:
 
-- `install_skill_from_git`: Clones a remote repository to a local storage directory (`~/.deeting/repos`) and creates a symlink in the application's search path. This allows Deeting to discover and load the skill dynamically.
-- `refresh_skill_index`: Triggers a full rescan of all local skill directories. This is essential after manual file changes or installation of new skills to ensure the semantic search index (LanceDB) is up-to-date.
-- `uninstall_skill`: Removes the symlink for a locally installed skill, effectively disabling it from the Deeting runtime without deleting the source code in the repos directory.
+- search skills with `npx skills find <query>`
+- install skills with `npx skills add <package>`
+- check and update installed skills with `npx skills check` / `npx skills update`
+- keep Deeting's own app-data skills directory linked to the installed skills so desktop indexing can discover them
 
-## Usage Guidelines
+## Core Rules
 
-- **Rule 1: Name Uniqueness**: Always provide a unique and descriptive `skill_name` when installing to avoid conflicts in the symlink directory.
-- **Rule 2: HTTPS URLs**: Prefer HTTPS URLs for git cloning to ensure compatibility across different environments.
-- **Rule 3: Post-Install Refresh**: After a successful installation, the system usually triggers a refresh, but you should verify by checking the skill availability if the LLM cannot immediately see the new tools.
+1. **Use `npx skills` first** for search/install/update flows.
+2. **If `npx skills add` is unavailable or fails, fall back to `git clone + local link`** for repo-based installs.
+3. **Deeting discovery must still point at Deeting's own skills directory**. After installation, mirror or symlink the installed skill into `$APP_DATA_DIR/skills/<skill_name>`.
+4. **Docs-first skills are valid**. Do not assume `deeting.json`, `main.py`, or tool executables are required.
+5. **Check the local environment first** when installation fails. The critical binaries are `git`, `node`, `npx`, and `python3`.
 
-## Anti-Patterns
+## Available Tools
 
-- **Do NOT manually delete files** in the `~/.deeting/repos` directory unless you intend to completely purge the source code. Use `uninstall_skill` to safely disable a skill.
-- **Avoid installing untrusted repositories**: Since skills can execute code, ensure the source repository is reputable.
+- `find_skills`
+- `add_skill`
+- `check_skill_updates`
+- `update_skills`
+- `inspect_skill_environment`
+- `refresh_skill_index`
+- `uninstall_skill`
+
+## Usage Notes
+
+- If a package exposes multiple skills, prefer selecting explicit `skill_names` instead of installing blindly.
+- After any add/update/remove operation, refresh the Deeting skill index.
+- Do not link skills into other agent directories and assume Deeting will see them automatically. The Deeting-local skills path must remain part of the flow.

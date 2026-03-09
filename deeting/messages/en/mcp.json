@@ -196,7 +196,11 @@
       "tools": {
         "title": "Tools",
         "description": "Toggle tool availability for this server.",
-        "empty": "No tools available."
+        "empty": "No tools available.",
+        "runtimeReady": "Runtime ready",
+        "indexIndexed": "Indexed",
+        "indexUnknown": "Index unknown",
+        "suggestedAction": "Suggested action"
       }
     },
     "delete": {
@@ -207,8 +211,12 @@
     }
   },
   "actions": {
+    "enable": "Enable",
     "start": "Start",
     "stop": "Stop",
+    "enableSkill": "Enable skill",
+    "review": "Review",
+    "reviewLogs": "Review logs",
     "configure": "Configure",
     "sync": "Sync",
     "applyUpdate": "Apply Update"
@@ -255,7 +263,15 @@
     "updateFailed": "Failed to update server",
     "deleteSuccess": "Server deleted",
     "deleteFailed": "Failed to delete server",
-    "toggleUnsupported": "Only remote SSE servers can be enabled or disabled"
+    "toggleUnsupported": "Only remote SSE servers can be enabled or disabled",
+    "actionUnavailable": "Action unavailable",
+    "installRequired": "This tool still needs installation or configuration before it can run.",
+    "runtimeBusy": "Runtime is still changing",
+    "runtimeBusyDesc": "Wait for the runtime to finish starting or updating, then try again.",
+    "enableSkillSuccess": "Skill enabled",
+    "enableSkillSuccessDesc": "The local skill is enabled again. Start it to make the tool runnable.",
+    "enableSkillFailed": "Failed to enable skill",
+    "enableSkillMissingId": "This tool is missing its backing skill id and cannot be re-enabled from here."
   }
 }
 }

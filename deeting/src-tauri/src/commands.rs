@@ -84,6 +84,7 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::mcp::commands::skill_registry_impl::install_skill_from_repo,
         crate::modules::mcp::commands::skill_registry_impl::uninstall_skill,
         crate::modules::mcp::commands::config_and_skills_impl::sync_official_skills_index,
+        crate::modules::mcp::commands::config_and_skills_impl::enable_local_skill,
         crate::modules::mcp::commands::runtime::asset_indexing::rebuild_local_embedding_assets,
         crate::modules::relay::restart_relay_event_worker,
         crate::modules::mcp::bridge::set_mcp_backend_url,

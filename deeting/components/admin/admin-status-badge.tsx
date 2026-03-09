@@ -79,6 +79,7 @@ export function getStatusTone(status: string): BadgeTone {
 
     // Warning
     pending: "warn",
+    needs_review: "warn",
     pending_review: "warn",
     pending_signal: "warn",
     pending_eval: "warn",

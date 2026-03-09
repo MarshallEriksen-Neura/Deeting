@@ -19,7 +19,7 @@ const MCP_SERVERS_KEY = "/api/v1/mcp/servers"
 
 export interface McpServersState extends SWRResult<McpServer[]> {
   create: SWRMutationResponse<McpServer, ApiError, string, McpServerCreateRequest>
-  update: SWRMutationResponse<McpServer, ApiError, [string, McpServerUpdateRequest], McpServerUpdateRequest>
+  update: SWRMutationResponse<McpServer, ApiError, string, [string, McpServerUpdateRequest]>
   remove: SWRMutationResponse<{ ok: boolean }, ApiError, string, string>
   sync: SWRMutationResponse<McpServer, ApiError, string, string>
   refresh: () => void
@@ -36,7 +36,7 @@ export function useMcpServers(options: { enabled?: boolean } = {}): McpServersSt
     (_key, { arg }: { arg: McpServerCreateRequest }) => createMcpServer(arg)
   )
 
-  const update = useSWRMutation(
+  const update: McpServersState["update"] = useSWRMutation(
     MCP_SERVERS_KEY,
     (_key, { arg }: { arg: [string, McpServerUpdateRequest] }) =>
       updateMcpServer(arg[0], arg[1])

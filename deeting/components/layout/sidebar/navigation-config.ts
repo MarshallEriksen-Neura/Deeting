@@ -198,6 +198,12 @@ export const adminNavigation: NavGroup[] = [
         icon: "workflow",
       },
       {
+        id: "plugin-reviews",
+        label: "nav.pluginReviews",
+        href: "/admin/plugin-reviews",
+        icon: "shield",
+      },
+      {
         id: "admin-memory",
         label: "nav.adminMemory",
         href: "/admin/memory",

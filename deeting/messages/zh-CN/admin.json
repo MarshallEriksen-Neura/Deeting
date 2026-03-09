@@ -31,6 +31,8 @@
         "assistantReviewsSubtitle": "等待审批",
         "knowledgeReviewsTitle": "知识审核",
         "knowledgeReviewsSubtitle": "等待处理",
+        "pluginReviewsTitle": "插件审核",
+        "pluginReviewsSubtitle": "等待管理员查看安全审查快照",
         "financialSummary": "财务摘要",
         "monthlySpend": "本月支出",
         "totalBalance": "账户余额",
@@ -1305,6 +1307,10 @@
       "title": "技能管理",
       "description": "管理已注册的技能与能力"
     },
+    "pluginReviews": {
+      "title": "插件审核",
+      "description": "结合安全审查快照审批或拒绝插件市场提交"
+    },
     "skillsPage": {
       "status": {
         "active": "启用",
@@ -1353,6 +1359,79 @@
       "feedback": {
         "deleted": "技能已删除",
         "deleteFailed": "删除技能失败"
+      }
+    },
+    "pluginReviewsPage": {
+      "status": {
+        "pendingReview": "待审核",
+        "approved": "已通过",
+        "rejected": "已拒绝"
+      },
+      "stats": {
+        "pendingReview": "待审核",
+        "approved": "已通过",
+        "rejected": "已拒绝"
+      },
+      "feedback": {
+        "approved": "已通过插件：{name}",
+        "rejected": "已拒绝插件：{name}",
+        "operationFailed": "操作失败"
+      },
+      "actions": {
+        "details": "查看详情",
+        "approve": "通过插件",
+        "reject": "拒绝插件"
+      },
+      "dialog": {
+        "title": "拒绝 {name}",
+        "description": "请先填写拒绝原因，再提交本次审核决定。",
+        "reasonLabel": "拒绝原因",
+        "reasonPlaceholder": "说明提交者需要修复的问题...",
+        "reasonHint": "该原因为必填项，并会写入审核记录。",
+        "cancel": "取消",
+        "confirmReject": "拒绝插件"
+      },
+      "drawer": {
+        "fallbackTitle": "插件审核",
+        "meta": {
+          "status": "状态",
+          "risk": "风险",
+          "submitter": "提交人",
+          "reviewedAt": "审核时间",
+          "repo": "仓库",
+          "revision": "版本"
+        },
+        "sections": {
+          "summary": "审核摘要",
+          "findings": "发现项",
+          "networkTargets": "网络目标",
+          "privacyRisks": "隐私风险",
+          "destructiveActions": "破坏性操作",
+          "reviewReason": "审核备注"
+        },
+        "findings": {
+          "uncategorized": "未分类"
+        }
+      },
+      "filters": {
+        "searchPlaceholder": "搜索插件 ID、仓库、提交人或审查摘要...",
+        "status": "状态"
+      },
+      "table": {
+        "headers": {
+          "skill": "插件",
+          "status": "状态",
+          "risk": "风险",
+          "security": "安全审查",
+          "submitter": "提交人",
+          "reviewed": "审核时间"
+        },
+        "summary": "{findings} 条发现 · {network} 个网络目标 · {privacy} 个隐私风险"
+      },
+      "empty": {
+        "loading": "正在加载插件提交...",
+        "failed": "加载插件提交失败",
+        "noData": "暂无插件提交"
       }
     }
   }

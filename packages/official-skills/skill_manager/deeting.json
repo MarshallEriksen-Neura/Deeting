@@ -2,9 +2,9 @@
   "$schema": "../deeting-manifest-schema.json",
   "id": "official.skills.skill_manager",
   "name": "Skill Manager",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Deeting Team",
-  "description": "Autonomous skill installer and local environment manager. Supports git clone and symlinking.",
+  "description": "Manage Deeting skills through npx skills and keep them linked into the Deeting local skills directory.",
   "entry": {
     "backend": "main.py"
   },

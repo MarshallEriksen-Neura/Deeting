@@ -31,6 +31,8 @@
         "assistantReviewsSubtitle": "Awaiting approval",
         "knowledgeReviewsTitle": "Knowledge Reviews",
         "knowledgeReviewsSubtitle": "Pending processing",
+        "pluginReviewsTitle": "Plugin Reviews",
+        "pluginReviewsSubtitle": "Security review snapshots pending decision",
         "financialSummary": "Financial Summary",
         "monthlySpend": "Monthly Spend",
         "totalBalance": "Total Balance",
@@ -1305,6 +1307,10 @@
       "title": "Skill Management",
       "description": "Manage registered skills and capabilities"
     },
+    "pluginReviews": {
+      "title": "Plugin Reviews",
+      "description": "Approve or reject plugin market submissions with security review snapshots"
+    },
     "skillsPage": {
       "status": {
         "active": "Active",
@@ -1353,6 +1359,79 @@
       "feedback": {
         "deleted": "Skill deleted",
         "deleteFailed": "Failed to delete skill"
+      }
+    },
+    "pluginReviewsPage": {
+      "status": {
+        "pendingReview": "Pending Review",
+        "approved": "Approved",
+        "rejected": "Rejected"
+      },
+      "stats": {
+        "pendingReview": "Pending Review",
+        "approved": "Approved",
+        "rejected": "Rejected"
+      },
+      "feedback": {
+        "approved": "Approved plugin: {name}",
+        "rejected": "Rejected plugin: {name}",
+        "operationFailed": "Operation failed"
+      },
+      "actions": {
+        "details": "Review details",
+        "approve": "Approve plugin",
+        "reject": "Reject plugin"
+      },
+      "dialog": {
+        "title": "Reject {name}",
+        "description": "Add a rejection reason before sending this decision.",
+        "reasonLabel": "Rejection reason",
+        "reasonPlaceholder": "Explain what the submitter needs to fix...",
+        "reasonHint": "This reason is required and will be stored with the review record.",
+        "cancel": "Cancel",
+        "confirmReject": "Reject plugin"
+      },
+      "drawer": {
+        "fallbackTitle": "Plugin review",
+        "meta": {
+          "status": "Status",
+          "risk": "Risk",
+          "submitter": "Submitter",
+          "reviewedAt": "Reviewed at",
+          "repo": "Repository",
+          "revision": "Revision"
+        },
+        "sections": {
+          "summary": "Review summary",
+          "findings": "Findings",
+          "networkTargets": "Network targets",
+          "privacyRisks": "Privacy risks",
+          "destructiveActions": "Destructive actions",
+          "reviewReason": "Review reason"
+        },
+        "findings": {
+          "uncategorized": "Uncategorized"
+        }
+      },
+      "filters": {
+        "searchPlaceholder": "Search plugin id, repo, submitter, or review summary...",
+        "status": "Status"
+      },
+      "table": {
+        "headers": {
+          "skill": "Plugin",
+          "status": "Status",
+          "risk": "Risk",
+          "security": "Security Review",
+          "submitter": "Submitter",
+          "reviewed": "Reviewed"
+        },
+        "summary": "{findings} findings · {network} network targets · {privacy} privacy risks"
+      },
+      "empty": {
+        "loading": "Loading plugin submissions...",
+        "failed": "Failed to load plugin submissions",
+        "noData": "No plugin submissions found"
       }
     }
   }

@@ -1,4 +1,5 @@
 import {
+  approveAdminPluginReview,
   archiveAdminConversation,
   closeAdminConversation,
   fetchAdminConversation,
@@ -7,9 +8,12 @@ import {
   fetchAdminConversationSummaries,
   fetchAdminGatewayLogs,
   fetchAdminGatewayLogStats,
+  fetchAdminPendingReviewCounts,
+  fetchAdminPluginMarketReviews,
   fetchLocalConversationSummaryIdleTasks,
   fetchLocalConversationSummaryJobs,
   fetchLocalConversationSummaryQueueStats,
+  rejectAdminPluginReview,
   retryLocalConversationSummaryJob,
   retryLocalConversationSummaryJobs,
   triggerLocalConversationSummary,
@@ -655,5 +659,82 @@ describe("admin dashboard api", () => {
       },
     })
     expect(mockInvoke).not.toHaveBeenCalled()
+  })
+
+  it("aggregates pending assistant, knowledge, and plugin review counts", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "false"
+    mockRequest.mockResolvedValueOnce({
+      assistant_reviews: 2,
+      knowledge_reviews: 3,
+      plugin_reviews: 4,
+    })
+
+    const result = await fetchAdminPendingReviewCounts()
+
+    expect(result).toEqual({
+      assistant_reviews: 2,
+      knowledge_reviews: 3,
+      plugin_reviews: 4,
+    })
+    expect(mockRequest).toHaveBeenCalledWith({
+      url: "/api/v1/admin/pending-reviews",
+      method: "GET",
+    })
+  })
+
+  it("lists and decides plugin market reviews via cloud api", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "false"
+    mockRequest
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: "skill.http.fetch",
+            name: "HTTP Fetch",
+            status: "needs_review",
+            risk_level: "high",
+            network_targets: ["api.example.com"],
+            destructive_actions: [],
+            privacy_risks: [],
+            findings: [],
+            created_at: "2026-03-09T00:00:00Z",
+            updated_at: "2026-03-09T00:00:00Z",
+          },
+        ],
+        total: 1,
+        skip: 0,
+        limit: 100,
+      })
+      .mockResolvedValueOnce({
+        id: "skill.http.fetch",
+        name: "HTTP Fetch",
+        status: "active",
+        risk_level: "high",
+        network_targets: [],
+        destructive_actions: [],
+        privacy_risks: [],
+        findings: [],
+        created_at: "2026-03-09T00:00:00Z",
+        updated_at: "2026-03-09T00:00:00Z",
+      })
+      .mockResolvedValueOnce({
+        id: "skill.http.fetch",
+        name: "HTTP Fetch",
+        status: "rejected",
+        risk_level: "high",
+        network_targets: [],
+        destructive_actions: [],
+        privacy_risks: [],
+        findings: [],
+        created_at: "2026-03-09T00:00:00Z",
+        updated_at: "2026-03-09T00:00:00Z",
+      })
+
+    const list = await fetchAdminPluginMarketReviews({ status_filter: "needs_review" })
+    const approved = await approveAdminPluginReview("skill.http.fetch")
+    const rejected = await rejectAdminPluginReview("skill.http.fetch", "unsafe")
+
+    expect(list.items[0]?.id).toBe("skill.http.fetch")
+    expect(approved.status).toBe("active")
+    expect(rejected.status).toBe("rejected")
   })
 })

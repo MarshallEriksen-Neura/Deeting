@@ -72,6 +72,7 @@ export interface McpToolRecord {
   created_at: string
   updated_at: string
   desired_enabled?: boolean
+  backing_skill_id?: string | null
   runtime_ready?: boolean
   runtime_status_reason?: string
   availability_lane?: MCPToolAvailabilityLane
@@ -122,6 +123,7 @@ export interface MCPTool {
   createdAt?: string
   updatedAt?: string
   desiredEnabled?: boolean
+  backingSkillId?: string
   runtimeReady?: boolean
   runtimeStatusReason?: string
   availabilityLane?: MCPToolAvailabilityLane

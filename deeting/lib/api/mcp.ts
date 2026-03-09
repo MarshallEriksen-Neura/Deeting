@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-import { ApiError, request } from "@/lib/http"
+import { request } from "@/lib/http"
 
 export const McpServerSchema = z.object({
   id: z.string(),
@@ -14,6 +14,15 @@ export const McpServerSchema = z.object({
   secret_ref_id: z.string().nullable().optional(),
   tools_count: z.number(),
   status: z.string(),
+  desired_enabled: z.boolean().optional(),
+  runtime_ready: z.boolean().optional(),
+  runtime_status_reason: z.string().nullable().optional(),
+  availability_lane: z.enum(["callable_now", "installable", "advisory"]).optional(),
+  recommended_action: z.string().nullable().optional(),
+  activation_required: z.boolean().optional(),
+  install_required: z.boolean().optional(),
+  index_status: z.enum(["indexed", "missing", "unknown"]).optional(),
+  index_status_reason: z.string().nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),
 })
@@ -25,6 +34,15 @@ export const McpServerToolSchema = z.object({
   description: z.string().nullable().optional(),
   input_schema: z.record(z.any()).default({}),
   enabled: z.boolean(),
+  desired_enabled: z.boolean().optional(),
+  runtime_ready: z.boolean().optional(),
+  runtime_status_reason: z.string().nullable().optional(),
+  availability_lane: z.enum(["callable_now", "installable", "advisory"]).optional(),
+  recommended_action: z.string().nullable().optional(),
+  activation_required: z.boolean().optional(),
+  install_required: z.boolean().optional(),
+  index_status: z.enum(["indexed", "missing", "unknown"]).optional(),
+  index_status_reason: z.string().nullable().optional(),
 })
 
 export type McpServerTool = z.infer<typeof McpServerToolSchema>
@@ -249,7 +267,7 @@ export async function fetchMcpMarketTools(params?: {
   trust_level?: string
   limit?: number
 }) {
-  return request<any[]>({
+  return request<unknown[]>({
     url: `${MCP_BASE}/market-tools`,
     method: "GET",
     params,
@@ -257,7 +275,7 @@ export async function fetchMcpMarketTools(params?: {
 }
 
 export async function fetchMcpMarketTool(identifier: string) {
-  return request<any>({
+  return request<unknown>({
     url: `${MCP_BASE}/market-tools/${encodeURIComponent(identifier)}`,
     method: "GET",
   })

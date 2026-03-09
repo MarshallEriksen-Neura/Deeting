@@ -10,6 +10,7 @@ import {
   fetchAdminConversations,
   fetchAdminGenerationTasks,
   fetchAdminGatewayLogs,
+  fetchAdminPendingReviewCounts,
   fetchAdminProviderInstances,
   fetchAdminProviderCredentials,
   fetchAdminProviderPresets,
@@ -400,19 +401,18 @@ export async function serverFetchRecentErrors(limit = 10): Promise<RecentError[]
 export interface PendingReviewCounts {
   assistant_reviews: number
   knowledge_reviews: number
+  plugin_reviews: number
 }
 
 export async function serverFetchPendingReviewCounts(): Promise<PendingReviewCounts> {
   try {
-    const data = await request<{ data: PendingReviewCounts }>({
-      url: "/api/v1/admin/pending-reviews",
-    })
-    return data.data
+    return await fetchAdminPendingReviewCounts()
   } catch (error) {
     console.error("Failed to fetch pending reviews:", error)
     return {
       assistant_reviews: 0,
       knowledge_reviews: 0,
+      plugin_reviews: 0,
     }
   }
 }

@@ -1,4 +1,10 @@
 use super::{common_impl::to_string, support::*};
+use serde_json::{Map as JsonMap, Value as JsonValue};
+use std::{
+    collections::HashMap,
+    ffi::OsStr,
+    path::{Path, PathBuf},
+};
 
 pub(crate) fn normalize_skill_dir_name(skill_id: &str) -> String {
     let mut out = String::with_capacity(skill_id.len());
@@ -89,33 +95,25 @@ pub(crate) async fn register_local_skills_from_scan_targets_inner(
             if !skill_path.is_dir() {
                 continue;
             }
-            let deeting_json_path = skill_path.join("deeting.json");
-            if !deeting_json_path.exists() {
+            let Some(skill_def) =
+                resolve_local_skill_definition(&skill_path, source_prefix, None, None)?
+            else {
                 continue;
-            }
-
-            let deeting_json_str =
-                std::fs::read_to_string(&deeting_json_path).map_err(to_string)?;
-            let manifest = match parse_deeting_manifest(&deeting_json_str) {
-                Ok(m) => m,
-                Err(e) => {
-                    warn!("skipping skill at {}: {}", skill_path.display(), e);
-                    continue;
-                }
             };
 
-            let id = &manifest.id;
-            if id.trim().is_empty() {
-                continue;
-            }
-            let tool_desc_prefix = manifest.description.as_deref().unwrap_or("");
-            let version = manifest.version.as_deref();
-            let runtime_str = manifest.runtime.join(",");
+            let id = skill_def.skill_id.as_str();
+            let tool_desc_prefix = skill_def.description.as_str();
+            let version = skill_def.version.as_deref();
+            let runtime_str = skill_def.runtime_values.join(",");
             let runtime = Some(runtime_str.as_str());
             let mut skill_capabilities = vec![source_prefix.to_string()];
-            if manifest.restricted {
+            skill_capabilities.push("guidance".to_string());
+            if skill_def.tool_runtime.is_some() {
+                skill_capabilities.push("tooling".to_string());
+            }
+            if skill_def.restricted {
                 skill_capabilities.push("restricted".to_string());
-                for role in &manifest.allowed_roles {
+                for role in &skill_def.allowed_roles {
                     skill_capabilities.push(format!("role:{}", role));
                 }
             }
@@ -125,7 +123,7 @@ pub(crate) async fn register_local_skills_from_scan_targets_inner(
                     id,
                     version,
                     runtime,
-                    &deeting_json_str,
+                    &skill_def.manifest_json,
                     &skill_path.to_string_lossy(),
                 )
                 .await
@@ -149,10 +147,38 @@ pub(crate) async fn register_local_skills_from_scan_targets_inner(
                 .map_err(to_string)?;
             let source_id = skill_source.id.clone();
 
+            let final_source_type = if *source_prefix == "system_plugin" {
+                "builtin"
+            } else {
+                "user"
+            }
+            .to_string();
+            if wait_for_vector_index {
+                index_local_skill_bundle_asset(
+                    provider_state.clone(),
+                    memory_state.clone(),
+                    id,
+                    &skill_def.display_name,
+                    tool_desc_prefix,
+                    skill_def.doc_excerpt.as_deref(),
+                    &skill_def.manifest_json,
+                    &final_source_type,
+                )
+                .await?;
+            }
+
             let llm_tool_path = skill_path.join("llm-tool.yaml");
             if !llm_tool_path.exists() {
                 continue;
             }
+            let Some(tool_runtime) = skill_def.tool_runtime.as_ref() else {
+                warn!(
+                    "skill {} at {} exposes llm-tool.yaml but no executable entrypoint was detected",
+                    id,
+                    skill_path.display()
+                );
+                continue;
+            };
             let llm_tool_str = std::fs::read_to_string(llm_tool_path).map_err(to_string)?;
             let llm_tools: serde_json::Value =
                 serde_yaml::from_str(&llm_tool_str).map_err(to_string)?;
@@ -166,12 +192,12 @@ pub(crate) async fn register_local_skills_from_scan_targets_inner(
                 format!("{}{}{}", sdk_pythonpath, pathsep, &existing_pypath)
             };
             env.insert("PYTHONPATH".to_string(), pypath);
-            for env_name in &manifest.env_requirements {
+            for env_name in &skill_def.env_requirements {
                 if let Ok(val) = std::env::var(env_name) {
                     env.insert(env_name.to_string(), val);
                 }
             }
-            if manifest
+            if skill_def
                 .env_requirements
                 .iter()
                 .any(|name| name == SCOUT_SERVICE_URL_ENV_KEY)
@@ -188,10 +214,9 @@ pub(crate) async fn register_local_skills_from_scan_targets_inner(
                     let tool_desc = tool_def["description"].as_str().unwrap_or(tool_desc_prefix);
                     let mut enriched_tool_def = tool_def.clone();
                     enriched_tool_def["execution"] = serde_json::json!({
-                        "timeout_seconds": manifest.execution.timeout_seconds
+                        "timeout_seconds": skill_def.execution_timeout_seconds
                     });
                     let config_json = serde_json::to_string(&enriched_tool_def).unwrap();
-                    let full_main_path = skill_path.join("main.py");
 
                     let upsert = ToolUpsert {
                         id: None,
@@ -204,8 +229,8 @@ pub(crate) async fn register_local_skills_from_scan_targets_inner(
                         capabilities: skill_capabilities.clone(),
                         description: tool_desc.to_string(),
                         error: None,
-                        command: Some("python3".to_string()),
-                        args: Some(vec![full_main_path.to_string_lossy().to_string()]),
+                        command: Some(tool_runtime.command.clone()),
+                        args: Some(tool_runtime.args.clone()),
                         env: if env.is_empty() {
                             None
                         } else {
@@ -223,12 +248,6 @@ pub(crate) async fn register_local_skills_from_scan_targets_inner(
                     if let Ok(tool) = store.upsert_tool(upsert).await {
                         total_indexed += 1;
                         let final_pkg_name = id.to_string();
-                        let final_source_type = if *source_prefix == "system_plugin" {
-                            "builtin"
-                        } else {
-                            "user"
-                        }
-                        .to_string();
                         if wait_for_vector_index {
                             index_local_skill_tool_asset(
                                 provider_state.clone(),
@@ -237,7 +256,7 @@ pub(crate) async fn register_local_skills_from_scan_targets_inner(
                                 tool.name.clone(),
                                 tool.description.clone(),
                                 final_pkg_name,
-                                final_source_type,
+                                final_source_type.clone(),
                             )
                             .await;
                         } else {
@@ -246,6 +265,7 @@ pub(crate) async fn register_local_skills_from_scan_targets_inner(
                             let tool_id = tool.id.clone();
                             let tool_name = tool.name.clone();
                             let tool_desc = tool.description.clone();
+                            let final_source_type = final_source_type.clone();
                             tauri::async_runtime::spawn(async move {
                                 index_local_skill_tool_asset(
                                     provider_state_clone,
@@ -327,59 +347,575 @@ fn parse_deeting_manifest(raw: &str) -> Result<DeetingManifest, String> {
     serde_json::from_str::<DeetingManifest>(raw).map_err(|e| format!("invalid deeting.json: {}", e))
 }
 
-pub(crate) async fn try_clone_skill_repo(
-    target_dir: &Path,
-    repo_url: &str,
-    revision: Option<&str>,
-) -> Result<(), String> {
-    if let Some(parent) = target_dir.parent() {
-        std::fs::create_dir_all(parent).map_err(to_string)?;
-    }
-    if target_dir.exists() {
-        return Ok(());
-    }
-    let normalized_repo = repo_url.trim();
-    if normalized_repo.is_empty() {
-        return Err("source repo is empty".to_string());
-    }
-    if !is_allowed_skill_repo_url(normalized_repo) {
-        return Err("source repo is not in the allowed host list".to_string());
-    }
-    let revision = revision
-        .map(|raw| raw.trim().to_string())
-        .filter(|raw| !raw.is_empty())
-        .ok_or_else(|| "pinned revision is required for reinstall".to_string())?;
-    let mut cmd = tokio::process::Command::new("git");
-    cmd.arg("clone").arg("--depth").arg("1");
-    cmd.arg("--branch").arg(revision);
-    cmd.arg(normalized_repo).arg(target_dir);
-    let output = cmd.output().await.map_err(to_string)?;
-    if output.status.success() {
-        return Ok(());
-    }
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let _ = std::fs::remove_dir_all(target_dir);
-    Err(if stderr.is_empty() {
-        "git clone failed".to_string()
-    } else {
-        format!("git clone failed: {}", stderr)
+#[derive(Debug, Clone)]
+pub(crate) struct LocalSkillToolRuntime {
+    command: String,
+    args: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct LocalSkillDefinition {
+    pub(crate) skill_id: String,
+    pub(crate) display_name: String,
+    pub(crate) version: Option<String>,
+    pub(crate) description: String,
+    pub(crate) manifest_json: String,
+    pub(crate) runtime_values: Vec<String>,
+    pub(crate) env_requirements: Vec<String>,
+    pub(crate) restricted: bool,
+    pub(crate) allowed_roles: Vec<String>,
+    pub(crate) execution_timeout_seconds: u64,
+    pub(crate) doc_excerpt: Option<String>,
+    pub(crate) tool_runtime: Option<LocalSkillToolRuntime>,
+}
+
+#[derive(Debug, Default)]
+struct SkillBundleSnapshot {
+    visible_entries: Vec<String>,
+    doc_paths: Vec<String>,
+    doc_excerpt: Option<String>,
+    frontmatter: Option<JsonValue>,
+    package_metadata: Option<JsonValue>,
+    tool_manifest_path: Option<PathBuf>,
+    has_ui: bool,
+}
+
+const SKILL_DOC_SCAN_DEPTH: usize = 2;
+const SKILL_DOC_SCAN_LIMIT: usize = 6;
+const SKILL_DOC_FILE_SIZE_LIMIT: u64 = 256 * 1024;
+
+fn is_hidden_name(name: &OsStr) -> bool {
+    name.to_str()
+        .map(|value| value.starts_with('.'))
+        .unwrap_or(false)
+}
+
+fn is_probably_text_document(path: &Path) -> bool {
+    let Some(ext) = path.extension().and_then(|ext| ext.to_str()) else {
+        return false;
+    };
+    matches!(
+        ext.to_ascii_lowercase().as_str(),
+        "md" | "mdx" | "txt" | "rst" | "adoc" | "prompt" | "yaml" | "yml" | "json" | "toml"
+    )
+}
+
+fn trim_excerpt(content: &str, max_chars: usize) -> String {
+    let compact = content
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    compact.chars().take(max_chars).collect::<String>()
+}
+
+fn first_non_empty_line(content: &str) -> Option<String> {
+    content
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(|line| line.to_string())
+}
+
+fn parse_frontmatter(content: &str) -> Option<JsonValue> {
+    let stripped = content.strip_prefix("---\n")?;
+    let end = stripped.find("\n---\n")?;
+    let raw = &stripped[..end];
+    serde_yaml::from_str::<serde_yaml::Value>(raw)
+        .ok()
+        .and_then(|value| serde_json::to_value(value).ok())
+}
+
+fn select_frontmatter_string(frontmatter: &JsonValue, keys: &[&str]) -> Option<String> {
+    let obj = frontmatter.as_object()?;
+    keys.iter().find_map(|key| {
+        obj.get(*key)
+            .and_then(|value| value.as_str())
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
     })
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct SkillInstallResult {
-    pub skill_id: String,
-    pub tool_count: usize,
-    pub install_path: String,
+fn slug_to_title(raw: &str) -> String {
+    let compact = raw.replace(['/', '-', '_', '.'], " ");
+    compact
+        .split_whitespace()
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                Some(first) => format!("{}{}", first.to_uppercase(), chars.as_str()),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
-pub(crate) async fn install_skill_to_local(
-    app: &AppHandle,
-    app_state: &AppState,
+fn repo_hint_from_url(repo_url: Option<&str>) -> Option<String> {
+    let trimmed = repo_url?.trim().trim_end_matches('/');
+    let segment = trimmed.rsplit('/').next()?.trim_end_matches(".git");
+    if segment.is_empty() {
+        None
+    } else {
+        Some(segment.to_string())
+    }
+}
+
+fn read_package_metadata(skill_path: &Path) -> Option<JsonValue> {
+    let raw = std::fs::read_to_string(skill_path.join("package.json")).ok()?;
+    let value = serde_json::from_str::<JsonValue>(&raw).ok()?;
+    let obj = value.as_object()?;
+    let mut subset = JsonMap::new();
+    for key in [
+        "name",
+        "displayName",
+        "version",
+        "description",
+        "keywords",
+        "homepage",
+        "author",
+        "repository",
+    ] {
+        if let Some(value) = obj.get(key) {
+            subset.insert(key.to_string(), value.clone());
+        }
+    }
+    if subset.is_empty() {
+        None
+    } else {
+        Some(JsonValue::Object(subset))
+    }
+}
+
+fn collect_skill_bundle_snapshot(skill_path: &Path) -> Result<SkillBundleSnapshot, String> {
+    let mut snapshot = SkillBundleSnapshot::default();
+    let mut root_entries = std::fs::read_dir(skill_path).map_err(to_string)?;
+    let mut children = Vec::new();
+    while let Some(entry) = root_entries.next().transpose().map_err(to_string)? {
+        if is_hidden_name(&entry.file_name()) {
+            continue;
+        }
+        children.push(entry.path());
+    }
+    children.sort();
+
+    snapshot.visible_entries = children
+        .iter()
+        .filter_map(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .map(|name| name.to_string())
+        })
+        .collect();
+    snapshot.has_ui = children
+        .iter()
+        .any(|path| path.is_dir() && path.file_name() == Some(OsStr::new("ui")));
+
+    let mut doc_sections = Vec::new();
+    let mut queue: Vec<(PathBuf, usize)> =
+        children.into_iter().map(|path| (path, 0usize)).collect();
+    while let Some((path, depth)) = queue.pop() {
+        if path.is_dir() {
+            if depth >= SKILL_DOC_SCAN_DEPTH {
+                continue;
+            }
+            let mut nested = std::fs::read_dir(&path).map_err(to_string)?;
+            let mut nested_paths = Vec::new();
+            while let Some(entry) = nested.next().transpose().map_err(to_string)? {
+                if is_hidden_name(&entry.file_name()) {
+                    continue;
+                }
+                nested_paths.push(entry.path());
+            }
+            nested_paths.sort();
+            for nested_path in nested_paths.into_iter().rev() {
+                queue.push((nested_path, depth + 1));
+            }
+            continue;
+        }
+        if path.file_name() == Some(OsStr::new("llm-tool.yaml")) {
+            snapshot.tool_manifest_path = Some(path.clone());
+        }
+        if doc_sections.len() >= SKILL_DOC_SCAN_LIMIT || !is_probably_text_document(&path) {
+            continue;
+        }
+        let Ok(metadata) = std::fs::metadata(&path) else {
+            continue;
+        };
+        if metadata.len() > SKILL_DOC_FILE_SIZE_LIMIT {
+            continue;
+        }
+        let Ok(raw) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let rel = path
+            .strip_prefix(skill_path)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        if snapshot.frontmatter.is_none() {
+            snapshot.frontmatter = parse_frontmatter(&raw);
+        }
+        snapshot.doc_paths.push(rel.clone());
+        doc_sections.push(format!("[{}]\n{}", rel, trim_excerpt(&raw, 1200)));
+    }
+
+    snapshot.package_metadata = read_package_metadata(skill_path);
+    if !doc_sections.is_empty() {
+        snapshot.doc_excerpt = Some(doc_sections.join("\n\n"));
+    }
+    Ok(snapshot)
+}
+
+fn derive_local_skill_tool_runtime(
+    skill_path: &Path,
+    manifest: Option<&DeetingManifest>,
+) -> Option<LocalSkillToolRuntime> {
+    let mut candidates = Vec::new();
+    if let Some(entry) = manifest.and_then(|manifest| manifest.entry.as_ref()) {
+        if let Some(value) = entry.as_str() {
+            candidates.push(skill_path.join(value));
+        }
+        if let Some(obj) = entry.as_object() {
+            for key in ["backend", "local", "command", "script"] {
+                if let Some(value) = obj.get(key).and_then(|value| value.as_str()) {
+                    candidates.push(skill_path.join(value));
+                }
+            }
+        }
+    }
+    for candidate in ["main.py", "main.js", "index.js"] {
+        candidates.push(skill_path.join(candidate));
+    }
+    for candidate in candidates {
+        if !candidate.exists() {
+            continue;
+        }
+        match candidate.extension().and_then(|ext| ext.to_str()) {
+            Some("py") => {
+                return Some(LocalSkillToolRuntime {
+                    command: "python3".to_string(),
+                    args: vec![candidate.to_string_lossy().to_string()],
+                })
+            }
+            Some("js") => {
+                return Some(LocalSkillToolRuntime {
+                    command: "node".to_string(),
+                    args: vec![candidate.to_string_lossy().to_string()],
+                })
+            }
+            _ => continue,
+        }
+    }
+    None
+}
+
+pub(crate) fn resolve_local_skill_definition(
+    skill_path: &Path,
+    source_prefix: &str,
+    repo_url: Option<&str>,
+    revision: Option<&str>,
+) -> Result<Option<LocalSkillDefinition>, String> {
+    if !skill_path.exists() || !skill_path.is_dir() {
+        return Ok(None);
+    }
+
+    let snapshot = collect_skill_bundle_snapshot(skill_path)?;
+    if snapshot.visible_entries.is_empty() {
+        return Ok(None);
+    }
+
+    let manifest_path = skill_path.join("deeting.json");
+    let parsed_manifest = if manifest_path.exists() {
+        let raw = std::fs::read_to_string(&manifest_path).map_err(to_string)?;
+        match parse_deeting_manifest(&raw) {
+            Ok(manifest) => Some(manifest),
+            Err(err) => {
+                warn!(
+                    "local skill manifest at {} is invalid ({}); falling back to bundle inference",
+                    skill_path.display(),
+                    err
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    let frontmatter = snapshot.frontmatter.as_ref();
+    let package_metadata = snapshot.package_metadata.as_ref();
+    let fallback_hint = skill_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.to_string())
+        .or_else(|| repo_hint_from_url(repo_url))
+        .unwrap_or_else(|| "skill".to_string());
+
+    let skill_id = parsed_manifest
+        .as_ref()
+        .map(|manifest| manifest.id.clone())
+        .or_else(|| {
+            frontmatter.and_then(|value| select_frontmatter_string(value, &["id", "slug", "name"]))
+        })
+        .or_else(|| {
+            package_metadata
+                .and_then(|value| value.get("name"))
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string())
+        })
+        .unwrap_or_else(|| fallback_hint.clone());
+    let skill_id = normalize_skill_dir_name(&skill_id.to_ascii_lowercase());
+
+    let display_name = parsed_manifest
+        .as_ref()
+        .map(|manifest| manifest.name.clone())
+        .or_else(|| {
+            frontmatter.and_then(|value| {
+                select_frontmatter_string(value, &["displayName", "title", "name"])
+            })
+        })
+        .or_else(|| {
+            package_metadata
+                .and_then(|value| value.get("displayName").or_else(|| value.get("name")))
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string())
+        })
+        .unwrap_or_else(|| slug_to_title(&fallback_hint));
+
+    let version = parsed_manifest
+        .as_ref()
+        .and_then(|manifest| manifest.version.clone())
+        .or_else(|| frontmatter.and_then(|value| select_frontmatter_string(value, &["version"])))
+        .or_else(|| {
+            package_metadata
+                .and_then(|value| value.get("version"))
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string())
+        });
+
+    let description = parsed_manifest
+        .as_ref()
+        .and_then(|manifest| manifest.description.clone())
+        .or_else(|| {
+            frontmatter
+                .and_then(|value| select_frontmatter_string(value, &["summary", "description"]))
+        })
+        .or_else(|| {
+            package_metadata
+                .and_then(|value| value.get("description"))
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string())
+        })
+        .or_else(|| {
+            snapshot
+                .doc_excerpt
+                .as_deref()
+                .and_then(first_non_empty_line)
+        })
+        .unwrap_or_else(|| format!("Installed skill bundle for {}", display_name));
+
+    let runtime_values = parsed_manifest
+        .as_ref()
+        .map(|manifest| manifest.runtime.clone())
+        .filter(|values| !values.is_empty())
+        .unwrap_or_else(|| vec!["local".to_string()]);
+    let env_requirements = parsed_manifest
+        .as_ref()
+        .map(|manifest| manifest.env_requirements.clone())
+        .unwrap_or_default();
+    let restricted = parsed_manifest
+        .as_ref()
+        .map(|manifest| manifest.restricted)
+        .unwrap_or(false);
+    let allowed_roles = parsed_manifest
+        .as_ref()
+        .map(|manifest| manifest.allowed_roles.clone())
+        .unwrap_or_default();
+    let execution_timeout_seconds = parsed_manifest
+        .as_ref()
+        .map(|manifest| manifest.execution.timeout_seconds)
+        .unwrap_or_else(default_timeout);
+    let tool_runtime = snapshot
+        .tool_manifest_path
+        .as_ref()
+        .and_then(|_| derive_local_skill_tool_runtime(skill_path, parsed_manifest.as_ref()));
+
+    let mut source_metadata = JsonMap::new();
+    source_metadata.insert(
+        "source_type".to_string(),
+        JsonValue::String(source_prefix.to_string()),
+    );
+    source_metadata.insert(
+        "visible_entries".to_string(),
+        serde_json::json!(snapshot.visible_entries),
+    );
+    source_metadata.insert(
+        "doc_paths".to_string(),
+        serde_json::json!(snapshot.doc_paths),
+    );
+    source_metadata.insert(
+        "assets".to_string(),
+        serde_json::json!({
+            "has_ui": snapshot.has_ui,
+            "has_tool_manifest": snapshot.tool_manifest_path.is_some(),
+        }),
+    );
+    if let Some(repo_url) = repo_url.filter(|value| !value.trim().is_empty()) {
+        source_metadata.insert(
+            "source_repo".to_string(),
+            JsonValue::String(repo_url.to_string()),
+        );
+    }
+    if let Some(revision) = revision.filter(|value| !value.trim().is_empty()) {
+        source_metadata.insert(
+            "source_revision".to_string(),
+            JsonValue::String(revision.to_string()),
+        );
+    }
+    let mut openclaw = JsonMap::new();
+    if let Some(frontmatter) = snapshot.frontmatter.clone() {
+        openclaw.insert("frontmatter".to_string(), frontmatter);
+    }
+    if let Some(package_metadata) = snapshot.package_metadata.clone() {
+        openclaw.insert("package".to_string(), package_metadata);
+    }
+    if !openclaw.is_empty() {
+        source_metadata.insert("openclaw".to_string(), JsonValue::Object(openclaw));
+    }
+
+    let mut manifest_value = JsonMap::new();
+    manifest_value.insert("id".to_string(), JsonValue::String(skill_id.clone()));
+    manifest_value.insert("name".to_string(), JsonValue::String(display_name.clone()));
+    manifest_value.insert(
+        "description".to_string(),
+        JsonValue::String(description.clone()),
+    );
+    manifest_value.insert("runtime".to_string(), serde_json::json!(runtime_values));
+    manifest_value.insert(
+        "env_requirements".to_string(),
+        serde_json::json!(env_requirements),
+    );
+    manifest_value.insert(
+        "capabilities".to_string(),
+        serde_json::json!([
+            source_prefix,
+            "guidance",
+            if snapshot.tool_manifest_path.is_some() {
+                "tooling"
+            } else {
+                "docs"
+            },
+            if snapshot.has_ui { "ui" } else { "bundle" }
+        ]),
+    );
+    manifest_value.insert("restricted".to_string(), JsonValue::Bool(restricted));
+    manifest_value.insert(
+        "allowed_roles".to_string(),
+        serde_json::json!(allowed_roles),
+    );
+    manifest_value.insert(
+        "execution".to_string(),
+        serde_json::json!({ "timeout_seconds": execution_timeout_seconds }),
+    );
+    manifest_value.insert(
+        "source_metadata".to_string(),
+        JsonValue::Object(source_metadata),
+    );
+    if let Some(version) = version.clone() {
+        manifest_value.insert("version".to_string(), JsonValue::String(version));
+    }
+    if let Some(manifest) = parsed_manifest.as_ref() {
+        if let Some(entry) = manifest.entry.clone() {
+            manifest_value.insert("entry".to_string(), entry);
+        }
+        if !manifest.permissions.is_empty() {
+            manifest_value.insert(
+                "permissions".to_string(),
+                serde_json::json!(manifest.permissions),
+            );
+        }
+    }
+
+    let manifest_json =
+        serde_json::to_string(&JsonValue::Object(manifest_value)).map_err(to_string)?;
+    Ok(Some(LocalSkillDefinition {
+        skill_id,
+        display_name,
+        version,
+        description,
+        manifest_json,
+        runtime_values,
+        env_requirements,
+        restricted,
+        allowed_roles,
+        execution_timeout_seconds,
+        doc_excerpt: snapshot.doc_excerpt,
+        tool_runtime,
+    }))
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct MaterializedSkillBundle {
+    pub(crate) skill_def: LocalSkillDefinition,
+    pub(crate) install_path: PathBuf,
+}
+
+pub(crate) fn finalize_materialized_skill_bundle(
+    temp_dir: &Path,
+    skills_dir: &Path,
+    source_prefix: &str,
+    repo_url: Option<&str>,
+    revision: Option<&str>,
+    expected_skill_id: Option<&str>,
+) -> Result<MaterializedSkillBundle, String> {
+    let Some(skill_def) =
+        resolve_local_skill_definition(temp_dir, source_prefix, repo_url, revision)?
+    else {
+        let _ = std::fs::remove_dir_all(temp_dir);
+        return Err("cloned repo does not contain a usable skill bundle".to_string());
+    };
+
+    let skill_id = skill_def.skill_id.trim().to_string();
+    if skill_id.is_empty() {
+        let _ = std::fs::remove_dir_all(temp_dir);
+        return Err("manifest id is empty".to_string());
+    }
+    if let Some(expected) = expected_skill_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .filter(|value| *value != skill_id)
+    {
+        let _ = std::fs::remove_dir_all(temp_dir);
+        return Err(format!(
+            "cloned repo resolved skill id '{}' but expected '{}'",
+            skill_id, expected
+        ));
+    }
+
+    let final_dir = skills_dir.join(&skill_id);
+    if final_dir.exists() {
+        let _ = std::fs::remove_dir_all(&final_dir);
+    }
+    std::fs::rename(temp_dir, &final_dir).map_err(|e| {
+        let _ = std::fs::remove_dir_all(temp_dir);
+        format!("failed to move skill to final location: {}", e)
+    })?;
+
+    Ok(MaterializedSkillBundle {
+        skill_def,
+        install_path: final_dir,
+    })
+}
+
+pub(crate) async fn materialize_skill_repo_to_dir(
+    skills_dir: &Path,
     repo_url: &str,
     revision: Option<&str>,
-) -> Result<SkillInstallResult, String> {
-    let skill_install_start = std::time::Instant::now();
+    source_prefix: &str,
+    expected_skill_id: Option<&str>,
+) -> Result<MaterializedSkillBundle, String> {
     let normalized_repo = repo_url.trim();
     if normalized_repo.is_empty() {
         return Err("repo_url is empty".to_string());
@@ -387,15 +923,12 @@ pub(crate) async fn install_skill_to_local(
     if !is_allowed_skill_repo_url(normalized_repo) {
         return Err("repo URL is not in the allowed host list".to_string());
     }
-
-    let skills_dir = app.path().app_data_dir().map_err(to_string)?.join("skills");
     if !skills_dir.exists() {
-        std::fs::create_dir_all(&skills_dir).map_err(to_string)?;
+        std::fs::create_dir_all(skills_dir).map_err(to_string)?;
     }
 
     let temp_name = format!("_installing_{}", uuid::Uuid::new_v4());
     let temp_dir = skills_dir.join(&temp_name);
-
     let mut cmd = tokio::process::Command::new("git");
     cmd.arg("clone").arg("--depth").arg("1");
     if let Some(rev) = revision.map(|r| r.trim()).filter(|r| !r.is_empty()) {
@@ -416,47 +949,46 @@ pub(crate) async fn install_skill_to_local(
         ));
     }
 
-    let manifest_path = temp_dir.join("deeting.json");
-    if !manifest_path.exists() {
-        let _ = std::fs::remove_dir_all(&temp_dir);
-        return Err("cloned repo has no deeting.json".to_string());
-    }
-    let manifest_str = std::fs::read_to_string(&manifest_path).map_err(|e| {
-        let _ = std::fs::remove_dir_all(&temp_dir);
-        to_string(e)
-    })?;
-    let manifest = match parse_deeting_manifest(&manifest_str) {
-        Ok(m) => m,
-        Err(e) => {
-            let _ = std::fs::remove_dir_all(&temp_dir);
-            return Err(format!("invalid deeting.json: {}", e));
-        }
-    };
+    finalize_materialized_skill_bundle(
+        &temp_dir,
+        skills_dir,
+        source_prefix,
+        Some(normalized_repo),
+        revision,
+        expected_skill_id,
+    )
+}
 
-    let skill_id = manifest.id.clone();
-    if skill_id.trim().is_empty() {
-        let _ = std::fs::remove_dir_all(&temp_dir);
-        return Err("manifest id is empty".to_string());
-    }
+#[derive(Debug, Clone, Serialize)]
+pub struct SkillInstallResult {
+    pub skill_id: String,
+    pub tool_count: usize,
+    pub install_path: String,
+}
 
-    let final_dir = skills_dir.join(&skill_id);
-    if final_dir.exists() {
-        let _ = std::fs::remove_dir_all(&final_dir);
-    }
-    std::fs::rename(&temp_dir, &final_dir).map_err(|e| {
-        let _ = std::fs::remove_dir_all(&temp_dir);
-        format!("failed to move skill to final location: {}", e)
-    })?;
+pub(crate) async fn install_skill_to_local(
+    app: &AppHandle,
+    app_state: &AppState,
+    repo_url: &str,
+    revision: Option<&str>,
+) -> Result<SkillInstallResult, String> {
+    let skill_install_start = std::time::Instant::now();
+    let skills_dir = app.path().app_data_dir().map_err(to_string)?.join("skills");
+    let materialized =
+        materialize_skill_repo_to_dir(&skills_dir, repo_url, revision, "user_skill", None).await?;
+    let skill_def = materialized.skill_def;
+    let skill_id = skill_def.skill_id.clone();
+    let final_dir = materialized.install_path;
 
     let store = &app_state.mcp.store;
-    let version = manifest.version.as_deref();
-    let runtime_str = manifest.runtime.join(",");
+    let version = skill_def.version.as_deref();
+    let runtime_str = skill_def.runtime_values.join(",");
     store
         .upsert_local_skill_install(
             &skill_id,
             version,
             Some(&runtime_str),
-            &manifest_str,
+            &skill_def.manifest_json,
             &final_dir.to_string_lossy(),
         )
         .await
@@ -542,6 +1074,47 @@ pub(crate) async fn uninstall_local_skill(
     Ok(())
 }
 
+async fn index_local_skill_bundle_asset(
+    provider_state: std::sync::Arc<crate::modules::providers::ProviderState>,
+    memory_state: std::sync::Arc<crate::modules::memory::MemoryState>,
+    skill_id: &str,
+    display_name: &str,
+    description: &str,
+    doc_excerpt: Option<&str>,
+    manifest_json: &str,
+    source_type: &str,
+) -> Result<(), String> {
+    let mut body = format!(
+        "skill: {}\ndescription: {}\nsource_type: {}\nmanifest: {}",
+        display_name, description, source_type, manifest_json
+    );
+    if let Some(doc_excerpt) = doc_excerpt.filter(|text| !text.trim().is_empty()) {
+        body.push_str("\n\ndocs:\n");
+        body.push_str(doc_excerpt);
+    }
+    let vector = provider_state
+        .embedding
+        .embed_text(&body)
+        .await
+        .map_err(|e| e.to_string())?;
+    let metadata = serde_json::from_str::<JsonValue>(manifest_json).ok();
+    memory_state
+        .store
+        .upsert_asset(
+            skill_id.to_string(),
+            display_name.to_string(),
+            description.to_string(),
+            "skill".to_string(),
+            source_type.to_string(),
+            Some(skill_id.to_string()),
+            vector,
+            metadata,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn register_local_skills(
     app: AppHandle,
@@ -596,4 +1169,159 @@ pub(crate) async fn register_local_skills_inner(
         false,
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_skill_dir(prefix: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "deeting-{}-{}",
+            prefix,
+            uuid::Uuid::new_v4().simple()
+        ));
+        std::fs::create_dir_all(&dir).expect("create temp skill dir");
+        dir
+    }
+
+    #[test]
+    fn resolve_local_skill_definition_accepts_docs_first_bundle() {
+        let dir = temp_skill_dir("docs-skill");
+        std::fs::write(
+            dir.join("guide.mdx"),
+            "---\ntitle: Find Skills\ndescription: Discover and install skills\nversion: 0.1.0\n---\n\nUse this skill to search for reusable abilities.",
+        )
+        .expect("write docs");
+        std::fs::write(
+            dir.join("package.json"),
+            r#"{"name":"find-skills","displayName":"Find Skills","version":"0.1.0","description":"Package metadata description"}"#,
+        )
+        .expect("write package metadata");
+        std::fs::create_dir_all(dir.join("ui")).expect("create ui dir");
+
+        let resolved = resolve_local_skill_definition(
+            &dir,
+            "user_skill",
+            Some("https://github.com/example/find-skills.git"),
+            Some("abc123"),
+        )
+        .expect("resolve skill")
+        .expect("skill exists");
+
+        assert_eq!(resolved.skill_id, "find-skills");
+        assert_eq!(resolved.display_name, "Find Skills");
+        assert_eq!(resolved.version.as_deref(), Some("0.1.0"));
+        assert!(resolved.description.contains("Discover and install skills"));
+        assert!(resolved
+            .doc_excerpt
+            .as_deref()
+            .unwrap_or_default()
+            .contains("guide.mdx"));
+        assert!(resolved.tool_runtime.is_none());
+
+        let manifest: JsonValue =
+            serde_json::from_str(&resolved.manifest_json).expect("manifest json");
+        assert_eq!(
+            manifest.get("name").and_then(|value| value.as_str()),
+            Some("Find Skills")
+        );
+        assert_eq!(
+            manifest
+                .pointer("/source_metadata/openclaw/package/name")
+                .and_then(|value| value.as_str()),
+            Some("find-skills")
+        );
+        assert_eq!(
+            manifest
+                .pointer("/source_metadata/source_repo")
+                .and_then(|value| value.as_str()),
+            Some("https://github.com/example/find-skills.git")
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn resolve_local_skill_definition_registers_optional_tool_runtime_when_present() {
+        let dir = temp_skill_dir("tool-skill");
+        std::fs::write(dir.join("notes.txt"), "This skill has an optional tool.")
+            .expect("write docs");
+        std::fs::write(dir.join("llm-tool.yaml"), "tools: []").expect("write tool manifest");
+        std::fs::write(dir.join("main.py"), "print('hello')\n").expect("write entrypoint");
+
+        let resolved = resolve_local_skill_definition(&dir, "user_skill", None, None)
+            .expect("resolve skill")
+            .expect("skill exists");
+
+        assert!(resolved.tool_runtime.is_some());
+        let runtime = resolved.tool_runtime.expect("tool runtime");
+        assert_eq!(runtime.command, "python3");
+        assert!(runtime
+            .args
+            .first()
+            .unwrap_or(&String::new())
+            .ends_with("main.py"));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn finalize_materialized_skill_bundle_moves_docs_first_bundle_into_final_skill_dir() {
+        let skills_dir = temp_skill_dir("materialized-skills-root");
+        let temp_dir = skills_dir.join("_installing_test");
+        std::fs::create_dir_all(&temp_dir).expect("create temp install dir");
+        std::fs::write(
+            temp_dir.join("guide.mdx"),
+            "---\nid: official.find-skills\ntitle: Find Skills\ndescription: Market skill\n---\n\nDocs-first bundle.",
+        )
+        .expect("write docs");
+
+        let materialized = finalize_materialized_skill_bundle(
+            &temp_dir,
+            &skills_dir,
+            "user_skill",
+            Some("https://github.com/example/find-skills.git"),
+            Some("rev-123"),
+            Some("official.find-skills"),
+        )
+        .expect("materialize skill bundle");
+
+        assert_eq!(materialized.skill_def.skill_id, "official.find-skills");
+        assert_eq!(
+            materialized.install_path,
+            skills_dir.join("official.find-skills")
+        );
+        assert!(materialized.install_path.exists());
+        assert!(!temp_dir.exists());
+
+        let _ = std::fs::remove_dir_all(skills_dir);
+    }
+
+    #[test]
+    fn finalize_materialized_skill_bundle_rejects_expected_skill_id_mismatch() {
+        let skills_dir = temp_skill_dir("materialized-mismatch-root");
+        let temp_dir = skills_dir.join("_installing_test");
+        std::fs::create_dir_all(&temp_dir).expect("create temp install dir");
+        std::fs::write(
+            temp_dir.join("guide.mdx"),
+            "---\nid: actual.skill\ntitle: Actual Skill\n---\n\nMismatch bundle.",
+        )
+        .expect("write docs");
+
+        let err = finalize_materialized_skill_bundle(
+            &temp_dir,
+            &skills_dir,
+            "user_skill",
+            Some("https://github.com/example/actual-skill.git"),
+            Some("rev-999"),
+            Some("expected.skill"),
+        )
+        .expect_err("mismatch should fail");
+
+        assert!(err.contains("expected 'expected.skill'"));
+        assert!(!temp_dir.exists());
+
+        let _ = std::fs::remove_dir_all(skills_dir);
+    }
 }

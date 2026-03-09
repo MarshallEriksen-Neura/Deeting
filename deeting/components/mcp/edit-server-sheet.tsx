@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { useTranslations } from "next-intl"
 import {
   Sheet,
@@ -15,8 +15,17 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useNotifications } from "@/components/contexts/notification-context"
+import {
+  getMcpDesiredEnabled,
+  getMcpIndexLabelKey,
+  getMcpPrimaryActionLabelKey,
+  getMcpRuntimeHintKey,
+  getMcpRuntimeLabelKey,
+  isMcpIndexMissing,
+} from "@/components/mcp/tool-semantics"
 import { type McpServer, type McpServerTool, type McpServerUpdateRequest } from "@/lib/api/mcp"
 
 interface EditServerSheetProps {
@@ -42,25 +51,15 @@ export function EditServerSheet({
 }: EditServerSheetProps) {
   const t = useTranslations("mcp")
   const { addNotification } = useNotifications()
-  const [name, setName] = useState("")
-  const [description, setDescription] = useState("")
-  const [sseUrl, setSseUrl] = useState("")
-  const [authType, setAuthType] = useState<McpServerUpdateRequest["auth_type"]>("bearer")
+  const [name, setName] = useState(() => server?.name || "")
+  const [description, setDescription] = useState(() => server?.description || "")
+  const [sseUrl, setSseUrl] = useState(() => server?.sse_url || "")
+  const [authType, setAuthType] = useState<McpServerUpdateRequest["auth_type"]>(() => server?.auth_type || "bearer")
   const [secretValue, setSecretValue] = useState("")
-  const [isEnabled, setIsEnabled] = useState(true)
+  const [isEnabled, setIsEnabled] = useState(() => Boolean(server?.is_enabled))
 
   const serverType = useMemo(() => server?.server_type ?? "sse", [server])
   const isRemote = serverType === "sse"
-
-  useEffect(() => {
-    if (!server) return
-    setName(server.name || "")
-    setDescription(server.description || "")
-    setSseUrl(server.sse_url || "")
-    setAuthType(server.auth_type || "bearer")
-    setSecretValue("")
-    setIsEnabled(Boolean(server.is_enabled))
-  }, [server])
 
   if (!server) return null
 
@@ -191,24 +190,75 @@ export function EditServerSheet({
                   {t("server.edit.tools.empty")}
                 </div>
               ) : (
-                tools.map((tool) => (
-                  <div
-                    key={tool.name}
-                    className="flex items-start justify-between gap-4 rounded-lg border border-gray-200 px-3 py-2"
-                  >
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium text-gray-900">{tool.name}</p>
-                      {tool.description && (
-                        <p className="text-xs text-gray-500">{tool.description}</p>
-                      )}
+                tools.map((tool) => {
+                  const desiredEnabled = getMcpDesiredEnabled(tool)
+                  const runtimeHintKey = getMcpRuntimeHintKey(tool)
+                  const runtimeLabelKey = getMcpRuntimeLabelKey(tool)
+                  const indexLabelKey = getMcpIndexLabelKey(tool)
+                  const primaryActionLabelKey = getMcpPrimaryActionLabelKey(tool)
+                  const showSuggestedAction = Boolean(primaryActionLabelKey)
+
+                  return (
+                    <div
+                      key={tool.name}
+                      className="flex items-start justify-between gap-4 rounded-lg border border-gray-200 px-3 py-2"
+                    >
+                      <div className="min-w-0 space-y-2">
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-gray-900">{tool.name}</p>
+                          {tool.description && (
+                            <p className="text-xs text-gray-500">{tool.description}</p>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap gap-1.5">
+                          {!desiredEnabled && (
+                            <Badge variant="outline" className="h-5 border-slate-200 bg-slate-50 px-1.5 text-[10px] text-slate-600">
+                              {t("tool.runtime.disabled")}
+                            </Badge>
+                          )}
+                          {runtimeHintKey === "waiting" && (
+                            <Badge variant="outline" className="h-5 border-sky-200 bg-sky-50 px-1.5 text-[10px] text-sky-700">
+                              {t(runtimeLabelKey)}
+                            </Badge>
+                          )}
+                          {isMcpIndexMissing(tool) && (
+                            <Badge variant="outline" className="h-5 border-purple-200 bg-purple-50 px-1.5 text-[10px] text-purple-700">
+                              {t(indexLabelKey)}
+                            </Badge>
+                          )}
+                          {showSuggestedAction && (
+                            <Badge variant="outline" className="h-5 border-amber-200 bg-amber-50 px-1.5 text-[10px] text-amber-700">
+                              {t(primaryActionLabelKey)}
+                            </Badge>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-500">
+                          <span>
+                            <span className="font-medium text-gray-700">{t("tool.labels.runtime")}:</span>{" "}
+                            {t(runtimeLabelKey)}
+                          </span>
+                          <span>
+                            <span className="font-medium text-gray-700">{t("tool.labels.index")}:</span>{" "}
+                            {t(indexLabelKey)}
+                          </span>
+                          {showSuggestedAction && (
+                            <span>
+                              <span className="font-medium text-gray-700">{t("server.edit.tools.suggestedAction")}:</span>{" "}
+                              {t(primaryActionLabelKey)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <Switch
+                        checked={desiredEnabled}
+                        disabled={!onToggleTool || toggleLoading}
+                        onCheckedChange={(checked) => onToggleTool?.(tool.name, checked)}
+                      />
                     </div>
-                    <Switch
-                      checked={tool.enabled}
-                      disabled={!onToggleTool || toggleLoading}
-                      onCheckedChange={(checked) => onToggleTool?.(tool.name, checked)}
-                    />
-                  </div>
-                ))
+                  )
+                })
               )}
             </div>
           </div>
