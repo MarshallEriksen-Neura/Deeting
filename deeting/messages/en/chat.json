@@ -341,11 +341,29 @@
       "subtitle": "System online. Awaiting input."
     },
     "actions": {
+      "compare": "Compare with another model",
       "regenerate": "Regenerate",
       "like": "Like",
       "dislike": "Dislike",
       "copy": "Copy",
       "copied": "Copied"
+    },
+    "compare": {
+      "current": "Current",
+      "actions": {
+        "addModel": "Add model",
+        "useAsFinal": "Use as final answer",
+        "keepCurrent": "Keep current answer",
+        "finalizing": "Finalizing..."
+      },
+      "dialog": {
+        "title": "Compare with another model",
+        "description": "Pick a local model to generate an alternative answer for this turn only.",
+        "searchPlaceholder": "Search models...",
+        "empty": "No more eligible local models available.",
+        "noModels": "No desktop local models found.",
+        "localModel": "Local model"
+      }
     },
     "views": {
       "invalidPayload": "Invalid data format",

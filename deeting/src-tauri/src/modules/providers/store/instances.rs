@@ -6,7 +6,7 @@ use crate::modules::providers::store::ProviderStore;
 use crate::modules::providers::types::{
     CreateInstanceRequest, ProviderInstance, UpdateInstanceRequest,
 };
-use serde_json::{Map, Value, json};
+use serde_json::{json, Map, Value};
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -326,14 +326,8 @@ impl ProviderStore {
     }
 }
 
-fn build_update_instance_meta(
-    update_payload: &UpdateInstanceRequest,
-    existing: Value,
-) -> Value {
-    let mut meta = existing
-        .as_object()
-        .cloned()
-        .unwrap_or_default();
+fn build_update_instance_meta(update_payload: &UpdateInstanceRequest, existing: Value) -> Value {
+    let mut meta = existing.as_object().cloned().unwrap_or_default();
 
     let protocol = update_payload
         .protocol
@@ -360,26 +354,11 @@ fn build_update_instance_meta(
     }
 
     for (key, value) in [
-        (
-            "resource_name",
-            update_payload.resource_name.as_deref(),
-        ),
-        (
-            "deployment_name",
-            update_payload.deployment_name.as_deref(),
-        ),
-        (
-            "api_version",
-            update_payload.api_version.as_deref(),
-        ),
-        (
-            "project_id",
-            update_payload.project_id.as_deref(),
-        ),
-        (
-            "region",
-            update_payload.region.as_deref(),
-        ),
+        ("resource_name", update_payload.resource_name.as_deref()),
+        ("deployment_name", update_payload.deployment_name.as_deref()),
+        ("api_version", update_payload.api_version.as_deref()),
+        ("project_id", update_payload.project_id.as_deref()),
+        ("region", update_payload.region.as_deref()),
     ] {
         if let Some(trimmed) = value.map(str::trim).filter(|item| !item.is_empty()) {
             meta.insert(key.to_string(), Value::String(trimmed.to_string()));

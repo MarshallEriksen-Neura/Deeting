@@ -431,6 +431,7 @@ async fn handle_feishu_chat_event(
         session_id,
         assistant_id: None,
         regenerate: false,
+        compare_only: false,
         user_content: Some(text.to_string()),
         temperature: Some(0.2),
         max_tokens: Some(512),

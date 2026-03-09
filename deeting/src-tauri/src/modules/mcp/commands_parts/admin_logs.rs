@@ -72,4 +72,3 @@ pub async fn get_local_gateway_log_stats(
         .await
         .map_err(to_string)
 }
-

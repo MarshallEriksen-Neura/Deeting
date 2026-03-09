@@ -21,10 +21,17 @@ pub async fn run_embedding_backfill(service: Arc<MemoryService>) {
     let mut total_failed = 0u64;
 
     loop {
-        let items = match service.store().list_memories_without_embedding(BATCH_SIZE).await {
+        let items = match service
+            .store()
+            .list_memories_without_embedding(BATCH_SIZE)
+            .await
+        {
             Ok(items) => items,
             Err(e) => {
-                log::warn!("memory backfill: failed to query unembedded memories: {}", e);
+                log::warn!(
+                    "memory backfill: failed to query unembedded memories: {}",
+                    e
+                );
                 break;
             }
         };
@@ -43,11 +50,7 @@ pub async fn run_embedding_backfill(service: Arc<MemoryService>) {
                 }
                 Err(e) => {
                     total_failed += 1;
-                    log::warn!(
-                        "memory backfill: failed to embed memory {}: {}",
-                        item.id,
-                        e
-                    );
+                    log::warn!("memory backfill: failed to embed memory {}: {}", item.id, e);
                 }
             }
             tokio::time::sleep(DELAY_BETWEEN_ITEMS).await;

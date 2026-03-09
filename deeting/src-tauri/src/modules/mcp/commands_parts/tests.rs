@@ -1097,6 +1097,146 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn finalize_local_compare_winner_replaces_latest_assistant_message() {
+        let store = create_test_store("compare-finalize-replace").await;
+        let session = store
+            .create_local_conversation(LocalConversationCreateRequest {
+                assistant_id: None,
+                title: Some("compare-finalize".to_string()),
+            })
+            .await
+            .expect("create conversation");
+
+        store
+            .append_local_conversation_message(CreateConversationMessageRequest {
+                session_id: session.session_id.clone(),
+                role: "user".to_string(),
+                content: "帮我写一个旅行建议".to_string(),
+                name: None,
+                meta_info: None,
+                is_truncated: Some(false),
+                parent_message_id: None,
+            })
+            .await
+            .expect("append user");
+
+        let baseline = store
+            .append_local_conversation_message(CreateConversationMessageRequest {
+                session_id: session.session_id.clone(),
+                role: "assistant".to_string(),
+                content: "先去上海再去杭州。".to_string(),
+                name: None,
+                meta_info: Some(serde_json::json!({
+                    "model_id": "baseline-model",
+                    "provider_model_id": "provider-baseline"
+                })),
+                is_truncated: Some(false),
+                parent_message_id: None,
+            })
+            .await
+            .expect("append baseline assistant");
+
+        let response = store
+            .finalize_local_compare_winner(
+                crate::modules::mcp::types::LocalConversationCompareFinalizeRequest {
+                    session_id: session.session_id.clone(),
+                    model_id: "compare-model".to_string(),
+                    provider_model_id: Some("provider-compare".to_string()),
+                    content: "建议先杭州后上海，节奏更轻松。".to_string(),
+                    blocks: Some(vec![serde_json::json!({
+                        "type": "text",
+                        "content": "建议先杭州后上海，节奏更轻松。"
+                    })]),
+                },
+            )
+            .await
+            .expect("finalize compare winner");
+
+        assert_eq!(Some(response.replaced_turn_index), baseline.turn_index);
+        assert_eq!(
+            response.message.content,
+            Some(serde_json::json!("建议先杭州后上海，节奏更轻松。"))
+        );
+        assert_eq!(response.message.role, "assistant");
+        let meta = response.message.meta_info.expect("winner meta info");
+        assert_eq!(meta["model_id"], serde_json::json!("compare-model"));
+        assert_eq!(meta["provider_model_id"], serde_json::json!("provider-compare"));
+        assert_eq!(meta["compare_winner"], serde_json::json!(true));
+
+        let history = store
+            .get_local_conversation_history(
+                &session.session_id,
+                LocalConversationHistoryQuery {
+                    session_id: Some(session.session_id.clone()),
+                    cursor: None,
+                    limit: Some(50),
+                },
+            )
+            .await
+            .expect("load history");
+        let assistant_messages: Vec<_> = history
+            .messages
+            .iter()
+            .filter(|message| message.role == "assistant")
+            .collect();
+        assert_eq!(assistant_messages.len(), 1);
+        assert_eq!(assistant_messages[0].content, response.message.content);
+
+        let runtime_window = store
+            .load_local_conversation_runtime_window(&session.session_id)
+            .await
+            .expect("load runtime window");
+        assert_eq!(runtime_window.messages.len(), 2);
+        assert_eq!(
+            runtime_window.messages[1].content,
+            response.message.content.clone()
+        );
+        let meta = runtime_window.meta.expect("runtime window meta");
+        assert_eq!(meta["last_model_id"], serde_json::json!("compare-model"));
+        assert_eq!(meta["last_provider_model_id"], serde_json::json!("provider-compare"));
+    }
+
+    #[tokio::test]
+    async fn finalize_local_compare_winner_requires_existing_assistant_message() {
+        let store = create_test_store("compare-finalize-missing-assistant").await;
+        let session = store
+            .create_local_conversation(LocalConversationCreateRequest {
+                assistant_id: None,
+                title: Some("compare-finalize-missing".to_string()),
+            })
+            .await
+            .expect("create conversation");
+
+        store
+            .append_local_conversation_message(CreateConversationMessageRequest {
+                session_id: session.session_id.clone(),
+                role: "user".to_string(),
+                content: "只有问题，没有正式答案".to_string(),
+                name: None,
+                meta_info: None,
+                is_truncated: Some(false),
+                parent_message_id: None,
+            })
+            .await
+            .expect("append user");
+
+        let error = store
+            .finalize_local_compare_winner(
+                crate::modules::mcp::types::LocalConversationCompareFinalizeRequest {
+                    session_id: session.session_id.clone(),
+                    model_id: "compare-model".to_string(),
+                    provider_model_id: None,
+                    content: "候选答案".to_string(),
+                    blocks: None,
+                },
+            )
+            .await
+            .expect_err("should require latest assistant");
+
+        assert!(error.to_string().contains("latest assistant message not found"));
+    }
+
+    #[tokio::test]
     async fn update_local_conversation_title_if_empty_does_not_override_existing_title() {
         let store = create_test_store("conversation-title-if-empty").await;
         let session = store

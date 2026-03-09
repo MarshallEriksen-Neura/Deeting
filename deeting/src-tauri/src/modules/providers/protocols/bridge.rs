@@ -99,7 +99,11 @@ pub fn build_protocol_profile(
             method: effective_config
                 .get("http_method")
                 .and_then(|value| value.as_str())
-                .or_else(|| effective_config.get("method").and_then(|value| value.as_str()))
+                .or_else(|| {
+                    effective_config
+                        .get("method")
+                        .and_then(|value| value.as_str())
+                })
                 .unwrap_or("POST")
                 .to_string(),
             path: model.upstream_path.clone(),
@@ -166,7 +170,9 @@ pub fn build_canonical_request_from_value(
         .get("stream")
         .and_then(|value| value.as_bool())
         .unwrap_or(false);
-    let temperature = request_data.get("temperature").and_then(|value| value.as_f64());
+    let temperature = request_data
+        .get("temperature")
+        .and_then(|value| value.as_f64());
     let max_output_tokens = request_data
         .get("max_output_tokens")
         .or_else(|| request_data.get("max_tokens"))
@@ -176,7 +182,8 @@ pub fn build_canonical_request_from_value(
         .get("messages")
         .and_then(|value| value.as_array())
         .map(|items| {
-            items.iter()
+            items
+                .iter()
                 .filter_map(|item| {
                     let role = item.get("role").and_then(|value| value.as_str())?;
                     Some(CanonicalMessage {
@@ -381,9 +388,12 @@ fn runtime_hook_from_value(value: &Value) -> Option<RuntimeHook> {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_canonical_request_from_value, build_protocol_profile, infer_protocol_family, template_matches_family};
+    use super::{
+        build_canonical_request_from_value, build_protocol_profile, infer_protocol_family,
+        template_matches_family,
+    };
     use crate::modules::providers::types::{ProviderModel, ProviderPreset};
-    use serde_json::{Value, json};
+    use serde_json::{json, Value};
     use uuid::Uuid;
 
     fn mock_model(upstream_path: &str) -> ProviderModel {
@@ -432,14 +442,26 @@ mod tests {
 
     #[test]
     fn infer_protocol_family_prefers_responses_path() {
-        assert_eq!(infer_protocol_family("responses", "responses"), "openai_responses");
-        assert_eq!(infer_protocol_family("openai", "v1/chat/completions"), "openai_chat");
+        assert_eq!(
+            infer_protocol_family("responses", "responses"),
+            "openai_responses"
+        );
+        assert_eq!(
+            infer_protocol_family("openai", "v1/chat/completions"),
+            "openai_chat"
+        );
     }
 
     #[test]
     fn template_matches_family_rejects_chat_template_for_responses() {
-        assert!(!template_matches_family(&json!({"messages": null}), "openai_responses"));
-        assert!(template_matches_family(&json!({"input": null}), "openai_responses"));
+        assert!(!template_matches_family(
+            &json!({"messages": null}),
+            "openai_responses"
+        ));
+        assert!(template_matches_family(
+            &json!({"input": null}),
+            "openai_responses"
+        ));
     }
 
     #[test]
@@ -461,7 +483,11 @@ mod tests {
         assert_eq!(profile.request.template_engine, "openai_compat");
         assert!(profile.request.request_template.get("input").is_some());
         assert_eq!(
-            profile.request.request_builder.as_ref().map(|item| item.name.as_str()),
+            profile
+                .request
+                .request_builder
+                .as_ref()
+                .map(|item| item.name.as_str()),
             Some("responses_input_from_messages_or_items")
         );
     }

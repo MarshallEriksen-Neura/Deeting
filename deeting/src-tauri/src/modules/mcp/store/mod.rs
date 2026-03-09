@@ -24,6 +24,7 @@ use crate::modules::mcp::types::{
     LocalAssistantRoutingReportSummary, LocalAssistantRoutingState, LocalAssistantSummary,
     LocalAssistantSummaryVersion, LocalAssistantTag, LocalAssistantVersion, LocalChatInputMessage,
     LocalConversationArchiveResponse, LocalConversationClearResponse,
+    LocalConversationCompareFinalizeRequest, LocalConversationCompareFinalizeResponse,
     LocalConversationCreateRequest, LocalConversationCreateResponse,
     LocalConversationDeleteResponse, LocalConversationHistoryMessage,
     LocalConversationHistoryQuery, LocalConversationHistoryResponse,

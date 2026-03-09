@@ -78,7 +78,10 @@ impl MemoryService {
                     return self.append_with_write_guard(payload, vector).await;
                 }
                 Err(e) => {
-                    log::warn!("memory auto-embedding failed, storing without embedding: {}", e);
+                    log::warn!(
+                        "memory auto-embedding failed, storing without embedding: {}",
+                        e
+                    );
                 }
             }
         }
@@ -249,8 +252,7 @@ impl MemoryService {
             Some((existing_id, existing_content, score))
                 if score >= WRITE_GUARD_UPDATE_THRESHOLD =>
             {
-                let merged =
-                    format!("{}\n\n---\n\n{}", existing_content, payload.content.trim());
+                let merged = format!("{}\n\n---\n\n{}", existing_content, payload.content.trim());
 
                 let new_embedding = if let Some(ref embedding_svc) = self.embedding {
                     embedding_svc.embed_text(&merged).await.ok()
@@ -260,13 +262,25 @@ impl MemoryService {
 
                 if let Some(ref snap) = self.snapshots {
                     let _ = snap
-                        .record(&existing_id, "update", Some(&existing_content), Some(&merged), None, None)
+                        .record(
+                            &existing_id,
+                            "update",
+                            Some(&existing_content),
+                            Some(&merged),
+                            None,
+                            None,
+                        )
                         .await;
                 }
 
                 let updated = self
                     .store
-                    .update_memory_content(&existing_id, &merged, new_embedding, Some("auto".to_string()))
+                    .update_memory_content(
+                        &existing_id,
+                        &merged,
+                        new_embedding,
+                        Some("auto".to_string()),
+                    )
                     .await?;
 
                 Ok(WriteGuardResult {
@@ -337,7 +351,10 @@ impl MemoryService {
             match embedding_svc.embed_text(&payload.content).await {
                 Ok(vector) => (Some(vector), Some("auto".to_string())),
                 Err(error) => {
-                    log::warn!("memory update embedding failed, clearing embedding: {}", error);
+                    log::warn!(
+                        "memory update embedding failed, clearing embedding: {}",
+                        error
+                    );
                     (None, None)
                 }
             }
@@ -423,9 +440,10 @@ impl MemoryService {
         memory_id: &str,
         limit: i64,
     ) -> Result<Vec<MemorySnapshot>, MemoryError> {
-        let snap = self.snapshots.as_ref().ok_or_else(|| {
-            MemoryError::Validation("snapshot store not available".to_string())
-        })?;
+        let snap = self
+            .snapshots
+            .as_ref()
+            .ok_or_else(|| MemoryError::Validation("snapshot store not available".to_string()))?;
         snap.list_by_memory(memory_id, limit).await
     }
 
@@ -435,13 +453,15 @@ impl MemoryService {
         &self,
         snapshot_id: &str,
     ) -> Result<Option<LocalMemoryItem>, MemoryError> {
-        let snap = self.snapshots.as_ref().ok_or_else(|| {
-            MemoryError::Validation("snapshot store not available".to_string())
-        })?;
+        let snap = self
+            .snapshots
+            .as_ref()
+            .ok_or_else(|| MemoryError::Validation("snapshot store not available".to_string()))?;
 
-        let snapshot = snap.get_snapshot(snapshot_id).await?.ok_or_else(|| {
-            MemoryError::NotFound(format!("snapshot {} not found", snapshot_id))
-        })?;
+        let snapshot = snap
+            .get_snapshot(snapshot_id)
+            .await?
+            .ok_or_else(|| MemoryError::NotFound(format!("snapshot {} not found", snapshot_id)))?;
 
         let old_content = snapshot.old_content.as_deref().ok_or_else(|| {
             MemoryError::Validation("snapshot has no old_content to restore".to_string())
@@ -490,7 +510,16 @@ impl MemoryService {
         metadata: Option<serde_json::Value>,
     ) -> Result<(), MemoryError> {
         self.store
-            .upsert_asset(id, name, description, asset_type, source_type, pkg_name, vector, metadata)
+            .upsert_asset(
+                id,
+                name,
+                description,
+                asset_type,
+                source_type,
+                pkg_name,
+                vector,
+                metadata,
+            )
             .await
     }
 
@@ -556,7 +585,10 @@ impl MemoryService {
         let clamped_limit = limit.clamp(1, 100);
         // Over-fetch to allow post-filtering by package_id prefix
         let overfetch = clamped_limit * 3;
-        let results = self.store.search_assets(query_vector, overfetch, None).await?;
+        let results = self
+            .store
+            .search_assets(query_vector, overfetch, None)
+            .await?;
 
         let mut hits = Vec::new();
         for item in results {
@@ -565,8 +597,16 @@ impl MemoryService {
                 continue;
             }
             let document_id = pkg_name.strip_prefix("knowledge:").map(|s| s.to_string());
-            let chunk_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let content = item.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let chunk_id = item
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let content = item
+                .get("description")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             let score = item
                 .get("_distance")
                 .and_then(|v| v.as_f64())
@@ -605,11 +645,7 @@ impl MemoryService {
 
     /// Embed a single memory's content and update its embedding in the store.
     /// Returns Ok(true) if updated, Ok(false) if the item was not found.
-    pub async fn embed_and_update(
-        &self,
-        id: &str,
-        content: &str,
-    ) -> Result<bool, MemoryError> {
+    pub async fn embed_and_update(&self, id: &str, content: &str) -> Result<bool, MemoryError> {
         let embedding_svc = self.embedding.as_ref().ok_or_else(|| {
             MemoryError::Validation("embedding service not available for backfill".to_string())
         })?;
@@ -649,9 +685,9 @@ fn serialize_memory_metadata(item: &LocalMemoryItem) -> Result<Option<String>, M
         "vitality": item.vitality,
         "last_accessed_at": item.last_accessed_at,
     });
-    serde_json::to_string(&metadata)
-        .map(Some)
-        .map_err(|error| MemoryError::Storage(format!("failed to serialize memory metadata: {}", error)))
+    serde_json::to_string(&metadata).map(Some).map_err(|error| {
+        MemoryError::Storage(format!("failed to serialize memory metadata: {}", error))
+    })
 }
 
 fn serialize_memory_update_metadata(
@@ -666,9 +702,12 @@ fn serialize_memory_update_metadata(
         "vitality": existing.vitality,
         "last_accessed_at": existing.last_accessed_at,
     });
-    serde_json::to_string(&metadata)
-        .map(Some)
-        .map_err(|error| MemoryError::Storage(format!("failed to serialize updated memory metadata: {}", error)))
+    serde_json::to_string(&metadata).map(Some).map_err(|error| {
+        MemoryError::Storage(format!(
+            "failed to serialize updated memory metadata: {}",
+            error
+        ))
+    })
 }
 
 fn touched_vitality(current: Option<f32>) -> f32 {
@@ -696,13 +735,14 @@ fn apply_vitality_rerank(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modules::memory::types::LocalMemorySearchItem;
     use crate::modules::memory::snapshot_store::SnapshotStore;
     use crate::modules::memory::store::MemoryStore;
+    use crate::modules::memory::types::LocalMemorySearchItem;
     use std::sync::Arc;
 
     fn test_path(label: &str) -> String {
-        let path = std::env::temp_dir().join(format!("deeting-memory-{}-{}", label, uuid::Uuid::new_v4()));
+        let path =
+            std::env::temp_dir().join(format!("deeting-memory-{}-{}", label, uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&path).expect("create temp dir");
         path.to_string_lossy().into_owned()
     }
@@ -761,7 +801,10 @@ mod tests {
         assert_eq!(snapshots.len(), 1);
         assert_eq!(snapshots[0].action, "update");
         assert_eq!(snapshots[0].old_content.as_deref(), Some("prefers coffee"));
-        assert_eq!(snapshots[0].new_content.as_deref(), Some("prefers black coffee"));
+        assert_eq!(
+            snapshots[0].new_content.as_deref(),
+            Some("prefers black coffee")
+        );
     }
 
     #[test]

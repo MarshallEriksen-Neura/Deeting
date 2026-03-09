@@ -1,16 +1,18 @@
 use std::collections::HashMap;
+use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use base64::Engine;
-use futures_util::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 use crate::modules::sandbox::error::SandboxError;
+use crate::modules::sandbox::installer::{is_supported_python_abi, supported_python_abis_label};
 use crate::modules::sandbox::provider::SandboxProvider;
-use crate::modules::sandbox::types::{SandboxExecutionOutput, SandboxIdentity};
+use crate::modules::sandbox::types::{
+    SandboxExecutionOutput, SandboxIdentity, SandboxPythonStatus, SandboxWslStatus,
+};
 
 const BOXRUN_API_PREFIX: &str = "v1";
 
@@ -187,257 +189,184 @@ impl SandboxProvider for WslBoxrunBackend {
             cwd: self.options.working_dir.clone(),
         };
 
-        let create_exec_url = self.url(&format!("/boxes/{}/exec", identity.sandbox_id));
-        let create_response = self
-            .authorized(self.client.post(create_exec_url))
+        let exec_url = self.url(&format!("/boxes/{}/exec-sync", identity.sandbox_id));
+        let response = self
+            .authorized(self.client.post(exec_url))
             .json(&request)
             .send()
             .await?;
-        if !create_response.status().is_success() {
-            let status = create_response.status();
-            let body = create_response.text().await.unwrap_or_default();
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
             if status.as_u16() == 409 {
                 return Err(SandboxError::Busy(format!(
-                    "create execution failed: status={status} body={body}"
+                    "synchronous execution failed: status={status} body={body}"
                 )));
             }
+            if status.as_u16() == 408 {
+                return Err(SandboxError::Timeout(body));
+            }
             return Err(SandboxError::Internal(format!(
-                "create execution failed: status={status} body={body}"
+                "synchronous execution failed: status={status} body={body}"
             )));
         }
 
-        let exec: ExecResponse = create_response.json().await?;
-        let execution_id = exec.id;
-        let output_url = self.url(&format!(
-            "/boxes/{}/exec/{}/events",
-            identity.sandbox_id, execution_id
-        ));
-        let output_response = self
-            .authorized(self.client.get(output_url))
-            .header("Accept", "text/event-stream")
-            .send()
-            .await?;
-        if !output_response.status().is_success() {
-            let status = output_response.status();
-            let body = output_response.text().await.unwrap_or_default();
-            return Err(SandboxError::Internal(format!(
-                "execution output stream failed: status={status} body={body}"
-            )));
-        }
-
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
-        let mut exit_code = -1;
-        let mut error_message = None;
-        let mut finished = false;
-
-        let mut stream = output_response.bytes_stream();
-        let mut buffer = String::new();
-        let mut current_event = String::new();
-        let mut current_data = String::new();
-
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|err| SandboxError::Internal(err.to_string()))?;
-            buffer.push_str(&String::from_utf8_lossy(&chunk));
-
-            while let Some(newline_pos) = buffer.find('\n') {
-                let line = buffer[..newline_pos].trim_end_matches('\r').to_string();
-                buffer = buffer[newline_pos + 1..].to_string();
-
-                if line.is_empty() {
-                    let done = dispatch_sse_event(
-                        &current_event,
-                        &current_data,
-                        &mut stdout,
-                        &mut stderr,
-                        &mut exit_code,
-                        &mut error_message,
-                    );
-                    current_event.clear();
-                    current_data.clear();
-                    if done {
-                        finished = true;
-                        break;
-                    }
-                } else if let Some(value) = line.strip_prefix("event: ") {
-                    current_event = value.to_string();
-                } else if let Some(value) = line.strip_prefix("data: ") {
-                    if !current_data.is_empty() {
-                        current_data.push('\n');
-                    }
-                    current_data.push_str(value);
-                }
-            }
-
-            if finished {
-                break;
-            }
-        }
+        let exec: SyncExecResponse = response.json().await?;
 
         Ok(SandboxExecutionOutput {
-            stdout,
-            stderr,
-            exit_code,
-            error_message,
+            stdout: split_output_lines(exec.stdout),
+            stderr: split_output_lines(exec.stderr),
+            exit_code: exec.exit_code,
+            error_message: exec.error,
         })
     }
 }
 
 fn ensure_wsl_available() -> Result<(), SandboxError> {
-    let status = Command::new("wsl.exe")
-        .arg("--status")
-        .status()
-        .map_err(|err| SandboxError::Unavailable(format!("wsl unavailable: {err}")))?;
-    if status.success() {
+    let status = diagnose_wsl_availability();
+    if status.ready {
         return Ok(());
     }
-    Err(SandboxError::Unavailable(
-        "wsl is installed but not ready; run `wsl --install` and initialize distro".to_string(),
-    ))
+    Err(SandboxError::Unavailable(status.detail.unwrap_or_else(
+        || "wsl is installed but not ready; run `wsl --install` and initialize distro".to_string(),
+    )))
 }
 
-fn dispatch_sse_event(
-    event: &str,
-    data: &str,
-    stdout: &mut Vec<String>,
-    stderr: &mut Vec<String>,
-    exit_code: &mut i32,
-    error_message: &mut Option<String>,
-) -> bool {
-    if data.is_empty() {
-        return false;
-    }
-
-    match event {
-        "stdout" => {
-            if let Some(decoded) = decode_event_data(data) {
-                stdout.push(decoded);
+pub fn diagnose_wsl_availability() -> SandboxWslStatus {
+    match Command::new("wsl.exe").arg("--status").output() {
+        Ok(output) if output.status.success() => SandboxWslStatus {
+            installed: true,
+            ready: true,
+            detail: None,
+            recommended_command: None,
+        },
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let detail = if !stderr.is_empty() {
+                stderr
+            } else if !stdout.is_empty() {
+                stdout
+            } else {
+                "wsl is installed but not ready; run `wsl --install` and initialize distro"
+                    .to_string()
+            };
+            SandboxWslStatus {
+                installed: true,
+                ready: false,
+                detail: Some(detail),
+                recommended_command: Some("wsl --install".to_string()),
             }
-            false
         }
-        "stderr" => {
-            if let Some(decoded) = decode_event_data(data) {
-                stderr.push(decoded);
-            }
-            false
-        }
-        "error" => {
-            *exit_code = -1;
-            *error_message = Some(decode_event_data(data).unwrap_or_else(|| data.to_string()));
-            true
-        }
-        _ => {
-            let parsed = serde_json::from_str::<serde_json::Value>(data).ok();
-            let lower_event = event.to_ascii_lowercase();
-
-            if let Some(parsed) = parsed.as_ref() {
-                if let Some(code) = extract_exit_code(parsed) {
-                    *exit_code = code;
-                    if error_message.is_none() {
-                        *error_message = parsed
-                            .get("error")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
-                    }
-                    if lower_event.contains("exit")
-                        || lower_event.contains("done")
-                        || lower_event.contains("complete")
-                    {
-                        return true;
-                    }
-                }
-
-                if let Some(stream_name) = parsed.get("stream").and_then(|v| v.as_str()) {
-                    if let Some(text) = extract_text_data(parsed) {
-                        if stream_name.eq_ignore_ascii_case("stderr") {
-                            stderr.push(text);
-                        } else {
-                            stdout.push(text);
-                        }
-                    }
-                    return false;
-                }
-            }
-
-            if lower_event.contains("stderr") {
-                if let Some(text) = decode_event_data(data) {
-                    stderr.push(text);
-                }
-                return false;
-            }
-            if lower_event.contains("stdout")
-                || lower_event == "chunk"
-                || lower_event == "message"
-                || lower_event.is_empty()
-            {
-                if let Some(text) = decode_event_data(data) {
-                    stdout.push(text);
-                }
-            }
-
-            false
-        }
+        Err(err) => SandboxWslStatus {
+            installed: false,
+            ready: false,
+            detail: Some(format!("wsl unavailable: {err}")),
+            recommended_command: Some("wsl --install".to_string()),
+        },
     }
 }
 
-fn decode_event_data(data: &str) -> Option<String> {
-    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(data) {
-        if let Some(text) = extract_text_data(&parsed) {
-            return Some(text);
-        }
+pub fn resolve_wsl_home_dir() -> Result<String, SandboxError> {
+    ensure_wsl_available()?;
+    let output = Command::new("wsl.exe")
+        .args(["--", "sh", "-lc", "printf %s \"$HOME\""])
+        .output()
+        .map_err(|err| SandboxError::Unavailable(format!("failed to resolve WSL home: {err}")))?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(SandboxError::Unavailable(format!(
+            "failed to resolve WSL home directory: {detail}"
+        )));
     }
-    let trimmed = data.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
+    let home = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if home.is_empty() {
+        return Err(SandboxError::Unavailable(
+            "failed to resolve WSL home directory".to_string(),
+        ));
     }
+    Ok(home)
 }
 
-fn extract_text_data(parsed: &serde_json::Value) -> Option<String> {
-    if let Some(raw_data) = parsed.get("data").and_then(|v| v.as_str()) {
-        if let Some(decoded) = decode_base64(raw_data) {
-            return Some(decoded);
-        }
-        let trimmed = raw_data.trim();
-        if !trimmed.is_empty() {
-            return Some(trimmed.to_string());
-        }
+pub fn detect_wsl_python_abi(python_bin: &str) -> Result<String, SandboxError> {
+    ensure_wsl_available()?;
+    let script = format!(
+        "{} -c 'import sys; print(f\"cp{{sys.version_info.major}}{{sys.version_info.minor}}\")'",
+        shell_quote(python_bin)
+    );
+    let output = Command::new("wsl.exe")
+        .args(["--", "sh", "-lc", &script])
+        .output()
+        .map_err(|err| SandboxError::Unavailable(format!("failed to inspect WSL python: {err}")))?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(SandboxError::Unavailable(format!(
+            "WSL python3 is required for BoxLite installation: {detail}"
+        )));
     }
+    let abi = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if abi.is_empty() {
+        return Err(SandboxError::Unavailable(
+            "failed to detect the WSL Python ABI".to_string(),
+        ));
+    }
+    Ok(abi)
+}
 
-    for key in ["chunk", "text", "line", "message"] {
-        if let Some(value) = parsed.get(key).and_then(|v| v.as_str()) {
-            let trimmed = value.trim();
-            if !trimmed.is_empty() {
-                return Some(trimmed.to_string());
+pub fn inspect_wsl_python(python_bin: &str) -> SandboxPythonStatus {
+    match detect_wsl_python_abi(python_bin) {
+        Ok(abi) => {
+            let supported = is_supported_python_abi(&abi);
+            SandboxPythonStatus {
+                installed: true,
+                abi: Some(abi.clone()),
+                supported,
+                detail: if supported {
+                    None
+                } else {
+                    Some(format!(
+                        "WSL Python ABI {abi} is not supported for the pinned BoxLite release. Supported ABIs: {}",
+                        supported_python_abis_label()
+                    ))
+                },
             }
         }
+        Err(err) => SandboxPythonStatus {
+            installed: false,
+            abi: None,
+            supported: false,
+            detail: Some(err.to_string()),
+        },
     }
-
-    if let Some(output_text) = parsed.get("output").and_then(|v| v.as_str()) {
-        let trimmed = output_text.trim();
-        if !trimmed.is_empty() {
-            return Some(trimmed.to_string());
-        }
-    }
-
-    None
 }
 
-fn decode_base64(value: &str) -> Option<String> {
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(value.trim())
-        .ok()?;
-    String::from_utf8(bytes).ok()
+pub fn windows_path_to_wsl(path: &Path) -> Result<String, SandboxError> {
+    ensure_wsl_available()?;
+    let raw = path.display().to_string();
+    let output = Command::new("wsl.exe")
+        .args(["--", "wslpath", "-a", raw.as_str()])
+        .output()
+        .map_err(|err| {
+            SandboxError::Unavailable(format!("failed to convert Windows path for WSL: {err}"))
+        })?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(SandboxError::Unavailable(format!(
+            "failed to convert Windows path for WSL: {detail}"
+        )));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-fn extract_exit_code(parsed: &serde_json::Value) -> Option<i32> {
-    for key in ["exit_code", "exitCode", "code"] {
-        if let Some(value) = parsed.get(key).and_then(|v| v.as_i64()) {
-            return Some(value as i32);
-        }
+pub fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+fn split_output_lines(raw: String) -> Vec<String> {
+    if raw.is_empty() {
+        return Vec::new();
     }
-    None
+    raw.lines().map(|line| line.to_string()).collect()
 }
 
 #[derive(Debug, Serialize)]
@@ -482,6 +411,9 @@ struct ExecRequest {
 }
 
 #[derive(Debug, Deserialize)]
-struct ExecResponse {
-    id: String,
+struct SyncExecResponse {
+    stdout: String,
+    stderr: String,
+    exit_code: i32,
+    error: Option<String>,
 }

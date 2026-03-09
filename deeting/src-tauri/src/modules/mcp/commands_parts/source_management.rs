@@ -87,7 +87,10 @@ pub async fn sync_local_system_assistants(
         }
 
         let base_url = state.mcp.cloud_base_url.read().await.clone();
-        let url = format!("{}/api/v1/assistants/market", base_url.trim_end_matches('/'));
+        let url = format!(
+            "{}/api/v1/assistants/market",
+            base_url.trim_end_matches('/')
+        );
         let mut request = state
             .mcp
             .client
@@ -100,7 +103,10 @@ pub async fn sync_local_system_assistants(
 
         let response = request.send().await.map_err(to_string)?;
         if !response.status().is_success() {
-            return Err(format!("failed to sync system assistants: {}", response.status()));
+            return Err(format!(
+                "failed to sync system assistants: {}",
+                response.status()
+            ));
         }
 
         let page: CloudAssistantMarketPage = response.json().await.map_err(to_string)?;
@@ -177,7 +183,12 @@ pub async fn create_mcp_source(
         last_synced_at: None,
         is_read_only: payload.is_read_only.unwrap_or(false),
     };
-    state.mcp.store.insert_source(source).await.map_err(to_string)
+    state
+        .mcp
+        .store
+        .insert_source(source)
+        .await
+        .map_err(to_string)
 }
 
 #[tauri::command]

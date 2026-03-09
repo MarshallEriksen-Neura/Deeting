@@ -9,6 +9,11 @@ import { normalizeConversationMessages } from "@/lib/chat/conversation-adapter"
 import { fetchConversationHistory } from "@/lib/api/conversations"
 import { fetchAssistantInstalls, type AssistantInstallItem } from "@/lib/api/assistants"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
+import {
+  appendMessageBlocks as appendNormalizedMessageBlocks,
+  extractAssistantTextFromBlocks,
+  replaceMessageBlocks,
+} from "@/lib/chat/message-blocks"
 
 // ============== 类型定义 ==============
 
@@ -28,6 +33,29 @@ interface ChatConfig {
   temperature: number
   topP: number
   maxTokens: number
+}
+
+export interface CompareCandidate {
+  modelKey: string
+  modelId: string
+  providerModelId?: string
+  content: string
+  blocks: MessageBlock[]
+  loading: boolean
+  baseline?: boolean
+  traceId?: string
+  errorMessage?: string | null
+  statusStage?: string | null
+  statusCode?: string | null
+  statusMeta?: Record<string, unknown> | null
+}
+
+export interface MessageCompareState {
+  messageId: string
+  baselineModelKey: string
+  activeModelKey: string
+  isFinalizing: boolean
+  candidates: Record<string, CompareCandidate>
 }
 
 // ============== 工具函数 ==============
@@ -102,23 +130,14 @@ function createMessageId() {
   return `msg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
-const extractAssistantTextFromBlocks = (blocks?: MessageBlock[]): string => {
-  if (!Array.isArray(blocks) || blocks.length === 0) return ""
-  return blocks.reduce((acc, block) => {
-    if (block.type !== "text") return acc
-    if (typeof block.content !== "string") return acc
-    return `${acc}${block.content}`
-  }, "")
-}
-
-const isEmptyTextLikeBlock = (block: MessageBlock): boolean => {
-  if (block.type === "text" || block.type === "thought") {
-    return typeof block.content !== "string" || block.content.trim().length === 0
-  }
-  if (block.type === "error") {
-    return typeof block.message !== "string" || block.message.trim().length === 0
-  }
-  return false
+function filterCompareStateByMessageIds(
+  compareByMessageId: Record<string, MessageCompareState>,
+  messages: Message[]
+) {
+  const validIds = new Set(messages.map((message) => message.id))
+  return Object.fromEntries(
+    Object.entries(compareByMessageId).filter(([messageId]) => validIds.has(messageId))
+  )
 }
 
 // ============== Store 接口 ==============
@@ -134,6 +153,7 @@ interface ChatStore {
 
   // === 消息状态 ===
   messages: Message[]
+  compareByMessageId: Record<string, MessageCompareState>
 
   // === 输入状态 ===
   input: string
@@ -167,6 +187,13 @@ interface ChatStore {
   mergeMessageMeta: (id: string, patch: Record<string, unknown>) => void
   setMessageBlocks: (id: string, blocks: MessageBlock[]) => void
   appendMessageBlocks: (id: string, blocks: MessageBlock[]) => void
+  ensureCompareState: (messageId: string, baselineCandidate: CompareCandidate) => void
+  upsertCompareCandidate: (messageId: string, candidate: CompareCandidate) => void
+  appendCompareCandidateBlocks: (messageId: string, modelKey: string, blocks: MessageBlock[]) => void
+  setCompareActiveCandidate: (messageId: string, modelKey: string) => void
+  setCompareFinalizing: (messageId: string, isFinalizing: boolean) => void
+  clearCompareState: (messageId: string) => void
+  clearAllCompareStates: () => void
   clearMessages: () => void
   setInput: (input: string) => void
   setAttachments: (attachments: ChatImageAttachment[]) => void
@@ -205,6 +232,7 @@ export const useChatStore = create<ChatStore>()(
 
       // === 消息状态初始值 ===
       messages: [],
+      compareByMessageId: {},
 
       // === 输入状态初始值 ===
       input: "",
@@ -267,6 +295,7 @@ export const useChatStore = create<ChatStore>()(
                   statusStage: null,
                   statusCode: null,
                   statusMeta: null,
+                  compareByMessageId: {},
                   historyCursor: null,
                   historyHasMore: false,
                 }
@@ -293,6 +322,7 @@ export const useChatStore = create<ChatStore>()(
 
           set({
             messages,
+            compareByMessageId: {},
             historyCursor,
             historyHasMore,
             isLoading: false,
@@ -325,6 +355,7 @@ export const useChatStore = create<ChatStore>()(
             statusStage: null,
             statusCode: null,
             statusMeta: null,
+            compareByMessageId: {},
             historyCursor: null,
             historyHasMore: false,
           } : {}),
@@ -370,6 +401,7 @@ export const useChatStore = create<ChatStore>()(
           set({
             agent,
             messages,
+            compareByMessageId: {},
             historyCursor,
             historyHasMore,
             isLoading: false,
@@ -404,7 +436,11 @@ export const useChatStore = create<ChatStore>()(
           agent: null,
         }),
 
-      setMessages: (messages) => set({ messages }),
+      setMessages: (messages) =>
+        set((state) => ({
+          messages,
+          compareByMessageId: filterCompareStateByMessageIds(state.compareByMessageId, messages),
+        })),
 
       addMessage: (role, content, attachments) => {
         const newMessage: Message = {
@@ -432,33 +468,7 @@ export const useChatStore = create<ChatStore>()(
         set((state) => ({
           messages: state.messages.map((msg) => {
             if (msg.id !== id) return msg
-            const incoming = Array.isArray(blocks) ? blocks : []
-            const normalized: MessageBlock[] = incoming
-              .filter((b): b is MessageBlock => Boolean(b && typeof b === "object" && "type" in b))
-              .filter((b) => !isEmptyTextLikeBlock(b))
-              .map((b, index) => ({
-                ...b,
-                id: (b as any).id || `${msg.id}-block-${index}`,
-                streamState: (b as any).streamState || "completed",
-                displayMode: (b as any).displayMode || "bubble",
-              }))
-
-            // Best-effort: mark tool_call status based on tool_result blocks.
-            for (const block of normalized) {
-              if (block.type !== "tool_result") continue
-              const callId = (block as any).callId
-              if (typeof callId !== "string" || !callId) continue
-              const idx = normalized.findIndex(
-                (b) => b.type === "tool_call" && (b as any).callId === callId
-              )
-              if (idx >= 0) {
-                const toolCall = normalized[idx] as any
-                normalized[idx] = {
-                  ...toolCall,
-                  status: block.status === "error" ? "error" : "success",
-                }
-              }
-            }
+            const normalized = replaceMessageBlocks(msg.id, blocks)
             if (msg.role !== "assistant") {
               return { ...msg, blocks: normalized }
             }
@@ -474,61 +484,7 @@ export const useChatStore = create<ChatStore>()(
         set((state) => ({
           messages: state.messages.map((msg) => {
             if (msg.id !== id) return msg
-            const existing = msg.blocks ? [...msg.blocks] : []
-            const incoming = Array.isArray(blocks) ? blocks : []
-
-            const normalizedIncoming: MessageBlock[] = incoming
-              .filter((b): b is MessageBlock => Boolean(b && typeof b === "object" && "type" in b))
-              .filter((b) => !isEmptyTextLikeBlock(b))
-              .map((b, index) => ({
-                ...b,
-                id: (b as any).id || `${msg.id}-block-${existing.length + index}`,
-                streamState: (b as any).streamState || "completed",
-                displayMode: (b as any).displayMode || "bubble",
-              }))
-
-            const next = existing
-            for (const block of normalizedIncoming) {
-              if (block.type === "text") {
-                const last = next[next.length - 1]
-                if (last?.type === "text") {
-                  next[next.length - 1] = { ...last, content: `${last.content}${block.content}` }
-                } else {
-                  next.push(block)
-                }
-                continue
-              }
-
-              if (block.type === "thought") {
-                const last = next[next.length - 1]
-                if (last?.type === "thought") {
-                  next[next.length - 1] = { ...last, content: `${last.content}${block.content}` }
-                } else {
-                  next.push(block)
-                }
-                continue
-              }
-
-              if (block.type === "tool_result") {
-                const callId = (block as any).callId
-                if (typeof callId === "string" && callId) {
-                  const idx = next.findIndex(
-                    (b) => b.type === "tool_call" && (b as any).callId === callId
-                  )
-                  if (idx >= 0) {
-                    const toolCall = next[idx] as any
-                    next[idx] = {
-                      ...toolCall,
-                      status: block.status === "error" ? "error" : "success",
-                    }
-                  }
-                }
-                next.push(block)
-                continue
-              }
-
-              next.push(block)
-            }
+            const next = appendNormalizedMessageBlocks(msg.id, msg.blocks, blocks)
 
             if (msg.role !== "assistant") {
               return { ...msg, blocks: next }
@@ -541,7 +497,126 @@ export const useChatStore = create<ChatStore>()(
           }),
         })),
 
-      clearMessages: () => set({ messages: [] }),
+      ensureCompareState: (messageId, baselineCandidate) =>
+        set((state) => {
+          const existing = state.compareByMessageId[messageId]
+          if (existing) {
+            return {
+              compareByMessageId: {
+                ...state.compareByMessageId,
+                [messageId]: {
+                  ...existing,
+                  candidates: {
+                    ...existing.candidates,
+                    [baselineCandidate.modelKey]: existing.candidates[baselineCandidate.modelKey] ?? baselineCandidate,
+                  },
+                },
+              },
+            }
+          }
+
+          return {
+            compareByMessageId: {
+              ...state.compareByMessageId,
+              [messageId]: {
+                messageId,
+                baselineModelKey: baselineCandidate.modelKey,
+                activeModelKey: baselineCandidate.modelKey,
+                isFinalizing: false,
+                candidates: {
+                  [baselineCandidate.modelKey]: baselineCandidate,
+                },
+              },
+            },
+          }
+        }),
+
+      upsertCompareCandidate: (messageId, candidate) =>
+        set((state) => {
+          const compareState = state.compareByMessageId[messageId]
+          if (!compareState) return state
+          return {
+            compareByMessageId: {
+              ...state.compareByMessageId,
+              [messageId]: {
+                ...compareState,
+                candidates: {
+                  ...compareState.candidates,
+                  [candidate.modelKey]: {
+                    ...(compareState.candidates[candidate.modelKey] ?? {}),
+                    ...candidate,
+                  },
+                },
+              },
+            },
+          }
+        }),
+
+      appendCompareCandidateBlocks: (messageId, modelKey, blocks) =>
+        set((state) => {
+          const compareState = state.compareByMessageId[messageId]
+          const candidate = compareState?.candidates[modelKey]
+          if (!compareState || !candidate) return state
+          const nextBlocks = appendNormalizedMessageBlocks(`${messageId}-${modelKey}`, candidate.blocks, blocks)
+          return {
+            compareByMessageId: {
+              ...state.compareByMessageId,
+              [messageId]: {
+                ...compareState,
+                candidates: {
+                  ...compareState.candidates,
+                  [modelKey]: {
+                    ...candidate,
+                    blocks: nextBlocks,
+                    content: extractAssistantTextFromBlocks(nextBlocks),
+                  },
+                },
+              },
+            },
+          }
+        }),
+
+      setCompareActiveCandidate: (messageId, modelKey) =>
+        set((state) => {
+          const compareState = state.compareByMessageId[messageId]
+          if (!compareState || !compareState.candidates[modelKey]) return state
+          return {
+            compareByMessageId: {
+              ...state.compareByMessageId,
+              [messageId]: {
+                ...compareState,
+                activeModelKey: modelKey,
+              },
+            },
+          }
+        }),
+
+      setCompareFinalizing: (messageId, isFinalizing) =>
+        set((state) => {
+          const compareState = state.compareByMessageId[messageId]
+          if (!compareState) return state
+          return {
+            compareByMessageId: {
+              ...state.compareByMessageId,
+              [messageId]: {
+                ...compareState,
+                isFinalizing,
+              },
+            },
+          }
+        }),
+
+      clearCompareState: (messageId) =>
+        set((state) => {
+          if (!state.compareByMessageId[messageId]) return state
+          const next = { ...state.compareByMessageId }
+          delete next[messageId]
+          return { compareByMessageId: next }
+        }),
+
+      clearAllCompareStates: () => set({ compareByMessageId: {} }),
+
+      clearMessages: () => set({ messages: [], compareByMessageId: {} }),
 
       setInput: (input) => set({ input }),
 
@@ -632,6 +707,7 @@ export const useChatStore = create<ChatStore>()(
 
           set({
             messages: mapped,
+            compareByMessageId: {},
             historyCursor: response.next_cursor ?? null,
             historyHasMore: Boolean(response.has_more),
           })
@@ -666,6 +742,7 @@ export const useChatStore = create<ChatStore>()(
           agentId: normalizedAgentId,
           agent,
           messages: [],
+          compareByMessageId: {},
           input: "",
           attachments: [],
           initialized: false, // 重置初始化状态
@@ -682,6 +759,7 @@ export const useChatStore = create<ChatStore>()(
       resetChat: () =>
         set({
           messages: [],
+          compareByMessageId: {},
           input: "",
           attachments: [],
           sessionId: null,
@@ -700,6 +778,7 @@ export const useChatStore = create<ChatStore>()(
           agentId: null,
           agent: null,
           messages: [],
+          compareByMessageId: {},
           input: "",
           attachments: [],
           initialized: false,

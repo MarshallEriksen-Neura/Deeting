@@ -4,8 +4,8 @@ mod background_workers;
 mod chat_completion;
 mod code_mode_catalog;
 mod code_mode_orchestration;
-mod consult;
 mod config;
+mod consult;
 mod onboarding;
 mod search_ranking;
 mod summary_format;
@@ -31,10 +31,10 @@ pub(crate) use code_mode_catalog::{
     build_local_code_mode_entry_tools, build_local_sdk_search_result,
 };
 pub(crate) use code_mode_orchestration::run_local_chat_complete_with_auto_code_mode;
+pub(crate) use config::{apply_config_payload, now_rfc3339, read_local_mcp_config};
 pub(crate) use consult::{
     build_local_consult_expert_network_result, LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
 };
-pub(crate) use config::{apply_config_payload, now_rfc3339, read_local_mcp_config};
 pub(crate) use onboarding::install_local_skill_from_onboarding_request;
 pub(crate) use summary_format::build_local_summary_from_window;
 pub(crate) use summary_generation::{
@@ -55,19 +55,18 @@ pub(crate) use tool_trace::{
 };
 
 #[cfg(test)]
-pub(crate) use config::hash_config;
-#[cfg(test)]
-pub(crate) use consult::build_local_consult_expert_network_result_with_runtime;
+pub(crate) use background_workers::process_next_local_conversation_summary_job_with_store;
 #[cfg(test)]
 pub(crate) use chat_completion::normalize_chat_completion_response;
 #[cfg(test)]
 pub(crate) use code_mode_catalog::build_local_sdk_search_result_with_runtime;
 #[cfg(test)]
-pub(crate) use onboarding::{derive_skill_name_from_repo_url, parse_skill_onboarding_payload};
+pub(crate) use config::hash_config;
 #[cfg(test)]
-pub(crate) use background_workers::process_next_local_conversation_summary_job_with_store;
+pub(crate) use consult::build_local_consult_expert_network_result_with_runtime;
+#[cfg(test)]
+pub(crate) use onboarding::{derive_skill_name_from_repo_url, parse_skill_onboarding_payload};
 #[cfg(test)]
 pub(crate) use tool_execution::{
     approve_mcp_tool_inner, execute_or_queue_mcp_tool_call, resolve_skill_env,
 };
-

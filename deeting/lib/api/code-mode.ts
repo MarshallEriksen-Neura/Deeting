@@ -1,6 +1,7 @@
 import { z } from "zod"
 
 import { request } from "@/lib/http"
+import { SandboxRuntimeModeSchema } from "@/lib/api/sandbox"
 
 const isTauriRuntime = () =>
   process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
@@ -24,6 +25,7 @@ export const CodeModeExecutionItemSchema = z.object({
   status: z.string(),
   error: z.string().nullable().optional(),
   error_code: z.string().nullable().optional(),
+  runtime_mode: SandboxRuntimeModeSchema.nullish(),
   duration_ms: z.number(),
   tool_call_count: z.number(),
   created_at: z.string().nullable(),
@@ -48,6 +50,7 @@ export const CodeModeExecutionDetailSchema = z.object({
   render_blocks: z.union([z.record(z.any()), z.array(z.any())]).default({}),
   error: z.string().nullable().optional(),
   error_code: z.string().nullable().optional(),
+  runtime_mode: SandboxRuntimeModeSchema.nullish(),
   duration_ms: z.number(),
   request_meta: z.record(z.any()).default({}),
   created_at: z.string().nullable(),
@@ -111,6 +114,8 @@ export const ExecuteLocalCodeModeResponseSchema = z.object({
   runtime_tool_calls: z.array(LocalRuntimeToolCallSchema).default([]),
   render_blocks: z.array(z.any()).default([]),
   error: z.string().nullable().optional(),
+  error_code: z.string().nullable().optional(),
+  runtime_mode: SandboxRuntimeModeSchema,
 })
 
 export type ExecuteLocalCodeModeResponse = z.infer<

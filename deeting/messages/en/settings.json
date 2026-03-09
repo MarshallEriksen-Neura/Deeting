@@ -123,7 +123,48 @@
       "saving": "Saving...",
       "saveSuccess": "Agent settings saved",
       "saveFailed": "Failed to save agent settings",
-      "scopeBadge": "Desktop only"
+      "scopeBadge": "Desktop only",
+      "sandbox": {
+        "title": "Desktop Sandbox",
+        "description": "Check whether Code Mode will run inside BoxLite sandbox and guide the user through prepare/repair steps.",
+        "loading": "Checking sandbox readiness...",
+        "providerLabel": "Active runtime provider",
+        "platformLabel": "Current platform",
+        "diagnosticsTitle": "Diagnostics",
+        "endpointLabel": "Endpoint",
+        "pythonLabel": "WSL Python",
+        "commandLabel": "Recommended command",
+        "pythonMissing": "Missing",
+        "pythonUnsupported": "Unsupported ABI",
+        "readyHint": "Sandbox is ready. Code Mode will execute in isolated mode.",
+        "footerHint": "Sandbox setup is checked on demand. Strict Code Mode execution no longer silently falls back to host Python.",
+        "refresh": "Refresh",
+        "install": "Install BoxLite",
+        "installing": "Installing...",
+        "prepare": "Prepare",
+        "preparing": "Preparing...",
+        "repair": "Repair",
+        "repairing": "Repairing...",
+        "copyCommand": "Copy command",
+        "copySuccess": "Command copied",
+        "installSuccess": "BoxLite installation finished. Status refreshed.",
+        "prepareSuccess": "Sandbox prepare finished. Status refreshed.",
+        "repairSuccess": "Sandbox repair finished. Status refreshed.",
+        "actionFailed": "Sandbox action failed",
+        "status": {
+          "ready": "Ready",
+          "needs_wsl": "Needs WSL",
+          "needs_python": "Needs Python",
+          "needs_boxlite": "Needs BoxLite",
+          "repair_needed": "Needs repair",
+          "unsupported": "Unsupported"
+        },
+        "runtime": {
+          "sandbox": "Sandboxed",
+          "host_fallback": "Host fallback",
+          "disabled": "Disabled"
+        }
+      }
     },
     "nav": {
       "models": "Models",

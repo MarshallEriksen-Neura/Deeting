@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
-use arrow_array::{
-    Array, Float32Array, RecordBatch, RecordBatchIterator, StringArray,
-};
+use arrow_array::{Array, Float32Array, RecordBatch, RecordBatchIterator, StringArray};
 use arrow_schema::{DataType, Field};
 use futures_util::TryStreamExt;
 use lancedb::query::ExecutableQuery;
@@ -50,7 +48,10 @@ pub async fn migrate_to_latest(
                     embedding_dim
                 );
                 migrate_v1_to_v2(conn, table_name, embedding_dim).await?;
-                log::info!("memory migration: {} upgraded to V2 successfully", table_name);
+                log::info!(
+                    "memory migration: {} upgraded to V2 successfully",
+                    table_name
+                );
             }
             2 => {
                 log::info!(
@@ -58,7 +59,10 @@ pub async fn migrate_to_latest(
                     table_name
                 );
                 migrate_v2_to_v3(conn, table_name, embedding_dim).await?;
-                log::info!("memory migration: {} upgraded to V3 successfully", table_name);
+                log::info!(
+                    "memory migration: {} upgraded to V3 successfully",
+                    table_name
+                );
             }
             _ => break,
         }
@@ -138,21 +142,29 @@ fn extend_batch_with_null_embedding(
     let num_rows = old_batch.num_rows();
 
     // Collect existing V1 columns in order
-    let id_col = old_batch.column_by_name("id")
+    let id_col = old_batch
+        .column_by_name("id")
         .ok_or_else(|| MemoryError::Storage("missing column: id".into()))?;
-    let content_col = old_batch.column_by_name("content")
+    let content_col = old_batch
+        .column_by_name("content")
         .ok_or_else(|| MemoryError::Storage("missing column: content".into()))?;
-    let session_col = old_batch.column_by_name("session_id")
+    let session_col = old_batch
+        .column_by_name("session_id")
         .ok_or_else(|| MemoryError::Storage("missing column: session_id".into()))?;
-    let assistant_col = old_batch.column_by_name("assistant_id")
+    let assistant_col = old_batch
+        .column_by_name("assistant_id")
         .ok_or_else(|| MemoryError::Storage("missing column: assistant_id".into()))?;
-    let meta_col = old_batch.column_by_name("meta_info_json")
+    let meta_col = old_batch
+        .column_by_name("meta_info_json")
         .ok_or_else(|| MemoryError::Storage("missing column: meta_info_json".into()))?;
-    let deleted_col = old_batch.column_by_name("is_deleted")
+    let deleted_col = old_batch
+        .column_by_name("is_deleted")
         .ok_or_else(|| MemoryError::Storage("missing column: is_deleted".into()))?;
-    let created_col = old_batch.column_by_name("created_at")
+    let created_col = old_batch
+        .column_by_name("created_at")
         .ok_or_else(|| MemoryError::Storage("missing column: created_at".into()))?;
-    let updated_col = old_batch.column_by_name("updated_at")
+    let updated_col = old_batch
+        .column_by_name("updated_at")
         .ok_or_else(|| MemoryError::Storage("missing column: updated_at".into()))?;
 
     // New columns: null embedding and null embedding_model
@@ -163,7 +175,8 @@ fn extend_batch_with_null_embedding(
         ),
         num_rows,
     );
-    let null_model = Arc::new(StringArray::from(vec![None as Option<&str>; num_rows])) as Arc<dyn Array>;
+    let null_model =
+        Arc::new(StringArray::from(vec![None as Option<&str>; num_rows])) as Arc<dyn Array>;
 
     let new_schema = super::store::local_memory_schema_v2(embedding_dim);
 
@@ -262,11 +275,15 @@ fn extend_v2_batch_with_v3_columns(
     let model_col = get_col(old_batch, "embedding_model")?;
 
     // V3 columns with defaults
-    let null_tags = Arc::new(StringArray::from(vec![None as Option<&str>; num_rows])) as Arc<dyn Array>;
-    let null_category = Arc::new(StringArray::from(vec![None as Option<&str>; num_rows])) as Arc<dyn Array>;
-    let null_source = Arc::new(StringArray::from(vec![None as Option<&str>; num_rows])) as Arc<dyn Array>;
+    let null_tags =
+        Arc::new(StringArray::from(vec![None as Option<&str>; num_rows])) as Arc<dyn Array>;
+    let null_category =
+        Arc::new(StringArray::from(vec![None as Option<&str>; num_rows])) as Arc<dyn Array>;
+    let null_source =
+        Arc::new(StringArray::from(vec![None as Option<&str>; num_rows])) as Arc<dyn Array>;
     let default_vitality = Arc::new(Float32Array::from(vec![1.0_f32; num_rows])) as Arc<dyn Array>;
-    let null_last_accessed = Arc::new(StringArray::from(vec![None as Option<&str>; num_rows])) as Arc<dyn Array>;
+    let null_last_accessed =
+        Arc::new(StringArray::from(vec![None as Option<&str>; num_rows])) as Arc<dyn Array>;
 
     let new_schema = super::store::local_memory_schema_v3(embedding_dim);
 

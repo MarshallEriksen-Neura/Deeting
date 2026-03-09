@@ -221,4 +221,67 @@ describe("useChatStore agent id normalization", () => {
       trace_id: "trace-1",
     })
   })
+
+  it("should manage compare candidates without mutating canonical messages", () => {
+    useChatStore.setState({
+      messages: [
+        {
+          id: "assistant-compare-1",
+          role: "assistant",
+          content: "baseline",
+          createdAt: 1,
+          blocks: [{ id: "baseline-block", type: "text", content: "baseline" } as any],
+        },
+      ],
+    })
+
+    useChatStore.getState().ensureCompareState("assistant-compare-1", {
+      modelKey: "model-a",
+      modelId: "model-a",
+      content: "baseline",
+      blocks: [{ id: "baseline-block", type: "text", content: "baseline" } as any],
+      loading: false,
+      baseline: true,
+    })
+
+    useChatStore.getState().upsertCompareCandidate("assistant-compare-1", {
+      modelKey: "model-b",
+      modelId: "model-b",
+      content: "",
+      blocks: [],
+      loading: true,
+    })
+    useChatStore.getState().appendCompareCandidateBlocks("assistant-compare-1", "model-b", [
+      { type: "text", content: "candidate" } as any,
+    ])
+    useChatStore.getState().setCompareActiveCandidate("assistant-compare-1", "model-b")
+
+    const state = useChatStore.getState().compareByMessageId["assistant-compare-1"]
+    expect(state?.baselineModelKey).toBe("model-a")
+    expect(state?.activeModelKey).toBe("model-b")
+    expect(state?.candidates["model-b"]?.content).toBe("candidate")
+    expect(useChatStore.getState().messages[0]?.content).toBe("baseline")
+  })
+
+  it("should clear compare state when target message disappears", () => {
+    useChatStore.getState().ensureCompareState("assistant-compare-2", {
+      modelKey: "model-a",
+      modelId: "model-a",
+      content: "baseline",
+      blocks: [{ id: "baseline-block", type: "text", content: "baseline" } as any],
+      loading: false,
+      baseline: true,
+    })
+
+    useChatStore.getState().setMessages([
+      {
+        id: "assistant-other",
+        role: "assistant",
+        content: "other",
+        createdAt: 2,
+      },
+    ])
+
+    expect(useChatStore.getState().compareByMessageId["assistant-compare-2"]).toBeUndefined()
+  })
 })

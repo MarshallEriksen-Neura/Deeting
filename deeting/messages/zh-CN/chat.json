@@ -341,11 +341,29 @@
       "subtitle": "系统在线，等待输入。"
     },
     "actions": {
+      "compare": "对比其他模型",
       "regenerate": "重新生成",
       "like": "点赞",
       "dislike": "踩",
       "copy": "复制",
       "copied": "已复制"
+    },
+    "compare": {
+      "current": "当前",
+      "actions": {
+        "addModel": "添加模型",
+        "useAsFinal": "设为最终答案",
+        "keepCurrent": "保留当前答案",
+        "finalizing": "正在确认..."
+      },
+      "dialog": {
+        "title": "对比其他模型",
+        "description": "选择一个本地模型，仅为当前这一轮生成候选答案。",
+        "searchPlaceholder": "搜索模型...",
+        "empty": "没有更多可用的本地模型了。",
+        "noModels": "未发现桌面本地模型。",
+        "localModel": "本地模型"
+      }
     },
     "views": {
       "invalidPayload": "数据格式无效",

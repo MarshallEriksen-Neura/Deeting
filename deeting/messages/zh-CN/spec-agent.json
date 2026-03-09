@@ -224,7 +224,13 @@
       "status": {
         "success": "成功",
         "failed": "失败",
-        "dry_run": "试运行"
+        "dry_run": "试运行",
+        "blocked": "已阻止"
+      },
+      "runtimeMode": {
+        "sandbox": "沙箱执行",
+        "host_fallback": "宿主机回退",
+        "disabled": "已禁用"
       },
       "duration": "{ms}ms",
       "toolCalls": "{count} 次工具调用",

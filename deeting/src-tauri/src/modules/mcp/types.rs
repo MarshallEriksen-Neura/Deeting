@@ -1151,3 +1151,19 @@ pub struct LocalConversationRegenerateResponse {
     pub deleted_turn_index: Option<i64>,
     pub message: LocalConversationHistoryMessage,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalConversationCompareFinalizeRequest {
+    pub session_id: String,
+    pub model_id: String,
+    pub provider_model_id: Option<String>,
+    pub content: String,
+    pub blocks: Option<Vec<Value>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalConversationCompareFinalizeResponse {
+    pub session_id: String,
+    pub replaced_turn_index: i64,
+    pub message: LocalConversationHistoryMessage,
+}

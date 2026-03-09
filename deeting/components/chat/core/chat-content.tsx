@@ -24,7 +24,7 @@ export function ChatContent({ agent }: ChatContentProps) {
   const statusCode = useChatStore((state) => state.statusCode)
   const statusMeta = useChatStore((state) => state.statusMeta)
   const sendFeedback = useChatStore((state) => state.sendFeedback)
-  const { regenerateMessage } = useChatMessagingService()
+  const { regenerateMessage, compareWithModel, finalizeCompareWinner } = useChatMessagingService()
 
   return (
     <div className="flex flex-1 min-h-0 h-full w-full">
@@ -39,6 +39,8 @@ export function ChatContent({ agent }: ChatContentProps) {
         onRegenerate={regenerateMessage}
         onLike={(id) => void sendFeedback(id, 1)}
         onDislike={(id) => void sendFeedback(id, -1)}
+        onCompareWithModel={compareWithModel}
+        onFinalizeCompare={finalizeCompareWinner}
       />
     </div>
   )

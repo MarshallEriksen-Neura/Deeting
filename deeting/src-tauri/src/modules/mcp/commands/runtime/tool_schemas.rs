@@ -3,7 +3,10 @@ use super::super::support::*;
 pub(crate) fn normalize_tool_schema_for_llm(raw: &serde_json::Value) -> Option<serde_json::Value> {
     let object = raw.as_object()?;
     if object.get("type").and_then(|value| value.as_str()) == Some("function")
-        && object.get("function").and_then(|value| value.as_object()).is_some()
+        && object
+            .get("function")
+            .and_then(|value| value.as_object())
+            .is_some()
     {
         return Some(raw.clone());
     }

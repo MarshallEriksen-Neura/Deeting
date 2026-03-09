@@ -14,7 +14,12 @@ pub async fn append_local_memory(
     state: State<'_, AppState>,
     payload: CreateLocalMemoryRequest,
 ) -> Result<LocalMemoryItem, String> {
-    state.memory.service.append(payload).await.map_err(to_string)
+    state
+        .memory
+        .service
+        .append(payload)
+        .await
+        .map_err(to_string)
 }
 
 #[tauri::command]
@@ -89,12 +94,7 @@ pub async fn search_local_memories(
     state: State<'_, AppState>,
     query: LocalMemorySearchQuery,
 ) -> Result<LocalMemorySearchResult, String> {
-    state
-        .memory
-        .service
-        .search(query)
-        .await
-        .map_err(to_string)
+    state.memory.service.search(query).await.map_err(to_string)
 }
 
 #[tauri::command]

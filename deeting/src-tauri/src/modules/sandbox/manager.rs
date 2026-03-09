@@ -12,12 +12,20 @@ use tokio::task::JoinHandle;
 
 use crate::modules::sandbox::error::SandboxError;
 use crate::modules::sandbox::provider::SandboxProvider;
-use crate::modules::sandbox::types::{SandboxLeaseInfo, SandboxRunResult};
+use crate::modules::sandbox::types::{
+    SandboxBoxLiteStatus, SandboxInstallGuide, SandboxLeaseInfo, SandboxPythonStatus,
+    SandboxReadinessReport, SandboxReadinessStatus, SandboxRunResult, SandboxRuntimeMode,
+    SandboxWslStatus,
+};
 
 #[cfg(target_os = "windows")]
 use crate::modules::sandbox::backend_host::{HostBackendOptions, HostPythonBackend};
 #[cfg(target_os = "windows")]
-use crate::modules::sandbox::backend_wsl::{WslBackendOptions, WslBoxrunBackend};
+use crate::modules::sandbox::backend_wsl::{
+    diagnose_wsl_availability, inspect_wsl_python, WslBackendOptions, WslBoxrunBackend,
+};
+#[cfg(target_os = "windows")]
+use crate::modules::sandbox::installer::{install_boxlite_wsl, BoxLiteInstallerConfig};
 
 const DEFAULT_TIMEOUT_SECS: u64 = 30 * 60;
 const DEFAULT_MAX_SANDBOXES: usize = 50;
@@ -69,13 +77,19 @@ impl SandboxManagerOptions {
 
 #[derive(Clone)]
 pub struct SandboxRuntimeManager {
-    backend: Arc<dyn SandboxProvider>,
+    backend: Arc<RwLock<Arc<dyn SandboxProvider>>>,
     provisioner: Option<Arc<crate::modules::sandbox::provisioner::BoxLiteProvisioner>>,
     options: SandboxManagerOptions,
     session_leases: Arc<RwLock<HashMap<String, SessionLease>>>,
     active_ids: Arc<RwLock<HashSet<String>>>,
     run_locks: Arc<RwLock<HashMap<String, Arc<Mutex<()>>>>>,
     cleanup_task: Arc<Mutex<Option<JoinHandle<()>>>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SandboxLaunchPolicy {
+    StrictSandbox,
+    AllowHostFallback,
 }
 
 #[derive(Debug, Clone)]
@@ -119,26 +133,20 @@ impl SandboxProvider for DisabledProvider {
 
 impl SandboxRuntimeManager {
     pub fn new(options: SandboxManagerOptions) -> Self {
-        let (backend, provisioner): (Arc<dyn SandboxProvider>, _) =
-            match Self::build_provider(&options) {
-                Ok((provider, prov)) => (provider, prov),
-                Err(err) => {
-                    log::warn!(
-                        "sandbox runtime disabled: code={} detail={}",
-                        err.code(),
-                        err
-                    );
-                    (
-                        Arc::new(DisabledProvider {
-                            reason: err.to_string(),
-                        }),
-                        None,
-                    )
-                }
-            };
+        let provisioner = Self::build_provisioner(&options);
+        let backend = Self::build_provider(&options, provisioner.as_ref()).unwrap_or_else(|err| {
+            log::warn!(
+                "sandbox runtime disabled: code={} detail={}",
+                err.code(),
+                err
+            );
+            Arc::new(DisabledProvider {
+                reason: err.to_string(),
+            }) as Arc<dyn SandboxProvider>
+        });
 
         Self {
-            backend,
+            backend: Arc::new(RwLock::new(backend)),
             provisioner,
             options,
             session_leases: Arc::new(RwLock::new(HashMap::new())),
@@ -148,12 +156,140 @@ impl SandboxRuntimeManager {
         }
     }
 
-    pub fn is_available(&self) -> bool {
-        self.backend.provider_name() != "disabled"
+    pub async fn is_available(&self) -> bool {
+        self.provider_name().await != "disabled"
     }
 
-    pub fn provider_name(&self) -> &str {
-        self.backend.provider_name()
+    pub async fn provider_name(&self) -> String {
+        self.backend.read().await.provider_name().to_string()
+    }
+
+    pub async fn runtime_mode(&self) -> SandboxRuntimeMode {
+        runtime_mode_from_provider_name(&self.provider_name().await)
+    }
+
+    pub async fn status_report(&self) -> SandboxReadinessReport {
+        let provider_name = self.provider_name().await;
+        let runtime_mode = runtime_mode_from_provider_name(&provider_name);
+        let boxlite = self.boxlite_status().await;
+
+        #[cfg(target_os = "windows")]
+        {
+            let wsl = diagnose_wsl_availability();
+            let python = if wsl.ready {
+                Some(inspect_wsl_python(&self.options.python_bin))
+            } else {
+                None
+            };
+            let boxlite_binary_found = boxlite.binary_found;
+            let (status, blocking_reason, next_actions) =
+                derive_windows_readiness(runtime_mode, &wsl, python.as_ref(), &boxlite);
+            return SandboxReadinessReport {
+                platform: current_platform().to_string(),
+                platform_supported: true,
+                status,
+                provider_name,
+                runtime_mode,
+                wsl: Some(wsl),
+                python,
+                boxlite,
+                blocking_reason,
+                can_auto_prepare: status != SandboxReadinessStatus::NeedsWsl
+                    && status != SandboxReadinessStatus::NeedsPython
+                    && boxlite_binary_found,
+                next_actions,
+            };
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            SandboxReadinessReport {
+                platform: current_platform().to_string(),
+                platform_supported: false,
+                status: SandboxReadinessStatus::Unsupported,
+                provider_name,
+                runtime_mode,
+                wsl: None,
+                python: None,
+                boxlite,
+                blocking_reason: Some(
+                    "Desktop sandbox install flow is currently only supported on Windows + WSL."
+                        .to_string(),
+                ),
+                next_actions: vec![
+                    "Use the Windows desktop build for managed sandbox installation.".to_string(),
+                ],
+                can_auto_prepare: false,
+            }
+        }
+    }
+
+    pub async fn prepare(&self) -> Result<SandboxReadinessReport, SandboxError> {
+        #[cfg(target_os = "windows")]
+        {
+            if let Some(provisioner) = self.provisioner.as_ref() {
+                if provisioner.resolve_binary().is_some() {
+                    if let Err(err) = provisioner.ensure_running().await {
+                        log::warn!("prepare sandbox failed: code={} detail={}", err.code(), err);
+                    }
+                }
+            }
+            self.refresh_backend().await?;
+            return Ok(self.status_report().await);
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            Ok(self.status_report().await)
+        }
+    }
+
+    pub async fn repair(&self) -> Result<SandboxReadinessReport, SandboxError> {
+        if let Some(provisioner) = self.provisioner.as_ref() {
+            provisioner.stop().await;
+        }
+        self.prepare().await
+    }
+
+    pub async fn install_boxlite(&self) -> Result<SandboxReadinessReport, SandboxError> {
+        #[cfg(target_os = "windows")]
+        {
+            let wsl = diagnose_wsl_availability();
+            if !wsl.ready {
+                return Err(SandboxError::Unavailable(wsl.detail.unwrap_or_else(|| {
+                    "WSL is required before BoxLite can be installed.".to_string()
+                })));
+            }
+
+            let config = BoxLiteInstallerConfig {
+                data_dir: self.options.home_dir.join("sandbox"),
+                python_bin: self.options.python_bin.clone(),
+            };
+            install_boxlite_wsl(&config).await?;
+            return self.prepare().await;
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            Ok(self.status_report().await)
+        }
+    }
+
+    pub async fn install_guide(&self) -> SandboxInstallGuide {
+        build_install_guide(&self.status_report().await)
+    }
+
+    pub async fn ensure_launch_policy(
+        &self,
+        policy: SandboxLaunchPolicy,
+    ) -> Result<SandboxReadinessReport, SandboxError> {
+        let mut report = self.status_report().await;
+        if matches!(policy, SandboxLaunchPolicy::StrictSandbox)
+            && report.runtime_mode != SandboxRuntimeMode::Sandbox
+        {
+            report = self.prepare().await?;
+        }
+        Ok(report)
     }
 
     pub async fn start_background_worker(&self) {
@@ -195,7 +331,8 @@ impl SandboxRuntimeManager {
 
         for (session_id, sandbox_id) in expired {
             self.remove_lease(&session_id, &sandbox_id).await;
-            let _ = self.backend.stop_box(&sandbox_id).await;
+            let backend = self.current_backend().await;
+            let _ = backend.stop_box(&sandbox_id).await;
         }
         Ok(())
     }
@@ -214,7 +351,8 @@ impl SandboxRuntimeManager {
         self.ensure_capacity().await?;
 
         let sandbox_name = session_to_box_name(&normalized_session);
-        let identity = self.backend.get_or_create_box(&sandbox_name).await?;
+        let backend = self.current_backend().await;
+        let identity = backend.get_or_create_box(&sandbox_name).await?;
         let expires_at = now_ms + self.options.default_timeout.as_millis() as i64;
 
         {
@@ -256,7 +394,8 @@ impl SandboxRuntimeManager {
         } else {
             self.remove_lease_by_sandbox_id(sandbox_id).await;
         }
-        self.backend.stop_box(sandbox_id).await
+        let backend = self.current_backend().await;
+        backend.stop_box(sandbox_id).await
     }
 
     pub async fn run_code(
@@ -265,6 +404,7 @@ impl SandboxRuntimeManager {
         code: &str,
         language: Option<&str>,
         execution_timeout_secs: Option<u64>,
+        policy: SandboxLaunchPolicy,
     ) -> Result<SandboxRunResult, SandboxError> {
         let normalized_session = normalize_session_id(session_id)?;
         if code.trim().is_empty() {
@@ -293,10 +433,22 @@ impl SandboxRuntimeManager {
                 ))
             })?;
 
+        let report = self.ensure_launch_policy(policy).await?;
+        if matches!(policy, SandboxLaunchPolicy::StrictSandbox)
+            && report.runtime_mode != SandboxRuntimeMode::Sandbox
+        {
+            return Err(SandboxError::Unavailable(
+                report.blocking_reason.unwrap_or_else(|| {
+                    "sandbox is not ready; install or repair the desktop sandbox before running Code Mode"
+                        .to_string()
+                }),
+            ));
+        }
+
         for attempt in 0..SESSION_BUSY_RETRY_ATTEMPTS {
             let lease = self.get_or_create_sandbox(&normalized_session).await?;
-            match self
-                .backend
+            let backend = self.current_backend().await;
+            match backend
                 .run_python(&lease.sandbox_id, code, timeout_secs)
                 .await
             {
@@ -360,10 +512,12 @@ impl SandboxRuntimeManager {
             active.iter().cloned().collect()
         };
         for sandbox_id in active_ids {
-            let _ = self.backend.stop_box(&sandbox_id).await;
+            let backend = self.current_backend().await;
+            let _ = backend.stop_box(&sandbox_id).await;
             self.remove_lease_by_sandbox_id(&sandbox_id).await;
         }
-        let result = self.backend.shutdown().await;
+        let backend = self.current_backend().await;
+        let result = backend.shutdown().await;
 
         if let Some(ref provisioner) = self.provisioner {
             provisioner.stop().await;
@@ -399,7 +553,8 @@ impl SandboxRuntimeManager {
 
         if let Some(stale_id) = stale_sandbox {
             self.remove_lease(session_id, &stale_id).await;
-            let _ = self.backend.stop_box(&stale_id).await;
+            let backend = self.current_backend().await;
+            let _ = backend.stop_box(&stale_id).await;
         }
         output
     }
@@ -481,18 +636,93 @@ impl SandboxRuntimeManager {
         }
     }
 
-    fn build_provider(
+    async fn current_backend(&self) -> Arc<dyn SandboxProvider> {
+        self.backend.read().await.clone()
+    }
+
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    async fn replace_backend(&self, next_backend: Arc<dyn SandboxProvider>) {
+        let next_name = next_backend.provider_name().to_string();
+        let current_name = self.provider_name().await;
+        {
+            let mut guard = self.backend.write().await;
+            *guard = next_backend;
+        }
+        if current_name != next_name {
+            self.clear_runtime_state().await;
+        }
+    }
+
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    async fn clear_runtime_state(&self) {
+        self.session_leases.write().await.clear();
+        self.active_ids.write().await.clear();
+        self.run_locks.write().await.clear();
+    }
+
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    async fn refresh_backend(&self) -> Result<(), SandboxError> {
+        let next_backend = Self::build_provider(&self.options, self.provisioner.as_ref())
+            .unwrap_or_else(|err| {
+                Arc::new(DisabledProvider {
+                    reason: err.to_string(),
+                }) as Arc<dyn SandboxProvider>
+            });
+        self.replace_backend(next_backend).await;
+        Ok(())
+    }
+
+    async fn boxlite_status(&self) -> SandboxBoxLiteStatus {
+        if let Some(provisioner) = self.provisioner.as_ref() {
+            let record = provisioner.installation_record();
+            let binary_path = record
+                .as_ref()
+                .map(|record| PathBuf::from(&record.bridge_script_host_path));
+            let endpoint = provisioner.endpoint();
+            let reachable = provisioner.is_endpoint_reachable().await;
+            let managed_path = provisioner.managed_binary_path();
+            let managed_by_deeting = binary_path
+                .as_ref()
+                .map(|path| path == &managed_path)
+                .unwrap_or(false);
+            return SandboxBoxLiteStatus {
+                binary_found: record.is_some(),
+                binary_path: record.map(|record| record.wsl_site_dir),
+                endpoint: Some(endpoint),
+                reachable,
+                managed_by_deeting,
+            };
+        }
+
+        SandboxBoxLiteStatus::default()
+    }
+
+    fn build_provisioner(
         options: &SandboxManagerOptions,
-    ) -> Result<
-        (
-            Arc<dyn SandboxProvider>,
-            Option<Arc<crate::modules::sandbox::provisioner::BoxLiteProvisioner>>,
-        ),
-        SandboxError,
-    > {
+    ) -> Option<Arc<crate::modules::sandbox::provisioner::BoxLiteProvisioner>> {
         #[cfg(not(target_os = "windows"))]
         {
             let _ = options;
+            None
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            use crate::modules::sandbox::provisioner::{BoxLiteConfig, BoxLiteProvisioner};
+            Some(Arc::new(BoxLiteProvisioner::new(
+                BoxLiteConfig::from_home_dir(&options.home_dir),
+            )))
+        }
+    }
+
+    fn build_provider(
+        options: &SandboxManagerOptions,
+        provisioner: Option<&Arc<crate::modules::sandbox::provisioner::BoxLiteProvisioner>>,
+    ) -> Result<Arc<dyn SandboxProvider>, SandboxError> {
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = options;
+            let _ = provisioner;
             return Err(SandboxError::Unavailable(
                 "native boxrun backend is not linked in this desktop package; use WSL backend"
                     .to_string(),
@@ -501,16 +731,9 @@ impl SandboxRuntimeManager {
 
         #[cfg(target_os = "windows")]
         {
-            use crate::modules::sandbox::provisioner::{BoxLiteConfig, BoxLiteProvisioner};
-
-            let provisioner = Arc::new(BoxLiteProvisioner::new(BoxLiteConfig::from_home_dir(
-                &options.home_dir,
-            )));
-
-            // Phase 1: if an explicit bridge URL is set (env or auto-discovered), use it
             if let Some(bridge_url) = options.bridge_url.clone() {
                 match Self::try_wsl_backend(&bridge_url, options) {
-                    Ok(provider) => return Ok((provider, Some(provisioner))),
+                    Ok(provider) => return Ok(provider),
                     Err(err) => {
                         log::warn!(
                             "boxrun WSL backend at {} unavailable: code={} detail={}",
@@ -522,50 +745,23 @@ impl SandboxRuntimeManager {
                 }
             }
 
-            // Phase 2: auto-provision — try to start BoxLite if binary is found
-            if provisioner.resolve_binary().is_some() {
-                let prov_clone = Arc::clone(&provisioner);
-                let wsl_options = options.clone();
-                tauri::async_runtime::spawn(async move {
-                    match prov_clone.ensure_running().await {
-                        Ok(endpoint) => {
-                            log::info!("BoxLite auto-provisioned at {}", endpoint);
+            if let Some(provisioner) = provisioner {
+                if provisioner.installation_record().is_some() {
+                    let auto_endpoint = provisioner.endpoint();
+                    if is_bridge_candidate_reachable(&auto_endpoint) {
+                        if let Ok(provider) = Self::try_wsl_backend(&auto_endpoint, options) {
+                            return Ok(provider);
                         }
-                        Err(err) => {
-                            log::warn!(
-                                "BoxLite auto-provisioning failed: code={} detail={}",
-                                err.code(),
-                                err
-                            );
-                        }
-                    }
-                    let _ = wsl_options;
-                });
-
-                let auto_endpoint = provisioner
-                    .resolve_binary()
-                    .map(|_| {
-                        format!(
-                            "http://127.0.0.1:{}",
-                            BoxLiteConfig::from_home_dir(&options.home_dir).port
-                        )
-                    })
-                    .unwrap_or_default();
-
-                if !auto_endpoint.is_empty() {
-                    if let Ok(provider) = Self::try_wsl_backend(&auto_endpoint, options) {
-                        return Ok((provider, Some(provisioner)));
                     }
                 }
             }
 
-            // Phase 3: fallback to host python
             log::warn!("no BoxLite endpoint available, falling back to host python runtime");
             let host_backend = HostPythonBackend::new(HostBackendOptions {
                 python_bin: options.python_bin.clone(),
                 working_dir: options.working_dir.clone(),
             })?;
-            Ok((Arc::new(host_backend), Some(provisioner)))
+            Ok(Arc::new(host_backend))
         }
     }
 
@@ -597,6 +793,169 @@ impl SandboxRuntimeManager {
         });
 
         Ok(provider)
+    }
+}
+
+fn runtime_mode_from_provider_name(provider_name: &str) -> SandboxRuntimeMode {
+    match provider_name {
+        "host-python" => SandboxRuntimeMode::HostFallback,
+        "disabled" => SandboxRuntimeMode::Disabled,
+        _ => SandboxRuntimeMode::Sandbox,
+    }
+}
+
+fn current_platform() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "windows"
+    } else if cfg!(target_os = "macos") {
+        "macos"
+    } else {
+        "linux"
+    }
+}
+
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn derive_windows_readiness(
+    runtime_mode: SandboxRuntimeMode,
+    wsl: &SandboxWslStatus,
+    python: Option<&SandboxPythonStatus>,
+    boxlite: &SandboxBoxLiteStatus,
+) -> (SandboxReadinessStatus, Option<String>, Vec<String>) {
+    if runtime_mode == SandboxRuntimeMode::Sandbox && boxlite.reachable {
+        return (
+            SandboxReadinessStatus::Ready,
+            None,
+            vec!["Sandbox is ready for Code Mode execution.".to_string()],
+        );
+    }
+
+    if !wsl.ready {
+        return (
+            SandboxReadinessStatus::NeedsWsl,
+            wsl.detail.clone().or_else(|| {
+                Some("WSL is required before the Deeting sandbox can run.".to_string())
+            }),
+            vec!["Install or initialize WSL first, then rerun sandbox detection.".to_string()],
+        );
+    }
+
+    if let Some(python) = python {
+        if !python.installed || !python.supported {
+            return (
+                SandboxReadinessStatus::NeedsPython,
+                python.detail.clone().or_else(|| {
+                    Some(
+                        "WSL Python 3.10–3.13 is required before BoxLite can be installed."
+                            .to_string(),
+                    )
+                }),
+                vec![
+                    "Install Python 3.10–3.13 inside your WSL distro, then rerun sandbox detection."
+                        .to_string(),
+                ],
+            );
+        }
+    }
+
+    if !boxlite.binary_found {
+        return (
+            SandboxReadinessStatus::NeedsBoxLite,
+            Some("BoxLite is not installed in WSL for the Deeting sandbox yet.".to_string()),
+            vec![
+                "Install BoxLite from Desktop Sandbox settings, then Deeting will prepare the WSL bridge automatically."
+                    .to_string(),
+            ],
+        );
+    }
+
+    (
+        SandboxReadinessStatus::RepairNeeded,
+        Some(
+            "BoxLite is installed but not reachable yet. Try preparing or repairing the sandbox."
+                .to_string(),
+        ),
+        vec![
+            "Try Prepare to start BoxLite automatically.".to_string(),
+            "If it still fails, use Repair to restart the sandbox service.".to_string(),
+        ],
+    )
+}
+
+fn build_install_guide(report: &SandboxReadinessReport) -> SandboxInstallGuide {
+    match report.status {
+        SandboxReadinessStatus::Ready => SandboxInstallGuide {
+            status: report.status,
+            title: "Sandbox ready".to_string(),
+            description: "The desktop sandbox is ready for Code Mode execution.".to_string(),
+            steps: vec!["You can start Code Mode safely in sandboxed mode.".to_string()],
+            primary_command: None,
+        },
+        SandboxReadinessStatus::NeedsWsl => SandboxInstallGuide {
+            status: report.status,
+            title: "Install Windows Subsystem for Linux".to_string(),
+            description: "Code Mode sandboxing on Windows depends on WSL before BoxLite can start."
+                .to_string(),
+            steps: vec![
+                "Run the recommended WSL installation command in an elevated terminal.".to_string(),
+                "Restart the machine if Windows prompts you to do so.".to_string(),
+                "Open WSL once to finish distro initialization, then rerun sandbox detection."
+                    .to_string(),
+            ],
+            primary_command: report
+                .wsl
+                .as_ref()
+                .and_then(|wsl| wsl.recommended_command.clone())
+                .or_else(|| Some("wsl --install".to_string())),
+        },
+        SandboxReadinessStatus::NeedsPython => SandboxInstallGuide {
+            status: report.status,
+            title: "Install Python inside WSL".to_string(),
+            description:
+                "The pinned BoxLite release needs a supported Python runtime inside WSL before installation can continue."
+                    .to_string(),
+            steps: vec![
+                "Open your WSL distro terminal and install Python 3.10–3.13 using that distro's package manager."
+                    .to_string(),
+                "Verify the runtime with `python3 --version` inside WSL, then refresh Desktop Sandbox settings."
+                    .to_string(),
+            ],
+            primary_command: None,
+        },
+        SandboxReadinessStatus::NeedsBoxLite => SandboxInstallGuide {
+            status: report.status,
+            title: "Install BoxLite into WSL".to_string(),
+            description:
+                "BoxLite is required for isolated Code Mode execution and will be installed into your WSL environment."
+                    .to_string(),
+            steps: vec![
+                "Click Install BoxLite in Desktop Sandbox settings.".to_string(),
+                "Deeting will download the pinned official BoxLite Python wheel, verify its SHA256 checksum, and install it into WSL."
+                    .to_string(),
+            ],
+            primary_command: None,
+        },
+        SandboxReadinessStatus::RepairNeeded => SandboxInstallGuide {
+            status: report.status,
+            title: "Repair sandbox service".to_string(),
+            description:
+                "BoxLite is installed in WSL, but the local sandbox bridge is not reachable."
+                    .to_string(),
+            steps: vec![
+                "Click Prepare to try starting BoxLite automatically.".to_string(),
+                "If Prepare does not work, click Repair to restart the sandbox process."
+                    .to_string(),
+            ],
+            primary_command: None,
+        },
+        SandboxReadinessStatus::Unsupported => SandboxInstallGuide {
+            status: report.status,
+            title: "Platform not supported".to_string(),
+            description:
+                "Managed desktop sandbox installation is currently supported on Windows only."
+                    .to_string(),
+            steps: vec!["Use the Windows desktop build for the managed sandbox flow.".to_string()],
+            primary_command: None,
+        },
     }
 }
 
@@ -747,6 +1106,107 @@ fn session_to_box_name(session_id: &str) -> String {
     let digest = hasher.finalize();
     let suffix = hex::encode(&digest[..4]);
     format!("deeting-{normalized}-{suffix}")
+}
+
+#[cfg(test)]
+mod session_name_tests {
+    use super::*;
+
+    #[test]
+    fn runtime_mode_maps_provider_name() {
+        assert_eq!(
+            runtime_mode_from_provider_name("boxlite"),
+            SandboxRuntimeMode::Sandbox
+        );
+        assert_eq!(
+            runtime_mode_from_provider_name("host-python"),
+            SandboxRuntimeMode::HostFallback
+        );
+        assert_eq!(
+            runtime_mode_from_provider_name("disabled"),
+            SandboxRuntimeMode::Disabled
+        );
+    }
+
+    #[test]
+    fn derive_windows_readiness_requires_wsl_before_boxlite() {
+        let (status, reason, actions) = derive_windows_readiness(
+            SandboxRuntimeMode::HostFallback,
+            &SandboxWslStatus {
+                installed: false,
+                ready: false,
+                detail: Some("wsl unavailable".to_string()),
+                recommended_command: Some("wsl --install".to_string()),
+            },
+            None,
+            &SandboxBoxLiteStatus::default(),
+        );
+
+        assert_eq!(status, SandboxReadinessStatus::NeedsWsl);
+        assert!(reason.unwrap().contains("wsl"));
+        assert!(!actions.is_empty());
+    }
+
+    #[test]
+    fn derive_windows_readiness_requires_supported_wsl_python() {
+        let (status, reason, actions) = derive_windows_readiness(
+            SandboxRuntimeMode::HostFallback,
+            &SandboxWslStatus {
+                installed: true,
+                ready: true,
+                detail: None,
+                recommended_command: None,
+            },
+            Some(&SandboxPythonStatus {
+                installed: false,
+                abi: None,
+                supported: false,
+                detail: Some("python3 not found".to_string()),
+            }),
+            &SandboxBoxLiteStatus::default(),
+        );
+
+        assert_eq!(status, SandboxReadinessStatus::NeedsPython);
+        assert!(reason.unwrap().contains("python3"));
+        assert!(!actions.is_empty());
+    }
+
+    #[test]
+    fn build_install_guide_for_repair_mentions_prepare_and_repair() {
+        let guide = build_install_guide(&SandboxReadinessReport {
+            platform: "windows".to_string(),
+            platform_supported: true,
+            status: SandboxReadinessStatus::RepairNeeded,
+            provider_name: "host-python".to_string(),
+            runtime_mode: SandboxRuntimeMode::HostFallback,
+            wsl: Some(SandboxWslStatus {
+                installed: true,
+                ready: true,
+                detail: None,
+                recommended_command: None,
+            }),
+            python: Some(SandboxPythonStatus {
+                installed: true,
+                abi: Some("cp311".to_string()),
+                supported: true,
+                detail: None,
+            }),
+            boxlite: SandboxBoxLiteStatus {
+                binary_found: true,
+                binary_path: Some("C:/sandbox/boxlite.exe".to_string()),
+                endpoint: Some("http://127.0.0.1:4318".to_string()),
+                reachable: false,
+                managed_by_deeting: true,
+            },
+            blocking_reason: Some("BoxLite is installed but not reachable yet.".to_string()),
+            next_actions: vec![],
+            can_auto_prepare: true,
+        });
+
+        assert_eq!(guide.status, SandboxReadinessStatus::RepairNeeded);
+        assert!(guide.title.contains("Repair"));
+        assert!(guide.steps.iter().any(|step| step.contains("Prepare")));
+    }
 }
 
 fn is_session_busy_error(err: &SandboxError) -> bool {

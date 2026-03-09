@@ -64,12 +64,12 @@ fn lexical_asset_match_score(normalized_query: &str, item: &serde_json::Value) -
         return None;
     }
 
-    let prefix_bonus = if name.starts_with(normalized_query) || description.starts_with(normalized_query)
-    {
-        100.0
-    } else {
-        0.0
-    };
+    let prefix_bonus =
+        if name.starts_with(normalized_query) || description.starts_with(normalized_query) {
+            100.0
+        } else {
+            0.0
+        };
     Some(prefix_bonus + overlap as f64)
 }
 

@@ -1,5 +1,7 @@
 use super::super::{runtime::request_provider_chat_completion, support::*};
-use super::summary_format::{build_local_summary_prompt_input, LOCAL_CONVERSATION_SUMMARY_MAX_CHARS};
+use super::summary_format::{
+    build_local_summary_prompt_input, LOCAL_CONVERSATION_SUMMARY_MAX_CHARS,
+};
 use super::text_utils::{extract_text_from_chat_completion_response, truncate_text_chars};
 
 pub(crate) const LOCAL_CONVERSATION_SUMMARY_MAX_TOKENS: u32 = 768;
@@ -36,7 +38,10 @@ fn sanitize_generated_title(title: &str, fallback: &str) -> Option<String> {
     if text.is_empty() {
         return None;
     }
-    Some(truncate_text_chars(&text, LOCAL_CONVERSATION_TOPIC_TITLE_MAX_CHARS))
+    Some(truncate_text_chars(
+        &text,
+        LOCAL_CONVERSATION_TOPIC_TITLE_MAX_CHARS,
+    ))
 }
 
 pub(crate) async fn request_local_auxiliary_text(
@@ -51,7 +56,10 @@ pub(crate) async fn request_local_auxiliary_text(
         app_state,
         provider_model_id,
         model_id,
-        vec![LocalChatInputMessage { role: "user".to_string(), content: prompt.to_string() }],
+        vec![LocalChatInputMessage {
+            role: "user".to_string(),
+            content: prompt.to_string(),
+        }],
         None,
         Some(LOCAL_CONVERSATION_AUXILIARY_TEMPERATURE),
         Some(max_tokens),
@@ -73,7 +81,8 @@ pub(crate) async fn generate_local_conversation_title_with_model(
     if normalized_first_message.is_empty() {
         return Ok(None);
     }
-    let prompt = LOCAL_CONVERSATION_TOPIC_NAMING_PROMPT_TEMPLATE.replace("{first_message}", normalized_first_message);
+    let prompt = LOCAL_CONVERSATION_TOPIC_NAMING_PROMPT_TEMPLATE
+        .replace("{first_message}", normalized_first_message);
     let generated = request_local_auxiliary_text(
         app_state,
         provider_model_id,
@@ -97,7 +106,8 @@ pub(crate) async fn generate_local_conversation_summary_with_model(
     if conversation.trim().is_empty() {
         return Ok(None);
     }
-    let prompt = LOCAL_CONVERSATION_SUMMARY_PROMPT_TEMPLATE.replace("{conversation}", &conversation);
+    let prompt =
+        LOCAL_CONVERSATION_SUMMARY_PROMPT_TEMPLATE.replace("{conversation}", &conversation);
     let generated = request_local_auxiliary_text(
         app_state,
         provider_model_id,
@@ -107,6 +117,8 @@ pub(crate) async fn generate_local_conversation_summary_with_model(
         session_id,
     )
     .await?;
-    Ok(generated.map(|value| value.trim().to_string()).filter(|value| !value.is_empty()).map(|value| truncate_text_chars(&value, LOCAL_CONVERSATION_SUMMARY_MAX_CHARS)))
+    Ok(generated
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .map(|value| truncate_text_chars(&value, LOCAL_CONVERSATION_SUMMARY_MAX_CHARS)))
 }
-

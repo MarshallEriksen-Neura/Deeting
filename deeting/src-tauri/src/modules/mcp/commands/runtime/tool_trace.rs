@@ -16,9 +16,18 @@ pub(crate) fn build_local_tool_trace_blocks(
     }));
 
     for item in tool_call_meta {
-        let tool_name = item.get("name").and_then(|value| value.as_str()).unwrap_or("unknown_tool");
-        let call_id = item.get("id").and_then(|value| value.as_str()).unwrap_or_default();
-        let status = item.get("status").and_then(|value| value.as_str()).unwrap_or("unknown");
+        let tool_name = item
+            .get("name")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown_tool");
+        let call_id = item
+            .get("id")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
+        let status = item
+            .get("status")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown");
         let call_status = if status.eq_ignore_ascii_case("success") {
             "success"
         } else if status.eq_ignore_ascii_case("running") {
@@ -42,7 +51,9 @@ pub(crate) fn build_local_tool_trace_blocks(
                 "status": "success",
                 "result": item.get("result").cloned().unwrap_or_else(|| serde_json::json!({})),
             }));
-            blocks.extend(extract_assistant_transition_blocks(item, call_id, tool_name));
+            blocks.extend(extract_assistant_transition_blocks(
+                item, call_id, tool_name,
+            ));
             blocks.extend(extract_ui_blocks_from_tool_result(item, call_id, tool_name));
         } else if status.eq_ignore_ascii_case("error") {
             blocks.push(serde_json::json!({
@@ -65,9 +76,18 @@ pub(crate) fn append_streamable_local_tool_result_blocks(
     blocks: &mut Vec<serde_json::Value>,
     item: &serde_json::Value,
 ) {
-    let tool_name = item.get("name").and_then(|value| value.as_str()).unwrap_or("unknown_tool");
-    let call_id = item.get("id").and_then(|value| value.as_str()).unwrap_or_default();
-    let status = item.get("status").and_then(|value| value.as_str()).unwrap_or("unknown");
+    let tool_name = item
+        .get("name")
+        .and_then(|value| value.as_str())
+        .unwrap_or("unknown_tool");
+    let call_id = item
+        .get("id")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default();
+    let status = item
+        .get("status")
+        .and_then(|value| value.as_str())
+        .unwrap_or("unknown");
 
     if status.eq_ignore_ascii_case("success") {
         blocks.push(serde_json::json!({
@@ -78,7 +98,9 @@ pub(crate) fn append_streamable_local_tool_result_blocks(
             "status": "success",
             "result": item.get("result").cloned().unwrap_or_else(|| serde_json::json!({})),
         }));
-        blocks.extend(extract_assistant_transition_blocks(item, call_id, tool_name));
+        blocks.extend(extract_assistant_transition_blocks(
+            item, call_id, tool_name,
+        ));
         blocks.extend(extract_ui_blocks_from_tool_result(item, call_id, tool_name));
     } else if status.eq_ignore_ascii_case("error") {
         blocks.push(serde_json::json!({
@@ -94,4 +116,3 @@ pub(crate) fn append_streamable_local_tool_result_blocks(
         }));
     }
 }
-

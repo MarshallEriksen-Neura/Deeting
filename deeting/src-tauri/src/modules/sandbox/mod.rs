@@ -1,5 +1,7 @@
 pub mod backend_host;
+pub mod commands;
 pub mod error;
+pub mod installer;
 pub mod manager;
 pub mod provider;
 pub mod provisioner;

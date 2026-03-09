@@ -105,4 +105,3 @@ pub async fn clear_local_conversation(
         .await
         .map_err(to_string)
 }
-

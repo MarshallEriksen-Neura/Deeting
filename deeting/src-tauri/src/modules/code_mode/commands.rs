@@ -19,6 +19,10 @@ use crate::modules::code_mode::types::{
     ExecuteLocalCodeModeResponse, ListCodeModeExecutionsQuery, LocalCodeModeBridgeStatus,
     ReplayLocalCodeModeRequest, ReplayLocalCodeModeResponse, RuntimeToolCallsEnvelope,
 };
+use crate::modules::sandbox::manager::SandboxLaunchPolicy;
+use crate::modules::sandbox::types::{
+    SandboxReadinessReport, SandboxReadinessStatus, SandboxRuntimeMode,
+};
 use crate::state::AppState;
 
 const LOCAL_DEFAULT_USER_ID: &str = "00000000-0000-0000-0000-000000000000";
@@ -174,8 +178,29 @@ async fn run_execute_local_code_mode(
             runtime_tool_calls: vec![],
             render_blocks: vec![],
             error: None,
+            error_code: None,
+            runtime_mode: SandboxRuntimeMode::Disabled,
         };
         persist_execution(state, &payload, &response, &source_code, 0).await;
+        return Ok(response);
+    }
+
+    let sandbox_report = state
+        .sandbox
+        .manager
+        .ensure_launch_policy(SandboxLaunchPolicy::StrictSandbox)
+        .await
+        .map_err(|err| CodeModeError::Sandbox(err.to_string()))?;
+    if sandbox_report.runtime_mode != SandboxRuntimeMode::Sandbox {
+        let response = build_sandbox_blocked_response(&session_id, &sandbox_report);
+        persist_execution(
+            state,
+            &payload,
+            &response,
+            &source_code,
+            started.elapsed().as_millis() as i64,
+        )
+        .await;
         return Ok(response);
     }
 
@@ -232,6 +257,7 @@ async fn run_execute_local_code_mode(
             &final_code,
             Some("python"),
             payload.execution_timeout,
+            SandboxLaunchPolicy::StrictSandbox,
         )
         .await
         .map_err(|err| CodeModeError::Sandbox(err.to_string()))?;
@@ -266,6 +292,12 @@ async fn run_execute_local_code_mode(
         } else {
             Some("sandbox execution failed".to_string())
         },
+        error_code: if run_result.exit_code == 0 {
+            None
+        } else {
+            Some("SANDBOX_EXECUTION_FAILED".to_string())
+        },
+        runtime_mode: SandboxRuntimeMode::Sandbox,
     };
     persist_execution(
         state,
@@ -305,6 +337,7 @@ async fn persist_execution(
         runtime_context: json!({
             "code": source_code,
             "bridge_endpoint": response.bridge_endpoint,
+            "runtime_mode": response.runtime_mode,
         }),
         tool_plan_results: json!({}),
         runtime_tool_calls: RuntimeToolCallsEnvelope {
@@ -312,15 +345,13 @@ async fn persist_execution(
         },
         render_blocks: Value::Array(response.render_blocks.clone()),
         error: response.error.clone(),
-        error_code: if response.success {
-            None
-        } else {
-            Some("SANDBOX_EXECUTION_FAILED".to_string())
-        },
+        error_code: response.error_code.clone(),
+        runtime_mode: Some(response.runtime_mode),
         duration_ms,
         request_meta: json!({
             "dry_run": request.dry_run.unwrap_or(false),
             "execution_timeout": request.execution_timeout,
+            "runtime_mode": response.runtime_mode,
         }),
         created_at: Some(created_at),
     };
@@ -334,6 +365,44 @@ fn now_rfc3339() -> String {
     time::OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_else(|_| "".to_string())
+}
+
+fn build_sandbox_blocked_response(
+    session_id: &str,
+    report: &SandboxReadinessReport,
+) -> ExecuteLocalCodeModeResponse {
+    let error_code = sandbox_status_error_code(report.status).to_string();
+    ExecuteLocalCodeModeResponse {
+        success: false,
+        status: "blocked".to_string(),
+        format_version: EXECUTION_FORMAT_VERSION.to_string(),
+        runtime_protocol_version: RUNTIME_PROTOCOL_VERSION.to_string(),
+        session_id: session_id.to_string(),
+        bridge_endpoint: "".to_string(),
+        exit_code: 1,
+        stdout: vec![],
+        stderr: vec![],
+        result: vec![],
+        runtime_tool_calls: vec![],
+        render_blocks: vec![],
+        error: Some(report.blocking_reason.clone().unwrap_or_else(|| {
+            "sandbox is not ready; install or repair the desktop sandbox before running Code Mode"
+                .to_string()
+        })),
+        error_code: Some(error_code),
+        runtime_mode: report.runtime_mode,
+    }
+}
+
+fn sandbox_status_error_code(status: SandboxReadinessStatus) -> &'static str {
+    match status {
+        SandboxReadinessStatus::NeedsWsl => "SANDBOX_NEEDS_WSL",
+        SandboxReadinessStatus::NeedsPython => "SANDBOX_NEEDS_PYTHON",
+        SandboxReadinessStatus::NeedsBoxLite => "SANDBOX_NEEDS_BOXLITE",
+        SandboxReadinessStatus::RepairNeeded => "SANDBOX_REPAIR_REQUIRED",
+        SandboxReadinessStatus::Unsupported => "SANDBOX_UNSUPPORTED_PLATFORM",
+        SandboxReadinessStatus::Ready => "SANDBOX_REQUIRED",
+    }
 }
 
 fn build_runtime_preamble(

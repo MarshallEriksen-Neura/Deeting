@@ -44,6 +44,7 @@ describe("code mode api", () => {
           session_id: "sess-1",
           language: "python",
           status: "success",
+          runtime_mode: "sandbox",
           duration_ms: 12,
           tool_call_count: 1,
           created_at: "2026-03-03T00:00:00Z",
@@ -80,6 +81,7 @@ describe("code mode api", () => {
       tool_plan_results: {},
       runtime_tool_calls: {},
       render_blocks: {},
+      runtime_mode: "sandbox",
       duration_ms: 20,
       request_meta: {},
       created_at: "2026-03-03T00:00:00Z",
@@ -127,6 +129,8 @@ describe("code mode api", () => {
         result: [],
         runtime_tool_calls: [],
         render_blocks: [],
+        error_code: null,
+        runtime_mode: "sandbox",
       } as unknown)
 
     const bridgeStatus = await getLocalCodeModeBridgeStatus()

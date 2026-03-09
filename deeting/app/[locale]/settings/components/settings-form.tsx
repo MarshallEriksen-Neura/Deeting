@@ -36,6 +36,7 @@ import {
 import { DesktopEmbeddingSettingsCard } from "./desktop-embedding-settings-card";
 import { DesktopRelaySettingsCard } from "./desktop-relay-settings-card";
 import { DesktopScoutSettingsCard } from "./desktop-scout-settings-card";
+import { DesktopSandboxSettingsCard } from "./desktop-sandbox-settings-card";
 import { AgentSettingsCard } from "./agent-settings-card";
 import { PersonalSettingsCard } from "./personal-settings-card";
 import { SettingsFormActions } from "./settings-form-actions";
@@ -437,6 +438,7 @@ export function SettingsForm({
           {activeSection === "agent" && (
             <div className="flex flex-col gap-6">
               <AgentSettingsCard isTauriRuntime={isTauriRuntime} />
+              <DesktopSandboxSettingsCard isTauriRuntime={isTauriRuntime} />
             </div>
           )}
 

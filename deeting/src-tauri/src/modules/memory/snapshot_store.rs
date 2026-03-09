@@ -37,10 +37,12 @@ impl SnapshotStore {
         .await
         .map_err(|e| MemoryError::Storage(format!("snapshot table init failed: {}", e)))?;
 
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_snapshots_memory_id ON memory_snapshots(memory_id)")
-            .execute(&self.pool)
-            .await
-            .map_err(|e| MemoryError::Storage(format!("snapshot index init failed: {}", e)))?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_snapshots_memory_id ON memory_snapshots(memory_id)",
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| MemoryError::Storage(format!("snapshot index init failed: {}", e)))?;
 
         Ok(())
     }
@@ -96,7 +98,10 @@ impl SnapshotStore {
     }
 
     /// Get a specific snapshot by ID.
-    pub async fn get_snapshot(&self, snapshot_id: &str) -> Result<Option<MemorySnapshot>, MemoryError> {
+    pub async fn get_snapshot(
+        &self,
+        snapshot_id: &str,
+    ) -> Result<Option<MemorySnapshot>, MemoryError> {
         let row = sqlx::query_as::<_, SnapshotRow>(
             "SELECT id, memory_id, action, old_content, new_content, old_metadata, new_metadata, created_at \
              FROM memory_snapshots WHERE id = ? LIMIT 1",

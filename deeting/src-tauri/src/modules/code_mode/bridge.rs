@@ -310,10 +310,7 @@ async fn code_mode_call_tool(
     }
 }
 
-async fn maybe_emit_runtime_execution_section(
-    state: &BridgeServerState,
-    token: &str,
-) {
+async fn maybe_emit_runtime_execution_section(state: &BridgeServerState, token: &str) {
     let normalized = token.trim();
     if normalized.is_empty() {
         return;
@@ -342,11 +339,7 @@ async fn maybe_emit_runtime_execution_section(
     );
 }
 
-async fn emit_runtime_blocks(
-    state: &BridgeServerState,
-    token: &str,
-    blocks: Vec<Value>,
-) {
+async fn emit_runtime_blocks(state: &BridgeServerState, token: &str, blocks: Vec<Value>) {
     if blocks.is_empty() {
         return;
     }
@@ -367,10 +360,7 @@ async fn emit_runtime_blocks(
     send_runtime_blocks(&stream_target, blocks);
 }
 
-fn send_runtime_blocks(
-    stream_target: &RuntimeBridgeStreamTarget,
-    blocks: Vec<Value>,
-) {
+fn send_runtime_blocks(stream_target: &RuntimeBridgeStreamTarget, blocks: Vec<Value>) {
     let mut payload = json!({
         "type": "blocks",
         "blocks": blocks,

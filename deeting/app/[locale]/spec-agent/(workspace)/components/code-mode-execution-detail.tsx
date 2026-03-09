@@ -35,6 +35,11 @@ import {
   type RuntimeToolTrace,
 } from '@/lib/api/code-mode'
 
+function runtimeVariant(runtimeMode?: string): 'secondary' | 'outline' | 'default' {
+  if (runtimeMode === 'sandbox') return 'default'
+  return 'outline'
+}
+
 // ── Tool trace item ─────────────────────────────────────────
 
 const ToolTraceItem = memo(function ToolTraceItem({
@@ -191,6 +196,11 @@ export const CodeModeExecutionDetailDrawer = memo(
                     )}
                     {t(`codeMode.status.${detail.status}` as Parameters<typeof t>[0])}
                   </Badge>
+                  {detail.runtime_mode ? (
+                    <Badge variant={runtimeVariant(detail.runtime_mode)}>
+                      {t(`codeMode.runtimeMode.${detail.runtime_mode}` as Parameters<typeof t>[0])}
+                    </Badge>
+                  ) : null}
                   <span className="text-muted-foreground flex items-center gap-1">
                     <Clock className="w-3 h-3" />
                     {detail.duration_ms}ms

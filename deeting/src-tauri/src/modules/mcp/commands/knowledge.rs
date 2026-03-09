@@ -8,4 +8,3 @@ pub use super::knowledge_folders_impl::{
     get_local_knowledge_tree, list_local_knowledge_files, list_local_knowledge_folders,
     update_local_knowledge_folder,
 };
-

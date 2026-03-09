@@ -77,7 +77,11 @@ pub async fn extract_and_store_facts(
         return;
     }
 
-    log::info!("fact extraction: extracted {} facts from session {}", facts.len(), session_id);
+    log::info!(
+        "fact extraction: extracted {} facts from session {}",
+        facts.len(),
+        session_id
+    );
 
     for fact in facts {
         let fact_trimmed = fact.trim().to_string();

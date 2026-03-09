@@ -1,23 +1,19 @@
-//! BoxLite auto-provisioning layer.
-//!
-//! Lifecycle: detect → download → start → health-check.
-//! Designed to be replaceable: if BoxLite is swapped out for another sandbox
-//! provider, only this file and `build_provider` in `manager.rs` change.
+//! BoxLite WSL bridge provisioning layer.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::sync::Mutex;
 
+#[cfg(target_os = "windows")]
+use crate::modules::sandbox::backend_wsl::shell_quote;
 use crate::modules::sandbox::error::SandboxError;
-
-const BOXLITE_BINARY_NAME: &str = if cfg!(windows) {
-    "boxlite.exe"
-} else {
-    "boxlite"
+use crate::modules::sandbox::installer::{
+    bridge_script_host_path, load_installation_record, BoxLiteInstallationRecord,
 };
+
 const BOXLITE_DEFAULT_PORT: u16 = 9090;
 const HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(2);
 const HEALTH_CHECK_RETRIES: usize = 10;
@@ -32,7 +28,7 @@ pub struct BoxLiteConfig {
 }
 
 impl BoxLiteConfig {
-    pub fn from_home_dir(home_dir: &Path) -> Self {
+    pub fn from_home_dir(home_dir: &std::path::Path) -> Self {
         let data_dir = home_dir.join("sandbox");
         Self {
             binary_path: None,
@@ -60,23 +56,21 @@ impl BoxLiteProvisioner {
         }
     }
 
-    /// Locate the boxlite binary via:
-    /// 1. Explicit path in config
-    /// 2. Data dir (`$HOME/.deeting/sandbox/boxlite`)
-    /// 3. System PATH
     pub fn resolve_binary(&self) -> Option<PathBuf> {
-        if let Some(ref explicit) = self.config.binary_path {
-            if explicit.is_file() {
-                return Some(explicit.clone());
-            }
-        }
+        self.installation_record()
+            .map(|record| PathBuf::from(record.bridge_script_host_path))
+    }
 
-        let bundled = self.config.data_dir.join(BOXLITE_BINARY_NAME);
-        if bundled.is_file() {
-            return Some(bundled);
-        }
+    pub fn endpoint(&self) -> String {
+        self.config.endpoint()
+    }
 
-        which_binary(BOXLITE_BINARY_NAME)
+    pub fn managed_binary_path(&self) -> PathBuf {
+        bridge_script_host_path(&self.config.data_dir)
+    }
+
+    pub fn installation_record(&self) -> Option<BoxLiteInstallationRecord> {
+        load_installation_record(&self.config.data_dir)
     }
 
     /// Check if a BoxLite-compatible endpoint is already reachable.
@@ -84,8 +78,6 @@ impl BoxLiteProvisioner {
         probe_endpoint(&self.config.endpoint()).await.is_ok()
     }
 
-    /// Start BoxLite server if not already running.
-    /// Returns the REST endpoint URL on success.
     pub async fn ensure_running(&self) -> Result<String, SandboxError> {
         let endpoint = self.config.endpoint();
 
@@ -94,17 +86,15 @@ impl BoxLiteProvisioner {
             return Ok(endpoint);
         }
 
-        let binary = self.resolve_binary().ok_or_else(|| {
+        let record = self.installation_record().ok_or_else(|| {
             SandboxError::Unavailable(format!(
-                "BoxLite binary not found. Install BoxLite to {dir}/{bin} or add it to PATH.",
-                dir = self.config.data_dir.display(),
-                bin = BOXLITE_BINARY_NAME,
+                "BoxLite is not installed yet. Install it from Settings before preparing the sandbox."
             ))
         })?;
 
         log::info!(
-            "starting BoxLite: binary={} port={}",
-            binary.display(),
+            "starting BoxLite bridge from {} on port {}",
+            record.bridge_script_wsl_path,
             self.config.port
         );
 
@@ -118,10 +108,9 @@ impl BoxLiteProvisioner {
             })?;
         }
 
-        let child = tokio::process::Command::new(&binary)
-            .arg("server")
-            .arg("--port")
-            .arg(self.config.port.to_string())
+        let launch_script = build_bridge_launch_command(&record, self.config.port);
+        let child = tokio::process::Command::new("wsl.exe")
+            .args(["--", "bash", "-lc", launch_script.as_str()])
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -129,9 +118,8 @@ impl BoxLiteProvisioner {
             .spawn()
             .map_err(|e| {
                 SandboxError::Unavailable(format!(
-                    "failed to start BoxLite at {}: {}",
-                    binary.display(),
-                    e
+                    "failed to start the WSL BoxLite bridge from {}: {}",
+                    record.bridge_script_wsl_path, e
                 ))
             })?;
 
@@ -145,7 +133,6 @@ impl BoxLiteProvisioner {
         Ok(endpoint)
     }
 
-    /// Wait for BoxLite to respond to health probes.
     async fn wait_for_health(&self, endpoint: &str) -> Result<(), SandboxError> {
         let deadline = tokio::time::Instant::now() + STARTUP_TIMEOUT;
 
@@ -182,7 +169,6 @@ impl BoxLiteProvisioner {
         )))
     }
 
-    /// Gracefully stop the managed BoxLite process.
     pub async fn stop(&self) {
         let mut guard = self.child.lock().await;
         if let Some(mut child) = guard.take() {
@@ -223,16 +209,22 @@ async fn probe_endpoint(base_url: &str) -> Result<(), SandboxError> {
     )))
 }
 
-fn which_binary(name: &str) -> Option<PathBuf> {
-    let path_var = std::env::var("PATH").unwrap_or_default();
-    let separator = if cfg!(windows) { ';' } else { ':' };
-    for dir in path_var.split(separator) {
-        let candidate = Path::new(dir).join(name);
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-    None
+#[cfg(target_os = "windows")]
+fn build_bridge_launch_command(record: &BoxLiteInstallationRecord, port: u16) -> String {
+    format!(
+        "set -eu; export PYTHONPATH={site}; exec {python} {bridge} --port {port} --runtime-home {runtime} --state-dir {state}",
+        site = shell_quote(&record.wsl_site_dir),
+        python = shell_quote(&record.python_bin),
+        bridge = shell_quote(&record.bridge_script_wsl_path),
+        runtime = shell_quote(&record.wsl_runtime_home),
+        state = shell_quote(&record.wsl_state_dir),
+        port = port,
+    )
+}
+
+#[cfg(not(target_os = "windows"))]
+fn build_bridge_launch_command(_record: &BoxLiteInstallationRecord, _port: u16) -> String {
+    String::new()
 }
 
 #[cfg(test)]

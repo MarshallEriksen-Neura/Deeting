@@ -128,6 +128,12 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::code_mode::commands::list_local_code_mode_executions,
         crate::modules::code_mode::commands::get_local_code_mode_execution,
         crate::modules::code_mode::commands::replay_local_code_mode_execution,
+        // Sandbox Commands
+        crate::modules::sandbox::commands::get_local_sandbox_status,
+        crate::modules::sandbox::commands::prepare_local_sandbox,
+        crate::modules::sandbox::commands::repair_local_sandbox,
+        crate::modules::sandbox::commands::install_local_sandbox_boxlite,
+        crate::modules::sandbox::commands::get_local_sandbox_install_guide,
         // Local Monitor Commands
         crate::modules::monitor::commands::list_local_monitor_tasks,
         crate::modules::monitor::commands::get_local_monitor_task,

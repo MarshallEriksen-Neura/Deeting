@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::modules::sandbox::types::SandboxRuntimeMode;
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct ExecuteLocalCodeModeRequest {
     pub code: String,
@@ -33,6 +35,7 @@ pub struct CodeModeExecutionItem {
     pub status: String,
     pub error: Option<String>,
     pub error_code: Option<String>,
+    pub runtime_mode: Option<SandboxRuntimeMode>,
     pub duration_ms: i64,
     pub tool_call_count: i64,
     pub created_at: Option<String>,
@@ -62,6 +65,7 @@ pub struct CodeModeExecutionDetail {
     pub render_blocks: Value,
     pub error: Option<String>,
     pub error_code: Option<String>,
+    pub runtime_mode: Option<SandboxRuntimeMode>,
     pub duration_ms: i64,
     pub request_meta: Value,
     pub created_at: Option<String>,
@@ -100,6 +104,8 @@ pub struct ExecuteLocalCodeModeResponse {
     pub runtime_tool_calls: Vec<RuntimeToolCall>,
     pub render_blocks: Vec<Value>,
     pub error: Option<String>,
+    pub error_code: Option<String>,
+    pub runtime_mode: SandboxRuntimeMode,
 }
 
 #[derive(Debug, Clone, Serialize)]

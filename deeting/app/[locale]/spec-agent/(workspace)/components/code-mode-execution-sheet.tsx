@@ -44,6 +44,11 @@ function statusVariant(status: string): 'destructive' | 'secondary' | 'default' 
   return 'secondary'
 }
 
+function runtimeVariant(runtimeMode?: string): 'secondary' | 'outline' | 'default' {
+  if (runtimeMode === 'sandbox') return 'default'
+  return 'outline'
+}
+
 export const CodeModeExecutionSheet = memo(function CodeModeExecutionSheet({
   trigger,
 }: {
@@ -117,6 +122,11 @@ export const CodeModeExecutionSheet = memo(function CodeModeExecutionSheet({
                         <Badge variant={statusVariant(item.status)} className="text-[10px] px-1.5 py-0">
                           {t(`codeMode.status.${item.status}` as Parameters<typeof t>[0])}
                         </Badge>
+                        {item.runtime_mode ? (
+                          <Badge variant={runtimeVariant(item.runtime_mode)} className="text-[10px] px-1.5 py-0">
+                            {t(`codeMode.runtimeMode.${item.runtime_mode}` as Parameters<typeof t>[0])}
+                          </Badge>
+                        ) : null}
                       </div>
                       <div className="flex items-center gap-3 mt-0.5">
                         <span className="text-[11px] text-muted-foreground/60 flex items-center gap-1">

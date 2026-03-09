@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { RefreshCw, ThumbsUp, ThumbsDown, Copy, Check } from "lucide-react"
+import { RefreshCw, ThumbsUp, ThumbsDown, Copy, Check, Bot } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/hooks/use-i18n"
@@ -14,8 +14,10 @@ interface MessageActionsProps {
   onLike?: (messageId: string) => void
   onDislike?: (messageId: string) => void
   onCopy?: (messageId: string) => void
+  onCompare?: (messageId: string) => void
   liked?: boolean
   disliked?: boolean
+  canCompare?: boolean
   disabled?: boolean
   className?: string
 }
@@ -39,8 +41,10 @@ export const MessageActions = React.memo<MessageActionsProps>(
     onLike,
     onDislike,
     onCopy,
+    onCompare,
     liked = false,
     disliked = false,
+    canCompare = false,
     disabled = false,
     className,
   }) => {
@@ -71,6 +75,10 @@ export const MessageActions = React.memo<MessageActionsProps>(
       }
     }, [content, messageId, onCopy])
 
+    const handleCompare = React.useCallback(() => {
+      onCompare?.(messageId)
+    }, [messageId, onCompare])
+
     return (
       <div className={cn("flex items-center gap-1 mt-1 ml-1", className)}>
         {/* 重新生成按钮 */}
@@ -85,6 +93,20 @@ export const MessageActions = React.memo<MessageActionsProps>(
           <RefreshCw size={14} />
           <span className="sr-only">{t("actions.regenerate")}</span>
         </Button>
+
+        {canCompare ? (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={handleCompare}
+            disabled={disabled}
+            className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-muted/50"
+            title={t("actions.compare")}
+          >
+            <Bot size={14} />
+            <span className="sr-only">{t("actions.compare")}</span>
+          </Button>
+        ) : null}
 
         {/* 点赞按钮 */}
         <Button
@@ -148,11 +170,13 @@ export const MessageActions = React.memo<MessageActionsProps>(
       prevProps.content === nextProps.content &&
       prevProps.liked === nextProps.liked &&
       prevProps.disliked === nextProps.disliked &&
+      prevProps.canCompare === nextProps.canCompare &&
       prevProps.disabled === nextProps.disabled &&
       prevProps.onRegenerate === nextProps.onRegenerate &&
       prevProps.onLike === nextProps.onLike &&
       prevProps.onDislike === nextProps.onDislike &&
-      prevProps.onCopy === nextProps.onCopy
+      prevProps.onCopy === nextProps.onCopy &&
+      prevProps.onCompare === nextProps.onCompare
     )
   }
 )

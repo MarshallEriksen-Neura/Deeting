@@ -1,7 +1,83 @@
 use super::helpers::*;
 use super::*;
+use serde_json::Value;
 
 impl McpStore {
+    pub async fn finalize_local_compare_winner(
+        &self,
+        request: LocalConversationCompareFinalizeRequest,
+    ) -> Result<LocalConversationCompareFinalizeResponse, McpError> {
+        let session_id = request.session_id.trim().to_string();
+        if session_id.is_empty() {
+            return Err(McpError::Validation("session_id is required".to_string()));
+        }
+
+        let model_id = request.model_id.trim().to_string();
+        if model_id.is_empty() {
+            return Err(McpError::Validation("model_id is required".to_string()));
+        }
+
+        let content = request.content.trim().to_string();
+        let blocks = request.blocks.unwrap_or_default();
+        if content.is_empty() && blocks.is_empty() {
+            return Err(McpError::Validation(
+                "content or blocks is required".to_string(),
+            ));
+        }
+
+        let provider_model_id = request
+            .provider_model_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned);
+
+        let regenerate_context = self
+            .prepare_local_conversation_regenerate(&session_id)
+            .await?;
+        let replaced_turn_index = regenerate_context.deleted_turn_index.ok_or_else(|| {
+            McpError::Validation("latest assistant message not found".to_string())
+        })?;
+
+        self.update_local_conversation_model_context(
+            &session_id,
+            Some(model_id.as_str()),
+            provider_model_id.as_deref(),
+        )
+        .await?;
+
+        let mut meta = serde_json::Map::new();
+        meta.insert("model_id".to_string(), Value::String(model_id));
+        if let Some(provider_model_id) = provider_model_id.clone() {
+            meta.insert(
+                "provider_model_id".to_string(),
+                Value::String(provider_model_id),
+            );
+        }
+        if !blocks.is_empty() {
+            meta.insert("blocks".to_string(), Value::Array(blocks));
+        }
+        meta.insert("compare_winner".to_string(), Value::Bool(true));
+
+        let message = self
+            .append_local_conversation_message(CreateConversationMessageRequest {
+                session_id: session_id.clone(),
+                role: "assistant".to_string(),
+                content,
+                name: None,
+                meta_info: Some(Value::Object(meta)),
+                is_truncated: Some(false),
+                parent_message_id: None,
+            })
+            .await?;
+
+        Ok(LocalConversationCompareFinalizeResponse {
+            session_id,
+            replaced_turn_index,
+            message,
+        })
+    }
+
     pub async fn list_local_admin_conversations(
         &self,
         query: LocalAdminConversationQuery,

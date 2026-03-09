@@ -249,6 +249,7 @@ pub struct LocalOrchestratorInput {
     pub session_id: String,
     pub assistant_id: Option<String>,
     pub regenerate: bool,
+    pub compare_only: bool,
     pub user_content: Option<String>,
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
@@ -570,9 +571,11 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SemanticMemoryInjectionStep {
                     tags: None,
                 };
                 match ctx.app_state.memory.service.search(search_query).await {
-                    Ok(result) if !result.items.is_empty() => {
-                        result.items.into_iter().map(|i| (i.id, i.content)).collect()
-                    }
+                    Ok(result) if !result.items.is_empty() => result
+                        .items
+                        .into_iter()
+                        .map(|i| (i.id, i.content))
+                        .collect(),
                     Ok(_) | Err(_) => {
                         // Fallback to list (no embeddings yet or embedding service unavailable)
                         self.fallback_list(ctx).await?
@@ -782,20 +785,26 @@ impl LocalWorkflowStep<LocalWorkflowContext> for PromptVariantSelectionStep {
                         variants[idx]
                     } else {
                         // Exploit: pick the variant with the highest success rate
-                        let arm_map: std::collections::HashMap<String, &crate::modules::providers::types::BanditArmState> =
-                            arms.iter()
-                                .filter_map(|a| a.arm_id.as_ref().map(|id| (id.clone(), a)))
-                                .collect();
+                        let arm_map: std::collections::HashMap<
+                            String,
+                            &crate::modules::providers::types::BanditArmState,
+                        > = arms
+                            .iter()
+                            .filter_map(|a| a.arm_id.as_ref().map(|id| (id.clone(), a)))
+                            .collect();
                         let mut best = variants[0];
                         let mut best_rate = -1.0_f64;
                         for v in &variants {
-                            let rate = arm_map.get(*v).map(|a| {
-                                if a.total_trials > 0 {
-                                    a.successes as f64 / a.total_trials as f64
-                                } else {
-                                    0.0
-                                }
-                            }).unwrap_or(0.0);
+                            let rate = arm_map
+                                .get(*v)
+                                .map(|a| {
+                                    if a.total_trials > 0 {
+                                        a.successes as f64 / a.total_trials as f64
+                                    } else {
+                                        0.0
+                                    }
+                                })
+                                .unwrap_or(0.0);
                             if rate > best_rate {
                                 best_rate = rate;
                                 best = v;
@@ -814,12 +823,8 @@ impl LocalWorkflowStep<LocalWorkflowContext> for PromptVariantSelectionStep {
 
             // Inject a style hint system message based on the selected variant
             let style_hint = match selected {
-                PROMPT_VARIANT_CONCISE => {
-                    "Respond concisely. Prefer short, direct answers."
-                }
-                _ => {
-                    "Respond in detail. Provide thorough, comprehensive answers."
-                }
+                PROMPT_VARIANT_CONCISE => "Respond concisely. Prefer short, direct answers.",
+                _ => "Respond in detail. Provide thorough, comprehensive answers.",
             };
             ctx.push_system_message(format!("## Response Style\n{}", style_hint));
 
@@ -922,7 +927,19 @@ pub async fn execute_local_orchestrated_chat(
     ensure_required_local_models_configured(app_state).await?;
 
     let store = &app_state.mcp.store;
-    let (assistant_id, summary_text, messages) = if input.regenerate {
+    let (assistant_id, summary_text, messages) = if input.compare_only {
+        let runtime_window = store
+            .load_local_conversation_runtime_window(&session_id)
+            .await
+            .map_err(|e| e.to_string())?;
+        let assistant_id = input
+            .assistant_id
+            .clone()
+            .or(runtime_window.assistant_id.clone());
+        let summary_text = extract_summary_text(runtime_window.summary.as_ref());
+        let messages = build_compare_only_messages(runtime_window.messages)?;
+        (assistant_id, summary_text, messages)
+    } else if input.regenerate {
         let regenerate_ctx = store
             .prepare_local_conversation_regenerate(&session_id)
             .await
@@ -1008,19 +1025,21 @@ pub async fn execute_local_orchestrated_chat(
             .await?;
     let provider_model_id = model_connection.provider_model_id.clone();
     let model_id = model_connection.model_id.clone();
-    if let Err(err) = store
-        .update_local_conversation_model_context(
-            &session_id,
-            Some(model_id.as_str()),
-            Some(provider_model_id.as_str()),
-        )
-        .await
-    {
-        log::warn!(
-            "update_local_conversation_model_context failed session={} err={}",
-            session_id,
-            err
-        );
+    if !input.compare_only {
+        if let Err(err) = store
+            .update_local_conversation_model_context(
+                &session_id,
+                Some(model_id.as_str()),
+                Some(provider_model_id.as_str()),
+            )
+            .await
+        {
+            log::warn!(
+                "update_local_conversation_model_context failed session={} err={}",
+                session_id,
+                err
+            );
+        }
     }
     ctx.emit_status(
         "remember",
@@ -1113,138 +1132,145 @@ pub async fn execute_local_orchestrated_chat(
         })),
     );
 
-    let assistant_meta = if assistant_blocks.is_empty() {
-        None
-    } else {
-        Some(json!({ "blocks": assistant_blocks }))
-    };
-    store
-        .append_local_conversation_message(CreateConversationMessageRequest {
-            session_id: session_id.clone(),
-            role: "assistant".to_string(),
-            content: response_text.clone(),
-            name: None,
-            meta_info: assistant_meta.clone(),
-            is_truncated: Some(false),
-            parent_message_id: None,
-        })
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let title_app_state = app_state.clone();
-    let title_session_id = session_id.clone();
-    let title_model_id = model_id.clone();
-    let title_provider_model_id = provider_model_id.clone();
-    tauri::async_runtime::spawn(async move {
-        let title_context = match title_app_state
-            .mcp
-            .store
-            .get_local_conversation_title_context(&title_session_id)
+    let assistant_meta = build_assistant_meta(
+        assistant_blocks,
+        &model_id,
+        &provider_model_id,
+        if input.compare_only {
+            AssistantMetaMode::CompareCandidate
+        } else {
+            AssistantMetaMode::Canonical
+        },
+    );
+    if !input.compare_only {
+        store
+            .append_local_conversation_message(CreateConversationMessageRequest {
+                session_id: session_id.clone(),
+                role: "assistant".to_string(),
+                content: response_text.clone(),
+                name: None,
+                meta_info: assistant_meta.clone(),
+                is_truncated: Some(false),
+                parent_message_id: None,
+            })
             .await
-        {
-            Ok(value) => value,
-            Err(err) => {
-                log::warn!(
-                    "get_local_conversation_title_context failed session={} err={}",
-                    title_session_id,
-                    err
-                );
+            .map_err(|e| e.to_string())?;
+
+        let title_app_state = app_state.clone();
+        let title_session_id = session_id.clone();
+        let title_model_id = model_id.clone();
+        let title_provider_model_id = provider_model_id.clone();
+        tauri::async_runtime::spawn(async move {
+            let title_context = match title_app_state
+                .mcp
+                .store
+                .get_local_conversation_title_context(&title_session_id)
+                .await
+            {
+                Ok(value) => value,
+                Err(err) => {
+                    log::warn!(
+                        "get_local_conversation_title_context failed session={} err={}",
+                        title_session_id,
+                        err
+                    );
+                    return;
+                }
+            };
+
+            if title_context
+                .title
+                .as_deref()
+                .map(|value| !value.trim().is_empty())
+                .unwrap_or(false)
+            {
                 return;
             }
-        };
+            if title_context.message_count > 2 {
+                return;
+            }
 
-        if title_context
-            .title
-            .as_deref()
-            .map(|value| !value.trim().is_empty())
-            .unwrap_or(false)
-        {
-            return;
-        }
-        if title_context.message_count > 2 {
-            return;
-        }
+            let Some(first_user_message) = title_context.first_user_message.as_deref() else {
+                return;
+            };
 
-        let Some(first_user_message) = title_context.first_user_message.as_deref() else {
-            return;
-        };
-
-        match generate_local_conversation_title_with_model(
-            &title_app_state,
-            &title_provider_model_id,
-            &title_model_id,
-            first_user_message,
-            Some(title_session_id.as_str()),
-        )
-        .await
-        {
-            Ok(Some(title)) => {
-                if let Err(err) = title_app_state
-                    .mcp
-                    .store
-                    .update_local_conversation_title_if_empty(&title_session_id, &title)
-                    .await
-                {
+            match generate_local_conversation_title_with_model(
+                &title_app_state,
+                &title_provider_model_id,
+                &title_model_id,
+                first_user_message,
+                Some(title_session_id.as_str()),
+            )
+            .await
+            {
+                Ok(Some(title)) => {
+                    if let Err(err) = title_app_state
+                        .mcp
+                        .store
+                        .update_local_conversation_title_if_empty(&title_session_id, &title)
+                        .await
+                    {
+                        log::warn!(
+                            "update_local_conversation_title_if_empty failed session={} err={}",
+                            title_session_id,
+                            err
+                        );
+                    }
+                }
+                Ok(None) => {}
+                Err(err) => {
                     log::warn!(
-                        "update_local_conversation_title_if_empty failed session={} err={}",
+                        "generate_local_conversation_title_with_model failed session={} err={}",
                         title_session_id,
                         err
                     );
                 }
             }
-            Ok(None) => {}
-            Err(err) => {
-                log::warn!(
-                    "generate_local_conversation_title_with_model failed session={} err={}",
-                    title_session_id,
-                    err
-                );
-            }
-        }
-    });
-
-    // Fire-and-forget: extract user facts from the conversation
-    let fact_app_state = app_state.clone();
-    let fact_memory_service = app_state.memory.service.clone();
-    let fact_session_id = session_id.clone();
-    let fact_assistant_id = assistant_id.clone();
-    let fact_provider_model_id = provider_model_id.clone();
-    let fact_model_id = model_id.clone();
-    let fact_response_text = response_text.clone();
-    let fact_user_content = input.user_content.clone().unwrap_or_default();
-    tauri::async_runtime::spawn(async move {
-        // Build a minimal conversation snippet for extraction
-        let conversation = format!("User: {}\nAssistant: {}", fact_user_content, fact_response_text);
-        crate::modules::memory::fact_extractor::extract_and_store_facts(
-            &fact_app_state,
-            fact_memory_service,
-            &fact_provider_model_id,
-            &fact_model_id,
-            &conversation,
-            &fact_session_id,
-            fact_assistant_id.as_deref(),
-        )
-        .await;
-    });
-
-    // Fire-and-forget: record bandit feedback for prompt variant selection
-    if let Some(variant) = ctx.selected_prompt_variant.clone() {
-        let bandit_store = app_state.providers.store.clone();
-        let prompt_success = !response_text.trim().is_empty();
-        let prompt_latency = ctx.started_at.elapsed().as_millis() as f64;
-        tauri::async_runtime::spawn(async move {
-            if let Err(e) = bandit_store
-                .record_feedback_simple(
-                    "router:prompt",
-                    &variant,
-                    prompt_success,
-                    Some(prompt_latency),
-                )
-                .await
-            {
-                log::warn!("bandit feedback failed for router:prompt: {}", e);
-            }
         });
+
+        let fact_app_state = app_state.clone();
+        let fact_memory_service = app_state.memory.service.clone();
+        let fact_session_id = session_id.clone();
+        let fact_assistant_id = assistant_id.clone();
+        let fact_provider_model_id = provider_model_id.clone();
+        let fact_model_id = model_id.clone();
+        let fact_response_text = response_text.clone();
+        let fact_user_content = input.user_content.clone().unwrap_or_default();
+        tauri::async_runtime::spawn(async move {
+            let conversation = format!(
+                "User: {}\nAssistant: {}",
+                fact_user_content, fact_response_text
+            );
+            crate::modules::memory::fact_extractor::extract_and_store_facts(
+                &fact_app_state,
+                fact_memory_service,
+                &fact_provider_model_id,
+                &fact_model_id,
+                &conversation,
+                &fact_session_id,
+                fact_assistant_id.as_deref(),
+            )
+            .await;
+        });
+
+        if let Some(variant) = ctx.selected_prompt_variant.clone() {
+            let bandit_store = app_state.providers.store.clone();
+            let prompt_success = !response_text.trim().is_empty();
+            let prompt_latency = ctx.started_at.elapsed().as_millis() as f64;
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = bandit_store
+                    .record_feedback_simple(
+                        "router:prompt",
+                        &variant,
+                        prompt_success,
+                        Some(prompt_latency),
+                    )
+                    .await
+                {
+                    log::warn!("bandit feedback failed for router:prompt: {}", e);
+                }
+            });
+        }
     }
 
     let created = unix_seconds();
@@ -1281,6 +1307,78 @@ fn extract_summary_text(summary: Option<&Value>) -> Option<String> {
         .and_then(|value| value.as_str())
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+#[derive(Debug, Clone, Copy)]
+enum AssistantMetaMode {
+    Canonical,
+    CompareCandidate,
+}
+
+fn build_assistant_meta(
+    assistant_blocks: Vec<Value>,
+    model_id: &str,
+    provider_model_id: &str,
+    mode: AssistantMetaMode,
+) -> Option<Value> {
+    let mut meta = serde_json::Map::new();
+    if !assistant_blocks.is_empty() {
+        meta.insert("blocks".to_string(), Value::Array(assistant_blocks));
+    }
+    meta.insert("model_id".to_string(), Value::String(model_id.to_string()));
+    meta.insert(
+        "provider_model_id".to_string(),
+        Value::String(provider_model_id.to_string()),
+    );
+    if matches!(mode, AssistantMetaMode::CompareCandidate) {
+        meta.insert("compare_candidate".to_string(), Value::Bool(true));
+    }
+    Some(Value::Object(meta))
+}
+
+fn build_compare_only_messages(
+    messages: Vec<crate::modules::mcp::types::LocalConversationHistoryMessage>,
+) -> Result<Vec<LocalChatInputMessage>, String> {
+    let mut last_user_index = None;
+    let mut last_assistant_index = None;
+
+    for (index, message) in messages.iter().enumerate() {
+        if message.role.eq_ignore_ascii_case("user") {
+            last_user_index = Some(index);
+            last_assistant_index = None;
+            continue;
+        }
+
+        if message.role.eq_ignore_ascii_case("assistant")
+            && last_user_index.is_some()
+            && last_assistant_index.is_none()
+        {
+            last_assistant_index = Some(index);
+        }
+    }
+
+    let last_user_index =
+        last_user_index.ok_or_else(|| "compare_only requires an existing user turn".to_string())?;
+    let last_assistant_index = last_assistant_index.ok_or_else(|| {
+        "compare_only requires a latest assistant answer to compare against".to_string()
+    })?;
+
+    if last_assistant_index <= last_user_index {
+        return Err(
+            "compare_only requires a latest assistant answer to compare against".to_string(),
+        );
+    }
+
+    Ok(messages
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, message)| {
+            if index == last_assistant_index {
+                return None;
+            }
+            Some(convert_history_message_to_chat_input(message))
+        })
+        .collect())
 }
 
 fn convert_history_message_to_chat_input(
@@ -1524,7 +1622,8 @@ mod tests {
 
     #[test]
     fn render_local_base_system_prompt_adds_code_mode_section() {
-        let prompt = render_local_base_system_prompt("## Current Context", "**Code Mode Capability**");
+        let prompt =
+            render_local_base_system_prompt("## Current Context", "**Code Mode Capability**");
 
         assert!(prompt.contains("## Current Context"));
         assert!(prompt.contains("## Code Mode Protocol"));
@@ -1558,5 +1657,71 @@ mod tests {
             router_prompt_response_language_for_locale_pref(false),
             "English (en)"
         );
+    }
+
+    #[test]
+    fn build_compare_only_messages_removes_latest_assistant_answer() {
+        let messages = vec![
+            crate::modules::mcp::types::LocalConversationHistoryMessage {
+                role: "user".to_string(),
+                content: Some(json!("first question")),
+                turn_index: Some(1),
+                created_at: None,
+                is_truncated: Some(false),
+                name: None,
+                meta_info: None,
+            },
+            crate::modules::mcp::types::LocalConversationHistoryMessage {
+                role: "assistant".to_string(),
+                content: Some(json!("first answer")),
+                turn_index: Some(2),
+                created_at: None,
+                is_truncated: Some(false),
+                name: None,
+                meta_info: None,
+            },
+            crate::modules::mcp::types::LocalConversationHistoryMessage {
+                role: "user".to_string(),
+                content: Some(json!("second question")),
+                turn_index: Some(3),
+                created_at: None,
+                is_truncated: Some(false),
+                name: None,
+                meta_info: None,
+            },
+            crate::modules::mcp::types::LocalConversationHistoryMessage {
+                role: "assistant".to_string(),
+                content: Some(json!("baseline answer")),
+                turn_index: Some(4),
+                created_at: None,
+                is_truncated: Some(false),
+                name: None,
+                meta_info: None,
+            },
+        ];
+
+        let snapshot = build_compare_only_messages(messages).expect("compare snapshot");
+        assert_eq!(snapshot.len(), 3);
+        assert_eq!(snapshot[0].content, "first question");
+        assert_eq!(snapshot[1].content, "first answer");
+        assert_eq!(snapshot[2].content, "second question");
+    }
+
+    #[test]
+    fn build_compare_only_messages_requires_latest_assistant_answer() {
+        let messages = vec![
+            crate::modules::mcp::types::LocalConversationHistoryMessage {
+                role: "user".to_string(),
+                content: Some(json!("question only")),
+                turn_index: Some(1),
+                created_at: None,
+                is_truncated: Some(false),
+                name: None,
+                meta_info: None,
+            },
+        ];
+
+        let error = build_compare_only_messages(messages).expect_err("missing baseline answer");
+        assert!(error.contains("latest assistant answer"));
     }
 }

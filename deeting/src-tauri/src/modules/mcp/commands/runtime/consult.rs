@@ -57,7 +57,9 @@ fn build_local_consult_candidates_from_assets(
         let Some(assistant_id) = assistant_id else {
             continue;
         };
-        if assistant_id == current_assistant_id || !enabled_assistant_ids.contains(assistant_id.as_str()) {
+        if assistant_id == current_assistant_id
+            || !enabled_assistant_ids.contains(assistant_id.as_str())
+        {
             continue;
         }
         let name = hit
@@ -112,7 +114,10 @@ pub(crate) async fn build_local_consult_expert_network_result_with_runtime(
     let assistants = match mcp_store.list_local_assistants().await {
         Ok(value) => value,
         Err(err) => {
-            log::warn!("local assistant catalog unavailable for consult_expert_network: {}", err);
+            log::warn!(
+                "local assistant catalog unavailable for consult_expert_network: {}",
+                err
+            );
             return build_local_consult_response(
                 Vec::new(),
                 "Local assistant catalog is unavailable, so expert consultation was skipped.",
@@ -124,11 +129,13 @@ pub(crate) async fn build_local_consult_expert_network_result_with_runtime(
         .into_iter()
         .filter(|assistant| enabled_assistant_ids.contains(assistant.id.as_str()))
         .filter(|assistant| assistant.id != current_assistant)
-        .map(|assistant| serde_json::json!({
-            "id": assistant.id,
-            "name": assistant.name,
-            "description": assistant.description.unwrap_or_default(),
-        }))
+        .map(|assistant| {
+            serde_json::json!({
+                "id": assistant.id,
+                "name": assistant.name,
+                "description": assistant.description.unwrap_or_default(),
+            })
+        })
         .collect::<Vec<_>>();
     if assistant_assets.is_empty() {
         return build_local_consult_response(
@@ -139,7 +146,10 @@ pub(crate) async fn build_local_consult_expert_network_result_with_runtime(
     }
 
     let fallback_reason = if let Ok(vector) = embedding_service.embed_text(normalized_query).await {
-        match memory_store.search_assets(vector, max_hits, Some("assistant")).await {
+        match memory_store
+            .search_assets(vector, max_hits, Some("assistant"))
+            .await
+        {
             Ok(hits) => {
                 let candidates = build_local_consult_candidates_from_assets(
                     hits,
@@ -171,11 +181,8 @@ pub(crate) async fn build_local_consult_expert_network_result_with_runtime(
             .to_string()
     };
 
-    let lexical_hits = lexical_rank_asset_hits(
-        &normalized_query.to_lowercase(),
-        assistant_assets,
-        max_hits,
-    );
+    let lexical_hits =
+        lexical_rank_asset_hits(&normalized_query.to_lowercase(), assistant_assets, max_hits);
     let candidates = build_local_consult_candidates_from_assets(
         lexical_hits,
         &enabled_assistant_ids,

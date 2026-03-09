@@ -27,7 +27,10 @@ pub(crate) async fn apply_config_payload(
 
     for (name, config) in payload.mcp_servers {
         let identifier = format!("{}/{}", source.id, name);
-        let existing_tool = state.store.get_tool_by_source_name(&source.id, &name).await?;
+        let existing_tool = state
+            .store
+            .get_tool_by_source_name(&source.id, &name)
+            .await?;
 
         let tool = match existing_tool {
             Some(existing_tool) => {
@@ -117,4 +120,3 @@ pub(crate) fn now_rfc3339() -> String {
         .format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_default()
 }
-

@@ -10,7 +10,11 @@ pub(crate) fn normalize_skill_dir_name(skill_id: &str) -> String {
         }
     }
     let normalized = out.trim_matches('_').trim().to_string();
-    if normalized.is_empty() { "skill".to_string() } else { normalized }
+    if normalized.is_empty() {
+        "skill".to_string()
+    } else {
+        normalized
+    }
 }
 
 fn is_allowed_skill_repo_url(repo_url: &str) -> bool {
@@ -29,11 +33,15 @@ pub(crate) struct DeetingManifestExecution {
     pub timeout_seconds: u64,
 }
 
-fn default_timeout() -> u64 { 60 }
+fn default_timeout() -> u64 {
+    60
+}
 
 impl Default for DeetingManifestExecution {
     fn default() -> Self {
-        Self { timeout_seconds: default_timeout() }
+        Self {
+            timeout_seconds: default_timeout(),
+        }
     }
 }
 
@@ -121,14 +129,22 @@ async fn fetch_cloud_plugin_market_skill(
     access_token: &str,
     skill_id: &str,
 ) -> Result<Option<CloudPluginMarketSkillItem>, String> {
-    let url = format!("{}/api/v1/plugin-market/plugins", base_url.trim_end_matches('/'));
+    let url = format!(
+        "{}/api/v1/plugin-market/plugins",
+        base_url.trim_end_matches('/')
+    );
     let rows: Vec<CloudPluginMarketSkillItem> = client
         .get(&url)
         .bearer_auth(access_token)
         .query(&[("q", skill_id), ("limit", "20")])
-        .send().await.map_err(to_string)?
-        .error_for_status().map_err(to_string)?
-        .json().await.map_err(to_string)?;
+        .send()
+        .await
+        .map_err(to_string)?
+        .error_for_status()
+        .map_err(to_string)?
+        .json()
+        .await
+        .map_err(to_string)?;
     Ok(rows.into_iter().find(|row| row.id == skill_id))
 }
 
@@ -137,13 +153,21 @@ async fn fetch_cloud_plugin_installs(
     base_url: &str,
     access_token: &str,
 ) -> Result<Vec<CloudPluginInstallItem>, String> {
-    let installs_url = format!("{}/api/v1/plugin-market/installs", base_url.trim_end_matches('/'));
+    let installs_url = format!(
+        "{}/api/v1/plugin-market/installs",
+        base_url.trim_end_matches('/')
+    );
     client
         .get(&installs_url)
         .bearer_auth(access_token)
-        .send().await.map_err(to_string)?
-        .error_for_status().map_err(to_string)?
-        .json().await.map_err(to_string)
+        .send()
+        .await
+        .map_err(to_string)?
+        .error_for_status()
+        .map_err(to_string)?
+        .json()
+        .await
+        .map_err(to_string)
 }
 
 async fn try_clone_skill_repo(
@@ -178,7 +202,11 @@ async fn try_clone_skill_repo(
     }
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
     let _ = std::fs::remove_dir_all(target_dir);
-    Err(if stderr.is_empty() { "git clone failed".to_string() } else { format!("git clone failed: {}", stderr) })
+    Err(if stderr.is_empty() {
+        "git clone failed".to_string()
+    } else {
+        format!("git clone failed: {}", stderr)
+    })
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -221,7 +249,14 @@ pub(crate) async fn install_skill_to_local(
     if !output.status.success() {
         let _ = std::fs::remove_dir_all(&temp_dir);
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(format!("git clone failed: {}", if stderr.is_empty() { "unknown error" } else { &stderr }));
+        return Err(format!(
+            "git clone failed: {}",
+            if stderr.is_empty() {
+                "unknown error"
+            } else {
+                &stderr
+            }
+        ));
     }
 
     let manifest_path = temp_dir.join("deeting.json");
@@ -259,21 +294,29 @@ pub(crate) async fn install_skill_to_local(
     let store = &app_state.mcp.store;
     let version = manifest.version.as_deref();
     let runtime_str = manifest.runtime.join(",");
-    store.upsert_local_skill_install(
-        &skill_id,
-        version,
-        Some(&runtime_str),
-        &manifest_str,
-        &final_dir.to_string_lossy(),
-    ).await.map_err(to_string)?;
+    store
+        .upsert_local_skill_install(
+            &skill_id,
+            version,
+            Some(&runtime_str),
+            &manifest_str,
+            &final_dir.to_string_lossy(),
+        )
+        .await
+        .map_err(to_string)?;
 
-    let indexed_tools = register_local_skills_inner(app.clone(), app_state).await.unwrap_or(0);
+    let indexed_tools = register_local_skills_inner(app.clone(), app_state)
+        .await
+        .unwrap_or(0);
 
     let bandit_store = app_state.providers.store.clone();
     let bandit_skill_id = skill_id.clone();
     let bandit_elapsed = skill_install_start.elapsed().as_millis() as f64;
     tauri::async_runtime::spawn(async move {
-        if let Err(e) = bandit_store.record_feedback_simple("router:skill", &bandit_skill_id, true, Some(bandit_elapsed)).await {
+        if let Err(e) = bandit_store
+            .record_feedback_simple("router:skill", &bandit_skill_id, true, Some(bandit_elapsed))
+            .await
+        {
             log::warn!("bandit feedback failed for router:skill install: {}", e);
         }
     });
@@ -293,21 +336,48 @@ pub(crate) async fn uninstall_local_skill(
     let store = &app_state.mcp.store;
     let source_name = format!("skill:{}", skill_id);
 
-    if let Some(source) = store.find_source_by_name(&source_name).await.map_err(to_string)? {
+    if let Some(source) = store
+        .find_source_by_name(&source_name)
+        .await
+        .map_err(to_string)?
+    {
         if source.is_read_only {
             return Err("cannot uninstall official (read-only) skills".to_string());
         }
-        let deleted = store.delete_tools_by_source_id(&source.id).await.map_err(to_string)?;
-        log::info!("uninstall_local_skill {}: deleted {} tools", skill_id, deleted);
+        let deleted = store
+            .delete_tools_by_source_id(&source.id)
+            .await
+            .map_err(to_string)?;
+        log::info!(
+            "uninstall_local_skill {}: deleted {} tools",
+            skill_id,
+            deleted
+        );
         store.delete_source(&source.id).await.map_err(to_string)?;
     }
 
-    store.delete_local_skill_install(skill_id).await.map_err(to_string)?;
-    if let Err(e) = app_state.memory.service.delete_assets_by_package(skill_id).await {
-        warn!("uninstall_local_skill {}: failed to delete embeddings: {}", skill_id, e);
+    store
+        .delete_local_skill_install(skill_id)
+        .await
+        .map_err(to_string)?;
+    if let Err(e) = app_state
+        .memory
+        .service
+        .delete_assets_by_package(skill_id)
+        .await
+    {
+        warn!(
+            "uninstall_local_skill {}: failed to delete embeddings: {}",
+            skill_id, e
+        );
     }
 
-    let install_path = app.path().app_data_dir().map_err(to_string)?.join("skills").join(skill_id);
+    let install_path = app
+        .path()
+        .app_data_dir()
+        .map_err(to_string)?
+        .join("skills")
+        .join(skill_id);
     if install_path.exists() {
         std::fs::remove_dir_all(&install_path).map_err(to_string)?;
     }
@@ -343,12 +413,19 @@ pub(crate) async fn sync_local_skill_installs_from_cloud_inner(
         let mut reinstalled = false;
         let mut error: Option<String> = None;
 
-        let market_skill = fetch_cloud_plugin_market_skill(client, base_url, access_token, &skill_id).await.ok().flatten();
+        let market_skill =
+            fetch_cloud_plugin_market_skill(client, base_url, access_token, &skill_id)
+                .await
+                .ok()
+                .flatten();
 
         if enable_reinstall && install.is_enabled && !install_path.exists() {
             if let Some(cloud_skill) = market_skill.as_ref() {
                 if let Some(repo_url) = cloud_skill.source_repo.as_deref() {
-                    let revision = install.installed_revision.as_deref().or(cloud_skill.source_revision.as_deref());
+                    let revision = install
+                        .installed_revision
+                        .as_deref()
+                        .or(cloud_skill.source_revision.as_deref());
                     match try_clone_skill_repo(&install_path, repo_url, revision).await {
                         Ok(_) => {
                             reinstalled = true;
@@ -382,9 +459,16 @@ pub(crate) async fn sync_local_skill_installs_from_cloud_inner(
         });
         let manifest_json = serde_json::to_string(&manifest).map_err(to_string)?;
         let runtime = manifest.get("runtime").and_then(|v| v.as_str());
-        let installed_version = install.installed_revision.clone().or_else(|| {
-            manifest.get("version").and_then(|v| v.as_str()).map(|v| v.to_string())
-        }).or_else(|| market_skill.as_ref().and_then(|s| s.version.clone()));
+        let installed_version = install
+            .installed_revision
+            .clone()
+            .or_else(|| {
+                manifest
+                    .get("version")
+                    .and_then(|v| v.as_str())
+                    .map(|v| v.to_string())
+            })
+            .or_else(|| market_skill.as_ref().and_then(|s| s.version.clone()));
         let user_settings = serde_json::json!({
             "alias": install.alias,
             "config_json": install.config_json,
@@ -392,15 +476,18 @@ pub(crate) async fn sync_local_skill_installs_from_cloud_inner(
             "sync_source": "cloud_plugin_market",
         });
 
-        match store.upsert_local_skill_install_state(
-            &skill_id,
-            installed_version.as_deref(),
-            install.is_enabled,
-            runtime,
-            &manifest_json,
-            &install_path_str,
-            Some(&user_settings),
-        ).await {
+        match store
+            .upsert_local_skill_install_state(
+                &skill_id,
+                installed_version.as_deref(),
+                install.is_enabled,
+                runtime,
+                &manifest_json,
+                &install_path_str,
+                Some(&user_settings),
+            )
+            .await
+        {
             Ok(_) => {
                 upserted_count += 1;
                 if status == "synced" && !install.is_enabled {
@@ -431,8 +518,14 @@ pub(crate) async fn sync_local_skill_installs_from_cloud_inner(
         });
     }
 
-    if let Err(err) = store.disable_missing_cloud_managed_local_skills(&cloud_installed_skill_ids).await {
-        warn!("sync_local_skill_installs_from_cloud disable missing cloud installs failed: {}", err);
+    if let Err(err) = store
+        .disable_missing_cloud_managed_local_skills(&cloud_installed_skill_ids)
+        .await
+    {
+        warn!(
+            "sync_local_skill_installs_from_cloud disable missing cloud installs failed: {}",
+            err
+        );
     }
 
     Ok(LocalSkillInstallSyncResponse {
@@ -475,18 +568,39 @@ pub(crate) async fn register_local_skills_inner(
     app: AppHandle,
     app_state: &AppState,
 ) -> Result<usize, String> {
-    let official_skills_dir = app.path().resource_dir().ok().map(|p| p.join("official-skills")).filter(|p| p.exists()).unwrap_or_else(|| {
-        std::env::current_dir().unwrap_or_default().join("packages").join("official-skills")
-    });
+    let official_skills_dir = app
+        .path()
+        .resource_dir()
+        .ok()
+        .map(|p| p.join("official-skills"))
+        .filter(|p| p.exists())
+        .unwrap_or_else(|| {
+            std::env::current_dir()
+                .unwrap_or_default()
+                .join("packages")
+                .join("official-skills")
+        });
     let user_skills_dir = app.path().app_data_dir().map_err(to_string)?.join("skills");
     if !user_skills_dir.exists() {
         let _ = std::fs::create_dir_all(&user_skills_dir);
     }
-    let sdk_dir = app.path().resource_dir().ok().map(|p| p.join("deeting-sdk")).filter(|p| p.exists()).unwrap_or_else(|| {
-        std::env::current_dir().unwrap_or_default().join("packages").join("deeting-sdk")
-    });
+    let sdk_dir = app
+        .path()
+        .resource_dir()
+        .ok()
+        .map(|p| p.join("deeting-sdk"))
+        .filter(|p| p.exists())
+        .unwrap_or_else(|| {
+            std::env::current_dir()
+                .unwrap_or_default()
+                .join("packages")
+                .join("deeting-sdk")
+        });
     let sdk_pythonpath = sdk_dir.to_string_lossy().to_string();
-    let scan_targets = vec![(official_skills_dir, "system_plugin"), (user_skills_dir, "user_skill")];
+    let scan_targets = vec![
+        (official_skills_dir, "system_plugin"),
+        (user_skills_dir, "user_skill"),
+    ];
     let store = &app_state.mcp.store;
     let mut total_indexed = 0;
 
@@ -504,7 +618,8 @@ pub(crate) async fn register_local_skills_inner(
                 continue;
             }
 
-            let deeting_json_str = std::fs::read_to_string(&deeting_json_path).map_err(to_string)?;
+            let deeting_json_str =
+                std::fs::read_to_string(&deeting_json_path).map_err(to_string)?;
             let manifest = match parse_deeting_manifest(&deeting_json_str) {
                 Ok(m) => m,
                 Err(e) => {
@@ -529,12 +644,33 @@ pub(crate) async fn register_local_skills_inner(
                 }
             }
 
-            store.upsert_local_skill_install(id, version, runtime, &deeting_json_str, &skill_path.to_string_lossy()).await.map_err(to_string)?;
+            store
+                .upsert_local_skill_install(
+                    id,
+                    version,
+                    runtime,
+                    &deeting_json_str,
+                    &skill_path.to_string_lossy(),
+                )
+                .await
+                .map_err(to_string)?;
 
             let source_name = format!("skill:{}", id);
-            let trust_level = if source_prefix == "system_plugin" { McpTrustLevel::Official } else { McpTrustLevel::Community };
+            let trust_level = if source_prefix == "system_plugin" {
+                McpTrustLevel::Official
+            } else {
+                McpTrustLevel::Community
+            };
             let is_read_only = source_prefix == "system_plugin";
-            let skill_source = store.upsert_skill_source(&source_name, &skill_path.to_string_lossy(), trust_level, is_read_only).await.map_err(to_string)?;
+            let skill_source = store
+                .upsert_skill_source(
+                    &source_name,
+                    &skill_path.to_string_lossy(),
+                    trust_level,
+                    is_read_only,
+                )
+                .await
+                .map_err(to_string)?;
             let source_id = skill_source.id.clone();
 
             let llm_tool_path = skill_path.join("llm-tool.yaml");
@@ -542,7 +678,8 @@ pub(crate) async fn register_local_skills_inner(
                 continue;
             }
             let llm_tool_str = std::fs::read_to_string(llm_tool_path).map_err(to_string)?;
-            let llm_tools: serde_json::Value = serde_yaml::from_str(&llm_tool_str).map_err(to_string)?;
+            let llm_tools: serde_json::Value =
+                serde_yaml::from_str(&llm_tool_str).map_err(to_string)?;
 
             let mut env = HashMap::new();
             let existing_pypath = std::env::var("PYTHONPATH").unwrap_or_default();
@@ -558,10 +695,18 @@ pub(crate) async fn register_local_skills_inner(
                     env.insert(env_name.to_string(), val);
                 }
             }
-            if manifest.env_requirements.iter().any(|name| name == "SCOUT_SERVICE_URL")
+            if manifest
+                .env_requirements
+                .iter()
+                .any(|name| name == "SCOUT_SERVICE_URL")
                 && !env.contains_key("SCOUT_SERVICE_URL")
             {
-                if let Ok(Some(val)) = app_state.mcp.store.get_desktop_config("scout.base_url").await {
+                if let Ok(Some(val)) = app_state
+                    .mcp
+                    .store
+                    .get_desktop_config("scout.base_url")
+                    .await
+                {
                     let normalized = val.trim().trim_end_matches('/').to_string();
                     if !normalized.is_empty() {
                         env.insert("SCOUT_SERVICE_URL".to_string(), normalized);
@@ -593,7 +738,11 @@ pub(crate) async fn register_local_skills_inner(
                         error: None,
                         command: Some("python3".to_string()),
                         args: Some(vec![full_main_path.to_string_lossy().to_string()]),
-                        env: if env.is_empty() { None } else { Some(env.clone()) },
+                        env: if env.is_empty() {
+                            None
+                        } else {
+                            Some(env.clone())
+                        },
                         config_json,
                         config_hash: "system_builtin".to_string(),
                         pending_config_json: None,
@@ -610,20 +759,30 @@ pub(crate) async fn register_local_skills_inner(
                         let tool_name = tool.name.clone();
                         let tool_desc = tool.description.clone();
                         let final_pkg_name = id.to_string();
-                        let final_source_type = if source_prefix == "system_plugin" { "builtin" } else { "user" };
+                        let final_source_type = if source_prefix == "system_plugin" {
+                            "builtin"
+                        } else {
+                            "user"
+                        };
                         tauri::async_runtime::spawn(async move {
                             let text = format!("name: {}\ndescription: {}", tool_name, tool_desc);
-                            if let Ok(vector) = app_state_clone.providers.embedding.embed_text(&text).await {
-                                let _ = app_state_clone.memory.store.upsert_asset(
-                                    tool_id,
-                                    tool_name,
-                                    tool_desc,
-                                    "tool".to_string(),
-                                    final_source_type.to_string(),
-                                    Some(final_pkg_name),
-                                    vector,
-                                    None,
-                                ).await;
+                            if let Ok(vector) =
+                                app_state_clone.providers.embedding.embed_text(&text).await
+                            {
+                                let _ = app_state_clone
+                                    .memory
+                                    .store
+                                    .upsert_asset(
+                                        tool_id,
+                                        tool_name,
+                                        tool_desc,
+                                        "tool".to_string(),
+                                        final_source_type.to_string(),
+                                        Some(final_pkg_name),
+                                        vector,
+                                        None,
+                                    )
+                                    .await;
                             }
                         });
                     }
@@ -658,10 +817,14 @@ pub async fn sync_local_skill_installs_from_cloud(
         normalized_token.as_str(),
         &skills_dir,
         enable_reinstall,
-    ).await?;
+    )
+    .await?;
 
     if let Err(err) = register_local_skills_inner(app, app_state).await {
-        warn!("sync_local_skill_installs_from_cloud register_local_skills failed: {}", err);
+        warn!(
+            "sync_local_skill_installs_from_cloud register_local_skills failed: {}",
+            err
+        );
     }
 
     Ok(response)

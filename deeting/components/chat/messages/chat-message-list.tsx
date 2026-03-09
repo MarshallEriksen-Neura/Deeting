@@ -21,6 +21,8 @@ interface ChatMessageListProps {
   onRegenerate?: (messageId: string) => void
   onLike?: (messageId: string) => void
   onDislike?: (messageId: string) => void
+  onCompareWithModel?: (messageId: string, modelValue: string) => void
+  onFinalizeCompare?: (messageId: string, modelKey: string) => void
 }
 
 // ============== Virtuoso 自定义组件（必须在组件外部定义）==============
@@ -71,6 +73,8 @@ export function ChatMessageList({
   onRegenerate,
   onLike,
   onDislike,
+  onCompareWithModel,
+  onFinalizeCompare,
 }: ChatMessageListProps) {
   const t = useI18n("chat")
   const virtuosoRef = React.useRef<VirtuosoHandle>(null)
@@ -264,6 +268,8 @@ export function ChatMessageList({
           onRegenerate={onRegenerate}
           onLike={onLike}
           onDislike={onDislike}
+          onCompareWithModel={onCompareWithModel}
+          onFinalizeCompare={onFinalizeCompare}
         />
       )
     },
@@ -279,6 +285,8 @@ export function ChatMessageList({
       onRegenerate,
       onLike,
       onDislike,
+      onCompareWithModel,
+      onFinalizeCompare,
     ]
   )
 

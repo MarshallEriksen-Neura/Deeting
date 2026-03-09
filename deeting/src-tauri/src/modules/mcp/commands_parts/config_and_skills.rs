@@ -94,4 +94,3 @@ pub async fn get_local_gateway_url(state: State<'_, AppState>) -> Result<Option<
     let url = state.mcp.local_gateway.base_url.read().await.clone();
     Ok(url)
 }
-

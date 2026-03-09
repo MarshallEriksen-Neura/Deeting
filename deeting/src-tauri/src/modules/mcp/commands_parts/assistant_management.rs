@@ -50,7 +50,12 @@ pub(crate) async fn index_local_assistants(app_state: &AppState, assistants: &[L
 pub async fn list_local_assistants(
     state: State<'_, AppState>,
 ) -> Result<Vec<LocalAssistant>, String> {
-    state.mcp.store.list_local_assistants().await.map_err(to_string)
+    state
+        .mcp
+        .store
+        .list_local_assistants()
+        .await
+        .map_err(to_string)
 }
 
 #[tauri::command]
@@ -121,10 +126,7 @@ pub async fn update_local_assistant(
 }
 
 #[tauri::command]
-pub async fn delete_local_assistant(
-    state: State<'_, AppState>,
-    id: String,
-) -> Result<(), String> {
+pub async fn delete_local_assistant(state: State<'_, AppState>, id: String) -> Result<(), String> {
     state
         .mcp
         .store
@@ -423,4 +425,3 @@ pub async fn delete_assistant_messages(
         .await
         .map_err(to_string)
 }
-

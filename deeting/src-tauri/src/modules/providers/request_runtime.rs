@@ -85,7 +85,11 @@ pub fn prepare_provider_request(
     let response_decoder = protocol_profile.response.decoder.name.clone();
     let request_template = protocol_profile.request.request_template.clone();
     let response_transform = protocol_profile.response.response_template.clone();
-    let http_method = protocol_profile.transport.method.trim().to_ascii_uppercase();
+    let http_method = protocol_profile
+        .transport
+        .method
+        .trim()
+        .to_ascii_uppercase();
     let request_builder = protocol_profile
         .request
         .request_builder
@@ -251,7 +255,10 @@ fn protocol_profile_to_effective_config(profile: &Value) -> Option<Value> {
         config.insert("request_template".to_string(), value.clone());
     }
     if let Some(value) = request.get("request_builder") {
-        config.insert("request_builder".to_string(), runtime_hook_to_builder(value));
+        config.insert(
+            "request_builder".to_string(),
+            runtime_hook_to_builder(value),
+        );
     }
     if let Some(value) = response.get("response_template") {
         config.insert("response_transform".to_string(), value.clone());
@@ -571,10 +578,7 @@ fn responses_input_from_messages_or_items_builder(
     rendered_body: Value,
     request_data: &Map<String, Value>,
 ) -> Value {
-    let mut body = rendered_body
-        .as_object()
-        .cloned()
-        .unwrap_or_default();
+    let mut body = rendered_body.as_object().cloned().unwrap_or_default();
 
     if body.get("input").is_some_and(|value| !value.is_null()) {
         return Value::Object(body);
@@ -585,13 +589,20 @@ fn responses_input_from_messages_or_items_builder(
         return Value::Object(body);
     }
 
-    if let Some(items) = request_data.get("input_items").and_then(|value| value.as_array()) {
+    if let Some(items) = request_data
+        .get("input_items")
+        .and_then(|value| value.as_array())
+    {
         let collected: Vec<Value> = items
             .iter()
             .filter_map(|item| {
-                item.get("text")
-                    .cloned()
-                    .or_else(|| if item.is_object() { Some(item.clone()) } else { None })
+                item.get("text").cloned().or_else(|| {
+                    if item.is_object() {
+                        Some(item.clone())
+                    } else {
+                        None
+                    }
+                })
             })
             .collect();
         if !collected.is_empty() {
@@ -607,7 +618,10 @@ fn responses_input_from_messages_or_items_builder(
         }
     }
 
-    if let Some(messages) = request_data.get("messages").and_then(|value| value.as_array()) {
+    if let Some(messages) = request_data
+        .get("messages")
+        .and_then(|value| value.as_array())
+    {
         let parts: Vec<String> = messages
             .iter()
             .filter(|message| {
@@ -1152,8 +1166,8 @@ fn is_version_segment(segment: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_request_builder, build_effective_config, build_upstream_url_with_params, deep_merge_json,
-        prepare_provider_request, resolve_auth_for_protocol,
+        apply_request_builder, build_effective_config, build_upstream_url_with_params,
+        deep_merge_json, prepare_provider_request, resolve_auth_for_protocol,
     };
     use crate::modules::providers::types::{ProviderInstance, ProviderModel, ProviderPreset};
     use serde_json::{json, Value};
@@ -1513,7 +1527,10 @@ mod tests {
         let effective = build_effective_config(Some(&preset), &model, "chat");
 
         assert_eq!(effective["template_engine"], json!("openai_compat"));
-        assert_eq!(effective["request_template"], json!({"model": null, "input": null}));
+        assert_eq!(
+            effective["request_template"],
+            json!({"model": null, "input": null})
+        );
         assert_eq!(
             effective["request_builder"]["type"],
             json!("responses_input_from_messages_or_items")

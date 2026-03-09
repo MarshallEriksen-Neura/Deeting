@@ -38,7 +38,9 @@ fn build_local_summary_source_lines(
     lines
 }
 
-pub(crate) fn build_local_summary_from_window(messages: &[LocalConversationHistoryMessage]) -> String {
+pub(crate) fn build_local_summary_from_window(
+    messages: &[LocalConversationHistoryMessage],
+) -> String {
     let lines = build_local_summary_source_lines(
         messages,
         Some(LOCAL_CONVERSATION_SUMMARY_FALLBACK_RECENT_MESSAGES),
@@ -50,11 +52,15 @@ pub(crate) fn build_local_summary_from_window(messages: &[LocalConversationHisto
     truncate_text_chars(&joined, LOCAL_CONVERSATION_SUMMARY_MAX_CHARS)
 }
 
-pub(crate) fn build_local_summary_prompt_input(messages: &[LocalConversationHistoryMessage]) -> String {
+pub(crate) fn build_local_summary_prompt_input(
+    messages: &[LocalConversationHistoryMessage],
+) -> String {
     let lines = build_local_summary_source_lines(messages, None);
     if lines.is_empty() {
         return String::new();
     }
-    truncate_text_chars(&lines.join("\n"), LOCAL_CONVERSATION_SUMMARY_PROMPT_INPUT_MAX_CHARS)
+    truncate_text_chars(
+        &lines.join("\n"),
+        LOCAL_CONVERSATION_SUMMARY_PROMPT_INPUT_MAX_CHARS,
+    )
 }
-

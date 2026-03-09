@@ -78,9 +78,12 @@ mod tests {
         assert!(prompt.contains("## Output Contract"));
         assert!(prompt.contains("Use Code Mode only when the task requires tool discovery"));
         assert!(prompt.contains("call `consult_expert_network` to inspect candidates"));
-        assert!(prompt.contains("Explicitly call `activate_assistant` before switching persona context"));
-        assert!(prompt.contains("Summarize what you changed, the key result, and any blocker or next step"));
+        assert!(prompt
+            .contains("Explicitly call `activate_assistant` before switching persona context"));
+        assert!(prompt
+            .contains("Summarize what you changed, the key result, and any blocker or next step"));
         assert!(prompt.contains("If required inputs, permissions, or tools are missing, stop and report the blocker instead of guessing"));
-        assert!(prompt.contains("Do not keep looping once enough evidence or results have been obtained"));
+        assert!(prompt
+            .contains("Do not keep looping once enough evidence or results have been obtained"));
     }
 }

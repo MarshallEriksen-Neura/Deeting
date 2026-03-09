@@ -4,6 +4,7 @@ import { useCallback, useMemo, useRef, useState } from "react"
 import {
   cancelChatCompletion,
   cancelDesktopLocalChatCompletion,
+  finalizeDesktopLocalCompare,
   streamChatCompletion,
   streamDesktopLocalChatCompletion,
   type ChatMessage,
@@ -38,7 +39,7 @@ import {
 } from "@/lib/api/conversations"
 import type { ConversationMessage } from "@/lib/api/conversations"
 import { signAssets } from "@/lib/api/media-assets"
-import { useChatStore, type Message } from "@/store/chat-store"
+import { useChatStore, type CompareCandidate, type Message } from "@/store/chat-store"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
 
 function createMessageId() {
@@ -126,6 +127,88 @@ function hasRenderableNonToolBlocks(blocks: MessageBlock[]): boolean {
   return blocks.some((block) => block.type !== "tool_call" && block.type !== "tool_result")
 }
 
+function parseStreamResponseBody(data: unknown): Record<string, unknown> | null {
+  if (typeof data === "string") {
+    try {
+      return JSON.parse(data) as Record<string, unknown>
+    } catch {
+      return null
+    }
+  }
+  if (data && typeof data === "object") {
+    return data as Record<string, unknown>
+  }
+  return null
+}
+
+function extractAssistantResponseBlocks(responseBody: Record<string, unknown>): MessageBlock[] {
+  const choices = Array.isArray(responseBody.choices) ? responseBody.choices : []
+  const firstChoice = choices[0]
+  const responseMessage = firstChoice && typeof firstChoice === "object"
+    ? (firstChoice as Record<string, unknown>).message
+    : null
+  if (!responseMessage || typeof responseMessage !== "object") {
+    return []
+  }
+
+  const messageObject = responseMessage as Record<string, unknown>
+  const metaInfo = messageObject.meta_info && typeof messageObject.meta_info === "object"
+    ? (messageObject.meta_info as Record<string, unknown>)
+    : null
+  const metaBlocks = Array.isArray(metaInfo?.blocks)
+    ? ((metaInfo.blocks as unknown[]).filter(isValidBlock) as MessageBlock[])
+    : []
+
+  const nextBlocks: MessageBlock[] = metaBlocks.filter(
+    (block) => block.type !== "tool_call" && block.type !== "tool_result"
+  )
+
+  if (metaBlocks.length === 0) {
+    const reasoning = typeof messageObject.reasoning_content === "string"
+      ? messageObject.reasoning_content
+      : ""
+    const textContent = typeof messageObject.content === "string" ? messageObject.content : ""
+    if (reasoning.trim()) {
+      nextBlocks.push({ type: "thought", content: reasoning } as MessageBlock)
+    }
+    if (textContent.trim()) {
+      nextBlocks.push({ type: "text", content: textContent } as MessageBlock)
+    }
+  } else if (!nextBlocks.some((block) => block.type === "text")) {
+    const textContent = typeof messageObject.content === "string" ? messageObject.content : ""
+    if (textContent.trim()) {
+      nextBlocks.push({ type: "text", content: textContent } as MessageBlock)
+    }
+  }
+
+  return nextBlocks
+}
+
+function createErrorBlock(messageId: string, message: string): MessageBlock {
+  return {
+    id: `${messageId}-error`,
+    type: "error",
+    message,
+    streamState: "completed",
+    displayMode: "bubble",
+  } as MessageBlock
+}
+
+function isDesktopLocalModel(model?: { request_route?: string; runtime_source?: string }) {
+  if (!model) return false
+  return model.request_route === "local_invoke" || model.runtime_source === "desktop_local"
+}
+
+function getAssistantBlocksForCandidate(message: Message): MessageBlock[] {
+  if (Array.isArray(message.blocks) && message.blocks.length > 0) {
+    return message.blocks as MessageBlock[]
+  }
+  if (message.content.trim()) {
+    return [{ type: "text", content: message.content } as MessageBlock]
+  }
+  return []
+}
+
 async function resolveLocalChatAsset(
   sha256: string,
   contentType: string
@@ -188,9 +271,9 @@ const resolveMessageAttachments = async (messages: Message[], isTauri = false) =
     if (dataUrl) localUrlMap.set(la.sha256, dataUrl)
   })
 
-  return messages.map((message, msgIdx) => {
+  return messages.map((message) => {
     if (!message.attachments?.length) return message
-    const attachments = message.attachments.map((attachment, attIdx) => {
+    const attachments = message.attachments.map((attachment) => {
       if (attachment.source === "local" && attachment.sha256 && localUrlMap.has(attachment.sha256)) {
         return { ...attachment, url: localUrlMap.get(attachment.sha256)! }
       }
@@ -224,6 +307,13 @@ export function useChatMessagingService() {
     setMessages,
     mergeMessageMeta,
     appendMessageBlocks,
+    ensureCompareState,
+    upsertCompareCandidate,
+    appendCompareCandidateBlocks,
+    setCompareActiveCandidate,
+    setCompareFinalizing,
+    clearCompareState,
+    clearAllCompareStates,
     sessionId,
     setSessionId,
     setIsLoading,
@@ -356,6 +446,158 @@ export function useChatMessagingService() {
     }
   }, [clearStatus, setIsLoading])
 
+  const findModelByValue = useCallback((value?: string | null) => {
+    if (!value) return null
+    return (
+      models.find((model) => model.provider_model_id === value || model.id === value) ?? null
+    )
+  }, [models])
+
+  const resolveCurrentSessionId = useCallback((sessionStorageKey: string, fallback?: string | null) => {
+    let resolved = fallback ?? useChatStore.getState().sessionId ?? sessionId
+    if (!resolved) {
+      const fallbackSessionId = resolveSessionIdFromBrowser(sessionStorageKey, {
+        allowStorageFallback: false,
+      })
+      if (fallbackSessionId) {
+        resolved = fallbackSessionId
+        setSessionId(resolved)
+      }
+    }
+    return resolved
+  }, [sessionId, setSessionId])
+
+  const runStreamedRequest = useCallback(async ({
+    payload,
+    preferLocalRoute,
+    trackActiveRequest = false,
+    errorBlockIdBase,
+    onBlocks,
+    onTraceId,
+    onSessionResolved,
+    onStatusEvent,
+    getCurrentBlocks,
+    onRequestError,
+  }: {
+    payload: Parameters<typeof streamChatCompletion>[0]
+    preferLocalRoute: boolean
+    trackActiveRequest?: boolean
+    errorBlockIdBase: string
+    onBlocks: (blocks: MessageBlock[]) => void
+    onTraceId?: (traceId: string) => void
+    onSessionResolved?: (nextSessionId: string) => void
+    onStatusEvent?: (status: {
+      stage: string | null
+      code: string | null
+      meta: Record<string, unknown> | null
+    }) => void
+    getCurrentBlocks: () => MessageBlock[]
+    onRequestError: (message: string, errorCode?: string | null) => void
+  }) => {
+    const streamFn = preferLocalRoute ? streamDesktopLocalChatCompletion : streamChatCompletion
+    const streamedText = await streamFn(
+      {
+        ...payload,
+        stream: streamEnabled,
+        status_stream: true,
+      },
+      {
+        onDelta: (delta) => {
+          if (!delta) return
+          onBlocks([
+            { type: "text", content: delta, streamState: "streaming" } as MessageBlock,
+          ])
+        },
+        onMessage: (data) => {
+          if (data && typeof data === "object" && "type" in data) {
+            const streamMessage = data as {
+              type?: string
+              stage?: string | null
+              code?: string | null
+              meta?: unknown
+              blocks?: unknown
+              message?: string
+              error_code?: string
+              trace_id?: string | null
+            }
+            if (streamMessage.type === "status") {
+              onStatusEvent?.({
+                stage: streamMessage.stage ?? null,
+                code: streamMessage.code ?? null,
+                meta:
+                  typeof streamMessage.meta === "object" && streamMessage.meta
+                    ? (streamMessage.meta as Record<string, unknown>)
+                    : null,
+              })
+              if (streamMessage.trace_id) {
+                onTraceId?.(streamMessage.trace_id)
+              }
+              return
+            }
+            if (streamMessage.type === "error") {
+              const message = streamMessage.message || "Request failed"
+              onBlocks([createErrorBlock(errorBlockIdBase, message)])
+              onRequestError(message, streamMessage.error_code ?? null)
+              return
+            }
+            if (streamMessage.type === "blocks") {
+              if (Array.isArray(streamMessage.blocks)) {
+                onBlocks(streamMessage.blocks.filter(isValidBlock) as MessageBlock[])
+              }
+              return
+            }
+          }
+
+          const responseBody = parseStreamResponseBody(data)
+          if (!responseBody) return
+
+          if (typeof responseBody.session_id === "string") {
+            onSessionResolved?.(responseBody.session_id)
+          }
+          if (typeof responseBody.trace_id === "string") {
+            onTraceId?.(responseBody.trace_id)
+          }
+
+          const responseBlocks = extractAssistantResponseBlocks(responseBody)
+          if (responseBlocks.length > 0) {
+            onBlocks(responseBlocks)
+          }
+        },
+      },
+      trackActiveRequest
+        ? {
+            onCancel: (cancel) => {
+              cancelRef.current = cancel
+            },
+          }
+        : undefined
+    )
+
+    const latestBlocks = getCurrentBlocks()
+    if (
+      streamedText.trim().length > 0 &&
+      !hasRenderableTextBlock(latestBlocks) &&
+      !hasRenderableNonToolBlocks(latestBlocks)
+    ) {
+      onBlocks([{ type: "text", content: streamedText } as MessageBlock])
+    }
+  }, [streamEnabled])
+
+  const replaceAssistantMessage = useCallback((targetMessageId: string, replacement: Message) => {
+    const currentMessages = useChatStore.getState().messages
+    setMessages(
+      currentMessages.map((message) =>
+        message.id === targetMessageId
+          ? {
+              ...replacement,
+              id: targetMessageId,
+              createdAt: message.createdAt,
+            }
+          : message
+      )
+    )
+  }, [setMessages])
+
   const sendMessage = useCallback(async (sessionIdOverride?: string | null) => {
     const trimmedInput = input.trim()
     if (!trimmedInput && attachments.length === 0) return
@@ -389,6 +631,7 @@ export function useChatMessagingService() {
     }
     activeAssistantMessageIdRef.current = assistantMessageId
     setInterruptedAssistantMessageId(null)
+    clearAllCompareStates()
 
     // 更新 UI 状态
     setMessages([...messages, userMessage, assistantMessage])
@@ -397,15 +640,7 @@ export function useChatMessagingService() {
     setIsLoading(true)
     clearStatus()
 
-    let resolvedSessionId = sessionIdOverride ?? useChatStore.getState().sessionId ?? sessionId
-    const storageKey = sessionStorageKey
-    if (!resolvedSessionId) {
-      const fallbackSessionId = resolveSessionIdFromBrowser(storageKey, { allowStorageFallback: false })
-      if (fallbackSessionId) {
-        resolvedSessionId = fallbackSessionId
-        setSessionId(resolvedSessionId)
-      }
-    }
+    const resolvedSessionId = resolveCurrentSessionId(sessionStorageKey, sessionIdOverride)
     try {
       if (preferLocalRoute && !resolvedSessionId) {
         throw new Error("Session not found")
@@ -429,175 +664,32 @@ export function useChatMessagingService() {
       requestIdRef.current = payload.request_id ?? null
       activeRequestRouteRef.current = preferLocalRoute ? "local_gateway" : "cloud"
 
-      const streamFn = preferLocalRoute ? streamDesktopLocalChatCompletion : streamChatCompletion
-      const streamedText = await streamFn(
-        {
+      await runStreamedRequest({
+        payload: {
           ...payload,
-          stream: streamEnabled,
-          status_stream: true,
           session_id: resolvedSessionId ?? undefined,
         },
-        {
-          onDelta: (delta) => {
-            if (!delta) return
-            appendMessageBlocks(assistantMessageId, [
-              { type: "text", content: delta, streamState: "streaming" } as MessageBlock,
-            ])
-          },
-          onMessage: (data) => {
-            if (data && typeof data === "object" && "type" in data) {
-              const payload = data as {
-                type?: string
-                stage?: string | null
-                step?: string | null
-                state?: string | null
-                code?: string | null
-                meta?: unknown
-                blocks?: unknown
-                message?: string
-                error_code?: string
-                trace_id?: string | null
-              }
-              if (payload.type === "status") {
-                setStatus({
-                  stage: payload.stage ?? null,
-                  code: payload.code ?? null,
-                  meta: typeof payload.meta === "object" && payload.meta ? (payload.meta as Record<string, unknown>) : null,
-                })
-                // 如果状态消息带了 trace_id，也记录下来
-                const traceId = payload.trace_id
-                if (traceId) {
-                  mergeMessageMeta(assistantMessageId, { trace_id: traceId })
-                }
-                return
-              }
-              if (payload.type === "error") {
-                const message = payload.message || "Request failed"
-                appendMessageBlocks(assistantMessageId, [
-                  {
-                    id: `${assistantMessageId}-error`,
-                    type: "error",
-                    message,
-                    streamState: "completed",
-                    displayMode: "bubble",
-                  },
-                ] as MessageBlock[])
-                setErrorMessage(payload.error_code ? `${payload.error_code}: ${message}` : message)
-                return
-              }
-              if (payload.type === "blocks") {
-                const blocks = payload.blocks
-                if (Array.isArray(blocks)) {
-                  appendMessageBlocks(
-                    assistantMessageId,
-                    blocks.filter(isValidBlock) as MessageBlock[]
-                  )
-                }
-                return
-              }
-            }
-
-            // ─── Final response body (non-status/blocks/error event) ───
-            // 当 stream=false 时，后端最终会返回完整的 OpenAI 格式响应体。
-            // 从 meta_info.blocks 中提取尚未流式到达的 blocks（thought, text），
-            // 使用 appendMessageBlocks 追加，避免 setMessageBlocks 全量替换导致的渲染问题。
-            let responseBody: Record<string, unknown> | null = null
-            if (typeof data === "string") {
-              // safeJson 可能因代理折行导致解析失败，这里重试一次
-              try { responseBody = JSON.parse(data) } catch { /* ignore */ }
-            } else if (data && typeof data === "object") {
-              responseBody = data as Record<string, unknown>
-            }
-            if (!responseBody) return
-
-            // 提取 session_id 和 trace_id
-            if (typeof responseBody.session_id === "string") {
-              setSessionId(responseBody.session_id)
-            }
-            if (typeof responseBody.trace_id === "string") {
-              mergeMessageMeta(assistantMessageId, { trace_id: responseBody.trace_id })
-            }
-
-            // 从 choices[0].message.meta_info.blocks 提取新 blocks
-            const choices = Array.isArray(responseBody.choices) ? responseBody.choices : []
-            const firstChoice = choices[0]
-            const respMessage = firstChoice && typeof firstChoice === "object"
-              ? (firstChoice as Record<string, unknown>).message
-              : null
-            if (respMessage && typeof respMessage === "object") {
-              const msgObj = respMessage as Record<string, unknown>
-              const metaInfo = msgObj.meta_info && typeof msgObj.meta_info === "object"
-                ? (msgObj.meta_info as Record<string, unknown>)
-                : null
-              const metaBlocks = Array.isArray(metaInfo?.blocks)
-                ? ((metaInfo!.blocks as unknown[]).filter(isValidBlock) as MessageBlock[])
-                : []
-
-              // 只追加尚未通过流式 blocks 事件到达的 blocks（跳过 tool_call/tool_result）
-              const newBlocks: MessageBlock[] = metaBlocks.filter(
-                (b) => b.type !== "tool_call" && b.type !== "tool_result"
-              )
-
-              // 兜底：如果 meta_info.blocks 为空，从 reasoning_content 和 content 构建
-              if (metaBlocks.length === 0) {
-                const reasoning = typeof msgObj.reasoning_content === "string" ? msgObj.reasoning_content : ""
-                const textContent = typeof msgObj.content === "string" ? msgObj.content : ""
-                if (reasoning.trim()) {
-                  newBlocks.push({ type: "thought", content: reasoning } as MessageBlock)
-                }
-                if (textContent.trim()) {
-                  newBlocks.push({ type: "text", content: textContent } as MessageBlock)
-                }
-              } else if (!newBlocks.some((b) => b.type === "text")) {
-                // meta_info.blocks 存在但没有 text block，从 content 兜底
-                const textContent = typeof msgObj.content === "string" ? msgObj.content : ""
-                if (textContent.trim()) {
-                  newBlocks.push({ type: "text", content: textContent } as MessageBlock)
-                }
-              }
-
-              if (newBlocks.length > 0) {
-                appendMessageBlocks(assistantMessageId, newBlocks)
-              }
-            }
-          },
+        preferLocalRoute,
+        trackActiveRequest: true,
+        errorBlockIdBase: assistantMessageId,
+        onBlocks: (blocks) => appendMessageBlocks(assistantMessageId, blocks),
+        onTraceId: (traceId) => mergeMessageMeta(assistantMessageId, { trace_id: traceId }),
+        onSessionResolved: (nextSessionId) => setSessionId(nextSessionId),
+        onStatusEvent: (status) => setStatus(status),
+        getCurrentBlocks: () => {
+          const latest = useChatStore.getState().messages.find((message) => message.id === assistantMessageId)
+          return Array.isArray(latest?.blocks) ? (latest.blocks as MessageBlock[]) : []
         },
-        {
-          onCancel: (cancel) => {
-            cancelRef.current = cancel
-          },
-        }
-      )
-
-      const latest = useChatStore.getState().messages.find(
-        (m) => m.id === assistantMessageId
-      )
-      const latestBlocks = Array.isArray(latest?.blocks)
-        ? (latest.blocks as MessageBlock[])
-        : []
-      if (
-        streamedText.trim().length > 0 &&
-        !hasRenderableTextBlock(latestBlocks) &&
-        !hasRenderableNonToolBlocks(latestBlocks)
-      ) {
-        appendMessageBlocks(assistantMessageId, [
-          { type: "text", content: streamedText } as MessageBlock,
-        ])
-      }
+        onRequestError: (message, errorCode) => {
+          setErrorMessage(errorCode ? `${errorCode}: ${message}` : message)
+        },
+      })
     } catch (error) {
       if (interruptedMessageIdsRef.current.has(assistantMessageId)) {
         return
       }
       const message = error instanceof Error && error.message ? error.message : "Request failed"
-      appendMessageBlocks(assistantMessageId, [
-        {
-          id: `${assistantMessageId}-error`,
-          type: "error",
-          message,
-          streamState: "completed",
-          displayMode: "bubble",
-        },
-      ] as MessageBlock[])
+      appendMessageBlocks(assistantMessageId, [createErrorBlock(assistantMessageId, message)])
       setErrorMessage(message)
     } finally {
       setIsLoading(false)
@@ -616,8 +708,6 @@ export function useChatMessagingService() {
     models,
     agent,
     agentId,
-    streamEnabled,
-    sessionId,
     setInput,
     clearAttachments,
     setMessages,
@@ -629,6 +719,9 @@ export function useChatMessagingService() {
     setStatus,
     clearStatus,
     isTauriRuntime,
+    clearAllCompareStates,
+    resolveCurrentSessionId,
+    runStreamedRequest,
   ])
 
   const regenerateMessage = useCallback(async (targetMessageId: string) => {
@@ -668,21 +761,14 @@ export function useChatMessagingService() {
     }
     activeAssistantMessageIdRef.current = assistantMessageId
     setInterruptedAssistantMessageId(null)
+    clearAllCompareStates()
 
     setMessages([...messagesBeforeTarget, newAssistantMessage])
     setIsLoading(true)
     clearStatus()
 
     // 构建请求消息（不含被删除的 assistant 消息）
-    let resolvedSessionId = sessionId
-    const storageKey = sessionStorageKey
-    if (!resolvedSessionId) {
-      const fallbackSessionId = resolveSessionIdFromBrowser(storageKey, { allowStorageFallback: false })
-      if (fallbackSessionId) {
-        resolvedSessionId = fallbackSessionId
-        setSessionId(resolvedSessionId)
-      }
-    }
+    const resolvedSessionId = resolveCurrentSessionId(sessionStorageKey)
     try {
       if (preferLocalRoute && !resolvedSessionId) {
         throw new Error("Session not found")
@@ -706,164 +792,32 @@ export function useChatMessagingService() {
       requestIdRef.current = payload.request_id ?? null
       activeRequestRouteRef.current = preferLocalRoute ? "local_gateway" : "cloud"
 
-      const streamFn = preferLocalRoute ? streamDesktopLocalChatCompletion : streamChatCompletion
-      const streamedText = await streamFn(
-        {
+      await runStreamedRequest({
+        payload: {
           ...payload,
-          stream: streamEnabled,
-          status_stream: true,
           session_id: resolvedSessionId ?? undefined,
         },
-        {
-          onDelta: (delta) => {
-            if (!delta) return
-            appendMessageBlocks(assistantMessageId, [
-              { type: "text", content: delta, streamState: "streaming" } as MessageBlock,
-            ])
-          },
-          onMessage: (data) => {
-            if (data && typeof data === "object" && "type" in data) {
-              const payload = data as {
-                type?: string
-                stage?: string | null
-                step?: string | null
-                state?: string | null
-                code?: string | null
-                meta?: unknown
-                blocks?: unknown
-                message?: string
-                error_code?: string
-                trace_id?: string | null
-              }
-              if (payload.type === "status") {
-                setStatus({
-                  stage: payload.stage ?? null,
-                  code: payload.code ?? null,
-                  meta: typeof payload.meta === "object" && payload.meta ? (payload.meta as Record<string, unknown>) : null,
-                })
-                const traceId = payload.trace_id
-                if (traceId) {
-                  mergeMessageMeta(assistantMessageId, { trace_id: traceId })
-                }
-                return
-              }
-              if (payload.type === "error") {
-                const message = payload.message || "Request failed"
-                appendMessageBlocks(assistantMessageId, [
-                  {
-                    id: `${assistantMessageId}-error`,
-                    type: "error",
-                    message,
-                    streamState: "completed",
-                    displayMode: "bubble",
-                  },
-                ] as MessageBlock[])
-                setErrorMessage(payload.error_code ? `${payload.error_code}: ${message}` : message)
-                return
-              }
-              if (payload.type === "blocks") {
-                const blocks = payload.blocks
-                if (Array.isArray(blocks)) {
-                  appendMessageBlocks(
-                    assistantMessageId,
-                    blocks.filter(isValidBlock) as MessageBlock[]
-                  )
-                }
-                return
-              }
-            }
-
-            let responseBody: Record<string, unknown> | null = null
-            if (typeof data === "string") {
-              try { responseBody = JSON.parse(data) } catch { /* ignore */ }
-            } else if (data && typeof data === "object") {
-              responseBody = data as Record<string, unknown>
-            }
-            if (!responseBody) return
-
-            if (typeof responseBody.session_id === "string") {
-              setSessionId(responseBody.session_id)
-            }
-            if (typeof responseBody.trace_id === "string") {
-              mergeMessageMeta(assistantMessageId, { trace_id: responseBody.trace_id })
-            }
-
-            const choices = Array.isArray(responseBody.choices) ? responseBody.choices : []
-            const firstChoice = choices[0]
-            const respMessage = firstChoice && typeof firstChoice === "object"
-              ? (firstChoice as Record<string, unknown>).message
-              : null
-            if (respMessage && typeof respMessage === "object") {
-              const msgObj = respMessage as Record<string, unknown>
-              const metaInfo = msgObj.meta_info && typeof msgObj.meta_info === "object"
-                ? (msgObj.meta_info as Record<string, unknown>)
-                : null
-              const metaBlocks = Array.isArray(metaInfo?.blocks)
-                ? ((metaInfo!.blocks as unknown[]).filter(isValidBlock) as MessageBlock[])
-                : []
-
-              const newBlocks: MessageBlock[] = metaBlocks.filter(
-                (b) => b.type !== "tool_call" && b.type !== "tool_result"
-              )
-
-              if (metaBlocks.length === 0) {
-                const reasoning = typeof msgObj.reasoning_content === "string" ? msgObj.reasoning_content : ""
-                const textContent = typeof msgObj.content === "string" ? msgObj.content : ""
-                if (reasoning.trim()) {
-                  newBlocks.push({ type: "thought", content: reasoning } as MessageBlock)
-                }
-                if (textContent.trim()) {
-                  newBlocks.push({ type: "text", content: textContent } as MessageBlock)
-                }
-              } else if (!newBlocks.some((b) => b.type === "text")) {
-                const textContent = typeof msgObj.content === "string" ? msgObj.content : ""
-                if (textContent.trim()) {
-                  newBlocks.push({ type: "text", content: textContent } as MessageBlock)
-                }
-              }
-
-              if (newBlocks.length > 0) {
-                appendMessageBlocks(assistantMessageId, newBlocks)
-              }
-            }
-          },
+        preferLocalRoute,
+        trackActiveRequest: true,
+        errorBlockIdBase: assistantMessageId,
+        onBlocks: (blocks) => appendMessageBlocks(assistantMessageId, blocks),
+        onTraceId: (traceId) => mergeMessageMeta(assistantMessageId, { trace_id: traceId }),
+        onSessionResolved: (nextSessionId) => setSessionId(nextSessionId),
+        onStatusEvent: (status) => setStatus(status),
+        getCurrentBlocks: () => {
+          const latest = useChatStore.getState().messages.find((message) => message.id === assistantMessageId)
+          return Array.isArray(latest?.blocks) ? (latest.blocks as MessageBlock[]) : []
         },
-        {
-          onCancel: (cancel) => {
-            cancelRef.current = cancel
-          },
-        }
-      )
-
-      const latest = useChatStore.getState().messages.find(
-        (m) => m.id === assistantMessageId
-      )
-      const latestBlocks = Array.isArray(latest?.blocks)
-        ? (latest.blocks as MessageBlock[])
-        : []
-      if (
-        streamedText.trim().length > 0 &&
-        !hasRenderableTextBlock(latestBlocks) &&
-        !hasRenderableNonToolBlocks(latestBlocks)
-      ) {
-        appendMessageBlocks(assistantMessageId, [
-          { type: "text", content: streamedText } as MessageBlock,
-        ])
-      }
+        onRequestError: (message, errorCode) => {
+          setErrorMessage(errorCode ? `${errorCode}: ${message}` : message)
+        },
+      })
     } catch (error) {
       if (interruptedMessageIdsRef.current.has(assistantMessageId)) {
         return
       }
       const message = error instanceof Error && error.message ? error.message : "Request failed"
-      appendMessageBlocks(assistantMessageId, [
-        {
-          id: `${assistantMessageId}-error`,
-          type: "error",
-          message,
-          streamState: "completed",
-          displayMode: "bubble",
-        },
-      ] as MessageBlock[])
+      appendMessageBlocks(assistantMessageId, [createErrorBlock(assistantMessageId, message)])
       setErrorMessage(message)
     } finally {
       setIsLoading(false)
@@ -879,8 +833,6 @@ export function useChatMessagingService() {
     models,
     agent,
     agentId,
-    streamEnabled,
-    sessionId,
     cancelActiveRequest,
     setMessages,
     mergeMessageMeta,
@@ -891,6 +843,296 @@ export function useChatMessagingService() {
     setStatus,
     clearStatus,
     isTauriRuntime,
+    clearAllCompareStates,
+    resolveCurrentSessionId,
+    runStreamedRequest,
+  ])
+
+  const compareWithModel = useCallback(async (targetMessageId: string, modelValue: string) => {
+    if (!isTauriRuntime) return
+
+    const currentMessages = useChatStore.getState().messages
+    const targetIndex = currentMessages.findIndex(
+      (message) => message.id === targetMessageId && message.role === "assistant"
+    )
+    if (targetIndex < 0) return
+
+    const latestAssistantMessage = [...currentMessages]
+      .reverse()
+      .find((message) => message.role === "assistant")
+    if (!latestAssistantMessage || latestAssistantMessage.id !== targetMessageId) {
+      return
+    }
+
+    const targetMessage = currentMessages[targetIndex]
+    const selectedCompareModel = findModelByValue(modelValue)
+    if (!selectedCompareModel || !isDesktopLocalModel(selectedCompareModel)) {
+      setErrorMessage("Compare mode currently supports desktop local models only")
+      return
+    }
+
+    const baselineModel =
+      findModelByValue(
+        typeof targetMessage.metaInfo?.provider_model_id === "string"
+          ? targetMessage.metaInfo.provider_model_id
+          : typeof targetMessage.metaInfo?.model_id === "string"
+            ? targetMessage.metaInfo.model_id
+            : config.model
+      ) ?? selectedCompareModel
+
+    if (!isDesktopLocalModel(baselineModel)) {
+      setErrorMessage("Compare mode currently supports answers from desktop local models only")
+      return
+    }
+
+    const baselineModelKey = baselineModel.provider_model_id ?? baselineModel.id
+    const baselineCandidate: CompareCandidate = {
+      modelKey: baselineModelKey,
+      modelId: baselineModel.id,
+      providerModelId: baselineModel.provider_model_id ?? undefined,
+      content: targetMessage.content,
+      blocks: getAssistantBlocksForCandidate(targetMessage),
+      loading: false,
+      baseline: true,
+      traceId:
+        typeof targetMessage.metaInfo?.trace_id === "string"
+          ? targetMessage.metaInfo.trace_id
+          : undefined,
+      errorMessage: null,
+      statusStage: null,
+      statusCode: null,
+      statusMeta: null,
+    }
+
+    ensureCompareState(targetMessageId, baselineCandidate)
+
+    const compareModelKey = selectedCompareModel.provider_model_id ?? selectedCompareModel.id
+    setCompareActiveCandidate(targetMessageId, compareModelKey)
+    if (compareModelKey === baselineModelKey) {
+      return
+    }
+
+    const existingCandidate = useChatStore
+      .getState()
+      .compareByMessageId[targetMessageId]?.candidates[compareModelKey]
+    if (existingCandidate && !existingCandidate.loading && !existingCandidate.errorMessage) {
+      return
+    }
+
+    const { assistantId, sessionStorageKey } = resolveAssistantRequestContext({
+      isTauriRuntime,
+      activeAssistantId: agentId,
+    })
+    const resolvedSessionId = resolveCurrentSessionId(sessionStorageKey)
+    if (!resolvedSessionId) {
+      setErrorMessage("Session not found")
+      return
+    }
+
+    const messagesBeforeTarget = currentMessages.slice(0, targetIndex)
+    upsertCompareCandidate(targetMessageId, {
+      modelKey: compareModelKey,
+      modelId: selectedCompareModel.id,
+      providerModelId: selectedCompareModel.provider_model_id ?? undefined,
+      content: existingCandidate?.content ?? "",
+      blocks: existingCandidate?.blocks ?? [],
+      loading: true,
+      baseline: false,
+      traceId: existingCandidate?.traceId,
+      errorMessage: null,
+      statusStage: null,
+      statusCode: null,
+      statusMeta: null,
+    })
+
+    try {
+      const requestMessages = buildChatMessages(messagesBeforeTarget)
+      await runStreamedRequest({
+        payload: {
+          model: selectedCompareModel.id,
+          provider_model_id: selectedCompareModel.provider_model_id ?? undefined,
+          messages: requestMessages,
+          temperature: config.temperature,
+          max_tokens: config.maxTokens,
+          request_id: createRequestId(),
+          assistant_id: assistantId,
+          session_id: resolvedSessionId,
+          compare_only: true,
+        },
+        preferLocalRoute: true,
+        errorBlockIdBase: `${targetMessageId}-${compareModelKey}`,
+        onBlocks: (blocks) => appendCompareCandidateBlocks(targetMessageId, compareModelKey, blocks),
+        onTraceId: (traceId) => {
+          upsertCompareCandidate(targetMessageId, {
+            modelKey: compareModelKey,
+            modelId: selectedCompareModel.id,
+            providerModelId: selectedCompareModel.provider_model_id ?? undefined,
+            content: useChatStore.getState().compareByMessageId[targetMessageId]?.candidates[compareModelKey]?.content ?? "",
+            blocks: useChatStore.getState().compareByMessageId[targetMessageId]?.candidates[compareModelKey]?.blocks ?? [],
+            loading: true,
+            traceId,
+          })
+        },
+        onStatusEvent: (status) => {
+          const currentCandidate = useChatStore.getState().compareByMessageId[targetMessageId]?.candidates[compareModelKey]
+          upsertCompareCandidate(targetMessageId, {
+            modelKey: compareModelKey,
+            modelId: selectedCompareModel.id,
+            providerModelId: selectedCompareModel.provider_model_id ?? undefined,
+            content: currentCandidate?.content ?? "",
+            blocks: currentCandidate?.blocks ?? [],
+            loading: true,
+            traceId: currentCandidate?.traceId,
+            errorMessage: null,
+            statusStage: status.stage,
+            statusCode: status.code,
+            statusMeta: status.meta,
+          })
+        },
+        getCurrentBlocks: () => {
+          const candidate = useChatStore.getState().compareByMessageId[targetMessageId]?.candidates[compareModelKey]
+          return candidate?.blocks ?? []
+        },
+        onRequestError: (message, errorCode) => {
+          const currentCandidate = useChatStore.getState().compareByMessageId[targetMessageId]?.candidates[compareModelKey]
+          upsertCompareCandidate(targetMessageId, {
+            modelKey: compareModelKey,
+            modelId: selectedCompareModel.id,
+            providerModelId: selectedCompareModel.provider_model_id ?? undefined,
+            content: currentCandidate?.content ?? "",
+            blocks: currentCandidate?.blocks ?? [],
+            loading: false,
+            traceId: currentCandidate?.traceId,
+            errorMessage: errorCode ? `${errorCode}: ${message}` : message,
+            statusStage: currentCandidate?.statusStage ?? null,
+            statusCode: currentCandidate?.statusCode ?? null,
+            statusMeta: currentCandidate?.statusMeta ?? null,
+          })
+        },
+      })
+
+      const currentCandidate = useChatStore.getState().compareByMessageId[targetMessageId]?.candidates[compareModelKey]
+      upsertCompareCandidate(targetMessageId, {
+        modelKey: compareModelKey,
+        modelId: selectedCompareModel.id,
+        providerModelId: selectedCompareModel.provider_model_id ?? undefined,
+        content: currentCandidate?.content ?? "",
+        blocks: currentCandidate?.blocks ?? [],
+        loading: false,
+        traceId: currentCandidate?.traceId,
+        errorMessage: null,
+        statusStage: currentCandidate?.statusStage ?? null,
+        statusCode: currentCandidate?.statusCode ?? null,
+        statusMeta: currentCandidate?.statusMeta ?? null,
+      })
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : "Request failed"
+      const currentCandidate = useChatStore.getState().compareByMessageId[targetMessageId]?.candidates[compareModelKey]
+      upsertCompareCandidate(targetMessageId, {
+        modelKey: compareModelKey,
+        modelId: selectedCompareModel.id,
+        providerModelId: selectedCompareModel.provider_model_id ?? undefined,
+        content: currentCandidate?.content ?? "",
+        blocks:
+          currentCandidate?.blocks?.length
+            ? currentCandidate.blocks
+            : [createErrorBlock(`${targetMessageId}-${compareModelKey}`, message)],
+        loading: false,
+        traceId: currentCandidate?.traceId,
+        errorMessage: message,
+        statusStage: currentCandidate?.statusStage ?? null,
+        statusCode: currentCandidate?.statusCode ?? null,
+        statusMeta: currentCandidate?.statusMeta ?? null,
+      })
+      setErrorMessage(message)
+    }
+  }, [
+    isTauriRuntime,
+    findModelByValue,
+    setErrorMessage,
+    config,
+    ensureCompareState,
+    setCompareActiveCandidate,
+    agentId,
+    resolveCurrentSessionId,
+    upsertCompareCandidate,
+    runStreamedRequest,
+    appendCompareCandidateBlocks,
+  ])
+
+  const finalizeCompareWinner = useCallback(async (targetMessageId: string, modelKey: string) => {
+    const compareState = useChatStore.getState().compareByMessageId[targetMessageId]
+    const candidate = compareState?.candidates[modelKey]
+    if (!compareState || !candidate || candidate.loading) return
+
+    if (candidate.baseline) {
+      clearCompareState(targetMessageId)
+      return
+    }
+
+    const { sessionStorageKey } = resolveAssistantRequestContext({
+      isTauriRuntime,
+      activeAssistantId: agentId,
+    })
+    const resolvedSessionId = resolveCurrentSessionId(sessionStorageKey)
+    if (!resolvedSessionId) {
+      setErrorMessage("Session not found")
+      return
+    }
+
+    setCompareFinalizing(targetMessageId, true)
+    try {
+      const response = await finalizeDesktopLocalCompare({
+        session_id: resolvedSessionId,
+        model_id: candidate.modelId,
+        provider_model_id: candidate.providerModelId,
+        content: candidate.content,
+        blocks: candidate.blocks as unknown[],
+      })
+      if (response.session_id) {
+        setSessionId(response.session_id)
+      }
+
+      const normalized = normalizeConversationMessages(
+        [response.message as ConversationMessage],
+        { idPrefix: response.session_id ?? "compare" }
+      )[0]
+      const currentMessage = useChatStore.getState().messages.find((message) => message.id === targetMessageId)
+      if (!currentMessage) {
+        clearCompareState(targetMessageId)
+        return
+      }
+
+      replaceAssistantMessage(targetMessageId, {
+        ...(normalized ?? currentMessage),
+        content: candidate.content,
+        blocks: candidate.blocks,
+        metaInfo: {
+          ...(normalized?.metaInfo ?? currentMessage.metaInfo ?? {}),
+          model_id: candidate.modelId,
+          provider_model_id: candidate.providerModelId,
+          compare_winner: true,
+          replaced_turn_index: response.replaced_turn_index,
+        },
+      })
+      clearCompareState(targetMessageId)
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : "Finalize compare failed"
+      setErrorMessage(message)
+      setCompareFinalizing(targetMessageId, false)
+      return
+    }
+
+    setCompareFinalizing(targetMessageId, false)
+  }, [
+    agentId,
+    clearCompareState,
+    isTauriRuntime,
+    replaceAssistantMessage,
+    resolveCurrentSessionId,
+    setCompareFinalizing,
+    setErrorMessage,
+    setSessionId,
   ])
 
   const hasInterruptedGeneration = useMemo(() => {
@@ -921,6 +1163,8 @@ export function useChatMessagingService() {
   return {
     sendMessage,
     regenerateMessage,
+    compareWithModel,
+    finalizeCompareWinner,
     loadHistoryBySession,
     loadMoreHistory,
     resetSession,

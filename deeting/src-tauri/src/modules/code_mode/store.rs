@@ -7,6 +7,7 @@ use crate::modules::code_mode::error::CodeModeError;
 use crate::modules::code_mode::types::{
     CodeModeExecutionDetail, CodeModeExecutionItem, CodeModeExecutionPage, RuntimeToolCallsEnvelope,
 };
+use crate::modules::sandbox::types::SandboxRuntimeMode;
 
 #[derive(Clone)]
 pub struct CodeModeExecutionStore {
@@ -154,7 +155,7 @@ impl CodeModeExecutionStore {
         session_id: Option<&str>,
     ) -> Result<CodeModeExecutionPage, CodeModeError> {
         let mut sql = String::from(
-            "SELECT id, execution_id, session_id, language, status, error, error_code, duration_ms, runtime_tool_calls_json, created_at FROM code_mode_executions WHERE 1=1",
+            "SELECT id, execution_id, session_id, language, status, error, error_code, duration_ms, runtime_tool_calls_json, request_meta_json, created_at FROM code_mode_executions WHERE 1=1",
         );
         if status.is_some() {
             sql.push_str(" AND status = ?");
@@ -183,8 +184,13 @@ impl CodeModeExecutionStore {
             let calls_json: String = row
                 .try_get("runtime_tool_calls_json")
                 .map_err(|err| CodeModeError::Storage(err.to_string()))?;
+            let request_meta_json: String = row
+                .try_get("request_meta_json")
+                .map_err(|err| CodeModeError::Storage(err.to_string()))?;
             let tool_calls: RuntimeToolCallsEnvelope = serde_json::from_str(&calls_json)
                 .unwrap_or_else(|_| RuntimeToolCallsEnvelope::default());
+            let request_meta: serde_json::Value =
+                serde_json::from_str(&request_meta_json).unwrap_or_else(|_| serde_json::json!({}));
             items.push(CodeModeExecutionItem {
                 id: row
                     .try_get("id")
@@ -207,6 +213,7 @@ impl CodeModeExecutionStore {
                 error_code: row
                     .try_get("error_code")
                     .map_err(|err| CodeModeError::Storage(err.to_string()))?,
+                runtime_mode: runtime_mode_from_request_meta(&request_meta),
                 duration_ms: row
                     .try_get("duration_ms")
                     .map_err(|err| CodeModeError::Storage(err.to_string()))?,
@@ -277,6 +284,9 @@ impl CodeModeExecutionStore {
             .try_get("request_meta_json")
             .map_err(|err| CodeModeError::Storage(err.to_string()))?;
 
+        let request_meta: serde_json::Value =
+            serde_json::from_str(&request_meta_json).unwrap_or_else(|_| serde_json::json!({}));
+
         Ok(CodeModeExecutionDetail {
             id: row
                 .try_get("id")
@@ -319,11 +329,11 @@ impl CodeModeExecutionStore {
             error_code: row
                 .try_get("error_code")
                 .map_err(|err| CodeModeError::Storage(err.to_string()))?,
+            runtime_mode: runtime_mode_from_request_meta(&request_meta),
             duration_ms: row
                 .try_get("duration_ms")
                 .map_err(|err| CodeModeError::Storage(err.to_string()))?,
-            request_meta: serde_json::from_str(&request_meta_json)
-                .unwrap_or_else(|_| serde_json::json!({})),
+            request_meta,
             created_at: row
                 .try_get("created_at")
                 .map_err(|err| CodeModeError::Storage(err.to_string()))?,
@@ -354,4 +364,11 @@ impl CodeModeExecutionStore {
         }
         Ok(())
     }
+}
+
+fn runtime_mode_from_request_meta(request_meta: &serde_json::Value) -> Option<SandboxRuntimeMode> {
+    request_meta
+        .get("runtime_mode")
+        .cloned()
+        .and_then(|value| serde_json::from_value(value).ok())
 }

@@ -1,7 +1,10 @@
 pub(crate) fn extract_text_from_chat_completion_response(
     response_body: &serde_json::Value,
 ) -> Option<String> {
-    if let Some(content) = response_body.get("content").and_then(|value| value.as_str()) {
+    if let Some(content) = response_body
+        .get("content")
+        .and_then(|value| value.as_str())
+    {
         let trimmed = content.trim();
         if !trimmed.is_empty() {
             return Some(trimmed.to_string());
@@ -50,4 +53,3 @@ pub(crate) fn truncate_text_chars(input: &str, max_chars: usize) -> String {
     out.push_str("...");
     out
 }
-

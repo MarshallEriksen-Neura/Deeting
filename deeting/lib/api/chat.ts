@@ -20,6 +20,7 @@ export type ChatCompletionRequest = {
   assistant_id?: string
   session_id?: string
   regenerate?: boolean
+  compare_only?: boolean
   context?: LocalContextSnapshot | unknown
 }
 
@@ -32,8 +33,23 @@ export type ChatCompletionResponse = {
   session_id?: string | null
 }
 
+export type LocalConversationCompareFinalizeRequest = {
+  session_id: string
+  model_id: string
+  provider_model_id?: string
+  content: string
+  blocks?: unknown[]
+}
+
+export type LocalConversationCompareFinalizeResponse = {
+  session_id: string
+  replaced_turn_index: number
+  message: Record<string, unknown>
+}
+
 const CHAT_COMPLETIONS_PATH = "/api/v1/internal/chat/completions"
 const LOCAL_GATEWAY_CHAT_PATH = "/v1/chat/completions"
+const LOCAL_GATEWAY_COMPARE_FINALIZE_PATH = "/v1/chat/comparisons/finalize"
 const LOCAL_GATEWAY_URL_COMMAND = "get_local_gateway_url"
 const LOCAL_GATEWAY_RESOLVE_MAX_RETRIES = 50
 const LOCAL_GATEWAY_RESOLVE_INTERVAL_MS = 120
@@ -170,6 +186,18 @@ export async function streamDesktopLocalChatCompletion(
     handlers,
     control
   )
+}
+
+export async function finalizeDesktopLocalCompare(
+  payload: LocalConversationCompareFinalizeRequest
+) {
+  const baseUrl = await resolveLocalGatewayBaseUrl()
+  return request<LocalConversationCompareFinalizeResponse>({
+    url: `${baseUrl}${LOCAL_GATEWAY_COMPARE_FINALIZE_PATH}`,
+    method: "POST",
+    data: payload,
+    anonymous: true,
+  })
 }
 
 type StreamOpenCallbacks = {

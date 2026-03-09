@@ -1,6 +1,5 @@
 use super::{
-    assistants_knowledge_admin_impl::spawn_embed_knowledge_chunks,
-    common_impl::to_string,
+    assistants_knowledge_admin_impl::spawn_embed_knowledge_chunks, common_impl::to_string,
     support::*,
 };
 
@@ -95,7 +94,10 @@ pub async fn delete_local_user_document(
     let memory_service = state.memory.service.clone();
     tokio::spawn(async move {
         if let Err(err) = memory_service.delete_assets_by_package(&pkg_name).await {
-            log::warn!("delete_local_user_document: failed to clean up embeddings: {}", err);
+            log::warn!(
+                "delete_local_user_document: failed to clean up embeddings: {}",
+                err
+            );
         }
     });
     Ok(())

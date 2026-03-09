@@ -309,14 +309,22 @@ impl ResponseTransformer {
                 if !item.is_object() {
                     continue;
                 }
-                match item.get("type").and_then(|value| value.as_str()).unwrap_or("") {
+                match item
+                    .get("type")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("")
+                {
                     "message" => {
-                        if let Some(content) = item.get("content").and_then(|value| value.as_array()) {
+                        if let Some(content) =
+                            item.get("content").and_then(|value| value.as_array())
+                        {
                             for part in content {
                                 if part.get("type").and_then(|value| value.as_str())
                                     == Some("output_text")
                                 {
-                                    if let Some(text) = part.get("text").and_then(|value| value.as_str()) {
+                                    if let Some(text) =
+                                        part.get("text").and_then(|value| value.as_str())
+                                    {
                                         output_text.push_str(text);
                                     }
                                 }

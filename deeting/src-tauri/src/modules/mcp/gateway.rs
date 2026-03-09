@@ -23,6 +23,7 @@ use uuid::Uuid;
 use crate::modules::mcp::local_orchestrator::{
     execute_local_orchestrated_chat, extract_user_text_from_messages, LocalOrchestratorInput,
 };
+use crate::modules::mcp::types::LocalConversationCompareFinalizeRequest;
 use crate::state::AppState;
 
 #[derive(Deserialize, Debug, Clone)]
@@ -38,6 +39,7 @@ pub struct LocalChatCompletionRequest {
     pub assistant_id: Option<String>,
     pub session_id: Option<String>,
     pub regenerate: Option<bool>,
+    pub compare_only: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -49,6 +51,13 @@ struct GatewayHealthResponse {
 struct LocalChatCancelResponse {
     request_id: String,
     status: String,
+}
+
+#[derive(Serialize)]
+struct LocalCompareFinalizeErrorResponse {
+    code: &'static str,
+    message: String,
+    source: &'static str,
 }
 
 pub struct LocalGatewayState {
@@ -89,6 +98,10 @@ impl LocalGatewayServer {
         let app = Router::new()
             .route("/health", get(health_handler))
             .route("/v1/chat/completions", post(chat_completions_handler))
+            .route(
+                "/v1/chat/comparisons/finalize",
+                post(finalize_compare_handler),
+            )
             .route(
                 "/v1/chat/completions/:request_id/cancel",
                 post(cancel_chat_completions_handler),
@@ -331,6 +344,30 @@ async fn cancel_chat_completions_handler(
     .into_response()
 }
 
+async fn finalize_compare_handler(
+    State(state): State<Arc<LocalGatewayState>>,
+    Json(payload): Json<LocalConversationCompareFinalizeRequest>,
+) -> impl IntoResponse {
+    match state
+        .app_state
+        .mcp
+        .store
+        .finalize_local_compare_winner(payload)
+        .await
+    {
+        Ok(response) => Json(response).into_response(),
+        Err(err) => (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(LocalCompareFinalizeErrorResponse {
+                code: "LOCAL_COMPARE_FINALIZE_FAILED",
+                message: err.to_string(),
+                source: "desktop",
+            }),
+        )
+            .into_response(),
+    }
+}
+
 fn map_request_to_orchestrator_input(
     payload: LocalChatCompletionRequest,
 ) -> Result<LocalOrchestratorInput, String> {
@@ -339,11 +376,12 @@ fn map_request_to_orchestrator_input(
     let stream = payload.stream.unwrap_or(true);
     let status_stream = payload.status_stream.unwrap_or(true);
 
-    let user_content = if payload.regenerate.unwrap_or(false) {
-        None
-    } else {
-        extract_user_text_from_messages(&payload.messages)
-    };
+    let user_content =
+        if payload.regenerate.unwrap_or(false) || payload.compare_only.unwrap_or(false) {
+            None
+        } else {
+            extract_user_text_from_messages(&payload.messages)
+        };
 
     Ok(LocalOrchestratorInput {
         model: payload.model,
@@ -351,6 +389,7 @@ fn map_request_to_orchestrator_input(
         session_id,
         assistant_id: normalize_optional_string(payload.assistant_id.as_deref()),
         regenerate: payload.regenerate.unwrap_or(false),
+        compare_only: payload.compare_only.unwrap_or(false),
         user_content,
         temperature: payload.temperature,
         max_tokens: payload.max_tokens,

@@ -81,13 +81,17 @@ pub(crate) fn build_local_code_mode_entry_tools() -> serde_json::Value {
     })
 }
 
-pub(crate) async fn build_local_sdk_search_result(app_state: &AppState, query: &str) -> serde_json::Value {
+pub(crate) async fn build_local_sdk_search_result(
+    app_state: &AppState,
+    query: &str,
+) -> serde_json::Value {
     build_local_sdk_search_result_with_runtime(
         app_state.mcp.store.as_ref(),
         &app_state.providers.embedding,
         app_state.memory.service.as_ref(),
         query,
-    ).await
+    )
+    .await
 }
 
 pub(crate) async fn build_local_sdk_search_result_with_runtime(
@@ -97,8 +101,14 @@ pub(crate) async fn build_local_sdk_search_result_with_runtime(
     query: &str,
 ) -> serde_json::Value {
     let normalized = query.trim().to_lowercase();
-    let enabled_assistant_ids = mcp_store.list_enabled_local_assistant_ids().await.unwrap_or_else(|_| HashSet::new());
-    let enabled_skill_ids = mcp_store.list_enabled_local_skill_ids().await.unwrap_or_else(|_| HashSet::new());
+    let enabled_assistant_ids = mcp_store
+        .list_enabled_local_assistant_ids()
+        .await
+        .unwrap_or_else(|_| HashSet::new());
+    let enabled_skill_ids = mcp_store
+        .list_enabled_local_skill_ids()
+        .await
+        .unwrap_or_else(|_| HashSet::new());
     let mut install_hints = Vec::new();
     let mut assistant_install_filtered_count = 0usize;
     let mut skill_install_filtered_count = 0usize;
@@ -110,7 +120,9 @@ pub(crate) async fn build_local_sdk_search_result_with_runtime(
     if !normalized.is_empty() {
         let mut asset_hits = Vec::new();
         if let Ok(vector) = embedding_service.embed_text(&normalized).await {
-            if let Ok(hits) = memory_store.search_assets(vector, 15, None).await { asset_hits = hits; }
+            if let Ok(hits) = memory_store.search_assets(vector, 15, None).await {
+                asset_hits = hits;
+            }
         }
         if asset_hits.is_empty() {
             if let Ok(all_assets) = memory_store.list_assets_catalog().await {
@@ -118,8 +130,14 @@ pub(crate) async fn build_local_sdk_search_result_with_runtime(
             }
         }
         for hit in asset_hits {
-            let source_type = hit.get("source_type").and_then(|v| v.as_str()).unwrap_or("unknown");
-            let asset_type = hit.get("asset_type").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let source_type = hit
+                .get("source_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let asset_type = hit
+                .get("asset_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
             let name = hit["name"].as_str().unwrap_or("").to_string();
             let desc = hit["description"].as_str().unwrap_or("").to_string();
             let pkg_name = hit.get("pkg_name").and_then(|v| v.as_str());
@@ -127,30 +145,53 @@ pub(crate) async fn build_local_sdk_search_result_with_runtime(
             let is_enabled_installed = if asset_type == "assistant" {
                 !asset_id.is_empty() && enabled_assistant_ids.contains(asset_id)
             } else if asset_type == "tool" {
-                pkg_name.map(|pkg| enabled_skill_ids.contains(pkg.trim())).unwrap_or(true)
-            } else { true };
+                pkg_name
+                    .map(|pkg| enabled_skill_ids.contains(pkg.trim()))
+                    .unwrap_or(true)
+            } else {
+                true
+            };
             let item = serde_json::json!({
                 "name": name, "description": desc, "source": format!("local_{}", source_type),
                 "pkg_name": pkg_name, "score": hit.get("_distance"), "needs_provisioning": source_type == "cloud_mirror",
                 "asset_type": hit.get("asset_type"), "callable": source_type != "cloud_mirror" && is_enabled_installed,
                 "assistant_id": if asset_type == "assistant" { Some(asset_id) } else { None::<&str> },
             });
-            if source_type == "cloud_mirror" { install_hints.push(item); continue; }
+            if source_type == "cloud_mirror" {
+                install_hints.push(item);
+                continue;
+            }
             if !is_enabled_installed {
-                if asset_type == "assistant" { assistant_install_filtered_count += 1; }
-                else if asset_type == "tool" { skill_install_filtered_count += 1; }
+                if asset_type == "assistant" {
+                    assistant_install_filtered_count += 1;
+                } else if asset_type == "tool" {
+                    skill_install_filtered_count += 1;
+                }
                 continue;
             }
             catalog.push(item);
         }
     }
     catalog.push(serde_json::json!({"name":"list_user_memories","description":"List local memories for current desktop session","source":"code_mode_bridge"}));
-    let matches = catalog.into_iter().filter(|item| {
-        if normalized.is_empty() { return true; }
-        let name_hit = item.get("name").and_then(|v| v.as_str()).map(|n| n.to_lowercase().contains(&normalized)).unwrap_or(false);
-        let desc_hit = item.get("description").and_then(|v| v.as_str()).map(|d| d.to_lowercase().contains(&normalized)).unwrap_or(false);
-        name_hit || desc_hit || item.get("score").is_some()
-    }).collect::<Vec<_>>();
+    let matches = catalog
+        .into_iter()
+        .filter(|item| {
+            if normalized.is_empty() {
+                return true;
+            }
+            let name_hit = item
+                .get("name")
+                .and_then(|v| v.as_str())
+                .map(|n| n.to_lowercase().contains(&normalized))
+                .unwrap_or(false);
+            let desc_hit = item
+                .get("description")
+                .and_then(|v| v.as_str())
+                .map(|d| d.to_lowercase().contains(&normalized))
+                .unwrap_or(false);
+            name_hit || desc_hit || item.get("score").is_some()
+        })
+        .collect::<Vec<_>>();
     let usage_hint = "先根据参数文档和 python_stub 规划步骤，再调用 execute_code_plan 一次性执行。脚本内优先 `from deeting_sdk import tool_name` 或 `deeting.call_tool(name, **kwargs)`；不要写 `deeting.call_tool(name, { ... })`。最后请用 `deeting.log(json.dumps(result, ensure_ascii=False))` 输出结构化结果。";
     serde_json::json!({
         "format_version": "sdk_toolcard.v2", "runtime_protocol_version": crate::modules::code_mode::contract::RUNTIME_PROTOCOL_VERSION,

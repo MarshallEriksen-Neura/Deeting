@@ -224,7 +224,13 @@
       "status": {
         "success": "Success",
         "failed": "Failed",
-        "dry_run": "Dry Run"
+        "dry_run": "Dry Run",
+        "blocked": "Blocked"
+      },
+      "runtimeMode": {
+        "sandbox": "Sandboxed",
+        "host_fallback": "Host fallback",
+        "disabled": "Disabled"
       },
       "duration": "{ms}ms",
       "toolCalls": "{count} tool calls",

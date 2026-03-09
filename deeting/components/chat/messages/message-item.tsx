@@ -5,9 +5,11 @@ import Image from "next/image"
 import { FileText } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { AIResponseBubble } from "./ai-response-bubble"
+import { CompareModelDialog } from "./compare-model-dialog"
+import { CompareResponseShell } from "./compare-response-shell"
 import { MessageActions } from "./message-actions"
 import { MarkdownViewer } from "@/components/chat/markdown-viewer"
-import type { Message, ChatAssistant } from "@/store/chat-store"
+import { useChatStore, type Message, type ChatAssistant } from "@/store/chat-store"
 import { useI18n } from "@/hooks/use-i18n"
 import type { ChatAttachment } from "@/lib/chat/message-content"
 import { ImageLightbox } from "@/components/ui/image-lightbox"
@@ -28,6 +30,8 @@ interface MessageItemProps {
   onLike?: (messageId: string) => void
   onDislike?: (messageId: string) => void
   onCopy?: (messageId: string) => void
+  onCompareWithModel?: (messageId: string, modelValue: string) => void
+  onFinalizeCompare?: (messageId: string, modelKey: string) => void
 }
 
 /**
@@ -53,9 +57,16 @@ export const MessageItem = React.memo<MessageItemProps>(
     onLike,
     onDislike,
     onCopy,
+    onCompareWithModel,
+    onFinalizeCompare,
   }) => {
     const t = useI18n("chat")
     const imageAlt = t("input.image.alt")
+    const compareState = useChatStore(
+      React.useCallback((state) => state.compareByMessageId[message.id] ?? null, [message.id])
+    )
+    const models = useChatStore((state) => state.models)
+    const [compareDialogOpen, setCompareDialogOpen] = React.useState(false)
 
     // 判断是否为最后一条助手消息（用于 reveal 动画）
     const isLastAssistantMessage = message.role === "assistant" && message.id === lastAssistantId
@@ -65,7 +76,11 @@ export const MessageItem = React.memo<MessageItemProps>(
       if (message.role !== "assistant") return []
       return message.blocks ?? []
     }, [message.blocks, message.role])
+    const activeCompareCandidate = compareState?.candidates[compareState.activeModelKey] ?? null
     const assistantCopyContent = React.useMemo(() => {
+      if (activeCompareCandidate) {
+        return activeCompareCandidate.content
+      }
       if (message.role !== "assistant") return message.content
       return assistantParts.reduce((acc, block) => {
         if (block.type === "text") {
@@ -76,7 +91,25 @@ export const MessageItem = React.memo<MessageItemProps>(
         }
         return acc
       }, "")
-    }, [assistantParts, message.content, message.role])
+    }, [activeCompareCandidate, assistantParts, message.content, message.role])
+    const canCompare =
+      message.role === "assistant" &&
+      message.id === lastAssistantId &&
+      !message.fromHistory &&
+      !isActive &&
+      !compareState
+    const excludedModelKeys = React.useMemo(() => {
+      if (compareState) {
+        return Object.keys(compareState.candidates)
+      }
+      const modelKey =
+        typeof message.metaInfo?.provider_model_id === "string"
+          ? message.metaInfo.provider_model_id
+          : typeof message.metaInfo?.model_id === "string"
+            ? message.metaInfo.model_id
+            : null
+      return modelKey ? [modelKey] : []
+    }, [compareState, message.metaInfo?.model_id, message.metaInfo?.provider_model_id])
 
     return (
       <div
@@ -88,15 +121,25 @@ export const MessageItem = React.memo<MessageItemProps>(
         {/* 消息气泡 */}
         {message.role === "assistant" ? (
           <div className="w-fit max-w-[75%]">
-            <AIResponseBubble
-              parts={assistantParts}
-              isActive={isActive}
-              streamEnabled={streamEnabled}
-              typingEnabled={typingEnabled}
-              statusStage={isActive ? statusStage : null}
-              statusCode={isActive ? statusCode : null}
-              statusMeta={isActive ? statusMeta : null}
-            />
+            {compareState && onCompareWithModel && onFinalizeCompare ? (
+              <CompareResponseShell
+                messageId={message.id}
+                compareState={compareState}
+                models={models}
+                onCompare={onCompareWithModel}
+                onFinalize={onFinalizeCompare}
+              />
+            ) : (
+              <AIResponseBubble
+                parts={assistantParts}
+                isActive={isActive}
+                streamEnabled={streamEnabled}
+                typingEnabled={typingEnabled}
+                statusStage={isActive ? statusStage : null}
+                statusCode={isActive ? statusCode : null}
+                statusMeta={isActive ? statusMeta : null}
+              />
+            )}
             {message.attachments?.length ? (
               <MessageAttachments
                 attachments={message.attachments}
@@ -112,9 +155,11 @@ export const MessageItem = React.memo<MessageItemProps>(
                   onLike={onLike}
                   onDislike={onDislike}
                   onCopy={onCopy}
+                  onCompare={() => setCompareDialogOpen(true)}
+                  canCompare={canCompare}
                   liked={message.metaInfo?.feedback_score === 1}
                   disliked={message.metaInfo?.feedback_score === -1}
-                  disabled={isActive}
+                  disabled={isActive || compareState?.isFinalizing}
                 />
               )}
               <span className="text-[10px] opacity-70 text-muted-foreground ml-auto">
@@ -124,6 +169,15 @@ export const MessageItem = React.memo<MessageItemProps>(
                 })}
               </span>
             </div>
+            {onCompareWithModel ? (
+              <CompareModelDialog
+                open={compareDialogOpen}
+                onOpenChange={setCompareDialogOpen}
+                models={models}
+                excludedModelKeys={excludedModelKeys}
+                onSelect={(modelValue) => onCompareWithModel(message.id, modelValue)}
+              />
+            ) : null}
           </div>
         ) : (
           <div className="relative min-w-0 max-w-[85%] px-5 py-3.5 rounded-2xl rounded-tr-none text-[15px] leading-relaxed tracking-wide shadow-md bg-primary/90 backdrop-blur-sm border border-primary/20 text-primary-foreground">
@@ -196,7 +250,9 @@ export const MessageItem = React.memo<MessageItemProps>(
       prevProps.onRegenerate === nextProps.onRegenerate &&
       prevProps.onLike === nextProps.onLike &&
       prevProps.onDislike === nextProps.onDislike &&
-      prevProps.onCopy === nextProps.onCopy
+      prevProps.onCopy === nextProps.onCopy &&
+      prevProps.onCompareWithModel === nextProps.onCompareWithModel &&
+      prevProps.onFinalizeCompare === nextProps.onFinalizeCompare
 
     return (
       messageUnchanged &&
