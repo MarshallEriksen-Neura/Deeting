@@ -11,6 +11,7 @@ pub enum McpSourceType {
     Modelscope,
     Github,
     Url,
+    Skill,
 }
 
 impl McpSourceType {
@@ -21,6 +22,7 @@ impl McpSourceType {
             McpSourceType::Modelscope => "modelscope",
             McpSourceType::Github => "github",
             McpSourceType::Url => "url",
+            McpSourceType::Skill => "skill",
         }
     }
 }
@@ -35,6 +37,7 @@ impl std::str::FromStr for McpSourceType {
             "modelscope" => Ok(McpSourceType::Modelscope),
             "github" => Ok(McpSourceType::Github),
             "url" => Ok(McpSourceType::Url),
+            "skill" => Ok(McpSourceType::Skill),
             _ => Err(format!("unknown source type: {value}")),
         }
     }

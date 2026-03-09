@@ -1715,6 +1715,83 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn skill_sources_are_hidden_from_sync_source_listing() {
+        let store = create_test_store("skill-source-hidden").await;
+
+        let visible_source = store
+            .insert_source(NewSource {
+                name: "demo-local".to_string(),
+                source_type: McpSourceType::Local,
+                path_or_url: "/tmp/demo-local.json".to_string(),
+                trust_level: McpTrustLevel::Private,
+                status: McpSourceStatus::Active,
+                last_synced_at: None,
+                is_read_only: false,
+            })
+            .await
+            .expect("insert visible source");
+
+        let skill_source = store
+            .upsert_skill_source(
+                "skill:official.skills.echo",
+                "/tmp/skills/echo",
+                McpTrustLevel::Official,
+                true,
+            )
+            .await
+            .expect("insert skill source");
+
+        assert_eq!(skill_source.source_type, McpSourceType::Skill);
+        assert!(store.is_internal_skill_source(&skill_source));
+
+        let listed = store.list_sources().await.expect("list visible sources");
+        assert!(listed.iter().any(|item| item.id == visible_source.id));
+        assert!(listed.iter().all(|item| item.id != skill_source.id));
+
+        let stored_skill = store
+            .find_source_by_name("skill:official.skills.echo")
+            .await
+            .expect("find stored skill source")
+            .expect("skill source exists");
+        assert_eq!(stored_skill.source_type, McpSourceType::Skill);
+    }
+
+    #[tokio::test]
+    async fn migrate_legacy_skill_sources_reclassifies_old_local_rows() {
+        let store = create_test_store("skill-source-migrate").await;
+
+        let legacy_skill_source = store
+            .insert_source(NewSource {
+                name: "skill:legacy.example".to_string(),
+                source_type: McpSourceType::Local,
+                path_or_url: "/tmp/skills/legacy.example".to_string(),
+                trust_level: McpTrustLevel::Community,
+                status: McpSourceStatus::Active,
+                last_synced_at: None,
+                is_read_only: false,
+            })
+            .await
+            .expect("insert legacy skill source");
+
+        let migrated = store
+            .migrate_legacy_skill_sources()
+            .await
+            .expect("migrate legacy skill sources");
+        assert_eq!(migrated, 1);
+
+        let stored = store
+            .get_source(&legacy_skill_source.id)
+            .await
+            .expect("get migrated source")
+            .expect("migrated source exists");
+        assert_eq!(stored.source_type, McpSourceType::Skill);
+        assert!(store.is_internal_skill_source(&stored));
+
+        let listed = store.list_sources().await.expect("list visible sources");
+        assert!(listed.iter().all(|item| item.id != legacy_skill_source.id));
+    }
+
+    #[tokio::test]
     async fn sync_local_skill_installs_from_cloud_inner_applies_light_sync_and_disable_missing() {
         let store = create_test_store("cloud-skill-sync-inner").await;
         let cloud_settings_stale = serde_json::json!({

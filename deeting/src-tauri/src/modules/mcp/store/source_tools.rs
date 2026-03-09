@@ -1,6 +1,14 @@
 use super::helpers::*;
 use super::*;
 
+fn is_skill_source_name(name: &str) -> bool {
+    name.trim_start().starts_with("skill:")
+}
+
+fn is_internal_skill_source(source: &McpSource) -> bool {
+    matches!(source.source_type, McpSourceType::Skill) || is_skill_source_name(&source.name)
+}
+
 impl McpStore {
     pub async fn upsert_local_skill_install(
         &self,
@@ -306,6 +314,7 @@ impl McpStore {
             SELECT id, name, source_type, path_or_url, trust_level, status,
                    last_synced_at, is_read_only, created_at, updated_at
             FROM mcp_sources
+            WHERE source_type != 'skill' AND name NOT LIKE 'skill:%'
             ORDER BY created_at ASC;
             "#,
         )
@@ -346,7 +355,9 @@ impl McpStore {
             SELECT id, name, source_type, path_or_url, trust_level, status,
                    last_synced_at, is_read_only, created_at, updated_at
             FROM mcp_sources
-            WHERE source_type = ?;
+            WHERE source_type = ?
+              AND name NOT LIKE 'skill:%'
+            LIMIT 1;
             "#,
         )
         .bind(source_type.as_str())
@@ -910,12 +921,39 @@ impl McpStore {
         trust_level: McpTrustLevel,
         is_read_only: bool,
     ) -> Result<McpSource, McpError> {
+        let now = now_rfc3339()?;
         if let Some(existing) = self.find_source_by_name(name).await? {
-            return Ok(existing);
+            sqlx::query(
+                r#"
+                UPDATE mcp_sources
+                SET source_type = ?,
+                    path_or_url = ?,
+                    trust_level = ?,
+                    status = ?,
+                    is_read_only = ?,
+                    updated_at = ?
+                WHERE id = ?;
+                "#,
+            )
+            .bind(McpSourceType::Skill.as_str())
+            .bind(path_or_url)
+            .bind(trust_level.as_str())
+            .bind(McpSourceStatus::Active.as_str())
+            .bind(if is_read_only { 1 } else { 0 })
+            .bind(&now)
+            .bind(&existing.id)
+            .execute(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+
+            return self
+                .get_source(&existing.id)
+                .await?
+                .ok_or_else(|| McpError::NotFound("skill source missing after update".to_string()));
         }
         self.insert_source(NewSource {
             name: name.to_string(),
-            source_type: McpSourceType::Local,
+            source_type: McpSourceType::Skill,
             path_or_url: path_or_url.to_string(),
             trust_level,
             status: McpSourceStatus::Active,
@@ -923,6 +961,31 @@ impl McpStore {
             is_read_only,
         })
         .await
+    }
+
+    pub async fn migrate_legacy_skill_sources(&self) -> Result<u64, McpError> {
+        let now = now_rfc3339()?;
+        let result = sqlx::query(
+            r#"
+            UPDATE mcp_sources
+            SET source_type = ?,
+                updated_at = ?
+            WHERE name LIKE 'skill:%'
+              AND source_type != ?;
+            "#,
+        )
+        .bind(McpSourceType::Skill.as_str())
+        .bind(&now)
+        .bind(McpSourceType::Skill.as_str())
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        Ok(result.rows_affected())
+    }
+
+    pub fn is_internal_skill_source(&self, source: &McpSource) -> bool {
+        is_internal_skill_source(source)
     }
 
     pub async fn delete_tools_by_source_id(&self, source_id: &str) -> Result<i64, McpError> {

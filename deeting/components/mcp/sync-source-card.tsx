@@ -94,7 +94,6 @@ export function SyncSourceCard({ source, onSync }: SyncSourceCardProps) {
   const t = useTranslations("mcp")
   const isModelScope = source.type === "modelscope"
   const isCloud = source.type === "cloud"
-  const isLocal = source.type === "local"
   const isDraft = source.status === "draft" || source.serverType === "stdio"
   const isRemote = isModelScope || isCloud || source.type === "github" || source.type === "url"
   const theme = sourceTheme[source.type] || sourceTheme.local
@@ -178,20 +177,18 @@ export function SyncSourceCard({ source, onSync }: SyncSourceCardProps) {
             )}
           </div>
 
-          {source.type !== "local" && (
-            <GlassButton
-              size="icon-sm"
-              variant="ghost"
-              className={cn(
-                "text-[var(--muted)] hover:text-[var(--foreground)] transition-all",
-                source.status !== "syncing" && "opacity-0 group-hover:opacity-100"
-              )}
-              onClick={() => onSync?.()}
-              disabled={source.status === "syncing" || isDraft}
-            >
-              <RefreshCw size={14} className={cn(source.status === "syncing" && "animate-spin")} />
-            </GlassButton>
-          )}
+          <GlassButton
+            size="icon-sm"
+            variant="ghost"
+            className={cn(
+              "text-[var(--muted)] hover:text-[var(--foreground)] transition-all",
+              source.status !== "syncing" && "opacity-0 group-hover:opacity-100"
+            )}
+            onClick={() => onSync?.()}
+            disabled={source.status === "syncing" || isDraft}
+          >
+            <RefreshCw size={14} className={cn(source.status === "syncing" && "animate-spin")} />
+          </GlassButton>
         </div>
       </div>
     </GlassCard>

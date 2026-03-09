@@ -205,6 +205,12 @@ pub async fn sync_mcp_source(
         .map_err(to_string)?
         .ok_or_else(|| to_string(McpError::NotFound(format!("source {source_id} not found"))))?;
 
+    if state.store.is_internal_skill_source(&source) {
+        return Err(to_string(McpError::validation(
+            "skill-backed sources are managed internally and cannot be synced as MCP config sources",
+        )));
+    }
+
     state
         .store
         .update_source_status(&source_id, McpSourceStatus::Syncing, None)

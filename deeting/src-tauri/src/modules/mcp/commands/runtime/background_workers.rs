@@ -18,6 +18,11 @@ pub(crate) async fn sync_source_inner(
                 .map_err(|err| McpError::Storage(err.to_string()))?;
             apply_config_payload(state, &source, config).await?
         }
+        McpSourceType::Skill => {
+            return Err(McpError::validation(
+                "skill-backed sources are managed internally and cannot be synced directly",
+            ));
+        }
         McpSourceType::Cloud
         | McpSourceType::Modelscope
         | McpSourceType::Github

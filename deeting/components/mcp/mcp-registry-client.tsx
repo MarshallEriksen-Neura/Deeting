@@ -94,7 +94,6 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
   const [editServerOpen, setEditServerOpen] = useState(false)
 
   const logListeners = useRef<Record<string, UnlistenFn>>({})
-  const autoSyncRef = useRef(false)
   const initialRefreshRef = useRef(false)
 
   const mapSource = useCallback((source: McpSourceRecord): MCPSource => ({
@@ -330,37 +329,6 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
       })
     }
   }, [addNotification, isTauri, mcpTools.error, t])
-
-  useEffect(() => {
-    if (!isTauri || autoSyncRef.current) return
-    if (sources.length === 0) return
-    autoSyncRef.current = true
-    const run = async () => {
-      try {
-        const localSources = sources.filter((source) => source.type === "local")
-        await Promise.all(
-          localSources.map((source) =>
-            invoke("sync_mcp_source", {
-              sourceId: source.id,
-              payload: { auth_token: null },
-            })
-          )
-        )
-        if (accessToken) {
-          await invoke("sync_cloud_subscriptions", { accessToken })
-        }
-        await refreshAll()
-      } catch (err) {
-        addNotification({
-          type: "error",
-          title: t("toast.syncFailed"),
-          description: String(err),
-          timestamp: Date.now(),
-        })
-      }
-    }
-    run()
-  }, [accessToken, addNotification, isTauri, refreshAll, sources, t])
 
   useEffect(() => {
     if (!selectedTool) return

@@ -190,6 +190,9 @@ impl ProviderStore {
         forced_capability: Option<&str>,
     ) -> Result<(), ProviderError> {
         let now = now_rfc3339()?;
+        let preferred_chat_upstream_path = self
+            .preferred_upstream_path_for_instance_capability(instance_id, CHAT_CAPABILITY)
+            .await?;
         let mut tx = self.pool.begin().await?;
         let normalized_forced_capability = normalize_capability(forced_capability);
 
@@ -202,8 +205,24 @@ impl ProviderStore {
                 .first()
                 .map(String::as_str)
                 .unwrap_or(CHAT_CAPABILITY);
-            let upstream_path = upstream_path_for_capability(primary_capability);
+            let upstream_path = if primary_capability == CHAT_CAPABILITY {
+                preferred_chat_upstream_path
+                    .as_deref()
+                    .unwrap_or_else(|| upstream_path_for_capability(primary_capability))
+            } else {
+                upstream_path_for_capability(primary_capability)
+            };
             let id = Uuid::new_v4().to_string();
+            sqlx::query(
+                "UPDATE provider_models
+                 SET is_active = 0, updated_at = ?
+                 WHERE instance_id = ? AND model_id = ?",
+            )
+            .bind(&now)
+            .bind(instance_id)
+            .bind(&model_id)
+            .execute(&mut *tx)
+            .await?;
             sqlx::query(
                 "INSERT INTO provider_models (
                     id, instance_id, capabilities, model_id, display_name,
@@ -441,6 +460,39 @@ impl ProviderStore {
             Some(row) => Ok(Some(row_to_model(&row)?)),
             None => Ok(None),
         }
+    }
+}
+
+impl ProviderStore {
+    async fn preferred_upstream_path_for_instance_capability(
+        &self,
+        instance_id: &str,
+        capability: &str,
+    ) -> Result<Option<String>, ProviderError> {
+        let Some(instance) = self.get_instance(instance_id).await? else {
+            return Ok(None);
+        };
+        if instance.preset_slug.eq_ignore_ascii_case("custom") {
+            return Ok(None);
+        }
+
+        let Some(preset) = self.get_preset(&instance.preset_slug).await? else {
+            return Ok(None);
+        };
+
+        let Some(path) = preset
+            .protocol_profiles
+            .get(capability)
+            .and_then(|profile| profile.get("transport"))
+            .and_then(|transport| transport.get("path"))
+            .and_then(|path| path.as_str())
+            .map(str::trim)
+            .filter(|path| !path.is_empty())
+        else {
+            return Ok(None);
+        };
+
+        Ok(normalize_upstream_path(Some(path)))
     }
 }
 

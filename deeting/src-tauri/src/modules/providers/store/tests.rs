@@ -39,6 +39,39 @@ async fn insert_instance(store: &ProviderStore) -> String {
     instance_id
 }
 
+async fn insert_instance_with_preset(
+    store: &ProviderStore,
+    preset_slug: &str,
+    name: &str,
+    base_url: &str,
+) -> String {
+    let instance_id = Uuid::new_v4().to_string();
+    let now = now_rfc3339().expect("time");
+    sqlx::query(
+        "INSERT INTO provider_instances (
+            id, preset_slug, name, base_url, description, icon, priority, meta,
+            is_enabled, is_local, credentials_ref, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&instance_id)
+    .bind(preset_slug)
+    .bind(name)
+    .bind(base_url)
+    .bind::<Option<&str>>(None)
+    .bind::<Option<&str>>(None)
+    .bind(0_i64)
+    .bind("{}")
+    .bind(1_i64)
+    .bind(1_i64)
+    .bind(format!("db:{instance_id}"))
+    .bind(&now)
+    .bind(&now)
+    .execute(&store.pool)
+    .await
+    .expect("insert provider instance");
+    instance_id
+}
+
 #[tokio::test]
 async fn create_instance_persists_protocol_meta_fields() {
     let store = init_store().await;
@@ -556,6 +589,190 @@ async fn quick_add_models_respects_forced_capability_alias() {
     assert_eq!(models.len(), 1);
     assert_eq!(models[0].capabilities, vec!["image_generation".to_string()]);
     assert_eq!(models[0].upstream_path, "v1/images/generations");
+}
+
+#[tokio::test]
+async fn quick_add_models_prefers_system_preset_chat_transport_path() {
+    let store = init_store().await;
+
+    store
+        .replace_presets(vec![crate::modules::providers::types::ProviderPreset {
+            slug: "anthropic".to_string(),
+            name: "Anthropic".to_string(),
+            provider: "anthropic".to_string(),
+            base_url: "https://api.anthropic.com".to_string(),
+            icon: None,
+            theme_color: None,
+            category: Some("cloud".to_string()),
+            url_template: None,
+            auth_type: "api_key".to_string(),
+            auth_config: json!({}),
+            protocol_schema_version: Some("2026-03-07".to_string()),
+            protocol_profiles: json!({
+                "chat": {
+                    "transport": {
+                        "path": "v1/messages"
+                    }
+                }
+            }),
+            version: 1,
+            is_active: true,
+        }])
+        .await
+        .expect("replace presets");
+
+    let instance_id =
+        insert_instance_with_preset(&store, "anthropic", "Claude", "https://api.anthropic.com")
+            .await;
+
+    store
+        .quick_add_models(&instance_id, vec!["claude-sonnet-4-6".to_string()], None)
+        .await
+        .expect("quick add models");
+
+    let models = store
+        .list_models(Some(instance_id), None)
+        .await
+        .expect("list models");
+    assert_eq!(models.len(), 1);
+    assert_eq!(models[0].upstream_path, "v1/messages");
+}
+
+#[tokio::test]
+async fn quick_add_models_keeps_default_chat_path_for_custom_preset() {
+    let store = init_store().await;
+
+    store
+        .replace_presets(vec![crate::modules::providers::types::ProviderPreset {
+            slug: "custom".to_string(),
+            name: "Custom".to_string(),
+            provider: "custom".to_string(),
+            base_url: "https://example.com".to_string(),
+            icon: None,
+            theme_color: None,
+            category: Some("cloud".to_string()),
+            url_template: None,
+            auth_type: "api_key".to_string(),
+            auth_config: json!({}),
+            protocol_schema_version: Some("2026-03-07".to_string()),
+            protocol_profiles: json!({
+                "chat": {
+                    "transport": {
+                        "path": "v1/messages"
+                    }
+                }
+            }),
+            version: 1,
+            is_active: true,
+        }])
+        .await
+        .expect("replace presets");
+
+    let instance_id =
+        insert_instance_with_preset(&store, "custom", "Custom Claude", "https://example.com").await;
+
+    store
+        .quick_add_models(&instance_id, vec!["claude-sonnet-4-6".to_string()], None)
+        .await
+        .expect("quick add models");
+
+    let models = store
+        .list_models(Some(instance_id), None)
+        .await
+        .expect("list models");
+    assert_eq!(models.len(), 1);
+    assert_eq!(models[0].upstream_path, "v1/chat/completions");
+}
+
+#[tokio::test]
+async fn quick_add_models_deactivates_stale_same_model_with_old_path() {
+    let store = init_store().await;
+
+    store
+        .replace_presets(vec![crate::modules::providers::types::ProviderPreset {
+            slug: "anthropic".to_string(),
+            name: "Anthropic".to_string(),
+            provider: "anthropic".to_string(),
+            base_url: "https://api.anthropic.com".to_string(),
+            icon: None,
+            theme_color: None,
+            category: Some("cloud".to_string()),
+            url_template: None,
+            auth_type: "api_key".to_string(),
+            auth_config: json!({}),
+            protocol_schema_version: Some("2026-03-07".to_string()),
+            protocol_profiles: json!({
+                "chat": {
+                    "transport": {
+                        "path": "v1/messages"
+                    }
+                }
+            }),
+            version: 1,
+            is_active: true,
+        }])
+        .await
+        .expect("replace presets");
+
+    let instance_id =
+        insert_instance_with_preset(&store, "anthropic", "Claude", "https://api.anthropic.com")
+            .await;
+    let now = now_rfc3339().expect("time");
+
+    sqlx::query(
+        "INSERT INTO provider_models (
+            id, instance_id, capabilities, model_id, display_name, upstream_path,
+            pricing_config, limit_config, tokenizer_config, routing_config,
+            config_override, source, extra_meta, weight, priority,
+            is_active, synced_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, '{}', '{}', '{}', '{}', '{}', 'manual', '{}', 100, 0, 1, ?, ?, ?)",
+    )
+    .bind(Uuid::new_v4().to_string())
+    .bind(&instance_id)
+    .bind("[\"chat\"]")
+    .bind("claude-sonnet-4-6")
+    .bind("claude-sonnet-4-6")
+    .bind("v1/chat/completions")
+    .bind(&now)
+    .bind(&now)
+    .bind(&now)
+    .execute(&store.pool)
+    .await
+    .expect("insert stale model");
+
+    store
+        .quick_add_models(&instance_id, vec!["claude-sonnet-4-6".to_string()], None)
+        .await
+        .expect("quick add models");
+
+    let rows = sqlx::query(
+        "SELECT upstream_path, is_active FROM provider_models
+         WHERE instance_id = ? AND model_id = ?
+         ORDER BY upstream_path ASC",
+    )
+    .bind(&instance_id)
+    .bind("claude-sonnet-4-6")
+    .fetch_all(&store.pool)
+    .await
+    .expect("fetch rows");
+
+    assert_eq!(rows.len(), 2);
+    let states: Vec<(String, i64)> = rows
+        .into_iter()
+        .map(|row| {
+            (
+                row.try_get::<String, _>("upstream_path").expect("path"),
+                row.try_get::<i64, _>("is_active").expect("active"),
+            )
+        })
+        .collect();
+    assert_eq!(
+        states,
+        vec![
+            ("v1/chat/completions".to_string(), 0),
+            ("v1/messages".to_string(), 1),
+        ]
+    );
 }
 
 #[tokio::test]
