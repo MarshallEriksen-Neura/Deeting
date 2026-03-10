@@ -1278,7 +1278,7 @@
       },
       "fields": {
         "current": "当前模型",
-        "newModelName": "新模型名称",
+        "newModelSelection": "新模型选择",
         "placeholder": "text-embedding-3-large",
         "currentUnlistedHint": "当前已保存的模型不在可选列表中，可能已下线或暂不可用。"
       },
@@ -1396,10 +1396,22 @@
         "meta": {
           "status": "状态",
           "risk": "风险",
+          "runtime": "运行时",
+          "version": "版本号",
           "submitter": "提交人",
+          "reviewer": "审核人",
           "reviewedAt": "审核时间",
           "repo": "仓库",
-          "revision": "版本"
+          "revision": "提交版本",
+          "subdir": "子目录"
+        },
+        "trace": {
+          "securityDecision": "安全审查结论",
+          "submissionChannel": "提交渠道",
+          "requiresApproval": "管理员审批",
+          "reviewReason": "审核备注",
+          "required": "需要",
+          "notRequired": "不需要"
         },
         "sections": {
           "summary": "审核摘要",
@@ -1407,7 +1419,8 @@
           "networkTargets": "网络目标",
           "privacyRisks": "隐私风险",
           "destructiveActions": "破坏性操作",
-          "reviewReason": "审核备注"
+          "reviewReason": "审核备注",
+          "manifest": "Manifest 摘要"
         },
         "findings": {
           "uncategorized": "未分类"

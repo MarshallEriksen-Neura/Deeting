@@ -5,11 +5,14 @@ use tauri::State;
 use uuid::Uuid;
 
 use crate::modules::providers::types::{
-    BanditArmState, BanditFeedbackRequest, CreateInstanceRequest, ProviderInstance, ProviderModel,
+    BanditArmState, BanditFeedbackRequest, CreateInstanceRequest, DesktopObjectStorageConfig,
+    DesktopObjectStorageConfigUpdateRequest, DesktopObjectStorageReadRequest,
+    DesktopObjectStorageReadTicket, DesktopObjectStorageUploadRequest,
+    DesktopObjectStorageUploadTicket, ProviderInstance, ProviderModel,
     ProviderModelTestRequest, ProviderModelTestResponse, ProviderModelUpdateRequest,
-    ProviderModelsQuickAddRequest, ProviderPreset, ProviderVerifyRequest, ProviderVerifyResponse,
-    UpdateInstanceRequest, UserEmbeddingConfig, UserEmbeddingConfigUpdateRequest, UserSecretary,
-    UserSecretaryUpdateRequest,
+    ProviderModelsQuickAddRequest, ProviderPreset, ProviderVerifyRequest,
+    ProviderVerifyResponse, UpdateInstanceRequest, UserEmbeddingConfig,
+    UserEmbeddingConfigUpdateRequest, UserSecretary, UserSecretaryUpdateRequest,
 };
 use crate::state::AppState;
 
@@ -69,6 +72,82 @@ pub async fn update_local_user_embedding_config(
         .providers
         .store
         .update_user_embedding_config(payload)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_local_desktop_object_storage_config(
+    state: State<'_, AppState>,
+) -> Result<Option<DesktopObjectStorageConfig>, String> {
+    state
+        .providers
+        .store
+        .get_local_desktop_object_storage_config()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn update_local_desktop_object_storage_config(
+    state: State<'_, AppState>,
+    payload: DesktopObjectStorageConfigUpdateRequest,
+) -> Result<DesktopObjectStorageConfig, String> {
+    state
+        .providers
+        .store
+        .update_local_desktop_object_storage_config(payload)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn clear_local_desktop_object_storage_config(
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    state
+        .providers
+        .store
+        .clear_local_desktop_object_storage_config()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn prepare_local_desktop_object_storage_upload(
+    state: State<'_, AppState>,
+    payload: DesktopObjectStorageUploadRequest,
+) -> Result<DesktopObjectStorageUploadTicket, String> {
+    state
+        .providers
+        .store
+        .prepare_local_desktop_object_storage_upload(payload)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn prepare_local_desktop_object_storage_read(
+    state: State<'_, AppState>,
+    payload: DesktopObjectStorageReadRequest,
+) -> Result<DesktopObjectStorageReadTicket, String> {
+    state
+        .providers
+        .store
+        .prepare_local_desktop_object_storage_read(payload)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_local_desktop_object_storage_object(
+    state: State<'_, AppState>,
+    object_key: String,
+) -> Result<bool, String> {
+    state
+        .providers
+        .store
+        .delete_local_desktop_object_storage_object(&object_key)
         .await
         .map_err(|e| e.to_string())
 }

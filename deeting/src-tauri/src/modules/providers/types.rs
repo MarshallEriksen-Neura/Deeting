@@ -108,7 +108,9 @@ pub struct UserSecretary {
     pub id: String,
     pub user_id: String,
     pub name: String,
+    // Legacy/back-compat model reference. Prefer provider_model_id in runtime logic.
     pub model_name: Option<String>,
+    pub provider_model_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -120,6 +122,94 @@ pub struct UserEmbeddingConfig {
     pub provider_model_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DesktopObjectStorageProvider {
+    CloudflareR2S3,
+    AliyunOss,
+}
+
+impl DesktopObjectStorageProvider {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::CloudflareR2S3 => "cloudflare_r2_s3",
+            Self::AliyunOss => "aliyun_oss",
+        }
+    }
+
+    pub fn from_str(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "cloudflare_r2_s3" => Some(Self::CloudflareR2S3),
+            "aliyun_oss" => Some(Self::AliyunOss),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DesktopObjectStorageConfig {
+    pub id: String,
+    pub user_id: String,
+    pub provider: DesktopObjectStorageProvider,
+    pub bucket: String,
+    pub region: Option<String>,
+    pub endpoint: String,
+    pub public_base_url: Option<String>,
+    pub path_prefix: Option<String>,
+    pub is_path_style: bool,
+    pub access_key_id: String,
+    pub has_secret: bool,
+    pub is_enabled: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DesktopObjectStorageConfigUpdateRequest {
+    pub provider: DesktopObjectStorageProvider,
+    pub bucket: String,
+    pub region: Option<String>,
+    pub endpoint: String,
+    pub public_base_url: Option<String>,
+    pub path_prefix: Option<String>,
+    pub is_path_style: Option<bool>,
+    pub access_key_id: String,
+    pub secret_access_key: Option<String>,
+    pub is_enabled: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DesktopObjectStorageUploadRequest {
+    pub object_key: String,
+    pub content_type: Option<String>,
+    pub expires_seconds: Option<u32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DesktopObjectStorageUploadTicket {
+    pub provider: DesktopObjectStorageProvider,
+    pub object_key: String,
+    pub upload_url: String,
+    pub method: String,
+    pub headers: std::collections::BTreeMap<String, String>,
+    pub asset_url: Option<String>,
+    pub expires_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DesktopObjectStorageReadRequest {
+    pub object_key: String,
+    pub expires_seconds: Option<u32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DesktopObjectStorageReadTicket {
+    pub provider: DesktopObjectStorageProvider,
+    pub object_key: String,
+    pub asset_url: String,
+    pub expires_at: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -256,7 +346,10 @@ pub struct BanditFeedbackRequest {
 #[derive(Debug, Deserialize)]
 pub struct UserSecretaryUpdateRequest {
     #[serde(default)]
+    // Legacy/back-compat model reference kept for existing desktop stores.
     pub model_name: Option<Option<String>>,
+    #[serde(default)]
+    pub provider_model_id: Option<Option<String>>,
 }
 
 #[derive(Debug, Deserialize)]

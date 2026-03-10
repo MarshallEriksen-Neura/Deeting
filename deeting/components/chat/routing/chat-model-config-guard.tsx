@@ -4,6 +4,7 @@ import * as React from "react"
 
 import { fetchUserSecretary } from "@/lib/api/secretary"
 import { fetchUserEmbeddingConfig } from "@/lib/api/user-embedding-config"
+import { hasSecretaryModelSelection } from "@/lib/model-selection"
 import { emitModelConfigRequired, type MissingDesktopModelConfig } from "@/lib/model-config-required"
 import { useAuthStore } from "@/store/auth-store"
 
@@ -34,7 +35,7 @@ export function ChatModelConfigGuard() {
         if (cancelled) return
 
         const missing: MissingDesktopModelConfig[] = []
-        if (!secretary.model_name?.trim()) {
+        if (!hasSecretaryModelSelection(secretary)) {
           missing.push("secretary")
         }
         if (!embedding.provider_model_id?.trim()) {

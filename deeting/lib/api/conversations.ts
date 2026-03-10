@@ -1,5 +1,10 @@
 import { z } from "zod"
 
+import {
+  deleteDesktopObjectStorageObject,
+  fetchDesktopObjectStorageConfig,
+} from "@/lib/api/desktop-object-storage"
+import { parseMessageContent } from "@/lib/chat/message-content"
 import { request } from "@/lib/http"
 import { handleModelConfigRequiredError } from "@/lib/model-config-required"
 
@@ -77,7 +82,7 @@ export const ConversationHistoryResponseSchema = z.object({
 export type ConversationHistoryResponse = z.infer<typeof ConversationHistoryResponseSchema>
 
 const isConversationMessageLike = (value: unknown): value is ConversationMessage =>
-  Boolean(value) && typeof value === "object" && "role" in value
+  value !== null && typeof value === "object" && "role" in value
 
 const normalizeConversationHistoryPayload = (
   sessionId: string,
@@ -361,6 +366,15 @@ export async function deleteConversationMessage(
   turnIndex: number
 ): Promise<ConversationDeleteResponse> {
   if (isTauriRuntime()) {
+    try {
+      const history = await fetchConversationHistory(sessionId, { limit: 500 })
+      const targetMessages = (history.messages ?? []).filter(
+        (message) => message.turn_index === turnIndex
+      )
+      await cleanupDesktopObjectStorageAssetsForMessages(targetMessages)
+    } catch {
+      // best-effort cleanup
+    }
     const data = await invokeTauri<ConversationDeleteResponse>("delete_local_conversation_message", {
       sessionId,
       turnIndex,
@@ -377,6 +391,54 @@ export async function deleteConversationMessage(
 
 const LOCAL_ASSET_RE = /local-asset:\/\/([a-f0-9]{64})/g
 
+const normalizeDesktopObjectStorageKeyFromUrl = (
+  url: string,
+  publicBaseUrl: string
+): string | null => {
+  const normalizedBase = publicBaseUrl.trim().replace(/\/+$/, "")
+  const normalizedUrl = url.trim()
+  if (!normalizedBase || !normalizedUrl.startsWith(`${normalizedBase}/`)) {
+    return null
+  }
+  const relative = normalizedUrl.slice(normalizedBase.length + 1).replace(/^\/+/, "")
+  return relative || null
+}
+
+async function cleanupDesktopObjectStorageAssetsForMessages(
+  messages: ConversationMessage[]
+): Promise<void> {
+  try {
+    const config = await fetchDesktopObjectStorageConfig()
+    const publicBaseUrl = config?.public_base_url?.trim() ?? ""
+
+    const objectKeys = new Set<string>()
+    for (const msg of messages) {
+      const parsed = parseMessageContent(msg.content)
+      for (const attachment of parsed.attachments) {
+        const directObjectKey = attachment.objectKey?.trim()
+        if (directObjectKey) {
+          objectKeys.add(directObjectKey)
+          continue
+        }
+        const url = attachment.url?.trim()
+        if (!url || !publicBaseUrl) continue
+        const objectKey = normalizeDesktopObjectStorageKeyFromUrl(url, publicBaseUrl)
+        if (objectKey) {
+          objectKeys.add(objectKey)
+        }
+      }
+    }
+
+    if (!objectKeys.size) return
+
+    await Promise.allSettled(
+      Array.from(objectKeys).map((objectKey) => deleteDesktopObjectStorageObject(objectKey))
+    )
+  } catch {
+    // best-effort cleanup
+  }
+}
+
 async function cleanupLocalAssetsForConversation(sessionId: string): Promise<void> {
   try {
     const history = await fetchConversationHistory(sessionId, { limit: 500 })
@@ -392,6 +454,7 @@ async function cleanupLocalAssetsForConversation(sessionId: string): Promise<voi
         sha256List: Array.from(sha256Set),
       })
     }
+    await cleanupDesktopObjectStorageAssetsForMessages(history.messages ?? [])
   } catch {
     // best-effort cleanup
   }

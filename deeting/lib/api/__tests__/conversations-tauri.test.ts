@@ -1,4 +1,9 @@
-import { fetchConversationSessions, fetchConversationWindow } from "@/lib/api/conversations"
+import {
+  clearConversation,
+  deleteConversationMessage,
+  fetchConversationSessions,
+  fetchConversationWindow,
+} from "@/lib/api/conversations"
 import { request } from "@/lib/http"
 import { invoke } from "@tauri-apps/api/core"
 
@@ -129,5 +134,218 @@ describe("conversation tauri apis", () => {
       })
     )
     expect(mockInvoke).not.toHaveBeenCalled()
+  })
+
+  it("clears desktop object storage assets before clearing a local conversation", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke
+      .mockResolvedValueOnce({
+        session_id: "session-local-4",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "image_url",
+                image_url: { url: "https://cdn.example.com/assets/chat/demo.png" },
+              },
+            ],
+            turn_index: 1,
+          },
+        ],
+        next_cursor: null,
+        has_more: false,
+      } as unknown)
+      .mockResolvedValueOnce({
+        id: "11111111-1111-4111-8111-111111111111",
+        user_id: "00000000-0000-0000-0000-000000000000",
+        provider: "cloudflare_r2_s3",
+        bucket: "demo-bucket",
+        region: "auto",
+        endpoint: "https://example.r2.cloudflarestorage.com",
+        public_base_url: "https://cdn.example.com/assets",
+        path_prefix: "desktop/uploads",
+        is_path_style: false,
+        access_key_id: "AKIA-DEMO",
+        has_secret: true,
+        is_enabled: true,
+        created_at: "2026-03-10T00:00:00Z",
+        updated_at: "2026-03-10T00:00:01Z",
+      } as unknown)
+      .mockResolvedValueOnce(true as unknown)
+      .mockResolvedValueOnce({
+        session_id: "session-local-4",
+        cleared: true,
+      } as unknown)
+
+    const result = await clearConversation("session-local-4")
+
+    expect(result.cleared).toBe(true)
+    expect(mockInvoke).toHaveBeenNthCalledWith(1, "list_local_conversation_history", {
+      query: { session_id: "session-local-4", cursor: null, limit: 500 },
+    })
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, "get_local_desktop_object_storage_config", undefined)
+    expect(mockInvoke).toHaveBeenNthCalledWith(3, "delete_local_desktop_object_storage_object", {
+      object_key: "chat/demo.png",
+    })
+    expect(mockInvoke).toHaveBeenNthCalledWith(4, "clear_local_conversation", {
+      sessionId: "session-local-4",
+    })
+  })
+
+  it("prefers objectKey when clearing local conversation assets", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke
+      .mockResolvedValueOnce({
+        session_id: "session-local-4b",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "image_url",
+                image_url: { url: "asset://desktop/uploads/chat/by-key.png" },
+              },
+            ],
+            turn_index: 1,
+          },
+        ],
+        next_cursor: null,
+        has_more: false,
+      } as unknown)
+      .mockResolvedValueOnce(null as unknown)
+      .mockResolvedValueOnce(true as unknown)
+      .mockResolvedValueOnce({
+        session_id: "session-local-4b",
+        cleared: true,
+      } as unknown)
+
+    const result = await clearConversation("session-local-4b")
+
+    expect(result.cleared).toBe(true)
+    expect(mockInvoke).toHaveBeenNthCalledWith(1, "list_local_conversation_history", {
+      query: { session_id: "session-local-4b", cursor: null, limit: 500 },
+    })
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, "get_local_desktop_object_storage_config", undefined)
+    expect(mockInvoke).toHaveBeenNthCalledWith(3, "delete_local_desktop_object_storage_object", {
+      object_key: "desktop/uploads/chat/by-key.png",
+    })
+    expect(mockInvoke).toHaveBeenNthCalledWith(4, "clear_local_conversation", {
+      sessionId: "session-local-4b",
+    })
+  })
+
+  it("cleans desktop object storage assets before deleting a local conversation message", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke
+      .mockResolvedValueOnce({
+        session_id: "session-local-5",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "image_url",
+                image_url: { url: "https://cdn.example.com/assets/chat/one.png" },
+              },
+            ],
+            turn_index: 2,
+          },
+        ],
+        next_cursor: null,
+        has_more: false,
+      } as unknown)
+      .mockResolvedValueOnce({
+        id: "11111111-1111-4111-8111-111111111111",
+        user_id: "00000000-0000-0000-0000-000000000000",
+        provider: "cloudflare_r2_s3",
+        bucket: "demo-bucket",
+        region: "auto",
+        endpoint: "https://example.r2.cloudflarestorage.com",
+        public_base_url: "https://cdn.example.com/assets",
+        path_prefix: "desktop/uploads",
+        is_path_style: false,
+        access_key_id: "AKIA-DEMO",
+        has_secret: true,
+        is_enabled: true,
+        created_at: "2026-03-10T00:00:00Z",
+        updated_at: "2026-03-10T00:00:01Z",
+      } as unknown)
+      .mockResolvedValueOnce(true as unknown)
+      .mockResolvedValueOnce({
+        session_id: "session-local-5",
+        turn_index: 2,
+        deleted: true,
+      } as unknown)
+
+    const result = await deleteConversationMessage("session-local-5", 2)
+
+    expect(result.deleted).toBe(true)
+    expect(mockInvoke).toHaveBeenNthCalledWith(1, "list_local_conversation_history", {
+      query: { session_id: "session-local-5", cursor: null, limit: 500 },
+    })
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, "get_local_desktop_object_storage_config", undefined)
+    expect(mockInvoke).toHaveBeenNthCalledWith(3, "delete_local_desktop_object_storage_object", {
+      object_key: "chat/one.png",
+    })
+    expect(mockInvoke).toHaveBeenNthCalledWith(4, "delete_local_conversation_message", {
+      sessionId: "session-local-5",
+      turnIndex: 2,
+    })
+  })
+
+  it("keeps url-to-objectKey cleanup compatibility when deleting a message", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke
+      .mockResolvedValueOnce({
+        session_id: "session-local-5b",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "image_url",
+                image_url: { url: "https://cdn.example.com/assets/chat/legacy.png" },
+              },
+            ],
+            turn_index: 2,
+          },
+        ],
+        next_cursor: null,
+        has_more: false,
+      } as unknown)
+      .mockResolvedValueOnce({
+        id: "11111111-1111-4111-8111-111111111111",
+        user_id: "00000000-0000-0000-0000-000000000000",
+        provider: "cloudflare_r2_s3",
+        bucket: "demo-bucket",
+        region: "auto",
+        endpoint: "https://example.r2.cloudflarestorage.com",
+        public_base_url: "https://cdn.example.com/assets",
+        path_prefix: "desktop/uploads",
+        is_path_style: false,
+        access_key_id: "AKIA-DEMO",
+        has_secret: true,
+        is_enabled: true,
+        created_at: "2026-03-10T00:00:00Z",
+        updated_at: "2026-03-10T00:00:01Z",
+      } as unknown)
+      .mockResolvedValueOnce(true as unknown)
+      .mockResolvedValueOnce({
+        session_id: "session-local-5b",
+        turn_index: 2,
+        deleted: true,
+      } as unknown)
+
+    const result = await deleteConversationMessage("session-local-5b", 2)
+
+    expect(result.deleted).toBe(true)
+    expect(mockInvoke).toHaveBeenNthCalledWith(3, "delete_local_desktop_object_storage_object", {
+      object_key: "chat/legacy.png",
+    })
   })
 })

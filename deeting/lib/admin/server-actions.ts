@@ -184,6 +184,7 @@ const CreateAssistantSchema = z.object({
   system_prompt: z.string().min(1, "System prompt is required"),
   visibility: z.enum(["private", "unlisted", "public"]).default("private"),
   model: z.string().default("gpt-4o-mini"),
+  provider_model_id: z.string().optional(),
   temperature: z.number().min(0).max(2).default(0.7),
 })
 
@@ -194,6 +195,7 @@ export async function createAssistantAction(formData: FormData) {
     const system_prompt = formData.get("system_prompt") as string
     const visibility = formData.get("visibility") as "private" | "unlisted" | "public"
     const model = formData.get("model") as string | null
+    const provider_model_id = formData.get("provider_model_id") as string | null
     const temperature = formData.get("temperature") as string | null
 
     const validated = CreateAssistantSchema.parse({
@@ -202,6 +204,7 @@ export async function createAssistantAction(formData: FormData) {
       system_prompt,
       visibility: visibility || "private",
       model: model || "gpt-4o-mini",
+      provider_model_id: provider_model_id || undefined,
       temperature: temperature ? parseFloat(temperature) : 0.7,
     })
 
@@ -214,6 +217,7 @@ export async function createAssistantAction(formData: FormData) {
         system_prompt: validated.system_prompt,
         model_config: {
           model: validated.model,
+          provider_model_id: validated.provider_model_id,
           temperature: validated.temperature,
         },
       },

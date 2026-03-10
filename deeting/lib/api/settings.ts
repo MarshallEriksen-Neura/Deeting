@@ -6,12 +6,14 @@ const SETTINGS_BASE = "/api/v1/settings"
 const ADMIN_SETTINGS_BASE = "/api/v1/admin/settings"
 
 export const EmbeddingSettingSchema = z.object({
+  // Backend still exposes this field name, but semantically it stores a model reference.
   model_name: z.string().nullable().optional(),
 })
 
 export type EmbeddingSetting = z.infer<typeof EmbeddingSettingSchema>
 
 export const EmbeddingSettingUpdateSchema = z.object({
+  // Backend contract name is legacy; callers should pass the selected model reference.
   model_name: z.string().min(1),
 })
 

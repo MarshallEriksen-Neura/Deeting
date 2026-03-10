@@ -39,6 +39,7 @@ import {
   fetchAdminAssistants,
   type AdminAssistantItem,
 } from "@/lib/api/admin-dashboard"
+import { getModelConfigReference } from "@/lib/model-selection"
 
 function shortId(value?: string | null) {
   if (!value) return "—"
@@ -53,14 +54,10 @@ function getCurrentVersion(row: AdminAssistantItem) {
   )
 }
 
-function getModelName(row: AdminAssistantItem) {
+function getModelReference(row: AdminAssistantItem) {
   const current = getCurrentVersion(row)
   if (!current?.model_config) return null
-  const model = current.model_config.model
-  const modelName = current.model_config.model_name
-  if (typeof model === "string") return model
-  if (typeof modelName === "string") return modelName
-  return null
+  return getModelConfigReference(current.model_config)
 }
 
 function formatDate(value: string, locale: string) {
@@ -107,6 +104,7 @@ export function PageContent() {
         row.summary,
         current?.name,
         current?.version,
+        getModelReference(row),
         ...(current?.tags ?? []),
       ].some((value) => String(value ?? "").toLowerCase().includes(query))
     })
@@ -248,7 +246,7 @@ export function PageContent() {
       key: "model",
       header: t("table.headers.model"),
       render: (row) => (
-        <span className="font-mono text-xs text-[var(--muted)]">{getModelName(row) || "—"}</span>
+        <span className="font-mono text-xs text-[var(--muted)]">{getModelReference(row) || "—"}</span>
       ),
     },
     {

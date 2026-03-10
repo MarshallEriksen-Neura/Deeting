@@ -81,14 +81,22 @@ describe("Plugin reviews page", () => {
             name: "HTTP Fetch",
             status: "needs_review",
             risk_level: "high",
+            runtime: "python",
+            version: "1.0.0",
             source_repo: "https://github.com/example/http-fetch",
             source_revision: "abc123",
+            source_subdir: "plugins/http-fetch",
             submitter_user_id: "00000000-0000-0000-0000-000000000010",
+            reviewer_user_id: "00000000-0000-0000-0000-000000000099",
+            submission_channel: "plugin_market",
+            requires_admin_approval: true,
+            security_review_decision: "needs_review",
             security_review_summary: "Calls external API",
             network_targets: ["api.example.com"],
             destructive_actions: ["writes files"],
             privacy_risks: ["reads personal data"],
-            findings: [{ category: "network", message: "Calls external API" }],
+            findings: [{ category: "network", severity: "high", file: "plugin.py", message: "Calls external API" }],
+            manifest_json: { name: "HTTP Fetch", permissions: ["network.outbound"] },
             reviewed_at: null,
             review_reason: null,
           },
@@ -139,8 +147,11 @@ describe("Plugin reviews page", () => {
     fireEvent.click(screen.getByRole("button", { name: "actions.details" }))
 
     expect(screen.getByText("drawer.sections.findings")).toBeInTheDocument()
+    expect(screen.getByText("drawer.trace.securityDecision")).toBeInTheDocument()
     expect(screen.getByText("network")).toBeInTheDocument()
+    expect(screen.getByText("high · plugin.py")).toBeInTheDocument()
     expect(screen.getByText("api.example.com")).toBeInTheDocument()
+    expect(screen.getByText(/network\.outbound/)).toBeInTheDocument()
   })
 })
 

@@ -66,9 +66,16 @@ struct RuntimeBridgeEntry {
 }
 
 #[derive(Debug, Clone)]
+enum StoredFileContent {
+    Inline(Vec<u8>),
+    ObjectStorage { object_key: String },
+}
+
+#[derive(Debug, Clone)]
 struct StoredFile {
     meta: Value,
-    content: Vec<u8>,
+    content: StoredFileContent,
+    owner_token: String,
 }
 
 #[derive(Default)]
@@ -124,6 +131,58 @@ struct CodeModeBridgeFileReadRequest {
 
 fn default_content_type() -> String {
     "application/octet-stream".to_string()
+}
+
+fn build_bridge_object_key(name: &str, ref_id: &str) -> String {
+    let safe_name = name
+        .trim()
+        .replace(|ch: char| !ch.is_ascii_alphanumeric() && !matches!(ch, '.' | '_' | '-'), "-")
+        .trim_matches('-')
+        .to_string();
+    if safe_name.is_empty() {
+        format!("code-mode-files/{ref_id}")
+    } else {
+        format!("code-mode-files/{ref_id}-{safe_name}")
+    }
+}
+
+async fn cleanup_bridge_files_for_token(state: &BridgeServerState, token: &str) {
+    let removed_files = {
+        let mut store = state.store.write().await;
+        let file_ids = store
+            .files
+            .iter()
+            .filter_map(|(file_id, file)| {
+                if file.owner_token == token {
+                    Some(file_id.clone())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        file_ids
+            .into_iter()
+            .filter_map(|file_id| store.files.remove(&file_id))
+            .collect::<Vec<_>>()
+    };
+
+    for file in removed_files {
+        if let StoredFileContent::ObjectStorage { object_key } = file.content {
+            if let Err(err) = state
+                .deps
+                .providers
+                .store
+                .delete_local_desktop_object_storage_object(&object_key)
+                .await
+            {
+                log::warn!(
+                    "code mode bridge cleanup failed for object {}: {}",
+                    object_key,
+                    err
+                );
+            }
+        }
+    }
 }
 
 impl CodeModeBridgeState {
@@ -437,12 +496,35 @@ async fn code_mode_file_write(
         "content_type": payload.content_type,
         "size": bytes.len(),
     });
+    let object_key = build_bridge_object_key(
+        file_ref["name"].as_str().unwrap_or("file"),
+        file_ref["id"].as_str().unwrap_or_default(),
+    );
+    let stored_content = match state
+        .deps
+        .providers
+        .store
+        .put_local_desktop_object_storage_bytes(
+            &object_key,
+            file_ref["content_type"]
+                .as_str()
+                .unwrap_or("application/octet-stream"),
+            &bytes,
+        )
+        .await
+    {
+        Ok(Some(saved_object_key)) => StoredFileContent::ObjectStorage {
+            object_key: saved_object_key,
+        },
+        Ok(None) | Err(_) => StoredFileContent::Inline(bytes),
+    };
     let mut store = state.store.write().await;
     store.files.insert(
         file_ref["id"].as_str().unwrap_or_default().to_string(),
         StoredFile {
             meta: file_ref.clone(),
-            content: bytes,
+            content: stored_content,
+            owner_token: token.clone(),
         },
     );
     Json(json!({"ok": true, "file_ref": file_ref}))
@@ -459,16 +541,36 @@ async fn code_mode_file_read(
         return Json(json!({"ok": false, "error_code": error_code, "error": error}));
     }
 
-    let store = state.store.read().await;
-    let Some(entry) = store.files.get(payload.ref_id.trim()) else {
-        return Json(
-            json!({"ok": false, "error_code": "FILE_NOT_FOUND", "error": "file ref not found"}),
-        );
+    let entry = {
+        let store = state.store.read().await;
+        let Some(entry) = store.files.get(payload.ref_id.trim()) else {
+            return Json(
+                json!({"ok": false, "error_code": "FILE_NOT_FOUND", "error": "file ref not found"}),
+            );
+        };
+        entry.clone()
+    };
+    let bytes = match &entry.content {
+        StoredFileContent::Inline(bytes) => bytes.clone(),
+        StoredFileContent::ObjectStorage { object_key } => match state
+            .deps
+            .providers
+            .store
+            .read_local_desktop_object_storage_bytes(object_key)
+            .await
+        {
+            Ok(Some(bytes)) => bytes,
+            _ => {
+                return Json(
+                    json!({"ok": false, "error_code": "FILE_NOT_FOUND", "error": "file ref not found"}),
+                );
+            }
+        },
     };
     Json(json!({
         "ok": true,
         "file_ref": entry.meta,
-        "content_base64": base64::engine::general_purpose::STANDARD.encode(entry.content.as_slice())
+        "content_base64": base64::engine::general_purpose::STANDARD.encode(bytes.as_slice())
     }))
 }
 
@@ -496,38 +598,47 @@ async fn consume_claims(
         ));
     }
     let now_ms = now_unix_ms();
-    let mut store = state.store.write().await;
-    let Some(entry) = store.tokens.get_mut(normalized) else {
-        return Err((
-            "CODE_MODE_BRIDGE_INVALID_TOKEN".to_string(),
-            "execution token not found".to_string(),
-        ));
+    let result = {
+        let mut store = state.store.write().await;
+        let Some(entry) = store.tokens.get_mut(normalized) else {
+            return Err((
+                "CODE_MODE_BRIDGE_INVALID_TOKEN".to_string(),
+                "execution token not found".to_string(),
+            ));
+        };
+        if entry.expires_at_unix_ms <= now_ms {
+            store.tokens.remove(normalized);
+            Err((
+                "CODE_MODE_BRIDGE_TOKEN_EXPIRED".to_string(),
+                "execution token expired".to_string(),
+            ))
+        } else if entry.used_calls >= entry.claims.max_calls {
+            Err((
+                "CODE_MODE_BRIDGE_CALL_LIMIT".to_string(),
+                format!(
+                    "runtime bridge call limit exceeded ({})",
+                    entry.claims.max_calls
+                ),
+            ))
+        } else {
+            let call_index = entry.used_calls;
+            entry.used_calls += 1;
+            Ok((
+                entry.claims.clone(),
+                call_index,
+                entry.claims.max_calls,
+                entry.context.clone(),
+            ))
+        }
     };
-    if entry.expires_at_unix_ms <= now_ms {
-        store.tokens.remove(normalized);
-        return Err((
-            "CODE_MODE_BRIDGE_TOKEN_EXPIRED".to_string(),
-            "execution token expired".to_string(),
-        ));
-    }
-    if entry.used_calls >= entry.claims.max_calls {
-        return Err((
-            "CODE_MODE_BRIDGE_CALL_LIMIT".to_string(),
-            format!(
-                "runtime bridge call limit exceeded ({})",
-                entry.claims.max_calls
-            ),
-        ));
-    }
 
-    let call_index = entry.used_calls;
-    entry.used_calls += 1;
-    Ok((
-        entry.claims.clone(),
-        call_index,
-        entry.claims.max_calls,
-        entry.context.clone(),
-    ))
+    if matches!(
+        result,
+        Err((ref code, _)) if code == "CODE_MODE_BRIDGE_TOKEN_EXPIRED"
+    ) {
+        cleanup_bridge_files_for_token(state, normalized).await;
+    }
+    result
 }
 
 async fn dispatch_tool_call(

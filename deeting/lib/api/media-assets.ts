@@ -9,7 +9,7 @@ const AssetUploadInitResponseSchema = z.object({
   object_key: z.string(),
   asset_url: z.string().nullable(),
   upload_url: z.string().nullable(),
-  upload_headers: z.record(z.string()).nullable(),
+  upload_headers: z.record(z.string(), z.string()).nullable(),
   expires_in: z.number().nullable(),
 })
 

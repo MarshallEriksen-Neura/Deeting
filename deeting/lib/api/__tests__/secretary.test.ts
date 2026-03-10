@@ -23,6 +23,7 @@ const localSecretary = {
   user_id: "00000000-0000-0000-0000-000000000000",
   name: "deeting",
   model_name: "gpt-4o-mini",
+  provider_model_id: "22222222-2222-4222-8222-222222222222",
   created_at: "2026-03-03T00:00:00Z",
   updated_at: "2026-03-03T00:00:01Z",
 }
@@ -54,14 +55,22 @@ describe("secretary api", () => {
     mockInvoke.mockResolvedValue({
       ...localSecretary,
       model_name: "gpt-4.1",
+      provider_model_id: "33333333-3333-4333-8333-333333333333",
       updated_at: "2026-03-03T00:10:00Z",
     } as unknown)
 
-    const result = await updateUserSecretary({ model_name: "gpt-4.1" })
+    const result = await updateUserSecretary({
+      model_name: "gpt-4.1",
+      provider_model_id: "33333333-3333-4333-8333-333333333333",
+    })
 
     expect(result.model_name).toBe("gpt-4.1")
+    expect(result.provider_model_id).toBe("33333333-3333-4333-8333-333333333333")
     expect(mockInvoke).toHaveBeenCalledWith("update_local_user_secretary", {
-      payload: { model_name: "gpt-4.1" },
+      payload: {
+        model_name: "gpt-4.1",
+        provider_model_id: "33333333-3333-4333-8333-333333333333",
+      },
     })
     expect(mockRequest).not.toHaveBeenCalled()
   })

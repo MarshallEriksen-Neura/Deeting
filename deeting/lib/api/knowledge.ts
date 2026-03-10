@@ -1,4 +1,5 @@
 import { request, apiClient } from "@/lib/http"
+import { prepareDesktopObjectStorageUpload } from "@/lib/api/desktop-object-storage"
 import { handleModelConfigRequiredError } from "@/lib/model-config-required"
 import type {
   KnowledgeFile,
@@ -249,6 +250,58 @@ async function readLocalFileText(file: File): Promise<string> {
   })
 }
 
+function buildDesktopKnowledgeObjectKey(file: File): string {
+  const safeName =
+    file.name
+      .trim()
+      .replace(/[^a-zA-Z0-9._-]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "") || "file"
+  const id =
+    typeof globalThis !== "undefined" && globalThis.crypto?.randomUUID
+      ? globalThis.crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  return `knowledge/${id}-${safeName}`
+}
+
+async function uploadDesktopKnowledgeFileToObjectStorage(file: File): Promise<{
+  mediaAssetId: string
+  metaInfo: Record<string, unknown>
+} | null> {
+  try {
+    const ticket = await prepareDesktopObjectStorageUpload({
+      object_key: buildDesktopKnowledgeObjectKey(file),
+      content_type: file.type || null,
+      expires_seconds: 900,
+    })
+    const headers = new Headers(ticket.headers ?? {})
+    if (file.type && !headers.has("Content-Type")) {
+      headers.set("Content-Type", file.type)
+    }
+    const response = await fetch(ticket.upload_url, {
+      method: ticket.method || "PUT",
+      headers,
+      body: file,
+    })
+    if (!response.ok) {
+      throw new Error(`knowledge object storage upload failed: ${response.status}`)
+    }
+    return {
+      mediaAssetId: ticket.object_key,
+      metaInfo: {
+        object_storage: {
+          provider: ticket.provider,
+          object_key: ticket.object_key,
+          asset_url: ticket.asset_url ?? null,
+        },
+      },
+    }
+  } catch (error) {
+    console.warn("[knowledge] desktop object storage upload skipped", error)
+    return null
+  }
+}
+
 const SORT_FIELD_MAP: Record<KnowledgeSortField, string> = {
   name: "name",
   size: "size",
@@ -453,16 +506,19 @@ export async function uploadFile(
   onProgress?: (percent: number) => void
 ): Promise<KnowledgeFile> {
   if (isTauriRuntime()) {
+    const uploadedObject = await uploadDesktopKnowledgeFileToObjectStorage(file)
     const fileType = inferFileTypeFromFilename(file.name)
     const baseMeta = {
       file_type: fileType,
       size: file.size,
       source: "desktop-local-upload",
+      ...(uploadedObject?.metaInfo ?? {}),
     }
     if (!LOCAL_TEXT_FILE_TYPES.has(fileType)) {
       await createLocalUserDocument({
         filename: file.name,
         folderId,
+        mediaAssetId: uploadedObject?.mediaAssetId ?? null,
         status: "failed",
         errorMessage: buildLocalUnsupportedFileError(fileType),
         metaInfo: baseMeta,
@@ -476,6 +532,7 @@ export async function uploadFile(
       await createLocalUserDocument({
         filename: file.name,
         folderId,
+        mediaAssetId: uploadedObject?.mediaAssetId ?? null,
         status: "failed",
         errorMessage,
         metaInfo: baseMeta,
@@ -489,6 +546,7 @@ export async function uploadFile(
     const created = await createLocalUserDocument({
       filename: file.name,
       folderId,
+      mediaAssetId: uploadedObject?.mediaAssetId ?? null,
       status: "processing",
       metaInfo: {
         ...baseMeta,
@@ -650,6 +708,11 @@ export async function fetchFileChunks(
 /* -------------------------------------------------------------------------- */
 
 export async function getFileDownloadUrl(fileId: string): Promise<string> {
+  if (isTauriRuntime()) {
+    return invokeTauri<string>("get_local_user_document_download_url", {
+      file_id: fileId,
+    })
+  }
   const data = await request<{ download_url: string }>({
     url: `${BASE}/files/${fileId}/download-url`,
   })
@@ -660,6 +723,9 @@ export async function shareFile(
   fileId: string,
   expiresSeconds?: number
 ): Promise<string> {
+  if (isTauriRuntime()) {
+    return getFileDownloadUrl(fileId)
+  }
   const data = await request<{ share_url: string }>({
     url: `${BASE}/files/${fileId}/share`,
     method: "POST",

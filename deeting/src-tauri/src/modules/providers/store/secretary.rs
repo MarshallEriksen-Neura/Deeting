@@ -21,12 +21,14 @@ impl ProviderStore {
         let id = Uuid::new_v4().to_string();
         let now = now_rfc3339()?;
         sqlx::query(
-            "INSERT INTO user_secretary (id, user_id, name, model_name, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO user_secretary (
+                id, user_id, name, model_name, provider_model_id, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&id)
         .bind(LOCAL_DESKTOP_USER_ID)
         .bind("Default Secretary")
+        .bind(None::<String>)
         .bind(None::<String>)
         .bind(&now)
         .bind(&now)
@@ -38,6 +40,7 @@ impl ProviderStore {
             user_id: LOCAL_DESKTOP_USER_ID.to_string(),
             name: "Default Secretary".to_string(),
             model_name: None,
+            provider_model_id: None,
             created_at: now.clone(),
             updated_at: now,
         })
@@ -47,13 +50,19 @@ impl ProviderStore {
         &self,
         payload: UserSecretaryUpdateRequest,
     ) -> Result<UserSecretary, ProviderError> {
+        let current = self.get_or_create_user_secretary().await?;
+        let model_name = payload.model_name.unwrap_or(current.model_name);
+        let provider_model_id = payload
+            .provider_model_id
+            .unwrap_or(current.provider_model_id);
         let now = now_rfc3339()?;
         sqlx::query(
             "UPDATE user_secretary
-             SET model_name = ?, updated_at = ?
+             SET model_name = ?, provider_model_id = ?, updated_at = ?
              WHERE user_id = ?",
         )
-        .bind(&payload.model_name)
+        .bind(&model_name)
+        .bind(&provider_model_id)
         .bind(&now)
         .bind(LOCAL_DESKTOP_USER_ID)
         .execute(&self.pool)

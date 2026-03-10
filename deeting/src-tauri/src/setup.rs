@@ -40,14 +40,21 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         let mcp_state = McpRuntimeState::new(store, process_manager, cloud_base_url);
 
         // Providers 初始化
-        let provider_state = ProviderState::new(&database_url)
-            .await
-            .map_err(|e| McpError::Storage(e.to_string()))?;
+        let provider_state = ProviderState::new_with_platform_proxy(
+            &database_url,
+            Some(mcp_state.store.clone()),
+            Some(mcp_state.cloud_base_url.clone()),
+        )
+        .await
+        .map_err(|e| McpError::Storage(e.to_string()))?;
 
         // Memory 初始化 (with shared embedding capability)
-        let memory_embedding = crate::modules::providers::embedding::EmbeddingService::new(
-            provider_state.store.clone(),
-        );
+        let memory_embedding =
+            crate::modules::providers::embedding::EmbeddingService::with_platform_proxy(
+                provider_state.store.clone(),
+                mcp_state.store.clone(),
+                mcp_state.cloud_base_url.clone(),
+            );
         let memory_state = MemoryState::with_options(
             &lancedb_uri,
             None,

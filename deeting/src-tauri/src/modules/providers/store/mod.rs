@@ -1,6 +1,7 @@
 pub mod bandit;
 pub mod instances;
 pub mod models;
+pub mod object_storage;
 pub mod presets;
 pub mod secret_store;
 pub mod secretary;
@@ -190,6 +191,7 @@ impl ProviderStore {
                 user_id TEXT NOT NULL UNIQUE,
                 name TEXT NOT NULL,
                 model_name TEXT,
+                provider_model_id TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )",
@@ -202,6 +204,28 @@ impl ProviderStore {
                 id TEXT PRIMARY KEY,
                 user_id TEXT NOT NULL UNIQUE,
                 provider_model_id TEXT REFERENCES provider_models(id) ON DELETE SET NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS desktop_object_storage_config (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL UNIQUE,
+                provider TEXT NOT NULL,
+                bucket TEXT NOT NULL,
+                region TEXT,
+                endpoint TEXT NOT NULL,
+                public_base_url TEXT,
+                path_prefix TEXT,
+                is_path_style BOOLEAN NOT NULL DEFAULT 0,
+                access_key_id TEXT NOT NULL,
+                secret_ciphertext TEXT NOT NULL DEFAULT '',
+                secret_key_version INTEGER NOT NULL DEFAULT 0,
+                is_enabled BOOLEAN NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )",
@@ -261,6 +285,12 @@ impl ProviderStore {
             "provider_presets",
             "version",
             "ALTER TABLE provider_presets ADD COLUMN version INTEGER NOT NULL DEFAULT 1",
+        )
+        .await?;
+        self.ensure_column(
+            "user_secretary",
+            "provider_model_id",
+            "ALTER TABLE user_secretary ADD COLUMN provider_model_id TEXT",
         )
         .await?;
         self.ensure_column(

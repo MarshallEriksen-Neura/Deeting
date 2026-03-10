@@ -113,6 +113,37 @@ pub(super) fn extract_local_document_text(meta_info: &serde_json::Value) -> Opti
     }
 }
 
+pub(super) fn extract_local_document_download_url(
+    meta_info: &serde_json::Value,
+) -> Option<String> {
+    if let Some(url) = meta_info
+        .get("object_storage")
+        .and_then(|value| value.get("asset_url"))
+        .and_then(|value| value.as_str())
+    {
+        let normalized = url.trim();
+        if !normalized.is_empty() {
+            return Some(normalized.to_string());
+        }
+    }
+    None
+}
+
+pub(super) fn extract_local_document_object_key(
+    meta_info: &serde_json::Value,
+) -> Option<String> {
+    let key = meta_info
+        .get("object_storage")
+        .and_then(|value| value.get("object_key"))
+        .and_then(|value| value.as_str())?;
+    let normalized = key.trim();
+    if normalized.is_empty() {
+        None
+    } else {
+        Some(normalized.to_string())
+    }
+}
+
 pub(super) fn split_local_document_text_into_chunks(text: &str) -> Vec<String> {
     let normalized = text.trim();
     if normalized.is_empty() {

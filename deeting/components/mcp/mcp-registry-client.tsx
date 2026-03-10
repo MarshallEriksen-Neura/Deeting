@@ -1,53 +1,42 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useState } from "react"
 import dynamic from "next/dynamic"
 import { useTranslations } from "next-intl"
-import { invoke } from "@tauri-apps/api/core"
 import {
   mapDesktopToolRecordToTool,
-  mapMcpSourceRecordToSource,
-  mapRemoteServerToRuntimeTool,
   mapRemoteServerToolRecordToTool,
 } from "@/lib/mcp/registry-mappers"
 import {
-  patchMcpRemoteToolToggle,
-  patchMcpSourceStatus,
-  patchMcpToolStatus,
-  upsertMcpSource,
-  upsertMcpTool,
-} from "@/lib/mcp/registry-patches"
+  useMcpRegistryServerActions,
+} from "@/components/mcp/registry-server-actions"
 import {
-  getMcpRegistryServer,
-  getMcpRegistryServerId,
-  resolveMcpRegistrySseServer,
-} from "./registry-guards"
+  useMcpRegistryToolActions,
+} from "@/components/mcp/registry-tool-actions"
 import {
-  getMcpRegistryCountNotification,
   getMcpRegistryErrorNotification,
-  getMcpRegistryNotification,
 } from "./registry-notifications"
-import { parseMcpRegistryImportConfig } from "./registry-import"
+import { useMcpRegistryImportAction } from "./registry-import"
 import {
-  getDesktopMcpRegistrySourceCreatePayload,
-  getMcpRegistrySourceCreateRequest,
-  getMcpRegistrySourceSyncPayload,
-  shouldSyncCreatedMcpSource,
+  useMcpRegistrySourceActions,
 } from "@/components/mcp/registry-source-actions"
 import {
+  useMcpRegistryClearLogsAction,
+  useMcpRegistryHydration,
   useMcpRegistryLoadErrorEffect,
+  useMcpRegistryRefreshAll,
   useMcpRegistryToolLogs,
 } from "./registry-effects"
-import { getMcpPrimaryActionIntent, getMcpToggleActionIntent } from "./tool-semantics"
+import { useMcpRegistryViewModel } from "@/components/mcp/registry-view-model"
 import { RegistryHeader } from "./registry-header"
 import { SupplyChainSection } from "./supply-chain-section"
 import { RuntimeGridSection } from "./runtime-grid-section"
-import { MCPLogEntry, MCPSource, MCPTool, McpSourceRecord, McpToolRecord } from "@/types/mcp"
+import { MCPLogEntry, MCPSource, MCPTool, McpToolRecord } from "@/types/mcp"
 import { useMcpServers } from "@/lib/swr/use-mcp-servers"
 import { useMcpSources } from "@/lib/swr/use-mcp-sources"
 import { useMcpTools, type McpServerToolRecord } from "@/lib/swr/use-mcp-tools"
 import { useMcpToolToggle } from "@/lib/swr/use-mcp-tool-toggle"
-import { type McpServer, type McpServerUpdateRequest } from "@/lib/api/mcp"
+import { type McpServer } from "@/lib/api/mcp"
 import { useAuthStore } from "@/store/auth-store"
 import { useNotifications } from "@/components/contexts/notification-context"
 
@@ -94,86 +83,51 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
   const [editServer, setEditServer] = useState<McpServer | null>(null)
   const [editServerOpen, setEditServerOpen] = useState(false)
 
-  const initialRefreshRef = useRef(false)
-
   const mapTool = useCallback((tool: McpToolRecord): MCPTool => mapDesktopToolRecordToTool(tool, t("conflict.warningDescription")), [t])
 
-  const serverById = useMemo(() => {
-    const map = new Map<string, McpServer>()
-    mcpServers.data?.forEach((server) => map.set(server.id, server))
-    return map
-  }, [mcpServers.data])
-
-  const editServerTools = useMemo(() => {
-    if (!editServer) return []
-    return (mcpTools.data ?? [])
-      .filter((tool) => tool.server_id === editServer.id)
-      .map((tool) => {
-        const { server_id: serverId, ...rest } = tool
-        void serverId
-        return rest
-      })
-  }, [editServer, mcpTools.data])
-
+  const { serverById, editServerTools, runtimeTools, conflictCount } = useMcpRegistryViewModel({
+    isTauri,
+    servers: mcpServers.data,
+    toolRecords: mcpTools.data,
+    editServer,
+    tools,
+  })
 
   const mapServerTool = useCallback((tool: McpServerToolRecord): MCPTool => {
     return mapRemoteServerToolRecordToTool(tool, serverById.get(tool.server_id))
   }, [serverById])
 
-  const refreshAll = useCallback(async () => {
-    if (!isTauri) {
-      refreshSources()
-      refreshServers()
-      await refreshTools()
-      return
-    }
-    try {
-      const [sourceRecords, toolRecords] = await Promise.all([
-        invoke<McpSourceRecord[]>("list_mcp_sources"),
-        invoke<McpToolRecord[]>("list_mcp_tools"),
-      ])
-      setSources(sourceRecords.map(mapMcpSourceRecordToSource))
-      setTools(toolRecords.map(mapTool))
-    } catch (err) {
-      addNotification(getMcpRegistryErrorNotification(t, "load", err))
-    }
-  }, [addNotification, isTauri, mapTool, refreshServers, refreshSources, refreshTools, t])
-
-  useEffect(() => {
-    if (initialRefreshRef.current) return
-    initialRefreshRef.current = true
-    refreshAll()
-  }, [refreshAll])
-
-  useEffect(() => {
-    if (isTauri) return
-    if (mcpSources.data) {
-      setSources(mcpSources.data.map(mapMcpSourceRecordToSource))
-    }
-  }, [isTauri, mcpSources.data])
-
-  useEffect(() => {
-    if (isTauri) return
-    if (mcpTools.data) {
-      setTools(mcpTools.data.map(mapServerTool))
-    }
-  }, [isTauri, mapServerTool, mcpTools.data])
-
   const handleLoadError = useCallback((error: unknown) => {
     addNotification(getMcpRegistryErrorNotification(t, "load", error))
   }, [addNotification, t])
+
+  const refreshAll = useMcpRegistryRefreshAll({
+    isTauri,
+    refreshSources,
+    refreshServers,
+    refreshTools,
+    setSources,
+    setTools,
+    mapTool,
+    onLoadError: handleLoadError,
+  })
 
   useMcpRegistryLoadErrorEffect({ isTauri, error: mcpSources.error, onError: handleLoadError })
   useMcpRegistryLoadErrorEffect({ isTauri, error: mcpServers.error, onError: handleLoadError })
   useMcpRegistryLoadErrorEffect({ isTauri, error: mcpTools.error, onError: handleLoadError })
 
-  useEffect(() => {
-    if (!selectedTool) return
-    const updated = tools.find((item) => item.id === selectedTool.id)
-    if (updated && updated !== selectedTool) {
-      setSelectedTool(updated)
-    }
-  }, [selectedTool, tools])
+  useMcpRegistryHydration({
+    isTauri,
+    sourceRecords: mcpSources.data,
+    toolRecords: mcpTools.data,
+    mapServerTool,
+    tools,
+    selectedTool,
+    setSources,
+    setTools,
+    setSelectedTool,
+    refreshAll,
+  })
 
   useMcpRegistryToolLogs({
     isTauri,
@@ -192,407 +146,87 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
     setSources((prev) => updater(prev))
   }, [])
 
-  const handleShowLogs = useCallback((tool: MCPTool) => {
-    if (!isTauri) return
-    setSelectedTool(tool)
-    setLogsOpen(true)
-  }, [isTauri])
+  const handleClearLogs = useMcpRegistryClearLogsAction({ isTauri, setLogsByTool })
 
-  const handleToggleTool = useCallback(async (tool: MCPTool, enabled: boolean) => {
-    const intent = getMcpToggleActionIntent(tool, enabled, isTauri ? "desktop" : "cloud")
-
-    switch (intent) {
-      case "toggle_remote_tool":
-        if (!tool.sourceId) {
-          addNotification(getMcpRegistryErrorNotification(t, "save", t("toast.missingServer")))
-          return
-        }
-        updateToolList((prev) => patchMcpRemoteToolToggle(prev, tool.id, enabled))
-        try {
-          const updated = await toolToggleMutation.trigger({
-            serverId: tool.sourceId,
-            toolName: tool.name,
-            enabled,
-          })
-          const mapped = mapServerTool({ ...updated, server_id: tool.sourceId })
-          updateToolList((prev) => upsertMcpTool(prev, mapped))
-          await refreshTools()
-        } catch (err) {
-          addNotification(getMcpRegistryErrorNotification(t, enabled ? "start" : "stop", err))
-          refreshAll()
-        }
-        return
-      case "stop_tool":
-        updateToolList((prev) => patchMcpToolStatus(prev, tool.id, "stopped", false))
-        try {
-          await invoke("stop_mcp_tool", { toolId: tool.id })
-          await refreshAll()
-        } catch (err) {
-          addNotification(getMcpRegistryErrorNotification(t, "stop", err))
-          refreshAll()
-        }
-        return
-      case "blocked_install":
-        addNotification(getMcpRegistryNotification(t, "blocked_install"))
-        return
-      case "blocked_runtime":
-        addNotification(getMcpRegistryNotification(t, "blocked_runtime"))
-        return
-      case "review":
-        handleShowLogs(tool)
-        return
-      case "enable_skill":
-        if (!tool.backingSkillId) {
-          addNotification(getMcpRegistryNotification(t, "enable_skill_missing_id"))
-          return
-        }
-
-        try {
-          await invoke("enable_local_skill", { skillId: tool.backingSkillId })
-          await refreshAll()
-          addNotification(getMcpRegistryNotification(t, "enable_skill_success"))
-        } catch (err) {
-          addNotification(getMcpRegistryErrorNotification(t, "enable_skill", err))
-          refreshAll()
-        }
-        return
-      case "start_tool":
-        updateToolList((prev) => patchMcpToolStatus(prev, tool.id, "starting"))
-        try {
-          await invoke("start_mcp_tool", { toolId: tool.id })
-          await refreshAll()
-        } catch (err) {
-          addNotification(getMcpRegistryErrorNotification(t, "start", err))
-          refreshAll()
-        }
-        return
-    }
-  }, [
-    addNotification,
+  const {
+    handleCreateSource,
+    handleSyncSource,
+  } = useMcpRegistrySourceActions({
     isTauri,
-    mapServerTool,
-    refreshTools,
-    refreshAll,
     t,
-    handleShowLogs,
-    toolToggleMutation,
-    updateToolList,
-  ])
-
-  const handleSyncSource = useCallback(async (source: MCPSource) => {
-    if (!isTauri) {
-      updateSourceList((prev) => patchMcpSourceStatus(prev, source.id, "syncing"))
-      try {
-        await syncSource.trigger([source.id, getMcpRegistrySourceSyncPayload(sourceTokens[source.id])])
-        await refreshAll()
-      } catch (err) {
-        addNotification(getMcpRegistryErrorNotification(t, "sync", err))
-        refreshAll()
-      }
-      return
-    }
-    updateSourceList((prev) => patchMcpSourceStatus(prev, source.id, "syncing"))
-    try {
-      if (source.type === "cloud") {
-        if (!accessToken) {
-          throw new Error(t("toast.missingToken"))
-        }
-        await invoke("sync_cloud_subscriptions", { accessToken })
-      } else {
-        await invoke("sync_mcp_source", {
-          sourceId: source.id,
-          payload: getMcpRegistrySourceSyncPayload(sourceTokens[source.id]),
-        })
-      }
-      await refreshAll()
-    } catch (err) {
-      addNotification(getMcpRegistryErrorNotification(t, "sync", err))
-      refreshAll()
-    }
-  }, [accessToken, addNotification, isTauri, refreshAll, sourceTokens, syncSource, t, updateSourceList])
-
-  const handleSyncServers = useCallback(async () => {
-    if (isTauri) {
-      addNotification(getMcpRegistryNotification(t, "desktop_only"))
-      return
-    }
-    const servers = mcpServers.data ?? []
-    const remoteServers = servers.filter((server) => server.server_type === "sse" && server.sse_url)
-    if (remoteServers.length === 0) {
-      addNotification(getMcpRegistryNotification(t, "no_remote_servers"))
-      return
-    }
-    setSyncingServers(true)
-    try {
-      await syncServer.trigger(remoteServers[0].id)
-      await refreshAll()
-      addNotification(getMcpRegistryNotification(t, "sync_success"))
-    } catch (err) {
-      addNotification(getMcpRegistryErrorNotification(t, "sync", err))
-      refreshAll()
-    } finally {
-      setSyncingServers(false)
-    }
-  }, [addNotification, isTauri, mcpServers.data, refreshAll, syncServer, t])
-
-  const handleSyncServer = useCallback(async (tool: MCPTool) => {
-    if (isTauri) {
-      addNotification(getMcpRegistryNotification(t, "desktop_only"))
-      return
-    }
-    if (tool.source === "local") {
-      addNotification(getMcpRegistryNotification(t, "no_remote_servers"))
-      return
-    }
-    const serverId = getMcpRegistryServerId(tool)
-    setSyncingServerIds((prev) => ({ ...prev, [serverId]: true }))
-    try {
-      await syncServer.trigger(serverId)
-      await refreshAll()
-      addNotification(getMcpRegistryNotification(t, "sync_success"))
-    } catch (err) {
-      addNotification(getMcpRegistryErrorNotification(t, "sync", err))
-      refreshAll()
-    } finally {
-      setSyncingServerIds((prev) => ({ ...prev, [serverId]: false }))
-    }
-  }, [addNotification, isTauri, refreshAll, syncServer, t])
-
-  const handleCreateSource = useCallback(async (payload: {
-    name: string
-    sourceType: MCPSource["type"]
-    pathOrUrl: string
-    trustLevel: MCPSource["trustLevel"]
-    authToken?: string
-  }) => {
-    if (!isTauri) {
-      try {
-        const created = await createSource.trigger(getMcpRegistrySourceCreateRequest(payload))
-        setSourceTokens((prev) => ({ ...prev, [created.id]: payload.authToken || "" }))
-        await syncSource.trigger([created.id, getMcpRegistrySourceSyncPayload(payload.authToken)])
-        await refreshAll()
-      } catch (err) {
-        addNotification(getMcpRegistryErrorNotification(t, "sync", err))
-        refreshAll()
-      }
-      return
-    }
-    try {
-      const created = await invoke<McpSourceRecord>("create_mcp_source", {
-        payload: getDesktopMcpRegistrySourceCreatePayload(payload),
-      })
-      const mapped = mapMcpSourceRecordToSource(created)
-      updateSourceList((prev) => upsertMcpSource(prev, mapped))
-      if (shouldSyncCreatedMcpSource(payload)) {
-        setSourceTokens((prev) => ({ ...prev, [created.id]: payload.authToken || "" }))
-        await invoke("sync_mcp_source", {
-          sourceId: created.id,
-          payload: getMcpRegistrySourceSyncPayload(payload.authToken),
-        })
-        await refreshAll()
-      }
-    } catch (err) {
-      addNotification(getMcpRegistryErrorNotification(t, "sync", err))
-    }
-  }, [addNotification, createSource, isTauri, refreshAll, syncSource, t, updateSourceList])
-
-  const handleImportConfig = useCallback(async (payload: {
-    config: Record<string, unknown>
-  }) => {
-    if (!isTauri) {
-      const parsed = parseMcpRegistryImportConfig(payload.config)
-      if (parsed.kind !== "ok") {
-        addNotification(getMcpRegistryNotification(t, "invalid_config"))
-        return
-      }
-      const results = await Promise.allSettled(
-        parsed.requests.map((request) => createServer.trigger(request))
-      )
-      const succeeded = results.filter((item) => item.status === "fulfilled").length
-      const failed = results.length - succeeded
-      if (succeeded > 0) {
-        addNotification(getMcpRegistryCountNotification(t, "import_success", succeeded))
-      }
-      if (failed > 0) {
-        addNotification(getMcpRegistryCountNotification(t, "import_failed", failed))
-      }
-      const createdServers = results
-        .filter((item): item is PromiseFulfilledResult<McpServer> => item.status === "fulfilled")
-        .map((item) => item.value)
-      const remoteServers = createdServers.filter((server) => server.server_type === "sse" && server.sse_url)
-      if (remoteServers.length > 0) {
-        try {
-          await syncServer.trigger(remoteServers[0].id)
-        } catch (err) {
-          addNotification(getMcpRegistryErrorNotification(t, "sync", err, "warning"))
-        }
-      }
-      await refreshAll()
-      return
-    }
-    try {
-      await invoke("import_mcp_config", { payload })
-      await refreshAll()
-    } catch (err) {
-      addNotification(getMcpRegistryErrorNotification(t, "save", err))
-    }
-  }, [addNotification, createServer, isTauri, refreshAll, syncServer, t])
-
-  const handleResolveConflict = useCallback(async (tool: MCPTool, action: "keep" | "update") => {
-    if (!isTauri) {
-      addNotification(getMcpRegistryNotification(t, "desktop_only"))
-      return
-    }
-    try {
-      const updated = await invoke<McpToolRecord>("resolve_mcp_conflict", {
-        tool_id: tool.id,
-        payload: { action },
-      })
-      const mapped = mapTool(updated)
-      updateToolList((prev) => upsertMcpTool(prev, mapped))
-      setConflictOpen(false)
-    } catch (err) {
-      addNotification(getMcpRegistryErrorNotification(t, "save", err))
-    }
-  }, [addNotification, isTauri, mapTool, t, updateToolList])
-
-  const handleClearLogs = useCallback(async (tool: MCPTool) => {
-    if (!isTauri) return
-    await invoke("clear_mcp_logs", { toolId: tool.id })
-    setLogsByTool((prev) => ({ ...prev, [tool.id]: [] }))
-  }, [isTauri])
-
-  const handleOpenEditServer = useCallback((tool: MCPTool) => {
-    if (isTauri) {
-      addNotification(getMcpRegistryNotification(t, "desktop_only"))
-      return
-    }
-    const server = getMcpRegistryServer(tool, serverById)
-    if (!server) {
-      addNotification(getMcpRegistryNotification(t, "missing_server"))
-      return
-    }
-    setEditServer(server)
-    setEditServerOpen(true)
-  }, [addNotification, isTauri, serverById, t])
-
-  const handleUpdateServer = useCallback(async (serverId: string, payload: McpServerUpdateRequest) => {
-    if (isTauri) {
-      addNotification(getMcpRegistryNotification(t, "desktop_only"))
-      return
-    }
-    try {
-      await updateServer.trigger([serverId, payload])
-      await refreshAll()
-      setEditServerOpen(false)
-      setEditServer(null)
-      addNotification(getMcpRegistryNotification(t, "update_success"))
-    } catch (err) {
-      addNotification(getMcpRegistryErrorNotification(t, "update", err))
-    }
-  }, [addNotification, isTauri, refreshAll, t, updateServer])
-
-  const handleToggleServerTool = useCallback(async (toolName: string, enabled: boolean) => {
-    if (isTauri || !editServer) return
-    try {
-      await toolToggleMutation.trigger({
-        serverId: editServer.id,
-        toolName,
-        enabled,
-      })
-      await refreshTools()
-    } catch (err) {
-      addNotification(getMcpRegistryErrorNotification(t, "update", err))
-      refreshTools()
-    }
-  }, [addNotification, editServer, isTauri, refreshTools, t, toolToggleMutation])
-
-  const handleToggleServerEnabled = useCallback(async (tool: MCPTool, enabled: boolean) => {
-    if (isTauri) return
-    const resolution = resolveMcpRegistrySseServer(tool, serverById)
-    if (resolution.kind === "missing_server") {
-      addNotification(getMcpRegistryNotification(t, "missing_server"))
-      return
-    }
-    if (resolution.kind === "unsupported_server") {
-      addNotification(getMcpRegistryNotification(t, "toggle_unsupported"))
-      return
-    }
-    try {
-      await updateServer.trigger([resolution.serverId, { is_enabled: enabled }])
-      await refreshAll()
-    } catch (err) {
-      addNotification(getMcpRegistryErrorNotification(t, "update", err))
-    }
-  }, [addNotification, isTauri, refreshAll, serverById, t, updateServer])
-
-  const handlePrimaryAction = useCallback(async (tool: MCPTool) => {
-    const intent = getMcpPrimaryActionIntent(tool, isTauri ? "desktop" : "cloud")
-
-    if (intent === "blocked_install") {
-      addNotification(getMcpRegistryNotification(t, "blocked_install"))
-      return
-    }
-
-    if (intent === "blocked_runtime") {
-      addNotification(getMcpRegistryNotification(t, "blocked_runtime"))
-      return
-    }
-
-    switch (intent) {
-      case "review":
-        if (isTauri) {
-          handleShowLogs(tool)
-        } else {
-          handleOpenEditServer(tool)
-        }
-        return
-      case "sync_server":
-        await handleSyncServer(tool)
-        return
-      case "enable_server":
-        await handleToggleServerEnabled(tool, true)
-        return
-      case "toggle_tool":
-        await handleToggleTool(tool, true)
-        return
-    }
-  }, [
+    accessToken,
     addNotification,
+    sourceTokens,
+    createSource,
+    syncSource,
+    refreshAll,
+    updateSourceList,
+    setSourceTokens,
+  })
+
+  const { handleImportConfig } = useMcpRegistryImportAction({
+    isTauri,
+    t,
+    addNotification,
+    createServer,
+    syncServer,
+    refreshAll,
+  })
+
+  const {
+    handleDeleteServer,
+    handleEditServerOpenChange,
     handleOpenEditServer,
+    handleSyncServer,
+    handleSyncServers,
+    handleToggleServerEnabled,
+    handleToggleServerTool,
+    handleUpdateServer,
+  } = useMcpRegistryServerActions({
+    isTauri,
+    t,
+    addNotification,
+    serverById,
+    servers: mcpServers.data ?? [],
+    editServer,
+    refreshAll,
+    refreshTools,
+    syncServer,
+    updateServer,
+    removeServer,
+    toolToggleMutation,
+    setSyncingServers,
+    setSyncingServerIds,
+    setEditServer,
+    setEditServerOpen,
+  })
+
+  const {
+    handleConflictOpenChange,
+    handleOpenConflict,
+    handlePrimaryAction,
+    handleResolveConflict,
     handleShowLogs,
+    handleToggleTool,
+  } = useMcpRegistryToolActions({
+    isTauri,
+    t,
+    addNotification,
+    conflictTool,
+    refreshAll,
+    refreshTools,
+    toolToggleMutation,
+    mapTool,
+    mapServerTool,
+    updateToolList,
+    handleOpenEditServer,
     handleSyncServer,
     handleToggleServerEnabled,
-    handleToggleTool,
-    isTauri,
-    t,
-  ])
-
-  const handleDeleteServer = useCallback(async (tool: MCPTool) => {
-    if (isTauri) {
-      addNotification(getMcpRegistryNotification(t, "desktop_only"))
-      return
-    }
-    const serverId = getMcpRegistryServerId(tool)
-    try {
-      await removeServer.trigger(serverId)
-      await refreshAll()
-      addNotification(getMcpRegistryNotification(t, "delete_success"))
-    } catch (err) {
-      addNotification(getMcpRegistryErrorNotification(t, "delete", err))
-    }
-  }, [addNotification, isTauri, refreshAll, removeServer, t])
-
-  const runtimeTools = useMemo(() => {
-    if (isTauri) return tools
-    const servers = mcpServers.data ?? []
-    return servers.map(mapRemoteServerToRuntimeTool)
-  }, [isTauri, mcpServers.data, tools])
-
-  const conflictCount = useMemo(
-    () => tools.filter((tool) => tool.conflictStatus !== "none").length,
-    [tools]
-  )
+    setSelectedTool,
+    setLogsOpen,
+    setConflictTool,
+    setConflictOpen,
+  })
 
   return (
     <div className="relative min-h-screen bg-[var(--background)] px-6 py-12 lg:px-8">
@@ -622,10 +256,7 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
             onToggleTool={isTauri ? (tool, enabled) => handleToggleTool(tool, enabled) : handleToggleServerEnabled}
             onPrimaryAction={handlePrimaryAction}
             onShowLogs={isTauri ? handleShowLogs : undefined}
-            onResolveConflict={isTauri ? (tool) => {
-              setConflictTool(tool)
-              setConflictOpen(true)
-            } : undefined}
+            onResolveConflict={isTauri ? handleOpenConflict : undefined}
             onEditServer={!isTauri ? handleOpenEditServer : undefined}
             onDeleteServer={!isTauri ? handleDeleteServer : undefined}
             onSyncAll={!isTauri ? handleSyncServers : undefined}
@@ -651,12 +282,8 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
       <ConflictResolutionDialog
         tool={conflictTool}
         open={conflictOpen}
-        onOpenChange={setConflictOpen}
-        onResolve={(action) => {
-          if (conflictTool) {
-            handleResolveConflict(conflictTool, action)
-          }
-        }}
+        onOpenChange={handleConflictOpenChange}
+        onResolve={handleResolveConflict}
       />
 
       <EditServerSheet
@@ -664,12 +291,7 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
         server={editServer}
         tools={editServerTools}
         open={editServerOpen}
-        onOpenChange={(nextOpen) => {
-          setEditServerOpen(nextOpen)
-          if (!nextOpen) {
-            setEditServer(null)
-          }
-        }}
+        onOpenChange={handleEditServerOpenChange}
         onSave={handleUpdateServer}
         onToggleTool={editServer?.server_type === "sse" ? handleToggleServerTool : undefined}
         loading={updateServer.isMutating}

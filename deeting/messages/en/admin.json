@@ -1278,7 +1278,7 @@
       },
       "fields": {
         "current": "Current",
-        "newModelName": "New Model Name",
+        "newModelSelection": "New Model Selection",
         "placeholder": "text-embedding-3-large",
         "currentUnlistedHint": "The saved model is not in the current list and may be unavailable or removed."
       },
@@ -1396,10 +1396,22 @@
         "meta": {
           "status": "Status",
           "risk": "Risk",
+          "runtime": "Runtime",
+          "version": "Version",
           "submitter": "Submitter",
+          "reviewer": "Reviewer",
           "reviewedAt": "Reviewed at",
           "repo": "Repository",
-          "revision": "Revision"
+          "revision": "Revision",
+          "subdir": "Subdirectory"
+        },
+        "trace": {
+          "securityDecision": "Security decision",
+          "submissionChannel": "Submission channel",
+          "requiresApproval": "Admin approval",
+          "reviewReason": "Review reason",
+          "required": "Required",
+          "notRequired": "Not required"
         },
         "sections": {
           "summary": "Review summary",
@@ -1407,7 +1419,8 @@
           "networkTargets": "Network targets",
           "privacyRisks": "Privacy risks",
           "destructiveActions": "Destructive actions",
-          "reviewReason": "Review reason"
+          "reviewReason": "Review reason",
+          "manifest": "Manifest excerpt"
         },
         "findings": {
           "uncategorized": "Uncategorized"

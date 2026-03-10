@@ -1,4 +1,8 @@
-import { appendMcpRegistryLogEntry } from "@/components/mcp/registry-effects"
+import {
+  appendMcpRegistryLogEntry,
+  clearMcpRegistryToolLogs,
+  getNextMcpRegistrySelectedTool,
+} from "@/components/mcp/registry-effects"
 
 describe("registry effects", () => {
   it("appends log entries below the cap", () => {
@@ -22,5 +26,24 @@ describe("registry effects", () => {
       { timestamp: "2", stream: "stdout", message: "b" },
       { timestamp: "3", stream: "event", message: "c" },
     ])
+  })
+
+  it("clears logs for the selected tool only", () => {
+    expect(clearMcpRegistryToolLogs({
+      alpha: [{ timestamp: "1", stream: "stdout", message: "a" }],
+      beta: [{ timestamp: "2", stream: "stderr", message: "b" }],
+    }, "alpha")).toEqual({
+      alpha: [],
+      beta: [{ timestamp: "2", stream: "stderr", message: "b" }],
+    })
+  })
+
+  it("keeps the selected tool aligned with the latest snapshot", () => {
+    const selectedTool = { id: "tool-1", title: "old" } as never
+    const updatedTool = { id: "tool-1", title: "new" } as never
+
+    expect(getNextMcpRegistrySelectedTool([updatedTool], selectedTool)).toBe(updatedTool)
+    expect(getNextMcpRegistrySelectedTool([], selectedTool)).toBe(selectedTool)
+    expect(getNextMcpRegistrySelectedTool([updatedTool], null)).toBeNull()
   })
 })

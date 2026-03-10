@@ -5,6 +5,7 @@
   deleteFolder,
   fetchFileChunks,
   getFile,
+  getFileDownloadUrl,
   fetchKnowledgeStats,
   fetchKnowledgeTree,
   listLocalUserDocuments,
@@ -327,18 +328,30 @@ describe("knowledge api", () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
     const progress = jest.fn()
-    mockInvoke.mockResolvedValue({
-      id: "d-20",
-      name: "local.txt",
-      file_type: "txt",
-      size: 11,
-      status: "indexed",
-      chunks: 1,
-      error_message: null,
-      folder_id: null,
-      created_at: "2026-03-03T00:00:00Z",
-      updated_at: "2026-03-03T00:00:01Z",
-    } as unknown)
+    const originalFetch = global.fetch
+    global.fetch = jest.fn().mockResolvedValue({ ok: true } as Response)
+    mockInvoke
+      .mockResolvedValueOnce({
+        provider: "cloudflare_r2_s3",
+        object_key: "desktop/uploads/knowledge/local.txt",
+        upload_url: "https://example.r2.cloudflarestorage.com/upload",
+        method: "PUT",
+        headers: {},
+        asset_url: "https://cdn.example.com/knowledge/local.txt",
+        expires_at: "2026-03-10T00:15:00Z",
+      } as unknown)
+      .mockResolvedValueOnce({
+        id: "d-20",
+        name: "local.txt",
+        file_type: "txt",
+        size: 11,
+        status: "indexed",
+        chunks: 1,
+        error_message: null,
+        folder_id: null,
+        created_at: "2026-03-03T00:00:00Z",
+        updated_at: "2026-03-03T00:00:01Z",
+      } as unknown)
 
     const file = new File(["hello world"], "local.txt", { type: "text/plain" })
     const uploaded = await uploadFile(file, null, progress)
@@ -348,11 +361,22 @@ describe("knowledge api", () => {
     expect(progress).toHaveBeenNthCalledWith(1, 20)
     expect(progress).toHaveBeenNthCalledWith(2, 80)
     expect(progress).toHaveBeenNthCalledWith(3, 100)
-    expect(mockInvoke).toHaveBeenCalledWith("create_local_user_document", {
+    expect(mockInvoke).toHaveBeenNthCalledWith(
+      1,
+      "prepare_local_desktop_object_storage_upload",
+      {
+        payload: {
+          object_key: expect.stringContaining("knowledge/"),
+          content_type: "text/plain",
+          expires_seconds: 900,
+        },
+      }
+    )
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, "create_local_user_document", {
       payload: {
         filename: "local.txt",
         folder_id: null,
-        media_asset_id: null,
+        media_asset_id: "desktop/uploads/knowledge/local.txt",
         status: "processing",
         error_message: null,
         chunk_count: null,
@@ -361,28 +385,49 @@ describe("knowledge api", () => {
           file_type: "txt",
           size: 11,
           source: "desktop-local-upload",
+          object_storage: {
+            provider: "cloudflare_r2_s3",
+            object_key: "desktop/uploads/knowledge/local.txt",
+            asset_url: "https://cdn.example.com/knowledge/local.txt",
+          },
           raw_text: "hello world",
         },
       },
     })
     expect(mockRequest).not.toHaveBeenCalled()
+    global.fetch = originalFetch
+  })
+
+  it("gets local knowledge download url via tauri command", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue("https://cdn.example.com/knowledge/local.txt" as unknown)
+
+    const url = await getFileDownloadUrl("d-20")
+
+    expect(url).toBe("https://cdn.example.com/knowledge/local.txt")
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_user_document_download_url", {
+      file_id: "d-20",
+    })
   })
 
   it("marks unsupported local file type as failed and throws", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
-    mockInvoke.mockResolvedValue({
-      id: "d-21",
-      name: "paper.pdf",
-      file_type: "pdf",
-      size: 4,
-      status: "failed",
-      chunks: 0,
-      error_message: "unsupported",
-      folder_id: null,
-      created_at: "2026-03-03T00:00:00Z",
-      updated_at: "2026-03-03T00:00:01Z",
-    } as unknown)
+    mockInvoke
+      .mockRejectedValueOnce(new Error("no object storage"))
+      .mockResolvedValueOnce({
+        id: "d-21",
+        name: "paper.pdf",
+        file_type: "pdf",
+        size: 4,
+        status: "failed",
+        chunks: 0,
+        error_message: "unsupported",
+        folder_id: null,
+        created_at: "2026-03-03T00:00:00Z",
+        updated_at: "2026-03-03T00:00:01Z",
+      } as unknown)
 
     const file = new File(["%PDF"], "paper.pdf", { type: "application/pdf" })
 

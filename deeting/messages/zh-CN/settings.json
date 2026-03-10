@@ -110,6 +110,43 @@
       "emptyHint": "暂无可用模型，请先添加",
       "scopeBadge": "仅个人"
     },
+    "storage": {
+      "title": "桌面对象存储",
+      "description": "配置你自己的 R2 或阿里云 OSS 存储桶，让桌面端文件上传优先走你的对象存储，而不是回退为内联数据。",
+      "scopeBadge": "仅桌面端",
+      "securityHint": "凭据只保存在当前设备上，Secret Key 会在持久化前加密。",
+      "enabledLabel": "启用桌面对象存储",
+      "enabledHelp": "启用后，桌面端图片附件会优先上传到你配置的存储桶；只有在上传准备失败时才回退到本地旧路径。",
+      "providerLabel": "存储提供商",
+      "providerPlaceholder": "选择提供商",
+      "providerHelp": "当前先支持 Cloudflare R2 和阿里云 OSS，两者复用同一套桌面上传抽象。",
+      "provider": {
+        "cloudflare_r2_s3": "Cloudflare R2（S3）",
+        "aliyun_oss": "阿里云 OSS"
+      },
+      "bucketLabel": "Bucket 名称",
+      "bucketHelp": "桌面端文件上传使用的 Bucket。",
+      "regionLabel": "区域",
+      "regionPlaceholder": "auto 或 cn-hangzhou",
+      "regionHelp": "R2 通常使用 auto；阿里云 OSS 通常使用具体地域，例如 cn-hangzhou。",
+      "pathStyleLabel": "使用 Path-Style URL",
+      "pathStyleHelp": "如果你的 endpoint 需要把 bucket 放在 URL 路径中，而不是子域名中，请开启此项。",
+      "endpointLabel": "Bucket Endpoint",
+      "endpointPlaceholder": "https://<bucket>.<storage-endpoint>",
+      "endpointHelp": "必须填写 HTTPS 的 bucket 或对象存储服务地址。",
+      "publicBaseUrlLabel": "公开访问基地址",
+      "publicBaseUrlPlaceholder": "https://cdn.example.com/assets",
+      "publicBaseUrlHelp": "当前聊天图片迁移仍要求消息里保存一个可直接读取的资源 URL，因此这里建议填写公开访问域名或 CDN 地址。",
+      "pathPrefixLabel": "路径前缀",
+      "pathPrefixHelp": "可选目录前缀，例如 desktop/uploads 或 chat-assets。",
+      "accessKeyIdLabel": "Access Key ID",
+      "accessKeyIdHelp": "仅保存在本机桌面端，用于本地上传签名。",
+      "secretAccessKeyLabel": "Secret Access Key",
+      "secretAccessKeyHelp": "留空表示继续使用当前已保存的密钥；只有在轮换凭据时才需要填写新值。",
+      "showSecret": "显示",
+      "hideSecret": "隐藏",
+      "footerHint": "仅当前桌面端使用，不会同步到云端。保存后会立即更新本地对象存储上传器。"
+    },
     "agent": {
       "title": "Agent 执行",
       "description": "配置 AI Agent 在本地执行工具调用时的行为。",
@@ -169,6 +206,8 @@
     "nav": {
       "models": "模型",
       "modelsDesc": "Embedding 与秘书模型",
+      "storage": "存储",
+      "storageDesc": "桌面端 OSS 存储桶",
       "agent": "Agent",
       "agentDesc": "工具执行设置",
       "relay": "Relay",
@@ -189,7 +228,8 @@
       "rebuildSuccess": "重建完成（向量维度 {dimension}；记忆 成功 {memoryIndexed} / 失败 {memoryFailed}；资产 成功 {assetIndexed} / 失败 {assetFailed}）",
       "rebuildFailed": "本地记忆与向量索引重建失败，请稍后重试",
       "desktopRelayUpdated": "桌面 Relay 配置已更新，已自动重载后台连接",
-      "desktopScoutUpdated": "桌面 Scout 配置已更新"
+      "desktopScoutUpdated": "桌面 Scout 配置已更新",
+      "desktopObjectStorageUpdated": "桌面对象存储配置已更新"
     }
   }
 }

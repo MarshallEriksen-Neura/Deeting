@@ -42,6 +42,7 @@ import {
   fetchConversationHistory,
 } from "@/lib/api/conversations"
 import type { ConversationMessage } from "@/lib/api/conversations"
+import { prepareDesktopObjectStorageRead } from "@/lib/api/desktop-object-storage"
 import { signAssets } from "@/lib/api/media-assets"
 import { useChatStore, type CompareCandidate, type Message } from "@/store/chat-store"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
@@ -333,7 +334,45 @@ async function resolveLocalChatAsset(
   }
 }
 
-const resolveMessageAttachments = async (messages: Message[], isTauri = false) => {
+async function resolveDesktopObjectStorageAssetUrls(objectKeys: string[]) {
+  if (!objectKeys.length) {
+    return new Map<string, string>()
+  }
+
+  const settled = await Promise.allSettled(
+    objectKeys.map(async (objectKey) => {
+      const ticket = await prepareDesktopObjectStorageRead({
+        object_key: objectKey,
+        expires_seconds: 900,
+      })
+      return [objectKey, ticket.asset_url] as const
+    })
+  )
+
+  const urlMap = new Map<string, string>()
+  const unresolved: string[] = []
+  settled.forEach((result, index) => {
+    const objectKey = objectKeys[index]
+    if (result.status === "fulfilled") {
+      urlMap.set(result.value[0], result.value[1])
+      return
+    }
+    unresolved.push(objectKey)
+  })
+
+  if (unresolved.length) {
+    const signedResult = await signAssets(unresolved).catch(() => ({
+      assets: [] as { object_key: string; asset_url: string }[],
+    }))
+    signedResult.assets.forEach((item) => {
+      urlMap.set(item.object_key, item.asset_url)
+    })
+  }
+
+  return urlMap
+}
+
+export const resolveMessageAttachments = async (messages: Message[], isTauri = false) => {
   const objectKeys = new Set<string>()
   const localAssets: { msgIdx: number; attIdx: number; sha256: string; type: string }[] = []
 
@@ -363,16 +402,18 @@ const resolveMessageAttachments = async (messages: Message[], isTauri = false) =
 
   if (!objectKeys.size && !localAssets.length) return messages
 
-  const [signedResult, ...localResults] = await Promise.all([
+  const [urlMap, ...localResults] = await Promise.all([
     objectKeys.size
-      ? signAssets(Array.from(objectKeys)).catch(() => ({ assets: [] as { object_key: string; asset_url: string }[] }))
-      : Promise.resolve({ assets: [] as { object_key: string; asset_url: string }[] }),
+      ? isTauri
+        ? resolveDesktopObjectStorageAssetUrls(Array.from(objectKeys))
+        : signAssets(Array.from(objectKeys))
+            .then(
+              (result) => new Map(result.assets.map((item) => [item.object_key, item.asset_url]))
+            )
+            .catch(() => new Map<string, string>())
+      : Promise.resolve(new Map<string, string>()),
     ...localAssets.map((la) => resolveLocalChatAsset(la.sha256, la.type)),
   ])
-
-  const urlMap = new Map(
-    signedResult.assets.map((item) => [item.object_key, item.asset_url])
-  )
 
   const localUrlMap = new Map<string, string>()
   localAssets.forEach((la, i) => {

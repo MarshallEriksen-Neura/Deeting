@@ -110,6 +110,43 @@
       "emptyHint": "No models available yet",
       "scopeBadge": "Personal only"
     },
+    "storage": {
+      "title": "Desktop Object Storage",
+      "description": "Configure your own R2 or OSS bucket so desktop file uploads can use your storage instead of inline data fallbacks.",
+      "scopeBadge": "Desktop only",
+      "securityHint": "Credentials stay on this device only. Secret keys are encrypted before persistence.",
+      "enabledLabel": "Enable desktop object storage",
+      "enabledHelp": "When enabled, desktop image attachments prefer your configured bucket and only fall back locally if upload preparation fails.",
+      "providerLabel": "Storage provider",
+      "providerPlaceholder": "Select a provider",
+      "providerHelp": "Start with Cloudflare R2 or Aliyun OSS. The desktop uploader reuses the same abstraction for both.",
+      "provider": {
+        "cloudflare_r2_s3": "Cloudflare R2 (S3)",
+        "aliyun_oss": "Aliyun OSS"
+      },
+      "bucketLabel": "Bucket name",
+      "bucketHelp": "Bucket used for desktop file uploads.",
+      "regionLabel": "Region",
+      "regionPlaceholder": "auto or cn-hangzhou",
+      "regionHelp": "R2 usually uses auto. Aliyun OSS typically uses a concrete region like cn-hangzhou.",
+      "pathStyleLabel": "Use path-style URLs",
+      "pathStyleHelp": "Enable this if your endpoint expects the bucket name in the URL path instead of the hostname.",
+      "endpointLabel": "Bucket endpoint",
+      "endpointPlaceholder": "https://<bucket>.<storage-endpoint>",
+      "endpointHelp": "Must be an HTTPS endpoint for your bucket or object storage service.",
+      "publicBaseUrlLabel": "Public base URL",
+      "publicBaseUrlPlaceholder": "https://cdn.example.com/assets",
+      "publicBaseUrlHelp": "Required for the current desktop chat-image flow because messages still store directly readable asset URLs.",
+      "pathPrefixLabel": "Path prefix",
+      "pathPrefixHelp": "Optional folder prefix such as desktop/uploads or chat-assets.",
+      "accessKeyIdLabel": "Access key ID",
+      "accessKeyIdHelp": "Stored locally and used only by this desktop app.",
+      "secretAccessKeyLabel": "Secret access key",
+      "secretAccessKeyHelp": "Leave blank to keep the current saved secret. Enter a new value only when rotating credentials.",
+      "showSecret": "Show",
+      "hideSecret": "Hide",
+      "footerHint": "Used only by this desktop app and never synced to cloud. Saving updates the local uploader immediately."
+    },
     "agent": {
       "title": "Agent Execution",
       "description": "Configure how the AI agent behaves when executing tool calls locally.",
@@ -169,6 +206,8 @@
     "nav": {
       "models": "Models",
       "modelsDesc": "Embedding & secretary models",
+      "storage": "Storage",
+      "storageDesc": "Desktop OSS buckets",
       "agent": "Agent",
       "agentDesc": "Tool execution settings",
       "relay": "Relay",
@@ -189,7 +228,8 @@
       "rebuildSuccess": "Rebuild completed at dimension {dimension} (memories {memoryIndexed}/{memoryFailed}, assets {assetIndexed}/{assetFailed})",
       "rebuildFailed": "Rebuilding local memories and vector indexes failed. Please try again.",
       "desktopRelayUpdated": "Desktop relay settings updated. The relay worker was reloaded automatically.",
-      "desktopScoutUpdated": "Desktop Scout settings updated"
+      "desktopScoutUpdated": "Desktop Scout settings updated",
+      "desktopObjectStorageUpdated": "Desktop object storage settings updated"
     }
   }
 }

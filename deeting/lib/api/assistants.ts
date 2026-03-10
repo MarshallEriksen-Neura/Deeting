@@ -564,6 +564,7 @@ export async function createAssistant(payload: {
     name: string
     description?: string | null
     system_prompt: string
+    model_config?: Record<string, unknown> | null
     tags?: string[]
   }
 }) {
@@ -581,7 +582,7 @@ export async function createAssistant(payload: {
         description: payload.summary ?? payload.version.description ?? null,
         avatar: payload.icon_id ?? null,
         system_prompt: payload.version.system_prompt,
-        model_config: null,
+        model_config: payload.version.model_config,
         tags: payload.version.tags ?? [],
         visibility: "private",
         source: "local",
@@ -612,6 +613,7 @@ export async function updateAssistant(
       name: string
       description?: string | null
       system_prompt: string
+      model_config?: Record<string, unknown> | null
       tags?: string[]
       changelog?: string | null
     }
@@ -630,7 +632,7 @@ export async function updateAssistant(
           payload.summary !== undefined ? payload.summary : payload.version?.description,
         avatar: payload.icon_id,
         system_prompt: payload.version?.system_prompt,
-        model_config: null,
+        model_config: payload.version?.model_config,
         tags: payload.version?.tags,
         visibility: payload.visibility,
         source: "local",

@@ -31,6 +31,15 @@ impl McpBridgeState {
         let mut base_url = self.base_url.write().await;
         *base_url = url;
     }
+
+    async fn stop_stream(&self, tool_id: &str) -> bool {
+        let mut streams = self.streams.lock().await;
+        if let Some(handle) = streams.remove(tool_id) {
+            handle.abort();
+            return true;
+        }
+        false
+    }
 }
 
 #[derive(Serialize)]
@@ -82,10 +91,7 @@ pub async fn stop_mcp_log_stream(
     tool_id: String,
 ) -> Result<(), String> {
     let state = &state.mcp.bridge;
-    let mut streams = state.streams.lock().await;
-    if let Some(handle) = streams.remove(&tool_id) {
-        handle.abort();
-    }
+    state.stop_stream(&tool_id).await;
     Ok(())
 }
 

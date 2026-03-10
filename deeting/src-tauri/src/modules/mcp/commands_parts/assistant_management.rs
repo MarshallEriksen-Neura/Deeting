@@ -4,6 +4,34 @@ use super::{
     support::*,
 };
 
+fn resolve_assistant_model_selection(
+    model_config: Option<&serde_json::Value>,
+) -> (String, Option<String>) {
+    // `model_name` remains as a legacy compatibility key for older assistant configs.
+    let provider_model_id = model_config
+        .and_then(|value| value.get("provider_model_id"))
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let model = model_config
+        .and_then(|value| value.get("model"))
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            model_config
+                .and_then(|value| value.get("model_name"))
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| "default".to_string());
+    (model, provider_model_id)
+}
+
 pub(crate) async fn index_local_assistants(app_state: &AppState, assistants: &[LocalAssistant]) {
     let enabled_assistant_ids = app_state
         .mcp
@@ -363,19 +391,8 @@ pub async fn preview_local_assistant(
         .map_err(to_string)?
         .ok_or_else(|| "assistant not found".to_string())?;
 
-    let model_from_config = assistant
-        .model_config
-        .as_ref()
-        .and_then(|value| value.get("model"))
-        .and_then(|value| value.as_str())
-        .map(|value| value.to_string())
-        .unwrap_or_else(|| "default".to_string());
-    let provider_model_id = assistant
-        .model_config
-        .as_ref()
-        .and_then(|value| value.get("provider_model_id"))
-        .and_then(|value| value.as_str())
-        .map(|value| value.to_string());
+    let (model_from_config, provider_model_id) =
+        resolve_assistant_model_selection(assistant.model_config.as_ref());
     let model_connection = resolve_local_model_connection(
         state.inner(),
         &model_from_config,
@@ -411,6 +428,36 @@ pub async fn preview_local_assistant(
         .unwrap_or("")
         .to_string();
     Ok(serde_json::json!({ "content": content }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn resolve_assistant_model_selection_prefers_provider_model_id() {
+        let (model, provider_model_id) = resolve_assistant_model_selection(Some(&json!({
+            "model": "gpt-4o-mini",
+            "provider_model_id": "22222222-2222-4222-8222-222222222222"
+        })));
+
+        assert_eq!(model, "gpt-4o-mini");
+        assert_eq!(
+            provider_model_id.as_deref(),
+            Some("22222222-2222-4222-8222-222222222222")
+        );
+    }
+
+    #[test]
+    fn resolve_assistant_model_selection_falls_back_to_legacy_model_name() {
+        let (model, provider_model_id) = resolve_assistant_model_selection(Some(&json!({
+            "model_name": "gpt-4.1"
+        })));
+
+        assert_eq!(model, "gpt-4.1");
+        assert_eq!(provider_model_id, None);
+    }
 }
 
 #[tauri::command]

@@ -119,7 +119,7 @@ export function PageContent() {
           </div>
 
           <div className="space-y-2">
-            <label className="text-xs font-medium text-[var(--muted)]">{t("fields.newModelName")}</label>
+            <label className="text-xs font-medium text-[var(--muted)]">{t("fields.newModelSelection")}</label>
             <ModelPicker
               value={selectedValue}
               onChange={setSelected}

@@ -17,7 +17,9 @@ export const UserSecretarySchema = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),
   name: z.string(),
+  // Legacy/back-compat model reference. Desktop should prefer provider_model_id.
   model_name: z.string().nullable().optional(),
+  provider_model_id: z.string().uuid().nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),
 })
@@ -25,7 +27,9 @@ export const UserSecretarySchema = z.object({
 export type UserSecretary = z.infer<typeof UserSecretarySchema>
 
 export const UserSecretaryUpdateSchema = z.object({
+  // Legacy/back-compat model reference. Keep sending it for older stores.
   model_name: z.string().nullable().optional(),
+  provider_model_id: z.string().uuid().nullable().optional(),
 })
 
 export type UserSecretaryUpdate = z.infer<typeof UserSecretaryUpdateSchema>
@@ -51,6 +55,7 @@ export async function updateUserSecretary(
     const data = await invokeTauri<UserSecretary>("update_local_user_secretary", {
       payload: {
         model_name: normalizedPayload.model_name,
+        provider_model_id: normalizedPayload.provider_model_id,
       },
     })
     return UserSecretarySchema.parse(data)

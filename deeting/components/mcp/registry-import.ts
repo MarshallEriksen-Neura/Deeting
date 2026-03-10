@@ -1,4 +1,33 @@
-import type { McpServerCreateRequest } from "@/lib/api/mcp"
+import { useCallback } from "react"
+import { invoke } from "@tauri-apps/api/core"
+
+import type { McpServer, McpServerCreateRequest } from "@/lib/api/mcp"
+
+import {
+  getMcpRegistryCountNotification,
+  getMcpRegistryErrorNotification,
+  getMcpRegistryNotification,
+} from "./registry-notifications"
+
+type McpTranslate = (key: string, values?: Record<string, string | number>) => string
+type McpRegistryAddNotification = (notification: ReturnType<typeof getMcpRegistryNotification>) => void
+
+type McpRegistryServerCreateMutation = {
+  trigger: (payload: McpServerCreateRequest) => Promise<McpServer>
+}
+
+type McpRegistryServerSyncMutation = {
+  trigger: (serverId: string) => Promise<unknown>
+}
+
+interface UseMcpRegistryImportActionOptions {
+  isTauri: boolean
+  t: McpTranslate
+  addNotification: McpRegistryAddNotification
+  createServer: McpRegistryServerCreateMutation
+  syncServer: McpRegistryServerSyncMutation
+  refreshAll: () => Promise<void>
+}
 
 type McpRegistryImportParseResult =
   | { kind: "invalid" }
@@ -71,4 +100,78 @@ export const parseMcpRegistryImportConfig = (
   }
 
   return { kind: "ok", requests }
+}
+
+export const getMcpRegistryImportResultCounts = (
+  results: readonly PromiseSettledResult<McpServer>[]
+): { succeeded: number; failed: number; createdServers: McpServer[] } => {
+  const createdServers = results
+    .filter((item): item is PromiseFulfilledResult<McpServer> => item.status === "fulfilled")
+    .map((item) => item.value)
+
+  return {
+    succeeded: createdServers.length,
+    failed: results.length - createdServers.length,
+    createdServers,
+  }
+}
+
+export const getFirstImportedRemoteMcpRegistryServerId = (
+  servers: readonly Pick<McpServer, "id" | "server_type" | "sse_url">[]
+): string | null => {
+  return servers.find((server) => server.server_type === "sse" && server.sse_url)?.id ?? null
+}
+
+export function useMcpRegistryImportAction({
+  isTauri,
+  t,
+  addNotification,
+  createServer,
+  syncServer,
+  refreshAll,
+}: UseMcpRegistryImportActionOptions) {
+  const handleImportConfig = useCallback(async (payload: { config: Record<string, unknown> }) => {
+    if (!isTauri) {
+      const parsed = parseMcpRegistryImportConfig(payload.config)
+      if (parsed.kind !== "ok") {
+        addNotification(getMcpRegistryNotification(t, "invalid_config"))
+        return
+      }
+
+      const results = await Promise.allSettled(
+        parsed.requests.map((request) => createServer.trigger(request))
+      )
+      const { succeeded, failed, createdServers } = getMcpRegistryImportResultCounts(results)
+
+      if (succeeded > 0) {
+        addNotification(getMcpRegistryCountNotification(t, "import_success", succeeded))
+      }
+      if (failed > 0) {
+        addNotification(getMcpRegistryCountNotification(t, "import_failed", failed))
+      }
+
+      const remoteServerId = getFirstImportedRemoteMcpRegistryServerId(createdServers)
+      if (remoteServerId) {
+        try {
+          await syncServer.trigger(remoteServerId)
+        } catch (err) {
+          addNotification(getMcpRegistryErrorNotification(t, "sync", err, "warning"))
+        }
+      }
+
+      await refreshAll()
+      return
+    }
+
+    try {
+      await invoke("import_mcp_config", { payload })
+      await refreshAll()
+    } catch (err) {
+      addNotification(getMcpRegistryErrorNotification(t, "save", err))
+    }
+  }, [addNotification, createServer, isTauri, refreshAll, syncServer, t])
+
+  return {
+    handleImportConfig,
+  }
 }

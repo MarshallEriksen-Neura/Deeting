@@ -1241,6 +1241,7 @@ const PluginMarketReviewItemSchema = z.object({
   destructive_actions: z.array(z.string()).default([]),
   privacy_risks: z.array(z.string()).default([]),
   findings: z.array(PluginMarketReviewFindingSchema).default([]),
+  manifest_json: z.record(z.string(), z.unknown()).default({}),
   created_at: z.string(),
   updated_at: z.string(),
 })
@@ -1857,6 +1858,7 @@ export async function deleteAdminSkill(skillId: string): Promise<void> {
 }
 
 const EmbeddingSettingSchema = z.object({
+  // Admin API still uses this legacy field name for the selected embedding model reference.
   model_name: z.string().nullable().optional(),
 })
 
@@ -1906,12 +1908,12 @@ export async function fetchAdminEmbeddingSetting() {
   return EmbeddingSettingSchema.parse(data)
 }
 
-export async function updateAdminEmbeddingSetting(modelName: string) {
+export async function updateAdminEmbeddingSetting(modelReference: string) {
   const data = await request<unknown>({
     url: `${ADMIN_BASE}/settings/embedding`,
     method: "PATCH",
     data: {
-      model_name: modelName,
+      model_name: modelReference,
     },
   })
   return EmbeddingSettingSchema.parse(data)

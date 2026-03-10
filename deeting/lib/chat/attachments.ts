@@ -1,4 +1,8 @@
 import type { ChatAttachment } from "@/lib/chat/message-content"
+import {
+  prepareDesktopObjectStorageRead,
+  prepareDesktopObjectStorageUpload,
+} from "@/lib/api/desktop-object-storage"
 import { completeAssetUpload, initAssetUpload } from "@/lib/api/media-assets"
 import { uploadModelFile } from "@/lib/api/model-files"
 import { calculateFileHash } from "@/lib/utils/file"
@@ -75,11 +79,36 @@ const fileToDataUrl = (file: File): Promise<string> =>
     reader.readAsDataURL(file)
   })
 
+const fileExtension = (file: File) => {
+  const fromName = file.name.split(".").pop()?.trim().toLowerCase()
+  if (fromName) return fromName
+  const fromType = file.type.split("/").pop()?.trim().toLowerCase()
+  if (fromType) return fromType
+  return "bin"
+}
+
 const uploadFile = async (url: string, headers: Headers, file: File) => {
   const response = await fetch(url, {
     method: "PUT",
     headers,
     body: file,
+  })
+  if (!response.ok) {
+    throw new Error("upload_put_failed")
+  }
+}
+
+const uploadFileBuffer = async (
+  url: string,
+  method: string,
+  headers: Headers,
+  file: File
+) => {
+  const body = await file.arrayBuffer()
+  const response = await fetch(url, {
+    method,
+    headers,
+    body,
   })
   if (!response.ok) {
     throw new Error("upload_put_failed")
@@ -126,6 +155,45 @@ const buildLocalImageAttachment = async (file: File): Promise<ChatAttachment> =>
     size: file.size,
     type: file.type,
     source: "local",
+    sha256: contentHash,
+  }
+}
+
+const buildDesktopObjectStorageImageAttachment = async (
+  file: File
+): Promise<ChatAttachment> => {
+  const contentHash = await hashFile(file)
+  const ticket = await prepareDesktopObjectStorageUpload({
+    object_key: `chat-assets/${contentHash}.${fileExtension(file)}`,
+    content_type: file.type || undefined,
+    expires_seconds: 900,
+  })
+
+  const headers = new Headers(ticket.headers ?? {})
+  await uploadFileBuffer(ticket.upload_url, ticket.method || "PUT", headers, file)
+
+  let assetUrl = ticket.asset_url ?? undefined
+  if (!assetUrl) {
+    try {
+      const readTicket = await prepareDesktopObjectStorageRead({
+        object_key: ticket.object_key,
+        expires_seconds: 900,
+      })
+      assetUrl = readTicket.asset_url
+    } catch {
+      assetUrl = undefined
+    }
+  }
+
+  return {
+    id: createAttachmentId(),
+    kind: "image",
+    url: assetUrl,
+    name: file.name,
+    size: file.size,
+    type: file.type,
+    source: "oss",
+    objectKey: ticket.object_key,
     sha256: contentHash,
   }
 }
@@ -235,6 +303,9 @@ const buildAttachment = async (
 ): Promise<ChatAttachment> => {
   if (file.type.startsWith("image/")) {
     if (isTauriRuntime()) {
+      try {
+        return await buildDesktopObjectStorageImageAttachment(file)
+      } catch {}
       return buildLocalImageAttachment(file)
     }
     return buildImageAttachment(file)

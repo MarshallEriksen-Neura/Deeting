@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
 import { useVideoGenerationStore } from "@/store/video-generation-store";
+import { resolveVideoInputUrl, type DesktopVideoMediaSlot } from "@/lib/video/desktop-media-upload";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 
@@ -38,8 +39,9 @@ function MediaUploadSlot({
     (event: React.ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
       if (file) {
-        const url = URL.createObjectURL(file);
-        config.onChange(url);
+        void resolveVideoInputUrl(file, config.type as DesktopVideoMediaSlot).then((url) => {
+          config.onChange(url);
+        });
       }
     },
     [config]

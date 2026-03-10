@@ -99,6 +99,7 @@ pub fn row_to_user_secretary(row: &SqliteRow) -> Result<UserSecretary, ProviderE
         user_id: row.try_get("user_id")?,
         name: row.try_get("name")?,
         model_name: row.try_get("model_name")?,
+        provider_model_id: row.try_get("provider_model_id")?,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
     })

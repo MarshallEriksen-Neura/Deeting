@@ -275,6 +275,42 @@ async fn get_instance_connection_prefers_anthropic_preset_for_official_base_url(
 }
 
 #[tokio::test]
+async fn update_user_secretary_persists_provider_model_id() {
+    let store = init_store().await;
+
+    let created = store
+        .get_or_create_user_secretary()
+        .await
+        .expect("create default secretary");
+    assert_eq!(created.provider_model_id, None);
+
+    let updated = store
+        .update_user_secretary(
+            crate::modules::providers::types::UserSecretaryUpdateRequest {
+                model_name: Some(Some("gpt-4o-mini".to_string())),
+                provider_model_id: Some(Some("22222222-2222-4222-8222-222222222222".to_string())),
+            },
+        )
+        .await
+        .expect("update secretary");
+
+    assert_eq!(updated.model_name.as_deref(), Some("gpt-4o-mini"));
+    assert_eq!(
+        updated.provider_model_id.as_deref(),
+        Some("22222222-2222-4222-8222-222222222222")
+    );
+
+    let reloaded = store
+        .get_or_create_user_secretary()
+        .await
+        .expect("reload secretary");
+    assert_eq!(
+        reloaded.provider_model_id.as_deref(),
+        Some("22222222-2222-4222-8222-222222222222")
+    );
+}
+
+#[tokio::test]
 async fn init_migrates_legacy_provider_models_before_index_creation() {
     let store = ProviderStore::new("sqlite::memory:")
         .await

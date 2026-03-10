@@ -418,16 +418,11 @@ async fn handle_feishu_chat_event(
         .await
         .map_err(|err| err.to_string())?;
 
-    let model_name = secretary
-        .model_name
-        .as_deref()
-        .map(str::trim)
-        .filter(|v| !v.is_empty())
-        .unwrap_or("gpt-4o-mini");
+    let (model_name, provider_model_id) = resolve_secretary_model_selection(&secretary);
 
     let input = LocalOrchestratorInput {
-        model: model_name.to_string(),
-        provider_model_id: None,
+        model: model_name,
+        provider_model_id,
         session_id,
         assistant_id: None,
         regenerate: false,
@@ -468,6 +463,26 @@ async fn handle_feishu_chat_event(
     client
         .reply_event(&event.id, &event.chat_id, &reply_text)
         .await
+}
+
+fn resolve_secretary_model_selection(
+    secretary: &crate::modules::providers::types::UserSecretary,
+) -> (String, Option<String>) {
+    // `model_name` is kept only as a legacy fallback for stored secretary selections.
+    let model_reference = secretary
+        .model_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("gpt-4o-mini")
+        .to_string();
+    let provider_model_id = secretary
+        .provider_model_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    (model_reference, provider_model_id)
 }
 
 fn relay_action_string(event: &RelayEvent, key: &str) -> Option<String> {
@@ -600,5 +615,44 @@ mod tests {
         let response = build_card_toast_response("ok", "success");
         assert_eq!(response["toast"]["type"], "success");
         assert_eq!(response["toast"]["content"], "ok");
+    }
+
+    #[test]
+    fn resolve_secretary_model_selection_prefers_provider_model_id() {
+        let secretary = crate::modules::providers::types::UserSecretary {
+            id: "11111111-1111-4111-8111-111111111111".to_string(),
+            user_id: "00000000-0000-0000-0000-000000000000".to_string(),
+            name: "deeting".to_string(),
+            model_name: Some("gpt-4o-mini".to_string()),
+            provider_model_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
+            created_at: "2026-03-10T00:00:00Z".to_string(),
+            updated_at: "2026-03-10T00:00:01Z".to_string(),
+        };
+
+        let (model_name, provider_model_id) = resolve_secretary_model_selection(&secretary);
+
+        assert_eq!(model_name, "gpt-4o-mini");
+        assert_eq!(
+            provider_model_id.as_deref(),
+            Some("22222222-2222-4222-8222-222222222222")
+        );
+    }
+
+    #[test]
+    fn resolve_secretary_model_selection_uses_default_when_secretary_empty() {
+        let secretary = crate::modules::providers::types::UserSecretary {
+            id: "11111111-1111-4111-8111-111111111111".to_string(),
+            user_id: "00000000-0000-0000-0000-000000000000".to_string(),
+            name: "deeting".to_string(),
+            model_name: None,
+            provider_model_id: Some("  ".to_string()),
+            created_at: "2026-03-10T00:00:00Z".to_string(),
+            updated_at: "2026-03-10T00:00:01Z".to_string(),
+        };
+
+        let (model_name, provider_model_id) = resolve_secretary_model_selection(&secretary);
+
+        assert_eq!(model_name, "gpt-4o-mini");
+        assert_eq!(provider_model_id, None);
     }
 }

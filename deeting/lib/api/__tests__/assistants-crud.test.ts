@@ -77,6 +77,10 @@ describe("assistant crud api", () => {
         name: "assistant-v1",
         description: "desc",
         system_prompt: "you are assistant",
+        model_config: {
+          model: "gpt-4o-mini",
+          provider_model_id: "22222222-2222-4222-8222-222222222222",
+        },
         tags: ["#chat"],
       },
     })
@@ -91,6 +95,10 @@ describe("assistant crud api", () => {
           description: "summary",
           avatar: "lucide:bot",
           system_prompt: "you are assistant",
+          model_config: {
+            model: "gpt-4o-mini",
+            provider_model_id: "22222222-2222-4222-8222-222222222222",
+          },
         }),
       })
     )
@@ -114,6 +122,10 @@ describe("assistant crud api", () => {
         name: "assistant-v1",
         description: "new-desc",
         system_prompt: "new prompt",
+        model_config: {
+          model: "gpt-4.1",
+          provider_model_id: "33333333-3333-4333-8333-333333333333",
+        },
       },
     })
 
@@ -127,6 +139,10 @@ describe("assistant crud api", () => {
           description: "new-summary",
           avatar: "lucide:brain",
           system_prompt: "new prompt",
+          model_config: {
+            model: "gpt-4.1",
+            provider_model_id: "33333333-3333-4333-8333-333333333333",
+          },
         }),
       })
     )

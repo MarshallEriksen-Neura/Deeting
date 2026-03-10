@@ -644,9 +644,7 @@ impl MonitorState {
             .get_or_create_user_secretary()
             .await
             .ok()
-            .and_then(|value| value.model_name)
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty());
+            .and_then(|value| secretary_model_hint(&value));
 
         let selected = task_model_hint
             .as_deref()
@@ -1045,6 +1043,25 @@ fn find_model_by_reference(models: &[ProviderModel], reference: &str) -> Option<
         .cloned()
 }
 
+fn secretary_model_hint(
+    secretary: &crate::modules::providers::types::UserSecretary,
+) -> Option<String> {
+    secretary
+        .provider_model_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            secretary
+                .model_name
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        })
+}
+
 fn matches_model_reference(model: &ProviderModel, normalized_reference: &str) -> bool {
     if model
         .model_id
@@ -1077,6 +1094,49 @@ fn matches_model_reference(model: &ProviderModel, normalized_reference: &str) ->
         }
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn build_secretary(
+        legacy_model_name: Option<&str>,
+        provider_model_id: Option<&str>,
+    ) -> crate::modules::providers::types::UserSecretary {
+        crate::modules::providers::types::UserSecretary {
+            id: "11111111-1111-4111-8111-111111111111".to_string(),
+            user_id: "00000000-0000-0000-0000-000000000000".to_string(),
+            name: "secretary".to_string(),
+            model_name: legacy_model_name.map(str::to_string),
+            provider_model_id: provider_model_id.map(str::to_string),
+            created_at: "2026-03-10T00:00:00Z".to_string(),
+            updated_at: "2026-03-10T00:00:01Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn secretary_model_hint_prefers_provider_model_id() {
+        let secretary = build_secretary(
+            Some("gpt-4o-mini"),
+            Some("22222222-2222-4222-8222-222222222222"),
+        );
+
+        assert_eq!(
+            secretary_model_hint(&secretary).as_deref(),
+            Some("22222222-2222-4222-8222-222222222222")
+        );
+    }
+
+    #[test]
+    fn secretary_model_hint_falls_back_to_legacy_model_name() {
+        let secretary = build_secretary(Some("gpt-4o-mini"), Some(" "));
+
+        assert_eq!(
+            secretary_model_hint(&secretary).as_deref(),
+            Some("gpt-4o-mini")
+        );
+    }
 }
 
 fn build_monitor_prompt(task: &LocalMonitorTask) -> String {

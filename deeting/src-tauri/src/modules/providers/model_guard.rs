@@ -1,5 +1,5 @@
 use crate::modules::providers::store::utils::has_embedding_capability;
-use crate::modules::providers::types::ProviderModel;
+use crate::modules::providers::types::{ProviderModel, UserSecretary};
 use crate::state::AppState;
 
 pub const MODEL_CONFIG_REQUIRED_PREFIX: &str = "MODEL_CONFIG_REQUIRED";
@@ -59,10 +59,7 @@ async fn collect_missing_required_local_models(
         .map_err(|err| err.to_string())?;
 
     let mut missing = Vec::new();
-    let secretary_model_name = secretary.model_name.as_deref().map(str::trim).unwrap_or("");
-    if secretary_model_name.is_empty()
-        || !matches_active_model_reference(&active_models, secretary_model_name)
-    {
+    if !matches_active_secretary_model(&active_models, &secretary) {
         missing.push(MODEL_CONFIG_SECRETARY);
     }
 
@@ -77,6 +74,31 @@ async fn collect_missing_required_local_models(
     }
 
     Ok(missing)
+}
+
+fn matches_active_secretary_model(models: &[ProviderModel], secretary: &UserSecretary) -> bool {
+    let provider_model_id = secretary
+        .provider_model_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if let Some(provider_model_id) = provider_model_id {
+        if models
+            .iter()
+            .any(|model| model.id.to_string() == provider_model_id)
+        {
+            return true;
+        }
+    }
+
+    let model_name = secretary
+        .model_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    model_name
+        .map(|value| matches_active_model_reference(models, value))
+        .unwrap_or(false)
 }
 
 fn matches_active_model_reference(models: &[ProviderModel], reference: &str) -> bool {
@@ -99,4 +121,67 @@ fn matches_active_embedding_model(models: &[ProviderModel], provider_model_id: &
     models.iter().any(|model| {
         model.id.to_string() == provider_model_id && has_embedding_capability(&model.capabilities)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use uuid::Uuid;
+
+    fn build_model(model_id: &str) -> ProviderModel {
+        ProviderModel {
+            id: Uuid::new_v4(),
+            instance_id: Uuid::new_v4(),
+            model_id: model_id.to_string(),
+            unified_model_id: None,
+            display_name: None,
+            capabilities: vec!["chat".to_string()],
+            upstream_path: "/v1/chat/completions".to_string(),
+            pricing_config: json!({}),
+            limit_config: json!({}),
+            tokenizer_config: json!({}),
+            routing_config: json!({}),
+            config_override: json!({}),
+            source: "manual".to_string(),
+            extra_meta: json!({}),
+            weight: 100,
+            priority: 0,
+            is_active: true,
+            synced_at: None,
+            created_at: None,
+            updated_at: None,
+        }
+    }
+
+    fn build_secretary(
+        legacy_model_name: Option<&str>,
+        provider_model_id: Option<String>,
+    ) -> UserSecretary {
+        UserSecretary {
+            id: "11111111-1111-4111-8111-111111111111".to_string(),
+            user_id: "00000000-0000-0000-0000-000000000000".to_string(),
+            name: "secretary".to_string(),
+            model_name: legacy_model_name.map(str::to_string),
+            provider_model_id,
+            created_at: "2026-03-10T00:00:00Z".to_string(),
+            updated_at: "2026-03-10T00:00:01Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn matches_active_secretary_model_prefers_provider_model_id() {
+        let model = build_model("gpt-4o-mini");
+        let secretary = build_secretary(Some("missing-model"), Some(model.id.to_string()));
+
+        assert!(matches_active_secretary_model(&[model], &secretary));
+    }
+
+    #[test]
+    fn matches_active_secretary_model_falls_back_to_legacy_model_name() {
+        let model = build_model("gpt-4o-mini");
+        let secretary = build_secretary(Some("gpt-4o-mini"), Some(" ".to_string()));
+
+        assert!(matches_active_secretary_model(&[model], &secretary));
+    }
 }

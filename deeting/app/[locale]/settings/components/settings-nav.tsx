@@ -1,11 +1,11 @@
 "use client"
 
 import type { ElementType } from "react"
-import { Boxes, Bot, Server } from "lucide-react"
+import { Boxes, Bot, Database, Server } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/hooks/use-i18n"
 
-export type SettingsSection = "models" | "agent" | "relay"
+export type SettingsSection = "models" | "storage" | "agent" | "relay"
 
 export interface NavItem {
   id: SettingsSection
@@ -15,6 +15,7 @@ export interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: "models", icon: Boxes, desktopOnly: false },
+  { id: "storage", icon: Database, desktopOnly: true },
   { id: "agent", icon: Bot, desktopOnly: true },
   { id: "relay", icon: Server, desktopOnly: true },
 ]

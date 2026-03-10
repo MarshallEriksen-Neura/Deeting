@@ -65,6 +65,19 @@ pub async fn get_local_user_document(
 }
 
 #[tauri::command]
+pub async fn get_local_user_document_download_url(
+    state: State<'_, AppState>,
+    file_id: String,
+) -> Result<String, String> {
+    state
+        .mcp
+        .store
+        .get_local_user_document_download_url(&file_id)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
 pub async fn update_local_user_document(
     state: State<'_, AppState>,
     file_id: String,
@@ -83,6 +96,28 @@ pub async fn delete_local_user_document(
     state: State<'_, AppState>,
     file_id: String,
 ) -> Result<(), String> {
+    let object_key = state
+        .mcp
+        .store
+        .get_local_user_document_object_key(&file_id)
+        .await
+        .map_err(to_string)?;
+
+    if let Some(object_key) = object_key {
+        if let Err(err) = state
+            .providers
+            .store
+            .delete_local_desktop_object_storage_object(&object_key)
+            .await
+        {
+            log::warn!(
+                "delete_local_user_document: failed to delete desktop object storage object {}: {}",
+                object_key,
+                err
+            );
+        }
+    }
+
     state
         .mcp
         .store

@@ -1,4 +1,8 @@
-import { parseMcpRegistryImportConfig } from "@/components/mcp/registry-import"
+import {
+  getFirstImportedRemoteMcpRegistryServerId,
+  getMcpRegistryImportResultCounts,
+  parseMcpRegistryImportConfig,
+} from "@/components/mcp/registry-import"
 
 describe("registry import", () => {
   it("returns invalid when mcpServers is missing or empty", () => {
@@ -58,5 +62,20 @@ describe("registry import", () => {
         },
       ],
     })
+  })
+
+  it("summarizes import results and resolves the first remote server id", () => {
+    const local = { id: "local-1", server_type: "stdio", sse_url: null }
+    const remote = { id: "remote-1", server_type: "sse", sse_url: "https://example.com/sse" }
+    const summary = getMcpRegistryImportResultCounts([
+      { status: "fulfilled", value: local as never },
+      { status: "rejected", reason: new Error("boom") },
+      { status: "fulfilled", value: remote as never },
+    ])
+
+    expect(summary.succeeded).toBe(2)
+    expect(summary.failed).toBe(1)
+    expect(summary.createdServers).toEqual([local, remote])
+    expect(getFirstImportedRemoteMcpRegistryServerId(summary.createdServers as never)).toBe("remote-1")
   })
 })

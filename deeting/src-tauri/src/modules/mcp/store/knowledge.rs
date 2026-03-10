@@ -618,6 +618,74 @@ impl McpStore {
         row_to_local_knowledge_file(&row)
     }
 
+    pub async fn get_local_user_document_download_url(
+        &self,
+        file_id: &str,
+    ) -> Result<String, McpError> {
+        let normalized_id = file_id.trim().to_string();
+        if normalized_id.is_empty() {
+            return Err(McpError::validation("file_id is required"));
+        }
+        let row = sqlx::query(
+            r#"
+            SELECT meta_info
+            FROM user_document
+            WHERE id = ? AND user_id = ?
+            LIMIT 1;
+            "#,
+        )
+        .bind(&normalized_id)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?
+        .ok_or_else(|| McpError::NotFound("user document not found".to_string()))?;
+
+        let meta_info_text: String = row.try_get("meta_info")?;
+        let meta_info = if meta_info_text.trim().is_empty() {
+            serde_json::json!({})
+        } else {
+            serde_json::from_str::<serde_json::Value>(&meta_info_text)
+                .unwrap_or_else(|_| serde_json::json!({}))
+        };
+
+        extract_local_document_download_url(&meta_info)
+            .ok_or_else(|| McpError::NotFound("download url not available".to_string()))
+    }
+
+    pub async fn get_local_user_document_object_key(
+        &self,
+        file_id: &str,
+    ) -> Result<Option<String>, McpError> {
+        let normalized_id = file_id.trim().to_string();
+        if normalized_id.is_empty() {
+            return Err(McpError::validation("file_id is required"));
+        }
+        let row = sqlx::query(
+            r#"
+            SELECT meta_info
+            FROM user_document
+            WHERE id = ? AND user_id = ?
+            LIMIT 1;
+            "#,
+        )
+        .bind(&normalized_id)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?
+        .ok_or_else(|| McpError::NotFound("user document not found".to_string()))?;
+
+        let meta_info_text: String = row.try_get("meta_info")?;
+        let meta_info = if meta_info_text.trim().is_empty() {
+            serde_json::json!({})
+        } else {
+            serde_json::from_str::<serde_json::Value>(&meta_info_text)
+                .unwrap_or_else(|_| serde_json::json!({}))
+        };
+        Ok(extract_local_document_object_key(&meta_info))
+    }
+
     pub async fn update_local_user_document(
         &self,
         file_id: &str,

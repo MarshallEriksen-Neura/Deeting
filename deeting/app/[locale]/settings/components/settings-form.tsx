@@ -34,6 +34,7 @@ import {
   useUserSecretary,
 } from "@/lib/swr/use-embedding-settings";
 import { DesktopEmbeddingSettingsCard } from "./desktop-embedding-settings-card";
+import { DesktopObjectStorageSettingsCard } from "./desktop-object-storage-settings-card";
 import { DesktopRelaySettingsCard } from "./desktop-relay-settings-card";
 import { DesktopScoutSettingsCard } from "./desktop-scout-settings-card";
 import { DesktopSandboxSettingsCard } from "./desktop-sandbox-settings-card";
@@ -41,7 +42,22 @@ import { AgentSettingsCard } from "./agent-settings-card";
 import { PersonalSettingsCard } from "./personal-settings-card";
 import { SettingsFormActions } from "./settings-form-actions";
 import { SettingsNav, type SettingsSection } from "./settings-nav";
-import { type SettingsFormValues } from "../types";
+import { type ModelGroup, type SettingsFormValues } from "../types";
+
+function findSelectedSecretaryModel(
+  value: string | undefined,
+  groups: ModelGroup[]
+) {
+  if (!value) return null;
+  for (const group of groups) {
+    for (const model of group.models) {
+      if (model.id === value || model.provider_model_id === value) {
+        return model;
+      }
+    }
+  }
+  return null;
+}
 
 interface SettingsFormProps {
   isAuthenticated: boolean;
@@ -96,6 +112,16 @@ export function SettingsForm({
       relayBaseUrl: "",
       relaySharedSecret: "",
       scoutBaseUrl: "",
+      objectStorageProvider: "cloudflare_r2_s3",
+      objectStorageBucket: "",
+      objectStorageRegion: "",
+      objectStorageEndpoint: "",
+      objectStoragePublicBaseUrl: "",
+      objectStoragePathPrefix: "",
+      objectStorageAccessKeyId: "",
+      objectStorageSecretAccessKey: "",
+      objectStorageIsPathStyle: false,
+      objectStorageEnabled: false,
     },
   });
 
@@ -115,6 +141,17 @@ export function SettingsForm({
       let relayBaseUrl = "";
       let relaySharedSecret = "";
       let scoutBaseUrl = "";
+      let objectStorageProvider: SettingsFormValues["objectStorageProvider"] =
+        "cloudflare_r2_s3";
+      let objectStorageBucket = "";
+      let objectStorageRegion = "";
+      let objectStorageEndpoint = "";
+      let objectStoragePublicBaseUrl = "";
+      let objectStoragePathPrefix = "";
+      let objectStorageAccessKeyId = "";
+      let objectStorageSecretAccessKey = "";
+      let objectStorageIsPathStyle = false;
+      let objectStorageEnabled = false;
 
       if (isTauriRuntime) {
         try {
@@ -122,11 +159,29 @@ export function SettingsForm({
             await import("@/lib/api/desktop-relay");
           const { getDesktopScoutBaseUrl } =
             await import("@/lib/api/desktop-config");
+          const { fetchDesktopObjectStorageConfig } = await import(
+            "@/lib/api/desktop-object-storage"
+          );
           const current = await getDesktopRelaySettings();
+          const objectStorageConfig = await fetchDesktopObjectStorageConfig();
           if (!cancelled) {
             relayBaseUrl = current.relayBaseUrl ?? "";
             relaySharedSecret = current.relaySharedSecret ?? "";
             scoutBaseUrl = await getDesktopScoutBaseUrl();
+            objectStorageProvider =
+              objectStorageConfig?.provider ?? "cloudflare_r2_s3";
+            objectStorageBucket = objectStorageConfig?.bucket ?? "";
+            objectStorageRegion = objectStorageConfig?.region ?? "";
+            objectStorageEndpoint = objectStorageConfig?.endpoint ?? "";
+            objectStoragePublicBaseUrl =
+              objectStorageConfig?.public_base_url ?? "";
+            objectStoragePathPrefix = objectStorageConfig?.path_prefix ?? "";
+            objectStorageAccessKeyId =
+              objectStorageConfig?.access_key_id ?? "";
+            objectStorageSecretAccessKey = "";
+            objectStorageIsPathStyle =
+              objectStorageConfig?.is_path_style ?? false;
+            objectStorageEnabled = objectStorageConfig?.is_enabled ?? false;
           }
         } catch (error) {
           console.warn("[desktop-settings] load relay settings failed", error);
@@ -136,13 +191,25 @@ export function SettingsForm({
       if (cancelled) return;
 
       form.reset({
-        secretaryModel: secretarySetting?.model_name ?? "",
+        secretaryModel: isTauriRuntime
+          ? (secretarySetting?.provider_model_id ?? secretarySetting?.model_name ?? "")
+          : (secretarySetting?.model_name ?? ""),
         desktopEmbeddingProviderModelId: isTauriRuntime
           ? (userEmbeddingConfig?.provider_model_id ?? "")
           : "",
         relayBaseUrl,
         relaySharedSecret,
         scoutBaseUrl,
+        objectStorageProvider,
+        objectStorageBucket,
+        objectStorageRegion,
+        objectStorageEndpoint,
+        objectStoragePublicBaseUrl,
+        objectStoragePathPrefix,
+        objectStorageAccessKeyId,
+        objectStorageSecretAccessKey,
+        objectStorageIsPathStyle,
+        objectStorageEnabled,
       });
     };
 
@@ -157,6 +224,7 @@ export function SettingsForm({
     isLoadingSecretary,
     isLoadingUserEmbeddingConfig,
     isTauriRuntime,
+    secretarySetting?.provider_model_id,
     secretarySetting?.model_name,
     userEmbeddingConfig?.provider_model_id,
   ]);
@@ -224,14 +292,29 @@ export function SettingsForm({
       let desktopEmbeddingChanged = false;
       let relaySettingsChanged = false;
       let scoutSettingsChanged = false;
+      let objectStorageChanged = false;
 
       if (canEditPersonal) {
         const secretaryPayload: UserSecretaryUpdate = {};
         const nextSecretaryModel = values.secretaryModel.trim();
-        const currentSecretaryModel =
-          secretarySetting?.model_name?.trim() ?? "";
+        const currentSecretaryModel = isTauriRuntime
+          ? (secretarySetting?.provider_model_id?.trim() ??
+            secretarySetting?.model_name?.trim() ??
+            "")
+          : (secretarySetting?.model_name?.trim() ?? "");
         if (nextSecretaryModel !== currentSecretaryModel) {
-          secretaryPayload.model_name = nextSecretaryModel || null;
+          if (isTauriRuntime) {
+            const selectedModel = findSelectedSecretaryModel(
+              nextSecretaryModel,
+              chatModelGroups
+            );
+            secretaryPayload.model_name =
+              selectedModel?.id ?? (nextSecretaryModel || null);
+            secretaryPayload.provider_model_id =
+              selectedModel?.provider_model_id ?? null;
+          } else {
+            secretaryPayload.model_name = nextSecretaryModel || null;
+          }
         }
         if (Object.keys(secretaryPayload).length > 0) {
           await updateUserSecretary(secretaryPayload);
@@ -256,8 +339,14 @@ export function SettingsForm({
             await import("@/lib/api/desktop-relay");
           const { getDesktopScoutBaseUrl, setDesktopScoutBaseUrl } =
             await import("@/lib/api/desktop-config");
+          const {
+            fetchDesktopObjectStorageConfig,
+            updateDesktopObjectStorageConfig,
+          } = await import("@/lib/api/desktop-object-storage");
           try {
             const current = await getDesktopRelaySettings();
+            const currentObjectStorage =
+              await fetchDesktopObjectStorageConfig();
             const nextBaseUrl = values.relayBaseUrl.trim();
             const nextSecret = values.relaySharedSecret.trim();
             const currentScoutBaseUrl = (await getDesktopScoutBaseUrl()).trim();
@@ -276,9 +365,67 @@ export function SettingsForm({
               await setDesktopScoutBaseUrl(nextScoutBaseUrl);
               scoutSettingsChanged = true;
             }
+
+            const nextObjectStorageProvider = values.objectStorageProvider;
+            const nextObjectStorageBucket = values.objectStorageBucket.trim();
+            const nextObjectStorageRegion = values.objectStorageRegion.trim();
+            const nextObjectStorageEndpoint = values.objectStorageEndpoint.trim();
+            const nextObjectStoragePublicBaseUrl =
+              values.objectStoragePublicBaseUrl.trim();
+            const nextObjectStoragePathPrefix =
+              values.objectStoragePathPrefix.trim();
+            const nextObjectStorageAccessKeyId =
+              values.objectStorageAccessKeyId.trim();
+            const nextObjectStorageSecretAccessKey =
+              values.objectStorageSecretAccessKey.trim();
+            const nextObjectStorageIsPathStyle = values.objectStorageIsPathStyle;
+            const nextObjectStorageEnabled = values.objectStorageEnabled;
+
+            const currentStorageSignature = JSON.stringify({
+              provider: currentObjectStorage?.provider ?? "cloudflare_r2_s3",
+              bucket: currentObjectStorage?.bucket ?? "",
+              region: currentObjectStorage?.region ?? "",
+              endpoint: currentObjectStorage?.endpoint ?? "",
+              public_base_url: currentObjectStorage?.public_base_url ?? "",
+              path_prefix: currentObjectStorage?.path_prefix ?? "",
+              access_key_id: currentObjectStorage?.access_key_id ?? "",
+              is_path_style: currentObjectStorage?.is_path_style ?? false,
+              is_enabled: currentObjectStorage?.is_enabled ?? false,
+            });
+            const nextStorageSignature = JSON.stringify({
+              provider: nextObjectStorageProvider,
+              bucket: nextObjectStorageBucket,
+              region: nextObjectStorageRegion,
+              endpoint: nextObjectStorageEndpoint,
+              public_base_url: nextObjectStoragePublicBaseUrl,
+              path_prefix: nextObjectStoragePathPrefix,
+              access_key_id: nextObjectStorageAccessKeyId,
+              is_path_style: nextObjectStorageIsPathStyle,
+              is_enabled: nextObjectStorageEnabled,
+            });
+
+            if (
+              nextStorageSignature !== currentStorageSignature ||
+              nextObjectStorageSecretAccessKey.length > 0
+            ) {
+              await updateDesktopObjectStorageConfig({
+                provider: nextObjectStorageProvider,
+                bucket: nextObjectStorageBucket,
+                region: nextObjectStorageRegion || null,
+                endpoint: nextObjectStorageEndpoint,
+                public_base_url: nextObjectStoragePublicBaseUrl || null,
+                path_prefix: nextObjectStoragePathPrefix || null,
+                access_key_id: nextObjectStorageAccessKeyId,
+                secret_access_key:
+                  nextObjectStorageSecretAccessKey || undefined,
+                is_path_style: nextObjectStorageIsPathStyle,
+                is_enabled: nextObjectStorageEnabled,
+              });
+              objectStorageChanged = true;
+            }
           } catch (error) {
             console.warn(
-              "[desktop-settings] update relay/scout settings failed",
+              "[desktop-settings] update relay/scout/object-storage settings failed",
               error,
             );
           }
@@ -323,6 +470,9 @@ export function SettingsForm({
             });
         }
         toast(t("toast.desktopScoutUpdated"));
+      }
+      if (objectStorageChanged) {
+        toast(t("toast.desktopObjectStorageUpdated"));
       }
     } catch {
       toast.error(t("toast.saveFailed"));
@@ -439,6 +589,17 @@ export function SettingsForm({
             <div className="flex flex-col gap-6">
               <AgentSettingsCard isTauriRuntime={isTauriRuntime} />
               <DesktopSandboxSettingsCard isTauriRuntime={isTauriRuntime} />
+            </div>
+          )}
+
+          {/* Storage section */}
+          {activeSection === "storage" && (
+            <div className="flex flex-col gap-6">
+              <DesktopObjectStorageSettingsCard
+                control={form.control}
+                isTauriRuntime={isTauriRuntime}
+                canEditDesktop={canEditDesktop}
+              />
             </div>
           )}
 
