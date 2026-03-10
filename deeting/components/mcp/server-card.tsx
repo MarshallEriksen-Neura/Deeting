@@ -300,7 +300,12 @@ export function ServerCard({
           </div>
 
           {/* Actions - switch always visible, others on hover */}
-          <div className="flex items-center gap-2 shrink-0" data-mcp-action>
+          <div
+            className="flex items-center gap-2 shrink-0"
+            data-mcp-action
+            onClick={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
             {showPrimaryAction && primaryActionLabelKey && (
               <GlassButton
                 size="sm"
@@ -315,6 +320,8 @@ export function ServerCard({
             )}
             <Switch
               checked={isMcpToolSwitchChecked(tool, toggleMode)}
+              onClick={(event) => event.stopPropagation()}
+              onPointerDown={(event) => event.stopPropagation()}
               onCheckedChange={(checked) => onToggle?.(tool, checked)}
               disabled={isMcpToolSwitchDisabled(tool, toggleMode)}
               className="data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-purple-600 data-[state=checked]:to-purple-500"
