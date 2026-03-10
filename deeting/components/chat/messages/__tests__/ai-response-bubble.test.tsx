@@ -33,6 +33,31 @@ jest.mock("framer-motion", () => ({
 }));
 
 describe("AIResponseBubble debug panel", () => {
+  it("does not show sandbox label for search_sdk console", () => {
+    const parts: MessageBlock[] = [
+      { id: "exec-title", type: "execution_section", title: "Local Tool Actions" },
+      { id: "log-1", type: "console_log", stream: "stdout", content: "hello" },
+      { id: "call-1", type: "tool_call", toolName: "search_sdk", status: "success" },
+    ];
+
+    render(<AIResponseBubble parts={parts} />);
+
+    expect(screen.queryByText("SANDBOX EXECUTION")).not.toBeInTheDocument();
+    expect(screen.getByText("Local Tool Actions")).toBeInTheDocument();
+  });
+
+  it("shows sandbox label for execute_code_plan console", () => {
+    const parts: MessageBlock[] = [
+      { id: "exec-title", type: "execution_section", title: "Local Tool Actions" },
+      { id: "log-1", type: "console_log", stream: "stdout", content: "hello" },
+      { id: "call-1", type: "tool_call", toolName: "execute_code_plan", status: "success" },
+    ];
+
+    render(<AIResponseBubble parts={parts} />);
+
+    expect(screen.getByText("SANDBOX EXECUTION")).toBeInTheDocument();
+  });
+
   it("renders assistant transition card", () => {
     const parts: MessageBlock[] = [
       {

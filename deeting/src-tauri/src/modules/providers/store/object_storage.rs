@@ -3,9 +3,8 @@ use crate::modules::providers::store::utils::now_rfc3339;
 use crate::modules::providers::store::{ProviderStore, LOCAL_DESKTOP_USER_ID};
 use crate::modules::providers::types::{
     DesktopObjectStorageConfig, DesktopObjectStorageConfigUpdateRequest,
-    DesktopObjectStorageProvider, DesktopObjectStorageReadRequest,
-    DesktopObjectStorageReadTicket, DesktopObjectStorageUploadRequest,
-    DesktopObjectStorageUploadTicket,
+    DesktopObjectStorageProvider, DesktopObjectStorageReadRequest, DesktopObjectStorageReadTicket,
+    DesktopObjectStorageUploadRequest, DesktopObjectStorageUploadTicket,
 };
 use base64::Engine;
 use hmac::{Hmac, Mac};
@@ -21,7 +20,9 @@ type HmacSha256 = Hmac<Sha256>;
 
 const DEFAULT_UPLOAD_EXPIRES_SECONDS: u32 = 900;
 
-fn format_expires_at(expires_seconds: u32) -> Result<(time::OffsetDateTime, String), ProviderError> {
+fn format_expires_at(
+    expires_seconds: u32,
+) -> Result<(time::OffsetDateTime, String), ProviderError> {
     let timestamp = time::OffsetDateTime::now_utc();
     let expires_at = (timestamp + time::Duration::seconds(i64::from(expires_seconds)))
         .format(&time::format_description::well_known::Rfc3339)

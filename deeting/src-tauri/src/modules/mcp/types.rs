@@ -228,6 +228,139 @@ pub struct McpTool {
     pub updated_at: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpTransportKind {
+    Stdio,
+    Sse,
+    Unknown,
+}
+
+fn normalized_transport_kind(value: Option<&str>) -> Option<McpTransportKind> {
+    match value.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(raw) if raw.eq_ignore_ascii_case("stdio") => Some(McpTransportKind::Stdio),
+        Some(raw) if raw.eq_ignore_ascii_case("sse") => Some(McpTransportKind::Sse),
+        Some(_) => Some(McpTransportKind::Unknown),
+        None => None,
+    }
+}
+
+impl McpTool {
+    fn config_value(&self) -> Option<Value> {
+        serde_json::from_str(&self.config_json).ok()
+    }
+
+    pub fn has_local_command(&self) -> bool {
+        self.command
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .is_some()
+    }
+
+    pub fn transport_kind(&self) -> McpTransportKind {
+        self.config_value()
+            .as_ref()
+            .and_then(|value| {
+                value
+                    .get("transport")
+                    .and_then(Value::as_str)
+                    .or_else(|| value.get("server_type").and_then(Value::as_str))
+                    .or_else(|| value.get("type").and_then(Value::as_str))
+            })
+            .and_then(|value| normalized_transport_kind(Some(value)))
+            .unwrap_or_else(|| {
+                if self.has_local_command() {
+                    McpTransportKind::Stdio
+                } else {
+                    McpTransportKind::Unknown
+                }
+            })
+    }
+
+    pub fn supports_local_process_lifecycle(&self) -> bool {
+        self.transport_kind() == McpTransportKind::Stdio && self.has_local_command()
+    }
+
+    pub fn transport_label(&self) -> &'static str {
+        match self.transport_kind() {
+            McpTransportKind::Stdio => "stdio",
+            McpTransportKind::Sse => "sse",
+            McpTransportKind::Unknown => "unknown",
+        }
+    }
+
+    pub fn is_remote_sse(&self) -> bool {
+        self.transport_kind() == McpTransportKind::Sse
+    }
+
+    pub fn remote_sse_url(&self) -> Option<String> {
+        self.config_value().and_then(|value| {
+            value
+                .get("sse_url")
+                .and_then(Value::as_str)
+                .or_else(|| value.get("url").and_then(Value::as_str))
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        })
+    }
+
+    pub fn remote_tool_name(&self) -> Option<String> {
+        self.config_value()
+            .and_then(|value| {
+                value
+                    .get("remote_tool_name")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+            })
+            .or_else(|| {
+                self.is_remote_sse()
+                    .then_some(self.name.trim().to_string())
+                    .filter(|value| !value.is_empty())
+            })
+    }
+
+    pub fn remote_server_name(&self) -> Option<String> {
+        self.config_value().and_then(|value| {
+            value
+                .get("server_name")
+                .and_then(Value::as_str)
+                .or_else(|| value.get("source_entry_name").and_then(Value::as_str))
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        })
+    }
+
+    pub fn is_stdio_mcp_tool(&self) -> bool {
+        self.transport_kind() == McpTransportKind::Stdio
+            && self
+                .config_value()
+                .as_ref()
+                .and_then(|value| value.get("runtime_protocol").and_then(Value::as_str))
+                .map(|value| value.eq_ignore_ascii_case("mcp"))
+                .unwrap_or(false)
+    }
+
+    pub fn stdio_mcp_tool_name(&self) -> Option<String> {
+        if !self.is_stdio_mcp_tool() {
+            return None;
+        }
+        self.config_value()
+            .and_then(|value| {
+                value
+                    .get("mcp_tool_name")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+            })
+            .or_else(|| Some(self.name.trim().to_string()).filter(|value| !value.is_empty()))
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpToolConfigPayload {
     pub command: Option<String>,
@@ -235,8 +368,34 @@ pub struct McpToolConfigPayload {
     pub env: Option<HashMap<String, String>>,
     pub description: Option<String>,
     pub capabilities: Option<Vec<String>>,
+    #[serde(rename = "type")]
+    pub transport_type: Option<String>,
+    pub url: Option<String>,
+    pub sse_url: Option<String>,
     #[serde(flatten)]
     pub extra: HashMap<String, serde_json::Value>,
+}
+
+impl McpToolConfigPayload {
+    pub fn transport_kind(&self) -> McpTransportKind {
+        normalized_transport_kind(self.transport_type.as_deref()).unwrap_or_else(|| {
+            if self.command.is_some() {
+                McpTransportKind::Stdio
+            } else if self.sse_url.is_some() || self.url.is_some() {
+                McpTransportKind::Sse
+            } else {
+                McpTransportKind::Unknown
+            }
+        })
+    }
+
+    pub fn remote_sse_url(&self) -> Option<&str> {
+        self.sse_url
+            .as_deref()
+            .or(self.url.as_deref())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

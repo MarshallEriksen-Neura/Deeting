@@ -113,9 +113,7 @@ pub(super) fn extract_local_document_text(meta_info: &serde_json::Value) -> Opti
     }
 }
 
-pub(super) fn extract_local_document_download_url(
-    meta_info: &serde_json::Value,
-) -> Option<String> {
+pub(super) fn extract_local_document_download_url(meta_info: &serde_json::Value) -> Option<String> {
     if let Some(url) = meta_info
         .get("object_storage")
         .and_then(|value| value.get("asset_url"))
@@ -129,9 +127,7 @@ pub(super) fn extract_local_document_download_url(
     None
 }
 
-pub(super) fn extract_local_document_object_key(
-    meta_info: &serde_json::Value,
-) -> Option<String> {
+pub(super) fn extract_local_document_object_key(meta_info: &serde_json::Value) -> Option<String> {
     let key = meta_info
         .get("object_storage")
         .and_then(|value| value.get("object_key"))

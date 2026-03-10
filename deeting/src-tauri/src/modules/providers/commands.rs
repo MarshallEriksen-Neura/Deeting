@@ -8,11 +8,11 @@ use crate::modules::providers::types::{
     BanditArmState, BanditFeedbackRequest, CreateInstanceRequest, DesktopObjectStorageConfig,
     DesktopObjectStorageConfigUpdateRequest, DesktopObjectStorageReadRequest,
     DesktopObjectStorageReadTicket, DesktopObjectStorageUploadRequest,
-    DesktopObjectStorageUploadTicket, ProviderInstance, ProviderModel,
-    ProviderModelTestRequest, ProviderModelTestResponse, ProviderModelUpdateRequest,
-    ProviderModelsQuickAddRequest, ProviderPreset, ProviderVerifyRequest,
-    ProviderVerifyResponse, UpdateInstanceRequest, UserEmbeddingConfig,
-    UserEmbeddingConfigUpdateRequest, UserSecretary, UserSecretaryUpdateRequest,
+    DesktopObjectStorageUploadTicket, ProviderInstance, ProviderModel, ProviderModelTestRequest,
+    ProviderModelTestResponse, ProviderModelUpdateRequest, ProviderModelsQuickAddRequest,
+    ProviderPreset, ProviderVerifyRequest, ProviderVerifyResponse, UpdateInstanceRequest,
+    UserEmbeddingConfig, UserEmbeddingConfigUpdateRequest, UserSecretary,
+    UserSecretaryUpdateRequest,
 };
 use crate::state::AppState;
 

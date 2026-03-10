@@ -3,26 +3,13 @@
 Deeting 主仓库。
 
 ## 子模块
+本仓库桌面端沙箱服务
+https://github.com/boxlite-ai/boxlite
+记忆设计参考
+https://github.com/Dataojitori/nocturne_memory
+https://github.com/AGI-is-going-to-arrive/Memory-Palace?tab=readme-ov-file
+云端沙箱服务
+https://github.com/alibaba/OpenSandbox
 
-当前主仓包含以下 Git submodule：
+为了做桌面端插件 把云端的聊天系统改废了（云端当前的聊天不可用）
 
-- deeting-relay - Relay 中转服务仓库
-- scout - Scout 仓库
-
-首次克隆建议使用：
-
-`ash
-git clone --recurse-submodules https://github.com/MarshallEriksen-Neura/Deeting.git
-`
-
-如果已经克隆过主仓，再执行：
-
-`ash
-git submodule update --init --recursive
-`
-
-更新子模块时：
-
-1. 先进入子仓库目录，在子仓里提交并推送变更。
-2. 回到主仓。
-3. 执行 git add <submodule-path>，然后提交主仓里的子模块指针更新。

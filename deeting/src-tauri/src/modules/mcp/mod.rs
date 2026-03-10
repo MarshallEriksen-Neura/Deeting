@@ -107,12 +107,20 @@ impl McpRuntimeState {
             .map(|(k, v)| format!("{k}={v}"))
             .collect::<Vec<_>>()
             .join("\u{1e}");
+        let remote_identity = [
+            tool.remote_server_name().unwrap_or_default(),
+            tool.remote_tool_name().unwrap_or_default(),
+            tool.remote_sse_url().unwrap_or_default(),
+        ]
+        .join("\u{1d}");
         let canonical = format!(
-            "{}|{}|{}|{}|{}",
+            "{}|{}|{}|{}|{}|{}|{}",
             tool.name,
+            tool.transport_label(),
             tool.command.clone().unwrap_or_default(),
             args,
             env_text,
+            remote_identity,
             tool.config_hash
         );
 
@@ -136,7 +144,10 @@ impl McpRuntimeState {
         let mut score = 0_i32;
         let mut reasons = Vec::new();
 
-        if tool.command.is_some() {
+        if tool.is_remote_sse() {
+            score += 1;
+            reasons.push("tool calls a remote MCP server".to_string());
+        } else if tool.supports_local_process_lifecycle() {
             // Any host command execution is a privileged action by default.
             score += 3;
             reasons.push("tool executes local host command".to_string());

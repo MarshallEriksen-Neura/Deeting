@@ -1,6 +1,9 @@
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::modules::mcp::commands::runtime::{
+        apply_config_payload_to_store, list_local_stdio_tools,
+    };
     use axum::{
         extract::State as AxumState,
         routing::{get, post},
@@ -314,6 +317,179 @@ mod tests {
             })
             .await
             .expect("upsert test tool")
+    }
+
+    async fn upsert_test_remote_sse_tool(
+        store: &crate::modules::mcp::store::McpStore,
+        server_name: &str,
+        tool_name: &str,
+    ) -> McpTool {
+        let source = store
+            .ensure_local_source()
+            .await
+            .expect("ensure local source for remote test tool");
+        let identifier = format!("{}/remote/{}/{}", source.id, server_name, tool_name);
+        let config_json = serde_json::json!({
+            "type": "sse",
+            "transport": "sse",
+            "server_type": "sse",
+            "server_name": server_name,
+            "source_entry_name": server_name,
+            "url": "https://example.com/sse",
+            "sse_url": "https://example.com/sse",
+            "remote_tool_name": tool_name,
+            "input_schema": {
+                "type": "object"
+            }
+        })
+        .to_string();
+        store
+            .upsert_tool(ToolUpsert {
+                id: None,
+                source_id: source.id.clone(),
+                identifier: Some(identifier),
+                name: tool_name.to_string(),
+                source_type: McpSourceType::Local,
+                status: McpToolStatus::Healthy,
+                ping_ms: None,
+                capabilities: vec!["remote".to_string()],
+                description: "remote test tool".to_string(),
+                error: None,
+                command: None,
+                args: None,
+                env: None,
+                config_json: config_json.clone(),
+                config_hash: hash_config(&config_json),
+                pending_config_json: None,
+                pending_config_hash: None,
+                conflict_status: McpConflictStatus::None,
+                is_read_only: false,
+                is_new: false,
+            })
+            .await
+            .expect("upsert remote sse test tool")
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn write_mock_stdio_mcp_server_script(test_name: &str) -> PathBuf {
+        let mut script_path = std::env::temp_dir();
+        script_path.push(format!(
+            "deeting-mock-stdio-mcp-{test_name}-{}.py",
+            Uuid::new_v4()
+        ));
+        std::fs::write(
+            &script_path,
+            r#"import json
+import sys
+
+TOOL = {
+    "name": "echo",
+    "description": "Echo test payload",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "message": {"type": "string"}
+        }
+    }
+}
+
+for raw_line in sys.stdin:
+    line = raw_line.strip()
+    if not line:
+        continue
+    msg = json.loads(line)
+    method = msg.get("method")
+
+    if method == "notifications/initialized":
+        continue
+    if method == "initialize":
+        result = {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {"tools": {}},
+            "serverInfo": {"name": "mock-stdio-mcp", "version": "0.1.0"}
+        }
+    elif method == "tools/list":
+        result = {"tools": [TOOL]}
+    elif method == "tools/call":
+        params = msg.get("params") or {}
+        arguments = params.get("arguments") or {}
+        result = {
+            "content": [{"type": "text", "text": json.dumps(arguments, sort_keys=True)}],
+            "structuredContent": {"echo": arguments},
+            "isError": False
+        }
+    else:
+        if "id" in msg:
+            print(json.dumps({
+                "jsonrpc": "2.0",
+                "id": msg["id"],
+                "error": {"code": -32601, "message": f"unsupported method: {method}"}
+            }), flush=True)
+        continue
+
+    if "id" in msg:
+        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": result}), flush=True)
+"#,
+        )
+        .expect("write mock stdio mcp server script");
+        script_path
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    async fn upsert_test_stdio_mcp_tool(
+        store: &crate::modules::mcp::store::McpStore,
+        server_name: &str,
+        tool_name: &str,
+        script_path: &Path,
+    ) -> McpTool {
+        let source = store
+            .ensure_local_source()
+            .await
+            .expect("ensure local source for stdio test tool");
+        let identifier = format!("{}/stdio/{}/{}", source.id, server_name, tool_name);
+        let config_json = serde_json::json!({
+            "type": "stdio",
+            "transport": "stdio",
+            "server_type": "stdio",
+            "server_name": server_name,
+            "source_entry_name": server_name,
+            "runtime_protocol": "mcp",
+            "mcp_tool_name": tool_name,
+            "command": "python3",
+            "args": [script_path.to_string_lossy().to_string()],
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "message": {"type": "string"}
+                }
+            }
+        })
+        .to_string();
+        store
+            .upsert_tool(ToolUpsert {
+                id: None,
+                source_id: source.id.clone(),
+                identifier: Some(identifier),
+                name: tool_name.to_string(),
+                source_type: McpSourceType::Local,
+                status: McpToolStatus::Healthy,
+                ping_ms: None,
+                capabilities: vec!["mcp".to_string()],
+                description: "stdio mcp test tool".to_string(),
+                error: None,
+                command: Some("python3".to_string()),
+                args: Some(vec![script_path.to_string_lossy().to_string()]),
+                env: None,
+                config_json: config_json.clone(),
+                config_hash: hash_config(&config_json),
+                pending_config_json: None,
+                pending_config_hash: None,
+                conflict_status: McpConflictStatus::None,
+                is_read_only: false,
+                is_new: false,
+            })
+            .await
+            .expect("upsert stdio mcp test tool")
     }
 
     #[derive(Clone)]
@@ -1144,6 +1320,154 @@ mod tests {
             view.index_status,
             crate::modules::mcp::commands::runtime::DesktopMcpToolIndexStatus::Indexed
         );
+    }
+
+    #[tokio::test]
+    async fn desktop_tool_view_marks_remote_sse_tool_as_callable_without_command() {
+        let store = create_test_store("desktop-tool-view-remote-sse").await;
+        let tool = upsert_test_remote_sse_tool(&store, "tavily-mcp", "search_web").await;
+
+        let view = crate::modules::mcp::commands::runtime::build_desktop_mcp_tool_view(
+            tool.clone(),
+            &HashSet::new(),
+            Some(&HashSet::from([tool.id.clone()])),
+        );
+
+        assert!(view.desired_enabled);
+        assert!(view.runtime_ready);
+        assert_eq!(view.runtime_status_reason, "ready_via_remote_mcp");
+        assert_eq!(view.availability_lane, "callable_now");
+        assert_eq!(view.recommended_action, "execute");
+        assert_eq!(tool.remote_tool_name().as_deref(), Some("search_web"));
+        assert_eq!(tool.remote_server_name().as_deref(), Some("tavily-mcp"));
+        assert_eq!(tool.remote_sse_url().as_deref(), Some("https://example.com/sse"));
+    }
+
+    #[tokio::test]
+    async fn desktop_tool_view_marks_remote_sse_tool_as_requiring_start_when_stopped() {
+        let store = create_test_store("desktop-tool-view-remote-sse-stopped").await;
+        let tool = upsert_test_remote_sse_tool(&store, "tavily-mcp", "search_web").await;
+        store
+            .set_tool_status(&tool.id, McpToolStatus::Stopped, None, None)
+            .await
+            .expect("set remote tool stopped");
+        let stopped_tool = store
+            .get_tool(&tool.id)
+            .await
+            .expect("load stopped remote tool")
+            .expect("stopped remote tool exists");
+
+        let view = crate::modules::mcp::commands::runtime::build_desktop_mcp_tool_view(
+            stopped_tool,
+            &HashSet::new(),
+            Some(&HashSet::new()),
+        );
+
+        assert!(!view.runtime_ready);
+        assert_eq!(view.runtime_status_reason, "remote_server_sync_required");
+        assert_eq!(view.recommended_action, "start_tool");
+        assert!(view.activation_required);
+    }
+
+    #[tokio::test]
+    async fn remote_transport_helpers_update_sse_tool_status_without_process_runtime() {
+        let store = create_test_store("remote-sse-lifecycle-inner").await;
+        let tool = upsert_test_remote_sse_tool(&store, "tavily-mcp", "search_web").await;
+        store
+            .set_tool_status(&tool.id, McpToolStatus::Stopped, None, None)
+            .await
+            .expect("seed stopped remote tool");
+
+        let started = start_remote_transport_tool(&store, &tool)
+            .await
+            .expect("start remote sse tool");
+        assert_eq!(started["status"], serde_json::json!("REMOTE_READY"));
+        assert_eq!(started["transport"], serde_json::json!("sse"));
+        let healthy_tool = store
+            .get_tool(&tool.id)
+            .await
+            .expect("reload healthy remote tool")
+            .expect("healthy remote tool exists");
+        assert_eq!(healthy_tool.status, McpToolStatus::Healthy);
+
+        stop_remote_transport_tool(&store, &healthy_tool)
+            .await
+            .expect("stop remote sse tool");
+        let stopped_tool = store
+            .get_tool(&tool.id)
+            .await
+            .expect("reload stopped remote tool")
+            .expect("stopped remote tool exists");
+        assert_eq!(stopped_tool.status, McpToolStatus::Stopped);
+    }
+
+    #[tokio::test]
+    async fn remote_transport_logs_explain_that_sse_has_no_local_process_stream() {
+        let store = create_test_store("remote-sse-logs-inner").await;
+        let tool = upsert_test_remote_sse_tool(&store, "tavily-mcp", "search_web").await;
+
+        let logs = build_remote_transport_log_entries(&tool)
+            .into_iter()
+            .map(|entry| serde_json::json!(entry))
+            .collect::<Vec<_>>();
+
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0]["stream"], serde_json::json!("event"));
+        assert!(logs[0]["message"]
+            .as_str()
+            .expect("log message")
+            .contains("does not expose a local process log stream"));
+    }
+
+    #[test]
+    fn tool_without_transport_or_command_stays_review_only() {
+        let tool = McpTool {
+            id: Uuid::new_v4().to_string(),
+            identifier: None,
+            name: "orphan_tool".to_string(),
+            source_type: McpSourceType::Local,
+            source_id: None,
+            status: McpToolStatus::Healthy,
+            ping_ms: None,
+            capabilities: vec![],
+            description: "unknown transport tool".to_string(),
+            error: None,
+            command: None,
+            args: None,
+            env: None,
+            config_json: "{}".to_string(),
+            pending_config_json: None,
+            config_hash: "hash".to_string(),
+            pending_config_hash: None,
+            conflict_status: McpConflictStatus::None,
+            is_read_only: false,
+            is_new: false,
+            created_at: "2025-01-01T00:00:00Z".to_string(),
+            updated_at: "2025-01-01T00:00:00Z".to_string(),
+        };
+
+        let view = crate::modules::mcp::commands::runtime::build_desktop_mcp_tool_view(
+            tool,
+            &HashSet::new(),
+            Some(&HashSet::new()),
+        );
+
+        assert!(!view.runtime_ready);
+        assert_eq!(view.runtime_status_reason, "tool_transport_unresolved");
+        assert_eq!(view.recommended_action, "review");
+        assert_eq!(view.availability_lane, "advisory");
+    }
+
+    #[test]
+    fn mcp_tool_config_payload_recognizes_sse_transport_from_url() {
+        let payload: McpToolConfigPayload = serde_json::from_value(serde_json::json!({
+            "type": "sse",
+            "url": "https://example.com/sse"
+        }))
+        .expect("deserialize remote config payload");
+
+        assert_eq!(payload.transport_kind(), McpTransportKind::Sse);
+        assert_eq!(payload.remote_sse_url(), Some("https://example.com/sse"));
     }
 
     #[tokio::test]
@@ -2455,6 +2779,159 @@ mod tests {
 
         assert!(err.contains("tool_installed_but_stopped"), "{err}");
         assert!(pending_tool_calls.read().await.is_empty());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[tokio::test]
+    async fn list_local_stdio_tools_discovers_tools_via_rmcp() {
+        let script_path = write_mock_stdio_mcp_server_script("list-local-stdio-tools");
+        let args = vec![script_path.to_string_lossy().to_string()];
+
+        let discovered = list_local_stdio_tools("python3", &args, None)
+            .await
+            .expect("discover local stdio mcp tools");
+
+        assert_eq!(discovered.len(), 1);
+        assert_eq!(discovered[0].name, "echo");
+        assert_eq!(
+            discovered[0].input_schema.get("type"),
+            Some(&serde_json::json!("object"))
+        );
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[tokio::test]
+    async fn execute_or_queue_routes_stdio_mcp_tools_through_rmcp() {
+        let store = create_test_store("execute-stdio-mcp-tool").await;
+        let script_path = write_mock_stdio_mcp_server_script("execute-stdio-mcp-tool");
+        let _tool = upsert_test_stdio_mcp_tool(&store, "mock_stdio", "echo", &script_path).await;
+        let pending_tool_calls =
+            RwLock::new(HashMap::<String, crate::modules::mcp::PendingToolCall>::new());
+
+        let result = execute_or_queue_mcp_tool_call(
+            &store,
+            &pending_tool_calls,
+            "echo".to_string(),
+            serde_json::json!({"message": "hello from rmcp"}),
+            false,
+        )
+        .await
+        .expect("execute stdio mcp tool through rmcp");
+
+        assert_eq!(
+            result
+                .get("structuredContent")
+                .and_then(|value| value.get("echo"))
+                .and_then(|value| value.get("message"))
+                .and_then(|value| value.as_str()),
+            Some("hello from rmcp")
+        );
+        assert_eq!(
+            result
+                .get("isError")
+                .and_then(|value| value.as_bool()),
+            Some(false)
+        );
+        assert!(pending_tool_calls.read().await.is_empty());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[tokio::test]
+    async fn apply_config_payload_imports_stdio_mcp_server_as_discovered_tool_and_executes() {
+        let store = create_test_store("apply-config-stdio-mcp").await;
+        let source = store
+            .ensure_local_source()
+            .await
+            .expect("ensure local source");
+        let script_path = write_mock_stdio_mcp_server_script("apply-config-stdio-mcp");
+        let legacy_identifier = format!("{}/{}", source.id, "mock_stdio");
+        let _legacy = upsert_test_tool_with_identifier(
+            &store,
+            "mock_stdio",
+            "python3",
+            Some(legacy_identifier),
+        )
+        .await;
+
+        let payload: McpConfigPayload = serde_json::from_value(serde_json::json!({
+            "mcpServers": {
+                "mock_stdio": {
+                    "type": "stdio",
+                    "command": "python3",
+                    "args": [script_path.to_string_lossy().to_string()],
+                    "description": "Mock stdio MCP server",
+                    "capabilities": ["test"]
+                }
+            }
+        }))
+        .expect("deserialize stdio mcp payload");
+
+        let imported = apply_config_payload_to_store(&store, &source, payload)
+            .await
+            .expect("apply stdio mcp config payload");
+
+        assert_eq!(imported.len(), 1);
+        let tool = &imported[0];
+        assert_eq!(tool.name, "echo");
+        assert_eq!(tool.command.as_deref(), Some("python3"));
+        assert_eq!(tool.transport_kind(), McpTransportKind::Stdio);
+        assert!(tool.is_stdio_mcp_tool());
+        assert_eq!(tool.stdio_mcp_tool_name().as_deref(), Some("echo"));
+        assert_eq!(tool.remote_server_name().as_deref(), Some("mock_stdio"));
+        let expected_identifier = format!("{}/stdio/{}/{}", source.id, "mock_stdio", "echo");
+        assert_eq!(
+            tool.identifier.as_deref(),
+            Some(expected_identifier.as_str())
+        );
+
+        assert!(
+            store
+                .get_tool_by_name("mock_stdio")
+                .await
+                .expect("read legacy tool by name")
+                .is_none()
+        );
+        let stored_tools = store.list_tools().await.expect("list stored tools");
+        assert_eq!(stored_tools.len(), 1);
+        assert_eq!(stored_tools[0].name, "echo");
+
+        let pending_tool_calls =
+            RwLock::new(HashMap::<String, crate::modules::mcp::PendingToolCall>::new());
+        let result = execute_or_queue_mcp_tool_call(
+            &store,
+            &pending_tool_calls,
+            "echo".to_string(),
+            serde_json::json!({"message": "hello from imported config"}),
+            false,
+        )
+        .await
+        .expect("execute imported stdio mcp tool through rmcp");
+
+        assert_eq!(
+            result
+                .get("structuredContent")
+                .and_then(|value| value.get("echo"))
+                .and_then(|value| value.get("message"))
+                .and_then(|value| value.as_str()),
+            Some("hello from imported config")
+        );
+        assert_eq!(
+            result
+                .get("isError")
+                .and_then(|value| value.as_bool()),
+            Some(false)
+        );
+        assert!(pending_tool_calls.read().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn plain_local_command_tool_is_not_classified_as_stdio_mcp_tool() {
+        let store = create_test_store("plain-local-command-tool").await;
+        let tool = upsert_test_tool(&store, "plain_command_demo", "cat").await;
+
+        assert_eq!(tool.transport_kind(), McpTransportKind::Stdio);
+        assert!(!tool.is_stdio_mcp_tool());
+        assert_eq!(tool.stdio_mcp_tool_name(), None);
     }
 
     #[tokio::test]

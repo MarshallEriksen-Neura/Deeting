@@ -136,7 +136,10 @@ fn default_content_type() -> String {
 fn build_bridge_object_key(name: &str, ref_id: &str) -> String {
     let safe_name = name
         .trim()
-        .replace(|ch: char| !ch.is_ascii_alphanumeric() && !matches!(ch, '.' | '_' | '-'), "-")
+        .replace(
+            |ch: char| !ch.is_ascii_alphanumeric() && !matches!(ch, '.' | '_' | '-'),
+            "-",
+        )
         .trim_matches('-')
         .to_string();
     if safe_name.is_empty() {

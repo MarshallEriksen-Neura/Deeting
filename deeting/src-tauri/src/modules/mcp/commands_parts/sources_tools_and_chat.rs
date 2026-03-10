@@ -2,11 +2,156 @@ use super::{
     assistants_knowledge_admin_impl::index_mcp_tools,
     common_impl::to_string,
     runtime::{
-        apply_config_payload, execute_or_queue_mcp_tool_call_with_tool_ref,
+        apply_config_payload, execute_or_queue_mcp_tool_call_with_tool_ref, now_rfc3339,
         resolve_callable_mcp_tool_by_ref,
     },
     support::*,
 };
+
+pub(crate) fn build_remote_transport_log_entries(tool: &McpTool) -> Vec<McpLogEntry> {
+    vec![McpLogEntry {
+        timestamp: now_rfc3339(),
+        stream: McpLogStream::Event,
+        message: format!(
+            "Remote {} transport does not expose a local process log stream.",
+            tool.transport_label()
+        ),
+    }]
+}
+
+pub(crate) async fn start_remote_transport_tool(
+    store: &crate::modules::mcp::store::McpStore,
+    tool: &McpTool,
+) -> Result<Value, String> {
+    store
+        .set_tool_status(&tool.id, McpToolStatus::Healthy, None, None)
+        .await
+        .map_err(to_string)?;
+    Ok(serde_json::json!({
+        "status": "REMOTE_READY",
+        "tool_id": tool.id,
+        "transport": tool.transport_label(),
+    }))
+}
+
+pub(crate) async fn stop_remote_transport_tool(
+    store: &crate::modules::mcp::store::McpStore,
+    tool: &McpTool,
+) -> Result<(), String> {
+    store
+        .set_tool_status(&tool.id, McpToolStatus::Stopped, None, None)
+        .await
+        .map_err(to_string)
+}
+
+pub(crate) async fn start_mcp_tool_inner(
+    state: &McpRuntimeState,
+    tool_id: &str,
+) -> Result<Value, String> {
+    let tool = state
+        .store
+        .get_tool(tool_id)
+        .await
+        .map_err(to_string)?
+        .ok_or_else(|| format!("tool {} not found", tool_id))?;
+
+    if tool.is_remote_sse() {
+        return start_remote_transport_tool(state.store.as_ref(), &tool).await;
+    }
+
+    if !tool.supports_local_process_lifecycle() {
+        return Err(format!(
+            "tool is not executable for transport '{}'",
+            tool.transport_label()
+        ));
+    }
+
+    let risk = state.assess_tool_risk(&tool, &serde_json::json!({}));
+    if risk.requires_approval {
+        return Err(format!(
+            "starting tool '{}' is blocked without explicit approval flow (risk={}): {}",
+            tool.name,
+            risk.risk_level,
+            risk.reasons.join("; ")
+        ));
+    }
+
+    state
+        .process_manager
+        .start_tool(tool, true)
+        .await
+        .map_err(to_string)?;
+
+    Ok(serde_json::json!({
+        "status": "STARTED",
+        "tool_id": tool_id,
+        "transport": "stdio",
+    }))
+}
+
+pub(crate) async fn stop_mcp_tool_inner(
+    state: &McpRuntimeState,
+    tool_id: &str,
+) -> Result<(), String> {
+    let tool = state
+        .store
+        .get_tool(tool_id)
+        .await
+        .map_err(to_string)?
+        .ok_or_else(|| format!("tool {} not found", tool_id))?;
+
+    if tool.is_remote_sse() {
+        return stop_remote_transport_tool(state.store.as_ref(), &tool).await;
+    }
+
+    state
+        .process_manager
+        .stop_tool(&tool.id)
+        .await
+        .map_err(to_string)
+}
+
+pub(crate) async fn get_mcp_logs_inner(
+    state: &McpRuntimeState,
+    tool_id: &str,
+) -> Result<Vec<Value>, String> {
+    let tool = state
+        .store
+        .get_tool(tool_id)
+        .await
+        .map_err(to_string)?
+        .ok_or_else(|| format!("tool {} not found", tool_id))?;
+
+    let logs = if tool.is_remote_sse() {
+        build_remote_transport_log_entries(&tool)
+    } else {
+        state.process_manager.logs(&tool.id).await
+    };
+
+    Ok(logs
+        .into_iter()
+        .map(|entry| serde_json::json!(entry))
+        .collect())
+}
+
+pub(crate) async fn clear_mcp_logs_inner(
+    state: &McpRuntimeState,
+    tool_id: &str,
+) -> Result<(), String> {
+    let tool = state
+        .store
+        .get_tool(tool_id)
+        .await
+        .map_err(to_string)?
+        .ok_or_else(|| format!("tool {} not found", tool_id))?;
+
+    if tool.is_remote_sse() {
+        return Ok(());
+    }
+
+    state.process_manager.clear_logs(&tool.id).await;
+    Ok(())
+}
 
 #[tauri::command]
 pub async fn update_assistant_message(
@@ -170,48 +315,12 @@ pub async fn start_mcp_tool(
     state: State<'_, AppState>,
     tool_id: String,
 ) -> Result<Value, String> {
-    let state = &state.mcp;
-    let tool = state
-        .store
-        .get_tool(&tool_id)
-        .await
-        .map_err(to_string)?
-        .ok_or_else(|| format!("tool {} not found", tool_id))?;
-
-    if tool.command.is_none() {
-        return Err("tool is not executable (no command)".to_string());
-    }
-
-    let risk = state.assess_tool_risk(&tool, &serde_json::json!({}));
-    if risk.requires_approval {
-        return Err(format!(
-            "starting tool '{}' is blocked without explicit approval flow (risk={}): {}",
-            tool.name,
-            risk.risk_level,
-            risk.reasons.join("; ")
-        ));
-    }
-
-    state
-        .process_manager
-        .start_tool(tool, true)
-        .await
-        .map_err(to_string)?;
-
-    Ok(serde_json::json!({
-        "status": "STARTED",
-        "tool_id": tool_id,
-    }))
+    start_mcp_tool_inner(&state.mcp, &tool_id).await
 }
 
 #[tauri::command]
 pub async fn stop_mcp_tool(state: State<'_, AppState>, tool_id: String) -> Result<(), String> {
-    let state = &state.mcp;
-    state
-        .process_manager
-        .stop_tool(&tool_id)
-        .await
-        .map_err(to_string)
+    stop_mcp_tool_inner(&state.mcp, &tool_id).await
 }
 
 #[tauri::command]
@@ -309,16 +418,12 @@ pub async fn get_mcp_logs(
     state: State<'_, AppState>,
     tool_id: String,
 ) -> Result<Vec<Value>, String> {
-    let state = &state.mcp;
-    let logs = state.process_manager.logs(&tool_id).await;
-    Ok(logs.into_iter().map(|l| serde_json::json!(l)).collect())
+    get_mcp_logs_inner(&state.mcp, &tool_id).await
 }
 
 #[tauri::command]
 pub async fn clear_mcp_logs(state: State<'_, AppState>, tool_id: String) -> Result<(), String> {
-    let state = &state.mcp;
-    state.process_manager.clear_logs(&tool_id).await;
-    Ok(())
+    clear_mcp_logs_inner(&state.mcp, &tool_id).await
 }
 
 #[tauri::command]

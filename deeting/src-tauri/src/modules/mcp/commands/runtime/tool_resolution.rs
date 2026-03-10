@@ -4,7 +4,7 @@ use std::fmt;
 use serde::Serialize;
 
 use crate::modules::mcp::store::McpStore;
-use crate::modules::mcp::types::{McpTool, McpToolStatus};
+use crate::modules::mcp::types::{McpTool, McpToolStatus, McpTransportKind};
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -225,36 +225,65 @@ pub(crate) fn tool_availability_from_tool(
         }
     }
 
-    let has_command = tool
-        .command
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .is_some();
-    if !has_command {
-        return ToolAvailability::advisory("review", "tool_missing_command");
-    }
+    match tool.transport_kind() {
+        McpTransportKind::Sse => match tool.status {
+            McpToolStatus::Healthy | McpToolStatus::Degraded => {
+                ToolAvailability::callable("ready_via_remote_mcp")
+            }
+            McpToolStatus::Stopped => {
+                ToolAvailability::activation_required("start_tool", "remote_server_sync_required")
+            }
+            McpToolStatus::Pending => {
+                ToolAvailability::advisory("wait_for_runtime", "remote_server_pending_sync")
+            }
+            McpToolStatus::Starting => {
+                ToolAvailability::advisory("wait_for_runtime", "remote_server_sync_starting")
+            }
+            McpToolStatus::Updating => {
+                ToolAvailability::advisory("wait_for_runtime", "remote_server_sync_updating")
+            }
+            McpToolStatus::Crashed => {
+                ToolAvailability::advisory("review", "remote_server_sync_crashed")
+            }
+            McpToolStatus::Error => ToolAvailability::advisory("review", "remote_server_error"),
+            McpToolStatus::Orphaned => {
+                ToolAvailability::advisory("review", "remote_tool_orphaned_from_server")
+            }
+        },
+        McpTransportKind::Stdio => {
+            if !tool.supports_local_process_lifecycle() {
+                return ToolAvailability::advisory("review", "stdio_tool_missing_command");
+            }
 
-    match tool.status {
-        McpToolStatus::Healthy | McpToolStatus::Degraded => {
-            ToolAvailability::callable("ready_in_local_runtime")
+            match tool.status {
+                McpToolStatus::Healthy | McpToolStatus::Degraded => {
+                    ToolAvailability::callable("ready_in_local_runtime")
+                }
+                McpToolStatus::Stopped => ToolAvailability::activation_required(
+                    "start_tool",
+                    "tool_installed_but_stopped",
+                ),
+                McpToolStatus::Pending => ToolAvailability::advisory(
+                    "wait_for_runtime",
+                    "tool_pending_runtime_activation",
+                ),
+                McpToolStatus::Starting => {
+                    ToolAvailability::advisory("wait_for_runtime", "tool_runtime_starting")
+                }
+                McpToolStatus::Updating => {
+                    ToolAvailability::advisory("wait_for_runtime", "tool_runtime_updating")
+                }
+                McpToolStatus::Crashed => {
+                    ToolAvailability::advisory("review", "tool_runtime_crashed")
+                }
+                McpToolStatus::Error => ToolAvailability::advisory("review", "tool_runtime_error"),
+                McpToolStatus::Orphaned => {
+                    ToolAvailability::advisory("review", "tool_orphaned_from_runtime")
+                }
+            }
         }
-        McpToolStatus::Stopped => {
-            ToolAvailability::activation_required("start_tool", "tool_installed_but_stopped")
-        }
-        McpToolStatus::Pending => {
-            ToolAvailability::advisory("wait_for_runtime", "tool_pending_runtime_activation")
-        }
-        McpToolStatus::Starting => {
-            ToolAvailability::advisory("wait_for_runtime", "tool_runtime_starting")
-        }
-        McpToolStatus::Updating => {
-            ToolAvailability::advisory("wait_for_runtime", "tool_runtime_updating")
-        }
-        McpToolStatus::Crashed => ToolAvailability::advisory("review", "tool_runtime_crashed"),
-        McpToolStatus::Error => ToolAvailability::advisory("review", "tool_runtime_error"),
-        McpToolStatus::Orphaned => {
-            ToolAvailability::advisory("review", "tool_orphaned_from_runtime")
+        McpTransportKind::Unknown => {
+            ToolAvailability::advisory("review", "tool_transport_unresolved")
         }
     }
 }

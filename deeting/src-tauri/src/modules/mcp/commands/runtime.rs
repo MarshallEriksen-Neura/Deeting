@@ -9,6 +9,7 @@ mod config;
 mod consult;
 mod core_tool_contracts;
 mod onboarding;
+mod remote_transport;
 mod search_ranking;
 mod summary_format;
 mod summary_generation;
@@ -36,6 +37,8 @@ pub(crate) use code_mode_catalog::{
 pub(crate) use code_mode_orchestration::{
     approve_pending_local_code_mode_execution, run_local_chat_complete_with_auto_code_mode,
 };
+#[cfg(test)]
+pub(crate) use config::apply_config_payload_to_store;
 pub(crate) use config::{apply_config_payload, now_rfc3339, read_local_mcp_config};
 pub(crate) use consult::{
     build_local_consult_expert_network_result, LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
@@ -78,6 +81,8 @@ pub(crate) use config::hash_config;
 pub(crate) use consult::build_local_consult_expert_network_result_with_runtime;
 #[cfg(test)]
 pub(crate) use onboarding::{derive_skill_name_from_repo_url, parse_skill_onboarding_payload};
+#[cfg(test)]
+pub(crate) use remote_transport::list_local_stdio_tools;
 #[cfg(test)]
 pub(crate) use tool_execution::{
     approve_mcp_tool_inner, execute_or_queue_mcp_tool_call, resolve_skill_env,

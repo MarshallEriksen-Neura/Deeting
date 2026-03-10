@@ -1,4 +1,5 @@
 use super::super::{common_impl::to_string, support::*};
+use super::remote_transport::{call_local_stdio_tool, call_remote_sse_tool};
 use super::tool_resolution::resolve_callable_mcp_tool_by_ref;
 
 const TOOL_CALL_MARKER: &str = "__DEETING_TOOL_CALL_REQUEST__";
@@ -65,6 +66,37 @@ pub(crate) async fn execute_local_mcp_tool(
         ));
     }
     Err("skill marker re-execution loop exhausted".to_string())
+}
+
+pub(crate) async fn execute_mcp_tool(
+    store: &crate::modules::mcp::store::McpStore,
+    tool: &McpTool,
+    arguments: &Value,
+) -> Result<Value, String> {
+    if tool.is_remote_sse() {
+        let sse_url = tool
+            .remote_sse_url()
+            .ok_or_else(|| format!("remote tool {} is missing sse url", tool.name))?;
+        let remote_tool_name = tool
+            .remote_tool_name()
+            .ok_or_else(|| format!("remote tool {} is missing remote tool name", tool.name))?;
+        return call_remote_sse_tool(&sse_url, &remote_tool_name, arguments).await;
+    }
+
+    if tool.is_stdio_mcp_tool() {
+        let command = tool
+            .command
+            .as_deref()
+            .ok_or_else(|| format!("stdio MCP tool {} has no executable command", tool.name))?;
+        let tool_name = tool
+            .stdio_mcp_tool_name()
+            .ok_or_else(|| format!("stdio MCP tool {} is missing tool metadata", tool.name))?;
+        let env = resolve_skill_env(store, tool).await?;
+        let args = tool.args.clone().unwrap_or_default();
+        return call_local_stdio_tool(command, &args, env.as_ref(), &tool_name, arguments).await;
+    }
+
+    execute_local_mcp_tool(store, tool, arguments).await
 }
 
 async fn spawn_skill_subprocess(
@@ -258,7 +290,7 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_tool_ref(
             "risk_reasons": risk_reasons, "expires_in_ms": expires_in_ms,
         }));
     }
-    execute_local_mcp_tool(store, &tool, &arguments).await
+    execute_mcp_tool(store, &tool, &arguments).await
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -328,7 +360,7 @@ pub(crate) async fn approve_mcp_tool_inner_with_context(
     {
         return Err("pending tool call already consumed".to_string());
     }
-    execute_local_mcp_tool(store, &tool, &pending.arguments).await
+    execute_mcp_tool(store, &tool, &pending.arguments).await
 }
 
 pub(crate) async fn reject_mcp_tool_inner(

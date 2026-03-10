@@ -1048,6 +1048,27 @@ impl McpStore {
         Ok(result.rows_affected() as i64)
     }
 
+    pub async fn delete_tools_by_ids(&self, tool_ids: &[String]) -> Result<i64, McpError> {
+        if tool_ids.is_empty() {
+            return Ok(0);
+        }
+
+        let mut query_builder =
+            sqlx::QueryBuilder::<sqlx::Sqlite>::new("DELETE FROM mcp_tools WHERE id IN (");
+        let mut separated = query_builder.separated(", ");
+        for tool_id in tool_ids {
+            separated.push_bind(tool_id);
+        }
+        separated.push_unseparated(")");
+
+        let result = query_builder
+            .build()
+            .execute(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+        Ok(result.rows_affected() as i64)
+    }
+
     pub async fn delete_source(&self, id: &str) -> Result<(), McpError> {
         sqlx::query("DELETE FROM mcp_sources WHERE id = ?;")
             .bind(id)

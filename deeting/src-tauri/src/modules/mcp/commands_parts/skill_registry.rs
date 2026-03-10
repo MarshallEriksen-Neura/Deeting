@@ -827,8 +827,18 @@ pub(crate) fn resolve_local_skill_definition(
         manifest_value.insert("version".to_string(), JsonValue::String(version));
     }
     if let Some(manifest) = parsed_manifest.as_ref() {
+        if let Some(author) = manifest
+            .author
+            .clone()
+            .filter(|value| !value.trim().is_empty())
+        {
+            manifest_value.insert("author".to_string(), JsonValue::String(author));
+        }
         if let Some(entry) = manifest.entry.clone() {
             manifest_value.insert("entry".to_string(), entry);
+        }
+        if let Some(capabilities) = manifest.capabilities.clone() {
+            manifest_value.insert("declared_capabilities".to_string(), capabilities);
         }
         if !manifest.permissions.is_empty() {
             manifest_value.insert(
@@ -1262,6 +1272,50 @@ mod tests {
             .first()
             .unwrap_or(&String::new())
             .ends_with("main.py"));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn resolve_local_skill_definition_preserves_manifest_author_and_declared_capabilities() {
+        let dir = temp_skill_dir("manifest-metadata-skill");
+        std::fs::write(dir.join("notes.txt"), "Manifest metadata test.").expect("write docs");
+        std::fs::write(
+            dir.join("deeting.json"),
+            serde_json::json!({
+                "id": "manifest-meta-skill",
+                "name": "Manifest Meta Skill",
+                "author": "NeuralCore",
+                "capabilities": ["search", "summarize"],
+                "runtime": ["local"],
+                "execution": { "timeout_seconds": 30 }
+            })
+            .to_string(),
+        )
+        .expect("write manifest");
+
+        let resolved = resolve_local_skill_definition(&dir, "user_skill", None, None)
+            .expect("resolve skill")
+            .expect("skill exists");
+
+        let manifest: JsonValue =
+            serde_json::from_str(&resolved.manifest_json).expect("manifest json");
+        assert_eq!(
+            manifest.get("author").and_then(|value| value.as_str()),
+            Some("NeuralCore")
+        );
+        assert_eq!(
+            manifest
+                .pointer("/declared_capabilities/0")
+                .and_then(|value| value.as_str()),
+            Some("search")
+        );
+        assert_eq!(
+            manifest
+                .pointer("/capabilities/0")
+                .and_then(|value| value.as_str()),
+            Some("user_skill")
+        );
 
         let _ = std::fs::remove_dir_all(dir);
     }

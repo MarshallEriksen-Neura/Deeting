@@ -489,6 +489,24 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
       };
     }, [parts, isActive]);
 
+    const hasExecuteCodePlan = useMemo(() => {
+      return parts.some(
+        (part) =>
+          (part.type === "tool_call" || part.type === "tool_result") &&
+          part.toolName === "execute_code_plan"
+      );
+    }, [parts]);
+
+    const consoleTitle = useMemo(() => {
+      for (const part of parts) {
+        if (part.type === "execution_section") {
+          const title = typeof part.title === "string" ? part.title.trim() : "";
+          if (title) return title;
+        }
+      }
+      return "Local Tool Actions";
+    }, [parts]);
+
     return (
       <div
         className={cn(
@@ -662,7 +680,12 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                         initial={{ opacity: 0, scale: 0.98 }}
                         animate={{ opacity: 1, scale: 1 }}
                       >
-                        <ExecutionConsole blocks={consoleSequence} isActive={isActive} />
+                        <ExecutionConsole
+                          blocks={consoleSequence}
+                          isActive={isActive}
+                          showSandboxLabel={hasExecuteCodePlan}
+                          title={consoleTitle}
+                        />
                       </motion.div>
                     );
                   }
@@ -1137,8 +1160,13 @@ const ErrorMessageBlock = memo<{ message?: string }>(function ErrorMessageBlock(
 });
 
 // === 组件：实时执行控制台 (Terminal Style) ===
-const ExecutionConsole = memo<{ blocks: MessageBlock[]; isActive: boolean }>(
-  function ExecutionConsole({ blocks, isActive }) {
+const ExecutionConsole = memo<{
+  blocks: MessageBlock[];
+  isActive: boolean;
+  showSandboxLabel: boolean;
+  title: string;
+}>(
+  function ExecutionConsole({ blocks, isActive, showSandboxLabel, title }) {
     const [isExpanded, setIsOpen] = useState(true);
     const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -1159,7 +1187,7 @@ const ExecutionConsole = memo<{ blocks: MessageBlock[]; isActive: boolean }>(
           <div className="flex items-center gap-2">
             <Terminal size={14} className="text-zinc-500" />
             <span className="text-xs font-mono font-bold text-zinc-600 dark:text-zinc-400">
-              SANDBOX EXECUTION
+              {showSandboxLabel ? "SANDBOX EXECUTION" : title}
             </span>
             {isActive && (
               <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
