@@ -4,13 +4,11 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { ToolApprovalDialog } from "@/components/bridge/tool-approval-dialog"
 import {
   createBridgeToolApproval,
-  createLocalCodeModeApproval,
   useBridgeApprovalStore,
 } from "@/lib/chat/bridge-approval-store"
 import { invoke } from "@tauri-apps/api/core"
 import { bridgeCallTool } from "@/lib/api/bridge"
 import { toast } from "sonner"
-import { useChatStore } from "@/store/chat-store"
 
 jest.mock("@/components/ui/alert-dialog", () => ({
   AlertDialog: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
@@ -40,8 +38,12 @@ jest.mock("@/components/ui/alert-dialog", () => ({
       {children}
     </button>
   ),
-  AlertDialogContent: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
-  AlertDialogDescription: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+  AlertDialogContent: ({ children, className }: React.PropsWithChildren<{ className?: string }>) => (
+    <div className={className}>{children}</div>
+  ),
+  AlertDialogDescription: ({ children, className }: React.PropsWithChildren<{ className?: string }>) => (
+    <div className={className}>{children}</div>
+  ),
   AlertDialogFooter: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
   AlertDialogHeader: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
   AlertDialogTitle: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
@@ -73,7 +75,6 @@ describe("ToolApprovalDialog", () => {
     jest.clearAllMocks()
     act(() => {
       useBridgeApprovalStore.getState().clear()
-      useChatStore.setState({ messages: [], compareByMessageId: {} })
     })
   })
 
@@ -119,72 +120,31 @@ describe("ToolApprovalDialog", () => {
     expect(useBridgeApprovalStore.getState().pending).toBeNull()
   })
 
-  it("approves local code-mode actions without calling the bridge callback", async () => {
-    mockInvoke.mockResolvedValueOnce({
-      blocks: [
-        {
-          id: "call-local-1-tool-result",
-          type: "tool_result",
-          callId: "call-local-1",
-          toolName: "execute_code_plan",
-          status: "success",
-          result: { ok: true },
-        },
-      ],
-      response: {
-        choices: [
-          {
-            message: {
-              content: "Done",
-            },
-          },
-        ],
-      },
-    } as unknown)
-
+  it("constrains long approval content so the footer actions remain reachable", () => {
     act(() => {
       useBridgeApprovalStore.getState().setPending(
-        createLocalCodeModeApproval({
-          approval_token: "approval-local-1",
-          tool_name: "apply_patch",
-          arguments: { target: "deeting/lib/chat/bridge-approval-store.ts" },
-          description: "Continue the paused code-mode execution",
+        createBridgeToolApproval({
+          approval_token: "approval-2",
+          tool_name: "write_file",
+          arguments: {
+            path: "demo.txt",
+            code: "line\n".repeat(200),
+          },
           meta: {
-            session_id: "session-1",
-            execution_id: "execution-1",
-            approve_action: {
-              command: "approve_pending_local_code_mode_execution",
-            },
-            reject_action: {
-              command: "reject_pending_local_code_mode_execution",
-            },
-            assistant_message_id: "assistant-1",
-            call_id: "call-local-1",
+            call_id: "call-2",
           },
         })
       )
     })
 
-    useChatStore.setState({
-      messages: [{ id: "assistant-1", role: "assistant", content: "", createdAt: Date.now() }],
-    })
-
     render(<ToolApprovalDialog />)
 
-    expect(screen.getByText("Approve Local Code Execution")).toBeTruthy()
-    fireEvent.click(screen.getByRole("button", { name: /allow execution/i }))
-
-    await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith("approve_pending_local_code_mode_execution", {
-        approvalToken: "approval-local-1",
-      })
-    })
-
-    expect(mockBridgeCallTool).not.toHaveBeenCalled()
-    expect(toast.success).toHaveBeenCalledWith(
-      "Code-mode execution apply_patch approved"
+    expect(
+      screen.getByText(/AI is requesting to execute a high-risk tool/i).parentElement
+    ).toHaveClass("max-h-[60vh]", "overflow-y-auto")
+    expect(screen.getByText("write_file").parentElement).toHaveClass(
+      "max-h-[40vh]",
+      "overflow-y-auto"
     )
-    expect(useChatStore.getState().messages[0]?.blocks).toBeDefined()
-    expect(useBridgeApprovalStore.getState().pending).toBeNull()
   })
 })

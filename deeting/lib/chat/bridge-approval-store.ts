@@ -1,7 +1,7 @@
 import { create } from "zustand"
 
 export interface BasePendingApproval {
-  kind: "bridge_mcp" | "local_code_mode"
+  kind: "bridge_mcp"
   approval_token: string
   tool_id?: string
   tool_name: string
@@ -20,24 +20,7 @@ export interface BridgeToolPendingApproval extends BasePendingApproval {
   }
 }
 
-export interface InvokeApprovalAction {
-  command: string
-  args?: Record<string, unknown>
-}
-
-export interface LocalCodeModePendingApproval extends BasePendingApproval {
-  kind: "local_code_mode"
-  meta: {
-    assistant_message_id: string
-    call_id: string
-    approve_action: InvokeApprovalAction
-    reject_action?: InvokeApprovalAction
-  }
-}
-
-export type PendingApproval =
-  | BridgeToolPendingApproval
-  | LocalCodeModePendingApproval
+export type PendingApproval = BridgeToolPendingApproval
 
 interface BridgeApprovalState {
   pending: PendingApproval | null
@@ -60,15 +43,6 @@ export function createBridgeToolApproval(
 ): BridgeToolPendingApproval {
   return {
     kind: "bridge_mcp",
-    ...approval,
-  }
-}
-
-export function createLocalCodeModeApproval(
-  approval: Omit<LocalCodeModePendingApproval, "kind">
-): LocalCodeModePendingApproval {
-  return {
-    kind: "local_code_mode",
     ...approval,
   }
 }

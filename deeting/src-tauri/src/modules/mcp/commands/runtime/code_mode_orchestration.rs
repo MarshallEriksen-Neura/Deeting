@@ -20,26 +20,6 @@ struct CapabilityExecutionContract {
 }
 
 const DEFAULT_MAX_AGENTIC_ROUNDS: usize = 10;
-const LOCAL_CODE_MODE_APPROVAL_TTL_MS: i128 = 5 * 60 * 1000;
-
-fn now_unix_ms() -> i128 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_else(|_| std::time::Duration::from_millis(0))
-        .as_millis() as i128
-}
-
-#[derive(Debug, Clone)]
-struct LocalCodeModeApprovalRequest {
-    call_id: String,
-    code: String,
-    language: String,
-    execution_timeout: Option<u64>,
-    execution_contract: CapabilityExecutionContract,
-    partial_tool_call_meta: Vec<serde_json::Value>,
-    partial_results: Vec<String>,
-    assistant_update: Option<LocalAssistantActivationUpdate>,
-}
 
 enum LocalToolCallProcessingOutcome {
     Completed {
@@ -48,7 +28,6 @@ enum LocalToolCallProcessingOutcome {
         results: Vec<String>,
         assistant_update: Option<LocalAssistantActivationUpdate>,
     },
-    ApprovalRequired(LocalCodeModeApprovalRequest),
 }
 
 struct LocalChatAutoCodeModeState {
@@ -251,112 +230,6 @@ async fn continue_local_chat_complete_with_auto_code_mode(
                 );
                 state.all_tool_call_meta.extend(tool_call_meta);
             }
-            LocalToolCallProcessingOutcome::ApprovalRequired(approval) => {
-                let approval_token = Uuid::new_v4().to_string();
-                let now = now_unix_ms();
-                let expires_at_unix_ms = now + LOCAL_CODE_MODE_APPROVAL_TTL_MS;
-                let mut pending_orchestrated_messages = state.orchestrated_messages.clone();
-                let mut pending_active_assistant = state.active_assistant.clone();
-                apply_assistant_update(
-                    &mut pending_orchestrated_messages,
-                    &mut pending_active_assistant,
-                    approval.assistant_update,
-                );
-                app_state
-                    .code_mode
-                    .pending_local_approvals
-                    .write()
-                    .await
-                    .insert(
-                        approval_token.clone(),
-                        crate::modules::code_mode::PendingLocalCodeModeExecution {
-                            model_connection: state.model_connection.clone(),
-                            orchestrated_messages: pending_orchestrated_messages,
-                            chat_ctx: state.chat_ctx.clone(),
-                            temperature: state.temperature,
-                            max_tokens: state.max_tokens,
-                            trace_id: state.trace_id.clone(),
-                            request_id: state.realtime_emitter.request_id.clone(),
-                            max_rounds: state.max_rounds,
-                            round: state.round,
-                            all_tool_call_meta: state.all_tool_call_meta.clone(),
-                            last_capability_snapshot: state.last_capability_snapshot.clone(),
-                            active_assistant: pending_active_assistant,
-                            response_assistant_content: response
-                                .get("content")
-                                .and_then(|v| v.as_str())
-                                .map(|v| v.trim().to_string())
-                                .unwrap_or_default(),
-                            partial_tool_call_meta: approval.partial_tool_call_meta,
-                            partial_results: approval.partial_results,
-                            pending_call_id: approval.call_id.clone(),
-                            execute_request:
-                                crate::modules::code_mode::types::ExecuteLocalCodeModeRequest {
-                                    code: approval.code.clone(),
-                                    session_id: Some(state.chat_ctx.session_id.clone()),
-                                    language: Some(approval.language.clone()),
-                                    execution_timeout: approval.execution_timeout,
-                                    dry_run: Some(false),
-                                    context: None,
-                                    max_calls: Some(16),
-                                    allowed_tools: Some(
-                                        approval.execution_contract.allowed_tools.clone(),
-                                    ),
-                                    capability_snapshot: Some(
-                                        approval.execution_contract.capability_snapshot.clone(),
-                                    ),
-                                },
-                            execution_section_emitted: state
-                                .realtime_emitter
-                                .emitted_execution_section,
-                            created_at_unix_ms: now,
-                            expires_at_unix_ms,
-                        },
-                    );
-
-                state.realtime_emitter.emit_blocks(vec![serde_json::json!({
-                    "id": format!("{}-tool-result", approval.call_id),
-                    "type": "tool_result",
-                    "callId": approval.call_id,
-                    "toolName": "execute_code_plan",
-                    "status": "success",
-                    "result": {
-                        "action": "code_mode_pending_approval",
-                        "approval_token": approval_token,
-                        "risk_level": "HIGH",
-                        "language": approval.language,
-                        "execution_timeout": approval.execution_timeout,
-                        "code": approval.code,
-                        "expires_in_ms": LOCAL_CODE_MODE_APPROVAL_TTL_MS,
-                    }
-                })]);
-
-                let mut response = serde_json::json!({
-                    "id": format!("local-approval-{}", Uuid::new_v4().simple()),
-                    "object": "chat.completion",
-                    "created": time::OffsetDateTime::now_utc().unix_timestamp(),
-                    "model": model_id,
-                    "trace_id": state.trace_id,
-                    "choices": [{
-                        "index": 0,
-                        "finish_reason": "stop",
-                        "message": {
-                            "role": "assistant",
-                            "content": ""
-                        }
-                    }],
-                    "content": "",
-                    "approval_pending": true,
-                    "tool_trace_streamed": true,
-                });
-                if let Some(request_id) = state.realtime_emitter.request_id.clone() {
-                    response["request_id"] = serde_json::json!(request_id);
-                }
-                return Ok(LocalChatAutoCodeModeOutput {
-                    response,
-                    streamed_blocks: state.realtime_emitter.captured_blocks.clone(),
-                });
-            }
         }
     }
 }
@@ -558,44 +431,6 @@ async fn maybe_handle_local_code_mode_tool_calls(
                 .get("dry_run")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(true);
-            if !dry_run {
-                let execution_contract = match build_execution_contract_from_search_result(
-                    last_capability_snapshot.as_ref(),
-                ) {
-                    Ok(contract) => contract,
-                    Err(error) => {
-                        synthesized = true;
-                        let meta = serde_json::json!({
-                            "id":call.id,
-                            "name":tool_name,
-                            "status":"error",
-                            "error_code":"CODE_MODE_SEARCH_REQUIRED",
-                            "error":error,
-                        });
-                        let mut streamed_blocks = Vec::new();
-                        append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
-                        realtime_emitter.emit_blocks(streamed_blocks);
-                        tool_call_meta.push(meta);
-                        results.push(format!(
-                            "Code Execution Blocked [CODE_MODE_SEARCH_REQUIRED]: {}",
-                            error
-                        ));
-                        continue;
-                    }
-                };
-                return LocalToolCallProcessingOutcome::ApprovalRequired(
-                    LocalCodeModeApprovalRequest {
-                        call_id,
-                        code: code.to_string(),
-                        language: language.to_string(),
-                        execution_timeout,
-                        execution_contract,
-                        partial_tool_call_meta: tool_call_meta,
-                        partial_results: results,
-                        assistant_update,
-                    },
-                );
-            }
             let execution_contract = match build_execution_contract_from_search_result(
                 last_capability_snapshot.as_ref(),
             ) {
@@ -929,119 +764,6 @@ async fn maybe_handle_local_code_mode_tool_calls(
         results,
         assistant_update,
     }
-}
-
-pub(crate) async fn approve_pending_local_code_mode_execution(
-    app: &AppHandle,
-    app_state: &AppState,
-    pending: crate::modules::code_mode::PendingLocalCodeModeExecution,
-) -> Result<serde_json::Value, String> {
-    let mut realtime_emitter = LocalRealtimeToolTraceEmitter::new(
-        None,
-        Some(pending.trace_id.as_str()),
-        pending.request_id.as_deref(),
-    )
-    .with_execution_section_emitted(pending.execution_section_emitted);
-
-    let execution_res = crate::modules::code_mode::commands::execute_local_code_mode_inner(
-        app_state,
-        pending.execute_request.clone(),
-        build_runtime_bridge_stream_target(&realtime_emitter),
-    )
-    .await;
-
-    let (meta, result_summary) = match execution_res {
-        Ok(res) => {
-            let meta_status = if res.success { "success" } else { "error" };
-            let meta = serde_json::json!({
-                "id": pending.pending_call_id,
-                "name": "execute_code_plan",
-                "status": meta_status,
-                "error_code": res.error_code,
-                "result": res
-            });
-            let result_summary = if meta_status == "success" {
-                format!(
-                    "Code Execution Result:\n{}",
-                    meta.get("result")
-                        .and_then(|value| value.get("result"))
-                        .and_then(|value| value.as_array())
-                        .map(|items| {
-                            items
-                                .iter()
-                                .filter_map(|item| item.as_str())
-                                .collect::<Vec<_>>()
-                                .join("\n")
-                        })
-                        .unwrap_or_default()
-                )
-            } else {
-                format!(
-                    "Code Execution Blocked: {}",
-                    meta.get("result")
-                        .and_then(|value| value.get("error"))
-                        .and_then(|value| value.as_str())
-                        .unwrap_or("sandbox not ready")
-                )
-            };
-            (meta, result_summary)
-        }
-        Err(err) => (
-            serde_json::json!({
-                "id": pending.pending_call_id,
-                "name": "execute_code_plan",
-                "status": "error",
-                "error": err.to_string()
-            }),
-            format!("Code Execution Failed: {}", err),
-        ),
-    };
-
-    let mut streamed_blocks = Vec::new();
-    append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
-    realtime_emitter.emit_blocks(streamed_blocks);
-
-    let mut round_tool_call_meta = pending.partial_tool_call_meta.clone();
-    round_tool_call_meta.push(meta);
-    let mut round_results = pending.partial_results.clone();
-    round_results.push(result_summary);
-
-    let mut next_state = LocalChatAutoCodeModeState {
-        max_rounds: pending.max_rounds,
-        round: pending.round.saturating_sub(1),
-        trace_id: pending.trace_id.clone(),
-        model_connection: pending.model_connection,
-        orchestrated_messages: pending.orchestrated_messages,
-        chat_ctx: pending.chat_ctx,
-        temperature: pending.temperature,
-        max_tokens: pending.max_tokens,
-        active_assistant: pending.active_assistant,
-        all_tool_call_meta: pending.all_tool_call_meta,
-        last_capability_snapshot: pending.last_capability_snapshot,
-        last_response: None,
-        realtime_emitter,
-    };
-
-    finalize_tool_round(
-        &mut next_state.orchestrated_messages,
-        &mut next_state.active_assistant,
-        pending.round,
-        &serde_json::json!({ "content": pending.response_assistant_content }),
-        &round_tool_call_meta,
-        &round_results,
-        None,
-    );
-    next_state
-        .all_tool_call_meta
-        .extend(round_tool_call_meta.iter().cloned());
-
-    let output =
-        continue_local_chat_complete_with_auto_code_mode(app, app_state, next_state).await?;
-    Ok(serde_json::json!({
-        "response": output.response,
-        "blocks": output.streamed_blocks,
-        "trace_id": pending.trace_id,
-    }))
 }
 
 fn build_execution_contract_from_search_result(

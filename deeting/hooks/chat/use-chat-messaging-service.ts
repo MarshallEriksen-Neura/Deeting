@@ -12,10 +12,6 @@ import {
 import { buildMessageContent, resolveLocalAssetUrlsInContent } from "@/lib/chat/message-content"
 import { normalizeConversationMessages } from "@/lib/chat/conversation-adapter"
 import { createRequestId } from "@/lib/chat/request-id"
-import {
-  createLocalCodeModeApproval,
-  useBridgeApprovalStore,
-} from "@/lib/chat/bridge-approval-store"
 
 const WEB_SESSION_STORAGE_KEY = "deeting-chat-session:router"
 
@@ -248,60 +244,6 @@ function createErrorBlock(messageId: string, message: string): MessageBlock {
     streamState: "completed",
     displayMode: "bubble",
   } as MessageBlock
-}
-
-function queuePendingLocalCodeModeApproval(
-  blocks: MessageBlock[],
-  assistantMessageId: string
-) {
-  for (const block of blocks) {
-    if (block.type !== "tool_result") continue
-    const payload =
-      block.result && typeof block.result === "object"
-        ? (block.result as Record<string, unknown>)
-        : null
-    if (!payload || payload.action !== "code_mode_pending_approval") continue
-
-    const approvalToken =
-      typeof payload.approval_token === "string" ? payload.approval_token : ""
-    if (!approvalToken) continue
-
-    const code = typeof payload.code === "string" ? payload.code : undefined
-    const language = typeof payload.language === "string" ? payload.language : undefined
-    const executionTimeout =
-      typeof payload.execution_timeout === "number"
-        ? payload.execution_timeout
-        : undefined
-
-    useBridgeApprovalStore.getState().setPending(
-      createLocalCodeModeApproval({
-        approval_token: approvalToken,
-        tool_name: block.toolName ?? "execute_code_plan",
-        arguments: {
-          ...(code ? { code } : {}),
-          ...(language ? { language } : {}),
-          ...(executionTimeout !== undefined
-            ? { execution_timeout: executionTimeout }
-            : {}),
-        },
-        description: "Continue the paused local code-mode execution",
-        risk_level: "HIGH",
-        expires_in_ms:
-          typeof payload.expires_in_ms === "number" ? payload.expires_in_ms : undefined,
-        meta: {
-          assistant_message_id: assistantMessageId,
-          call_id: block.callId ?? "",
-          approve_action: {
-            command: "approve_pending_local_code_mode_execution",
-          },
-          reject_action: {
-            command: "reject_pending_local_code_mode_execution",
-          },
-        },
-      })
-    )
-    return
-  }
 }
 
 function isDesktopLocalModel(model?: { request_route?: string; runtime_source?: string }) {
@@ -842,7 +784,6 @@ export function useChatMessagingService() {
         trackActiveRequest: true,
         errorBlockIdBase: assistantMessageId,
         onBlocks: (blocks) => {
-          queuePendingLocalCodeModeApproval(blocks, assistantMessageId)
           appendMessageBlocks(assistantMessageId, blocks)
         },
         onTraceId: (traceId) => mergeMessageMeta(assistantMessageId, { trace_id: traceId }),
@@ -973,7 +914,6 @@ export function useChatMessagingService() {
         trackActiveRequest: true,
         errorBlockIdBase: assistantMessageId,
         onBlocks: (blocks) => {
-          queuePendingLocalCodeModeApproval(blocks, assistantMessageId)
           appendMessageBlocks(assistantMessageId, blocks)
         },
         onTraceId: (traceId) => mergeMessageMeta(assistantMessageId, { trace_id: traceId }),

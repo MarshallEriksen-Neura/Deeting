@@ -35,7 +35,7 @@ pub(crate) use code_mode_catalog::{
     build_local_code_mode_entry_tools, build_local_sdk_search_result_with_runtime,
 };
 pub(crate) use code_mode_orchestration::{
-    approve_pending_local_code_mode_execution, run_local_chat_complete_with_auto_code_mode,
+    run_local_chat_complete_with_auto_code_mode,
 };
 #[cfg(test)]
 pub(crate) use config::apply_config_payload_to_store;
