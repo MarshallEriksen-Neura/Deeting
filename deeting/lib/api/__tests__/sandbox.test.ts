@@ -3,6 +3,7 @@ import {
   getLocalSandboxStatus,
   installLocalSandboxBoxlite,
   prepareLocalSandbox,
+  rebuildLocalSandboxRuntime,
   repairLocalSandbox,
 } from "@/lib/api/sandbox"
 import { invoke } from "@tauri-apps/api/core"
@@ -151,6 +152,25 @@ describe("sandbox api", () => {
         can_auto_prepare: true,
       } as unknown)
       .mockResolvedValueOnce({
+        platform: "windows",
+        platform_supported: true,
+        status: "ready",
+        provider_name: "boxlite",
+        runtime_mode: "sandbox",
+        wsl: { installed: true, ready: true },
+        python: { installed: true, abi: "cp311", supported: true, detail: null },
+        boxlite: {
+          binary_found: true,
+          binary_path: "C:/Users/test/.deeting/sandbox/boxlite.exe",
+          endpoint: "http://127.0.0.1:4318",
+          reachable: true,
+          managed_by_deeting: true,
+        },
+        blocking_reason: null,
+        next_actions: [],
+        can_auto_prepare: true,
+      } as unknown)
+      .mockResolvedValueOnce({
         status: "needs_wsl",
         title: "Install Windows Subsystem for Linux",
         description: "WSL is required before the sandbox can start.",
@@ -162,17 +182,20 @@ describe("sandbox api", () => {
     const installed = await installLocalSandboxBoxlite()
     const prepared = await prepareLocalSandbox()
     const repaired = await repairLocalSandbox()
+    const rebuilt = await rebuildLocalSandboxRuntime()
     const guide = await getLocalSandboxInstallGuide()
 
     expect(status.provider_name).toBe("boxlite")
     expect(installed.status).toBe("repair_needed")
     expect(prepared.status).toBe("repair_needed")
     expect(repaired.runtime_mode).toBe("sandbox")
+    expect(rebuilt.runtime_mode).toBe("sandbox")
     expect(guide.primary_command).toBe("wsl --install")
     expect(mockInvoke).toHaveBeenNthCalledWith(1, "get_local_sandbox_status", undefined)
     expect(mockInvoke).toHaveBeenNthCalledWith(2, "install_local_sandbox_boxlite", undefined)
     expect(mockInvoke).toHaveBeenNthCalledWith(3, "prepare_local_sandbox", undefined)
     expect(mockInvoke).toHaveBeenNthCalledWith(4, "repair_local_sandbox", undefined)
-    expect(mockInvoke).toHaveBeenNthCalledWith(5, "get_local_sandbox_install_guide", undefined)
+    expect(mockInvoke).toHaveBeenNthCalledWith(5, "rebuild_local_sandbox_runtime", undefined)
+    expect(mockInvoke).toHaveBeenNthCalledWith(6, "get_local_sandbox_install_guide", undefined)
   })
 })

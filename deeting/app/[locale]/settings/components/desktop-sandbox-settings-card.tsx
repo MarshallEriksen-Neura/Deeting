@@ -18,6 +18,7 @@ import { useI18n } from "@/hooks/use-i18n"
 import {
   installLocalSandboxBoxlite,
   prepareLocalSandbox,
+  rebuildLocalSandboxRuntime,
   repairLocalSandbox,
 } from "@/lib/api/sandbox"
 import { useSandboxInstallGuide, useSandboxStatus } from "@/lib/swr/use-sandbox-status"
@@ -37,6 +38,7 @@ export function DesktopSandboxSettingsCard({
   const [isInstalling, setIsInstalling] = React.useState(false)
   const [isPreparing, setIsPreparing] = React.useState(false)
   const [isRepairing, setIsRepairing] = React.useState(false)
+  const [isRebuilding, setIsRebuilding] = React.useState(false)
 
   if (!isTauriRuntime) {
     return null
@@ -46,6 +48,16 @@ export function DesktopSandboxSettingsCard({
     await Promise.all([mutate(), guide.mutate()])
   }
 
+  const formatActionError = (err: unknown) => {
+    if (err instanceof Error && err.message) {
+      return err.message
+    }
+    if (typeof err === "string" && err) {
+      return err
+    }
+    return t("agent.sandbox.actionFailed")
+  }
+
   const handlePrepare = async () => {
     try {
       setIsPreparing(true)
@@ -53,7 +65,7 @@ export function DesktopSandboxSettingsCard({
       await handleRefresh()
       toast.success(t("agent.sandbox.prepareSuccess"))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : t("agent.sandbox.actionFailed"))
+      toast.error(formatActionError(err))
     } finally {
       setIsPreparing(false)
     }
@@ -66,7 +78,7 @@ export function DesktopSandboxSettingsCard({
       await handleRefresh()
       toast.success(t("agent.sandbox.installSuccess"))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : t("agent.sandbox.actionFailed"))
+      toast.error(formatActionError(err))
     } finally {
       setIsInstalling(false)
     }
@@ -79,9 +91,22 @@ export function DesktopSandboxSettingsCard({
       await handleRefresh()
       toast.success(t("agent.sandbox.repairSuccess"))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : t("agent.sandbox.actionFailed"))
+      toast.error(formatActionError(err))
     } finally {
       setIsRepairing(false)
+    }
+  }
+
+  const handleRebuild = async () => {
+    try {
+      setIsRebuilding(true)
+      await rebuildLocalSandboxRuntime()
+      await handleRefresh()
+      toast.success(t("agent.sandbox.rebuildSuccess"))
+    } catch (err) {
+      toast.error(formatActionError(err))
+    } finally {
+      setIsRebuilding(false)
     }
   }
 
@@ -161,6 +186,30 @@ export function DesktopSandboxSettingsCard({
                   {t("agent.sandbox.pythonLabel")}: {pythonSummary}
                 </p>
               ) : null}
+              <p className="text-xs text-muted-foreground">
+                {t("agent.sandbox.bridgeLabel")}: {" "}
+                {data.boxlite.reachable
+                  ? t("agent.sandbox.bridgeReachable")
+                  : t("agent.sandbox.bridgeUnreachable")}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t("agent.sandbox.ownershipLabel")}: {" "}
+                {data.boxlite.managed_by_deeting
+                  ? t("agent.sandbox.managed")
+                  : t("agent.sandbox.external")}
+              </p>
+              {data.next_actions.length > 0 ? (
+                <div className="pt-1">
+                  <p className="text-xs font-medium text-foreground">
+                    {t("agent.sandbox.nextActionsTitle")}
+                  </p>
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+                    {data.next_actions.map((action) => (
+                      <li key={action}>{action}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </div>
           </>
         ) : null}
@@ -218,6 +267,12 @@ export function DesktopSandboxSettingsCard({
             <Button type="button" onClick={handleRepair} disabled={isRepairing}>
               <Wrench className="mr-2 h-4 w-4" />
               {isRepairing ? t("agent.sandbox.repairing") : t("agent.sandbox.repair")}
+            </Button>
+          ) : null}
+          {data ? (
+            <Button type="button" variant="outline" onClick={handleRebuild} disabled={isRebuilding}>
+              <Wrench className="mr-2 h-4 w-4" />
+              {isRebuilding ? t("agent.sandbox.rebuilding") : t("agent.sandbox.rebuild")}
             </Button>
           ) : null}
         </div>

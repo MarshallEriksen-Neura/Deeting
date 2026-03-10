@@ -251,6 +251,27 @@ impl SandboxRuntimeManager {
         self.prepare().await
     }
 
+    pub async fn rebuild_runtime(&self) -> Result<SandboxReadinessReport, SandboxError> {
+        let active_ids: Vec<String> = {
+            let active = self.active_ids.read().await;
+            active.iter().cloned().collect()
+        };
+
+        for sandbox_id in active_ids {
+            let backend = self.current_backend().await;
+            let _ = backend.stop_box(&sandbox_id).await;
+            self.remove_lease_by_sandbox_id(&sandbox_id).await;
+        }
+
+        self.clear_runtime_state().await;
+
+        if let Some(provisioner) = self.provisioner.as_ref() {
+            provisioner.stop().await;
+        }
+
+        self.prepare().await
+    }
+
     pub async fn install_boxlite(&self) -> Result<SandboxReadinessReport, SandboxError> {
         #[cfg(target_os = "windows")]
         {
@@ -479,6 +500,20 @@ impl SandboxRuntimeManager {
                     let _ = self
                         .stop_sandbox(&lease.sandbox_id, Some(&normalized_session))
                         .await;
+                    continue;
+                }
+                Err(err)
+                    if is_missing_sandbox_error(&err) && attempt + 1 < SESSION_BUSY_RETRY_ATTEMPTS =>
+                {
+                    log::warn!(
+                        "sandbox missing for session {} (attempt {}/{}), rebuilding runtime",
+                        normalized_session,
+                        attempt + 1,
+                        SESSION_BUSY_RETRY_ATTEMPTS
+                    );
+                    self.remove_lease(&normalized_session, &lease.sandbox_id).await;
+                    let _ = backend.stop_box(&lease.sandbox_id).await;
+                    let _ = self.prepare().await;
                     continue;
                 }
                 Err(err) => return Err(err),
@@ -1220,6 +1255,17 @@ fn is_session_busy_error(err: &SandboxError) -> bool {
     }
 }
 
+fn is_missing_sandbox_error(err: &SandboxError) -> bool {
+    match err {
+        SandboxError::NotFound(_) => true,
+        SandboxError::Internal(message) => {
+            let lowered = message.to_lowercase();
+            lowered.contains("sandbox") && lowered.contains("not found")
+        }
+        _ => false,
+    }
+}
+
 fn now_unix_ms() -> i64 {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1263,5 +1309,18 @@ mod tests {
                 "http://c"
             ]
         );
+    }
+
+    #[test]
+    fn missing_sandbox_errors_are_detected() {
+        assert!(is_missing_sandbox_error(&SandboxError::NotFound(
+            "sandbox abc not found".to_string()
+        )));
+        assert!(is_missing_sandbox_error(&SandboxError::Internal(
+            "sandbox abc not found".to_string()
+        )));
+        assert!(!is_missing_sandbox_error(&SandboxError::Busy(
+            "session is busy".to_string()
+        )));
     }
 }

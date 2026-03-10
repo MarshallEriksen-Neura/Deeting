@@ -111,6 +111,11 @@ export async function repairLocalSandbox(): Promise<SandboxReadinessReport> {
   return SandboxReadinessReportSchema.parse(data)
 }
 
+export async function rebuildLocalSandboxRuntime(): Promise<SandboxReadinessReport> {
+  const data = await invokeTauri<unknown>("rebuild_local_sandbox_runtime")
+  return SandboxReadinessReportSchema.parse(data)
+}
+
 export async function installLocalSandboxBoxlite(): Promise<SandboxReadinessReport> {
   const data = await invokeTauri<unknown>("install_local_sandbox_boxlite")
   return SandboxReadinessReportSchema.parse(data)

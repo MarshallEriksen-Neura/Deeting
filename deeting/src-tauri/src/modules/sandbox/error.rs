@@ -33,6 +33,29 @@ impl SandboxError {
             SandboxError::Internal(_) => "SANDBOX_INTERNAL_ERROR",
         }
     }
+
+    pub fn user_message(&self) -> String {
+        match self {
+            SandboxError::Validation(message) => message.clone(),
+            SandboxError::NotFound(_) => {
+                "The desktop sandbox session is no longer available. Deeting will try to rebuild it automatically. If this keeps happening, use Rebuild Sandbox in Settings.".to_string()
+            }
+            SandboxError::Unavailable(message) => message.clone(),
+            SandboxError::Busy(_) => {
+                "The desktop sandbox is busy running another task. Please wait a moment and try again.".to_string()
+            }
+            SandboxError::ResourceLimit(_) => {
+                "The desktop sandbox hit a local resource limit. Close other running tasks or rebuild the sandbox and try again.".to_string()
+            }
+            SandboxError::Timeout(_) => {
+                "The desktop sandbox timed out before the command finished. Try reducing the workload or increasing the timeout.".to_string()
+            }
+            SandboxError::Network(_) => {
+                "Deeting could not reach the local BoxLite runtime. Try Prepare, Repair, or Rebuild Sandbox from Settings.".to_string()
+            }
+            SandboxError::Internal(message) => message.clone(),
+        }
+    }
 }
 
 impl From<reqwest::Error> for SandboxError {

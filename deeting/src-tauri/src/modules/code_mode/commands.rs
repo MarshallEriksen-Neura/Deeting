@@ -196,7 +196,7 @@ async fn run_execute_local_code_mode(
         .manager
         .ensure_launch_policy(SandboxLaunchPolicy::StrictSandbox)
         .await
-        .map_err(|err| CodeModeError::Sandbox(err.to_string()))?;
+        .map_err(|err| CodeModeError::Sandbox(err.user_message()))?;
     if sandbox_report.runtime_mode != SandboxRuntimeMode::Sandbox {
         let response = build_sandbox_blocked_response(&session_id, &sandbox_report);
         persist_execution(
@@ -279,7 +279,7 @@ async fn run_execute_local_code_mode(
             SandboxLaunchPolicy::StrictSandbox,
         )
         .await
-        .map_err(|err| CodeModeError::Sandbox(err.to_string()))?;
+        .map_err(|err| CodeModeError::Sandbox(err.user_message()))?;
 
     let mut io_lines = Vec::new();
     io_lines.extend(run_result.stdout.clone());
