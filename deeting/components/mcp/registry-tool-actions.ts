@@ -159,7 +159,8 @@ export function useMcpRegistryToolActions({
         addNotification(getMcpRegistryNotification(t, intent))
         return
       case "review":
-        handleShowLogs(tool)
+        // Don't show logs on toggle, only notify the user
+        addNotification(getMcpRegistryNotification(t, "review"))
         return
       case "enable_skill": {
         const resolution = resolveMcpRegistryEnableSkill(tool)

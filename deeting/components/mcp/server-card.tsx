@@ -30,7 +30,6 @@ interface ServerCardProps {
   toggleMode?: McpUiToggleMode
   onToggle?: (tool: MCPTool, enabled: boolean) => void
   onPrimaryAction?: () => void
-  onClick?: () => void
   onResolveConflict?: () => void
   onSync?: () => void
   syncLoading?: boolean
@@ -132,7 +131,6 @@ export function ServerCard({
   toggleMode = "runtime",
   onToggle,
   onPrimaryAction,
-  onClick,
   onResolveConflict,
   onSync,
   syncLoading = false,
@@ -158,15 +156,6 @@ export function ServerCard({
 
   return (
     <GlassCard
-      onClick={(e: MouseEvent<HTMLDivElement>) => {
-        if (
-          (e.target as HTMLElement).closest("button") ||
-          (e.target as HTMLElement).closest('[role="switch"]') ||
-          (e.target as HTMLElement).closest("[data-mcp-action]")
-        )
-          return
-        onClick?.()
-      }}
       blur="lg"
       theme={showConflict || showUpdate ? "primary" : "default"}
       hover="lift"
@@ -303,8 +292,14 @@ export function ServerCard({
           <div
             className="flex items-center gap-2 shrink-0"
             data-mcp-action
-            onClick={(event) => event.stopPropagation()}
-            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation()
+              event.preventDefault()
+            }}
+            onPointerDown={(event) => {
+              event.stopPropagation()
+              event.preventDefault()
+            }}
           >
             {showPrimaryAction && primaryActionLabelKey && (
               <GlassButton
@@ -320,9 +315,9 @@ export function ServerCard({
             )}
             <Switch
               checked={isMcpToolSwitchChecked(tool, toggleMode)}
-              onClick={(event) => event.stopPropagation()}
-              onPointerDown={(event) => event.stopPropagation()}
-              onCheckedChange={(checked) => onToggle?.(tool, checked)}
+              onCheckedChange={(checked) => {
+                onToggle?.(tool, checked)
+              }}
               disabled={isMcpToolSwitchDisabled(tool, toggleMode)}
               className="data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-purple-600 data-[state=checked]:to-purple-500"
             />

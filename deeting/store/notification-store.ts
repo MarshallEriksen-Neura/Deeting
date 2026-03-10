@@ -64,9 +64,13 @@ export const useNotificationStore = create<NotificationState>()(
 
       // 通知管理
       addNotification: (notification: NotificationInput) => {
+        if (!notification) {
+          console.warn("[NotificationStore] addNotification called with undefined notification")
+          return
+        }
         const newNotification: NotificationItem = {
           ...notification,
-          timestamp: normalizeNotificationTimestamp(notification.timestamp),
+          timestamp: normalizeNotificationTimestamp(notification?.timestamp ?? Date.now()),
           id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           read: false,
         }

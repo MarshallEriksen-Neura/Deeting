@@ -122,7 +122,6 @@ export function RuntimeGridSection({
                   toggleMode={toggleMode}
                   onToggle={onToggleTool ? (item, enabled) => onToggleTool(item, enabled) : undefined}
                   onPrimaryAction={onPrimaryAction ? () => onPrimaryAction(tool) : undefined}
-                  onClick={onShowLogs ? () => onShowLogs(tool) : undefined}
                   onResolveConflict={onResolveConflict ? () => onResolveConflict(tool) : undefined}
                   onSync={onSyncTool ? () => onSyncTool(tool) : undefined}
                   syncLoading={Boolean(syncingToolIds?.[tool.sourceId ?? tool.id])}
