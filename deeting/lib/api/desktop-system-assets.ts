@@ -25,6 +25,15 @@ const LocalSystemAssetSyncResponseSchema = z.object({
 
 export type LocalSystemAssetSyncResponse = z.infer<typeof LocalSystemAssetSyncResponseSchema>
 
+const LocalSystemAssetRepairResponseSchema = z.object({
+  vector_dimension: z.number(),
+  skill_reindexed_count: z.number(),
+  assistant_reindexed_count: z.number(),
+  sync: LocalSystemAssetSyncResponseSchema,
+})
+
+export type LocalSystemAssetRepairResponse = z.infer<typeof LocalSystemAssetRepairResponseSchema>
+
 async function invokeTauri<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke } = await import("@tauri-apps/api/core")
   return invoke<T>(command, args)
@@ -71,6 +80,43 @@ export async function trySyncLocalSystemAssetsFromCloud(options?: {
     return await syncLocalSystemAssetsFromCloud(options)
   } catch (error) {
     console.warn("[desktop-system-assets] sync local system assets from cloud failed", error)
+    return null
+  }
+}
+
+export async function repairLocalSystemAssetIndexFromCloud(options?: {
+  limit?: number
+  reinstallMissing?: boolean
+}): Promise<LocalSystemAssetRepairResponse | null> {
+  if (!isTauriRuntime()) {
+    return null
+  }
+
+  const tokenResolver = typeof getAuthToken === "function" ? getAuthToken : () => null
+  const token = (tokenResolver() ?? "").trim()
+  if (!token) {
+    return null
+  }
+
+  const data = await invokeTauri<LocalSystemAssetRepairResponse>(
+    "repair_local_system_asset_index",
+    {
+      accessToken: token,
+      limit: options?.limit ?? 500,
+      reinstallMissing: options?.reinstallMissing ?? false,
+    }
+  )
+  return LocalSystemAssetRepairResponseSchema.parse(data)
+}
+
+export async function tryRepairLocalSystemAssetIndexFromCloud(options?: {
+  limit?: number
+  reinstallMissing?: boolean
+}): Promise<LocalSystemAssetRepairResponse | null> {
+  try {
+    return await repairLocalSystemAssetIndexFromCloud(options)
+  } catch (error) {
+    console.warn("[desktop-system-assets] repair local system asset index failed", error)
     return null
   }
 }

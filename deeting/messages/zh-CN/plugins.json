@@ -12,6 +12,8 @@
       "marketEntry": "前往插件市场",
       "syncAction": "仅同步",
       "syncReinstallAction": "同步并重装缺失",
+      "repairIndexAction": "修复本地索引",
+      "repairingAction": "修复中...",
       "syncing": "同步中...",
       "hero": {
         "titlePrefix": "探索",
@@ -57,6 +59,13 @@
       "aliasLabel": "自定义别名（可选）",
       "aliasPlaceholder": "为插件设置一个别名"
     },
+    "repairConfirm": {
+      "title": "确认修复本地索引？",
+      "description": "该操作会重建本地系统资产索引，并依赖当前同步能力重新回灌技能与助手数据。",
+      "warning": "历史本地资产索引会被清空后重建；如果当前桌面端未完成同步或登录失效，回灌结果可能不完整。",
+      "confirm": "确认修复",
+      "cancel": "取消"
+    },
     "permissions": {
       "toolExecution": "执行工具调用和代码",
       "dataAccess": "读取会话上下文数据",
@@ -75,7 +84,12 @@
       "syncSuccessDesc": "共拉取 {fetched} 项，更新 {upserted} 项，重装 {reinstalled} 项，失败 {failed} 项。",
       "syncSuccessDescNoop": "当前运行时或登录态下无需执行桌面同步。",
       "syncFailedTitle": "同步失败",
-      "syncFailedDesc": "无法同步本地安装状态，请稍后重试。"
+      "syncFailedDesc": "无法同步本地安装状态，请稍后重试。",
+      "repairSuccessTitle": "本地索引已修复",
+      "repairSuccessDesc": "已同步 {fetched} 项、更新 {upserted} 项，并重建 {skills} 个技能索引、{assistants} 个助手索引。",
+      "repairSuccessDescNoop": "当前运行时或登录态下无法执行本地索引修复。",
+      "repairFailedTitle": "修复失败",
+      "repairFailedDesc": "无法修复本地系统资产索引，请稍后重试。"
     },
     "importRepo": {
       "trigger": "从 GitHub 导入",

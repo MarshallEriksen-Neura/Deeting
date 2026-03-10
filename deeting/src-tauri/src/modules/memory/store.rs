@@ -185,9 +185,7 @@ impl MemoryStore {
             ],
         )?;
 
-        // Use standard LanceDB merge/upsert if possible, or simple add for now
-        // Note: For simplicity in this heavy refactor, we clear old entries with same ID if needed
-        // but LanceDB add is cumulative. In a real scenario, we'd use a merge query.
+        table.delete(&format!("id = '{}'", sql_escape(&id))).await?;
         table
             .add(RecordBatchIterator::new(vec![Ok(batch)], schema))
             .execute()
@@ -1972,5 +1970,59 @@ mod tests {
         assert_eq!(restored.tags, original.tags);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id, original.id);
+    }
+
+    #[tokio::test]
+    async fn upsert_asset_replaces_existing_row_with_same_id() {
+        let store = create_test_store().await;
+        let asset_id = "tool.find_skills".to_string();
+
+        store
+            .upsert_asset(
+                asset_id.clone(),
+                "find_skills".into(),
+                "first description".into(),
+                "tool".into(),
+                "user".into(),
+                Some("skill:find-skills".into()),
+                test_embedding(),
+                Some(serde_json::json!({"version": 1})),
+            )
+            .await
+            .expect("insert initial asset");
+
+        store
+            .upsert_asset(
+                asset_id.clone(),
+                "find_skills".into(),
+                "updated description".into(),
+                "tool".into(),
+                "user".into(),
+                Some("skill:find-skills".into()),
+                test_embedding(),
+                Some(serde_json::json!({"version": 2})),
+            )
+            .await
+            .expect("replace existing asset");
+
+        let assets = store.list_assets_catalog().await.expect("list assets");
+        let matching_assets = assets
+            .iter()
+            .filter(|asset| {
+                asset.get("id").and_then(|value| value.as_str()) == Some(asset_id.as_str())
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(matching_assets.len(), 1);
+        assert_eq!(
+            matching_assets[0]
+                .get("description")
+                .and_then(|value| value.as_str()),
+            Some("updated description")
+        );
+        assert_eq!(
+            matching_assets[0]["metadata"]["version"],
+            serde_json::json!(2)
+        );
     }
 }

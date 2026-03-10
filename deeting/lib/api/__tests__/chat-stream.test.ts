@@ -75,4 +75,40 @@ describe("streamDesktopLocalChatCompletion", () => {
     expect(onDelta).not.toHaveBeenCalled()
     expect(result).toBe("")
   })
+
+  it("forwards typed desktop stream error events without turning them into deltas", async () => {
+    mockCollectLocalContext.mockResolvedValue(null)
+    mockOpenSSE.mockImplementation((_url, options) => {
+      options.onMessage({
+        data: {
+          type: "error",
+          message: "upstream timeout\ntrace=abc",
+          error_code: "LOCAL_CHAT_FAILED",
+          trace_id: "trace-abc",
+        },
+      })
+      options.onClose?.()
+      return () => {}
+    })
+
+    const onDelta = jest.fn()
+    const onMessage = jest.fn()
+    const result = await streamDesktopLocalChatCompletion(
+      {
+        model: "kimi-k2.5",
+        messages: [{ role: "user", content: "hi" }],
+        stream: true,
+      },
+      { onDelta, onMessage }
+    )
+
+    expect(onMessage).toHaveBeenCalledWith({
+      type: "error",
+      message: "upstream timeout\ntrace=abc",
+      error_code: "LOCAL_CHAT_FAILED",
+      trace_id: "trace-abc",
+    })
+    expect(onDelta).not.toHaveBeenCalled()
+    expect(result).toBe("")
+  })
 })

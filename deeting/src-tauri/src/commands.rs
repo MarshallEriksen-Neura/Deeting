@@ -81,6 +81,7 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::mcp::commands::sources_tools_and_chat_impl::set_desktop_config_value,
         crate::modules::mcp::commands::source_management_impl::sync_cloud_subscriptions,
         crate::modules::mcp::commands::source_management_impl::sync_local_system_assets,
+        crate::modules::mcp::commands::source_management_impl::repair_local_system_asset_index,
         crate::modules::mcp::commands::skill_registry_impl::register_local_skills,
         crate::modules::mcp::commands::skill_registry_impl::install_skill_from_repo,
         crate::modules::mcp::commands::skill_registry_impl::uninstall_skill,

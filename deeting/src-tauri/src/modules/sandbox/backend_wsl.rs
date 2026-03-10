@@ -206,9 +206,7 @@ impl SandboxProvider for WslBoxrunBackend {
             if status.as_u16() == 408 {
                 return Err(SandboxError::Timeout(body));
             }
-            return Err(SandboxError::Internal(format!(
-                "synchronous execution failed: status={status} body={body}"
-            )));
+            return Err(classify_exec_error(status, &body));
         }
 
         let exec: SyncExecResponse = response.json().await?;
@@ -454,9 +452,41 @@ struct SyncExecResponse {
     error: Option<String>,
 }
 
+fn classify_exec_error(status: reqwest::StatusCode, body: &str) -> SandboxError {
+    let detail = format!("synchronous execution failed: status={status} body={body}");
+    if status.as_u16() == 404 || missing_box_detail(body) {
+        return SandboxError::NotFound(detail);
+    }
+    SandboxError::Internal(detail)
+}
+
+fn missing_box_detail(body: &str) -> bool {
+    let lowered = body.to_lowercase();
+    (lowered.contains("not found") && (lowered.contains("box") || lowered.contains("sandbox")))
+        || lowered.contains("does not exist")
+        || lowered.contains("no such box")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{decode_wsl_text, normalize_windows_path_for_wsl};
+    use super::{
+        classify_exec_error, decode_wsl_text, normalize_windows_path_for_wsl, SandboxError,
+    };
+
+    #[test]
+    fn classify_exec_error_maps_404_to_not_found() {
+        let err = classify_exec_error(reqwest::StatusCode::NOT_FOUND, "{\"error\":\"not found\"}");
+        assert!(matches!(err, SandboxError::NotFound(_)));
+    }
+
+    #[test]
+    fn classify_exec_error_maps_missing_id_body_to_not_found() {
+        let err = classify_exec_error(
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            "box id does not exist",
+        );
+        assert!(matches!(err, SandboxError::NotFound(_)));
+    }
 
     #[test]
     fn normalize_windows_path_replaces_backslashes() {

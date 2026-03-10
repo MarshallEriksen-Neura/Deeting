@@ -93,6 +93,7 @@ pub(crate) async fn build_capability_search_result(
             .partial_cmp(&left.score)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
+    let mut ranked = dedupe_ranked_capabilities(ranked);
     if ranked.len() > limit {
         ranked.truncate(limit);
     }
@@ -136,6 +137,28 @@ pub(crate) async fn build_capability_search_result(
             "enabled_skill_count": enabled_skill_ids.len(),
         }
     })
+}
+
+fn dedupe_ranked_capabilities(ranked: Vec<RankedCapability>) -> Vec<RankedCapability> {
+    let mut seen = HashSet::new();
+    ranked
+        .into_iter()
+        .filter(|item| {
+            capability_dedupe_key(&item.value)
+                .map(|key| seen.insert(key))
+                .unwrap_or(true)
+        })
+        .collect()
+}
+
+fn capability_dedupe_key(value: &Value) -> Option<String> {
+    value
+        .get("name")
+        .and_then(|item| item.as_str())
+        .or_else(|| value.get("capability_id").and_then(|item| item.as_str()))
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(|item| item.to_lowercase())
 }
 
 async fn collect_semantic_scores(
@@ -1085,6 +1108,40 @@ fn lexical_reason(score: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dedupe_ranked_capabilities_keeps_highest_ranked_entry_per_name() {
+        let deduped = dedupe_ranked_capabilities(vec![
+            RankedCapability {
+                score: 12.0,
+                value: json!({"name": "find_skills", "capability_id": "tool.find_skills.latest"}),
+            },
+            RankedCapability {
+                score: 11.0,
+                value: json!({"name": "find_skills", "capability_id": "tool.find_skills.stale"}),
+            },
+            RankedCapability {
+                score: 9.0,
+                value: json!({"name": "search_web", "capability_id": "tool.search_web"}),
+            },
+            RankedCapability {
+                score: 8.0,
+                value: json!({"capability_id": "assistant.unique"}),
+            },
+            RankedCapability {
+                score: 7.0,
+                value: json!({"capability_id": "assistant.unique"}),
+            },
+        ]);
+
+        assert_eq!(deduped.len(), 3);
+        assert_eq!(
+            deduped[0].value["capability_id"],
+            json!("tool.find_skills.latest")
+        );
+        assert_eq!(deduped[1].value["capability_id"], json!("tool.search_web"));
+        assert_eq!(deduped[2].value["capability_id"], json!("assistant.unique"));
+    }
 
     #[test]
     fn build_tool_contract_uses_input_schema_to_generate_typed_fields() {

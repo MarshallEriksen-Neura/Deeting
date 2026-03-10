@@ -586,6 +586,14 @@ pub struct LocalSystemAssetSyncResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalSystemAssetRepairResponse {
+    pub vector_dimension: i64,
+    pub skill_reindexed_count: i64,
+    pub assistant_reindexed_count: i64,
+    pub sync: LocalSystemAssetSyncResponse,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalAssistantSummary {
     pub assistant_id: String,
     pub owner_user_id: Option<String>,

@@ -220,13 +220,12 @@ async fn stream_chat_completion(
             Ok(value) => value,
             Err(err) => {
                 let _ = tx.send(
-                    json!({
-                        "code": "LOCAL_BAD_REQUEST",
-                        "message": err,
-                        "source": "desktop",
-                        "trace_id": trace_id,
-                        "request_id": request_id,
-                    })
+                    build_stream_error_payload(
+                        "LOCAL_BAD_REQUEST",
+                        err,
+                        &trace_id,
+                        request_id.as_deref(),
+                    )
                     .to_string(),
                 );
                 let _ = tx.send("[DONE]".to_string());
@@ -282,13 +281,12 @@ async fn stream_chat_completion(
             }
             Err(err) => {
                 let _ = tx.send(
-                    json!({
-                        "code": "LOCAL_CHAT_FAILED",
-                        "message": err,
-                        "source": "desktop",
-                        "trace_id": trace_id,
-                        "request_id": request_id,
-                    })
+                    build_stream_error_payload(
+                        "LOCAL_CHAT_FAILED",
+                        err,
+                        &trace_id,
+                        request_id.as_deref(),
+                    )
                     .to_string(),
                 );
             }
@@ -613,9 +611,28 @@ fn normalize_optional_string(value: Option<&str>) -> Option<String> {
         .filter(|v| !v.is_empty())
 }
 
+fn build_stream_error_payload(
+    error_code: &str,
+    message: impl Into<String>,
+    trace_id: &str,
+    request_id: Option<&str>,
+) -> Value {
+    json!({
+        "type": "error",
+        "message": message.into(),
+        "error_code": error_code,
+        "source": "desktop",
+        "trace_id": trace_id,
+        "request_id": normalize_optional_string(request_id),
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{build_fact_rebuild_conversation_text, clear_session_auto_extraction_memories};
+    use super::{
+        build_fact_rebuild_conversation_text, clear_session_auto_extraction_memories,
+        build_stream_error_payload,
+    };
     use crate::modules::mcp::store::LocalConversationRuntimeWindow;
     use crate::modules::mcp::types::LocalConversationHistoryMessage;
     use crate::modules::memory::types::{CreateLocalMemoryRequest, LocalMemoryListQuery};
@@ -732,5 +749,51 @@ mod tests {
         assert!(conversation.contains("Summary: User is building desktop compare mode."));
         assert!(conversation.contains("User: Please compare these answers."));
         assert!(conversation.contains("Assistant: Winner answer kept in canonical history."));
+    }
+
+    #[test]
+    fn build_stream_error_payload_uses_typed_error_event_shape() {
+        let payload = build_stream_error_payload(
+            "LOCAL_CHAT_FAILED",
+            "upstream exploded with full body",
+            "trace-123",
+            Some("request-456"),
+        );
+
+        assert_eq!(payload.get("type").and_then(|value| value.as_str()), Some("error"));
+        assert_eq!(
+            payload.get("message").and_then(|value| value.as_str()),
+            Some("upstream exploded with full body")
+        );
+        assert_eq!(
+            payload.get("error_code").and_then(|value| value.as_str()),
+            Some("LOCAL_CHAT_FAILED")
+        );
+        assert_eq!(
+            payload.get("trace_id").and_then(|value| value.as_str()),
+            Some("trace-123")
+        );
+        assert_eq!(
+            payload.get("request_id").and_then(|value| value.as_str()),
+            Some("request-456")
+        );
+        assert_eq!(
+            payload.get("source").and_then(|value| value.as_str()),
+            Some("desktop")
+        );
+        assert_eq!(payload.get("code").and_then(|value| value.as_str()), None);
+    }
+
+    #[test]
+    fn build_stream_error_payload_keeps_request_id_key_when_missing() {
+        let payload = build_stream_error_payload(
+            "LOCAL_BAD_REQUEST",
+            "session_id is required for desktop local chat",
+            "trace-999",
+            None,
+        );
+
+        assert!(payload.get("request_id").is_some());
+        assert!(payload.get("request_id").is_some_and(|value| value.is_null()));
     }
 }

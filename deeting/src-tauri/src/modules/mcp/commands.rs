@@ -78,7 +78,8 @@ pub(crate) use skill_registry_impl::{
 };
 #[cfg(test)]
 pub(crate) use source_management_impl::{
-    local_skill_registration_self_heal_needed, sync_local_system_assets_inner,
+    local_skill_registration_self_heal_needed, reset_local_asset_catalog_then_sync_inner,
+    sync_local_system_assets_inner,
 };
 #[cfg(test)]
 pub(crate) use sources_tools_and_chat_impl::{

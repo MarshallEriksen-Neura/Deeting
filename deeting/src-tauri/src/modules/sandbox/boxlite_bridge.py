@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import asyncio
+import inspect
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -20,6 +21,12 @@ def parse_memory_mib(raw):
         return int(text)
     except ValueError:
         return None
+
+
+async def maybe_await(value):
+    if inspect.isawaitable(value):
+        return await value
+    return value
 
 
 class BoxLiteBridge:
@@ -50,7 +57,7 @@ class BoxLiteBridge:
         mapping = self.load_names()
         box_id = mapping.get(identifier, identifier)
         try:
-            box = self.runtime().get(box_id)
+            box = await maybe_await(self.runtime().get(box_id))
             name = next((n for n, value in mapping.items() if value == box_id), identifier)
             return {"id": box_id, "name": name}, box
         except Exception:
@@ -76,7 +83,7 @@ class BoxLiteBridge:
             working_dir=payload.get("cwd") or "/workspace",
             auto_remove=False,
         )
-        box = self.runtime().create(options)
+        box = await maybe_await(self.runtime().create(options))
         mapping = self.load_names()
         mapping[name] = box.id
         self.save_names(mapping)

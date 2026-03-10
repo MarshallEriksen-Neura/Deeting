@@ -503,7 +503,8 @@ impl SandboxRuntimeManager {
                     continue;
                 }
                 Err(err)
-                    if is_missing_sandbox_error(&err) && attempt + 1 < SESSION_BUSY_RETRY_ATTEMPTS =>
+                    if is_missing_sandbox_error(&err)
+                        && attempt + 1 < SESSION_BUSY_RETRY_ATTEMPTS =>
                 {
                     log::warn!(
                         "sandbox missing for session {} (attempt {}/{}), rebuilding runtime",
@@ -511,7 +512,8 @@ impl SandboxRuntimeManager {
                         attempt + 1,
                         SESSION_BUSY_RETRY_ATTEMPTS
                     );
-                    self.remove_lease(&normalized_session, &lease.sandbox_id).await;
+                    self.remove_lease(&normalized_session, &lease.sandbox_id)
+                        .await;
                     let _ = backend.stop_box(&lease.sandbox_id).await;
                     let _ = self.prepare().await;
                     continue;
@@ -1260,7 +1262,9 @@ fn is_missing_sandbox_error(err: &SandboxError) -> bool {
         SandboxError::NotFound(_) => true,
         SandboxError::Internal(message) => {
             let lowered = message.to_lowercase();
-            lowered.contains("sandbox") && lowered.contains("not found")
+            ((lowered.contains("not found") || lowered.contains("does not exist"))
+                && (lowered.contains("sandbox") || lowered.contains("box") || lowered.contains("id")))
+                || lowered.contains("no such box")
         }
         _ => false,
     }
@@ -1318,6 +1322,9 @@ mod tests {
         )));
         assert!(is_missing_sandbox_error(&SandboxError::Internal(
             "sandbox abc not found".to_string()
+        )));
+        assert!(is_missing_sandbox_error(&SandboxError::Internal(
+            "box id does not exist".to_string()
         )));
         assert!(!is_missing_sandbox_error(&SandboxError::Busy(
             "session is busy".to_string()

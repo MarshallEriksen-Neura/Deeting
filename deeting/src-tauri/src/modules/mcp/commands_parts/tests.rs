@@ -1340,7 +1340,10 @@ for raw_line in sys.stdin:
         assert_eq!(view.recommended_action, "execute");
         assert_eq!(tool.remote_tool_name().as_deref(), Some("search_web"));
         assert_eq!(tool.remote_server_name().as_deref(), Some("tavily-mcp"));
-        assert_eq!(tool.remote_sse_url().as_deref(), Some("https://example.com/sse"));
+        assert_eq!(
+            tool.remote_sse_url().as_deref(),
+            Some("https://example.com/sse")
+        );
     }
 
     #[tokio::test]
@@ -2827,9 +2830,7 @@ for raw_line in sys.stdin:
             Some("hello from rmcp")
         );
         assert_eq!(
-            result
-                .get("isError")
-                .and_then(|value| value.as_bool()),
+            result.get("isError").and_then(|value| value.as_bool()),
             Some(false)
         );
         assert!(pending_tool_calls.read().await.is_empty());
@@ -2884,13 +2885,11 @@ for raw_line in sys.stdin:
             Some(expected_identifier.as_str())
         );
 
-        assert!(
-            store
-                .get_tool_by_name("mock_stdio")
-                .await
-                .expect("read legacy tool by name")
-                .is_none()
-        );
+        assert!(store
+            .get_tool_by_name("mock_stdio")
+            .await
+            .expect("read legacy tool by name")
+            .is_none());
         let stored_tools = store.list_tools().await.expect("list stored tools");
         assert_eq!(stored_tools.len(), 1);
         assert_eq!(stored_tools[0].name, "echo");
@@ -2916,9 +2915,7 @@ for raw_line in sys.stdin:
             Some("hello from imported config")
         );
         assert_eq!(
-            result
-                .get("isError")
-                .and_then(|value| value.as_bool()),
+            result.get("isError").and_then(|value| value.as_bool()),
             Some(false)
         );
         assert!(pending_tool_calls.read().await.is_empty());
@@ -3616,6 +3613,63 @@ for raw_line in sys.stdin:
         .await
         .expect("read stale assistant status");
         assert_eq!(stale_assistant_status, "archived");
+
+        server_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn reset_local_asset_catalog_then_sync_inner_clears_existing_asset_rows() {
+        let store = create_test_store("system-assets-reset-local-assets").await;
+        let memory = create_test_memory_state("system-assets-reset-local-assets", 4).await;
+
+        memory
+            .service
+            .upsert_asset(
+                "tool.find_skills".into(),
+                "find_skills".into(),
+                "stale duplicated asset".into(),
+                "tool".into(),
+                "system_plugin".into(),
+                Some("skill.find_skills".into()),
+                vec![0.9, 0.1, 0.0, 0.0],
+                Some(serde_json::json!({"version": 1})),
+            )
+            .await
+            .expect("seed asset catalog row");
+        assert_eq!(
+            memory
+                .service
+                .list_assets_catalog()
+                .await
+                .expect("list seeded assets")
+                .len(),
+            1
+        );
+
+        let payload = serde_json::json!({"items": []});
+        let (mock_base_url, server_handle) = start_mock_system_assets_server(payload).await;
+
+        let response = reset_local_asset_catalog_then_sync_inner(
+            &memory.service,
+            &store,
+            &reqwest::Client::new(),
+            &mock_base_url,
+            "test-access-token",
+            50,
+            4,
+            None,
+            false,
+        )
+        .await
+        .expect("reset local asset catalog and sync");
+
+        assert_eq!(response.fetched_count, 0);
+        assert!(memory
+            .service
+            .list_assets_catalog()
+            .await
+            .expect("list assets after reset")
+            .is_empty());
 
         server_handle.abort();
     }

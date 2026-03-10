@@ -12,6 +12,8 @@
       "marketEntry": "Go To Plugin Market",
       "syncAction": "Sync State",
       "syncReinstallAction": "Sync + Reinstall Missing",
+      "repairIndexAction": "Repair Local Index",
+      "repairingAction": "Repairing...",
       "syncing": "Syncing...",
       "hero": {
         "titlePrefix": "Explore",
@@ -57,6 +59,13 @@
       "aliasLabel": "Custom alias (optional)",
       "aliasPlaceholder": "Set an alias for this plugin"
     },
+    "repairConfirm": {
+      "title": "Repair local index?",
+      "description": "This rebuilds the local system asset index and relies on the current sync pipeline to repopulate skills and assistants.",
+      "warning": "Existing local asset index entries will be cleared before rebuild. If desktop sync or auth is not ready, the repopulated result may be incomplete.",
+      "confirm": "Repair Index",
+      "cancel": "Cancel"
+    },
     "permissions": {
       "toolExecution": "Execute tool calls and code",
       "dataAccess": "Read session context data",
@@ -75,7 +84,12 @@
       "syncSuccessDesc": "Fetched {fetched}, updated {upserted}, reinstalled {reinstalled}, failed {failed}.",
       "syncSuccessDescNoop": "No desktop sync was needed for current runtime or auth state.",
       "syncFailedTitle": "Sync failed",
-      "syncFailedDesc": "Could not sync local install state. Please try again."
+      "syncFailedDesc": "Could not sync local install state. Please try again.",
+      "repairSuccessTitle": "Local index repaired",
+      "repairSuccessDesc": "Synced {fetched}, updated {upserted}, and rebuilt {skills} skill indexes and {assistants} assistant indexes.",
+      "repairSuccessDescNoop": "Local index repair could not run for the current desktop runtime or auth state.",
+      "repairFailedTitle": "Repair failed",
+      "repairFailedDesc": "Could not repair the local system asset index. Please try again."
     },
     "importRepo": {
       "trigger": "Import from GitHub",
