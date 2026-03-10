@@ -14,6 +14,7 @@ type McpRegistryNotificationKind =
   | "invalid_config"
   | "missing_server"
   | "no_remote_servers"
+  | "review"
   | "sync_success"
   | "toggle_unsupported"
   | "update_success"
@@ -56,6 +57,8 @@ export const getMcpRegistryNotification = (
       return createNotification("error", t("toast.missingServer"))
     case "no_remote_servers":
       return createNotification("warning", t("toast.syncFailed"), t("toast.noRemoteServers"))
+    case "review":
+      return createNotification("warning", t("toast.actionUnavailable"), t("tool.runtime.review"))
     case "sync_success":
       return createNotification("success", t("toast.syncSuccess"), t("toast.syncSuccessDesc"))
     case "toggle_unsupported":

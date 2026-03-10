@@ -67,6 +67,12 @@ describe("registry notifications", () => {
       title: "toast.toggleUnsupported",
       description: "",
     })
+
+    expect(getMcpRegistryNotification(t, "review")).toMatchObject({
+      type: "warning",
+      title: "toast.actionUnavailable",
+      description: "tool.runtime.review",
+    })
   })
 
   it("maps error notifications to the expected failure title", () => {

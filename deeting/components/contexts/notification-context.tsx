@@ -51,6 +51,11 @@ export function useNotifications() {
   
   // 如果是错误或警告，同时显示为瞬态通知
   const addNotification = useCallback((notification: Parameters<typeof actions.add>[0]) => {
+    if (!notification) {
+      console.warn("[NotificationContext] addNotification called with undefined notification")
+      return
+    }
+
     actions.add(notification)
     
     if (notification.type === "error" || notification.type === "warning") {

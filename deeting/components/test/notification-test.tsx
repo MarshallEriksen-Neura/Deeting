@@ -1,12 +1,10 @@
 "use client"
 
 import { useNotifications } from "@/components/contexts/notification-context"
-import { useNotificationActions } from "@/store/notification-store"
 import { Button } from "@/components/ui/button"
 
 export function NotificationTestButtons() {
-  const { setProcessing } = useNotifications()
-  const { addNotification } = useNotificationActions()
+  const { addNotification, setProcessing } = useNotifications()
 
   const testSuccessNotification = () => {
     addNotification({
