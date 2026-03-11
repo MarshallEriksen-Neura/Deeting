@@ -1,3 +1,4 @@
+pub mod ai_upstream;
 pub mod capability_control_plane;
 pub mod chat_assets;
 pub mod code_mode;

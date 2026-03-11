@@ -755,6 +755,39 @@ pub struct LocalGatewayLogQuery {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalMaintenanceActionRequest {
+    pub kind: String,
+    pub limit: Option<i64>,
+    pub reinstall_missing: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalMaintenanceLogQuery {
+    pub skip: Option<i64>,
+    pub limit: Option<i64>,
+    pub kind: Option<String>,
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalMaintenanceLogItem {
+    pub id: String,
+    pub kind: String,
+    pub status: String,
+    pub message: String,
+    pub details: Option<serde_json::Value>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalMaintenanceLogListResponse {
+    pub total: i64,
+    pub skip: i64,
+    pub limit: i64,
+    pub items: Vec<LocalMaintenanceLogItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalGatewayLogItem {
     pub id: String,
     pub trace_id: Option<String>,

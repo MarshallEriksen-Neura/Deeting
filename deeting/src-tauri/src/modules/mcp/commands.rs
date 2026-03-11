@@ -20,6 +20,8 @@ pub(crate) mod conversation_management_impl;
 pub(crate) mod knowledge_documents_impl;
 #[path = "commands_parts/knowledge_folders.rs"]
 pub(crate) mod knowledge_folders_impl;
+#[path = "commands_parts/maintenance.rs"]
+pub(crate) mod maintenance_impl;
 #[path = "commands_parts/skill_registry.rs"]
 pub(crate) mod skill_registry_impl;
 #[path = "commands_parts/source_management.rs"]

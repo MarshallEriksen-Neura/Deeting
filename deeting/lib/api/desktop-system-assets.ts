@@ -35,6 +35,32 @@ const LocalSystemAssetRepairResponseSchema = z.object({
 
 export type LocalSystemAssetRepairResponse = z.infer<typeof LocalSystemAssetRepairResponseSchema>
 
+const LocalMaintenanceActionRequestSchema = z.object({
+  kind: z.string(),
+  limit: z.number().optional(),
+  reinstallMissing: z.boolean().optional(),
+})
+
+const LocalMaintenanceLogItemSchema = z.object({
+  id: z.string(),
+  kind: z.string(),
+  status: z.string(),
+  message: z.string(),
+  details: z.unknown().nullish(),
+  created_at: z.string(),
+})
+
+const LocalMaintenanceLogListResponseSchema = z.object({
+  total: z.number(),
+  skip: z.number(),
+  limit: z.number(),
+  items: z.array(LocalMaintenanceLogItemSchema),
+})
+
+export type LocalMaintenanceActionRequest = z.infer<typeof LocalMaintenanceActionRequestSchema>
+export type LocalMaintenanceLogItem = z.infer<typeof LocalMaintenanceLogItemSchema>
+export type LocalMaintenanceLogListResponse = z.infer<typeof LocalMaintenanceLogListResponseSchema>
+
 async function invokeTauri<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke } = await import("@tauri-apps/api/core")
   return invoke<T>(command, args)
@@ -120,4 +146,50 @@ export async function tryRepairLocalSystemAssetIndexFromCloud(options?: {
     console.warn("[desktop-system-assets] repair local system asset index failed", error)
     return null
   }
+}
+
+export async function runLocalMaintenanceAction(
+  request: LocalMaintenanceActionRequest
+): Promise<LocalMaintenanceLogItem | null> {
+  if (!isTauriRuntime()) {
+    return null
+  }
+
+  const tokenResolver = typeof getAuthToken === "function" ? getAuthToken : () => null
+  const token = (tokenResolver() ?? "").trim()
+  if (!token) {
+    return null
+  }
+
+  const normalizedRequest = LocalMaintenanceActionRequestSchema.parse(request)
+  const data = await invokeTauri<LocalMaintenanceLogItem>("run_local_maintenance_action", {
+    accessToken: token,
+    request: {
+      kind: normalizedRequest.kind,
+      limit: normalizedRequest.limit ?? 500,
+      reinstallMissing: normalizedRequest.reinstallMissing ?? false,
+    },
+  })
+  return LocalMaintenanceLogItemSchema.parse(data)
+}
+
+export async function listLocalMaintenanceLogs(options?: {
+  limit?: number
+  skip?: number
+  kind?: string
+  status?: string
+}): Promise<LocalMaintenanceLogListResponse | null> {
+  if (!isTauriRuntime()) {
+    return null
+  }
+
+  const data = await invokeTauri<LocalMaintenanceLogListResponse>("list_local_maintenance_logs", {
+    query: {
+      limit: options?.limit ?? 10,
+      skip: options?.skip ?? 0,
+      kind: options?.kind,
+      status: options?.status,
+    },
+  })
+  return LocalMaintenanceLogListResponseSchema.parse(data)
 }

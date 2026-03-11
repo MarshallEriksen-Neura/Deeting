@@ -1601,6 +1601,128 @@ impl McpStore {
         })
     }
 
+    pub async fn create_local_maintenance_log(
+        &self,
+        kind: &str,
+        status: &str,
+        message: &str,
+        details: Option<&serde_json::Value>,
+    ) -> Result<LocalMaintenanceLogItem, McpError> {
+        let normalized_kind = kind.trim().to_string();
+        let normalized_status = status.trim().to_string();
+        let normalized_message = message.trim().to_string();
+        if normalized_kind.is_empty() {
+            return Err(McpError::validation("kind is required"));
+        }
+        if normalized_status.is_empty() {
+            return Err(McpError::validation("status is required"));
+        }
+        if normalized_message.is_empty() {
+            return Err(McpError::validation("message is required"));
+        }
+
+        let id = Uuid::new_v4().to_string();
+        let created_at = now_rfc3339()?;
+        let details_json = details
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO maintenance_log (id, kind, status, message, details, created_at)
+            VALUES (?, ?, ?, ?, ?, ?);
+            "#,
+        )
+        .bind(&id)
+        .bind(&normalized_kind)
+        .bind(&normalized_status)
+        .bind(&normalized_message)
+        .bind(details_json.as_deref())
+        .bind(&created_at)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        Ok(LocalMaintenanceLogItem {
+            id,
+            kind: normalized_kind,
+            status: normalized_status,
+            message: normalized_message,
+            details: details.cloned(),
+            created_at,
+        })
+    }
+
+    pub async fn list_local_maintenance_logs(
+        &self,
+        query: LocalMaintenanceLogQuery,
+    ) -> Result<LocalMaintenanceLogListResponse, McpError> {
+        let skip = query.skip.unwrap_or(0).max(0);
+        let limit = query.limit.unwrap_or(20).clamp(1, 100);
+        let kind = normalize_optional_text(query.kind.as_deref());
+        let status = normalize_optional_text(query.status.as_deref());
+
+        let total_row = sqlx::query(
+            r#"
+            SELECT COUNT(*) AS total
+            FROM maintenance_log
+            WHERE (? IS NULL OR kind = ?)
+              AND (? IS NULL OR status = ?);
+            "#,
+        )
+        .bind(kind.as_deref())
+        .bind(kind.as_deref())
+        .bind(status.as_deref())
+        .bind(status.as_deref())
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        let total: i64 = total_row.try_get("total")?;
+
+        let rows = sqlx::query(
+            r#"
+            SELECT id, kind, status, message, details, created_at
+            FROM maintenance_log
+            WHERE (? IS NULL OR kind = ?)
+              AND (? IS NULL OR status = ?)
+            ORDER BY created_at DESC, id DESC
+            LIMIT ? OFFSET ?;
+            "#,
+        )
+        .bind(kind.as_deref())
+        .bind(kind.as_deref())
+        .bind(status.as_deref())
+        .bind(status.as_deref())
+        .bind(limit)
+        .bind(skip)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let mut items = Vec::with_capacity(rows.len());
+        for row in rows {
+            let details = row
+                .try_get::<Option<String>, _>("details")?
+                .and_then(|value| serde_json::from_str::<serde_json::Value>(&value).ok());
+            items.push(LocalMaintenanceLogItem {
+                id: row.try_get("id")?,
+                kind: row.try_get("kind")?,
+                status: row.try_get("status")?,
+                message: row.try_get("message")?,
+                details,
+                created_at: row.try_get("created_at")?,
+            });
+        }
+
+        Ok(LocalMaintenanceLogListResponse {
+            total,
+            skip,
+            limit,
+            items,
+        })
+    }
+
     pub async fn get_local_gateway_log_stats(
         &self,
         query: LocalGatewayLogQuery,

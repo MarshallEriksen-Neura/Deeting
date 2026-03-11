@@ -1,7 +1,4 @@
-use super::super::{
-    common_impl::{to_string, LocalModelConnection},
-    support::*,
-};
+use super::super::{common_impl::to_string, support::*};
 use super::{
     append_streamable_local_tool_result_blocks, build_auto_code_mode_tool_feedback,
     build_local_code_mode_entry_tools, build_local_consult_expert_network_result,
@@ -12,6 +9,7 @@ use super::{
     LocalCapabilityActivationState, LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
     LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
 };
+use crate::modules::mcp::commands::common_impl::LocalModelConnection;
 
 #[derive(Debug, Clone)]
 struct CapabilityExecutionContract {

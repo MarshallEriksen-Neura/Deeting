@@ -12,6 +12,7 @@ jest.mock("next-intl", () => ({
 const mockMutate = jest.fn()
 const mockUseSWR = jest.fn()
 const mockRunScanReviewAction = jest.fn()
+const mockRunScanReviewActions = jest.fn()
 
 jest.mock("swr", () => ({
   __esModule: true,
@@ -24,6 +25,7 @@ jest.mock("@/lib/api/desktop-config", () => ({
 
 jest.mock("@/lib/api/local-scan", () => ({
   runScanReviewAction: (...args: unknown[]) => mockRunScanReviewAction(...args),
+  runScanReviewActions: (...args: unknown[]) => mockRunScanReviewActions(...args),
   scanDirectoryReview: jest.fn(),
 }))
 
@@ -51,7 +53,7 @@ const mockRun = {
   target_path: "/tmp/skills",
   started_at: "2026-03-11T00:00:00Z",
   finished_at: "2026-03-11T00:00:01Z",
-  summary: { document_count: 1, finding_count: 1, warning_count: 1, error_count: 0, skill_bundle_count: 1, index_missing_count: 1, install_missing_count: 0 },
+  summary: { document_count: 1, finding_count: 1, warning_count: 1, error_count: 0, skill_bundle_count: 1, index_missing_count: 1, install_missing_count: 0, security_warning_count: 1, high_risk_script_count: 0, missing_skill_doc_count: 0 },
   documents: [],
   findings: [{
     id: "finding-1",
@@ -71,7 +73,7 @@ describe("Scan reviews page", () => {
   })
 
   it("runs finding actions from the scan table", async () => {
-    mockRunScanReviewAction.mockResolvedValue({ success: true, message: "Action applied" })
+    mockRunScanReviewAction.mockResolvedValue({ status: "applied", message: "Action applied" })
 
     render(<PageContent />)
     fireEvent.click(screen.getByRole("button", { name: "actions.reindex_bundle" }))
@@ -82,6 +84,24 @@ describe("Scan reviews page", () => {
         bundle_id: "skill.find-skills",
         path: "/tmp/skills/skill.find-skills",
       })
+    })
+    expect(mockMutate).toHaveBeenCalled()
+  })
+
+  it("runs batch fix for all actionable findings", async () => {
+    mockRunScanReviewActions.mockResolvedValue({ total: 1, applied: 1, failed: 0, skipped: 0, results: [] })
+
+    render(<PageContent />)
+    fireEvent.click(screen.getByRole("button", { name: "actions.fixAll" }))
+
+    await waitFor(() => {
+      expect(mockRunScanReviewActions).toHaveBeenCalledWith([
+        {
+          kind: "reindex_bundle",
+          bundle_id: "skill.find-skills",
+          path: "/tmp/skills/skill.find-skills",
+        },
+      ])
     })
     expect(mockMutate).toHaveBeenCalled()
   })

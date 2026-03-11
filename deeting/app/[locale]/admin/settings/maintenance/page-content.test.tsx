@@ -6,21 +6,32 @@ import { PageContent } from "./page-content"
 jest.mock("next-intl", () => ({
   useTranslations: () => (key: string, values?: Record<string, string | number>) =>
     values ? `${key}:${JSON.stringify(values)}` : key,
+  useLocale: () => "en",
 }))
 
-const mockSyncLocalSkillInstallsFromCloud = jest.fn()
-const mockRepairLocalSystemAssetIndexFromCloud = jest.fn()
+const mockRunLocalMaintenanceAction = jest.fn()
+const mockListLocalMaintenanceLogs = jest.fn()
+const mockUseSWR = jest.fn()
+
+jest.mock("swr", () => ({
+  __esModule: true,
+  default: (...args: unknown[]) => mockUseSWR(...args),
+}))
 
 jest.mock("@/lib/api/desktop-config", () => ({
   isTauriRuntime: () => true,
 }))
 
-jest.mock("@/lib/api/plugin-market", () => ({
-  syncLocalSkillInstallsFromCloud: (...args: unknown[]) => mockSyncLocalSkillInstallsFromCloud(...args),
+jest.mock("@/lib/api/desktop-system-assets", () => ({
+  runLocalMaintenanceAction: (...args: unknown[]) => mockRunLocalMaintenanceAction(...args),
+  listLocalMaintenanceLogs: (...args: unknown[]) => mockListLocalMaintenanceLogs(...args),
 }))
 
-jest.mock("@/lib/api/desktop-system-assets", () => ({
-  repairLocalSystemAssetIndexFromCloud: (...args: unknown[]) => mockRepairLocalSystemAssetIndexFromCloud(...args),
+jest.mock("@/components/admin", () => ({
+  AdminStatusBadge: ({ text }: { text: string }) => <span>{text}</span>,
+  AdminDataTable: ({ data }: { data: Array<{ id: string; message: string }> }) => (
+    <div>{data.map((row) => <div key={row.id}>{row.message}</div>)}</div>
+  ),
 }))
 
 jest.mock("@/components/ui/glass-card", () => ({
@@ -45,37 +56,83 @@ jest.mock("@/components/ui/alert-dialog", () => ({
 describe("Admin maintenance settings page", () => {
   beforeEach(() => {
     jest.clearAllMocks()
+    mockUseSWR.mockReturnValue({
+      data: {
+        total: 1,
+        skip: 0,
+        limit: 10,
+        items: [
+          {
+            id: "log-1",
+            kind: "sync_local_installs",
+            status: "success",
+            message: "sync complete",
+            details: {
+              skill_install_fetched_count: 2,
+              skill_install_upserted_count: 2,
+              skill_failed_count: 0,
+            },
+            created_at: "2026-03-11T00:00:00Z",
+          },
+        ],
+      },
+      mutate: jest.fn(),
+    })
   })
 
   it("runs local install sync", async () => {
-    mockSyncLocalSkillInstallsFromCloud.mockResolvedValue({ fetched_count: 2, upserted_count: 2, reinstalled_count: 0, failed_count: 0 })
+    mockRunLocalMaintenanceAction.mockResolvedValue({
+      id: "log-2",
+      kind: "sync_local_installs",
+      status: "success",
+      message: "sync complete",
+      details: {
+        skill_install_fetched_count: 2,
+        skill_install_upserted_count: 2,
+        skill_failed_count: 0,
+      },
+      created_at: "2026-03-11T00:00:01Z",
+    })
 
     render(<PageContent />)
     fireEvent.click(screen.getByRole("button", { name: "actions.syncAction" }))
 
     await waitFor(() => {
-      expect(mockSyncLocalSkillInstallsFromCloud).toHaveBeenCalledWith({ reinstallMissing: false, force: true })
+      expect(mockRunLocalMaintenanceAction).toHaveBeenCalledWith({ kind: "sync_local_installs", reinstallMissing: false })
     })
   })
 
   it("confirms before running full repair", async () => {
-    mockRepairLocalSystemAssetIndexFromCloud.mockResolvedValue({
-      vector_dimension: 1536,
-      skill_reindexed_count: 3,
-      assistant_reindexed_count: 2,
-      sync: { fetched_count: 4, upserted_count: 4 },
+    mockRunLocalMaintenanceAction.mockResolvedValue({
+      id: "log-3",
+      kind: "repair_local_index",
+      status: "success",
+      message: "repair complete",
+      details: {
+        skill_reindexed_count: 3,
+        assistant_reindexed_count: 2,
+        sync: { assets_fetched: 4, skill_install_upserted_count: 4 },
+      },
+      created_at: "2026-03-11T00:00:02Z",
     })
 
     render(<PageContent />)
     fireEvent.click(screen.getByRole("button", { name: "actions.repairIndexAction" }))
 
     expect(screen.getByText("repairConfirm.title")).toBeInTheDocument()
-    expect(mockRepairLocalSystemAssetIndexFromCloud).not.toHaveBeenCalled()
+    expect(mockRunLocalMaintenanceAction).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole("button", { name: "repairConfirm.confirm" }))
 
     await waitFor(() => {
-      expect(mockRepairLocalSystemAssetIndexFromCloud).toHaveBeenCalledTimes(1)
+      expect(mockRunLocalMaintenanceAction).toHaveBeenCalledWith({ kind: "repair_local_index" })
     })
+  })
+
+  it("renders recent maintenance history", () => {
+    render(<PageContent />)
+
+    expect(screen.getByText("history.title")).toBeInTheDocument()
+    expect(screen.getByText("sync complete")).toBeInTheDocument()
   })
 })

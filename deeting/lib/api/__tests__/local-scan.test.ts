@@ -1,4 +1,4 @@
-import { runScanReviewAction, scanDirectoryReview, scanFileReview } from "@/lib/api/local-scan"
+import { runScanReviewAction, runScanReviewActions, scanDirectoryReview, scanFileReview } from "@/lib/api/local-scan"
 import { invoke } from "@tauri-apps/api/core"
 
 jest.mock("@tauri-apps/api/core", () => ({
@@ -27,6 +27,9 @@ const mockRun = {
     skill_bundle_count: 1,
     index_missing_count: 1,
     install_missing_count: 1,
+    security_warning_count: 2,
+    high_risk_script_count: 1,
+    missing_skill_doc_count: 0,
   },
   documents: [],
   findings: [],
@@ -94,6 +97,27 @@ describe("local scan api", () => {
         kind: "reindex_bundle",
         bundle_id: "demo.skill",
         path: "/tmp/skills/demo-skill",
+      },
+    })
+  })
+
+  it("invokes run_scan_review_actions in tauri runtime", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue({ total: 2, applied: 1, failed: 0, skipped: 1, results: [] } as unknown)
+
+    const result = await runScanReviewActions([
+      { kind: "register_bundle", bundle_id: "demo.skill", path: "/tmp/skills/demo-skill", destructive: false },
+      { kind: "register_bundle", bundle_id: "demo.skill", path: "/tmp/skills/demo-skill", destructive: false },
+    ])
+
+    expect(result?.skipped).toBe(1)
+    expect(mockInvoke).toHaveBeenCalledWith("run_scan_review_actions", {
+      request: {
+        actions: [
+          { kind: "register_bundle", bundle_id: "demo.skill", path: "/tmp/skills/demo-skill" },
+          { kind: "register_bundle", bundle_id: "demo.skill", path: "/tmp/skills/demo-skill" },
+        ],
       },
     })
   })

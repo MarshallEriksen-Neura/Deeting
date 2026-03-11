@@ -63,9 +63,15 @@ struct BundleSnapshot {
     excerpt: Option<String>,
     doc_paths: Vec<String>,
     script_paths: Vec<String>,
+    runtime_script_paths: Vec<String>,
+    high_risk_script_paths: Vec<String>,
     file_count: usize,
+    skill_doc_present: bool,
     manifest_present: bool,
     manifest_invalid: Option<String>,
+    manifest_id: Option<String>,
+    manifest_name: Option<String>,
+    manifest_runtime: Option<String>,
     package_present: bool,
 }
 
@@ -248,6 +254,65 @@ fn build_bundle_document(
         ));
     }
 
+    if !snapshot.skill_doc_present {
+        status = "needs_review".to_string();
+        findings.push(ScanFinding {
+            id: Uuid::new_v4().to_string(),
+            severity: "warn".to_string(),
+            code: "skill_doc_missing".to_string(),
+            message: format!(
+                "Skill bundle {} is missing SKILL.md documentation",
+                snapshot.bundle_id
+            ),
+            document_path: Some(normalized_path.clone()),
+            bundle_id: Some(snapshot.bundle_id.clone()),
+            metadata: Some(json!({ "expected_path": "SKILL.md" })),
+            action: None,
+        });
+    }
+
+    if snapshot.manifest_present && snapshot.manifest_invalid.is_none() {
+        if snapshot.manifest_id.is_none() || snapshot.manifest_name.is_none() {
+            status = "needs_review".to_string();
+            findings.push(ScanFinding {
+                id: Uuid::new_v4().to_string(),
+                severity: "warn".to_string(),
+                code: "manifest_identity_missing".to_string(),
+                message: format!(
+                    "Skill bundle {} is missing manifest identity fields (id/name)",
+                    snapshot.bundle_id
+                ),
+                document_path: Some(normalized_path.clone()),
+                bundle_id: Some(snapshot.bundle_id.clone()),
+                metadata: Some(json!({
+                    "manifest_id": snapshot.manifest_id.clone(),
+                    "manifest_name": snapshot.manifest_name.clone(),
+                })),
+                action: None,
+            });
+        }
+
+        if snapshot.manifest_runtime.is_none() {
+            status = "needs_review".to_string();
+            findings.push(ScanFinding {
+                id: Uuid::new_v4().to_string(),
+                severity: "warn".to_string(),
+                code: "manifest_runtime_missing".to_string(),
+                message: format!(
+                    "Skill bundle {} is missing a runtime declaration in deeting.json",
+                    snapshot.bundle_id
+                ),
+                document_path: Some(normalized_path.clone()),
+                bundle_id: Some(snapshot.bundle_id.clone()),
+                metadata: Some(json!({
+                    "manifest_id": snapshot.manifest_id.clone(),
+                    "manifest_name": snapshot.manifest_name.clone(),
+                })),
+                action: None,
+            });
+        }
+    }
+
     if !asset_present {
         status = "needs_review".to_string();
         findings.push(asset_missing_finding(
@@ -262,18 +327,41 @@ fn build_bundle_document(
         ));
     }
 
-    if !snapshot.script_paths.is_empty() {
+    if !snapshot.high_risk_script_paths.is_empty() {
+        status = "needs_review".to_string();
         findings.push(ScanFinding {
             id: Uuid::new_v4().to_string(),
-            severity: "info".to_string(),
-            code: "script_files_detected".to_string(),
+            severity: "warn".to_string(),
+            code: "high_risk_scripts_detected".to_string(),
             message: format!(
-                "Skill bundle {} includes executable/script files that may require review",
+                "Skill bundle {} includes high-risk shell or system scripts that may require review",
                 snapshot.bundle_id
             ),
             document_path: Some(normalized_path.clone()),
             bundle_id: Some(snapshot.bundle_id.clone()),
-            metadata: Some(json!({ "script_paths": snapshot.script_paths.clone() })),
+            metadata: Some(json!({
+                "risk_level": "high",
+                "script_paths": snapshot.high_risk_script_paths.clone(),
+            })),
+            action: None,
+        });
+    }
+
+    if !snapshot.runtime_script_paths.is_empty() {
+        findings.push(ScanFinding {
+            id: Uuid::new_v4().to_string(),
+            severity: "info".to_string(),
+            code: "runtime_scripts_detected".to_string(),
+            message: format!(
+                "Skill bundle {} includes runtime scripts (js/ts/py) that may execute code",
+                snapshot.bundle_id
+            ),
+            document_path: Some(normalized_path.clone()),
+            bundle_id: Some(snapshot.bundle_id.clone()),
+            metadata: Some(json!({
+                "risk_level": "runtime",
+                "script_paths": snapshot.runtime_script_paths.clone(),
+            })),
             action: None,
         });
     }
@@ -283,7 +371,14 @@ fn build_bundle_document(
         "file_count": snapshot.file_count,
         "version": snapshot.version.clone(),
         "description": snapshot.description.clone(),
+        "skill_doc_present": snapshot.skill_doc_present,
         "manifest_present": snapshot.manifest_present,
+        "manifest_id": snapshot.manifest_id.clone(),
+        "manifest_name": snapshot.manifest_name.clone(),
+        "manifest_runtime": snapshot.manifest_runtime.clone(),
+        "script_count": snapshot.script_paths.len(),
+        "runtime_script_count": snapshot.runtime_script_paths.len(),
+        "high_risk_script_count": snapshot.high_risk_script_paths.len(),
         "package_present": snapshot.package_present,
         "install": install.map(|item| json!({
             "is_enabled": item.is_enabled,
@@ -347,15 +442,18 @@ fn build_file_findings(path: &Path, bundle_id: Option<String>) -> Vec<ScanFindin
     let mut findings = Vec::new();
     let normalized_path = normalize_path(path);
 
-    if is_script_path(path) {
+    if let Some(risk_level) = classify_script_risk_level(path) {
         findings.push(ScanFinding {
             id: Uuid::new_v4().to_string(),
-            severity: "warn".to_string(),
+            severity: if risk_level == "high" { "warn" } else { "info" }.to_string(),
             code: "script_file_detected".to_string(),
             message: format!("Script/executable file detected: {}", normalized_path),
             document_path: Some(normalized_path.clone()),
             bundle_id: bundle_id.clone(),
-            metadata: Some(json!({ "path": normalized_path })),
+            metadata: Some(json!({
+                "path": normalized_path,
+                "risk_level": risk_level,
+            })),
             action: None,
         });
     }
@@ -440,6 +538,10 @@ fn walk_bundle(
         snapshot.file_count += 1;
         let relative = relative_path(&path, root).unwrap_or_else(|| normalize_path(&path));
 
+        if path.file_name() == Some(OsStr::new("SKILL.md")) {
+            snapshot.skill_doc_present = true;
+        }
+
         if path.file_name() == Some(OsStr::new("deeting.json")) {
             snapshot.manifest_present = true;
             match parse_deeting_manifest(&path) {
@@ -463,8 +565,17 @@ fn walk_bundle(
                 snapshot.excerpt = first_non_empty_line(&trim_excerpt(&text, EXCERPT_CHARS));
             }
         }
-        if is_script_path(&path) {
+        if let Some(risk_level) = classify_script_risk_level(&path) {
             snapshot.script_paths.push(relative);
+            if risk_level == "high" {
+                snapshot.high_risk_script_paths.push(
+                    relative_path(&path, root).unwrap_or_else(|| normalize_path(&path)),
+                );
+            } else {
+                snapshot.runtime_script_paths.push(
+                    relative_path(&path, root).unwrap_or_else(|| normalize_path(&path)),
+                );
+            }
         }
     }
 
@@ -515,6 +626,33 @@ fn summarize(documents: &[ScanDocument], findings: &[ScanFinding]) -> ScanSummar
             .filter(|item| {
                 item.code == "install_record_missing" || item.code == "installed_path_missing"
             })
+            .count(),
+        security_warning_count: findings
+            .iter()
+            .filter(|item| {
+                matches!(
+                    item.code.as_str(),
+                    "invalid_manifest"
+                        | "skill_doc_missing"
+                        | "manifest_identity_missing"
+                        | "manifest_runtime_missing"
+                        | "high_risk_scripts_detected"
+                        | "runtime_scripts_detected"
+                        | "script_file_detected"
+                )
+            })
+            .count(),
+        high_risk_script_count: findings
+            .iter()
+            .filter(|item| {
+                item.code == "high_risk_scripts_detected"
+                    || (item.code == "script_file_detected"
+                        && finding_metadata_equals(item, "risk_level", "high"))
+            })
+            .count(),
+        missing_skill_doc_count: findings
+            .iter()
+            .filter(|item| item.code == "skill_doc_missing")
             .count(),
     }
 }
@@ -616,6 +754,19 @@ fn has_skill_asset(skill_id: &str, assets: &[AssetIndexSnapshot]) -> bool {
 }
 
 fn apply_json_metadata(snapshot: &mut BundleSnapshot, value: &Value) {
+    if snapshot.manifest_id.is_none() {
+        snapshot.manifest_id = select_json_string(value, &["id", "name"]);
+    }
+    if snapshot.manifest_name.is_none() {
+        snapshot.manifest_name = select_json_string(
+            value,
+            &["display_name", "displayName", "title", "name"],
+        );
+    }
+    if snapshot.manifest_runtime.is_none() {
+        snapshot.manifest_runtime = select_json_string(value, &["runtime"])
+            .or_else(|| select_json_string_array(value, &["runtime", "runtimes"]));
+    }
     if snapshot.bundle_id.is_empty() {
         if let Some(id) = select_json_string(value, &["id", "name"]) {
             snapshot.bundle_id = normalize_bundle_id(&id);
@@ -643,6 +794,26 @@ fn select_json_string(value: &Value, keys: &[&str]) -> Option<String> {
             .map(str::trim)
             .filter(|item| !item.is_empty())
             .map(ToString::to_string)
+    })
+}
+
+fn select_json_string_array(value: &Value, keys: &[&str]) -> Option<String> {
+    let object = value.as_object()?;
+    keys.iter().find_map(|key| {
+        object.get(*key).and_then(Value::as_array).and_then(|items| {
+            let values = items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|item| !item.is_empty())
+                .map(ToString::to_string)
+                .collect::<Vec<_>>();
+            if values.is_empty() {
+                None
+            } else {
+                Some(values.join(","))
+            }
+        })
     })
 }
 
@@ -690,11 +861,32 @@ fn is_probably_text_document(path: &Path) -> bool {
 }
 
 fn is_script_path(path: &Path) -> bool {
+    classify_script_risk_level(path).is_some()
+}
+
+fn classify_script_risk_level(path: &Path) -> Option<&'static str> {
     matches!(
         path.extension().and_then(|ext| ext.to_str()).map(|ext| ext.to_ascii_lowercase()),
-        Some(ext)
-            if matches!(ext.as_str(), "sh" | "bash" | "zsh" | "ps1" | "bat" | "cmd" | "py" | "js" | "ts")
+        Some(ext) if matches!(ext.as_str(), "sh" | "bash" | "zsh" | "ps1" | "bat" | "cmd")
     )
+    .then_some("high")
+    .or_else(|| {
+        matches!(
+            path.extension().and_then(|ext| ext.to_str()).map(|ext| ext.to_ascii_lowercase()),
+            Some(ext) if matches!(ext.as_str(), "py" | "js" | "ts")
+        )
+        .then_some("runtime")
+    })
+}
+
+fn finding_metadata_equals(finding: &ScanFinding, key: &str, expected: &str) -> bool {
+    finding
+        .metadata
+        .as_ref()
+        .and_then(Value::as_object)
+        .and_then(|object| object.get(key))
+        .and_then(Value::as_str)
+        == Some(expected)
 }
 
 fn trim_excerpt(content: &str, max_chars: usize) -> String {
@@ -862,7 +1054,51 @@ mod tests {
 
         let run = scan_file(&script, &[], &[]).expect("scan file");
         assert_eq!(run.summary.document_count, 1);
-        assert!(run.findings.iter().any(|finding| finding.code == "script_file_detected"));
+        assert!(run.findings.iter().any(|finding| {
+            finding.code == "script_file_detected"
+                && finding_metadata_equals(finding, "risk_level", "high")
+        }));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn scan_directory_flags_missing_skill_doc_manifest_fields_and_script_risks() {
+        let root = temp_dir("skill-review");
+        let skill_dir = root.join("beta-skill");
+        std::fs::create_dir_all(&skill_dir).expect("create skill dir");
+        std::fs::write(
+            skill_dir.join("deeting.json"),
+            r#"{"id":"beta-skill"}"#,
+        )
+        .expect("write manifest");
+        std::fs::write(skill_dir.join("run.sh"), "#!/usr/bin/env bash\necho hi\n")
+            .expect("write shell script");
+        std::fs::write(skill_dir.join("worker.ts"), "export const run = true\n")
+            .expect("write runtime script");
+
+        let run = scan_directory(&root, &[], &[]).expect("scan directory");
+
+        assert!(run.findings.iter().any(|finding| finding.code == "skill_doc_missing"));
+        assert!(run
+            .findings
+            .iter()
+            .any(|finding| finding.code == "manifest_identity_missing"));
+        assert!(run
+            .findings
+            .iter()
+            .any(|finding| finding.code == "manifest_runtime_missing"));
+        assert!(run
+            .findings
+            .iter()
+            .any(|finding| finding.code == "high_risk_scripts_detected"));
+        assert!(run
+            .findings
+            .iter()
+            .any(|finding| finding.code == "runtime_scripts_detected"));
+        assert_eq!(run.summary.missing_skill_doc_count, 1);
+        assert_eq!(run.summary.high_risk_script_count, 1);
+        assert!(run.summary.security_warning_count >= 4);
 
         let _ = std::fs::remove_dir_all(root);
     }

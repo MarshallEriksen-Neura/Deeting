@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
@@ -6,18 +7,78 @@ use crate::modules::mcp::commands::skill_registry_impl::{
 };
 use crate::state::AppState;
 
-use super::types::{ScanReviewActionRequest, ScanReviewActionResult};
+use super::types::{
+    ScanReviewActionRequest, ScanReviewActionResult, ScanReviewBatchRequest,
+    ScanReviewBatchResult,
+};
 
 pub async fn run_scan_review_action(
     app_state: &AppState,
     request: ScanReviewActionRequest,
 ) -> Result<ScanReviewActionResult, String> {
+    let request = normalize_request(request);
     match request.kind.trim() {
         "register_bundle" => register_bundle(app_state, request).await,
         "reindex_bundle" => reindex_bundle(app_state, request).await,
         "cleanup_missing_install" => cleanup_missing_install(app_state, request).await,
         other => Err(format!("unsupported scan review action: {}", other)),
     }
+}
+
+pub async fn run_scan_review_actions(
+    app_state: &AppState,
+    request: ScanReviewBatchRequest,
+) -> Result<ScanReviewBatchResult, String> {
+    let total = request.actions.len();
+    let mut applied = 0usize;
+    let mut failed = 0usize;
+    let mut skipped = 0usize;
+    let mut deduped = HashSet::new();
+    let mut results = Vec::with_capacity(total);
+
+    for raw_action in request.actions {
+        let action = normalize_request(raw_action);
+        if !deduped.insert(action.clone()) {
+            skipped += 1;
+            results.push(ScanReviewActionResult {
+                kind: action.kind,
+                status: "skipped".to_string(),
+                message: "Skipped duplicate scan review action".to_string(),
+                bundle_id: action.bundle_id,
+                path: action.path,
+            });
+            continue;
+        }
+
+        match run_scan_review_action(app_state, action.clone()).await {
+            Ok(result) => {
+                if result.status == "applied" {
+                    applied += 1;
+                } else {
+                    skipped += 1;
+                }
+                results.push(result);
+            }
+            Err(error) => {
+                failed += 1;
+                results.push(ScanReviewActionResult {
+                    kind: action.kind,
+                    status: "failed".to_string(),
+                    message: error,
+                    bundle_id: action.bundle_id,
+                    path: action.path,
+                });
+            }
+        }
+    }
+
+    Ok(ScanReviewBatchResult {
+        total,
+        applied,
+        failed,
+        skipped,
+        results,
+    })
 }
 
 async fn register_bundle(
@@ -131,6 +192,20 @@ fn infer_source_prefix(path: &Path) -> &'static str {
     } else {
         "user_skill"
     }
+}
+
+fn normalize_request(request: ScanReviewActionRequest) -> ScanReviewActionRequest {
+    ScanReviewActionRequest {
+        kind: request.kind.trim().to_string(),
+        bundle_id: normalize_optional_field(request.bundle_id),
+        path: normalize_optional_field(request.path),
+    }
+}
+
+fn normalize_optional_field(value: Option<String>) -> Option<String> {
+    value
+        .map(|raw| raw.trim().to_string())
+        .filter(|raw| !raw.is_empty())
 }
 
 fn to_string(error: impl std::fmt::Display) -> String {

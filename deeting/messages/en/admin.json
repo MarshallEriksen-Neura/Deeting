@@ -1476,6 +1476,8 @@
         "needs_review": "Needs review"
       },
       "actions": {
+        "fixAll": "Fix all actionable findings",
+        "fixingAll": "Fixing all...",
         "rescan": "Rescan",
         "rescanning": "Rescanning...",
         "running": "Running...",
@@ -1486,6 +1488,7 @@
       "feedback": {
         "refreshed": "Scan refreshed",
         "actionApplied": "Action applied",
+        "batchApplied": "Batch fix complete · applied {applied}, failed {failed}, skipped {skipped}",
         "actionFailed": "Action failed"
       },
       "summary": {
@@ -1543,6 +1546,25 @@
       },
       "empty": {
         "desktopOnly": "Available only in the desktop app"
+      },
+      "history": {
+        "title": "Recent maintenance history",
+        "empty": "No maintenance actions recorded yet",
+        "headers": {
+          "action": "Action",
+          "status": "Status",
+          "result": "Result",
+          "time": "Time"
+        },
+        "status": {
+          "success": "Success",
+          "failed": "Failed"
+        },
+        "kind": {
+          "sync_local_installs": "Sync local installs",
+          "sync_reinstall_missing": "Sync + reinstall missing",
+          "repair_local_index": "Repair local index"
+        }
       },
       "repairConfirm": {
         "title": "Repair local index?",

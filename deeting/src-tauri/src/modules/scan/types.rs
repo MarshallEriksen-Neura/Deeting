@@ -23,6 +23,9 @@ pub struct ScanSummary {
     pub skill_bundle_count: usize,
     pub index_missing_count: usize,
     pub install_missing_count: usize,
+    pub security_warning_count: usize,
+    pub high_risk_script_count: usize,
+    pub missing_skill_doc_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,13 +78,19 @@ pub struct ScanFindingAction {
     pub destructive: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ScanReviewActionRequest {
     pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bundle_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScanReviewBatchRequest {
+    #[serde(default)]
+    pub actions: Vec<ScanReviewActionRequest>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,4 +102,14 @@ pub struct ScanReviewActionResult {
     pub bundle_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScanReviewBatchResult {
+    pub total: usize,
+    pub applied: usize,
+    pub failed: usize,
+    pub skipped: usize,
+    #[serde(default)]
+    pub results: Vec<ScanReviewActionResult>,
 }

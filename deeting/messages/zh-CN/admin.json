@@ -1476,6 +1476,8 @@
         "needs_review": "待审查"
       },
       "actions": {
+        "fixAll": "修复全部可执行发现项",
+        "fixingAll": "批量修复中...",
         "rescan": "重新扫描",
         "rescanning": "重新扫描中...",
         "running": "执行中...",
@@ -1486,6 +1488,7 @@
       "feedback": {
         "refreshed": "扫描结果已刷新",
         "actionApplied": "操作已执行",
+        "batchApplied": "批量修复完成 · 已执行 {applied} 项，失败 {failed} 项，跳过 {skipped} 项",
         "actionFailed": "操作失败"
       },
       "summary": {
@@ -1543,6 +1546,25 @@
       },
       "empty": {
         "desktopOnly": "仅桌面端可用"
+      },
+      "history": {
+        "title": "最近维护记录",
+        "empty": "暂无维护记录",
+        "headers": {
+          "action": "动作",
+          "status": "状态",
+          "result": "结果",
+          "time": "时间"
+        },
+        "status": {
+          "success": "成功",
+          "failed": "失败"
+        },
+        "kind": {
+          "sync_local_installs": "同步本地安装记录",
+          "sync_reinstall_missing": "同步并重装缺失项",
+          "repair_local_index": "修复本地索引"
+        }
       },
       "repairConfirm": {
         "title": "确认修复本地索引？",

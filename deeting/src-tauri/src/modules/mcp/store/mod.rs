@@ -38,6 +38,7 @@ use crate::modules::mcp::types::{
     LocalConversationSummaryJobQuery, LocalConversationSummaryQueueStats,
     LocalConversationWindowResponse, LocalGatewayLogItem, LocalGatewayLogListResponse,
     LocalGatewayLogQuery, LocalGatewayLogStatsBucket, LocalGatewayLogStatsResponse,
+    LocalMaintenanceLogItem, LocalMaintenanceLogListResponse, LocalMaintenanceLogQuery,
     LocalKnowledgeBreadcrumbItem, LocalKnowledgeChunk, LocalKnowledgeChunkListResponse,
     LocalKnowledgeFile, LocalKnowledgeFolder, LocalKnowledgeSearchHit, LocalKnowledgeStatsResponse,
     LocalKnowledgeTreeQuery, LocalKnowledgeTreeResponse, LocalTraceFeedback,
@@ -740,6 +741,52 @@ impl McpStore {
             r#"
             CREATE INDEX IF NOT EXISTS idx_gateway_log_created_at
             ON gateway_log(created_at);
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS maintenance_log (
+              id TEXT PRIMARY KEY,
+              kind TEXT NOT NULL,
+              status TEXT NOT NULL,
+              message TEXT NOT NULL,
+              details TEXT,
+              created_at TEXT NOT NULL
+            );
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_maintenance_log_kind
+            ON maintenance_log(kind);
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_maintenance_log_status
+            ON maintenance_log(status);
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_maintenance_log_created_at
+            ON maintenance_log(created_at);
             "#,
         )
         .execute(&self.pool)

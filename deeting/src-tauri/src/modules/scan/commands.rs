@@ -4,9 +4,15 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::state::AppState;
 
-use super::actions::run_scan_review_action as execute_scan_review_action;
+use super::actions::{
+    run_scan_review_action as execute_scan_review_action,
+    run_scan_review_actions as execute_scan_review_actions,
+};
 use super::service::{scan_directory as run_scan_directory, scan_file as run_scan_file, AssetIndexSnapshot};
-use super::types::{ScanReviewActionRequest, ScanReviewActionResult, ScanRun};
+use super::types::{
+    ScanReviewActionRequest, ScanReviewActionResult, ScanReviewBatchRequest,
+    ScanReviewBatchResult, ScanRun,
+};
 
 #[tauri::command]
 pub async fn scan_directory(
@@ -69,6 +75,14 @@ pub async fn run_scan_review_action(
     request: ScanReviewActionRequest,
 ) -> Result<ScanReviewActionResult, String> {
     execute_scan_review_action(app_state.inner(), request).await
+}
+
+#[tauri::command]
+pub async fn run_scan_review_actions(
+    app_state: State<'_, AppState>,
+    request: ScanReviewBatchRequest,
+) -> Result<ScanReviewBatchResult, String> {
+    execute_scan_review_actions(app_state.inner(), request).await
 }
 
 fn resolve_scan_directory_target(app: &AppHandle, path: Option<String>) -> Result<PathBuf, String> {

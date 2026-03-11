@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button"
 import { isTauriRuntime } from "@/lib/api/desktop-config"
 import {
   runScanReviewAction,
+  runScanReviewActions,
   scanDirectoryReview,
   type LocalScanFindingAction,
   type LocalScanRun,
@@ -42,6 +43,7 @@ export function PageContent() {
   const [severityFilter, setSeverityFilter] = useState("")
   const [feedback, setFeedback] = useState<string | null>(null)
   const [actioningId, setActioningId] = useState<string | null>(null)
+  const [batchRunning, setBatchRunning] = useState(false)
   const { data, error, isLoading, isValidating, mutate } = useSWR<LocalScanRun | null>(
     supported ? "desktop-scan-review" : null,
     () => scanDirectoryReview()
@@ -75,6 +77,10 @@ export function PageContent() {
   ]
 
   const hasFindingActions = findings.some((row) => row.action)
+  const actionableFindings = useMemo(
+    () => (data?.findings ?? []).flatMap((row) => (row.action ? [row.action] : [])),
+    [data?.findings]
+  )
 
   const documentColumns: ColumnDef<LocalScanRun["documents"][number]>[] = [
     {
@@ -154,6 +160,29 @@ export function PageContent() {
     }
   }
 
+  const handleBatchFix = async () => {
+    if (!actionableFindings.length) return
+    setFeedback(null)
+    setBatchRunning(true)
+    try {
+      const result = await runScanReviewActions(actionableFindings)
+      setFeedback(
+        result
+          ? t("feedback.batchApplied", {
+              applied: result.applied,
+              failed: result.failed,
+              skipped: result.skipped,
+            })
+          : t("feedback.actionApplied")
+      )
+      await mutate()
+    } catch (actionError) {
+      setFeedback(actionError instanceof Error ? actionError.message : t("feedback.actionFailed"))
+    } finally {
+      setBatchRunning(false)
+    }
+  }
+
   const renderFindingActionLabel = (action: LocalScanFindingAction) => {
     return t(`actions.${action.kind}`)
   }
@@ -177,10 +206,20 @@ export function PageContent() {
           },
         ]}
         actions={
-          <Button variant="outline" size="sm" onClick={() => void handleRescan()} disabled={!supported || isValidating}>
-            <RefreshCcw className="size-3.5" />
-            {isValidating ? t("actions.rescanning") : t("actions.rescan")}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleBatchFix()}
+              disabled={!supported || batchRunning || actionableFindings.length === 0}
+            >
+              {batchRunning ? t("actions.fixingAll") : t("actions.fixAll")}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => void handleRescan()} disabled={!supported || isValidating || batchRunning}>
+              <RefreshCcw className="size-3.5" />
+              {isValidating ? t("actions.rescanning") : t("actions.rescan")}
+            </Button>
+          </div>
         }
       />
       {feedback && <p className="text-xs text-[var(--muted)]" role="status">{feedback}</p>}
@@ -213,7 +252,7 @@ export function PageContent() {
                   variant="outline"
                   size="sm"
                   onClick={() => void handleFindingAction(row)}
-                  disabled={actioningId === row.id}
+                  disabled={batchRunning || actioningId === row.id}
                 >
                   {actioningId === row.id ? t("actions.running") : renderFindingActionLabel(row.action)}
                 </Button>

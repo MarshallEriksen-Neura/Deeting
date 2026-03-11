@@ -1,5 +1,7 @@
 import {
+  listLocalMaintenanceLogs,
   repairLocalSystemAssetIndexFromCloud,
+  runLocalMaintenanceAction,
   syncLocalSystemAssetsFromCloud,
   tryRepairLocalSystemAssetIndexFromCloud,
 } from "@/lib/api/desktop-system-assets"
@@ -105,5 +107,48 @@ describe("desktop system assets api", () => {
     expect(result).toBeNull()
     expect(warnSpy).toHaveBeenCalled()
     warnSpy.mockRestore()
+  })
+
+  it("runs local maintenance action through tauri wrapper", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue({
+      id: "log-1",
+      kind: "sync_local_installs",
+      status: "success",
+      message: "ok",
+      details: { skill_install_upserted_count: 2 },
+      created_at: "2026-03-11T00:00:00Z",
+    } as unknown)
+
+    const result = await runLocalMaintenanceAction({ kind: "sync_local_installs" })
+
+    expect(result?.status).toBe("success")
+    expect(mockInvoke).toHaveBeenCalledWith("run_local_maintenance_action", {
+      accessToken: "desktop-token",
+      request: {
+        kind: "sync_local_installs",
+        limit: 500,
+        reinstallMissing: false,
+      },
+    })
+  })
+
+  it("lists local maintenance logs", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue({ total: 1, skip: 0, limit: 10, items: [] } as unknown)
+
+    const result = await listLocalMaintenanceLogs({ limit: 10 })
+
+    expect(result?.total).toBe(1)
+    expect(mockInvoke).toHaveBeenCalledWith("list_local_maintenance_logs", {
+      query: {
+        limit: 10,
+        skip: 0,
+        kind: undefined,
+        status: undefined,
+      },
+    })
   })
 })

@@ -1,8 +1,10 @@
 "use client"
 
 import { useState } from "react"
-import { useTranslations } from "next-intl"
+import { useLocale, useTranslations } from "next-intl"
+import useSWR from "swr"
 
+import { AdminDataTable, AdminStatusBadge, type ColumnDef } from "@/components/admin"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,29 +18,106 @@ import {
 import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/ui/glass-card"
 import { isTauriRuntime } from "@/lib/api/desktop-config"
-import { repairLocalSystemAssetIndexFromCloud } from "@/lib/api/desktop-system-assets"
-import { syncLocalSkillInstallsFromCloud } from "@/lib/api/plugin-market"
+import {
+  listLocalMaintenanceLogs,
+  runLocalMaintenanceAction,
+  type LocalMaintenanceLogItem,
+} from "@/lib/api/desktop-system-assets"
+
+function formatDate(value: string, locale: string) {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(date)
+}
+
+function getDetailNumber(details: unknown, key: string): number {
+  if (!details || typeof details !== "object") return 0
+  const value = (details as Record<string, unknown>)[key]
+  return typeof value === "number" ? value : 0
+}
+
+function getNestedDetailNumber(details: unknown, parent: string, key: string): number {
+  if (!details || typeof details !== "object") return 0
+  const nested = (details as Record<string, unknown>)[parent]
+  if (!nested || typeof nested !== "object") return 0
+  const value = (nested as Record<string, unknown>)[key]
+  return typeof value === "number" ? value : 0
+}
 
 export function PageContent() {
   const t = useTranslations("admin.maintenanceSettingsPage")
+  const locale = useLocale()
   const supported = isTauriRuntime()
   const [mode, setMode] = useState<"sync" | "reinstall" | "repair" | null>(null)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [repairConfirmOpen, setRepairConfirmOpen] = useState(false)
+  const { data: history, mutate } = useSWR(
+    supported ? "desktop-maintenance-history" : null,
+    () => listLocalMaintenanceLogs({ limit: 10 })
+  )
+
+  const formatLogMessage = (item: LocalMaintenanceLogItem) => {
+    if (item.status === "failed") return item.message
+    if (item.kind === "repair_local_index") {
+      return t("feedback.repairApplied", {
+        fetched: getNestedDetailNumber(item.details, "sync", "assets_fetched"),
+        upserted: getNestedDetailNumber(item.details, "sync", "skill_install_upserted_count"),
+        skills: getDetailNumber(item.details, "skill_reindexed_count"),
+        assistants: getDetailNumber(item.details, "assistant_reindexed_count"),
+      })
+    }
+    if (item.kind === "sync_reinstall_missing") {
+      return t("feedback.syncReinstallApplied", {
+        fetched: getDetailNumber(item.details, "skill_install_fetched_count"),
+        upserted: getDetailNumber(item.details, "skill_install_upserted_count"),
+        reinstalled: getDetailNumber(item.details, "skill_reinstalled_count"),
+        failed: getDetailNumber(item.details, "skill_failed_count"),
+      })
+    }
+    return t("feedback.syncApplied", {
+      fetched: getDetailNumber(item.details, "skill_install_fetched_count"),
+      upserted: getDetailNumber(item.details, "skill_install_upserted_count"),
+      failed: getDetailNumber(item.details, "skill_failed_count"),
+    })
+  }
+
+  const historyColumns: ColumnDef<LocalMaintenanceLogItem>[] = [
+    {
+      key: "kind",
+      header: t("history.headers.action"),
+      render: (row) => t(`history.kind.${row.kind}`),
+    },
+    {
+      key: "status",
+      header: t("history.headers.status"),
+      render: (row) => (
+        <AdminStatusBadge
+          text={t(`history.status.${row.status}`)}
+          tone={row.status === "success" ? "success" : "error"}
+        />
+      ),
+    },
+    {
+      key: "message",
+      header: t("history.headers.result"),
+      render: (row) => <div className="max-w-[380px] text-xs text-[var(--muted)]">{formatLogMessage(row)}</div>,
+    },
+    {
+      key: "created_at",
+      header: t("history.headers.time"),
+      render: (row) => <span className="text-xs text-[var(--muted)]">{formatDate(row.created_at, locale)}</span>,
+    },
+  ]
 
   const handleSystemSync = async (reinstallMissing: boolean) => {
     setFeedback(null)
     setMode(reinstallMissing ? "reinstall" : "sync")
     try {
-      const syncResult = await syncLocalSkillInstallsFromCloud({ reinstallMissing, force: true })
-      setFeedback(syncResult
-        ? t(reinstallMissing ? "feedback.syncReinstallApplied" : "feedback.syncApplied", {
-            fetched: syncResult.fetched_count,
-            upserted: syncResult.upserted_count,
-            reinstalled: syncResult.reinstalled_count,
-            failed: syncResult.failed_count,
-          })
-        : t("feedback.syncAppliedNoop"))
+      const result = await runLocalMaintenanceAction({
+        kind: reinstallMissing ? "sync_reinstall_missing" : "sync_local_installs",
+        reinstallMissing,
+      })
+      setFeedback(result ? formatLogMessage(result) : t("feedback.syncAppliedNoop"))
+      await mutate()
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : t("feedback.maintenanceFailed"))
     } finally {
@@ -51,15 +130,9 @@ export function PageContent() {
     setFeedback(null)
     setMode("repair")
     try {
-      const repairResult = await repairLocalSystemAssetIndexFromCloud()
-      setFeedback(repairResult
-        ? t("feedback.repairApplied", {
-            fetched: repairResult.sync.fetched_count,
-            upserted: repairResult.sync.upserted_count,
-            skills: repairResult.skill_reindexed_count,
-            assistants: repairResult.assistant_reindexed_count,
-          })
-        : t("feedback.repairAppliedNoop"))
+      const result = await runLocalMaintenanceAction({ kind: "repair_local_index" })
+      setFeedback(result ? formatLogMessage(result) : t("feedback.repairAppliedNoop"))
+      await mutate()
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : t("feedback.maintenanceFailed"))
     } finally {
@@ -95,6 +168,15 @@ export function PageContent() {
         )}
 
         {feedback ? <p className="text-xs text-[var(--muted)]" role="status">{feedback}</p> : null}
+
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-[var(--foreground)]">{t("history.title")}</h3>
+          <AdminDataTable
+            columns={historyColumns}
+            data={history?.items ?? []}
+            emptyMessage={t("history.empty")}
+          />
+        </div>
       </div>
 
       <AlertDialog open={repairConfirmOpen} onOpenChange={setRepairConfirmOpen}>

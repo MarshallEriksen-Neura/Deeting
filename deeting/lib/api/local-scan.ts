@@ -10,6 +10,9 @@ const ScanSummarySchema = z.object({
   skill_bundle_count: z.number(),
   index_missing_count: z.number(),
   install_missing_count: z.number(),
+  security_warning_count: z.number(),
+  high_risk_script_count: z.number(),
+  missing_skill_doc_count: z.number(),
 })
 
 const ScanDocumentSchema = z.object({
@@ -53,6 +56,14 @@ const ScanReviewActionResultSchema = z.object({
   path: z.string().nullish(),
 })
 
+const ScanReviewBatchResultSchema = z.object({
+  total: z.number(),
+  applied: z.number(),
+  failed: z.number(),
+  skipped: z.number(),
+  results: z.array(ScanReviewActionResultSchema),
+})
+
 const ScanRunSchema = z.object({
   run_id: z.string(),
   trigger: z.string(),
@@ -68,6 +79,7 @@ const ScanRunSchema = z.object({
 export type LocalScanRun = z.infer<typeof ScanRunSchema>
 export type LocalScanFindingAction = z.infer<typeof ScanFindingActionSchema>
 export type LocalScanReviewActionResult = z.infer<typeof ScanReviewActionResultSchema>
+export type LocalScanReviewBatchResult = z.infer<typeof ScanReviewBatchResultSchema>
 
 async function invokeTauri<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke } = await import("@tauri-apps/api/core")
@@ -106,4 +118,20 @@ export async function runScanReviewAction(
     },
   })
   return ScanReviewActionResultSchema.parse(data)
+}
+
+export async function runScanReviewActions(
+  actions: LocalScanFindingAction[]
+): Promise<LocalScanReviewBatchResult | null> {
+  if (!isTauriRuntime()) return null
+  const data = await invokeTauri<LocalScanReviewBatchResult>("run_scan_review_actions", {
+    request: {
+      actions: actions.map((action) => ({
+        kind: action.kind,
+        bundle_id: action.bundle_id,
+        path: action.path,
+      })),
+    },
+  })
+  return ScanReviewBatchResultSchema.parse(data)
 }
