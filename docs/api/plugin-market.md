@@ -1,7 +1,27 @@
 # Plugin Market API（GitHub 提交与用户安装）
 
 - 前置条件：需要登录（Bearer Token），路由前缀 `/api/v1`。
-- 目标：实现 `GitHub 源码 -> 用户安装 -> Agent 调用` 的最小闭环。
+- 目标：实现 `GitHub 源码 -> 管理员审核 -> 用户安装 -> 桌面本地执行` 的最小闭环。
+
+## 架构边界（定稿）
+
+- 云端在这条链路中是 **control plane / 弹药库**，不再承担用户提交后自动 AI/sandbox 冒烟的职责。
+- `skill_registry` 是技能主数据真源；`system_asset` 中 `registry_entity=skill`、`asset_kind=skill_bundle` 的记录是给桌面同步用的 projection。
+- 插件商店展示与桌面同步 **直接读取数据库 projection**，不以 Qdrant 成功与否为前置条件。
+- Qdrant 中的 skill collection 只作为可选语义索引层；即使 skill Qdrant 同步失败，也不应阻断：
+  - 插件商店展示
+  - 管理员审核流转
+  - 桌面 metadata 同步
+  - 用户桌面安装
+- 用户提交 `repo_url` 后：
+  - 只做 ingestion / metadata 入库
+  - 状态进入 `needs_review`
+  - 等待管理员审核
+  - **不会**自动触发 dry-run / self-heal / sandbox 执行
+- 管理员审核通过后：
+  - skill 进入 `active`
+  - skill projection 写入 `system_asset`
+  - skill Qdrant 同步作为附加索引动作触发，但不是商店/同步闭环前置条件
 
 ## 市场插件列表
 
@@ -41,6 +61,8 @@
 - 说明：
   - 该接口会下发 `skill_registry.ingest_repo` 异步任务。
   - 网关会透传当前 `user_id` 到任务，便于后续通知与审计。
+  - ingestion 成功后，若提交来源是插件商店，则技能进入 `needs_review`，等待管理员审核。
+  - 提交后不再自动执行 dry-run / self-heal / sandbox 冒烟。
 
 ## 安装插件
 
@@ -56,6 +78,13 @@
 - 状态码：
   - `201`：首次安装
   - `200`：已安装记录被重新启用/更新
+- 说明：
+  - 安装只发生在桌面 / 本地 runtime。
+  - 安装后桌面端负责：
+    - 下载或物化 skill 包
+    - 写入本地安装状态
+    - 创建本地 skill docs / recipe / 资产索引
+  - 云端不负责为桌面执行创建本地运行时索引。
 
 ## 卸载插件
 

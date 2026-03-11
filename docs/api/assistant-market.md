@@ -4,7 +4,27 @@
 - 分页：市场列表与安装列表使用 `fastapi_pagination` 的 CursorPage。
 - 审核：提交后由超级用户秘书自动审核，通过后才会出现在市场；超级用户秘书模型未配置会返回 400。
 - 同步：仅系统助手（`owner_user_id = null`）或审核通过的用户助手会异步同步到 Qdrant 专家索引（`expert_network`）；未通过审核不会同步。
-- Desktop（Tauri）补充：市场读取前会执行“系统助手（`owner_user_id = null`）云端 -> 本地”单向同步；用户本地数据不上云。
+- Desktop（Tauri）补充：市场读取前会执行 assistant sync feed 的云端 -> 本地同步。当前规则是：
+  - 系统助手默认同步到桌面；
+  - 审核通过的用户助手也会同步到桌面；
+  - assistant 不再要求桌面端单独“安装”后才能在聊天 runtime 中可用。
+
+## 架构边界（定稿）
+
+- assistant 在云端承担 **专家模板 / capability template** 角色，而不是桌面聊天的固定人格。
+- 桌面聊天的固定人格由本地设置中的 persona prompt 决定，不由 assistant market 决定。
+- assistant market 的数据库真源是：
+  - `assistant`
+  - `assistant_version`
+  - 以及面向桌面同步的 `system_asset` projection（`registry_entity=assistant`，`asset_kind=assistant_template`）
+- Qdrant 中的 assistant collection 继续用于 expert capability / template 的语义检索，但桌面同步本身走数据库 projection feed。
+- 因此 assistant 的云端闭环是：
+  - 创建/更新 assistant
+  - 审核通过
+  - 写入数据库 projection
+  - 同步到桌面
+  - 可选再进入 assistant Qdrant 作为语义索引
+- assistant 的桌面可用性不再依赖安装记录；安装语义已经从桌面 runtime 主链退出。
 
 ## 市场列表
 
@@ -15,6 +35,7 @@
   - `tags`：标签过滤（`?tags=a&tags=b`）
 - 响应：`CursorPage[AssistantMarketItem]`
 - 说明：仅返回 `public + published` 且通过审核（或系统助手）的条目；包含 `installed`、`summary`、`tags`、`install_count`、`rating_avg` 等字段。`tags` 采用 `#Python` 形式。
+  - 在当前桌面模型里，`installed` 对 assistant 已不再表示本地运行时前置条件，而更接近于历史兼容字段。
 
 ### 搜索索引（Meilisearch）
 
@@ -34,7 +55,9 @@
 - `GET /assistants/installs`
 - Query：`cursor` / `size`
 - 响应：`CursorPage[AssistantInstallItem]`
-- 说明：安装相关响应包含 `assistant.version.system_prompt`（系统提示词）；已归档（删除）助手不会出现在安装列表中。
+- 说明：
+  - 该接口仍保留给云端兼容层 / 历史数据使用。
+  - 桌面端当前主模型已不再依赖 assistant install 作为 runtime 前置条件。
 
 ## 安装助手
 
@@ -47,7 +70,9 @@
   }
   ```
 - 响应：`AssistantInstallItem`
-- 说明：仅允许安装市场可见助手或自己创建的助手；当 `follow_latest=false` 时会锁定当前版本（或指定 `pinned_version_id`）。
+- 说明：
+  - 该接口仍保留给云端兼容层 / 历史用户配置使用。
+  - 桌面端当前 assistant 同步与可用性不再依赖这条安装链路。
 
 ## 卸载助手
 

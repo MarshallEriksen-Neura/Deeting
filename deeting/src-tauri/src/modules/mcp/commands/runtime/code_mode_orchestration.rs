@@ -84,7 +84,8 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
         orchestrated_messages.insert(0, LocalChatInputMessage {
             role: "system".to_string(),
             content: concat!(
-                "You are running inside Deeting, an AI agent platform.\n",
+                "## Desktop Code Mode Runtime\n",
+                "- Environment: Deeting Desktop local runtime\n",
                 "When the user asks to install, create, or manage skills:\n",
                 "- Deeting skills are docs-first bundles centered on SKILL.md. deeting.json is metadata/runtime/UI config, and llm-tool.yaml is optional when a host contract still needs it.\n",
                 "- Use the install_skill_from_repo tool or sys_submit_onboarding_request to install skills.\n",

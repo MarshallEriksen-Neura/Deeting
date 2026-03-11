@@ -83,6 +83,15 @@ pub struct LocalPeriodicTask {
     pub interval_seconds: i64,
 }
 
+#[derive(Debug, Clone)]
+pub struct LocalSkillInstallSnapshot {
+    pub skill_id: String,
+    pub installed_version: Option<String>,
+    pub is_enabled: bool,
+    pub runtime: Option<String>,
+    pub install_path: String,
+}
+
 mod assistants;
 mod conversations;
 mod helpers;

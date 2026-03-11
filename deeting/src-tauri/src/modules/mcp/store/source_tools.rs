@@ -94,6 +94,41 @@ impl McpStore {
         Ok(ids)
     }
 
+    pub async fn list_local_skill_installs(
+        &self,
+    ) -> Result<Vec<LocalSkillInstallSnapshot>, McpError> {
+        let rows = sqlx::query(
+            r#"
+            SELECT skill_id, installed_version, is_enabled, runtime, install_path
+            FROM local_skill_install
+            WHERE user_id = ?
+            ORDER BY updated_at DESC;
+            "#,
+        )
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let mut installs = Vec::with_capacity(rows.len());
+        for row in rows {
+            let skill_id = row.try_get::<String, _>("skill_id")?.trim().to_string();
+            let install_path = row.try_get::<String, _>("install_path")?.trim().to_string();
+            if skill_id.is_empty() || install_path.is_empty() {
+                continue;
+            }
+            installs.push(LocalSkillInstallSnapshot {
+                skill_id,
+                installed_version: row.try_get::<Option<String>, _>("installed_version")?,
+                is_enabled: row.try_get::<i64, _>("is_enabled")? != 0,
+                runtime: row.try_get::<Option<String>, _>("runtime")?,
+                install_path,
+            });
+        }
+
+        Ok(installs)
+    }
+
     pub async fn get_enabled_local_skill_manifest_json(
         &self,
         skill_id: &str,

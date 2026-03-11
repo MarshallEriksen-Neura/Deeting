@@ -204,6 +204,12 @@ export const adminNavigation: NavGroup[] = [
         icon: "shield",
       },
       {
+        id: "scan-reviews",
+        label: "nav.scanReviews",
+        href: "/admin/scan-reviews",
+        icon: "fileText",
+      },
+      {
         id: "admin-memory",
         label: "nav.adminMemory",
         href: "/admin/memory",
@@ -304,6 +310,12 @@ export const adminNavigation: NavGroup[] = [
         label: "nav.embeddingSettings",
         href: "/admin/settings/embedding",
         icon: "cpu",
+      },
+      {
+        id: "maintenance-settings",
+        label: "nav.maintenanceSettings",
+        href: "/admin/settings/maintenance",
+        icon: "settings",
       },
       {
         id: "admin-notifications",

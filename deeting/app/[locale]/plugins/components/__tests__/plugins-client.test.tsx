@@ -2,10 +2,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 
 import { PluginsClient as DashboardPluginsClient } from "@/app/[locale]/dashboard/plugins/components/plugins-client"
 import { PluginsClient as PublicPluginsClient } from "@/app/[locale]/plugins/components/plugins-client"
-import { repairLocalSystemAssetIndexFromCloud } from "@/lib/api/desktop-system-assets"
-import { syncLocalSkillInstallsFromCloud, isDesktopRuntime } from "@/lib/api/plugin-market"
+import { isDesktopRuntime } from "@/lib/api/plugin-market"
 import { usePluginMarket } from "@/lib/swr/use-plugin-market"
-import { toast } from "sonner"
 
 jest.mock("next-intl", () => ({
   useTranslations: () => (key: string, values?: Record<string, string | number>) =>
@@ -37,17 +35,12 @@ jest.mock("@/lib/api/plugin-market", () => ({
   installPlugin: jest.fn(),
   uninstallPlugin: jest.fn(),
   submitPluginRepo: jest.fn(),
-  syncLocalSkillInstallsFromCloud: jest.fn(),
   isDesktopRuntime: jest.fn(),
   isUserVisiblePlugin: (plugin: { source_kind?: string }) => plugin.source_kind !== "official",
 }))
 
-jest.mock("@/lib/api/desktop-system-assets", () => ({
-  repairLocalSystemAssetIndexFromCloud: jest.fn(),
-}))
-
 jest.mock("@/components/ui/button", () => ({
-  Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) =>
+  Button: ({ children, asChild, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { asChild?: boolean }) =>
     <button {...props}>{children}</button>,
 }))
 
@@ -86,43 +79,14 @@ jest.mock("@/components/plugins/import-repo-dialog", () => ({
 }))
 
 const mockUsePluginMarket = usePluginMarket as jest.MockedFunction<typeof usePluginMarket>
-const mockRepairLocalSystemAssetIndexFromCloud = repairLocalSystemAssetIndexFromCloud as jest.MockedFunction<
-  typeof repairLocalSystemAssetIndexFromCloud
->
-const mockSyncLocalSkillInstallsFromCloud = syncLocalSkillInstallsFromCloud as jest.MockedFunction<
-  typeof syncLocalSkillInstallsFromCloud
->
 const mockIsDesktopRuntime = isDesktopRuntime as jest.MockedFunction<typeof isDesktopRuntime>
-const mockToastSuccess = toast.success as jest.MockedFunction<typeof toast.success>
 
-describe("PluginsClient desktop repair actions", () => {
+describe("PluginsClient store-only actions", () => {
   const mockMutate = jest.fn()
 
   beforeEach(() => {
     jest.clearAllMocks()
     mockIsDesktopRuntime.mockReturnValue(true)
-    mockSyncLocalSkillInstallsFromCloud.mockResolvedValue(null)
-    mockRepairLocalSystemAssetIndexFromCloud.mockResolvedValue({
-      vector_dimension: 1536,
-      skill_reindexed_count: 3,
-      assistant_reindexed_count: 2,
-      sync: {
-        fetched_count: 4,
-        assistant_fetched_count: 0,
-        skill_fetched_count: 4,
-        upserted_count: 4,
-        hidden_count: 0,
-        metadata_only_count: 0,
-        executable_count: 4,
-        archived_count: 0,
-        skill_install_fetched_count: 1,
-        skill_install_upserted_count: 1,
-        skill_reinstalled_count: 0,
-        skill_failed_count: 0,
-        disabled_skill_count: 0,
-        archived_assistant_count: 0,
-      },
-    })
     mockUsePluginMarket.mockReturnValue({
       plugins: [
         {
@@ -149,24 +113,12 @@ describe("PluginsClient desktop repair actions", () => {
   it.each([
     ["public plugins page", <PublicPluginsClient mode="market" />],
     ["dashboard plugins page", <DashboardPluginsClient mode="market" />],
-  ])("confirms local index repair from %s", async (_label, view) => {
+  ])("does not expose local maintenance actions from %s", (_label, view) => {
     render(view)
 
-    fireEvent.click(screen.getByRole("button", { name: "page.repairIndexAction" }))
-
-    expect(screen.getByText("repairConfirm.title")).toBeInTheDocument()
-    expect(mockRepairLocalSystemAssetIndexFromCloud).not.toHaveBeenCalled()
-
-    fireEvent.click(screen.getByRole("button", { name: "repairConfirm.confirm" }))
-
-    await waitFor(() => {
-      expect(mockRepairLocalSystemAssetIndexFromCloud).toHaveBeenCalledTimes(1)
-    })
-    expect(mockMutate).toHaveBeenCalled()
-    expect(mockToastSuccess).toHaveBeenCalledWith("toast.repairSuccessTitle", {
-      description:
-        'toast.repairSuccessDesc:{"fetched":4,"upserted":4,"skills":3,"assistants":2}',
-    })
+    expect(screen.queryByRole("button", { name: "page.syncAction" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "page.syncReinstallAction" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "page.repairIndexAction" })).not.toBeInTheDocument()
   })
 
   it.each([

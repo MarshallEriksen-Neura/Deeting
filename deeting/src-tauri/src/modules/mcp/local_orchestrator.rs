@@ -22,7 +22,8 @@ use crate::modules::providers::model_guard::ensure_required_local_models_configu
 use crate::state::AppState;
 
 const LOCAL_ROUTER_BASE_PROMPT_TEMPLATE: &str = concat!(
-    "You are Deeting Desktop's local orchestrator.\n\n",
+    "## Desktop Runtime Context\n",
+    "- Environment: Deeting Desktop local runtime\n\n",
     "## Current Context\n",
     "- Current local date: {current_date}\n",
     "- Current local timezone: {timezone}\n",

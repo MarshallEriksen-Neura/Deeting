@@ -20,6 +20,31 @@ To balance **User Creativity** (Local) with **Server Stability** (Cloud), we enf
 
 ## 3. Architecture Design
 
+### 3.0 Control Plane / Runtime Plane Split
+
+For desktop sync and execution, Deeting now treats cloud as a **control plane / arsenal** and desktop as the **runtime plane**.
+
+- **Cloud control plane** responsibilities:
+  - store assistant templates and skill metadata in database truth sources
+  - manage review, versioning, artifact references, checksums, and sync projections
+  - expose assistant feed and skill feed for desktop synchronization
+- **Desktop runtime** responsibilities:
+  - fixed persona prompt
+  - JIT assistant template routing
+  - local skill installation
+  - local docs/recipe retrieval
+  - local execution and self-heal
+
+This implies two important rules:
+
+1. **Assistant sync does not require local install**
+   - assistants are cloud-managed expert templates and sync down as default-available desktop templates
+   - desktop runtime no longer treats assistant install as a prerequisite for use
+
+2. **Skill sync does not depend on cloud Qdrant**
+   - skill market and desktop metadata sync read database projections, not Qdrant
+   - Qdrant skill indexing is optional semantic acceleration, not the source of truth or sync prerequisite
+
 ### 3.1 Manifest Field (`deeting.json`)
 Skill/plugin bundles must explicitly declare supported runtimes.
 

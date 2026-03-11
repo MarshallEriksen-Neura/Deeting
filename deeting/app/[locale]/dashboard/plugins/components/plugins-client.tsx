@@ -7,29 +7,16 @@ import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { PluginCard } from "@/components/plugins/plugin-card"
 import { PermissionConfirmDialog } from "@/components/plugins/permission-confirm-dialog"
 import { ImportRepoDialog } from "@/components/plugins/import-repo-dialog"
-import { repairLocalSystemAssetIndexFromCloud } from "@/lib/api/desktop-system-assets"
 import { usePluginMarket } from "@/lib/swr/use-plugin-market"
 import {
   installPlugin,
-  isDesktopRuntime,
   isUserVisiblePlugin,
   submitPluginRepo,
-  syncLocalSkillInstallsFromCloud,
   uninstallPlugin,
 } from "@/lib/api/plugin-market"
 import { useDebounce } from "@/hooks/use-debounce"
@@ -53,9 +40,6 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
   const [dialogOpen, setDialogOpen] = React.useState(false)
   const [selectedPlugin, setSelectedPlugin] = React.useState<PluginMarketSkillItem | null>(null)
   const [isInstalling, setIsInstalling] = React.useState(false)
-  const [repairConfirmOpen, setRepairConfirmOpen] = React.useState(false)
-  const [syncMode, setSyncMode] = React.useState<"sync" | "reinstall" | "repair" | null>(null)
-  const showDesktopSync = isDesktopRuntime()
 
   const handleInstallClick = React.useCallback((plugin: PluginMarketSkillItem) => {
     setSelectedPlugin(plugin)
@@ -117,66 +101,6 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
     },
     [mutate, t],
   )
-
-  const handleSyncInstalls = React.useCallback(async (reinstallMissing: boolean) => {
-    setSyncMode(reinstallMissing ? "reinstall" : "sync")
-    try {
-      const syncResult = await syncLocalSkillInstallsFromCloud({
-        reinstallMissing,
-        force: true,
-      })
-      if (syncResult) {
-        toast.success(t("toast.syncSuccessTitle"), {
-          description: t("toast.syncSuccessDesc", {
-            fetched: syncResult.fetched_count,
-            upserted: syncResult.upserted_count,
-            reinstalled: syncResult.reinstalled_count,
-            failed: syncResult.failed_count,
-          }),
-        })
-      } else {
-        toast.success(t("toast.syncSuccessTitle"), {
-          description: t("toast.syncSuccessDescNoop"),
-        })
-      }
-      await mutate()
-    } catch {
-      toast.error(t("toast.syncFailedTitle"), {
-        description: t("toast.syncFailedDesc"),
-      })
-    } finally {
-      setSyncMode(null)
-    }
-  }, [mutate, t])
-
-  const handleRepairIndex = React.useCallback(async () => {
-    setRepairConfirmOpen(false)
-    setSyncMode("repair")
-    try {
-      const repairResult = await repairLocalSystemAssetIndexFromCloud()
-      if (repairResult) {
-        toast.success(t("toast.repairSuccessTitle"), {
-          description: t("toast.repairSuccessDesc", {
-            fetched: repairResult.sync.fetched_count,
-            upserted: repairResult.sync.upserted_count,
-            skills: repairResult.skill_reindexed_count,
-            assistants: repairResult.assistant_reindexed_count,
-          }),
-        })
-      } else {
-        toast.success(t("toast.repairSuccessTitle"), {
-          description: t("toast.repairSuccessDescNoop"),
-        })
-      }
-      await mutate()
-    } catch {
-      toast.error(t("toast.repairFailedTitle"), {
-        description: t("toast.repairFailedDesc"),
-      })
-    } finally {
-      setSyncMode(null)
-    }
-  }, [mutate, t])
 
   const userVisiblePlugins = React.useMemo(
     () => plugins.filter(isUserVisiblePlugin),
@@ -242,72 +166,12 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
         {isMarketMode ? (
           <div className="pt-2 flex items-center justify-center gap-2 flex-wrap">
             <ImportRepoDialog onSubmit={handleImportRepo} />
-            {showDesktopSync && (
-              <>
-                <Button
-                  variant="outline"
-                  className="rounded-full"
-                  onClick={() => void handleSyncInstalls(false)}
-                  disabled={syncMode !== null}
-                >
-                  {syncMode === "sync" ? t("page.syncing") : t("page.syncAction")}
-                </Button>
-                <Button
-                  variant="outline"
-                  className="rounded-full"
-                  onClick={() => void handleSyncInstalls(true)}
-                  disabled={syncMode !== null}
-                >
-                  {syncMode === "reinstall"
-                    ? t("page.syncing")
-                    : t("page.syncReinstallAction")}
-                </Button>
-                <Button
-                  variant="outline"
-                  className="rounded-full"
-                  onClick={() => setRepairConfirmOpen(true)}
-                  disabled={syncMode !== null}
-                >
-                  {syncMode === "repair" ? t("page.repairingAction") : t("page.repairIndexAction")}
-                </Button>
-              </>
-            )}
           </div>
         ) : (
           <div className="pt-2 flex items-center justify-center gap-2 flex-wrap">
             <Button asChild variant="outline" className="rounded-full">
               <Link href="/plugins/market">{t("page.marketEntry")}</Link>
             </Button>
-            {showDesktopSync && (
-              <>
-                <Button
-                  variant="outline"
-                  className="rounded-full"
-                  onClick={() => void handleSyncInstalls(false)}
-                  disabled={syncMode !== null}
-                >
-                  {syncMode === "sync" ? t("page.syncing") : t("page.syncAction")}
-                </Button>
-                <Button
-                  variant="outline"
-                  className="rounded-full"
-                  onClick={() => void handleSyncInstalls(true)}
-                  disabled={syncMode !== null}
-                >
-                  {syncMode === "reinstall"
-                    ? t("page.syncing")
-                    : t("page.syncReinstallAction")}
-                </Button>
-                <Button
-                  variant="outline"
-                  className="rounded-full"
-                  onClick={() => setRepairConfirmOpen(true)}
-                  disabled={syncMode !== null}
-                >
-                  {syncMode === "repair" ? t("page.repairingAction") : t("page.repairIndexAction")}
-                </Button>
-              </>
-            )}
           </div>
         )}
 
@@ -383,28 +247,6 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
         onConfirm={handleConfirmInstall}
         isInstalling={isInstalling}
       />
-
-      <AlertDialog open={repairConfirmOpen} onOpenChange={setRepairConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("repairConfirm.title")}</AlertDialogTitle>
-            <AlertDialogDescription>{t("repairConfirm.description")}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <p className="text-sm text-amber-600 dark:text-amber-400">
-            {t("repairConfirm.warning")}
-          </p>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("repairConfirm.cancel")}</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-amber-500 hover:bg-amber-600 text-white"
-              onClick={() => void handleRepairIndex()}
-              disabled={syncMode === "repair"}
-            >
-              {syncMode === "repair" ? t("page.repairingAction") : t("repairConfirm.confirm")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   )
 }

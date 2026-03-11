@@ -625,6 +625,10 @@
       "title": "Embedding Settings",
       "description": "Configure vector embedding services"
     },
+    "maintenanceSettings": {
+      "title": "Maintenance",
+      "description": "Run desktop sync and full local index repair outside the scan review workflow"
+    },
     "systemMemory": {
       "title": "System Knowledge Management",
       "description": "Maintain platform-level public knowledge shared by all users and AI assistants.",
@@ -1311,6 +1315,10 @@
       "title": "Plugin Reviews",
       "description": "Approve or reject plugin market submissions with security review snapshots"
     },
+    "scanReviews": {
+      "title": "Scan Reviews",
+      "description": "Review local scan output, security signals, and index reconciliation for doc-first assets"
+    },
     "skillsPage": {
       "status": {
         "active": "Active",
@@ -1445,6 +1453,103 @@
         "loading": "Loading plugin submissions...",
         "failed": "Failed to load plugin submissions",
         "noData": "No plugin submissions found"
+      }
+    },
+    "scanReviewsPage": {
+      "stats": {
+        "documents": "Documents",
+        "skillBundles": "Skill Bundles",
+        "missingIndexes": "Missing Indexes",
+        "needsReview": "Needs Review"
+      },
+      "filters": {
+        "searchPlaceholder": "Search path, bundle, excerpt, or finding...",
+        "severity": "Severity"
+      },
+      "severity": {
+        "error": "Error",
+        "warn": "Warning",
+        "info": "Info"
+      },
+      "status": {
+        "healthy": "Healthy",
+        "needs_review": "Needs review"
+      },
+      "actions": {
+        "rescan": "Rescan",
+        "rescanning": "Rescanning...",
+        "running": "Running...",
+        "register_bundle": "Register bundle",
+        "reindex_bundle": "Rebuild index",
+        "cleanup_missing_install": "Remove stale record"
+      },
+      "feedback": {
+        "refreshed": "Scan refreshed",
+        "actionApplied": "Action applied",
+        "actionFailed": "Action failed"
+      },
+      "summary": {
+        "target": "Target",
+        "finishedAt": "Finished at",
+        "findings": "Findings"
+      },
+      "table": {
+        "documents": {
+          "title": "Documents",
+          "headers": {
+            "document": "Document",
+            "status": "Status",
+            "kind": "Kind",
+            "summary": "Summary"
+          }
+        },
+        "findings": {
+          "title": "Findings",
+          "headers": {
+            "finding": "Finding",
+            "severity": "Severity",
+            "message": "Message"
+          }
+        }
+      },
+      "empty": {
+        "desktopOnly": "Scan review is available only in the desktop runtime",
+        "loading": "Loading scan review...",
+        "failed": "Failed to load scan review",
+        "noDocuments": "No scanned documents found",
+        "noFindings": "No findings found"
+      }
+    },
+    "maintenanceSettingsPage": {
+      "section": {
+        "title": "Desktop maintenance",
+        "description": "Use these controls for full-system sync and repair tasks. Scan reviews keeps only scan findings and targeted fix actions.",
+        "note": "Use sync actions for skill install reconciliation. Use full repair only when the local asset index needs a complete rebuild."
+      },
+      "actions": {
+        "syncAction": "Sync local installs",
+        "syncReinstallAction": "Sync + reinstall missing",
+        "syncing": "Syncing...",
+        "repairIndexAction": "Repair local index",
+        "repairingAction": "Repairing..."
+      },
+      "feedback": {
+        "syncApplied": "Local install sync complete · fetched {fetched}, upserted {upserted}, failed {failed}",
+        "syncReinstallApplied": "Sync + reinstall complete · fetched {fetched}, upserted {upserted}, reinstalled {reinstalled}, failed {failed}",
+        "syncAppliedNoop": "No desktop sync changes were applied",
+        "repairApplied": "Local index repaired · fetched {fetched}, upserted {upserted}, skills {skills}, assistants {assistants}",
+        "repairAppliedNoop": "No local index repair changes were applied",
+        "maintenanceFailed": "Maintenance action failed"
+      },
+      "empty": {
+        "desktopOnly": "Available only in the desktop app"
+      },
+      "repairConfirm": {
+        "title": "Repair local index?",
+        "description": "This rebuilds the local system asset index and rehydrates skills and assistants from the current sync pipeline.",
+        "warning": "Existing local asset index entries will be cleared before rebuild. If desktop sync or auth is not ready, the rebuilt result may be incomplete.",
+        "confirm": "Repair index",
+        "cancel": "Cancel"
       }
     }
   }

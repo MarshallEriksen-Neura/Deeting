@@ -625,6 +625,10 @@
       "title": "Embedding 设置",
       "description": "配置向量嵌入服务"
     },
+    "maintenanceSettings": {
+      "title": "维护设置",
+      "description": "将桌面端系统同步与全量本地索引修复从扫描审查流程中拆出"
+    },
     "systemMemory": {
       "title": "系统知识管理",
       "description": "维护平台级公共知识库，供所有用户和 AI 助手共享。",
@@ -1311,6 +1315,10 @@
       "title": "插件审核",
       "description": "结合安全审查快照审批或拒绝插件市场提交"
     },
+    "scanReviews": {
+      "title": "扫描审查",
+      "description": "查看本地扫描结果、风险信号以及 doc-first 资产的索引对账情况"
+    },
     "skillsPage": {
       "status": {
         "active": "启用",
@@ -1445,6 +1453,103 @@
         "loading": "正在加载插件提交...",
         "failed": "加载插件提交失败",
         "noData": "暂无插件提交"
+      }
+    },
+    "scanReviewsPage": {
+      "stats": {
+        "documents": "文档数",
+        "skillBundles": "技能包",
+        "missingIndexes": "缺失索引",
+        "needsReview": "待审查"
+      },
+      "filters": {
+        "searchPlaceholder": "搜索路径、技能包、摘要或发现项...",
+        "severity": "严重级别"
+      },
+      "severity": {
+        "error": "错误",
+        "warn": "警告",
+        "info": "提示"
+      },
+      "status": {
+        "healthy": "健康",
+        "needs_review": "待审查"
+      },
+      "actions": {
+        "rescan": "重新扫描",
+        "rescanning": "重新扫描中...",
+        "running": "执行中...",
+        "register_bundle": "补登记技能包",
+        "reindex_bundle": "重建索引",
+        "cleanup_missing_install": "移除过期记录"
+      },
+      "feedback": {
+        "refreshed": "扫描结果已刷新",
+        "actionApplied": "操作已执行",
+        "actionFailed": "操作失败"
+      },
+      "summary": {
+        "target": "目标",
+        "finishedAt": "完成时间",
+        "findings": "发现项"
+      },
+      "table": {
+        "documents": {
+          "title": "文档",
+          "headers": {
+            "document": "文档",
+            "status": "状态",
+            "kind": "类型",
+            "summary": "摘要"
+          }
+        },
+        "findings": {
+          "title": "发现项",
+          "headers": {
+            "finding": "发现项",
+            "severity": "严重级别",
+            "message": "说明"
+          }
+        }
+      },
+      "empty": {
+        "desktopOnly": "扫描审查仅在桌面端可用",
+        "loading": "正在加载扫描审查...",
+        "failed": "加载扫描审查失败",
+        "noDocuments": "暂无扫描文档",
+        "noFindings": "暂无发现项"
+      }
+    },
+    "maintenanceSettingsPage": {
+      "section": {
+        "title": "桌面端维护",
+        "description": "这里承接全局系统同步和修复类动作。扫描审查页只保留扫描结果、发现项和定向修复。",
+        "note": "技能安装对账优先使用同步动作；只有在本地资产索引需要整体重建时才使用全量修复。"
+      },
+      "actions": {
+        "syncAction": "同步本地安装记录",
+        "syncReinstallAction": "同步并重装缺失项",
+        "syncing": "同步中...",
+        "repairIndexAction": "修复本地索引",
+        "repairingAction": "修复中..."
+      },
+      "feedback": {
+        "syncApplied": "本地安装同步完成 · 拉取 {fetched} 条，写入 {upserted} 条，失败 {failed} 条",
+        "syncReinstallApplied": "同步并重装完成 · 拉取 {fetched} 条，写入 {upserted} 条，重装 {reinstalled} 条，失败 {failed} 条",
+        "syncAppliedNoop": "本次没有可应用的桌面同步变更",
+        "repairApplied": "本地索引修复完成 · 拉取 {fetched} 条，写入 {upserted} 条，技能 {skills} 项，助手 {assistants} 项",
+        "repairAppliedNoop": "本次没有可应用的本地索引修复变更",
+        "maintenanceFailed": "维护操作失败"
+      },
+      "empty": {
+        "desktopOnly": "仅桌面端可用"
+      },
+      "repairConfirm": {
+        "title": "确认修复本地索引？",
+        "description": "该操作会重建本地系统资产索引，并通过当前同步链路重新回灌技能与助手数据。",
+        "warning": "历史本地资产索引会先被清空再重建；如果当前桌面端未完成同步或登录失效，重建结果可能不完整。",
+        "confirm": "确认修复",
+        "cancel": "取消"
       }
     }
   }

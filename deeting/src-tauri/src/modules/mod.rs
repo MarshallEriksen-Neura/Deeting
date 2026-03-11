@@ -7,3 +7,4 @@ pub mod monitor;
 pub mod providers;
 pub mod relay;
 pub mod sandbox;
+pub mod scan;
