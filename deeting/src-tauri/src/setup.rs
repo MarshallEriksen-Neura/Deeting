@@ -222,6 +222,22 @@ fn spawn_background_tasks(handle: AppHandle, sync_state: AppState) {
             });
         }
 
+        if let Ok(custom_agents) =
+            crate::modules::custom_task_agents::store::list_custom_task_agents(
+                sync_state.mcp.store.as_ref(),
+            )
+            .await
+        {
+            let app_state_clone = sync_state.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = crate::modules::custom_task_agents::indexing::index_custom_task_agents(
+                    &app_state_clone,
+                    &custom_agents,
+                )
+                .await;
+            });
+        }
+
         // Register and index all local skills (Official & User)
         let app_state_for_skills = sync_state.clone();
         let app_handle_for_skills = handle.clone();

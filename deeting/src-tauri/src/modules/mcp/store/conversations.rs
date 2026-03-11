@@ -4288,7 +4288,9 @@ impl McpStore {
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
 
-            tx.commit().await.map_err(|err| McpError::Storage(err.to_string()))
+            tx.commit()
+                .await
+                .map_err(|err| McpError::Storage(err.to_string()))
         }
         .await;
 

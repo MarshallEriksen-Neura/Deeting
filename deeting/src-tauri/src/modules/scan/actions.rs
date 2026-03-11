@@ -8,8 +8,7 @@ use crate::modules::mcp::commands::skill_registry_impl::{
 use crate::state::AppState;
 
 use super::types::{
-    ScanReviewActionRequest, ScanReviewActionResult, ScanReviewBatchRequest,
-    ScanReviewBatchResult,
+    ScanReviewActionRequest, ScanReviewActionResult, ScanReviewBatchRequest, ScanReviewBatchResult,
 };
 
 pub async fn run_scan_review_action(
@@ -86,12 +85,20 @@ async fn register_bundle(
     request: ScanReviewActionRequest,
 ) -> Result<ScanReviewActionResult, String> {
     let path = normalize_bundle_path(request.path.as_deref())?;
-    let Some(skill_def) = resolve_local_skill_definition(&path, infer_source_prefix(&path), None, None)?
+    let Some(skill_def) =
+        resolve_local_skill_definition(&path, infer_source_prefix(&path), None, None)?
     else {
-        return Err(format!("bundle at {} is not a valid skill bundle", path.display()));
+        return Err(format!(
+            "bundle at {} is not a valid skill bundle",
+            path.display()
+        ));
     };
 
-    if let Some(expected_skill_id) = request.bundle_id.as_deref().filter(|value| !value.trim().is_empty()) {
+    if let Some(expected_skill_id) = request
+        .bundle_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
         if skill_def.skill_id != expected_skill_id.trim() {
             return Err(format!(
                 "bundle id mismatch: expected {}, resolved {}",
@@ -145,7 +152,11 @@ async fn cleanup_missing_install(
     request: ScanReviewActionRequest,
 ) -> Result<ScanReviewActionResult, String> {
     let bundle_id = required_bundle_id(&request)?;
-    let _ = app_state.memory.service.delete_assets_by_package(&bundle_id).await;
+    let _ = app_state
+        .memory
+        .service
+        .delete_assets_by_package(&bundle_id)
+        .await;
     app_state
         .mcp
         .store
@@ -162,7 +173,10 @@ async fn cleanup_missing_install(
 }
 
 fn normalize_bundle_path(raw: Option<&str>) -> Result<PathBuf, String> {
-    let value = raw.map(str::trim).filter(|value| !value.is_empty()).ok_or_else(|| "path is required".to_string())?;
+    let value = raw
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "path is required".to_string())?;
     let path = PathBuf::from(value);
     if path.is_dir() {
         return Ok(path);
@@ -187,7 +201,10 @@ fn required_bundle_id(request: &ScanReviewActionRequest) -> Result<String, Strin
 }
 
 fn infer_source_prefix(path: &Path) -> &'static str {
-    if path.components().any(|component| component.as_os_str() == OsStr::new("official-skills")) {
+    if path
+        .components()
+        .any(|component| component.as_os_str() == OsStr::new("official-skills"))
+    {
         "system_plugin"
     } else {
         "user_skill"

@@ -860,11 +860,17 @@ pub(crate) async fn purge_legacy_skill_tool_state(app_state: &AppState) -> Resul
         .into_iter()
         .filter(|asset| asset.get("asset_type").and_then(JsonValue::as_str) == Some("tool"))
         .filter(|asset| {
-            asset.get("pkg_name")
+            asset
+                .get("pkg_name")
                 .and_then(JsonValue::as_str)
                 .is_some_and(|pkg| pkg.starts_with("skill."))
         })
-        .filter_map(|asset| asset.get("id").and_then(JsonValue::as_str).map(str::to_string))
+        .filter_map(|asset| {
+            asset
+                .get("id")
+                .and_then(JsonValue::as_str)
+                .map(str::to_string)
+        })
         .collect::<Vec<_>>();
 
     if !legacy_tool_ids.is_empty() {
@@ -1069,7 +1075,10 @@ pub(crate) async fn register_local_skills_inner(
 ) -> Result<usize, String> {
     let purged = purge_legacy_skill_tool_state(app_state).await?;
     if purged > 0 {
-        log::info!("purged {} legacy skill-tool state entries before reindex", purged);
+        log::info!(
+            "purged {} legacy skill-tool state entries before reindex",
+            purged
+        );
     }
     let scan_targets = resolve_local_skill_scan_targets(&app)?;
     let sdk_dir = app

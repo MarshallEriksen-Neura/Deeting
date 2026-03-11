@@ -2,6 +2,7 @@ pub mod ai_upstream;
 pub mod capability_control_plane;
 pub mod chat_assets;
 pub mod code_mode;
+pub mod custom_task_agents;
 pub mod mcp;
 pub mod memory;
 pub mod monitor;

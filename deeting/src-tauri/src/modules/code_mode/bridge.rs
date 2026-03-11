@@ -755,8 +755,7 @@ async fn dispatch_tool_call(
                         .is_some_and(|identifier| identifier.trim().starts_with("skill."))
                 })
                 .collect::<Vec<_>>();
-            serde_json::to_value(filtered)
-                .map_err(|err| ("MCP_ERROR".to_string(), err.to_string()))
+            serde_json::to_value(filtered).map_err(|err| ("MCP_ERROR".to_string(), err.to_string()))
         }
         "list_local_provider_instances" | "list_provider_instances" => {
             let instances = state

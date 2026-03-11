@@ -99,6 +99,14 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::mcp::bridge::set_mcp_backend_url,
         crate::modules::mcp::bridge::start_mcp_log_stream,
         crate::modules::mcp::bridge::stop_mcp_log_stream,
+        // Custom Task Agent Commands
+        crate::modules::custom_task_agents::commands::list_custom_task_agents,
+        crate::modules::custom_task_agents::commands::get_custom_task_agent,
+        crate::modules::custom_task_agents::commands::create_custom_task_agent,
+        crate::modules::custom_task_agents::commands::update_custom_task_agent,
+        crate::modules::custom_task_agents::commands::delete_custom_task_agent,
+        crate::modules::custom_task_agents::commands::preview_custom_task_agent,
+        crate::modules::custom_task_agents::commands::reindex_custom_task_agents,
         // Provider Commands
         crate::modules::providers::commands::list_local_provider_presets,
         crate::modules::providers::commands::get_local_user_secretary,

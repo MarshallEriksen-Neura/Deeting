@@ -78,8 +78,9 @@ mod tests {
         assert!(prompt.contains("## Output Contract"));
         assert!(prompt.contains("Use Code Mode only when the task requires tool discovery"));
         assert!(prompt.contains("call `consult_expert_network` to inspect candidates"));
-        assert!(prompt
-            .contains("Explicitly call `attach_capability` before attaching request-scoped expert capability"));
+        assert!(prompt.contains(
+            "Explicitly call `attach_capability` before attaching request-scoped expert capability"
+        ));
         assert!(prompt
             .contains("Summarize what you changed, the key result, and any blocker or next step"));
         assert!(prompt.contains("If required inputs, permissions, or tools are missing, stop and report the blocker instead of guessing"));

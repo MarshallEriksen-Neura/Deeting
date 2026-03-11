@@ -149,7 +149,8 @@ pub(crate) fn build_local_route_status_meta(decision: &LocalRouteDecision) -> Va
 impl TaskProfile {
     fn from_query(query: &str) -> Self {
         let normalized = query.trim().to_lowercase();
-        let explicit_route = if contains_any(&normalized, &["codemode", "code mode", "代码模式"]) {
+        let explicit_route = if contains_any(&normalized, &["codemode", "code mode", "代码模式"])
+        {
             Some(LocalRouteKind::CodeMode)
         } else if contains_any(
             &normalized,
@@ -304,18 +305,8 @@ impl TaskProfile {
             && contains_any(
                 &normalized,
                 &[
-                    "markdown",
-                    "md",
-                    "file",
-                    "files",
-                    "repo",
-                    "repos",
-                    "log",
-                    "logs",
-                    "目录",
-                    "文件",
-                    "仓库",
-                    "日志",
+                    "markdown", "md", "file", "files", "repo", "repos", "log", "logs", "目录",
+                    "文件", "仓库", "日志",
                 ],
             ));
 
@@ -344,7 +335,8 @@ impl RouteEvidence {
                     .get("capabilities")
                     .and_then(Value::as_array)
                     .map(|items| {
-                        items.iter()
+                        items
+                            .iter()
                             .filter(|item| {
                                 item.pointer("/status/callable")
                                     .and_then(Value::as_bool)
@@ -427,26 +419,206 @@ mod tests {
     #[test]
     fn select_local_route_handles_twenty_bilingual_cases() {
         let cases = [
-            RouteCase { name: "explicit direct mixed", query: "直接调用 search_web 抓一下这个页面标题", direct_callable_capability_count: 1, has_code_mode_executor: true, mutating: false, high_risk: false, expected_route: LocalRouteKind::Direct, expected_reason: "explicit_route" },
-            RouteCase { name: "explicit worker english", query: "Please use worker to analyze this auth refactor", direct_callable_capability_count: 0, has_code_mode_executor: true, mutating: false, high_risk: false, expected_route: LocalRouteKind::Worker, expected_reason: "explicit_route" },
-            RouteCase { name: "explicit codemode chinese english", query: "用 codemode 遍历所有 markdown 然后生成目录树", direct_callable_capability_count: 0, has_code_mode_executor: true, mutating: false, high_risk: false, expected_route: LocalRouteKind::CodeMode, expected_reason: "explicit_route" },
-            RouteCase { name: "delete provider config", query: "删除这个 provider 配置并清理 cache", direct_callable_capability_count: 1, has_code_mode_executor: true, mutating: true, high_risk: true, expected_route: LocalRouteKind::Direct, expected_reason: "destructive_intent" },
-            RouteCase { name: "reset api token", query: "reset the API token and revoke old keys", direct_callable_capability_count: 1, has_code_mode_executor: true, mutating: true, high_risk: true, expected_route: LocalRouteKind::Direct, expected_reason: "approval_sensitive" },
-            RouteCase { name: "single image generation", query: "Generate one image of a neon cat", direct_callable_capability_count: 1, has_code_mode_executor: true, mutating: false, high_risk: false, expected_route: LocalRouteKind::Direct, expected_reason: "single_direct_callable" },
-            RouteCase { name: "single search web mixed", query: "search_web 查一下这个官网标题", direct_callable_capability_count: 1, has_code_mode_executor: true, mutating: false, high_risk: false, expected_route: LocalRouteKind::Direct, expected_reason: "single_direct_callable" },
-            RouteCase { name: "batch markdown json", query: "遍历所有 markdown files，抽标题、分类、去重后输出 JSON", direct_callable_capability_count: 0, has_code_mode_executor: true, mutating: false, high_risk: false, expected_route: LocalRouteKind::CodeMode, expected_reason: "programmatic_logic" },
-            RouteCase { name: "aggregate logs", query: "Scan every log file and aggregate error counts by service", direct_callable_capability_count: 0, has_code_mode_executor: true, mutating: false, high_risk: false, expected_route: LocalRouteKind::CodeMode, expected_reason: "programmatic_logic" },
-            RouteCase { name: "rename png manifest", query: "批量 rename 这个目录下所有 png files 并生成 manifest", direct_callable_capability_count: 0, has_code_mode_executor: true, mutating: false, high_risk: false, expected_route: LocalRouteKind::CodeMode, expected_reason: "programmatic_logic" },
-            RouteCase { name: "runtime refactor analysis", query: "分析一下 desktop runtime 重构对 subagent 的影响", direct_callable_capability_count: 0, has_code_mode_executor: true, mutating: false, high_risk: false, expected_route: LocalRouteKind::Worker, expected_reason: "analysis_request" },
-            RouteCase { name: "compare orchestration plans", query: "Compare these two orchestration plans and give me a recommendation", direct_callable_capability_count: 0, has_code_mode_executor: true, mutating: false, high_risk: false, expected_route: LocalRouteKind::Worker, expected_reason: "analysis_request" },
-            RouteCase { name: "boundary research", query: "调研一下 search_sdk 和 execute_code_plan 的边界", direct_callable_capability_count: 0, has_code_mode_executor: true, mutating: false, high_risk: false, expected_route: LocalRouteKind::Worker, expected_reason: "analysis_request" },
-            RouteCase { name: "delegation tradeoff", query: "Summarize the pros/cons of moving image_generation into delegation layer", direct_callable_capability_count: 0, has_code_mode_executor: true, mutating: false, high_risk: false, expected_route: LocalRouteKind::Worker, expected_reason: "analysis_request" },
-            RouteCase { name: "explicit worker migration", query: "Please delegate this to a worker and produce a migration plan", direct_callable_capability_count: 0, has_code_mode_executor: true, mutating: false, high_risk: false, expected_route: LocalRouteKind::Worker, expected_reason: "explicit_route" },
-            RouteCase { name: "risk and fallback", query: "列出这个方案的风险点和 fallback", direct_callable_capability_count: 0, has_code_mode_executor: true, mutating: false, high_risk: false, expected_route: LocalRouteKind::Worker, expected_reason: "analysis_request" },
-            RouteCase { name: "readmes into table", query: "为每个 repo 读取 README, extract TODOs, then merge into one table", direct_callable_capability_count: 0, has_code_mode_executor: true, mutating: false, high_risk: false, expected_route: LocalRouteKind::CodeMode, expected_reason: "programmatic_logic" },
-            RouteCase { name: "disable skill remove cache", query: "disable this skill and remove local cache", direct_callable_capability_count: 1, has_code_mode_executor: true, mutating: true, high_risk: true, expected_route: LocalRouteKind::Direct, expected_reason: "destructive_intent" },
-            RouteCase { name: "capability vs recipe", query: "What's the difference between recipe and capability here?", direct_callable_capability_count: 2, has_code_mode_executor: true, mutating: false, high_risk: false, expected_route: LocalRouteKind::Worker, expected_reason: "analysis_request" },
-            RouteCase { name: "single weather lookup", query: "打开 weather tool 查一下今天上海天气", direct_callable_capability_count: 1, has_code_mode_executor: true, mutating: false, high_risk: false, expected_route: LocalRouteKind::Direct, expected_reason: "single_direct_callable" },
+            RouteCase {
+                name: "explicit direct mixed",
+                query: "直接调用 search_web 抓一下这个页面标题",
+                direct_callable_capability_count: 1,
+                has_code_mode_executor: true,
+                mutating: false,
+                high_risk: false,
+                expected_route: LocalRouteKind::Direct,
+                expected_reason: "explicit_route",
+            },
+            RouteCase {
+                name: "explicit worker english",
+                query: "Please use worker to analyze this auth refactor",
+                direct_callable_capability_count: 0,
+                has_code_mode_executor: true,
+                mutating: false,
+                high_risk: false,
+                expected_route: LocalRouteKind::Worker,
+                expected_reason: "explicit_route",
+            },
+            RouteCase {
+                name: "explicit codemode chinese english",
+                query: "用 codemode 遍历所有 markdown 然后生成目录树",
+                direct_callable_capability_count: 0,
+                has_code_mode_executor: true,
+                mutating: false,
+                high_risk: false,
+                expected_route: LocalRouteKind::CodeMode,
+                expected_reason: "explicit_route",
+            },
+            RouteCase {
+                name: "delete provider config",
+                query: "删除这个 provider 配置并清理 cache",
+                direct_callable_capability_count: 1,
+                has_code_mode_executor: true,
+                mutating: true,
+                high_risk: true,
+                expected_route: LocalRouteKind::Direct,
+                expected_reason: "destructive_intent",
+            },
+            RouteCase {
+                name: "reset api token",
+                query: "reset the API token and revoke old keys",
+                direct_callable_capability_count: 1,
+                has_code_mode_executor: true,
+                mutating: true,
+                high_risk: true,
+                expected_route: LocalRouteKind::Direct,
+                expected_reason: "approval_sensitive",
+            },
+            RouteCase {
+                name: "single image generation",
+                query: "Generate one image of a neon cat",
+                direct_callable_capability_count: 1,
+                has_code_mode_executor: true,
+                mutating: false,
+                high_risk: false,
+                expected_route: LocalRouteKind::Direct,
+                expected_reason: "single_direct_callable",
+            },
+            RouteCase {
+                name: "single search web mixed",
+                query: "search_web 查一下这个官网标题",
+                direct_callable_capability_count: 1,
+                has_code_mode_executor: true,
+                mutating: false,
+                high_risk: false,
+                expected_route: LocalRouteKind::Direct,
+                expected_reason: "single_direct_callable",
+            },
+            RouteCase {
+                name: "batch markdown json",
+                query: "遍历所有 markdown files，抽标题、分类、去重后输出 JSON",
+                direct_callable_capability_count: 0,
+                has_code_mode_executor: true,
+                mutating: false,
+                high_risk: false,
+                expected_route: LocalRouteKind::CodeMode,
+                expected_reason: "programmatic_logic",
+            },
+            RouteCase {
+                name: "aggregate logs",
+                query: "Scan every log file and aggregate error counts by service",
+                direct_callable_capability_count: 0,
+                has_code_mode_executor: true,
+                mutating: false,
+                high_risk: false,
+                expected_route: LocalRouteKind::CodeMode,
+                expected_reason: "programmatic_logic",
+            },
+            RouteCase {
+                name: "rename png manifest",
+                query: "批量 rename 这个目录下所有 png files 并生成 manifest",
+                direct_callable_capability_count: 0,
+                has_code_mode_executor: true,
+                mutating: false,
+                high_risk: false,
+                expected_route: LocalRouteKind::CodeMode,
+                expected_reason: "programmatic_logic",
+            },
+            RouteCase {
+                name: "runtime refactor analysis",
+                query: "分析一下 desktop runtime 重构对 subagent 的影响",
+                direct_callable_capability_count: 0,
+                has_code_mode_executor: true,
+                mutating: false,
+                high_risk: false,
+                expected_route: LocalRouteKind::Worker,
+                expected_reason: "analysis_request",
+            },
+            RouteCase {
+                name: "compare orchestration plans",
+                query: "Compare these two orchestration plans and give me a recommendation",
+                direct_callable_capability_count: 0,
+                has_code_mode_executor: true,
+                mutating: false,
+                high_risk: false,
+                expected_route: LocalRouteKind::Worker,
+                expected_reason: "analysis_request",
+            },
+            RouteCase {
+                name: "boundary research",
+                query: "调研一下 search_sdk 和 execute_code_plan 的边界",
+                direct_callable_capability_count: 0,
+                has_code_mode_executor: true,
+                mutating: false,
+                high_risk: false,
+                expected_route: LocalRouteKind::Worker,
+                expected_reason: "analysis_request",
+            },
+            RouteCase {
+                name: "delegation tradeoff",
+                query: "Summarize the pros/cons of moving image_generation into delegation layer",
+                direct_callable_capability_count: 0,
+                has_code_mode_executor: true,
+                mutating: false,
+                high_risk: false,
+                expected_route: LocalRouteKind::Worker,
+                expected_reason: "analysis_request",
+            },
+            RouteCase {
+                name: "explicit worker migration",
+                query: "Please delegate this to a worker and produce a migration plan",
+                direct_callable_capability_count: 0,
+                has_code_mode_executor: true,
+                mutating: false,
+                high_risk: false,
+                expected_route: LocalRouteKind::Worker,
+                expected_reason: "explicit_route",
+            },
+            RouteCase {
+                name: "risk and fallback",
+                query: "列出这个方案的风险点和 fallback",
+                direct_callable_capability_count: 0,
+                has_code_mode_executor: true,
+                mutating: false,
+                high_risk: false,
+                expected_route: LocalRouteKind::Worker,
+                expected_reason: "analysis_request",
+            },
+            RouteCase {
+                name: "readmes into table",
+                query: "为每个 repo 读取 README, extract TODOs, then merge into one table",
+                direct_callable_capability_count: 0,
+                has_code_mode_executor: true,
+                mutating: false,
+                high_risk: false,
+                expected_route: LocalRouteKind::CodeMode,
+                expected_reason: "programmatic_logic",
+            },
+            RouteCase {
+                name: "disable skill remove cache",
+                query: "disable this skill and remove local cache",
+                direct_callable_capability_count: 1,
+                has_code_mode_executor: true,
+                mutating: true,
+                high_risk: true,
+                expected_route: LocalRouteKind::Direct,
+                expected_reason: "destructive_intent",
+            },
+            RouteCase {
+                name: "capability vs recipe",
+                query: "What's the difference between recipe and capability here?",
+                direct_callable_capability_count: 2,
+                has_code_mode_executor: true,
+                mutating: false,
+                high_risk: false,
+                expected_route: LocalRouteKind::Worker,
+                expected_reason: "analysis_request",
+            },
+            RouteCase {
+                name: "single weather lookup",
+                query: "打开 weather tool 查一下今天上海天气",
+                direct_callable_capability_count: 1,
+                has_code_mode_executor: true,
+                mutating: false,
+                high_risk: false,
+                expected_route: LocalRouteKind::Direct,
+                expected_reason: "single_direct_callable",
+            },
         ];
 
         for case in cases {
@@ -461,7 +633,10 @@ mod tests {
             );
             assert_eq!(decision.route, case.expected_route, "case={}", case.name);
             assert!(
-                decision.reasons.iter().any(|reason| reason == case.expected_reason),
+                decision
+                    .reasons
+                    .iter()
+                    .any(|reason| reason == case.expected_reason),
                 "case={} reasons={:?}",
                 case.name,
                 decision.reasons

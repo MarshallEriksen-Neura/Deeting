@@ -1,12 +1,19 @@
 use std::collections::HashMap;
 
-use serde_json::Value;
-use uuid::Uuid;
-
-use crate::modules::mcp::commands::common_impl::{to_string, LocalModelConnection};
-use crate::modules::mcp::commands::runtime::now_rfc3339;
+use crate::modules::ai_upstream::types::LocalModelConnection;
 use crate::modules::mcp::types::LocalChatInputMessage;
 use crate::state::AppState;
+use uuid::Uuid;
+
+fn to_string<T: std::fmt::Display>(err: T) -> String {
+    err.to_string()
+}
+
+fn now_rfc3339() -> String {
+    time::OffsetDateTime::now_utc()
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap_or_default()
+}
 
 pub(crate) async fn resolve_local_model_connection(
     app_state: &AppState,
@@ -155,12 +162,12 @@ async fn request_platform_chat_via_proxy(
     app_state: &AppState,
     model_id: &str,
     messages: Vec<LocalChatInputMessage>,
-    tools: Option<Value>,
+    tools: Option<serde_json::Value>,
     temperature: Option<f32>,
     max_tokens: Option<u32>,
     trace_id: Option<&str>,
     session_id: Option<&str>,
-) -> Result<Value, String> {
+) -> Result<serde_json::Value, String> {
     let base_url = app_state.mcp.cloud_base_url.read().await.clone();
     let base_url = base_url.trim().trim_end_matches('/');
     if base_url.is_empty() {
@@ -171,14 +178,14 @@ async fn request_platform_chat_via_proxy(
     let url = format!("{}/api/v1/credits/chat/completions", base_url);
     let mut body =
         serde_json::json!({ "model": model_id.trim(), "messages": messages, "stream": false });
-    if let Some(value) = temperature {
-        body["temperature"] = serde_json::json!(value);
+    if let Some(t) = temperature {
+        body["temperature"] = serde_json::json!(t);
     }
-    if let Some(value) = max_tokens {
-        body["max_tokens"] = serde_json::json!(value);
+    if let Some(m) = max_tokens {
+        body["max_tokens"] = serde_json::json!(m);
     }
-    if let Some(ref value) = tools {
-        body["tools"] = value.clone();
+    if let Some(ref t) = tools {
+        body["tools"] = t.clone();
     }
     if let Some(id) = trace_id.filter(|value| !value.trim().is_empty()) {
         body["trace_id"] = serde_json::json!(id);
@@ -207,7 +214,7 @@ async fn request_platform_chat_via_proxy(
     let response = request.send().await.map_err(to_string)?;
     let status = response.status();
     let raw_text = response.text().await.map_err(to_string)?;
-    let raw_json = serde_json::from_str::<Value>(&raw_text).ok();
+    let raw_json = serde_json::from_str::<serde_json::Value>(&raw_text).ok();
     if !status.is_success() {
         return Err(extract_upstream_error_message(
             status,
@@ -230,12 +237,12 @@ pub(crate) async fn request_provider_chat_completion(
     provider_model_id: &str,
     model_id: &str,
     messages: Vec<LocalChatInputMessage>,
-    tools: Option<Value>,
+    tools: Option<serde_json::Value>,
     temperature: Option<f32>,
     max_tokens: Option<u32>,
     trace_id: Option<&str>,
     session_id: Option<&str>,
-) -> Result<Value, String> {
+) -> Result<serde_json::Value, String> {
     let provider_model_uuid = Uuid::parse_str(provider_model_id).map_err(to_string)?;
     let model = app_state
         .providers
@@ -294,11 +301,11 @@ pub(crate) async fn request_provider_chat_completion(
         .map_err(to_string)?;
     let mut body =
         serde_json::json!({ "model": effective_model, "messages": messages, "stream": false });
-    if let Some(value) = temperature {
-        body["temperature"] = serde_json::json!(value);
+    if let Some(t) = temperature {
+        body["temperature"] = serde_json::json!(t);
     }
-    if let Some(value) = max_tokens {
-        body["max_tokens"] = serde_json::json!(value);
+    if let Some(m) = max_tokens {
+        body["max_tokens"] = serde_json::json!(m);
     }
     let prepared = crate::modules::providers::request_runtime::prepare_provider_request(
         preset.as_ref(),
@@ -363,7 +370,7 @@ pub(crate) async fn request_provider_chat_completion(
     Ok(normalize_chat_completion_response(transformed))
 }
 
-pub(crate) fn normalize_chat_completion_response(raw: Value) -> Value {
+pub(crate) fn normalize_chat_completion_response(raw: serde_json::Value) -> serde_json::Value {
     if raw.get("content").is_some() && raw.get("tool_calls").is_some() {
         return raw;
     }
@@ -377,7 +384,7 @@ pub(crate) fn normalize_chat_completion_response(raw: Value) -> Value {
         .and_then(|value| value.as_str())
         .unwrap_or("")
         .to_string();
-    let mut normalized_tool_calls = Vec::<Value>::new();
+    let mut normalized_tool_calls = Vec::<serde_json::Value>::new();
     if let Some(choice) = raw
         .get("choices")
         .and_then(|value| value.as_array())
@@ -398,16 +405,17 @@ pub(crate) fn normalize_chat_completion_response(raw: Value) -> Value {
                     .unwrap_or("")
                     .to_string();
             }
-            if let Some(tool_calls) = message.get("tool_calls").and_then(|value| value.as_array())
-            {
+            if let Some(tool_calls) = message.get("tool_calls").and_then(|value| value.as_array()) {
                 for call in tool_calls {
                     let (function_name, arguments) = if let Some(func) = call.get("function") {
                         (
-                            func.get("name").and_then(|value| value.as_str()).unwrap_or(""),
+                            func.get("name")
+                                .and_then(|value| value.as_str())
+                                .unwrap_or(""),
                             func.get("arguments")
                                 .and_then(|value| {
                                     if let Some(text) = value.as_str() {
-                                        serde_json::from_str::<Value>(text).ok()
+                                        serde_json::from_str::<serde_json::Value>(text).ok()
                                     } else {
                                         Some(value.clone())
                                     }
@@ -434,8 +442,8 @@ pub(crate) fn normalize_chat_completion_response(raw: Value) -> Value {
         }
     }
     if normalized_tool_calls.is_empty() {
-        if let Some(tool_call_array) = raw.get("tool_calls").and_then(|value| value.as_array()) {
-            normalized_tool_calls.extend(tool_call_array.iter().cloned());
+        if let Some(tool_calls) = raw.get("tool_calls").and_then(|value| value.as_array()) {
+            normalized_tool_calls.extend(tool_calls.iter().cloned());
         }
     }
     let mut result = serde_json::json!({ "content": content, "tool_calls": normalized_tool_calls });
@@ -445,20 +453,32 @@ pub(crate) fn normalize_chat_completion_response(raw: Value) -> Value {
     result
 }
 
-fn extract_upstream_error_message(
+pub(crate) fn extract_upstream_error_message(
     status: reqwest::StatusCode,
-    raw_json: Option<&Value>,
+    raw_json: Option<&serde_json::Value>,
     raw_text: &str,
 ) -> String {
     if let Some(message) = raw_json
-        .and_then(|value| value.pointer("/error/message").and_then(|inner| inner.as_str()))
-        .or_else(|| raw_json.and_then(|value| value.get("error")).and_then(|inner| inner.as_str()))
+        .and_then(|value| {
+            value
+                .pointer("/error/message")
+                .and_then(|item| item.as_str())
+        })
+        .or_else(|| {
+            raw_json
+                .and_then(|value| value.get("error"))
+                .and_then(|item| item.as_str())
+        })
         .or_else(|| {
             raw_json
                 .and_then(|value| value.get("message"))
-                .and_then(|inner| inner.as_str())
+                .and_then(|item| item.as_str())
         })
-        .or_else(|| raw_json.and_then(|value| value.get("detail")).and_then(|inner| inner.as_str()))
+        .or_else(|| {
+            raw_json
+                .and_then(|value| value.get("detail"))
+                .and_then(|item| item.as_str())
+        })
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
@@ -474,7 +494,7 @@ fn extract_upstream_error_message(
     format!("upstream status {}", status.as_u16())
 }
 
-fn truncate_upstream_body(text: &str, max_len: usize) -> String {
+pub(crate) fn truncate_upstream_body(text: &str, max_len: usize) -> String {
     let trimmed = text.trim();
     if trimmed.chars().count() <= max_len {
         return trimmed.to_string();

@@ -223,7 +223,9 @@ fn build_bundle_document(
 ) -> Result<(ScanDocument, Vec<ScanFinding>), String> {
     let snapshot = collect_bundle_snapshot(path)?;
     let normalized_path = normalize_path(path);
-    let install = installs.iter().find(|install| install.skill_id == snapshot.bundle_id);
+    let install = installs
+        .iter()
+        .find(|install| install.skill_id == snapshot.bundle_id);
     let asset_present = has_skill_asset(&snapshot.bundle_id, assets);
     let mut findings = Vec::new();
     let mut status = "healthy".to_string();
@@ -412,7 +414,9 @@ fn build_file_document(path: &Path, target_root: &Path) -> Result<ScanDocument, 
     let metadata = std::fs::metadata(path).map_err(to_string)?;
     let bundle_id = path.parent().and_then(|parent| {
         if looks_like_skill_bundle_dir(parent).unwrap_or(false) {
-            collect_bundle_snapshot(parent).ok().map(|snapshot| snapshot.bundle_id)
+            collect_bundle_snapshot(parent)
+                .ok()
+                .map(|snapshot| snapshot.bundle_id)
         } else {
             None
         }
@@ -568,13 +572,13 @@ fn walk_bundle(
         if let Some(risk_level) = classify_script_risk_level(&path) {
             snapshot.script_paths.push(relative);
             if risk_level == "high" {
-                snapshot.high_risk_script_paths.push(
-                    relative_path(&path, root).unwrap_or_else(|| normalize_path(&path)),
-                );
+                snapshot
+                    .high_risk_script_paths
+                    .push(relative_path(&path, root).unwrap_or_else(|| normalize_path(&path)));
             } else {
-                snapshot.runtime_script_paths.push(
-                    relative_path(&path, root).unwrap_or_else(|| normalize_path(&path)),
-                );
+                snapshot
+                    .runtime_script_paths
+                    .push(relative_path(&path, root).unwrap_or_else(|| normalize_path(&path)));
             }
         }
     }
@@ -587,12 +591,10 @@ fn looks_like_skill_bundle_dir(path: &Path) -> Result<bool, String> {
         return Ok(false);
     }
     match collect_bundle_snapshot(path) {
-        Ok(snapshot) => Ok(
-            snapshot.manifest_present
-                || snapshot.package_present
-                || !snapshot.doc_paths.is_empty()
-                || !snapshot.script_paths.is_empty(),
-        ),
+        Ok(snapshot) => Ok(snapshot.manifest_present
+            || snapshot.package_present
+            || !snapshot.doc_paths.is_empty()
+            || !snapshot.script_paths.is_empty()),
         Err(_) => Ok(false),
     }
 }
@@ -602,7 +604,10 @@ fn ensure_directory(path: &Path) -> Result<(), String> {
         return Err(format!("scan target does not exist: {}", path.display()));
     }
     if !path.is_dir() {
-        return Err(format!("scan target is not a directory: {}", path.display()));
+        return Err(format!(
+            "scan target is not a directory: {}",
+            path.display()
+        ));
     }
     Ok(())
 }
@@ -611,8 +616,14 @@ fn summarize(documents: &[ScanDocument], findings: &[ScanFinding]) -> ScanSummar
     ScanSummary {
         document_count: documents.len(),
         finding_count: findings.len(),
-        warning_count: findings.iter().filter(|item| item.severity == "warn").count(),
-        error_count: findings.iter().filter(|item| item.severity == "error").count(),
+        warning_count: findings
+            .iter()
+            .filter(|item| item.severity == "warn")
+            .count(),
+        error_count: findings
+            .iter()
+            .filter(|item| item.severity == "error")
+            .count(),
         skill_bundle_count: documents
             .iter()
             .filter(|item| item.document_kind == "skill_bundle")
@@ -699,13 +710,20 @@ fn orphan_install_finding(
     }
 }
 
-fn install_missing_finding(skill_id: &str, document_path: String, bundle_path: String) -> ScanFinding {
+fn install_missing_finding(
+    skill_id: &str,
+    document_path: String,
+    bundle_path: String,
+) -> ScanFinding {
     let metadata_bundle_path = bundle_path.clone();
     ScanFinding {
         id: Uuid::new_v4().to_string(),
         severity: "warn".to_string(),
         code: "install_record_missing".to_string(),
-        message: format!("Skill bundle {} exists on disk but has no install record", skill_id),
+        message: format!(
+            "Skill bundle {} exists on disk but has no install record",
+            skill_id
+        ),
         document_path: Some(document_path),
         bundle_id: Some(skill_id.to_string()),
         metadata: Some(json!({ "bundle_path": metadata_bundle_path })),
@@ -758,10 +776,8 @@ fn apply_json_metadata(snapshot: &mut BundleSnapshot, value: &Value) {
         snapshot.manifest_id = select_json_string(value, &["id", "name"]);
     }
     if snapshot.manifest_name.is_none() {
-        snapshot.manifest_name = select_json_string(
-            value,
-            &["display_name", "displayName", "title", "name"],
-        );
+        snapshot.manifest_name =
+            select_json_string(value, &["display_name", "displayName", "title", "name"]);
     }
     if snapshot.manifest_runtime.is_none() {
         snapshot.manifest_runtime = select_json_string(value, &["runtime"])
@@ -773,7 +789,9 @@ fn apply_json_metadata(snapshot: &mut BundleSnapshot, value: &Value) {
         }
     }
     if snapshot.display_name.is_empty() {
-        if let Some(name) = select_json_string(value, &["display_name", "displayName", "title", "name"]) {
+        if let Some(name) =
+            select_json_string(value, &["display_name", "displayName", "title", "name"])
+        {
             snapshot.display_name = name;
         }
     }
@@ -800,20 +818,23 @@ fn select_json_string(value: &Value, keys: &[&str]) -> Option<String> {
 fn select_json_string_array(value: &Value, keys: &[&str]) -> Option<String> {
     let object = value.as_object()?;
     keys.iter().find_map(|key| {
-        object.get(*key).and_then(Value::as_array).and_then(|items| {
-            let values = items
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::trim)
-                .filter(|item| !item.is_empty())
-                .map(ToString::to_string)
-                .collect::<Vec<_>>();
-            if values.is_empty() {
-                None
-            } else {
-                Some(values.join(","))
-            }
-        })
+        object
+            .get(*key)
+            .and_then(Value::as_array)
+            .and_then(|items| {
+                let values = items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::trim)
+                    .filter(|item| !item.is_empty())
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>();
+                if values.is_empty() {
+                    None
+                } else {
+                    Some(values.join(","))
+                }
+            })
     })
 }
 
@@ -849,7 +870,9 @@ fn detect_file_kind(path: &Path) -> String {
 }
 
 fn is_hidden_name(name: &OsStr) -> bool {
-    name.to_str().map(|item| item.starts_with('.')).unwrap_or(false)
+    name.to_str()
+        .map(|item| item.starts_with('.'))
+        .unwrap_or(false)
 }
 
 fn is_probably_text_document(path: &Path) -> bool {
@@ -1009,17 +1032,20 @@ mod tests {
         let root = temp_dir("missing-install");
         let skill_dir = root.join("alpha-skill");
         std::fs::create_dir_all(&skill_dir).expect("create skill dir");
-        std::fs::write(skill_dir.join("SKILL.md"), "# Alpha Skill\n\nSearch docs").expect("write doc");
+        std::fs::write(skill_dir.join("SKILL.md"), "# Alpha Skill\n\nSearch docs")
+            .expect("write doc");
 
         let run = scan_directory(&root, &[], &[]).expect("scan directory");
         assert_eq!(run.summary.skill_bundle_count, 1);
         assert!(run.findings.iter().any(|finding| {
             finding.code == "install_record_missing"
-                && finding.action.as_ref().map(|action| action.kind.as_str()) == Some("register_bundle")
+                && finding.action.as_ref().map(|action| action.kind.as_str())
+                    == Some("register_bundle")
         }));
         assert!(run.findings.iter().any(|finding| {
             finding.code == "asset_index_missing"
-                && finding.action.as_ref().map(|action| action.kind.as_str()) == Some("register_bundle")
+                && finding.action.as_ref().map(|action| action.kind.as_str())
+                    == Some("register_bundle")
         }));
 
         let _ = std::fs::remove_dir_all(root);
@@ -1067,11 +1093,8 @@ mod tests {
         let root = temp_dir("skill-review");
         let skill_dir = root.join("beta-skill");
         std::fs::create_dir_all(&skill_dir).expect("create skill dir");
-        std::fs::write(
-            skill_dir.join("deeting.json"),
-            r#"{"id":"beta-skill"}"#,
-        )
-        .expect("write manifest");
+        std::fs::write(skill_dir.join("deeting.json"), r#"{"id":"beta-skill"}"#)
+            .expect("write manifest");
         std::fs::write(skill_dir.join("run.sh"), "#!/usr/bin/env bash\necho hi\n")
             .expect("write shell script");
         std::fs::write(skill_dir.join("worker.ts"), "export const run = true\n")
@@ -1079,7 +1102,10 @@ mod tests {
 
         let run = scan_directory(&root, &[], &[]).expect("scan directory");
 
-        assert!(run.findings.iter().any(|finding| finding.code == "skill_doc_missing"));
+        assert!(run
+            .findings
+            .iter()
+            .any(|finding| finding.code == "skill_doc_missing"));
         assert!(run
             .findings
             .iter()

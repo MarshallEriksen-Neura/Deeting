@@ -4,10 +4,9 @@ use super::{
     build_local_code_mode_entry_tools, build_local_consult_expert_network_result,
     build_local_sdk_search_result_with_runtime, build_local_tool_call_install_gate_error_meta,
     build_local_tool_trace_blocks, extract_chat_tool_calls,
-    install_local_skill_from_onboarding_request,
-    request_provider_chat_completion, resolve_local_capability_activation_state,
-    LocalCapabilityActivationState, LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
-    LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
+    install_local_skill_from_onboarding_request, request_provider_chat_completion,
+    resolve_local_capability_activation_state, LocalCapabilityActivationState,
+    LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION, LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
 };
 use crate::modules::mcp::commands::common_impl::LocalModelConnection;
 
@@ -153,9 +152,7 @@ async fn continue_local_chat_complete_with_auto_code_mode(
             if state.realtime_emitter.emitted_any {
                 fallback["tool_trace_streamed"] = serde_json::json!(true);
             }
-            return Ok(LocalChatAutoCodeModeOutput {
-                response: fallback,
-            });
+            return Ok(LocalChatAutoCodeModeOutput { response: fallback });
         }
 
         let tools = build_local_code_mode_entry_tools();
@@ -183,9 +180,7 @@ async fn continue_local_chat_complete_with_auto_code_mode(
             if state.realtime_emitter.emitted_any {
                 enriched["tool_trace_streamed"] = serde_json::json!(true);
             }
-            return Ok(LocalChatAutoCodeModeOutput {
-                response: enriched,
-            });
+            return Ok(LocalChatAutoCodeModeOutput { response: enriched });
         }
 
         state.last_response = Some(response.clone());
@@ -207,9 +202,7 @@ async fn continue_local_chat_complete_with_auto_code_mode(
                 capability_update,
             } => {
                 if !synthesized {
-                    return Ok(LocalChatAutoCodeModeOutput {
-                        response,
-                    });
+                    return Ok(LocalChatAutoCodeModeOutput { response });
                 }
                 finalize_tool_round(
                     &mut state.orchestrated_messages,

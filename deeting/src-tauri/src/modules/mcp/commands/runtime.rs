@@ -53,7 +53,7 @@ pub(crate) use summary_generation::{
     request_local_auxiliary_text, LOCAL_CONVERSATION_SUMMARY_WORKER_IDLE_INTERVAL_SECS,
 };
 pub(crate) use tool_execution::{
-    approve_mcp_tool_inner_with_context, execute_local_mcp_tool,
+    approve_mcp_tool_inner_with_context, execute_local_mcp_tool, execute_mcp_tool,
     execute_or_queue_mcp_tool_call_with_tool_ref, reject_mcp_tool_inner,
 };
 pub(crate) use tool_resolution::{

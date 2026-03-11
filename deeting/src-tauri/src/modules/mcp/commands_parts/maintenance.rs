@@ -1,7 +1,6 @@
 use serde_json::json;
 use tauri::{AppHandle, Manager, State};
 
-use crate::state::AppState;
 use crate::modules::mcp::commands::assistant_management_impl::index_local_assistants;
 use crate::modules::mcp::commands::common_impl::to_string;
 use crate::modules::mcp::commands::skill_registry_impl::{
@@ -15,6 +14,7 @@ use crate::modules::mcp::types::{
     LocalMaintenanceActionRequest, LocalMaintenanceLogItem, LocalMaintenanceLogListResponse,
     LocalMaintenanceLogQuery, LocalSystemAssetRepairResponse, LocalSystemAssetSyncResponse,
 };
+use crate::state::AppState;
 
 #[tauri::command]
 pub async fn run_local_maintenance_action(
@@ -37,13 +37,13 @@ pub async fn run_local_maintenance_action(
     let enable_reinstall = request.reinstall_missing.unwrap_or(false);
     let log_item = match kind.as_str() {
         "sync_local_installs" => {
-            let result = execute_sync_action(app, state.inner(), &normalized_token, page_limit, false)
-                .await;
+            let result =
+                execute_sync_action(app, state.inner(), &normalized_token, page_limit, false).await;
             persist_action_log(state.inner(), &kind, result).await?
         }
         "sync_reinstall_missing" => {
-            let result = execute_sync_action(app, state.inner(), &normalized_token, page_limit, true)
-                .await;
+            let result =
+                execute_sync_action(app, state.inner(), &normalized_token, page_limit, true).await;
             persist_action_log(state.inner(), &kind, result).await?
         }
         "repair_local_index" => {
@@ -100,8 +100,13 @@ async fn execute_sync_action(
         reinstall_missing,
     )
     .await?;
-    let skill_reindexed_count = maybe_reindex_skills(&app, state, &response, &skill_scan_roots).await;
-    Ok(build_sync_log_payload(response, reinstall_missing, skill_reindexed_count))
+    let skill_reindexed_count =
+        maybe_reindex_skills(&app, state, &response, &skill_scan_roots).await;
+    Ok(build_sync_log_payload(
+        response,
+        reinstall_missing,
+        skill_reindexed_count,
+    ))
 }
 
 async fn execute_repair_action(
@@ -229,7 +234,9 @@ fn build_sync_log_payload(
     )
 }
 
-fn build_repair_log_payload(response: LocalSystemAssetRepairResponse) -> (String, serde_json::Value) {
+fn build_repair_log_payload(
+    response: LocalSystemAssetRepairResponse,
+) -> (String, serde_json::Value) {
     (
         format!(
             "Rebuilt local asset index and reindexed {} skills / {} assistants",

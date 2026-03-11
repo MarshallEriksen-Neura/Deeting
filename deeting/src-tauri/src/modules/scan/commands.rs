@@ -8,10 +8,12 @@ use super::actions::{
     run_scan_review_action as execute_scan_review_action,
     run_scan_review_actions as execute_scan_review_actions,
 };
-use super::service::{scan_directory as run_scan_directory, scan_file as run_scan_file, AssetIndexSnapshot};
+use super::service::{
+    scan_directory as run_scan_directory, scan_file as run_scan_file, AssetIndexSnapshot,
+};
 use super::types::{
-    ScanReviewActionRequest, ScanReviewActionResult, ScanReviewBatchRequest,
-    ScanReviewBatchResult, ScanRun,
+    ScanReviewActionRequest, ScanReviewActionResult, ScanReviewBatchRequest, ScanReviewBatchResult,
+    ScanRun,
 };
 
 #[tauri::command]
@@ -41,10 +43,7 @@ pub async fn scan_directory(
 }
 
 #[tauri::command]
-pub async fn scan_file(
-    app_state: State<'_, AppState>,
-    path: String,
-) -> Result<ScanRun, String> {
+pub async fn scan_file(app_state: State<'_, AppState>, path: String) -> Result<ScanRun, String> {
     let normalized_path = path.trim();
     if normalized_path.is_empty() {
         return Err("path is required".to_string());
@@ -86,7 +85,10 @@ pub async fn run_scan_review_actions(
 }
 
 fn resolve_scan_directory_target(app: &AppHandle, path: Option<String>) -> Result<PathBuf, String> {
-    if let Some(path) = path.map(|value| value.trim().to_string()).filter(|value| !value.is_empty()) {
+    if let Some(path) = path
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
         return Ok(PathBuf::from(path));
     }
 

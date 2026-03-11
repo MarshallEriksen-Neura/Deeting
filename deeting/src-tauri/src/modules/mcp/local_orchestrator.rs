@@ -1164,7 +1164,8 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SkillRecipeInjectionStep {
                 .get("recipes")
                 .and_then(Value::as_array)
                 .map(|items| {
-                    items.iter()
+                    items
+                        .iter()
                         .filter(|item| {
                             item.get("asset_type").and_then(Value::as_str) == Some("skill")
                         })
