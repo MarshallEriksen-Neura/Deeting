@@ -20,8 +20,8 @@ To balance **User Creativity** (Local) with **Server Stability** (Cloud), we enf
 
 ## 3. Architecture Design
 
-### 3.1 Manifest Field (`kimai.json`)
-Plugins must explicitly declare supported runtimes.
+### 3.1 Manifest Field (`deeting.json`)
+Skill/plugin bundles must explicitly declare supported runtimes.
 
 ```json
 {

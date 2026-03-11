@@ -94,7 +94,7 @@
       "properties": {
         "llm_tools": {
           "type": "string",
-          "description": "Path to LLM tool definitions file (e.g. llm-tool.yaml)"
+          "description": "Optional path to host tool definitions file when an explicit callable schema is still needed (e.g. llm-tool.yaml)"
         }
       },
       "description": "Capability declarations"

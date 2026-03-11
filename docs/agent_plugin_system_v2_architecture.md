@@ -37,7 +37,7 @@
 my-plugin/
 ├─ SKILL.md       # Primary AI-facing skill contract
 ├─ package.json   # Standard npm fields
-├─ kimai.json     # Plugin Manifest / runtime metadata
+├─ deeting.json   # Bundle manifest / runtime metadata
 ├─ llm-tool.yaml  # Optional host callable schema
 ├─ src/
 │ ├─ index.js     # Entry (activate/deactivate)
@@ -45,7 +45,7 @@ my-plugin/
 └─ README.md
 ```
 
-### 3.2 Manifest (`kimai.json`)
+### 3.2 Manifest (`deeting.json`)
 ```json
 {
   "name": "search-bing",
@@ -106,7 +106,7 @@ parameters:
 `Dev Repo (PR)` -> `Official Repo (CI)` -> `Release (Artifact)` -> `CDN` -> `Client`
 
 ### 6.2 CI/CD Pipeline (GitHub Actions)
-1.  **Lint:** Validate `kimai.json` schema.
+1.  **Lint:** Validate `deeting.json` schema.
 2.  **Security:** CodeQL / CVE Scan.
 3.  **Smoke Test:** Run plugin in Docker sandbox, verify `invoke` return.
 4.  **Publish:** Sign Artifact (GPG) -> Upload Release -> Update `registry.json`.
