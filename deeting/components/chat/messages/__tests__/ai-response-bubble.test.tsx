@@ -74,20 +74,20 @@ describe("AIResponseBubble debug panel", () => {
     expect(screen.getAllByText("Local Tool Actions")).toHaveLength(1);
   });
 
-  it("renders assistant transition card", () => {
+  it("renders capability transition card", () => {
     const parts: MessageBlock[] = [
       {
         id: "assistant-transition-1",
-        type: "assistant_transition",
+        type: "capability_transition",
         action: "activated",
-        assistantName: "Expert Planner",
+        capabilityName: "Expert Planner",
         reason: "best match for this request",
       },
     ];
 
     render(<AIResponseBubble parts={parts} />);
 
-    expect(screen.getByText("已切换到助手：Expert Planner")).toBeInTheDocument();
+    expect(screen.getByText("已启用专家能力：Expert Planner")).toBeInTheDocument();
     expect(screen.getByText("best match for this request")).toBeInTheDocument();
   });
 

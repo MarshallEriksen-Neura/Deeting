@@ -7,11 +7,11 @@ pub(crate) fn build_local_code_mode_entry_tools() -> serde_json::Value {
                 "type": "function",
                 "function": {
                     "name": "consult_expert_network",
-                    "description": "Search expert assistants by intent query and return top candidates. This tool only searches and does not switch persona context by itself.",
+                    "description": "Search expert capabilities by intent query and return top candidates. This tool only searches and does not change reply personality by itself.",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "intent_query": { "type": "string", "description": "The intent or task description to search for expert assistants." },
+                            "intent_query": { "type": "string", "description": "The intent or task description to search for expert capabilities." },
                             "k": { "type": "integer", "description": "Number of candidates to return.", "default": 3 },
                             "confidence": { "type": "number", "description": "Model confidence in the routing decision (0-1).", "default": 0 }
                         },
@@ -22,24 +22,24 @@ pub(crate) fn build_local_code_mode_entry_tools() -> serde_json::Value {
             serde_json::json!({
                 "type": "function",
                 "function": {
-                    "name": "activate_assistant",
-                    "description": "Activate an assistant explicitly for the current request-scoped agent loop. This switches persona context only after an explicit activation call.",
+                    "name": "attach_capability",
+                    "description": "Attach an expert capability explicitly for the current request-scoped agent loop. This augments domain capability without changing reply personality.",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "assistant_id": { "type": "string", "description": "Assistant id returned by consult_expert_network." },
-                            "reason": { "type": "string", "description": "Optional reason for the activation decision." }
+                            "capability_id": { "type": "string", "description": "Capability id returned by consult_expert_network." },
+                            "reason": { "type": "string", "description": "Optional reason for the capability attachment decision." }
                         },
-                        "required": ["assistant_id"]
+                        "required": ["capability_id"]
                     }
                 }
             }),
             serde_json::json!({
                 "type": "function",
                 "function": {
-                    "name": "deactivate_assistant",
-                    "description": "Deactivate the current request-scoped assistant and return to the default base assistant context.",
-                    "parameters": { "type": "object", "properties": { "reason": { "type": "string", "description": "Optional reason for the deactivation." } } }
+                    "name": "detach_capability",
+                    "description": "Detach the current request-scoped expert capability and return to the default capability-neutral context.",
+                    "parameters": { "type": "object", "properties": { "reason": { "type": "string", "description": "Optional reason for the capability detachment." } } }
                 }
             })
         ]);

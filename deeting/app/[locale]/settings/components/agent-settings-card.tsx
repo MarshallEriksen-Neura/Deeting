@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/glass-card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { GlassButton } from "@/components/ui/glass-button"
 import { toast } from "sonner"
@@ -34,18 +35,26 @@ export function AgentSettingsCard({ isTauriRuntime }: AgentSettingsCardProps) {
   const t = useI18n("settings")
   const [maxRounds, setMaxRounds] = React.useState<string>(String(DEFAULT_MAX_ROUNDS))
   const [savedValue, setSavedValue] = React.useState<string>(String(DEFAULT_MAX_ROUNDS))
+  const [personaPrompt, setPersonaPrompt] = React.useState("")
+  const [savedPersonaPrompt, setSavedPersonaPrompt] = React.useState("")
   const [isLoading, setIsLoading] = React.useState(true)
   const [isSaving, setIsSaving] = React.useState(false)
 
   React.useEffect(() => {
     if (!isTauriRuntime) return
     let cancelled = false
-    getDesktopConfig(DESKTOP_CONFIG_KEYS.maxAgenticRounds)
-      .then((value) => {
+    Promise.all([
+      getDesktopConfig(DESKTOP_CONFIG_KEYS.maxAgenticRounds),
+      getDesktopConfig(DESKTOP_CONFIG_KEYS.personaPrompt),
+    ])
+      .then(([value, personaValue]) => {
         if (cancelled) return
         const parsed = value ? String(parseInt(value, 10) || DEFAULT_MAX_ROUNDS) : String(DEFAULT_MAX_ROUNDS)
         setMaxRounds(parsed)
         setSavedValue(parsed)
+        const nextPersonaPrompt = personaValue?.trim() ?? ""
+        setPersonaPrompt(nextPersonaPrompt)
+        setSavedPersonaPrompt(nextPersonaPrompt)
       })
       .catch(() => {})
       .finally(() => {
@@ -56,7 +65,7 @@ export function AgentSettingsCard({ isTauriRuntime }: AgentSettingsCardProps) {
 
   if (!isTauriRuntime) return null
 
-  const hasChanges = maxRounds !== savedValue
+  const hasChanges = maxRounds !== savedValue || personaPrompt !== savedPersonaPrompt
 
   const handleSave = async () => {
     const parsed = parseInt(maxRounds, 10)
@@ -66,9 +75,14 @@ export function AgentSettingsCard({ isTauriRuntime }: AgentSettingsCardProps) {
     }
     setIsSaving(true)
     try {
-      await setDesktopConfig(DESKTOP_CONFIG_KEYS.maxAgenticRounds, String(parsed))
+      await Promise.all([
+        setDesktopConfig(DESKTOP_CONFIG_KEYS.maxAgenticRounds, String(parsed)),
+        setDesktopConfig(DESKTOP_CONFIG_KEYS.personaPrompt, personaPrompt.trim()),
+      ])
       setSavedValue(String(parsed))
       setMaxRounds(String(parsed))
+      setSavedPersonaPrompt(personaPrompt.trim())
+      setPersonaPrompt(personaPrompt.trim())
       toast.success(t("agent.saveSuccess"))
     } catch {
       toast.error(t("agent.saveFailed"))
@@ -127,6 +141,22 @@ export function AgentSettingsCard({ isTauriRuntime }: AgentSettingsCardProps) {
           </div>
           <p className="text-xs text-muted-foreground">
             {t("agent.maxRoundsHelp")}
+          </p>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="desktop-persona-prompt" className="text-sm font-medium">
+            {t("agent.personaPromptLabel")}
+          </Label>
+          <Textarea
+            id="desktop-persona-prompt"
+            value={personaPrompt}
+            onChange={(event) => setPersonaPrompt(event.target.value)}
+            disabled={isLoading || isSaving}
+            placeholder={t("agent.personaPromptPlaceholder")}
+            className="min-h-32 rounded-2xl"
+          />
+          <p className="text-xs text-muted-foreground">
+            {t("agent.personaPromptHelp")}
           </p>
         </div>
         {hasChanges && (

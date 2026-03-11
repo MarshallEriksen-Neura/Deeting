@@ -71,7 +71,7 @@ impl McpStore {
             sqlx::query(
                 r#"
                 SELECT id, assistant_id, version, name, description, system_prompt,
-                       model_config, skill_refs, tags, changelog, published_at,
+                       model_config, tags, changelog, published_at,
                        created_at, updated_at
                 FROM assistant_version
                 WHERE assistant_id = ?
@@ -86,7 +86,7 @@ impl McpStore {
             sqlx::query(
                 r#"
                 SELECT id, assistant_id, version, name, description, system_prompt,
-                       model_config, skill_refs, tags, changelog, published_at,
+                       model_config, tags, changelog, published_at,
                        created_at, updated_at
                 FROM assistant_version
                 ORDER BY updated_at DESC, id DESC;
@@ -202,9 +202,9 @@ impl McpStore {
                 r#"
                 INSERT INTO assistant_version (
                   id, assistant_id, version, name, description, system_prompt,
-                  model_config, skill_refs, tags, changelog, published_at, created_at, updated_at
+                  model_config, tags, changelog, published_at, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, NULL, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, NULL, ?, NULL, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                   assistant_id = excluded.assistant_id,
                   version = excluded.version,

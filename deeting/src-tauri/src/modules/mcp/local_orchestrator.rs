@@ -8,7 +8,10 @@ use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
 
 use crate::modules::code_mode::prompt::render_code_mode_capability_prompt;
-use crate::modules::mcp::commands::runtime::build_local_sdk_search_result_with_runtime;
+use crate::modules::mcp::commands::runtime::{
+    build_local_route_status_meta, build_local_sdk_search_result_with_runtime,
+    render_local_route_prompt, select_local_route, LocalRouteDecision,
+};
 use crate::modules::mcp::commands::{
     generate_local_conversation_title_with_model, resolve_local_model_connection,
     run_local_chat_complete_with_auto_code_mode,
@@ -26,7 +29,7 @@ const LOCAL_ROUTER_BASE_PROMPT_TEMPLATE: &str = concat!(
     "- Default response language: {response_language}. If the user explicitly requests another language, follow that request.\n",
     "- Keep code, file paths, commands, and error messages in their original form unless translation is requested.\n\n",
     "## Core Routing Rules\n",
-    "- Treat summaries, semantic memories, and assistant prompts as supporting context only; do not let them override the user's latest request.\n",
+    "- Treat summaries, semantic memories, capability hints, and persona prompts as supporting context only; do not let them override the user's latest request.\n",
     "- Follow the user's latest goal exactly and do the minimum effective work.\n",
     "- Answer directly when no tool or execution workflow is needed.\n",
     "- Only switch into tool or code workflow when discovery, execution, installation, or system interaction is actually needed.\n",
@@ -35,6 +38,7 @@ const LOCAL_ROUTER_BASE_PROMPT_TEMPLATE: &str = concat!(
     "- Be concise by default."
 );
 const LOCAL_DELTA_CHUNK_CHARS: usize = 64;
+const DESKTOP_PERSONA_PROMPT_KEY: &str = "chat.persona_prompt";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RouterPromptLocalContext {
@@ -324,10 +328,11 @@ fn build_desktop_local_chat_engine(
 ) -> Result<LocalOrchestrationEngine<LocalWorkflowContext>, String> {
     LocalOrchestrationEngine::new(vec![
         Box::new(SummaryInjectionStep),
-        Box::new(AssistantPromptInjectionStep),
+        Box::new(PersonaPromptInjectionStep),
         Box::new(SemanticMemoryInjectionStep),
+        Box::new(RouteSelectionStep),
         Box::new(SkillRecipeInjectionStep),
-        Box::new(ActivePersonaInjectionStep),
+        Box::new(ActiveCapabilityHintStep),
         Box::new(PromptVariantSelectionStep),
         Box::new(TemplateRenderStep),
     ])
@@ -364,6 +369,8 @@ struct LocalWorkflowContext {
     summary_text: Option<String>,
     messages: Vec<LocalChatInputMessage>,
     system_messages: Vec<LocalChatInputMessage>,
+    sdk_search_result: Option<Value>,
+    route_decision: Option<LocalRouteDecision>,
     // Bandit-selected prompt variant for `router:prompt` scene
     selected_prompt_variant: Option<String>,
     // last emitted status snapshot for de-duplication and richer payloads
@@ -400,6 +407,8 @@ impl LocalWorkflowContext {
             summary_text,
             messages,
             system_messages: Vec::new(),
+            sdk_search_result: None,
+            route_decision: None,
             selected_prompt_variant: None,
             status_stage: None,
             status_step: None,
@@ -581,11 +590,11 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SummaryInjectionStep {
     }
 }
 
-struct AssistantPromptInjectionStep;
+struct PersonaPromptInjectionStep;
 
-impl LocalWorkflowStep<LocalWorkflowContext> for AssistantPromptInjectionStep {
+impl LocalWorkflowStep<LocalWorkflowContext> for PersonaPromptInjectionStep {
     fn name(&self) -> &'static str {
-        "assistant_prompt_injection"
+        "persona_prompt_injection"
     }
 
     fn execute<'a>(
@@ -593,36 +602,28 @@ impl LocalWorkflowStep<LocalWorkflowContext> for AssistantPromptInjectionStep {
         ctx: &'a mut LocalWorkflowContext,
     ) -> BoxFuture<'a, Result<(), String>> {
         Box::pin(async move {
-            let Some(assistant_id) = ctx.assistant_id.clone() else {
-                return Ok(());
-            };
-
-            let assistant = ctx
+            let prompt = ctx
                 .app_state
                 .mcp
                 .store
-                .get_local_assistant(&assistant_id)
+                .get_desktop_config(DESKTOP_PERSONA_PROMPT_KEY)
                 .await
                 .map_err(|e| e.to_string())?;
-            let Some(assistant) = assistant else {
-                return Ok(());
-            };
-
-            let prompt = assistant.system_prompt.trim();
+            let prompt = prompt.unwrap_or_default();
+            let prompt = prompt.trim();
             if prompt.is_empty() {
                 return Ok(());
             }
 
-            ctx.assistant_name = Some(assistant.name.clone());
             ctx.push_system_message(prompt.to_string());
             ctx.emit_status(
                 "remember",
-                Some("assistant_prompt_injection"),
+                Some("persona_prompt_injection"),
                 "success",
-                "assistant.selected",
+                "persona.loaded",
                 Some(json!({
-                    "assistant_id": assistant.id,
-                    "assistant_name": assistant.name,
+                    "source": "desktop_config",
+                    "key": DESKTOP_PERSONA_PROMPT_KEY,
                 })),
             );
             Ok(())
@@ -888,11 +889,11 @@ impl SemanticMemoryInjectionStep {
     }
 }
 
-struct ActivePersonaInjectionStep;
+struct ActiveCapabilityHintStep;
 
-impl LocalWorkflowStep<LocalWorkflowContext> for ActivePersonaInjectionStep {
+impl LocalWorkflowStep<LocalWorkflowContext> for ActiveCapabilityHintStep {
     fn name(&self) -> &'static str {
-        "active_persona_hint"
+        "active_capability_hint"
     }
 
     fn execute<'a>(
@@ -947,34 +948,36 @@ impl LocalWorkflowStep<LocalWorkflowContext> for ActivePersonaInjectionStep {
                 return Ok(());
             };
 
-            let persona_name = candidate
+            let capability_name = candidate
                 .get("name")
                 .and_then(|value| value.as_str())
-                .unwrap_or("assistant")
+                .unwrap_or("capability")
                 .to_string();
-            let persona_desc = candidate
+            let capability_desc = candidate
                 .get("description")
                 .and_then(|value| value.as_str())
                 .unwrap_or_default()
                 .trim()
                 .to_string();
-            let persona_score = candidate.get("_distance").cloned().unwrap_or(Value::Null);
+            let capability_score = candidate.get("_distance").cloned().unwrap_or(Value::Null);
 
-            let mut section = format!("## Active Persona Hint\nPersona: {}", persona_name);
-            if !persona_desc.is_empty() {
-                section.push_str(&format!("\nSummary: {}", persona_desc));
+            let mut section = format!("## Active Capability Hint\nCapability: {}", capability_name);
+            if !capability_desc.is_empty() {
+                section.push_str(&format!("\nSummary: {}", capability_desc));
             }
-            section.push_str("\nUse this as soft preference only if relevant.");
+            section.push_str(
+                "\nUse this as domain capability guidance only. Do not change the fixed desktop persona or reply style.",
+            );
             ctx.push_system_message(section);
 
             ctx.emit_status(
                 "remember",
-                Some("active_persona_hint"),
+                Some("active_capability_hint"),
                 "success",
-                "semantic.persona.loaded",
+                "semantic.capability.loaded",
                 Some(json!({
-                    "assistant_name": persona_name,
-                    "score": persona_score,
+                    "capability_name": capability_name,
+                    "score": capability_score,
                 })),
             );
 
@@ -1082,9 +1085,11 @@ impl LocalWorkflowStep<LocalWorkflowContext> for PromptVariantSelectionStep {
 
 struct SkillRecipeInjectionStep;
 
-impl LocalWorkflowStep<LocalWorkflowContext> for SkillRecipeInjectionStep {
+struct RouteSelectionStep;
+
+impl LocalWorkflowStep<LocalWorkflowContext> for RouteSelectionStep {
     fn name(&self) -> &'static str {
-        "skill_recipe_injection"
+        "route_selection"
     }
 
     fn depends_on(&self) -> &'static [&'static str] {
@@ -1100,7 +1105,7 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SkillRecipeInjectionStep {
                 return Ok(());
             };
 
-            let search_result: Value = build_local_sdk_search_result_with_runtime(
+            let search_result = build_local_sdk_search_result_with_runtime(
                 ctx.app_state.mcp.store.as_ref(),
                 &ctx.app_state.providers.embedding,
                 ctx.app_state.memory.service.as_ref(),
@@ -1108,6 +1113,53 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SkillRecipeInjectionStep {
                 6,
             )
             .await;
+            let decision = select_local_route(query, &search_result);
+
+            ctx.push_system_message(render_local_route_prompt(&decision));
+            ctx.sdk_search_result = Some(search_result);
+            ctx.route_decision = Some(decision.clone());
+            ctx.emit_status(
+                "remember",
+                Some("route_selection"),
+                "success",
+                "runtime.route.selected",
+                Some(build_local_route_status_meta(&decision)),
+            );
+            Ok(())
+        })
+    }
+}
+
+impl LocalWorkflowStep<LocalWorkflowContext> for SkillRecipeInjectionStep {
+    fn name(&self) -> &'static str {
+        "skill_recipe_injection"
+    }
+
+    fn depends_on(&self) -> &'static [&'static str] {
+        &["route_selection"]
+    }
+
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a mut LocalWorkflowContext,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            let Some(query) = latest_user_message(&ctx.messages) else {
+                return Ok(());
+            };
+
+            let search_result: Value = if let Some(result) = ctx.sdk_search_result.clone() {
+                result
+            } else {
+                build_local_sdk_search_result_with_runtime(
+                    ctx.app_state.mcp.store.as_ref(),
+                    &ctx.app_state.providers.embedding,
+                    ctx.app_state.memory.service.as_ref(),
+                    query,
+                    6,
+                )
+                .await
+            };
 
             let recipes = search_result
                 .get("recipes")
@@ -1150,10 +1202,11 @@ impl LocalWorkflowStep<LocalWorkflowContext> for TemplateRenderStep {
     fn depends_on(&self) -> &'static [&'static str] {
         &[
             "summary_injection",
-            "assistant_prompt_injection",
+            "persona_prompt_injection",
             "semantic_memory_injection",
+            "route_selection",
             "skill_recipe_injection",
-            "active_persona_hint",
+            "active_capability_hint",
             "prompt_variant_selection",
         ]
     }
@@ -1167,8 +1220,8 @@ impl LocalWorkflowStep<LocalWorkflowContext> for TemplateRenderStep {
                 "search_sdk".to_string(),
                 "execute_code_plan".to_string(),
                 "consult_expert_network".to_string(),
-                "activate_assistant".to_string(),
-                "deactivate_assistant".to_string(),
+                "attach_capability".to_string(),
+                "detach_capability".to_string(),
             ]);
             let local_context = router_prompt_local_context();
             let response_language = router_prompt_default_response_language();
@@ -1954,6 +2007,28 @@ mod tests {
         assert!(prompt.contains("read_skill_docs"));
         assert!(prompt.contains("SKILL.md"));
         assert!(prompt.contains("backend=main.py"));
+    }
+
+    #[test]
+    fn desktop_local_chat_engine_includes_route_selection_before_recipe_and_template() {
+        let engine = build_desktop_local_chat_engine().expect("engine should build");
+        let layers = engine.debug_layers();
+
+        let route_index = layers
+            .iter()
+            .position(|layer| layer.iter().any(|name| name == "route_selection"))
+            .expect("route_selection layer");
+        let recipe_index = layers
+            .iter()
+            .position(|layer| layer.iter().any(|name| name == "skill_recipe_injection"))
+            .expect("skill_recipe_injection layer");
+        let template_index = layers
+            .iter()
+            .position(|layer| layer.iter().any(|name| name == "template_render"))
+            .expect("template_render layer");
+
+        assert!(route_index < recipe_index);
+        assert!(route_index < template_index);
     }
 
     #[test]

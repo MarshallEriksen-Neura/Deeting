@@ -1,7 +1,7 @@
 use super::super::support::*;
 use super::search_ranking::lexical_rank_asset_hits;
 
-pub(crate) const LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION: &str = "assistant_activation.v1";
+pub(crate) const LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION: &str = "capability_activation.v1";
 
 pub(crate) async fn build_local_consult_expert_network_result(
     app_state: &AppState,
@@ -25,9 +25,9 @@ fn build_local_consult_response(
     reason: &str,
     search_mode: &str,
 ) -> serde_json::Value {
-    let recommended_assistant_id = candidates
+    let recommended_capability_id = candidates
         .first()
-        .and_then(|value| value.get("assistant_id"))
+        .and_then(|value| value.get("capability_id"))
         .cloned()
         .unwrap_or(serde_json::Value::Null);
     serde_json::json!({
@@ -35,7 +35,7 @@ fn build_local_consult_response(
         "scope": "request",
         "format_version": LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
         "candidates": candidates,
-        "recommended_assistant_id": recommended_assistant_id,
+        "recommended_capability_id": recommended_capability_id,
         "reason": reason,
         "search_mode": search_mode,
     })
@@ -49,16 +49,16 @@ fn build_local_consult_candidates_from_assets(
 ) -> Vec<serde_json::Value> {
     let mut candidates = Vec::new();
     for hit in assets {
-        let assistant_id = hit
+        let capability_id = hit
             .get("id")
             .and_then(|value| value.as_str())
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
-        let Some(assistant_id) = assistant_id else {
+        let Some(capability_id) = capability_id else {
             continue;
         };
-        if assistant_id == current_assistant_id
-            || !enabled_assistant_ids.contains(assistant_id.as_str())
+        if capability_id == current_assistant_id
+            || !enabled_assistant_ids.contains(capability_id.as_str())
         {
             continue;
         }
@@ -67,9 +67,9 @@ fn build_local_consult_candidates_from_assets(
             .and_then(|value| value.as_str())
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| "Assistant".to_string());
+            .unwrap_or_else(|| "Capability".to_string());
         candidates.push(serde_json::json!({
-            "assistant_id": assistant_id,
+            "capability_id": capability_id,
             "name": name,
             "summary": hit.get("description").cloned().unwrap_or(serde_json::Value::Null),
             "score": hit.get("_distance").cloned().unwrap_or(serde_json::Value::Null),
@@ -93,7 +93,7 @@ pub(crate) async fn build_local_consult_expert_network_result_with_runtime(
     if normalized_query.is_empty() {
         return serde_json::json!({
             "error": "intent_query is required",
-            "error_code": "ASSISTANT_CONSULT_EMPTY_QUERY",
+            "error_code": "CAPABILITY_CONSULT_EMPTY_QUERY",
         });
     }
 
@@ -105,7 +105,7 @@ pub(crate) async fn build_local_consult_expert_network_result_with_runtime(
     if enabled_assistant_ids.is_empty() {
         return build_local_consult_response(
             Vec::new(),
-            "No installed local assistants are enabled for expert consultation.",
+            "No installed local expert capabilities are enabled for expert consultation.",
             "catalog_empty",
         );
     }
@@ -120,7 +120,7 @@ pub(crate) async fn build_local_consult_expert_network_result_with_runtime(
             );
             return build_local_consult_response(
                 Vec::new(),
-                "Local assistant catalog is unavailable, so expert consultation was skipped.",
+                "Local expert capability catalog is unavailable, so expert consultation was skipped.",
                 "catalog_unavailable",
             );
         }
@@ -140,7 +140,7 @@ pub(crate) async fn build_local_consult_expert_network_result_with_runtime(
     if assistant_assets.is_empty() {
         return build_local_consult_response(
             Vec::new(),
-            "No alternative local assistants are available for expert consultation.",
+            "No alternative local expert capabilities are available for expert consultation.",
             "catalog_empty",
         );
     }
@@ -160,11 +160,11 @@ pub(crate) async fn build_local_consult_expert_network_result_with_runtime(
                 if !candidates.is_empty() {
                     return build_local_consult_response(
                         candidates,
-                        "Search expert assistants by intent and activate explicitly if needed.",
+                        "Search expert capabilities by intent and attach explicitly if needed.",
                         "vector",
                     );
                 }
-                "No vector-ranked assistant matched, so the local assistant catalog fallback was used."
+                "No vector-ranked expert capability matched, so the local capability catalog fallback was used."
                     .to_string()
             }
             Err(err) => {
@@ -172,12 +172,12 @@ pub(crate) async fn build_local_consult_expert_network_result_with_runtime(
                     "local assistant vector search failed for consult_expert_network: {}",
                     err
                 );
-                "Vector search was unavailable, so the local assistant catalog fallback was used."
+                "Vector search was unavailable, so the local capability catalog fallback was used."
                     .to_string()
             }
         }
     } else {
-        "Embedding lookup was unavailable, so the local assistant catalog fallback was used."
+        "Embedding lookup was unavailable, so the local capability catalog fallback was used."
             .to_string()
     };
 
@@ -192,7 +192,7 @@ pub(crate) async fn build_local_consult_expert_network_result_with_runtime(
     if candidates.is_empty() {
         return build_local_consult_response(
             Vec::new(),
-            "No matching local assistants were found for this request.",
+            "No matching local expert capabilities were found for this request.",
             "lexical",
         );
     }

@@ -48,6 +48,10 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
   const t = useI18n('chat');
   const router = useRouter();
   const searchParams = useSearchParams();
+  const isTauriRuntime =
+    process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
+    typeof window !== "undefined" &&
+    ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
   const [search, setSearch] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const [actionSessionId, setActionSessionId] = useState<string | null>(null);
@@ -82,7 +86,7 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
   } = useConversationSessions(
     {
       size: 24,
-      assistant_id: activeAssistantId ?? undefined,
+      assistant_id: isTauriRuntime ? undefined : activeAssistantId ?? undefined,
       status: showArchived ? "archived" : "active",
     },
     { enabled: true }
@@ -91,7 +95,7 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
   useEffect(() => {
     reset();
     setSearch('');
-  }, [reset, activeAssistantId, showArchived]);
+  }, [reset, activeAssistantId, showArchived, isTauriRuntime]);
 
   const searchValue = search.trim().toLowerCase();
   const filteredSessions = useMemo(() => {
@@ -148,7 +152,7 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
   }, [filteredSessions, t]);
 
   const buildChatUrl = useCallback((nextSessionId?: string) => {
-    const basePath = activeAssistantId ? `/chat/${activeAssistantId}` : "/chat";
+    const basePath = isTauriRuntime ? "/chat" : activeAssistantId ? `/chat/${activeAssistantId}` : "/chat";
     const params = new URLSearchParams(searchParams?.toString());
     params.delete("agentId");
     if (nextSessionId) {
@@ -158,7 +162,7 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
     }
     const query = params.toString();
     return query ? `${basePath}?${query}` : basePath;
-  }, [activeAssistantId, searchParams]);
+  }, [activeAssistantId, isTauriRuntime, searchParams]);
 
   const handleSelectSession = useCallback(async (targetSessionId: string) => {
     await loadHistoryBySession(targetSessionId);
@@ -172,16 +176,14 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
     clearAttachments();
     setGlobalLoading(true);
     try {
-      const created = await createConversation({
-        assistant_id: activeAssistantId ?? null,
-      });
+      const created = await createConversation({});
       if (created.session_id) {
         setSessionId(created.session_id);
         if (typeof window !== "undefined") {
           const params = new URLSearchParams(searchParams?.toString());
           params.set("session", created.session_id);
           params.delete("agentId");
-          const basePath = activeAssistantId ? `/chat/${activeAssistantId}` : "/chat";
+          const basePath = isTauriRuntime ? "/chat" : activeAssistantId ? `/chat/${activeAssistantId}` : "/chat";
           const query = params.toString();
           const nextUrl = query ? `${basePath}?${query}` : basePath;
           window.history.replaceState(null, "", nextUrl);
@@ -204,6 +206,7 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
     setMessages,
     clearAttachments,
     activeAssistantId,
+    isTauriRuntime,
     searchParams,
     setSessionId,
     setGlobalLoading,

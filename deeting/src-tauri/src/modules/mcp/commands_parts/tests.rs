@@ -920,8 +920,8 @@ for raw_line in sys.stdin:
 
         assert!(names.contains(&"search_sdk"));
         assert!(names.contains(&"consult_expert_network"));
-        assert!(names.contains(&"activate_assistant"));
-        assert!(names.contains(&"deactivate_assistant"));
+        assert!(names.contains(&"attach_capability"));
+        assert!(names.contains(&"detach_capability"));
         assert!(names.contains(&"execute_code_plan"));
         assert!(names.contains(&"sys_submit_onboarding_request"));
     }
@@ -1887,7 +1887,7 @@ for raw_line in sys.stdin:
         assert_eq!(result["action"], serde_json::json!("consulted"));
         assert_eq!(result["search_mode"], serde_json::json!("catalog_empty"));
         assert_eq!(result["candidates"], serde_json::json!([]));
-        assert_eq!(result["recommended_assistant_id"], serde_json::Value::Null);
+        assert_eq!(result["recommended_capability_id"], serde_json::Value::Null);
 
         server_handle.abort();
     }
@@ -1923,12 +1923,12 @@ for raw_line in sys.stdin:
         assert_eq!(result["search_mode"], serde_json::json!("lexical"));
         assert_eq!(candidates.len(), 1);
         assert_eq!(
-            candidates[0]["assistant_id"],
+            candidates[0]["capability_id"],
             serde_json::json!("assistant.weather")
         );
         assert_eq!(candidates[0]["name"], serde_json::json!("Weather Expert"));
         assert_eq!(
-            result["recommended_assistant_id"],
+            result["recommended_capability_id"],
             serde_json::json!("assistant.weather")
         );
 
@@ -2055,16 +2055,16 @@ for raw_line in sys.stdin:
     }
 
     #[test]
-    fn build_local_tool_trace_blocks_emits_assistant_transition_block() {
+    fn build_local_tool_trace_blocks_emits_capability_transition_block() {
         let meta = vec![serde_json::json!({
             "id": "call_activate",
-            "name": "activate_assistant",
+            "name": "attach_capability",
             "status": "success",
             "result": {
-                "assistant_transition": {
+                "capability_transition": {
                     "action": "activated",
-                    "assistant_id": "assistant-1",
-                    "assistant_name": "Expert",
+                    "capability_id": "capability-1",
+                    "capability_name": "Expert",
                     "reason": "best match"
                 }
             }
@@ -2072,8 +2072,8 @@ for raw_line in sys.stdin:
 
         let blocks = build_local_tool_trace_blocks(&meta);
         assert!(blocks.iter().any(|block| {
-            block.get("type").and_then(|v| v.as_str()) == Some("assistant_transition")
-                && block.get("assistantName").and_then(|v| v.as_str()) == Some("Expert")
+            block.get("type").and_then(|v| v.as_str()) == Some("capability_transition")
+                && block.get("capabilityName").and_then(|v| v.as_str()) == Some("Expert")
         }));
     }
 

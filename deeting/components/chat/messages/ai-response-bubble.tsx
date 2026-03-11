@@ -515,17 +515,17 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                     );
                   }
 
-                  if (part.type === 'assistant_transition') {
+                  if (part.type === 'capability_transition') {
                     return (
                       <motion.div
-                        key={`assistant-transition-${index}`}
+                        key={`capability-transition-${index}`}
                         initial={{ y: 8, opacity: 0 }}
                         animate={{ y: 0, opacity: 1 }}
                         transition={{ type: "spring", stiffness: 120, damping: 18 }}
                       >
-                        <AssistantTransitionCard
+                        <CapabilityTransitionCard
                           action={part.action}
-                          assistantName={part.assistantName}
+                          capabilityName={part.capabilityName}
                           reason={part.reason}
                         />
                       </motion.div>
@@ -791,18 +791,18 @@ const ThoughtBlock = memo<{ content?: string; cost?: string }>(
   }
 );
 
-const AssistantTransitionCard = memo<{
+const CapabilityTransitionCard = memo<{
   action?: "activated" | "deactivated" | "updated";
-  assistantName?: string;
+  capabilityName?: string;
   reason?: string;
 }>(
-  function AssistantTransitionCard({ action, assistantName, reason }) {
+  function CapabilityTransitionCard({ action, capabilityName, reason }) {
     const title =
       action === "activated"
-        ? `已切换到助手${assistantName ? `：${assistantName}` : ""}`
+        ? `已启用专家能力${capabilityName ? `：${capabilityName}` : ""}`
         : action === "deactivated"
-          ? `已退出助手${assistantName ? `：${assistantName}` : ""}`
-          : `助手上下文已更新${assistantName ? `：${assistantName}` : ""}`;
+          ? `已退出专家能力${capabilityName ? `：${capabilityName}` : ""}`
+          : `专家能力上下文已更新${capabilityName ? `：${capabilityName}` : ""}`;
     const accentClass =
       action === "activated"
         ? "border-sky-200 bg-sky-50/70 dark:border-sky-900 dark:bg-sky-900/20"

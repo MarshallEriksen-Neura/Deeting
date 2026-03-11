@@ -63,20 +63,19 @@ describe("ControlsContainer (web)", () => {
   it("should hide assistant selector on web", () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "false"
     render(<ControlsContainer />)
-    expect(screen.queryByLabelText("hud.selectAgent")).toBeNull()
+    expect(screen.queryByLabelText("routing.override")).toBeNull()
   })
 
-  it("should render auto routing button with new icon gradient style", () => {
-    process.env.NEXT_PUBLIC_IS_TAURI = "false"
+  it("should render fixed persona pill on desktop", () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    Object.defineProperty(window, "__TAURI__", {
+      configurable: true,
+      value: {},
+    })
     render(<ControlsContainer />)
 
-    const routingButton = screen.getByLabelText("routing.override")
-    const autoIconContainer = routingButton.querySelector("span.w-8.h-8")
-
-    expect(autoIconContainer).toBeInTheDocument()
-    expect(autoIconContainer?.className).toContain("bg-gradient-to-br")
-    expect(autoIconContainer?.className).toContain("from-sky-500")
-    expect(autoIconContainer?.className).toContain("to-cyan-500")
+    expect(screen.getByText("routing.persona")).toBeInTheDocument()
+    expect(screen.getByText("routing.personaDesc")).toBeInTheDocument()
   })
 
   it("shows continue button and triggers continue callback after interruption", () => {

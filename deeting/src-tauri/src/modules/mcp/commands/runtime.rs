@@ -11,6 +11,7 @@ mod consult;
 mod core_tool_contracts;
 mod onboarding;
 mod remote_transport;
+mod route_selector;
 mod search_ranking;
 mod summary_format;
 mod summary_generation;
@@ -43,6 +44,10 @@ pub(crate) use consult::{
     build_local_consult_expert_network_result, LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
 };
 pub(crate) use onboarding::install_local_skill_from_onboarding_request;
+pub(crate) use route_selector::{
+    build_local_route_status_meta, render_local_route_prompt, select_local_route,
+    LocalRouteDecision,
+};
 pub(crate) use summary_format::build_local_summary_from_window;
 pub(crate) use summary_generation::{
     generate_local_conversation_summary_with_model, generate_local_conversation_title_with_model,
@@ -67,7 +72,6 @@ pub(crate) use tool_feedback::{
 pub(crate) use tool_resolution::{
     build_desktop_mcp_tool_view, DesktopMcpToolIndexStatus, ToolAvailabilityClass,
 };
-pub(crate) use tool_schemas::merge_wrapped_tool_payload;
 pub(crate) use tool_trace::{
     append_streamable_local_tool_result_blocks, build_local_tool_trace_blocks,
 };

@@ -418,7 +418,6 @@ impl McpStore {
               description TEXT,
               system_prompt TEXT NOT NULL,
               model_config TEXT,
-              skill_refs TEXT,
               tags TEXT,
               changelog TEXT,
               published_at TEXT,
@@ -1275,6 +1274,7 @@ impl McpStore {
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
         self.migrate_legacy_skill_sources().await?;
+        self.migrate_assistant_version_drop_skill_refs().await?;
         self.migrate_assistant_versions_from_legacy().await?;
         self.migrate_assistant_installs_from_assistant().await?;
 

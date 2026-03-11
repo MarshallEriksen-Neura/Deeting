@@ -398,7 +398,6 @@ pub(super) fn row_to_assistant_entity(row: &SqliteRow) -> Result<LocalAssistantE
 
 pub(super) fn row_to_assistant_version(row: &SqliteRow) -> Result<LocalAssistantVersion, McpError> {
     let model_config: Option<serde_json::Value> = deserialize_json(row.try_get("model_config")?)?;
-    let skill_refs: Option<Vec<serde_json::Value>> = deserialize_json(row.try_get("skill_refs")?)?;
     let tags: Option<Vec<String>> = deserialize_json(row.try_get("tags")?)?;
     Ok(LocalAssistantVersion {
         id: row.try_get("id")?,
@@ -408,7 +407,6 @@ pub(super) fn row_to_assistant_version(row: &SqliteRow) -> Result<LocalAssistant
         description: row.try_get("description")?,
         system_prompt: row.try_get("system_prompt")?,
         model_config,
-        skill_refs: skill_refs.unwrap_or_default(),
         tags: tags.unwrap_or_default(),
         changelog: row.try_get("changelog")?,
         published_at: row.try_get("published_at")?,

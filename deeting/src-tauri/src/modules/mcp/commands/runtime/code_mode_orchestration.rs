@@ -7,7 +7,7 @@ use super::{
     build_local_code_mode_entry_tools, build_local_consult_expert_network_result,
     build_local_sdk_search_result_with_runtime, build_local_tool_call_install_gate_error_meta,
     build_local_tool_trace_blocks, extract_chat_tool_calls,
-    install_local_skill_from_onboarding_request, merge_wrapped_tool_payload,
+    install_local_skill_from_onboarding_request,
     request_provider_chat_completion, resolve_local_assistant_activation_state,
     LocalAssistantActivationState, LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
     LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
@@ -161,10 +161,7 @@ async fn continue_local_chat_complete_with_auto_code_mode(
             });
         }
 
-        let mut tools = build_local_code_mode_entry_tools();
-        if let Some(active) = &state.active_assistant {
-            tools = merge_wrapped_tool_payload(&tools, &active.skill_tools);
-        }
+        let tools = build_local_code_mode_entry_tools();
         let response = request_provider_chat_completion(
             app_state,
             &provider_model_id,
@@ -272,13 +269,18 @@ fn apply_assistant_update(
         match update {
             LocalAssistantActivationUpdate::Activate(next_active) => {
                 let assistant_name = next_active.assistant_name.clone();
-                let system_prompt = next_active.system_prompt.clone();
+                let capability_summary = next_active.capability_summary.clone();
                 *active_assistant = Some(next_active);
                 orchestrated_messages.push(LocalChatInputMessage {
                     role: "system".to_string(),
                     content: format!(
-                        "[Assistant Activated: {}]\n\nReplace any previously activated request-scoped assistant instructions with the following prompt.\n\n{}",
-                        assistant_name, system_prompt,
+                        "[Expert Capability Attached: {}]\n\nAttach this as domain capability guidance only. Keep the fixed desktop persona, tone, and reply style unchanged.\n\n{}",
+                        assistant_name,
+                        if capability_summary.trim().is_empty() {
+                            "Use the attached expert capability only to improve domain depth and tool choice.".to_string()
+                        } else {
+                            format!("Relevant capability focus: {}", capability_summary.trim())
+                        },
                     ),
                 });
             }
@@ -287,11 +289,11 @@ fn apply_assistant_update(
                 assistant_name,
             } => {
                 *active_assistant = None;
-                let label = assistant_name.unwrap_or_else(|| "assistant".to_string());
+                let label = assistant_name.unwrap_or_else(|| "expert capability".to_string());
                 orchestrated_messages.push(LocalChatInputMessage {
                     role: "system".to_string(),
                     content: format!(
-                        "[Assistant Deactivated: {}]\n\nReturn to the default base assistant context for this request. Ignore any previous request-scoped assistant activation instructions.",
+                        "[Expert Capability Detached: {}]\n\nReturn to the default capability-neutral state for this request while keeping the fixed desktop persona unchanged.",
                         label,
                     ),
                 });
@@ -572,31 +574,31 @@ async fn maybe_handle_local_code_mode_tool_calls(
             realtime_emitter.emit_blocks(streamed_blocks);
             tool_call_meta.push(meta);
             results.push(format!(
-                "Assistant Consult Result for '{}':\n{}",
+                "Expert Capability Consult Result for '{}':\n{}",
                 intent_query,
                 serde_json::to_string_pretty(&consult_res).unwrap()
             ));
-        } else if tool_name == "activate_assistant" {
+        } else if tool_name == "attach_capability" {
             realtime_emitter.emit_execution_section_once();
             realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call.id,"toolName":tool_name,"status":"running"})]);
-            let assistant_id = call
+            let capability_id = call
                 .arguments
-                .get("assistant_id")
+                .get("capability_id")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             let reason = call
                 .arguments
                 .get("reason")
                 .and_then(|v| v.as_str())
-                .unwrap_or("Explicit assistant activation requested by the model.");
-            match resolve_local_assistant_activation_state(app_state, assistant_id).await {
+                .unwrap_or("Explicit expert capability attach requested by the model.");
+            match resolve_local_assistant_activation_state(app_state, capability_id).await {
                 Ok(state) => {
-                    let activated_assistant_id = state.assistant_id.clone();
+                    let activated_capability_id = state.assistant_id.clone();
                     let result = serde_json::json!({
                         "action":"activated","scope":"request","format_version":LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
-                        "activation_mode":"replace","assistant_id":activated_assistant_id,"assistant_name":state.assistant_name.clone(),
-                        "system_prompt":state.system_prompt.clone(),"skill_tools":state.skill_tools.clone(),"reason":reason,
-                        "assistant_transition":{"action":"activated","assistant_id":assistant_id,"assistant_name":state.assistant_name.clone(),"reason":reason}
+                        "activation_mode":"attach_capability","capability_id":activated_capability_id,"capability_name":state.assistant_name.clone(),
+                        "capability_summary":state.capability_summary.clone(),"reason":reason,
+                        "capability_transition":{"action":"activated","capability_id":capability_id,"capability_name":state.assistant_name.clone(),"reason":reason}
                     });
                     synthesized = true;
                     let meta = serde_json::json!({"id":call.id,"name":tool_name,"status":"success","result":result});
@@ -605,7 +607,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
                     realtime_emitter.emit_blocks(streamed_blocks);
                     tool_call_meta.push(meta);
                     results.push(format!(
-                        "Assistant '{}' activated for the current request.",
+                        "Expert capability '{}' attached for the current request.",
                         state.assistant_name
                     ));
                     assistant_update = Some(LocalAssistantActivationUpdate::Activate(state));
@@ -614,7 +616,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
                         if let Err(e) = bandit_store
                             .record_feedback_simple(
                                 "router:assistant",
-                                &activated_assistant_id,
+                                &activated_capability_id,
                                 true,
                                 None,
                             )
@@ -625,20 +627,20 @@ async fn maybe_handle_local_code_mode_tool_calls(
                     });
                 }
                 Err(err) => {
-                    let meta = serde_json::json!({"id":call.id,"name":tool_name,"status":"error","error_code":"ASSISTANT_ACTIVATION_FAILED","error":err});
+                    let meta = serde_json::json!({"id":call.id,"name":tool_name,"status":"error","error_code":"CAPABILITY_ATTACH_FAILED","error":err});
                     let mut streamed_blocks = Vec::new();
                     append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
                     realtime_emitter.emit_blocks(streamed_blocks);
                     tool_call_meta.push(meta);
-                    results.push(format!("Assistant activation failed: {}", err));
+                    results.push(format!("Expert capability attach failed: {}", err));
                     synthesized = true;
                     let bandit_store = app_state.providers.store.clone();
-                    let bandit_assistant_id = assistant_id.to_string();
+                    let bandit_capability_id = capability_id.to_string();
                     tauri::async_runtime::spawn(async move {
                         if let Err(e) = bandit_store
                             .record_feedback_simple(
                                 "router:assistant",
-                                &bandit_assistant_id,
+                                &bandit_capability_id,
                                 false,
                                 None,
                             )
@@ -649,18 +651,18 @@ async fn maybe_handle_local_code_mode_tool_calls(
                     });
                 }
             }
-        } else if tool_name == "deactivate_assistant" {
+        } else if tool_name == "detach_capability" {
             realtime_emitter.emit_execution_section_once();
             realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call.id,"toolName":tool_name,"status":"running"})]);
             let reason = call
                 .arguments
                 .get("reason")
                 .and_then(|v| v.as_str())
-                .unwrap_or("Explicit assistant deactivation requested by the model.");
+                .unwrap_or("Explicit expert capability detach requested by the model.");
             let result = serde_json::json!({
                 "action":"deactivated","scope":"request","format_version":LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
-                "assistant_id":active_assistant.map(|v| v.assistant_id.clone()),"assistant_name":active_assistant.map(|v| v.assistant_name.clone()),"reason":reason,
-                "assistant_transition":{"action":"deactivated","assistant_id":active_assistant.map(|v| v.assistant_id.clone()),"assistant_name":active_assistant.map(|v| v.assistant_name.clone()),"reason":reason}
+                "capability_id":active_assistant.map(|v| v.assistant_id.clone()),"capability_name":active_assistant.map(|v| v.assistant_name.clone()),"reason":reason,
+                "capability_transition":{"action":"deactivated","capability_id":active_assistant.map(|v| v.assistant_id.clone()),"capability_name":active_assistant.map(|v| v.assistant_name.clone()),"reason":reason}
             });
             synthesized = true;
             let meta = serde_json::json!({"id":call.id,"name":tool_name,"status":"success","result":result});

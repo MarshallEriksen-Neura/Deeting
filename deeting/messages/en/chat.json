@@ -198,9 +198,11 @@
       "modelUnavailable": "No available models. Please configure a provider."
     },
     "routing": {
-      "auto": "Auto routing",
-      "autoDesc": "System chooses the best assistant",
-      "locked": "Locked",
+    "auto": "Auto routing",
+    "autoDesc": "System chooses the best assistant",
+    "persona": "Persona",
+    "personaDesc": "Fixed style, dynamic capabilities",
+    "locked": "Locked",
       "override": "Switch assistant",
       "clear": "Back to auto",
       "empty": "No assistants available"

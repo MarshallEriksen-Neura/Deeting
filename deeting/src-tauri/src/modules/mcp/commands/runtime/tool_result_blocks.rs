@@ -1,4 +1,4 @@
-pub(crate) fn extract_assistant_transition_blocks(
+pub(crate) fn extract_capability_transition_blocks(
     item: &serde_json::Value,
     call_id: &str,
     tool_name: &str,
@@ -9,7 +9,7 @@ pub(crate) fn extract_assistant_transition_blocks(
     };
 
     let transition = result
-        .get("assistant_transition")
+        .get("capability_transition")
         .and_then(|value| value.as_object());
     let Some(transition) = transition else {
         return Vec::new();
@@ -21,13 +21,13 @@ pub(crate) fn extract_assistant_transition_blocks(
         .map(|value| value.trim())
         .filter(|value| !value.is_empty())
         .unwrap_or("updated");
-    let assistant_id = transition
-        .get("assistant_id")
+    let capability_id = transition
+        .get("capability_id")
         .and_then(|value| value.as_str())
         .map(|value| value.trim())
         .filter(|value| !value.is_empty());
-    let assistant_name = transition
-        .get("assistant_name")
+    let capability_name = transition
+        .get("capability_name")
         .and_then(|value| value.as_str())
         .map(|value| value.trim())
         .filter(|value| !value.is_empty());
@@ -43,11 +43,11 @@ pub(crate) fn extract_assistant_transition_blocks(
         call_id
     };
     vec![serde_json::json!({
-        "id": format!("{id_seed}-assistant-transition"),
-        "type": "assistant_transition",
+        "id": format!("{id_seed}-capability-transition"),
+        "type": "capability_transition",
         "action": action,
-        "assistantId": assistant_id,
-        "assistantName": assistant_name,
+        "capabilityId": capability_id,
+        "capabilityName": capability_name,
         "reason": reason,
     })]
 }

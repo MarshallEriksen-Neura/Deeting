@@ -1,5 +1,5 @@
 use super::tool_result_blocks::{
-    extract_assistant_transition_blocks, extract_ui_blocks_from_tool_result,
+    extract_capability_transition_blocks, extract_ui_blocks_from_tool_result,
 };
 
 pub(crate) fn build_local_tool_trace_blocks(
@@ -51,7 +51,7 @@ pub(crate) fn build_local_tool_trace_blocks(
                 "status": "success",
                 "result": item.get("result").cloned().unwrap_or_else(|| serde_json::json!({})),
             }));
-            blocks.extend(extract_assistant_transition_blocks(
+            blocks.extend(extract_capability_transition_blocks(
                 item, call_id, tool_name,
             ));
             blocks.extend(extract_ui_blocks_from_tool_result(item, call_id, tool_name));
@@ -98,7 +98,7 @@ pub(crate) fn append_streamable_local_tool_result_blocks(
             "status": "success",
             "result": item.get("result").cloned().unwrap_or_else(|| serde_json::json!({})),
         }));
-        blocks.extend(extract_assistant_transition_blocks(
+        blocks.extend(extract_capability_transition_blocks(
             item, call_id, tool_name,
         ));
         blocks.extend(extract_ui_blocks_from_tool_result(item, call_id, tool_name));

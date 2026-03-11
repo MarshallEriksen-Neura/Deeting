@@ -1,8 +1,8 @@
 "use client"
 
 import * as React from "react"
-import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { useChatStore, type ChatAssistant } from "@/store/chat-store"
+import { useSearchParams } from "next/navigation"
+import { useChatStore } from "@/store/chat-store"
 import { useMarketStore } from "@/store/market-store"
 import { ChatLayout } from "./chat-layout"
 import { ChatContent } from "./chat-content"
@@ -25,8 +25,6 @@ interface ChatContainerProps {
 }
 
 export function ChatContainer({ agentId }: ChatContainerProps) {
-  const router = useRouter()
-  const pathname = usePathname()
   const searchParams = useSearchParams()
 
   // 从 store 获取状态和 action
@@ -34,7 +32,6 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
   const agent = useChatStore((state) => state.agent)
   const isLoading = useChatStore((state) => state.isLoading)
   const initialized = useChatStore((state) => state.initialized)
-  const storeAgentId = useChatStore((state) => state.agentId)
 
   // 环境检测
   const isTauriRuntime = React.useMemo(
@@ -45,22 +42,8 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
     []
   )
 
-  const chatRootPath = React.useMemo(() => {
-    if (!pathname) return "/chat"
-    const index = pathname.indexOf("/chat")
-    if (index === -1) return "/chat"
-    return pathname.slice(0, index + 5)
-  }, [pathname])
-
-  // Tauri 本地代理
-  const installedAgents = useMarketStore((state) => state.installedAgents)
   const loadLocalAssistants = useMarketStore((state) => state.loadLocalAssistants)
   const marketLoaded = useMarketStore((state) => state.loaded)
-
-  const localAgent = React.useMemo<ChatAssistant | null>(
-    () => installedAgents.find((a) => a.id === agentId) ?? null,
-    [installedAgents, agentId]
-  )
 
   // 获取 sessionId（稳定计算，不依赖 state）
   const sessionId = React.useMemo(() => {
@@ -75,37 +58,25 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
   // 唯一的 Effect：初始化会话
   // 只在 agentId 或 sessionId 变化时调用
   React.useEffect(() => {
-    // 生成唯一 key，避免重复初始化
-    const initKey = `${agentId}:${sessionId ?? ""}`
+    const runtimeAgentId = isTauriRuntime ? "" : agentId
+    const initKey = `${runtimeAgentId}:${sessionId ?? ""}`
     if (initCalledRef.current === initKey) return
 
-    // Tauri 环境：使用本地 agent
     if (isTauriRuntime) {
-      if (!marketLoaded) return // 等待市场数据加载
+      if (!marketLoaded) return
       initCalledRef.current = initKey
-      void initSession(agentId, sessionId, localAgent)
+      void initSession("", sessionId, null)
     } else {
-      // 云端环境：store 内部会获取 agent 数据
       initCalledRef.current = initKey
       void initSession(agentId, sessionId, null)
     }
-  }, [agentId, sessionId, isTauriRuntime, marketLoaded, localAgent, initSession])
+  }, [agentId, sessionId, isTauriRuntime, marketLoaded, initSession])
 
   // Tauri 环境：加载本地 assistants
   React.useEffect(() => {
     if (!isTauriRuntime || marketLoaded) return
     void loadLocalAssistants()
   }, [isTauriRuntime, marketLoaded, loadLocalAssistants])
-
-  // 路由检查：如果 agent 不存在，重定向到 chat 根路径
-  React.useEffect(() => {
-    if (pathname?.includes("/chat/create/assistant")) return
-    if (!isTauriRuntime) return
-
-    if (marketLoaded && !localAgent && pathname !== chatRootPath) {
-      router.replace(chatRootPath)
-    }
-  }, [isTauriRuntime, marketLoaded, localAgent, pathname, chatRootPath, router])
 
   // 显示加载状态
   const showLoading = !initialized || (isLoading && !agent)

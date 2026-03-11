@@ -2,7 +2,6 @@
 
 import * as React from "react"
 import { useParams, useSearchParams, useRouter } from "next/navigation"
-import { useChatStore } from "@/store/chat-store"
 import { ChatContainer } from "@/components/chat/core"
 
 /**
@@ -21,7 +20,6 @@ function ChatRouteClient() {
   const router = useRouter()
   const params = useParams<{ agentId?: string | string[] }>()
   const searchParams = useSearchParams()
-  const storedAgentId = useChatStore((state) => state.agentId)
   const isTauriRuntime = React.useMemo(
     () =>
       process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
@@ -41,29 +39,17 @@ function ChatRouteClient() {
     [searchParams]
   )
 
-  // 解析最终的 agentId（优先级：路径 > 查询参数 > 存储）
-  const resolvedAgentId = isTauriRuntime
-    ? pathAgentId || queryAgentId || storedAgentId || null
-    : null
-
-  // 处理自动重定向：使用 ref 防止重复调用 router.replace
   const redirectedRef = React.useRef(false)
 
   React.useEffect(() => {
     if (!isTauriRuntime) return
-    if (pathAgentId || queryAgentId) {
-      // 已有路由参数，不需要重定向
-      redirectedRef.current = false
-      return
-    }
-    if (storedAgentId && !redirectedRef.current) {
+    if ((pathAgentId || queryAgentId) && !redirectedRef.current) {
       redirectedRef.current = true
-      router.replace(`/chat/${storedAgentId}`)
+      router.replace(`/chat`)
     }
-  }, [isTauriRuntime, pathAgentId, queryAgentId, storedAgentId, router])
+  }, [isTauriRuntime, pathAgentId, queryAgentId, router])
 
-  // Chat UI container (uses chat-state-store)
-  return <ChatContainer agentId={resolvedAgentId || ""} />
+  return <ChatContainer agentId="" />
 }
 
 // 使用 React.memo 优化，避免不必要的重渲染

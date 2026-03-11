@@ -4065,9 +4065,9 @@ impl McpStore {
                         r#"
                         INSERT INTO assistant_version (
                           id, assistant_id, version, name, description, system_prompt, model_config,
-                          skill_refs, tags, changelog, published_at, created_at, updated_at
+                          tags, changelog, published_at, created_at, updated_at
                         )
-                        VALUES (?, ?, '1.0.0', ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?);
+                        VALUES (?, ?, '1.0.0', ?, ?, ?, ?, ?, NULL, ?, ?, ?);
                         "#,
                     )
                     .bind(&new_version_id)
@@ -4076,7 +4076,6 @@ impl McpStore {
                     .bind(description)
                     .bind(system_prompt)
                     .bind(model_config_json)
-                    .bind(Some("[]"))
                     .bind(tags_json)
                     .bind(published_at)
                     .bind(created_at)
@@ -4110,9 +4109,9 @@ impl McpStore {
                     r#"
                     INSERT INTO assistant_version (
                       id, assistant_id, version, name, description, system_prompt, model_config,
-                      skill_refs, tags, changelog, published_at, created_at, updated_at
+                      tags, changelog, published_at, created_at, updated_at
                     )
-                    VALUES (?, ?, '1.0.0', ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?);
+                    VALUES (?, ?, '1.0.0', ?, ?, ?, ?, ?, NULL, ?, ?, ?);
                     "#,
                 )
                 .bind(&new_version_id)
@@ -4121,7 +4120,6 @@ impl McpStore {
                 .bind(description)
                 .bind(system_prompt)
                 .bind(model_config_json)
-                .bind(Some("[]"))
                 .bind(tags_json)
                 .bind(published_at)
                 .bind(created_at)
@@ -4196,5 +4194,109 @@ impl McpStore {
                 .map_err(|err| McpError::Storage(err.to_string()))?;
         }
         Ok(())
+    }
+
+    pub(super) async fn migrate_assistant_version_drop_skill_refs(&self) -> Result<(), McpError> {
+        let rows = sqlx::query("PRAGMA table_info(assistant_version)")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+        let has_skill_refs = rows.iter().any(|row: &SqliteRow| {
+            row.try_get::<String, _>("name")
+                .map(|name| name == "skill_refs")
+                .unwrap_or(false)
+        });
+        if !has_skill_refs {
+            return Ok(());
+        }
+
+        sqlx::query("PRAGMA foreign_keys=OFF;")
+            .execute(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let result = async {
+            let mut tx = self.pool.begin().await?;
+            sqlx::query(
+                r#"
+                ALTER TABLE assistant_version RENAME TO assistant_version_legacy;
+                "#,
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+
+            sqlx::query(
+                r#"
+                CREATE TABLE assistant_version (
+                  id TEXT PRIMARY KEY,
+                  assistant_id TEXT NOT NULL REFERENCES assistant(id) ON DELETE CASCADE,
+                  version TEXT NOT NULL,
+                  name TEXT NOT NULL,
+                  description TEXT,
+                  system_prompt TEXT NOT NULL,
+                  model_config TEXT,
+                  tags TEXT,
+                  changelog TEXT,
+                  published_at TEXT,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                );
+                "#,
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+
+            sqlx::query(
+                r#"
+                INSERT INTO assistant_version (
+                  id, assistant_id, version, name, description, system_prompt,
+                  model_config, tags, changelog, published_at, created_at, updated_at
+                )
+                SELECT id, assistant_id, version, name, description, system_prompt,
+                       model_config, tags, changelog, published_at, created_at, updated_at
+                FROM assistant_version_legacy;
+                "#,
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+
+            sqlx::query("DROP TABLE assistant_version_legacy;")
+                .execute(&mut *tx)
+                .await
+                .map_err(|err| McpError::Storage(err.to_string()))?;
+
+            sqlx::query(
+                r#"
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_assistant_version_semver
+                ON assistant_version(assistant_id, version);
+                "#,
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+
+            sqlx::query(
+                r#"
+                CREATE INDEX IF NOT EXISTS idx_assistant_version_assistant
+                ON assistant_version(assistant_id);
+                "#,
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+
+            tx.commit().await.map_err(|err| McpError::Storage(err.to_string()))
+        }
+        .await;
+
+        sqlx::query("PRAGMA foreign_keys=ON;")
+            .execute(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        result
     }
 }

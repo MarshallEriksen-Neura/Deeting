@@ -493,7 +493,6 @@ pub struct LocalAssistantVersion {
     pub description: Option<String>,
     pub system_prompt: String,
     pub model_config: Option<Value>,
-    pub skill_refs: Vec<Value>,
     pub tags: Vec<String>,
     pub changelog: Option<String>,
     pub published_at: Option<String>,

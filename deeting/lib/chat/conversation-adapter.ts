@@ -28,8 +28,8 @@ const hasRenderableBlocks = (blocks: MessageBlock[]) =>
     if (block.type === "thought") {
       return true
     }
-    if (block.type === "assistant_transition") {
-      return Boolean(block.action || block.assistantName || block.reason)
+    if (block.type === "capability_transition") {
+      return Boolean(block.action || block.capabilityName || block.reason)
     }
     if (block.type === "tool_call") {
       return Boolean(block.toolName || block.toolArgs || block.status)
@@ -100,17 +100,18 @@ const normalizeBlocks = (blocks: MessageBlock[], messageId: string): MessageBloc
       }
     }
 
-    if (block.type === "assistant_transition") {
+    if (block.type === "capability_transition") {
       return {
         ...normalizedBase,
         action:
           block.action === "activated" || block.action === "deactivated"
             ? block.action
             : "updated",
-        assistantId: typeof block.assistantId === "string" ? block.assistantId : undefined,
-        assistantName:
-          typeof block.assistantName === "string"
-            ? normalizeTextValue(block.assistantName)
+        capabilityId:
+          typeof block.capabilityId === "string" ? block.capabilityId : undefined,
+        capabilityName:
+          typeof block.capabilityName === "string"
+            ? normalizeTextValue(block.capabilityName)
             : undefined,
         reason:
           typeof block.reason === "string" ? normalizeTextValue(block.reason) : undefined,

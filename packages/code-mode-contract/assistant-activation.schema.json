@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://deeting.ai/contracts/assistant-activation.schema.json",
-  "title": "Assistant Activation Contract",
-  "description": "Shared request-scoped assistant activation payload for Deeting code mode on cloud and desktop.",
+  "$id": "https://deeting.ai/contracts/capability-activation.schema.json",
+  "title": "Capability Attachment Contract",
+  "description": "Shared request-scoped expert capability attachment payload for Deeting code mode on cloud and desktop.",
   "type": "object",
   "required": [
     "action",
@@ -27,28 +27,28 @@
     "format_version": {
       "type": "string",
       "enum": [
-        "assistant_activation.v1"
+        "capability_activation.v1"
       ]
     },
     "activation_mode": {
       "type": "string",
       "enum": [
-        "replace"
+        "attach_capability"
       ]
     },
-    "assistant_id": {
+    "capability_id": {
       "type": [
         "string",
         "null"
       ]
     },
-    "assistant_name": {
+    "capability_name": {
       "type": [
         "string",
         "null"
       ]
     },
-    "system_prompt": {
+    "capability_summary": {
       "type": [
         "string",
         "null"
@@ -60,7 +60,7 @@
         "null"
       ]
     },
-    "recommended_assistant_id": {
+    "recommended_capability_id": {
       "type": [
         "string",
         "null"
@@ -84,7 +84,7 @@
       "items": {
         "type": "object",
         "properties": {
-          "assistant_id": {
+          "capability_id": {
             "type": "string"
           },
           "name": {
@@ -99,7 +99,7 @@
           "score": {}
         },
         "required": [
-          "assistant_id",
+          "capability_id",
           "name"
         ]
       },
