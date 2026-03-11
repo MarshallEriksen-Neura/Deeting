@@ -424,7 +424,7 @@ async fn handle_feishu_chat_event(
         model: model_name,
         provider_model_id,
         session_id,
-        assistant_id: None,
+        capability_id: None,
         regenerate: false,
         compare_only: false,
         user_content: Some(text.to_string()),

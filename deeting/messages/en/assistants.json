@@ -72,10 +72,10 @@
       "emptyReply": "(No content returned)"
     },
     "create": {
-      "trigger": "Create Assistant",
-      "title": "Create New Persona",
-      "description": "Design a custom AI assistant. It will be installed locally.",
-      "descriptionCloud": "Design a custom AI assistant. It will be saved to your account.",
+    "trigger": "Create Assistant",
+    "title": "Create Expert Template",
+    "description": "Design a custom expert template for capability routing. This does not control the fixed desktop chat persona.",
+    "descriptionCloud": "Design a custom expert template for capability routing. It will be saved to your account.",
       "nameLabel": "Name",
       "namePlaceholder": "e.g. Python Guru",
       "descLabel": "Short Description",
@@ -94,13 +94,13 @@
       "tagsEmpty": "No tags selected",
       "tagsAdd": "Add",
       "tagsNoOptions": "No tags available",
-      "systemPromptLabel": "System Prompt (Personality)",
-      "systemPromptPlaceholder": "You are an expert Python developer with a witty tone...",
-      "systemPromptHelp": "This defines how your assistant behaves and answers.",
+    "systemPromptLabel": "Expert Template Prompt",
+    "systemPromptPlaceholder": "You are an expert Python developer. Focus on debugging, optimization, and code review strategies...",
+    "systemPromptHelp": "This defines the expert capability template used by routing. The fixed desktop reply persona is configured separately in Settings.",
       "shareLabel": "Share to market",
       "shareHelp": "Submit for review. If approved, it will appear in the marketplace.",
       "shareHint": "Changes will be reviewed before appearing in the marketplace.",
-      "submit": "Create & Install",
+    "submit": "Create Template",
       "submitting": "Creating...",
       "submitCloud": "Create Assistant",
       "submittingCloud": "Creating...",
@@ -120,10 +120,10 @@
         "iconRequired": "Select an icon."
       }
     },
-    "edit": {
-      "trigger": "Edit",
-      "title": "Edit Assistant",
-      "description": "Update the assistant’s profile and system prompt.",
+  "edit": {
+    "trigger": "Edit",
+    "title": "Edit Expert Template",
+    "description": "Update the expert template profile and routing prompt. Desktop fixed persona is configured separately in Settings.",
       "submit": "Save Changes",
       "submitting": "Saving...",
       "delete": "Delete",

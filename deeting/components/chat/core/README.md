@@ -52,8 +52,8 @@ ChatContainer 是聊天功能的顶层容器，负责：
 ```tsx
 import { ChatContainer } from "@/components/chat/core"
 
-function ChatPage({ params }: { params: { agentId: string } }) {
-  return <ChatContainer agentId={params.agentId} />
+function ChatPage() {
+  return <ChatContainer agentId="" />
 }
 ```
 
@@ -90,7 +90,7 @@ const chatContentProps = React.useMemo(() => ({
 
 ChatLayout 负责聊天界面的整体布局结构，包括：
 - 加载状态展示
-- 错误状态展示（代理不存在）
+- 错误状态展示（旧助手路由不存在）
 - 正常聊天布局容器
 
 ```tsx

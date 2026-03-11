@@ -153,7 +153,7 @@ pub async fn search_unified(
         query: query.clone(),
         limit: Some(k),
         session_id: None,
-        assistant_id: None,
+        capability_id: None,
         category: None,
         source: None,
         tags: None,

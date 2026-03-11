@@ -49,7 +49,7 @@ function ControlsContainer() {
     attachments,
     setInput,
     setMessages,
-    agent,
+    selectedAssistant,
     models,
     config,
     setConfig,
@@ -66,7 +66,7 @@ function ControlsContainer() {
       attachments: state.attachments,
       setInput: state.setInput,
       setMessages: state.setMessages,
-      agent: state.agent,
+      selectedAssistant: state.selectedAssistant,
       models: state.models,
       config: state.config,
       setConfig: state.setConfig,
@@ -91,8 +91,8 @@ function ControlsContainer() {
   const { assistants: serviceAssistants } = useChatService({ enabled: !isTauriRuntime });
 
   const activeAssistant = useMemo(
-    () => (isTauriRuntime ? null : serviceAssistants.find((assistant) => assistant.id === agent?.id)),
-    [agent?.id, isTauriRuntime, serviceAssistants]
+    () => (isTauriRuntime ? null : serviceAssistants.find((assistant) => assistant.id === selectedAssistant?.id)),
+    [selectedAssistant?.id, isTauriRuntime, serviceAssistants]
   );
 
   const {

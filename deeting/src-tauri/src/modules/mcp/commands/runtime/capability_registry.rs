@@ -13,7 +13,6 @@ use super::{
 pub(crate) struct CapabilityRegistry {
     pub entries: Vec<CapabilityRegistryEntry>,
     pub enabled_assistant_count: usize,
-    pub enabled_skill_count: usize,
 }
 
 #[derive(Clone)]
@@ -102,7 +101,6 @@ pub(crate) async fn build_capability_registry(
     CapabilityRegistry {
         entries,
         enabled_assistant_count: enabled_assistant_ids.len(),
-        enabled_skill_count: enabled_skill_ids.len(),
     }
 }
 
@@ -115,10 +113,6 @@ async fn load_tool_contract_sources(
     tools
         .into_iter()
         .filter_map(|tool| {
-            let identifier = tool.identifier.as_deref().unwrap_or("").trim();
-            if identifier.starts_with("skill.") {
-                return None;
-            }
             let normalized = tool.name.trim().to_string();
             if normalized.is_empty() {
                 return None;
@@ -200,10 +194,7 @@ impl RegistryAvailability {
                         return Self::from_tool_availability(availability);
                     }
                 }
-                Self::from_tool_availability(&fallback_local_tool_availability(
-                    pkg_name,
-                    enabled_skill_ids,
-                ))
+                Self::from_tool_availability(&fallback_local_tool_availability(pkg_name))
             }
             "assistant" => {
                 if enabled_assistant_ids.contains(asset_id) {

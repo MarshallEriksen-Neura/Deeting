@@ -33,6 +33,8 @@ describe("desktop system assets api", () => {
     windowWithTauri.__TAURI__ = {}
     mockInvoke.mockResolvedValue({
       fetched_count: 1,
+      assistant_fetched_count: 1,
+      skill_fetched_count: 0,
       upserted_count: 1,
       hidden_count: 0,
       metadata_only_count: 0,
@@ -44,7 +46,6 @@ describe("desktop system assets api", () => {
       skill_failed_count: 0,
       disabled_skill_count: 0,
       archived_assistant_count: 0,
-      disabled_assistant_install_count: 0,
     } as unknown)
 
     const result = await syncLocalSystemAssetsFromCloud({ force: true, limit: 42 })
@@ -66,6 +67,8 @@ describe("desktop system assets api", () => {
       assistant_reindexed_count: 2,
       sync: {
         fetched_count: 2,
+        assistant_fetched_count: 1,
+        skill_fetched_count: 1,
         upserted_count: 2,
         hidden_count: 0,
         metadata_only_count: 0,
@@ -77,7 +80,6 @@ describe("desktop system assets api", () => {
         skill_failed_count: 0,
         disabled_skill_count: 0,
         archived_assistant_count: 0,
-        disabled_assistant_install_count: 0,
       },
     } as unknown)
 

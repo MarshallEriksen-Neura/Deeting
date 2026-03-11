@@ -343,7 +343,7 @@ pub struct LocalOrchestratorInput {
     pub model: String,
     pub provider_model_id: Option<String>,
     pub session_id: String,
-    pub assistant_id: Option<String>,
+    pub capability_id: Option<String>,
     pub regenerate: bool,
     pub compare_only: bool,
     pub user_content: Option<String>,
@@ -364,8 +364,7 @@ struct LocalWorkflowContext {
     status_stream: bool,
     started_at: Instant,
     event_tx: Option<UnboundedSender<String>>,
-    assistant_id: Option<String>,
-    assistant_name: Option<String>,
+    capability_id: Option<String>,
     summary_text: Option<String>,
     messages: Vec<LocalChatInputMessage>,
     system_messages: Vec<LocalChatInputMessage>,
@@ -388,7 +387,7 @@ impl LocalWorkflowContext {
         request_id: Option<String>,
         input: &LocalOrchestratorInput,
         messages: Vec<LocalChatInputMessage>,
-        assistant_id: Option<String>,
+        capability_id: Option<String>,
         summary_text: Option<String>,
         event_tx: Option<UnboundedSender<String>>,
     ) -> Self {
@@ -402,8 +401,7 @@ impl LocalWorkflowContext {
             status_stream: input.status_stream,
             started_at: Instant::now(),
             event_tx,
-            assistant_id,
-            assistant_name: None,
+            capability_id,
             summary_text,
             messages,
             system_messages: Vec::new(),
@@ -738,7 +736,7 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SemanticMemoryInjectionStep {
                     query: query_text.clone(),
                     limit: Some(5),
                     session_id: Some(ctx.session_id.clone()),
-                    assistant_id: ctx.assistant_id.clone(),
+                    capability_id: ctx.capability_id.clone(),
                     category: None,
                     source: None,
                     tags: None,
@@ -828,7 +826,7 @@ impl SemanticMemoryInjectionStep {
             cursor: None,
             limit: Some(20),
             session_id: Some(ctx.session_id.clone()),
-            assistant_id: ctx.assistant_id.clone(),
+            capability_id: ctx.capability_id.clone(),
         };
         let memories = ctx
             .app_state
@@ -872,7 +870,7 @@ impl SemanticMemoryInjectionStep {
             cursor: None,
             limit: Some(5),
             session_id: Some(ctx.session_id.clone()),
-            assistant_id: ctx.assistant_id.clone(),
+            capability_id: ctx.capability_id.clone(),
         };
         let memories = ctx
             .app_state
@@ -934,14 +932,14 @@ impl LocalWorkflowStep<LocalWorkflowContext> for ActiveCapabilityHintStep {
                 Err(_) => return Ok(()),
             };
 
-            let current_assistant_id = ctx.assistant_id.clone().unwrap_or_default();
+            let current_capability_id = ctx.capability_id.clone().unwrap_or_default();
             let candidate = hits.into_iter().find(|hit| {
                 let id = hit
                     .get("id")
                     .and_then(|value| value.as_str())
                     .unwrap_or_default()
                     .trim();
-                !id.is_empty() && id != current_assistant_id
+                !id.is_empty() && id != current_capability_id
             });
 
             let Some(candidate) = candidate else {
@@ -1280,18 +1278,18 @@ pub async fn execute_local_orchestrated_chat(
     ensure_required_local_models_configured(app_state).await?;
 
     let store = &app_state.mcp.store;
-    let (assistant_id, summary_text, messages) = if input.compare_only {
+    let (capability_id, summary_text, messages) = if input.compare_only {
         let runtime_window = store
             .load_local_conversation_runtime_window(&session_id)
             .await
             .map_err(|e| e.to_string())?;
-        let assistant_id = input
-            .assistant_id
+        let capability_id = input
+            .capability_id
             .clone()
             .or(runtime_window.assistant_id.clone());
         let summary_text = extract_summary_text(runtime_window.summary.as_ref());
         let messages = build_compare_only_messages(runtime_window.messages)?;
-        (assistant_id, summary_text, messages)
+        (capability_id, summary_text, messages)
     } else if input.regenerate {
         let regenerate_ctx = store
             .prepare_local_conversation_regenerate(&session_id)
@@ -1301,8 +1299,8 @@ pub async fn execute_local_orchestrated_chat(
             .load_local_conversation_runtime_window(&session_id)
             .await
             .map_err(|e| e.to_string())?;
-        let assistant_id = input
-            .assistant_id
+        let capability_id = input
+            .capability_id
             .clone()
             .or(regenerate_ctx.assistant_id)
             .or(runtime_window.assistant_id.clone());
@@ -1312,7 +1310,7 @@ pub async fn execute_local_orchestrated_chat(
             .into_iter()
             .map(convert_history_message_to_chat_input)
             .collect();
-        (assistant_id, summary_text, messages)
+        (capability_id, summary_text, messages)
     } else {
         let user_content = input
             .user_content
@@ -1338,8 +1336,8 @@ pub async fn execute_local_orchestrated_chat(
             .load_local_conversation_runtime_window(&session_id)
             .await
             .map_err(|e| e.to_string())?;
-        let assistant_id = input
-            .assistant_id
+        let capability_id = input
+            .capability_id
             .clone()
             .or(runtime_window.assistant_id.clone());
         let summary_text = extract_summary_text(runtime_window.summary.as_ref());
@@ -1348,7 +1346,7 @@ pub async fn execute_local_orchestrated_chat(
             .into_iter()
             .map(convert_history_message_to_chat_input)
             .collect();
-        (assistant_id, summary_text, messages)
+        (capability_id, summary_text, messages)
     };
 
     let mut ctx = LocalWorkflowContext::new(
@@ -1357,7 +1355,7 @@ pub async fn execute_local_orchestrated_chat(
         input.request_id.clone(),
         &input,
         messages,
-        assistant_id.clone(),
+        capability_id.clone(),
         summary_text.clone(),
         event_tx,
     );
@@ -1368,7 +1366,7 @@ pub async fn execute_local_orchestrated_chat(
         "context.loaded",
         Some(json!({
             "count": ctx.messages.len(),
-            "assistant_id": assistant_id,
+            "capability_id": capability_id,
             "has_summary": summary_text.is_some(),
         })),
     );
@@ -1418,7 +1416,7 @@ pub async fn execute_local_orchestrated_chat(
     );
     let chat_context = crate::modules::mcp::store::LocalConversationChatContext {
         session_id: session_id.clone(),
-        assistant_id: assistant_id.clone(),
+        assistant_id: capability_id.clone(),
         messages: ctx.messages.clone(),
     };
     let response_json = run_local_chat_complete_with_auto_code_mode(
@@ -1584,7 +1582,7 @@ pub async fn execute_local_orchestrated_chat(
         let fact_app_state = app_state.clone();
         let fact_memory_service = app_state.memory.service.clone();
         let fact_session_id = session_id.clone();
-        let fact_assistant_id = assistant_id.clone();
+        let fact_capability_id = capability_id.clone();
         let fact_provider_model_id = provider_model_id.clone();
         let fact_model_id = model_id.clone();
         let fact_response_text = response_text.clone();
@@ -1601,7 +1599,7 @@ pub async fn execute_local_orchestrated_chat(
                 &fact_model_id,
                 &conversation,
                 &fact_session_id,
-                fact_assistant_id.as_deref(),
+                fact_capability_id.as_deref(),
             )
             .await;
         });
@@ -2148,7 +2146,7 @@ mod tests {
             id: "memory-1".to_string(),
             content: "remember this".to_string(),
             session_id: None,
-            assistant_id: None,
+            capability_id: None,
             meta_info: Some(json!({ "memory_tier": "core", "recall_when": "architecture" })),
             embedding_model: None,
             category: None,

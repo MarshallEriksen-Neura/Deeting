@@ -15,23 +15,17 @@ import { createRequestId } from "@/lib/chat/request-id"
 
 const WEB_SESSION_STORAGE_KEY = "deeting-chat-session:router"
 
-export function resolveAssistantRequestContext({
+export function resolveChatRequestContext({
   isTauriRuntime,
-  activeAssistantId,
+  selectedAssistantId,
 }: {
   isTauriRuntime: boolean
-  activeAssistantId?: string | null
+  selectedAssistantId?: string | null
 }) {
-  if (!activeAssistantId) {
+  if (!selectedAssistantId || isTauriRuntime) {
     return { assistantId: undefined, sessionStorageKey: WEB_SESSION_STORAGE_KEY }
   }
-  if (!isTauriRuntime) {
-    return { assistantId: activeAssistantId, sessionStorageKey: WEB_SESSION_STORAGE_KEY }
-  }
-  return {
-    assistantId: activeAssistantId,
-    sessionStorageKey: `deeting-chat-session:${activeAssistantId}`,
-  }
+  return { assistantId: selectedAssistantId, sessionStorageKey: WEB_SESSION_STORAGE_KEY }
 }
 import { resolveSessionIdFromBrowser } from "@/lib/chat/session-storage"
 import {
@@ -391,8 +385,8 @@ export function useChatMessagingService() {
     messages,
     config,
     models,
-    agent,
-    agentId,
+    selectedAssistant,
+    agentId: selectedAssistantId,
     streamEnabled,
     setInput,
     clearAttachments,
@@ -718,12 +712,12 @@ export function useChatMessagingService() {
       models[0]
     const preferLocalRoute =
       isTauriRuntime && (selectedModel?.request_route ?? "local_invoke") === "local_invoke"
-    const activeAssistant = agent
+    const selectedAssistantForRequest = selectedAssistant
     if (!selectedModel) return
 
-    const { assistantId, sessionStorageKey } = resolveAssistantRequestContext({
+    const { assistantId, sessionStorageKey } = resolveChatRequestContext({
       isTauriRuntime,
-      activeAssistantId: agentId,
+      selectedAssistantId,
     })
 
     const userMessage: Message = {
@@ -760,7 +754,7 @@ export function useChatMessagingService() {
       // Local route: Rust orchestrator injects assistant persona; skip frontend prepend to avoid duplication.
       const requestMessages = buildChatMessages(
         [...messages, userMessage],
-        preferLocalRoute ? undefined : activeAssistant?.systemPrompt,
+        preferLocalRoute ? undefined : selectedAssistantForRequest?.systemPrompt,
       )
       const payload = {
         model: selectedModel.id,
@@ -819,8 +813,8 @@ export function useChatMessagingService() {
     messages,
     config,
     models,
-    agent,
-    agentId,
+    selectedAssistant,
+    selectedAssistantId,
     setInput,
     clearAttachments,
     setMessages,
@@ -855,12 +849,12 @@ export function useChatMessagingService() {
       models[0]
     const preferLocalRoute =
       isTauriRuntime && (selectedModel?.request_route ?? "local_invoke") === "local_invoke"
-    const activeAssistant = agent
+    const selectedAssistantForRequest = selectedAssistant
     if (!selectedModel) return
 
-    const { assistantId, sessionStorageKey } = resolveAssistantRequestContext({
+    const { assistantId, sessionStorageKey } = resolveChatRequestContext({
       isTauriRuntime,
-      activeAssistantId: agentId,
+      selectedAssistantId,
     })
 
     // 移除旧的 assistant 消息，插入新的空 assistant 占位
@@ -889,7 +883,7 @@ export function useChatMessagingService() {
 
       const requestMessages = buildChatMessages(
         messagesBeforeTarget,
-        preferLocalRoute ? undefined : activeAssistant?.systemPrompt,
+        preferLocalRoute ? undefined : selectedAssistantForRequest?.systemPrompt,
       )
       const payload = {
         model: selectedModel.id,
@@ -946,8 +940,8 @@ export function useChatMessagingService() {
   }, [
     config,
     models,
-    agent,
-    agentId,
+    selectedAssistant,
+    selectedAssistantId,
     cancelActiveRequest,
     setMessages,
     mergeMessageMeta,
@@ -1034,9 +1028,9 @@ export function useChatMessagingService() {
       return
     }
 
-    const { assistantId, sessionStorageKey } = resolveAssistantRequestContext({
+    const { assistantId, sessionStorageKey } = resolveChatRequestContext({
       isTauriRuntime,
-      activeAssistantId: agentId,
+      selectedAssistantId,
     })
     const resolvedSessionId = resolveCurrentSessionId(sessionStorageKey)
     if (!resolvedSessionId) {
@@ -1168,7 +1162,7 @@ export function useChatMessagingService() {
     config,
     ensureCompareState,
     setCompareActiveCandidate,
-    agentId,
+    selectedAssistantId,
     resolveCurrentSessionId,
     upsertCompareCandidate,
     runStreamedRequest,
@@ -1185,9 +1179,9 @@ export function useChatMessagingService() {
       return
     }
 
-    const { sessionStorageKey } = resolveAssistantRequestContext({
+    const { sessionStorageKey } = resolveChatRequestContext({
       isTauriRuntime,
-      activeAssistantId: agentId,
+      selectedAssistantId,
     })
     const resolvedSessionId = resolveCurrentSessionId(sessionStorageKey)
     if (!resolvedSessionId) {
@@ -1240,7 +1234,7 @@ export function useChatMessagingService() {
 
     setCompareFinalizing(targetMessageId, false)
   }, [
-    agentId,
+    selectedAssistantId,
     clearCompareState,
     isTauriRuntime,
     replaceAssistantMessage,

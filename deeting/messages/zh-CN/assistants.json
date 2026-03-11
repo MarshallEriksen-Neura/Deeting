@@ -72,10 +72,10 @@
       "emptyReply": "（未返回内容）"
     },
     "create": {
-      "trigger": "创建助手",
-      "title": "创建新角色",
-      "description": "设计一个自定义 AI 助手，将安装到本地。",
-      "descriptionCloud": "设计一个自定义 AI 助手，将保存到你的账号。",
+    "trigger": "创建助手",
+    "title": "创建专家模板",
+    "description": "设计一个供能力路由使用的专家模板。它不会控制桌面聊天的固定人格。",
+    "descriptionCloud": "设计一个供能力路由使用的专家模板，并保存到你的账号。",
       "nameLabel": "名称",
       "namePlaceholder": "例如：Python Guru",
       "descLabel": "简短介绍",
@@ -94,13 +94,13 @@
       "tagsEmpty": "未选择标签",
       "tagsAdd": "添加",
       "tagsNoOptions": "暂无可选标签",
-      "systemPromptLabel": "系统提示词（人格）",
-      "systemPromptPlaceholder": "你是一个资深 Python 开发者，语气略带幽默...",
-      "systemPromptHelp": "定义助手的行为和回答方式。",
+    "systemPromptLabel": "专家模板 Prompt",
+    "systemPromptPlaceholder": "你是一名资深 Python 开发者，重点关注调试、优化和代码审查策略...",
+    "systemPromptHelp": "这里定义的是供路由使用的专家能力模板。桌面聊天的固定人格请在设置页单独配置。",
       "shareLabel": "是否分享到市场",
       "shareHelp": "开启后将提交审核，通过后可在市场展示。",
       "shareHint": "更新后需要重新审核，通过后才能在市场展示。",
-      "submit": "创建并安装",
+    "submit": "创建模板",
       "submitting": "创建中...",
       "submitCloud": "创建助手",
       "submittingCloud": "创建中...",
@@ -120,10 +120,10 @@
         "iconRequired": "请选择一个图标。"
       }
     },
-    "edit": {
-      "trigger": "编辑",
-      "title": "编辑助手",
-      "description": "更新助手资料与系统提示词。",
+  "edit": {
+    "trigger": "编辑",
+    "title": "编辑专家模板",
+    "description": "更新专家模板资料与路由 Prompt。桌面固定人格请在设置页单独配置。",
       "submit": "保存修改",
       "submitting": "保存中...",
       "delete": "删除",

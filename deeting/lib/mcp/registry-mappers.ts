@@ -93,7 +93,6 @@ export const mapDesktopToolRecordToTool = (tool: McpToolRecord, conflictWarning?
     createdAt: tool.created_at,
     updatedAt: tool.updated_at,
     desiredEnabled: tool.desired_enabled,
-    backingSkillId: tool.backing_skill_id ?? undefined,
     runtimeReady: tool.runtime_ready,
     runtimeStatusReason: tool.runtime_status_reason,
     availabilityClass: tool.availability_class,
@@ -144,7 +143,6 @@ export const mapRemoteServerToolRecordToTool = (tool: McpServerToolRecordLike, s
     installRequired: tool.install_required,
     indexStatus: tool.index_status,
     indexStatusReason: tool.index_status_reason ?? undefined,
-    backingSkillId: undefined,
     envConfig: [],
   }
 }
@@ -187,7 +185,6 @@ export const mapRemoteServerToRuntimeTool = (server: McpServer): MCPTool => {
     installRequired: server.install_required,
     indexStatus: server.index_status,
     indexStatusReason: server.index_status_reason ?? undefined,
-    backingSkillId: undefined,
     envConfig: [],
   }
 }

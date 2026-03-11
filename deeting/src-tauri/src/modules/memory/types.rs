@@ -33,7 +33,7 @@ pub struct LocalMemoryItem {
     pub id: String,
     pub content: String,
     pub session_id: Option<String>,
-    pub assistant_id: Option<String>,
+    pub capability_id: Option<String>,
     pub meta_info: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub embedding_model: Option<String>,
@@ -55,7 +55,7 @@ pub struct LocalMemoryItem {
 pub struct CreateLocalMemoryRequest {
     pub content: String,
     pub session_id: Option<String>,
-    pub assistant_id: Option<String>,
+    pub capability_id: Option<String>,
     pub meta_info: Option<Value>,
     #[serde(default)]
     pub category: Option<String>,
@@ -83,7 +83,7 @@ pub struct LocalMemoryListQuery {
     pub cursor: Option<String>,
     pub limit: Option<i64>,
     pub session_id: Option<String>,
-    pub assistant_id: Option<String>,
+    pub capability_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,7 +102,7 @@ pub struct LocalMemoryDeleteResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LocalMemoryClearRequest {
     pub session_id: Option<String>,
-    pub assistant_id: Option<String>,
+    pub capability_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -117,7 +117,7 @@ pub struct LocalMemorySearchQuery {
     pub query: String,
     pub limit: Option<usize>,
     pub session_id: Option<String>,
-    pub assistant_id: Option<String>,
+    pub capability_id: Option<String>,
     #[serde(default)]
     pub category: Option<String>,
     #[serde(default)]
@@ -131,7 +131,7 @@ pub struct LocalMemorySearchItem {
     pub id: String,
     pub content: String,
     pub session_id: Option<String>,
-    pub assistant_id: Option<String>,
+    pub capability_id: Option<String>,
     pub meta_info: Option<Value>,
     pub score: f32,
     #[serde(skip_serializing_if = "Option::is_none")]

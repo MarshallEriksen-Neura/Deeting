@@ -8,8 +8,8 @@ import { ChatContainer } from "@/components/chat/core"
  * ChatRouteClient - 聊天路由客户端组件
  * 
  * 功能：
- * - 解析路由参数（agentId）
- * - 管理助手 ID 的优先级（路径 > 查询参数 > 存储）
+ * - 解析历史聊天路由参数（agentId）
+ * - 在桌面端忽略旧助手路由参数并统一回到 `/chat`
  * - 渲染 ChatContainer
  * 
  * 性能优化：

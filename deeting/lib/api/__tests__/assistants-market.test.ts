@@ -35,6 +35,8 @@ describe("assistant market api", () => {
       if (command === "sync_local_system_assets") {
         return {
           fetched_count: 1,
+          assistant_fetched_count: 1,
+          skill_fetched_count: 0,
           upserted_count: 1,
           hidden_count: 0,
           metadata_only_count: 0,
@@ -46,7 +48,6 @@ describe("assistant market api", () => {
           skill_failed_count: 0,
           disabled_skill_count: 0,
           archived_assistant_count: 0,
-          disabled_assistant_install_count: 0,
         }
       }
       if (command === "list_local_assistant_entities") {
@@ -80,46 +81,6 @@ describe("assistant market api", () => {
             published_at: "2026-03-03T00:00:00Z",
           },
         ]
-      }
-      if (command === "list_local_assistant_installs") {
-        return {
-          items: [
-            {
-              id: "f14e6b4c-8cc0-4f45-9590-fac897f76207",
-              assistant_id: "ca8c65e1-ffdd-45aa-8f58-b7709ed318de",
-              alias: null,
-              icon_override: null,
-              pinned_version_id: null,
-              follow_latest: true,
-              is_enabled: true,
-              sort_order: 0,
-              assistant: {
-                assistant_id: "ca8c65e1-ffdd-45aa-8f58-b7709ed318de",
-                owner_user_id: null,
-                icon_id: "lucide:bot",
-                share_slug: null,
-                summary: "local summary",
-                published_at: "2026-03-03T00:00:00Z",
-                current_version_id: "3c1855f8-4080-4f67-8bdf-d00adaf42cae",
-                install_count: 12,
-                rating_avg: 4.8,
-                rating_count: 3,
-                tags: ["#chat"],
-                version: {
-                  id: "3c1855f8-4080-4f67-8bdf-d00adaf42cae",
-                  version: "1.0.0",
-                  name: "Chat Pro",
-                  description: "assistant for chat",
-                  system_prompt: "you are assistant",
-                  tags: ["#chat"],
-                  published_at: "2026-03-03T00:00:00Z",
-                },
-              },
-            },
-          ],
-          next_page: null,
-          previous_page: null,
-        }
       }
       return []
     })

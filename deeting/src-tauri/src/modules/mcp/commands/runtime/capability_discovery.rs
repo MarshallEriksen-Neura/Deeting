@@ -113,7 +113,6 @@ pub(crate) async fn build_capability_search_result(
         "usage_hint": "优先从 capabilities 里选择 direct host 能力直接调用；recipes 表示需要安装、启用或激活的 skill/assistant bundle，本身不是可直接执行的 tool。只有在需要多步程序逻辑、循环、条件分支或结果聚合时，才进入 orchestration_primitives 里的 execute_code_plan。",
         "availability": {
             "enabled_assistant_count": registry.enabled_assistant_count,
-            "enabled_skill_count": registry.enabled_skill_count,
         }
     })
 }

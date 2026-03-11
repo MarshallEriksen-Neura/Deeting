@@ -145,8 +145,8 @@ function filterCompareStateByMessageIds(
 interface ChatStore {
   // === 会话状态 ===
   sessionId: string | null
-  agentId: string | null
-  agent: ChatAssistant | null
+  selectedAssistantId: string | null
+  selectedAssistant: ChatAssistant | null
   initialized: boolean // 新增：标记是否已初始化
   isLoading: boolean
   globalLoading: boolean
@@ -175,13 +175,13 @@ interface ChatStore {
   historyHasMore: boolean
 
   // === 核心 Action：初始化会话（一次性调用）===
-  initSession: (agentId: string, sessionId: string | null, localAgent?: ChatAssistant | null) => Promise<void>
+  initSession: (selectedAssistantId: string, sessionId: string | null, localAssistant?: ChatAssistant | null) => Promise<void>
 
   // === 同步 Actions ===
   setSessionId: (sessionId: string | null) => void
-  setAgent: (agent: ChatAssistant | null) => void
-  setOverrideAssistantId: (assistantId: string | null) => void
-  clearOverrideAssistantId: () => void
+  setSelectedAssistant: (assistant: ChatAssistant | null) => void
+  setSelectedAssistantId: (assistantId: string | null) => void
+  clearSelectedAssistantId: () => void
   setMessages: (messages: Message[]) => void
   addMessage: (role: MessageRole, content: string, attachments?: ChatImageAttachment[]) => void
   mergeMessageMeta: (id: string, patch: Record<string, unknown>) => void
@@ -212,7 +212,7 @@ interface ChatStore {
 
   // === 兼容性 Actions（逐步废弃）===
   loadHistory: (sessionId: string) => Promise<void>
-  switchAgent: (agentId: string, agent: ChatAssistant | null) => void
+  switchSelectedAssistant: (assistantId: string, assistant: ChatAssistant | null) => void
   resetChat: () => void
   resetSession: () => void
 }
@@ -224,8 +224,8 @@ export const useChatStore = create<ChatStore>()(
     (set, get) => ({
       // === 会话状态初始值 ===
       sessionId: null,
-      agentId: null,
-      agent: null,
+      selectedAssistantId: null,
+      selectedAssistant: null,
       initialized: false,
       isLoading: false,
       globalLoading: false,
@@ -269,11 +269,11 @@ export const useChatStore = create<ChatStore>()(
       //
       // 所有操作在一个函数内完成，没有循环依赖。
       // ============================================================
-      initSession: async (agentId: string, sessionId: string | null, localAgent?: ChatAssistant | null) => {
-        const normalizedAgentId = normalizeAssistantId(agentId)
+      initSession: async (selectedAssistantId: string, sessionId: string | null, localAssistant?: ChatAssistant | null) => {
+        const normalizedAssistantId = normalizeAssistantId(selectedAssistantId)
         const state = get()
-        if (!normalizedAgentId) {
-          if (state.initialized && state.agentId === null && state.sessionId === sessionId) {
+        if (!normalizedAssistantId) {
+          if (state.initialized && state.selectedAssistantId === null && state.sessionId === sessionId) {
             return
           }
 
@@ -281,8 +281,8 @@ export const useChatStore = create<ChatStore>()(
           const shouldReset = isNewSession
 
           set({
-            agentId: null,
-            agent: null,
+            selectedAssistantId: null,
+            selectedAssistant: null,
             sessionId,
             initialized: true,
             isLoading: true,
@@ -331,18 +331,18 @@ export const useChatStore = create<ChatStore>()(
         }
 
         // 防止重复初始化同一个 agent + session
-        if (state.initialized && state.agentId === normalizedAgentId && state.sessionId === sessionId) {
+        if (state.initialized && state.selectedAssistantId === normalizedAssistantId && state.sessionId === sessionId) {
           return
         }
 
-        // 如果是新的 agentId 或 sessionId，需要重置状态
-        const isNewAgent = state.agentId !== normalizedAgentId
+        // 如果是新的 selectedAssistantId 或 sessionId，需要重置状态
+        const isNewAssistant = state.selectedAssistantId !== normalizedAssistantId
         const isNewSession = state.sessionId !== sessionId
-        const shouldReset = isNewAgent || isNewSession
+        const shouldReset = isNewAssistant || isNewSession
 
         // 先设置基础状态
         set({
-          agentId: normalizedAgentId,
+          selectedAssistantId: normalizedAssistantId,
           sessionId,
           initialized: true,
           isLoading: true,
@@ -363,15 +363,15 @@ export const useChatStore = create<ChatStore>()(
 
         try {
           // Step 1: 获取 agent 数据
-          let agent: ChatAssistant | null = localAgent ?? null
+          let selectedAssistant: ChatAssistant | null = localAssistant ?? null
 
-          if (!agent) {
+          if (!selectedAssistant) {
             // 从 API 获取 assistant 列表
             try {
               const installPage = await fetchAssistantInstalls({ size: 100 })
-              const found = installPage.items.find((item) => item.assistant_id === normalizedAgentId)
+              const found = installPage.items.find((item) => item.assistant_id === normalizedAssistantId)
               if (found) {
-                agent = mapInstallToAssistant(found)
+                selectedAssistant = mapInstallToAssistant(found)
               }
             } catch (error) {
               console.error("Failed to fetch assistant:", error)
@@ -399,7 +399,7 @@ export const useChatStore = create<ChatStore>()(
 
           // Step 3: 一次性更新所有状态（避免多次触发渲染）
           set({
-            agent,
+            selectedAssistant,
             messages,
             compareByMessageId: {},
             historyCursor,
@@ -416,24 +416,24 @@ export const useChatStore = create<ChatStore>()(
       // === 同步 Actions ===
       setSessionId: (sessionId) => set({ sessionId }),
 
-      setAgent: (agent) => {
+      setSelectedAssistant: (assistant) => {
         // 防止相同 agent 重复设置（避免无限循环）
-        const current = get().agent
-        if (current?.id === agent?.id) return
-        set({ agent })
+        const current = get().selectedAssistant
+        if (current?.id === assistant?.id) return
+        set({ selectedAssistant: assistant })
       },
 
-      setOverrideAssistantId: (assistantId) => {
+      setSelectedAssistantId: (assistantId) => {
         const normalized = normalizeAssistantId(assistantId)
         set({
-          agentId: normalized,
+          selectedAssistantId: normalized,
         })
       },
 
-      clearOverrideAssistantId: () =>
+      clearSelectedAssistantId: () =>
         set({
-          agentId: null,
-          agent: null,
+          selectedAssistantId: null,
+          selectedAssistant: null,
         }),
 
       setMessages: (messages) =>
@@ -723,24 +723,24 @@ export const useChatStore = create<ChatStore>()(
         }
       },
 
-      switchAgent: (agentId: string, agent: ChatAssistant | null) => {
-        const normalizedAgentId = normalizeAssistantId(agentId)
-        if (!normalizedAgentId) {
-          console.warn("switchAgent skipped due to invalid agentId", agentId)
+      switchSelectedAssistant: (assistantId: string, assistant: ChatAssistant | null) => {
+        const normalizedAssistantId = normalizeAssistantId(assistantId)
+        if (!normalizedAssistantId) {
+          console.warn("switchSelectedAssistant skipped due to invalid assistantId", assistantId)
           return
         }
         const current = get()
 
-        if (current.agentId === normalizedAgentId) {
-          if (agent && current.agent?.id !== agent.id) {
-            set({ agent })
+        if (current.selectedAssistantId === normalizedAssistantId) {
+          if (assistant && current.selectedAssistant?.id !== assistant.id) {
+            set({ selectedAssistant: assistant })
           }
           return
         }
 
         set({
-          agentId: normalizedAgentId,
-          agent,
+          selectedAssistantId: normalizedAssistantId,
+          selectedAssistant: assistant,
           messages: [],
           compareByMessageId: {},
           input: "",
@@ -775,8 +775,8 @@ export const useChatStore = create<ChatStore>()(
       resetSession: () =>
         set({
           sessionId: null,
-          agentId: null,
-          agent: null,
+          selectedAssistantId: null,
+          selectedAssistant: null,
           messages: [],
           compareByMessageId: {},
           input: "",
@@ -813,7 +813,7 @@ export const useChatMessages = () => useChatStore((state) => state.messages)
 export const useChatLoading = () => useChatStore((state) => state.isLoading)
 
 /** 获取当前 Agent */
-export const useChatAgent = () => useChatStore((state) => state.agent)
+export const useChatAgent = () => useChatStore((state) => state.selectedAssistant)
 
 /** 获取状态信息 */
 export const useChatStatus = () =>
@@ -834,4 +834,3 @@ export const useChatInput = () =>
     removeAttachment: state.removeAttachment,
     clearAttachments: state.clearAttachments,
   }))
-

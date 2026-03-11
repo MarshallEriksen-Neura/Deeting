@@ -62,6 +62,10 @@ const matchesQuery = (agent: AssistantCardData, query: string) => {
 
 export default function AssistantsPage() {
   const t = useTranslations("assistants")
+  const isTauriRuntime =
+    process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
+    typeof window !== "undefined" &&
+    ("__TAURI__" in window || "__TAURI_INTERNALS__" in window)
   const [searchQuery, setSearchQuery] = React.useState("")
   const [selectedTags, setSelectedTags] = React.useState<string[]>([])
 
@@ -317,7 +321,7 @@ export default function AssistantsPage() {
               <AgentCard
                 key={agent.id}
                 agent={agent}
-                onInstall={handleInstall}
+                onInstall={isTauriRuntime ? undefined : handleInstall}
                 onEdit={handleEdit}
               />
             ))

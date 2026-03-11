@@ -499,8 +499,37 @@ for raw_line in sys.stdin:
 
     async fn mock_system_assets_handler(
         AxumState(state): AxumState<MockSystemAssetsServerState>,
+        uri: axum::http::Uri,
     ) -> Json<serde_json::Value> {
-        Json(state.payload)
+        let path = uri.path();
+        let items = state
+            .payload
+            .get("items")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let filtered_items = if path.ends_with("/assistants") {
+            items.into_iter()
+                .filter(|item| {
+                    item.get("asset_id")
+                        .and_then(|value| value.as_str())
+                        .map(|value| value.starts_with("assistant:"))
+                        .unwrap_or(false)
+                })
+                .collect::<Vec<_>>()
+        } else if path.ends_with("/skills") {
+            items.into_iter()
+                .filter(|item| {
+                    item.get("asset_id")
+                        .and_then(|value| value.as_str())
+                        .map(|value| value.starts_with("skill:"))
+                        .unwrap_or(false)
+                })
+                .collect::<Vec<_>>()
+        } else {
+            items
+        };
+        Json(serde_json::json!({ "items": filtered_items }))
     }
 
     async fn start_mock_system_assets_server(
@@ -513,10 +542,8 @@ for raw_line in sys.stdin:
             .local_addr()
             .expect("read mock system assets listener addr");
         let app = Router::new()
-            .route(
-                "/api/v1/system-assets/sync",
-                get(mock_system_assets_handler),
-            )
+            .route("/api/v1/system-assets/assistants", get(mock_system_assets_handler))
+            .route("/api/v1/system-assets/skills", get(mock_system_assets_handler))
             .with_state(MockSystemAssetsServerState { payload });
         let server = tokio::spawn(async move {
             let _ = axum::serve(listener, app).await;
@@ -1228,7 +1255,6 @@ for raw_line in sys.stdin:
 
         let view = crate::modules::mcp::commands::runtime::build_desktop_mcp_tool_view(
             tool,
-            &HashSet::new(),
             Some(&indexed_tool_ids),
         );
 
@@ -1263,7 +1289,6 @@ for raw_line in sys.stdin:
 
         let view = crate::modules::mcp::commands::runtime::build_desktop_mcp_tool_view(
             stopped_tool,
-            &HashSet::new(),
             Some(&HashSet::new()),
         );
 
@@ -1283,7 +1308,7 @@ for raw_line in sys.stdin:
     }
 
     #[tokio::test]
-    async fn desktop_tool_views_mark_disabled_skill_as_not_desired_enabled() {
+    async fn desktop_tool_views_do_not_infer_state_from_legacy_skill_identifier() {
         let store = create_test_store("desktop-tool-view-disabled-skill").await;
         store
             .upsert_local_skill_install_state(
@@ -1314,18 +1339,17 @@ for raw_line in sys.stdin:
         let view = views
             .into_iter()
             .find(|item| item.tool.id == tool.id)
-            .expect("find disabled skill tool view");
+            .expect("find legacy skill tool view");
 
-        assert!(!view.desired_enabled);
-        assert!(!view.runtime_ready);
-        assert_eq!(view.backing_skill_id.as_deref(), Some("skill.stocks"));
-        assert_eq!(view.runtime_status_reason, "skill_installed_but_disabled");
+        assert!(view.desired_enabled);
+        assert!(view.runtime_ready);
+        assert_eq!(view.runtime_status_reason, "ready_in_local_runtime");
         assert_eq!(
             view.availability_class,
-            crate::modules::mcp::commands::runtime::ToolAvailabilityClass::NeedsSetup
+            crate::modules::mcp::commands::runtime::ToolAvailabilityClass::CallableDirect
         );
-        assert_eq!(view.recommended_action, "enable_skill");
-        assert!(view.activation_required);
+        assert_eq!(view.recommended_action, "execute");
+        assert!(!view.activation_required);
         assert_eq!(
             view.index_status,
             crate::modules::mcp::commands::runtime::DesktopMcpToolIndexStatus::Indexed
@@ -1333,18 +1357,21 @@ for raw_line in sys.stdin:
     }
 
     #[tokio::test]
-    async fn desktop_tool_views_hide_skill_backed_tools_from_mcp_registry_listing() {
+    async fn desktop_tool_views_surface_legacy_skill_backed_rows_without_special_hiding() {
         let store = create_test_store("desktop-tool-view-hide-skill-tools").await;
 
         let visible_tool = upsert_test_tool(&store, "plain_local_tool", "cat").await;
 
         let skill_source = store
-            .upsert_skill_source(
-                "skill:skill.stocks",
-                "/tmp/skills/stocks",
-                McpTrustLevel::Community,
-                false,
-            )
+            .insert_source(NewSource {
+                name: "skill:skill.stocks".to_string(),
+                source_type: McpSourceType::Skill,
+                path_or_url: "/tmp/skills/stocks".to_string(),
+                trust_level: McpTrustLevel::Community,
+                status: McpSourceStatus::Active,
+                last_synced_at: None,
+                is_read_only: false,
+            })
             .await
             .expect("insert skill source");
         let skill_config_json = serde_json::json!({
@@ -1390,7 +1417,7 @@ for raw_line in sys.stdin:
         .expect("build tool views");
 
         assert!(views.iter().any(|item| item.tool.id == visible_tool.id));
-        assert!(views.iter().all(|item| item.tool.id != hidden_skill_tool.id));
+        assert!(views.iter().any(|item| item.tool.id == hidden_skill_tool.id));
     }
 
     #[tokio::test]
@@ -1400,7 +1427,6 @@ for raw_line in sys.stdin:
 
         let view = crate::modules::mcp::commands::runtime::build_desktop_mcp_tool_view(
             tool.clone(),
-            &HashSet::new(),
             Some(&HashSet::from([tool.id.clone()])),
         );
 
@@ -1436,7 +1462,6 @@ for raw_line in sys.stdin:
 
         let view = crate::modules::mcp::commands::runtime::build_desktop_mcp_tool_view(
             stopped_tool,
-            &HashSet::new(),
             Some(&HashSet::new()),
         );
 
@@ -1525,7 +1550,6 @@ for raw_line in sys.stdin:
 
         let view = crate::modules::mcp::commands::runtime::build_desktop_mcp_tool_view(
             tool,
-            &HashSet::new(),
             Some(&HashSet::new()),
         );
 
@@ -3278,12 +3302,15 @@ for raw_line in sys.stdin:
             .expect("insert visible source");
 
         let skill_source = store
-            .upsert_skill_source(
-                "skill:official.skills.echo",
-                "/tmp/skills/echo",
-                McpTrustLevel::Official,
-                true,
-            )
+            .insert_source(NewSource {
+                name: "skill:official.skills.echo".to_string(),
+                source_type: McpSourceType::Skill,
+                path_or_url: "/tmp/skills/echo".to_string(),
+                trust_level: McpTrustLevel::Official,
+                status: McpSourceStatus::Active,
+                last_synced_at: None,
+                is_read_only: true,
+            })
             .await
             .expect("insert skill source");
 
@@ -3303,7 +3330,7 @@ for raw_line in sys.stdin:
     }
 
     #[tokio::test]
-    async fn migrate_legacy_skill_sources_reclassifies_old_local_rows() {
+    async fn purge_legacy_skill_mcp_rows_removes_old_skill_sources_and_tools() {
         let store = create_test_store("skill-source-migrate").await;
 
         let legacy_skill_source = store
@@ -3319,19 +3346,54 @@ for raw_line in sys.stdin:
             .await
             .expect("insert legacy skill source");
 
-        let migrated = store
-            .migrate_legacy_skill_sources()
+        let config_json = serde_json::json!({
+            "command": "python3",
+            "args": ["main.py"]
+        })
+        .to_string();
+        let legacy_tool = store
+            .upsert_tool(ToolUpsert {
+                id: None,
+                source_id: legacy_skill_source.id.clone(),
+                identifier: Some("skill.legacy.example/repair".to_string()),
+                name: "legacy_skill_tool".to_string(),
+                source_type: McpSourceType::Local,
+                status: McpToolStatus::Healthy,
+                ping_ms: None,
+                capabilities: vec![],
+                description: "legacy skill tool".to_string(),
+                error: None,
+                command: Some("python3".to_string()),
+                args: Some(vec!["main.py".to_string()]),
+                env: None,
+                config_json: config_json.clone(),
+                config_hash: hash_config(&config_json),
+                pending_config_json: None,
+                pending_config_hash: None,
+                conflict_status: McpConflictStatus::None,
+                is_read_only: false,
+                is_new: false,
+            })
             .await
-            .expect("migrate legacy skill sources");
-        assert_eq!(migrated, 1);
+            .expect("insert legacy skill tool");
+
+        let migrated = store
+            .purge_legacy_skill_mcp_rows()
+            .await
+            .expect("purge legacy skill rows");
+        assert!(migrated >= 2);
 
         let stored = store
             .get_source(&legacy_skill_source.id)
             .await
-            .expect("get migrated source")
-            .expect("migrated source exists");
-        assert_eq!(stored.source_type, McpSourceType::Skill);
-        assert!(store.is_internal_skill_source(&stored));
+            .expect("get purged source");
+        assert!(stored.is_none());
+
+        let stored_tool = store
+            .get_tool(&legacy_tool.id)
+            .await
+            .expect("get purged tool");
+        assert!(stored_tool.is_none());
 
         let listed = store.list_sources().await.expect("list visible sources");
         assert!(listed.iter().all(|item| item.id != legacy_skill_source.id));
@@ -3407,7 +3469,7 @@ for raw_line in sys.stdin:
                     "asset_id": "skill:skill.hidden",
                     "title": "Hidden Skill",
                     "description": "no local exec",
-                    "asset_kind": "capability",
+                    "asset_kind": "skill_bundle",
                     "owner_scope": "system",
                     "source_kind": "official",
                     "version": "1.0.0",
@@ -3427,7 +3489,7 @@ for raw_line in sys.stdin:
                     "asset_id": "skill:skill.meta",
                     "title": "Meta Skill",
                     "description": "metadata only",
-                    "asset_kind": "capability",
+                    "asset_kind": "skill_bundle",
                     "owner_scope": "system",
                     "source_kind": "official",
                     "version": "1.0.0",
@@ -3447,7 +3509,7 @@ for raw_line in sys.stdin:
                     "asset_id": "assistant:assistant.hidden",
                     "title": "Hidden Assistant",
                     "description": "no local exec",
-                    "asset_kind": "capability",
+                    "asset_kind": "assistant_template",
                     "owner_scope": "system",
                     "source_kind": "official",
                     "version": "1.0.0",
@@ -3487,7 +3549,7 @@ for raw_line in sys.stdin:
                     "asset_id": "assistant:assistant.exec",
                     "title": "Executable Assistant",
                     "description": "ok",
-                    "asset_kind": "capability",
+                    "asset_kind": "assistant_template",
                     "owner_scope": "system",
                     "source_kind": "official",
                     "version": "1.0.0",
@@ -3540,13 +3602,14 @@ for raw_line in sys.stdin:
         .expect("sync local system assets");
 
         assert_eq!(response.fetched_count, 4);
+        assert_eq!(response.assistant_fetched_count, 2);
+        assert_eq!(response.skill_fetched_count, 2);
         assert_eq!(response.upserted_count, 4);
         assert_eq!(response.hidden_count, 2);
         assert_eq!(response.metadata_only_count, 1);
         assert_eq!(response.executable_count, 1);
         assert_eq!(response.disabled_skill_count, 2);
         assert_eq!(response.archived_assistant_count, 1);
-        assert_eq!(response.disabled_assistant_install_count, 1);
 
         let enabled_skills = store
             .list_enabled_local_skill_ids()
@@ -3554,12 +3617,6 @@ for raw_line in sys.stdin:
             .expect("list enabled skills");
         assert!(!enabled_skills.contains("skill.hidden"));
         assert!(!enabled_skills.contains("skill.meta"));
-
-        let assistant_ids = store
-            .list_enabled_local_assistant_ids()
-            .await
-            .expect("list enabled assistants");
-        assert!(!assistant_ids.contains("assistant.hidden"));
 
         let archived_status: String = sqlx::query_scalar(
             "SELECT status FROM assistant WHERE id = 'assistant.hidden' LIMIT 1;",
@@ -3644,7 +3701,7 @@ for raw_line in sys.stdin:
                 "asset_id": "skill:skill.keep",
                 "title": "Keep Skill",
                 "description": null,
-                "asset_kind": "capability",
+                "asset_kind": "skill_bundle",
                 "owner_scope": "system",
                 "source_kind": "official",
                 "version": "1.0.0",
@@ -3778,7 +3835,7 @@ for raw_line in sys.stdin:
                 "asset_id": "skill:skill.installed",
                 "title": "Installed Skill",
                 "description": "projected via system assets",
-                "asset_kind": "capability",
+                "asset_kind": "skill_bundle",
                 "owner_scope": "system",
                 "source_kind": "official",
                 "version": "1.2.3",
@@ -3834,6 +3891,8 @@ for raw_line in sys.stdin:
         .expect("sync unified skill installs");
 
         assert_eq!(response.skill_install_fetched_count, 1);
+        assert_eq!(response.assistant_fetched_count, 0);
+        assert_eq!(response.skill_fetched_count, 1);
         assert_eq!(response.skill_install_upserted_count, 1);
         assert_eq!(response.skill_reinstalled_count, 0);
         assert_eq!(response.skill_failed_count, 0);
@@ -3897,15 +3956,18 @@ for raw_line in sys.stdin:
         .await
         .expect("detect missing skill source"));
 
-        let _source = store
-            .upsert_skill_source(
-                "skill:skill.self-heal",
+        store
+            .upsert_local_skill_install_state(
+                "skill.self-heal",
+                Some("1.0.0"),
+                true,
+                Some("python"),
+                r#"{"id":"skill.self-heal","name":"Self Heal Skill"}"#,
                 skill_dir.to_string_lossy().as_ref(),
-                McpTrustLevel::Community,
-                false,
+                None,
             )
             .await
-            .expect("upsert self-heal source");
+            .expect("upsert self-heal install state");
 
         assert!(local_skill_registration_self_heal_needed(
             &store,
@@ -4047,12 +4109,11 @@ for raw_line in sys.stdin:
         .expect("initial skill registration");
         assert_eq!(indexed, 1);
 
-        let source_name = "skill:skill.restore";
-        let source = store
-            .find_source_by_name(source_name)
+        let install_path = store
+            .get_local_skill_install_path("skill.restore")
             .await
-            .expect("find initial source")
-            .expect("initial source exists");
+            .expect("get initial install path");
+        assert_eq!(install_path.as_deref(), Some(skill_dir.to_string_lossy().as_ref()));
         assert!(memory_state
             .service
             .get_asset_by_id("skill.restore")
@@ -4066,13 +4127,9 @@ for raw_line in sys.stdin:
             .await
             .expect("delete restore vector asset");
         store
-            .delete_tools_by_source_id(&source.id)
+            .delete_local_skill_install("skill.restore")
             .await
-            .expect("delete restore tools");
-        store
-            .delete_source(&source.id)
-            .await
-            .expect("delete restore source");
+            .expect("delete restore install row");
 
         assert!(local_skill_registration_self_heal_needed(
             &store,
@@ -4094,12 +4151,11 @@ for raw_line in sys.stdin:
         .expect("restore skill registration");
         assert_eq!(restored, 1);
 
-        let restored_source = store
-            .find_source_by_name(source_name)
+        let restored_path = store
+            .get_local_skill_install_path("skill.restore")
             .await
-            .expect("find restored source")
-            .expect("restored source exists");
-        assert_eq!(restored_source.path_or_url, skill_dir.to_string_lossy());
+            .expect("get restored install path");
+        assert_eq!(restored_path.as_deref(), Some(skill_dir.to_string_lossy().as_ref()));
         assert!(memory_state
             .service
             .get_asset_by_id("skill.restore")

@@ -31,7 +31,7 @@ pub async fn extract_and_store_facts(
     model_id: &str,
     conversation_text: &str,
     session_id: &str,
-    assistant_id: Option<&str>,
+    capability_id: Option<&str>,
 ) {
     let trimmed = conversation_text.trim();
     if trimmed.is_empty() || trimmed.len() < 50 {
@@ -92,7 +92,7 @@ pub async fn extract_and_store_facts(
         let payload = CreateLocalMemoryRequest {
             content: fact_trimmed,
             session_id: Some(session_id.to_string()),
-            assistant_id: assistant_id.map(|s| s.to_string()),
+            capability_id: capability_id.map(|s| s.to_string()),
             meta_info: Some(serde_json::json!({ "source": "auto_extraction" })),
             category: Some("fact".to_string()),
             source: Some("auto_extraction".to_string()),

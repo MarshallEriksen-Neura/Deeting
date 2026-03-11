@@ -9,6 +9,8 @@ let lastSystemAssetSyncAt = 0
 
 const LocalSystemAssetSyncResponseSchema = z.object({
   fetched_count: z.number(),
+  assistant_fetched_count: z.number(),
+  skill_fetched_count: z.number(),
   upserted_count: z.number(),
   hidden_count: z.number(),
   metadata_only_count: z.number(),
@@ -20,7 +22,6 @@ const LocalSystemAssetSyncResponseSchema = z.object({
   skill_failed_count: z.number(),
   disabled_skill_count: z.number(),
   archived_assistant_count: z.number(),
-  disabled_assistant_install_count: z.number(),
 })
 
 export type LocalSystemAssetSyncResponse = z.infer<typeof LocalSystemAssetSyncResponseSchema>

@@ -679,7 +679,8 @@ async fn dispatch_tool_call(
                 limit: value_to_i64(arguments.get("limit")),
                 session_id: value_to_string(arguments.get("session_id"))
                     .or_else(|| Some(claims.session_id.clone())),
-                assistant_id: value_to_string(arguments.get("assistant_id")),
+                capability_id: value_to_string(arguments.get("capability_id"))
+                    .or_else(|| value_to_string(arguments.get("assistant_id"))),
             };
             let result = state
                 .deps
@@ -704,7 +705,8 @@ async fn dispatch_tool_call(
                 content: resolved_content,
                 session_id: value_to_string(arguments.get("session_id"))
                     .or_else(|| Some(claims.session_id.clone())),
-                assistant_id: value_to_string(arguments.get("assistant_id")),
+                capability_id: value_to_string(arguments.get("capability_id"))
+                    .or_else(|| value_to_string(arguments.get("assistant_id"))),
                 meta_info: arguments.get("meta_info").cloned(),
                 category: None,
                 source: None,
@@ -724,7 +726,8 @@ async fn dispatch_tool_call(
             let payload = LocalMemoryClearRequest {
                 session_id: value_to_string(arguments.get("session_id"))
                     .or_else(|| Some(claims.session_id.clone())),
-                assistant_id: value_to_string(arguments.get("assistant_id")),
+                capability_id: value_to_string(arguments.get("capability_id"))
+                    .or_else(|| value_to_string(arguments.get("assistant_id"))),
             };
             let cleared = state
                 .deps

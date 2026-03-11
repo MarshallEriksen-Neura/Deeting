@@ -41,6 +41,8 @@ describe("plugin market api", () => {
       if (command === "sync_local_system_assets") {
         return {
           fetched_count: 1,
+          assistant_fetched_count: 0,
+          skill_fetched_count: 1,
           upserted_count: 1,
           hidden_count: 0,
           metadata_only_count: 0,
@@ -52,7 +54,6 @@ describe("plugin market api", () => {
           skill_failed_count: 0,
           disabled_skill_count: 0,
           archived_assistant_count: 0,
-          disabled_assistant_install_count: 0,
         }
       }
       return null
@@ -73,6 +74,8 @@ describe("plugin market api", () => {
       if (command === "sync_local_system_assets") {
         return {
           fetched_count: 0,
+          assistant_fetched_count: 0,
+          skill_fetched_count: 0,
           upserted_count: 0,
           hidden_count: 0,
           metadata_only_count: 0,
@@ -84,7 +87,6 @@ describe("plugin market api", () => {
           skill_failed_count: 0,
           disabled_skill_count: 0,
           archived_assistant_count: 0,
-          disabled_assistant_install_count: 0,
         }
       }
       return null

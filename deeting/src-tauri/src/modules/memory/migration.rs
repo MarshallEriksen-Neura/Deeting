@@ -8,7 +8,7 @@ use lancedb::Connection;
 
 use crate::modules::memory::error::MemoryError;
 
-/// Schema V1: id, content, session_id, assistant_id, meta_info_json, is_deleted, created_at, updated_at
+/// Schema V1 legacy rows may still use `assistant_id`; newer rows use `capability_id`.
 /// Schema V2: V1 + embedding (FixedSizeList<f32>, nullable), embedding_model (Utf8, nullable)
 /// Schema V3: V2 + tags_json, category, source, vitality, last_accessed_at
 pub const CURRENT_MEMORY_SCHEMA_VERSION: u32 = 3;
@@ -151,9 +151,7 @@ fn extend_batch_with_null_embedding(
     let session_col = old_batch
         .column_by_name("session_id")
         .ok_or_else(|| MemoryError::Storage("missing column: session_id".into()))?;
-    let assistant_col = old_batch
-        .column_by_name("assistant_id")
-        .ok_or_else(|| MemoryError::Storage("missing column: assistant_id".into()))?;
+    let capability_col = get_memory_context_col(old_batch)?;
     let meta_col = old_batch
         .column_by_name("meta_info_json")
         .ok_or_else(|| MemoryError::Storage("missing column: meta_info_json".into()))?;
@@ -186,7 +184,7 @@ fn extend_batch_with_null_embedding(
             id_col.clone(),
             content_col.clone(),
             session_col.clone(),
-            assistant_col.clone(),
+            capability_col.clone(),
             meta_col.clone(),
             deleted_col.clone(),
             created_col.clone(),
@@ -266,7 +264,7 @@ fn extend_v2_batch_with_v3_columns(
     let id_col = get_col(old_batch, "id")?;
     let content_col = get_col(old_batch, "content")?;
     let session_col = get_col(old_batch, "session_id")?;
-    let assistant_col = get_col(old_batch, "assistant_id")?;
+    let capability_col = get_memory_context_col(old_batch)?;
     let meta_col = get_col(old_batch, "meta_info_json")?;
     let deleted_col = get_col(old_batch, "is_deleted")?;
     let created_col = get_col(old_batch, "created_at")?;
@@ -293,7 +291,7 @@ fn extend_v2_batch_with_v3_columns(
             id_col,
             content_col,
             session_col,
-            assistant_col,
+            capability_col,
             meta_col,
             deleted_col,
             created_col,
@@ -315,4 +313,16 @@ fn get_col(batch: &RecordBatch, name: &str) -> Result<Arc<dyn Array>, MemoryErro
         .column_by_name(name)
         .cloned()
         .ok_or_else(|| MemoryError::Storage(format!("missing column: {}", name)))
+}
+
+fn get_memory_context_col(batch: &RecordBatch) -> Result<Arc<dyn Array>, MemoryError> {
+    if let Some(column) = batch.column_by_name("capability_id") {
+        return Ok(column.clone());
+    }
+    if let Some(column) = batch.column_by_name("assistant_id") {
+        return Ok(column.clone());
+    }
+    Err(MemoryError::Storage(
+        "missing column: capability_id/assistant_id".into(),
+    ))
 }

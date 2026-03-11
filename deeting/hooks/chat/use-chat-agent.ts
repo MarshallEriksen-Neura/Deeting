@@ -5,20 +5,20 @@ import { useChatStore, type ChatAssistant } from "@/store/chat-store"
 import { useMarketStore } from "@/store/market-store"
 
 interface UseChatAgentProps {
-  agentId: string
+  selectedAssistantId: string
   isTauriRuntime: boolean
   cloudAssistant?: ChatAssistant
 }
 
-export function useChatAgent({ agentId, isTauriRuntime, cloudAssistant }: UseChatAgentProps) {
+export function useChatAgent({ selectedAssistantId, isTauriRuntime, cloudAssistant }: UseChatAgentProps) {
   const installedAgents = useMarketStore((state) => state.installedAgents)
   const loadLocalAssistants = useMarketStore((state) => state.loadLocalAssistants)
   const marketLoaded = useMarketStore((state) => state.loaded)
 
-  const { setOverrideAssistantId, setAgent } = useChatStore()
+  const { setSelectedAssistantId, setSelectedAssistant } = useChatStore()
 
   // 获取本地代理
-  const localAgent = installedAgents.find(a => a.id === agentId)
+  const localAgent = installedAgents.find(a => a.id === selectedAssistantId)
 
   // 合并云端/本地代理
   const agent = useMemo(() => {
@@ -35,13 +35,13 @@ export function useChatAgent({ agentId, isTauriRuntime, cloudAssistant }: UseCha
     // 只在 agent.id 变化时才更新 store，避免不必要的状态更新
     if (prevAgentIdRef.current === agent.id) return
     prevAgentIdRef.current = agent.id
-    setAgent(agent as ChatAssistant)
-  }, [agent, setAgent])
+    setSelectedAssistant(agent as ChatAssistant)
+  }, [agent, setSelectedAssistant])
 
   // 设置活跃代理 ID
   useEffect(() => {
-    setOverrideAssistantId(agentId)
-  }, [agentId, setOverrideAssistantId])
+    setSelectedAssistantId(selectedAssistantId)
+  }, [selectedAssistantId, setSelectedAssistantId])
 
   // Tauri 代理加载
   useEffect(() => {

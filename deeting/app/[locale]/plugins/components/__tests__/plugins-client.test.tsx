@@ -108,6 +108,8 @@ describe("PluginsClient desktop repair actions", () => {
       assistant_reindexed_count: 2,
       sync: {
         fetched_count: 4,
+        assistant_fetched_count: 0,
+        skill_fetched_count: 4,
         upserted_count: 4,
         hidden_count: 0,
         metadata_only_count: 0,
@@ -119,7 +121,6 @@ describe("PluginsClient desktop repair actions", () => {
         skill_failed_count: 0,
         disabled_skill_count: 0,
         archived_assistant_count: 0,
-        disabled_assistant_install_count: 0,
       },
     })
     mockUsePluginMarket.mockReturnValue({

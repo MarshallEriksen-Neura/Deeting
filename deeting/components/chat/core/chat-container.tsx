@@ -29,7 +29,7 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
 
   // 从 store 获取状态和 action
   const initSession = useChatStore((state) => state.initSession)
-  const agent = useChatStore((state) => state.agent)
+  const selectedAssistant = useChatStore((state) => state.selectedAssistant)
   const isLoading = useChatStore((state) => state.isLoading)
   const initialized = useChatStore((state) => state.initialized)
 
@@ -79,16 +79,16 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
   }, [isTauriRuntime, marketLoaded, loadLocalAssistants])
 
   // 显示加载状态
-  const showLoading = !initialized || (isLoading && !agent)
+  const showLoading = !initialized || (isLoading && !selectedAssistant)
 
   return (
     <ChatErrorBoundary>
       <ChatLayout
-        agent={agent ?? undefined}
+        agent={selectedAssistant ?? undefined}
         isLoadingAssistants={showLoading}
         allowMissingAgent
       >
-        <ChatContent agent={agent ?? undefined} />
+        <ChatContent agent={selectedAssistant ?? undefined} />
       </ChatLayout>
     </ChatErrorBoundary>
   )

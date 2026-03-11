@@ -4,10 +4,10 @@ import { useCallback } from "react"
 import { useChatStore } from "@/store/chat-store"
 
 interface UseChatSessionProps {
-  agentId: string
+  selectedAssistantId: string
 }
 
-export function useChatSession({ agentId: _agentId }: UseChatSessionProps) {
+export function useChatSession({ selectedAssistantId: _selectedAssistantId }: UseChatSessionProps) {
   const { sessionId, setSessionId, resetSession, setMessages, clearAttachments } = useChatStore()
 
   const handleNewChat = useCallback(() => {

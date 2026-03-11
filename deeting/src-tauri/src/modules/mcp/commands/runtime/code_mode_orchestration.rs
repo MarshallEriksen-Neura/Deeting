@@ -8,8 +8,8 @@ use super::{
     build_local_sdk_search_result_with_runtime, build_local_tool_call_install_gate_error_meta,
     build_local_tool_trace_blocks, extract_chat_tool_calls,
     install_local_skill_from_onboarding_request,
-    request_provider_chat_completion, resolve_local_assistant_activation_state,
-    LocalAssistantActivationState, LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
+    request_provider_chat_completion, resolve_local_capability_activation_state,
+    LocalCapabilityActivationState, LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
     LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
 };
 
@@ -26,7 +26,7 @@ enum LocalToolCallProcessingOutcome {
         synthesized: bool,
         tool_call_meta: Vec<serde_json::Value>,
         results: Vec<String>,
-        assistant_update: Option<LocalAssistantActivationUpdate>,
+        capability_update: Option<LocalCapabilityActivationUpdate>,
     },
 }
 
@@ -39,7 +39,7 @@ struct LocalChatAutoCodeModeState {
     chat_ctx: LocalConversationChatContext,
     temperature: Option<f32>,
     max_tokens: Option<u32>,
-    active_assistant: Option<LocalAssistantActivationState>,
+    active_capability: Option<LocalCapabilityActivationState>,
     all_tool_call_meta: Vec<serde_json::Value>,
     last_capability_snapshot: Option<serde_json::Value>,
     last_response: Option<serde_json::Value>,
@@ -48,7 +48,6 @@ struct LocalChatAutoCodeModeState {
 
 struct LocalChatAutoCodeModeOutput {
     response: serde_json::Value,
-    streamed_blocks: Vec<serde_json::Value>,
 }
 
 pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
@@ -104,7 +103,7 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
         chat_ctx: chat_ctx.clone(),
         temperature,
         max_tokens,
-        active_assistant: None,
+        active_capability: None,
         all_tool_call_meta: Vec::new(),
         last_capability_snapshot: None,
         last_response: None,
@@ -120,11 +119,11 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
 }
 
 #[derive(Debug, Clone)]
-enum LocalAssistantActivationUpdate {
-    Activate(LocalAssistantActivationState),
+enum LocalCapabilityActivationUpdate {
+    Activate(LocalCapabilityActivationState),
     Deactivate {
-        _assistant_id: Option<String>,
-        assistant_name: Option<String>,
+        _capability_id: Option<String>,
+        capability_name: Option<String>,
     },
 }
 
@@ -157,7 +156,6 @@ async fn continue_local_chat_complete_with_auto_code_mode(
             }
             return Ok(LocalChatAutoCodeModeOutput {
                 response: fallback,
-                streamed_blocks: state.realtime_emitter.captured_blocks.clone(),
             });
         }
 
@@ -188,7 +186,6 @@ async fn continue_local_chat_complete_with_auto_code_mode(
             }
             return Ok(LocalChatAutoCodeModeOutput {
                 response: enriched,
-                streamed_blocks: state.realtime_emitter.captured_blocks.clone(),
             });
         }
 
@@ -198,7 +195,7 @@ async fn continue_local_chat_complete_with_auto_code_mode(
             app_state,
             &response,
             &state.chat_ctx,
-            state.active_assistant.as_ref(),
+            state.active_capability.as_ref(),
             &mut state.last_capability_snapshot,
             &mut state.realtime_emitter,
         )
@@ -208,22 +205,21 @@ async fn continue_local_chat_complete_with_auto_code_mode(
                 synthesized,
                 tool_call_meta,
                 results,
-                assistant_update,
+                capability_update,
             } => {
                 if !synthesized {
                     return Ok(LocalChatAutoCodeModeOutput {
                         response,
-                        streamed_blocks: state.realtime_emitter.captured_blocks.clone(),
                     });
                 }
                 finalize_tool_round(
                     &mut state.orchestrated_messages,
-                    &mut state.active_assistant,
+                    &mut state.active_capability,
                     state.round,
                     &response,
                     &tool_call_meta,
                     &results,
-                    assistant_update,
+                    capability_update,
                 );
                 state.all_tool_call_meta.extend(tool_call_meta);
             }
@@ -233,14 +229,14 @@ async fn continue_local_chat_complete_with_auto_code_mode(
 
 fn finalize_tool_round(
     orchestrated_messages: &mut Vec<LocalChatInputMessage>,
-    active_assistant: &mut Option<LocalAssistantActivationState>,
+    active_capability: &mut Option<LocalCapabilityActivationState>,
     round: usize,
     response: &serde_json::Value,
     tool_call_meta: &[serde_json::Value],
     results: &[String],
-    assistant_update: Option<LocalAssistantActivationUpdate>,
+    capability_update: Option<LocalCapabilityActivationUpdate>,
 ) {
-    apply_assistant_update(orchestrated_messages, active_assistant, assistant_update);
+    apply_capability_update(orchestrated_messages, active_capability, capability_update);
 
     let tool_feedback = build_auto_code_mode_tool_feedback(round, tool_call_meta, results);
     let assistant_content = response
@@ -260,22 +256,22 @@ fn finalize_tool_round(
     });
 }
 
-fn apply_assistant_update(
+fn apply_capability_update(
     orchestrated_messages: &mut Vec<LocalChatInputMessage>,
-    active_assistant: &mut Option<LocalAssistantActivationState>,
-    assistant_update: Option<LocalAssistantActivationUpdate>,
+    active_capability: &mut Option<LocalCapabilityActivationState>,
+    capability_update: Option<LocalCapabilityActivationUpdate>,
 ) {
-    if let Some(update) = assistant_update {
+    if let Some(update) = capability_update {
         match update {
-            LocalAssistantActivationUpdate::Activate(next_active) => {
-                let assistant_name = next_active.assistant_name.clone();
+            LocalCapabilityActivationUpdate::Activate(next_active) => {
+                let capability_name = next_active.capability_name.clone();
                 let capability_summary = next_active.capability_summary.clone();
-                *active_assistant = Some(next_active);
+                *active_capability = Some(next_active);
                 orchestrated_messages.push(LocalChatInputMessage {
                     role: "system".to_string(),
                     content: format!(
                         "[Expert Capability Attached: {}]\n\nAttach this as domain capability guidance only. Keep the fixed desktop persona, tone, and reply style unchanged.\n\n{}",
-                        assistant_name,
+                        capability_name,
                         if capability_summary.trim().is_empty() {
                             "Use the attached expert capability only to improve domain depth and tool choice.".to_string()
                         } else {
@@ -284,12 +280,12 @@ fn apply_assistant_update(
                     ),
                 });
             }
-            LocalAssistantActivationUpdate::Deactivate {
-                _assistant_id: _,
-                assistant_name,
+            LocalCapabilityActivationUpdate::Deactivate {
+                _capability_id: _,
+                capability_name,
             } => {
-                *active_assistant = None;
-                let label = assistant_name.unwrap_or_else(|| "expert capability".to_string());
+                *active_capability = None;
+                let label = capability_name.unwrap_or_else(|| "expert capability".to_string());
                 orchestrated_messages.push(LocalChatInputMessage {
                     role: "system".to_string(),
                     content: format!(
@@ -329,11 +325,6 @@ impl LocalRealtimeToolTraceEmitter {
             emitted_any: false,
             captured_blocks: Vec::new(),
         }
-    }
-
-    fn with_execution_section_emitted(mut self, emitted: bool) -> Self {
-        self.emitted_execution_section = emitted;
-        self
     }
 
     fn emit_execution_section_once(&mut self) {
@@ -389,7 +380,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
     app_state: &AppState,
     chat_response: &serde_json::Value,
     chat_ctx: &LocalConversationChatContext,
-    active_assistant: Option<&LocalAssistantActivationState>,
+    active_capability: Option<&LocalCapabilityActivationState>,
     last_capability_snapshot: &mut Option<serde_json::Value>,
     realtime_emitter: &mut LocalRealtimeToolTraceEmitter,
 ) -> LocalToolCallProcessingOutcome {
@@ -399,13 +390,13 @@ async fn maybe_handle_local_code_mode_tool_calls(
             synthesized: false,
             tool_call_meta: Vec::new(),
             results: Vec::new(),
-            assistant_update: None,
+            capability_update: None,
         };
     }
     let mut tool_call_meta = Vec::new();
     let mut results = Vec::new();
     let mut synthesized = false;
-    let mut assistant_update = None;
+    let mut capability_update = None;
 
     for call in tool_calls {
         let tool_name = call.name.trim().to_lowercase();
@@ -564,7 +555,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
                 app_state,
                 intent_query,
                 limit,
-                active_assistant.map(|v| v.assistant_id.as_str()),
+                active_capability.map(|v| v.capability_id.as_str()),
             )
             .await;
             synthesized = true;
@@ -591,14 +582,14 @@ async fn maybe_handle_local_code_mode_tool_calls(
                 .get("reason")
                 .and_then(|v| v.as_str())
                 .unwrap_or("Explicit expert capability attach requested by the model.");
-            match resolve_local_assistant_activation_state(app_state, capability_id).await {
+            match resolve_local_capability_activation_state(app_state, capability_id).await {
                 Ok(state) => {
-                    let activated_capability_id = state.assistant_id.clone();
+                    let activated_capability_id = state.capability_id.clone();
                     let result = serde_json::json!({
                         "action":"activated","scope":"request","format_version":LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
-                        "activation_mode":"attach_capability","capability_id":activated_capability_id,"capability_name":state.assistant_name.clone(),
+                        "activation_mode":"attach_capability","capability_id":activated_capability_id,"capability_name":state.capability_name.clone(),
                         "capability_summary":state.capability_summary.clone(),"reason":reason,
-                        "capability_transition":{"action":"activated","capability_id":capability_id,"capability_name":state.assistant_name.clone(),"reason":reason}
+                        "capability_transition":{"action":"activated","capability_id":capability_id,"capability_name":state.capability_name.clone(),"reason":reason}
                     });
                     synthesized = true;
                     let meta = serde_json::json!({"id":call.id,"name":tool_name,"status":"success","result":result});
@@ -608,9 +599,9 @@ async fn maybe_handle_local_code_mode_tool_calls(
                     tool_call_meta.push(meta);
                     results.push(format!(
                         "Expert capability '{}' attached for the current request.",
-                        state.assistant_name
+                        state.capability_name
                     ));
-                    assistant_update = Some(LocalAssistantActivationUpdate::Activate(state));
+                    capability_update = Some(LocalCapabilityActivationUpdate::Activate(state));
                     let bandit_store = app_state.providers.store.clone();
                     tauri::async_runtime::spawn(async move {
                         if let Err(e) = bandit_store
@@ -661,8 +652,8 @@ async fn maybe_handle_local_code_mode_tool_calls(
                 .unwrap_or("Explicit expert capability detach requested by the model.");
             let result = serde_json::json!({
                 "action":"deactivated","scope":"request","format_version":LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
-                "capability_id":active_assistant.map(|v| v.assistant_id.clone()),"capability_name":active_assistant.map(|v| v.assistant_name.clone()),"reason":reason,
-                "capability_transition":{"action":"deactivated","capability_id":active_assistant.map(|v| v.assistant_id.clone()),"capability_name":active_assistant.map(|v| v.assistant_name.clone()),"reason":reason}
+                "capability_id":active_capability.map(|v| v.capability_id.clone()),"capability_name":active_capability.map(|v| v.capability_name.clone()),"reason":reason,
+                "capability_transition":{"action":"deactivated","capability_id":active_capability.map(|v| v.capability_id.clone()),"capability_name":active_capability.map(|v| v.capability_name.clone()),"reason":reason}
             });
             synthesized = true;
             let meta = serde_json::json!({"id":call.id,"name":tool_name,"status":"success","result":result});
@@ -671,9 +662,9 @@ async fn maybe_handle_local_code_mode_tool_calls(
             realtime_emitter.emit_blocks(streamed_blocks);
             tool_call_meta.push(meta);
             results.push("Assistant deactivated for the current request.".to_string());
-            assistant_update = Some(LocalAssistantActivationUpdate::Deactivate {
-                _assistant_id: active_assistant.map(|v| v.assistant_id.clone()),
-                assistant_name: active_assistant.map(|v| v.assistant_name.clone()),
+            capability_update = Some(LocalCapabilityActivationUpdate::Deactivate {
+                _capability_id: active_capability.map(|v| v.capability_id.clone()),
+                capability_name: active_capability.map(|v| v.capability_name.clone()),
             });
         } else if tool_name == "sys_submit_onboarding_request" {
             realtime_emitter.emit_execution_section_once();
@@ -764,7 +755,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
         synthesized,
         tool_call_meta,
         results,
-        assistant_update,
+        capability_update,
     }
 }
 

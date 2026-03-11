@@ -467,7 +467,7 @@ async fn clear_session_auto_extraction_memories(
                 cursor: cursor.clone(),
                 limit: Some(200),
                 session_id: Some(normalized_session_id.to_string()),
-                assistant_id: None,
+                capability_id: None,
             })
             .await
             .map_err(|err| err.to_string())?;
@@ -593,7 +593,7 @@ fn map_request_to_orchestrator_input(
         model: payload.model,
         provider_model_id: normalize_optional_string(payload.provider_model_id.as_deref()),
         session_id,
-        assistant_id: normalize_optional_string(payload.assistant_id.as_deref()),
+        capability_id: normalize_optional_string(payload.assistant_id.as_deref()),
         regenerate: payload.regenerate.unwrap_or(false),
         compare_only: payload.compare_only.unwrap_or(false),
         user_content,
@@ -663,7 +663,7 @@ mod tests {
                 .append(CreateLocalMemoryRequest {
                     content: format!("auto fact {index}"),
                     session_id: Some(session_id.to_string()),
-                    assistant_id: None,
+                    capability_id: None,
                     meta_info: Some(json!({ "source": "auto_extraction" })),
                     category: Some("fact".to_string()),
                     source: Some("auto_extraction".to_string()),
@@ -679,7 +679,7 @@ mod tests {
                 .append(CreateLocalMemoryRequest {
                     content: format!("manual note {index}"),
                     session_id: Some(session_id.to_string()),
-                    assistant_id: None,
+                    capability_id: None,
                     meta_info: Some(json!({ "source": "manual" })),
                     category: Some("note".to_string()),
                     source: Some("manual".to_string()),
@@ -702,7 +702,7 @@ mod tests {
                 cursor: None,
                 limit: Some(100),
                 session_id: Some(session_id.to_string()),
-                assistant_id: None,
+                capability_id: None,
             })
             .await
             .expect("list remaining memories");

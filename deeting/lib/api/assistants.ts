@@ -235,32 +235,13 @@ const includeBySearch = (item: AssistantMarketItem, queryText: string) => {
   return fields.some((field) => field.toLowerCase().includes(text))
 }
 
-async function listAllInstalledAssistantIds(): Promise<Set<string>> {
-  const installedIds = new Set<string>()
-  let cursor: string | null = null
-  let guard = 0
-  do {
-    const pageRaw = await invokeTauri<AssistantInstallPage>("list_local_assistant_installs", {
-      query: { cursor, size: 200 },
-    })
-    const page = AssistantInstallPageSchema.parse(pageRaw)
-    for (const item of page.items) {
-      installedIds.add(item.assistant_id)
-    }
-    cursor = page.next_page ?? null
-    guard += 1
-  } while (cursor && guard < 20)
-  return installedIds
-}
-
 export async function fetchAssistantMarket(query: AssistantMarketQuery) {
   if (isTauriRuntime()) {
     await trySyncLocalSystemAssetsFromCloud()
 
-    const [entities, versions, installedIds] = await Promise.all([
+    const [entities, versions] = await Promise.all([
       invokeTauri<LocalAssistantEntityPayload[]>("list_local_assistant_entities"),
       invokeTauri<LocalAssistantVersionPayload[]>("list_local_assistant_versions"),
-      listAllInstalledAssistantIds(),
     ])
 
     const versionsByAssistant = new Map<string, LocalAssistantVersionPayload[]>()
@@ -300,7 +281,7 @@ export async function fetchAssistantMarket(query: AssistantMarketQuery) {
           tags: current.tags ?? [],
           published_at: current.published_at ?? null,
         },
-        installed: installedIds.has(entity.id),
+        installed: true,
       })
     }
 
@@ -351,13 +332,70 @@ export async function fetchAssistantMarket(query: AssistantMarketQuery) {
 
 export async function fetchAssistantInstalls(params: { cursor?: string | null; size?: number }) {
   if (isTauriRuntime()) {
-    const data = await invokeTauri<AssistantInstallPage>("list_local_assistant_installs", {
-      query: {
-        cursor: params.cursor ?? null,
-        size: params.size ?? null,
-      },
+    await trySyncLocalSystemAssetsFromCloud()
+
+    const [entities, versions] = await Promise.all([
+      invokeTauri<LocalAssistantEntityPayload[]>("list_local_assistant_entities"),
+      invokeTauri<LocalAssistantVersionPayload[]>("list_local_assistant_versions"),
+    ])
+
+    const versionMap = new Map<string, LocalAssistantVersionPayload[]>()
+    for (const version of versions ?? []) {
+      const list = versionMap.get(version.assistant_id) ?? []
+      list.push(version)
+      versionMap.set(version.assistant_id, list)
+    }
+
+    const items = (entities ?? []).map((entity) => {
+      const assistantVersions = versionMap.get(entity.id) ?? []
+      const current =
+        assistantVersions.find((version) => version.id === entity.current_version_id) ??
+        assistantVersions[0]
+      return AssistantInstallItemSchema.parse({
+        id: entity.id,
+        assistant_id: entity.id,
+        alias: null,
+        icon_override: null,
+        pinned_version_id: null,
+        follow_latest: true,
+        is_enabled: true,
+        sort_order: 0,
+        assistant: {
+          assistant_id: entity.id,
+          owner_user_id: entity.owner_user_id ?? null,
+          icon_id: entity.icon_id ?? null,
+          share_slug: entity.share_slug ?? null,
+          summary: entity.summary ?? null,
+          published_at: entity.published_at ?? null,
+          current_version_id: entity.current_version_id ?? current?.id ?? null,
+          install_count: entity.install_count ?? 0,
+          rating_avg: entity.rating_avg ?? 0,
+          rating_count: entity.rating_count ?? 0,
+          tags: current?.tags ?? [],
+          version: current
+            ? {
+                id: current.id,
+                version: current.version,
+                name: current.name,
+                description: current.description ?? null,
+                system_prompt: current.system_prompt,
+                tags: current.tags ?? [],
+                published_at: current.published_at ?? null,
+              }
+            : null,
+        },
+      })
     })
-    return AssistantInstallPageSchema.parse(data)
+
+    const size = Math.max(1, params.size ?? 100)
+    const offset = Math.max(0, Number.parseInt(params.cursor ?? "0", 10) || 0)
+    const pageItems = items.slice(offset, offset + size)
+    const nextPage = offset + size < items.length ? String(offset + size) : null
+    return AssistantInstallPageSchema.parse({
+      items: pageItems,
+      next_page: nextPage,
+      previous_page: null,
+    })
   }
 
   const data = await request({
@@ -428,16 +466,7 @@ export async function installAssistant(
   }
 ) {
   if (isTauriRuntime()) {
-    const data = await invokeTauri<AssistantInstallItem>("install_local_assistant", {
-      assistant_id: assistantId,
-      payload: payload
-        ? {
-            follow_latest: payload.follow_latest ?? null,
-            pinned_version_id: payload.pinned_version_id ?? null,
-          }
-        : null,
-    })
-    return AssistantInstallItemSchema.parse(data)
+    throw cloudOnlyOperationError("assistant install")
   }
 
   return request({
@@ -449,8 +478,7 @@ export async function installAssistant(
 
 export async function uninstallAssistant(assistantId: string) {
   if (isTauriRuntime()) {
-    await invokeTauri<void>("uninstall_local_assistant", { assistant_id: assistantId })
-    return
+    throw cloudOnlyOperationError("assistant uninstall")
   }
 
   return request({
@@ -471,18 +499,7 @@ export async function updateAssistantInstall(
   }
 ) {
   if (isTauriRuntime()) {
-    const data = await invokeTauri<AssistantInstallItem>("update_local_assistant_install", {
-      assistant_id: assistantId,
-      payload: {
-        alias: payload.alias ?? null,
-        icon_override: payload.icon_override ?? null,
-        pinned_version_id: payload.pinned_version_id ?? null,
-        follow_latest: payload.follow_latest ?? null,
-        is_enabled: payload.is_enabled ?? null,
-        sort_order: payload.sort_order ?? null,
-      },
-    })
-    return AssistantInstallItemSchema.parse(data)
+    throw cloudOnlyOperationError("assistant install update")
   }
 
   return request({

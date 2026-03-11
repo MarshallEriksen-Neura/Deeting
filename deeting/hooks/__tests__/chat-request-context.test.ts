@@ -1,23 +1,23 @@
-import { resolveAssistantRequestContext } from "@/hooks/chat/use-chat-messaging-service"
+import { resolveChatRequestContext } from "@/hooks/chat/use-chat-messaging-service"
 
-describe("resolveAssistantRequestContext", () => {
-  it("should omit assistant_id on web even if assistant exists", () => {
-    const ctx = resolveAssistantRequestContext({
+describe("resolveChatRequestContext", () => {
+  it("should include assistant_id on web when assistant exists", () => {
+    const ctx = resolveChatRequestContext({
       isTauriRuntime: false,
-      activeAssistantId: "agent-1",
+      selectedAssistantId: "agent-1",
+    })
+
+    expect(ctx.assistantId).toBe("agent-1")
+    expect(ctx.sessionStorageKey).toBe("deeting-chat-session:router")
+  })
+
+  it("should omit assistant_id on tauri", () => {
+    const ctx = resolveChatRequestContext({
+      isTauriRuntime: true,
+      selectedAssistantId: "agent-1",
     })
 
     expect(ctx.assistantId).toBeUndefined()
     expect(ctx.sessionStorageKey).toBe("deeting-chat-session:router")
-  })
-
-  it("should include assistant_id on tauri", () => {
-    const ctx = resolveAssistantRequestContext({
-      isTauriRuntime: true,
-      activeAssistantId: "agent-1",
-    })
-
-    expect(ctx.assistantId).toBe("agent-1")
-    expect(ctx.sessionStorageKey).toBe("deeting-chat-session:agent-1")
   })
 })

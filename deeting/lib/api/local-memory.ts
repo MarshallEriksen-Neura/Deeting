@@ -14,7 +14,7 @@ export const LocalMemoryItemSchema = z.object({
   id: z.string(),
   content: z.string(),
   session_id: z.string().nullable().optional(),
-  assistant_id: z.string().nullable().optional(),
+  capability_id: z.string().nullable().optional(),
   meta_info: z.record(z.string(), z.unknown()).nullable().optional(),
   embedding_model: z.string().nullable().optional(),
   category: z.string().nullable().optional(),
@@ -53,7 +53,7 @@ export const LocalMemorySearchItemSchema = z.object({
   id: z.string(),
   content: z.string(),
   session_id: z.string().nullable().optional(),
-  assistant_id: z.string().nullable().optional(),
+  capability_id: z.string().nullable().optional(),
   meta_info: z.record(z.string(), z.unknown()).nullable().optional(),
   score: z.number(),
   category: z.string().nullable().optional(),
@@ -85,7 +85,7 @@ export type WriteGuardResult = z.infer<typeof WriteGuardResultSchema>
 export type AppendLocalMemoryRequest = {
   content: string
   session_id?: string | null
-  assistant_id?: string | null
+  capability_id?: string | null
   meta_info?: Record<string, unknown> | null
   category?: string | null
   source?: string | null
@@ -96,14 +96,14 @@ export type LocalMemoryListQuery = {
   cursor?: string | null
   limit?: number | null
   session_id?: string | null
-  assistant_id?: string | null
+  capability_id?: string | null
 }
 
 export type LocalMemorySearchQuery = {
   query: string
   limit?: number | null
   session_id?: string | null
-  assistant_id?: string | null
+  capability_id?: string | null
   category?: string | null
   source?: string | null
   tags?: string[] | null
@@ -119,7 +119,7 @@ export type UpdateLocalMemoryRequest = {
 
 export type ClearLocalMemoriesRequest = {
   session_id?: string | null
-  assistant_id?: string | null
+  capability_id?: string | null
 }
 
 function ensureTauriRuntime() {
@@ -136,7 +136,7 @@ export async function appendLocalMemory(
     payload: {
       content: payload.content,
       session_id: payload.session_id ?? null,
-      assistant_id: payload.assistant_id ?? null,
+      capability_id: payload.capability_id ?? null,
       meta_info: payload.meta_info ?? null,
       category: payload.category ?? null,
       source: payload.source ?? null,
@@ -154,7 +154,7 @@ export async function appendLocalMemoryGuarded(
     payload: {
       content: payload.content,
       session_id: payload.session_id ?? null,
-      assistant_id: payload.assistant_id ?? null,
+      capability_id: payload.capability_id ?? null,
       meta_info: payload.meta_info ?? null,
       category: payload.category ?? null,
       source: payload.source ?? null,
@@ -173,7 +173,7 @@ export async function listLocalMemories(
       cursor: query.cursor ?? null,
       limit: query.limit ?? null,
       session_id: query.session_id ?? null,
-      assistant_id: query.assistant_id ?? null,
+      capability_id: query.capability_id ?? null,
     },
   })
   return LocalMemoryListResponseSchema.parse(data)
@@ -188,7 +188,7 @@ export async function searchLocalMemories(
       query: query.query,
       limit: query.limit ?? null,
       session_id: query.session_id ?? null,
-      assistant_id: query.assistant_id ?? null,
+      capability_id: query.capability_id ?? null,
       category: query.category ?? null,
       source: query.source ?? null,
       tags: query.tags ?? null,
@@ -291,7 +291,7 @@ export async function clearLocalMemories(
   const data = await invokeTauri<LocalMemoryClearResponse>("clear_local_memories", {
     payload: {
       session_id: payload.session_id ?? null,
-      assistant_id: payload.assistant_id ?? null,
+      capability_id: payload.capability_id ?? null,
     },
   })
   return LocalMemoryClearResponseSchema.parse(data)

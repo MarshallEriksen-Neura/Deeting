@@ -120,6 +120,32 @@ impl McpStore {
         Ok(row.and_then(|row| row.try_get::<String, _>("manifest_json").ok()))
     }
 
+    pub async fn get_local_skill_install_path(
+        &self,
+        skill_id: &str,
+    ) -> Result<Option<String>, McpError> {
+        let normalized_skill_id = skill_id.trim().to_string();
+        if normalized_skill_id.is_empty() {
+            return Err(McpError::validation("skill_id is required"));
+        }
+
+        let row = sqlx::query(
+            r#"
+            SELECT install_path
+            FROM local_skill_install
+            WHERE user_id = ? AND skill_id = ?
+            LIMIT 1;
+            "#,
+        )
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(&normalized_skill_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        Ok(row.and_then(|row| row.try_get::<String, _>("install_path").ok()))
+    }
+
     pub async fn upsert_local_skill_install_state(
         &self,
         skill_id: &str,
@@ -966,73 +992,37 @@ impl McpStore {
         row.map(|row| row_to_source(&row)).transpose()
     }
 
-    pub async fn upsert_skill_source(
-        &self,
-        name: &str,
-        path_or_url: &str,
-        trust_level: McpTrustLevel,
-        is_read_only: bool,
-    ) -> Result<McpSource, McpError> {
-        let now = now_rfc3339()?;
-        if let Some(existing) = self.find_source_by_name(name).await? {
-            sqlx::query(
-                r#"
-                UPDATE mcp_sources
-                SET source_type = ?,
-                    path_or_url = ?,
-                    trust_level = ?,
-                    status = ?,
-                    is_read_only = ?,
-                    updated_at = ?
-                WHERE id = ?;
-                "#,
-            )
-            .bind(McpSourceType::Skill.as_str())
-            .bind(path_or_url)
-            .bind(trust_level.as_str())
-            .bind(McpSourceStatus::Active.as_str())
-            .bind(if is_read_only { 1 } else { 0 })
-            .bind(&now)
-            .bind(&existing.id)
-            .execute(&self.pool)
-            .await
-            .map_err(|err| McpError::Storage(err.to_string()))?;
-
-            return self.get_source(&existing.id).await?.ok_or_else(|| {
-                McpError::NotFound("skill source missing after update".to_string())
-            });
-        }
-        self.insert_source(NewSource {
-            name: name.to_string(),
-            source_type: McpSourceType::Skill,
-            path_or_url: path_or_url.to_string(),
-            trust_level,
-            status: McpSourceStatus::Active,
-            last_synced_at: None,
-            is_read_only,
-        })
-        .await
-    }
-
-    pub async fn migrate_legacy_skill_sources(&self) -> Result<u64, McpError> {
-        let now = now_rfc3339()?;
-        let result = sqlx::query(
+    pub async fn purge_legacy_skill_mcp_rows(&self) -> Result<u64, McpError> {
+        let deleted_tools = sqlx::query(
             r#"
-            UPDATE mcp_sources
-            SET source_type = ?,
-                updated_at = ?
-            WHERE name LIKE 'skill:%'
-              AND source_type != ?;
+            DELETE FROM mcp_tools
+            WHERE identifier LIKE 'skill.%'
+               OR source_id IN (
+                    SELECT id
+                    FROM mcp_sources
+                    WHERE source_type = ? OR name LIKE 'skill:%'
+               );
             "#,
         )
         .bind(McpSourceType::Skill.as_str())
-        .bind(&now)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?
+        .rows_affected();
+
+        let deleted_sources = sqlx::query(
+            r#"
+            DELETE FROM mcp_sources
+            WHERE source_type = ? OR name LIKE 'skill:%';
+            "#,
+        )
         .bind(McpSourceType::Skill.as_str())
         .execute(&self.pool)
         .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
+        .map_err(|err| McpError::Storage(err.to_string()))?
+        .rows_affected();
 
-        Ok(result.rows_affected())
+        Ok(deleted_tools + deleted_sources)
     }
 
     pub fn is_internal_skill_source(&self, source: &McpSource) -> bool {

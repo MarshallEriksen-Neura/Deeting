@@ -9,8 +9,8 @@
 **功能：** 聊天路由客户端组件
 
 **职责：**
-- 解析路由参数（agentId）
-- 管理助手 ID 的优先级（路径 > 查询参数 > 存储）
+- 解析历史桌面聊天路由参数（`agentId`）
+- 在桌面端忽略旧助手路由参数并回到 `/chat`
 - 渲染 ChatContainer
 
 **性能优化：**
@@ -26,10 +26,10 @@ function ChatPage() {
 }
 ```
 
-**路由参数优先级：**
-1. 路径参数：`/chat/[agentId]`
-2. 查询参数：`/chat?agentId=xxx`
-3. 存储状态：从 `useChatStateStore` 获取
+**当前桌面语义：**
+1. 桌面端不再依赖 `/chat/[agentId]`
+2. 查询参数 `agentId` 仅作为旧链接兼容输入
+3. 桌面聊天 runtime 使用固定 persona + 自动能力路由
 
 **依赖：**
 - `@/store/chat-state-store` - 聊天状态管理

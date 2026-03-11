@@ -18,7 +18,6 @@ pub enum DesktopMcpToolIndexStatus {
 pub struct DesktopMcpToolView {
     #[serde(flatten)]
     pub tool: McpTool,
-    pub backing_skill_id: Option<String>,
     pub desired_enabled: bool,
     pub runtime_ready: bool,
     pub runtime_status_reason: &'static str,
@@ -132,43 +131,11 @@ impl fmt::Display for ToolResolutionError {
 
 impl std::error::Error for ToolResolutionError {}
 
-fn derive_skill_id(raw: &str) -> Option<&str> {
-    let normalized = raw.trim();
-    if !normalized.starts_with("skill.") {
-        return None;
-    }
-    Some(normalized.split('/').next().unwrap_or(normalized))
-}
-
-fn disabled_skill_availability() -> ToolAvailability {
-    ToolAvailability::activation_required("enable_skill", "skill_installed_but_disabled")
-}
-
-fn docs_first_skill_availability() -> ToolAvailability {
-    ToolAvailability::unavailable("read_skill_docs", "skill_routed_via_docs")
-}
-
-pub(crate) fn desired_enabled_from_tool(
-    tool: &McpTool,
-    enabled_skill_ids: &HashSet<String>,
-) -> bool {
-    match tool.identifier.as_deref().and_then(derive_skill_id) {
-        Some(skill_id) => enabled_skill_ids.contains(skill_id),
-        None => true,
-    }
-}
-
 pub(crate) fn build_desktop_mcp_tool_view(
     tool: McpTool,
-    enabled_skill_ids: &HashSet<String>,
     indexed_tool_ids: Option<&HashSet<String>>,
 ) -> DesktopMcpToolView {
-    let backing_skill_id = tool
-        .identifier
-        .as_deref()
-        .and_then(derive_skill_id)
-        .map(str::to_string);
-    let availability = tool_availability_from_tool(&tool, enabled_skill_ids);
+    let availability = tool_availability_from_tool(&tool);
     let (index_status, index_status_reason) = match indexed_tool_ids {
         Some(ids) if ids.contains(tool.id.as_str()) => (
             DesktopMcpToolIndexStatus::Indexed,
@@ -185,8 +152,7 @@ pub(crate) fn build_desktop_mcp_tool_view(
     };
 
     DesktopMcpToolView {
-        backing_skill_id,
-        desired_enabled: desired_enabled_from_tool(&tool, enabled_skill_ids),
+        desired_enabled: true,
         runtime_ready: availability.is_direct_callable(),
         runtime_status_reason: availability.status_reason,
         availability_class: availability.class,
@@ -203,43 +169,19 @@ pub(crate) async fn build_desktop_mcp_tool_views(
     store: &McpStore,
     indexed_tool_ids: Option<&HashSet<String>>,
 ) -> Result<Vec<DesktopMcpToolView>, String> {
-    let enabled_skill_ids = store
-        .list_enabled_local_skill_ids()
-        .await
-        .map_err(|err| err.to_string())?;
     let tools = store.list_tools().await.map_err(|err| err.to_string())?;
 
     Ok(tools
         .into_iter()
-        .filter(|tool| tool.identifier.as_deref().and_then(derive_skill_id).is_none())
-        .map(|tool| build_desktop_mcp_tool_view(tool, &enabled_skill_ids, indexed_tool_ids))
+        .map(|tool| build_desktop_mcp_tool_view(tool, indexed_tool_ids))
         .collect())
 }
 
-pub(crate) fn fallback_local_tool_availability(
-    pkg_name: Option<&str>,
-    enabled_skill_ids: &HashSet<String>,
-) -> ToolAvailability {
-    if let Some(skill_id) = pkg_name.and_then(derive_skill_id) {
-        if !enabled_skill_ids.contains(skill_id) {
-            return disabled_skill_availability();
-        }
-        return docs_first_skill_availability();
-    }
+pub(crate) fn fallback_local_tool_availability(_pkg_name: Option<&str>) -> ToolAvailability {
     ToolAvailability::callable("ready_in_local_runtime")
 }
 
-pub(crate) fn tool_availability_from_tool(
-    tool: &McpTool,
-    enabled_skill_ids: &HashSet<String>,
-) -> ToolAvailability {
-    if let Some(skill_id) = tool.identifier.as_deref().and_then(derive_skill_id) {
-        if !enabled_skill_ids.contains(skill_id) {
-            return disabled_skill_availability();
-        }
-        return docs_first_skill_availability();
-    }
-
+pub(crate) fn tool_availability_from_tool(tool: &McpTool) -> ToolAvailability {
     match tool.transport_kind() {
         McpTransportKind::Sse => match tool.status {
             McpToolStatus::Healthy | McpToolStatus::Degraded => {
@@ -308,20 +250,13 @@ pub(crate) fn tool_availability_from_tool(
 pub(crate) async fn build_db_tool_availability_catalog(
     store: &McpStore,
 ) -> Result<ToolAvailabilityCatalog, String> {
-    let enabled_skill_ids = store
-        .list_enabled_local_skill_ids()
-        .await
-        .map_err(|err| err.to_string())?;
     let tools = store.list_tools().await.map_err(|err| err.to_string())?;
     let mut by_id = HashMap::with_capacity(tools.len());
     let mut by_name_candidates = HashMap::with_capacity(tools.len());
     let mut name_counts = HashMap::<String, usize>::with_capacity(tools.len());
 
     for tool in tools {
-        if tool.identifier.as_deref().and_then(derive_skill_id).is_some() {
-            continue;
-        }
-        let availability = tool_availability_from_tool(&tool, &enabled_skill_ids);
+        let availability = tool_availability_from_tool(&tool);
         by_id.insert(tool.id.clone(), availability.clone());
 
         let normalized_name = tool.name.trim().to_string();
@@ -415,13 +350,7 @@ pub(crate) async fn resolve_callable_mcp_tool_by_ref(
 ) -> Result<McpTool, ToolResolutionError> {
     let tool = resolve_tool_by_ref(store, tool_id, tool_name).await?;
     let tool_ref = display_tool_ref(tool_id, Some(tool.name.as_str()));
-    let enabled_skill_ids = store.list_enabled_local_skill_ids().await.map_err(|_| {
-        ToolResolutionError::ToolNotCallable {
-            tool_ref: tool_ref.clone(),
-            availability: ToolAvailability::unavailable("review", "tool_status_unavailable"),
-        }
-    })?;
-    let availability = tool_availability_from_tool(&tool, &enabled_skill_ids);
+    let availability = tool_availability_from_tool(&tool);
     if availability.is_direct_callable() {
         Ok(tool)
     } else {

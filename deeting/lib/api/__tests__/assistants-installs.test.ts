@@ -68,69 +68,81 @@ describe("assistant install apis", () => {
   it("fetches assistant installs via tauri command", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
-    mockInvoke.mockResolvedValue({
-      items: [installItem],
-      next_page: null,
-      previous_page: null,
-    } as unknown)
+    mockInvoke.mockImplementation(async (command: string) => {
+      if (command === "sync_local_system_assets") {
+        return {
+          fetched_count: 1,
+          assistant_fetched_count: 1,
+          skill_fetched_count: 0,
+          upserted_count: 1,
+          hidden_count: 0,
+          metadata_only_count: 0,
+          executable_count: 1,
+          archived_count: 0,
+          skill_install_fetched_count: 0,
+          skill_install_upserted_count: 0,
+          skill_reinstalled_count: 0,
+          skill_failed_count: 0,
+          disabled_skill_count: 0,
+          archived_assistant_count: 0,
+        }
+      }
+      if (command === "list_local_assistant_entities") {
+        return [
+          {
+            id: installItem.assistant_id,
+            owner_user_id: null,
+            visibility: "public",
+            status: "published",
+            share_slug: null,
+            summary: installItem.assistant.summary,
+            icon_id: installItem.assistant.icon_id,
+            current_version_id: installItem.assistant.current_version_id,
+            published_at: null,
+            install_count: 1,
+            rating_avg: 0,
+            rating_count: 0,
+          },
+        ]
+      }
+      if (command === "list_local_assistant_versions") {
+        return [
+          {
+            ...installItem.assistant.version,
+            assistant_id: installItem.assistant_id,
+          },
+        ]
+      }
+      throw new Error(`Unexpected command: ${command}`)
+    })
 
     const result = await fetchAssistantInstalls({ size: 20 })
 
     expect(result.items).toHaveLength(1)
-    expect(mockInvoke).toHaveBeenCalledWith("list_local_assistant_installs", {
-      query: { cursor: null, size: 20 },
-    })
+    expect(result.items[0].assistant_id).toBe(installItem.assistant_id)
     expect(mockRequest).not.toHaveBeenCalled()
   })
 
-  it("installs assistant via tauri command", async () => {
+  it("disallows assistant install in tauri runtime", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
-    mockInvoke.mockResolvedValue(installItem as unknown)
-
-    const result = await installAssistant(installItem.assistant_id, {
-      follow_latest: true,
-    })
-
-    expect(result).toEqual(installItem)
-    expect(mockInvoke).toHaveBeenCalledWith("install_local_assistant", {
-      assistant_id: installItem.assistant_id,
-      payload: {
+    await expect(
+      installAssistant(installItem.assistant_id, {
         follow_latest: true,
-        pinned_version_id: null,
-      },
-    })
+      })
+    ).rejects.toThrow("assistant install is cloud-only")
   })
 
-  it("updates assistant install via tauri command", async () => {
+  it("disallows assistant install updates in tauri runtime", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
-    mockInvoke.mockResolvedValue({
-      ...installItem,
-      alias: "my-alias",
-      follow_latest: false,
-      pinned_version_id: "3c1855f8-4080-4f67-8bdf-d00adaf42cae",
-    } as unknown)
-
-    const result = await updateAssistantInstall(installItem.assistant_id, {
-      alias: "my-alias",
-      follow_latest: false,
-      pinned_version_id: "3c1855f8-4080-4f67-8bdf-d00adaf42cae",
-    })
-
-    expect(result.alias).toBe("my-alias")
-    expect(result.follow_latest).toBe(false)
-    expect(mockInvoke).toHaveBeenCalledWith("update_local_assistant_install", {
-      assistant_id: installItem.assistant_id,
-      payload: {
+    await expect(
+      updateAssistantInstall(installItem.assistant_id, {
         alias: "my-alias",
-        icon_override: null,
-        pinned_version_id: "3c1855f8-4080-4f67-8bdf-d00adaf42cae",
         follow_latest: false,
-        is_enabled: null,
-        sort_order: null,
-      },
-    })
+        pinned_version_id: "3c1855f8-4080-4f67-8bdf-d00adaf42cae",
+      })
+    ).rejects.toThrow("assistant install update is cloud-only")
   })
 
   it("falls back to web request outside tauri runtime", async () => {

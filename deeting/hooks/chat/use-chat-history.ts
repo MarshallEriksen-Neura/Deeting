@@ -7,7 +7,7 @@ import { useChatStore } from "@/store/chat-store"
 import { parseMessageContent } from "@/lib/chat/message-content"
 import { normalizeConversationMessages } from "@/lib/chat/conversation-adapter"
 
-interface LocalAssistantMessageRecord {
+interface LocalCapabilityMessageRecord {
   id: string
   assistant_id: string
   role: string
@@ -16,15 +16,15 @@ interface LocalAssistantMessageRecord {
 }
 
 interface UseChatHistoryProps {
-  agentId: string
-  agent?: { id: string; name: string; desc?: string }
+  selectedAssistantId: string
+  selectedAssistant?: { id: string; name: string; desc?: string }
   isTauriRuntime: boolean
   loadHistory?: (sessionId: string) => Promise<any>
 }
 
 export function useChatHistory({
-  agentId: _agentId,
-  agent,
+  selectedAssistantId: _selectedAssistantId,
+  selectedAssistant,
   isTauriRuntime,
   loadHistory,
 }: UseChatHistoryProps) {
@@ -98,14 +98,14 @@ export function useChatHistory({
 
   const loadLocalHistory = useCallback(async () => {
     // 使用 ref 防止并发调用
-    if (!agent || isLoadingRef.current) return
+    if (!selectedAssistant || isLoadingRef.current) return
     isLoadingRef.current = true
 
     try {
       setHistoryState({ loading: true })
-      const records = await invoke<LocalAssistantMessageRecord[]>(
+      const records = await invoke<LocalCapabilityMessageRecord[]>(
         "list_assistant_messages",
-        { assistant_id: agent.id }
+        { assistant_id: selectedAssistant.id }
       )
 
       if (records.length > 0) {
@@ -139,7 +139,7 @@ export function useChatHistory({
       setHistoryState({ loading: false })
       isLoadingRef.current = false
     }
-  }, [agent, setMessages, setHistoryState])
+  }, [selectedAssistant, setMessages, setHistoryState])
 
   const resetHistory = useCallback(() => {
     setHistoryLoaded(false)
@@ -153,14 +153,14 @@ export function useChatHistory({
     if (historyLoaded || isLoadingRef.current) return
 
     // Tauri 运行时需要等待 agent 加载
-    if (isTauriRuntime && !agent) return
+    if (isTauriRuntime && !selectedAssistant) return
 
     if (isTauriRuntime) {
       loadLocalHistory()
     } else {
       loadCloudHistory()
     }
-  }, [agent, historyLoaded, isTauriRuntime, loadLocalHistory, loadCloudHistory])
+  }, [selectedAssistant, historyLoaded, isTauriRuntime, loadLocalHistory, loadCloudHistory])
 
   return {
     historyLoaded,

@@ -47,13 +47,13 @@ export default function HUD() {
   const {
     config,
     setConfig,
-    agent,
+    selectedAssistant,
     models,
-    agentId: activeAssistantId,
-    setAgent,
+    selectedAssistantId,
+    setSelectedAssistant,
     setModels,
-    setOverrideAssistantId,
-    clearOverrideAssistantId,
+    setSelectedAssistantId,
+    clearSelectedAssistantId,
     setMessages,
     clearAttachments,
     isLoading,
@@ -67,13 +67,13 @@ export default function HUD() {
     useShallow((state) => ({
       config: state.config,
       setConfig: state.setConfig,
-      agent: state.agent,
+      selectedAssistant: state.selectedAssistant,
       models: state.models,
-      agentId: state.agentId,
-      setAgent: state.setAgent,
+      selectedAssistantId: state.selectedAssistantId,
+      setSelectedAssistant: state.setSelectedAssistant,
       setModels: state.setModels,
-      setOverrideAssistantId: state.setOverrideAssistantId,
-      clearOverrideAssistantId: state.clearOverrideAssistantId,
+      setSelectedAssistantId: state.setSelectedAssistantId,
+      clearSelectedAssistantId: state.clearSelectedAssistantId,
       setMessages: state.setMessages,
       clearAttachments: state.clearAttachments,
       isLoading: state.isLoading,
@@ -86,12 +86,12 @@ export default function HUD() {
     }))
   );
 
-  // 从 agent 派生 assistants 列表
-  const assistants: ChatAssistant[] = agent ? [agent] : [];
-  const setAssistants = (newAssistants: ChatAssistant[]) => {
-    if (newAssistants.length > 0) setAgent(newAssistants[0]);
+  // 从 selectedAssistant 派生 assistant 模板列表
+  const assistantTemplates: ChatAssistant[] = selectedAssistant ? [selectedAssistant] : [];
+  const setAssistantTemplates = (nextTemplates: ChatAssistant[]) => {
+    if (nextTemplates.length > 0) setSelectedAssistant(nextTemplates[0]);
   };
-  const setActiveAssistantId = setOverrideAssistantId;
+  const setSelectedTemplateId = setSelectedAssistantId;
 
   const { assistants: serviceAssistants, models: serviceModels, modelGroups: serviceModelGroups } = useChatService({
     enabled: !isImage,
@@ -117,9 +117,9 @@ export default function HUD() {
   useEffect(() => {
     if (isImage) return;
     if (serviceAssistants.length) {
-      setAssistants(serviceAssistants);
+      setAssistantTemplates(serviceAssistants);
     }
-  }, [isImage, serviceAssistants, setAssistants]);
+  }, [isImage, serviceAssistants, setAssistantTemplates]);
 
   useEffect(() => {
     if (isImage) return;
@@ -128,10 +128,10 @@ export default function HUD() {
 
   useEffect(() => {
     if (!isTauriRuntime) return;
-    if (!activeAssistantId && assistants.length) {
-      setActiveAssistantId(assistants[0].id);
+    if (!selectedAssistantId && assistantTemplates.length) {
+      setSelectedTemplateId(assistantTemplates[0].id);
     }
-  }, [isTauriRuntime, activeAssistantId, assistants, setActiveAssistantId]);
+  }, [isTauriRuntime, selectedAssistantId, assistantTemplates, setSelectedTemplateId]);
 
   useEffect(() => {
     if (isImage || !models.length) return;
@@ -156,7 +156,7 @@ export default function HUD() {
   const activeModel =
     activeModelSource.find((model) => model.provider_model_id === activeModelId || model.id === activeModelId) ??
     activeModelSource[0];
-  const activeModelVisual = resolveModelVisual(activeModel, {
+  const activeModelVisual = resolveModelVisual(activeModel as any, {
     healthStatus: activeModel?.health_status ?? null,
     statusCode,
     isLoading,
@@ -164,9 +164,9 @@ export default function HUD() {
   });
   const statusDetail = resolveStatusDetail(t, statusCode, statusMeta);
   
-  const activeAssistant = useMemo(() => 
-    assistants.find(a => a.id === activeAssistantId), 
-  [assistants, activeAssistantId]);
+  const activeTemplate = useMemo(() => 
+    assistantTemplates.find((template) => template.id === selectedAssistantId), 
+  [assistantTemplates, selectedAssistantId]);
 
   // 使用 useCallback 缓存事件处理函数
   const handleNewChat = useCallback(async () => {
@@ -174,9 +174,9 @@ export default function HUD() {
      setMessages([]);
      clearAttachments();
      if (!isTauriRuntime) {
-       clearOverrideAssistantId();
+       clearSelectedAssistantId();
      }
-     const targetAssistantId = activeAssistantId ?? assistants[0]?.id ?? undefined;
+     const targetAssistantId = selectedAssistantId ?? assistantTemplates[0]?.id ?? undefined;
      setGlobalLoading(true);
      try {
       const created = await createConversation(
@@ -211,11 +211,11 @@ export default function HUD() {
     resetSession,
     setMessages,
     clearAttachments,
-    clearOverrideAssistantId,
+    clearSelectedAssistantId,
     searchParams,
     pathname,
-    activeAssistantId,
-    assistants,
+    selectedAssistantId,
+    assistantTemplates,
     setSessionId,
     setGlobalLoading,
     isTauriRuntime,
@@ -324,7 +324,7 @@ export default function HUD() {
                 <ModelPicker
                   value={activeModelId ?? ""}
                   onChange={handleModelChange}
-                  modelGroups={isImage ? imageModelGroups : serviceModelGroups}
+                  modelGroups={(isImage ? imageModelGroups : serviceModelGroups) as any}
                   title={t("model.label")}
                   subtitle={t("model.placeholder")}
                   searchPlaceholder={t("model.searchPlaceholder")}
@@ -369,10 +369,10 @@ export default function HUD() {
                         <span className="text-[9px] opacity-40 uppercase">{theme}</span>
                      </Button>
                      
-                     <Link href={`/login?callbackUrl=${encodeURIComponent(pathname || "/")}`} className="flex items-center gap-3 p-3 rounded-2xl bg-white/60 dark:bg-white/5 hover:bg-red-500/10 hover:text-red-500 transition-colors text-[11px] font-semibold shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]">
+                     <a href={`/login?callbackUrl=${encodeURIComponent(pathname || "/")}`} className="flex items-center gap-3 p-3 rounded-2xl bg-white/60 dark:bg-white/5 hover:bg-red-500/10 hover:text-red-500 transition-colors text-[11px] font-semibold shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]">
                         <LogOut className="w-4 h-4" />
                         <span>{t("hud.menu.terminateSession")}</span>
-                     </Link>
+                     </a>
                 </div>
             </motion.div>
         )}
@@ -391,7 +391,7 @@ export default function HUD() {
 
 function MenuLink({ href, icon, label }: { href: string; icon: ReactNode; label: string }) {
     return (
-        <Link href={href} className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl bg-white/70 dark:bg-white/5 hover:bg-white/90 dark:hover:bg-white/10 transition-all group shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]">
+        <Link href={href as any} className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl bg-white/70 dark:bg-white/5 hover:bg-white/90 dark:hover:bg-white/10 transition-all group shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]">
             <div className="text-slate-500/90 dark:text-white/45 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
                 {icon}
             </div>

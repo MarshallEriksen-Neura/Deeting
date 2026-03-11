@@ -101,7 +101,7 @@ impl MemoryService {
             .find_top1_similar(
                 embedding.clone(),
                 payload.session_id.as_deref(),
-                payload.assistant_id.as_deref(),
+                payload.capability_id.as_deref(),
             )
             .await?;
 
@@ -119,7 +119,7 @@ impl MemoryService {
                     id: existing_id,
                     content: existing_content,
                     session_id: payload.session_id,
-                    assistant_id: payload.assistant_id,
+                    capability_id: payload.capability_id,
                     meta_info: payload.meta_info,
                     embedding_model: None,
                     category: payload.category,
@@ -235,7 +235,7 @@ impl MemoryService {
             .find_top1_similar(
                 embedding.clone(),
                 payload.session_id.as_deref(),
-                payload.assistant_id.as_deref(),
+                payload.capability_id.as_deref(),
             )
             .await?;
 
@@ -403,7 +403,7 @@ impl MemoryService {
                 query_vector,
                 overfetch,
                 query.session_id.as_deref(),
-                query.assistant_id.as_deref(),
+                query.capability_id.as_deref(),
                 query.category.as_deref(),
                 query.source.as_deref(),
                 query.tags.as_deref(),
@@ -864,7 +864,7 @@ mod tests {
             .append(CreateLocalMemoryRequest {
                 content: "prefers coffee".into(),
                 session_id: None,
-                assistant_id: None,
+                capability_id: None,
                 meta_info: Some(serde_json::json!({"source": "chat"})),
                 category: Some("preference".into()),
                 source: Some("manual".into()),
@@ -910,7 +910,7 @@ mod tests {
             .append(CreateLocalMemoryRequest {
                 content: "prefers coffee".into(),
                 session_id: None,
-                assistant_id: None,
+                capability_id: None,
                 meta_info: Some(serde_json::json!({
                     "recall_when": "when discussing drinks",
                     "is_core": true
@@ -991,7 +991,7 @@ mod tests {
                 id: "recent-access".into(),
                 content: "recent access".into(),
                 session_id: None,
-                assistant_id: None,
+                capability_id: None,
                 meta_info: None,
                 score: 1.0,
                 category: None,
@@ -1006,7 +1006,7 @@ mod tests {
                 id: "stale-access".into(),
                 content: "stale access".into(),
                 session_id: None,
-                assistant_id: None,
+                capability_id: None,
                 meta_info: None,
                 score: 1.0,
                 category: None,

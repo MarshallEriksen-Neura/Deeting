@@ -420,7 +420,7 @@ impl MemoryStore {
             return Err(MemoryError::validation("content is required"));
         }
         let session_id = normalize_optional(payload.session_id);
-        let assistant_id = normalize_optional(payload.assistant_id);
+        let capability_id = normalize_optional(payload.capability_id);
         let meta_info_json = payload
             .meta_info
             .as_ref()
@@ -447,7 +447,7 @@ impl MemoryStore {
                 Arc::new(StringArray::from(vec![Some(id.clone())])) as Arc<dyn Array>,
                 Arc::new(StringArray::from(vec![Some(content.clone())])) as Arc<dyn Array>,
                 Arc::new(StringArray::from(vec![session_id.clone()])) as Arc<dyn Array>,
-                Arc::new(StringArray::from(vec![assistant_id.clone()])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![capability_id.clone()])) as Arc<dyn Array>,
                 Arc::new(StringArray::from(vec![meta_info_json.clone()])) as Arc<dyn Array>,
                 Arc::new(BooleanArray::from(vec![false])) as Arc<dyn Array>,
                 Arc::new(StringArray::from(vec![Some(now.clone())])) as Arc<dyn Array>,
@@ -470,7 +470,7 @@ impl MemoryStore {
             id,
             content,
             session_id,
-            assistant_id,
+            capability_id,
             meta_info: payload.meta_info,
             embedding_model: None,
             category,
@@ -490,15 +490,15 @@ impl MemoryStore {
         let limit = query.limit.unwrap_or(30).clamp(1, 200) as usize;
         let cursor = decode_cursor(query.cursor)?;
         let session_id = normalize_optional(query.session_id);
-        let assistant_id = normalize_optional(query.assistant_id);
+        let capability_id = normalize_optional(query.capability_id);
 
-        let where_clause = build_filter_sql(session_id.as_deref(), assistant_id.as_deref(), true);
+        let where_clause = build_filter_sql(session_id.as_deref(), capability_id.as_deref(), true);
         let table = self.table().await?;
         let mut stmt = table.query().select(Select::columns(&[
             "id",
             "content",
             "session_id",
-            "assistant_id",
+            "capability_id",
             "meta_info_json",
             "embedding_model",
             "tags_json",
@@ -634,7 +634,7 @@ impl MemoryStore {
                 Arc::new(StringArray::from(vec![Some(item.id.clone())])) as Arc<dyn Array>,
                 Arc::new(StringArray::from(vec![Some(item.content.clone())])) as Arc<dyn Array>,
                 Arc::new(StringArray::from(vec![item.session_id.clone()])) as Arc<dyn Array>,
-                Arc::new(StringArray::from(vec![item.assistant_id.clone()])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![item.capability_id.clone()])) as Arc<dyn Array>,
                 Arc::new(StringArray::from(vec![meta_info_json])) as Arc<dyn Array>,
                 Arc::new(BooleanArray::from(vec![false])) as Arc<dyn Array>,
                 Arc::new(StringArray::from(vec![Some(item.created_at.clone())])) as Arc<dyn Array>,
@@ -686,8 +686,8 @@ impl MemoryStore {
 
     pub async fn clear(&self, payload: LocalMemoryClearRequest) -> Result<i64, MemoryError> {
         let session_id = normalize_optional(payload.session_id);
-        let assistant_id = normalize_optional(payload.assistant_id);
-        let where_clause = build_filter_sql(session_id.as_deref(), assistant_id.as_deref(), true);
+        let capability_id = normalize_optional(payload.capability_id);
+        let where_clause = build_filter_sql(session_id.as_deref(), capability_id.as_deref(), true);
         let now = now_rfc3339();
         let table = self.table().await?;
         let mut operation = table
@@ -717,7 +717,7 @@ impl MemoryStore {
             return Err(MemoryError::validation("content is required"));
         }
         let session_id = normalize_optional(payload.session_id);
-        let assistant_id = normalize_optional(payload.assistant_id);
+        let capability_id = normalize_optional(payload.capability_id);
         let meta_info_json = payload
             .meta_info
             .as_ref()
@@ -757,7 +757,7 @@ impl MemoryStore {
                 Arc::new(StringArray::from(vec![Some(id.clone())])) as Arc<dyn Array>,
                 Arc::new(StringArray::from(vec![Some(content.clone())])) as Arc<dyn Array>,
                 Arc::new(StringArray::from(vec![session_id.clone()])) as Arc<dyn Array>,
-                Arc::new(StringArray::from(vec![assistant_id.clone()])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![capability_id.clone()])) as Arc<dyn Array>,
                 Arc::new(StringArray::from(vec![meta_info_json.clone()])) as Arc<dyn Array>,
                 Arc::new(BooleanArray::from(vec![false])) as Arc<dyn Array>,
                 Arc::new(StringArray::from(vec![Some(now.clone())])) as Arc<dyn Array>,
@@ -780,7 +780,7 @@ impl MemoryStore {
             id,
             content,
             session_id,
-            assistant_id,
+            capability_id,
             meta_info: payload.meta_info,
             embedding_model,
             category,
@@ -800,13 +800,13 @@ impl MemoryStore {
         query_embedding: Vec<f32>,
         limit: usize,
         session_id: Option<&str>,
-        assistant_id: Option<&str>,
+        capability_id: Option<&str>,
         category: Option<&str>,
         source: Option<&str>,
         tags: Option<&[String]>,
     ) -> Result<Vec<LocalMemorySearchItem>, MemoryError> {
         let filter =
-            build_memory_search_filter_sql(session_id, assistant_id, category, source, tags, true);
+            build_memory_search_filter_sql(session_id, capability_id, category, source, tags, true);
         let table = self.table().await?;
 
         // Try LanceDB native vector search first
@@ -836,7 +836,7 @@ impl MemoryStore {
             query_embedding,
             limit,
             session_id,
-            assistant_id,
+            capability_id,
             category,
             source,
             tags,
@@ -849,13 +849,13 @@ impl MemoryStore {
         query_embedding: Vec<f32>,
         limit: usize,
         session_id: Option<&str>,
-        assistant_id: Option<&str>,
+        capability_id: Option<&str>,
         category: Option<&str>,
         source: Option<&str>,
         tags: Option<&[String]>,
     ) -> Result<Vec<LocalMemorySearchItem>, MemoryError> {
         let filter =
-            build_memory_search_filter_sql(session_id, assistant_id, category, source, tags, true);
+            build_memory_search_filter_sql(session_id, capability_id, category, source, tags, true);
         let table = self.table().await?;
         let mut stmt = table.query();
         if !filter.is_empty() {
@@ -868,7 +868,7 @@ impl MemoryStore {
             let id_col = as_string_col(batch, "id")?;
             let content_col = as_string_col(batch, "content")?;
             let session_col = as_string_col(batch, "session_id")?;
-            let assistant_col = as_string_col(batch, "assistant_id")?;
+            let assistant_col = as_string_col(batch, "capability_id")?;
             let meta_col = as_string_col(batch, "meta_info_json")?;
             let created_col = as_string_col(batch, "created_at")?;
             let updated_col = as_string_col(batch, "updated_at")?;
@@ -949,7 +949,7 @@ impl MemoryStore {
                     id: required_string(id_col, row, "id")?,
                     content: required_string(content_col, row, "content")?,
                     session_id: nullable_string(session_col, row),
-                    assistant_id: nullable_string(assistant_col, row),
+                    capability_id: nullable_string(assistant_col, row),
                     meta_info,
                     score,
                     category,
@@ -1019,7 +1019,7 @@ impl MemoryStore {
         let id_col = as_string_col(batch, "id")?;
         let content_col = as_string_col(batch, "content")?;
         let session_col = as_string_col(batch, "session_id")?;
-        let assistant_col = as_string_col(batch, "assistant_id")?;
+        let assistant_col = as_string_col(batch, "capability_id")?;
         let meta_col = as_string_col(batch, "meta_info_json")?;
         let deleted_col = batch
             .column_by_name("is_deleted")
@@ -1107,9 +1107,9 @@ impl MemoryStore {
         &self,
         query_embedding: Vec<f32>,
         session_id: Option<&str>,
-        assistant_id: Option<&str>,
+        capability_id: Option<&str>,
     ) -> Result<Option<(String, String, f32)>, MemoryError> {
-        let filter = build_filter_sql(session_id, assistant_id, true);
+        let filter = build_filter_sql(session_id, capability_id, true);
         let table = self.table().await?;
 
         // Try native vector search first
@@ -1241,7 +1241,7 @@ impl MemoryStore {
 
         let id_col = as_string_col(batch, "id")?;
         let session_col = as_string_col(batch, "session_id")?;
-        let assistant_col = as_string_col(batch, "assistant_id")?;
+        let assistant_col = as_string_col(batch, "capability_id")?;
         let meta_col = as_string_col(batch, "meta_info_json")?;
         let deleted_col = batch
             .column_by_name("is_deleted")
@@ -1277,7 +1277,7 @@ impl MemoryStore {
 
         let row_id = id_col.value(0).to_string();
         let session_id = nullable_string(session_col, 0);
-        let assistant_id = nullable_string(assistant_col, 0);
+        let capability_id = nullable_string(assistant_col, 0);
         let existing_meta_raw = nullable_string(meta_col, 0);
         let meta_raw = payload
             .meta_info
@@ -1309,7 +1309,7 @@ impl MemoryStore {
                 Arc::new(StringArray::from(vec![Some(row_id.clone())])) as Arc<dyn Array>,
                 Arc::new(StringArray::from(vec![Some(content.clone())])) as Arc<dyn Array>,
                 Arc::new(StringArray::from(vec![session_id.clone()])) as Arc<dyn Array>,
-                Arc::new(StringArray::from(vec![assistant_id.clone()])) as Arc<dyn Array>,
+                Arc::new(StringArray::from(vec![capability_id.clone()])) as Arc<dyn Array>,
                 Arc::new(StringArray::from(vec![meta_raw])) as Arc<dyn Array>,
                 Arc::new(BooleanArray::from(vec![deleted_col.value(0)])) as Arc<dyn Array>,
                 Arc::new(StringArray::from(vec![Some(created_at.clone())])) as Arc<dyn Array>,
@@ -1337,7 +1337,7 @@ impl MemoryStore {
             id: row_id,
             content,
             session_id,
-            assistant_id,
+            capability_id,
             meta_info,
             embedding_model,
             category,
@@ -1390,7 +1390,7 @@ pub(crate) fn local_memory_schema_v2(embedding_dim: i32) -> SchemaRef {
         Field::new("id", DataType::Utf8, false),
         Field::new("content", DataType::Utf8, false),
         Field::new("session_id", DataType::Utf8, true),
-        Field::new("assistant_id", DataType::Utf8, true),
+        Field::new("capability_id", DataType::Utf8, true),
         Field::new("meta_info_json", DataType::Utf8, true),
         Field::new("is_deleted", DataType::Boolean, false),
         Field::new("created_at", DataType::Utf8, false),
@@ -1413,7 +1413,7 @@ pub(crate) fn local_memory_schema_v3(embedding_dim: i32) -> SchemaRef {
         Field::new("id", DataType::Utf8, false),
         Field::new("content", DataType::Utf8, false),
         Field::new("session_id", DataType::Utf8, true),
-        Field::new("assistant_id", DataType::Utf8, true),
+        Field::new("capability_id", DataType::Utf8, true),
         Field::new("meta_info_json", DataType::Utf8, true),
         Field::new("is_deleted", DataType::Boolean, false),
         Field::new("created_at", DataType::Utf8, false),
@@ -1470,7 +1470,7 @@ fn local_asset_vector_dimension_from_schema(schema: &Schema) -> Option<i32> {
 
 fn build_filter_sql(
     session_id: Option<&str>,
-    assistant_id: Option<&str>,
+    capability_id: Option<&str>,
     include_not_deleted: bool,
 ) -> String {
     let mut clauses = Vec::new();
@@ -1480,22 +1480,22 @@ fn build_filter_sql(
     if let Some(session) = session_id {
         clauses.push(format!("session_id = '{}'", sql_escape(session)));
     }
-    if let Some(assistant) = assistant_id {
-        clauses.push(format!("assistant_id = '{}'", sql_escape(assistant)));
+    if let Some(assistant) = capability_id {
+        clauses.push(format!("capability_id = '{}'", sql_escape(assistant)));
     }
     clauses.join(" AND ")
 }
 
 fn build_memory_search_filter_sql(
     session_id: Option<&str>,
-    assistant_id: Option<&str>,
+    capability_id: Option<&str>,
     category: Option<&str>,
     source: Option<&str>,
     tags: Option<&[String]>,
     include_not_deleted: bool,
 ) -> String {
     let mut clauses = Vec::new();
-    let base = build_filter_sql(session_id, assistant_id, include_not_deleted);
+    let base = build_filter_sql(session_id, capability_id, include_not_deleted);
     if !base.is_empty() {
         clauses.push(base);
     }
@@ -1653,7 +1653,7 @@ fn read_items_from_batch(batch: &RecordBatch) -> Result<Vec<LocalMemoryItem>, Me
     let id_col = as_string_col(batch, "id")?;
     let content_col = as_string_col(batch, "content")?;
     let session_col = as_string_col(batch, "session_id")?;
-    let assistant_col = as_string_col(batch, "assistant_id")?;
+    let assistant_col = as_string_col(batch, "capability_id")?;
     let meta_col = as_string_col(batch, "meta_info_json")?;
     let created_col = as_string_col(batch, "created_at")?;
     let updated_col = as_string_col(batch, "updated_at")?;
@@ -1701,7 +1701,7 @@ fn read_items_from_batch(batch: &RecordBatch) -> Result<Vec<LocalMemoryItem>, Me
             id: required_string(id_col, row, "id")?,
             content: required_string(content_col, row, "content")?,
             session_id: nullable_string(session_col, row),
-            assistant_id: nullable_string(assistant_col, row),
+            capability_id: nullable_string(assistant_col, row),
             meta_info,
             embedding_model,
             category,
@@ -1757,7 +1757,7 @@ fn read_memory_search_batches(
         let id_col = as_string_col(batch, "id")?;
         let content_col = as_string_col(batch, "content")?;
         let session_col = as_string_col(batch, "session_id")?;
-        let assistant_col = as_string_col(batch, "assistant_id")?;
+        let assistant_col = as_string_col(batch, "capability_id")?;
         let meta_col = as_string_col(batch, "meta_info_json")?;
         let created_col = as_string_col(batch, "created_at")?;
         let updated_col = as_string_col(batch, "updated_at")?;
@@ -1807,7 +1807,7 @@ fn read_memory_search_batches(
                 id: required_string(id_col, row, "id")?,
                 content: required_string(content_col, row, "content")?,
                 session_id: nullable_string(session_col, row),
-                assistant_id: nullable_string(assistant_col, row),
+                capability_id: nullable_string(assistant_col, row),
                 meta_info,
                 score,
                 category,
@@ -1883,7 +1883,7 @@ mod tests {
                 CreateLocalMemoryRequest {
                     content: "likes black coffee".into(),
                     session_id: None,
-                    assistant_id: None,
+                    capability_id: None,
                     meta_info: None,
                     category: Some("preference".into()),
                     source: Some("manual".into()),
@@ -1900,7 +1900,7 @@ mod tests {
                 CreateLocalMemoryRequest {
                     content: "visited office".into(),
                     session_id: None,
-                    assistant_id: None,
+                    capability_id: None,
                     meta_info: None,
                     category: Some("event".into()),
                     source: Some("auto_extraction".into()),
@@ -1942,7 +1942,7 @@ mod tests {
             .append(CreateLocalMemoryRequest {
                 content: "prefers pour over".into(),
                 session_id: None,
-                assistant_id: None,
+                capability_id: None,
                 meta_info: Some(serde_json::json!({"source": "chat"})),
                 category: Some("preference".into()),
                 source: Some("manual".into()),

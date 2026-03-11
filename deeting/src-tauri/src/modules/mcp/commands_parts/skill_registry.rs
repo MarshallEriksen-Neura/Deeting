@@ -97,24 +97,6 @@ pub(crate) async fn register_local_skills_from_scan_targets_inner(
                 .await
                 .map_err(to_string)?;
 
-            let source_name = format!("skill:{}", id);
-            let trust_level = if *source_prefix == "system_plugin" {
-                McpTrustLevel::Official
-            } else {
-                McpTrustLevel::Community
-            };
-            let is_read_only = *source_prefix == "system_plugin";
-            let skill_source = store
-                .upsert_skill_source(
-                    &source_name,
-                    &skill_path.to_string_lossy(),
-                    trust_level,
-                    is_read_only,
-                )
-                .await
-                .map_err(to_string)?;
-            let source_id = skill_source.id.clone();
-            let _ = store.delete_tools_by_source_id(&source_id).await;
             let _ = memory_state.service.delete_assets_by_package(id).await;
 
             let final_source_type = if *source_prefix == "system_plugin" {
@@ -226,13 +208,6 @@ fn parse_deeting_manifest(raw: &str) -> Result<DeetingManifest, String> {
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
-pub(crate) struct LocalSkillToolRuntime {
-    command: String,
-    args: Vec<String>,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
 pub(crate) struct LocalSkillDefinition {
     pub(crate) skill_id: String,
     pub(crate) display_name: String,
@@ -245,7 +220,6 @@ pub(crate) struct LocalSkillDefinition {
     pub(crate) allowed_roles: Vec<String>,
     pub(crate) execution_timeout_seconds: u64,
     pub(crate) doc_excerpt: Option<String>,
-    pub(crate) tool_runtime: Option<LocalSkillToolRuntime>,
 }
 
 #[derive(Debug, Default)]
@@ -447,49 +421,6 @@ fn collect_skill_bundle_snapshot(skill_path: &Path) -> Result<SkillBundleSnapsho
     Ok(snapshot)
 }
 
-fn derive_local_skill_tool_runtime(
-    skill_path: &Path,
-    manifest: Option<&DeetingManifest>,
-) -> Option<LocalSkillToolRuntime> {
-    let mut candidates = Vec::new();
-    if let Some(entry) = manifest.and_then(|manifest| manifest.entry.as_ref()) {
-        if let Some(value) = entry.as_str() {
-            candidates.push(skill_path.join(value));
-        }
-        if let Some(obj) = entry.as_object() {
-            for key in ["backend", "local", "command", "script"] {
-                if let Some(value) = obj.get(key).and_then(|value| value.as_str()) {
-                    candidates.push(skill_path.join(value));
-                }
-            }
-        }
-    }
-    for candidate in ["main.py", "main.js", "index.js"] {
-        candidates.push(skill_path.join(candidate));
-    }
-    for candidate in candidates {
-        if !candidate.exists() {
-            continue;
-        }
-        match candidate.extension().and_then(|ext| ext.to_str()) {
-            Some("py") => {
-                return Some(LocalSkillToolRuntime {
-                    command: "python3".to_string(),
-                    args: vec![candidate.to_string_lossy().to_string()],
-                })
-            }
-            Some("js") => {
-                return Some(LocalSkillToolRuntime {
-                    command: "node".to_string(),
-                    args: vec![candidate.to_string_lossy().to_string()],
-                })
-            }
-            _ => continue,
-        }
-    }
-    None
-}
-
 pub(crate) fn resolve_local_skill_definition(
     skill_path: &Path,
     source_prefix: &str,
@@ -616,10 +547,6 @@ pub(crate) fn resolve_local_skill_definition(
         .as_ref()
         .map(|manifest| manifest.execution.timeout_seconds)
         .unwrap_or_else(default_timeout);
-    let tool_runtime = snapshot
-        .tool_manifest_path
-        .as_ref()
-        .and_then(|_| derive_local_skill_tool_runtime(skill_path, parsed_manifest.as_ref()));
 
     let mut source_metadata = JsonMap::new();
     source_metadata.insert(
@@ -748,7 +675,6 @@ pub(crate) fn resolve_local_skill_definition(
         allowed_roles,
         execution_timeout_seconds,
         doc_excerpt: snapshot.doc_excerpt,
-        tool_runtime,
     }))
 }
 
@@ -958,7 +884,28 @@ pub(crate) async fn purge_legacy_skill_tool_state(app_state: &AppState) -> Resul
             .map_err(to_string)?;
     }
 
-    Ok(legacy_tool_ids.len().max(legacy_asset_ids.len()))
+    let purged_mcp_rows = app_state
+        .mcp
+        .store
+        .purge_legacy_skill_mcp_rows()
+        .await
+        .map_err(to_string)? as usize;
+
+    Ok(legacy_tool_ids
+        .len()
+        .max(legacy_asset_ids.len())
+        .max(purged_mcp_rows))
+}
+
+fn infer_local_skill_asset_source_type(skill_path: &Path) -> &'static str {
+    if skill_path
+        .components()
+        .any(|component| component.as_os_str() == OsStr::new("official-skills"))
+    {
+        "builtin"
+    } else {
+        "user"
+    }
 }
 
 pub(crate) async fn reindex_local_skill_bundle_asset(
@@ -970,15 +917,14 @@ pub(crate) async fn reindex_local_skill_bundle_asset(
         return Err("skill_id is required".to_string());
     }
 
-    let source_name = format!("skill:{}", normalized_skill_id);
-    let source = app_state
+    let skill_path = app_state
         .mcp
         .store
-        .find_source_by_name(&source_name)
+        .get_local_skill_install_path(normalized_skill_id)
         .await
         .map_err(to_string)?
-        .ok_or_else(|| format!("skill source {} not found", source_name))?;
-    let skill_path = std::path::PathBuf::from(source.path_or_url.trim());
+        .map(PathBuf::from)
+        .ok_or_else(|| format!("skill install {} not found", normalized_skill_id))?;
     let Some(skill_def) =
         resolve_local_skill_definition(&skill_path, "reindex", None, None).map_err(to_string)?
     else {
@@ -1003,7 +949,7 @@ pub(crate) async fn reindex_local_skill_bundle_asset(
         &skill_def.description,
         skill_def.doc_excerpt.as_deref(),
         &skill_def.manifest_json,
-        if source.is_read_only { "builtin" } else { "user" },
+        infer_local_skill_asset_source_type(&skill_path),
     )
     .await
 }
@@ -1014,32 +960,18 @@ pub(crate) async fn uninstall_local_skill(
     skill_id: &str,
 ) -> Result<(), String> {
     let store = &app_state.mcp.store;
-    let source_name = format!("skill:{}", skill_id);
-
-    if let Some(source) = store
-        .find_source_by_name(&source_name)
+    let install_path = store
+        .get_local_skill_install_path(skill_id)
         .await
         .map_err(to_string)?
-    {
-        if source.is_read_only {
-            return Err("cannot uninstall official (read-only) skills".to_string());
-        }
-        let deleted = store
-            .delete_tools_by_source_id(&source.id)
-            .await
-            .map_err(to_string)?;
-        log::info!(
-            "uninstall_local_skill {}: deleted {} tools",
-            skill_id,
-            deleted
-        );
-        store.delete_source(&source.id).await.map_err(to_string)?;
+        .map(PathBuf::from)
+        .ok_or_else(|| format!("local skill {} is not installed", skill_id))?;
+
+    let managed_skills_root = app.path().app_data_dir().map_err(to_string)?.join("skills");
+    if !install_path.starts_with(&managed_skills_root) {
+        return Err("cannot uninstall official (read-only) skills".to_string());
     }
 
-    store
-        .delete_local_skill_install(skill_id)
-        .await
-        .map_err(to_string)?;
     if let Err(e) = app_state
         .memory
         .service
@@ -1051,13 +983,11 @@ pub(crate) async fn uninstall_local_skill(
             skill_id, e
         );
     }
-
-    let install_path = app
-        .path()
-        .app_data_dir()
-        .map_err(to_string)?
-        .join("skills")
-        .join(skill_id);
+    let _ = purge_legacy_skill_tool_state(app_state).await;
+    store
+        .delete_local_skill_install(skill_id)
+        .await
+        .map_err(to_string)?;
     if install_path.exists() {
         std::fs::remove_dir_all(&install_path).map_err(to_string)?;
     }
@@ -1213,8 +1143,6 @@ mod tests {
             .as_deref()
             .unwrap_or_default()
             .contains("guide.mdx"));
-        assert!(resolved.tool_runtime.is_none());
-
         let manifest: JsonValue =
             serde_json::from_str(&resolved.manifest_json).expect("manifest json");
         assert_eq!(
@@ -1238,7 +1166,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_local_skill_definition_registers_optional_tool_runtime_when_present() {
+    fn resolve_local_skill_definition_keeps_doc_first_metadata_when_optional_tool_files_exist() {
         let dir = temp_skill_dir("tool-skill");
         std::fs::write(dir.join("notes.txt"), "This skill has an optional tool.")
             .expect("write docs");
@@ -1249,14 +1177,15 @@ mod tests {
             .expect("resolve skill")
             .expect("skill exists");
 
-        assert!(resolved.tool_runtime.is_some());
-        let runtime = resolved.tool_runtime.expect("tool runtime");
-        assert_eq!(runtime.command, "python3");
-        assert!(runtime
-            .args
-            .first()
-            .unwrap_or(&String::new())
-            .ends_with("main.py"));
+        let manifest: JsonValue =
+            serde_json::from_str(&resolved.manifest_json).expect("manifest json");
+        assert_eq!(resolved.skill_id, "tool-skill");
+        assert_eq!(
+            manifest
+                .pointer("/source_metadata/assets/has_tool_manifest")
+                .and_then(|value| value.as_bool()),
+            Some(true)
+        );
 
         let _ = std::fs::remove_dir_all(dir);
     }

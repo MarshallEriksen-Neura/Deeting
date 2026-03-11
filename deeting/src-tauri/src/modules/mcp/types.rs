@@ -570,6 +570,8 @@ pub struct CloudSystemAssetSyncResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalSystemAssetSyncResponse {
     pub fetched_count: i64,
+    pub assistant_fetched_count: i64,
+    pub skill_fetched_count: i64,
     pub upserted_count: i64,
     pub hidden_count: i64,
     pub metadata_only_count: i64,
@@ -581,7 +583,6 @@ pub struct LocalSystemAssetSyncResponse {
     pub skill_failed_count: i64,
     pub disabled_skill_count: i64,
     pub archived_assistant_count: i64,
-    pub disabled_assistant_install_count: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

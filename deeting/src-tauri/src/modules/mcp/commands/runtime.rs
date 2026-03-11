@@ -20,11 +20,10 @@ mod tool_execution;
 mod tool_feedback;
 mod tool_resolution;
 mod tool_result_blocks;
-mod tool_schemas;
 mod tool_trace;
 
 pub(crate) use activation::{
-    resolve_local_assistant_activation_state, LocalAssistantActivationState,
+    resolve_local_capability_activation_state, LocalCapabilityActivationState,
 };
 pub(crate) use asset_indexing::rebuild_local_knowledge_vector_index;
 pub(crate) use background_workers::{

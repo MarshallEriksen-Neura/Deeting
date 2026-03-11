@@ -155,6 +155,26 @@ fn skill_metadata_from_system_asset(
     Some((metadata_skill_id.trim().to_string(), metadata))
 }
 
+async fn fetch_system_asset_sync_feed(
+    client: &reqwest::Client,
+    url: &str,
+    access_token: &str,
+    limit: i64,
+) -> Result<CloudSystemAssetSyncResponse, String> {
+    client
+        .get(url)
+        .bearer_auth(access_token)
+        .query(&[("limit", limit.to_string())])
+        .send()
+        .await
+        .map_err(to_string)?
+        .error_for_status()
+        .map_err(to_string)?
+        .json()
+        .await
+        .map_err(to_string)
+}
+
 fn read_skill_manifest_json(manifest_path: &Path) -> Option<Value> {
     let raw = std::fs::read_to_string(manifest_path).ok()?;
     serde_json::from_str::<Value>(&raw).ok()
@@ -166,16 +186,15 @@ async fn local_skill_registration_needs_reindex(
     skill_id: &str,
     skill_path: &Path,
 ) -> Result<bool, String> {
-    let source_name = format!("skill:{}", skill_id);
-    let Some(source) = store
-        .find_source_by_name(&source_name)
+    let Some(install_path) = store
+        .get_local_skill_install_path(skill_id)
         .await
         .map_err(to_string)?
     else {
         return Ok(true);
     };
 
-    if source.path_or_url.trim() != skill_path.to_string_lossy() {
+    if install_path.trim() != skill_path.to_string_lossy() {
         return Ok(true);
     }
 
@@ -244,22 +263,17 @@ pub(crate) async fn sync_local_system_assets_inner(
     skills_dir: Option<&Path>,
     reinstall_missing: bool,
 ) -> Result<LocalSystemAssetSyncResponse, String> {
-    let url = format!(
-        "{}/api/v1/system-assets/sync",
-        base_url.trim_end_matches('/')
-    );
-    let response: CloudSystemAssetSyncResponse = client
-        .get(&url)
-        .bearer_auth(access_token)
-        .query(&[("limit", limit.to_string())])
-        .send()
-        .await
-        .map_err(to_string)?
-        .error_for_status()
-        .map_err(to_string)?
-        .json()
-        .await
-        .map_err(to_string)?;
+    let normalized_base_url = base_url.trim_end_matches('/');
+    let assistants_url = format!("{normalized_base_url}/api/v1/system-assets/assistants");
+    let skills_url = format!("{normalized_base_url}/api/v1/system-assets/skills");
+    let assistant_response =
+        fetch_system_asset_sync_feed(client, &assistants_url, access_token, limit).await?;
+    let skill_response =
+        fetch_system_asset_sync_feed(client, &skills_url, access_token, limit).await?;
+    let assistant_fetched_count = assistant_response.items.len() as i64;
+    let skill_fetched_count = skill_response.items.len() as i64;
+    let mut items = assistant_response.items;
+    items.extend(skill_response.items);
 
     let mut upserted_count = 0_i64;
     let mut hidden_count = 0_i64;
@@ -272,11 +286,10 @@ pub(crate) async fn sync_local_system_assets_inner(
     let mut asset_ids = Vec::new();
     let mut skill_ids_to_disable: HashSet<String> = HashSet::new();
     let mut cloud_installed_skill_ids: Vec<String> = Vec::new();
-    let mut assistant_ids_to_disable: HashSet<String> = HashSet::new();
     let mut active_assistant_snapshots: Vec<CloudSystemAssistantSnapshot> = Vec::new();
     let mut active_assistant_ids: HashSet<String> = HashSet::new();
 
-    for item in &response.items {
+    for item in &items {
         store
             .upsert_cloud_system_asset(item)
             .await
@@ -439,15 +452,12 @@ pub(crate) async fn sync_local_system_assets_inner(
             if matches!(state, "hidden" | "metadata_only") {
                 skill_ids_to_disable.insert(skill_id.to_string());
             }
-        } else if let Some(assistant_id) = item.asset_id.strip_prefix("assistant:") {
+        } else if item.asset_id.strip_prefix("assistant:").is_some() {
             if state != "hidden" {
                 if let Some(snapshot) = assistant_snapshot_from_system_asset(item) {
                     active_assistant_ids.insert(snapshot.assistant_id.clone());
                     active_assistant_snapshots.push(snapshot);
                 }
-            }
-            if matches!(state, "hidden" | "metadata_only") {
-                assistant_ids_to_disable.insert(assistant_id.to_string());
             }
         }
     }
@@ -476,15 +486,10 @@ pub(crate) async fn sync_local_system_assets_inner(
         )
         .await
         .map_err(to_string)?;
-    let disabled_assistant_install_count = store
-        .disable_local_assistant_installs_by_ids(
-            &assistant_ids_to_disable.into_iter().collect::<Vec<_>>(),
-        )
-        .await
-        .map_err(to_string)?;
-
     Ok(LocalSystemAssetSyncResponse {
-        fetched_count: response.items.len() as i64,
+        fetched_count: items.len() as i64,
+        assistant_fetched_count,
+        skill_fetched_count,
         upserted_count,
         hidden_count,
         metadata_only_count,
@@ -496,7 +501,6 @@ pub(crate) async fn sync_local_system_assets_inner(
         skill_failed_count,
         disabled_skill_count,
         archived_assistant_count,
-        disabled_assistant_install_count,
     })
 }
 

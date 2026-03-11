@@ -1273,7 +1273,7 @@ impl McpStore {
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
-        self.migrate_legacy_skill_sources().await?;
+        self.purge_legacy_skill_mcp_rows().await?;
         self.migrate_assistant_version_drop_skill_refs().await?;
         self.migrate_assistant_versions_from_legacy().await?;
         self.migrate_assistant_installs_from_assistant().await?;
