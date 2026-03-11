@@ -630,8 +630,8 @@ fn build_stream_error_payload(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_fact_rebuild_conversation_text, clear_session_auto_extraction_memories,
-        build_stream_error_payload,
+        build_fact_rebuild_conversation_text, build_stream_error_payload,
+        clear_session_auto_extraction_memories,
     };
     use crate::modules::mcp::store::LocalConversationRuntimeWindow;
     use crate::modules::mcp::types::LocalConversationHistoryMessage;
@@ -760,7 +760,10 @@ mod tests {
             Some("request-456"),
         );
 
-        assert_eq!(payload.get("type").and_then(|value| value.as_str()), Some("error"));
+        assert_eq!(
+            payload.get("type").and_then(|value| value.as_str()),
+            Some("error")
+        );
         assert_eq!(
             payload.get("message").and_then(|value| value.as_str()),
             Some("upstream exploded with full body")
@@ -794,6 +797,8 @@ mod tests {
         );
 
         assert!(payload.get("request_id").is_some());
-        assert!(payload.get("request_id").is_some_and(|value| value.is_null()));
+        assert!(payload
+            .get("request_id")
+            .is_some_and(|value| value.is_null()));
     }
 }

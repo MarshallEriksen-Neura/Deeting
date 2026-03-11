@@ -225,6 +225,26 @@ impl MemoryStore {
         Ok(())
     }
 
+    pub async fn delete_assets_by_ids(&self, asset_ids: &[String]) -> Result<(), MemoryError> {
+        if asset_ids.is_empty() {
+            return Ok(());
+        }
+
+        let table_names = self.conn.table_names().execute().await?;
+        if !table_names.iter().any(|name| name == LOCAL_ASSET_TABLE) {
+            return Ok(());
+        }
+
+        let table = self.conn.open_table(LOCAL_ASSET_TABLE).execute().await?;
+        let predicate = asset_ids
+            .iter()
+            .map(|asset_id| format!("id = '{}'", sql_escape(asset_id)))
+            .collect::<Vec<_>>()
+            .join(" OR ");
+        table.delete(&predicate).await?;
+        Ok(())
+    }
+
     pub async fn local_asset_vector_dimension(&self) -> Result<Option<i32>, MemoryError> {
         let table_names = self.conn.table_names().execute().await?;
         if !table_names.iter().any(|name| name == LOCAL_ASSET_TABLE) {

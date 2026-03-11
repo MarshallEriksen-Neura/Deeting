@@ -1,5 +1,7 @@
-use super::common_impl::to_string;
 use super::support::*;
+use super::{
+    common_impl::to_string, skill_registry_impl::reindex_local_skill_bundle_asset,
+};
 
 #[tauri::command]
 pub async fn sync_official_skills_index(app_state: State<'_, AppState>) -> Result<usize, String> {
@@ -71,6 +73,8 @@ pub async fn enable_local_skill(
             normalized_skill_id
         ));
     }
+
+    reindex_local_skill_bundle_asset(state.inner(), &normalized_skill_id).await?;
 
     Ok(())
 }

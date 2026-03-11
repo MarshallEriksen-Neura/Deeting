@@ -1,7 +1,6 @@
 use super::{common_impl::to_string, support::*};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 use std::{
-    collections::HashMap,
     ffi::OsStr,
     path::{Path, PathBuf},
 };
@@ -21,6 +20,14 @@ pub(crate) fn normalize_skill_dir_name(skill_id: &str) -> String {
     } else {
         normalized
     }
+}
+
+fn derive_skill_id_from_identifier(raw: Option<&str>) -> Option<&str> {
+    let normalized = raw?.trim();
+    if !normalized.starts_with("skill.") {
+        return None;
+    }
+    Some(normalized.split('/').next().unwrap_or(normalized))
 }
 
 pub(crate) fn resolve_local_skill_scan_targets(
@@ -49,36 +56,9 @@ pub(crate) fn resolve_local_skill_scan_targets(
     ])
 }
 
-async fn index_local_skill_tool_asset(
-    provider_state: std::sync::Arc<crate::modules::providers::ProviderState>,
-    memory_state: std::sync::Arc<crate::modules::memory::MemoryState>,
-    tool_id: String,
-    tool_name: String,
-    tool_desc: String,
-    final_pkg_name: String,
-    final_source_type: String,
-) {
-    let text = format!("name: {}\ndescription: {}", tool_name, tool_desc);
-    if let Ok(vector) = provider_state.embedding.embed_text(&text).await {
-        let _ = memory_state
-            .store
-            .upsert_asset(
-                tool_id,
-                tool_name,
-                tool_desc,
-                "tool".to_string(),
-                final_source_type,
-                Some(final_pkg_name),
-                vector,
-                None,
-            )
-            .await;
-    }
-}
-
 pub(crate) async fn register_local_skills_from_scan_targets_inner(
     scan_targets: &[(std::path::PathBuf, &'static str)],
-    sdk_pythonpath: &str,
+    _sdk_pythonpath: &str,
     store: &crate::modules::mcp::store::McpStore,
     provider_state: std::sync::Arc<crate::modules::providers::ProviderState>,
     memory_state: std::sync::Arc<crate::modules::memory::MemoryState>,
@@ -102,21 +82,9 @@ pub(crate) async fn register_local_skills_from_scan_targets_inner(
             };
 
             let id = skill_def.skill_id.as_str();
-            let tool_desc_prefix = skill_def.description.as_str();
             let version = skill_def.version.as_deref();
             let runtime_str = skill_def.runtime_values.join(",");
             let runtime = Some(runtime_str.as_str());
-            let mut skill_capabilities = vec![source_prefix.to_string()];
-            skill_capabilities.push("guidance".to_string());
-            if skill_def.tool_runtime.is_some() {
-                skill_capabilities.push("tooling".to_string());
-            }
-            if skill_def.restricted {
-                skill_capabilities.push("restricted".to_string());
-                for role in &skill_def.allowed_roles {
-                    skill_capabilities.push(format!("role:{}", role));
-                }
-            }
 
             store
                 .upsert_local_skill_install(
@@ -146,6 +114,8 @@ pub(crate) async fn register_local_skills_from_scan_targets_inner(
                 .await
                 .map_err(to_string)?;
             let source_id = skill_source.id.clone();
+            let _ = store.delete_tools_by_source_id(&source_id).await;
+            let _ = memory_state.service.delete_assets_by_package(id).await;
 
             let final_source_type = if *source_prefix == "system_plugin" {
                 "builtin"
@@ -159,129 +129,36 @@ pub(crate) async fn register_local_skills_from_scan_targets_inner(
                     memory_state.clone(),
                     id,
                     &skill_def.display_name,
-                    tool_desc_prefix,
+                    &skill_def.description,
                     skill_def.doc_excerpt.as_deref(),
                     &skill_def.manifest_json,
                     &final_source_type,
                 )
                 .await?;
-            }
-
-            let llm_tool_path = skill_path.join("llm-tool.yaml");
-            if !llm_tool_path.exists() {
-                continue;
-            }
-            let Some(tool_runtime) = skill_def.tool_runtime.as_ref() else {
-                warn!(
-                    "skill {} at {} exposes llm-tool.yaml but no executable entrypoint was detected",
-                    id,
-                    skill_path.display()
-                );
-                continue;
-            };
-            let llm_tool_str = std::fs::read_to_string(llm_tool_path).map_err(to_string)?;
-            let llm_tools: serde_json::Value =
-                serde_yaml::from_str(&llm_tool_str).map_err(to_string)?;
-
-            let mut env = HashMap::new();
-            let existing_pypath = std::env::var("PYTHONPATH").unwrap_or_default();
-            let pathsep = if cfg!(windows) { ";" } else { ":" };
-            let pypath = if existing_pypath.is_empty() {
-                sdk_pythonpath.to_string()
             } else {
-                format!("{}{}{}", sdk_pythonpath, pathsep, &existing_pypath)
-            };
-            env.insert("PYTHONPATH".to_string(), pypath);
-            for env_name in &skill_def.env_requirements {
-                if let Ok(val) = std::env::var(env_name) {
-                    env.insert(env_name.to_string(), val);
-                }
+                let provider_state_clone = provider_state.clone();
+                let memory_state_clone = memory_state.clone();
+                let skill_id = id.to_string();
+                let display_name = skill_def.display_name.clone();
+                let description = skill_def.description.clone();
+                let doc_excerpt = skill_def.doc_excerpt.clone();
+                let manifest_json = skill_def.manifest_json.clone();
+                let final_source_type_clone = final_source_type.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = index_local_skill_bundle_asset(
+                        provider_state_clone,
+                        memory_state_clone,
+                        &skill_id,
+                        &display_name,
+                        &description,
+                        doc_excerpt.as_deref(),
+                        &manifest_json,
+                        &final_source_type_clone,
+                    )
+                    .await;
+                });
             }
-            if skill_def
-                .env_requirements
-                .iter()
-                .any(|name| name == SCOUT_SERVICE_URL_ENV_KEY)
-            {
-                env.remove(SCOUT_SERVICE_URL_ENV_KEY);
-                if let Ok(Some(val)) = resolve_effective_desktop_scout_base_url(store).await {
-                    env.insert(SCOUT_SERVICE_URL_ENV_KEY.to_string(), val);
-                }
-            }
-
-            if let Some(tools_array) = llm_tools.get("tools").and_then(|v| v.as_array()) {
-                for tool_def in tools_array {
-                    let tool_name = tool_def["name"].as_str().unwrap();
-                    let tool_desc = tool_def["description"].as_str().unwrap_or(tool_desc_prefix);
-                    let mut enriched_tool_def = tool_def.clone();
-                    enriched_tool_def["execution"] = serde_json::json!({
-                        "timeout_seconds": skill_def.execution_timeout_seconds
-                    });
-                    let config_json = serde_json::to_string(&enriched_tool_def).unwrap();
-
-                    let upsert = ToolUpsert {
-                        id: None,
-                        source_id: source_id.clone(),
-                        identifier: Some(format!("{}/{}", id, tool_name)),
-                        name: tool_name.to_string(),
-                        source_type: McpSourceType::Local,
-                        status: McpToolStatus::Healthy,
-                        ping_ms: None,
-                        capabilities: skill_capabilities.clone(),
-                        description: tool_desc.to_string(),
-                        error: None,
-                        command: Some(tool_runtime.command.clone()),
-                        args: Some(tool_runtime.args.clone()),
-                        env: if env.is_empty() {
-                            None
-                        } else {
-                            Some(env.clone())
-                        },
-                        config_json,
-                        config_hash: "system_builtin".to_string(),
-                        pending_config_json: None,
-                        pending_config_hash: None,
-                        conflict_status: McpConflictStatus::None,
-                        is_read_only: true,
-                        is_new: false,
-                    };
-
-                    if let Ok(tool) = store.upsert_tool(upsert).await {
-                        total_indexed += 1;
-                        let final_pkg_name = id.to_string();
-                        if wait_for_vector_index {
-                            index_local_skill_tool_asset(
-                                provider_state.clone(),
-                                memory_state.clone(),
-                                tool.id.clone(),
-                                tool.name.clone(),
-                                tool.description.clone(),
-                                final_pkg_name,
-                                final_source_type.clone(),
-                            )
-                            .await;
-                        } else {
-                            let provider_state_clone = provider_state.clone();
-                            let memory_state_clone = memory_state.clone();
-                            let tool_id = tool.id.clone();
-                            let tool_name = tool.name.clone();
-                            let tool_desc = tool.description.clone();
-                            let final_source_type = final_source_type.clone();
-                            tauri::async_runtime::spawn(async move {
-                                index_local_skill_tool_asset(
-                                    provider_state_clone,
-                                    memory_state_clone,
-                                    tool_id,
-                                    tool_name,
-                                    tool_desc,
-                                    final_pkg_name,
-                                    final_source_type,
-                                )
-                                .await;
-                            });
-                        }
-                    }
-                }
-            }
+            total_indexed += 1;
         }
     }
 
@@ -347,12 +224,14 @@ fn parse_deeting_manifest(raw: &str) -> Result<DeetingManifest, String> {
     serde_json::from_str::<DeetingManifest>(raw).map_err(|e| format!("invalid deeting.json: {}", e))
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub(crate) struct LocalSkillToolRuntime {
     command: String,
     args: Vec<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub(crate) struct LocalSkillDefinition {
     pub(crate) skill_id: String,
@@ -762,6 +641,13 @@ pub(crate) fn resolve_local_skill_definition(
             "has_tool_manifest": snapshot.tool_manifest_path.is_some(),
         }),
     );
+    if let Some(doc_excerpt) = snapshot
+        .doc_excerpt
+        .clone()
+        .filter(|text| !text.trim().is_empty())
+    {
+        source_metadata.insert("doc_excerpt".to_string(), JsonValue::String(doc_excerpt));
+    }
     if let Some(repo_url) = repo_url.filter(|value| !value.trim().is_empty()) {
         source_metadata.insert(
             "source_repo".to_string(),
@@ -1027,6 +913,101 @@ pub(crate) async fn install_skill_to_local(
     })
 }
 
+pub(crate) async fn purge_legacy_skill_tool_state(app_state: &AppState) -> Result<usize, String> {
+    let legacy_tool_ids = app_state
+        .mcp
+        .store
+        .list_tools()
+        .await
+        .map_err(to_string)?
+        .into_iter()
+        .filter(|tool| derive_skill_id_from_identifier(tool.identifier.as_deref()).is_some())
+        .map(|tool| tool.id)
+        .collect::<Vec<_>>();
+
+    let legacy_asset_ids = app_state
+        .memory
+        .service
+        .list_assets_catalog()
+        .await
+        .map_err(to_string)?
+        .into_iter()
+        .filter(|asset| asset.get("asset_type").and_then(JsonValue::as_str) == Some("tool"))
+        .filter(|asset| {
+            asset.get("pkg_name")
+                .and_then(JsonValue::as_str)
+                .is_some_and(|pkg| pkg.starts_with("skill."))
+        })
+        .filter_map(|asset| asset.get("id").and_then(JsonValue::as_str).map(str::to_string))
+        .collect::<Vec<_>>();
+
+    if !legacy_tool_ids.is_empty() {
+        let _ = app_state
+            .mcp
+            .store
+            .delete_tools_by_ids(&legacy_tool_ids)
+            .await
+            .map_err(to_string)?;
+    }
+    if !legacy_asset_ids.is_empty() {
+        app_state
+            .memory
+            .service
+            .delete_assets_by_ids(&legacy_asset_ids)
+            .await
+            .map_err(to_string)?;
+    }
+
+    Ok(legacy_tool_ids.len().max(legacy_asset_ids.len()))
+}
+
+pub(crate) async fn reindex_local_skill_bundle_asset(
+    app_state: &AppState,
+    skill_id: &str,
+) -> Result<(), String> {
+    let normalized_skill_id = skill_id.trim();
+    if normalized_skill_id.is_empty() {
+        return Err("skill_id is required".to_string());
+    }
+
+    let source_name = format!("skill:{}", normalized_skill_id);
+    let source = app_state
+        .mcp
+        .store
+        .find_source_by_name(&source_name)
+        .await
+        .map_err(to_string)?
+        .ok_or_else(|| format!("skill source {} not found", source_name))?;
+    let skill_path = std::path::PathBuf::from(source.path_or_url.trim());
+    let Some(skill_def) =
+        resolve_local_skill_definition(&skill_path, "reindex", None, None).map_err(to_string)?
+    else {
+        return Err(format!(
+            "skill bundle at {} is no longer readable",
+            skill_path.display()
+        ));
+    };
+
+    app_state
+        .memory
+        .service
+        .delete_assets_by_package(normalized_skill_id)
+        .await
+        .map_err(to_string)?;
+
+    index_local_skill_bundle_asset(
+        app_state.providers.clone(),
+        app_state.memory.clone(),
+        normalized_skill_id,
+        &skill_def.display_name,
+        &skill_def.description,
+        skill_def.doc_excerpt.as_deref(),
+        &skill_def.manifest_json,
+        if source.is_read_only { "builtin" } else { "user" },
+    )
+    .await
+}
+
 pub(crate) async fn uninstall_local_skill(
     app: &AppHandle,
     app_state: &AppState,
@@ -1156,6 +1137,10 @@ pub(crate) async fn register_local_skills_inner(
     app: AppHandle,
     app_state: &AppState,
 ) -> Result<usize, String> {
+    let purged = purge_legacy_skill_tool_state(app_state).await?;
+    if purged > 0 {
+        log::info!("purged {} legacy skill-tool state entries before reindex", purged);
+    }
     let scan_targets = resolve_local_skill_scan_targets(&app)?;
     let sdk_dir = app
         .path()

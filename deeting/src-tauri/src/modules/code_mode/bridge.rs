@@ -743,7 +743,17 @@ async fn dispatch_tool_call(
                 .list_tools()
                 .await
                 .map_err(|err| ("MCP_ERROR".to_string(), err.to_string()))?;
-            serde_json::to_value(tools).map_err(|err| ("MCP_ERROR".to_string(), err.to_string()))
+            let filtered = tools
+                .into_iter()
+                .filter(|tool| {
+                    !tool
+                        .identifier
+                        .as_deref()
+                        .is_some_and(|identifier| identifier.trim().starts_with("skill."))
+                })
+                .collect::<Vec<_>>();
+            serde_json::to_value(filtered)
+                .map_err(|err| ("MCP_ERROR".to_string(), err.to_string()))
         }
         "list_local_provider_instances" | "list_provider_instances" => {
             let instances = state

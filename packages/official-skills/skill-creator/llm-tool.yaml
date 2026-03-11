@@ -1,11 +1,11 @@
 tools:
   - name: create_deeting_skill
     description: >
-      [Deeting Platform] Create a new Deeting skill with the full standard
-      directory structure: deeting.json (manifest), llm-tool.yaml (tool definitions),
-      and main.py (entry point). The skill is created under
-      $APP_DATA_DIR/skills/<skill_id>/. Do NOT create SKILL.md — Deeting uses
-      deeting.json as the manifest, not the AgentSkills/opencode/openclaw format.
+      [Deeting Platform] Create a new Deeting skill with the docs-first
+      directory structure: SKILL.md (primary instructions), deeting.json
+      (manifest/runtime/UI metadata), main.py (entry point), and optional
+      llm-tool.yaml when a host still needs an explicit tool contract.
+      The skill is created under $APP_DATA_DIR/skills/<skill_id>/.
     parameters:
       type: object
       properties:
@@ -35,5 +35,5 @@ tools:
   - name: list_official_skills
     description: >
       [Deeting Platform] List all official Deeting skills bundled with the application.
-      Each skill has deeting.json, llm-tool.yaml, and main.py.
+      Official skills should be treated as docs-first bundles centered on SKILL.md.
     parameters: { type: object, properties: {} }

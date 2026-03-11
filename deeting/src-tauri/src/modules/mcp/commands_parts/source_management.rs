@@ -160,36 +160,6 @@ fn read_skill_manifest_json(manifest_path: &Path) -> Option<Value> {
     serde_json::from_str::<Value>(&raw).ok()
 }
 
-fn read_skill_tool_identifiers(skill_path: &Path, skill_id: &str) -> Vec<String> {
-    let llm_tool_path = skill_path.join("llm-tool.yaml");
-    let raw = match std::fs::read_to_string(llm_tool_path) {
-        Ok(raw) => raw,
-        Err(_) => return Vec::new(),
-    };
-    let parsed: Value = match serde_yaml::from_str(&raw) {
-        Ok(parsed) => parsed,
-        Err(_) => return Vec::new(),
-    };
-    let mut seen = HashSet::new();
-    parsed
-        .get("tools")
-        .and_then(|value| value.as_array())
-        .into_iter()
-        .flatten()
-        .filter_map(|tool| tool.get("name").and_then(|value| value.as_str()))
-        .map(str::trim)
-        .filter(|name| !name.is_empty())
-        .filter_map(|name| {
-            let identifier = format!("{}/{}", skill_id, name);
-            if seen.insert(identifier.clone()) {
-                Some(identifier)
-            } else {
-                None
-            }
-        })
-        .collect()
-}
-
 async fn local_skill_registration_needs_reindex(
     store: &crate::modules::mcp::store::McpStore,
     memory_service: Option<&crate::modules::memory::service::MemoryService>,
@@ -205,24 +175,18 @@ async fn local_skill_registration_needs_reindex(
         return Ok(true);
     };
 
-    for identifier in read_skill_tool_identifiers(skill_path, skill_id) {
-        let Some(tool) = store
-            .get_tool_by_source_identifier(&source.id, &identifier)
+    if source.path_or_url.trim() != skill_path.to_string_lossy() {
+        return Ok(true);
+    }
+
+    if let Some(memory_service) = memory_service {
+        if memory_service
+            .get_asset_by_id(skill_id)
             .await
             .map_err(to_string)?
-        else {
+            .is_none()
+        {
             return Ok(true);
-        };
-
-        if let Some(memory_service) = memory_service {
-            if memory_service
-                .get_asset_by_id(&tool.id)
-                .await
-                .map_err(to_string)?
-                .is_none()
-            {
-                return Ok(true);
-            }
         }
     }
 

@@ -1,8 +1,9 @@
 """
-Deeting Skill Creator — creates new skills with the full Deeting standard structure:
-  deeting.json  (manifest, conforming to deeting-manifest-schema.json)
-  llm-tool.yaml (LLM tool definitions)
+Deeting Skill Creator — creates new skills with the docs-first Deeting structure:
+  SKILL.md      (primary AI-facing instructions)
+  deeting.json  (manifest, runtime, permissions, UI/backend entrypoints)
   main.py       (stdin/stdout Python entry point)
+  llm-tool.yaml (optional host tool contract when still needed)
 """
 
 import json
@@ -108,6 +109,36 @@ if __name__ == "__main__":
 '''
 
 
+def _make_skill_md(
+    skill_id: str,
+    name: str,
+    description: str,
+    tool_name: str,
+    tool_description: str,
+) -> str:
+    return f'''---
+name: {skill_id}
+description: "{description}"
+---
+
+# {name}
+
+## Overview
+
+{description}
+
+## Core Capability
+
+- `{tool_name}`: {tool_description}
+
+## Usage Guidelines
+
+- Start by reading this file before calling any host-specific tool interface.
+- Keep `deeting.json` focused on metadata/runtime/UI entrypoints.
+- Keep `llm-tool.yaml` only when a host integration still requires an explicit tool schema.
+'''
+
+
 def create_deeting_skill(
     skill_id: str,
     name: str,
@@ -136,6 +167,11 @@ def create_deeting_skill(
         json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
     )
 
+    (skill_dir / "SKILL.md").write_text(
+        _make_skill_md(skill_id, name, description, tool_name, tool_description),
+        encoding="utf-8",
+    )
+
     try:
         llm_yaml = _make_llm_tool_yaml(tool_name, tool_description, tool_parameters)
     except ImportError:
@@ -160,7 +196,7 @@ def create_deeting_skill(
         "status": "success",
         "skill_id": skill_id,
         "path": str(skill_dir),
-        "files": ["deeting.json", "llm-tool.yaml", "main.py"],
+        "files": ["SKILL.md", "deeting.json", "llm-tool.yaml", "main.py"],
         "hint": "Call refresh_skill_index or register_local_skills to make this skill available.",
     }
 

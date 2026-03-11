@@ -68,7 +68,7 @@ pub(crate) fn code_mode_core_tools() -> Vec<CoreToolContract> {
     vec![
         CoreToolContract {
             name: "search_sdk",
-            description: "Search desktop capability control-plane objects by intent and return three semantic groups: capabilities, recipes, and orchestration_primitives. Direct capabilities should be called on host without sandbox; recipes are install or activation bundles; execute_code_plan is only for multi-step orchestration.",
+            description: "Search desktop capability control-plane objects by intent and return three semantic groups: capabilities, recipes, and orchestration_primitives. Direct capabilities are real host-callable tools. Recipes are docs-first skill or assistant bundles that should be read and followed, not treated as direct tools. execute_code_plan is only for multi-step orchestration.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -100,7 +100,7 @@ pub(crate) fn code_mode_core_tools() -> Vec<CoreToolContract> {
         },
         CoreToolContract {
             name: "execute_code_plan",
-            description: "Execute a Python code plan in sandbox. Runtime exposes `deeting.log()`, `deeting.section()`, and `deeting.call_tool()`. SDK tool stubs are auto-injected based on your code: use `from deeting_sdk import <tool_name>` directly without calling search_sdk first (search_sdk is optional for discovery). Important: call tools with keyword args (`deeting.call_tool('tool-name', query='...')`), not positional dict args. Generate one coherent script, and always emit final structured output via `deeting.log(json.dumps(result, ensure_ascii=False))` instead of relying on top-level `return`.",
+            description: "Execute a Python code plan in sandbox. Runtime exposes `deeting.log()`, `deeting.section()`, and `deeting.call_tool()`. SDK tool stubs are only for direct callable host tools; skills are docs-first bundles and are not auto-exposed as callable tools. Use `from deeting_sdk import <tool_name>` only for direct tools, or call `deeting.call_tool('tool-name', query='...')` with keyword args. Generate one coherent script, and always emit final structured output via `deeting.log(json.dumps(result, ensure_ascii=False))` instead of relying on top-level `return`.",
             input_schema: json!({
                 "type": "object",
                 "properties": {

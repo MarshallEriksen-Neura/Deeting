@@ -35,9 +35,10 @@
 ### 3.1 Directory Structure
 ```text
 my-plugin/
+├─ SKILL.md       # Primary AI-facing skill contract
 ├─ package.json   # Standard npm fields
-├─ kimai.json     # Plugin Manifest
-├─ llm-tool.yaml  # LLM Function Calling Spec
+├─ kimai.json     # Plugin Manifest / runtime metadata
+├─ llm-tool.yaml  # Optional host callable schema
 ├─ src/
 │ ├─ index.js     # Entry (activate/deactivate)
 │ └─ handler.js   # Logic
@@ -76,8 +77,11 @@ my-plugin/
 
 ## 5. LLM Perception (Zero Hallucination)
 
-### 5.1 `llm-tool.yaml`
-Standard OpenAI Function Calling definition.
+### 5.1 `SKILL.md`
+Primary AI-facing contract. Agents should read this first to understand the bundle's purpose, usage rules, and safety constraints.
+
+### 5.2 `llm-tool.yaml`
+Optional OpenAI-style callable schema for hosts that still need explicit tool definitions.
 ```yaml
 name: get_weather
 description: Get 7-day forecast
@@ -89,9 +93,9 @@ parameters:
 ```
 
 ### 5.2 Dynamic Context
-*   Kernel injects available tools into System Prompt.
-*   LLM generates JSON `{"name": "get_weather", ...}`.
-*   Kernel routes to Plugin `invoke()`.
+*   Kernel injects direct callable tools plus docs-first skill recipes into context.
+*   LLM reads skill docs/recipes first, then only emits JSON tool calls for direct callable host tools.
+*   Kernel routes direct calls to Plugin `invoke()`.
 *   Plugin returns **Structured JSON** (for UI) and **Text Summary** (for LLM).
 
 ---

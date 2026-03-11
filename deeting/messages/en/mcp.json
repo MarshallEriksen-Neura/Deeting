@@ -67,6 +67,12 @@
       "waiting": "Waiting for runtime",
       "review": "Needs review",
       "indexMissing": "Not indexed"
+    },
+    "delete": {
+      "title": "Delete this MCP?",
+      "description": "This will remove {name} and clear its local index assets.",
+      "confirm": "Delete MCP",
+      "cancel": "Cancel"
     }
   },
   "logs": {
@@ -214,6 +220,7 @@
     "enable": "Enable",
     "start": "Start",
     "stop": "Stop",
+    "delete": "Delete",
     "enableSkill": "Enable skill",
     "review": "Review",
     "reviewLogs": "Review logs",
@@ -261,8 +268,8 @@
     "testFailed": "Test call failed",
     "updateSuccess": "Server updated",
     "updateFailed": "Failed to update server",
-    "deleteSuccess": "Server deleted",
-    "deleteFailed": "Failed to delete server",
+    "deleteSuccess": "Deleted",
+    "deleteFailed": "Delete failed",
     "toggleUnsupported": "Only remote SSE servers can be enabled or disabled",
     "actionUnavailable": "Action unavailable",
     "installRequired": "This tool still needs installation or configuration before it can run.",

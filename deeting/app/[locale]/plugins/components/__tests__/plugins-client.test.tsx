@@ -39,6 +39,7 @@ jest.mock("@/lib/api/plugin-market", () => ({
   submitPluginRepo: jest.fn(),
   syncLocalSkillInstallsFromCloud: jest.fn(),
   isDesktopRuntime: jest.fn(),
+  isUserVisiblePlugin: (plugin: { source_kind?: string }) => plugin.source_kind !== "official",
 }))
 
 jest.mock("@/lib/api/desktop-system-assets", () => ({
@@ -124,10 +125,18 @@ describe("PluginsClient desktop repair actions", () => {
     mockUsePluginMarket.mockReturnValue({
       plugins: [
         {
+          id: "official.skills.memory",
+          name: "Memory",
+          description: "Built-in memory skill",
+          installed: true,
+          source_kind: "official",
+        },
+        {
           id: "skill.find-skills",
           name: "Find Skills",
           description: "Locate available skills",
           installed: true,
+          source_kind: "community",
         },
       ],
       isLoading: false,
@@ -157,5 +166,15 @@ describe("PluginsClient desktop repair actions", () => {
       description:
         'toast.repairSuccessDesc:{"fetched":4,"upserted":4,"skills":3,"assistants":2}',
     })
+  })
+
+  it.each([
+    ["public market page", <PublicPluginsClient mode="market" />],
+    ["dashboard installed page", <DashboardPluginsClient mode="installed" />],
+  ])("hides official skills in %s", (_label, view) => {
+    render(view)
+
+    expect(screen.queryByText("Memory")).not.toBeInTheDocument()
+    expect(screen.getByText("Find Skills")).toBeInTheDocument()
   })
 })

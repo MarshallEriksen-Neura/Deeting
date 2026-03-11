@@ -8,6 +8,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
 
 use crate::modules::code_mode::prompt::render_code_mode_capability_prompt;
+use crate::modules::mcp::commands::runtime::build_local_sdk_search_result_with_runtime;
 use crate::modules::mcp::commands::{
     generate_local_conversation_title_with_model, resolve_local_model_connection,
     run_local_chat_complete_with_auto_code_mode,
@@ -128,6 +129,94 @@ fn render_local_base_system_prompt(router_prompt: &str, code_mode_prompt: &str) 
     )
 }
 
+fn latest_user_message(messages: &[LocalChatInputMessage]) -> Option<&str> {
+    messages
+        .iter()
+        .rev()
+        .find(|message| message.role == "user")
+        .and_then(|message| {
+            let trimmed = message.content.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        })
+}
+
+fn render_skill_recipe_prompt(recipes: &[Value]) -> Option<String> {
+    if recipes.is_empty() {
+        return None;
+    }
+
+    let mut lines = vec![
+        "## Installed Skills".to_string(),
+        "These are docs-first skills. They are guidance bundles, not direct model tools or MCP tools.".to_string(),
+        "Read the recipe details first. Only use direct tools when search_sdk explicitly returns a callable capability.".to_string(),
+    ];
+
+    for recipe in recipes {
+        let name = recipe
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or("Unknown Skill");
+        let description = recipe
+            .get("description")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let action = recipe
+            .pointer("/status/recommended_action")
+            .and_then(Value::as_str)
+            .unwrap_or("review");
+        let reason = recipe
+            .pointer("/status/reason")
+            .and_then(Value::as_str)
+            .unwrap_or("skill_available");
+        lines.push(format!("- {} — {}", name, description));
+        lines.push(format!("  - Status: action={}, reason={}", action, reason));
+        if let Some(excerpt) = recipe
+            .get("docs_excerpt")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            lines.push(format!("  - Docs: {}", excerpt));
+        }
+        if let Some(paths) = recipe.get("docs_paths").and_then(Value::as_array) {
+            let docs = paths
+                .iter()
+                .filter_map(Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+                .take(3)
+                .collect::<Vec<_>>();
+            if !docs.is_empty() {
+                lines.push(format!("  - Files: {}", docs.join(", ")));
+            }
+        }
+        if let Some(entry) = recipe.get("entry").and_then(Value::as_object) {
+            let backend = entry
+                .get("backend")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty());
+            let ui = entry
+                .get("ui")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty());
+            if backend.is_some() || ui.is_some() {
+                lines.push(format!(
+                    "  - Bundle entry: backend={}, ui={}",
+                    backend.unwrap_or("-"),
+                    ui.unwrap_or("-")
+                ));
+            }
+        }
+    }
+
+    Some(lines.join("\n"))
+}
+
 pub trait LocalWorkflowStep<C>: Send + Sync {
     fn name(&self) -> &'static str;
 
@@ -237,6 +326,7 @@ fn build_desktop_local_chat_engine(
         Box::new(SummaryInjectionStep),
         Box::new(AssistantPromptInjectionStep),
         Box::new(SemanticMemoryInjectionStep),
+        Box::new(SkillRecipeInjectionStep),
         Box::new(ActivePersonaInjectionStep),
         Box::new(PromptVariantSelectionStep),
         Box::new(TemplateRenderStep),
@@ -990,6 +1080,66 @@ impl LocalWorkflowStep<LocalWorkflowContext> for PromptVariantSelectionStep {
     }
 }
 
+struct SkillRecipeInjectionStep;
+
+impl LocalWorkflowStep<LocalWorkflowContext> for SkillRecipeInjectionStep {
+    fn name(&self) -> &'static str {
+        "skill_recipe_injection"
+    }
+
+    fn depends_on(&self) -> &'static [&'static str] {
+        &["semantic_memory_injection"]
+    }
+
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a mut LocalWorkflowContext,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            let Some(query) = latest_user_message(&ctx.messages) else {
+                return Ok(());
+            };
+
+            let search_result: Value = build_local_sdk_search_result_with_runtime(
+                ctx.app_state.mcp.store.as_ref(),
+                &ctx.app_state.providers.embedding,
+                ctx.app_state.memory.service.as_ref(),
+                query,
+                6,
+            )
+            .await;
+
+            let recipes = search_result
+                .get("recipes")
+                .and_then(Value::as_array)
+                .map(|items| {
+                    items.iter()
+                        .filter(|item| {
+                            item.get("asset_type").and_then(Value::as_str) == Some("skill")
+                        })
+                        .take(3)
+                        .cloned()
+                        .collect::<Vec<Value>>()
+                })
+                .unwrap_or_default();
+
+            if let Some(prompt) = render_skill_recipe_prompt(&recipes) {
+                ctx.push_system_message(prompt);
+            }
+
+            ctx.emit_status(
+                "remember",
+                Some("skill_recipe_injection"),
+                "success",
+                "skills.recipes.injected",
+                Some(json!({ "count": recipes.len() })),
+            );
+
+            Ok(())
+        })
+    }
+}
+
 struct TemplateRenderStep;
 
 impl LocalWorkflowStep<LocalWorkflowContext> for TemplateRenderStep {
@@ -1002,6 +1152,7 @@ impl LocalWorkflowStep<LocalWorkflowContext> for TemplateRenderStep {
             "summary_injection",
             "assistant_prompt_injection",
             "semantic_memory_injection",
+            "skill_recipe_injection",
             "active_persona_hint",
             "prompt_variant_selection",
         ]
@@ -1777,6 +1928,32 @@ mod tests {
         assert!(prompt.contains("## Current Context"));
         assert!(prompt.contains("## Code Mode Protocol"));
         assert!(prompt.contains("**Code Mode Capability**"));
+    }
+
+    #[test]
+    fn render_skill_recipe_prompt_formats_docs_first_guidance() {
+        let prompt = render_skill_recipe_prompt(&[json!({
+            "name": "Planner",
+            "description": "Design execution plans",
+            "docs_excerpt": "Read the planning checklist before execution.",
+            "docs_paths": ["SKILL.md", "examples/plan.md"],
+            "status": {
+                "recommended_action": "read_skill_docs",
+                "reason": "skill_routed_via_docs"
+            },
+            "entry": {
+                "backend": "main.py",
+                "ui": "ui/index.html"
+            }
+        })])
+        .expect("skill recipe prompt");
+
+        assert!(prompt.contains("## Installed Skills"));
+        assert!(prompt.contains("Planner"));
+        assert!(prompt.contains("docs-first"));
+        assert!(prompt.contains("read_skill_docs"));
+        assert!(prompt.contains("SKILL.md"));
+        assert!(prompt.contains("backend=main.py"));
     }
 
     #[test]

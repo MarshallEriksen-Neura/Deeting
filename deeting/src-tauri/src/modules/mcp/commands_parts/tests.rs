@@ -927,7 +927,7 @@ for raw_line in sys.stdin:
     }
 
     #[tokio::test]
-    async fn search_sdk_smoke_returns_callable_tool_for_matching_query() {
+    async fn search_sdk_smoke_surfaces_installed_skill_bundle_as_recipe() {
         let query = "帮我抓取网页并提取标题";
         let (base_url, server_handle) = start_mock_embedding_server(HashMap::from([(
             query.to_lowercase(),
@@ -985,22 +985,23 @@ for raw_line in sys.stdin:
         )
         .await;
 
-        let callable = result["capabilities"]
-            .as_array()
-            .expect("capabilities array");
-        let matched = callable
+        let recipes = result["recipes"].as_array().expect("recipes array");
+        let matched = recipes
             .iter()
             .find(|item| item["name"] == serde_json::json!("search_web"))
-            .expect("matched tool");
+            .expect("matched skill recipe");
         assert_eq!(
             result["format_version"],
             serde_json::json!("sdk_control_plane.v1")
         );
         assert_eq!(matched["source"], serde_json::json!("local_mcp"));
-        assert_eq!(matched["semantic_kind"], serde_json::json!("capability"));
-        assert_eq!(matched["status"]["callable"], serde_json::json!(true));
+        assert_eq!(matched["semantic_kind"], serde_json::json!("recipe"));
+        assert_eq!(matched["status"]["callable"], serde_json::json!(false));
         assert_eq!(matched["pkg_name"], serde_json::json!("skill.web-tools"));
-        assert_eq!(matched["status"]["recommended_action"], serde_json::json!("execute"));
+        assert_eq!(
+            matched["status"]["recommended_action"],
+            serde_json::json!("read_skill_docs")
+        );
         assert_eq!(
             result["normalized_query"]["intent"],
             serde_json::json!("web_fetch")
@@ -1029,32 +1030,9 @@ for raw_line in sys.stdin:
             normalized_query.get("requires_network"),
             Some(&serde_json::json!(true))
         );
-        assert_eq!(matched["required_parameters"], serde_json::json!(["url"]));
-        assert_eq!(matched["parameters"][0]["name"], serde_json::json!("url"));
-        assert!(matched["signature"]
-            .as_str()
-            .expect("signature")
-            .contains("search_web(url:string"));
-        assert!(matched["python_stub"]
-            .as_str()
-            .expect("python stub")
-            .contains("def search_web(url: str, timeout: int = 30)"));
-        assert_eq!(
-            matched["example_arguments"]["url"],
-            serde_json::json!("https://example.com")
-        );
-        assert_eq!(
-            matched["output_schema"]["type"],
-            serde_json::json!("object")
-        );
-        assert_eq!(matched["risk_level"], serde_json::json!("MEDIUM"));
-        assert_eq!(matched["read_only"], serde_json::json!(true));
-        assert_eq!(matched["mutating"], serde_json::json!(false));
-        assert!(matched["permission_scope"]
-            .as_array()
-            .expect("permission scope")
-            .iter()
-            .any(|item| item == "source:mcp"));
+        assert_eq!(matched["description"], serde_json::json!("抓取网页内容并提取标题"));
+        assert!(matched.get("required_parameters").is_none());
+        assert!(matched.get("python_stub").is_none());
 
         server_handle.abort();
     }
@@ -1113,7 +1091,7 @@ for raw_line in sys.stdin:
     }
 
     #[tokio::test]
-    async fn search_sdk_smoke_filters_disabled_local_skill_tool() {
+    async fn search_sdk_smoke_routes_disabled_local_skill_bundle_to_recipes() {
         let query = "帮我查股票行情";
         let (base_url, server_handle) = start_mock_embedding_server(HashMap::from([(
             query.to_lowercase(),
@@ -1160,24 +1138,18 @@ for raw_line in sys.stdin:
         )
         .await;
 
-        let capabilities = result["capabilities"]
-            .as_array()
-            .expect("capabilities array");
-        assert!(capabilities
-            .iter()
-            .filter(|item| item["status"]["callable"] == serde_json::json!(true))
-            .all(|item| item["name"] != serde_json::json!("stock_quotes")));
-        let disabled = capabilities
+        let recipes = result["recipes"].as_array().expect("recipes array");
+        let disabled = recipes
             .iter()
             .find(|item| item["name"] == serde_json::json!("stock_quotes"))
-            .expect("disabled stock tool surfaced as non-callable capability");
+            .expect("disabled stock skill surfaced as recipe");
         assert_eq!(disabled["status"]["callable"], serde_json::json!(false));
         assert_eq!(disabled["status"]["activation_required"], serde_json::json!(true));
         assert_eq!(
             disabled["status"]["recommended_action"],
             serde_json::json!("enable_skill")
         );
-        assert_eq!(disabled["semantic_kind"], serde_json::json!("capability"));
+        assert_eq!(disabled["semantic_kind"], serde_json::json!("recipe"));
 
         server_handle.abort();
     }
@@ -1358,6 +1330,67 @@ for raw_line in sys.stdin:
             view.index_status,
             crate::modules::mcp::commands::runtime::DesktopMcpToolIndexStatus::Indexed
         );
+    }
+
+    #[tokio::test]
+    async fn desktop_tool_views_hide_skill_backed_tools_from_mcp_registry_listing() {
+        let store = create_test_store("desktop-tool-view-hide-skill-tools").await;
+
+        let visible_tool = upsert_test_tool(&store, "plain_local_tool", "cat").await;
+
+        let skill_source = store
+            .upsert_skill_source(
+                "skill:skill.stocks",
+                "/tmp/skills/stocks",
+                McpTrustLevel::Community,
+                false,
+            )
+            .await
+            .expect("insert skill source");
+        let skill_config_json = serde_json::json!({
+            "command": "python3",
+            "args": ["main.py"],
+            "description": "Stock quotes",
+        })
+        .to_string();
+        let hidden_skill_tool = store
+            .upsert_tool(ToolUpsert {
+                id: None,
+                source_id: skill_source.id.clone(),
+                identifier: Some("skill.stocks/stock_quotes".to_string()),
+                name: "stock_quotes".to_string(),
+                source_type: McpSourceType::Local,
+                status: McpToolStatus::Healthy,
+                ping_ms: None,
+                capabilities: vec!["finance".to_string()],
+                description: "Stock quotes".to_string(),
+                error: None,
+                command: Some("python3".to_string()),
+                args: Some(vec!["main.py".to_string()]),
+                env: None,
+                config_json: skill_config_json.clone(),
+                config_hash: hash_config(&skill_config_json),
+                pending_config_json: None,
+                pending_config_hash: None,
+                conflict_status: McpConflictStatus::None,
+                is_read_only: false,
+                is_new: false,
+            })
+            .await
+            .expect("upsert skill-backed tool");
+
+        let views = crate::modules::mcp::commands::runtime::build_desktop_mcp_tool_views(
+            &store,
+            Some(&HashSet::from([
+                visible_tool.id.clone(),
+                hidden_skill_tool.id.clone(),
+            ])),
+        )
+        .await
+        .expect("build tool views");
+
+        assert!(views.iter().any(|item| item.tool.id == visible_tool.id));
+        assert!(views.iter().all(|item| item.tool.id != hidden_skill_tool.id));
     }
 
     #[tokio::test]
@@ -1645,9 +1678,9 @@ for raw_line in sys.stdin:
             web_result["normalized_query"]["intent"],
             serde_json::json!("web_fetch")
         );
-        assert!(web_result["capabilities"]
+        assert!(web_result["recipes"]
             .as_array()
-            .expect("web capability array")
+            .expect("web recipe array")
             .iter()
             .any(|item| item["name"] == serde_json::json!("search_web")));
 
@@ -1684,9 +1717,9 @@ for raw_line in sys.stdin:
             stock_result["normalized_query"]["domain"],
             serde_json::json!("finance")
         );
-        assert!(stock_result["capabilities"]
+        assert!(stock_result["recipes"]
             .as_array()
-            .expect("stock capability array")
+            .expect("stock recipe array")
             .iter()
             .any(|item| {
                 item["name"] == serde_json::json!("stock_quotes")
@@ -3864,7 +3897,7 @@ for raw_line in sys.stdin:
         .await
         .expect("detect missing skill source"));
 
-        let source = store
+        let _source = store
             .upsert_skill_source(
                 "skill:skill.self-heal",
                 skill_dir.to_string_lossy().as_ref(),
@@ -3880,39 +3913,7 @@ for raw_line in sys.stdin:
             std::slice::from_ref(&skills_dir),
         )
         .await
-        .expect("detect missing skill tool row"));
-
-        let config_json = serde_json::json!({
-            "command": "python3",
-            "args": ["main.py"],
-            "description": "Diagnose installation gaps",
-        })
-        .to_string();
-        let tool = store
-            .upsert_tool(ToolUpsert {
-                id: None,
-                source_id: source.id.clone(),
-                identifier: Some("skill.self-heal/diagnose".to_string()),
-                name: "diagnose".to_string(),
-                source_type: McpSourceType::Local,
-                status: McpToolStatus::Healthy,
-                ping_ms: None,
-                capabilities: vec!["diagnostics".to_string()],
-                description: "Diagnose installation gaps".to_string(),
-                error: None,
-                command: Some("python3".to_string()),
-                args: Some(vec!["main.py".to_string()]),
-                env: None,
-                config_json: config_json.clone(),
-                config_hash: hash_config(&config_json),
-                pending_config_json: None,
-                pending_config_hash: None,
-                conflict_status: McpConflictStatus::None,
-                is_read_only: false,
-                is_new: false,
-            })
-            .await
-            .expect("upsert self-heal tool");
+        .expect("detect missing skill asset"));
 
         assert!(local_skill_registration_self_heal_needed(
             &store,
@@ -3925,20 +3926,24 @@ for raw_line in sys.stdin:
         memory_state
             .store
             .upsert_asset(
-                tool.id.clone(),
-                tool.name.clone(),
-                tool.description.clone(),
-                "tool".to_string(),
-                "mcp".to_string(),
+                "skill.self-heal".to_string(),
+                "Self Heal Skill".to_string(),
+                "Installed skill bundle for Self Heal Skill".to_string(),
+                "skill".to_string(),
+                "user".to_string(),
                 Some("skill.self-heal".to_string()),
                 vec![1.0, 0.0, 0.0],
                 Some(serde_json::json!({
-                    "source_name": "skill:skill.self-heal",
-                    "identifier": "skill.self-heal/diagnose",
+                    "id": "skill.self-heal",
+                    "name": "Self Heal Skill",
+                    "source_metadata": {
+                        "doc_paths": ["llm-tool.yaml"],
+                        "doc_excerpt": "Diagnose installation gaps"
+                    }
                 })),
             )
             .await
-            .expect("upsert self-heal vector asset");
+            .expect("upsert self-heal skill asset");
 
         assert!(!local_skill_registration_self_heal_needed(
             &store,
@@ -4043,22 +4048,16 @@ for raw_line in sys.stdin:
         assert_eq!(indexed, 1);
 
         let source_name = "skill:skill.restore";
-        let identifier = "skill.restore/repair";
         let source = store
             .find_source_by_name(source_name)
             .await
             .expect("find initial source")
             .expect("initial source exists");
-        let tool = store
-            .get_tool_by_source_identifier(&source.id, identifier)
-            .await
-            .expect("find initial tool")
-            .expect("initial tool exists");
         assert!(memory_state
             .service
-            .get_asset_by_id(&tool.id)
+            .get_asset_by_id("skill.restore")
             .await
-            .expect("get initial vector asset")
+            .expect("get initial skill asset")
             .is_some());
 
         memory_state
@@ -4100,16 +4099,12 @@ for raw_line in sys.stdin:
             .await
             .expect("find restored source")
             .expect("restored source exists");
-        let restored_tool = store
-            .get_tool_by_source_identifier(&restored_source.id, identifier)
-            .await
-            .expect("find restored tool")
-            .expect("restored tool exists");
+        assert_eq!(restored_source.path_or_url, skill_dir.to_string_lossy());
         assert!(memory_state
             .service
-            .get_asset_by_id(&restored_tool.id)
+            .get_asset_by_id("skill.restore")
             .await
-            .expect("get restored vector asset")
+            .expect("get restored skill asset")
             .is_some());
         assert!(!local_skill_registration_self_heal_needed(
             &store,

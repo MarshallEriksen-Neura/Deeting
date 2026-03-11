@@ -13,6 +13,7 @@ export const PluginMarketSkillItemSchema = z.object({
   version: z.string().nullable().optional(),
   source_repo: z.string().nullable().optional(),
   source_revision: z.string().nullable().optional(),
+  source_kind: z.string().default("community"),
   status: z.string(),
   installed: z.boolean().default(false),
   created_at: z.string().nullable().optional(),
@@ -34,6 +35,11 @@ export const PluginInstallationItemSchema = z.object({
 
 export type PluginMarketSkillItem = z.infer<typeof PluginMarketSkillItemSchema>
 export type PluginInstallationItem = z.infer<typeof PluginInstallationItemSchema>
+
+export function isUserVisiblePlugin(plugin: PluginMarketSkillItem) {
+  return plugin.source_kind !== "official"
+}
+
 export const LocalSkillInstallSyncItemSchema = z.object({
   skill_id: z.string(),
   is_enabled: z.boolean(),

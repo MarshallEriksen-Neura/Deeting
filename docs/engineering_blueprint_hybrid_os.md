@@ -55,15 +55,15 @@ The **Gateway (Backend)** serves as the Kernel. It abstracts the difference betw
 ### 3.1 The Aggregator Pattern
 When a session starts, the Kernel aggregates tools:
 
-1.  **Local Discovery**: Scans `plugins/` directory (v2 standard), loads `llm-tool.yaml`.
+1.  **Local Discovery**: Scans installed skill/plugin bundles, reads `SKILL.md` plus bundle metadata, and only uses `llm-tool.yaml` when a host contract still requires an explicit schema.
 2.  **Remote Handshake**: Connects to configured Cloud MCP Endpoint via SSE. Requests `tools/list`.
 3.  **Fusion**: Merges both lists into a single `system_prompt` context for the LLM.
 
 ### 3.2 Routing Logic
 When LLM requests a tool call (e.g., `{"name": "search_web"}`):
 
-*   **Kernel Lookup**: Checks the Tool Registry.
-*   **Path A (Local)**: If owner is Local Plugin -> Invoke Python function in Sandbox.
+*   **Kernel Lookup**: Checks the capability registry and recipe catalog.
+*   **Path A (Local)**: If owner is a local direct capability -> Invoke host/runtime function.
 *   **Path B (Cloud)**: If owner is Cloud MCP -> Send JSON-RPC request over SSE tunnel -> Await Result.
 
 ---
@@ -113,7 +113,7 @@ Regardless of where the code runs, the UI update path is identical:
 ### Phase 3: The Plugin Framework V2 (Weeks 5-6)
 *   **Objective**: Standardize Local Extensions.
 *   **Tasks**:
-    1.  Implement the `kimai.json` & `llm-tool.yaml` loader in Gateway.
+    1.  Implement the `SKILL.md` + metadata loader in Gateway, with `llm-tool.yaml` as an optional compatibility contract.
     2.  Create the "Plugin Sandbox" (Process isolation for local scripts).
     3.  Implement the GitOps -> CI -> Registry pipeline (from V2 plan).
 

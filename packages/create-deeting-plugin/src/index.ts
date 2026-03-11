@@ -51,7 +51,7 @@ async function run() {
     console.log(kleur.green("\n✅ Success! Your plugin is ready."));
     console.log("\nNext steps:");
     console.log(kleur.yellow(`  cd ${response.projectName}`));
-    console.log(kleur.yellow("  # Edit main.py and ui/index.html"));
+    console.log(kleur.yellow("  # Edit SKILL.md, main.py, and ui/index.html"));
     console.log(kleur.yellow("  # Push to GitHub and install in Deeting OS!\n"));
   } catch (err) {
     console.error(kleur.red("Error copying template:"), err);

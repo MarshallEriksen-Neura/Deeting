@@ -115,6 +115,10 @@ async fn load_tool_contract_sources(
     tools
         .into_iter()
         .filter_map(|tool| {
+            let identifier = tool.identifier.as_deref().unwrap_or("").trim();
+            if identifier.starts_with("skill.") {
+                return None;
+            }
             let normalized = tool.name.trim().to_string();
             if normalized.is_empty() {
                 return None;
@@ -162,6 +166,24 @@ impl RegistryAvailability {
 
         match asset_type {
             "tool" => {
+                if let Some(skill_id) = pkg_name.filter(|value| value.starts_with("skill.")) {
+                    if !enabled_skill_ids.contains(skill_id) {
+                        return Self {
+                            class: ToolAvailabilityClass::NeedsSetup,
+                            install_required: false,
+                            activation_required: true,
+                            recommended_action: "enable_skill",
+                            status_reason: "skill_installed_but_disabled",
+                        };
+                    }
+                    return Self {
+                        class: ToolAvailabilityClass::Unavailable,
+                        install_required: false,
+                        activation_required: false,
+                        recommended_action: "read_skill_docs",
+                        status_reason: "skill_routed_via_docs",
+                    };
+                }
                 if source_type == "code_mode_core" {
                     return Self {
                         class: ToolAvailabilityClass::CallableDirect,

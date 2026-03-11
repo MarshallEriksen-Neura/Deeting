@@ -203,10 +203,10 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
 
   const {
     handleConflictOpenChange,
+    handleDeleteTool,
     handleOpenConflict,
     handlePrimaryAction,
     handleResolveConflict,
-    handleShowLogs,
     handleToggleTool,
   } = useMcpRegistryToolActions({
     isTauri,
@@ -252,13 +252,13 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
           <RuntimeGridSection
             tools={runtimeTools}
             conflictCount={conflictCount}
+            platform={isTauri ? "desktop" : "cloud"}
             toggleMode={isTauri ? "runtime" : "desired"}
             onToggleTool={isTauri ? (tool, enabled) => handleToggleTool(tool, enabled) : handleToggleServerEnabled}
             onPrimaryAction={handlePrimaryAction}
-            onShowLogs={isTauri ? handleShowLogs : undefined}
             onResolveConflict={isTauri ? handleOpenConflict : undefined}
             onEditServer={!isTauri ? handleOpenEditServer : undefined}
-            onDeleteServer={!isTauri ? handleDeleteServer : undefined}
+            onDeleteServer={isTauri ? handleDeleteTool : handleDeleteServer}
             onSyncAll={!isTauri ? handleSyncServers : undefined}
             syncAllLoading={syncingServers}
             onSyncTool={!isTauri ? handleSyncServer : undefined}

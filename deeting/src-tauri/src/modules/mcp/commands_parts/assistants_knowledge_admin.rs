@@ -1,30 +1,65 @@
 use super::{
     common_impl::to_string,
     runtime::{approve_mcp_tool_inner_with_context, reject_mcp_tool_inner},
+    skill_registry_impl::reindex_local_skill_bundle_asset,
     source_management_impl::CloudSubscriptionItem,
     support::*,
 };
 
+fn derive_backing_skill_id(raw: Option<&str>) -> Option<&str> {
+    let normalized = raw?.trim();
+    if !normalized.starts_with("skill.") {
+        return None;
+    }
+    Some(normalized.split('/').next().unwrap_or(normalized))
+}
+
+pub(crate) async fn index_mcp_tool_asset(
+    app_state: &AppState,
+    tool: &McpTool,
+    source_type: &str,
+    pkg_name: Option<String>,
+) {
+    let text = format!("name: {}\ndescription: {}", tool.name, tool.description);
+    if let Ok(vector) = app_state.providers.embedding.embed_text(&text).await {
+        let _ = app_state
+            .memory
+            .service
+            .upsert_asset(
+                tool.id.clone(),
+                tool.name.clone(),
+                tool.description.clone(),
+                "tool".to_string(),
+                source_type.to_string(),
+                pkg_name,
+                vector,
+                None,
+            )
+            .await;
+    }
+}
+
 pub(crate) async fn index_mcp_tools(app_state: &AppState, tools: &[McpTool]) {
     for tool in tools {
-        let text = format!("name: {}\ndescription: {}", tool.name, tool.description);
-        if let Ok(vector) = app_state.providers.embedding.embed_text(&text).await {
-            let _ = app_state
-                .memory
-                .service
-                .upsert_asset(
-                    tool.id.clone(),
-                    tool.name.clone(),
-                    tool.description.clone(),
-                    "tool".to_string(),
-                    "mcp".to_string(),
-                    tool.identifier.clone(),
-                    vector,
-                    None,
-                )
-                .await;
-        }
+        index_mcp_tool_asset(app_state, tool, "mcp", tool.source_id.clone()).await;
     }
+}
+
+pub(crate) async fn reindex_desktop_tool_asset(
+    app_state: &AppState,
+    tool: &McpTool,
+) -> Result<(), String> {
+    if let Some(skill_id) = derive_backing_skill_id(tool.identifier.as_deref()) {
+        let _ = app_state
+            .memory
+            .service
+            .delete_assets_by_ids(&[tool.id.clone()])
+            .await;
+        return reindex_local_skill_bundle_asset(app_state, skill_id).await;
+    }
+
+    index_mcp_tool_asset(app_state, tool, "mcp", tool.source_id.clone()).await;
+    Ok(())
 }
 
 /// Fire-and-forget: embed all chunks of a successfully indexed document into LanceDB.

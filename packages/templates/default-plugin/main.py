@@ -2,11 +2,12 @@ from typing import Any
 
 async def invoke(tool_name: str, args: dict[str, Any], deeting: Any) -> Any:
     """
-    Deeting 插件核心入口。
-    
-    :param tool_name: llm-tool.yaml 中定义的工具名
-    :param args: LLM 传入的参数字典
-    :param deeting: Deeting SDK 对象，提供 call_tool, render, log 等能力
+    Primary backend entrypoint for the skill/plugin.
+
+    :param tool_name: Tool selected by the host. Keep it aligned with SKILL.md
+        and, when present, llm-tool.yaml.
+    :param args: Arguments passed to the selected tool.
+    :param deeting: Deeting SDK object with call_tool, render, log, and related helpers.
     """
     deeting.log(f"Executing tool: {tool_name} with args: {args}")
     
@@ -14,7 +15,7 @@ async def invoke(tool_name: str, args: dict[str, Any], deeting: Any) -> Any:
         name = args.get("name", "Stranger")
         message = f"Hello {name}! This is your custom plugin speaking."
         
-        # 渲染 UI Block (可选)
+        # Optional UI block
         deeting.render(
             view_type="bento.grid",
             title="Plugin Response",

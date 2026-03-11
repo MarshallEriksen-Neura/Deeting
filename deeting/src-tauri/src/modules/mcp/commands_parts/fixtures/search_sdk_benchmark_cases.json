@@ -3,10 +3,10 @@
     "query": "search_web 抓取网页标题",
     "embedding": [1.0, 0.0, 0.0, 0.0, 0.0],
     "expected_name": "search_web",
-    "expected_group": "capabilities",
+    "expected_group": "recipes",
     "expected_intent": "web_fetch",
     "expected_domain": null,
-    "forbidden_groups": ["recipes", "orchestration_primitives"]
+    "forbidden_groups": ["capabilities", "orchestration_primitives"]
   },
   {
     "query": "Weather Skill 天气预报降雨提醒",
@@ -21,10 +21,10 @@
     "query": "stock_quotes 股票实时行情",
     "embedding": [0.0, 0.0, 1.0, 0.0, 0.0],
     "expected_name": "stock_quotes",
-    "expected_group": "capabilities",
+    "expected_group": "recipes",
     "expected_intent": "realtime_lookup",
     "expected_domain": "finance",
-    "forbidden_groups": ["recipes", "orchestration_primitives"]
+    "forbidden_groups": ["capabilities", "orchestration_primitives"]
   },
   {
     "query": "sys_submit_onboarding_request 安装本地 skill",

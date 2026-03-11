@@ -4,7 +4,7 @@
   "name": "Skill Creator",
   "version": "1.0.0",
   "author": "Deeting Team",
-  "description": "Create new Deeting skills with the standard structure (deeting.json + llm-tool.yaml + main.py) in the user skills directory.",
+  "description": "Create new Deeting skills with the docs-first structure (SKILL.md + deeting.json + main.py, optional llm-tool.yaml) in the user skills directory.",
   "entry": {
     "backend": "main.py"
   },

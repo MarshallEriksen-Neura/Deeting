@@ -1263,7 +1263,9 @@ fn is_missing_sandbox_error(err: &SandboxError) -> bool {
         SandboxError::Internal(message) => {
             let lowered = message.to_lowercase();
             ((lowered.contains("not found") || lowered.contains("does not exist"))
-                && (lowered.contains("sandbox") || lowered.contains("box") || lowered.contains("id")))
+                && (lowered.contains("sandbox")
+                    || lowered.contains("box")
+                    || lowered.contains("id")))
                 || lowered.contains("no such box")
         }
         _ => false,

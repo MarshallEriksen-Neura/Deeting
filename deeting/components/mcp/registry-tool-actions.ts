@@ -103,6 +103,22 @@ export function useMcpRegistryToolActions({
     }
   }, [setConflictOpen, setConflictTool])
 
+  const handleDeleteTool = useCallback(async (tool: MCPTool) => {
+    if (!isTauri) {
+      addNotification(getMcpRegistryNotification(t, "desktop_only"))
+      return
+    }
+
+    try {
+      await invoke("delete_local_mcp_tool", { toolId: tool.id })
+      await refreshAll()
+      addNotification(getMcpRegistryNotification(t, "delete_success"))
+    } catch (err) {
+      addNotification(getMcpRegistryErrorNotification(t, "delete", err))
+      await refreshAll()
+    }
+  }, [addNotification, isTauri, refreshAll, t])
+
   const handleOpenConflict = useCallback((tool: MCPTool) => {
     setConflictTool(tool)
     setConflictOpen(true)
@@ -189,7 +205,7 @@ export function useMcpRegistryToolActions({
         }
         return
     }
-  }, [addNotification, handleShowLogs, isTauri, mapServerTool, refreshAll, refreshTools, t, toolToggleMutation, updateToolList])
+  }, [addNotification, isTauri, mapServerTool, refreshAll, refreshTools, t, toolToggleMutation, updateToolList])
 
   const handlePrimaryAction = useCallback(async (tool: MCPTool) => {
     const intent = getMcpPrimaryActionIntent(tool, isTauri ? "desktop" : "cloud")
@@ -221,6 +237,7 @@ export function useMcpRegistryToolActions({
 
   return {
     handleConflictOpenChange,
+    handleDeleteTool,
     handleOpenConflict,
     handlePrimaryAction,
     handleResolveConflict,

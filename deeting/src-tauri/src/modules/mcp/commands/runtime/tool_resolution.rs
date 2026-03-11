@@ -81,7 +81,6 @@ impl ToolAvailability {
     pub(crate) fn is_direct_callable(&self) -> bool {
         matches!(self.class, ToolAvailabilityClass::CallableDirect)
     }
-
 }
 
 #[derive(Debug, Clone, Default)]
@@ -143,6 +142,10 @@ fn derive_skill_id(raw: &str) -> Option<&str> {
 
 fn disabled_skill_availability() -> ToolAvailability {
     ToolAvailability::activation_required("enable_skill", "skill_installed_but_disabled")
+}
+
+fn docs_first_skill_availability() -> ToolAvailability {
+    ToolAvailability::unavailable("read_skill_docs", "skill_routed_via_docs")
 }
 
 pub(crate) fn desired_enabled_from_tool(
@@ -208,6 +211,7 @@ pub(crate) async fn build_desktop_mcp_tool_views(
 
     Ok(tools
         .into_iter()
+        .filter(|tool| tool.identifier.as_deref().and_then(derive_skill_id).is_none())
         .map(|tool| build_desktop_mcp_tool_view(tool, &enabled_skill_ids, indexed_tool_ids))
         .collect())
 }
@@ -220,6 +224,7 @@ pub(crate) fn fallback_local_tool_availability(
         if !enabled_skill_ids.contains(skill_id) {
             return disabled_skill_availability();
         }
+        return docs_first_skill_availability();
     }
     ToolAvailability::callable("ready_in_local_runtime")
 }
@@ -232,6 +237,7 @@ pub(crate) fn tool_availability_from_tool(
         if !enabled_skill_ids.contains(skill_id) {
             return disabled_skill_availability();
         }
+        return docs_first_skill_availability();
     }
 
     match tool.transport_kind() {
@@ -254,9 +260,7 @@ pub(crate) fn tool_availability_from_tool(
             McpToolStatus::Crashed => {
                 ToolAvailability::unavailable("review", "remote_server_sync_crashed")
             }
-            McpToolStatus::Error => {
-                ToolAvailability::unavailable("review", "remote_server_error")
-            }
+            McpToolStatus::Error => ToolAvailability::unavailable("review", "remote_server_error"),
             McpToolStatus::Orphaned => {
                 ToolAvailability::unavailable("review", "remote_tool_orphaned_from_server")
             }
@@ -314,6 +318,9 @@ pub(crate) async fn build_db_tool_availability_catalog(
     let mut name_counts = HashMap::<String, usize>::with_capacity(tools.len());
 
     for tool in tools {
+        if tool.identifier.as_deref().and_then(derive_skill_id).is_some() {
+            continue;
+        }
         let availability = tool_availability_from_tool(&tool, &enabled_skill_ids);
         by_id.insert(tool.id.clone(), availability.clone());
 

@@ -87,7 +87,7 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
             content: concat!(
                 "You are running inside Deeting, an AI agent platform.\n",
                 "When the user asks to install, create, or manage skills:\n",
-                "- Deeting skills use deeting.json (NOT SKILL.md), llm-tool.yaml, and main.py.\n",
+                "- Deeting skills are docs-first bundles centered on SKILL.md. deeting.json is metadata/runtime/UI config, and llm-tool.yaml is optional when a host contract still needs it.\n",
                 "- Use the install_skill_from_repo tool or sys_submit_onboarding_request to install skills.\n",
                 "- User skills directory: $APP_DATA_DIR/skills/<skill_id>/.\n",
                 "- Do NOT use opencode, codex, openclaw, or any other platform's skill paths or manifest format.\n",

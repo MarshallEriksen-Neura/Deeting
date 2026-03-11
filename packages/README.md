@@ -1,41 +1,58 @@
 # Deeting Plugin Development Kit (PDK)
 
-Welcome to the Deeting OS ecosystem. This monorepo provides everything you need to build, test, and publish plugins that extend the intelligence of Deeting OS.
+Welcome to the Deeting OS ecosystem. This monorepo provides the starter packages you need to build, test, and publish plugins that extend Deeting.
 
 ## 🚀 Quick Start in 3 Steps
 
 ### 1. Scaffold your project
 Run the following command in your terminal to create a new plugin project:
+
 ```bash
 bunx create-deeting-plugin
 ```
-Follow the prompts to name your plugin. This will create a directory containing the standard structure:
-- `deeting.json`: Metadata and permissions.
-- `llm-tool.yaml`: Tool definitions for the AI.
-- `main.py`: Your backend logic.
-- `ui/`: Your frontend interface.
 
-### 2. Implement the Logic
+Follow the prompts to name your plugin. This creates a standard structure:
+
+- `SKILL.md`: Primary AI-facing entry point. Describe the tool surface, usage rules, and guardrails here first.
+- `deeting.json`: Metadata, runtime, permissions, and UI/backend entrypoints.
+- `main.py`: Backend logic that implements `async def invoke`.
+- `ui/`: Optional frontend interface.
+- `llm-tool.yaml`: Optional host tool contract for environments that still expect an explicit schema.
+
+### 2. Implement the logic
 Your `main.py` should export an `async def invoke` function:
+
 ```python
 async def invoke(tool_name, args, deeting):
     deeting.log("Doing something cool...")
     return {"result": "Done!"}
 ```
 
+Update `SKILL.md` first when you rename tools or change behavior. Keep `llm-tool.yaml` in sync only when you need it.
+
 ### 3. Publish to Market
-Copy your GitHub URL and paste it into the **Deeting Dashboard > Developer Lab**. Click "Publish" to sync your plugin instantly.
+Copy your GitHub URL and paste it into **Deeting Dashboard > Developer Lab**. Click **Publish** to sync your plugin.
+
+---
+
+## 📦 Skill-First Packaging
+
+- Start with `SKILL.md`. This is the main contract an AI agent should read.
+- Keep `deeting.json` focused on metadata, runtime, permissions, packaging, and UI support.
+- Keep `main.py` aligned with the tool names and behavior described in `SKILL.md`.
+- Use `llm-tool.yaml` when a host integration still requires a structured tool schema or when you need legacy compatibility.
+- If your plugin renders UI, keep `entry.ui` in `deeting.json` and `ui/index.html` in place.
 
 ---
 
 ## 🛠 Deeting SDK Reference
 
-When running in the **OpenSandbox**, a `deeting` object is automatically injected.
+When running in the OpenSandbox, a `deeting` object is automatically injected.
 
 | Method | Description | Example |
 | :--- | :--- | :--- |
 | `deeting.log(*args)` | Prints a log to the chat debug panel. | `deeting.log("User input:", args)` |
-| `deeting.render(type, data)` | Renders a UI Block in the chat stream. | `deeting.render("table.v1", rows)` |
+| `deeting.render(type, data)` | Renders a UI block in the chat stream. | `deeting.render("table.v1", rows)` |
 | `deeting.call_tool(name, **kwargs)` | Calls another system tool or plugin. | `deeting.call_tool("google_search", q="...")` |
 | `deeting.section(title)` | Groups the following logs under a header. | `deeting.section("Analyzing Data")` |
 
@@ -45,40 +62,38 @@ When running in the **OpenSandbox**, a `deeting` object is automatically injecte
 
 Deeting uses a secure, sandboxed `<iframe>` to render plugin UIs. To ensure data is injected correctly, your `ui/index.html` must follow this handshake protocol:
 
-### 1. The Handshake Protocol
-1.  **Iframe Load**: Deeting renders your iframe pointing to the signed URL.
-2.  **Ready Signal**: Your UI must send a `DEETING_PLUGIN_READY` message to the parent window once it is fully loaded.
-3.  **Data Injection**: Deeting responds with a `DEETING_PLUGIN_DATA` message containing the `payload` returned by your `main.py`.
-4.  **Theme Sync**: Deeting may send `DEETING_THEME_CHANGE` whenever the user switches between Light/Dark mode.
+### 1. The handshake protocol
+1. **Iframe load**: Deeting renders your iframe pointing to the signed URL.
+2. **Ready signal**: Your UI sends a `DEETING_PLUGIN_READY` message to the parent window once it is fully loaded.
+3. **Data injection**: Deeting responds with a `DEETING_PLUGIN_DATA` message containing the `payload` returned by your `main.py`.
+4. **Theme sync**: Deeting may send `DEETING_THEME_CHANGE` whenever the user switches between light and dark mode.
 
-### 2. Frontend Implementation Example
+### 2. Frontend implementation example
 Add this script to your `ui/index.html`:
 
 ```javascript
-// 1. Listen for messages from Deeting OS
 window.addEventListener('message', (event) => {
     const { type, payload } = event.data;
 
     if (type === 'DEETING_PLUGIN_DATA') {
-        // Render your UI using the 'payload' data
         console.log("Received data from skill:", payload);
         renderMyApp(payload);
     }
 
     if (type === 'DEETING_THEME_CHANGE') {
-        // payload is 'light' or 'dark'
         document.documentElement.className = payload;
     }
 });
 
-// 2. Tell the host you are ready to receive data
 window.parent.postMessage({ type: 'DEETING_PLUGIN_READY' }, '*');
 ```
 
 ---
 
 ## 🛡 Security & Permissions
-Plugins run in a strictly isolated **Docker Sandbox**. You must request permissions in `deeting.json`:
+
+Plugins run in a strictly isolated Docker sandbox. Request any required permissions in `deeting.json`:
+
 - `network.outbound`: Required for external API calls.
 - `filesystem.read/write`: Required for processing files.
 
@@ -86,25 +101,26 @@ Plugins run in a strictly isolated **Docker Sandbox**. You must request permissi
 
 ## 🤖 Developing with AI Assistance
 
-You can use AI (ChatGPT, Claude, Gemini) to help you build plugins faster. Simply copy and paste the context below into your AI tool to make it understand the Deeting development standards.
+You can use AI tools to help you build plugins faster. If you do, give them the packaging rules below:
 
-### Copy-Paste Context for AI:
-> I am developing a plugin for **Deeting OS**. Please act as an expert developer.
-> 
-> **Architecture Rules:**
-> 1. **deeting.json**: Metadata and permissions (network.outbound, etc.).
-> 2. **llm-tool.yaml**: Tool definition in OpenAI Function Calling format.
-> 3. **main.py**: Must implement `async def invoke(tool_name, args, deeting)`.
-> 4. **ui/index.html**: A transparent HTML page that listens for `DEETING_DATA` message.
-> 
-> **SDK Capabilities:**
+> I am developing a plugin for Deeting OS. Please act as an expert developer.
+>
+> Architecture rules:
+> 1. `SKILL.md` is the primary AI-facing entry point.
+> 2. `deeting.json` stores metadata, runtime, permissions, and UI/backend entrypoints.
+> 3. `main.py` must implement `async def invoke(tool_name, args, deeting)`.
+> 4. `llm-tool.yaml` is optional and should stay aligned with `SKILL.md` when present.
+> 5. `ui/index.html` is optional and should listen for `DEETING_PLUGIN_DATA` if the plugin renders UI.
+>
+> SDK capabilities:
 > - `deeting.log(msg)`: Debugging.
-> - `deeting.render(view_type, payload)`: Send UI data to frontend.
+> - `deeting.render(view_type, payload)`: Send UI data to the frontend.
 > - `deeting.call_tool(name, **kwargs)`: Call other system tools.
-> 
-> **Task:** [Describe your plugin idea here, e.g., "Help me write a crypto price tracker with a glassmorphism UI"]
+>
+> Task: [Describe your plugin idea here.]
 
 ---
 
 ## 🧪 Smoke Testing (CI)
-We recommend adding the [Deeting Check Workflow](./templates/default-plugin/.github/workflows/plugin-check.yml) to your repository. It will automatically validate your `deeting.json` and syntax on every push.
+
+We recommend adding the workflow at `packages/templates/default-plugin/.github/workflows/plugin-check.yml` to your repository. It validates `deeting.json` and basic plugin syntax on every push.

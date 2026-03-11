@@ -27,6 +27,7 @@ import { usePluginMarket } from "@/lib/swr/use-plugin-market"
 import {
   installPlugin,
   isDesktopRuntime,
+  isUserVisiblePlugin,
   submitPluginRepo,
   syncLocalSkillInstallsFromCloud,
   uninstallPlugin,
@@ -177,9 +178,13 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
     }
   }, [mutate, t])
 
-  const installedPlugins = React.useMemo(
-    () => plugins.filter((plugin) => plugin.installed),
+  const userVisiblePlugins = React.useMemo(
+    () => plugins.filter(isUserVisiblePlugin),
     [plugins],
+  )
+  const installedPlugins = React.useMemo(
+    () => userVisiblePlugins.filter((plugin) => plugin.installed),
+    [userVisiblePlugins],
   )
 
   const normalizedQuery = debouncedQuery.trim().toLowerCase()
@@ -200,8 +205,8 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
   )
 
   const filteredMarketPlugins = React.useMemo(
-    () => plugins.filter(matchPlugin),
-    [matchPlugin, plugins],
+    () => userVisiblePlugins.filter(matchPlugin),
+    [matchPlugin, userVisiblePlugins],
   )
   const filteredInstalledPlugins = React.useMemo(
     () => installedPlugins.filter(matchPlugin),

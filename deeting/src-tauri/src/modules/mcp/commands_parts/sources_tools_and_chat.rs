@@ -1,10 +1,11 @@
 use super::{
-    assistants_knowledge_admin_impl::index_mcp_tools,
+    assistants_knowledge_admin_impl::{index_mcp_tools, reindex_desktop_tool_asset},
     common_impl::to_string,
     runtime::{
         apply_config_payload, execute_or_queue_mcp_tool_call_with_tool_ref, now_rfc3339,
         resolve_callable_mcp_tool_by_ref,
     },
+    skill_registry_impl::uninstall_local_skill,
     support::*,
 };
 
@@ -315,12 +316,107 @@ pub async fn start_mcp_tool(
     state: State<'_, AppState>,
     tool_id: String,
 ) -> Result<Value, String> {
-    start_mcp_tool_inner(&state.mcp, &tool_id).await
+    let result = start_mcp_tool_inner(&state.mcp, &tool_id).await?;
+    if let Some(tool) = state
+        .mcp
+        .store
+        .get_tool(&tool_id)
+        .await
+        .map_err(to_string)?
+    {
+        let _ = reindex_desktop_tool_asset(state.inner(), &tool).await;
+    }
+    Ok(result)
 }
 
 #[tauri::command]
 pub async fn stop_mcp_tool(state: State<'_, AppState>, tool_id: String) -> Result<(), String> {
     stop_mcp_tool_inner(&state.mcp, &tool_id).await
+}
+
+fn derive_backing_skill_id(raw: Option<&str>) -> Option<&str> {
+    let normalized = raw?.trim();
+    if !normalized.starts_with("skill.") {
+        return None;
+    }
+    Some(normalized.split('/').next().unwrap_or(normalized))
+}
+
+#[tauri::command]
+pub async fn delete_local_mcp_tool(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    tool_id: String,
+) -> Result<(), String> {
+    let tool = state
+        .mcp
+        .store
+        .get_tool(&tool_id)
+        .await
+        .map_err(to_string)?
+        .ok_or_else(|| format!("tool {} not found", tool_id))?;
+
+    if tool.supports_local_process_lifecycle() {
+        let _ = state.mcp.process_manager.stop_tool(&tool.id).await;
+    }
+
+    if let Some(skill_id) = derive_backing_skill_id(tool.identifier.as_deref()) {
+        return uninstall_local_skill(&app, state.inner(), skill_id).await;
+    }
+
+    let source_id = tool.source_id.clone();
+    let sibling_count = match source_id.as_deref() {
+        Some(current_source_id) => state
+            .mcp
+            .store
+            .list_tools()
+            .await
+            .map_err(to_string)?
+            .into_iter()
+            .filter(|item| item.source_id.as_deref() == Some(current_source_id))
+            .count(),
+        None => 0,
+    };
+
+    state
+        .mcp
+        .store
+        .delete_tools_by_ids(&[tool.id.clone()])
+        .await
+        .map_err(to_string)?;
+
+    if sibling_count <= 1 {
+        if let Some(source_id) = source_id.as_deref() {
+            state
+                .mcp
+                .store
+                .delete_source(source_id)
+                .await
+                .map_err(to_string)?;
+            state
+                .memory
+                .service
+                .delete_assets_by_package(source_id)
+                .await
+                .map_err(to_string)?;
+        } else {
+            state
+                .memory
+                .service
+                .delete_assets_by_ids(&[tool.id.clone()])
+                .await
+                .map_err(to_string)?;
+        }
+    } else {
+        state
+            .memory
+            .service
+            .delete_assets_by_ids(&[tool.id.clone()])
+            .await
+            .map_err(to_string)?;
+    }
+
+    Ok(())
 }
 
 #[tauri::command]

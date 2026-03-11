@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, type MouseEvent } from "react"
+import { useState } from "react"
 import { Terminal, AlertCircle, RefreshCw, MoreHorizontal, Pencil, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { GlassButton } from "@/components/ui/glass-button"
@@ -25,8 +25,11 @@ import { cn } from "@/lib/utils"
 import { MCPTool, MCPToolStatus } from "@/types/mcp"
 import { useTranslations } from "next-intl"
 
+type ServerCardPlatform = "desktop" | "cloud"
+
 interface ServerCardProps {
   tool: MCPTool
+  platform?: ServerCardPlatform
   toggleMode?: McpUiToggleMode
   onToggle?: (tool: MCPTool, enabled: boolean) => void
   onPrimaryAction?: () => void
@@ -128,6 +131,7 @@ const StatusDot = ({ status }: { status: MCPToolStatus }) => {
 
 export function ServerCard({
   tool,
+  platform = "cloud",
   toggleMode = "runtime",
   onToggle,
   onPrimaryAction,
@@ -144,7 +148,9 @@ export function ServerCard({
   const showConflict = tool.conflictStatus === "conflict"
   const showUpdate = tool.conflictStatus === "update_available"
   const showNew = tool.isNew && !showConflict && !showUpdate
-  const showMenu = Boolean(onEdit || onDelete)
+  const showInlineToggle = platform !== "desktop" && Boolean(onToggle)
+  const showDesktopToggleAction = platform === "desktop" && Boolean(onToggle)
+  const showMenu = platform === "desktop" ? Boolean(onToggle || onDelete) : Boolean(onEdit || onDelete)
   const theme = statusTheme[tool.status]
   const isActive = isRunning || isMcpRuntimeTransitioning(tool)
   const runtimeHintKey = getMcpRuntimeHintKey(tool)
@@ -152,7 +158,12 @@ export function ServerCard({
   const showIndexMissing = isMcpIndexMissing(tool)
   const indexLabelKey = getMcpIndexLabelKey(tool)
   const primaryActionLabelKey = getMcpPrimaryActionLabelKey(tool)
-  const showPrimaryAction = Boolean(primaryActionLabelKey && onPrimaryAction)
+  const showPrimaryAction = platform !== "desktop" && Boolean(primaryActionLabelKey && onPrimaryAction)
+  const toggleChecked = isMcpToolSwitchChecked(tool, toggleMode)
+  const toggleDisabled = isMcpToolSwitchDisabled(tool, toggleMode)
+  const toggleActionLabelKey = toggleChecked ? "actions.stop" : "actions.start"
+  const deleteActionLabelKey = platform === "desktop" ? "actions.delete" : "server.actions.delete"
+  const deleteDialogKeyPrefix = platform === "desktop" ? "tool.delete" : "server.delete"
 
   return (
     <GlassCard
@@ -313,14 +324,16 @@ export function ServerCard({
                 {t(primaryActionLabelKey)}
               </GlassButton>
             )}
-            <Switch
-              checked={isMcpToolSwitchChecked(tool, toggleMode)}
-              onCheckedChange={(checked) => {
-                onToggle?.(tool, checked)
-              }}
-              disabled={isMcpToolSwitchDisabled(tool, toggleMode)}
-              className="data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-purple-600 data-[state=checked]:to-purple-500"
-            />
+            {showInlineToggle && (
+              <Switch
+                checked={toggleChecked}
+                onCheckedChange={(checked) => {
+                  onToggle?.(tool, checked)
+                }}
+                disabled={toggleDisabled}
+                className="data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-purple-600 data-[state=checked]:to-purple-500"
+              />
+            )}
             {isSynced && onSync && (
               <GlassButton
                 size="icon-sm"
@@ -351,6 +364,18 @@ export function ServerCard({
                   </GlassButton>
                 </GlassDropdownMenuTrigger>
                 <GlassDropdownMenuContent align="end" className="w-[180px]">
+                  {showDesktopToggleAction && (
+                    <GlassDropdownMenuItem
+                      disabled={toggleDisabled}
+                      onSelect={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        onToggle?.(tool, !toggleChecked)
+                      }}
+                    >
+                      {t(toggleActionLabelKey)}
+                    </GlassDropdownMenuItem>
+                  )}
                   {onEdit && (
                     <GlassDropdownMenuItem
                       onClick={(event) => {
@@ -374,18 +399,18 @@ export function ServerCard({
                           }}
                         >
                           <Trash2 size={14} />
-                          {t("server.actions.delete")}
+                          {t(deleteActionLabelKey)}
                         </GlassDropdownMenuItem>
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
-                          <AlertDialogTitle>{t("server.delete.title")}</AlertDialogTitle>
+                          <AlertDialogTitle>{t(`${deleteDialogKeyPrefix}.title`)}</AlertDialogTitle>
                           <AlertDialogDescription>
-                            {t("server.delete.description", { name: tool.name })}
+                            {t(`${deleteDialogKeyPrefix}.description`, { name: tool.name })}
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
-                          <AlertDialogCancel>{t("server.delete.cancel")}</AlertDialogCancel>
+                          <AlertDialogCancel>{t(`${deleteDialogKeyPrefix}.cancel`)}</AlertDialogCancel>
                           <AlertDialogAction
                             className="bg-red-600 hover:bg-red-500 text-white"
                             onClick={() => {
@@ -393,7 +418,7 @@ export function ServerCard({
                               setConfirmOpen(false)
                             }}
                           >
-                            {t("server.delete.confirm")}
+                            {t(`${deleteDialogKeyPrefix}.confirm`)}
                           </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>

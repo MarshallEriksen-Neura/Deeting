@@ -258,6 +258,7 @@ fn rank_registry_entry(
         source_type,
         pkg_name,
         assistant_id,
+        asset_metadata.as_ref(),
         &availability,
         match_reason,
         semantic_score,
@@ -290,13 +291,17 @@ fn materialize_ranked_entry(
     source_type: &str,
     pkg_name: Option<String>,
     assistant_id: Option<String>,
+    asset_metadata: Option<&Value>,
     availability: &RegistryAvailability,
     match_reason: Vec<String>,
     semantic_score: Option<f64>,
     lexical_score: Option<f64>,
     rank_score: f64,
 ) -> Value {
-    let group = classify_semantic_group(name, asset_type);
+    let skill_backed_tool = pkg_name
+        .as_deref()
+        .is_some_and(|value| value.starts_with("skill."));
+    let group = classify_semantic_group(name, asset_type, pkg_name.as_deref());
     let mut value = json!({
         "capability_id": id,
         "name": name,
@@ -329,10 +334,30 @@ fn materialize_ranked_entry(
             SemanticGroup::Recipe => {
                 object.insert("semantic_kind".to_string(), json!("recipe"));
                 object.insert("recipe_kind".to_string(), json!(asset_type));
-                object.insert(
-                    "recommended_path".to_string(),
-                    json!("install_or_activate"),
-                );
+                object.insert("recommended_path".to_string(), json!("install_or_activate"));
+                if asset_type == "skill" || skill_backed_tool {
+                    if let Some(metadata) = asset_metadata {
+                        if let Some(source_metadata) = metadata.get("source_metadata") {
+                            if let Some(doc_excerpt) = source_metadata
+                                .get("doc_excerpt")
+                                .and_then(|value| value.as_str())
+                                .map(str::trim)
+                                .filter(|value| !value.is_empty())
+                            {
+                                object.insert("docs_excerpt".to_string(), json!(doc_excerpt));
+                            }
+                            if let Some(doc_paths) = source_metadata.get("doc_paths") {
+                                object.insert("docs_paths".to_string(), doc_paths.clone());
+                            }
+                            if let Some(assets) = source_metadata.get("assets") {
+                                object.insert("bundle_assets".to_string(), assets.clone());
+                            }
+                        }
+                        if let Some(entry) = metadata.get("entry") {
+                            object.insert("entry".to_string(), entry.clone());
+                        }
+                    }
+                }
             }
             SemanticGroup::OrchestrationPrimitive => {
                 let primitive_kind = match name {
@@ -361,9 +386,12 @@ fn materialize_ranked_entry(
     value
 }
 
-fn classify_semantic_group(name: &str, asset_type: &str) -> SemanticGroup {
+fn classify_semantic_group(name: &str, asset_type: &str, pkg_name: Option<&str>) -> SemanticGroup {
     if matches!(name.trim(), "search_sdk" | "execute_code_plan") {
         return SemanticGroup::OrchestrationPrimitive;
+    }
+    if asset_type == "tool" && pkg_name.is_some_and(|value| value.starts_with("skill.")) {
+        return SemanticGroup::Recipe;
     }
     match asset_type {
         "skill" | "assistant" => SemanticGroup::Recipe,

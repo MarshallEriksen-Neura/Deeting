@@ -549,6 +549,10 @@ impl MemoryService {
         self.store.delete_assets_by_package(pkg_name).await
     }
 
+    pub async fn delete_assets_by_ids(&self, asset_ids: &[String]) -> Result<(), MemoryError> {
+        self.store.delete_assets_by_ids(asset_ids).await
+    }
+
     pub async fn recreate_local_asset_table(&self, vector_dim: i32) -> Result<(), MemoryError> {
         self.store.recreate_local_asset_table(vector_dim).await
     }

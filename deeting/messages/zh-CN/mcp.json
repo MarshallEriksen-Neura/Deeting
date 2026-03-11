@@ -67,6 +67,12 @@
       "waiting": "等待运行时",
       "review": "需检查",
       "indexMissing": "未进入索引"
+    },
+    "delete": {
+      "title": "确认删除该 MCP？",
+      "description": "将移除 {name} 并清理本地索引资产。",
+      "confirm": "删除 MCP",
+      "cancel": "取消"
     }
   },
   "logs": {
@@ -214,6 +220,7 @@
     "enable": "启用",
     "start": "启动",
     "stop": "停止",
+    "delete": "删除",
     "enableSkill": "启用 skill",
     "review": "查看",
     "reviewLogs": "查看日志",
@@ -261,8 +268,8 @@
     "testFailed": "测试调用失败",
     "updateSuccess": "服务已更新",
     "updateFailed": "更新服务失败",
-    "deleteSuccess": "服务已删除",
-    "deleteFailed": "删除服务失败",
+    "deleteSuccess": "删除成功",
+    "deleteFailed": "删除失败",
     "toggleUnsupported": "仅远程 SSE 服务支持启用或停用",
     "actionUnavailable": "当前无法执行该操作",
     "installRequired": "该工具仍需安装或补充配置后才能运行。",
