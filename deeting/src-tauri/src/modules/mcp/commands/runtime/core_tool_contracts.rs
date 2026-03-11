@@ -68,7 +68,7 @@ pub(crate) fn code_mode_core_tools() -> Vec<CoreToolContract> {
     vec![
         CoreToolContract {
             name: "search_sdk",
-            description: "Search desktop Code Mode capabilities by intent and return grouped results: callable_now, installable, and advisory. Use before execute_code_plan to decide what can run immediately versus what must be installed or enabled.",
+            description: "Search desktop capability control-plane objects by intent and return three semantic groups: capabilities, recipes, and orchestration_primitives. Direct capabilities should be called on host without sandbox; recipes are install or activation bundles; execute_code_plan is only for multi-step orchestration.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -85,12 +85,12 @@ pub(crate) fn code_mode_core_tools() -> Vec<CoreToolContract> {
                     "query": {"type": "string"},
                     "normalized_query": {"type": "object"},
                     "count": {"type": "integer"},
-                    "callable_now": {"type": "array"},
-                    "installable": {"type": "array"},
-                    "advisory": {"type": "array"},
+                    "capabilities": {"type": "array"},
+                    "recipes": {"type": "array"},
+                    "orchestration_primitives": {"type": "array"},
                     "usage_hint": {"type": "string"}
                 },
-                "required": ["format_version", "mode", "query", "count", "callable_now", "installable", "advisory"]
+                "required": ["format_version", "mode", "query", "count", "capabilities", "recipes", "orchestration_primitives"]
             }),
             permission_scope: &["local_catalog_read", "capability_discovery"],
             read_only: true,

@@ -58,6 +58,22 @@ describe("AIResponseBubble debug panel", () => {
     expect(screen.getByText("SANDBOX EXECUTION")).toBeInTheDocument();
   });
 
+  it("keeps sandbox label scoped to the matching console sequence", () => {
+    const parts: MessageBlock[] = [
+      { id: "exec-title-1", type: "execution_section", title: "Local Tool Actions" },
+      { id: "log-1", type: "console_log", stream: "stdout", content: "search log" },
+      { id: "call-1", type: "tool_call", toolName: "search_sdk", status: "success" },
+      { id: "exec-title-2", type: "execution_section", title: "Local Tool Actions" },
+      { id: "log-2", type: "console_log", stream: "stdout", content: "exec log" },
+      { id: "call-2", type: "tool_call", toolName: "execute_code_plan", status: "success" },
+    ];
+
+    render(<AIResponseBubble parts={parts} />);
+
+    expect(screen.getByText("SANDBOX EXECUTION")).toBeInTheDocument();
+    expect(screen.getAllByText("Local Tool Actions")).toHaveLength(1);
+  });
+
   it("renders assistant transition card", () => {
     const parts: MessageBlock[] = [
       {

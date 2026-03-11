@@ -20,7 +20,7 @@ const baseServer: McpServer = {
   desired_enabled: true,
   runtime_ready: true,
   runtime_status_reason: null,
-  availability_lane: "callable_now",
+  availability_class: "callable_direct",
   recommended_action: null,
   index_status: "indexed",
   index_status_reason: null,

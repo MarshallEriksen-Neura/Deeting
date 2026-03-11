@@ -403,16 +403,14 @@ fn resolve_allowed_tools(
         }
     }
     if let Some(snapshot) = capability_snapshot {
-        if let Some(callable_now) = snapshot
-            .get("callable_now")
-            .and_then(|value| value.as_array())
+        if let Ok(capability_names) =
+            crate::modules::capability_control_plane::extract_direct_callable_capability_names(
+                snapshot,
+            )
         {
-            for item in callable_now {
-                if let Some(name) = item.get("name").and_then(|value| value.as_str()) {
-                    let normalized = name.trim().to_lowercase();
-                    if !normalized.is_empty() {
-                        names.insert(normalized);
-                    }
+            for name in capability_names {
+                if !name.is_empty() {
+                    names.insert(name);
                 }
             }
         }
@@ -469,9 +467,10 @@ mod tests {
     fn resolve_allowed_tools_merges_request_and_snapshot() {
         let request_allowed = vec!["search_web".to_string(), "search_web".to_string()];
         let snapshot = json!({
-            "callable_now": [
-                { "name": "fetch_page" },
-                { "name": "search_web" }
+            "capabilities": [
+                { "name": "fetch_page", "invocation_mode": "direct", "status": { "callable": true } },
+                { "name": "search_web", "invocation_mode": "direct", "status": { "callable": true } },
+                { "name": "execute_code_plan", "invocation_mode": "code_mode", "status": { "callable": true } }
             ]
         });
         assert_eq!(
@@ -486,7 +485,13 @@ mod tests {
         let result = with_capability_contract(
             context,
             Some(&vec!["search_web".to_string()]),
-            Some(&json!({"callable_now": [{"name": "search_web"}]})),
+            Some(&json!({
+                "capabilities": [{
+                    "name": "search_web",
+                    "invocation_mode": "direct",
+                    "status": {"callable": true}
+                }]
+            })),
         );
         assert_eq!(
             result["capability_contract"]["allowed_tools"],

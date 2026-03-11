@@ -44,7 +44,10 @@ export type MCPToolStatus =
 
 export type MCPConflictStatus = "none" | "update_available" | "conflict"
 
-export type MCPToolAvailabilityLane = "callable_now" | "installable" | "advisory"
+export type MCPToolAvailabilityClass =
+  | "callable_direct"
+  | "needs_setup"
+  | "unavailable"
 
 export type MCPToolIndexStatus = "indexed" | "missing" | "unknown"
 
@@ -75,7 +78,7 @@ export interface McpToolRecord {
   backing_skill_id?: string | null
   runtime_ready?: boolean
   runtime_status_reason?: string
-  availability_lane?: MCPToolAvailabilityLane
+  availability_class?: MCPToolAvailabilityClass
   recommended_action?: string
   activation_required?: boolean
   install_required?: boolean
@@ -126,7 +129,7 @@ export interface MCPTool {
   backingSkillId?: string
   runtimeReady?: boolean
   runtimeStatusReason?: string
-  availabilityLane?: MCPToolAvailabilityLane
+  availabilityClass?: MCPToolAvailabilityClass
   recommendedAction?: string
   activationRequired?: boolean
   installRequired?: boolean

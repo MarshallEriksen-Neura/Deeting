@@ -17,7 +17,9 @@ export const McpServerSchema = z.object({
   desired_enabled: z.boolean().optional(),
   runtime_ready: z.boolean().optional(),
   runtime_status_reason: z.string().nullable().optional(),
-  availability_lane: z.enum(["callable_now", "installable", "advisory"]).optional(),
+  availability_class: z
+    .enum(["callable_direct", "needs_setup", "unavailable"])
+    .optional(),
   recommended_action: z.string().nullable().optional(),
   activation_required: z.boolean().optional(),
   install_required: z.boolean().optional(),
@@ -37,7 +39,9 @@ export const McpServerToolSchema = z.object({
   desired_enabled: z.boolean().optional(),
   runtime_ready: z.boolean().optional(),
   runtime_status_reason: z.string().nullable().optional(),
-  availability_lane: z.enum(["callable_now", "installable", "advisory"]).optional(),
+  availability_class: z
+    .enum(["callable_direct", "needs_setup", "unavailable"])
+    .optional(),
   recommended_action: z.string().nullable().optional(),
   activation_required: z.boolean().optional(),
   install_required: z.boolean().optional(),

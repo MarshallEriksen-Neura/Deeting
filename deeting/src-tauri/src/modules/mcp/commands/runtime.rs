@@ -1,7 +1,8 @@
 mod activation;
 pub(crate) mod asset_indexing;
 mod background_workers;
-mod capability_discovery;
+pub(crate) mod capability_discovery;
+mod capability_registry;
 mod chat_completion;
 mod code_mode_catalog;
 mod code_mode_orchestration;
@@ -63,7 +64,9 @@ pub(crate) use tool_feedback::{
     extract_chat_tool_calls, LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
 };
 #[cfg(test)]
-pub(crate) use tool_resolution::{build_desktop_mcp_tool_view, DesktopMcpToolIndexStatus};
+pub(crate) use tool_resolution::{
+    build_desktop_mcp_tool_view, DesktopMcpToolIndexStatus, ToolAvailabilityClass,
+};
 pub(crate) use tool_schemas::merge_wrapped_tool_payload;
 pub(crate) use tool_trace::{
     append_streamable_local_tool_result_blocks, build_local_tool_trace_blocks,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, memo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
 import { AlertTriangle, Brain, ChevronDown, Loader2, Terminal } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Badge } from "@/components/ui/badge";
@@ -444,14 +444,6 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
       };
     }, [parts, isActive]);
 
-    const hasExecuteCodePlan = useMemo(() => {
-      return parts.some(
-        (part) =>
-          (part.type === "tool_call" || part.type === "tool_result") &&
-          part.toolName === "execute_code_plan"
-      );
-    }, [parts]);
-
     const consoleTitle = useMemo(() => {
       for (const part of parts) {
         if (part.type === "execution_section") {
@@ -460,6 +452,13 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
         }
       }
       return "Local Tool Actions";
+    }, [parts]);
+
+    const shouldShowSandboxLabelForConsole = useCallback((nextPartIndex: number) => {
+      const nextPart = parts[nextPartIndex];
+      if (!nextPart) return false;
+      if (nextPart.type !== "tool_call" && nextPart.type !== "tool_result") return false;
+      return nextPart.toolName === "execute_code_plan";
     }, [parts]);
 
     return (
@@ -621,28 +620,30 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
 
                     // 收集后续所有连续的控制台相关块
                     const consoleSequence: MessageBlock[] = [];
-                    for (let i = index; i < parts.length; i++) {
-                      if (parts[i].type === 'console_log' || parts[i].type === 'execution_section') {
-                        consoleSequence.push(parts[i]);
-                      } else {
-                        break;
-                      }
-                    }
+	                    let nextPartIndex = parts.length;
+	                    for (let i = index; i < parts.length; i++) {
+	                      if (parts[i].type === 'console_log' || parts[i].type === 'execution_section') {
+	                        consoleSequence.push(parts[i]);
+	                      } else {
+	                        nextPartIndex = i;
+	                        break;
+	                      }
+	                    }
 
-                    return (
+	                    return (
                       <motion.div
                         key={`console-group-${index}`}
                         initial={{ opacity: 0, scale: 0.98 }}
                         animate={{ opacity: 1, scale: 1 }}
                       >
-                        <ExecutionConsole
-                          blocks={consoleSequence}
-                          isActive={isActive}
-                          showSandboxLabel={hasExecuteCodePlan}
-                          title={consoleTitle}
-                        />
-                      </motion.div>
-                    );
+	                        <ExecutionConsole
+	                          blocks={consoleSequence}
+	                          isActive={isActive}
+	                          showSandboxLabel={shouldShowSandboxLabelForConsole(nextPartIndex)}
+	                          title={consoleTitle}
+	                        />
+	                      </motion.div>
+	                    );
                   }
 
                   if (part.type === 'error') {

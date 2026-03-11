@@ -22,7 +22,7 @@ pub struct DesktopMcpToolView {
     pub desired_enabled: bool,
     pub runtime_ready: bool,
     pub runtime_status_reason: &'static str,
-    pub availability_lane: &'static str,
+    pub availability_class: ToolAvailabilityClass,
     pub recommended_action: &'static str,
     pub activation_required: bool,
     pub install_required: bool,
@@ -30,10 +30,17 @@ pub struct DesktopMcpToolView {
     pub index_status_reason: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolAvailabilityClass {
+    CallableDirect,
+    NeedsSetup,
+    Unavailable,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct ToolAvailability {
-    pub(crate) lane: &'static str,
-    pub(crate) callable_now: bool,
+    pub(crate) class: ToolAvailabilityClass,
     pub(crate) install_required: bool,
     pub(crate) activation_required: bool,
     pub(crate) recommended_action: &'static str,
@@ -43,8 +50,7 @@ pub(crate) struct ToolAvailability {
 impl ToolAvailability {
     fn callable(status_reason: &'static str) -> Self {
         Self {
-            lane: "callable_now",
-            callable_now: true,
+            class: ToolAvailabilityClass::CallableDirect,
             install_required: false,
             activation_required: false,
             recommended_action: "execute",
@@ -54,8 +60,7 @@ impl ToolAvailability {
 
     fn activation_required(recommended_action: &'static str, status_reason: &'static str) -> Self {
         Self {
-            lane: "installable",
-            callable_now: false,
+            class: ToolAvailabilityClass::NeedsSetup,
             install_required: false,
             activation_required: true,
             recommended_action,
@@ -63,16 +68,20 @@ impl ToolAvailability {
         }
     }
 
-    fn advisory(recommended_action: &'static str, status_reason: &'static str) -> Self {
+    fn unavailable(recommended_action: &'static str, status_reason: &'static str) -> Self {
         Self {
-            lane: "advisory",
-            callable_now: false,
+            class: ToolAvailabilityClass::Unavailable,
             install_required: false,
             activation_required: false,
             recommended_action,
             status_reason,
         }
     }
+
+    pub(crate) fn is_direct_callable(&self) -> bool {
+        matches!(self.class, ToolAvailabilityClass::CallableDirect)
+    }
+
 }
 
 #[derive(Debug, Clone, Default)]
@@ -115,7 +124,7 @@ impl fmt::Display for ToolResolutionError {
                 availability,
             } => write!(
                 f,
-                "tool '{}' is not callable now (reason={}, action={})",
+                "tool '{}' is not directly callable (reason={}, action={})",
                 tool_ref, availability.status_reason, availability.recommended_action
             ),
         }
@@ -175,9 +184,9 @@ pub(crate) fn build_desktop_mcp_tool_view(
     DesktopMcpToolView {
         backing_skill_id,
         desired_enabled: desired_enabled_from_tool(&tool, enabled_skill_ids),
-        runtime_ready: availability.callable_now,
+        runtime_ready: availability.is_direct_callable(),
         runtime_status_reason: availability.status_reason,
-        availability_lane: availability.lane,
+        availability_class: availability.class,
         recommended_action: availability.recommended_action,
         activation_required: availability.activation_required,
         install_required: availability.install_required,
@@ -234,25 +243,27 @@ pub(crate) fn tool_availability_from_tool(
                 ToolAvailability::activation_required("start_tool", "remote_server_sync_required")
             }
             McpToolStatus::Pending => {
-                ToolAvailability::advisory("wait_for_runtime", "remote_server_pending_sync")
+                ToolAvailability::unavailable("wait_for_runtime", "remote_server_pending_sync")
             }
             McpToolStatus::Starting => {
-                ToolAvailability::advisory("wait_for_runtime", "remote_server_sync_starting")
+                ToolAvailability::unavailable("wait_for_runtime", "remote_server_sync_starting")
             }
             McpToolStatus::Updating => {
-                ToolAvailability::advisory("wait_for_runtime", "remote_server_sync_updating")
+                ToolAvailability::unavailable("wait_for_runtime", "remote_server_sync_updating")
             }
             McpToolStatus::Crashed => {
-                ToolAvailability::advisory("review", "remote_server_sync_crashed")
+                ToolAvailability::unavailable("review", "remote_server_sync_crashed")
             }
-            McpToolStatus::Error => ToolAvailability::advisory("review", "remote_server_error"),
+            McpToolStatus::Error => {
+                ToolAvailability::unavailable("review", "remote_server_error")
+            }
             McpToolStatus::Orphaned => {
-                ToolAvailability::advisory("review", "remote_tool_orphaned_from_server")
+                ToolAvailability::unavailable("review", "remote_tool_orphaned_from_server")
             }
         },
         McpTransportKind::Stdio => {
             if !tool.supports_local_process_lifecycle() {
-                return ToolAvailability::advisory("review", "stdio_tool_missing_command");
+                return ToolAvailability::unavailable("review", "stdio_tool_missing_command");
             }
 
             match tool.status {
@@ -263,27 +274,29 @@ pub(crate) fn tool_availability_from_tool(
                     "start_tool",
                     "tool_installed_but_stopped",
                 ),
-                McpToolStatus::Pending => ToolAvailability::advisory(
+                McpToolStatus::Pending => ToolAvailability::unavailable(
                     "wait_for_runtime",
                     "tool_pending_runtime_activation",
                 ),
                 McpToolStatus::Starting => {
-                    ToolAvailability::advisory("wait_for_runtime", "tool_runtime_starting")
+                    ToolAvailability::unavailable("wait_for_runtime", "tool_runtime_starting")
                 }
                 McpToolStatus::Updating => {
-                    ToolAvailability::advisory("wait_for_runtime", "tool_runtime_updating")
+                    ToolAvailability::unavailable("wait_for_runtime", "tool_runtime_updating")
                 }
                 McpToolStatus::Crashed => {
-                    ToolAvailability::advisory("review", "tool_runtime_crashed")
+                    ToolAvailability::unavailable("review", "tool_runtime_crashed")
                 }
-                McpToolStatus::Error => ToolAvailability::advisory("review", "tool_runtime_error"),
+                McpToolStatus::Error => {
+                    ToolAvailability::unavailable("review", "tool_runtime_error")
+                }
                 McpToolStatus::Orphaned => {
-                    ToolAvailability::advisory("review", "tool_orphaned_from_runtime")
+                    ToolAvailability::unavailable("review", "tool_orphaned_from_runtime")
                 }
             }
         }
         McpTransportKind::Unknown => {
-            ToolAvailability::advisory("review", "tool_transport_unresolved")
+            ToolAvailability::unavailable("review", "tool_transport_unresolved")
         }
     }
 }
@@ -398,11 +411,11 @@ pub(crate) async fn resolve_callable_mcp_tool_by_ref(
     let enabled_skill_ids = store.list_enabled_local_skill_ids().await.map_err(|_| {
         ToolResolutionError::ToolNotCallable {
             tool_ref: tool_ref.clone(),
-            availability: ToolAvailability::advisory("review", "tool_status_unavailable"),
+            availability: ToolAvailability::unavailable("review", "tool_status_unavailable"),
         }
     })?;
     let availability = tool_availability_from_tool(&tool, &enabled_skill_ids);
-    if availability.callable_now {
+    if availability.is_direct_callable() {
         Ok(tool)
     } else {
         Err(ToolResolutionError::ToolNotCallable {

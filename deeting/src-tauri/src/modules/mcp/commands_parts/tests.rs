@@ -530,21 +530,21 @@ for raw_line in sys.stdin:
         query: String,
         embedding: Vec<f32>,
         expected_name: String,
-        expected_lane: String,
+        expected_group: String,
         expected_intent: String,
         expected_domain: Option<String>,
-        forbidden_lanes: Vec<String>,
+        forbidden_groups: Vec<String>,
     }
 
     #[derive(Debug)]
     struct SearchSdkBenchmarkCaseResult {
         query: String,
         expected_name: String,
-        expected_lane: String,
+        expected_group: String,
         top1_name: Option<String>,
         found_rank: Option<usize>,
         found_in_top3: bool,
-        lane_match: bool,
+        group_match: bool,
         actual_intent: Option<String>,
         actual_domain: Option<String>,
         false_positive: bool,
@@ -555,7 +555,7 @@ for raw_line in sys.stdin:
         total_cases: usize,
         top1_hits: usize,
         top3_hits: usize,
-        lane_hits: usize,
+        group_hits: usize,
         intent_hits: usize,
         domain_hits: usize,
         domain_case_count: usize,
@@ -572,8 +572,8 @@ for raw_line in sys.stdin:
             ratio(self.top3_hits, self.total_cases)
         }
 
-        fn lane_accuracy(&self) -> f64 {
-            ratio(self.lane_hits, self.total_cases)
+        fn group_accuracy(&self) -> f64 {
+            ratio(self.group_hits, self.total_cases)
         }
 
         fn intent_accuracy(&self) -> f64 {
@@ -595,8 +595,8 @@ for raw_line in sys.stdin:
                 "top1_accuracy": self.top1_accuracy(),
                 "top3_hits": self.top3_hits,
                 "top3_coverage": self.top3_coverage(),
-                "lane_hits": self.lane_hits,
-                "lane_accuracy": self.lane_accuracy(),
+                "group_hits": self.group_hits,
+                "group_accuracy": self.group_accuracy(),
                 "intent_hits": self.intent_hits,
                 "intent_accuracy": self.intent_accuracy(),
                 "domain_hits": self.domain_hits,
@@ -607,11 +607,11 @@ for raw_line in sys.stdin:
                 "cases": self.case_results.iter().map(|item| serde_json::json!({
                     "query": item.query,
                     "expected_name": item.expected_name,
-                    "expected_lane": item.expected_lane,
+                    "expected_group": item.expected_group,
                     "top1_name": item.top1_name,
                     "found_rank": item.found_rank,
                     "found_in_top3": item.found_in_top3,
-                    "lane_match": item.lane_match,
+                    "group_match": item.group_match,
                     "actual_intent": item.actual_intent,
                     "actual_domain": item.actual_domain,
                     "false_positive": item.false_positive,
@@ -743,9 +743,9 @@ for raw_line in sys.stdin:
             .expect("insert disabled stock tool asset");
     }
 
-    fn lane_contains_name(result: &serde_json::Value, lane: &str, name: &str) -> bool {
+    fn result_group_contains_name(result: &serde_json::Value, group: &str, name: &str) -> bool {
         result
-            .get(lane)
+            .get(group)
             .and_then(|value| value.as_array())
             .map(|items| {
                 items
@@ -771,7 +771,7 @@ for raw_line in sys.stdin:
 
         let mut top1_hits = 0_usize;
         let mut top3_hits = 0_usize;
-        let mut lane_hits = 0_usize;
+        let mut group_hits = 0_usize;
         let mut intent_hits = 0_usize;
         let mut domain_hits = 0_usize;
         let mut domain_case_count = 0_usize;
@@ -787,22 +787,22 @@ for raw_line in sys.stdin:
                 8,
             )
             .await;
-            let lane_items = result
-                .get(&case.expected_lane)
+            let group_items = result
+                .get(&case.expected_group)
                 .and_then(|value| value.as_array())
                 .cloned()
                 .unwrap_or_default();
-            let found_rank = lane_items
+            let found_rank = group_items
                 .iter()
                 .position(|item| item["name"] == serde_json::json!(case.expected_name))
                 .map(|index| index + 1);
-            let top1_name = lane_items
+            let top1_name = group_items
                 .first()
                 .and_then(|item| item.get("name"))
                 .and_then(|value| value.as_str())
                 .map(|value| value.to_string());
             let found_in_top3 = found_rank.map(|rank| rank <= 3).unwrap_or(false);
-            let lane_match = found_rank.is_some();
+            let group_match = found_rank.is_some();
             let actual_intent = result
                 .get("normalized_query")
                 .and_then(|value| value.get("intent"))
@@ -814,9 +814,9 @@ for raw_line in sys.stdin:
                 .and_then(|value| value.as_str())
                 .map(|value| value.to_string());
             let false_positive = case
-                .forbidden_lanes
+                .forbidden_groups
                 .iter()
-                .any(|lane| lane_contains_name(&result, lane, &case.expected_name));
+                .any(|group| result_group_contains_name(&result, group, &case.expected_name));
 
             if top1_name.as_deref() == Some(case.expected_name.as_str()) {
                 top1_hits += 1;
@@ -824,8 +824,8 @@ for raw_line in sys.stdin:
             if found_in_top3 {
                 top3_hits += 1;
             }
-            if lane_match {
-                lane_hits += 1;
+            if group_match {
+                group_hits += 1;
             }
             if actual_intent.as_deref() == Some(case.expected_intent.as_str()) {
                 intent_hits += 1;
@@ -843,11 +843,11 @@ for raw_line in sys.stdin:
             case_results.push(SearchSdkBenchmarkCaseResult {
                 query: case.query.clone(),
                 expected_name: case.expected_name.clone(),
-                expected_lane: case.expected_lane.clone(),
+                expected_group: case.expected_group.clone(),
                 top1_name,
                 found_rank,
                 found_in_top3,
-                lane_match,
+                group_match,
                 actual_intent,
                 actual_domain,
                 false_positive,
@@ -860,7 +860,7 @@ for raw_line in sys.stdin:
             total_cases: cases.len(),
             top1_hits,
             top3_hits,
-            lane_hits,
+            group_hits,
             intent_hits,
             domain_hits,
             domain_case_count,
@@ -985,24 +985,49 @@ for raw_line in sys.stdin:
         )
         .await;
 
-        let callable = result["callable_now"]
+        let callable = result["capabilities"]
             .as_array()
-            .expect("callable_now array");
+            .expect("capabilities array");
         let matched = callable
             .iter()
             .find(|item| item["name"] == serde_json::json!("search_web"))
             .expect("matched tool");
         assert_eq!(
             result["format_version"],
-            serde_json::json!("sdk_capability_search.v1")
+            serde_json::json!("sdk_control_plane.v1")
         );
         assert_eq!(matched["source"], serde_json::json!("local_mcp"));
-        assert_eq!(matched["callable_now"], serde_json::json!(true));
+        assert_eq!(matched["semantic_kind"], serde_json::json!("capability"));
+        assert_eq!(matched["status"]["callable"], serde_json::json!(true));
         assert_eq!(matched["pkg_name"], serde_json::json!("skill.web-tools"));
-        assert_eq!(matched["recommended_action"], serde_json::json!("execute"));
+        assert_eq!(matched["status"]["recommended_action"], serde_json::json!("execute"));
         assert_eq!(
             result["normalized_query"]["intent"],
             serde_json::json!("web_fetch")
+        );
+        assert_eq!(
+            result["normalized_query"]["wants_recipes"],
+            serde_json::json!(false)
+        );
+        let normalized_query = result["normalized_query"]
+            .as_object()
+            .expect("normalized query");
+        assert_eq!(normalized_query.len(), 6);
+        assert_eq!(
+            normalized_query.get("intent"),
+            Some(&serde_json::json!("web_fetch"))
+        );
+        assert_eq!(
+            normalized_query.get("domain"),
+            Some(&serde_json::json!("web"))
+        );
+        assert_eq!(
+            normalized_query.get("wants_recipes"),
+            Some(&serde_json::json!(false))
+        );
+        assert_eq!(
+            normalized_query.get("requires_network"),
+            Some(&serde_json::json!(true))
         );
         assert_eq!(matched["required_parameters"], serde_json::json!(["url"]));
         assert_eq!(matched["parameters"][0]["name"], serde_json::json!("url"));
@@ -1070,18 +1095,19 @@ for raw_line in sys.stdin:
         )
         .await;
 
-        let installable = result["installable"].as_array().expect("installable array");
-        let hint = installable
+        let recipes = result["recipes"].as_array().expect("recipes array");
+        let hint = recipes
             .iter()
             .find(|item| item["name"] == serde_json::json!("Weather Skill"))
             .expect("weather skill hint");
-        assert_eq!(hint["install_required"], serde_json::json!(true));
-        assert_eq!(hint["callable_now"], serde_json::json!(false));
+        assert_eq!(hint["status"]["install_required"], serde_json::json!(true));
+        assert_eq!(hint["status"]["callable"], serde_json::json!(false));
         assert_eq!(hint["asset_type"], serde_json::json!("skill"));
         assert_eq!(
-            hint["recommended_action"],
+            hint["status"]["recommended_action"],
             serde_json::json!("install_skill")
         );
+        assert_eq!(hint["semantic_kind"], serde_json::json!("recipe"));
 
         server_handle.abort();
     }
@@ -1134,22 +1160,24 @@ for raw_line in sys.stdin:
         )
         .await;
 
-        let callable = result["callable_now"]
+        let capabilities = result["capabilities"]
             .as_array()
-            .expect("callable_now array");
-        assert!(callable
+            .expect("capabilities array");
+        assert!(capabilities
             .iter()
+            .filter(|item| item["status"]["callable"] == serde_json::json!(true))
             .all(|item| item["name"] != serde_json::json!("stock_quotes")));
-        let installable = result["installable"].as_array().expect("installable array");
-        let disabled = installable
+        let disabled = capabilities
             .iter()
             .find(|item| item["name"] == serde_json::json!("stock_quotes"))
-            .expect("disabled stock tool surfaced as installable");
-        assert_eq!(disabled["activation_required"], serde_json::json!(true));
+            .expect("disabled stock tool surfaced as non-callable capability");
+        assert_eq!(disabled["status"]["callable"], serde_json::json!(false));
+        assert_eq!(disabled["status"]["activation_required"], serde_json::json!(true));
         assert_eq!(
-            disabled["recommended_action"],
+            disabled["status"]["recommended_action"],
             serde_json::json!("enable_skill")
         );
+        assert_eq!(disabled["semantic_kind"], serde_json::json!("capability"));
 
         server_handle.abort();
     }
@@ -1195,24 +1223,25 @@ for raw_line in sys.stdin:
         )
         .await;
 
-        let callable = result["callable_now"]
+        let capabilities = result["capabilities"]
             .as_array()
-            .expect("callable_now array");
-        assert!(callable
+            .expect("capabilities array");
+        assert!(capabilities
             .iter()
+            .filter(|item| item["status"]["callable"] == serde_json::json!(true))
             .all(|item| item["name"] != serde_json::json!("demo_tool")));
-        let installable = result["installable"].as_array().expect("installable array");
-        let stopped = installable
+        let stopped = capabilities
             .iter()
             .find(|item| item["name"] == serde_json::json!("demo_tool"))
-            .expect("stopped tool surfaced outside callable_now");
-        assert_eq!(stopped["activation_required"], serde_json::json!(true));
+            .expect("stopped tool surfaced as non-callable capability");
+        assert_eq!(stopped["status"]["callable"], serde_json::json!(false));
+        assert_eq!(stopped["status"]["activation_required"], serde_json::json!(true));
         assert_eq!(
-            stopped["recommended_action"],
+            stopped["status"]["recommended_action"],
             serde_json::json!("start_tool")
         );
         assert_eq!(
-            stopped["callable_status_reason"],
+            stopped["status"]["reason"],
             serde_json::json!("tool_installed_but_stopped")
         );
 
@@ -1234,7 +1263,10 @@ for raw_line in sys.stdin:
         assert!(view.desired_enabled);
         assert!(view.runtime_ready);
         assert_eq!(view.runtime_status_reason, "ready_in_local_runtime");
-        assert_eq!(view.availability_lane, "callable_now");
+        assert_eq!(
+            view.availability_class,
+            crate::modules::mcp::commands::runtime::ToolAvailabilityClass::CallableDirect
+        );
         assert_eq!(view.recommended_action, "execute");
         assert_eq!(
             view.index_status,
@@ -1266,7 +1298,10 @@ for raw_line in sys.stdin:
         assert!(view.desired_enabled);
         assert!(!view.runtime_ready);
         assert_eq!(view.runtime_status_reason, "tool_installed_but_stopped");
-        assert_eq!(view.availability_lane, "installable");
+        assert_eq!(
+            view.availability_class,
+            crate::modules::mcp::commands::runtime::ToolAvailabilityClass::NeedsSetup
+        );
         assert_eq!(view.recommended_action, "start_tool");
         assert!(view.activation_required);
         assert_eq!(
@@ -1313,7 +1348,10 @@ for raw_line in sys.stdin:
         assert!(!view.runtime_ready);
         assert_eq!(view.backing_skill_id.as_deref(), Some("skill.stocks"));
         assert_eq!(view.runtime_status_reason, "skill_installed_but_disabled");
-        assert_eq!(view.availability_lane, "installable");
+        assert_eq!(
+            view.availability_class,
+            crate::modules::mcp::commands::runtime::ToolAvailabilityClass::NeedsSetup
+        );
         assert_eq!(view.recommended_action, "enable_skill");
         assert!(view.activation_required);
         assert_eq!(
@@ -1336,7 +1374,10 @@ for raw_line in sys.stdin:
         assert!(view.desired_enabled);
         assert!(view.runtime_ready);
         assert_eq!(view.runtime_status_reason, "ready_via_remote_mcp");
-        assert_eq!(view.availability_lane, "callable_now");
+        assert_eq!(
+            view.availability_class,
+            crate::modules::mcp::commands::runtime::ToolAvailabilityClass::CallableDirect
+        );
         assert_eq!(view.recommended_action, "execute");
         assert_eq!(tool.remote_tool_name().as_deref(), Some("search_web"));
         assert_eq!(tool.remote_server_name().as_deref(), Some("tavily-mcp"));
@@ -1458,7 +1499,10 @@ for raw_line in sys.stdin:
         assert!(!view.runtime_ready);
         assert_eq!(view.runtime_status_reason, "tool_transport_unresolved");
         assert_eq!(view.recommended_action, "review");
-        assert_eq!(view.availability_lane, "advisory");
+        assert_eq!(
+            view.availability_class,
+            crate::modules::mcp::commands::runtime::ToolAvailabilityClass::Unavailable
+        );
     }
 
     #[test]
@@ -1503,7 +1547,7 @@ for raw_line in sys.stdin:
     }
 
     #[tokio::test]
-    async fn search_sdk_regression_matrix_preserves_lanes_and_intents() {
+    async fn search_sdk_regression_matrix_preserves_result_groups_and_intents() {
         let web_query = "帮我抓取网页并提取标题";
         let weather_skill_query = "帮我找个天气 skill";
         let stock_query = "帮我查股票行情";
@@ -1601,9 +1645,9 @@ for raw_line in sys.stdin:
             web_result["normalized_query"]["intent"],
             serde_json::json!("web_fetch")
         );
-        assert!(web_result["callable_now"]
+        assert!(web_result["capabilities"]
             .as_array()
-            .expect("web callable array")
+            .expect("web capability array")
             .iter()
             .any(|item| item["name"] == serde_json::json!("search_web")));
 
@@ -1619,13 +1663,13 @@ for raw_line in sys.stdin:
             weather_skill_result["normalized_query"]["intent"],
             serde_json::json!("install_or_enable")
         );
-        assert!(weather_skill_result["installable"]
+        assert!(weather_skill_result["recipes"]
             .as_array()
-            .expect("weather installable array")
+            .expect("weather recipe array")
             .iter()
             .any(|item| {
                 item["name"] == serde_json::json!("Weather Skill")
-                    && item["recommended_action"] == serde_json::json!("install_skill")
+                    && item["status"]["recommended_action"] == serde_json::json!("install_skill")
             }));
 
         let stock_result = build_local_sdk_search_result_with_runtime(
@@ -1640,13 +1684,13 @@ for raw_line in sys.stdin:
             stock_result["normalized_query"]["domain"],
             serde_json::json!("finance")
         );
-        assert!(stock_result["installable"]
+        assert!(stock_result["capabilities"]
             .as_array()
-            .expect("stock installable array")
+            .expect("stock capability array")
             .iter()
             .any(|item| {
                 item["name"] == serde_json::json!("stock_quotes")
-                    && item["recommended_action"] == serde_json::json!("enable_skill")
+                    && item["status"]["recommended_action"] == serde_json::json!("enable_skill")
             }));
 
         let realtime_weather_result = build_local_sdk_search_result_with_runtime(
@@ -1665,9 +1709,9 @@ for raw_line in sys.stdin:
             realtime_weather_result["normalized_query"]["intent"],
             serde_json::json!("realtime_lookup")
         );
-        assert!(realtime_weather_result["installable"]
+        assert!(realtime_weather_result["recipes"]
             .as_array()
-            .expect("realtime weather installable array")
+            .expect("realtime weather recipe array")
             .iter()
             .any(|item| item["name"] == serde_json::json!("Weather Skill")));
 
@@ -1685,7 +1729,7 @@ for raw_line in sys.stdin:
         assert_eq!(summary.total_cases, cases.len(), "{debug_payload}");
         assert!(summary.top1_accuracy() >= 0.20, "{debug_payload}");
         assert_eq!(summary.top3_hits, summary.total_cases, "{debug_payload}");
-        assert_eq!(summary.lane_hits, summary.total_cases, "{debug_payload}");
+        assert_eq!(summary.group_hits, summary.total_cases, "{debug_payload}");
         assert_eq!(summary.intent_hits, summary.total_cases, "{debug_payload}");
         assert_eq!(
             summary.domain_hits, summary.domain_case_count,
@@ -1707,7 +1751,7 @@ for raw_line in sys.stdin:
             total_cases: 2,
             top1_hits: 1,
             top3_hits: 2,
-            lane_hits: 2,
+            group_hits: 2,
             intent_hits: 2,
             domain_hits: 1,
             domain_case_count: 1,
@@ -1715,11 +1759,11 @@ for raw_line in sys.stdin:
             case_results: vec![SearchSdkBenchmarkCaseResult {
                 query: "demo query".to_string(),
                 expected_name: "search_web".to_string(),
-                expected_lane: "callable_now".to_string(),
+                expected_group: "capabilities".to_string(),
                 top1_name: Some("search_web".to_string()),
                 found_rank: Some(1),
                 found_in_top3: true,
-                lane_match: true,
+                group_match: true,
                 actual_intent: Some("web_fetch".to_string()),
                 actual_domain: Some("web".to_string()),
                 false_positive: false,
@@ -1766,12 +1810,14 @@ for raw_line in sys.stdin:
         )
         .await;
 
-        let callable = result["callable_now"].as_array().expect("callable array");
+        let callable = result["capabilities"].as_array().expect("capabilities array");
         let onboarding = callable
             .iter()
             .find(|item| item["name"] == serde_json::json!("sys_submit_onboarding_request"))
             .expect("onboarding core tool");
-        let execute = callable
+        let execute = result["orchestration_primitives"]
+            .as_array()
+            .expect("orchestration primitives array")
             .iter()
             .find(|item| item["name"] == serde_json::json!("execute_code_plan"))
             .expect("execute core tool");

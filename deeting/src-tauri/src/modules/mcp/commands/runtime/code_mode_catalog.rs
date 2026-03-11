@@ -1,4 +1,3 @@
-use super::capability_discovery::build_capability_search_result;
 use super::core_tool_contracts::build_core_tool_function_entries;
 
 pub(crate) fn build_local_code_mode_entry_tools() -> serde_json::Value {
@@ -56,5 +55,12 @@ pub(crate) async fn build_local_sdk_search_result_with_runtime(
     query: &str,
     limit: usize,
 ) -> serde_json::Value {
-    build_capability_search_result(mcp_store, embedding_service, memory_store, query, limit).await
+    crate::modules::capability_control_plane::build_search_sdk_result(
+        mcp_store,
+        embedding_service,
+        memory_store,
+        query,
+        limit,
+    )
+    .await
 }

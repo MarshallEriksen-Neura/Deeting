@@ -2,16 +2,15 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use serde_json::{json, Value};
 
-use super::core_tool_contracts::build_core_tool_assets;
-use super::search_ranking::lexical_asset_match_score;
-use super::{
-    build_db_tool_availability_catalog, fallback_local_tool_availability, ToolAvailability,
-    ToolAvailabilityCatalog,
+use super::capability_registry::{
+    build_capability_registry, CapabilityRegistryEntry, RegistryAvailability, ToolContractSource,
 };
+use super::search_ranking::lexical_asset_match_score;
 
 const MAX_LIMIT: usize = 20;
 const SEMANTIC_SCORE_FLOOR: f64 = 0.30;
 const MIN_RANK_SCORE: f64 = 8.0;
+const SEARCH_RESULT_FORMAT_VERSION: &str = "sdk_control_plane.v1";
 
 #[derive(Clone)]
 struct QueryProfile {
@@ -19,7 +18,7 @@ struct QueryProfile {
     tokens: Vec<String>,
     intent: &'static str,
     domain: &'static str,
-    wants_installable: bool,
+    wants_recipes: bool,
     requires_network: bool,
 }
 
@@ -28,13 +27,11 @@ struct RankedCapability {
     score: f64,
 }
 
-#[derive(Clone)]
-struct ToolContractSource {
-    config: Value,
-    is_read_only: bool,
-    capabilities: Vec<String>,
-    command: Option<String>,
-    source_type: String,
+#[derive(Copy, Clone, Eq, PartialEq)]
+enum SemanticGroup {
+    Capability,
+    Recipe,
+    OrchestrationPrimitive,
 }
 
 #[derive(Clone)]
@@ -56,36 +53,14 @@ pub(crate) async fn build_capability_search_result(
     query: &str,
     limit: usize,
 ) -> Value {
-    let enabled_assistant_ids = mcp_store
-        .list_enabled_local_assistant_ids()
-        .await
-        .unwrap_or_else(|_| HashSet::new());
-    let enabled_skill_ids = mcp_store
-        .list_enabled_local_skill_ids()
-        .await
-        .unwrap_or_else(|_| HashSet::new());
-    let tool_availability_catalog = build_db_tool_availability_catalog(mcp_store)
-        .await
-        .unwrap_or_default();
-    let tool_contracts = load_tool_contract_sources(mcp_store).await;
+    let registry = build_capability_registry(mcp_store, memory_store).await;
     let profile = QueryProfile::from_query(query);
     let limit = limit.clamp(1, MAX_LIMIT);
     let semantic_scores = collect_semantic_scores(memory_store, embedding_service, &profile).await;
-    let mut all_assets = memory_store.list_assets_catalog().await.unwrap_or_default();
-    all_assets.extend(build_core_tool_assets());
-    let mut ranked = all_assets
+    let mut ranked = registry
+        .entries
         .into_iter()
-        .filter_map(|asset| {
-            rank_asset(
-                asset,
-                &profile,
-                &semantic_scores,
-                &enabled_assistant_ids,
-                &enabled_skill_ids,
-                &tool_availability_catalog,
-                &tool_contracts,
-            )
-        })
+        .filter_map(|entry| rank_registry_entry(entry, &profile, &semantic_scores))
         .collect::<Vec<_>>();
     ranked.sort_by(|left, right| {
         right
@@ -98,43 +73,47 @@ pub(crate) async fn build_capability_search_result(
         ranked.truncate(limit);
     }
 
-    let mut callable_now = Vec::new();
-    let mut installable = Vec::new();
-    let mut advisory = Vec::new();
+    let mut capabilities = Vec::new();
+    let mut recipes = Vec::new();
+    let mut orchestration_primitives = Vec::new();
     for ranked_item in ranked {
-        let lane = ranked_item
-            .value
-            .get("lane")
-            .and_then(|value| value.as_str())
-            .unwrap_or("advisory");
-        match lane {
-            "callable_now" => callable_now.push(ranked_item.value),
-            "installable" => installable.push(ranked_item.value),
-            _ => advisory.push(ranked_item.value),
-        }
+        push_semantic_group(
+            ranked_item.value,
+            &mut capabilities,
+            &mut recipes,
+            &mut orchestration_primitives,
+        );
     }
 
+    let direct_callable_capability_count = capabilities
+        .iter()
+        .filter(|item| {
+            item.get("status")
+                .and_then(|value| value.get("callable"))
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false)
+        })
+        .count();
+
     json!({
-        "format_version": "sdk_capability_search.v1",
+        "format_version": SEARCH_RESULT_FORMAT_VERSION,
         "runtime_protocol_version": crate::modules::code_mode::contract::RUNTIME_PROTOCOL_VERSION,
         "mode": "code_mode",
         "query": query,
-        "normalized_query": {
-            "text": profile.normalized,
-            "tokens": profile.tokens,
-            "intent": profile.intent,
-            "domain": profile.domain,
-            "wants_installable": profile.wants_installable,
-            "requires_network": profile.requires_network,
+        "normalized_query": profile.to_value(),
+        "count": capabilities.len() + recipes.len() + orchestration_primitives.len(),
+        "capabilities": capabilities,
+        "recipes": recipes,
+        "orchestration_primitives": orchestration_primitives,
+        "routing_hint": {
+            "default_path": "direct_capability_call",
+            "programmatic_path": "execute_code_plan",
+            "direct_callable_capability_count": direct_callable_capability_count,
         },
-        "count": callable_now.len() + installable.len() + advisory.len(),
-        "callable_now": callable_now,
-        "installable": installable,
-        "advisory": advisory,
-        "usage_hint": "先从 callable_now 选择能力，再调用 execute_code_plan 一次性执行；installable 仅表示相关能力，需要先安装或启用，不可直接调用。脚本内优先 `from deeting_sdk import tool_name` 或 `deeting.call_tool(name, **kwargs)`；不要写 `deeting.call_tool(name, { ... })`。最后请用 `deeting.log(json.dumps(result, ensure_ascii=False))` 输出结构化结果。",
+        "usage_hint": "优先从 capabilities 里选择 direct host 能力直接调用；recipes 表示需要安装、启用或激活的 skill/assistant bundle，本身不是可直接执行的 tool。只有在需要多步程序逻辑、循环、条件分支或结果聚合时，才进入 orchestration_primitives 里的 execute_code_plan。",
         "availability": {
-            "enabled_assistant_count": enabled_assistant_ids.len(),
-            "enabled_skill_count": enabled_skill_ids.len(),
+            "enabled_assistant_count": registry.enabled_assistant_count,
+            "enabled_skill_count": registry.enabled_skill_count,
         }
     })
 }
@@ -188,15 +167,12 @@ async fn collect_semantic_scores(
         .collect()
 }
 
-fn rank_asset(
-    asset: Value,
+fn rank_registry_entry(
+    entry: CapabilityRegistryEntry,
     profile: &QueryProfile,
     semantic_scores: &HashMap<String, f64>,
-    enabled_assistant_ids: &HashSet<String>,
-    enabled_skill_ids: &HashSet<String>,
-    tool_availability_catalog: &ToolAvailabilityCatalog,
-    tool_contracts: &HashMap<String, ToolContractSource>,
 ) -> Option<RankedCapability> {
+    let asset = entry.asset;
     let id = asset.get("id")?.as_str()?.trim().to_string();
     let name = asset
         .get("name")
@@ -226,16 +202,7 @@ fn rank_asset(
     };
     let semantic_score = semantic_scores.get(&id).copied();
     let lexical_score = lexical_asset_match_score(&profile.normalized, &asset);
-    let availability = Availability::from_asset(
-        asset_type,
-        source_type,
-        &id,
-        name,
-        pkg_name.as_deref(),
-        enabled_assistant_ids,
-        enabled_skill_ids,
-        tool_availability_catalog,
-    );
+    let availability = entry.availability;
     let combined_text = format!("{}\n{}", name.to_lowercase(), description.to_lowercase());
     let domain_hit = matches_domain(profile.domain, &combined_text);
     let intent_hit = matches_intent(profile.intent, &combined_text, asset_type, source_type);
@@ -266,11 +233,11 @@ fn rank_asset(
         rank_score += 10.0;
         match_reason.push(format!("intent:{}", profile.intent));
     }
-    if availability.callable_now {
+    if availability.is_direct_callable() {
         rank_score += 12.0;
-        match_reason.push("callable_now".to_string());
-    } else if availability.lane == "installable" {
-        rank_score += if profile.wants_installable { 12.0 } else { 2.0 };
+        match_reason.push("direct_callable".to_string());
+    } else if availability.needs_setup() {
+        rank_score += if profile.wants_recipes { 12.0 } else { 2.0 };
         match_reason.push(availability.status_reason.to_string());
     } else {
         rank_score += 1.0;
@@ -283,32 +250,27 @@ fn rank_asset(
         return None;
     }
 
-    let mut value = json!({
-        "capability_id": id,
-        "name": name,
-        "description": description,
-        "lane": availability.lane,
-        "asset_type": asset_type,
-        "source": format!("local_{}", source_type),
-        "pkg_name": pkg_name,
-        "assistant_id": assistant_id,
-        "callable_now": availability.callable_now,
-        "install_required": availability.install_required,
-        "activation_required": availability.activation_required,
-        "recommended_action": availability.recommended_action,
-        "callable_status_reason": availability.status_reason,
-        "match_reason": match_reason,
-        "semantic_score": semantic_score,
-        "lexical_score": lexical_score,
-        "rank_score": rank_score,
-    });
-    if availability.callable_now && asset_type == "tool" {
+    let mut value = materialize_ranked_entry(
+        &id,
+        name,
+        description,
+        asset_type,
+        source_type,
+        pkg_name,
+        assistant_id,
+        &availability,
+        match_reason,
+        semantic_score,
+        lexical_score,
+        rank_score,
+    );
+    if availability.is_direct_callable() && asset_type == "tool" {
         if let Some(contract) = build_tool_contract(
             name,
             description,
             source_type,
             asset_metadata.as_ref(),
-            tool_contracts.get(name),
+            entry.tool_contract_source.as_ref(),
         ) {
             merge_object(&mut value, contract);
         }
@@ -320,32 +282,110 @@ fn rank_asset(
     })
 }
 
-async fn load_tool_contract_sources(
-    mcp_store: &crate::modules::mcp::store::McpStore,
-) -> HashMap<String, ToolContractSource> {
-    let Ok(tools) = mcp_store.list_tools().await else {
-        return HashMap::new();
-    };
-    tools
-        .into_iter()
-        .filter_map(|tool| {
-            let normalized = tool.name.trim().to_string();
-            if normalized.is_empty() {
-                return None;
+fn materialize_ranked_entry(
+    id: &str,
+    name: &str,
+    description: &str,
+    asset_type: &str,
+    source_type: &str,
+    pkg_name: Option<String>,
+    assistant_id: Option<String>,
+    availability: &RegistryAvailability,
+    match_reason: Vec<String>,
+    semantic_score: Option<f64>,
+    lexical_score: Option<f64>,
+    rank_score: f64,
+) -> Value {
+    let group = classify_semantic_group(name, asset_type);
+    let mut value = json!({
+        "capability_id": id,
+        "name": name,
+        "description": description,
+        "asset_type": asset_type,
+        "source": format!("local_{}", source_type),
+        "pkg_name": pkg_name,
+        "assistant_id": assistant_id,
+        "status": {
+            "class": availability.class,
+            "callable": availability.is_direct_callable(),
+            "install_required": availability.install_required,
+            "activation_required": availability.activation_required,
+            "recommended_action": availability.recommended_action,
+            "reason": availability.status_reason,
+        },
+        "match_reason": match_reason,
+        "semantic_score": semantic_score,
+        "lexical_score": lexical_score,
+        "rank_score": rank_score,
+    });
+
+    if let Some(object) = value.as_object_mut() {
+        match group {
+            SemanticGroup::Capability => {
+                object.insert("semantic_kind".to_string(), json!("capability"));
+                object.insert("invocation_mode".to_string(), json!("direct"));
+                object.insert("execution_plane".to_string(), json!("host"));
             }
-            let config = serde_json::from_str::<Value>(&tool.config_json).ok()?;
-            Some((
-                normalized,
-                ToolContractSource {
-                    config,
-                    is_read_only: tool.is_read_only,
-                    capabilities: tool.capabilities,
-                    command: tool.command,
-                    source_type: tool.source_type.as_str().to_string(),
-                },
-            ))
-        })
-        .collect()
+            SemanticGroup::Recipe => {
+                object.insert("semantic_kind".to_string(), json!("recipe"));
+                object.insert("recipe_kind".to_string(), json!(asset_type));
+                object.insert(
+                    "recommended_path".to_string(),
+                    json!("install_or_activate"),
+                );
+            }
+            SemanticGroup::OrchestrationPrimitive => {
+                let primitive_kind = match name {
+                    "execute_code_plan" => "orchestration",
+                    _ => "discovery",
+                };
+                let invocation_mode = match name {
+                    "execute_code_plan" => "code_mode",
+                    _ => "direct",
+                };
+                let execution_plane = match name {
+                    "execute_code_plan" => "sandbox",
+                    _ => "host",
+                };
+                object.insert(
+                    "semantic_kind".to_string(),
+                    json!("orchestration_primitive"),
+                );
+                object.insert("primitive_kind".to_string(), json!(primitive_kind));
+                object.insert("invocation_mode".to_string(), json!(invocation_mode));
+                object.insert("execution_plane".to_string(), json!(execution_plane));
+            }
+        }
+    }
+
+    value
+}
+
+fn classify_semantic_group(name: &str, asset_type: &str) -> SemanticGroup {
+    if matches!(name.trim(), "search_sdk" | "execute_code_plan") {
+        return SemanticGroup::OrchestrationPrimitive;
+    }
+    match asset_type {
+        "skill" | "assistant" => SemanticGroup::Recipe,
+        _ => SemanticGroup::Capability,
+    }
+}
+
+fn push_semantic_group(
+    item: Value,
+    capabilities: &mut Vec<Value>,
+    recipes: &mut Vec<Value>,
+    orchestration_primitives: &mut Vec<Value>,
+) {
+    match item
+        .get("semantic_kind")
+        .and_then(|value| value.as_str())
+        .unwrap_or("capability")
+    {
+        "recipe" => recipes.push(item),
+        "orchestration_primitive" => orchestration_primitives.push(item),
+        _ => capabilities.push(item),
+    }
 }
 
 fn build_tool_contract(
@@ -883,114 +923,11 @@ fn merge_object(target: &mut Value, extra: Value) {
     }
 }
 
-struct Availability {
-    lane: &'static str,
-    callable_now: bool,
-    install_required: bool,
-    activation_required: bool,
-    recommended_action: &'static str,
-    status_reason: &'static str,
-}
-
-impl Availability {
-    fn from_asset(
-        asset_type: &str,
-        source_type: &str,
-        asset_id: &str,
-        tool_name: &str,
-        pkg_name: Option<&str>,
-        enabled_assistant_ids: &HashSet<String>,
-        enabled_skill_ids: &HashSet<String>,
-        tool_availability_catalog: &ToolAvailabilityCatalog,
-    ) -> Self {
-        if source_type == "cloud_mirror" {
-            let recommended_action = if asset_type == "assistant" {
-                "install_assistant"
-            } else {
-                "install_skill"
-            };
-            return Self {
-                lane: "installable",
-                callable_now: false,
-                install_required: true,
-                activation_required: false,
-                recommended_action,
-                status_reason: "not_installed_locally",
-            };
-        }
-        match asset_type {
-            "tool" => {
-                if source_type == "code_mode_core" {
-                    return Self {
-                        lane: "callable_now",
-                        callable_now: true,
-                        install_required: false,
-                        activation_required: false,
-                        recommended_action: "execute",
-                        status_reason: "core_code_mode_tool",
-                    };
-                }
-                if source_type == "mcp" {
-                    if let Some(availability) =
-                        tool_availability_catalog.get_for_asset(asset_id, tool_name)
-                    {
-                        return Self::from_tool_availability(availability);
-                    }
-                }
-                Self::from_tool_availability(&fallback_local_tool_availability(
-                    pkg_name,
-                    enabled_skill_ids,
-                ))
-            }
-            "assistant" => {
-                if enabled_assistant_ids.contains(asset_id) {
-                    Self {
-                        lane: "advisory",
-                        callable_now: false,
-                        install_required: false,
-                        activation_required: false,
-                        recommended_action: "consult_then_activate",
-                        status_reason: "assistant_available_for_activation",
-                    }
-                } else {
-                    Self {
-                        lane: "installable",
-                        callable_now: false,
-                        install_required: false,
-                        activation_required: true,
-                        recommended_action: "enable_assistant",
-                        status_reason: "assistant_installed_but_disabled",
-                    }
-                }
-            }
-            _ => Self {
-                lane: "advisory",
-                callable_now: false,
-                install_required: false,
-                activation_required: false,
-                recommended_action: "review",
-                status_reason: "non_callable_catalog_item",
-            },
-        }
-    }
-
-    fn from_tool_availability(availability: &ToolAvailability) -> Self {
-        Self {
-            lane: availability.lane,
-            callable_now: availability.callable_now,
-            install_required: availability.install_required,
-            activation_required: availability.activation_required,
-            recommended_action: availability.recommended_action,
-            status_reason: availability.status_reason,
-        }
-    }
-}
-
 impl QueryProfile {
     fn from_query(query: &str) -> Self {
         let normalized = query.trim().to_lowercase();
         let tokens = tokenize(&normalized);
-        let wants_installable = contains_any(
+        let wants_recipes = contains_any(
             &normalized,
             &["安装", "install", "skill", "assistant", "启用", "开通"],
         );
@@ -1008,7 +945,7 @@ impl QueryProfile {
         } else {
             "general"
         };
-        let intent = if wants_installable {
+        let intent = if wants_recipes {
             "install_or_enable"
         } else if domain == "web" {
             "web_fetch"
@@ -1023,9 +960,20 @@ impl QueryProfile {
             tokens,
             intent,
             domain,
-            wants_installable,
+            wants_recipes,
             requires_network,
         }
+    }
+
+    fn to_value(&self) -> Value {
+        json!({
+            "text": self.normalized,
+            "tokens": self.tokens,
+            "intent": self.intent,
+            "domain": self.domain,
+            "wants_recipes": self.wants_recipes,
+            "requires_network": self.requires_network,
+        })
     }
 }
 

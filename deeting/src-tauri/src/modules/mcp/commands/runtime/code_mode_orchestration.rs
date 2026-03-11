@@ -771,29 +771,14 @@ fn build_execution_contract_from_search_result(
 ) -> Result<CapabilityExecutionContract, String> {
     let Some(search_result) = search_result else {
         return Err(
-            "execute_code_plan requires a prior search_sdk result with callable_now capabilities"
+            "execute_code_plan requires a prior search_sdk result with callable direct capabilities"
                 .to_string(),
         );
     };
-    let callable_now = search_result
-        .get("callable_now")
-        .and_then(|value| value.as_array())
-        .ok_or_else(|| "search_sdk result is missing callable_now".to_string())?;
-    let mut allowed_tools = callable_now
-        .iter()
-        .filter_map(|item| item.get("name").and_then(|value| value.as_str()))
-        .map(|name| name.trim().to_lowercase())
-        .filter(|name| !name.is_empty())
-        .collect::<std::collections::BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
-    if allowed_tools.is_empty() {
-        return Err(
-            "search_sdk returned no callable_now capabilities; refine the search before execute_code_plan"
-                .to_string(),
-        );
-    }
-    allowed_tools.sort();
+    let allowed_tools =
+        crate::modules::capability_control_plane::extract_direct_callable_capability_names(
+            search_result,
+        )?;
     Ok(CapabilityExecutionContract {
         allowed_tools,
         capability_snapshot: search_result.clone(),
@@ -807,21 +792,23 @@ mod tests {
     use crate::modules::mcp::commands::runtime::LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE;
 
     #[test]
-    fn build_execution_contract_from_search_result_requires_callable_now() {
+    fn build_execution_contract_from_search_result_requires_capabilities() {
         let err = build_execution_contract_from_search_result(Some(&serde_json::json!({
-            "installable": [{"name": "Weather Skill"}]
+            "recipes": [{"name": "Weather Skill"}]
         })))
         .expect_err("should require callable results");
-        assert!(err.contains("callable_now"));
+        assert!(err.contains("capabilities"));
     }
 
     #[test]
     fn build_execution_contract_from_search_result_extracts_allowed_tools() {
         let contract = build_execution_contract_from_search_result(Some(&serde_json::json!({
-            "callable_now": [
-                {"name": "search_web"},
-                {"name": "fetch_page"},
-                {"name": "search_web"}
+            "capabilities": [
+                {"name": "search_web", "invocation_mode": "direct", "status": {"callable": true}},
+                {"name": "fetch_page", "invocation_mode": "direct", "status": {"callable": true}},
+                {"name": "search_web", "invocation_mode": "direct", "status": {"callable": true}},
+                {"name": "disabled_tool", "invocation_mode": "direct", "status": {"callable": false}},
+                {"name": "execute_code_plan", "invocation_mode": "code_mode", "status": {"callable": true}}
             ]
         })))
         .expect("contract");
