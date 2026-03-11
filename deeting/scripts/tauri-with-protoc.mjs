@@ -2,11 +2,13 @@ import { existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import tauriEnv from "./tauri-env.cjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "..");
 const args = process.argv.slice(2);
+const { loadDesktopEnv, buildTauriEnv } = tauriEnv;
 
 const isWindows = process.platform === "win32";
 const protocBinary = isWindows ? "protoc.exe" : "protoc";
@@ -52,6 +54,10 @@ function resolveTauriCommand() {
   return "tauri";
 }
 
+loadDesktopEnv(projectRoot, {
+  dev: args[0] === "dev",
+});
+
 const protocPath = resolveProtoc();
 if (!protocPath) {
   console.error("[tauri-with-protoc] protoc not found. Rust build will fail.");
@@ -63,11 +69,7 @@ if (!protocPath) {
 
 const tauriResult = spawnSync(resolveTauriCommand(), args, {
   cwd: projectRoot,
-  env: {
-    ...process.env,
-    NEXT_PUBLIC_IS_TAURI: "true",
-    PROTOC: protocPath,
-  },
+  env: buildTauriEnv(process.env, protocPath),
   shell: false,
   stdio: "inherit",
 });
