@@ -16,10 +16,6 @@ pub(crate) mod common_impl;
 pub(crate) mod config_and_skills_impl;
 #[path = "commands_parts/conversation_management.rs"]
 pub(crate) mod conversation_management_impl;
-#[path = "commands_parts/knowledge_documents.rs"]
-pub(crate) mod knowledge_documents_impl;
-#[path = "commands_parts/knowledge_folders.rs"]
-pub(crate) mod knowledge_folders_impl;
 #[path = "commands_parts/maintenance.rs"]
 pub(crate) mod maintenance_impl;
 #[path = "commands_parts/skill_registry.rs"]
@@ -33,7 +29,6 @@ pub mod admin;
 pub mod assistants;
 pub mod config;
 pub mod conversations;
-pub mod knowledge;
 pub mod runtime;
 pub mod skills;
 pub mod sources;
@@ -43,7 +38,6 @@ pub use admin::*;
 pub use assistants::*;
 pub use config::*;
 pub use conversations::*;
-pub use knowledge::*;
 pub use skills::*;
 pub use sources::*;
 pub use tools::*;

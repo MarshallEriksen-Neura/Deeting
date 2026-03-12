@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -11,8 +10,7 @@ use uuid::Uuid;
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::types::{
     CloudSystemAssetSyncItem, CloudSystemAssistantSnapshot, CreateAssistantMessageRequest,
-    CreateConversationMessageRequest, CreateLocalAssistantRequest,
-    CreateLocalKnowledgeFolderRequest, CreateLocalUserDocumentRequest, LocalAdminConversationItem,
+    CreateConversationMessageRequest, CreateLocalAssistantRequest, LocalAdminConversationItem,
     LocalAdminConversationListResponse, LocalAdminConversationMessageItem,
     LocalAdminConversationMessageListResponse, LocalAdminConversationMessageQuery,
     LocalAdminConversationQuery, LocalAdminConversationSummaryItem,
@@ -37,15 +35,10 @@ use crate::modules::mcp::types::{
     LocalConversationSummaryJobItem, LocalConversationSummaryJobListResponse,
     LocalConversationSummaryJobQuery, LocalConversationSummaryQueueStats,
     LocalConversationWindowResponse, LocalGatewayLogItem, LocalGatewayLogListResponse,
-    LocalGatewayLogQuery, LocalGatewayLogStatsBucket, LocalGatewayLogStatsResponse,
-    LocalKnowledgeBreadcrumbItem, LocalKnowledgeChunk, LocalKnowledgeChunkListResponse,
-    LocalKnowledgeFile, LocalKnowledgeFolder, LocalKnowledgeSearchHit, LocalKnowledgeStatsResponse,
-    LocalKnowledgeTreeQuery, LocalKnowledgeTreeResponse, LocalMaintenanceLogItem,
+    LocalGatewayLogQuery, LocalGatewayLogStatsBucket, LocalGatewayLogStatsResponse, LocalMaintenanceLogItem,
     LocalMaintenanceLogListResponse, LocalMaintenanceLogQuery, LocalTraceFeedback,
-    LocalTraceFeedbackRequest, LocalUserDocumentChunkListQuery, LocalUserDocumentListQuery,
-    McpConflictStatus, McpSource, McpSourceStatus, McpSourceType, McpTool, McpToolConfigPayload,
-    McpToolStatus, McpTrustLevel, UpdateLocalAssistantRequest, UpdateLocalKnowledgeFolderRequest,
-    UpdateLocalUserDocumentRequest,
+    LocalTraceFeedbackRequest, McpConflictStatus, McpSource, McpSourceStatus, McpSourceType,
+    McpTool, McpToolConfigPayload, McpToolStatus, McpTrustLevel, UpdateLocalAssistantRequest,
 };
 
 const DEFAULT_LOCAL_SOURCE_PATH: &str = "~/.config/deeting/mcp.json";
@@ -62,9 +55,6 @@ const LOCAL_CONVERSATION_SUMMARY_MIN_INTERVAL_SECONDS: i64 = 120;
 const LOCAL_CONVERSATION_SUMMARY_IDLE_SECONDS: i64 = 600;
 const LOCAL_CONVERSATION_IDLE_CHECK_BATCH_SIZE: i64 = 50;
 const LOCAL_PERIODIC_TASK_MAX_ERROR_CHARS: usize = 2000;
-const LOCAL_KNOWLEDGE_TOTAL_BYTES: i64 = 10 * 1024 * 1024 * 1024;
-const LOCAL_KNOWLEDGE_CHUNK_MAX_CHARS: usize = 1200;
-const LOCAL_KNOWLEDGE_CHUNK_OVERLAP_CHARS: usize = 120;
 
 pub struct McpStore {
     pub(crate) pool: SqlitePool,
@@ -96,7 +86,6 @@ pub struct LocalSkillInstallSnapshot {
 mod assistants;
 mod conversations;
 mod helpers;
-mod knowledge;
 mod source_tools;
 mod system_assets;
 
@@ -168,176 +157,6 @@ impl McpStore {
               updated_at TEXT NOT NULL,
               FOREIGN KEY (source_id) REFERENCES mcp_sources(id)
             );
-            "#,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
-
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS knowledge_folder (
-              id TEXT PRIMARY KEY,
-              user_id TEXT NOT NULL,
-              parent_id TEXT,
-              name TEXT NOT NULL,
-              created_at TEXT NOT NULL,
-              updated_at TEXT NOT NULL,
-              FOREIGN KEY (parent_id) REFERENCES knowledge_folder(id) ON DELETE CASCADE
-            );
-            "#,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
-
-        sqlx::query(
-            r#"
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_knowledge_folder_user_parent_name
-            ON knowledge_folder(user_id, parent_id, name);
-            "#,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
-
-        sqlx::query(
-            r#"
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_knowledge_folder_user_root_name
-            ON knowledge_folder(user_id, name)
-            WHERE parent_id IS NULL;
-            "#,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
-
-        sqlx::query(
-            r#"
-            CREATE INDEX IF NOT EXISTS ix_knowledge_folder_user_id
-            ON knowledge_folder(user_id);
-            "#,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
-
-        sqlx::query(
-            r#"
-            CREATE INDEX IF NOT EXISTS ix_knowledge_folder_parent_id
-            ON knowledge_folder(parent_id);
-            "#,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
-
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS user_document (
-              id TEXT PRIMARY KEY,
-              user_id TEXT NOT NULL,
-              media_asset_id TEXT NOT NULL,
-              filename TEXT NOT NULL,
-              folder_id TEXT,
-              status TEXT NOT NULL DEFAULT 'pending',
-              error_message TEXT,
-              chunk_count INTEGER NOT NULL DEFAULT 0,
-              embedding_model TEXT,
-              meta_info TEXT NOT NULL DEFAULT '{}',
-              created_at TEXT NOT NULL,
-              updated_at TEXT NOT NULL,
-              FOREIGN KEY (folder_id) REFERENCES knowledge_folder(id) ON DELETE SET NULL
-            );
-            "#,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
-
-        sqlx::query(
-            r#"
-            CREATE INDEX IF NOT EXISTS ix_user_document_user_id
-            ON user_document(user_id);
-            "#,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
-
-        sqlx::query(
-            r#"
-            CREATE INDEX IF NOT EXISTS ix_user_document_status
-            ON user_document(status);
-            "#,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
-
-        sqlx::query(
-            r#"
-            CREATE INDEX IF NOT EXISTS ix_user_document_media_asset_id
-            ON user_document(media_asset_id);
-            "#,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
-
-        sqlx::query(
-            r#"
-            CREATE INDEX IF NOT EXISTS ix_user_document_folder_id
-            ON user_document(folder_id);
-            "#,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
-
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS knowledge_chunk (
-              id TEXT PRIMARY KEY,
-              document_id TEXT NOT NULL,
-              user_id TEXT NOT NULL,
-              chunk_index INTEGER NOT NULL,
-              text_content TEXT NOT NULL,
-              token_count INTEGER NOT NULL DEFAULT 0,
-              created_at TEXT NOT NULL,
-              updated_at TEXT NOT NULL,
-              FOREIGN KEY (document_id) REFERENCES user_document(id) ON DELETE CASCADE
-            );
-            "#,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
-
-        sqlx::query(
-            r#"
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_knowledge_chunk_document_index
-            ON knowledge_chunk(document_id, chunk_index);
-            "#,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
-
-        sqlx::query(
-            r#"
-            CREATE INDEX IF NOT EXISTS ix_knowledge_chunk_document_id
-            ON knowledge_chunk(document_id);
-            "#,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
-
-        sqlx::query(
-            r#"
-            CREATE INDEX IF NOT EXISTS ix_knowledge_chunk_user_id
-            ON knowledge_chunk(user_id);
             "#,
         )
         .execute(&self.pool)

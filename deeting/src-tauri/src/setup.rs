@@ -1,4 +1,5 @@
 use crate::modules::code_mode::CodeModeState;
+use crate::modules::knowledge::KnowledgeState;
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::process::ProcessManager;
 use crate::modules::mcp::types::McpSourceStatus;
@@ -54,6 +55,9 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         let process_manager = ProcessManager::new(store.clone(), handle);
         let mcp_state = McpRuntimeState::new(store, process_manager, cloud_base_url);
 
+        // Knowledge 初始化
+        let knowledge_state = KnowledgeState::with_pool(global_pool.clone()).await?;
+
         // Providers 初始化
         let provider_state = ProviderState::with_pool_and_proxy(
             global_pool.clone(),
@@ -89,6 +93,7 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
         Ok::<_, McpError>(AppState::new(
             mcp_state,
+            knowledge_state,
             provider_state,
             memory_state,
             sandbox_state,

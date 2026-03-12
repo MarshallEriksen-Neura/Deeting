@@ -54,7 +54,7 @@ pub(crate) fn spawn_embed_knowledge_chunks(app_state: &AppState, file: &LocalKno
     }
     let document_id = file.id.clone();
     let document_name = file.name.clone();
-    let store = app_state.mcp.store.clone();
+    let store = app_state.knowledge.store.clone();
     let providers = app_state.providers.clone();
     let memory_service = app_state.memory.service.clone();
 
@@ -62,7 +62,7 @@ pub(crate) fn spawn_embed_knowledge_chunks(app_state: &AppState, file: &LocalKno
         let chunks_result = store
             .list_local_user_document_chunks(
                 &document_id,
-                crate::modules::mcp::types::LocalUserDocumentChunkListQuery {
+                crate::modules::knowledge::types::LocalUserDocumentChunkListQuery {
                     offset: None,
                     limit: Some(500),
                 },

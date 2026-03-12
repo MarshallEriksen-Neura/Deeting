@@ -57,7 +57,7 @@ pub(crate) async fn rebuild_local_knowledge_vector_index(
     app_state: &AppState,
 ) -> Result<usize, String> {
     let files = app_state
-        .mcp
+        .knowledge
         .store
         .list_local_user_documents(LocalUserDocumentListQuery {
             folder_id: None,
@@ -140,7 +140,7 @@ pub async fn rebuild_local_embedding_assets(
         .await
         .unwrap_or_else(|_| HashSet::new());
     let local_knowledge_files = app_state
-        .mcp
+        .knowledge
         .store
         .list_local_user_documents(LocalUserDocumentListQuery {
             folder_id: None,
