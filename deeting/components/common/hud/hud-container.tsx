@@ -93,8 +93,9 @@ export default function HUD() {
   };
   const setSelectedTemplateId = setSelectedAssistantId;
 
-  const { assistants: serviceAssistants, models: serviceModels, modelGroups: serviceModelGroups } = useChatService({
+  const { models: serviceModels, modelGroups: serviceModelGroups } = useChatService({
     enabled: !isImage,
+    fetchAssistants: false,
   });
   const {
     models: imageModels,
@@ -113,13 +114,6 @@ export default function HUD() {
       ("__TAURI_INTERNALS__" in window || "__TAURI__" in window),
     []
   );
-
-  useEffect(() => {
-    if (isImage) return;
-    if (serviceAssistants.length) {
-      setAssistantTemplates(serviceAssistants);
-    }
-  }, [isImage, serviceAssistants, setAssistantTemplates]);
 
   useEffect(() => {
     if (isImage) return;

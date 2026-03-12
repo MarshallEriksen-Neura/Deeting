@@ -29,6 +29,12 @@ impl CodeModeExecutionStore {
         Ok(store)
     }
 
+    pub async fn with_pool(pool: SqlitePool) -> Result<Self, CodeModeError> {
+        let store = Self { pool };
+        store.init().await?;
+        Ok(store)
+    }
+
     async fn init(&self) -> Result<(), CodeModeError> {
         sqlx::query(
             r#"

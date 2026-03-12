@@ -59,6 +59,11 @@ impl ProviderStore {
         Ok(Self { pool, secret_store })
     }
 
+    pub fn with_pool(pool: SqlitePool, database_url: &str) -> Result<Self, ProviderError> {
+        let secret_store = SecretStore::new(database_url)?;
+        Ok(Self { pool, secret_store })
+    }
+
     pub async fn init(&self) -> Result<(), ProviderError> {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS provider_presets (

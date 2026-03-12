@@ -27,4 +27,12 @@ impl CodeModeState {
             execution_store: Arc::new(execution_store),
         })
     }
+
+    pub async fn with_pool(pool: sqlx::sqlite::SqlitePool) -> Result<Self, CodeModeError> {
+        let execution_store = CodeModeExecutionStore::with_pool(pool).await?;
+        Ok(Self {
+            bridge: Arc::new(CodeModeBridgeState::new()),
+            execution_store: Arc::new(execution_store),
+        })
+    }
 }

@@ -116,6 +116,10 @@ impl McpStore {
         Ok(Self { pool })
     }
 
+    pub fn with_pool(pool: SqlitePool) -> Self {
+        Self { pool }
+    }
+
     pub async fn init(&self) -> Result<(), McpError> {
         sqlx::query(
             r#"

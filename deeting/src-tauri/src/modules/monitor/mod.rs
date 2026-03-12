@@ -154,6 +154,35 @@ impl MonitorState {
         })
     }
 
+    pub async fn with_pool(
+        pool: sqlx::sqlite::SqlitePool,
+        provider_store: Arc<ProviderStore>,
+        mcp_store: Option<Arc<crate::modules::mcp::store::McpStore>>,
+    ) -> Result<Self, String> {
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+        let config = WorkerConfig {
+            agent_id: make_default_agent_id(),
+            poll_interval_seconds: DEFAULT_MONITOR_POLL_INTERVAL_SECONDS,
+            pull_limit: DEFAULT_MONITOR_PULL_LIMIT,
+        };
+        let store = Arc::new(MonitorStore::with_pool(pool).await?);
+        Ok(Self {
+            shared: Arc::new(MonitorWorkerShared {
+                client,
+                provider_store,
+                store,
+                mcp_store,
+                worker_task: Mutex::new(None),
+                tick_lock: Mutex::new(()),
+                config: RwLock::new(config),
+                runtime: RwLock::new(WorkerRuntime::default()),
+            }),
+        })
+    }
+
     pub async fn start_worker(
         &self,
         payload: MonitorWorkerStartRequest,
@@ -1139,6 +1168,89 @@ mod tests {
             secretary_model_hint(&secretary).as_deref(),
             Some("gpt-4o-mini")
         );
+    }
+
+    #[test]
+    fn build_monitor_gateway_log_entry_includes_local_dimensions_and_metrics() {
+        let model = crate::modules::providers::types::ProviderModel {
+            id: Uuid::parse_str("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").expect("uuid"),
+            instance_id: Uuid::parse_str("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb").expect("uuid"),
+            model_id: "gpt-4o".to_string(),
+            unified_model_id: None,
+            display_name: None,
+            capabilities: vec!["chat".to_string()],
+            upstream_path: "v1/chat/completions".to_string(),
+            pricing_config: json!({
+                "input_per_1k": 0.1,
+                "output_per_1k": 0.2
+            }),
+            limit_config: json!({}),
+            tokenizer_config: json!({}),
+            routing_config: json!({}),
+            config_override: json!({}),
+            source: "local".to_string(),
+            extra_meta: json!({}),
+            weight: 0,
+            priority: 0,
+            is_active: true,
+            synced_at: None,
+            created_at: None,
+            updated_at: None,
+        };
+        let instance = crate::modules::providers::types::ProviderInstance {
+            id: model.instance_id,
+            preset_slug: "openai".to_string(),
+            name: "OpenAI".to_string(),
+            base_url: "https://example.com".to_string(),
+            description: None,
+            icon: None,
+            priority: 0,
+            meta: json!({}),
+            is_enabled: true,
+            is_local: true,
+            credential_source: "local".to_string(),
+            credentials_ref: "cred-monitor-1".to_string(),
+            updated_at: "2026-03-12T00:00:00Z".to_string(),
+            created_at: "2026-03-12T00:00:00Z".to_string(),
+        };
+        let headers = std::collections::BTreeMap::from([(
+            "x-cache".to_string(),
+            "HIT".to_string(),
+        )]);
+        let response = json!({
+            "usage": {
+                "prompt_tokens": 12,
+                "completion_tokens": 34,
+                "total_tokens": 46
+            },
+            "metrics": {
+                "ttft_ms": 78
+            },
+            "billing": {
+                "amount": 0.0099
+            }
+        });
+
+        let entry = build_monitor_gateway_log_entry(
+            &model,
+            &instance,
+            "https://example.com/v1/chat/completions",
+            reqwest::StatusCode::OK,
+            345,
+            &headers,
+            &response,
+        );
+
+        assert_eq!(entry.api_key_id.as_deref(), Some("cred-monitor-1"));
+        assert_eq!(entry.preset_id.as_deref(), Some("openai"));
+        assert_eq!(entry.input_tokens, 12);
+        assert_eq!(entry.output_tokens, 34);
+        assert_eq!(entry.total_tokens, 46);
+        assert_eq!(entry.ttft_ms, Some(78));
+        assert!(entry.is_cached);
+        assert_eq!(entry.cost_upstream, 0.008);
+        assert_eq!(entry.cost_user, 0.0099);
+        assert!(entry.error_code.is_none());
     }
 }
 

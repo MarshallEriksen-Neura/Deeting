@@ -13,6 +13,9 @@ use crate::utils::*;
 use log::warn;
 use std::sync::Arc;
 use tauri::{App, AppHandle, Manager};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions, SqliteJournalMode};
+use std::str::FromStr;
+use std::time::Duration;
 
 pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     if cfg!(debug_assertions) {
@@ -31,8 +34,20 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let state = tauri::async_runtime::block_on(async {
         let database_url = resolve_database_url(app)?;
 
+        let db_options = SqliteConnectOptions::from_str(&database_url)
+            .map_err(|err| McpError::Storage(err.to_string()))?
+            .create_if_missing(true)
+            .journal_mode(SqliteJournalMode::Wal)
+            .busy_timeout(Duration::from_secs(10));
+
+        let global_pool = SqlitePoolOptions::new()
+            .max_connections(15)
+            .connect_with(db_options)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+
         // MCP 初始化
-        let store = Arc::new(crate::modules::mcp::store::McpStore::new(&database_url).await?);
+        let store = Arc::new(crate::modules::mcp::store::McpStore::with_pool(global_pool.clone()));
         store.init().await?;
         store.ensure_local_source().await?;
         store.ensure_cloud_source(&cloud_base_url).await?;
@@ -40,7 +55,8 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         let mcp_state = McpRuntimeState::new(store, process_manager, cloud_base_url);
 
         // Providers 初始化
-        let provider_state = ProviderState::new_with_platform_proxy(
+        let provider_state = ProviderState::with_pool_and_proxy(
+            global_pool.clone(),
             &database_url,
             Some(mcp_state.store.clone()),
             Some(mcp_state.cloud_base_url.clone()),
@@ -49,27 +65,27 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|e| McpError::Storage(e.to_string()))?;
 
         // Memory 初始化 (with shared embedding capability)
-        let memory_embedding =
-            crate::modules::providers::embedding::EmbeddingService::with_platform_proxy(
-                provider_state.store.clone(),
-                mcp_state.store.clone(),
-                mcp_state.cloud_base_url.clone(),
-            );
         let memory_state = MemoryState::with_options(
             &lancedb_uri,
             None,
-            Some(memory_embedding),
-            Some(&database_url),
+            Some(provider_state.embedding.clone()),
+            Some(global_pool.clone()),
         )
         .await
         .map_err(|e| McpError::Storage(e.to_string()))?;
+        
         let sandbox_state = SandboxState::new(boxrun_home_dir.clone());
-        let code_mode_state = CodeModeState::new(&database_url)
+        let code_mode_state = CodeModeState::with_pool(global_pool.clone())
             .await
             .map_err(|e| McpError::Storage(e.to_string()))?;
-        let monitor_state = MonitorState::new(&database_url, provider_state.store.clone(), Some(mcp_state.store.clone()))
-            .await
-            .map_err(|e| McpError::Storage(e.to_string()))?;
+        
+        let monitor_state = MonitorState::with_pool(
+            global_pool.clone(),
+            provider_state.store.clone(),
+            Some(mcp_state.store.clone())
+        )
+        .await
+        .map_err(|e| McpError::Storage(e.to_string()))?;
 
         Ok::<_, McpError>(AppState::new(
             mcp_state,

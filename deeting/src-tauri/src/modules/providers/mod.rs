@@ -48,4 +48,26 @@ impl ProviderState {
             transformer,
         })
     }
+
+    pub async fn with_pool_and_proxy(
+        pool: sqlx::sqlite::SqlitePool,
+        database_url: &str,
+        mcp_store: Option<Arc<McpStore>>,
+        cloud_base_url: Option<Arc<RwLock<String>>>,
+    ) -> Result<Self, crate::modules::providers::error::ProviderError> {
+        let store = Arc::new(ProviderStore::with_pool(pool, database_url)?);
+        store.init().await?;
+        let embedding = match (mcp_store, cloud_base_url) {
+            (Some(mcp_store), Some(cloud_base_url)) => {
+                EmbeddingService::with_platform_proxy(store.clone(), mcp_store, cloud_base_url)
+            }
+            _ => EmbeddingService::new(store.clone()),
+        };
+        let transformer = ResponseTransformer::new();
+        Ok(Self {
+            store,
+            embedding,
+            transformer,
+        })
+    }
 }

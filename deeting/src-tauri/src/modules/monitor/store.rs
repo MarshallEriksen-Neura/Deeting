@@ -40,6 +40,12 @@ impl MonitorStore {
         Ok(store)
     }
 
+    pub async fn with_pool(pool: SqlitePool) -> Result<Self, String> {
+        let store = Self { pool };
+        store.init().await?;
+        Ok(store)
+    }
+
     async fn init(&self) -> Result<(), String> {
         sqlx::query(
             r#"

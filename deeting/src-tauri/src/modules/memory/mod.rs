@@ -31,7 +31,7 @@ impl MemoryState {
         lancedb_uri: &str,
         embedding_dim: Option<i32>,
         embedding_service: Option<EmbeddingService>,
-        database_url: Option<&str>,
+        db_pool: Option<sqlx::sqlite::SqlitePool>,
     ) -> Result<Self, MemoryError> {
         let store = Arc::new(MemoryStore::new(lancedb_uri).await?);
         let dim = embedding_dim.unwrap_or(store::DEFAULT_MEMORY_EMBEDDING_DIM);
@@ -42,9 +42,9 @@ impl MemoryState {
             None => MemoryService::new(store.clone()),
         };
 
-        // Initialize snapshot store if database URL is provided
-        if let Some(db_url) = database_url {
-            match SnapshotStore::new(db_url).await {
+        // Initialize snapshot store if db_pool is provided
+        if let Some(pool) = db_pool {
+            match SnapshotStore::with_pool(pool).await {
                 Ok(snap) => {
                     service.set_snapshot_store(Arc::new(snap));
                     log::info!("memory snapshot store initialized");

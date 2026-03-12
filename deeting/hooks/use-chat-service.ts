@@ -59,21 +59,26 @@ export function useChatService({
   enabled = true,
   installSize = 100,
   modelCapability,
+  fetchAssistants = true,
 }: {
   assistantId?: string
   enabled?: boolean
   installSize?: number
   modelCapability?: string
+  fetchAssistants?: boolean
 }) {
   const { isAuthenticated } = useAuthStore()
   const isEnabled = enabled && isAuthenticated
-  const shouldFetch = isEnabled ? [INSTALLS_QUERY_KEY, { size: installSize }] : null
+  const shouldFetch = isEnabled && fetchAssistants ? [INSTALLS_QUERY_KEY, { size: installSize }] : null
 
   const {
     data: installPage,
     isLoading: isLoadingAssistants,
     mutate: mutateInstalls,
-  } = useSWR<AssistantInstallPage>(shouldFetch, () => fetchAssistantInstalls({ size: installSize }))
+  } = useSWR<AssistantInstallPage>(shouldFetch, () => fetchAssistantInstalls({ size: installSize }), {
+    revalidateOnFocus: false,
+    dedupingInterval: 10000,
+  })
 
   const modelQueryKey = isEnabled
     ? [MODELS_QUERY_KEY, modelCapability ?? "all"]

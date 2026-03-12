@@ -7,6 +7,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
+#[derive(Clone)]
 struct PlatformEmbeddingProxyConfig {
     mcp_store: Arc<crate::modules::mcp::store::McpStore>,
     cloud_base_url: Arc<RwLock<String>>,
@@ -22,6 +23,7 @@ struct EmbeddingData {
     embedding: Vec<f32>,
 }
 
+#[derive(Clone)]
 pub struct EmbeddingService {
     store: Arc<ProviderStore>,
     client: reqwest::Client,
