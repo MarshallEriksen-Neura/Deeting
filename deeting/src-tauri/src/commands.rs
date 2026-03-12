@@ -102,6 +102,7 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         // Custom Task Agent Commands
         crate::modules::custom_task_agents::commands::list_custom_task_agents,
         crate::modules::custom_task_agents::commands::get_custom_task_agent,
+        crate::modules::custom_task_agents::commands::get_custom_task_agent_binding_catalog,
         crate::modules::custom_task_agents::commands::create_custom_task_agent,
         crate::modules::custom_task_agents::commands::update_custom_task_agent,
         crate::modules::custom_task_agents::commands::delete_custom_task_agent,

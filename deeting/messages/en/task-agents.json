@@ -1,0 +1,171 @@
+{
+  "task-agents": {
+    "title": "Local Task Agents",
+    "subtitle": "Create, manage, and run custom task agents stored on this device.",
+    "unsupported": {
+      "title": "Desktop only",
+      "description": "Local task agents are backed by Tauri commands and only available inside the desktop app."
+    },
+    "actions": {
+      "new": "New Agent",
+      "save": "Save",
+      "saving": "Saving...",
+      "create": "Create Agent",
+      "delete": "Delete",
+      "reindex": "Reindex",
+      "reindexing": "Reindexing...",
+      "runPreview": "Run Preview",
+      "runningPreview": "Running Preview..."
+    },
+    "stats": {
+      "total": "Total Agents",
+      "enabled": "Enabled",
+      "discoverable": "Discoverable",
+      "updated": "Latest Update"
+    },
+    "library": {
+      "title": "Agent Library",
+      "description": "Search and switch between your local task agents.",
+      "searchPlaceholder": "Search by name, description, prompt, or tags...",
+      "draftTitle": "Unsaved draft",
+      "draftDescription": "You are editing a new task agent that has not been saved yet.",
+      "emptyTitle": "No task agents yet",
+      "emptyDescription": "Create your first task agent to start building repeatable local workflows.",
+      "updatedAt": "Updated {value}"
+    },
+    "filters": {
+      "allKinds": "All kinds",
+      "allStatuses": "All statuses"
+    },
+    "badges": {
+      "chat": "Chat",
+      "imageGeneration": "Image",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "discoverable": "Discoverable",
+      "hidden": "Hidden"
+    },
+    "tabs": {
+      "config": "Config",
+      "bindings": "Bindings",
+      "preview": "Preview",
+      "debug": "Debug"
+    },
+    "editor": {
+      "newTitle": "New Task Agent",
+      "newDescription": "Define the task, bind the right tools and skills, then save before previewing.",
+      "draft": "Draft",
+      "updatedAt": "Last updated {value}",
+      "basic": {
+        "title": "Agent Identity",
+        "description": "Name the agent and define how it should behave."
+      },
+      "model": {
+        "title": "Model Routing",
+        "description": "Keep the common fields easy to edit, while still preserving advanced JSON config."
+      },
+      "fields": {
+        "name": "Name",
+        "description": "Description",
+        "taskPrompt": "Task Prompt",
+        "invocationKind": "Invocation Kind",
+        "model": "Model",
+        "providerModelId": "Provider Model ID",
+        "modelConfigJson": "Advanced Model Config JSON",
+        "tags": "Tags",
+        "discoverable": "Discoverable",
+        "isEnabled": "Enabled",
+        "boundTools": "Bound Tools",
+        "boundSkills": "Bound Skills"
+      },
+      "placeholders": {
+        "name": "e.g. Release Notes Drafter",
+        "description": "What this agent is good at and when you should use it.",
+        "taskPrompt": "You are a delegated local task agent. Focus on...",
+        "model": "default",
+        "providerModelId": "provider/model-id",
+        "modelConfigJson": "{\n  \"model\": \"default\"\n}",
+        "tags": "research, docs, release"
+      },
+      "modelConfig": {
+        "helper": "Basic model fields above override overlapping keys inside the JSON block when you save.",
+        "invalidJson": "Model config JSON must be a valid object."
+      },
+      "toggles": {
+        "discoverable": "Allow this agent to be indexed and surfaced for local discovery.",
+        "enabled": "Disable this agent to keep it out of preview and execution."
+      }
+    },
+    "bindings": {
+      "title": "Bindings Catalog",
+      "description": "Task agents can only call explicitly bound tools and locally installed skills.",
+      "toolsTitle": "Available Tools",
+      "toolsDescription": "Choose the local MCP tools this agent may call.",
+      "skillsTitle": "Installed Skills",
+      "skillsDescription": "Only locally installed skills can be bound here.",
+      "searchToolsPlaceholder": "Search tools by name, id, or status...",
+      "searchSkillsPlaceholder": "Search skills by id, version, or runtime...",
+      "selectedOnly": "Selected only",
+      "noTools": "No local tools available.",
+      "noSkills": "No installed skills available.",
+      "noFilteredTools": "No tools match the current filter.",
+      "noFilteredSkills": "No skills match the current filter.",
+      "skillMeta": "Version {version} · Runtime {runtime}",
+      "unknownVersion": "unknown",
+      "unknownRuntime": "unknown"
+    },
+    "preview": {
+      "title": "Live Preview",
+      "description": "Run the saved agent against a test message and inspect its full local response.",
+      "fields": {
+        "message": "Preview Message",
+        "temperature": "Temperature",
+        "maxTokens": "Max Tokens",
+        "maxRounds": "Max Tool Rounds"
+      },
+      "placeholders": {
+        "message": "Describe the task you want this agent to handle..."
+      },
+      "unsavedDescription": "Save the draft first. Preview requires a persisted local task agent ID.",
+      "errorTitle": "Preview failed",
+      "emptyTitle": "No preview yet",
+      "emptyDescription": "Run a preview to inspect the answer, reasoning, tool calls, and raw payload.",
+      "images": "Generated Images",
+      "imageAlt": "Generated preview image {index}",
+      "response": "Assistant Response",
+      "reasoning": "Reasoning",
+      "toolCalls": "Tool Calls",
+      "toolTrace": "Tool Trace",
+      "raw": "Raw Payload"
+    },
+    "debug": {
+      "title": "Debug Snapshot",
+      "description": "Review the exact local payload that will be persisted and the runtime inputs currently configured.",
+      "cards": {
+        "identity": "Model Identity",
+        "bindings": "Bindings Summary",
+        "preview": "Preview Settings"
+      },
+      "rawProfile": "Current Payload"
+    },
+    "deleteDialog": {
+      "title": "Delete task agent?",
+      "description": "Delete \"{name}\" from this device? This removes the local profile and unindexes it from discovery.",
+      "cancel": "Cancel",
+      "confirm": "Delete Agent"
+    },
+    "confirm": {
+      "discardChanges": "You have unsaved changes. Discard them and continue?"
+    },
+    "toast": {
+      "created": "Task agent created",
+      "saved": "Task agent saved",
+      "saveFailed": "Failed to save task agent",
+      "deleted": "Task agent deleted",
+      "deleteFailed": "Failed to delete task agent",
+      "reindexed": "Task agents reindexed",
+      "reindexFailed": "Failed to reindex task agents",
+      "previewFailed": "Failed to run preview"
+    }
+  }
+}

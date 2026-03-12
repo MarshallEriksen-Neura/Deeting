@@ -63,6 +63,12 @@ export const userNavigation: NavGroup[] = [
         icon: "cpu",
       },
       {
+        id: "task-agents",
+        label: "nav.taskAgents",
+        href: "/dashboard/user/task-agents",
+        icon: "bot",
+      },
+      {
         id: "api-keys",
         label: "nav.apiKeys",
         href: "/dashboard/user/api-keys",

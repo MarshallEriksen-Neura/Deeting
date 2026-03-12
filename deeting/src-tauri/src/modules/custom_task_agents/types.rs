@@ -101,3 +101,27 @@ pub struct CustomTaskAgentPreviewResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw: Option<Value>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomTaskAgentBindableTool {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomTaskAgentBindableSkill {
+    pub skill_id: String,
+    pub installed_version: Option<String>,
+    pub is_enabled: bool,
+    pub runtime: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomTaskAgentBindingCatalogResponse {
+    #[serde(default)]
+    pub tools: Vec<CustomTaskAgentBindableTool>,
+    #[serde(default)]
+    pub skills: Vec<CustomTaskAgentBindableSkill>,
+}

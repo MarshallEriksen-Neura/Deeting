@@ -14,8 +14,9 @@ use super::store::{
     update_custom_task_agent as update_custom_task_agent_inner,
 };
 use super::types::{
-    CreateCustomTaskAgentRequest, CustomTaskAgentPreviewRequest, CustomTaskAgentPreviewResponse,
-    CustomTaskAgentProfile, UpdateCustomTaskAgentRequest,
+    CreateCustomTaskAgentRequest, CustomTaskAgentBindingCatalogResponse,
+    CustomTaskAgentBindableSkill, CustomTaskAgentBindableTool, CustomTaskAgentPreviewRequest,
+    CustomTaskAgentPreviewResponse, CustomTaskAgentProfile, UpdateCustomTaskAgentRequest,
 };
 
 #[tauri::command]
@@ -36,6 +37,45 @@ pub async fn get_custom_task_agent(
         .await
         .map_err(|err| err.to_string())?
         .ok_or_else(|| "custom task agent not found".to_string())
+}
+
+#[tauri::command]
+pub async fn get_custom_task_agent_binding_catalog(
+    state: State<'_, AppState>,
+) -> Result<CustomTaskAgentBindingCatalogResponse, String> {
+    let mut tools = state
+        .mcp
+        .store
+        .list_tools()
+        .await
+        .map_err(|err| err.to_string())?
+        .into_iter()
+        .map(|tool| CustomTaskAgentBindableTool {
+            id: tool.id,
+            name: tool.name,
+            description: tool.description,
+            status: tool.status.as_str().to_string(),
+        })
+        .collect::<Vec<_>>();
+    tools.sort_by(|left, right| left.name.cmp(&right.name));
+
+    let mut skills = state
+        .mcp
+        .store
+        .list_local_skill_installs()
+        .await
+        .map_err(|err| err.to_string())?
+        .into_iter()
+        .map(|skill| CustomTaskAgentBindableSkill {
+            skill_id: skill.skill_id,
+            installed_version: skill.installed_version,
+            is_enabled: skill.is_enabled,
+            runtime: skill.runtime,
+        })
+        .collect::<Vec<_>>();
+    skills.sort_by(|left, right| left.skill_id.cmp(&right.skill_id));
+
+    Ok(CustomTaskAgentBindingCatalogResponse { tools, skills })
 }
 
 #[tauri::command]
