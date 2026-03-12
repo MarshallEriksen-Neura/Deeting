@@ -4,7 +4,9 @@ use uuid::Uuid;
 
 use crate::modules::ai_upstream::chat::{extract_upstream_error_message, truncate_upstream_body};
 use crate::modules::ai_upstream::gateway_log_recorder::{
-    extract_error_code_from_response, record_gateway_log, GatewayLogEntry,
+    extract_billing_amount_from_response, extract_cache_hit_from_response,
+    extract_error_code_from_response, extract_ttft_ms_from_response, record_gateway_log,
+    GatewayLogEntry,
 };
 use crate::modules::mcp::commands::common_impl::to_string;
 use crate::state::AppState;
@@ -88,6 +90,7 @@ pub(crate) async fn request_provider_image_generation(
     )
     .await?;
     let status = response.status;
+    let response_headers = response.headers.clone();
     let latency_ms = call_start.elapsed().as_millis() as f64;
     let raw_text = response.text;
     let raw_json = response.json;
@@ -115,6 +118,8 @@ pub(crate) async fn request_provider_image_generation(
             app_state.mcp.store.clone(),
             GatewayLogEntry {
                 trace_id: trace_id.map(str::to_string),
+                api_key_id: Some(instance.credentials_ref.clone()).filter(|value| !value.trim().is_empty()),
+                preset_id: Some(instance.preset_slug.clone()).filter(|value| !value.trim().is_empty()),
                 model: effective_model.clone(),
                 status_code: status.as_u16() as i64,
                 duration_ms: latency_ms as i64,
@@ -141,10 +146,15 @@ pub(crate) async fn request_provider_image_generation(
         app_state.mcp.store.clone(),
         GatewayLogEntry {
             trace_id: trace_id.map(str::to_string),
+            api_key_id: Some(instance.credentials_ref.clone()).filter(|value| !value.trim().is_empty()),
+            preset_id: Some(instance.preset_slug.clone()).filter(|value| !value.trim().is_empty()),
             model: effective_model.clone(),
             status_code: status.as_u16() as i64,
             duration_ms: latency_ms as i64,
+            ttft_ms: extract_ttft_ms_from_response(&submit_payload),
             upstream_url: Some(prepared.display_url()),
+            cost_user: extract_billing_amount_from_response(&submit_payload).unwrap_or(0.0),
+            is_cached: extract_cache_hit_from_response(&response_headers, Some(&submit_payload)),
             ..Default::default()
         },
     );

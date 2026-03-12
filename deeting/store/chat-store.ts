@@ -7,7 +7,6 @@ import type { Message, MessageRole } from "@/lib/chat/message-types"
 import type { ModelInfo } from "@/lib/api/models"
 import { normalizeConversationMessages } from "@/lib/chat/conversation-adapter"
 import { fetchConversationHistory } from "@/lib/api/conversations"
-import { fetchAssistantInstalls, type AssistantInstallItem } from "@/lib/api/assistants"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
 import {
   appendMessageBlocks as appendNormalizedMessageBlocks,
@@ -93,19 +92,6 @@ const normalizeAssistantId = (value: unknown): string | null => {
     return trimmed.length ? trimmed : null
   }
   return null
-}
-
-function mapInstallToAssistant(item: AssistantInstallItem): ChatAssistant {
-  const color = COLOR_PRESETS[hashToIndex(item.assistant_id, COLOR_PRESETS.length)]
-  const version = item.assistant.version
-  return {
-    id: item.assistant_id,
-    name: version?.name || "Assistant",
-    desc: version?.description || item.assistant.summary || "",
-    color,
-    systemPrompt: version?.system_prompt ?? undefined,
-    ownerUserId: item.assistant.owner_user_id,
-  }
 }
 
 function createMessageId() {
@@ -365,8 +351,9 @@ export const useChatStore = create<ChatStore>()(
           // Step 1: 获取 agent 数据
           let selectedAssistant: ChatAssistant | null = localAssistant ?? null
 
+          // 之前会从 API 获取 assistant 列表，现已移除，因为 chat 页面不再支持切换 assistant
+          /*
           if (!selectedAssistant) {
-            // 从 API 获取 assistant 列表
             try {
               const installPage = await fetchAssistantInstalls({ size: 100 })
               const found = installPage.items.find((item) => item.assistant_id === normalizedAssistantId)
@@ -377,6 +364,7 @@ export const useChatStore = create<ChatStore>()(
               console.error("Failed to fetch assistant:", error)
             }
           }
+          */
 
           // Step 2: 加载历史消息（如果有 sessionId 且是新 agent 或新 session）
           let messages: Message[] = shouldReset ? [] : state.messages

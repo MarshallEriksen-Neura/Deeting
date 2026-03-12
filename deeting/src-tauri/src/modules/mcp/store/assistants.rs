@@ -13,12 +13,18 @@ fn normalize_gateway_log_query(
     Option<String>,
     Option<String>,
     Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
     Option<i64>,
     Option<i64>,
     Option<String>,
 ) {
     let start_time = normalize_optional_text(query.start_time.as_deref());
     let end_time = normalize_optional_text(query.end_time.as_deref());
+    let user_id = normalize_optional_text(query.user_id.as_deref());
+    let api_key_id = normalize_optional_text(query.api_key_id.as_deref());
+    let preset_id = normalize_optional_text(query.preset_id.as_deref());
     let model = normalize_optional_text(query.model.as_deref());
     let status_code = query.status_code.map(|value| value.max(0));
     let is_cached = query
@@ -26,7 +32,17 @@ fn normalize_gateway_log_query(
         .map(|value| if value { 1_i64 } else { 0_i64 });
     let error_code = normalize_optional_text(query.error_code.as_deref());
 
-    (start_time, end_time, model, status_code, is_cached, error_code)
+    (
+        start_time,
+        end_time,
+        user_id,
+        api_key_id,
+        preset_id,
+        model,
+        status_code,
+        is_cached,
+        error_code,
+    )
 }
 
 impl McpStore {
@@ -1433,6 +1449,9 @@ impl McpStore {
     pub async fn create_local_gateway_log(
         &self,
         trace_id: Option<&str>,
+        user_id: Option<&str>,
+        api_key_id: Option<&str>,
+        preset_id: Option<&str>,
         model: &str,
         status_code: i64,
         duration_ms: i64,
@@ -1460,6 +1479,10 @@ impl McpStore {
                 Some(trimmed)
             }
         });
+        let normalized_user_id =
+            normalize_optional_text(user_id).unwrap_or_else(|| LOCAL_DESKTOP_USER_ID.to_string());
+        let normalized_api_key_id = normalize_optional_text(api_key_id);
+        let normalized_preset_id = normalize_optional_text(preset_id);
         if let Some(value) = normalized_trace_id.as_deref() {
             if value.len() > 64 {
                 return Err(McpError::validation("trace_id must be <= 64 characters"));
@@ -1495,12 +1518,14 @@ impl McpStore {
               upstream_url, retry_count, input_tokens, output_tokens, total_tokens,
               cost_upstream, cost_user, is_cached, error_code, meta, created_at
             )
-            VALUES (?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             "#,
         )
         .bind(&id)
-        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(normalized_user_id)
         .bind(normalized_trace_id.as_deref())
+        .bind(normalized_api_key_id.as_deref())
+        .bind(normalized_preset_id.as_deref())
         .bind(&normalized_model)
         .bind(status_code.max(0))
         .bind(duration_ms.max(0))
@@ -1537,14 +1562,26 @@ impl McpStore {
     ) -> Result<LocalGatewayLogListResponse, McpError> {
         let skip = query.skip.unwrap_or(0).max(0);
         let limit = query.limit.unwrap_or(100).clamp(1, 1000);
-        let (start_time, end_time, model, status_code, is_cached, error_code) =
-            normalize_gateway_log_query(query);
+        let (
+            start_time,
+            end_time,
+            user_id,
+            api_key_id,
+            preset_id,
+            model,
+            status_code,
+            is_cached,
+            error_code,
+        ) = normalize_gateway_log_query(query);
 
         let total_row = sqlx::query(
             r#"
             SELECT COUNT(*) AS total
             FROM gateway_log
-            WHERE (? IS NULL OR model = ?)
+            WHERE (? IS NULL OR user_id = ?)
+              AND (? IS NULL OR api_key_id = ?)
+              AND (? IS NULL OR preset_id = ?)
+              AND (? IS NULL OR model = ?)
               AND (? IS NULL OR status_code = ?)
               AND (? IS NULL OR is_cached = ?)
               AND (? IS NULL OR error_code = ?)
@@ -1552,6 +1589,12 @@ impl McpStore {
               AND (? IS NULL OR julianday(created_at) <= julianday(?));
             "#,
         )
+        .bind(user_id.as_deref())
+        .bind(user_id.as_deref())
+        .bind(api_key_id.as_deref())
+        .bind(api_key_id.as_deref())
+        .bind(preset_id.as_deref())
+        .bind(preset_id.as_deref())
         .bind(model.as_deref())
         .bind(model.as_deref())
         .bind(status_code)
@@ -1572,10 +1615,14 @@ impl McpStore {
         let rows = sqlx::query(
             r#"
             SELECT
-              id, trace_id, user_id, api_key_id, model, status_code, duration_ms, ttft_ms,
-              input_tokens, output_tokens, cost_user, is_cached, error_code, created_at
+              id, trace_id, user_id, api_key_id, preset_id, model, status_code, duration_ms, ttft_ms,
+              input_tokens, output_tokens, total_tokens, cost_upstream, cost_user, is_cached,
+              error_code, created_at
             FROM gateway_log
-            WHERE (? IS NULL OR model = ?)
+            WHERE (? IS NULL OR user_id = ?)
+              AND (? IS NULL OR api_key_id = ?)
+              AND (? IS NULL OR preset_id = ?)
+              AND (? IS NULL OR model = ?)
               AND (? IS NULL OR status_code = ?)
               AND (? IS NULL OR is_cached = ?)
               AND (? IS NULL OR error_code = ?)
@@ -1585,6 +1632,12 @@ impl McpStore {
             LIMIT ? OFFSET ?;
             "#,
         )
+        .bind(user_id.as_deref())
+        .bind(user_id.as_deref())
+        .bind(api_key_id.as_deref())
+        .bind(api_key_id.as_deref())
+        .bind(preset_id.as_deref())
+        .bind(preset_id.as_deref())
         .bind(model.as_deref())
         .bind(model.as_deref())
         .bind(status_code)
@@ -1610,12 +1663,15 @@ impl McpStore {
                 trace_id: row.try_get("trace_id")?,
                 user_id: row.try_get("user_id")?,
                 api_key_id: row.try_get("api_key_id")?,
+                preset_id: row.try_get("preset_id")?,
                 model: row.try_get("model")?,
                 status_code: row.try_get("status_code")?,
                 duration_ms: row.try_get::<i64, _>("duration_ms")?.max(0),
                 ttft_ms: row.try_get("ttft_ms")?,
                 input_tokens: row.try_get::<i64, _>("input_tokens")?.max(0),
                 output_tokens: row.try_get::<i64, _>("output_tokens")?.max(0),
+                total_tokens: row.try_get::<i64, _>("total_tokens")?.max(0),
+                cost_upstream: row.try_get::<f64, _>("cost_upstream").unwrap_or(0.0),
                 cost_user: row.try_get::<f64, _>("cost_user").unwrap_or(0.0),
                 is_cached: row.try_get::<i64, _>("is_cached")? != 0,
                 error_code: row.try_get("error_code")?,
@@ -1757,14 +1813,26 @@ impl McpStore {
         &self,
         query: LocalGatewayLogQuery,
     ) -> Result<LocalGatewayLogStatsResponse, McpError> {
-        let (start_time, end_time, model, status_code, is_cached, error_code) =
-            normalize_gateway_log_query(query);
+        let (
+            start_time,
+            end_time,
+            user_id,
+            api_key_id,
+            preset_id,
+            model,
+            status_code,
+            is_cached,
+            error_code,
+        ) = normalize_gateway_log_query(query);
 
         let total_row = sqlx::query(
             r#"
             SELECT COUNT(*) AS total
             FROM gateway_log
-            WHERE (? IS NULL OR model = ?)
+            WHERE (? IS NULL OR user_id = ?)
+              AND (? IS NULL OR api_key_id = ?)
+              AND (? IS NULL OR preset_id = ?)
+              AND (? IS NULL OR model = ?)
               AND (? IS NULL OR status_code = ?)
               AND (? IS NULL OR is_cached = ?)
               AND (? IS NULL OR error_code = ?)
@@ -1772,6 +1840,12 @@ impl McpStore {
               AND (? IS NULL OR julianday(created_at) <= julianday(?));
             "#,
         )
+        .bind(user_id.as_deref())
+        .bind(user_id.as_deref())
+        .bind(api_key_id.as_deref())
+        .bind(api_key_id.as_deref())
+        .bind(preset_id.as_deref())
+        .bind(preset_id.as_deref())
         .bind(model.as_deref())
         .bind(model.as_deref())
         .bind(status_code)
@@ -1795,6 +1869,9 @@ impl McpStore {
             FROM gateway_log
             WHERE status_code >= 200
               AND status_code < 400
+              AND (? IS NULL OR user_id = ?)
+              AND (? IS NULL OR api_key_id = ?)
+              AND (? IS NULL OR preset_id = ?)
               AND (? IS NULL OR model = ?)
               AND (? IS NULL OR status_code = ?)
               AND (? IS NULL OR is_cached = ?)
@@ -1803,6 +1880,12 @@ impl McpStore {
               AND (? IS NULL OR julianday(created_at) <= julianday(?));
             "#,
         )
+        .bind(user_id.as_deref())
+        .bind(user_id.as_deref())
+        .bind(api_key_id.as_deref())
+        .bind(api_key_id.as_deref())
+        .bind(preset_id.as_deref())
+        .bind(preset_id.as_deref())
         .bind(model.as_deref())
         .bind(model.as_deref())
         .bind(status_code)
@@ -1825,6 +1908,9 @@ impl McpStore {
             SELECT COUNT(*) AS total
             FROM gateway_log
             WHERE is_cached = 1
+              AND (? IS NULL OR user_id = ?)
+              AND (? IS NULL OR api_key_id = ?)
+              AND (? IS NULL OR preset_id = ?)
               AND (? IS NULL OR model = ?)
               AND (? IS NULL OR status_code = ?)
               AND (? IS NULL OR is_cached = ?)
@@ -1833,6 +1919,12 @@ impl McpStore {
               AND (? IS NULL OR julianday(created_at) <= julianday(?));
             "#,
         )
+        .bind(user_id.as_deref())
+        .bind(user_id.as_deref())
+        .bind(api_key_id.as_deref())
+        .bind(api_key_id.as_deref())
+        .bind(preset_id.as_deref())
+        .bind(preset_id.as_deref())
         .bind(model.as_deref())
         .bind(model.as_deref())
         .bind(status_code)
@@ -1856,7 +1948,10 @@ impl McpStore {
               COALESCE(ROUND(AVG(duration_ms)), 0) AS avg_duration_ms,
               COALESCE(SUM(cost_user), 0) AS total_cost_user
             FROM gateway_log
-            WHERE (? IS NULL OR model = ?)
+            WHERE (? IS NULL OR user_id = ?)
+              AND (? IS NULL OR api_key_id = ?)
+              AND (? IS NULL OR preset_id = ?)
+              AND (? IS NULL OR model = ?)
               AND (? IS NULL OR status_code = ?)
               AND (? IS NULL OR is_cached = ?)
               AND (? IS NULL OR error_code = ?)
@@ -1864,6 +1959,12 @@ impl McpStore {
               AND (? IS NULL OR julianday(created_at) <= julianday(?));
             "#,
         )
+        .bind(user_id.as_deref())
+        .bind(user_id.as_deref())
+        .bind(api_key_id.as_deref())
+        .bind(api_key_id.as_deref())
+        .bind(preset_id.as_deref())
+        .bind(preset_id.as_deref())
         .bind(model.as_deref())
         .bind(model.as_deref())
         .bind(status_code)
@@ -1880,7 +1981,9 @@ impl McpStore {
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
         let avg_duration_ms = aggregate_row
-            .try_get::<i64, _>("avg_duration_ms")
+            .try_get::<f64, _>("avg_duration_ms")
+            .map(|value| value.round() as i64)
+            .or_else(|_| aggregate_row.try_get::<i64, _>("avg_duration_ms"))
             .unwrap_or(0)
             .max(0);
         let total_cost_user = aggregate_row
@@ -1892,7 +1995,10 @@ impl McpStore {
             r#"
             SELECT COALESCE(error_code, CAST(status_code AS TEXT)) AS bucket, COUNT(*) AS count
             FROM gateway_log
-            WHERE (? IS NULL OR model = ?)
+            WHERE (? IS NULL OR user_id = ?)
+              AND (? IS NULL OR api_key_id = ?)
+              AND (? IS NULL OR preset_id = ?)
+              AND (? IS NULL OR model = ?)
               AND (? IS NULL OR status_code = ?)
               AND (? IS NULL OR is_cached = ?)
               AND (? IS NULL OR error_code = ?)
@@ -1903,6 +2009,12 @@ impl McpStore {
             LIMIT 20;
             "#,
         )
+        .bind(user_id.as_deref())
+        .bind(user_id.as_deref())
+        .bind(api_key_id.as_deref())
+        .bind(api_key_id.as_deref())
+        .bind(preset_id.as_deref())
+        .bind(preset_id.as_deref())
         .bind(model.as_deref())
         .bind(model.as_deref())
         .bind(status_code)
@@ -1930,7 +2042,10 @@ impl McpStore {
             r#"
             SELECT model AS bucket, COUNT(*) AS count
             FROM gateway_log
-            WHERE (? IS NULL OR model = ?)
+            WHERE (? IS NULL OR user_id = ?)
+              AND (? IS NULL OR api_key_id = ?)
+              AND (? IS NULL OR preset_id = ?)
+              AND (? IS NULL OR model = ?)
               AND (? IS NULL OR status_code = ?)
               AND (? IS NULL OR is_cached = ?)
               AND (? IS NULL OR error_code = ?)
@@ -1941,6 +2056,12 @@ impl McpStore {
             LIMIT 20;
             "#,
         )
+        .bind(user_id.as_deref())
+        .bind(user_id.as_deref())
+        .bind(api_key_id.as_deref())
+        .bind(api_key_id.as_deref())
+        .bind(preset_id.as_deref())
+        .bind(preset_id.as_deref())
         .bind(model.as_deref())
         .bind(model.as_deref())
         .bind(status_code)
@@ -1975,7 +2096,10 @@ impl McpStore {
               END AS bucket,
               COUNT(*) AS count
             FROM gateway_log
-            WHERE (? IS NULL OR model = ?)
+            WHERE (? IS NULL OR user_id = ?)
+              AND (? IS NULL OR api_key_id = ?)
+              AND (? IS NULL OR preset_id = ?)
+              AND (? IS NULL OR model = ?)
               AND (? IS NULL OR status_code = ?)
               AND (? IS NULL OR is_cached = ?)
               AND (? IS NULL OR error_code = ?)
@@ -1985,6 +2109,12 @@ impl McpStore {
             ORDER BY COUNT(*) DESC;
             "#,
         )
+        .bind(user_id.as_deref())
+        .bind(user_id.as_deref())
+        .bind(api_key_id.as_deref())
+        .bind(api_key_id.as_deref())
+        .bind(preset_id.as_deref())
+        .bind(preset_id.as_deref())
         .bind(model.as_deref())
         .bind(model.as_deref())
         .bind(status_code)

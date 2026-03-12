@@ -780,12 +780,15 @@ const GatewayLogItemSchema = z.object({
   trace_id: z.string().nullable().optional(),
   user_id: z.string().nullable().optional(),
   api_key_id: z.string().nullable().optional(),
+  preset_id: z.string().nullable().optional(),
   model: z.string(),
   status_code: z.number().int(),
   duration_ms: z.number().int().nonnegative(),
   ttft_ms: z.number().int().nullable().optional(),
   input_tokens: z.number().int().nonnegative().default(0),
   output_tokens: z.number().int().nonnegative().default(0),
+  total_tokens: z.number().int().nonnegative().default(0),
+  cost_upstream: z.number().default(0),
   cost_user: z.number().default(0),
   is_cached: z.boolean().default(false),
   error_code: z.string().nullable().optional(),
@@ -798,6 +801,9 @@ export type GatewayLogItem = z.infer<typeof GatewayLogItemSchema>
 type GatewayLogFilterParams = {
   start_time?: string
   end_time?: string
+  user_id?: string
+  api_key_id?: string
+  preset_id?: string
   model?: string
   status_code?: number
   is_cached?: boolean
@@ -815,6 +821,9 @@ export async function fetchAdminGatewayLogs(params?: GatewayLogFilterParams & {
         limit: params?.limit ?? 100,
         start_time: params?.start_time,
         end_time: params?.end_time,
+        user_id: params?.user_id,
+        api_key_id: params?.api_key_id,
+        preset_id: params?.preset_id,
         model: params?.model,
         status_code: params?.status_code,
         is_cached: params?.is_cached,
@@ -832,6 +841,9 @@ export async function fetchAdminGatewayLogs(params?: GatewayLogFilterParams & {
       limit: params?.limit ?? 100,
       start_time: params?.start_time,
       end_time: params?.end_time,
+      user_id: params?.user_id,
+      api_key_id: params?.api_key_id,
+      preset_id: params?.preset_id,
       model: params?.model,
       status_code: params?.status_code,
       is_cached: params?.is_cached,
@@ -867,6 +879,9 @@ export async function fetchAdminGatewayLogStats(
       query: {
         start_time: params?.start_time,
         end_time: params?.end_time,
+        user_id: params?.user_id,
+        api_key_id: params?.api_key_id,
+        preset_id: params?.preset_id,
         model: params?.model,
         status_code: params?.status_code,
         is_cached: params?.is_cached,
@@ -882,6 +897,9 @@ export async function fetchAdminGatewayLogStats(
     params: {
       start_time: params?.start_time,
       end_time: params?.end_time,
+      user_id: params?.user_id,
+      api_key_id: params?.api_key_id,
+      preset_id: params?.preset_id,
       model: params?.model,
       status_code: params?.status_code,
       is_cached: params?.is_cached,

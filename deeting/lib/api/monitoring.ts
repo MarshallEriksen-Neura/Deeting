@@ -153,6 +153,11 @@ async function fetchLocalMonitoringLogs(
       limit: LOCAL_LOG_PAGE_SIZE,
       start_time: timeBounds.start_time,
       end_time: timeBounds.end_time,
+      api_key_id: params?.apiKey,
+      error_code:
+        params?.errorCode && params.errorCode !== "4xx" && params.errorCode !== "5xx"
+          ? params.errorCode
+          : undefined,
       model: params?.model,
     })
 

@@ -24,6 +24,7 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::mcp::commands::assistant_management_impl::record_local_assistant_routing_feedback,
         crate::modules::mcp::commands::assistant_management_impl::get_local_assistant_routing_report,
         crate::modules::mcp::commands::admin_logs_impl::create_local_trace_feedback,
+        crate::modules::mcp::commands::admin_logs_impl::create_local_gateway_log,
         crate::modules::mcp::commands::admin_logs_impl::list_local_gateway_logs,
         crate::modules::mcp::commands::admin_logs_impl::get_local_gateway_log_stats,
         crate::modules::mcp::commands::knowledge_folders_impl::get_local_knowledge_tree,

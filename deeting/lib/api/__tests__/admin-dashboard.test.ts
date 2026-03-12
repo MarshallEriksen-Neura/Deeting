@@ -75,9 +75,15 @@ describe("admin dashboard api", () => {
       query: {
         skip: 0,
         limit: 100,
+        start_time: undefined,
+        end_time: undefined,
+        user_id: undefined,
+        api_key_id: undefined,
+        preset_id: undefined,
         model: "gpt-4o",
         status_code: undefined,
         is_cached: false,
+        error_code: undefined,
       },
     })
     expect(mockRequest).not.toHaveBeenCalled()
@@ -628,6 +634,7 @@ describe("admin dashboard api", () => {
     const result = await fetchAdminGatewayLogStats({
       start_time: "2026-03-01T00:00:00.000Z",
       end_time: "2026-03-04T00:00:00.000Z",
+      api_key_id: "cred-local-1",
       model: "gpt-4o",
       is_cached: false,
       error_code: "UPSTREAM_ERROR",
@@ -639,6 +646,9 @@ describe("admin dashboard api", () => {
       query: {
         start_time: "2026-03-01T00:00:00.000Z",
         end_time: "2026-03-04T00:00:00.000Z",
+        user_id: undefined,
+        api_key_id: "cred-local-1",
+        preset_id: undefined,
         model: "gpt-4o",
         status_code: undefined,
         is_cached: false,

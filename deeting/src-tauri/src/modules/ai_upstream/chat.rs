@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use crate::modules::ai_upstream::gateway_log_recorder::{
-    extract_error_code_from_response, extract_usage_from_response, record_gateway_log,
-    GatewayLogEntry,
+    calculate_token_cost, extract_billing_amount_from_response, extract_cache_hit_from_response,
+    extract_error_code_from_response, extract_ttft_ms_from_response, extract_usage_from_response,
+    record_gateway_log, GatewayLogEntry,
 };
 use crate::modules::ai_upstream::types::LocalModelConnection;
 use crate::modules::mcp::types::LocalChatInputMessage;
@@ -328,6 +329,7 @@ pub(crate) async fn request_provider_chat_completion(
     )
     .await?;
     let status = response.status;
+    let response_headers = response.headers.clone();
     let latency_ms = call_start.elapsed().as_millis() as f64;
     let raw_text = response.text;
     let raw_json = response.json;
@@ -355,6 +357,8 @@ pub(crate) async fn request_provider_chat_completion(
             app_state.mcp.store.clone(),
             GatewayLogEntry {
                 trace_id: trace_id.map(str::to_string),
+                api_key_id: Some(instance.credentials_ref.clone()).filter(|value| !value.trim().is_empty()),
+                preset_id: Some(instance.preset_slug.clone()).filter(|value| !value.trim().is_empty()),
                 model: effective_model.clone(),
                 status_code: status.as_u16() as i64,
                 duration_ms: latency_ms as i64,
@@ -369,6 +373,13 @@ pub(crate) async fn request_provider_chat_completion(
             raw_text.as_str(),
         ));
     }
+    let raw_ttft_ms = raw_json
+        .as_ref()
+        .and_then(extract_ttft_ms_from_response);
+    let raw_billing_amount = raw_json
+        .as_ref()
+        .and_then(extract_billing_amount_from_response);
+    let raw_cache_hit = extract_cache_hit_from_response(&response_headers, raw_json.as_ref());
     let raw = raw_json.ok_or_else(|| {
         format!(
             "failed to parse upstream json response (status={}): {}",
@@ -385,17 +396,29 @@ pub(crate) async fn request_provider_chat_completion(
     );
     let (input_tokens, output_tokens, total_tokens) =
         extract_usage_from_response(&transformed);
+    let computed_cost =
+        calculate_token_cost(&model.pricing_config, input_tokens, output_tokens).unwrap_or(0.0);
+    let reported_cost = extract_billing_amount_from_response(&transformed)
+        .or(raw_billing_amount)
+        .unwrap_or(computed_cost);
     record_gateway_log(
         app_state.mcp.store.clone(),
         GatewayLogEntry {
             trace_id: trace_id.map(str::to_string),
+            api_key_id: Some(instance.credentials_ref.clone()).filter(|value| !value.trim().is_empty()),
+            preset_id: Some(instance.preset_slug.clone()).filter(|value| !value.trim().is_empty()),
             model: effective_model.clone(),
             status_code: status.as_u16() as i64,
             duration_ms: latency_ms as i64,
+            ttft_ms: extract_ttft_ms_from_response(&transformed).or(raw_ttft_ms),
             upstream_url: Some(prepared.display_url()),
             input_tokens,
             output_tokens,
             total_tokens,
+            cost_upstream: computed_cost,
+            cost_user: reported_cost,
+            is_cached: extract_cache_hit_from_response(&response_headers, Some(&transformed))
+                || raw_cache_hit,
             ..Default::default()
         },
     );

@@ -58,6 +58,8 @@ describe("monitoring api", () => {
           ttft_ms: 60,
           input_tokens: 10,
           output_tokens: 20,
+          total_tokens: 30,
+          cost_upstream: 0.02,
           cost_user: 0.03,
           is_cached: false,
           error_code: null,
@@ -72,6 +74,8 @@ describe("monitoring api", () => {
           ttft_ms: 120,
           input_tokens: 5,
           output_tokens: 5,
+          total_tokens: 10,
+          cost_upstream: 0.008,
           cost_user: 0.01,
           is_cached: false,
           error_code: "429",
@@ -86,6 +90,8 @@ describe("monitoring api", () => {
           ttft_ms: 250,
           input_tokens: 6,
           output_tokens: 4,
+          total_tokens: 10,
+          cost_upstream: 0.015,
           cost_user: 0.02,
           is_cached: true,
           error_code: "UPSTREAM_ERROR",
@@ -116,6 +122,54 @@ describe("monitoring api", () => {
       limit: 500,
       start_time: "2026-03-03T12:00:00.000Z",
       end_time: "2026-03-04T12:00:00.000Z",
+      api_key_id: undefined,
+      error_code: undefined,
+      model: undefined,
+    })
+  })
+
+  it("passes apiKey and exact error filters into local log scan", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockFetchAdminGatewayLogs.mockResolvedValue({
+      total: 1,
+      skip: 0,
+      limit: 500,
+      items: [
+        {
+          id: "log-429",
+          api_key_id: "key-1111",
+          model: "gpt-4o",
+          status_code: 429,
+          duration_ms: 300,
+          ttft_ms: 120,
+          input_tokens: 5,
+          output_tokens: 5,
+          total_tokens: 10,
+          cost_upstream: 0.008,
+          cost_user: 0.01,
+          is_cached: false,
+          error_code: "429",
+          created_at: "2026-03-04T11:10:00.000Z",
+        },
+      ],
+    } as never)
+
+    const ranking = await fetchKeyActivityRanking({
+      timeRange: "24h",
+      apiKey: "key-1111",
+      errorCode: "429",
+      limit: 5,
+    })
+
+    expect(ranking.keys[0]?.id).toBe("key-1111")
+    expect(mockFetchAdminGatewayLogs).toHaveBeenCalledWith({
+      skip: 0,
+      limit: 500,
+      start_time: "2026-03-03T12:00:00.000Z",
+      end_time: "2026-03-04T12:00:00.000Z",
+      api_key_id: "key-1111",
+      error_code: "429",
       model: undefined,
     })
   })

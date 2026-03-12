@@ -25,6 +25,7 @@ pub struct PreparedProviderRequest {
 #[derive(Debug, Clone)]
 pub struct PreparedJsonResponse {
     pub status: reqwest::StatusCode,
+    pub headers: BTreeMap<String, String>,
     pub text: String,
     pub json: Option<Value>,
 }
@@ -186,9 +187,24 @@ pub async fn send_prepared_json_request(
         .await
         .map_err(|err| err.to_string())?;
     let status = response.status();
+    let headers = response
+        .headers()
+        .iter()
+        .filter_map(|(key, value)| {
+            value
+                .to_str()
+                .ok()
+                .map(|text| (key.as_str().to_string(), text.to_string()))
+        })
+        .collect();
     let text = response.text().await.map_err(|err| err.to_string())?;
     let json = serde_json::from_str::<Value>(&text).ok();
-    Ok(PreparedJsonResponse { status, text, json })
+    Ok(PreparedJsonResponse {
+        status,
+        headers,
+        text,
+        json,
+    })
 }
 
 impl PreparedProviderRequest {

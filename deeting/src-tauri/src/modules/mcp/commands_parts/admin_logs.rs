@@ -36,6 +36,9 @@ pub async fn create_local_gateway_log(
         .store
         .create_local_gateway_log(
             payload.trace_id.as_deref(),
+            payload.user_id.as_deref(),
+            payload.api_key_id.as_deref(),
+            payload.preset_id.as_deref(),
             &payload.model,
             payload.status_code,
             payload.duration_ms,
@@ -44,8 +47,8 @@ pub async fn create_local_gateway_log(
             0,
             payload.input_tokens,
             payload.output_tokens,
-            payload.input_tokens.saturating_add(payload.output_tokens),
-            payload.cost_user,
+            payload.total_tokens,
+            payload.cost_upstream,
             payload.cost_user,
             payload.is_cached,
             payload.error_code.as_deref(),

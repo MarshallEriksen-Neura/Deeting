@@ -274,17 +274,25 @@ async function streamViaSse(
         if (parsedMessage?.usage && process.env.NEXT_PUBLIC_IS_TAURI === "true") {
           const usage = parsedMessage.usage
           invokeTauri("create_local_gateway_log", {
-            id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-            trace_id: parsedMessage.trace_id || payload.request_id,
-            model: payload.model,
-            status_code: 200,
-            duration_ms: parsedMessage.duration_ms || 0,
-            ttft_ms: parsedMessage.ttft_ms,
-            input_tokens: usage.prompt_tokens || 0,
-            output_tokens: usage.completion_tokens || 0,
-            total_tokens: usage.total_tokens || 0,
-            cost_user: parsedMessage.billing?.amount || 0,
-            created_at: new Date().toISOString(),
+            payload: {
+              id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+              trace_id: parsedMessage.trace_id || payload.request_id,
+              user_id: null,
+              api_key_id: null,
+              preset_id: null,
+              model: payload.model,
+              status_code: 200,
+              duration_ms: parsedMessage.duration_ms || 0,
+              ttft_ms: parsedMessage.ttft_ms,
+              input_tokens: usage.prompt_tokens || 0,
+              output_tokens: usage.completion_tokens || 0,
+              total_tokens: usage.total_tokens || 0,
+              cost_upstream: parsedMessage.billing?.amount || 0,
+              cost_user: parsedMessage.billing?.amount || 0,
+              is_cached: false,
+              error_code: null,
+              created_at: new Date().toISOString(),
+            },
           }).catch((error) => console.warn("[ChatAPI] Local log backfill failed", error))
         }
 

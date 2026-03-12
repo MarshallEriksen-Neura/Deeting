@@ -10,6 +10,9 @@ export type GatewayLogQuery = {
   size?: number
   start_time?: string
   end_time?: string
+  user_id?: string
+  api_key_id?: string
+  preset_id?: string
   model?: string
   status_code?: number
   is_cached?: boolean
@@ -30,6 +33,9 @@ const buildQueryString = (query: GatewayLogQuery | undefined) => {
   if (query.size) params.set("size", String(query.size))
   if (query.start_time) params.set("start_time", query.start_time)
   if (query.end_time) params.set("end_time", query.end_time)
+  if (query.user_id) params.set("user_id", query.user_id)
+  if (query.api_key_id) params.set("api_key_id", query.api_key_id)
+  if (query.preset_id) params.set("preset_id", query.preset_id)
   if (query.model) params.set("model", query.model)
   if (query.status_code !== undefined) params.set("status_code", String(query.status_code))
   if (query.is_cached !== undefined) params.set("is_cached", String(query.is_cached))
@@ -51,6 +57,9 @@ const toGatewayLogFilterQuery = (query: GatewayLogQuery | undefined): GatewayLog
   return {
     start_time: query.start_time,
     end_time: query.end_time,
+    user_id: query.user_id,
+    api_key_id: query.api_key_id,
+    preset_id: query.preset_id,
     model: query.model,
     status_code: query.status_code,
     is_cached: query.is_cached,
@@ -62,15 +71,15 @@ const toGatewayLogDTO = (item: Awaited<ReturnType<typeof fetchAdminGatewayLogs>>
   ({
     id: item.id,
     user_id: item.user_id ?? null,
-    preset_id: null,
+    preset_id: item.preset_id ?? null,
     model: item.model,
     status_code: item.status_code,
     duration_ms: item.duration_ms,
     ttft_ms: item.ttft_ms ?? null,
     input_tokens: item.input_tokens,
     output_tokens: item.output_tokens,
-    total_tokens: item.input_tokens + item.output_tokens,
-    cost_upstream: item.cost_user,
+    total_tokens: item.total_tokens,
+    cost_upstream: item.cost_upstream,
     cost_user: item.cost_user,
     is_cached: item.is_cached,
     error_code: item.error_code ?? null,

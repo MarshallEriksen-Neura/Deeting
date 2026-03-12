@@ -4,6 +4,7 @@ use super::helpers::{
     truncate_local_document_error_message,
 };
 use super::McpStore;
+use crate::modules::mcp::types::LocalGatewayLogQuery;
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -315,4 +316,92 @@ async fn init_drops_skill_refs_without_retargeting_assistant_install() {
     .execute(&store.pool)
     .await
     .expect("assistant_install should still reference assistant_version");
+}
+
+#[tokio::test]
+async fn gateway_log_queries_filter_by_dimensions_and_stats() {
+    let store = create_test_store("gateway-log-dimensions").await;
+    store.init().await.expect("init store");
+
+    store
+        .create_local_gateway_log(
+            Some("trace-1"),
+            Some("user-a"),
+            Some("cred-a"),
+            Some("preset-a"),
+            "gpt-4o",
+            200,
+            120,
+            Some(60),
+            Some("https://example.com/v1/chat/completions"),
+            0,
+            10,
+            20,
+            30,
+            0.015,
+            0.02,
+            true,
+            None,
+            None,
+        )
+        .await
+        .expect("insert cached success log");
+
+    store
+        .create_local_gateway_log(
+            Some("trace-2"),
+            Some("user-b"),
+            Some("cred-b"),
+            Some("preset-b"),
+            "gpt-4o-mini",
+            429,
+            240,
+            Some(90),
+            Some("https://example.com/v1/chat/completions"),
+            0,
+            4,
+            6,
+            10,
+            0.008,
+            0.01,
+            false,
+            Some("429"),
+            None,
+        )
+        .await
+        .expect("insert rate limit log");
+
+    let filtered = store
+        .list_local_gateway_logs(LocalGatewayLogQuery {
+            api_key_id: Some("cred-a".to_string()),
+            preset_id: Some("preset-a".to_string()),
+            is_cached: Some(true),
+            ..Default::default()
+        })
+        .await
+        .expect("list filtered logs");
+
+    assert_eq!(filtered.total, 1);
+    assert_eq!(filtered.items.len(), 1);
+    assert_eq!(filtered.items[0].user_id.as_deref(), Some("user-a"));
+    assert_eq!(filtered.items[0].api_key_id.as_deref(), Some("cred-a"));
+    assert_eq!(filtered.items[0].preset_id.as_deref(), Some("preset-a"));
+    assert_eq!(filtered.items[0].total_tokens, 30);
+    assert_eq!(filtered.items[0].cost_upstream, 0.015);
+
+    let stats = store
+        .get_local_gateway_log_stats(LocalGatewayLogQuery {
+            api_key_id: Some("cred-b".to_string()),
+            error_code: Some("429".to_string()),
+            ..Default::default()
+        })
+        .await
+        .expect("stats for filtered logs");
+
+    assert_eq!(stats.total, 1);
+    assert_eq!(stats.success_rate, 0.0);
+    assert_eq!(stats.cache_hit_rate, 0.0);
+    assert_eq!(stats.avg_duration_ms, 240);
+    assert_eq!(stats.total_cost_user, 0.01);
+    assert_eq!(stats.error_distribution[0].key, "429");
 }

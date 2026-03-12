@@ -23,12 +23,15 @@ describe("fetchGatewayLogsForQuery", () => {
         {
           id: "log-local-1",
           user_id: "user-1",
+          preset_id: "preset-1",
           model: "gpt-4o",
           status_code: 200,
           duration_ms: 120,
           ttft_ms: 60,
           input_tokens: 10,
           output_tokens: 20,
+          total_tokens: 30,
+          cost_upstream: 0.015,
           cost_user: 0.02,
           is_cached: true,
           error_code: null,
@@ -43,6 +46,8 @@ describe("fetchGatewayLogsForQuery", () => {
           ttft_ms: null,
           input_tokens: 5,
           output_tokens: 5,
+          total_tokens: 10,
+          cost_upstream: 0.008,
           cost_user: 0.01,
           is_cached: false,
           error_code: "UPSTREAM_ERROR",
@@ -55,7 +60,8 @@ describe("fetchGatewayLogsForQuery", () => {
 
     expect(result.items).toHaveLength(2)
     expect(result.items[0]?.total_tokens).toBe(30)
-    expect(result.items[0]?.cost_upstream).toBe(0.02)
+    expect(result.items[0]?.cost_upstream).toBe(0.015)
+    expect(result.items[0]?.preset_id).toBe("preset-1")
     expect(result.previous_page).toBeNull()
     expect(result.next_page).toBe("2")
     expect(mockFetchAdminGatewayLogs).toHaveBeenCalledWith({
@@ -63,6 +69,9 @@ describe("fetchGatewayLogsForQuery", () => {
       limit: 2,
       start_time: undefined,
       end_time: undefined,
+      user_id: undefined,
+      api_key_id: undefined,
+      preset_id: undefined,
       model: undefined,
       status_code: undefined,
       is_cached: undefined,
@@ -85,6 +94,8 @@ describe("fetchGatewayLogsForQuery", () => {
           ttft_ms: 100,
           input_tokens: 2,
           output_tokens: 2,
+          total_tokens: 4,
+          cost_upstream: 0.001,
           cost_user: 0.002,
           is_cached: false,
           error_code: "E500",
@@ -94,6 +105,7 @@ describe("fetchGatewayLogsForQuery", () => {
     } as never)
 
     const result = await fetchGatewayLogsForQuery({
+      api_key_id: "cred-local-1",
       error_code: "E500",
       start_time: "2026-03-04T10:30:00.000Z",
       end_time: "2026-03-04T11:30:00.000Z",
@@ -106,6 +118,9 @@ describe("fetchGatewayLogsForQuery", () => {
       limit: 20,
       start_time: "2026-03-04T10:30:00.000Z",
       end_time: "2026-03-04T11:30:00.000Z",
+      user_id: undefined,
+      api_key_id: "cred-local-1",
+      preset_id: undefined,
       model: undefined,
       status_code: undefined,
       is_cached: undefined,

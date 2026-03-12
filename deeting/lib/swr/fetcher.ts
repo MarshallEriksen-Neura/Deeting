@@ -40,8 +40,9 @@ export const defaultSWRConfig: SWRConfiguration = {
     return true
   },
   errorRetryCount: 2,
-  revalidateOnFocus: true,
-  dedupingInterval: 2000,
+  revalidateOnFocus: false,
+  dedupingInterval: 10000,
+  refreshInterval: 0,
 }
 
 export type SWRResult<T, E = ApiError> = SWRResponse<T, E>
