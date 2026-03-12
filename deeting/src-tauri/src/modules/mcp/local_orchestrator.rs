@@ -1487,31 +1487,6 @@ pub async fn execute_local_orchestrated_chat(
             }
         });
 
-        let fact_app_state = app_state.clone();
-        let fact_memory_service = app_state.memory.service.clone();
-        let fact_session_id = session_id.clone();
-        let fact_capability_id = capability_id.clone();
-        let fact_provider_model_id = provider_model_id.clone();
-        let fact_model_id = model_id.clone();
-        let fact_response_text = response_text.clone();
-        let fact_user_content = input.user_content.clone().unwrap_or_default();
-        tauri::async_runtime::spawn(async move {
-            let conversation = format!(
-                "User: {}\nAssistant: {}",
-                fact_user_content, fact_response_text
-            );
-            crate::modules::memory::fact_extractor::extract_and_store_facts(
-                &fact_app_state,
-                fact_memory_service,
-                &fact_provider_model_id,
-                &fact_model_id,
-                &conversation,
-                &fact_session_id,
-                fact_capability_id.as_deref(),
-            )
-            .await;
-        });
-
         if let Some(variant) = ctx.selected_prompt_variant.clone() {
             let bandit_store = app_state.providers.store.clone();
             let prompt_success = !response_text.trim().is_empty();

@@ -1401,6 +1401,28 @@ impl McpStore {
         Ok(LocalConversationCreateResponse { session_id, title })
     }
 
+    pub async fn find_latest_local_fact_extraction_candidate_session(
+        &self,
+    ) -> Result<Option<String>, McpError> {
+        let row = sqlx::query(
+            r#"
+            SELECT id
+            FROM conversation_session
+            WHERE channel = 'internal'
+              AND status = ?
+              AND message_count > 0
+            ORDER BY COALESCE(last_active_at, updated_at, created_at) DESC
+            LIMIT 1;
+            "#,
+        )
+        .bind(LocalConversationStatus::Active.as_str())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        Ok(row.and_then(|item| item.try_get::<String, _>("id").ok()))
+    }
+
     pub async fn update_local_conversation_status(
         &self,
         session_id: &str,

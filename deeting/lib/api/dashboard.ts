@@ -400,10 +400,32 @@ export async function fetchSmartRouterStats(options?: {
       const code = toFiniteNumber(item.status_code, 0)
       return code === 403 || code === 429
     }).length
+    const directSavings = logs.reduce((sum, item) => {
+      const upstreamCost = Math.max(0, toFiniteNumber(item.cost_upstream, 0))
+      const userCost = Math.max(0, toFiniteNumber(item.cost_user, 0))
+      return sum + Math.max(0, upstreamCost - userCost)
+    }, 0)
+    const cachedCosts = logs
+      .filter((item) => item.is_cached)
+      .map((item) => Math.max(0, toFiniteNumber(item.cost_user, 0)))
+    const uncachedCosts = logs
+      .filter((item) => !item.is_cached)
+      .map((item) => Math.max(0, toFiniteNumber(item.cost_user, 0)))
+      .filter((value) => value > 0)
+    const avgUncachedCost = average(uncachedCosts)
+    const fallbackSavings =
+      avgUncachedCost > 0
+        ? Math.max(
+            0,
+            avgUncachedCost * cachedCosts.length -
+              cachedCosts.reduce((sum, value) => sum + value, 0)
+          )
+        : 0
+    const costSavings = Number((directSavings > 0 ? directSavings : fallbackSavings).toFixed(6))
 
     return SmartRouterStatsSchema.parse({
       cacheHitRate: toFiniteNumber(stats.cache_hit_rate, 0),
-      costSavings: toFiniteNumber(stats.cache_hit_rate, 0),
+      costSavings,
       requestsBlocked: blocked,
       avgSpeedup: Number(speedup.toFixed(2)),
     })

@@ -143,6 +143,7 @@ describe("dashboard apis", () => {
           ttft_ms: 90,
           input_tokens: 120,
           output_tokens: 80,
+          cost_upstream: 0.1,
           cost_user: 0.1,
           is_cached: false,
           error_code: null,
@@ -156,6 +157,7 @@ describe("dashboard apis", () => {
           ttft_ms: 40,
           input_tokens: 80,
           output_tokens: 40,
+          cost_upstream: 0.08,
           cost_user: 0.04,
           is_cached: true,
           error_code: null,
@@ -172,6 +174,7 @@ describe("dashboard apis", () => {
     expect(throughput.timeline).toHaveLength(24)
     expect(throughput.totalInput).toBe(200)
     expect(routerStats.cacheHitRate).toBe(50)
+    expect(routerStats.costSavings).toBe(0.04)
     expect(routerStats.avgSpeedup).toBeGreaterThan(0)
   })
 
