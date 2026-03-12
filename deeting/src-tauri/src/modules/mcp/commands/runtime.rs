@@ -6,10 +6,14 @@ mod capability_registry;
 mod chat_completion;
 mod code_mode_catalog;
 mod code_mode_orchestration;
+mod control_plane;
 mod config;
 mod consult;
 mod core_tool_contracts;
+mod execution_plane;
 mod onboarding;
+mod prompt_assets;
+mod prompt_plan;
 mod remote_transport;
 mod route_selector;
 mod search_ranking;
@@ -32,20 +36,46 @@ pub(crate) use background_workers::{
 pub(crate) use chat_completion::{
     request_provider_chat_completion, resolve_local_model_connection,
 };
+#[cfg(test)]
+pub(crate) use code_mode_catalog::build_local_code_mode_entry_tools;
 pub(crate) use code_mode_catalog::{
-    build_local_code_mode_entry_tools, build_local_sdk_search_result_with_runtime,
+    build_local_code_mode_entry_tools_with_allowlist, build_local_sdk_search_result_with_runtime,
 };
 pub(crate) use code_mode_orchestration::run_local_chat_complete_with_auto_code_mode;
+pub(crate) use control_plane::{
+    build_local_control_plane_result, build_local_control_plane_status_meta,
+    build_default_local_execution_policy, build_local_execution_policy,
+    build_runtime_discovery_bundle_with_runtime, maybe_override_route_with_custom_task_agent,
+    select_worker_custom_task_agent, LocalControlPlaneResult, LocalExecutionPolicy,
+    RuntimeDiscoveryBundle,
+};
+#[cfg(test)]
+pub(crate) use control_plane::select_custom_task_agent_candidate;
 #[cfg(test)]
 pub(crate) use config::apply_config_payload_to_store;
 pub(crate) use config::{apply_config_payload, now_rfc3339, read_local_mcp_config};
 pub(crate) use consult::{
     build_local_consult_expert_network_result, LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
 };
+pub(crate) use execution_plane::{run_local_execution_plane, LocalExecutionRequest};
 pub(crate) use onboarding::install_local_skill_from_onboarding_request;
+#[cfg(test)]
+pub(crate) use prompt_assets::PromptAssets;
+#[cfg(test)]
+pub(crate) use prompt_plan::{
+    build_local_prelude_messages, render_local_base_system_prompt,
+    render_local_router_base_prompt,
+};
+#[cfg(test)]
+pub(crate) use prompt_plan::{
+    parse_router_prompt_local_context, router_prompt_default_local_context,
+    router_prompt_response_language_for_locale_pref,
+};
+#[cfg(test)]
+pub(crate) use route_selector::select_local_route;
 pub(crate) use route_selector::{
-    build_local_route_status_meta, render_local_route_prompt, select_local_route,
-    LocalRouteDecision,
+    build_local_route_status_meta, render_local_route_prompt, select_local_route_with_evidence,
+    LocalRouteDecision, LocalRouteKind,
 };
 pub(crate) use summary_format::build_local_summary_from_window;
 pub(crate) use summary_generation::{

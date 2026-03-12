@@ -8,8 +8,10 @@ import { Button } from "@/components/ui/button";
 import { useI18n } from "@/hooks/use-i18n";
 import { useImageGenerationStore } from "@/store/image-generation-store";
 import { useImageGenerationTasks } from "@/lib/swr/use-image-generation-tasks";
-import { createImageGenerationTask } from "@/lib/api/image-generation";
-import { openApiSSE } from "@/lib/http";
+import {
+  createImageGenerationTask,
+  watchImageGenerationTask,
+} from "@/lib/api/image-generation";
 import { createRequestId } from "@/lib/chat/request-id";
 import { normalizeSessionId } from "@/lib/chat/session-id";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
@@ -18,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { MarkdownViewer } from "@/components/chat/markdown-viewer";
 import { ImageShareAction } from "@/components/image/share/image-share-action";
 import type { ImageGenerationTaskItem } from "@/lib/api/image-generation";
+import { resolveImagePreviewUrl } from "@/lib/image/result-helpers";
 
 type StatusTone = "default" | "secondary" | "destructive" | "outline";
 
@@ -325,7 +328,7 @@ export default function ImageDashboard() {
           request_id: requestId,
           num_outputs: 1,
         });
-        openApiSSE(`/api/v1/internal/images/generations/${newTask.task_id}/events`, {
+        watchImageGenerationTask(newTask.task_id, {
           onMessage: (msg) => {
             const data = msg.data;
             if (data === "[DONE]") {
@@ -365,9 +368,11 @@ export default function ImageDashboard() {
       (a, b) => resolveTaskTimestampValue(a) - resolveTaskTimestampValue(b)
     );
     return sortedTasks.map((task) => {
-      const previewUrl = task.preview?.asset_url ?? task.preview?.source_url ?? null;
-      const statusLabel = statusMeta.labels[task.status] ?? task.status;
-      const statusTone = statusMeta.tones[task.status] ?? "outline";
+      const previewUrl = resolveImagePreviewUrl(task);
+      const statusLabel =
+        statusMeta.labels[task.status as keyof typeof statusMeta.labels] ?? task.status;
+      const statusTone =
+        statusMeta.tones[task.status as keyof typeof statusMeta.tones] ?? "outline";
       const shareEnabled = task.status === "succeeded" && Boolean(previewUrl);
       return {
         id: task.task_id,

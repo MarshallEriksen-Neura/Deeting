@@ -1,4 +1,4 @@
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use crate::state::AppState;
 
@@ -6,6 +6,7 @@ use super::indexing::{
     index_custom_task_agent, index_custom_task_agents, remove_custom_task_agent_index,
 };
 use super::runtime::preview_custom_task_agent as execute_preview_custom_task_agent;
+use super::skill_actions::{list_bindable_skill_actions, validate_callable_skill_action_refs};
 use super::store::{
     create_custom_task_agent as create_custom_task_agent_inner,
     delete_custom_task_agent as delete_custom_task_agent_inner,
@@ -14,9 +15,10 @@ use super::store::{
     update_custom_task_agent as update_custom_task_agent_inner,
 };
 use super::types::{
-    CreateCustomTaskAgentRequest, CustomTaskAgentBindingCatalogResponse,
-    CustomTaskAgentBindableSkill, CustomTaskAgentBindableTool, CustomTaskAgentPreviewRequest,
-    CustomTaskAgentPreviewResponse, CustomTaskAgentProfile, UpdateCustomTaskAgentRequest,
+    CreateCustomTaskAgentRequest, CustomTaskAgentBindableGuidanceSkill,
+    CustomTaskAgentBindableMcpTool, CustomTaskAgentBindingCatalogResponse,
+    CustomTaskAgentPreviewRequest, CustomTaskAgentPreviewResponse, CustomTaskAgentProfile,
+    UpdateCustomTaskAgentRequest,
 };
 
 #[tauri::command]
@@ -43,39 +45,45 @@ pub async fn get_custom_task_agent(
 pub async fn get_custom_task_agent_binding_catalog(
     state: State<'_, AppState>,
 ) -> Result<CustomTaskAgentBindingCatalogResponse, String> {
-    let mut tools = state
+    let mut mcp_tools = state
         .mcp
         .store
         .list_tools()
         .await
         .map_err(|err| err.to_string())?
         .into_iter()
-        .map(|tool| CustomTaskAgentBindableTool {
+        .map(|tool| CustomTaskAgentBindableMcpTool {
             id: tool.id,
             name: tool.name,
             description: tool.description,
             status: tool.status.as_str().to_string(),
         })
         .collect::<Vec<_>>();
-    tools.sort_by(|left, right| left.name.cmp(&right.name));
+    mcp_tools.sort_by(|left, right| left.name.cmp(&right.name));
 
-    let mut skills = state
+    let mut guidance_skills = state
         .mcp
         .store
         .list_local_skill_installs()
         .await
         .map_err(|err| err.to_string())?
         .into_iter()
-        .map(|skill| CustomTaskAgentBindableSkill {
+        .map(|skill| CustomTaskAgentBindableGuidanceSkill {
             skill_id: skill.skill_id,
             installed_version: skill.installed_version,
             is_enabled: skill.is_enabled,
             runtime: skill.runtime,
         })
         .collect::<Vec<_>>();
-    skills.sort_by(|left, right| left.skill_id.cmp(&right.skill_id));
+    guidance_skills.sort_by(|left, right| left.skill_id.cmp(&right.skill_id));
 
-    Ok(CustomTaskAgentBindingCatalogResponse { tools, skills })
+    let skill_actions = list_bindable_skill_actions(state.inner()).await?;
+
+    Ok(CustomTaskAgentBindingCatalogResponse {
+        mcp_tools,
+        guidance_skills,
+        skill_actions,
+    })
 }
 
 #[tauri::command]
@@ -119,6 +127,7 @@ pub async fn delete_custom_task_agent(
 
 #[tauri::command]
 pub async fn preview_custom_task_agent(
+    app: AppHandle,
     state: State<'_, AppState>,
     agent_id: String,
     payload: CustomTaskAgentPreviewRequest,
@@ -127,7 +136,7 @@ pub async fn preview_custom_task_agent(
         .await
         .map_err(|err| err.to_string())?
         .ok_or_else(|| "custom task agent not found".to_string())?;
-    execute_preview_custom_task_agent(state.inner(), &profile, payload).await
+    execute_preview_custom_task_agent(&app, state.inner(), &profile, payload).await
 }
 
 #[tauri::command]
@@ -154,8 +163,12 @@ async fn validate_create_payload(
     app_state: &AppState,
     mut payload: CreateCustomTaskAgentRequest,
 ) -> Result<CreateCustomTaskAgentRequest, String> {
-    payload.bound_tool_ids = validate_bound_tool_ids(app_state, &payload.bound_tool_ids).await?;
-    payload.bound_skill_ids = validate_bound_skill_ids(app_state, &payload.bound_skill_ids).await?;
+    payload.callable_mcp_tool_ids =
+        validate_callable_mcp_tool_ids(app_state, &payload.callable_mcp_tool_ids).await?;
+    payload.guidance_skill_ids =
+        validate_guidance_skill_ids(app_state, &payload.guidance_skill_ids).await?;
+    payload.callable_skill_action_refs =
+        validate_callable_skill_action_refs(app_state, &payload.callable_skill_action_refs).await?;
     Ok(payload)
 }
 
@@ -163,22 +176,28 @@ async fn validate_update_payload(
     app_state: &AppState,
     mut payload: UpdateCustomTaskAgentRequest,
 ) -> Result<UpdateCustomTaskAgentRequest, String> {
-    if let Some(bound_tool_ids) = payload.bound_tool_ids.as_ref() {
-        payload.bound_tool_ids = Some(validate_bound_tool_ids(app_state, bound_tool_ids).await?);
+    if let Some(callable_mcp_tool_ids) = payload.callable_mcp_tool_ids.as_ref() {
+        payload.callable_mcp_tool_ids =
+            Some(validate_callable_mcp_tool_ids(app_state, callable_mcp_tool_ids).await?);
     }
-    if let Some(bound_skill_ids) = payload.bound_skill_ids.as_ref() {
-        payload.bound_skill_ids = Some(validate_bound_skill_ids(app_state, bound_skill_ids).await?);
+    if let Some(guidance_skill_ids) = payload.guidance_skill_ids.as_ref() {
+        payload.guidance_skill_ids =
+            Some(validate_guidance_skill_ids(app_state, guidance_skill_ids).await?);
+    }
+    if let Some(callable_skill_action_refs) = payload.callable_skill_action_refs.as_ref() {
+        payload.callable_skill_action_refs =
+            Some(validate_callable_skill_action_refs(app_state, callable_skill_action_refs).await?);
     }
     Ok(payload)
 }
 
-async fn validate_bound_tool_ids(
+async fn validate_callable_mcp_tool_ids(
     app_state: &AppState,
-    bound_tool_ids: &[String],
+    callable_mcp_tool_ids: &[String],
 ) -> Result<Vec<String>, String> {
     let mut normalized = Vec::new();
     let mut seen = std::collections::HashSet::new();
-    for tool_id in bound_tool_ids {
+    for tool_id in callable_mcp_tool_ids {
         let trimmed = tool_id.trim();
         if trimmed.is_empty() || !seen.insert(trimmed.to_string()) {
             continue;
@@ -195,9 +214,9 @@ async fn validate_bound_tool_ids(
     Ok(normalized)
 }
 
-async fn validate_bound_skill_ids(
+async fn validate_guidance_skill_ids(
     app_state: &AppState,
-    bound_skill_ids: &[String],
+    guidance_skill_ids: &[String],
 ) -> Result<Vec<String>, String> {
     let installs = app_state
         .mcp
@@ -211,7 +230,7 @@ async fn validate_bound_skill_ids(
         .collect::<std::collections::HashSet<_>>();
     let mut normalized = Vec::new();
     let mut seen = std::collections::HashSet::new();
-    for skill_id in bound_skill_ids {
+    for skill_id in guidance_skill_ids {
         let trimmed = skill_id.trim();
         if trimmed.is_empty() || !seen.insert(trimmed.to_string()) {
             continue;

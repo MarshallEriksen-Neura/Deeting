@@ -1,6 +1,13 @@
 import { z } from "zod"
 
+import { isTauriRuntime } from "@/lib/api/desktop-config"
 import { request } from "@/lib/http"
+import { openApiSSE } from "@/lib/http"
+
+async function invokeTauri<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  const { invoke } = await import("@tauri-apps/api/core")
+  return invoke<T>(command, args)
+}
 
 const INTERNAL_IMAGE_BASE = "/api/v1/internal/images/generations"
 const PUBLIC_IMAGE_SHARE_BASE = "/api/v1/public/images/shares"
@@ -179,6 +186,12 @@ export type ImageShareDetail = z.infer<typeof ImageShareDetailSchema>
 export async function createImageGenerationTask(
   payload: ImageGenerationTaskCreateRequest
 ): Promise<ImageGenerationTaskCreateResponse> {
+  if (isTauriRuntime()) {
+    const data = await invokeTauri<unknown>("create_local_image_generation_task", {
+      payload,
+    })
+    return ImageGenerationTaskCreateResponseSchema.parse(data)
+  }
   const data = await request({
     url: INTERNAL_IMAGE_BASE,
     method: "POST",
@@ -191,6 +204,12 @@ export async function fetchImageGenerationTask(
   taskId: string,
   includeOutputs = true
 ): Promise<ImageGenerationTaskDetail> {
+  if (isTauriRuntime()) {
+    const data = await invokeTauri<unknown>("get_local_image_generation_task", {
+      task_id: taskId,
+    })
+    return ImageGenerationTaskDetailSchema.parse(data)
+  }
   const data = await request({
     url: `${INTERNAL_IMAGE_BASE}/${taskId}`,
     method: "GET",
@@ -202,6 +221,12 @@ export async function fetchImageGenerationTask(
 export async function fetchImageGenerationTasks(
   query: ImageGenerationTasksQuery
 ): Promise<ImageGenerationTaskPage> {
+  if (isTauriRuntime()) {
+    const data = await invokeTauri<unknown>("list_local_image_generation_tasks", {
+      query,
+    })
+    return ImageGenerationTaskPageSchema.parse(data)
+  }
   const data = await request({
     url: INTERNAL_IMAGE_BASE,
     method: "GET",
@@ -213,11 +238,66 @@ export async function fetchImageGenerationTasks(
 export async function cancelImageGenerationTask(
   requestId: string
 ): Promise<ImageGenerationCancelResponse> {
+  if (isTauriRuntime()) {
+    const data = await invokeTauri<unknown>("cancel_local_image_generation_task", {
+      request_id: requestId,
+    })
+    return ImageGenerationCancelResponseSchema.parse(data)
+  }
   const data = await request({
     url: `${INTERNAL_IMAGE_BASE}/${requestId}/cancel`,
     method: "POST",
   })
   return ImageGenerationCancelResponseSchema.parse(data)
+}
+
+export function watchImageGenerationTask(
+  taskId: string,
+  handlers: {
+    onMessage: (event: { data: unknown }) => void
+    onError?: () => void
+  }
+): () => void {
+  if (!isTauriRuntime()) {
+    return openApiSSE(`/api/v1/internal/images/generations/${taskId}/events`, handlers)
+  }
+
+  let stopped = false
+  let timer: ReturnType<typeof setTimeout> | null = null
+
+  const run = async () => {
+    if (stopped) return
+    try {
+      const detail = await fetchImageGenerationTask(taskId, true)
+      handlers.onMessage({
+        data: {
+          type: "status",
+          task_id: detail.task_id,
+          status: detail.status,
+          updated_at: detail.updated_at,
+          error_code: detail.error_code ?? null,
+          error_message: detail.error_message ?? null,
+          outputs: detail.outputs ?? [],
+        },
+      })
+
+      if (["succeeded", "failed", "canceled"].includes(detail.status)) {
+        handlers.onMessage({ data: "[DONE]" })
+        return
+      }
+
+      timer = setTimeout(run, 1000)
+    } catch {
+      handlers.onError?.()
+    }
+  }
+
+  void run()
+
+  return () => {
+    stopped = true
+    if (timer) clearTimeout(timer)
+  }
 }
 
 export async function shareImageGenerationTask(

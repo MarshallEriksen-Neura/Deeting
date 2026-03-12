@@ -17,6 +17,7 @@ import {
 import { Link } from "@/i18n/routing";
 import { usePathname } from "next/navigation";
 import { useI18n } from "@/hooks/use-i18n";
+import { prepareDesktopObjectStorageRead } from "@/lib/api/desktop-object-storage";
 import { GlassButton } from "@/components/ui/glass-button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { GlassCard } from "@/components/ui/glass-card";
@@ -27,6 +28,7 @@ import { Slider } from "@/components/ui/slider";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
+import { useLazyImage } from "@/hooks/use-lazy-image";
 
 interface FloatingConsoleProps {
   prompt: string;
@@ -343,10 +345,9 @@ export const FloatingConsole = React.memo<FloatingConsoleProps>(function Floatin
                           className="relative size-10 rounded-2xl overflow-hidden ring-1 ring-white/40 hover:ring-primary/40"
                           aria-label={t("image.console.selectHistory")}
                         >
-                          <img
+                          <RecentImageThumb
                             src={item.url}
                             alt={t("image.console.historyAlt")}
-                            className="size-full object-cover"
                           />
                         </GlassButton>
                       </motion.div>
@@ -671,3 +672,86 @@ export const FloatingConsole = React.memo<FloatingConsoleProps>(function Floatin
     </motion.div>
   );
 });
+
+const RecentImageThumb = React.memo<{
+  src: string
+  alt: string
+}>(({ src, alt }) => {
+  const [resolvedSrc, setResolvedSrc] = React.useState(src)
+
+  React.useEffect(() => {
+    let cancelled = false
+    const resolveSrc = async () => {
+      const trimmed = src.trim()
+      if (!trimmed) {
+        if (!cancelled) setResolvedSrc("")
+        return
+      }
+      if (trimmed.startsWith("local-asset://")) {
+        const sha256 = trimmed.slice("local-asset://".length).replace(/^\/+/, "")
+        if (!sha256) {
+          if (!cancelled) setResolvedSrc("")
+          return
+        }
+        try {
+          const { invoke } = await import("@tauri-apps/api/core")
+          const result = await invoke<{ data_url: string }>("read_local_chat_asset", {
+            payload: { sha256, content_type: "image/png" },
+          })
+          if (!cancelled) setResolvedSrc(result.data_url)
+          return
+        } catch {
+          if (!cancelled) setResolvedSrc("")
+          return
+        }
+      }
+      if (trimmed.startsWith("asset://")) {
+        const objectKey = trimmed.slice("asset://".length).replace(/^\/+/, "")
+        try {
+          const ticket = await prepareDesktopObjectStorageRead({
+            object_key: objectKey,
+            expires_seconds: 900,
+          })
+          if (!cancelled) setResolvedSrc(ticket.asset_url)
+          return
+        } catch {
+          if (!cancelled) setResolvedSrc("")
+          return
+        }
+      }
+      if (!cancelled) setResolvedSrc(trimmed)
+    }
+
+    void resolveSrc()
+    return () => {
+      cancelled = true
+    }
+  }, [src])
+
+  const { imageSrc, isLoading, error, imgRef } = useLazyImage({
+    src: resolvedSrc,
+    rootMargin: "20px",
+    threshold: 0.01,
+  })
+
+  return (
+    <>
+      <img
+        ref={imgRef}
+        src={imageSrc ?? undefined}
+        alt={alt}
+        className={cn(
+          "size-full object-cover transition-opacity",
+          (isLoading || !imageSrc || error) && "opacity-0",
+        )}
+      />
+      {(!imageSrc || isLoading || error) ? (
+        <div className="absolute inset-0 flex items-center justify-center bg-slate-100/80 dark:bg-white/5">
+          <ImageIcon className="h-4 w-4 text-slate-400 dark:text-white/30" />
+        </div>
+      ) : null}
+    </>
+  )
+})
+
+RecentImageThumb.displayName = "RecentImageThumb"

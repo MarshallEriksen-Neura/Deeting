@@ -1062,6 +1062,7 @@ mod tests {
             template_engine: "openai_compat".to_string(),
             response_decoder: "openai_responses".to_string(),
             response_transform: json!({}),
+            async_config: json!({}),
         };
 
         let normalized = normalize_provider_test_response(

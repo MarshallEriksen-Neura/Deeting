@@ -147,6 +147,11 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::memory::commands::rollback_memory,
         crate::modules::memory::commands::search_knowledge_semantic,
         crate::modules::memory::commands::search_unified,
+        // Local Image Generation Commands
+        crate::modules::image_generation::commands::create_local_image_generation_task,
+        crate::modules::image_generation::commands::get_local_image_generation_task,
+        crate::modules::image_generation::commands::list_local_image_generation_tasks,
+        crate::modules::image_generation::commands::cancel_local_image_generation_task,
         // Local Code Mode Commands
         crate::modules::code_mode::commands::get_local_code_mode_bridge_status,
         crate::modules::code_mode::commands::execute_local_code_mode,

@@ -2,11 +2,11 @@ import * as React from "react"
 import useSWRInfinite from "swr/infinite"
 
 import type { ApiError } from "@/lib/http"
-import { swrFetcher, type SWRResult } from "@/lib/swr/fetcher"
 import type { CursorPage } from "@/types/pagination"
-import type {
-  ImageGenerationTaskItem,
-  ImageGenerationTasksQuery,
+import {
+  fetchImageGenerationTasks,
+  type ImageGenerationTaskItem,
+  type ImageGenerationTasksQuery,
 } from "@/lib/api/image-generation"
 
 type ImageGenerationTasksState = {
@@ -17,8 +17,21 @@ type ImageGenerationTasksState = {
   error?: ApiError
   loadMore: () => void
   reset: () => void
-  mutate: SWRResult<CursorPage<ImageGenerationTaskItem>>["mutate"]
+  mutate: () => Promise<unknown>
 }
+
+type ImageGenerationTasksKey = readonly [
+  string,
+  {
+    params: {
+      cursor: string | null
+      size: number
+      status?: string
+      include_outputs?: boolean
+      session_id?: string
+    }
+  },
+]
 
 export function useImageGenerationTasks(
   query: ImageGenerationTasksQuery = {},
@@ -62,6 +75,11 @@ export function useImageGenerationTasks(
     ]
   )
 
+  const fetchPage = React.useCallback(
+    (key: ImageGenerationTasksKey) => fetchImageGenerationTasks(key[1].params),
+    []
+  )
+
   const {
     data,
     error,
@@ -69,9 +87,13 @@ export function useImageGenerationTasks(
     size,
     setSize,
     mutate,
-  } = useSWRInfinite<CursorPage<ImageGenerationTaskItem>, ApiError>(getKey, swrFetcher, {
-    revalidateOnFocus: false,
-  })
+  } = useSWRInfinite<CursorPage<ImageGenerationTaskItem>, ApiError>(
+    getKey as any,
+    fetchPage as any,
+    {
+      revalidateOnFocus: false,
+    }
+  )
 
   const items = React.useMemo(() => {
     if (!data) return []
@@ -104,6 +126,6 @@ export function useImageGenerationTasks(
     error,
     loadMore,
     reset,
-    mutate,
+    mutate: () => mutate(),
   }
 }

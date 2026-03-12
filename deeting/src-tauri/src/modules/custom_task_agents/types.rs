@@ -23,6 +23,12 @@ impl CustomTaskAgentInvocationKind {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct CustomTaskAgentSkillActionRef {
+    pub skill_id: String,
+    pub action_id: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomTaskAgentProfile {
     pub id: String,
@@ -30,9 +36,11 @@ pub struct CustomTaskAgentProfile {
     pub description: Option<String>,
     pub task_prompt: String,
     pub invocation_kind: CustomTaskAgentInvocationKind,
+    pub preferred_for_image_generation: bool,
     pub model_config: Option<Value>,
-    pub bound_tool_ids: Vec<String>,
-    pub bound_skill_ids: Vec<String>,
+    pub callable_mcp_tool_ids: Vec<String>,
+    pub guidance_skill_ids: Vec<String>,
+    pub callable_skill_action_refs: Vec<CustomTaskAgentSkillActionRef>,
     pub tags: Vec<String>,
     pub discoverable: bool,
     pub is_enabled: bool,
@@ -47,11 +55,14 @@ pub struct CreateCustomTaskAgentRequest {
     pub description: Option<String>,
     pub task_prompt: String,
     pub invocation_kind: Option<CustomTaskAgentInvocationKind>,
+    pub preferred_for_image_generation: Option<bool>,
     pub model_config: Option<Value>,
+    #[serde(default, alias = "bound_tool_ids")]
+    pub callable_mcp_tool_ids: Vec<String>,
+    #[serde(default, alias = "bound_skill_ids")]
+    pub guidance_skill_ids: Vec<String>,
     #[serde(default)]
-    pub bound_tool_ids: Vec<String>,
-    #[serde(default)]
-    pub bound_skill_ids: Vec<String>,
+    pub callable_skill_action_refs: Vec<CustomTaskAgentSkillActionRef>,
     pub tags: Option<Vec<String>>,
     pub discoverable: Option<bool>,
     pub is_enabled: Option<bool>,
@@ -63,9 +74,13 @@ pub struct UpdateCustomTaskAgentRequest {
     pub description: Option<String>,
     pub task_prompt: Option<String>,
     pub invocation_kind: Option<CustomTaskAgentInvocationKind>,
+    pub preferred_for_image_generation: Option<bool>,
     pub model_config: Option<Value>,
-    pub bound_tool_ids: Option<Vec<String>>,
-    pub bound_skill_ids: Option<Vec<String>>,
+    #[serde(alias = "bound_tool_ids")]
+    pub callable_mcp_tool_ids: Option<Vec<String>>,
+    #[serde(alias = "bound_skill_ids")]
+    pub guidance_skill_ids: Option<Vec<String>>,
+    pub callable_skill_action_refs: Option<Vec<CustomTaskAgentSkillActionRef>>,
     pub tags: Option<Vec<String>>,
     pub discoverable: Option<bool>,
     pub is_enabled: Option<bool>,
@@ -93,9 +108,11 @@ pub struct CustomTaskAgentPreviewResponse {
     #[serde(default)]
     pub tool_trace: Vec<Value>,
     #[serde(default)]
-    pub bound_tool_ids: Vec<String>,
+    pub callable_mcp_tool_ids: Vec<String>,
     #[serde(default)]
-    pub bound_skill_ids: Vec<String>,
+    pub guidance_skill_ids: Vec<String>,
+    #[serde(default)]
+    pub callable_skill_action_refs: Vec<CustomTaskAgentSkillActionRef>,
     #[serde(default)]
     pub images: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -103,7 +120,7 @@ pub struct CustomTaskAgentPreviewResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CustomTaskAgentBindableTool {
+pub struct CustomTaskAgentBindableMcpTool {
     pub id: String,
     pub name: String,
     pub description: String,
@@ -111,7 +128,7 @@ pub struct CustomTaskAgentBindableTool {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CustomTaskAgentBindableSkill {
+pub struct CustomTaskAgentBindableGuidanceSkill {
     pub skill_id: String,
     pub installed_version: Option<String>,
     pub is_enabled: bool,
@@ -119,9 +136,23 @@ pub struct CustomTaskAgentBindableSkill {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomTaskAgentBindableSkillAction {
+    pub skill_id: String,
+    pub action_id: String,
+    pub callable_name: String,
+    pub description: String,
+    pub runtime: String,
+    pub entry_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_schema: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomTaskAgentBindingCatalogResponse {
     #[serde(default)]
-    pub tools: Vec<CustomTaskAgentBindableTool>,
+    pub mcp_tools: Vec<CustomTaskAgentBindableMcpTool>,
     #[serde(default)]
-    pub skills: Vec<CustomTaskAgentBindableSkill>,
+    pub guidance_skills: Vec<CustomTaskAgentBindableGuidanceSkill>,
+    #[serde(default)]
+    pub skill_actions: Vec<CustomTaskAgentBindableSkillAction>,
 }

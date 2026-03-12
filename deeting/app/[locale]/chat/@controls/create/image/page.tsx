@@ -4,13 +4,17 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useI18n } from "@/hooks/use-i18n";
 import { useChatService } from "@/hooks/use-chat-service";
-import { cancelImageGenerationTask, createImageGenerationTask } from "@/lib/api/image-generation";
-import { openApiSSE } from "@/lib/http";
+import {
+  cancelImageGenerationTask,
+  createImageGenerationTask,
+  watchImageGenerationTask,
+} from "@/lib/api/image-generation";
 import { useImageGenerationStore } from "@/store/image-generation-store";
 import { useImageGenerationTasks } from "@/lib/swr/use-image-generation-tasks";
 import { FloatingConsole } from "@/components/chat/console/floating-console";
 import { createRequestId } from "@/lib/chat/request-id";
 import { createSessionId, normalizeSessionId } from "@/lib/chat/session-id";
+import { resolveImagePreviewUrl } from "@/lib/image/result-helpers";
 
 export default function ImageControlsPage() {
   const t = useI18n("chat");
@@ -94,7 +98,7 @@ export default function ImageControlsPage() {
     }
     return sessionTasks
       .map((task) => {
-        const previewUrl = task.preview?.asset_url ?? task.preview?.source_url ?? null;
+        const previewUrl = resolveImagePreviewUrl(task);
         if (!previewUrl) return null;
         return { url: previewUrl, taskId: task.task_id };
       })
@@ -140,7 +144,7 @@ export default function ImageControlsPage() {
 
       mutateSessionTasks();
       activeTaskIdRef.current = task.task_id;
-      stopRef.current = openApiSSE(`/api/v1/internal/images/generations/${task.task_id}/events`, {
+      stopRef.current = watchImageGenerationTask(task.task_id, {
         onMessage: (msg) => {
           const data = msg.data;
           if (data === "[DONE]") {

@@ -40,6 +40,7 @@
     "badges": {
       "chat": "对话",
       "imageGeneration": "图片",
+      "imagePreferred": "图片优先",
       "enabled": "已启用",
       "disabled": "已停用",
       "discoverable": "可发现",
@@ -69,6 +70,7 @@
         "description": "描述",
         "taskPrompt": "任务提示词",
         "invocationKind": "调用类型",
+        "preferredForImageGeneration": "图片生成优先",
         "model": "模型",
         "providerModelId": "Provider Model ID",
         "modelConfigJson": "高级模型配置 JSON",
@@ -93,7 +95,12 @@
       },
       "toggles": {
         "discoverable": "允许该智能体进入本地索引，并被本地发现流程命中。",
-        "enabled": "停用后，该智能体不会参与预览或执行。"
+        "enabled": "停用后，该智能体不会参与预览或执行。",
+        "preferredForImageGeneration": "仅对图片类型智能体生效。开启后，worker 分支会优先把图片请求分发给该智能体。"
+      },
+      "values": {
+        "preferredForImageGenerationOn": "优先",
+        "preferredForImageGenerationOff": "普通"
       }
     },
     "bindings": {

@@ -28,9 +28,11 @@ pub(crate) async fn index_custom_task_agent(
             vector,
             Some(json!({
                 "invocation_kind": profile.invocation_kind.as_str(),
+                "preferred_for_image_generation": profile.preferred_for_image_generation,
                 "model_config": profile.model_config.clone(),
-                "bound_tool_ids": profile.bound_tool_ids.clone(),
-                "bound_skill_ids": profile.bound_skill_ids.clone(),
+                "callable_mcp_tool_ids": profile.callable_mcp_tool_ids.clone(),
+                "guidance_skill_ids": profile.guidance_skill_ids.clone(),
+                "callable_skill_action_refs": profile.callable_skill_action_refs.clone(),
                 "tags": profile.tags.clone(),
                 "discoverable": profile.discoverable,
                 "is_enabled": profile.is_enabled,
@@ -72,25 +74,37 @@ fn build_index_text(profile: &CustomTaskAgentProfile) -> String {
     } else {
         profile.tags.join(", ")
     };
-    let tool_ids = if profile.bound_tool_ids.is_empty() {
+    let mcp_tools = if profile.callable_mcp_tool_ids.is_empty() {
         String::new()
     } else {
-        profile.bound_tool_ids.join(", ")
+        profile.callable_mcp_tool_ids.join(", ")
     };
-    let skill_ids = if profile.bound_skill_ids.is_empty() {
+    let guidance_skills = if profile.guidance_skill_ids.is_empty() {
         String::new()
     } else {
-        profile.bound_skill_ids.join(", ")
+        profile.guidance_skill_ids.join(", ")
+    };
+    let skill_actions = if profile.callable_skill_action_refs.is_empty() {
+        String::new()
+    } else {
+        profile
+            .callable_skill_action_refs
+            .iter()
+            .map(|item| format!("{}#{}", item.skill_id, item.action_id))
+            .collect::<Vec<_>>()
+            .join(", ")
     };
     let prompt_excerpt = profile.task_prompt.chars().take(240).collect::<String>();
     format!(
-        "name: {}\ndescription: {}\ninvocation_kind: {}\ntags: {}\nbound_tools: {}\nbound_skills: {}\nprompt_excerpt: {}",
+        "name: {}\ndescription: {}\ninvocation_kind: {}\npreferred_for_image_generation: {}\ntags: {}\ncallable_mcp_tools: {}\nguidance_skills: {}\ncallable_skill_actions: {}\nprompt_excerpt: {}",
         profile.name,
         profile.description.as_deref().unwrap_or(""),
         profile.invocation_kind.as_str(),
+        profile.preferred_for_image_generation,
         tags,
-        tool_ids,
-        skill_ids,
+        mcp_tools,
+        guidance_skills,
+        skill_actions,
         prompt_excerpt,
     )
 }
@@ -99,20 +113,25 @@ fn build_index_text(profile: &CustomTaskAgentProfile) -> String {
 mod tests {
     use super::build_index_text;
     use crate::modules::custom_task_agents::types::{
-        CustomTaskAgentInvocationKind, CustomTaskAgentProfile,
+        CustomTaskAgentInvocationKind, CustomTaskAgentProfile, CustomTaskAgentSkillActionRef,
     };
 
     #[test]
-    fn build_index_text_includes_bound_resources() {
+    fn build_index_text_includes_split_execution_resources() {
         let text = build_index_text(&CustomTaskAgentProfile {
             id: "agent-1".to_string(),
             name: "Image Agent".to_string(),
             description: Some("Creates images".to_string()),
             task_prompt: "Generate image variants".to_string(),
             invocation_kind: CustomTaskAgentInvocationKind::ImageGeneration,
+            preferred_for_image_generation: true,
             model_config: None,
-            bound_tool_ids: vec!["tool.image.generate".to_string()],
-            bound_skill_ids: vec!["skill.prompt-polish".to_string()],
+            callable_mcp_tool_ids: vec!["tool.image.generate".to_string()],
+            guidance_skill_ids: vec!["skill.prompt-polish".to_string()],
+            callable_skill_action_refs: vec![CustomTaskAgentSkillActionRef {
+                skill_id: "official.skills.crawler".to_string(),
+                action_id: "fetch_web_content".to_string(),
+            }],
             tags: vec!["image".to_string()],
             discoverable: true,
             is_enabled: true,
@@ -121,8 +140,9 @@ mod tests {
             updated_at: "2026-03-11T00:00:00Z".to_string(),
         });
 
-        assert!(text.contains("bound_tools: tool.image.generate"));
-        assert!(text.contains("bound_skills: skill.prompt-polish"));
-        assert!(text.contains("invocation_kind: image_generation"));
+        assert!(text.contains("callable_mcp_tools: tool.image.generate"));
+        assert!(text.contains("guidance_skills: skill.prompt-polish"));
+        assert!(text.contains("callable_skill_actions: official.skills.crawler#fetch_web_content"));
+        assert!(text.contains("preferred_for_image_generation: true"));
     }
 }

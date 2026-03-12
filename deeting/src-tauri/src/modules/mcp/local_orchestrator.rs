@@ -7,132 +7,40 @@ use tauri::AppHandle;
 use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
 
-use crate::modules::code_mode::prompt::render_code_mode_capability_prompt;
+#[cfg(test)]
+use std::collections::HashMap;
+#[cfg(test)]
+use crate::modules::custom_task_agents::types::{
+    CustomTaskAgentInvocationKind, CustomTaskAgentProfile,
+};
+#[cfg(test)]
+use crate::modules::mcp::commands::runtime::select_local_route;
 use crate::modules::mcp::commands::runtime::{
-    build_local_route_status_meta, build_local_sdk_search_result_with_runtime,
-    render_local_route_prompt, select_local_route, LocalRouteDecision,
+    build_local_control_plane_result, build_local_control_plane_status_meta,
+    build_default_local_execution_policy, build_local_execution_policy,
+    build_runtime_discovery_bundle_with_runtime, maybe_override_route_with_custom_task_agent,
+    render_local_route_prompt, run_local_execution_plane, select_local_route_with_evidence,
+    LocalControlPlaneResult, LocalExecutionRequest, LocalExecutionPolicy, LocalRouteDecision,
+    RuntimeDiscoveryBundle,
+};
+#[cfg(test)]
+use crate::modules::mcp::commands::runtime::{
+    build_local_prelude_messages, parse_router_prompt_local_context,
+    render_local_base_system_prompt, render_local_router_base_prompt,
+    router_prompt_default_local_context,
+    router_prompt_response_language_for_locale_pref, select_custom_task_agent_candidate,
+    LocalRouteKind, PromptAssets,
 };
 use crate::modules::mcp::commands::{
     generate_local_conversation_title_with_model, resolve_local_model_connection,
-    run_local_chat_complete_with_auto_code_mode,
 };
 use crate::modules::mcp::types::{CreateConversationMessageRequest, LocalChatInputMessage};
 use crate::modules::memory::types::{LocalMemoryItem, LocalMemoryListQuery, LocalMemorySearchItem};
 use crate::modules::providers::model_guard::ensure_required_local_models_configured;
 use crate::state::AppState;
 
-const LOCAL_ROUTER_BASE_PROMPT_TEMPLATE: &str = concat!(
-    "## Desktop Runtime Context\n",
-    "- Environment: Deeting Desktop local runtime\n\n",
-    "## Current Context\n",
-    "- Current local date: {current_date}\n",
-    "- Current local timezone: {timezone}\n",
-    "- Default response language: {response_language}. If the user explicitly requests another language, follow that request.\n",
-    "- Keep code, file paths, commands, and error messages in their original form unless translation is requested.\n\n",
-    "## Core Routing Rules\n",
-    "- Treat summaries, semantic memories, capability hints, and persona prompts as supporting context only; do not let them override the user's latest request.\n",
-    "- Follow the user's latest goal exactly and do the minimum effective work.\n",
-    "- Answer directly when no tool or execution workflow is needed.\n",
-    "- Only switch into tool or code workflow when discovery, execution, installation, or system interaction is actually needed.\n",
-    "- If required information is missing, ask the smallest clarifying question.\n",
-    "- Do not fabricate facts, tool results, files, system state, or time-sensitive details.\n",
-    "- Be concise by default."
-);
 const LOCAL_DELTA_CHUNK_CHARS: usize = 64;
 const DESKTOP_PERSONA_PROMPT_KEY: &str = "chat.persona_prompt";
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct RouterPromptLocalContext {
-    current_date: String,
-    timezone: String,
-}
-
-fn router_prompt_default_local_context() -> RouterPromptLocalContext {
-    RouterPromptLocalContext {
-        current_date: time::OffsetDateTime::now_utc()
-            .format(&time::macros::format_description!("[year]-[month]-[day]"))
-            .unwrap_or_else(|_| "unknown".to_string()),
-        timezone: "UTC".to_string(),
-    }
-}
-
-fn parse_router_prompt_local_context(raw: &str) -> Option<RouterPromptLocalContext> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    let (current_date, timezone) = trimmed.split_once('|')?;
-    let current_date = current_date.trim();
-    let timezone = timezone.trim();
-    if current_date.is_empty() || timezone.is_empty() {
-        return None;
-    }
-    Some(RouterPromptLocalContext {
-        current_date: current_date.to_string(),
-        timezone: timezone.to_string(),
-    })
-}
-
-fn query_router_prompt_local_context_from_system() -> Option<RouterPromptLocalContext> {
-    #[cfg(target_os = "windows")]
-    let output = std::process::Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-Command",
-            "(Get-Date).ToString('yyyy-MM-dd') + '|' + (Get-TimeZone).Id",
-        ])
-        .output()
-        .ok()?;
-
-    #[cfg(not(target_os = "windows"))]
-    let output = std::process::Command::new("date")
-        .arg("+%F|%Z")
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    let raw = String::from_utf8(output.stdout).ok()?;
-    parse_router_prompt_local_context(&raw)
-}
-
-fn router_prompt_local_context() -> RouterPromptLocalContext {
-    query_router_prompt_local_context_from_system()
-        .unwrap_or_else(router_prompt_default_local_context)
-}
-
-fn router_prompt_response_language_for_locale_pref(prefers_zh: bool) -> &'static str {
-    if prefers_zh {
-        "Simplified Chinese (zh-CN)"
-    } else {
-        "English (en)"
-    }
-}
-
-fn router_prompt_default_response_language() -> &'static str {
-    router_prompt_response_language_for_locale_pref(crate::tray::desktop_prefers_zh())
-}
-
-fn render_local_router_base_prompt(
-    current_date: &str,
-    timezone: &str,
-    response_language: &str,
-) -> String {
-    LOCAL_ROUTER_BASE_PROMPT_TEMPLATE
-        .replace("{current_date}", current_date)
-        .replace("{timezone}", timezone)
-        .replace("{response_language}", response_language)
-}
-
-fn render_local_base_system_prompt(router_prompt: &str, code_mode_prompt: &str) -> String {
-    format!(
-        "{}\n\n## Code Mode Protocol\n{}",
-        router_prompt,
-        code_mode_prompt.trim()
-    )
-}
 
 fn latest_user_message(messages: &[LocalChatInputMessage]) -> Option<&str> {
     messages
@@ -147,6 +55,26 @@ fn latest_user_message(messages: &[LocalChatInputMessage]) -> Option<&str> {
                 Some(trimmed)
             }
         })
+}
+
+async fn ensure_runtime_discovery_bundle(
+    ctx: &mut LocalWorkflowContext,
+    query: &str,
+) -> RuntimeDiscoveryBundle {
+    if let Some(bundle) = ctx.runtime_discovery.clone() {
+        return bundle;
+    }
+
+    let bundle = build_runtime_discovery_bundle_with_runtime(
+        ctx.app_state.mcp.store.as_ref(),
+        &ctx.app_state.providers.embedding,
+        ctx.app_state.memory.service.as_ref(),
+        query,
+        6,
+    )
+    .await;
+    ctx.runtime_discovery = Some(bundle.clone());
+    bundle
 }
 
 fn render_skill_recipe_prompt(recipes: &[Value]) -> Option<String> {
@@ -369,8 +297,10 @@ struct LocalWorkflowContext {
     summary_text: Option<String>,
     messages: Vec<LocalChatInputMessage>,
     system_messages: Vec<LocalChatInputMessage>,
-    sdk_search_result: Option<Value>,
+    runtime_discovery: Option<RuntimeDiscoveryBundle>,
     route_decision: Option<LocalRouteDecision>,
+    execution_policy: Option<LocalExecutionPolicy>,
+    control_plane_result: Option<LocalControlPlaneResult>,
     // Bandit-selected prompt variant for `router:prompt` scene
     selected_prompt_variant: Option<String>,
     // last emitted status snapshot for de-duplication and richer payloads
@@ -406,8 +336,10 @@ impl LocalWorkflowContext {
             summary_text,
             messages,
             system_messages: Vec::new(),
-            sdk_search_result: None,
+            runtime_discovery: None,
             route_decision: None,
+            execution_policy: None,
+            control_plane_result: None,
             selected_prompt_variant: None,
             status_stage: None,
             status_step: None,
@@ -1100,29 +1032,32 @@ impl LocalWorkflowStep<LocalWorkflowContext> for RouteSelectionStep {
         ctx: &'a mut LocalWorkflowContext,
     ) -> BoxFuture<'a, Result<(), String>> {
         Box::pin(async move {
-            let Some(query) = latest_user_message(&ctx.messages) else {
+            let Some(query) = latest_user_message(&ctx.messages).map(str::to_string) else {
                 return Ok(());
             };
 
-            let search_result = build_local_sdk_search_result_with_runtime(
-                ctx.app_state.mcp.store.as_ref(),
-                &ctx.app_state.providers.embedding,
-                ctx.app_state.memory.service.as_ref(),
-                query,
-                6,
+            let discovery_bundle = ensure_runtime_discovery_bundle(ctx, &query).await;
+            let decision = maybe_override_route_with_custom_task_agent(
+                &ctx.app_state,
+                &query,
+                select_local_route_with_evidence(&query, discovery_bundle.route_evidence.clone()),
             )
-            .await;
-            let decision = select_local_route(query, &search_result);
+            .await?;
+            let execution_policy = build_local_execution_policy(&decision);
 
             ctx.push_system_message(render_local_route_prompt(&decision));
-            ctx.sdk_search_result = Some(search_result);
+            ctx.runtime_discovery = Some(discovery_bundle);
             ctx.route_decision = Some(decision.clone());
+            ctx.execution_policy = Some(execution_policy.clone());
             ctx.emit_status(
                 "remember",
                 Some("route_selection"),
                 "success",
                 "runtime.route.selected",
-                Some(build_local_route_status_meta(&decision)),
+                Some(build_local_control_plane_status_meta(
+                    &decision,
+                    &execution_policy,
+                )),
             );
             Ok(())
         })
@@ -1143,37 +1078,12 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SkillRecipeInjectionStep {
         ctx: &'a mut LocalWorkflowContext,
     ) -> BoxFuture<'a, Result<(), String>> {
         Box::pin(async move {
-            let Some(query) = latest_user_message(&ctx.messages) else {
+            let Some(query) = latest_user_message(&ctx.messages).map(str::to_string) else {
                 return Ok(());
             };
 
-            let search_result: Value = if let Some(result) = ctx.sdk_search_result.clone() {
-                result
-            } else {
-                build_local_sdk_search_result_with_runtime(
-                    ctx.app_state.mcp.store.as_ref(),
-                    &ctx.app_state.providers.embedding,
-                    ctx.app_state.memory.service.as_ref(),
-                    query,
-                    6,
-                )
-                .await
-            };
-
-            let recipes = search_result
-                .get("recipes")
-                .and_then(Value::as_array)
-                .map(|items| {
-                    items
-                        .iter()
-                        .filter(|item| {
-                            item.get("asset_type").and_then(Value::as_str) == Some("skill")
-                        })
-                        .take(3)
-                        .cloned()
-                        .collect::<Vec<Value>>()
-                })
-                .unwrap_or_default();
+            let discovery_bundle = ensure_runtime_discovery_bundle(ctx, &query).await;
+            let recipes = discovery_bundle.skill_recipes();
 
             if let Some(prompt) = render_skill_recipe_prompt(&recipes) {
                 ctx.push_system_message(prompt);
@@ -1216,36 +1126,22 @@ impl LocalWorkflowStep<LocalWorkflowContext> for TemplateRenderStep {
         ctx: &'a mut LocalWorkflowContext,
     ) -> BoxFuture<'a, Result<(), String>> {
         Box::pin(async move {
-            let code_mode_prompt = render_code_mode_capability_prompt(&[
-                "search_sdk".to_string(),
-                "execute_code_plan".to_string(),
-                "consult_expert_network".to_string(),
-                "attach_capability".to_string(),
-                "detach_capability".to_string(),
-            ]);
-            let local_context = router_prompt_local_context();
-            let response_language = router_prompt_default_response_language();
-            let local_router_prompt = render_local_router_base_prompt(
-                &local_context.current_date,
-                &local_context.timezone,
-                response_language,
+            let control_plane_result = build_local_control_plane_result(
+                &ctx.system_messages,
+                ctx.runtime_discovery.clone(),
+                ctx.route_decision.clone(),
+                ctx.execution_policy.clone(),
             );
-
-            let base_system_prompt =
-                render_local_base_system_prompt(&local_router_prompt, &code_mode_prompt);
-            let mut prelude_messages = Vec::new();
-            if !base_system_prompt.trim().is_empty() {
-                prelude_messages.push(LocalChatInputMessage {
-                    role: "system".to_string(),
-                    content: base_system_prompt,
-                });
-            }
-            prelude_messages.extend(ctx.system_messages.clone());
+            let prelude_messages = control_plane_result.prompt_plan.prelude_messages.clone();
             if !prelude_messages.is_empty() {
                 let mut merged_messages = prelude_messages;
                 merged_messages.extend(ctx.messages.clone());
                 ctx.messages = merged_messages;
             }
+            let local_context = control_plane_result.prompt_plan.local_context.clone();
+            let response_language = control_plane_result.prompt_plan.response_language;
+            ctx.execution_policy = Some(control_plane_result.execution_policy.clone());
+            ctx.control_plane_result = Some(control_plane_result);
 
             ctx.emit_status(
                 "evolve",
@@ -1409,31 +1305,35 @@ pub async fn execute_local_orchestrated_chat(
     let engine = build_desktop_local_chat_engine()?;
     engine.execute(&mut ctx).await?;
 
-    ctx.emit_status(
-        "evolve",
-        Some("upstream_call"),
-        "running",
-        "upstream.request.batch",
-        None,
-    );
-    let chat_context = crate::modules::mcp::store::LocalConversationChatContext {
-        session_id: session_id.clone(),
-        assistant_id: capability_id.clone(),
-        messages: ctx.messages.clone(),
-    };
-    let response_json = run_local_chat_complete_with_auto_code_mode(
-        app_handle,
-        app_state,
-        &model_connection,
-        ctx.messages.clone(),
-        &chat_context,
-        input.temperature,
-        input.max_tokens,
-        ctx.event_tx.clone(),
-        Some(trace_id.as_str()),
-        input.request_id.as_deref(),
+    let execution_policy = ctx
+        .control_plane_result
+        .as_ref()
+        .map(|result| result.execution_policy.clone())
+        .or_else(|| ctx.execution_policy.clone())
+        .clone()
+        .unwrap_or_else(build_default_local_execution_policy);
+    let execution_outcome = run_local_execution_plane(
+        LocalExecutionRequest {
+            app_handle: app_handle.clone(),
+            app_state: app_state.clone(),
+            model_connection: model_connection.clone(),
+            session_id: session_id.clone(),
+            capability_id: capability_id.clone(),
+            messages: ctx.messages.clone(),
+            execution_policy: execution_policy.clone(),
+            temperature: input.temperature,
+            max_tokens: input.max_tokens,
+            event_tx: ctx.event_tx.clone(),
+            trace_id: Some(trace_id.clone()),
+            request_id: input.request_id.clone(),
+        },
+        |stage, step, state, code, meta| {
+            ctx.emit_status(stage, step, state, code, meta);
+        },
     )
     .await?;
+    let delegated_worker = execution_outcome.delegated_worker;
+    let response_json = execution_outcome.response_json;
 
     let response_text = response_json
         .get("content")
@@ -1453,6 +1353,12 @@ pub async fn execute_local_orchestrated_chat(
         .get("tool_trace_streamed")
         .and_then(|value| value.as_bool())
         .unwrap_or(false);
+    if let Some(execution) = delegated_worker.as_ref() {
+        if !execution.trace_blocks.is_empty() {
+            ctx.emit_blocks(execution.trace_blocks.clone());
+            assistant_blocks.extend(execution.trace_blocks.clone());
+        }
+    }
     if let Some(tool_trace_blocks) = response_json
         .get("tool_trace_blocks")
         .and_then(|value| value.as_array())
@@ -1976,11 +1882,76 @@ mod tests {
     #[test]
     fn render_local_base_system_prompt_adds_code_mode_section() {
         let prompt =
-            render_local_base_system_prompt("## Current Context", "**Code Mode Capability**");
+            render_local_base_system_prompt("## Current Context", Some("**Code Mode Capability**"));
 
         assert!(prompt.contains("## Current Context"));
         assert!(prompt.contains("## Code Mode Protocol"));
         assert!(prompt.contains("**Code Mode Capability**"));
+    }
+
+    #[test]
+    fn render_local_base_system_prompt_omits_code_mode_section_when_not_requested() {
+        let prompt = render_local_base_system_prompt("## Current Context", None);
+
+        assert!(prompt.contains("## Current Context"));
+        assert!(!prompt.contains("## Code Mode Protocol"));
+    }
+
+    #[test]
+    fn build_local_prompt_plan_omits_code_mode_protocol_without_policy() {
+        let rendered = build_local_prelude_messages(
+            &PromptAssets::default(),
+            Some(&build_default_local_execution_policy()),
+        )
+        .first()
+        .map(|message| message.content.clone())
+        .unwrap_or_default();
+
+        assert!(rendered.contains("## Current Context"));
+        assert!(!rendered.contains("## Code Mode Protocol"));
+    }
+
+    #[test]
+    fn build_local_prompt_plan_includes_code_mode_protocol_from_execution_policy() {
+        let policy = build_local_execution_policy(&select_local_route(
+            "遍历所有 markdown files，抽标题、分类、去重后输出 JSON",
+            &json!({
+                "orchestration_primitives": [{ "name": "execute_code_plan" }],
+                "capabilities": [],
+                "routing_hint": { "programmatic_path": "execute_code_plan" }
+            }),
+        ));
+        assert_eq!(policy.route, LocalRouteKind::CodeMode);
+        let rendered = build_local_prelude_messages(&PromptAssets::default(), Some(&policy))
+            .first()
+            .map(|message| message.content.clone())
+            .unwrap_or_default();
+
+        assert!(rendered.contains("## Current Context"));
+        assert!(rendered.contains("## Code Mode Protocol"));
+        assert!(rendered.contains("search_sdk"));
+    }
+
+    #[test]
+    fn build_route_selection_status_meta_embeds_execution_policy() {
+        let decision = select_local_route(
+            "遍历所有 markdown files，抽标题、分类、去重后输出 JSON",
+            &json!({
+                "orchestration_primitives": [{ "name": "execute_code_plan" }],
+                "capabilities": [],
+                "routing_hint": { "programmatic_path": "execute_code_plan" }
+            }),
+        );
+        let policy = build_local_execution_policy(&decision);
+        let meta = build_local_control_plane_status_meta(&decision, &policy);
+
+        assert_eq!(meta.get("route").and_then(Value::as_str), Some("codemode"));
+        assert_eq!(
+            meta.get("execution_policy")
+                .and_then(|value| value.get("plane"))
+                .and_then(Value::as_str),
+            Some("code_mode_orchestration")
+        );
     }
 
     #[test]
@@ -2164,5 +2135,60 @@ mod tests {
         assert!(!memory.is_boot);
         assert_eq!(memory.memory_tier.as_deref(), Some("core"));
         assert_eq!(memory.recall_when.as_deref(), Some("architecture"));
+    }
+
+    #[test]
+    fn select_custom_task_agent_candidate_prefers_image_agent_for_image_query() {
+        let profiles = vec![
+            CustomTaskAgentProfile {
+                id: "agent-image".to_string(),
+                name: "Image Agent".to_string(),
+                description: Some("Creates images".to_string()),
+                task_prompt: "Generate images".to_string(),
+                invocation_kind: CustomTaskAgentInvocationKind::ImageGeneration,
+                preferred_for_image_generation: true,
+                model_config: None,
+                callable_mcp_tool_ids: vec![],
+                guidance_skill_ids: vec![],
+                callable_skill_action_refs: vec![],
+                tags: vec!["image".to_string(), "draw".to_string()],
+                discoverable: true,
+                is_enabled: true,
+                is_deleted: false,
+                created_at: "2026-03-12T00:00:00Z".to_string(),
+                updated_at: "2026-03-12T00:00:00Z".to_string(),
+            },
+            CustomTaskAgentProfile {
+                id: "agent-text".to_string(),
+                name: "Planner".to_string(),
+                description: Some("Plans tasks".to_string()),
+                task_prompt: "Plan".to_string(),
+                invocation_kind: CustomTaskAgentInvocationKind::Chat,
+                preferred_for_image_generation: false,
+                model_config: None,
+                callable_mcp_tool_ids: vec![],
+                guidance_skill_ids: vec![],
+                callable_skill_action_refs: vec![],
+                tags: vec!["plan".to_string()],
+                discoverable: true,
+                is_enabled: true,
+                is_deleted: false,
+                created_at: "2026-03-12T00:00:00Z".to_string(),
+                updated_at: "2026-03-12T00:00:00Z".to_string(),
+            },
+        ];
+
+        let selection = select_custom_task_agent_candidate(
+            "Generate one image of a neon cat",
+            &profiles,
+            &HashMap::new(),
+        )
+        .expect("image agent should be selected");
+
+        assert_eq!(selection.profile.id, "agent-image");
+        assert_eq!(
+            selection.profile.invocation_kind,
+            CustomTaskAgentInvocationKind::ImageGeneration
+        );
     }
 }

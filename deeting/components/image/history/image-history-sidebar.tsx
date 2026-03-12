@@ -12,6 +12,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useI18n } from '@/hooks/use-i18n';
 import { useImageGenerationTasks } from '@/lib/swr/use-image-generation-tasks';
 import { useLazyImage } from '@/hooks/use-lazy-image';
+import ImageResultPanel from '@/components/image/image-result-panel';
+import { buildImageResultPanelPayloadFromTask, resolveImagePreviewUrl } from '@/lib/image/result-helpers';
 import { cn } from '@/lib/utils';
 import type { ImageGenerationTaskItem } from '@/lib/api/image-generation';
 import { formatRelativeTime } from '@/lib/api/api-keys';
@@ -243,7 +245,7 @@ export function ImageHistorySidebar({ isOpen, onClose }: ImageHistorySidebarProp
       const previewTask =
         tasksSorted.find((task) => task.preview?.asset_url || task.preview?.source_url) ??
         latestTask;
-      const previewUrl = previewTask?.preview?.asset_url ?? previewTask?.preview?.source_url ?? null;
+      const previewUrl = previewTask ? resolveImagePreviewUrl(previewTask) : null;
       const searchText = group.tasks
         .map((task) => [
           task.prompt_encrypted ? "" : task.prompt ?? "",
@@ -485,38 +487,19 @@ export function ImageHistorySidebar({ isOpen, onClose }: ImageHistorySidebarProp
               {selectedTask ? (
                 <div className="space-y-4">
                   <div className="flex items-center gap-2">
-                    <Badge variant={statusMeta.tones[selectedTask.status] ?? "outline"}>
-                      {statusMeta.labels[selectedTask.status] ?? selectedTask.status}
+                    <Badge variant={statusMeta.tones[selectedTask.status as keyof typeof statusMeta.tones] ?? "outline"}>
+                      {statusMeta.labels[selectedTask.status as keyof typeof statusMeta.labels] ?? selectedTask.status}
                     </Badge>
                     <span className="text-xs text-slate-500 dark:text-white/40">
                       {formatRelativeTime(selectedTask.updated_at)}
                     </span>
                   </div>
-                  <div className="relative w-full aspect-[4/3] rounded-2xl overflow-hidden bg-slate-100 dark:bg-white/5">
-                    {selectedTask.preview?.asset_url || selectedTask.preview?.source_url ? (
-                      <LazyImage
-                        src={selectedTask.preview?.asset_url ?? selectedTask.preview?.source_url ?? ""}
-                        alt={imageAlt}
-                        className="w-full h-full"
-                      />
-                    ) : (
-                      <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 dark:text-white/30 gap-2">
-                        <ImageIcon className="h-6 w-6" />
-                        <span className="text-xs">{t('imageHistory.previewEmpty')}</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-xs text-slate-500 dark:text-white/40">
-                      {t('imageHistory.promptLabel')}
-                    </p>
-                    <div className="rounded-2xl border border-slate-200/70 dark:border-white/10 bg-slate-50/80 dark:bg-white/[0.03] p-3 text-sm text-slate-700 dark:text-white/70">
-                      {renderPrompt(selectedTask)}
-                    </div>
-                    <div className="text-[10px] text-slate-400 dark:text-white/30">
-                      {selectedTask.model}
-                    </div>
-                  </div>
+                  <ImageResultPanel
+                    payload={buildImageResultPanelPayloadFromTask(selectedTask, {
+                      prompt: renderPrompt(selectedTask),
+                      model: selectedTask.model,
+                    })}
+                  />
                 </div>
               ) : null}
             </DialogContent>

@@ -1,9 +1,9 @@
 use super::super::{common_impl::to_string, support::*};
 use super::{
     append_streamable_local_tool_result_blocks, build_auto_code_mode_tool_feedback,
-    build_local_code_mode_entry_tools, build_local_consult_expert_network_result,
+    build_local_code_mode_entry_tools_with_allowlist, build_local_consult_expert_network_result,
     build_local_sdk_search_result_with_runtime, build_local_tool_call_install_gate_error_meta,
-    build_local_tool_trace_blocks, extract_chat_tool_calls,
+    build_local_tool_trace_blocks, extract_chat_tool_calls, LocalExecutionPolicy,
     install_local_skill_from_onboarding_request, request_provider_chat_completion,
     resolve_local_capability_activation_state, LocalCapabilityActivationState,
     LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION, LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
@@ -31,6 +31,7 @@ struct LocalChatAutoCodeModeState {
     max_rounds: usize,
     round: usize,
     trace_id: String,
+    execution_policy: LocalExecutionPolicy,
     model_connection: LocalModelConnection,
     orchestrated_messages: Vec<LocalChatInputMessage>,
     chat_ctx: LocalConversationChatContext,
@@ -53,6 +54,7 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
     model_connection: &LocalModelConnection,
     messages: Vec<LocalChatInputMessage>,
     chat_ctx: &LocalConversationChatContext,
+    execution_policy: &LocalExecutionPolicy,
     temperature: Option<f32>,
     max_tokens: Option<u32>,
     event_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
@@ -73,7 +75,8 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
         .filter(|v| !v.is_empty())
         .unwrap_or_else(|| Uuid::new_v4().to_string());
     let mut orchestrated_messages = messages;
-    if !orchestrated_messages
+    if execution_policy.inject_code_mode_protocol
+        && !orchestrated_messages
         .first()
         .map(|m| m.role == "system")
         .unwrap_or(false)
@@ -96,6 +99,7 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
         max_rounds,
         round: 0,
         trace_id: trace_id.clone(),
+        execution_policy: execution_policy.clone(),
         model_connection: model_connection.clone(),
         orchestrated_messages,
         chat_ctx: chat_ctx.clone(),
@@ -155,13 +159,15 @@ async fn continue_local_chat_complete_with_auto_code_mode(
             return Ok(LocalChatAutoCodeModeOutput { response: fallback });
         }
 
-        let tools = build_local_code_mode_entry_tools();
+        let tools = build_local_code_mode_entry_tools_with_allowlist(
+            &state.execution_policy.allowed_tool_names,
+        );
         let response = request_provider_chat_completion(
             app_state,
             &provider_model_id,
             &model_id,
             state.orchestrated_messages.clone(),
-            Some(tools),
+            tools,
             state.temperature,
             state.max_tokens,
             Some(state.trace_id.as_str()),
@@ -189,6 +195,7 @@ async fn continue_local_chat_complete_with_auto_code_mode(
             app_state,
             &response,
             &state.chat_ctx,
+            &state.execution_policy,
             state.active_capability.as_ref(),
             &mut state.last_capability_snapshot,
             &mut state.realtime_emitter,
@@ -372,6 +379,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
     app_state: &AppState,
     chat_response: &serde_json::Value,
     chat_ctx: &LocalConversationChatContext,
+    execution_policy: &LocalExecutionPolicy,
     active_capability: Option<&LocalCapabilityActivationState>,
     last_capability_snapshot: &mut Option<serde_json::Value>,
     realtime_emitter: &mut LocalRealtimeToolTraceEmitter,
@@ -393,6 +401,32 @@ async fn maybe_handle_local_code_mode_tool_calls(
     for call in tool_calls {
         let tool_name = call.name.trim().to_lowercase();
         let call_id = call.id.clone().unwrap_or_default();
+        if !execution_policy.allows_tool(&tool_name) {
+            synthesized = true;
+            let error = format!(
+                "tool '{}' is not enabled for the current execution policy",
+                tool_name
+            );
+            realtime_emitter.emit_execution_section_once();
+            realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call.id,"toolName":tool_name,"status":"running"})]);
+            let meta = serde_json::json!({
+                "id": call.id,
+                "name": tool_name,
+                "status": "error",
+                "error_code": "LOCAL_TOOL_POLICY_BLOCKED",
+                "error": error,
+            });
+            let mut streamed_blocks = Vec::new();
+            append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+            realtime_emitter.emit_blocks(streamed_blocks);
+            tool_call_meta.push(meta);
+            results.push(format!(
+                "Tool call '{}' blocked [LOCAL_TOOL_POLICY_BLOCKED]: {}",
+                tool_name, error
+            ));
+            continue;
+        }
+
         if tool_name == "execute_code_plan" {
             realtime_emitter.emit_execution_section_once();
             realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call.id,"toolName":tool_name,"status":"running"})]);

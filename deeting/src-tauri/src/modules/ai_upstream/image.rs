@@ -1,4 +1,5 @@
-use serde_json::Value;
+use handlebars::Handlebars;
+use serde_json::{json, Map, Value};
 use uuid::Uuid;
 
 use crate::modules::ai_upstream::chat::{extract_upstream_error_message, truncate_upstream_body};
@@ -62,7 +63,7 @@ pub(crate) async fn request_provider_image_generation(
         .get_preset(&instance.preset_slug)
         .await
         .map_err(to_string)?;
-    let request_data = serde_json::json!({
+    let request_data = json!({
         "model": effective_model,
         "prompt": prompt,
         "n": 1
@@ -113,11 +114,289 @@ pub(crate) async fn request_provider_image_generation(
             raw_text.as_str(),
         ));
     }
-    raw_json.ok_or_else(|| {
+    let submit_payload = raw_json.ok_or_else(|| {
         format!(
             "failed to parse upstream image generation response (status={}): {}",
             status.as_u16(),
             truncate_upstream_body(raw_text.as_str(), 300)
         )
-    })
+    })?;
+
+    if prepared
+        .async_config
+        .get("enabled")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        let mut final_payload = poll_async_image_result(
+            app_state,
+            submit_payload,
+            &prepared.url,
+            &prepared.headers,
+            &prepared.async_config,
+        )
+        .await?;
+        if let Some(object) = final_payload.as_object_mut() {
+            object.insert(
+                "_async_mode".to_string(),
+                Value::String("async".to_string()),
+            );
+        }
+        return Ok(final_payload);
+    }
+
+    let mut payload = submit_payload;
+    if let Some(object) = payload.as_object_mut() {
+        object.insert(
+            "_async_mode".to_string(),
+            Value::String("direct".to_string()),
+        );
+    }
+    Ok(payload)
+}
+
+async fn poll_async_image_result(
+    app_state: &AppState,
+    submit_payload: Value,
+    submit_url: &str,
+    base_headers: &std::collections::BTreeMap<String, String>,
+    async_config: &Value,
+) -> Result<Value, String> {
+    let extraction = async_config
+        .get("task_id_extraction")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let task_id_path = extraction
+        .get("key_path")
+        .or_else(|| extraction.get("path"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let task_id = extract_by_path(&submit_payload, task_id_path.as_str())
+        .and_then(value_to_string)
+        .ok_or_else(|| "async task_id extraction failed".to_string())?;
+
+    let poll = async_config
+        .get("poll")
+        .and_then(Value::as_object)
+        .cloned()
+        .ok_or_else(|| "async poll config missing".to_string())?;
+    let url_template = poll
+        .get("url_template")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "async poll.url_template missing".to_string())?;
+    let base_url = submit_url
+        .split('?')
+        .next()
+        .unwrap_or(submit_url)
+        .rsplit_once('/')
+        .map(|(value, _)| format!("{}/", value))
+        .unwrap_or_else(|| submit_url.to_string());
+    let render_context = json!({
+        "task_id": task_id,
+        "base_url": base_url,
+    });
+    let poll_url = render_string_template(url_template, &render_context)?;
+
+    let mut poll_headers = serde_json::Map::new();
+    for (key, value) in base_headers {
+        poll_headers.insert(key.clone(), Value::String(value.clone()));
+    }
+    if let Some(extra_headers) = poll.get("headers").and_then(Value::as_object) {
+        for (key, value) in extra_headers {
+            poll_headers.insert(key.clone(), value.clone());
+        }
+    }
+    let poll_headers = render_value_recursive(&Value::Object(poll_headers), &render_context);
+    let status_check = poll
+        .get("status_check")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let status_path = status_check
+        .get("location")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or("");
+    let success_values = to_string_set(status_check.get("success_values"));
+    let fail_values = to_string_set(status_check.get("fail_values"));
+    let pending_values = to_string_set(status_check.get("pending_values"));
+    let interval_secs = poll.get("interval").and_then(Value::as_u64).unwrap_or(5);
+    let timeout_secs = poll.get("timeout").and_then(Value::as_u64).unwrap_or(300);
+    let method = poll
+        .get("method")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("GET");
+
+    let started = std::time::Instant::now();
+    loop {
+        let mut request = app_state.mcp.client.request(
+            reqwest::Method::from_bytes(method.as_bytes()).unwrap_or(reqwest::Method::GET),
+            poll_url.as_str(),
+        );
+        if let Some(object) = poll_headers.as_object() {
+            for (key, value) in object {
+                if let Some(text) = value.as_str() {
+                    request = request.header(key, text);
+                }
+            }
+        }
+        let response = request.send().await.map_err(to_string)?;
+        if !response.status().is_success() {
+            return Err(format!(
+                "async image poll failed status={}",
+                response.status()
+            ));
+        }
+        let text = response.text().await.map_err(to_string)?;
+        let payload =
+            serde_json::from_str::<Value>(&text).unwrap_or_else(|_| Value::String(text.clone()));
+        let status_value = extract_by_path(&payload, status_path)
+            .and_then(value_to_string)
+            .unwrap_or_default();
+
+        if !success_values.is_empty() && success_values.contains(status_value.as_str()) {
+            return extract_async_result(&payload, async_config);
+        }
+        if !fail_values.is_empty() && fail_values.contains(status_value.as_str()) {
+            return Err(format!("async image task failed status={}", status_value));
+        }
+        if started.elapsed().as_secs() >= timeout_secs {
+            return Err("async image task timeout".to_string());
+        }
+        if !pending_values.is_empty() && !pending_values.contains(status_value.as_str()) {
+            log::warn!(
+                "async image task unexpected pending status={}",
+                status_value
+            );
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(interval_secs.max(1))).await;
+    }
+}
+
+fn extract_async_result(payload: &Value, async_config: &Value) -> Result<Value, String> {
+    let extraction = async_config
+        .get("result_extraction")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    if extraction.is_empty() {
+        return Ok(payload.clone());
+    }
+    let key_path = extraction
+        .get("key_path")
+        .or_else(|| extraction.get("path"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or("");
+    let extracted = if key_path.is_empty() {
+        payload.clone()
+    } else {
+        extract_by_path(payload, key_path)
+            .cloned()
+            .unwrap_or_else(|| Value::Null)
+    };
+    let result_format = extraction
+        .get("result_format")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or("");
+    match result_format {
+        "url_list" => {
+            let urls = extracted.as_array().cloned().unwrap_or_default();
+            Ok(json!({
+                "data": urls
+                    .into_iter()
+                    .filter_map(|item| item.as_str().map(|value| json!({"url": value})))
+                    .collect::<Vec<_>>()
+            }))
+        }
+        "b64_list" => {
+            let items = extracted.as_array().cloned().unwrap_or_default();
+            Ok(json!({
+                "data": items
+                    .into_iter()
+                    .filter_map(|item| item.as_str().map(|value| json!({"b64_json": value})))
+                    .collect::<Vec<_>>()
+            }))
+        }
+        _ => Ok(extracted),
+    }
+}
+
+fn render_string_template(template: &str, context: &Value) -> Result<String, String> {
+    if !template.contains("{{") {
+        return Ok(template.to_string());
+    }
+    let mut hb = Handlebars::new();
+    hb.set_strict_mode(false);
+    hb.render_template(template, context).map_err(to_string)
+}
+
+fn render_value_recursive(value: &Value, context: &Value) -> Value {
+    match value {
+        Value::String(text) => render_string_template(text, context)
+            .map(Value::String)
+            .unwrap_or_else(|_| Value::String(text.clone())),
+        Value::Array(items) => Value::Array(
+            items
+                .iter()
+                .map(|item| render_value_recursive(item, context))
+                .collect(),
+        ),
+        Value::Object(map) => Value::Object(
+            map.iter()
+                .map(|(key, value)| (key.clone(), render_value_recursive(value, context)))
+                .collect::<Map<String, Value>>(),
+        ),
+        _ => value.clone(),
+    }
+}
+
+fn extract_by_path<'a>(value: &'a Value, path: &str) -> Option<&'a Value> {
+    if path.trim().is_empty() {
+        return Some(value);
+    }
+    let mut current = value;
+    for part in path.split('.') {
+        match current {
+            Value::Array(items) => {
+                let index = part.parse::<usize>().ok()?;
+                current = items.get(index)?;
+            }
+            Value::Object(map) => {
+                current = map.get(part)?;
+            }
+            _ => return None,
+        }
+    }
+    Some(current)
+}
+
+fn value_to_string(value: &Value) -> Option<String> {
+    value
+        .as_str()
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(str::to_string)
+        .or_else(|| value.as_i64().map(|number| number.to_string()))
+        .or_else(|| value.as_u64().map(|number| number.to_string()))
+}
+
+fn to_string_set(value: Option<&Value>) -> std::collections::HashSet<String> {
+    value
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(value_to_string)
+                .collect::<std::collections::HashSet<_>>()
+        })
+        .unwrap_or_default()
 }

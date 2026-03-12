@@ -1,51 +1,42 @@
+use std::collections::HashSet;
+
+#[cfg(test)]
+use super::control_plane::full_code_mode_tool_names;
 use super::core_tool_contracts::build_core_tool_function_entries;
 
+#[cfg(test)]
 pub(crate) fn build_local_code_mode_entry_tools() -> serde_json::Value {
-    let mut tools = build_core_tool_function_entries();
-    tools.extend(vec![
-            serde_json::json!({
-                "type": "function",
-                "function": {
-                    "name": "consult_expert_network",
-                    "description": "Search expert capabilities by intent query and return top candidates. This tool only searches and does not change reply personality by itself.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "intent_query": { "type": "string", "description": "The intent or task description to search for expert capabilities." },
-                            "k": { "type": "integer", "description": "Number of candidates to return.", "default": 3 },
-                            "confidence": { "type": "number", "description": "Model confidence in the routing decision (0-1).", "default": 0 }
-                        },
-                        "required": ["intent_query", "confidence"]
-                    }
-                }
+    build_local_code_mode_entry_tools_with_allowlist(&full_code_mode_tool_names())
+        .unwrap_or_else(|| serde_json::json!({ "tools": [] }))
+}
+
+pub(crate) fn build_local_code_mode_entry_tools_with_allowlist(
+    allowed_tool_names: &[String],
+) -> Option<serde_json::Value> {
+    let allowlist: HashSet<&str> = allowed_tool_names.iter().map(String::as_str).collect();
+    let mut tools = build_core_tool_function_entries()
+        .into_iter()
+        .filter(|tool| {
+            function_tool_name(tool)
+                .map(|name| allowlist.contains(name))
+                .unwrap_or(false)
+        })
+        .collect::<Vec<_>>();
+    tools.extend(
+        build_local_execution_lane_aux_tools()
+            .into_iter()
+            .filter(|tool| {
+                function_tool_name(tool)
+                    .map(|name| allowlist.contains(name))
+                    .unwrap_or(false)
             }),
-            serde_json::json!({
-                "type": "function",
-                "function": {
-                    "name": "attach_capability",
-                    "description": "Attach an expert capability explicitly for the current request-scoped agent loop. This augments domain capability without changing reply personality.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "capability_id": { "type": "string", "description": "Capability id returned by consult_expert_network." },
-                            "reason": { "type": "string", "description": "Optional reason for the capability attachment decision." }
-                        },
-                        "required": ["capability_id"]
-                    }
-                }
-            }),
-            serde_json::json!({
-                "type": "function",
-                "function": {
-                    "name": "detach_capability",
-                    "description": "Detach the current request-scoped expert capability and return to the default capability-neutral context.",
-                    "parameters": { "type": "object", "properties": { "reason": { "type": "string", "description": "Optional reason for the capability detachment." } } }
-                }
-            })
-        ]);
-    serde_json::json!({
-        "tools": tools
-    })
+    );
+
+    if tools.is_empty() {
+        None
+    } else {
+        Some(serde_json::json!({ "tools": tools }))
+    }
 }
 
 pub(crate) async fn build_local_sdk_search_result_with_runtime(
@@ -63,4 +54,77 @@ pub(crate) async fn build_local_sdk_search_result_with_runtime(
         limit,
     )
     .await
+}
+
+fn build_local_execution_lane_aux_tools() -> Vec<serde_json::Value> {
+    vec![
+        serde_json::json!({
+            "type": "function",
+            "function": {
+                "name": "consult_expert_network",
+                "description": "Search expert capabilities by intent query and return top candidates. This tool only searches and does not change reply personality by itself.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "intent_query": { "type": "string", "description": "The intent or task description to search for expert capabilities." },
+                        "k": { "type": "integer", "description": "Number of candidates to return.", "default": 3 },
+                        "confidence": { "type": "number", "description": "Model confidence in the routing decision (0-1).", "default": 0 }
+                    },
+                    "required": ["intent_query", "confidence"]
+                }
+            }
+        }),
+        serde_json::json!({
+            "type": "function",
+            "function": {
+                "name": "attach_capability",
+                "description": "Attach an expert capability explicitly for the current request-scoped agent loop. This augments domain capability without changing reply personality.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "capability_id": { "type": "string", "description": "Capability id returned by consult_expert_network." },
+                        "reason": { "type": "string", "description": "Optional reason for the capability attachment decision." }
+                    },
+                    "required": ["capability_id"]
+                }
+            }
+        }),
+        serde_json::json!({
+            "type": "function",
+            "function": {
+                "name": "detach_capability",
+                "description": "Detach the current request-scoped expert capability and return to the default capability-neutral context.",
+                "parameters": { "type": "object", "properties": { "reason": { "type": "string", "description": "Optional reason for the capability detachment." } } }
+            }
+        }),
+    ]
+}
+
+fn function_tool_name(tool: &serde_json::Value) -> Option<&str> {
+    tool.get("function")?.get("name")?.as_str()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_local_code_mode_entry_tools_with_allowlist_filters_tools() {
+        let payload = build_local_code_mode_entry_tools_with_allowlist(&[
+            "search_sdk".to_string(),
+            "attach_capability".to_string(),
+        ])
+        .expect("tool payload");
+
+        let tools = payload
+            .get("tools")
+            .and_then(serde_json::Value::as_array)
+            .expect("tools array");
+        let names = tools
+            .iter()
+            .filter_map(function_tool_name)
+            .collect::<Vec<_>>();
+
+        assert_eq!(names, vec!["search_sdk", "attach_capability"]);
+    }
 }

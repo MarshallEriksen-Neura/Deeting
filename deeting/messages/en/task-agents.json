@@ -40,6 +40,7 @@
     "badges": {
       "chat": "Chat",
       "imageGeneration": "Image",
+      "imagePreferred": "Image Preferred",
       "enabled": "Enabled",
       "disabled": "Disabled",
       "discoverable": "Discoverable",
@@ -69,6 +70,7 @@
         "description": "Description",
         "taskPrompt": "Task Prompt",
         "invocationKind": "Invocation Kind",
+        "preferredForImageGeneration": "Preferred for Image Generation",
         "model": "Model",
         "providerModelId": "Provider Model ID",
         "modelConfigJson": "Advanced Model Config JSON",
@@ -93,7 +95,12 @@
       },
       "toggles": {
         "discoverable": "Allow this agent to be indexed and surfaced for local discovery.",
-        "enabled": "Disable this agent to keep it out of preview and execution."
+        "enabled": "Disable this agent to keep it out of preview and execution.",
+        "preferredForImageGeneration": "When enabled on an image agent, the worker branch will prefer this agent for image requests."
+      },
+      "values": {
+        "preferredForImageGenerationOn": "Preferred",
+        "preferredForImageGenerationOff": "Standard"
       }
     },
     "bindings": {

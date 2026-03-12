@@ -46,9 +46,16 @@ pub(crate) struct LocalRouteDecision {
     pub(crate) evidence: RouteEvidence,
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn select_local_route(query: &str, search_result: &Value) -> LocalRouteDecision {
+    select_local_route_with_evidence(query, RouteEvidence::from_search_result(search_result))
+}
+
+pub(crate) fn select_local_route_with_evidence(
+    query: &str,
+    evidence: RouteEvidence,
+) -> LocalRouteDecision {
     let profile = TaskProfile::from_query(query);
-    let evidence = RouteEvidence::from_search_result(search_result);
 
     let (route, reasons) = if let Some(route) = profile.explicit_route.clone() {
         (route, vec!["explicit_route".to_string()])
@@ -325,7 +332,7 @@ impl TaskProfile {
 }
 
 impl RouteEvidence {
-    fn from_search_result(search_result: &Value) -> Self {
+    pub(crate) fn from_search_result(search_result: &Value) -> Self {
         let direct_callable_capability_count = search_result
             .pointer("/routing_hint/direct_callable_capability_count")
             .and_then(Value::as_u64)

@@ -92,11 +92,12 @@ type TaskAgentDraft = {
   description: string
   task_prompt: string
   invocation_kind: CustomTaskAgentInvocationKind
+  preferred_for_image_generation: boolean
   model: string
   provider_model_id: string
   model_config_json: string
-  bound_tool_ids: string[]
-  bound_skill_ids: string[]
+  callable_mcp_tool_ids: string[]
+  guidance_skill_ids: string[]
   tags_input: string
   discoverable: boolean
   is_enabled: boolean
@@ -122,11 +123,12 @@ function createEmptyDraft(): TaskAgentDraft {
     description: "",
     task_prompt: "",
     invocation_kind: "chat",
+    preferred_for_image_generation: false,
     model: "",
     provider_model_id: "",
     model_config_json: "",
-    bound_tool_ids: [],
-    bound_skill_ids: [],
+    callable_mcp_tool_ids: [],
+    guidance_skill_ids: [],
     tags_input: "",
     discoverable: true,
     is_enabled: true,
@@ -152,13 +154,14 @@ function buildDraftFromProfile(profile: CustomTaskAgentProfile): TaskAgentDraft 
     description: profile.description ?? "",
     task_prompt: profile.task_prompt,
     invocation_kind: profile.invocation_kind,
+    preferred_for_image_generation: profile.preferred_for_image_generation,
     model: extractModelValue(profile.model_config ?? undefined),
     provider_model_id: extractProviderModelId(profile.model_config ?? undefined),
     model_config_json: profile.model_config
       ? JSON.stringify(profile.model_config, null, 2)
       : "",
-    bound_tool_ids: [...profile.bound_tool_ids],
-    bound_skill_ids: [...profile.bound_skill_ids],
+    callable_mcp_tool_ids: [...profile.callable_mcp_tool_ids],
+    guidance_skill_ids: [...profile.guidance_skill_ids],
     tags_input: profile.tags.join(", "),
     discoverable: profile.discoverable,
     is_enabled: profile.is_enabled,
@@ -231,6 +234,7 @@ const AgentListItem = React.memo(function AgentListItem({
   isSelected,
   updatedLabel,
   invocationLabel,
+  preferredImageLabel,
   enabledLabel,
   disabledLabel,
   discoverableLabel,
@@ -241,6 +245,7 @@ const AgentListItem = React.memo(function AgentListItem({
   isSelected: boolean
   updatedLabel: string
   invocationLabel: string
+  preferredImageLabel: string
   enabledLabel: string
   disabledLabel: string
   discoverableLabel: string
@@ -268,6 +273,11 @@ const AgentListItem = React.memo(function AgentListItem({
             <Badge variant="secondary" className="capitalize">
               {invocationLabel}
             </Badge>
+            {agent.preferred_for_image_generation ? (
+              <Badge className="border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-200">
+                {preferredImageLabel}
+              </Badge>
+            ) : null}
           </div>
           <p className="line-clamp-2 text-sm text-[var(--muted)]">
             {agent.description?.trim() || "—"}
@@ -409,7 +419,11 @@ export function TaskAgentsClient() {
   )
 
   const {
-    data: bindingCatalog = { tools: [], skills: [] },
+    data: bindingCatalog = {
+      mcp_tools: [],
+      guidance_skills: [],
+      skill_actions: [],
+    },
     isLoading: bindingsLoading,
   } = useSWR<CustomTaskAgentBindingCatalog, Error>(
     isDesktop ? "local-custom-task-agent-binding-catalog" : null,
@@ -512,11 +526,11 @@ export function TaskAgentsClient() {
 
   const filteredBindingTools = React.useMemo(() => {
     const normalizedToolQuery = deferredToolQuery.trim().toLowerCase()
-    return bindingCatalog.tools
-      .filter((tool) => {
+    return bindingCatalog.mcp_tools
+      .filter((tool: (typeof bindingCatalog.mcp_tools)[number]) => {
       if (
         showSelectedToolsOnly &&
-        !draft.bound_tool_ids.includes(tool.id)
+        !draft.callable_mcp_tool_ids.includes(tool.id)
       ) {
         return false
       }
@@ -529,9 +543,13 @@ export function TaskAgentsClient() {
 
         return haystack.includes(normalizedToolQuery)
       })
-      .toSorted((left, right) => {
-        const leftSelected = draft.bound_tool_ids.includes(left.id)
-        const rightSelected = draft.bound_tool_ids.includes(right.id)
+      .toSorted(
+        (
+          left: (typeof bindingCatalog.mcp_tools)[number],
+          right: (typeof bindingCatalog.mcp_tools)[number],
+        ) => {
+        const leftSelected = draft.callable_mcp_tool_ids.includes(left.id)
+        const rightSelected = draft.callable_mcp_tool_ids.includes(right.id)
         if (leftSelected !== rightSelected) {
           return leftSelected ? -1 : 1
         }
@@ -543,19 +561,19 @@ export function TaskAgentsClient() {
         return compareBindingText(left.name, right.name)
       })
   }, [
-    bindingCatalog.tools,
+    bindingCatalog.mcp_tools,
     deferredToolQuery,
-    draft.bound_tool_ids,
+    draft.callable_mcp_tool_ids,
     showSelectedToolsOnly,
   ])
 
   const filteredBindingSkills = React.useMemo(() => {
     const normalizedSkillQuery = deferredSkillQuery.trim().toLowerCase()
-    return bindingCatalog.skills
-      .filter((skill) => {
+    return bindingCatalog.guidance_skills
+      .filter((skill: (typeof bindingCatalog.guidance_skills)[number]) => {
       if (
         showSelectedSkillsOnly &&
-        !draft.bound_skill_ids.includes(skill.skill_id)
+        !draft.guidance_skill_ids.includes(skill.skill_id)
       ) {
         return false
       }
@@ -572,9 +590,13 @@ export function TaskAgentsClient() {
 
         return haystack.includes(normalizedSkillQuery)
       })
-      .toSorted((left, right) => {
-        const leftSelected = draft.bound_skill_ids.includes(left.skill_id)
-        const rightSelected = draft.bound_skill_ids.includes(right.skill_id)
+      .toSorted(
+        (
+          left: (typeof bindingCatalog.guidance_skills)[number],
+          right: (typeof bindingCatalog.guidance_skills)[number],
+        ) => {
+        const leftSelected = draft.guidance_skill_ids.includes(left.skill_id)
+        const rightSelected = draft.guidance_skill_ids.includes(right.skill_id)
         if (leftSelected !== rightSelected) {
           return leftSelected ? -1 : 1
         }
@@ -586,9 +608,9 @@ export function TaskAgentsClient() {
         return compareBindingText(left.skill_id, right.skill_id)
       })
   }, [
-    bindingCatalog.skills,
+    bindingCatalog.guidance_skills,
     deferredSkillQuery,
-    draft.bound_skill_ids,
+    draft.guidance_skill_ids,
     showSelectedSkillsOnly,
   ])
 
@@ -680,9 +702,10 @@ export function TaskAgentsClient() {
       description: normalizedDescription || null,
       task_prompt: draft.task_prompt.trim(),
       invocation_kind: draft.invocation_kind,
+      preferred_for_image_generation: draft.preferred_for_image_generation,
       model_config: Object.keys(modelConfig).length > 0 ? modelConfig : null,
-      bound_tool_ids: [...draft.bound_tool_ids],
-      bound_skill_ids: [...draft.bound_skill_ids],
+      callable_mcp_tool_ids: [...draft.callable_mcp_tool_ids],
+      guidance_skill_ids: [...draft.guidance_skill_ids],
       tags: normalizedTags,
       discoverable: draft.discoverable,
       is_enabled: draft.is_enabled,
@@ -696,9 +719,10 @@ export function TaskAgentsClient() {
       description: selectedAgent.description?.trim() || null,
       task_prompt: selectedAgent.task_prompt.trim(),
       invocation_kind: selectedAgent.invocation_kind,
+      preferred_for_image_generation: selectedAgent.preferred_for_image_generation,
       model_config: selectedAgent.model_config ?? null,
-      bound_tool_ids: selectedAgent.bound_tool_ids,
-      bound_skill_ids: selectedAgent.bound_skill_ids,
+      callable_mcp_tool_ids: selectedAgent.callable_mcp_tool_ids,
+      guidance_skill_ids: selectedAgent.guidance_skill_ids,
       tags: selectedAgent.tags,
       discoverable: selectedAgent.discoverable,
       is_enabled: selectedAgent.is_enabled,
@@ -714,9 +738,10 @@ export function TaskAgentsClient() {
           draft.model.trim() ||
           draft.provider_model_id.trim() ||
           draft.model_config_json.trim() ||
-          draft.bound_tool_ids.length ||
-          draft.bound_skill_ids.length ||
+          draft.callable_mcp_tool_ids.length ||
+          draft.guidance_skill_ids.length ||
           parseTagsInput(draft.tags_input).length ||
+          draft.preferred_for_image_generation !== false ||
           draft.discoverable !== true ||
           draft.is_enabled !== true,
       )
@@ -779,7 +804,7 @@ export function TaskAgentsClient() {
   const toggleBinding = React.useCallback(
     (kind: "tool" | "skill", identifier: string, checked: boolean) => {
       const targetKey =
-        kind === "tool" ? "bound_tool_ids" : "bound_skill_ids"
+        kind === "tool" ? "callable_mcp_tool_ids" : "guidance_skill_ids"
       setDraft((current) => {
         const nextValues = checked
           ? [...current[targetKey], identifier]
@@ -1062,6 +1087,7 @@ export function TaskAgentsClient() {
                           ? t("badges.chat")
                           : t("badges.imageGeneration")
                       }
+                      preferredImageLabel={t("badges.imagePreferred")}
                       enabledLabel={t("badges.enabled")}
                       disabledLabel={t("badges.disabled")}
                       discoverableLabel={t("badges.discoverable")}
@@ -1199,6 +1225,26 @@ export function TaskAgentsClient() {
                         </SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-[var(--foreground)]">
+                        {t("editor.fields.preferredForImageGeneration")}
+                      </p>
+                      <p className="text-xs text-[var(--muted)]">
+                        {t("editor.toggles.preferredForImageGeneration")}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={draft.preferred_for_image_generation}
+                      onCheckedChange={(checked) =>
+                        updateDraft("preferred_for_image_generation", checked)
+                      }
+                      disabled={draft.invocation_kind !== "image_generation"}
+                    />
                   </div>
                 </div>
 
@@ -1369,7 +1415,7 @@ export function TaskAgentsClient() {
                         </p>
                       </div>
                       <Badge variant="secondary">
-                        {draft.bound_tool_ids.length}
+                        {draft.callable_mcp_tool_ids.length}
                       </Badge>
                     </div>
 
@@ -1406,7 +1452,7 @@ export function TaskAgentsClient() {
                               <Skeleton className="h-3 w-full" />
                             </div>
                           ))
-                        ) : bindingCatalog.tools.length === 0 ? (
+                        ) : bindingCatalog.mcp_tools.length === 0 ? (
                           <p className="text-sm text-[var(--muted)]">
                             {t("bindings.noTools")}
                           </p>
@@ -1421,7 +1467,7 @@ export function TaskAgentsClient() {
                               className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 p-3 transition-colors hover:bg-white/[0.03]"
                             >
                               <Checkbox
-                                checked={draft.bound_tool_ids.includes(tool.id)}
+                                checked={draft.callable_mcp_tool_ids.includes(tool.id)}
                                 onCheckedChange={(checked) =>
                                   toggleBinding("tool", tool.id, checked === true)
                                 }
@@ -1463,7 +1509,7 @@ export function TaskAgentsClient() {
                         </p>
                       </div>
                       <Badge variant="secondary">
-                        {draft.bound_skill_ids.length}
+                        {draft.guidance_skill_ids.length}
                       </Badge>
                     </div>
 
@@ -1500,7 +1546,7 @@ export function TaskAgentsClient() {
                               <Skeleton className="h-3 w-5/6" />
                             </div>
                           ))
-                        ) : bindingCatalog.skills.length === 0 ? (
+                        ) : bindingCatalog.guidance_skills.length === 0 ? (
                           <p className="text-sm text-[var(--muted)]">
                             {t("bindings.noSkills")}
                           </p>
@@ -1515,7 +1561,7 @@ export function TaskAgentsClient() {
                               className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 p-3 transition-colors hover:bg-white/[0.03]"
                             >
                               <Checkbox
-                                checked={draft.bound_skill_ids.includes(
+                                checked={draft.guidance_skill_ids.includes(
                                   skill.skill_id,
                                 )}
                                 onCheckedChange={(checked) =>
@@ -1838,7 +1884,7 @@ export function TaskAgentsClient() {
                           {t("editor.fields.boundTools")}
                         </dt>
                         <dd className="text-right text-[var(--foreground)]">
-                          {draft.bound_tool_ids.length}
+                          {draft.callable_mcp_tool_ids.length}
                         </dd>
                       </div>
                       <div className="flex items-start justify-between gap-3">
@@ -1846,7 +1892,17 @@ export function TaskAgentsClient() {
                           {t("editor.fields.boundSkills")}
                         </dt>
                         <dd className="text-right text-[var(--foreground)]">
-                          {draft.bound_skill_ids.length}
+                          {draft.guidance_skill_ids.length}
+                        </dd>
+                      </div>
+                      <div className="flex items-start justify-between gap-3">
+                        <dt className="text-[var(--muted)]">
+                          {t("editor.fields.preferredForImageGeneration")}
+                        </dt>
+                        <dd className="text-right text-[var(--foreground)]">
+                          {draft.preferred_for_image_generation
+                            ? t("editor.values.preferredForImageGenerationOn")
+                            : t("editor.values.preferredForImageGenerationOff")}
                         </dd>
                       </div>
                       <div className="flex items-start justify-between gap-3">

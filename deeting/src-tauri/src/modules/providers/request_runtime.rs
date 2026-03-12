@@ -19,6 +19,7 @@ pub struct PreparedProviderRequest {
     pub template_engine: String,
     pub response_decoder: String,
     pub response_transform: Value,
+    pub async_config: Value,
 }
 
 #[derive(Debug, Clone)]
@@ -85,6 +86,10 @@ pub fn prepare_provider_request(
     let response_decoder = protocol_profile.response.decoder.name.clone();
     let request_template = protocol_profile.request.request_template.clone();
     let response_transform = protocol_profile.response.response_template.clone();
+    let async_config = effective_config
+        .get("async_config")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
     let http_method = protocol_profile
         .transport
         .method
@@ -159,6 +164,7 @@ pub fn prepare_provider_request(
         template_engine,
         response_decoder,
         response_transform,
+        async_config,
     })
 }
 

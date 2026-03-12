@@ -2,24 +2,29 @@ use std::collections::HashMap;
 
 use serde_json::{json, Value};
 
-use crate::modules::ai_upstream::image::request_provider_image_generation;
 use crate::modules::ai_upstream::{
     request_provider_chat_completion, resolve_local_model_connection,
 };
+use crate::modules::image_generation::commands::run_local_image_generation_task_inline;
+use crate::modules::image_generation::types::LocalImageGenerationTaskCreateRequest;
 use crate::modules::mcp::commands::runtime::{execute_mcp_tool, resolve_callable_mcp_tool_by_ref};
 use crate::modules::mcp::types::{LocalChatInputMessage, McpTool};
 use crate::state::AppState;
+use tauri::AppHandle;
 
+use super::skill_actions::{
+    execute_skill_action, load_callable_skill_actions, ResolvedSkillAction,
+};
 use super::types::{
     CustomTaskAgentInvocationKind, CustomTaskAgentPreviewRequest, CustomTaskAgentPreviewResponse,
     CustomTaskAgentProfile,
 };
 
 const MAX_CUSTOM_TASK_AGENT_TOOL_ROUNDS: usize = 4;
-const MAX_BOUND_SKILL_DOCS: usize = 3;
+const MAX_GUIDANCE_SKILL_DOCS: usize = 3;
 
 #[derive(Debug, Clone)]
-struct BoundToolCall {
+struct BoundCallable {
     id: String,
     name: String,
     arguments: Value,
@@ -53,6 +58,7 @@ pub(crate) fn resolve_custom_task_agent_model_selection(
 }
 
 pub(crate) async fn preview_custom_task_agent(
+    app_handle: &AppHandle,
     app_state: &AppState,
     profile: &CustomTaskAgentProfile,
     request: CustomTaskAgentPreviewRequest,
@@ -72,12 +78,31 @@ pub(crate) async fn preview_custom_task_agent(
         resolve_local_model_connection(app_state, &model, provider_model_id.as_deref()).await?;
 
     if profile.invocation_kind == CustomTaskAgentInvocationKind::ImageGeneration {
-        let raw = request_provider_image_generation(
+        let detail = run_local_image_generation_task_inline(
+            app_handle,
             app_state,
-            &model_connection.provider_model_id,
-            &model_connection.model_id,
-            message,
-            None,
+            LocalImageGenerationTaskCreateRequest {
+                model: model_connection.model_id.clone(),
+                prompt: message.to_string(),
+                negative_prompt: None,
+                width: None,
+                height: None,
+                aspect_ratio: None,
+                num_outputs: Some(1),
+                steps: None,
+                cfg_scale: None,
+                seed: None,
+                sampler_name: None,
+                quality: None,
+                style: None,
+                response_format: None,
+                extra_params: None,
+                provider_model_id: model_connection.provider_model_id.clone(),
+                session_id: None,
+                request_id: None,
+                encrypt_prompt: Some(false),
+                image_url: None,
+            },
         )
         .await?;
         return Ok(CustomTaskAgentPreviewResponse {
@@ -89,17 +114,24 @@ pub(crate) async fn preview_custom_task_agent(
             reasoning_content: None,
             tool_calls: Vec::new(),
             tool_trace: Vec::new(),
-            bound_tool_ids: profile.bound_tool_ids.clone(),
-            bound_skill_ids: profile.bound_skill_ids.clone(),
-            images: extract_image_outputs(&raw),
-            raw: Some(raw),
+            callable_mcp_tool_ids: profile.callable_mcp_tool_ids.clone(),
+            guidance_skill_ids: profile.guidance_skill_ids.clone(),
+            callable_skill_action_refs: profile.callable_skill_action_refs.clone(),
+            images: detail
+                .outputs
+                .iter()
+                .filter_map(|item| item.asset_url.clone().or_else(|| item.source_url.clone()))
+                .collect(),
+            raw: serde_json::to_value(detail).ok(),
         });
     }
 
-    let bound_tools = load_bound_tools(app_state, &profile.bound_tool_ids).await?;
-    let bound_skills = load_bound_skill_docs(app_state, &profile.bound_skill_ids).await?;
-    let tool_payload = build_bound_tool_payload(&bound_tools);
-    let mut messages = build_initial_messages(profile, message, &bound_skills);
+    let mcp_tools = load_callable_mcp_tools(app_state, &profile.callable_mcp_tool_ids).await?;
+    let guidance_skills = load_guidance_skill_docs(app_state, &profile.guidance_skill_ids).await?;
+    let skill_actions =
+        load_callable_skill_actions(app_state, &profile.callable_skill_action_refs).await?;
+    let tool_payload = build_callable_payload(&mcp_tools, &skill_actions);
+    let mut messages = build_initial_messages(profile, message, &guidance_skills);
     let mut tool_trace = Vec::<Value>::new();
     let max_rounds = request
         .max_rounds
@@ -119,8 +151,8 @@ pub(crate) async fn preview_custom_task_agent(
             None,
         )
         .await?;
-        let tool_calls = extract_bound_tool_calls(&response);
-        if tool_calls.is_empty() {
+        let callables = extract_bound_callables(&response);
+        if callables.is_empty() {
             return Ok(CustomTaskAgentPreviewResponse {
                 status: "completed".to_string(),
                 content: response
@@ -141,8 +173,9 @@ pub(crate) async fn preview_custom_task_agent(
                     .cloned()
                     .unwrap_or_default(),
                 tool_trace,
-                bound_tool_ids: profile.bound_tool_ids.clone(),
-                bound_skill_ids: profile.bound_skill_ids.clone(),
+                callable_mcp_tool_ids: profile.callable_mcp_tool_ids.clone(),
+                guidance_skill_ids: profile.guidance_skill_ids.clone(),
+                callable_skill_action_refs: profile.callable_skill_action_refs.clone(),
                 images: Vec::new(),
                 raw: Some(response),
             });
@@ -160,57 +193,94 @@ pub(crate) async fn preview_custom_task_agent(
             });
         }
 
-        let mut tool_results = Vec::new();
-        for call in tool_calls {
-            let Some(bound_tool) = bound_tools.get(call.name.as_str()) else {
-                return Err(format!(
-                    "tool '{}' is not bound to this custom task agent",
-                    call.name
-                ));
-            };
-            match execute_mcp_tool(app_state.mcp.store.as_ref(), bound_tool, &call.arguments).await
-            {
-                Ok(tool_result) => {
-                    let meta = json!({
-                        "id": call.id,
-                        "name": call.name,
-                        "status": "success",
-                        "result": tool_result,
-                    });
-                    tool_trace.push(meta.clone());
-                    tool_results.push(meta);
+        let mut action_results = Vec::new();
+        for callable in callables {
+            if let Some(tool) = mcp_tools.get(callable.name.as_str()) {
+                match execute_mcp_tool(app_state.mcp.store.as_ref(), tool, &callable.arguments)
+                    .await
+                {
+                    Ok(result) => {
+                        let meta = json!({
+                            "id": callable.id,
+                            "name": callable.name,
+                            "lane": "mcp_tool",
+                            "status": "success",
+                            "result": result,
+                        });
+                        tool_trace.push(meta.clone());
+                        action_results.push(meta);
+                    }
+                    Err(err) => {
+                        let meta = json!({
+                            "id": callable.id,
+                            "name": callable.name,
+                            "lane": "mcp_tool",
+                            "status": "error",
+                            "error": err,
+                        });
+                        tool_trace.push(meta.clone());
+                        action_results.push(meta);
+                    }
                 }
-                Err(err) => {
-                    let meta = json!({
-                        "id": call.id,
-                        "name": call.name,
-                        "status": "error",
-                        "error": err,
-                    });
-                    tool_trace.push(meta.clone());
-                    tool_results.push(meta);
-                }
+                continue;
             }
+
+            if let Some(action) = skill_actions.get(callable.name.as_str()) {
+                match execute_skill_action(app_state, action, &callable.arguments).await {
+                    Ok(result) => {
+                        let meta = json!({
+                            "id": callable.id,
+                            "name": callable.name,
+                            "lane": "skill_action",
+                            "skill_id": action.skill_id,
+                            "action_id": action.action_id,
+                            "status": "success",
+                            "result": result,
+                        });
+                        tool_trace.push(meta.clone());
+                        action_results.push(meta);
+                    }
+                    Err(err) => {
+                        let meta = json!({
+                            "id": callable.id,
+                            "name": callable.name,
+                            "lane": "skill_action",
+                            "skill_id": action.skill_id,
+                            "action_id": action.action_id,
+                            "status": "error",
+                            "error": err,
+                        });
+                        tool_trace.push(meta.clone());
+                        action_results.push(meta);
+                    }
+                }
+                continue;
+            }
+
+            return Err(format!(
+                "callable '{}' is neither a bound MCP tool nor a bound skill action",
+                callable.name
+            ));
         }
 
         messages.push(LocalChatInputMessage {
             role: "user".to_string(),
-            content: build_tool_feedback_message(round, &tool_results),
+            content: build_callable_feedback_message(round, &action_results),
         });
     }
 
     Err(format!(
-        "custom task agent exceeded {} tool rounds",
+        "custom task agent exceeded {} callable rounds",
         max_rounds
     ))
 }
 
-async fn load_bound_tools(
+async fn load_callable_mcp_tools(
     app_state: &AppState,
-    bound_tool_ids: &[String],
+    callable_mcp_tool_ids: &[String],
 ) -> Result<HashMap<String, McpTool>, String> {
     let mut by_name = HashMap::new();
-    for tool_id in bound_tool_ids {
+    for tool_id in callable_mcp_tool_ids {
         let tool =
             resolve_callable_mcp_tool_by_ref(app_state.mcp.store.as_ref(), Some(tool_id), None)
                 .await
@@ -220,11 +290,11 @@ async fn load_bound_tools(
     Ok(by_name)
 }
 
-async fn load_bound_skill_docs(
+async fn load_guidance_skill_docs(
     app_state: &AppState,
-    bound_skill_ids: &[String],
+    guidance_skill_ids: &[String],
 ) -> Result<String, String> {
-    if bound_skill_ids.is_empty() {
+    if guidance_skill_ids.is_empty() {
         return Ok(String::new());
     }
 
@@ -242,10 +312,10 @@ async fn load_bound_skill_docs(
         .map_err(|err| err.to_string())?;
 
     let mut sections = Vec::new();
-    for skill_id in bound_skill_ids.iter().take(MAX_BOUND_SKILL_DOCS) {
+    for skill_id in guidance_skill_ids.iter().take(MAX_GUIDANCE_SKILL_DOCS) {
         let Some(install) = installs.iter().find(|item| item.skill_id == *skill_id) else {
             return Err(format!(
-                "bound skill '{}' is not installed locally",
+                "guidance skill '{}' is not installed locally",
                 skill_id
             ));
         };
@@ -276,7 +346,7 @@ async fn load_bound_skill_docs(
                 })
                 .unwrap_or_default();
             sections.push(format!(
-                "## Bound Skill {}\nName: {}\nInstall path: {}\nDocs: {}\nFiles: {}",
+                "## Guidance Skill {}\nName: {}\nInstall path: {}\nDocs: {}\nFiles: {}",
                 skill_id,
                 name,
                 install.install_path,
@@ -285,7 +355,7 @@ async fn load_bound_skill_docs(
             ));
         } else {
             sections.push(format!(
-                "## Bound Skill {}\nInstall path: {}\nNo indexed skill metadata found.",
+                "## Guidance Skill {}\nInstall path: {}\nNo indexed skill metadata found.",
                 skill_id, install.install_path
             ));
         }
@@ -296,22 +366,24 @@ async fn load_bound_skill_docs(
 fn build_initial_messages(
     profile: &CustomTaskAgentProfile,
     message: &str,
-    bound_skills: &str,
+    guidance_skills: &str,
 ) -> Vec<LocalChatInputMessage> {
     let mut system_lines = vec![
         "## Custom Task Agent Runtime",
         "You are a delegated custom task agent.",
         "You only execute the single task assigned in the current request.",
-        "Do not use any tool except the tools explicitly bound to this custom task agent.",
+        "Guidance skills are documentation-only context. Read them, but do not treat them as directly callable tools.",
+        "Callable MCP tools and callable skill actions are separate execution lanes.",
+        "Use only the callable MCP tools and callable skill actions explicitly bound to this custom task agent.",
         "Do not perform extra search, search_sdk, route planning, or orchestration on your own.",
         "If you are blocked, explain the blocker briefly and stop.",
         "",
         "## Agent Task Prompt",
         profile.task_prompt.trim(),
     ];
-    if !bound_skills.trim().is_empty() {
+    if !guidance_skills.trim().is_empty() {
         system_lines.push("");
-        system_lines.push(bound_skills.trim());
+        system_lines.push(guidance_skills.trim());
     }
     vec![
         LocalChatInputMessage {
@@ -325,40 +397,63 @@ fn build_initial_messages(
     ]
 }
 
-fn build_bound_tool_payload(bound_tools: &HashMap<String, McpTool>) -> Option<Value> {
-    if bound_tools.is_empty() {
-        return None;
+fn build_callable_payload(
+    mcp_tools: &HashMap<String, McpTool>,
+    skill_actions: &HashMap<String, ResolvedSkillAction>,
+) -> Option<Value> {
+    let mut entries = Vec::new();
+    for tool in mcp_tools.values() {
+        let Some(config_value) = serde_json::from_str::<Value>(&tool.config_json).ok() else {
+            continue;
+        };
+        let input_schema = config_value
+            .get("input_schema")
+            .cloned()
+            .unwrap_or_else(|| json!({ "type": "object", "properties": {} }));
+        entries.push(json!({
+            "type": "function",
+            "function": {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": input_schema,
+            }
+        }));
     }
-    let entries = bound_tools
-        .values()
-        .filter_map(|tool| {
-            let config_value = serde_json::from_str::<Value>(&tool.config_json).ok()?;
-            let input_schema = config_value
-                .get("input_schema")
-                .cloned()
-                .unwrap_or_else(|| json!({ "type": "object", "properties": {} }));
-            Some(json!({
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": input_schema,
-                }
-            }))
-        })
-        .collect::<Vec<_>>();
-    Some(json!({ "tools": entries }))
+    for action in skill_actions.values() {
+        entries.push(json!({
+            "type": "function",
+            "function": {
+                "name": action.callable_name,
+                "description": format!(
+                    "[Skill Action] {} (skill={}, action={}, runtime={})",
+                    action.description,
+                    action.skill_id,
+                    action.action_id,
+                    action.runtime
+                ),
+                "parameters": action
+                    .input_schema
+                    .clone()
+                    .unwrap_or_else(|| json!({ "type": "object", "properties": {} })),
+            }
+        }));
+    }
+    if entries.is_empty() {
+        None
+    } else {
+        Some(json!({ "tools": entries }))
+    }
 }
 
-fn build_tool_feedback_message(round: usize, tool_results: &[Value]) -> String {
+fn build_callable_feedback_message(round: usize, action_results: &[Value]) -> String {
     format!(
-        "## Bound Tool Results\nRound: {}\nTool results:\n{}\nContinue the same delegated task using only these tool results.",
+        "## Callable Results\nRound: {}\nResults:\n{}\nContinue the same delegated task using only these callable results.",
         round + 1,
-        serde_json::to_string_pretty(tool_results).unwrap_or_else(|_| "[]".to_string())
+        serde_json::to_string_pretty(action_results).unwrap_or_else(|_| "[]".to_string())
     )
 }
 
-fn extract_bound_tool_calls(response: &Value) -> Vec<BoundToolCall> {
+fn extract_bound_callables(response: &Value) -> Vec<BoundCallable> {
     response
         .get("tool_calls")
         .and_then(Value::as_array)
@@ -370,7 +465,7 @@ fn extract_bound_tool_calls(response: &Value) -> Vec<BoundToolCall> {
                     if name.is_empty() {
                         return None;
                     }
-                    Some(BoundToolCall {
+                    Some(BoundCallable {
                         id: item
                             .get("id")
                             .and_then(Value::as_str)
@@ -379,27 +474,6 @@ fn extract_bound_tool_calls(response: &Value) -> Vec<BoundToolCall> {
                         name,
                         arguments: item.get("arguments").cloned().unwrap_or_else(|| json!({})),
                     })
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default()
-}
-
-fn extract_image_outputs(raw: &Value) -> Vec<String> {
-    raw.get("data")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| {
-                    item.get("url")
-                        .and_then(Value::as_str)
-                        .map(str::to_string)
-                        .or_else(|| {
-                            item.get("b64_json")
-                                .and_then(Value::as_str)
-                                .map(|value| format!("data:image/png;base64,{}", value))
-                        })
                 })
                 .collect::<Vec<_>>()
         })

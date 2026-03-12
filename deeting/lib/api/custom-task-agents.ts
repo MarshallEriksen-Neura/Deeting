@@ -25,9 +25,18 @@ export const CustomTaskAgentProfileSchema = z.object({
   description: z.string().nullish(),
   task_prompt: z.string(),
   invocation_kind: CustomTaskAgentInvocationKindSchema,
+  preferred_for_image_generation: z.boolean().default(false),
   model_config: CustomTaskAgentModelConfigSchema,
-  bound_tool_ids: z.array(z.string()).default([]),
-  bound_skill_ids: z.array(z.string()).default([]),
+  callable_mcp_tool_ids: z.array(z.string()).default([]),
+  guidance_skill_ids: z.array(z.string()).default([]),
+  callable_skill_action_refs: z
+    .array(
+      z.object({
+        skill_id: z.string(),
+        action_id: z.string(),
+      }),
+    )
+    .default([]),
   tags: z.array(z.string()).default([]),
   discoverable: z.boolean(),
   is_enabled: z.boolean(),
@@ -50,9 +59,20 @@ export const CustomTaskAgentBindableSkillSchema = z.object({
   runtime: z.string().nullish(),
 })
 
+export const CustomTaskAgentBindableSkillActionSchema = z.object({
+  skill_id: z.string(),
+  action_id: z.string(),
+  callable_name: z.string(),
+  description: z.string(),
+  runtime: z.string(),
+  entry_path: z.string(),
+  input_schema: z.unknown().nullish(),
+})
+
 export const CustomTaskAgentBindingCatalogSchema = z.object({
-  tools: z.array(CustomTaskAgentBindableToolSchema).default([]),
-  skills: z.array(CustomTaskAgentBindableSkillSchema).default([]),
+  mcp_tools: z.array(CustomTaskAgentBindableToolSchema).default([]),
+  guidance_skills: z.array(CustomTaskAgentBindableSkillSchema).default([]),
+  skill_actions: z.array(CustomTaskAgentBindableSkillActionSchema).default([]),
 })
 
 export const CustomTaskAgentPreviewResponseSchema = z.object({
@@ -64,8 +84,16 @@ export const CustomTaskAgentPreviewResponseSchema = z.object({
   reasoning_content: z.string().nullish(),
   tool_calls: z.array(z.unknown()).default([]),
   tool_trace: z.array(z.unknown()).default([]),
-  bound_tool_ids: z.array(z.string()).default([]),
-  bound_skill_ids: z.array(z.string()).default([]),
+  callable_mcp_tool_ids: z.array(z.string()).default([]),
+  guidance_skill_ids: z.array(z.string()).default([]),
+  callable_skill_action_refs: z
+    .array(
+      z.object({
+        skill_id: z.string(),
+        action_id: z.string(),
+      }),
+    )
+    .default([]),
   images: z.array(z.string()).default([]),
   raw: z.unknown().nullish(),
 })
@@ -82,6 +110,9 @@ export type CustomTaskAgentBindableTool = z.infer<
 export type CustomTaskAgentBindableSkill = z.infer<
   typeof CustomTaskAgentBindableSkillSchema
 >
+export type CustomTaskAgentBindableSkillAction = z.infer<
+  typeof CustomTaskAgentBindableSkillActionSchema
+>
 export type CustomTaskAgentBindingCatalog = z.infer<
   typeof CustomTaskAgentBindingCatalogSchema
 >
@@ -94,9 +125,14 @@ export interface UpsertCustomTaskAgentPayload {
   description?: string | null
   task_prompt: string
   invocation_kind?: CustomTaskAgentInvocationKind
+  preferred_for_image_generation?: boolean
   model_config?: Record<string, unknown> | null
-  bound_tool_ids?: string[]
-  bound_skill_ids?: string[]
+  callable_mcp_tool_ids?: string[]
+  guidance_skill_ids?: string[]
+  callable_skill_action_refs?: Array<{
+    skill_id: string
+    action_id: string
+  }>
   tags?: string[]
   discoverable?: boolean
   is_enabled?: boolean
@@ -134,8 +170,9 @@ export async function getCustomTaskAgent(
 export async function getCustomTaskAgentBindingCatalog(): Promise<CustomTaskAgentBindingCatalog> {
   if (!isTauriRuntime()) {
     return CustomTaskAgentBindingCatalogSchema.parse({
-      tools: [],
-      skills: [],
+      mcp_tools: [],
+      guidance_skills: [],
+      skill_actions: [],
     })
   }
 
