@@ -6,7 +6,7 @@ import { useLocale, useTranslations } from "next-intl"
 
 import { GlassButton } from "@/components/ui/glass-button"
 import { GlassStatCard } from "@/components/ui/glass-card"
-import { useGatewayLogs, type GatewayLogQuery } from "@/lib/swr"
+import { useGatewayLogs, useGatewayLogStats, type GatewayLogQuery } from "@/lib/swr"
 
 import { LogsDetailPanel } from "./logs-detail-panel"
 import { LogsFilterBar, type LogsFilters } from "./logs-filter-bar"
@@ -74,6 +74,7 @@ export function LogsClient() {
   const { data, error, isLoading, isValidating, mutate } = useGatewayLogs(query, {
     keepPreviousData: true,
   })
+  const { data: statsData, mutate: mutateStats } = useGatewayLogStats(query)
 
   const items = useMemo(() => data?.items ?? [], [data?.items])
   const effectiveSelectedId =
@@ -83,25 +84,20 @@ export function LogsClient() {
   const selectedLog = items.find((item) => item.id === effectiveSelectedId) ?? null
 
   const summary = useMemo(() => {
-    const total = items.length
-    const failed = items.filter((item) =>
-      isFailedRequest(item.status_code, item.error_code)
-    ).length
+    const pageTotal = items.length
+    const failed = items.filter((item) => isFailedRequest(item.status_code, item.error_code)).length
     const cacheHits = items.filter((item) => item.is_cached).length
-    const totalCost = items.reduce((acc, item) => acc + item.cost_user, 0)
-    const avgDuration =
-      total === 0
-        ? 0
-        : Math.round(items.reduce((acc, item) => acc + item.duration_ms, 0) / total)
+    const total = statsData?.total ?? pageTotal
+    const totalCost = statsData?.total_cost_user ?? items.reduce((acc, item) => acc + item.cost_user, 0)
 
     return {
       total,
-      errorRate: total === 0 ? 0 : (failed / total) * 100,
-      cacheHitRate: total === 0 ? 0 : (cacheHits / total) * 100,
-      avgDuration,
+      errorRate: statsData != null ? 100 - statsData.success_rate : total === 0 ? 0 : (failed / total) * 100,
+      cacheHitRate:
+        statsData != null ? statsData.cache_hit_rate : total === 0 ? 0 : (cacheHits / total) * 100,
       totalCost,
     }
-  }, [items])
+  }, [items, statsData])
 
   const handleFiltersChange = (next: LogsFilters) => {
     setFilters(next)
@@ -141,7 +137,7 @@ export function LogsClient() {
         value={filters}
         onChange={handleFiltersChange}
         onRefresh={() => {
-          void mutate()
+          void Promise.all([mutate(), mutateStats()])
         }}
         refreshing={isValidating}
       />

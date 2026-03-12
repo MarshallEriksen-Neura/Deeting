@@ -7,6 +7,28 @@ fn normalize_optional_text(value: Option<&str>) -> Option<String> {
         .filter(|raw| !raw.is_empty())
 }
 
+fn normalize_gateway_log_query(
+    query: LocalGatewayLogQuery,
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<i64>,
+    Option<i64>,
+    Option<String>,
+) {
+    let start_time = normalize_optional_text(query.start_time.as_deref());
+    let end_time = normalize_optional_text(query.end_time.as_deref());
+    let model = normalize_optional_text(query.model.as_deref());
+    let status_code = query.status_code.map(|value| value.max(0));
+    let is_cached = query
+        .is_cached
+        .map(|value| if value { 1_i64 } else { 0_i64 });
+    let error_code = normalize_optional_text(query.error_code.as_deref());
+
+    (start_time, end_time, model, status_code, is_cached, error_code)
+}
+
 impl McpStore {
     pub async fn list_local_assistants(&self) -> Result<Vec<LocalAssistant>, McpError> {
         let rows = sqlx::query(
@@ -1515,18 +1537,8 @@ impl McpStore {
     ) -> Result<LocalGatewayLogListResponse, McpError> {
         let skip = query.skip.unwrap_or(0).max(0);
         let limit = query.limit.unwrap_or(100).clamp(1, 1000);
-        let model = query.model.and_then(|value| {
-            let trimmed = value.trim().to_string();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed)
-            }
-        });
-        let status_code = query.status_code.map(|value| value.max(0));
-        let is_cached = query
-            .is_cached
-            .map(|value| if value { 1_i64 } else { 0_i64 });
+        let (start_time, end_time, model, status_code, is_cached, error_code) =
+            normalize_gateway_log_query(query);
 
         let total_row = sqlx::query(
             r#"
@@ -1534,7 +1546,10 @@ impl McpStore {
             FROM gateway_log
             WHERE (? IS NULL OR model = ?)
               AND (? IS NULL OR status_code = ?)
-              AND (? IS NULL OR is_cached = ?);
+              AND (? IS NULL OR is_cached = ?)
+              AND (? IS NULL OR error_code = ?)
+              AND (? IS NULL OR julianday(created_at) >= julianday(?))
+              AND (? IS NULL OR julianday(created_at) <= julianday(?));
             "#,
         )
         .bind(model.as_deref())
@@ -1543,6 +1558,12 @@ impl McpStore {
         .bind(status_code)
         .bind(is_cached)
         .bind(is_cached)
+        .bind(error_code.as_deref())
+        .bind(error_code.as_deref())
+        .bind(start_time.as_deref())
+        .bind(start_time.as_deref())
+        .bind(end_time.as_deref())
+        .bind(end_time.as_deref())
         .fetch_one(&self.pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
@@ -1557,6 +1578,9 @@ impl McpStore {
             WHERE (? IS NULL OR model = ?)
               AND (? IS NULL OR status_code = ?)
               AND (? IS NULL OR is_cached = ?)
+              AND (? IS NULL OR error_code = ?)
+              AND (? IS NULL OR julianday(created_at) >= julianday(?))
+              AND (? IS NULL OR julianday(created_at) <= julianday(?))
             ORDER BY created_at DESC, id DESC
             LIMIT ? OFFSET ?;
             "#,
@@ -1567,6 +1591,12 @@ impl McpStore {
         .bind(status_code)
         .bind(is_cached)
         .bind(is_cached)
+        .bind(error_code.as_deref())
+        .bind(error_code.as_deref())
+        .bind(start_time.as_deref())
+        .bind(start_time.as_deref())
+        .bind(end_time.as_deref())
+        .bind(end_time.as_deref())
         .bind(limit)
         .bind(skip)
         .fetch_all(&self.pool)
@@ -1727,18 +1757,8 @@ impl McpStore {
         &self,
         query: LocalGatewayLogQuery,
     ) -> Result<LocalGatewayLogStatsResponse, McpError> {
-        let model = query.model.and_then(|value| {
-            let trimmed = value.trim().to_string();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed)
-            }
-        });
-        let status_code = query.status_code.map(|value| value.max(0));
-        let is_cached = query
-            .is_cached
-            .map(|value| if value { 1_i64 } else { 0_i64 });
+        let (start_time, end_time, model, status_code, is_cached, error_code) =
+            normalize_gateway_log_query(query);
 
         let total_row = sqlx::query(
             r#"
@@ -1746,7 +1766,10 @@ impl McpStore {
             FROM gateway_log
             WHERE (? IS NULL OR model = ?)
               AND (? IS NULL OR status_code = ?)
-              AND (? IS NULL OR is_cached = ?);
+              AND (? IS NULL OR is_cached = ?)
+              AND (? IS NULL OR error_code = ?)
+              AND (? IS NULL OR julianday(created_at) >= julianday(?))
+              AND (? IS NULL OR julianday(created_at) <= julianday(?));
             "#,
         )
         .bind(model.as_deref())
@@ -1755,6 +1778,12 @@ impl McpStore {
         .bind(status_code)
         .bind(is_cached)
         .bind(is_cached)
+        .bind(error_code.as_deref())
+        .bind(error_code.as_deref())
+        .bind(start_time.as_deref())
+        .bind(start_time.as_deref())
+        .bind(end_time.as_deref())
+        .bind(end_time.as_deref())
         .fetch_one(&self.pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
@@ -1768,7 +1797,10 @@ impl McpStore {
               AND status_code < 400
               AND (? IS NULL OR model = ?)
               AND (? IS NULL OR status_code = ?)
-              AND (? IS NULL OR is_cached = ?);
+              AND (? IS NULL OR is_cached = ?)
+              AND (? IS NULL OR error_code = ?)
+              AND (? IS NULL OR julianday(created_at) >= julianday(?))
+              AND (? IS NULL OR julianday(created_at) <= julianday(?));
             "#,
         )
         .bind(model.as_deref())
@@ -1777,6 +1809,12 @@ impl McpStore {
         .bind(status_code)
         .bind(is_cached)
         .bind(is_cached)
+        .bind(error_code.as_deref())
+        .bind(error_code.as_deref())
+        .bind(start_time.as_deref())
+        .bind(start_time.as_deref())
+        .bind(end_time.as_deref())
+        .bind(end_time.as_deref())
         .fetch_one(&self.pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
@@ -1789,7 +1827,10 @@ impl McpStore {
             WHERE is_cached = 1
               AND (? IS NULL OR model = ?)
               AND (? IS NULL OR status_code = ?)
-              AND (? IS NULL OR is_cached = ?);
+              AND (? IS NULL OR is_cached = ?)
+              AND (? IS NULL OR error_code = ?)
+              AND (? IS NULL OR julianday(created_at) >= julianday(?))
+              AND (? IS NULL OR julianday(created_at) <= julianday(?));
             "#,
         )
         .bind(model.as_deref())
@@ -1798,10 +1839,54 @@ impl McpStore {
         .bind(status_code)
         .bind(is_cached)
         .bind(is_cached)
+        .bind(error_code.as_deref())
+        .bind(error_code.as_deref())
+        .bind(start_time.as_deref())
+        .bind(start_time.as_deref())
+        .bind(end_time.as_deref())
+        .bind(end_time.as_deref())
         .fetch_one(&self.pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
         let cached_count: i64 = cached_row.try_get("total")?;
+
+        let aggregate_row = sqlx::query(
+            r#"
+            SELECT
+              COALESCE(ROUND(AVG(duration_ms)), 0) AS avg_duration_ms,
+              COALESCE(SUM(cost_user), 0) AS total_cost_user
+            FROM gateway_log
+            WHERE (? IS NULL OR model = ?)
+              AND (? IS NULL OR status_code = ?)
+              AND (? IS NULL OR is_cached = ?)
+              AND (? IS NULL OR error_code = ?)
+              AND (? IS NULL OR julianday(created_at) >= julianday(?))
+              AND (? IS NULL OR julianday(created_at) <= julianday(?));
+            "#,
+        )
+        .bind(model.as_deref())
+        .bind(model.as_deref())
+        .bind(status_code)
+        .bind(status_code)
+        .bind(is_cached)
+        .bind(is_cached)
+        .bind(error_code.as_deref())
+        .bind(error_code.as_deref())
+        .bind(start_time.as_deref())
+        .bind(start_time.as_deref())
+        .bind(end_time.as_deref())
+        .bind(end_time.as_deref())
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        let avg_duration_ms = aggregate_row
+            .try_get::<i64, _>("avg_duration_ms")
+            .unwrap_or(0)
+            .max(0);
+        let total_cost_user = aggregate_row
+            .try_get::<f64, _>("total_cost_user")
+            .unwrap_or(0.0)
+            .max(0.0);
 
         let error_rows = sqlx::query(
             r#"
@@ -1810,6 +1895,9 @@ impl McpStore {
             WHERE (? IS NULL OR model = ?)
               AND (? IS NULL OR status_code = ?)
               AND (? IS NULL OR is_cached = ?)
+              AND (? IS NULL OR error_code = ?)
+              AND (? IS NULL OR julianday(created_at) >= julianday(?))
+              AND (? IS NULL OR julianday(created_at) <= julianday(?))
             GROUP BY bucket
             ORDER BY COUNT(*) DESC
             LIMIT 20;
@@ -1821,6 +1909,12 @@ impl McpStore {
         .bind(status_code)
         .bind(is_cached)
         .bind(is_cached)
+        .bind(error_code.as_deref())
+        .bind(error_code.as_deref())
+        .bind(start_time.as_deref())
+        .bind(start_time.as_deref())
+        .bind(end_time.as_deref())
+        .bind(end_time.as_deref())
         .fetch_all(&self.pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
@@ -1839,6 +1933,9 @@ impl McpStore {
             WHERE (? IS NULL OR model = ?)
               AND (? IS NULL OR status_code = ?)
               AND (? IS NULL OR is_cached = ?)
+              AND (? IS NULL OR error_code = ?)
+              AND (? IS NULL OR julianday(created_at) >= julianday(?))
+              AND (? IS NULL OR julianday(created_at) <= julianday(?))
             GROUP BY model
             ORDER BY COUNT(*) DESC
             LIMIT 20;
@@ -1850,6 +1947,12 @@ impl McpStore {
         .bind(status_code)
         .bind(is_cached)
         .bind(is_cached)
+        .bind(error_code.as_deref())
+        .bind(error_code.as_deref())
+        .bind(start_time.as_deref())
+        .bind(start_time.as_deref())
+        .bind(end_time.as_deref())
+        .bind(end_time.as_deref())
         .fetch_all(&self.pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
@@ -1875,6 +1978,9 @@ impl McpStore {
             WHERE (? IS NULL OR model = ?)
               AND (? IS NULL OR status_code = ?)
               AND (? IS NULL OR is_cached = ?)
+              AND (? IS NULL OR error_code = ?)
+              AND (? IS NULL OR julianday(created_at) >= julianday(?))
+              AND (? IS NULL OR julianday(created_at) <= julianday(?))
             GROUP BY bucket
             ORDER BY COUNT(*) DESC;
             "#,
@@ -1885,6 +1991,12 @@ impl McpStore {
         .bind(status_code)
         .bind(is_cached)
         .bind(is_cached)
+        .bind(error_code.as_deref())
+        .bind(error_code.as_deref())
+        .bind(start_time.as_deref())
+        .bind(start_time.as_deref())
+        .bind(end_time.as_deref())
+        .bind(end_time.as_deref())
         .fetch_all(&self.pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
@@ -1911,6 +2023,8 @@ impl McpStore {
             total,
             success_rate,
             cache_hit_rate,
+            avg_duration_ms,
+            total_cost_user,
             error_distribution,
             model_ranking,
             latency_histogram,

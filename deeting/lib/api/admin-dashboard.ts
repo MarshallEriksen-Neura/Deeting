@@ -795,21 +795,30 @@ const GatewayLogItemSchema = z.object({
 export const GatewayLogListSchema = createOffsetPageSchema(GatewayLogItemSchema)
 export type GatewayLogItem = z.infer<typeof GatewayLogItemSchema>
 
-export async function fetchAdminGatewayLogs(params?: {
-  skip?: number
-  limit?: number
+type GatewayLogFilterParams = {
+  start_time?: string
+  end_time?: string
   model?: string
   status_code?: number
   is_cached?: boolean
+  error_code?: string
+}
+
+export async function fetchAdminGatewayLogs(params?: GatewayLogFilterParams & {
+  skip?: number
+  limit?: number
 }): Promise<z.infer<typeof GatewayLogListSchema>> {
   if (isTauriRuntime()) {
     const data = await invokeTauri<unknown>("list_local_gateway_logs", {
       query: {
         skip: params?.skip ?? 0,
         limit: params?.limit ?? 100,
+        start_time: params?.start_time,
+        end_time: params?.end_time,
         model: params?.model,
         status_code: params?.status_code,
         is_cached: params?.is_cached,
+        error_code: params?.error_code,
       },
     })
     return GatewayLogListSchema.parse(data)
@@ -821,9 +830,12 @@ export async function fetchAdminGatewayLogs(params?: {
     params: {
       skip: params?.skip ?? 0,
       limit: params?.limit ?? 100,
+      start_time: params?.start_time,
+      end_time: params?.end_time,
       model: params?.model,
       status_code: params?.status_code,
       is_cached: params?.is_cached,
+      error_code: params?.error_code,
     },
   })
   return GatewayLogListSchema.parse(data)
@@ -838,6 +850,8 @@ export const GatewayLogStatsSchema = z.object({
   total: z.number().int().nonnegative(),
   success_rate: z.number(),
   cache_hit_rate: z.number(),
+  avg_duration_ms: z.number().int().nonnegative().default(0),
+  total_cost_user: z.number().nonnegative().default(0),
   error_distribution: z.array(GatewayLogStatsBucketSchema).default([]),
   model_ranking: z.array(GatewayLogStatsBucketSchema).default([]),
   latency_histogram: z.array(GatewayLogStatsBucketSchema).default([]),
@@ -845,17 +859,18 @@ export const GatewayLogStatsSchema = z.object({
 
 export type GatewayLogStats = z.infer<typeof GatewayLogStatsSchema>
 
-export async function fetchAdminGatewayLogStats(params?: {
-  model?: string
-  status_code?: number
-  is_cached?: boolean
-}): Promise<GatewayLogStats> {
+export async function fetchAdminGatewayLogStats(
+  params?: GatewayLogFilterParams
+): Promise<GatewayLogStats> {
   if (isTauriRuntime()) {
     const data = await invokeTauri<unknown>("get_local_gateway_log_stats", {
       query: {
+        start_time: params?.start_time,
+        end_time: params?.end_time,
         model: params?.model,
         status_code: params?.status_code,
         is_cached: params?.is_cached,
+        error_code: params?.error_code,
       },
     })
     return GatewayLogStatsSchema.parse(data)
@@ -865,9 +880,12 @@ export async function fetchAdminGatewayLogStats(params?: {
     url: `${ADMIN_BASE}/gateway-logs/stats`,
     method: "GET",
     params: {
+      start_time: params?.start_time,
+      end_time: params?.end_time,
       model: params?.model,
       status_code: params?.status_code,
       is_cached: params?.is_cached,
+      error_code: params?.error_code,
     },
   })
   return GatewayLogStatsSchema.parse(data)

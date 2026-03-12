@@ -61,32 +61,21 @@ describe("fetchGatewayLogsForQuery", () => {
     expect(mockFetchAdminGatewayLogs).toHaveBeenCalledWith({
       skip: 0,
       limit: 2,
+      start_time: undefined,
+      end_time: undefined,
       model: undefined,
       status_code: undefined,
       is_cached: undefined,
+      error_code: undefined,
     })
   })
 
-  it("applies local-only filters for error and time range", async () => {
+  it("passes error and time range filters through to backend query", async () => {
     mockFetchAdminGatewayLogs.mockResolvedValue({
-      total: 2,
+      total: 1,
       skip: 0,
       limit: 20,
       items: [
-        {
-          id: "log-ok",
-          user_id: "user-1",
-          model: "gpt-4o",
-          status_code: 200,
-          duration_ms: 100,
-          ttft_ms: 50,
-          input_tokens: 1,
-          output_tokens: 1,
-          cost_user: 0.001,
-          is_cached: false,
-          error_code: null,
-          created_at: "2026-03-04T08:00:00.000Z",
-        },
         {
           id: "log-err",
           user_id: "user-1",
@@ -112,5 +101,15 @@ describe("fetchGatewayLogsForQuery", () => {
 
     expect(result.items).toHaveLength(1)
     expect(result.items[0]?.id).toBe("log-err")
+    expect(mockFetchAdminGatewayLogs).toHaveBeenCalledWith({
+      skip: 0,
+      limit: 20,
+      start_time: "2026-03-04T10:30:00.000Z",
+      end_time: "2026-03-04T11:30:00.000Z",
+      model: undefined,
+      status_code: undefined,
+      is_cached: undefined,
+      error_code: "E500",
+    })
   })
 })

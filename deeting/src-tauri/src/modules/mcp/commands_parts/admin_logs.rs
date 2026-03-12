@@ -58,17 +58,12 @@ pub async fn create_local_gateway_log(
 #[tauri::command]
 pub async fn get_local_gateway_log_stats(
     state: State<'_, AppState>,
+    query: Option<LocalGatewayLogQuery>,
 ) -> Result<LocalGatewayLogStatsResponse, String> {
     state
         .mcp
         .store
-        .get_local_gateway_log_stats(LocalGatewayLogQuery {
-            skip: None,
-            limit: None,
-            model: None,
-            status_code: None,
-            is_cached: None,
-        })
+        .get_local_gateway_log_stats(query.unwrap_or_default())
         .await
         .map_err(to_string)
 }

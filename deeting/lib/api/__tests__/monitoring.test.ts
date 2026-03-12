@@ -111,7 +111,13 @@ describe("monitoring api", () => {
     )
     expect(ranking.keys.length).toBeGreaterThan(0)
     expect(mockRequest).not.toHaveBeenCalled()
-    expect(mockFetchAdminGatewayLogs).toHaveBeenCalled()
+    expect(mockFetchAdminGatewayLogs).toHaveBeenCalledWith({
+      skip: 0,
+      limit: 500,
+      start_time: "2026-03-03T12:00:00.000Z",
+      end_time: "2026-03-04T12:00:00.000Z",
+      model: undefined,
+    })
   })
 
   it("uses cloud monitoring endpoint outside tauri", async () => {

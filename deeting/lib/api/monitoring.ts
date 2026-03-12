@@ -99,6 +99,14 @@ function getRangeMs(timeRange: MonitoringTimeRange = "24h"): number {
   return 24 * 60 * 60 * 1000
 }
 
+function getTimeBounds(timeRange: MonitoringTimeRange | undefined, nowMs: number) {
+  const rangeMs = getRangeMs(timeRange)
+  return {
+    start_time: new Date(nowMs - rangeMs).toISOString(),
+    end_time: new Date(nowMs).toISOString(),
+  }
+}
+
 function percentile(values: number[], p: number): number {
   if (values.length === 0) return 0
   const sorted = [...values].sort((a, b) => a - b)
@@ -139,9 +147,12 @@ async function fetchLocalMonitoringLogs(
   const logs: LocalGatewayLogItem[] = []
 
   while (skip < LOCAL_LOG_MAX_SCAN) {
+    const timeBounds = getTimeBounds(params?.timeRange, nowMs)
     const page = await fetchAdminGatewayLogs({
       skip,
       limit: LOCAL_LOG_PAGE_SIZE,
+      start_time: timeBounds.start_time,
+      end_time: timeBounds.end_time,
       model: params?.model,
     })
 

@@ -98,7 +98,7 @@ export function PageContent() {
     },
     {
       label: t("stats.avgLatency"),
-      value: t("stats.ms", { value: numberFormatter.format(localAvgLatency) }),
+      value: t("stats.ms", { value: numberFormatter.format(statsData?.avg_duration_ms ?? localAvgLatency) }),
       color: "teal",
     },
     {

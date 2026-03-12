@@ -1,6 +1,6 @@
 import useSWR, { type SWRConfiguration } from "swr"
 import { swrFetcher, type SWRResult } from "./fetcher"
-import { fetchAdminGatewayLogs } from "@/lib/api/admin-dashboard"
+import { fetchAdminGatewayLogs, fetchAdminGatewayLogStats } from "@/lib/api/admin-dashboard"
 import type { GatewayLogDTO } from "@/types/gateway_log"
 import type { CursorPage } from "@/types/pagination"
 import type { ApiError } from "@/lib/http/client"
@@ -15,6 +15,8 @@ export type GatewayLogQuery = {
   is_cached?: boolean
   error_code?: string
 }
+
+type GatewayLogStatsQuery = Omit<GatewayLogQuery, "cursor" | "size">
 
 const isTauriRuntime = () =>
   process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
@@ -43,27 +45,17 @@ const parseCursorToSkip = (cursor: string | null | undefined): number => {
   return value
 }
 
-const applyLocalOnlyFilters = (
-  item: GatewayLogDTO,
-  query: GatewayLogQuery | undefined
-): boolean => {
-  if (!query?.error_code && !query?.start_time && !query?.end_time) return true
+const toGatewayLogFilterQuery = (query: GatewayLogQuery | undefined): GatewayLogStatsQuery => {
+  if (!query) return {}
 
-  if (query.error_code && item.error_code !== query.error_code) {
-    return false
+  return {
+    start_time: query.start_time,
+    end_time: query.end_time,
+    model: query.model,
+    status_code: query.status_code,
+    is_cached: query.is_cached,
+    error_code: query.error_code,
   }
-
-  const createdAt = new Date(item.created_at).getTime()
-  if (query.start_time) {
-    const start = new Date(query.start_time).getTime()
-    if (Number.isFinite(start) && createdAt < start) return false
-  }
-  if (query.end_time) {
-    const end = new Date(query.end_time).getTime()
-    if (Number.isFinite(end) && createdAt > end) return false
-  }
-
-  return true
 }
 
 const toGatewayLogDTO = (item: Awaited<ReturnType<typeof fetchAdminGatewayLogs>>["items"][number]) =>
@@ -93,12 +85,10 @@ export async function fetchGatewayLogsForQuery(
   const data = await fetchAdminGatewayLogs({
     skip,
     limit: size,
-    model: query?.model,
-    status_code: query?.status_code,
-    is_cached: query?.is_cached,
+    ...toGatewayLogFilterQuery(query),
   })
 
-  const items = data.items.map(toGatewayLogDTO).filter((item) => applyLocalOnlyFilters(item, query))
+  const items = data.items.map(toGatewayLogDTO)
   const nextSkip = skip + size
   const previousSkip = Math.max(0, skip - size)
 
@@ -107,6 +97,28 @@ export async function fetchGatewayLogsForQuery(
     next_page: nextSkip < data.total ? String(nextSkip) : null,
     previous_page: skip > 0 ? String(previousSkip) : null,
   }
+}
+
+export async function fetchGatewayLogStatsForQuery(query: GatewayLogQuery | undefined) {
+  return fetchAdminGatewayLogStats(toGatewayLogFilterQuery(query))
+}
+
+export const getGatewayLogStatsKey = (query: GatewayLogQuery | undefined): [string] | null => {
+  const qs = buildQueryString(toGatewayLogFilterQuery(query))
+  return ["/api/v1/logs/stats" + qs]
+}
+
+export function useGatewayLogStats(
+  query: GatewayLogQuery | undefined,
+  config?: SWRConfiguration<Awaited<ReturnType<typeof fetchAdminGatewayLogStats>>, ApiError>
+): SWRResult<Awaited<ReturnType<typeof fetchAdminGatewayLogStats>>> {
+  const key = getGatewayLogStatsKey(query)
+  return useSWR(key, async ([url]) => {
+    if (isTauriRuntime()) {
+      return fetchGatewayLogStatsForQuery(query)
+    }
+    return swrFetcher([url])
+  }, config)
 }
 
 export const getGatewayLogsKey = (query: GatewayLogQuery | undefined): [string] | null => {

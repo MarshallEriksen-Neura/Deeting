@@ -745,13 +745,16 @@ pub struct LocalTraceFeedback {
     pub updated_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LocalGatewayLogQuery {
     pub skip: Option<i64>,
     pub limit: Option<i64>,
+    pub start_time: Option<String>,
+    pub end_time: Option<String>,
     pub model: Option<String>,
     pub status_code: Option<i64>,
     pub is_cached: Option<bool>,
+    pub error_code: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -824,6 +827,8 @@ pub struct LocalGatewayLogStatsResponse {
     pub total: i64,
     pub success_rate: f64,
     pub cache_hit_rate: f64,
+    pub avg_duration_ms: i64,
+    pub total_cost_user: f64,
     pub error_distribution: Vec<LocalGatewayLogStatsBucket>,
     pub model_ranking: Vec<LocalGatewayLogStatsBucket>,
     pub latency_histogram: Vec<LocalGatewayLogStatsBucket>,

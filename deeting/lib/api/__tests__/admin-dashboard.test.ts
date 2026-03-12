@@ -586,7 +586,10 @@ describe("admin dashboard api", () => {
     })
 
     const result = await fetchAdminGatewayLogs({
+      start_time: "2026-03-03T00:00:00.000Z",
+      end_time: "2026-03-04T00:00:00.000Z",
       status_code: 502,
+      error_code: "UPSTREAM_ERROR",
       limit: 100,
     })
 
@@ -597,9 +600,12 @@ describe("admin dashboard api", () => {
       params: {
         skip: 0,
         limit: 100,
+        start_time: "2026-03-03T00:00:00.000Z",
+        end_time: "2026-03-04T00:00:00.000Z",
         model: undefined,
         status_code: 502,
         is_cached: undefined,
+        error_code: "UPSTREAM_ERROR",
       },
     })
     expect(mockInvoke).not.toHaveBeenCalled()
@@ -612,22 +618,31 @@ describe("admin dashboard api", () => {
       total: 4,
       success_rate: 75,
       cache_hit_rate: 25,
+      avg_duration_ms: 180,
+      total_cost_user: 0.09,
       error_distribution: [{ key: "UPSTREAM_ERROR", count: 1 }],
       model_ranking: [{ key: "gpt-4o", count: 4 }],
       latency_histogram: [{ key: "lt_200ms", count: 3 }],
     } as unknown)
 
     const result = await fetchAdminGatewayLogStats({
+      start_time: "2026-03-01T00:00:00.000Z",
+      end_time: "2026-03-04T00:00:00.000Z",
       model: "gpt-4o",
       is_cached: false,
+      error_code: "UPSTREAM_ERROR",
     })
 
     expect(result.success_rate).toBe(75)
+    expect(result.total_cost_user).toBe(0.09)
     expect(mockInvoke).toHaveBeenCalledWith("get_local_gateway_log_stats", {
       query: {
+        start_time: "2026-03-01T00:00:00.000Z",
+        end_time: "2026-03-04T00:00:00.000Z",
         model: "gpt-4o",
         status_code: undefined,
         is_cached: false,
+        error_code: "UPSTREAM_ERROR",
       },
     })
     expect(mockRequest).not.toHaveBeenCalled()
@@ -639,13 +654,18 @@ describe("admin dashboard api", () => {
       total: 2,
       success_rate: 50,
       cache_hit_rate: 0,
+      avg_duration_ms: 320,
+      total_cost_user: 0.04,
       error_distribution: [{ key: "500", count: 1 }],
       model_ranking: [{ key: "deepseek-v3", count: 2 }],
       latency_histogram: [{ key: "200_500ms", count: 2 }],
     })
 
     const result = await fetchAdminGatewayLogStats({
+      start_time: "2026-03-03T00:00:00.000Z",
+      end_time: "2026-03-04T00:00:00.000Z",
       status_code: 500,
+      error_code: "500",
     })
 
     expect(result.total).toBe(2)
@@ -653,9 +673,12 @@ describe("admin dashboard api", () => {
       url: "/api/v1/admin/gateway-logs/stats",
       method: "GET",
       params: {
+        start_time: "2026-03-03T00:00:00.000Z",
+        end_time: "2026-03-04T00:00:00.000Z",
         model: undefined,
         status_code: 500,
         is_cached: undefined,
+        error_code: "500",
       },
     })
     expect(mockInvoke).not.toHaveBeenCalled()
