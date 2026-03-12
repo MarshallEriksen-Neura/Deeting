@@ -1,4 +1,5 @@
 pub mod chat;
+pub mod gateway_log_recorder;
 pub mod image;
 pub mod types;
 

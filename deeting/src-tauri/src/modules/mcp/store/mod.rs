@@ -1331,6 +1331,7 @@ impl McpStore {
 
         self.purge_legacy_skill_mcp_rows().await?;
         self.migrate_assistant_version_drop_skill_refs().await?;
+        self.repair_assistant_install_foreign_key_target().await?;
         self.migrate_assistant_versions_from_legacy().await?;
         self.migrate_assistant_installs_from_assistant().await?;
 

@@ -4219,7 +4219,7 @@ impl McpStore {
             let mut tx = self.pool.begin().await?;
             sqlx::query(
                 r#"
-                ALTER TABLE assistant_version RENAME TO assistant_version_legacy;
+                DROP TABLE IF EXISTS assistant_version_new;
                 "#,
             )
             .execute(&mut *tx)
@@ -4228,7 +4228,7 @@ impl McpStore {
 
             sqlx::query(
                 r#"
-                CREATE TABLE assistant_version (
+                CREATE TABLE assistant_version_new (
                   id TEXT PRIMARY KEY,
                   assistant_id TEXT NOT NULL REFERENCES assistant(id) ON DELETE CASCADE,
                   version TEXT NOT NULL,
@@ -4250,20 +4250,25 @@ impl McpStore {
 
             sqlx::query(
                 r#"
-                INSERT INTO assistant_version (
+                INSERT INTO assistant_version_new (
                   id, assistant_id, version, name, description, system_prompt,
                   model_config, tags, changelog, published_at, created_at, updated_at
                 )
                 SELECT id, assistant_id, version, name, description, system_prompt,
                        model_config, tags, changelog, published_at, created_at, updated_at
-                FROM assistant_version_legacy;
+                FROM assistant_version;
                 "#,
             )
             .execute(&mut *tx)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
 
-            sqlx::query("DROP TABLE assistant_version_legacy;")
+            sqlx::query("DROP TABLE assistant_version;")
+                .execute(&mut *tx)
+                .await
+                .map_err(|err| McpError::Storage(err.to_string()))?;
+
+            sqlx::query("ALTER TABLE assistant_version_new RENAME TO assistant_version;")
                 .execute(&mut *tx)
                 .await
                 .map_err(|err| McpError::Storage(err.to_string()))?;
@@ -4282,6 +4287,142 @@ impl McpStore {
                 r#"
                 CREATE INDEX IF NOT EXISTS idx_assistant_version_assistant
                 ON assistant_version(assistant_id);
+                "#,
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+
+            tx.commit()
+                .await
+                .map_err(|err| McpError::Storage(err.to_string()))
+        }
+        .await;
+
+        sqlx::query("PRAGMA foreign_keys=ON;")
+            .execute(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        result
+    }
+
+    pub(super) async fn repair_assistant_install_foreign_key_target(&self) -> Result<(), McpError> {
+        let rows = sqlx::query("PRAGMA foreign_key_list(assistant_install)")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+        let references_legacy = rows.iter().any(|row: &SqliteRow| {
+            row.try_get::<String, _>("table")
+                .map(|name| name == "assistant_version_legacy")
+                .unwrap_or(false)
+        });
+        if !references_legacy {
+            return Ok(());
+        }
+
+        sqlx::query("PRAGMA foreign_keys=OFF;")
+            .execute(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let result = async {
+            let mut tx = self.pool.begin().await?;
+            sqlx::query(
+                r#"
+                DROP TABLE IF EXISTS assistant_install_new;
+                "#,
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+
+            sqlx::query(
+                r#"
+                CREATE TABLE assistant_install_new (
+                  id TEXT PRIMARY KEY,
+                  user_id TEXT NOT NULL,
+                  assistant_id TEXT NOT NULL REFERENCES assistant(id) ON DELETE CASCADE,
+                  alias TEXT,
+                  icon_override TEXT,
+                  pinned_version_id TEXT REFERENCES assistant_version(id) ON DELETE SET NULL,
+                  follow_latest INTEGER NOT NULL DEFAULT 1,
+                  is_enabled INTEGER NOT NULL DEFAULT 1,
+                  sort_order INTEGER NOT NULL DEFAULT 0,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                );
+                "#,
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+
+            sqlx::query(
+                r#"
+                INSERT INTO assistant_install_new (
+                  id, user_id, assistant_id, alias, icon_override, pinned_version_id,
+                  follow_latest, is_enabled, sort_order, created_at, updated_at
+                )
+                SELECT id, user_id, assistant_id, alias, icon_override, pinned_version_id,
+                       follow_latest, is_enabled, sort_order, created_at, updated_at
+                FROM assistant_install;
+                "#,
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+
+            sqlx::query("DROP TABLE assistant_install;")
+                .execute(&mut *tx)
+                .await
+                .map_err(|err| McpError::Storage(err.to_string()))?;
+
+            sqlx::query("ALTER TABLE assistant_install_new RENAME TO assistant_install;")
+                .execute(&mut *tx)
+                .await
+                .map_err(|err| McpError::Storage(err.to_string()))?;
+
+            sqlx::query(
+                r#"
+                UPDATE assistant_install
+                SET pinned_version_id = NULL
+                WHERE pinned_version_id IS NOT NULL
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM assistant_version
+                    WHERE assistant_version.id = assistant_install.pinned_version_id
+                  );
+                "#,
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+
+            sqlx::query(
+                r#"
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_assistant_install_user_assistant
+                ON assistant_install(user_id, assistant_id);
+                "#,
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+
+            sqlx::query(
+                r#"
+                CREATE INDEX IF NOT EXISTS idx_assistant_install_user
+                ON assistant_install(user_id);
+                "#,
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+
+            sqlx::query(
+                r#"
+                CREATE INDEX IF NOT EXISTS idx_assistant_install_assistant
+                ON assistant_install(assistant_id);
                 "#,
             )
             .execute(&mut *tx)
