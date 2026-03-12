@@ -100,13 +100,29 @@ async fn process_next_local_conversation_summary_job_inner(
     app_state: Option<&AppState>,
     store: &crate::modules::mcp::store::McpStore,
 ) -> Result<(), McpError> {
-    let Some(job) = store.claim_next_local_conversation_summary_job().await? else {
+    let Some(job) = store
+        .claim_next_local_conversation_summary_job()
+        .await
+        .map_err(|err| {
+            McpError::Storage(format!(
+                "summary worker step=claim_next_job err={}",
+                err
+            ))
+        })?
+    else {
         return Ok(());
     };
+    let job_context = format!("job_id={} session_id={}", job.id, job.session_id);
     let processing = async {
         let window = store
             .load_local_conversation_runtime_window(&job.session_id)
-            .await?;
+            .await
+            .map_err(|err| {
+                McpError::Storage(format!(
+                    "summary worker step=load_runtime_window {} err={}",
+                    job_context, err
+                ))
+            })?;
         let model_summary = if let Some(app_state) = app_state {
             let meta = window.meta.as_ref();
             let model_id = meta
@@ -135,8 +151,8 @@ async fn process_next_local_conversation_summary_job_inner(
                     Ok(_) => None,
                     Err(err) => {
                         log::warn!(
-                            "local conversation model summary failed session={} err={}",
-                            job.session_id,
+                            "local conversation model summary failed {} err={}",
+                            job_context,
                             err
                         );
                         None
@@ -155,9 +171,10 @@ async fn process_next_local_conversation_summary_job_inner(
             )
         });
         if summary.trim().is_empty() {
-            return Err(McpError::validation(
-                "conversation summary content is empty",
-            ));
+            return Err(McpError::validation(format!(
+                "summary worker step=build_summary {} err=conversation summary content is empty",
+                job_context
+            )));
         }
         store
             .persist_local_conversation_summary(
@@ -165,18 +182,38 @@ async fn process_next_local_conversation_summary_job_inner(
                 &summary,
                 Some(summarizer_model.as_str()),
             )
-            .await?;
+            .await
+            .map_err(|err| {
+                McpError::Storage(format!(
+                    "summary worker step=persist_summary {} err={}",
+                    job_context, err
+                ))
+            })?;
         Ok::<(), McpError>(())
     }
     .await;
 
     match processing {
-        Ok(()) => store.complete_local_conversation_summary_job(&job.id).await,
+        Ok(()) => store
+            .complete_local_conversation_summary_job(&job.id)
+            .await
+            .map_err(|err| {
+                McpError::Storage(format!(
+                    "summary worker step=complete_job {} err={}",
+                    job_context, err
+                ))
+            }),
         Err(err) => {
             let message = err.to_string();
-            let _ = store
+            if let Err(fail_err) = store
                 .fail_local_conversation_summary_job(&job, &message, 30)
-                .await;
+                .await
+            {
+                warn!(
+                    "summary worker step=mark_failed {} err={}",
+                    job_context, fail_err
+                );
+            }
             Err(err)
         }
     }

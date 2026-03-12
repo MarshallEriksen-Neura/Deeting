@@ -26,8 +26,8 @@ use crate::modules::monitor::types::{
     LocalNotificationChannelTestResponse, LocalNotificationChannelUpdateRequest,
     LocalNotificationChannelUpdateResponse, MonitorWorkerStartRequest, MonitorWorkerStatus,
 };
-use crate::modules::providers::store::{ProviderConnection, ProviderStore};
-use crate::modules::providers::types::ProviderModel;
+use crate::modules::providers::store::{ProviderConnection, ProviderStore, LOCAL_DESKTOP_USER_ID};
+use crate::modules::providers::types::{ProviderInstance, ProviderModel};
 
 const DEFAULT_MONITOR_POLL_INTERVAL_SECONDS: u64 = 20;
 const MIN_MONITOR_POLL_INTERVAL_SECONDS: u64 = 5;
@@ -73,6 +73,7 @@ struct MonitorWorkflowContext {
     execution_id: String,
     events: Vec<Value>,
     model: Option<ProviderModel>,
+    instance: Option<ProviderInstance>,
     connection: Option<ProviderConnection>,
     prompt: Option<String>,
     content: Option<String>,
@@ -90,6 +91,7 @@ impl MonitorWorkflowContext {
             execution_id: Uuid::new_v4().to_string(),
             events: Vec::new(),
             model: None,
+            instance: None,
             connection: None,
             prompt: None,
             content: None,
@@ -654,7 +656,7 @@ impl MonitorState {
     async fn resolve_execution_model(
         &self,
         task: &LocalMonitorTask,
-    ) -> Result<(ProviderModel, ProviderConnection), String> {
+    ) -> Result<(ProviderModel, ProviderInstance, ProviderConnection), String> {
         let mut active_models = self
             .shared
             .provider_store
@@ -699,7 +701,15 @@ impl MonitorState {
             .map_err(|err| format!("读取模型连接失败: {}", err))?
             .ok_or_else(|| "模型实例不存在或连接信息缺失".to_string())?;
 
-        Ok((selected, connection))
+        let instance = self
+            .shared
+            .provider_store
+            .get_instance(&selected.instance_id.to_string())
+            .await
+            .map_err(|err| format!("读取模型实例失败: {}", err))?
+            .ok_or_else(|| "模型实例不存在".to_string())?;
+
+        Ok((selected, instance, connection))
     }
 
     async fn dispatch_change_notification(
@@ -1356,8 +1366,9 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorResolveModelStep {
                 "monitor.model.selecting",
                 None,
             );
-            let (model, connection) = ctx.state.resolve_execution_model(&ctx.task).await?;
+            let (model, instance, connection) = ctx.state.resolve_execution_model(&ctx.task).await?;
             ctx.model = Some(model);
+            ctx.instance = Some(instance);
             ctx.connection = Some(connection);
             ctx.emit_status(
                 "remember",
@@ -1432,6 +1443,10 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorInvokeModelStep {
                 .model
                 .clone()
                 .ok_or_else(|| "monitor model missing".to_string())?;
+            let instance = ctx
+                .instance
+                .clone()
+                .ok_or_else(|| "monitor model instance missing".to_string())?;
             let prompt = ctx
                 .prompt
                 .clone()
@@ -1464,26 +1479,48 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorInvokeModelStep {
                 .await
                 .map_err(|err| format!("调用本地模型失败: {}", err))?;
             let status = response.status();
+            let response_headers: std::collections::BTreeMap<String, String> = response
+                .headers()
+                .iter()
+                .filter_map(|(key, value)| {
+                    value
+                        .to_str()
+                        .ok()
+                        .map(|text| (key.as_str().to_string(), text.to_string()))
+                })
+                .collect();
             let duration_ms = call_start.elapsed().as_millis() as i64;
             let body_json: Value = response
                 .json()
                 .await
                 .unwrap_or_else(|_| json!({ "raw": "failed to parse json response" }));
+            let mut gateway_log_entry = build_monitor_gateway_log_entry(
+                &model,
+                &instance,
+                endpoint.as_str(),
+                status,
+                duration_ms,
+                &response_headers,
+                &body_json,
+            );
+            gateway_log_entry.trace_id = Some(ctx.execution_id.clone());
+            gateway_log_entry.meta = Some(json!({
+                "scope": "monitor",
+                "task_id": ctx.task.id,
+                "execution_id": ctx.execution_id
+            }));
 
             if !status.is_success() {
                 let detail = extract_error_message(&body_json)
                     .unwrap_or_else(|| format!("upstream status {}", status.as_u16()));
                 if let Some(ref mcp_store) = ctx.state.shared.mcp_store {
+                    gateway_log_entry.error_code = gateway_log_entry
+                        .error_code
+                        .clone()
+                        .or_else(|| Some(format!("UPSTREAM_{}", status.as_u16())));
                     crate::modules::ai_upstream::gateway_log_recorder::record_gateway_log(
                         mcp_store.clone(),
-                        crate::modules::ai_upstream::gateway_log_recorder::GatewayLogEntry {
-                            model: model.model_id.clone(),
-                            status_code: status.as_u16() as i64,
-                            duration_ms,
-                            upstream_url: Some(endpoint.clone()),
-                            error_code: Some(format!("UPSTREAM_{}", status.as_u16())),
-                            ..Default::default()
-                        },
+                        gateway_log_entry,
                     );
                 }
                 ctx.emit_status(
@@ -1497,6 +1534,12 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorInvokeModelStep {
                     })),
                 );
                 return Err(detail);
+            }
+            if let Some(ref mcp_store) = ctx.state.shared.mcp_store {
+                crate::modules::ai_upstream::gateway_log_recorder::record_gateway_log(
+                    mcp_store.clone(),
+                    gateway_log_entry,
+                );
             }
 
             let content = extract_model_content(&body_json);
@@ -1647,6 +1690,60 @@ fn extract_error_message(value: &Value) -> Option<String> {
                 .map(|message| message.trim().to_string())
                 .filter(|message| !message.is_empty())
         })
+}
+
+fn build_monitor_gateway_log_entry(
+    model: &ProviderModel,
+    instance: &ProviderInstance,
+    endpoint: &str,
+    status: reqwest::StatusCode,
+    duration_ms: i64,
+    response_headers: &std::collections::BTreeMap<String, String>,
+    body_json: &Value,
+) -> crate::modules::ai_upstream::gateway_log_recorder::GatewayLogEntry {
+    let (input_tokens, output_tokens, total_tokens) =
+        crate::modules::ai_upstream::gateway_log_recorder::extract_usage_from_response(body_json);
+    let cost_upstream =
+        crate::modules::ai_upstream::gateway_log_recorder::calculate_token_cost(
+            &model.pricing_config,
+            input_tokens,
+            output_tokens,
+        )
+        .unwrap_or(0.0);
+    let cost_user = crate::modules::ai_upstream::gateway_log_recorder::extract_billing_amount_from_response(body_json)
+        .unwrap_or(cost_upstream);
+    let error_code =
+        crate::modules::ai_upstream::gateway_log_recorder::extract_error_code_from_response(
+            Some(body_json),
+        )
+        .or_else(|| {
+            (!status.is_success()).then_some(format!("UPSTREAM_{}", status.as_u16()))
+        });
+
+    crate::modules::ai_upstream::gateway_log_recorder::GatewayLogEntry {
+        user_id: Some(LOCAL_DESKTOP_USER_ID.to_string()),
+        api_key_id: Some(instance.credentials_ref.trim().to_string()).filter(|value| !value.is_empty()),
+        preset_id: Some(instance.preset_slug.trim().to_string()).filter(|value| !value.is_empty()),
+        model: model.model_id.clone(),
+        status_code: status.as_u16() as i64,
+        duration_ms: duration_ms.max(0),
+        ttft_ms: crate::modules::ai_upstream::gateway_log_recorder::extract_ttft_ms_from_response(
+            body_json,
+        ),
+        upstream_url: Some(endpoint.to_string()),
+        retry_count: 0,
+        input_tokens,
+        output_tokens,
+        total_tokens,
+        cost_upstream,
+        cost_user,
+        is_cached: crate::modules::ai_upstream::gateway_log_recorder::extract_cache_hit_from_response(
+            response_headers,
+            Some(body_json),
+        ),
+        error_code,
+        ..Default::default()
+    }
 }
 
 fn extract_notify_channel_ids(notify_config: &Value) -> Vec<String> {
