@@ -2,16 +2,16 @@
   "assistants": {
     "page": {
       "hero": {
-        "titlePrefix": "发现你的下一个",
-        "titleHighlight": "数字伙伴",
-        "subtitle": "不仅仅是 Prompt，而是具有独特人格和技能的智能体"
+        "titlePrefix": "发现你的下一位",
+        "titleHighlight": "智能体搭档",
+        "subtitle": "不只是提示词，而是拥有独特人格与技能的智能体"
       },
       "installed": {
-        "title": "已安装",
-        "subtitle": "管理已安装助手的更新策略"
+        "title": "已安装的智能体",
+        "subtitle": "管理已安装智能体的更新策略"
       },
       "search": {
-        "placeholder": "搜索助手能力 (e.g. Python, 写作...)"
+        "placeholder": "搜索智能体能力（例如：Python、写作）"
       }
     },
     "author": {
@@ -37,20 +37,20 @@
     },
     "toast": {
       "installedTitle": "{name} 已就绪",
-      "installedDesc": "该助手已添加到您的侧边栏",
+      "installedDesc": "该智能体已添加到你的侧边栏",
       "installFailedTitle": "安装失败",
       "installFailedDesc": "请稍后重试",
       "previewFailedTitle": "预览失败",
-      "previewFailedDesc": "请先配置秘书模型或稍后重试",
+      "previewFailedDesc": "请先配置秘书模型，或稍后重试",
       "previewUnavailable": "抱歉，预览暂时不可用。",
-      "assistantCreatedTitle": "助手已创建",
-      "assistantCreatedDesc": "{name} 已创建，可在“我的助手”中管理。",
-      "assistantUpdatedTitle": "助手已更新",
+      "assistantCreatedTitle": "智能体已创建",
+      "assistantCreatedDesc": "{name} 已创建，可在“我的智能体”中管理。",
+      "assistantUpdatedTitle": "智能体已更新",
       "assistantUpdatedDesc": "{name} 已更新。",
-      "assistantDeletedTitle": "助手已删除",
+      "assistantDeletedTitle": "智能体已删除",
       "assistantDeletedDesc": "{name} 已删除。",
-      "followLatestUpdatedTitle": "更新成功",
-      "followLatestUpdatedDesc": "已更新跟随策略。",
+      "followLatestUpdatedTitle": "更新已保存",
+      "followLatestUpdatedDesc": "更新策略已变更。",
       "followLatestUpdateFailedTitle": "更新失败",
       "followLatestUpdateFailedDesc": "请稍后重试",
       "createFailedTitle": "创建失败",
@@ -59,50 +59,50 @@
       "deleteFailedDesc": "请稍后重试"
     },
     "modal": {
-      "tagsTitle": "能力标签",
-      "installButton": "确认安装到侧边栏",
+      "tagsTitle": "标签",
+      "installButton": "添加到侧边栏",
       "installedButton": "已添加到侧边栏",
       "followLatestLabel": "自动跟随更新",
-      "followLatestDesc": "开启后将自动使用助手的最新版本",
+      "followLatestDesc": "自动使用该智能体的最新版本",
       "previewMode": "预览模式",
       "inputPlaceholder": "试着和 {name} 聊聊..."
     },
     "preview": {
-      "greeting": "你好！我是{name}。{description} 有什么我可以帮你的吗？",
+      "greeting": "你好！我是 {name}。{description} 我可以帮你做些什么？",
       "emptyReply": "（未返回内容）"
     },
     "create": {
-    "trigger": "创建助手",
-    "title": "创建专家模板",
-    "description": "设计一个供能力路由使用的专家模板。它不会控制桌面聊天的固定人格。",
-    "descriptionCloud": "设计一个供能力路由使用的专家模板，并保存到你的账号。",
+      "trigger": "创建智能体",
+      "title": "创建专家模板",
+      "description": "设计一个用于能力路由的专家模板。它不会控制桌面聊天中的固定人格。",
+      "descriptionCloud": "设计一个用于能力路由的专家模板，并将其保存到你的账号。",
       "nameLabel": "名称",
-      "namePlaceholder": "例如：Python Guru",
+      "namePlaceholder": "例如：Python 专家",
       "descLabel": "简短介绍",
-      "descPlaceholder": "例如：擅长 Python 优化与调试...",
-      "descHelp": "可选，显示在市场卡片上。",
+      "descPlaceholder": "例如：擅长 Python 优化、调试与代码审查...",
+      "descHelp": "可选，会显示在市场中的智能体卡片上。",
       "themeLabel": "主题",
       "themePlaceholder": "选择主题色",
       "iconLabel": "图标",
-      "iconHelp": "选择一个代表助手的图标。",
+      "iconHelp": "选择一个代表该智能体的图标。",
       "tagsLabel": "标签",
-      "tagsPlaceholder": "例如：Coding, Python, Debugging",
-      "tagsHelp": "可选，可从列表选择或输入自定义标签。",
+      "tagsPlaceholder": "例如：编程、Python、调试",
+      "tagsHelp": "可选。可从列表中选择，或添加自定义标签。",
       "optionalSuffix": "（可选）",
-      "tagsSelectPlaceholder": "选择或输入标签",
-      "tagsInputPlaceholder": "输入标签并回车添加",
-      "tagsEmpty": "未选择标签",
+      "tagsSelectPlaceholder": "选择或添加标签",
+      "tagsInputPlaceholder": "输入标签后按回车添加",
+      "tagsEmpty": "尚未选择标签",
       "tagsAdd": "添加",
       "tagsNoOptions": "暂无可选标签",
-    "systemPromptLabel": "专家模板 Prompt",
-    "systemPromptPlaceholder": "你是一名资深 Python 开发者，重点关注调试、优化和代码审查策略...",
-    "systemPromptHelp": "这里定义的是供路由使用的专家能力模板。桌面聊天的固定人格请在设置页单独配置。",
-      "shareLabel": "是否分享到市场",
-      "shareHelp": "开启后将提交审核，通过后可在市场展示。",
-      "shareHint": "更新后需要重新审核，通过后才能在市场展示。",
-    "submit": "创建模板",
+      "systemPromptLabel": "专家模板提示词",
+      "systemPromptPlaceholder": "你是一名资深 Python 开发者，请重点关注调试、优化和代码审查策略...",
+      "systemPromptHelp": "这里定义的是供路由使用的专家能力模板。桌面聊天中的固定回复人格需在设置中单独配置。",
+      "shareLabel": "分享到市场",
+      "shareHelp": "提交审核后，审核通过才会出现在市场中。",
+      "shareHint": "修改内容会先经过审核，审核通过后才会出现在市场中。",
+      "submit": "创建模板",
       "submitting": "创建中...",
-      "submitCloud": "创建助手",
+      "submitCloud": "创建智能体",
       "submittingCloud": "创建中...",
       "colors": {
         "ocean": "海洋蓝",
@@ -113,49 +113,49 @@
         "neon": "霓虹粉"
       },
       "validation": {
-        "nameMin": "名称至少 2 个字符。",
-        "descMin": "简介至少 10 个字符。",
-        "promptMin": "系统提示词至少 20 个字符。",
-        "tagsMin": "至少填写一个标签。",
+        "nameMin": "名称至少需要 2 个字符。",
+        "descMin": "简介至少需要 10 个字符。",
+        "promptMin": "系统提示词需足够完整（至少 20 个字符）。",
+        "tagsMin": "至少添加一个标签。",
         "iconRequired": "请选择一个图标。"
       }
     },
-  "edit": {
-    "trigger": "编辑",
-    "title": "编辑专家模板",
-    "description": "更新专家模板资料与路由 Prompt。桌面固定人格请在设置页单独配置。",
+    "edit": {
+      "trigger": "编辑",
+      "title": "编辑专家模板",
+      "description": "更新专家模板资料和路由提示词。桌面固定人格请在设置中单独配置。",
       "submit": "保存修改",
       "submitting": "保存中...",
       "delete": "删除",
       "deleting": "删除中...",
-      "deleteConfirmTitle": "确认删除助手？",
-      "deleteConfirmDesc": "这会从本地移除 {name}，且无法恢复。",
-      "deleteConfirmAction": "确认删除",
+      "deleteConfirmTitle": "确认删除智能体？",
+      "deleteConfirmDesc": "这会将 {name} 从你的本地列表中移除，此操作无法撤销。",
+      "deleteConfirmAction": "删除",
       "deleteConfirmCancel": "取消"
     },
     "select": {
-      "title": "选择助手",
-      "subtitle": "为你的任务选择最合适的智能体。",
+      "title": "选择智能体",
+      "subtitle": "为你的任务选择最合适的专长能力。",
       "create": {
         "name": "创建",
-        "desc": "创建你的专属助手，默认私有。"
+        "desc": "创建你自己的智能体，默认私有。"
       },
       "presets": {
         "coder": {
           "name": "程序员",
-          "desc": "Python、JS、Rust 专家。支持执行与调试。"
+          "desc": "精通 Python、JS、Rust，擅长执行、调试与排障。"
         },
         "artist": {
           "name": "艺术家",
-          "desc": "DALL·E 3、Stable Diffusion，支持视觉创作与编辑。"
+          "desc": "擅长 DALL·E 3、Stable Diffusion，支持视觉创作与编辑。"
         },
         "writer": {
           "name": "写作者",
-          "desc": "创意写作、文案与故事创作，长文更擅长。"
+          "desc": "擅长创意写作、文案和故事创作，更适合长文本输出。"
         },
         "assistant": {
           "name": "助手",
-          "desc": "通用助理，擅长分析、规划与对话。"
+          "desc": "通用型助手，擅长分析、规划与对话。"
         }
       }
     }

@@ -1315,10 +1315,6 @@
       "title": "Plugin Reviews",
       "description": "Approve or reject plugin market submissions with security review snapshots"
     },
-    "scanReviews": {
-      "title": "Scan Reviews",
-      "description": "Review local scan output, security signals, and index reconciliation for doc-first assets"
-    },
     "skillsPage": {
       "status": {
         "active": "Active",
@@ -1453,74 +1449,6 @@
         "loading": "Loading plugin submissions...",
         "failed": "Failed to load plugin submissions",
         "noData": "No plugin submissions found"
-      }
-    },
-    "scanReviewsPage": {
-      "stats": {
-        "documents": "Documents",
-        "skillBundles": "Skill Bundles",
-        "missingIndexes": "Missing Indexes",
-        "needsReview": "Needs Review"
-      },
-      "filters": {
-        "searchPlaceholder": "Search path, bundle, excerpt, or finding...",
-        "severity": "Severity"
-      },
-      "severity": {
-        "error": "Error",
-        "warn": "Warning",
-        "info": "Info"
-      },
-      "status": {
-        "healthy": "Healthy",
-        "needs_review": "Needs review"
-      },
-      "actions": {
-        "fixAll": "Fix all actionable findings",
-        "fixingAll": "Fixing all...",
-        "rescan": "Rescan",
-        "rescanning": "Rescanning...",
-        "running": "Running...",
-        "register_bundle": "Register bundle",
-        "reindex_bundle": "Rebuild index",
-        "cleanup_missing_install": "Remove stale record"
-      },
-      "feedback": {
-        "refreshed": "Scan refreshed",
-        "actionApplied": "Action applied",
-        "batchApplied": "Batch fix complete · applied {applied}, failed {failed}, skipped {skipped}",
-        "actionFailed": "Action failed"
-      },
-      "summary": {
-        "target": "Target",
-        "finishedAt": "Finished at",
-        "findings": "Findings"
-      },
-      "table": {
-        "documents": {
-          "title": "Documents",
-          "headers": {
-            "document": "Document",
-            "status": "Status",
-            "kind": "Kind",
-            "summary": "Summary"
-          }
-        },
-        "findings": {
-          "title": "Findings",
-          "headers": {
-            "finding": "Finding",
-            "severity": "Severity",
-            "message": "Message"
-          }
-        }
-      },
-      "empty": {
-        "desktopOnly": "Scan review is available only in the desktop runtime",
-        "loading": "Loading scan review...",
-        "failed": "Failed to load scan review",
-        "noDocuments": "No scanned documents found",
-        "noFindings": "No findings found"
       }
     },
     "maintenanceSettingsPage": {

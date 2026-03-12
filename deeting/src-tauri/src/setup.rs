@@ -67,7 +67,7 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         let code_mode_state = CodeModeState::new(&database_url)
             .await
             .map_err(|e| McpError::Storage(e.to_string()))?;
-        let monitor_state = MonitorState::new(&database_url, provider_state.store.clone())
+        let monitor_state = MonitorState::new(&database_url, provider_state.store.clone(), Some(mcp_state.store.clone()))
             .await
             .map_err(|e| McpError::Storage(e.to_string()))?;
 

@@ -53,6 +53,78 @@
       "description": "Latest gateway error logs",
       "viewAll": "View All",
       "noErrors": "No recent errors - all systems operational"
+    },
+    "scanReviews": {
+      "title": "Scan Reviews",
+      "description": "Review local scan output, security signals, and index reconciliation for doc-first assets"
+    },
+    "scanReviewsPage": {
+      "stats": {
+        "documents": "Documents",
+        "skillBundles": "Skill Bundles",
+        "missingIndexes": "Missing Indexes",
+        "needsReview": "Needs Review"
+      },
+      "filters": {
+        "searchPlaceholder": "Search paths, bundles, excerpts, or findings...",
+        "severity": "Severity"
+      },
+      "severity": {
+        "error": "Error",
+        "warn": "Warning",
+        "info": "Info"
+      },
+      "status": {
+        "healthy": "Healthy",
+        "needs_review": "Needs Review"
+      },
+      "actions": {
+        "fixAll": "Fix all actionable findings",
+        "fixingAll": "Applying fixes...",
+        "rescan": "Rescan",
+        "rescanning": "Rescanning...",
+        "running": "Running...",
+        "register_bundle": "Register bundle",
+        "reindex_bundle": "Rebuild index",
+        "cleanup_missing_install": "Remove stale record"
+      },
+      "feedback": {
+        "refreshed": "Scan results refreshed",
+        "actionApplied": "Action applied",
+        "batchApplied": "Batch fix complete · applied {applied}, failed {failed}, skipped {skipped}",
+        "actionFailed": "Action failed"
+      },
+      "summary": {
+        "target": "Target",
+        "finishedAt": "Finished",
+        "findings": "Findings"
+      },
+      "table": {
+        "documents": {
+          "title": "Documents & Bundles",
+          "headers": {
+            "document": "Document",
+            "status": "Status",
+            "kind": "Kind",
+            "summary": "Summary"
+          }
+        },
+        "findings": {
+          "title": "Findings",
+          "headers": {
+            "finding": "Finding",
+            "severity": "Severity",
+            "message": "Message"
+          }
+        }
+      },
+      "empty": {
+        "desktopOnly": "Local scan review is only available in the desktop app",
+        "loading": "Loading scan results...",
+        "failed": "Failed to load scan results",
+        "noDocuments": "No documents found",
+        "noFindings": "No findings found"
+      }
     }
   }
 }

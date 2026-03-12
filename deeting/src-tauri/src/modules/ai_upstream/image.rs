@@ -3,6 +3,9 @@ use serde_json::{json, Map, Value};
 use uuid::Uuid;
 
 use crate::modules::ai_upstream::chat::{extract_upstream_error_message, truncate_upstream_body};
+use crate::modules::ai_upstream::gateway_log_recorder::{
+    extract_error_code_from_response, record_gateway_log, GatewayLogEntry,
+};
 use crate::modules::mcp::commands::common_impl::to_string;
 use crate::state::AppState;
 
@@ -108,6 +111,18 @@ pub(crate) async fn request_provider_image_generation(
         log::warn!("failed to record bandit feedback: {}", err);
     }
     if !success {
+        record_gateway_log(
+            app_state.mcp.store.clone(),
+            GatewayLogEntry {
+                trace_id: trace_id.map(str::to_string),
+                model: effective_model.clone(),
+                status_code: status.as_u16() as i64,
+                duration_ms: latency_ms as i64,
+                upstream_url: Some(prepared.display_url()),
+                error_code: extract_error_code_from_response(raw_json.as_ref()),
+                ..Default::default()
+            },
+        );
         return Err(extract_upstream_error_message(
             status,
             raw_json.as_ref(),
@@ -121,6 +136,18 @@ pub(crate) async fn request_provider_image_generation(
             truncate_upstream_body(raw_text.as_str(), 300)
         )
     })?;
+
+    record_gateway_log(
+        app_state.mcp.store.clone(),
+        GatewayLogEntry {
+            trace_id: trace_id.map(str::to_string),
+            model: effective_model.clone(),
+            status_code: status.as_u16() as i64,
+            duration_ms: latency_ms as i64,
+            upstream_url: Some(prepared.display_url()),
+            ..Default::default()
+        },
+    );
 
     if prepared
         .async_config

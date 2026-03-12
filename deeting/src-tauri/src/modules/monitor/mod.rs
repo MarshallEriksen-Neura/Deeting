@@ -46,6 +46,7 @@ struct MonitorWorkerShared {
     client: reqwest::Client,
     provider_store: Arc<ProviderStore>,
     store: Arc<MonitorStore>,
+    mcp_store: Option<Arc<crate::modules::mcp::store::McpStore>>,
     worker_task: Mutex<Option<JoinHandle<()>>>,
     tick_lock: Mutex<()>,
     config: RwLock<WorkerConfig>,
@@ -127,6 +128,7 @@ impl MonitorState {
     pub async fn new(
         database_url: &str,
         provider_store: Arc<ProviderStore>,
+        mcp_store: Option<Arc<crate::modules::mcp::store::McpStore>>,
     ) -> Result<Self, String> {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
@@ -143,6 +145,7 @@ impl MonitorState {
                 client,
                 provider_store,
                 store,
+                mcp_store,
                 worker_task: Mutex::new(None),
                 tick_lock: Mutex::new(()),
                 config: RwLock::new(config),
@@ -1343,11 +1346,13 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorInvokeModelStep {
                 }
             }
 
+            let call_start = std::time::Instant::now();
             let response = request
                 .send()
                 .await
                 .map_err(|err| format!("调用本地模型失败: {}", err))?;
             let status = response.status();
+            let duration_ms = call_start.elapsed().as_millis() as i64;
             let body_json: Value = response
                 .json()
                 .await
@@ -1356,6 +1361,19 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorInvokeModelStep {
             if !status.is_success() {
                 let detail = extract_error_message(&body_json)
                     .unwrap_or_else(|| format!("upstream status {}", status.as_u16()));
+                if let Some(ref mcp_store) = ctx.state.shared.mcp_store {
+                    crate::modules::ai_upstream::gateway_log_recorder::record_gateway_log(
+                        mcp_store.clone(),
+                        crate::modules::ai_upstream::gateway_log_recorder::GatewayLogEntry {
+                            model: model.model_id.clone(),
+                            status_code: status.as_u16() as i64,
+                            duration_ms,
+                            upstream_url: Some(endpoint.clone()),
+                            error_code: Some(format!("UPSTREAM_{}", status.as_u16())),
+                            ..Default::default()
+                        },
+                    );
+                }
                 ctx.emit_status(
                     "evolve",
                     "monitor_invoke_model",

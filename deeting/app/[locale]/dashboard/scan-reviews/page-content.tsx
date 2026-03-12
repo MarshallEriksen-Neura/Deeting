@@ -36,7 +36,7 @@ function toneForSeverity(severity: string) {
 }
 
 export function PageContent() {
-  const t = useTranslations("admin.scanReviewsPage")
+  const t = useTranslations("dashboard.scanReviewsPage")
   const locale = useLocale()
   const supported = isTauriRuntime()
   const [searchQuery, setSearchQuery] = useState("")

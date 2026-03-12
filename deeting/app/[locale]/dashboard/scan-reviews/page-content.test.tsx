@@ -66,7 +66,7 @@ const mockRun = {
   }],
 }
 
-describe("Scan reviews page", () => {
+describe("Dashboard scan reviews page", () => {
   beforeEach(() => {
     jest.clearAllMocks()
     mockUseSWR.mockReturnValue({ data: mockRun, error: undefined, isLoading: false, isValidating: false, mutate: mockMutate })

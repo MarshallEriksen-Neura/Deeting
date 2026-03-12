@@ -132,7 +132,7 @@
       "pathStyleLabel": "Use path-style URLs",
       "pathStyleHelp": "Enable this if your endpoint expects the bucket name in the URL path instead of the hostname.",
       "endpointLabel": "Bucket endpoint",
-      "endpointPlaceholder": "https://<bucket>.<storage-endpoint>",
+      "endpointPlaceholder": "https://&lt;bucket&gt;.&lt;storage-endpoint&gt;",
       "endpointHelp": "Must be an HTTPS endpoint for your bucket or object storage service.",
       "publicBaseUrlLabel": "Public base URL",
       "publicBaseUrlPlaceholder": "https://cdn.example.com/assets",

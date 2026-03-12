@@ -53,6 +53,78 @@
       "description": "最新的网关错误日志",
       "viewAll": "查看全部",
       "noErrors": "无最近错误 - 系统运行正常"
+    },
+    "scanReviews": {
+      "title": "扫描审查",
+      "description": "查看本地扫描结果、风险信号以及 doc-first 资产的索引对账情况"
+    },
+    "scanReviewsPage": {
+      "stats": {
+        "documents": "文档数",
+        "skillBundles": "技能包",
+        "missingIndexes": "缺失索引",
+        "needsReview": "待审查"
+      },
+      "filters": {
+        "searchPlaceholder": "搜索路径、技能包、摘要或发现项...",
+        "severity": "严重级别"
+      },
+      "severity": {
+        "error": "错误",
+        "warn": "警告",
+        "info": "提示"
+      },
+      "status": {
+        "healthy": "健康",
+        "needs_review": "待审查"
+      },
+      "actions": {
+        "fixAll": "修复全部可执行发现项",
+        "fixingAll": "批量修复中...",
+        "rescan": "重新扫描",
+        "rescanning": "重新扫描中...",
+        "running": "执行中...",
+        "register_bundle": "补登记技能包",
+        "reindex_bundle": "重建索引",
+        "cleanup_missing_install": "移除过期记录"
+      },
+      "feedback": {
+        "refreshed": "扫描结果已刷新",
+        "actionApplied": "操作已执行",
+        "batchApplied": "批量修复完成 · 已执行 {applied} 项，失败 {failed} 项，跳过 {skipped} 项",
+        "actionFailed": "操作失败"
+      },
+      "summary": {
+        "target": "扫描目标",
+        "finishedAt": "完成时间",
+        "findings": "发现项"
+      },
+      "table": {
+        "documents": {
+          "title": "文档与技能包",
+          "headers": {
+            "document": "文档",
+            "status": "状态",
+            "kind": "类型",
+            "summary": "摘要"
+          }
+        },
+        "findings": {
+          "title": "风险发现",
+          "headers": {
+            "finding": "发现项",
+            "severity": "严重级别",
+            "message": "说明"
+          }
+        }
+      },
+      "empty": {
+        "desktopOnly": "仅桌面端支持本地扫描审查",
+        "loading": "正在加载扫描结果...",
+        "failed": "加载扫描结果失败",
+        "noDocuments": "暂无文档记录",
+        "noFindings": "暂无风险发现"
+      }
     }
   }
 }

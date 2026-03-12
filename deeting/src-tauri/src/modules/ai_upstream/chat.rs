@@ -1,5 +1,9 @@
 use std::collections::HashMap;
 
+use crate::modules::ai_upstream::gateway_log_recorder::{
+    extract_error_code_from_response, extract_usage_from_response, record_gateway_log,
+    GatewayLogEntry,
+};
 use crate::modules::ai_upstream::types::LocalModelConnection;
 use crate::modules::mcp::types::LocalChatInputMessage;
 use crate::state::AppState;
@@ -347,6 +351,18 @@ pub(crate) async fn request_provider_chat_completion(
         log::warn!("failed to record bandit feedback: {}", err);
     }
     if !success {
+        record_gateway_log(
+            app_state.mcp.store.clone(),
+            GatewayLogEntry {
+                trace_id: trace_id.map(str::to_string),
+                model: effective_model.clone(),
+                status_code: status.as_u16() as i64,
+                duration_ms: latency_ms as i64,
+                upstream_url: Some(prepared.display_url()),
+                error_code: extract_error_code_from_response(raw_json.as_ref()),
+                ..Default::default()
+            },
+        );
         return Err(extract_upstream_error_message(
             status,
             raw_json.as_ref(),
@@ -366,6 +382,22 @@ pub(crate) async fn request_provider_chat_completion(
         &prepared.response_transform,
         raw,
         status.as_u16(),
+    );
+    let (input_tokens, output_tokens, total_tokens) =
+        extract_usage_from_response(&transformed);
+    record_gateway_log(
+        app_state.mcp.store.clone(),
+        GatewayLogEntry {
+            trace_id: trace_id.map(str::to_string),
+            model: effective_model.clone(),
+            status_code: status.as_u16() as i64,
+            duration_ms: latency_ms as i64,
+            upstream_url: Some(prepared.display_url()),
+            input_tokens,
+            output_tokens,
+            total_tokens,
+            ..Default::default()
+        },
     );
     Ok(normalize_chat_completion_response(transformed))
 }

@@ -99,6 +99,12 @@ export const userNavigation: NavGroup[] = [
         icon: "activity",
       },
       {
+        id: "scan-reviews",
+        label: "nav.scanReviews",
+        href: "/dashboard/scan-reviews",
+        icon: "fileText",
+      },
+      {
         id: "logs",
         label: "nav.logs",
         href: "/dashboard/logs",
@@ -208,12 +214,6 @@ export const adminNavigation: NavGroup[] = [
         label: "nav.pluginReviews",
         href: "/admin/plugin-reviews",
         icon: "shield",
-      },
-      {
-        id: "scan-reviews",
-        label: "nav.scanReviews",
-        href: "/admin/scan-reviews",
-        icon: "fileText",
       },
       {
         id: "admin-memory",

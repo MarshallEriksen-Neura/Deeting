@@ -132,7 +132,7 @@
       "pathStyleLabel": "使用 Path-Style URL",
       "pathStyleHelp": "如果你的 endpoint 需要把 bucket 放在 URL 路径中，而不是子域名中，请开启此项。",
       "endpointLabel": "Bucket Endpoint",
-      "endpointPlaceholder": "https://<bucket>.<storage-endpoint>",
+      "endpointPlaceholder": "https://&lt;bucket&gt;.&lt;storage-endpoint&gt;",
       "endpointHelp": "必须填写 HTTPS 的 bucket 或对象存储服务地址。",
       "publicBaseUrlLabel": "公开访问基地址",
       "publicBaseUrlPlaceholder": "https://cdn.example.com/assets",

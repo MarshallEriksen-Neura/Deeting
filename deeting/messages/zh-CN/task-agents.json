@@ -72,7 +72,7 @@
         "invocationKind": "调用类型",
         "preferredForImageGeneration": "图片生成优先",
         "model": "模型",
-        "providerModelId": "Provider Model ID",
+        "providerModelId": "提供商模型 ID",
         "modelConfigJson": "高级模型配置 JSON",
         "tags": "标签",
         "discoverable": "可发现",
@@ -87,7 +87,7 @@
         "model": "default",
         "providerModelId": "provider/model-id",
         "modelConfigJson": "{\n  \"model\": \"default\"\n}",
-        "tags": "research, docs, release"
+        "tags": "研究, 文档, 发布"
       },
       "modelConfig": {
         "helper": "保存时，上方基础模型字段会覆盖 JSON 中同名的配置项。",
@@ -111,13 +111,13 @@
       "skillsTitle": "已安装技能",
       "skillsDescription": "这里只能绑定已在本地安装的技能。",
       "searchToolsPlaceholder": "按名称、ID 或状态搜索工具...",
-      "searchSkillsPlaceholder": "按技能 ID、版本或 Runtime 搜索...",
+      "searchSkillsPlaceholder": "按技能 ID、版本或运行时搜索...",
       "selectedOnly": "只看已选",
       "noTools": "当前没有可用的本地工具。",
       "noSkills": "当前没有已安装技能。",
       "noFilteredTools": "没有匹配当前筛选条件的工具。",
       "noFilteredSkills": "没有匹配当前筛选条件的技能。",
-      "skillMeta": "版本 {version} · Runtime {runtime}",
+      "skillMeta": "版本 {version} · 运行时 {runtime}",
       "unknownVersion": "未知",
       "unknownRuntime": "未知"
     },
@@ -126,8 +126,8 @@
       "description": "用测试消息运行已保存的智能体，并检查完整的本地响应。",
       "fields": {
         "message": "预览消息",
-        "temperature": "Temperature",
-        "maxTokens": "最大 Tokens",
+        "temperature": "温度",
+        "maxTokens": "最大 Token 数",
         "maxRounds": "最大工具轮数"
       },
       "placeholders": {

@@ -24,6 +24,7 @@ const namespaces = [
   "video",
   "memory",
   "plugins",
+  "task-agents",
 ] as const
 
 export default getRequestConfig(async ({ requestLocale }) => {

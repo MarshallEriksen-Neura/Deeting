@@ -14,19 +14,19 @@ const PageContent = dynamic(
   }
 )
 
-export default async function Page({
+export default async function DashboardScanReviewsPage({
   params,
 }: {
   params: Promise<{ locale: string }>
 }) {
   const { locale } = await params
   setRequestLocale(locale)
-  const tAdmin = await getTranslations({ locale, namespace: "admin" })
+  const tDashboard = await getTranslations({ locale, namespace: "dashboard" })
 
   return (
     <AdminPageShell
-      title={tAdmin("scanReviews.title")}
-      description={tAdmin("scanReviews.description")}
+      title={tDashboard("scanReviews.title")}
+      description={tDashboard("scanReviews.description")}
       icon={<Shield />}
     >
       <PageContent />
