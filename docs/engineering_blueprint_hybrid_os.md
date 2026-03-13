@@ -55,7 +55,7 @@ The **Gateway (Backend)** serves as the Kernel. It abstracts the difference betw
 ### 3.1 The Aggregator Pattern
 When a session starts, the Kernel aggregates tools:
 
-1.  **Local Discovery**: Scans installed skill/plugin bundles, reads `SKILL.md` plus bundle metadata, and only uses `llm-tool.yaml` when a host contract still requires an explicit schema.
+1.  **Local Discovery**: Scans installed skill/plugin bundles and loads callable tool contracts (`llm-tool.yaml` or equivalent schema from manifest/runtime metadata). `SKILL.md` is loaded as usage/safety guidance.
 2.  **Remote Handshake**: Connects to configured Cloud MCP Endpoint via SSE. Requests `tools/list`.
 3.  **Fusion**: Merges both lists into a single `system_prompt` context for the LLM.
 
@@ -113,7 +113,7 @@ Regardless of where the code runs, the UI update path is identical:
 ### Phase 3: The Plugin Framework V2 (Weeks 5-6)
 *   **Objective**: Standardize Local Extensions.
 *   **Tasks**:
-    1.  Implement the `SKILL.md` + metadata loader in Gateway, with `llm-tool.yaml` as an optional compatibility contract.
+    1.  Implement tool-contract + metadata loader in Gateway (`llm-tool.yaml` / generated schema + `deeting.json`), and keep `SKILL.md` as guidance context.
     2.  Create the "Plugin Sandbox" (Process isolation for local scripts).
     3.  Implement the GitOps -> CI -> Registry pipeline (from V2 plan).
 

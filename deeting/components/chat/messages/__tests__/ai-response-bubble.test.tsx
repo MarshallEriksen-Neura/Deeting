@@ -67,7 +67,7 @@ describe("AIResponseBubble debug panel", () => {
     render(<AIResponseBubble parts={parts} isActive />);
 
     expect(screen.getByText("LIVE")).toBeInTheDocument();
-    expect(screen.getByText("toolGroup.summary")).toBeInTheDocument();
+    expect(screen.getByText("toolGroup.skillSummary")).toBeInTheDocument();
   });
 
   it("forwards repeat_count from status meta to terminal stream", () => {
@@ -91,20 +91,19 @@ describe("AIResponseBubble debug panel", () => {
 
   it("does not show sandbox label for search_sdk console", () => {
     const parts: MessageBlock[] = [
-      { id: "exec-title", type: "execution_section", title: "Local Tool Actions" },
-      { id: "log-1", type: "console_log", stream: "stdout", content: "hello" },
       { id: "call-1", type: "tool_call", toolName: "search_sdk", status: "success" },
     ];
 
     render(<AIResponseBubble parts={parts} />);
 
     expect(screen.queryByText("SANDBOX EXECUTION")).not.toBeInTheDocument();
-    expect(screen.getByText("Local Tool Actions")).toBeInTheDocument();
+    expect(screen.queryByText("Code Execution")).not.toBeInTheDocument();
+    expect(screen.getByText("SDK Search")).toBeInTheDocument();
   });
 
   it("shows sandbox label for execute_code_plan console", () => {
     const parts: MessageBlock[] = [
-      { id: "exec-title", type: "execution_section", title: "Local Tool Actions" },
+      { id: "exec-title", type: "execution_section", title: "Code Execution" },
       { id: "log-1", type: "console_log", stream: "stdout", content: "hello" },
       { id: "call-1", type: "tool_call", toolName: "execute_code_plan", status: "success" },
     ];
@@ -116,10 +115,8 @@ describe("AIResponseBubble debug panel", () => {
 
   it("keeps sandbox label scoped to the matching console sequence", () => {
     const parts: MessageBlock[] = [
-      { id: "exec-title-1", type: "execution_section", title: "Local Tool Actions" },
-      { id: "log-1", type: "console_log", stream: "stdout", content: "search log" },
       { id: "call-1", type: "tool_call", toolName: "search_sdk", status: "success" },
-      { id: "exec-title-2", type: "execution_section", title: "Local Tool Actions" },
+      { id: "exec-title-2", type: "execution_section", title: "Code Execution" },
       { id: "log-2", type: "console_log", stream: "stdout", content: "exec log" },
       { id: "call-2", type: "tool_call", toolName: "execute_code_plan", status: "success" },
     ];
@@ -127,7 +124,7 @@ describe("AIResponseBubble debug panel", () => {
     render(<AIResponseBubble parts={parts} />);
 
     expect(screen.getByText("SANDBOX EXECUTION")).toBeInTheDocument();
-    expect(screen.getAllByText("Local Tool Actions")).toHaveLength(1);
+    expect(screen.getByText("SDK Search")).toBeInTheDocument();
   });
 
   it("renders capability transition card", () => {
@@ -184,7 +181,7 @@ describe("AIResponseBubble debug panel", () => {
 
     render(<AIResponseBubble parts={parts} />);
 
-    fireEvent.click(screen.getByText("execute_code_plan"));
+    fireEvent.click(screen.getByText("Code Execution"));
     fireEvent.click(screen.getByText("Debug"));
 
     expect(screen.getByText("Runtime Tool Timeline")).toBeInTheDocument();
@@ -217,7 +214,7 @@ describe("AIResponseBubble debug panel", () => {
 
     render(<AIResponseBubble parts={parts} />);
 
-    fireEvent.click(screen.getByText("execute_code_plan"));
+    fireEvent.click(screen.getByText("Code Execution"));
     fireEvent.click(screen.getByText("Debug"));
     fireEvent.click(screen.getByText("Copy JSON"));
 

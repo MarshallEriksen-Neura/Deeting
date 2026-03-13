@@ -7,10 +7,10 @@ description: "A simple tool to greet the user and show a status dashboard."
 
 ## Overview
 
-Use `SKILL.md` as the primary AI-facing entry for this plugin.
+Use `SKILL.md` as behavior guidance for this plugin (non-executable contract).
 
 - Keep `deeting.json` focused on metadata, runtime, permissions, and UI entrypoints.
-- Keep `llm-tool.yaml` only when a host needs an explicit tool contract.
+- Keep callable tool schema in `llm-tool.yaml` (or generated equivalent) so host/MCP can register executable tools.
 - Keep `main.py` aligned with the tool names and behavior described here.
 
 ## Available Tools

@@ -274,6 +274,8 @@
     },
     "toolGroup": {
       "summary": "调用了 {count} 个工具",
+      "skillSummary": "使用了 {count} 项技能",
+      "codeExecution": "代码执行",
       "expand": "展开详情",
       "collapse": "收起"
     },

@@ -274,6 +274,8 @@
     },
     "toolGroup": {
       "summary": "Used {count} tools",
+      "skillSummary": "Used {count} skills",
+      "codeExecution": "Code Execution",
       "expand": "Show details",
       "collapse": "Collapse"
     },

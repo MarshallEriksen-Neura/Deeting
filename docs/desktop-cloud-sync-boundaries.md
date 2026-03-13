@@ -166,7 +166,7 @@ Carries:
 
 Does not carry:
 - mandatory cloud semantic lookup dependency
-- direct tool materialization contract by default
+- executable runtime state itself (execution is resolved by local/host tool registry)
 
 ## Review Rules
 
@@ -191,8 +191,8 @@ Does not carry:
 ### Desktop Chat
 - fixed persona comes from desktop settings
 - assistant templates may be JIT matched as expert capability guidance
-- skills are docs-first bundles
-- direct capabilities are separate callable tools
+- skills are capability bundles with docs + metadata + runtime entrypoints
+- direct callable abilities must be surfaced through MCP/host tool registry (not by reading docs alone)
 
 ### Desktop Install
 - assistant templates: no install required
@@ -207,7 +207,7 @@ Does not carry:
 Do not:
 - describe assistant sync as an install flow
 - require skill Qdrant success for plugin market display
-- treat skill bundle metadata as direct callable tool schema
+- assume AI can execute skill repo scripts directly without host tool registration
 - inject assistant template as desktop fixed persona
 - merge assistant and skill feeds back into a single runtime semantic feed
 - let desktop runtime depend on cloud unified asset ambiguity

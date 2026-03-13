@@ -413,7 +413,7 @@ impl LocalRealtimeToolTraceEmitter {
         }
         self.emitted_execution_section = true;
         self.emit_blocks(vec![
-            serde_json::json!({ "type": "execution_section", "title": "Local Tool Actions" }),
+            serde_json::json!({ "type": "execution_section", "title": "Code Execution" }),
         ]);
     }
 
@@ -491,7 +491,6 @@ async fn maybe_handle_local_code_mode_tool_calls(
                 "tool '{}' is not enabled for the current execution policy",
                 tool_name
             );
-            realtime_emitter.emit_execution_section_once();
             realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call.id,"toolName":tool_name,"status":"running"})]);
             let meta = serde_json::json!({
                 "id": call.id,
@@ -614,7 +613,6 @@ async fn maybe_handle_local_code_mode_tool_calls(
                 }
             }
         } else if tool_name == "search_sdk" {
-            realtime_emitter.emit_execution_section_once();
             realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call.id,"toolName":tool_name,"status":"running"})]);
             let query = call
                 .arguments
@@ -648,7 +646,6 @@ async fn maybe_handle_local_code_mode_tool_calls(
                 serde_json::to_string_pretty(&search_res).unwrap()
             ));
         } else if tool_name == "consult_expert_network" {
-            realtime_emitter.emit_execution_section_once();
             realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call.id,"toolName":tool_name,"status":"running"})]);
             let intent_query = call
                 .arguments
@@ -680,7 +677,6 @@ async fn maybe_handle_local_code_mode_tool_calls(
                 serde_json::to_string_pretty(&consult_res).unwrap()
             ));
         } else if tool_name == "attach_capability" {
-            realtime_emitter.emit_execution_section_once();
             realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call.id,"toolName":tool_name,"status":"running"})]);
             let capability_id = call
                 .arguments
@@ -753,7 +749,6 @@ async fn maybe_handle_local_code_mode_tool_calls(
                 }
             }
         } else if tool_name == "detach_capability" {
-            realtime_emitter.emit_execution_section_once();
             realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call.id,"toolName":tool_name,"status":"running"})]);
             let reason = call
                 .arguments
@@ -777,7 +772,6 @@ async fn maybe_handle_local_code_mode_tool_calls(
                 capability_name: active_capability.map(|v| v.capability_name.clone()),
             });
         } else if tool_name == "sys_submit_onboarding_request" {
-            realtime_emitter.emit_execution_section_once();
             realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call.id,"toolName":tool_name,"status":"running"})]);
             let asset_type = call
                 .arguments
@@ -840,7 +834,6 @@ async fn maybe_handle_local_code_mode_tool_calls(
             }
         } else {
             synthesized = true;
-            realtime_emitter.emit_execution_section_once();
             realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call.id,"toolName":tool_name,"status":"running"})]);
             match resolve_callable_mcp_tool_by_ref(
                 app_state.mcp.store.as_ref(),

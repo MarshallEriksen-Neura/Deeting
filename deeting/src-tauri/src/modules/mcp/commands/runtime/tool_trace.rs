@@ -9,11 +9,20 @@ pub(crate) fn build_local_tool_trace_blocks(
         return Vec::new();
     }
 
+    let has_code_execution = tool_call_meta.iter().any(|item| {
+        item.get("name")
+            .and_then(|v| v.as_str())
+            .map(|n| n.eq_ignore_ascii_case("execute_code_plan"))
+            .unwrap_or(false)
+    });
+
     let mut blocks = Vec::with_capacity(1 + tool_call_meta.len() * 2);
-    blocks.push(serde_json::json!({
-        "type": "execution_section",
-        "title": "Local Tool Actions"
-    }));
+    if has_code_execution {
+        blocks.push(serde_json::json!({
+            "type": "execution_section",
+            "title": "Code Execution"
+        }));
+    }
 
     for item in tool_call_meta {
         let tool_name = item

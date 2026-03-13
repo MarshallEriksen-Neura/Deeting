@@ -13,11 +13,11 @@ bunx create-deeting-plugin
 
 Follow the prompts to name your plugin. This creates a standard structure:
 
-- `SKILL.md`: Primary AI-facing entry point. Describe the tool surface, usage rules, and guardrails here first.
+- `SKILL.md`: Guidance and guardrails for model behavior (non-executable contract).
 - `deeting.json`: Metadata, runtime, permissions, and UI/backend entrypoints.
 - `main.py`: Backend logic that implements `async def invoke`.
 - `ui/`: Optional frontend interface.
-- `llm-tool.yaml`: Optional host tool contract for environments that still expect an explicit schema.
+- `llm-tool.yaml`: Callable tool contract used by MCP/host registration (or equivalent generated schema).
 
 ### 2. Implement the logic
 Your `main.py` should export an `async def invoke` function:
@@ -28,19 +28,19 @@ async def invoke(tool_name, args, deeting):
     return {"result": "Done!"}
 ```
 
-Update `SKILL.md` first when you rename tools or change behavior. Keep `llm-tool.yaml` in sync only when you need it.
+When renaming tools or changing behavior, update callable schema first (`llm-tool.yaml` / generated contract), then sync `SKILL.md`.
 
 ### 3. Publish to Market
 Copy your GitHub URL and paste it into **Deeting Dashboard > Developer Lab**. Click **Publish** to sync your plugin.
 
 ---
 
-## 📦 Skill-First Packaging
+## 📦 Tool-First Packaging
 
-- Start with `SKILL.md`. This is the main contract an AI agent should read.
+- Start with a callable tool schema (`llm-tool.yaml` or generated equivalent). This is what MCP/host can execute.
 - Keep `deeting.json` focused on metadata, runtime, permissions, packaging, and UI support.
-- Keep `main.py` aligned with the tool names and behavior described in `SKILL.md`.
-- Use `llm-tool.yaml` when a host integration still requires a structured tool schema or when you need legacy compatibility.
+- Keep `main.py` aligned with the callable tool names and behavior in the schema.
+- Keep `SKILL.md` aligned as semantic guidance (when to use / not use / safety constraints).
 - If your plugin renders UI, keep `entry.ui` in `deeting.json` and `ui/index.html` in place.
 
 ---
@@ -106,10 +106,10 @@ You can use AI tools to help you build plugins faster. If you do, give them the 
 > I am developing a plugin for Deeting OS. Please act as an expert developer.
 >
 > Architecture rules:
-> 1. `SKILL.md` is the primary AI-facing entry point.
+> 1. Callable capabilities must be exposed as host tools via `llm-tool.yaml` (or generated equivalent schema).
 > 2. `deeting.json` stores metadata, runtime, permissions, and UI/backend entrypoints.
 > 3. `main.py` must implement `async def invoke(tool_name, args, deeting)`.
-> 4. `llm-tool.yaml` is optional and should stay aligned with `SKILL.md` when present.
+> 4. `SKILL.md` documents behavior and constraints; it does not replace callable tool schema.
 > 5. `ui/index.html` is optional and should listen for `DEETING_PLUGIN_DATA` if the plugin renders UI.
 >
 > SDK capabilities:

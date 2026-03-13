@@ -127,6 +127,33 @@ function formatObjectAsMarkdown(value: unknown): string {
   }
 }
 
+const INTERNAL_TOOL_NAMES = new Set([
+  "search_sdk",
+  "execute_code_plan",
+  "consult_expert_network",
+  "attach_capability",
+  "detach_capability",
+  "sys_submit_onboarding_request",
+]);
+
+const TOOL_DISPLAY_NAMES: Record<string, string> = {
+  search_sdk: "SDK Search",
+  execute_code_plan: "Code Execution",
+  consult_expert_network: "Expert Consult",
+  attach_capability: "Activate Skill",
+  detach_capability: "Deactivate Skill",
+  sys_submit_onboarding_request: "Onboarding",
+};
+
+function humanizeToolName(name?: string): string {
+  if (!name) return "tool";
+  return TOOL_DISPLAY_NAMES[name] || name;
+}
+
+function isInternalTool(name?: string): boolean {
+  return !!name && INTERNAL_TOOL_NAMES.has(name);
+}
+
 function asTrimmedString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
@@ -180,10 +207,15 @@ function summarizeToolCalls(parts: MessageBlock[]) {
   const sorted = Array.from(counter.entries())
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, 3)
-    .map(([name, count]) => (count > 1 ? `${name}×${count}` : name));
+    .map(([name, count]) => {
+      const display = humanizeToolName(name);
+      return count > 1 ? `${display}×${count}` : display;
+    });
+  const allInternal = toolNames.every((n) => isInternalTool(n));
   return {
     totalCalls: toolNames.length,
     highlights: sorted.join(" · "),
+    allInternal,
   };
 }
 
@@ -538,7 +570,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
           if (title) return title;
         }
       }
-      return "Local Tool Actions";
+      return "Code Execution";
     }, [parts]);
 
     const shouldShowSandboxLabelForConsole = useCallback((nextPartIndex: number) => {
@@ -968,9 +1000,9 @@ const ToolCallBlock = memo<{
         {/* Info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between">
-            <span className="font-semibold font-mono truncate">{name}</span>
+            <span className="font-semibold font-mono truncate">{humanizeToolName(name)}</span>
             <Badge variant="outline" className="text-[10px] h-5 font-normal text-muted-foreground">
-              MCP
+              {isInternalTool(name) ? "Skill" : "MCP"}
             </Badge>
           </div>
           <div className="text-xs text-muted-foreground truncate font-mono mt-0.5 opacity-80">
@@ -1066,10 +1098,10 @@ const ToolCallGroup = memo<{
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <span className="font-semibold font-mono text-sm">
-                  {t("toolGroup.summary", { count: toolCalls.length })}
+                  {t(summary?.allInternal ? "toolGroup.skillSummary" : "toolGroup.summary", { count: toolCalls.length })}
                 </span>
                 <Badge variant="outline" className="text-[10px] h-5 font-normal text-muted-foreground">
-                  MCP
+                  {summary?.allInternal ? "Skill" : "MCP"}
                 </Badge>
                 {isActive ? (
                   <Badge variant="outline" className="text-[10px] h-5 font-normal border-blue-200 text-blue-600 dark:border-blue-800 dark:text-blue-300">
@@ -1113,7 +1145,7 @@ const ToolResultBlock = memo<{
   debug?: Record<string, unknown>;
 }>(function ToolResultBlock({ name, callId, status, result, debug }) {
   const [isOpen, setIsOpen] = useState(false);
-  const title = name || callId || "tool_result";
+  const title = humanizeToolName(name) || callId || "tool_result";
   const isError = status === "error";
   const skillInstallInsight = useMemo(
     () => extractSkillInstallInsight(name, result),
@@ -1216,8 +1248,13 @@ const ExecutionConsole = memo<{
   title: string;
 }>(
   function ExecutionConsole({ blocks, isActive, showSandboxLabel, title }) {
-    const [isExpanded, setIsOpen] = useState(true);
+    const [isExpanded, setIsOpen] = useState(isActive);
     const scrollRef = useRef<HTMLDivElement>(null);
+
+    // Auto-expand when execution starts
+    useEffect(() => {
+      if (isActive) setIsOpen(true);
+    }, [isActive]);
 
     // 自动滚动到底部
     useEffect(() => {
@@ -1229,7 +1266,7 @@ const ExecutionConsole = memo<{
     return (
       <div className="w-full max-w-2xl my-2 overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-sm bg-zinc-50 dark:bg-zinc-950 text-left">
         {/* Header */}
-        <div 
+        <div
           className="flex items-center justify-between px-3 py-2 bg-zinc-100 dark:bg-zinc-900 cursor-pointer border-b border-zinc-200 dark:border-zinc-800"
           onClick={() => setIsOpen(!isExpanded)}
         >
@@ -1242,27 +1279,22 @@ const ExecutionConsole = memo<{
               <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
             )}
           </div>
-          <ChevronDown 
-            size={14} 
-            className={cn("text-zinc-400 transition-transform duration-200", !isExpanded && "-rotate-90")} 
+          <ChevronDown
+            size={14}
+            className={cn("text-zinc-400 transition-transform duration-200", !isExpanded && "-rotate-90")}
           />
         </div>
 
         {/* Console Body */}
         <Collapsible open={isExpanded}>
           <CollapsibleContent>
-            <div 
+            <div
               ref={scrollRef}
               className="p-3 max-h-[300px] overflow-y-auto font-mono text-[11px] leading-relaxed"
             >
               {blocks.map((block, i) => {
                 if (block.type === 'execution_section') {
-                  const b = block as ExecutionSectionBlock;
-                  return (
-                    <div key={i} className="mt-3 mb-1 text-zinc-900 dark:text-zinc-100 font-bold border-b border-zinc-200 dark:border-zinc-800 pb-0.5">
-                      {`> ${b.title}`}
-                    </div>
-                  );
+                  return null;
                 }
                 if (block.type === 'console_log') {
                   const b = block as ConsoleLogBlock;

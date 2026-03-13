@@ -127,7 +127,7 @@ Although retrieved together, resources execute in different "Physics".
 To achieve this, we need to refactor our data models.
 
 1.  **Unified Storage**: Migrate `Assistant` and `Plugin` tables to sync with a `ResourceIndex` in Qdrant.
-2.  **Manifest Standardization**: Ensure every skill/plugin bundle has a clean runtime declaration and host contract metadata (as per `deeting.json`, with `SKILL.md` as the primary AI-facing contract).
+2.  **Manifest & Tool Contract Standardization**: Ensure every skill/plugin bundle has clean runtime declaration and callable tool contract metadata (as per `deeting.json` + `llm-tool.yaml`/generated schema), with `SKILL.md` as supplemental guidance.
 3.  **Kernel Service**: Implement the `search -> assemble -> spec` logic.
 
 This architecture ensures Deeting OS is not just a chatbot, but a **Semantic Computer** that dynamically configures itself to solve the user's problem.

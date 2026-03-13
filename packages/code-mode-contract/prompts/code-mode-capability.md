@@ -16,7 +16,7 @@ Required workflow:
 
 ## Behavior Rules
 Behavior rules:
-- Treat skills as docs-first guidance bundles, not as direct tools.
+- Treat skills as capability bundles: execution must route through registered host/MCP tools, never by directly running repo scripts.
 - Answer directly instead of using Code Mode when no execution or tool interaction is needed.
 - If required inputs, permissions, or tools are missing, stop and report the blocker instead of guessing.
 - Do not keep looping once enough evidence or results have been obtained.

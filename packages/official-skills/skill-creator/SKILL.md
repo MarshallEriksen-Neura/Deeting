@@ -7,7 +7,7 @@ description: "Meta-skill to upgrade existing Deeting skills to the Agent Skills 
 
 ## Overview
 
-Use this skill to systematically upgrade Deeting's Official Skills into the docs-first `SKILL.md` standard. The target shape is `SKILL.md` first, with `deeting.json` for metadata/runtime/UI and `llm-tool.yaml` kept only when a host still needs an explicit callable contract.
+Use this skill to systematically upgrade Deeting's Official Skills into a tool-first standard. The target shape is callable tool contracts first (`llm-tool.yaml` or generated schema), `deeting.json` for metadata/runtime/UI, and `SKILL.md` as guidance/safety context.
 
 ## Upgrade Process
 
@@ -15,12 +15,12 @@ You MUST follow these steps for each skill being upgraded:
 
 1. **Inventory Skills** — Use `list_official_skills` to see what needs upgrading.
 2. **Analyze Implementation** — For a target skill, read `SKILL.md` if present, then inspect `deeting.json`, `llm-tool.yaml`, and `main.py` to understand its real capabilities.
-3. **Generate SKILL.md** — Create a `SKILL.md` that captures:
+3. **Generate / Update SKILL.md** — Create or revise `SKILL.md` so it captures:
     - **Name & Description** (from `deeting.json`)
     - **Tools & Parameters** (from `llm-tool.yaml`)
     - **Detailed Instructions** (How/When to use the tools, constraints, and anti-patterns)
     - **Checklists/Process Flow** (If applicable to the skill's logic)
-4. **Validate** — Ensure the new `SKILL.md` matches the physical capabilities of the implementation and keep `llm-tool.yaml` aligned only when that host contract is still used.
+4. **Validate** — Ensure callable contracts and implementation stay aligned first, then ensure `SKILL.md` matches real behavior and constraints.
 
 ## SKILL.md Standard Template
 
