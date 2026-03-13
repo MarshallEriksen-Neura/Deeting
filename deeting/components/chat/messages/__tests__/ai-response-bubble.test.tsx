@@ -3,6 +3,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { AIResponseBubble } from "@/components/chat/messages/ai-response-bubble";
 import type { MessageBlock } from "@/lib/chat/message-protocol";
 
+const terminalStreamMock = jest.fn();
+
 jest.mock("@/hooks/use-i18n", () => ({
   useI18n: () => (key: string) => key,
 }));
@@ -16,6 +18,10 @@ jest.mock("@/hooks/chat/use-typewriter", () => ({
 }));
 
 jest.mock("@/components/chat/visuals/status-visuals", () => ({
+  TerminalStream: (props: Record<string, unknown>) => {
+    terminalStreamMock(props);
+    return <div data-testid="terminal-stream" />;
+  },
   StatusStream: () => <div data-testid="status-stream" />,
   HolographicPulse: () => <div data-testid="holographic-pulse" />,
   GhostCursor: () => <div data-testid="ghost-cursor" />,
@@ -33,6 +39,56 @@ jest.mock("framer-motion", () => ({
 }));
 
 describe("AIResponseBubble debug panel", () => {
+  beforeEach(() => {
+    terminalStreamMock.mockClear();
+  });
+
+  it("keeps terminal stream visible in compact mode after content appears", () => {
+    const parts: MessageBlock[] = [{ id: "text-1", type: "text", content: "hello" }];
+
+    render(
+      <AIResponseBubble
+        parts={parts}
+        isActive
+        streamEnabled
+        statusStage="listen"
+      />
+    );
+
+    expect(screen.getByTestId("terminal-stream")).toBeInTheDocument();
+  });
+
+  it("groups active multi-tool calls into one live block", () => {
+    const parts: MessageBlock[] = [
+      { id: "tool-1", type: "tool_call", toolName: "search_sdk", status: "success" },
+      { id: "tool-2", type: "tool_call", toolName: "execute_code_plan", status: "running" },
+    ];
+
+    render(<AIResponseBubble parts={parts} isActive />);
+
+    expect(screen.getByText("LIVE")).toBeInTheDocument();
+    expect(screen.getByText("toolGroup.summary")).toBeInTheDocument();
+  });
+
+  it("forwards repeat_count from status meta to terminal stream", () => {
+    render(
+      <AIResponseBubble
+        parts={[]}
+        isActive
+        streamEnabled
+        statusStage="listen"
+        statusCode="upstream.streaming"
+        statusMeta={{ repeat_count: 5 }}
+      />
+    );
+
+    const latestCall = terminalStreamMock.mock.calls[terminalStreamMock.mock.calls.length - 1];
+    const latestProps = latestCall?.[0] as
+      | { detailRepeat?: number }
+      | undefined;
+    expect(latestProps?.detailRepeat).toBe(5);
+  });
+
   it("does not show sandbox label for search_sdk console", () => {
     const parts: MessageBlock[] = [
       { id: "exec-title", type: "execution_section", title: "Local Tool Actions" },

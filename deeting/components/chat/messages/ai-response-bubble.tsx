@@ -12,6 +12,7 @@ import { MarkdownViewer } from "@/components/chat/markdown-viewer";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   TerminalStream,
+  type TerminalStreamHistoryItem,
   GhostCursor,
   useStepProgress,
   resolveStageIndex
@@ -159,6 +160,31 @@ function extractSkillInstallInsight(toolName?: string, result?: unknown): SkillI
   }
 
   return null;
+}
+
+function summarizeToolCalls(parts: MessageBlock[]) {
+  const toolNames: string[] = [];
+  for (const part of parts) {
+    if (part.type !== "tool_call") continue;
+    if (typeof part.toolName === "string" && part.toolName.trim().length > 0) {
+      toolNames.push(part.toolName.trim());
+    } else {
+      toolNames.push("tool");
+    }
+  }
+  if (toolNames.length === 0) return null;
+  const counter = new Map<string, number>();
+  toolNames.forEach((name) => {
+    counter.set(name, (counter.get(name) ?? 0) + 1);
+  });
+  const sorted = Array.from(counter.entries())
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 3)
+    .map(([name, count]) => (count > 1 ? `${name}×${count}` : name));
+  return {
+    totalCalls: toolNames.length,
+    highlights: sorted.join(" · "),
+  };
 }
 
 const SkillInstallStatusCard = memo<{ insight: SkillInstallInsight }>(function SkillInstallStatusCard({
@@ -404,6 +430,11 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
     
     const timerStep = useStepProgress(isActive && !statusStage, steps.length);
     const activeStep = statusStage ? resolveStageIndex(statusStage, steps) : timerStep;
+    const [stableActiveStep, setStableActiveStep] = useState(0);
+    const [detailRepeat, setDetailRepeat] = useState(1);
+    const [stableDetail, setStableDetail] = useState<string | null>(null);
+    const [stageHistory, setStageHistory] = useState<TerminalStreamHistoryItem[]>([]);
+    const lastDetailRef = useRef<string | null>(null);
     
     // 缓存内容检查结果
     const hasContent = useMemo(() => parts.length > 0, [parts.length]);
@@ -412,6 +443,61 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
       () => resolveStatusDetail(t, statusCode, statusMeta),
       [t, statusCode, statusMeta]
     );
+    const repeatCountFromMeta = useMemo(() => {
+      const raw = statusMeta?.repeat_count;
+      if (typeof raw !== "number" || !Number.isFinite(raw)) return 1;
+      return Math.max(1, Math.floor(raw));
+    }, [statusMeta]);
+
+    useEffect(() => {
+      if (!isActive) {
+        setStableActiveStep(0);
+        return;
+      }
+      setStableActiveStep((prev) => Math.max(prev, activeStep));
+    }, [activeStep, isActive]);
+
+    useEffect(() => {
+      if (!isActive) {
+        setStableDetail(null);
+        setDetailRepeat(1);
+        lastDetailRef.current = null;
+        return;
+      }
+      const nextDetail = typeof statusDetail === "string" ? statusDetail.trim() : "";
+      if (!nextDetail) return;
+      if (lastDetailRef.current === nextDetail) {
+        setDetailRepeat((current) => current + 1);
+        return;
+      }
+      lastDetailRef.current = nextDetail;
+      setStableDetail(nextDetail);
+      setDetailRepeat(1);
+    }, [isActive, statusDetail]);
+
+    useEffect(() => {
+      if (!isActive) {
+        setStageHistory((prev) => (prev.length === 0 ? prev : []));
+        return;
+      }
+      const fallbackStage = steps[Math.min(stableActiveStep, steps.length - 1)]?.key ?? null;
+      const stageKey = statusStage && steps.some((step) => step.key === statusStage) ? statusStage : fallbackStage;
+      if (!stageKey) return;
+      const stageLabel = steps.find((step) => step.key === stageKey)?.label ?? stageKey;
+      setStageHistory((prev) => {
+        if (prev[prev.length - 1]?.key === stageKey) {
+          return prev;
+        }
+        const withoutDuplicate = prev.filter((entry) => entry.key !== stageKey);
+        return [...withoutDuplicate, { key: stageKey, label: stageLabel }].slice(-6);
+      });
+    }, [isActive, statusStage, stableActiveStep, steps]);
+
+    const toolCallSummary = useMemo(() => summarizeToolCalls(parts), [parts]);
+    const streamActivity = useMemo(() => {
+      if (!toolCallSummary) return null;
+      return `${t("status.flow.calls", { count: toolCallSummary.totalCalls })} · ${toolCallSummary.highlights}`;
+    }, [t, toolCallSummary]);
 
     // 将 tool_result 与对应的 tool_call 配对（通过 callId）
     const { resultMap, pairedResultIndices } = useMemo(() => {
@@ -437,7 +523,9 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
         }
       });
       return {
-        shouldGroupTools: entries.length > TOOL_GROUP_THRESHOLD && !isActive,
+        shouldGroupTools:
+          entries.length > TOOL_GROUP_THRESHOLD ||
+          (isActive && entries.length > 1),
         toolCallEntries: entries,
         firstToolCallIndex: entries.length > 0 ? entries[0].index : -1,
       };
@@ -470,9 +558,9 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
         data-slot="glass-card"
         >
           <div className="px-5 py-3.5 min-w-0 overflow-hidden">
-            {/* Terminal stream – fades out upward when content arrives */}
+            {/* Terminal stream – persistent in compact mode after content arrives */}
             <AnimatePresence mode="sync">
-              {isActive && !hasContent && (
+              {isActive && (
                 <motion.div
                   key="terminal-stream"
                   initial={{ opacity: 0, y: 6 }}
@@ -482,9 +570,13 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                 >
                   <TerminalStream
                     steps={steps}
-                    activeIndex={activeStep}
+                    activeIndex={stableActiveStep}
                     label={streamEnabled ? t("status.flow.stream") : t("status.flow.batch")}
-                    detail={statusDetail}
+                    detail={stableDetail ?? statusDetail}
+                    detailRepeat={Math.max(detailRepeat, repeatCountFromMeta)}
+                    activity={streamActivity}
+                    history={stageHistory}
+                    compact={hasContent}
                   />
                 </motion.div>
               )}
@@ -544,6 +636,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                             <ToolCallGroup
                               toolCalls={toolCallEntries}
                               resultMap={resultMap}
+                              isActive={isActive}
                             />
                           </motion.div>
                         );
@@ -943,17 +1036,21 @@ const ToolCallBlock = memo<{
 const ToolCallGroup = memo<{
   toolCalls: Array<{ part: MessageBlock; index: number }>;
   resultMap: Map<string, MessageBlock>;
+  isActive: boolean;
 }>(
-  function ToolCallGroup({ toolCalls, resultMap }) {
-    const [isOpen, setIsOpen] = useState(false);
+  function ToolCallGroup({ toolCalls, resultMap, isActive }) {
+    const [isOpen, setIsOpen] = useState(isActive);
     const t = useI18n("chat");
 
-    const uniqueNames = useMemo(() => {
-      const names = new Set<string>();
-      toolCalls.forEach(({ part }) => {
-        if (part.toolName) names.add(part.toolName);
-      });
-      return Array.from(names);
+    useEffect(() => {
+      if (isActive) {
+        setIsOpen(true);
+      }
+    }, [isActive]);
+
+    const summary = useMemo(() => {
+      const pseudoParts: MessageBlock[] = toolCalls.map(({ part }) => part);
+      return summarizeToolCalls(pseudoParts);
     }, [toolCalls]);
 
     return (
@@ -974,9 +1071,14 @@ const ToolCallGroup = memo<{
                 <Badge variant="outline" className="text-[10px] h-5 font-normal text-muted-foreground">
                   MCP
                 </Badge>
+                {isActive ? (
+                  <Badge variant="outline" className="text-[10px] h-5 font-normal border-blue-200 text-blue-600 dark:border-blue-800 dark:text-blue-300">
+                    LIVE
+                  </Badge>
+                ) : null}
               </div>
               <div className="text-xs text-muted-foreground truncate font-mono mt-0.5 opacity-80">
-                {uniqueNames.join(", ")}
+                {summary?.highlights || "-"}
               </div>
             </div>
             <ChevronDown size={16} className={cn(

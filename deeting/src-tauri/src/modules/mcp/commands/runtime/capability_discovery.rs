@@ -300,7 +300,7 @@ fn materialize_ranked_entry(
     let skill_backed_tool = pkg_name
         .as_deref()
         .is_some_and(|value| value.starts_with("skill."));
-    let group = classify_semantic_group(name, asset_type, pkg_name.as_deref());
+    let group = classify_semantic_group(name, asset_type, pkg_name.as_deref(), availability);
     let mut value = json!({
         "capability_id": id,
         "name": name,
@@ -385,12 +385,21 @@ fn materialize_ranked_entry(
     value
 }
 
-fn classify_semantic_group(name: &str, asset_type: &str, pkg_name: Option<&str>) -> SemanticGroup {
+fn classify_semantic_group(
+    name: &str,
+    asset_type: &str,
+    pkg_name: Option<&str>,
+    availability: &RegistryAvailability,
+) -> SemanticGroup {
     if matches!(name.trim(), "search_sdk" | "execute_code_plan") {
         return SemanticGroup::OrchestrationPrimitive;
     }
     if asset_type == "tool" && pkg_name.is_some_and(|value| value.starts_with("skill.")) {
-        return SemanticGroup::Recipe;
+        return if availability.is_direct_callable() {
+            SemanticGroup::Capability
+        } else {
+            SemanticGroup::Recipe
+        };
     }
     match asset_type {
         "skill" | "assistant" => SemanticGroup::Recipe,

@@ -126,15 +126,13 @@ impl LocalExecutionPolicy {
         capability_snapshot: Option<&Value>,
     ) -> Vec<String> {
         let mut names = self.allowed_tool_names.clone();
-        if self.route == LocalRouteKind::Direct {
-            if let Some(snapshot) = capability_snapshot {
-                if let Ok(direct_names) =
-                    crate::modules::capability_control_plane::extract_direct_callable_capability_names(
-                        snapshot,
-                    )
-                {
-                    names.extend(direct_names);
-                }
+        if let Some(snapshot) = capability_snapshot {
+            if let Ok(direct_names) =
+                crate::modules::capability_control_plane::extract_direct_callable_capability_names(
+                    snapshot,
+                )
+            {
+                names.extend(direct_names);
             }
         }
         normalize_tool_names(names)
@@ -271,15 +269,6 @@ fn enrich_execution_policy_with_runtime_discovery(
     mut policy: LocalExecutionPolicy,
     runtime_discovery: Option<&RuntimeDiscoveryBundle>,
 ) -> LocalExecutionPolicy {
-    if !matches!(
-        policy.route,
-        LocalRouteKind::Direct | LocalRouteKind::Worker
-    ) {
-        policy.capability_snapshot = None;
-        policy.allowed_tool_names = normalize_tool_names(policy.allowed_tool_names);
-        return policy;
-    }
-
     let mut allowed = policy.allowed_tool_names.clone();
     if !allowed.iter().any(|name| name == SEARCH_SDK_TOOL_NAME) {
         allowed.push(SEARCH_SDK_TOOL_NAME.to_string());
@@ -696,6 +685,50 @@ mod tests {
         assert!(policy.allows_tool(SEARCH_SDK_TOOL_NAME));
         assert!(policy.allows_tool("weather_lookup"));
         assert!(policy.allows_tool("tavily_search"));
+        assert!(policy.capability_snapshot.is_some());
+    }
+
+    #[test]
+    fn build_local_control_plane_result_enriches_code_mode_policy_with_direct_capabilities() {
+        let decision = LocalRouteDecision {
+            route: LocalRouteKind::CodeMode,
+            reasons: vec!["programmatic_logic".to_string()],
+            profile: TaskProfile {
+                explicit_route: Some(LocalRouteKind::CodeMode),
+                has_batch_scope: false,
+                wants_programmatic_logic: true,
+                wants_analysis: false,
+                wants_single_action: true,
+                destructive_intent: false,
+                approval_sensitive: false,
+            },
+            evidence: RouteEvidence {
+                direct_callable_capability_count: 1,
+                has_code_mode_executor: true,
+                any_mutating_capability: false,
+                any_high_risk_capability: false,
+                direct_capability_names: vec!["weather_lookup".to_string()],
+            },
+        };
+        let runtime_discovery = RuntimeDiscoveryBundle::from_search_result(serde_json::json!({
+            "capabilities": [
+                {
+                    "name": "weather_lookup",
+                    "invocation_mode": "direct",
+                    "status": { "callable": true }
+                }
+            ]
+        }));
+        let result = build_local_control_plane_result(
+            &[],
+            Some(runtime_discovery),
+            Some(decision.clone()),
+            Some(build_local_execution_policy(&decision)),
+        );
+        let policy = result.execution_policy;
+        assert_eq!(policy.route, LocalRouteKind::CodeMode);
+        assert!(policy.allows_tool(SEARCH_SDK_TOOL_NAME));
+        assert!(policy.allows_tool("weather_lookup"));
         assert!(policy.capability_snapshot.is_some());
     }
 }

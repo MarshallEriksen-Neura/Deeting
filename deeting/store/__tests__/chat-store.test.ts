@@ -284,4 +284,42 @@ describe("useChatStore selected assistant normalization", () => {
 
     expect(useChatStore.getState().compareByMessageId["assistant-compare-2"]).toBeUndefined()
   })
+
+  it("setStatus should skip duplicate status payloads", () => {
+    const listener = jest.fn()
+    const unsubscribe = useChatStore.subscribe(listener)
+
+    useChatStore.getState().setStatus({
+      stage: "listen",
+      code: "upstream.streaming",
+      meta: { repeat_count: 1 },
+    })
+    useChatStore.getState().setStatus({
+      stage: "listen",
+      code: "upstream.streaming",
+      meta: { repeat_count: 1 },
+    })
+
+    expect(listener).toHaveBeenCalledTimes(1)
+    unsubscribe()
+  })
+
+  it("setStatus should update when repeat_count changes", () => {
+    const listener = jest.fn()
+    const unsubscribe = useChatStore.subscribe(listener)
+
+    useChatStore.getState().setStatus({
+      stage: "listen",
+      code: "upstream.streaming",
+      meta: { repeat_count: 1 },
+    })
+    useChatStore.getState().setStatus({
+      stage: "listen",
+      code: "upstream.streaming",
+      meta: { repeat_count: 2 },
+    })
+
+    expect(listener).toHaveBeenCalledTimes(2)
+    unsubscribe()
+  })
 })

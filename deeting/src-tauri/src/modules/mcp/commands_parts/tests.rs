@@ -954,7 +954,7 @@ for raw_line in sys.stdin:
     }
 
     #[tokio::test]
-    async fn search_sdk_smoke_surfaces_installed_skill_bundle_as_recipe() {
+    async fn search_sdk_smoke_surfaces_enabled_skill_tool_as_callable_capability() {
         let query = "帮我抓取网页并提取标题";
         let (base_url, server_handle) = start_mock_embedding_server(HashMap::from([(
             query.to_lowercase(),
@@ -1012,22 +1012,26 @@ for raw_line in sys.stdin:
         )
         .await;
 
-        let recipes = result["recipes"].as_array().expect("recipes array");
-        let matched = recipes
+        let capabilities = result["capabilities"].as_array().expect("capabilities array");
+        let matched = capabilities
             .iter()
             .find(|item| item["name"] == serde_json::json!("search_web"))
-            .expect("matched skill recipe");
+            .expect("matched skill tool capability");
         assert_eq!(
             result["format_version"],
             serde_json::json!("sdk_control_plane.v1")
         );
         assert_eq!(matched["source"], serde_json::json!("local_mcp"));
-        assert_eq!(matched["semantic_kind"], serde_json::json!("recipe"));
-        assert_eq!(matched["status"]["callable"], serde_json::json!(false));
+        assert_eq!(matched["semantic_kind"], serde_json::json!("capability"));
+        assert_eq!(matched["status"]["callable"], serde_json::json!(true));
         assert_eq!(matched["pkg_name"], serde_json::json!("skill.web-tools"));
         assert_eq!(
             matched["status"]["recommended_action"],
-            serde_json::json!("read_skill_docs")
+            serde_json::json!("execute")
+        );
+        assert_eq!(
+            result["routing_hint"]["direct_callable_capability_count"],
+            serde_json::json!(1)
         );
         assert_eq!(
             result["normalized_query"]["intent"],
@@ -1058,8 +1062,8 @@ for raw_line in sys.stdin:
             Some(&serde_json::json!(true))
         );
         assert_eq!(matched["description"], serde_json::json!("抓取网页内容并提取标题"));
-        assert!(matched.get("required_parameters").is_none());
-        assert!(matched.get("python_stub").is_none());
+        assert!(matched.get("required_parameters").is_some());
+        assert!(matched.get("python_stub").is_some());
 
         server_handle.abort();
     }

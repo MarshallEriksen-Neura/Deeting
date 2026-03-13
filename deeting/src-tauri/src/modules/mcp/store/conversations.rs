@@ -1671,7 +1671,7 @@ impl McpStore {
         }
 
         let now = now_rfc3339()?;
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.begin_write().await?;
 
         let session_exists = sqlx::query(
             r#"
@@ -1792,7 +1792,7 @@ impl McpStore {
         }
 
         let now = now_rfc3339()?;
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.begin_write().await?;
 
         let session_exists = sqlx::query(
             r#"
@@ -1898,7 +1898,7 @@ impl McpStore {
         }
 
         let now = now_rfc3339()?;
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.begin_write().await?;
 
         let session_row = sqlx::query(
             r#"
@@ -2531,7 +2531,7 @@ impl McpStore {
         });
 
         let now = now_rfc3339()?;
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.begin_write().await?;
 
         let session_row = sqlx::query(
             r#"
@@ -2681,7 +2681,7 @@ impl McpStore {
 
         let now = now_rfc3339()?;
         let now_epoch = now_unix_epoch()?;
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.begin_write().await?;
 
         let session_exists = sqlx::query(
             r#"
@@ -2870,7 +2870,7 @@ impl McpStore {
     ) -> Result<Option<LocalConversationSummaryJob>, McpError> {
         let now = now_rfc3339()?;
         let now_epoch = now_unix_epoch()?;
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.begin_write().await?;
 
         let next_row = sqlx::query(
             r#"
@@ -2943,7 +2943,7 @@ impl McpStore {
         }
 
         let now = now_rfc3339()?;
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.begin_write().await?;
         let session_row = sqlx::query(
             r#"
             SELECT session_id
@@ -3037,7 +3037,7 @@ impl McpStore {
             }
         };
 
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.begin_write().await?;
         sqlx::query(
             r#"
             UPDATE conversation_summary_job
@@ -3348,7 +3348,7 @@ impl McpStore {
     ) -> Result<Option<LocalPeriodicTask>, McpError> {
         let now = now_rfc3339()?;
         let now_epoch = now_unix_epoch()?;
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.begin_write().await?;
 
         let task_row = sqlx::query(
             r#"
@@ -4287,7 +4287,7 @@ impl McpStore {
             .map_err(|err| McpError::Storage(err.to_string()))?;
 
         let result = async {
-            let mut tx = self.pool.begin().await?;
+            let mut tx = self.begin_write().await?;
             sqlx::query(
                 r#"
                 DROP TABLE IF EXISTS assistant_version_new;
@@ -4398,7 +4398,7 @@ impl McpStore {
             .map_err(|err| McpError::Storage(err.to_string()))?;
 
         let result = async {
-            let mut tx = self.pool.begin().await?;
+            let mut tx = self.begin_write().await?;
             sqlx::query(
                 r#"
                 DROP TABLE IF EXISTS assistant_install_new;

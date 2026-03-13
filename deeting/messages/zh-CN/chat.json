@@ -35,6 +35,7 @@
         "remember": "检索记忆",
         "evolve": "组织回答",
         "render": "渲染输出",
+        "calls": "AI 调度 {count} 次",
         "queue": "排队等待中",
         "process": "生成视觉",
         "refine": "优化细节",

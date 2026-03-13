@@ -35,22 +35,43 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let state = tauri::async_runtime::block_on(async {
         let database_url = resolve_database_url(app)?;
 
-        let db_options = SqliteConnectOptions::from_str(&database_url)
+        let read_options = SqliteConnectOptions::from_str(&database_url)
             .map_err(|err| McpError::Storage(err.to_string()))?
             .create_if_missing(true)
             .journal_mode(SqliteJournalMode::Wal)
-            .busy_timeout(Duration::from_secs(10));
+            .busy_timeout(Duration::from_secs(10))
+            .pragma("synchronous", "NORMAL")
+            .pragma("mmap_size", "268435456");
+
+        let write_options = SqliteConnectOptions::from_str(&database_url)
+            .map_err(|err| McpError::Storage(err.to_string()))?
+            .create_if_missing(true)
+            .journal_mode(SqliteJournalMode::Wal)
+            .busy_timeout(Duration::from_secs(30))
+            .pragma("synchronous", "NORMAL");
 
         let global_pool = SqlitePoolOptions::new()
-            .max_connections(15)
-            .connect_with(db_options)
+            .max_connections(10)
+            .connect_with(read_options)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        // Single-connection pool: serializes all transactional writes at the
+        // application level so concurrent workers never fight for SQLite's
+        // single-writer lock. Eliminates "database is locked" errors.
+        let global_write_pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(write_options)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
 
         // MCP 初始化
-        let store = Arc::new(crate::modules::mcp::store::McpStore::with_pool(
-            global_pool.clone(),
-        ));
+        let store = Arc::new(
+            crate::modules::mcp::store::McpStore::with_pool_and_write_pool(
+                global_pool.clone(),
+                global_write_pool,
+            ),
+        );
         store.init().await?;
         store.ensure_local_source().await?;
         store.ensure_cloud_source(&cloud_base_url).await?;

@@ -261,6 +261,16 @@ function isDesktopLocalModel(model?: { request_route?: string; runtime_source?: 
   return model.request_route === "local_invoke" || model.runtime_source === "desktop_local"
 }
 
+export function buildStatusRepeatKey(stage: string | null, code: string | null) {
+  return `${stage ?? "unknown_stage"}::${code ?? "unknown_code"}`
+}
+
+export function shouldEmitStatusRepeat(repeatCount: number) {
+  if (repeatCount <= 3) return true
+  if (repeatCount <= 10) return repeatCount % 2 === 0
+  return repeatCount % 5 === 0
+}
+
 function getAssistantBlocksForCandidate(message: Message): MessageBlock[] {
   if (Array.isArray(message.blocks) && message.blocks.length > 0) {
     return message.blocks as MessageBlock[]
@@ -394,6 +404,10 @@ export function useChatMessagingService() {
   const activeRequestRouteRef = useRef<"local_gateway" | "cloud" | null>(null)
   const activeAssistantMessageIdRef = useRef<string | null>(null)
   const interruptedMessageIdsRef = useRef<Set<string>>(new Set())
+  const statusRepeatRef = useRef<{ key: string; repeatCount: number }>({
+    key: "",
+    repeatCount: 0,
+  })
   const [interruptedAssistantMessageId, setInterruptedAssistantMessageId] = useState<string | null>(null)
   const {
     input,
@@ -597,6 +611,7 @@ export function useChatMessagingService() {
     getCurrentBlocks: () => MessageBlock[]
     onRequestError: (message: string, errorCode?: string | null) => void
   }) => {
+    statusRepeatRef.current = { key: "", repeatCount: 0 }
     const streamFn = preferLocalRoute ? streamDesktopLocalChatCompletion : streamChatCompletion
     let receivedStructuredBlocks = false
     const streamedText = await streamFn(
@@ -625,14 +640,35 @@ export function useChatMessagingService() {
               trace_id?: string | null
             }
             if (streamMessage.type === "status") {
-              onStatusEvent?.({
-                stage: streamMessage.stage ?? null,
-                code: streamMessage.code ?? null,
-                meta:
-                  typeof streamMessage.meta === "object" && streamMessage.meta
-                    ? (streamMessage.meta as Record<string, unknown>)
-                    : null,
-              })
+              const stage = streamMessage.stage ?? null
+              const code = streamMessage.code ?? null
+              const incomingMeta =
+                typeof streamMessage.meta === "object" && streamMessage.meta
+                  ? (streamMessage.meta as Record<string, unknown>)
+                  : null
+              const statusKey = buildStatusRepeatKey(stage, code)
+              if (statusRepeatRef.current.key === statusKey) {
+                statusRepeatRef.current = {
+                  key: statusKey,
+                  repeatCount: statusRepeatRef.current.repeatCount + 1,
+                }
+              } else {
+                statusRepeatRef.current = {
+                  key: statusKey,
+                  repeatCount: 1,
+                }
+              }
+              const repeatCount = statusRepeatRef.current.repeatCount
+              const shouldEmit = shouldEmitStatusRepeat(repeatCount)
+              if (shouldEmit) {
+                onStatusEvent?.({
+                  stage,
+                  code,
+                  meta: incomingMeta
+                    ? { ...incomingMeta, repeat_count: repeatCount }
+                    : { repeat_count: repeatCount },
+                })
+              }
               if (streamMessage.trace_id) {
                 onTraceId?.(streamMessage.trace_id)
               }

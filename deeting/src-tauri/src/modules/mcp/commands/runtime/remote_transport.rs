@@ -289,16 +289,28 @@ fn push_unique_command_candidate(
 
 fn legacy_sse_proxy_command_candidates(sse_url: &str) -> Vec<(String, Vec<String>)> {
     let mut candidates = Vec::new();
+    let direct_args = vec![
+        "--transport".to_string(),
+        "sse-only".to_string(),
+        sse_url.to_string(),
+    ];
+    let npx_args = vec![
+        "-y".to_string(),
+        "mcp-remote".to_string(),
+        "--transport".to_string(),
+        "sse-only".to_string(),
+        sse_url.to_string(),
+    ];
 
     for command in discover_binary_paths("mcp-remote") {
         if is_windows_cmd_script(&command) {
-            push_unique_command_candidate(
-                &mut candidates,
-                "cmd".to_string(),
-                vec!["/C".to_string(), command, sse_url.to_string()],
-            );
+            push_unique_command_candidate(&mut candidates, "cmd".to_string(), {
+                let mut args = vec!["/C".to_string(), command];
+                args.extend(direct_args.clone());
+                args
+            });
         } else {
-            push_unique_command_candidate(&mut candidates, command, vec![sse_url.to_string()]);
+            push_unique_command_candidate(&mut candidates, command, direct_args.clone());
         }
     }
     for command in discover_binary_paths("npx") {
@@ -311,36 +323,22 @@ fn legacy_sse_proxy_command_candidates(sse_url: &str) -> Vec<(String, Vec<String
                     command,
                     "-y".to_string(),
                     "mcp-remote".to_string(),
+                    "--transport".to_string(),
+                    "sse-only".to_string(),
                     sse_url.to_string(),
                 ],
             );
         } else {
-            push_unique_command_candidate(
-                &mut candidates,
-                command,
-                vec![
-                    "-y".to_string(),
-                    "mcp-remote".to_string(),
-                    sse_url.to_string(),
-                ],
-            );
+            push_unique_command_candidate(&mut candidates, command, npx_args.clone());
         }
     }
 
     push_unique_command_candidate(
         &mut candidates,
         "mcp-remote".to_string(),
-        vec![sse_url.to_string()],
+        direct_args.clone(),
     );
-    push_unique_command_candidate(
-        &mut candidates,
-        "npx".to_string(),
-        vec![
-            "-y".to_string(),
-            "mcp-remote".to_string(),
-            sse_url.to_string(),
-        ],
-    );
+    push_unique_command_candidate(&mut candidates, "npx".to_string(), npx_args.clone());
     if cfg!(target_os = "windows") {
         push_unique_command_candidate(
             &mut candidates,
@@ -350,6 +348,8 @@ fn legacy_sse_proxy_command_candidates(sse_url: &str) -> Vec<(String, Vec<String
                 "npx".to_string(),
                 "-y".to_string(),
                 "mcp-remote".to_string(),
+                "--transport".to_string(),
+                "sse-only".to_string(),
                 sse_url.to_string(),
             ],
         );
@@ -618,15 +618,20 @@ mod tests {
     #[test]
     fn builds_legacy_sse_proxy_command_candidates() {
         let candidates = legacy_sse_proxy_command_candidates("https://mcp.example.com/abc123/sse");
-        assert!(candidates
-            .iter()
-            .any(|item| item.0 == "mcp-remote"
-                && item.1 == vec!["https://mcp.example.com/abc123/sse"]));
+        assert!(candidates.iter().any(|item| item.0 == "mcp-remote"
+            && item.1
+                == vec![
+                    "--transport".to_string(),
+                    "sse-only".to_string(),
+                    "https://mcp.example.com/abc123/sse".to_string()
+                ]));
         assert!(candidates.iter().any(|item| item.0 == "npx"
             && item.1
                 == vec![
                     "-y".to_string(),
                     "mcp-remote".to_string(),
+                    "--transport".to_string(),
+                    "sse-only".to_string(),
                     "https://mcp.example.com/abc123/sse".to_string()
                 ]));
     }

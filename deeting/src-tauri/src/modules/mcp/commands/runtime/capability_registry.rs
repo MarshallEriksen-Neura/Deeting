@@ -170,13 +170,16 @@ impl RegistryAvailability {
                             status_reason: "skill_installed_but_disabled",
                         };
                     }
-                    return Self {
-                        class: ToolAvailabilityClass::Unavailable,
-                        install_required: false,
-                        activation_required: false,
-                        recommended_action: "read_skill_docs",
-                        status_reason: "skill_routed_via_docs",
-                    };
+                    if source_type == "mcp" {
+                        if let Some(availability) =
+                            tool_availability_catalog.get_for_asset(asset_id, tool_name)
+                        {
+                            return Self::from_tool_availability(availability);
+                        }
+                    }
+                    return Self::from_tool_availability(&fallback_local_tool_availability(
+                        pkg_name,
+                    ));
                 }
                 if source_type == "code_mode_core" {
                     return Self {

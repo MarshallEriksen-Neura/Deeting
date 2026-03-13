@@ -126,6 +126,18 @@ function filterCompareStateByMessageIds(
   )
 }
 
+function isStatusMetaEqual(
+  left: Record<string, unknown> | null,
+  right: Record<string, unknown> | null
+) {
+  if (left === right) return true
+  if (!left || !right) return false
+  const leftKeys = Object.keys(left)
+  const rightKeys = Object.keys(right)
+  if (leftKeys.length !== rightKeys.length) return false
+  return leftKeys.every((key) => Object.is(left[key], right[key]))
+}
+
 // ============== Store 接口 ==============
 
 interface ChatStore {
@@ -674,11 +686,25 @@ export const useChatStore = create<ChatStore>()(
       setGlobalLoading: (globalLoading) => set({ globalLoading }),
 
       setStatus: (status) =>
-        set((state) => ({
-          statusStage: status.stage !== undefined ? status.stage : state.statusStage,
-          statusCode: status.code !== undefined ? status.code : state.statusCode,
-          statusMeta: status.meta !== undefined ? status.meta : state.statusMeta,
-        })),
+        set((state) => {
+          const nextStage = status.stage !== undefined ? status.stage : state.statusStage
+          const nextCode = status.code !== undefined ? status.code : state.statusCode
+          const nextMeta = status.meta !== undefined ? status.meta : state.statusMeta
+
+          if (
+            nextStage === state.statusStage &&
+            nextCode === state.statusCode &&
+            isStatusMetaEqual(state.statusMeta, nextMeta)
+          ) {
+            return state
+          }
+
+          return {
+            statusStage: nextStage,
+            statusCode: nextCode,
+            statusMeta: nextMeta,
+          }
+        }),
 
       clearStatus: () =>
         set({

@@ -184,7 +184,7 @@ impl McpStore {
         assistants: &[CloudSystemAssistantSnapshot],
     ) -> Result<(i64, Vec<String>), McpError> {
         let now = now_rfc3339()?;
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.begin_write().await?;
         let mut snapshot_ids: Vec<String> = Vec::new();
         let mut upserted_count = 0_i64;
         let mut tag_jobs: Vec<(String, Option<String>)> = Vec::new();

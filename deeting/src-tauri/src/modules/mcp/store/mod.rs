@@ -59,6 +59,10 @@ const LOCAL_PERIODIC_TASK_MAX_ERROR_CHARS: usize = 2000;
 
 pub struct McpStore {
     pub(crate) pool: SqlitePool,
+    /// Single-connection pool dedicated to write transactions.
+    /// Serializes all transactional writes at the pool level, eliminating
+    /// SQLite "database is locked" errors from concurrent write contention.
+    pub(crate) write_pool: SqlitePool,
 }
 
 #[derive(Debug, Clone)]
@@ -100,14 +104,38 @@ impl McpStore {
             .create_if_missing(true);
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
+            .connect_with(options.clone())
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+        let write_pool = SqlitePoolOptions::new()
+            .max_connections(1)
             .connect_with(options)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
-        Ok(Self { pool })
+        Ok(Self { pool, write_pool })
     }
 
     pub fn with_pool(pool: SqlitePool) -> Self {
-        Self { pool }
+        Self {
+            write_pool: pool.clone(),
+            pool,
+        }
+    }
+
+    pub fn with_pool_and_write_pool(pool: SqlitePool, write_pool: SqlitePool) -> Self {
+        Self { pool, write_pool }
+    }
+
+    /// Begin a write transaction on the dedicated single-connection write pool.
+    /// This serializes all transactional writes at the application level,
+    /// preventing SQLite "database is locked" (SQLITE_BUSY) errors.
+    pub(crate) async fn begin_write(
+        &self,
+    ) -> Result<sqlx::Transaction<'_, sqlx::Sqlite>, McpError> {
+        self.write_pool
+            .begin()
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))
     }
 
     pub async fn init(&self) -> Result<(), McpError> {

@@ -35,6 +35,7 @@
         "remember": "Retrieving memory",
         "evolve": "Synthesizing response",
         "render": "Rendering output",
+        "calls": "AI orchestrated {count} calls",
         "queue": "Queued in sequence",
         "process": "Processing visual",
         "refine": "Refining details",
