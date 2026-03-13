@@ -14,6 +14,7 @@ use std::{
     path::{Path, PathBuf},
     process::Stdio,
 };
+use tokio::io::AsyncBufReadExt;
 
 #[derive(Debug, Clone)]
 pub(crate) struct RemoteDiscoveredTool {
@@ -136,10 +137,34 @@ async fn connect_local_stdio_client(
     if let Some(env) = env {
         child_command.envs(env);
     }
-    let (transport, _stderr) = TokioChildProcess::builder(child_command)
+    let (transport, stderr_handle) = TokioChildProcess::builder(child_command)
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|err| err.to_string())?;
+    if let Some(stderr) = stderr_handle {
+        let command_label = if args.is_empty() {
+            command.to_string()
+        } else {
+            format!("{} {}", command, args.join(" "))
+        };
+        tokio::spawn(async move {
+            let mut lines = tokio::io::BufReader::new(stderr).lines();
+            let mut line_count = 0usize;
+            while let Ok(Some(line)) = lines.next_line().await {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() {
+                    warn!(
+                        "mcp subprocess stderr command='{}' line='{}'",
+                        command_label, trimmed
+                    );
+                }
+                line_count += 1;
+                if line_count >= 30 {
+                    break;
+                }
+            }
+        });
+    }
     client_info()
         .serve(transport)
         .await
@@ -169,13 +194,15 @@ fn is_executable_file(path: &Path) -> bool {
 }
 
 fn binary_name_variants(binary_name: &str) -> Vec<String> {
-    let mut variants = vec![binary_name.to_string()];
     if cfg!(target_os = "windows") {
-        for suffix in [".cmd", ".exe", ".bat"] {
-            variants.push(format!("{}{}", binary_name, suffix));
-        }
+        return vec![
+            format!("{}{}", binary_name, ".cmd"),
+            format!("{}{}", binary_name, ".exe"),
+            format!("{}{}", binary_name, ".bat"),
+            binary_name.to_string(),
+        ];
     }
-    variants
+    vec![binary_name.to_string()]
 }
 
 fn append_binary_from_dir(candidates: &mut Vec<String>, directory: &Path, variants: &[String]) {
@@ -295,6 +322,18 @@ fn is_windows_cmd_script(command: &str) -> bool {
     normalized.ends_with(".cmd") || normalized.ends_with(".bat")
 }
 
+fn quote_for_cmd_c(raw: &str) -> String {
+    if !cfg!(target_os = "windows") {
+        return raw.to_string();
+    }
+    let trimmed = raw.trim();
+    if trimmed.contains(' ') && !(trimmed.starts_with('"') && trimmed.ends_with('"')) {
+        format!("\"{}\"", trimmed)
+    } else {
+        trimmed.to_string()
+    }
+}
+
 fn push_unique_command_candidate(
     candidates: &mut Vec<(String, Vec<String>)>,
     command: String,
@@ -325,7 +364,7 @@ fn legacy_sse_proxy_command_candidates(sse_url: &str) -> Vec<(String, Vec<String
     for command in discover_binary_paths("mcp-remote") {
         if is_windows_cmd_script(&command) {
             push_unique_command_candidate(&mut candidates, "cmd".to_string(), {
-                let mut args = vec!["/C".to_string(), command];
+                let mut args = vec!["/C".to_string(), quote_for_cmd_c(&command)];
                 args.extend(direct_args.clone());
                 args
             });
@@ -340,7 +379,7 @@ fn legacy_sse_proxy_command_candidates(sse_url: &str) -> Vec<(String, Vec<String
                 "cmd".to_string(),
                 vec![
                     "/C".to_string(),
-                    command,
+                    quote_for_cmd_c(&command),
                     "-y".to_string(),
                     "mcp-remote".to_string(),
                     "--transport".to_string(),
