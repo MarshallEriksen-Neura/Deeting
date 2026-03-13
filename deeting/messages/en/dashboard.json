@@ -67,7 +67,21 @@
       },
       "filters": {
         "searchPlaceholder": "Search paths, bundles, excerpts, or findings...",
-        "severity": "Severity"
+        "severity": "Severity",
+        "boundary": "Boundary",
+        "operation": "Operation"
+      },
+      "boundary": {
+        "hard_boundary": "Hard Boundary",
+        "soft_boundary": "Soft Boundary",
+        "none": "No Boundary"
+      },
+      "operation": {
+        "process_exec": "Process Exec",
+        "filesystem_write": "Filesystem Write",
+        "filesystem_read": "Filesystem Read",
+        "network_read": "Network Read",
+        "unknown": "Unknown"
       },
       "severity": {
         "error": "Error",

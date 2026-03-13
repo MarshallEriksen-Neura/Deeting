@@ -35,12 +35,51 @@ function toneForSeverity(severity: string) {
   return "default" as const
 }
 
+function toRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  return value as Record<string, unknown>
+}
+
+function asTrimmedString(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null
+}
+
+function readRiskPreview(metadata: unknown) {
+  const meta = toRecord(metadata)
+  const riskPreview = toRecord(meta?.risk_preview)
+  if (!riskPreview) return null
+  return {
+    riskLevel: asTrimmedString(riskPreview.risk_level),
+    operationClass: asTrimmedString(riskPreview.operation_class),
+    targetClass: asTrimmedString(riskPreview.target_class),
+    boundaryClass: asTrimmedString(riskPreview.boundary_class),
+  }
+}
+
+function readRiskMetadata(metadata: unknown) {
+  const meta = toRecord(metadata)
+  if (!meta) return null
+  return {
+    riskLevel: asTrimmedString(meta.risk_level),
+    operationClass: asTrimmedString(meta.operation_class),
+    targetClass: asTrimmedString(meta.target_class),
+    boundaryClass: asTrimmedString(meta.boundary_class),
+  }
+}
+
+function formatRiskTuple(parts: Array<string | null>) {
+  const compact = parts.filter((part): part is string => Boolean(part))
+  return compact.length > 0 ? compact.join(" · ") : null
+}
+
 export function PageContent() {
   const t = useTranslations("dashboard.scanReviewsPage")
   const locale = useLocale()
   const supported = isTauriRuntime()
   const [searchQuery, setSearchQuery] = useState("")
   const [severityFilter, setSeverityFilter] = useState("")
+  const [boundaryFilter, setBoundaryFilter] = useState("")
+  const [operationFilter, setOperationFilter] = useState("")
   const [feedback, setFeedback] = useState<string | null>(null)
   const [actioningId, setActioningId] = useState<string | null>(null)
   const [batchRunning, setBatchRunning] = useState(false)
@@ -63,11 +102,14 @@ export function PageContent() {
     const rows = data?.findings ?? []
     return rows.filter((row) => {
       if (severityFilter && row.severity !== severityFilter) return false
+      const riskMeta = readRiskMetadata(row.metadata)
+      if (boundaryFilter && riskMeta?.boundaryClass !== boundaryFilter) return false
+      if (operationFilter && riskMeta?.operationClass !== operationFilter) return false
       if (!query) return true
       return [row.code, row.message, row.bundle_id, row.document_path]
         .some((value) => String(value ?? "").toLowerCase().includes(query))
     })
-  }, [data?.findings, query, severityFilter])
+  }, [boundaryFilter, data?.findings, operationFilter, query, severityFilter])
 
   const stats: StatCardData[] = [
     { label: t("stats.documents"), value: data?.summary.document_count ?? 0, color: "primary", icon: Files },
@@ -107,7 +149,20 @@ export function PageContent() {
     {
       key: "excerpt",
       header: t("table.documents.headers.summary"),
-      render: (row) => <div className="max-w-[320px] text-xs text-[var(--muted)]">{row.excerpt ?? "—"}</div>,
+      render: (row) => {
+        const riskPreview = readRiskPreview(row.metadata)
+        const riskLine = formatRiskTuple([
+          riskPreview?.riskLevel,
+          riskPreview?.operationClass,
+          riskPreview?.boundaryClass,
+        ])
+        return (
+          <div className="max-w-[320px] space-y-1 text-xs text-[var(--muted)]">
+            <div>{row.excerpt ?? "—"}</div>
+            {riskLine ? <div className="font-mono">{riskLine}</div> : null}
+          </div>
+        )
+      },
     },
   ]
 
@@ -130,7 +185,21 @@ export function PageContent() {
     {
       key: "message",
       header: t("table.findings.headers.message"),
-      render: (row) => <div className="max-w-[420px] text-xs text-[var(--muted)]">{row.message}</div>,
+      render: (row) => {
+        const riskMeta = readRiskMetadata(row.metadata)
+        const riskLine = formatRiskTuple([
+          riskMeta?.riskLevel,
+          riskMeta?.operationClass,
+          riskMeta?.targetClass,
+          riskMeta?.boundaryClass,
+        ])
+        return (
+          <div className="max-w-[420px] space-y-1 text-xs text-[var(--muted)]">
+            <div>{row.message}</div>
+            {riskLine ? <div className="font-mono">{riskLine}</div> : null}
+          </div>
+        )
+      },
     },
   ]
 
@@ -193,7 +262,11 @@ export function PageContent() {
       <AdminFilterBar
         searchPlaceholder={t("filters.searchPlaceholder")}
         onSearch={setSearchQuery}
-        onFilterChange={(key, value) => key === "severity" && setSeverityFilter(value)}
+        onFilterChange={(key, value) => {
+          if (key === "severity") setSeverityFilter(value)
+          if (key === "boundary") setBoundaryFilter(value)
+          if (key === "operation") setOperationFilter(value)
+        }}
         filters={[
           {
             key: "severity",
@@ -202,6 +275,26 @@ export function PageContent() {
               { label: t("severity.error"), value: "error" },
               { label: t("severity.warn"), value: "warn" },
               { label: t("severity.info"), value: "info" },
+            ],
+          },
+          {
+            key: "boundary",
+            label: t("filters.boundary"),
+            options: [
+              { label: t("boundary.hard_boundary"), value: "hard_boundary" },
+              { label: t("boundary.soft_boundary"), value: "soft_boundary" },
+              { label: t("boundary.none"), value: "none" },
+            ],
+          },
+          {
+            key: "operation",
+            label: t("filters.operation"),
+            options: [
+              { label: t("operation.process_exec"), value: "process_exec" },
+              { label: t("operation.filesystem_write"), value: "filesystem_write" },
+              { label: t("operation.filesystem_read"), value: "filesystem_read" },
+              { label: t("operation.network_read"), value: "network_read" },
+              { label: t("operation.unknown"), value: "unknown" },
             ],
           },
         ]}

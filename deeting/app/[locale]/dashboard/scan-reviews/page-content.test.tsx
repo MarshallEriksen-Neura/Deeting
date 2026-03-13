@@ -32,11 +32,50 @@ jest.mock("@/lib/api/local-scan", () => ({
 jest.mock("@/components/admin", () => ({
   AdminStatCards: () => <div>stats</div>,
   AdminStatusBadge: ({ text }: { text: string }) => <span>{text}</span>,
-  AdminFilterBar: ({ actions }: { actions?: React.ReactNode }) => <div>{actions}</div>,
-  AdminDataTable: ({ data, rowActions }: { data: Array<{ id: string }>; rowActions?: (row: { id: string }) => React.ReactNode }) => (
+  AdminFilterBar: ({
+    actions,
+    filters = [],
+    onFilterChange,
+  }: {
+    actions?: React.ReactNode
+    filters?: Array<{
+      key: string
+      options?: Array<{ label: string; value: string }>
+    }>
+    onFilterChange?: (key: string, value: string) => void
+  }) => (
+    <div>
+      {filters.flatMap((filter) =>
+        (filter.options ?? []).map((option) => (
+          <button
+            key={`${filter.key}-${option.value}`}
+            type="button"
+            onClick={() => onFilterChange?.(filter.key, option.value)}
+          >
+            {option.label}
+          </button>
+        ))
+      )}
+      {actions}
+    </div>
+  ),
+  AdminDataTable: ({
+    data,
+    columns = [],
+    rowActions,
+  }: {
+    data: Array<{ id: string }>
+    columns?: Array<{ key: string; render?: (row: { id: string }) => React.ReactNode }>
+    rowActions?: (row: { id: string }) => React.ReactNode
+  }) => (
     <div>
       {data.map((row) => (
-        <div key={row.id}>{rowActions?.(row)}</div>
+        <div key={row.id}>
+          {columns.map((column) => (
+            <div key={`${row.id}-${column.key}`}>{column.render?.(row) ?? null}</div>
+          ))}
+          {rowActions?.(row)}
+        </div>
       ))}
     </div>
   ),
@@ -62,6 +101,12 @@ const mockRun = {
     message: "Index missing",
     bundle_id: "skill.find-skills",
     document_path: "/tmp/skills/skill.find-skills/SKILL.md",
+    metadata: {
+      risk_level: "medium",
+      operation_class: "network_read",
+      target_class: "public_internet",
+      boundary_class: "soft_boundary",
+    },
     action: { kind: "reindex_bundle", bundle_id: "skill.find-skills", path: "/tmp/skills/skill.find-skills" },
   }],
 }
@@ -112,5 +157,113 @@ describe("Dashboard scan reviews page", () => {
     expect(screen.queryByRole("button", { name: "actions.syncAction" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "actions.syncReinstallAction" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "actions.repairIndexAction" })).not.toBeInTheDocument()
+  })
+
+  it("renders structured risk metadata from scan findings", () => {
+    mockUseSWR.mockReturnValue({
+      data: {
+        ...mockRun,
+        documents: [
+          {
+            id: "doc-1",
+            path: "/tmp/skills/skill.find-skills",
+            relative_path: "skill.find-skills",
+            document_kind: "skill_bundle",
+            display_name: "Find Skills",
+            bundle_id: "skill.find-skills",
+            status: "needs_review",
+            size_bytes: null,
+            modified_at: null,
+            sha256: null,
+            excerpt: "Bundle summary",
+            metadata: {
+              risk_preview: {
+                risk_level: "medium",
+                operation_class: "network_read",
+                target_class: "unknown",
+                boundary_class: "soft_boundary",
+              },
+            },
+          },
+        ],
+      },
+      error: undefined,
+      isLoading: false,
+      isValidating: false,
+      mutate: mockMutate,
+    })
+
+    render(<PageContent />)
+
+    expect(screen.getByText("medium · network_read · soft_boundary")).toBeInTheDocument()
+    expect(screen.getByText("medium · network_read · public_internet · soft_boundary")).toBeInTheDocument()
+  })
+
+  it("filters findings by boundary class", () => {
+    mockUseSWR.mockReturnValue({
+      data: {
+        ...mockRun,
+        findings: [
+          mockRun.findings[0],
+          {
+            ...mockRun.findings[0],
+            id: "finding-2",
+            code: "runtime_scripts_detected",
+            message: "Runtime script",
+            metadata: {
+              risk_level: "high",
+              operation_class: "process_exec",
+              target_class: "host",
+              boundary_class: "hard_boundary",
+            },
+            action: undefined,
+          },
+        ],
+      },
+      error: undefined,
+      isLoading: false,
+      isValidating: false,
+      mutate: mockMutate,
+    })
+
+    render(<PageContent />)
+    fireEvent.click(screen.getByRole("button", { name: "boundary.hard_boundary" }))
+
+    expect(screen.getByText("Runtime script")).toBeInTheDocument()
+    expect(screen.queryByText("Index missing")).not.toBeInTheDocument()
+  })
+
+  it("filters findings by operation class", () => {
+    mockUseSWR.mockReturnValue({
+      data: {
+        ...mockRun,
+        findings: [
+          mockRun.findings[0],
+          {
+            ...mockRun.findings[0],
+            id: "finding-3",
+            code: "script_file_detected",
+            message: "Shell script",
+            metadata: {
+              risk_level: "high",
+              operation_class: "process_exec",
+              target_class: "host",
+              boundary_class: "hard_boundary",
+            },
+            action: undefined,
+          },
+        ],
+      },
+      error: undefined,
+      isLoading: false,
+      isValidating: false,
+      mutate: mockMutate,
+    })
+
+    render(<PageContent />)
+    fireEvent.click(screen.getByRole("button", { name: "operation.process_exec" }))
+
+    expect(screen.getByText("Shell script")).toBeInTheDocument()
+    expect(screen.queryByText("Index missing")).not.toBeInTheDocument()
   })
 })

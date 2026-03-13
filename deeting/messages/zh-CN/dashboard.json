@@ -67,7 +67,21 @@
       },
       "filters": {
         "searchPlaceholder": "搜索路径、技能包、摘要或发现项...",
-        "severity": "严重级别"
+        "severity": "严重级别",
+        "boundary": "边界类型",
+        "operation": "操作类型"
+      },
+      "boundary": {
+        "hard_boundary": "硬边界",
+        "soft_boundary": "软边界",
+        "none": "无边界"
+      },
+      "operation": {
+        "process_exec": "进程执行",
+        "filesystem_write": "文件写入",
+        "filesystem_read": "文件读取",
+        "network_read": "网络读取",
+        "unknown": "未知"
       },
       "severity": {
         "error": "错误",

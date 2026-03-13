@@ -9,6 +9,7 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
+use crate::modules::mcp::risk::classify_scan_runtime_risk;
 use crate::modules::mcp::store::LocalSkillInstallSnapshot;
 
 use super::types::{ScanDocument, ScanFinding, ScanFindingAction, ScanRun, ScanSummary};
@@ -330,6 +331,7 @@ fn build_bundle_document(
     }
 
     if !snapshot.high_risk_script_paths.is_empty() {
+        let risk = classify_scan_runtime_risk(Some("bash"), snapshot.high_risk_script_paths.first().map(|s| s.as_str()));
         status = "needs_review".to_string();
         findings.push(ScanFinding {
             id: Uuid::new_v4().to_string(),
@@ -342,7 +344,10 @@ fn build_bundle_document(
             document_path: Some(normalized_path.clone()),
             bundle_id: Some(snapshot.bundle_id.clone()),
             metadata: Some(json!({
-                "risk_level": "high",
+                "risk_level": risk.risk_level.to_lowercase(),
+                "operation_class": risk.operation_class.as_str(),
+                "target_class": risk.target_class.as_str(),
+                "boundary_class": risk.boundary_class.as_str(),
                 "script_paths": snapshot.high_risk_script_paths.clone(),
             })),
             action: None,
@@ -350,6 +355,11 @@ fn build_bundle_document(
     }
 
     if !snapshot.runtime_script_paths.is_empty() {
+        let runtime_hint = snapshot.manifest_runtime.as_deref().or(Some("runtime"));
+        let risk = classify_scan_runtime_risk(
+            runtime_hint,
+            snapshot.runtime_script_paths.first().map(|s| s.as_str()),
+        );
         findings.push(ScanFinding {
             id: Uuid::new_v4().to_string(),
             severity: "info".to_string(),
@@ -362,6 +372,9 @@ fn build_bundle_document(
             bundle_id: Some(snapshot.bundle_id.clone()),
             metadata: Some(json!({
                 "risk_level": "runtime",
+                "operation_class": risk.operation_class.as_str(),
+                "target_class": risk.target_class.as_str(),
+                "boundary_class": risk.boundary_class.as_str(),
                 "script_paths": snapshot.runtime_script_paths.clone(),
             })),
             action: None,
@@ -381,6 +394,7 @@ fn build_bundle_document(
         "script_count": snapshot.script_paths.len(),
         "runtime_script_count": snapshot.runtime_script_paths.len(),
         "high_risk_script_count": snapshot.high_risk_script_paths.len(),
+        "risk_preview": scan_bundle_risk_preview(&snapshot),
         "package_present": snapshot.package_present,
         "install": install.map(|item| json!({
             "is_enabled": item.is_enabled,
@@ -447,6 +461,8 @@ fn build_file_findings(path: &Path, bundle_id: Option<String>) -> Vec<ScanFindin
     let normalized_path = normalize_path(path);
 
     if let Some(risk_level) = classify_script_risk_level(path) {
+        let runtime_hint = path.extension().and_then(|ext| ext.to_str());
+        let risk = classify_scan_runtime_risk(runtime_hint, Some(normalized_path.as_str()));
         findings.push(ScanFinding {
             id: Uuid::new_v4().to_string(),
             severity: if risk_level == "high" { "warn" } else { "info" }.to_string(),
@@ -457,6 +473,9 @@ fn build_file_findings(path: &Path, bundle_id: Option<String>) -> Vec<ScanFindin
             metadata: Some(json!({
                 "path": normalized_path,
                 "risk_level": risk_level,
+                "operation_class": risk.operation_class.as_str(),
+                "target_class": risk.target_class.as_str(),
+                "boundary_class": risk.boundary_class.as_str(),
             })),
             action: None,
         });
@@ -666,6 +685,30 @@ fn summarize(documents: &[ScanDocument], findings: &[ScanFinding]) -> ScanSummar
             .filter(|item| item.code == "skill_doc_missing")
             .count(),
     }
+}
+
+fn scan_bundle_risk_preview(snapshot: &BundleSnapshot) -> Value {
+    let risk = if !snapshot.high_risk_script_paths.is_empty() {
+        classify_scan_runtime_risk(
+            Some("bash"),
+            snapshot.high_risk_script_paths.first().map(|s| s.as_str()),
+        )
+    } else if !snapshot.runtime_script_paths.is_empty() {
+        classify_scan_runtime_risk(
+            snapshot.manifest_runtime.as_deref(),
+            snapshot.runtime_script_paths.first().map(|s| s.as_str()),
+        )
+    } else {
+        classify_scan_runtime_risk(snapshot.manifest_runtime.as_deref(), None)
+    };
+
+    json!({
+        "risk_level": risk.risk_level.to_lowercase(),
+        "operation_class": risk.operation_class.as_str(),
+        "target_class": risk.target_class.as_str(),
+        "boundary_class": risk.boundary_class.as_str(),
+        "reasons": risk.reasons,
+    })
 }
 
 fn orphan_install_finding(

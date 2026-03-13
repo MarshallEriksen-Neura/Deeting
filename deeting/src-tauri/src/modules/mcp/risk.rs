@@ -508,6 +508,54 @@ pub fn assess_skill_binding_risk(
     )
 }
 
+pub fn classify_scan_runtime_risk(runtime: Option<&str>, file_path: Option<&str>) -> ToolRiskAssessment {
+    let runtime = runtime
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_default()
+        .to_lowercase();
+    let path = file_path.unwrap_or_default().to_lowercase();
+
+    if runtime == "bash" || path.ends_with(".sh") || path.ends_with(".bat") || path.ends_with(".ps1")
+    {
+        return ToolRiskAssessment {
+            requires_approval: true,
+            risk_level: "HIGH",
+            reasons: vec!["bundle includes shell/script execution surface".to_string()],
+            operation_class: RiskOperationClass::ProcessExec,
+            target_class: RiskTargetClass::Host,
+            boundary_class: ApprovalBoundaryClass::HardBoundary,
+        };
+    }
+
+    if runtime == "python"
+        || runtime == "node"
+        || path.ends_with(".py")
+        || path.ends_with(".js")
+        || path.ends_with(".ts")
+        || path.ends_with(".mjs")
+        || path.ends_with(".cjs")
+    {
+        return ToolRiskAssessment {
+            requires_approval: true,
+            risk_level: "MEDIUM",
+            reasons: vec!["bundle includes runtime code that may perform network or filesystem reads".to_string()],
+            operation_class: RiskOperationClass::Unknown,
+            target_class: RiskTargetClass::Unknown,
+            boundary_class: ApprovalBoundaryClass::SoftBoundary,
+        };
+    }
+
+    ToolRiskAssessment {
+        requires_approval: false,
+        risk_level: "LOW",
+        reasons: vec!["no runtime execution surface detected".to_string()],
+        operation_class: RiskOperationClass::Unknown,
+        target_class: RiskTargetClass::Unknown,
+        boundary_class: ApprovalBoundaryClass::None,
+    }
+}
+
 fn finalize_risk_assessment(
     score: i32,
     reasons: Vec<String>,
