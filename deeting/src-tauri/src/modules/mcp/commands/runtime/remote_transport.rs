@@ -322,18 +322,6 @@ fn is_windows_cmd_script(command: &str) -> bool {
     normalized.ends_with(".cmd") || normalized.ends_with(".bat")
 }
 
-fn quote_for_cmd_c(raw: &str) -> String {
-    if !cfg!(target_os = "windows") {
-        return raw.to_string();
-    }
-    let trimmed = raw.trim();
-    if trimmed.contains(' ') && !(trimmed.starts_with('"') && trimmed.ends_with('"')) {
-        format!("\"{}\"", trimmed)
-    } else {
-        trimmed.to_string()
-    }
-}
-
 fn push_unique_command_candidate(
     candidates: &mut Vec<(String, Vec<String>)>,
     command: String,
@@ -349,22 +337,22 @@ fn push_unique_command_candidate(
 fn legacy_sse_proxy_command_candidates(sse_url: &str) -> Vec<(String, Vec<String>)> {
     let mut candidates = Vec::new();
     let direct_args = vec![
+        sse_url.to_string(),
         "--transport".to_string(),
         "sse-only".to_string(),
-        sse_url.to_string(),
     ];
     let npx_args = vec![
         "-y".to_string(),
         "mcp-remote".to_string(),
+        sse_url.to_string(),
         "--transport".to_string(),
         "sse-only".to_string(),
-        sse_url.to_string(),
     ];
 
     for command in discover_binary_paths("mcp-remote") {
         if is_windows_cmd_script(&command) {
             push_unique_command_candidate(&mut candidates, "cmd".to_string(), {
-                let mut args = vec!["/C".to_string(), quote_for_cmd_c(&command)];
+                let mut args = vec!["/C".to_string(), "call".to_string(), command];
                 args.extend(direct_args.clone());
                 args
             });
@@ -379,12 +367,13 @@ fn legacy_sse_proxy_command_candidates(sse_url: &str) -> Vec<(String, Vec<String
                 "cmd".to_string(),
                 vec![
                     "/C".to_string(),
-                    quote_for_cmd_c(&command),
+                    "call".to_string(),
+                    command,
                     "-y".to_string(),
                     "mcp-remote".to_string(),
+                    sse_url.to_string(),
                     "--transport".to_string(),
                     "sse-only".to_string(),
-                    sse_url.to_string(),
                 ],
             );
         } else {
@@ -407,9 +396,9 @@ fn legacy_sse_proxy_command_candidates(sse_url: &str) -> Vec<(String, Vec<String
                 "npx".to_string(),
                 "-y".to_string(),
                 "mcp-remote".to_string(),
+                sse_url.to_string(),
                 "--transport".to_string(),
                 "sse-only".to_string(),
-                sse_url.to_string(),
             ],
         );
     }
@@ -690,18 +679,18 @@ mod tests {
         assert!(candidates.iter().any(|item| item.0 == "mcp-remote"
             && item.1
                 == vec![
+                    "https://mcp.example.com/abc123/sse".to_string(),
                     "--transport".to_string(),
-                    "sse-only".to_string(),
-                    "https://mcp.example.com/abc123/sse".to_string()
+                    "sse-only".to_string()
                 ]));
         assert!(candidates.iter().any(|item| item.0 == "npx"
             && item.1
                 == vec![
                     "-y".to_string(),
                     "mcp-remote".to_string(),
+                    "https://mcp.example.com/abc123/sse".to_string(),
                     "--transport".to_string(),
-                    "sse-only".to_string(),
-                    "https://mcp.example.com/abc123/sse".to_string()
+                    "sse-only".to_string()
                 ]));
     }
 }
