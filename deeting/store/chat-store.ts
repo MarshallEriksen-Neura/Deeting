@@ -7,11 +7,12 @@ import type { Message, MessageRole } from "@/lib/chat/message-types"
 import type { ModelInfo } from "@/lib/api/models"
 import { normalizeConversationMessages } from "@/lib/chat/conversation-adapter"
 import { fetchConversationHistory } from "@/lib/api/conversations"
-import type { MessageBlock } from "@/lib/chat/message-protocol"
+import type { MessageBlock, ToolResultBlock } from "@/lib/chat/message-protocol"
 import {
   appendMessageBlocks as appendNormalizedMessageBlocks,
   extractAssistantTextFromBlocks,
   replaceMessageBlocks,
+  upsertToolResultBlock,
 } from "@/lib/chat/message-blocks"
 
 // ============== 类型定义 ==============
@@ -55,25 +56,6 @@ export interface MessageCompareState {
   activeModelKey: string
   isFinalizing: boolean
   candidates: Record<string, CompareCandidate>
-}
-
-// ============== 工具函数 ==============
-
-const COLOR_PRESETS = [
-  "from-indigo-500 to-purple-500",
-  "from-sky-500 to-cyan-500",
-  "from-emerald-500 to-green-500",
-  "from-amber-500 to-orange-500",
-  "from-rose-500 to-pink-500",
-  "from-fuchsia-500 to-purple-500",
-]
-
-const hashToIndex = (value: string, modulo: number) => {
-  let hash = 0
-  for (let i = 0; i < value.length; i += 1) {
-    hash = (hash * 31 + value.charCodeAt(i)) % modulo
-  }
-  return hash
 }
 
 const normalizeAssistantId = (value: unknown): string | null => {
@@ -186,6 +168,7 @@ interface ChatStore {
   mergeMessageMeta: (id: string, patch: Record<string, unknown>) => void
   setMessageBlocks: (id: string, blocks: MessageBlock[]) => void
   appendMessageBlocks: (id: string, blocks: MessageBlock[]) => void
+  upsertMessageToolResult: (id: string, block: ToolResultBlock) => void
   ensureCompareState: (messageId: string, baselineCandidate: CompareCandidate) => void
   upsertCompareCandidate: (messageId: string, candidate: CompareCandidate) => void
   appendCompareCandidateBlocks: (messageId: string, modelKey: string, blocks: MessageBlock[]) => void
@@ -492,6 +475,23 @@ export const useChatStore = create<ChatStore>()(
           messages: state.messages.map((msg) => {
             if (msg.id !== id) return msg
             const next = appendNormalizedMessageBlocks(msg.id, msg.blocks, blocks)
+
+            if (msg.role !== "assistant") {
+              return { ...msg, blocks: next }
+            }
+            return {
+              ...msg,
+              blocks: next,
+              content: extractAssistantTextFromBlocks(next),
+            }
+          }),
+        })),
+
+      upsertMessageToolResult: (id, block) =>
+        set((state) => ({
+          messages: state.messages.map((msg) => {
+            if (msg.id !== id) return msg
+            const next = upsertToolResultBlock(msg.id, msg.blocks, block)
 
             if (msg.role !== "assistant") {
               return { ...msg, blocks: next }

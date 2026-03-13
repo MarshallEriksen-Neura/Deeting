@@ -1,4 +1,5 @@
 import { UserApiKeys } from "./components/user-api-keys"
+import { UserAccountBindings } from "./components/user-account-bindings"
 import { UserBasicInfo } from "./components/user-basic-info"
 import { UserDevices } from "./components/user-devices"
 import { UserMemory } from "./components/user-memory"
@@ -24,6 +25,7 @@ export default function ProfilePage() {
           <UserApiKeys apiKeys={apiKeys} />
           <UserDevices />
           <UserMemory memoriesCount={0} />
+          <UserAccountBindings />
           <UserSecurity />
         </main>
       </div>

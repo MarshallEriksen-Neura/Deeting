@@ -1,6 +1,7 @@
 import { request } from "@/lib/http"
 
 export type DesktopOAuthProvider = "google" | "github"
+export type DesktopOAuthIntent = "login" | "bind"
 
 export interface DesktopOAuthStartRequest {
   provider: DesktopOAuthProvider
@@ -19,6 +20,10 @@ export interface DesktopOAuthExchangeRequest {
   session_id: string
   state: string
   grant: string
+}
+
+export interface DesktopOAuthCallbackPayload extends DesktopOAuthExchangeRequest {
+  intent: DesktopOAuthIntent
 }
 
 export interface DesktopOAuthExchangeResponse {
@@ -64,7 +69,7 @@ export async function openDesktopOAuthAuthorizeUrl(url: string): Promise<void> {
   await openUrl(url)
 }
 
-export function parseDesktopOAuthCallbackUrl(url: string): DesktopOAuthExchangeRequest | null {
+export function parseDesktopOAuthCallbackUrl(url: string): DesktopOAuthCallbackPayload | null {
   try {
     const parsed = new URL(url)
     if (parsed.protocol !== DESKTOP_SCHEME) return null
@@ -72,6 +77,7 @@ export function parseDesktopOAuthCallbackUrl(url: string): DesktopOAuthExchangeR
     if (parsed.pathname !== "/callback") return null
 
     const provider = parsed.searchParams.get("provider")?.trim()
+    const intent = parsed.searchParams.get("intent")?.trim() ?? "login"
     const sessionId = parsed.searchParams.get("session_id")?.trim()
     const state = parsed.searchParams.get("state")?.trim()
     const grant = parsed.searchParams.get("grant")?.trim()
@@ -87,7 +93,12 @@ export function parseDesktopOAuthCallbackUrl(url: string): DesktopOAuthExchangeR
       return null
     }
 
+    if (intent !== "login" && intent !== "bind") {
+      return null
+    }
+
     return {
+      intent,
       provider,
       session_id: sessionId,
       state,

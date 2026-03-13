@@ -55,6 +55,36 @@
       "fragmentsStored": "已安全存储 {count} 个记忆片段",
       "reviewEdit": "查看与编辑"
     },
+    "bindings": {
+      "title": "账号绑定",
+      "description": "将 Google、GitHub 与邮箱验证码登录绑定到当前账号，避免登录时创建新账号。",
+      "providers": {
+        "google": "Google",
+        "github": "GitHub",
+        "email": "邮箱验证码登录"
+      },
+      "bound": "已绑定",
+      "bind": "绑定",
+      "binding": "绑定中...",
+      "connected": "已连接到当前账号",
+      "notBound": "尚未绑定到当前账号",
+      "email": {
+        "primary": "主邮箱: {email}",
+        "placeholder": "输入要绑定的邮箱",
+        "sendCode": "发送验证码",
+        "sending": "发送中...",
+        "codeSent": "验证码已发送到该邮箱",
+        "codePlaceholder": "输入发送到 {email} 的验证码",
+        "confirm": "确认绑定",
+        "confirming": "确认中...",
+        "bound": "邮箱登录绑定成功"
+      },
+      "errors": {
+        "oauth": "桌面 OAuth 绑定失败",
+        "emailSend": "发送邮箱验证码失败",
+        "emailConfirm": "确认邮箱绑定失败"
+      }
+    },
     "security": {
       "title": "安全与访问",
       "description": "保护您的数字 ID 和管理凭据",

@@ -17,6 +17,7 @@ export interface BridgeToolPendingApproval extends BasePendingApproval {
   meta: {
     call_id: string
     execution_token?: string
+    message_id?: string
   }
 }
 

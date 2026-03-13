@@ -9,6 +9,8 @@ import {
 import { invoke } from "@tauri-apps/api/core"
 import { bridgeCallTool } from "@/lib/api/bridge"
 import { toast } from "sonner"
+import { useChatStore } from "@/store/chat-store"
+import type { MessageBlock } from "@/lib/chat/message-protocol"
 
 jest.mock("@/components/ui/alert-dialog", () => ({
   AlertDialog: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
@@ -75,6 +77,7 @@ describe("ToolApprovalDialog", () => {
     jest.clearAllMocks()
     act(() => {
       useBridgeApprovalStore.getState().clear()
+      useChatStore.getState().resetSession()
     })
   })
 
@@ -145,6 +148,77 @@ describe("ToolApprovalDialog", () => {
     expect(screen.getByText("write_file").parentElement).toHaveClass(
       "max-h-[40vh]",
       "overflow-y-auto"
+    )
+  })
+
+  it("writes approved local-chat tool results back into the matching assistant message", async () => {
+    mockInvoke.mockResolvedValueOnce({ crawled_pages: 3 } as unknown)
+
+    act(() => {
+      useChatStore.setState({
+        messages: [
+          {
+            id: "assistant-local-1",
+            role: "assistant",
+            content: "",
+            createdAt: 1,
+            blocks: [
+              {
+                id: "call-local-1",
+                type: "tool_call",
+                callId: "call-local-1",
+                toolName: "skill.official.skills.crawler.crawl_website",
+                status: "running",
+              } as MessageBlock,
+              {
+                id: "result-local-1",
+                type: "tool_result",
+                callId: "call-local-1",
+                toolName: "skill.official.skills.crawler.crawl_website",
+                status: "success",
+                result: {
+                  status: "REQUIRES_APPROVAL",
+                  approval_token: "approval-local-1",
+                },
+              } as MessageBlock,
+            ],
+          },
+        ],
+      })
+      useBridgeApprovalStore.getState().setPending(
+        createBridgeToolApproval({
+          approval_token: "approval-local-1",
+          tool_name: "skill.official.skills.crawler.crawl_website",
+          arguments: { url: "https://example.com" },
+          meta: {
+            call_id: "call-local-1",
+            message_id: "assistant-local-1",
+          },
+        })
+      )
+    })
+
+    render(<ToolApprovalDialog />)
+    fireEvent.click(screen.getByRole("button", { name: /allow execution/i }))
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("approve_mcp_tool", {
+        approvalToken: "approval-local-1",
+        callId: "call-local-1",
+        executionToken: undefined,
+      })
+    })
+
+    expect(mockBridgeCallTool).not.toHaveBeenCalled()
+    expect(useChatStore.getState().messages[0]?.blocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "tool_result",
+          callId: "call-local-1",
+          status: "success",
+          result: { crawled_pages: 3 },
+        }),
+      ])
     )
   })
 })

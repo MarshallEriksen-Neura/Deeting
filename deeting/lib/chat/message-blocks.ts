@@ -1,4 +1,4 @@
-import type { MessageBlock } from "@/lib/chat/message-protocol"
+import type { MessageBlock, ToolResultBlock } from "@/lib/chat/message-protocol"
 
 export function extractAssistantTextFromBlocks(blocks?: MessageBlock[]): string {
   if (!Array.isArray(blocks) || blocks.length === 0) return ""
@@ -86,5 +86,37 @@ export function appendMessageBlocks(
     next.push(block)
   }
 
+  return applyToolResultStatuses(next)
+}
+
+export function upsertToolResultBlock(
+  messageId: string,
+  existingBlocks: MessageBlock[] | undefined,
+  incomingBlock: ToolResultBlock
+): MessageBlock[] {
+  const next = Array.isArray(existingBlocks) ? [...existingBlocks] : []
+  const [normalized] = normalizeIncomingBlocks(messageId, [incomingBlock], next.length)
+
+  if (!normalized || normalized.type !== "tool_result") {
+    return applyToolResultStatuses(next)
+  }
+
+  const callId = normalized.callId
+  if (typeof callId === "string" && callId.trim().length > 0) {
+    const existingIndex = next.findIndex(
+      (block) => block.type === "tool_result" && block.callId === callId
+    )
+    if (existingIndex >= 0) {
+      const existing = next[existingIndex]
+      next[existingIndex] = {
+        ...existing,
+        ...normalized,
+        id: existing.id || normalized.id,
+      }
+      return applyToolResultStatuses(next)
+    }
+  }
+
+  next.push(normalized)
   return applyToolResultStatuses(next)
 }

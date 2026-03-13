@@ -1,4 +1,5 @@
 import { useChatStore, type ChatAssistant } from "../chat-store"
+import type { MessageBlock } from "@/lib/chat/message-protocol"
 
 describe("useChatStore selected assistant normalization", () => {
   const resetStore = () => {
@@ -196,6 +197,52 @@ describe("useChatStore selected assistant normalization", () => {
     const message = useChatStore.getState().messages[0]
     expect(message?.content).toBe("AB")
     expect(message?.blocks?.filter((block) => block.type === "text")).toHaveLength(1)
+  })
+
+  it("upsertMessageToolResult should replace the matching tool result by callId", () => {
+    useChatStore.setState({
+      messages: [
+        {
+          id: "assistant-7",
+          role: "assistant",
+          content: "",
+          createdAt: 1,
+          blocks: [
+            { id: "call-7", type: "tool_call", callId: "call-7", toolName: "crawl_website", status: "running" } as MessageBlock,
+            {
+              id: "result-7-old",
+              type: "tool_result",
+              callId: "call-7",
+              toolName: "crawl_website",
+              status: "error",
+              result: { status: "REQUIRES_APPROVAL" },
+            } as MessageBlock,
+          ],
+        },
+      ],
+    })
+
+    useChatStore.getState().upsertMessageToolResult("assistant-7", {
+      id: "result-7-new",
+      type: "tool_result",
+      callId: "call-7",
+      toolName: "crawl_website",
+      status: "success",
+      result: { ok: true },
+    })
+
+    const message = useChatStore.getState().messages[0]
+    const toolResults = message?.blocks?.filter((block) => block.type === "tool_result") ?? []
+    const toolCall = message?.blocks?.find((block) => block.type === "tool_call")
+
+    expect(toolResults).toHaveLength(1)
+    expect(toolResults[0]).toMatchObject({
+      id: "result-7-old",
+      callId: "call-7",
+      status: "success",
+      result: { ok: true },
+    })
+    expect(toolCall).toMatchObject({ status: "success" })
   })
 
   it("mergeMessageMeta should update trace_id without mutating content", () => {

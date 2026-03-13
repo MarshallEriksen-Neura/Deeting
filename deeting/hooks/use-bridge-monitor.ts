@@ -5,9 +5,9 @@ import { useAuthStore } from "@/store/auth-store"
 import { subscribeBridgeEvents, bridgeCallTool } from "@/lib/api/bridge"
 import { invoke } from "@tauri-apps/api/core"
 import {
-  createBridgeToolApproval,
-  useBridgeApprovalStore,
-} from "@/lib/chat/bridge-approval-store"
+  buildBridgeToolApprovalFromResult,
+  enqueueBridgeToolApproval,
+} from "@/lib/chat/tool-approval"
 
 type BridgeToolCallRequestPayload = {
   type: string
@@ -80,48 +80,15 @@ export function useBridgeMonitor() {
                 })
 
                 // 2. SECURITY INTERCEPT: If high-risk, wait for user
-                if (executionResult.status === "REQUIRES_APPROVAL") {
+                const pendingApproval = buildBridgeToolApprovalFromResult(executionResult, {
+                  tool_id,
+                  tool_name,
+                  arguments: toolArgs,
+                  meta: { call_id, execution_token },
+                })
+                if (pendingApproval) {
                   console.log("[BridgeMonitor] High-risk tool intercepted, awaiting approval")
-                  const approvalToken =
-                    typeof executionResult.approval_token === "string"
-                      ? executionResult.approval_token
-                      : ""
-                  if (!approvalToken) {
-                    throw new Error("missing approval token in approval-required response")
-                  }
-                  useBridgeApprovalStore.getState().setPending(createBridgeToolApproval({
-                    approval_token: approvalToken,
-                    tool_id:
-                      typeof executionResult.tool_id === "string"
-                        ? executionResult.tool_id
-                        : tool_id,
-                    tool_name:
-                      typeof executionResult.tool_name === "string"
-                        ? executionResult.tool_name
-                        : tool_name,
-                    arguments:
-                      (executionResult.arguments as Record<string, unknown> | undefined) ??
-                      toolArgs,
-                    description:
-                      typeof executionResult.description === "string"
-                        ? executionResult.description
-                        : undefined,
-                    risk_level:
-                      typeof executionResult.risk_level === "string"
-                        ? executionResult.risk_level
-                        : undefined,
-                    risk_reasons: Array.isArray(executionResult.risk_reasons)
-                      ? executionResult.risk_reasons.filter(
-                          (v): v is string => typeof v === "string"
-                        )
-                      : undefined,
-                    expires_in_ms:
-                      typeof executionResult.expires_in_ms === "number"
-                        ? executionResult.expires_in_ms
-                        : undefined,
-                    // Pass these through so the Dialog component can finish the Bridge call
-                    meta: { call_id, execution_token },
-                  }))
+                  enqueueBridgeToolApproval(pendingApproval)
                   return // Stop here, Dialog will resume
                 }
 

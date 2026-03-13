@@ -55,6 +55,36 @@
       "fragmentsStored": "{count} memory fragments stored securely",
       "reviewEdit": "Review & Edit"
     },
+    "bindings": {
+      "title": "Account Bindings",
+      "description": "Bind Google, GitHub, and email-code login to this account so future sign-ins reuse the same account.",
+      "providers": {
+        "google": "Google",
+        "github": "GitHub",
+        "email": "Email Code Login"
+      },
+      "bound": "Bound",
+      "bind": "Bind",
+      "binding": "Binding...",
+      "connected": "Connected to this account",
+      "notBound": "Not bound to this account yet",
+      "email": {
+        "primary": "Primary email: {email}",
+        "placeholder": "Enter an email to bind",
+        "sendCode": "Send Code",
+        "sending": "Sending...",
+        "codeSent": "Verification code sent",
+        "codePlaceholder": "Enter the code sent to {email}",
+        "confirm": "Confirm Bind",
+        "confirming": "Confirming...",
+        "bound": "Email login bound successfully"
+      },
+      "errors": {
+        "oauth": "Desktop OAuth binding failed",
+        "emailSend": "Failed to send email verification code",
+        "emailConfirm": "Failed to confirm email binding"
+      }
+    },
     "security": {
       "title": "Security & Access",
       "description": "Protect your Digital ID and management credentials",

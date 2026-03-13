@@ -19,9 +19,15 @@ import { invoke } from "@tauri-apps/api/core"
 import { bridgeCallTool } from "@/lib/api/bridge"
 import { toast } from "sonner"
 import { Loader2, ShieldAlert } from "lucide-react"
+import { useChatStore } from "@/store/chat-store"
+import {
+  createApprovedToolResultBlock,
+  createRejectedToolResultBlock,
+} from "@/lib/chat/tool-approval"
 
 export function ToolApprovalDialog() {
   const { pending, clear } = useBridgeApprovalStore()
+  const upsertMessageToolResult = useChatStore((state) => state.upsertMessageToolResult)
   const [loading, setLoading] = useState(false)
 
   if (!pending) return null
@@ -45,15 +51,24 @@ export function ToolApprovalDialog() {
         executionToken: pending.meta.execution_token,
       })
 
-      await bridgeCallTool({
-        tool_name: pending.tool_name,
-        arguments: {
-          call_id: pending.meta.call_id,
-          result,
-          ok: true,
-        },
-        execution_token: pending.meta.execution_token,
-      })
+      if (pending.meta.message_id) {
+        const successBlock = createApprovedToolResultBlock(pending, result)
+        if (successBlock) {
+          upsertMessageToolResult(pending.meta.message_id, successBlock)
+        }
+      }
+
+      if (pending.meta.execution_token) {
+        await bridgeCallTool({
+          tool_name: pending.tool_name,
+          arguments: {
+            call_id: pending.meta.call_id,
+            result,
+            ok: true,
+          },
+          execution_token: pending.meta.execution_token,
+        })
+      }
 
       toast.success(dialogCopy.successMessage)
       clear()
@@ -63,15 +78,23 @@ export function ToolApprovalDialog() {
       toast.error(`Execution failed: ${errorMessage}`)
 
       if (isBridgeToolApproval(pending)) {
-        await bridgeCallTool({
-          tool_name: pending.tool_name,
-          arguments: {
-            call_id: pending.meta.call_id,
-            result: { error: errorMessage },
-            ok: false,
-          },
-          execution_token: pending.meta.execution_token,
-        })
+        if (pending.meta.message_id) {
+          const errorBlock = createRejectedToolResultBlock(pending, errorMessage)
+          if (errorBlock) {
+            upsertMessageToolResult(pending.meta.message_id, errorBlock)
+          }
+        }
+        if (pending.meta.execution_token) {
+          await bridgeCallTool({
+            tool_name: pending.tool_name,
+            arguments: {
+              call_id: pending.meta.call_id,
+              result: { error: errorMessage },
+              ok: false,
+            },
+            execution_token: pending.meta.execution_token,
+          })
+        }
       }
       clear()
     } finally {
@@ -85,15 +108,24 @@ export function ToolApprovalDialog() {
         approvalToken: pending.approval_token,
       })
 
-      await bridgeCallTool({
-        tool_name: pending.tool_name,
-        arguments: {
-          call_id: pending.meta.call_id,
-          result: { error: "User rejected tool execution" },
-          ok: false,
-        },
-        execution_token: pending.meta.execution_token,
-      })
+      if (pending.meta.message_id) {
+        const rejectedBlock = createRejectedToolResultBlock(pending)
+        if (rejectedBlock) {
+          upsertMessageToolResult(pending.meta.message_id, rejectedBlock)
+        }
+      }
+
+      if (pending.meta.execution_token) {
+        await bridgeCallTool({
+          tool_name: pending.tool_name,
+          arguments: {
+            call_id: pending.meta.call_id,
+            result: { error: "User rejected tool execution" },
+            ok: false,
+          },
+          execution_token: pending.meta.execution_token,
+        })
+      }
 
       toast.info(dialogCopy.rejectMessage)
     } catch (err) {

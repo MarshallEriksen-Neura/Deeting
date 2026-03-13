@@ -1,8 +1,10 @@
 import { render, waitFor } from "@testing-library/react"
+import { mutate } from "swr"
 
 import { DesktopOAuthListener } from "../desktop-oauth-listener"
 
 const mockCompleteDesktopOAuth = jest.fn()
+const mockConfirmDesktopOAuthBindingGrant = jest.fn()
 const mockGetCurrentDesktopDeepLinks = jest.fn()
 const mockListenForDesktopDeepLinks = jest.fn()
 
@@ -10,6 +12,12 @@ jest.mock("@/hooks/use-auth", () => ({
   useAuthService: () => ({
     completeDesktopOAuth: mockCompleteDesktopOAuth,
   }),
+}))
+
+jest.mock("@/lib/api/account-bindings", () => ({
+  ACCOUNT_BINDINGS_KEY: "/api/v1/users/me/bindings",
+  confirmDesktopOAuthBindingGrant: (...args: unknown[]) =>
+    mockConfirmDesktopOAuthBindingGrant(...args),
 }))
 
 jest.mock("@/lib/api/desktop-config", () => ({
@@ -28,9 +36,14 @@ jest.mock("sonner", () => ({
   },
 }))
 
+jest.mock("swr", () => ({
+  mutate: jest.fn(),
+}))
+
 describe("DesktopOAuthListener", () => {
   beforeEach(() => {
     mockCompleteDesktopOAuth.mockReset()
+    mockConfirmDesktopOAuthBindingGrant.mockReset()
     mockGetCurrentDesktopDeepLinks.mockReset()
     mockListenForDesktopDeepLinks.mockReset()
     mockGetCurrentDesktopDeepLinks.mockResolvedValue(null)
@@ -74,5 +87,34 @@ describe("DesktopOAuthListener", () => {
         grant: "grant-2",
       })
     })
+  })
+
+  it("dispatches bind callbacks to the binding confirm API and refreshes binding state", async () => {
+    mockConfirmDesktopOAuthBindingGrant.mockResolvedValueOnce({
+      provider: "google",
+      is_bound: true,
+      display_name: "Bound Google User",
+    })
+    mockListenForDesktopDeepLinks.mockImplementationOnce(
+      async (handler: (urls: string[]) => Promise<void>) => {
+        await handler([
+          "deeting://auth/callback?intent=bind&provider=google&session_id=sess-3&state=state-3&grant=grant-3",
+        ])
+        return jest.fn()
+      }
+    )
+
+    render(<DesktopOAuthListener />)
+
+    await waitFor(() => {
+      expect(mockConfirmDesktopOAuthBindingGrant).toHaveBeenCalledWith({
+        provider: "google",
+        session_id: "sess-3",
+        state: "state-3",
+        grant: "grant-3",
+      })
+    })
+
+    expect(mutate).toHaveBeenCalledWith("/api/v1/users/me/bindings")
   })
 })

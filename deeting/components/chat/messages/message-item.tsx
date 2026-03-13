@@ -15,6 +15,7 @@ import type { ChatAttachment } from "@/lib/chat/message-content"
 import { ImageLightbox } from "@/components/ui/image-lightbox"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
 import { formatFileSize } from "@/lib/utils/file"
+import { useMessageToolApproval } from "@/hooks/chat/use-message-tool-approval"
 
 interface MessageItemProps {
   message: Message
@@ -94,7 +95,6 @@ export const MessageItem = React.memo<MessageItemProps>(
     statusCode = null,
     statusMeta = null,
     lastAssistantId,
-    isTyping = false,
     onRegenerate,
     onLike,
     onDislike,
@@ -118,6 +118,7 @@ export const MessageItem = React.memo<MessageItemProps>(
       if (message.role !== "assistant") return []
       return message.blocks ?? []
     }, [message.blocks, message.role])
+    useMessageToolApproval(message.role === "assistant" ? message.id : null, assistantParts)
     const activeCompareCandidate = compareState?.candidates[compareState.activeModelKey] ?? null
     const runtimeMetricsSummary = React.useMemo(() => {
       if (message.role !== "assistant") return null

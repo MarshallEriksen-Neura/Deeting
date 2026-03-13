@@ -1,12 +1,17 @@
 "use client"
 
 import { useEffect, useRef } from "react"
+import { mutate } from "swr"
 import { toast } from "sonner"
 
 import { useAuthService } from "@/hooks/use-auth"
 import {
+  ACCOUNT_BINDINGS_KEY,
+  confirmDesktopOAuthBindingGrant,
+} from "@/lib/api/account-bindings"
+import {
   parseDesktopOAuthCallbackUrl,
-  type DesktopOAuthExchangeRequest,
+  type DesktopOAuthCallbackPayload,
 } from "@/lib/api/auth-oauth-desktop"
 import { isTauriRuntime } from "@/lib/api/desktop-config"
 import {
@@ -14,8 +19,8 @@ import {
   listenForDesktopDeepLinks,
 } from "@/lib/api/desktop-deep-link"
 
-function serializePayload(payload: DesktopOAuthExchangeRequest) {
-  return `${payload.provider}:${payload.session_id}:${payload.state}:${payload.grant}`
+function serializePayload(payload: DesktopOAuthCallbackPayload) {
+  return `${payload.intent}:${payload.provider}:${payload.session_id}:${payload.state}:${payload.grant}`
 }
 
 export function DesktopOAuthListener() {
@@ -36,11 +41,23 @@ export function DesktopOAuthListener() {
         if (handledRef.current.has(key)) continue
         handledRef.current.add(key)
         try {
-          await completeDesktopOAuth(payload)
-          toast.success("登录成功")
+          const requestPayload = {
+            provider: payload.provider,
+            session_id: payload.session_id,
+            state: payload.state,
+            grant: payload.grant,
+          }
+          if (payload.intent === "bind") {
+            const result = await confirmDesktopOAuthBindingGrant(requestPayload)
+            await mutate(ACCOUNT_BINDINGS_KEY)
+            toast.success(`${result.provider} 绑定成功`)
+          } else {
+            await completeDesktopOAuth(requestPayload)
+            toast.success("登录成功")
+          }
         } catch (error) {
           handledRef.current.delete(key)
-          const message = error instanceof Error ? error.message : "桌面 OAuth 登录失败"
+          const message = error instanceof Error ? error.message : "桌面 OAuth 操作失败"
           toast.error(message)
         }
       }
