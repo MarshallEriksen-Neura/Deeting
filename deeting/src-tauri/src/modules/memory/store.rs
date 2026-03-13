@@ -234,7 +234,9 @@ impl MemoryStore {
         let table = self.conn.open_table(table_name).execute().await?;
         let table_schema = table.schema().await?;
         let expected_dim = local_asset_vector_dimension_from_schema(table_schema.as_ref())
-            .ok_or_else(|| MemoryError::validation(format!("{table_name} vector field is missing")))?;
+            .ok_or_else(|| {
+                MemoryError::validation(format!("{table_name} vector field is missing"))
+            })?;
         if expected_dim != vector_dim {
             return Err(MemoryError::validation(format!(
                 "embedding vector dimension mismatch: table expects {expected_dim}, got {vector_dim}; please rebuild local embedding index"

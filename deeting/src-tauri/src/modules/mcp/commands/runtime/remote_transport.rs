@@ -1,4 +1,5 @@
 use super::super::support::*;
+use futures_util::StreamExt;
 use rmcp::{
     model::{CallToolRequestParams, ClientInfo, Implementation},
     service::{RoleClient, RunningService},
@@ -19,7 +20,57 @@ pub(crate) struct RemoteDiscoveredTool {
 async fn connect_sse_client(
     sse_url: &str,
 ) -> Result<RunningService<RoleClient, ClientInfo>, String> {
-    let transport = StreamableHttpClientTransport::from_uri(sse_url);
+    match connect_streamable_http_client(sse_url).await {
+        Ok(client) => Ok(client),
+        Err(primary_error) => {
+            if !is_http_405_method_not_allowed_error(&primary_error) {
+                return Err(primary_error);
+            }
+
+            let fallback_candidates = collect_legacy_sse_fallback_candidates(sse_url).await;
+            if fallback_candidates.is_empty() {
+                return Err(primary_error);
+            }
+
+            let mut last_fallback_error: Option<(String, String)> = None;
+            for candidate in fallback_candidates {
+                if candidate == sse_url {
+                    continue;
+                }
+                match connect_streamable_http_client(&candidate).await {
+                    Ok(client) => {
+                        warn!(
+                            "remote MCP fallback succeeded after HTTP 405: original='{}' fallback='{}'",
+                            sse_url, candidate
+                        );
+                        return Ok(client);
+                    }
+                    Err(err) => {
+                        warn!(
+                            "remote MCP fallback candidate failed after HTTP 405: original='{}' fallback='{}' err={}",
+                            sse_url, candidate, err
+                        );
+                        last_fallback_error = Some((candidate, err));
+                    }
+                }
+            }
+
+            if let Some((candidate, err)) = last_fallback_error {
+                Err(format!(
+                    "{}; fallback from '{}' to '{}' also failed: {}",
+                    primary_error, sse_url, candidate, err
+                ))
+            } else {
+                Err(primary_error)
+            }
+        }
+    }
+}
+
+async fn connect_streamable_http_client(
+    url: &str,
+) -> Result<RunningService<RoleClient, ClientInfo>, String> {
+    let transport = StreamableHttpClientTransport::from_uri(url);
     client_info()
         .serve(transport)
         .await
@@ -50,6 +101,121 @@ fn client_info() -> ClientInfo {
     let mut client_info = ClientInfo::default();
     client_info.client_info = Implementation::new("deeting-desktop", env!("CARGO_PKG_VERSION"));
     client_info
+}
+
+fn is_http_405_method_not_allowed_error(error_text: &str) -> bool {
+    let normalized = error_text.to_ascii_lowercase();
+    normalized.contains("http 405") || normalized.contains("405 method not allowed")
+}
+
+fn build_url_with_same_origin(origin: &reqwest::Url, endpoint: &str) -> Option<String> {
+    if endpoint.starts_with("http://") || endpoint.starts_with("https://") {
+        return Some(endpoint.to_string());
+    }
+
+    if endpoint.starts_with('/') {
+        let host = origin.host_str()?;
+        let mut result = format!("{}://{}", origin.scheme(), host);
+        if let Some(port) = origin.port() {
+            result.push(':');
+            result.push_str(&port.to_string());
+        }
+        result.push_str(endpoint);
+        return Some(result);
+    }
+
+    origin.join(endpoint).ok().map(|value| value.to_string())
+}
+
+fn extract_legacy_sse_endpoint_path(payload: &str) -> Option<String> {
+    for line in payload.lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with("data:") {
+            continue;
+        }
+        let data = trimmed.trim_start_matches("data:").trim();
+        if data.is_empty() {
+            continue;
+        }
+        if data.contains("session_id=")
+            && (data.starts_with('/')
+                || data.starts_with("http://")
+                || data.starts_with("https://"))
+        {
+            return Some(data.to_string());
+        }
+    }
+    None
+}
+
+async fn discover_legacy_sse_message_endpoint_url(sse_url: &str) -> Option<String> {
+    let origin = reqwest::Url::parse(sse_url).ok()?;
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(5))
+        .timeout(std::time::Duration::from_secs(12))
+        .build()
+        .ok()?;
+    let response = client
+        .get(sse_url)
+        .header("Accept", "text/event-stream")
+        .send()
+        .await
+        .ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+
+    let mut stream = response.bytes_stream();
+    let mut buffer = String::new();
+    for _ in 0..6 {
+        let chunk = stream.next().await?;
+        let chunk = chunk.ok()?;
+        buffer.push_str(&String::from_utf8_lossy(&chunk));
+        if let Some(endpoint) = extract_legacy_sse_endpoint_path(&buffer) {
+            return build_url_with_same_origin(&origin, &endpoint);
+        }
+    }
+    None
+}
+
+fn heuristic_streamable_http_fallback_urls(sse_url: &str) -> Vec<String> {
+    let parsed = match reqwest::Url::parse(sse_url) {
+        Ok(value) => value,
+        Err(_) => return Vec::new(),
+    };
+    let mut candidates = Vec::new();
+    let normalized_path = parsed.path().trim_end_matches('/');
+
+    if let Some(prefix) = normalized_path.strip_suffix("/sse") {
+        let mut candidate = parsed.clone();
+        let fallback_path = if prefix.is_empty() {
+            "/mcp".to_string()
+        } else {
+            format!("{}/mcp", prefix)
+        };
+        candidate.set_path(&fallback_path);
+        candidate.set_query(None);
+        candidates.push(candidate.to_string());
+    }
+
+    let mut root_mcp = parsed;
+    root_mcp.set_path("/mcp");
+    root_mcp.set_query(None);
+    candidates.push(root_mcp.to_string());
+    candidates
+}
+
+async fn collect_legacy_sse_fallback_candidates(sse_url: &str) -> Vec<String> {
+    let mut candidates = Vec::new();
+    if let Some(discovered) = discover_legacy_sse_message_endpoint_url(sse_url).await {
+        candidates.push(discovered);
+    }
+    for candidate in heuristic_streamable_http_fallback_urls(sse_url) {
+        if !candidates.contains(&candidate) {
+            candidates.push(candidate);
+        }
+    }
+    candidates
 }
 
 fn normalized_call_arguments(
@@ -151,4 +317,50 @@ pub(crate) async fn call_local_stdio_tool(
         .map_err(|err| err.to_string())?;
     let _ = client.close().await;
     serde_json::to_value(response).map_err(|err| err.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        build_url_with_same_origin, extract_legacy_sse_endpoint_path,
+        heuristic_streamable_http_fallback_urls, is_http_405_method_not_allowed_error,
+    };
+
+    #[test]
+    fn detects_http_405_method_not_allowed_error_text() {
+        assert!(is_http_405_method_not_allowed_error(
+            "unexpected server response: HTTP 405 Method Not Allowed: Method Not Allowed"
+        ));
+        assert!(!is_http_405_method_not_allowed_error(
+            "unexpected server response: HTTP 404 Not Found"
+        ));
+    }
+
+    #[test]
+    fn extracts_legacy_sse_endpoint_path() {
+        let payload =
+            "event: endpoint\ndata: /messages/?session_id=abc123\n\n: ping - 2026-03-13\n\n";
+        assert_eq!(
+            extract_legacy_sse_endpoint_path(payload).as_deref(),
+            Some("/messages/?session_id=abc123")
+        );
+    }
+
+    #[test]
+    fn builds_absolute_fallback_url_from_relative_endpoint() {
+        let origin = reqwest::Url::parse("https://mcp.example.com/project/sse").unwrap();
+        assert_eq!(
+            build_url_with_same_origin(&origin, "/messages/?session_id=test").as_deref(),
+            Some("https://mcp.example.com/messages/?session_id=test")
+        );
+    }
+
+    #[test]
+    fn derives_streamable_http_heuristic_fallback_urls() {
+        let candidates =
+            heuristic_streamable_http_fallback_urls("https://mcp.example.com/abc123/sse");
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0], "https://mcp.example.com/abc123/mcp");
+        assert_eq!(candidates[1], "https://mcp.example.com/mcp");
+    }
 }

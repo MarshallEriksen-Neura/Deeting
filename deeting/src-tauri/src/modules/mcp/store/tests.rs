@@ -136,15 +136,13 @@ async fn init_repairs_assistant_install_legacy_foreign_key_target() {
     .execute(&store.pool)
     .await
     .expect("create broken schema");
-    sqlx::query(
-        "INSERT INTO assistant (id, created_at, updated_at) VALUES (?, ?, ?)",
-    )
-    .bind("assistant-1")
-    .bind("2024-01-01T00:00:00Z")
-    .bind("2024-01-01T00:00:00Z")
-    .execute(&store.pool)
-    .await
-    .expect("insert assistant");
+    sqlx::query("INSERT INTO assistant (id, created_at, updated_at) VALUES (?, ?, ?)")
+        .bind("assistant-1")
+        .bind("2024-01-01T00:00:00Z")
+        .bind("2024-01-01T00:00:00Z")
+        .execute(&store.pool)
+        .await
+        .expect("insert assistant");
     sqlx::query(
         "INSERT INTO assistant_version (id, assistant_id, version, name, system_prompt, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
@@ -159,7 +157,10 @@ async fn init_repairs_assistant_install_legacy_foreign_key_target() {
     .await
     .expect("insert assistant version");
 
-    store.init().await.expect("init should repair broken schema");
+    store
+        .init()
+        .await
+        .expect("init should repair broken schema");
 
     let fk_rows = sqlx::query("PRAGMA foreign_key_list(assistant_install)")
         .fetch_all(&store.pool)
@@ -246,15 +247,13 @@ async fn init_drops_skill_refs_without_retargeting_assistant_install() {
     .execute(&store.pool)
     .await
     .expect("create legacy schema");
-    sqlx::query(
-        "INSERT INTO assistant (id, created_at, updated_at) VALUES (?, ?, ?)",
-    )
-    .bind("assistant-1")
-    .bind("2024-01-01T00:00:00Z")
-    .bind("2024-01-01T00:00:00Z")
-    .execute(&store.pool)
-    .await
-    .expect("insert assistant");
+    sqlx::query("INSERT INTO assistant (id, created_at, updated_at) VALUES (?, ?, ?)")
+        .bind("assistant-1")
+        .bind("2024-01-01T00:00:00Z")
+        .bind("2024-01-01T00:00:00Z")
+        .execute(&store.pool)
+        .await
+        .expect("insert assistant");
     sqlx::query(
         "INSERT INTO assistant_version (id, assistant_id, version, name, system_prompt, skill_refs, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
@@ -282,7 +281,10 @@ async fn init_drops_skill_refs_without_retargeting_assistant_install() {
     .await
     .expect("insert assistant install");
 
-    store.init().await.expect("init should migrate legacy schema");
+    store
+        .init()
+        .await
+        .expect("init should migrate legacy schema");
 
     let columns = sqlx::query("PRAGMA table_info(assistant_version)")
         .fetch_all(&store.pool)

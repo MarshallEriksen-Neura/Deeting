@@ -9,9 +9,9 @@ use crate::modules::custom_task_agents::store::list_custom_task_agents;
 use crate::modules::custom_task_agents::types::{
     CustomTaskAgentInvocationKind, CustomTaskAgentProfile,
 };
-use crate::modules::memory::service::MemoryService;
-use crate::modules::mcp::types::LocalChatInputMessage;
 use crate::modules::mcp::store::McpStore;
+use crate::modules::mcp::types::LocalChatInputMessage;
+use crate::modules::memory::service::MemoryService;
 use crate::modules::providers::embedding::EmbeddingService;
 use crate::state::AppState;
 use serde::Serialize;
@@ -40,7 +40,10 @@ impl RuntimeDiscoveryBundle {
         Self {
             capabilities: extract_array_items(&search_result, "capabilities"),
             recipes: extract_array_items(&search_result, "recipes"),
-            orchestration_primitives: extract_array_items(&search_result, "orchestration_primitives"),
+            orchestration_primitives: extract_array_items(
+                &search_result,
+                "orchestration_primitives",
+            ),
             route_evidence: RouteEvidence::from_search_result(&search_result),
             raw_search_result: search_result,
         }

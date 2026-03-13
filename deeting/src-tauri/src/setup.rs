@@ -12,11 +12,11 @@ use crate::modules::sandbox::SandboxState;
 use crate::state::AppState;
 use crate::utils::*;
 use log::warn;
-use std::sync::Arc;
-use tauri::{App, AppHandle, Manager};
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions, SqliteJournalMode};
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
+use tauri::{App, AppHandle, Manager};
 
 pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     if cfg!(debug_assertions) {
@@ -48,7 +48,9 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
             .map_err(|err| McpError::Storage(err.to_string()))?;
 
         // MCP 初始化
-        let store = Arc::new(crate::modules::mcp::store::McpStore::with_pool(global_pool.clone()));
+        let store = Arc::new(crate::modules::mcp::store::McpStore::with_pool(
+            global_pool.clone(),
+        ));
         store.init().await?;
         store.ensure_local_source().await?;
         store.ensure_cloud_source(&cloud_base_url).await?;
@@ -77,16 +79,16 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         )
         .await
         .map_err(|e| McpError::Storage(e.to_string()))?;
-        
+
         let sandbox_state = SandboxState::new(boxrun_home_dir.clone());
         let code_mode_state = CodeModeState::with_pool(global_pool.clone())
             .await
             .map_err(|e| McpError::Storage(e.to_string()))?;
-        
+
         let monitor_state = MonitorState::with_pool(
             global_pool.clone(),
             provider_state.store.clone(),
-            Some(mcp_state.store.clone())
+            Some(mcp_state.store.clone()),
         )
         .await
         .map_err(|e| McpError::Storage(e.to_string()))?;

@@ -2,6 +2,17 @@ use super::helpers::*;
 use super::*;
 use serde_json::Value;
 
+fn is_sqlite_busy_error(err: &McpError) -> bool {
+    let text = err.to_string().to_ascii_lowercase();
+    text.contains("database is locked")
+        || text.contains("sqlite_busy")
+        || text.contains("(code: 5)")
+}
+
+fn storage_step_error(step: &str, err: impl std::fmt::Display) -> McpError {
+    McpError::Storage(format!("append_message step={} err={}", step, err))
+}
+
 impl McpStore {
     pub async fn finalize_local_compare_winner(
         &self,
@@ -2224,6 +2235,38 @@ impl McpStore {
         &self,
         payload: CreateConversationMessageRequest,
     ) -> Result<LocalConversationHistoryMessage, McpError> {
+        const SQLITE_BUSY_RETRY_DELAYS_MS: [u64; 3] = [150, 400, 900];
+
+        let mut attempt = 0_usize;
+        loop {
+            match self
+                .append_local_conversation_message_once(payload.clone())
+                .await
+            {
+                Ok(message) => return Ok(message),
+                Err(err)
+                    if is_sqlite_busy_error(&err)
+                        && attempt < SQLITE_BUSY_RETRY_DELAYS_MS.len() =>
+                {
+                    let delay_ms = SQLITE_BUSY_RETRY_DELAYS_MS[attempt];
+                    attempt += 1;
+                    log::warn!(
+                        "append_local_conversation_message busy retry session={} attempt={} delay_ms={}",
+                        payload.session_id,
+                        attempt,
+                        delay_ms
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                }
+                Err(err) => return Err(err),
+            }
+        }
+    }
+
+    async fn append_local_conversation_message_once(
+        &self,
+        payload: CreateConversationMessageRequest,
+    ) -> Result<LocalConversationHistoryMessage, McpError> {
         let session_id = payload.session_id.trim().to_string();
         if session_id.is_empty() {
             return Err(McpError::validation("session_id is required"));
@@ -2260,7 +2303,7 @@ impl McpStore {
             .as_ref()
             .map(serde_json::to_string)
             .transpose()
-            .map_err(|err| McpError::Storage(err.to_string()))?;
+            .map_err(|err| storage_step_error("serialize_meta_info", err))?;
         let is_truncated = payload.is_truncated.unwrap_or(false);
         let token_estimate = payload
             .meta_info
@@ -2270,7 +2313,11 @@ impl McpStore {
             .filter(|value| *value >= 0)
             .unwrap_or_else(|| estimate_token_count(content.as_deref().unwrap_or("")));
 
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|err| storage_step_error("begin_tx", err))?;
 
         let exists = sqlx::query(
             r#"
@@ -2282,7 +2329,7 @@ impl McpStore {
         .bind(&session_id)
         .fetch_optional(&mut *tx)
         .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
+        .map_err(|err| storage_step_error("fetch_session", err))?;
 
         if exists.is_none() {
             return Err(McpError::NotFound(
@@ -2300,7 +2347,7 @@ impl McpStore {
         .bind(&session_id)
         .fetch_one(&mut *tx)
         .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
+        .map_err(|err| storage_step_error("fetch_next_turn", err))?;
         let next_turn: i64 = turn_row.try_get("next_turn")?;
         let message_id = Uuid::new_v4().to_string();
 
@@ -2327,7 +2374,7 @@ impl McpStore {
         .bind(&now)
         .execute(&mut *tx)
         .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
+        .map_err(|err| storage_step_error("insert_message", err))?;
 
         let window_tokens_row = sqlx::query(
             r#"
@@ -2345,7 +2392,7 @@ impl McpStore {
         .bind(LOCAL_CONVERSATION_ACTIVE_WINDOW_TURNS_INTERNAL)
         .fetch_one(&mut *tx)
         .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
+        .map_err(|err| storage_step_error("compute_window_tokens", err))?;
         let window_tokens = window_tokens_row
             .try_get::<i64, _>("total_tokens")
             .unwrap_or(0);
@@ -2368,15 +2415,17 @@ impl McpStore {
         .bind(&session_id)
         .execute(&mut *tx)
         .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
+        .map_err(|err| storage_step_error("update_session_counters", err))?;
 
-        tx.commit().await?;
+        tx.commit()
+            .await
+            .map_err(|err| storage_step_error("commit_tx", err))?;
         if let Err(err) = self
             .touch_local_conversation_summary_idle_task(&session_id)
             .await
         {
             log::warn!(
-                "touch_local_conversation_summary_idle_task failed session={} err={}",
+                "append_message step=touch_summary_idle_task session={} err={}",
                 session_id,
                 err
             );
@@ -2386,7 +2435,7 @@ impl McpStore {
             .await
         {
             log::warn!(
-                "try_trigger_local_conversation_summary_flush failed session={} err={}",
+                "append_message step=trigger_summary_flush session={} err={}",
                 session_id,
                 err
             );

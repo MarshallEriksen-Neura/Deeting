@@ -14,8 +14,7 @@ const FACT_EXTRACTION_MIN_MESSAGES: usize = 2;
 fn build_fact_extraction_new_chat_marker_key(session_id: &str) -> String {
     format!(
         "{}.{}",
-        FACT_EXTRACTION_NEW_CHAT_TRIGGER_KEY_PREFIX,
-        session_id
+        FACT_EXTRACTION_NEW_CHAT_TRIGGER_KEY_PREFIX, session_id
     )
 }
 
@@ -134,7 +133,12 @@ async fn trigger_fact_extraction_once_on_new_chat(app_state: AppState, session_i
         return;
     };
 
-    if let Err(err) = app_state.mcp.store.set_desktop_config(&marker_key, "1").await {
+    if let Err(err) = app_state
+        .mcp
+        .store
+        .set_desktop_config(&marker_key, "1")
+        .await
+    {
         warn!(
             "fact extraction new-chat marker write failed session={} err={}",
             normalized_session_id, err

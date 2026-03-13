@@ -6,9 +6,9 @@ mod capability_registry;
 mod chat_completion;
 mod code_mode_catalog;
 mod code_mode_orchestration;
-mod control_plane;
 mod config;
 mod consult;
+mod control_plane;
 mod core_tool_contracts;
 mod execution_plane;
 mod onboarding;
@@ -42,20 +42,20 @@ pub(crate) use code_mode_catalog::{
     build_local_code_mode_entry_tools_with_allowlist, build_local_sdk_search_result_with_runtime,
 };
 pub(crate) use code_mode_orchestration::run_local_chat_complete_with_auto_code_mode;
-pub(crate) use control_plane::{
-    build_local_control_plane_result, build_local_control_plane_status_meta,
-    build_default_local_execution_policy, build_local_execution_policy,
-    build_runtime_discovery_bundle_with_runtime, maybe_override_route_with_custom_task_agent,
-    select_worker_custom_task_agent, LocalControlPlaneResult, LocalExecutionPolicy,
-    RuntimeDiscoveryBundle,
-};
-#[cfg(test)]
-pub(crate) use control_plane::select_custom_task_agent_candidate;
 #[cfg(test)]
 pub(crate) use config::apply_config_payload_to_store;
 pub(crate) use config::{apply_config_payload, now_rfc3339, read_local_mcp_config};
 pub(crate) use consult::{
     build_local_consult_expert_network_result, LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
+};
+#[cfg(test)]
+pub(crate) use control_plane::select_custom_task_agent_candidate;
+pub(crate) use control_plane::{
+    build_default_local_execution_policy, build_local_control_plane_result,
+    build_local_control_plane_status_meta, build_local_execution_policy,
+    build_runtime_discovery_bundle_with_runtime, maybe_override_route_with_custom_task_agent,
+    select_worker_custom_task_agent, LocalControlPlaneResult, LocalExecutionPolicy,
+    RuntimeDiscoveryBundle,
 };
 pub(crate) use execution_plane::{run_local_execution_plane, LocalExecutionRequest};
 pub(crate) use onboarding::install_local_skill_from_onboarding_request;
@@ -63,8 +63,7 @@ pub(crate) use onboarding::install_local_skill_from_onboarding_request;
 pub(crate) use prompt_assets::PromptAssets;
 #[cfg(test)]
 pub(crate) use prompt_plan::{
-    build_local_prelude_messages, render_local_base_system_prompt,
-    render_local_router_base_prompt,
+    build_local_prelude_messages, render_local_base_system_prompt, render_local_router_base_prompt,
 };
 #[cfg(test)]
 pub(crate) use prompt_plan::{

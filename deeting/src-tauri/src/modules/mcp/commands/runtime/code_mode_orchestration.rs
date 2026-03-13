@@ -3,10 +3,11 @@ use super::{
     append_streamable_local_tool_result_blocks, build_auto_code_mode_tool_feedback,
     build_local_code_mode_entry_tools_with_allowlist, build_local_consult_expert_network_result,
     build_local_sdk_search_result_with_runtime, build_local_tool_call_install_gate_error_meta,
-    build_local_tool_trace_blocks, extract_chat_tool_calls, LocalExecutionPolicy,
+    build_local_tool_trace_blocks, extract_chat_tool_calls,
     install_local_skill_from_onboarding_request, request_provider_chat_completion,
     resolve_local_capability_activation_state, LocalCapabilityActivationState,
-    LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION, LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
+    LocalExecutionPolicy, LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
+    LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
 };
 use crate::modules::mcp::commands::common_impl::LocalModelConnection;
 
@@ -77,9 +78,9 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
     let mut orchestrated_messages = messages;
     if execution_policy.inject_code_mode_protocol
         && !orchestrated_messages
-        .first()
-        .map(|m| m.role == "system")
-        .unwrap_or(false)
+            .first()
+            .map(|m| m.role == "system")
+            .unwrap_or(false)
     {
         orchestrated_messages.insert(0, LocalChatInputMessage {
             role: "system".to_string(),

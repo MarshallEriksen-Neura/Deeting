@@ -104,10 +104,7 @@ async fn process_next_local_conversation_summary_job_inner(
         .claim_next_local_conversation_summary_job()
         .await
         .map_err(|err| {
-            McpError::Storage(format!(
-                "summary worker step=claim_next_job err={}",
-                err
-            ))
+            McpError::Storage(format!("summary worker step=claim_next_job err={}", err))
         })?
     else {
         return Ok(());

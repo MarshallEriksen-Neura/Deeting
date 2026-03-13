@@ -44,7 +44,6 @@ pub use tools::*;
 
 pub(crate) use assistant_management_impl::index_local_assistants;
 pub(crate) use assistants_knowledge_admin_impl::index_mcp_tools;
-pub(crate) use support::{resolve_effective_desktop_scout_base_url, SCOUT_SERVICE_URL_ENV_KEY};
 pub(crate) use runtime::{
     generate_local_conversation_title_with_model, rebuild_local_knowledge_vector_index,
     request_local_auxiliary_text, resolve_local_model_connection,
@@ -53,6 +52,7 @@ pub(crate) use runtime::{
 pub(crate) use skill_registry_impl::register_local_skills_inner;
 #[cfg(test)]
 pub(crate) use support::*;
+pub(crate) use support::{resolve_effective_desktop_scout_base_url, SCOUT_SERVICE_URL_ENV_KEY};
 
 #[cfg(test)]
 pub(crate) use runtime::{

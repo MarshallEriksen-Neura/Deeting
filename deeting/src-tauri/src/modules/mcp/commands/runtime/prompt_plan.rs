@@ -210,13 +210,10 @@ mod tests {
         ));
         assert_eq!(policy.route, LocalRouteKind::CodeMode);
 
-        let rendered = build_local_prelude_messages(
-            &PromptAssets::default(),
-            Some(&policy),
-        )
-        .first()
-        .map(|message| message.content.clone())
-        .unwrap_or_default();
+        let rendered = build_local_prelude_messages(&PromptAssets::default(), Some(&policy))
+            .first()
+            .map(|message| message.content.clone())
+            .unwrap_or_default();
 
         assert!(rendered.contains("## Code Mode Protocol"));
         assert!(rendered.contains("search_sdk"));

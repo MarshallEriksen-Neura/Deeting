@@ -7,11 +7,11 @@ use uuid::Uuid;
 
 use crate::modules::knowledge::error::KnowledgeError;
 use crate::modules::knowledge::types::{
-    CreateLocalKnowledgeFolderRequest, CreateLocalUserDocumentRequest, LocalKnowledgeBreadcrumbItem,
-    LocalKnowledgeChunk, LocalKnowledgeChunkListResponse, LocalKnowledgeFile, LocalKnowledgeFolder,
-    LocalKnowledgeSearchHit, LocalKnowledgeStatsResponse, LocalKnowledgeTreeQuery,
-    LocalKnowledgeTreeResponse, LocalUserDocumentChunkListQuery, LocalUserDocumentListQuery,
-    UpdateLocalKnowledgeFolderRequest, UpdateLocalUserDocumentRequest,
+    CreateLocalKnowledgeFolderRequest, CreateLocalUserDocumentRequest,
+    LocalKnowledgeBreadcrumbItem, LocalKnowledgeChunk, LocalKnowledgeChunkListResponse,
+    LocalKnowledgeFile, LocalKnowledgeFolder, LocalKnowledgeSearchHit, LocalKnowledgeStatsResponse,
+    LocalKnowledgeTreeQuery, LocalKnowledgeTreeResponse, LocalUserDocumentChunkListQuery,
+    LocalUserDocumentListQuery, UpdateLocalKnowledgeFolderRequest, UpdateLocalUserDocumentRequest,
 };
 use crate::utils::now_rfc3339;
 
@@ -252,7 +252,9 @@ impl KnowledgeStore {
             .await
             .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
             if parent_row.is_none() {
-                return Err(KnowledgeError::NotFound("knowledge folder not found".to_string()));
+                return Err(KnowledgeError::NotFound(
+                    "knowledge folder not found".to_string(),
+                ));
             }
         }
 
@@ -367,7 +369,9 @@ impl KnowledgeStore {
         })
     }
 
-    pub async fn get_local_knowledge_stats(&self) -> Result<LocalKnowledgeStatsResponse, KnowledgeError> {
+    pub async fn get_local_knowledge_stats(
+        &self,
+    ) -> Result<LocalKnowledgeStatsResponse, KnowledgeError> {
         let file_row = sqlx::query(
             r#"
             SELECT
@@ -451,7 +455,9 @@ impl KnowledgeStore {
             .await
             .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
             if parent_row.is_none() {
-                return Err(KnowledgeError::NotFound("parent folder not found".to_string()));
+                return Err(KnowledgeError::NotFound(
+                    "parent folder not found".to_string(),
+                ));
             }
         }
 
@@ -506,7 +512,9 @@ impl KnowledgeStore {
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
         if result.rows_affected() == 0 {
-            return Err(KnowledgeError::NotFound("knowledge folder not found".to_string()));
+            return Err(KnowledgeError::NotFound(
+                "knowledge folder not found".to_string(),
+            ));
         }
         self.get_local_knowledge_folder_by_id(&normalized_id).await
     }
@@ -535,7 +543,9 @@ impl KnowledgeStore {
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
         if exists.is_none() {
-            return Err(KnowledgeError::NotFound("knowledge folder not found".to_string()));
+            return Err(KnowledgeError::NotFound(
+                "knowledge folder not found".to_string(),
+            ));
         }
 
         if !recursive {
@@ -1422,7 +1432,9 @@ impl KnowledgeStore {
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
         let Some(row) = row else {
-            return Err(KnowledgeError::NotFound("knowledge folder not found".to_string()));
+            return Err(KnowledgeError::NotFound(
+                "knowledge folder not found".to_string(),
+            ));
         };
 
         Ok(LocalKnowledgeFolder {
@@ -1707,7 +1719,11 @@ fn sort_local_knowledge_folders(
     });
 }
 
-fn sort_local_knowledge_files(files: &mut [LocalKnowledgeFile], sort_field: &str, sort_direction: &str) {
+fn sort_local_knowledge_files(
+    files: &mut [LocalKnowledgeFile],
+    sort_field: &str,
+    sort_direction: &str,
+) {
     files.sort_by(|left, right| {
         let base = match sort_field {
             "name" => left

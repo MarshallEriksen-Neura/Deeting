@@ -35,10 +35,11 @@ use crate::modules::mcp::types::{
     LocalConversationSummaryJobItem, LocalConversationSummaryJobListResponse,
     LocalConversationSummaryJobQuery, LocalConversationSummaryQueueStats,
     LocalConversationWindowResponse, LocalGatewayLogItem, LocalGatewayLogListResponse,
-    LocalGatewayLogQuery, LocalGatewayLogStatsBucket, LocalGatewayLogStatsResponse, LocalMaintenanceLogItem,
-    LocalMaintenanceLogListResponse, LocalMaintenanceLogQuery, LocalTraceFeedback,
-    LocalTraceFeedbackRequest, McpConflictStatus, McpSource, McpSourceStatus, McpSourceType,
-    McpTool, McpToolConfigPayload, McpToolStatus, McpTrustLevel, UpdateLocalAssistantRequest,
+    LocalGatewayLogQuery, LocalGatewayLogStatsBucket, LocalGatewayLogStatsResponse,
+    LocalMaintenanceLogItem, LocalMaintenanceLogListResponse, LocalMaintenanceLogQuery,
+    LocalTraceFeedback, LocalTraceFeedbackRequest, McpConflictStatus, McpSource, McpSourceStatus,
+    McpSourceType, McpTool, McpToolConfigPayload, McpToolStatus, McpTrustLevel,
+    UpdateLocalAssistantRequest,
 };
 
 const DEFAULT_LOCAL_SOURCE_PATH: &str = "~/.config/deeting/mcp.json";

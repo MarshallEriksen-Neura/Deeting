@@ -1416,7 +1416,12 @@ pub async fn execute_local_orchestrated_chat(
                 parent_message_id: None,
             })
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| {
+                format!(
+                    "chat step=append_user_message session={} err={}",
+                    session_id, e
+                )
+            })?;
 
         let runtime_window = store
             .load_local_conversation_runtime_window(&session_id)
@@ -1601,7 +1606,12 @@ pub async fn execute_local_orchestrated_chat(
                 parent_message_id: None,
             })
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| {
+                format!(
+                    "chat step=append_assistant_message session={} err={}",
+                    session_id, e
+                )
+            })?;
 
         let title_app_state = app_state.clone();
         let title_session_id = session_id.clone();

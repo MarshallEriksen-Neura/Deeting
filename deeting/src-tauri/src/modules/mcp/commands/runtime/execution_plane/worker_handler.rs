@@ -1,14 +1,17 @@
-use super::{DelegatedWorkerExecution, LocalExecutionOutcome, LocalExecutionRequest, run_policy_scoped_chat_completion};
+use super::{
+    run_policy_scoped_chat_completion, DelegatedWorkerExecution, LocalExecutionOutcome,
+    LocalExecutionRequest,
+};
 use crate::modules::chat_assets::resolve_chat_assets_dir;
 use crate::modules::custom_task_agents::runtime::preview_custom_task_agent;
 use crate::modules::custom_task_agents::types::{
     CustomTaskAgentInvocationKind, CustomTaskAgentPreviewRequest, CustomTaskAgentPreviewResponse,
     CustomTaskAgentProfile,
 };
+use crate::modules::mcp::commands::runtime::control_plane::LocalExecutionPlane;
 use crate::modules::mcp::commands::runtime::{
     build_local_tool_trace_blocks, select_worker_custom_task_agent,
 };
-use crate::modules::mcp::commands::runtime::control_plane::LocalExecutionPlane;
 use crate::modules::mcp::types::LocalChatInputMessage;
 use crate::state::AppState;
 use base64::Engine;
@@ -27,7 +30,8 @@ where
         request.execution_policy.plane,
         LocalExecutionPlane::WorkerReasoning
     );
-    let delegated_worker = maybe_delegate_worker_to_custom_task_agent(&request, emit_status).await?;
+    let delegated_worker =
+        maybe_delegate_worker_to_custom_task_agent(&request, emit_status).await?;
     run_policy_scoped_chat_completion(request, delegated_worker, emit_status).await
 }
 
@@ -46,7 +50,8 @@ where
     if query.trim().is_empty() {
         return Ok(None);
     }
-    let Some(selection) = select_worker_custom_task_agent(&request.app_state, query.as_str()).await?
+    let Some(selection) =
+        select_worker_custom_task_agent(&request.app_state, query.as_str()).await?
     else {
         return Ok(None);
     };
@@ -227,7 +232,8 @@ fn build_custom_task_agent_render_blocks(
         if result.invocation_kind != CustomTaskAgentInvocationKind::ImageGeneration {
             return Vec::new();
         }
-        let outputs = persist_custom_task_agent_image_outputs(&app_handle, &app_state, &result).await;
+        let outputs =
+            persist_custom_task_agent_image_outputs(&app_handle, &app_state, &result).await;
         if outputs.is_empty() {
             return Vec::new();
         }

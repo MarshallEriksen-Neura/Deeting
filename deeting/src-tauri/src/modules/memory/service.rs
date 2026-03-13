@@ -675,7 +675,6 @@ impl MemoryService {
                 chunk_index,
                 metadata,
             });
-
         }
 
         Ok(hits)

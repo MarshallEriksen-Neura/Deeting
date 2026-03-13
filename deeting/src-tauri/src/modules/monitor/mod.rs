@@ -1223,10 +1223,8 @@ mod tests {
             updated_at: "2026-03-12T00:00:00Z".to_string(),
             created_at: "2026-03-12T00:00:00Z".to_string(),
         };
-        let headers = std::collections::BTreeMap::from([(
-            "x-cache".to_string(),
-            "HIT".to_string(),
-        )]);
+        let headers =
+            std::collections::BTreeMap::from([("x-cache".to_string(), "HIT".to_string())]);
         let response = json!({
             "usage": {
                 "prompt_tokens": 12,
@@ -1366,7 +1364,8 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorResolveModelStep {
                 "monitor.model.selecting",
                 None,
             );
-            let (model, instance, connection) = ctx.state.resolve_execution_model(&ctx.task).await?;
+            let (model, instance, connection) =
+                ctx.state.resolve_execution_model(&ctx.task).await?;
             ctx.model = Some(model);
             ctx.instance = Some(instance);
             ctx.connection = Some(connection);
@@ -1703,26 +1702,27 @@ fn build_monitor_gateway_log_entry(
 ) -> crate::modules::ai_upstream::gateway_log_recorder::GatewayLogEntry {
     let (input_tokens, output_tokens, total_tokens) =
         crate::modules::ai_upstream::gateway_log_recorder::extract_usage_from_response(body_json);
-    let cost_upstream =
-        crate::modules::ai_upstream::gateway_log_recorder::calculate_token_cost(
-            &model.pricing_config,
-            input_tokens,
-            output_tokens,
+    let cost_upstream = crate::modules::ai_upstream::gateway_log_recorder::calculate_token_cost(
+        &model.pricing_config,
+        input_tokens,
+        output_tokens,
+    )
+    .unwrap_or(0.0);
+    let cost_user =
+        crate::modules::ai_upstream::gateway_log_recorder::extract_billing_amount_from_response(
+            body_json,
         )
-        .unwrap_or(0.0);
-    let cost_user = crate::modules::ai_upstream::gateway_log_recorder::extract_billing_amount_from_response(body_json)
         .unwrap_or(cost_upstream);
     let error_code =
-        crate::modules::ai_upstream::gateway_log_recorder::extract_error_code_from_response(
-            Some(body_json),
-        )
-        .or_else(|| {
-            (!status.is_success()).then_some(format!("UPSTREAM_{}", status.as_u16()))
-        });
+        crate::modules::ai_upstream::gateway_log_recorder::extract_error_code_from_response(Some(
+            body_json,
+        ))
+        .or_else(|| (!status.is_success()).then_some(format!("UPSTREAM_{}", status.as_u16())));
 
     crate::modules::ai_upstream::gateway_log_recorder::GatewayLogEntry {
         user_id: Some(LOCAL_DESKTOP_USER_ID.to_string()),
-        api_key_id: Some(instance.credentials_ref.trim().to_string()).filter(|value| !value.is_empty()),
+        api_key_id: Some(instance.credentials_ref.trim().to_string())
+            .filter(|value| !value.is_empty()),
         preset_id: Some(instance.preset_slug.trim().to_string()).filter(|value| !value.is_empty()),
         model: model.model_id.clone(),
         status_code: status.as_u16() as i64,
@@ -1737,10 +1737,11 @@ fn build_monitor_gateway_log_entry(
         total_tokens,
         cost_upstream,
         cost_user,
-        is_cached: crate::modules::ai_upstream::gateway_log_recorder::extract_cache_hit_from_response(
-            response_headers,
-            Some(body_json),
-        ),
+        is_cached:
+            crate::modules::ai_upstream::gateway_log_recorder::extract_cache_hit_from_response(
+                response_headers,
+                Some(body_json),
+            ),
         error_code,
         ..Default::default()
     }

@@ -841,11 +841,11 @@ pub struct LocalGatewayLogStatsResponse {
 }
 
 pub use crate::modules::knowledge::types::{
-    CreateLocalKnowledgeFolderRequest, CreateLocalUserDocumentRequest, LocalKnowledgeBreadcrumbItem,
-    LocalKnowledgeChunk, LocalKnowledgeChunkListResponse, LocalKnowledgeFile, LocalKnowledgeFolder,
-    LocalKnowledgeSearchHit, LocalKnowledgeStatsResponse, LocalKnowledgeTreeQuery,
-    LocalKnowledgeTreeResponse, LocalUserDocumentChunkListQuery, LocalUserDocumentListQuery,
-    UpdateLocalKnowledgeFolderRequest, UpdateLocalUserDocumentRequest,
+    CreateLocalKnowledgeFolderRequest, CreateLocalUserDocumentRequest,
+    LocalKnowledgeBreadcrumbItem, LocalKnowledgeChunk, LocalKnowledgeChunkListResponse,
+    LocalKnowledgeFile, LocalKnowledgeFolder, LocalKnowledgeSearchHit, LocalKnowledgeStatsResponse,
+    LocalKnowledgeTreeQuery, LocalKnowledgeTreeResponse, LocalUserDocumentChunkListQuery,
+    LocalUserDocumentListQuery, UpdateLocalKnowledgeFolderRequest, UpdateLocalUserDocumentRequest,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

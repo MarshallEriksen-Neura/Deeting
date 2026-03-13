@@ -357,8 +357,10 @@ pub(crate) async fn request_provider_chat_completion(
             app_state.mcp.store.clone(),
             GatewayLogEntry {
                 trace_id: trace_id.map(str::to_string),
-                api_key_id: Some(instance.credentials_ref.clone()).filter(|value| !value.trim().is_empty()),
-                preset_id: Some(instance.preset_slug.clone()).filter(|value| !value.trim().is_empty()),
+                api_key_id: Some(instance.credentials_ref.clone())
+                    .filter(|value| !value.trim().is_empty()),
+                preset_id: Some(instance.preset_slug.clone())
+                    .filter(|value| !value.trim().is_empty()),
                 model: effective_model.clone(),
                 status_code: status.as_u16() as i64,
                 duration_ms: latency_ms as i64,
@@ -373,9 +375,7 @@ pub(crate) async fn request_provider_chat_completion(
             raw_text.as_str(),
         ));
     }
-    let raw_ttft_ms = raw_json
-        .as_ref()
-        .and_then(extract_ttft_ms_from_response);
+    let raw_ttft_ms = raw_json.as_ref().and_then(extract_ttft_ms_from_response);
     let raw_billing_amount = raw_json
         .as_ref()
         .and_then(extract_billing_amount_from_response);
@@ -394,8 +394,7 @@ pub(crate) async fn request_provider_chat_completion(
         raw,
         status.as_u16(),
     );
-    let (input_tokens, output_tokens, total_tokens) =
-        extract_usage_from_response(&transformed);
+    let (input_tokens, output_tokens, total_tokens) = extract_usage_from_response(&transformed);
     let computed_cost =
         calculate_token_cost(&model.pricing_config, input_tokens, output_tokens).unwrap_or(0.0);
     let reported_cost = extract_billing_amount_from_response(&transformed)
@@ -405,7 +404,8 @@ pub(crate) async fn request_provider_chat_completion(
         app_state.mcp.store.clone(),
         GatewayLogEntry {
             trace_id: trace_id.map(str::to_string),
-            api_key_id: Some(instance.credentials_ref.clone()).filter(|value| !value.trim().is_empty()),
+            api_key_id: Some(instance.credentials_ref.clone())
+                .filter(|value| !value.trim().is_empty()),
             preset_id: Some(instance.preset_slug.clone()).filter(|value| !value.trim().is_empty()),
             model: effective_model.clone(),
             status_code: status.as_u16() as i64,

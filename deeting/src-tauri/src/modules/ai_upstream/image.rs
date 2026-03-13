@@ -118,8 +118,10 @@ pub(crate) async fn request_provider_image_generation(
             app_state.mcp.store.clone(),
             GatewayLogEntry {
                 trace_id: trace_id.map(str::to_string),
-                api_key_id: Some(instance.credentials_ref.clone()).filter(|value| !value.trim().is_empty()),
-                preset_id: Some(instance.preset_slug.clone()).filter(|value| !value.trim().is_empty()),
+                api_key_id: Some(instance.credentials_ref.clone())
+                    .filter(|value| !value.trim().is_empty()),
+                preset_id: Some(instance.preset_slug.clone())
+                    .filter(|value| !value.trim().is_empty()),
                 model: effective_model.clone(),
                 status_code: status.as_u16() as i64,
                 duration_ms: latency_ms as i64,
@@ -146,7 +148,8 @@ pub(crate) async fn request_provider_image_generation(
         app_state.mcp.store.clone(),
         GatewayLogEntry {
             trace_id: trace_id.map(str::to_string),
-            api_key_id: Some(instance.credentials_ref.clone()).filter(|value| !value.trim().is_empty()),
+            api_key_id: Some(instance.credentials_ref.clone())
+                .filter(|value| !value.trim().is_empty()),
             preset_id: Some(instance.preset_slug.clone()).filter(|value| !value.trim().is_empty()),
             model: effective_model.clone(),
             status_code: status.as_u16() as i64,
