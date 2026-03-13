@@ -611,8 +611,7 @@ pub async fn execute_mcp_tool_raw(
             let risk = state.mcp.assess_tool_risk(&tool, &arguments);
             execute_or_queue_mcp_tool_call_with_tool_ref(
                 &approval_context,
-                Some(risk.risk_level),
-                risk.reasons,
+                Some(&risk),
                 Some(&state.mcp),
                 state.mcp.store.as_ref(),
                 state.mcp.pending_tool_calls.as_ref(),
@@ -635,8 +634,7 @@ pub async fn execute_mcp_tool_raw(
             let risk = state.mcp.assess_skill_binding_risk(&binding, &arguments);
             execute_or_queue_mcp_tool_call_with_tool_ref(
                 &approval_context,
-                Some(risk.risk_level),
-                risk.reasons,
+                Some(&risk),
                 Some(&state.mcp),
                 state.mcp.store.as_ref(),
                 state.mcp.pending_tool_calls.as_ref(),

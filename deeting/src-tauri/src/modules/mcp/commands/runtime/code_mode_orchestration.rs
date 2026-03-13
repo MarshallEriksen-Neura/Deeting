@@ -998,8 +998,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
                         .build_approval_context(call.id.as_deref(), None);
                     match execute_or_queue_mcp_tool_call_with_tool_ref(
                         &approval_context,
-                        Some(risk.risk_level),
-                        risk.reasons,
+                        Some(&risk),
                         Some(&app_state.mcp),
                         app_state.mcp.store.as_ref(),
                         app_state.mcp.pending_tool_calls.as_ref(),
@@ -1085,8 +1084,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
                             .build_approval_context(call.id.as_deref(), None);
                         match execute_or_queue_mcp_tool_call_with_tool_ref(
                             &approval_context,
-                            Some(risk.risk_level),
-                            risk.reasons,
+                            Some(&risk),
                             Some(&app_state.mcp),
                             app_state.mcp.store.as_ref(),
                             app_state.mcp.pending_tool_calls.as_ref(),

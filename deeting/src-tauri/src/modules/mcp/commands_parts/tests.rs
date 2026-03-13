@@ -1396,10 +1396,10 @@ for raw_line in sys.stdin:
 
         let pending_tool_calls =
             RwLock::new(HashMap::<String, crate::modules::mcp::PendingToolCall>::new());
+        let risk = crate::modules::mcp::assess_skill_binding_risk(&binding, &serde_json::json!({}));
         let queued = execute_or_queue_mcp_tool_call_with_context(
             &crate::modules::mcp::ToolApprovalContext::default(),
-            Some("HIGH"),
-            vec!["binding runtime is bash shell".to_string()],
+            Some(&risk),
             None,
             &store,
             &pending_tool_calls,
