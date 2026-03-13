@@ -55,14 +55,20 @@ async fn connect_sse_client(
                 }
             }
 
-            if let Some((candidate, err)) = last_fallback_error {
-                Err(format!(
+            let streamable_error = if let Some((candidate, err)) = last_fallback_error {
+                format!(
                     "{}; fallback from '{}' to '{}' also failed: {}",
                     primary_error, sse_url, candidate, err
-                ))
+                )
             } else {
-                Err(primary_error)
+                primary_error
+            };
+
+            if let Ok(proxy_client) = connect_legacy_sse_proxy_client(sse_url).await {
+                return Ok(proxy_client);
             }
+
+            Err(streamable_error)
         }
     }
 }
@@ -75,6 +81,31 @@ async fn connect_streamable_http_client(
         .serve(transport)
         .await
         .map_err(|err| err.to_string())
+}
+
+async fn connect_legacy_sse_proxy_client(
+    sse_url: &str,
+) -> Result<RunningService<RoleClient, ClientInfo>, String> {
+    let mut last_error: Option<String> = None;
+    for (command, args) in legacy_sse_proxy_command_candidates(sse_url) {
+        match connect_local_stdio_client(command, &args, None).await {
+            Ok(client) => {
+                warn!(
+                    "remote MCP legacy SSE proxy fallback succeeded: url='{}' command='{}'",
+                    sse_url, command
+                );
+                return Ok(client);
+            }
+            Err(err) => {
+                warn!(
+                    "remote MCP legacy SSE proxy fallback failed: url='{}' command='{}' err={}",
+                    sse_url, command, err
+                );
+                last_error = Some(format!("{}: {}", command, err));
+            }
+        }
+    }
+    Err(last_error.unwrap_or_else(|| "no proxy command candidates".to_string()))
 }
 
 async fn connect_local_stdio_client(
@@ -106,6 +137,20 @@ fn client_info() -> ClientInfo {
 fn is_http_405_method_not_allowed_error(error_text: &str) -> bool {
     let normalized = error_text.to_ascii_lowercase();
     normalized.contains("http 405") || normalized.contains("405 method not allowed")
+}
+
+fn legacy_sse_proxy_command_candidates(sse_url: &str) -> Vec<(&'static str, Vec<String>)> {
+    vec![
+        ("mcp-remote", vec![sse_url.to_string()]),
+        (
+            "npx",
+            vec![
+                "-y".to_string(),
+                "mcp-remote".to_string(),
+                sse_url.to_string(),
+            ],
+        ),
+    ]
 }
 
 fn build_url_with_same_origin(origin: &reqwest::Url, endpoint: &str) -> Option<String> {
@@ -324,6 +369,7 @@ mod tests {
     use super::{
         build_url_with_same_origin, extract_legacy_sse_endpoint_path,
         heuristic_streamable_http_fallback_urls, is_http_405_method_not_allowed_error,
+        legacy_sse_proxy_command_candidates,
     };
 
     #[test]
@@ -362,5 +408,18 @@ mod tests {
         assert_eq!(candidates.len(), 2);
         assert_eq!(candidates[0], "https://mcp.example.com/abc123/mcp");
         assert_eq!(candidates[1], "https://mcp.example.com/mcp");
+    }
+
+    #[test]
+    fn builds_legacy_sse_proxy_command_candidates() {
+        let candidates = legacy_sse_proxy_command_candidates("https://mcp.example.com/abc123/sse");
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].0, "mcp-remote");
+        assert_eq!(candidates[0].1, vec!["https://mcp.example.com/abc123/sse"]);
+        assert_eq!(candidates[1].0, "npx");
+        assert_eq!(
+            candidates[1].1,
+            vec!["-y", "mcp-remote", "https://mcp.example.com/abc123/sse"]
+        );
     }
 }

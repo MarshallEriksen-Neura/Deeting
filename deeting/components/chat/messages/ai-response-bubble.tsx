@@ -10,12 +10,11 @@ import { useI18n } from "@/hooks/use-i18n";
 import type { MessageBlock } from "@/lib/chat/message-protocol";
 import { MarkdownViewer } from "@/components/chat/markdown-viewer";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
-  StatusStream, 
-  HolographicPulse, 
-  GhostCursor, 
-  useStepProgress, 
-  resolveStageIndex 
+import {
+  TerminalStream,
+  GhostCursor,
+  useStepProgress,
+  resolveStageIndex
 } from "@/components/chat/visuals/status-visuals";
 import { useTypewriter } from "@/hooks/chat/use-typewriter";
 import { TaskLiveBlock } from "@/components/chat/messages/task-live-block";
@@ -471,35 +470,33 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
         data-slot="glass-card"
         >
           <div className="px-5 py-3.5 min-w-0 overflow-hidden">
-            {isActive && (
-              <div className="mb-3">
-                <StatusStream
-                  steps={steps}
-                  activeIndex={activeStep}
-                  compact={hasContent}
-                  label={streamEnabled ? t("status.flow.stream") : t("status.flow.batch")}
-                  detail={statusDetail}
-                />
-              </div>
-            )}
-
+            {/* Terminal stream – fades out upward when content arrives */}
             <AnimatePresence mode="sync">
-              {!hasContent && (
+              {isActive && !hasContent && (
                 <motion.div
-                  key="placeholder"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0, transition: { duration: 0.15 } }}
+                  key="terminal-stream"
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10, height: 0, marginBottom: 0, transition: { duration: 0.3, ease: "easeInOut" } }}
+                  className="mb-3"
                 >
-                  <HolographicPulse
-                    label={streamEnabled ? t("status.placeholder.stream") : t("status.placeholder.batch")}
+                  <TerminalStream
+                    steps={steps}
+                    activeIndex={activeStep}
+                    label={streamEnabled ? t("status.flow.stream") : t("status.flow.batch")}
+                    detail={statusDetail}
                   />
                 </motion.div>
               )}
             </AnimatePresence>
 
             {hasContent && (
-              <div className="space-y-3">
+              <motion.div
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.25, ease: "easeOut" }}
+                className="space-y-3"
+              >
                 {parts.map((part, index) => {
                   // --- A. 思维链 (CoT) ---
                   if (part.type === 'thought') {
@@ -685,7 +682,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                     <GhostCursor />
                   </motion.div>
                 )}
-              </div>
+              </motion.div>
             )}
           </div>
         </div>

@@ -800,7 +800,12 @@ export function useChatMessagingService() {
         },
         onTraceId: (traceId) => mergeMessageMeta(assistantMessageId, { trace_id: traceId }),
         onSessionResolved: (nextSessionId) => setSessionId(nextSessionId),
-        onStatusEvent: (status) => setStatus(status),
+        onStatusEvent: (status) => {
+          setStatus(status)
+          if (status.code === "upstream.response" && status.meta) {
+            mergeMessageMeta(assistantMessageId, { runtime_metrics: status.meta })
+          }
+        },
         getCurrentBlocks: () => {
           const latest = useChatStore.getState().messages.find((message) => message.id === assistantMessageId)
           return Array.isArray(latest?.blocks) ? (latest.blocks as MessageBlock[]) : []

@@ -33,7 +33,17 @@ export function resolveStatusDetail(
     case "upstream.streaming":
       return t("status.detail.upstreamStreaming")
     case "upstream.response": {
-      const latency = Number(meta?.latency_ms ?? 0)
+      const totalLatency = Number(meta?.total_latency_ms ?? meta?.latency_ms ?? 0)
+      const upstreamLatency = Number(meta?.upstream_latency_ms ?? 0)
+      const orchestratorLatency = Number(meta?.orchestrator_latency_ms ?? 0)
+      if (Number.isFinite(totalLatency) && totalLatency > 0 && Number.isFinite(upstreamLatency) && upstreamLatency > 0) {
+        return t("status.detail.upstreamResponseWithBreakdown", {
+          total: Math.max(0, Math.round(totalLatency)),
+          upstream: Math.max(0, Math.round(upstreamLatency)),
+          local: Math.max(0, Math.round(orchestratorLatency)),
+        })
+      }
+      const latency = Number.isFinite(totalLatency) ? Math.max(0, Math.round(totalLatency)) : 0
       return t("status.detail.upstreamResponse", { latency })
     }
     case "tool.call": {

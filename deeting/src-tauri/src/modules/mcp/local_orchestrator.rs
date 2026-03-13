@@ -1574,20 +1574,42 @@ pub async fn execute_local_orchestrated_chat(
         assistant_blocks.push(text_block);
     }
 
+    let total_latency_ms = ctx.started_at.elapsed().as_millis() as i64;
+    let (upstream_latency_ms, ttft_ms, upstream_calls) =
+        extract_response_runtime_metrics(&response_json);
+    let orchestrator_latency_ms = upstream_latency_ms
+        .map(|value| total_latency_ms.saturating_sub(value))
+        .unwrap_or(total_latency_ms);
+    let mut upstream_response_meta = serde_json::Map::new();
+    upstream_response_meta.insert("latency_ms".to_string(), json!(total_latency_ms));
+    upstream_response_meta.insert("total_latency_ms".to_string(), json!(total_latency_ms));
+    upstream_response_meta.insert(
+        "orchestrator_latency_ms".to_string(),
+        json!(orchestrator_latency_ms),
+    );
+    if let Some(value) = upstream_latency_ms.filter(|value| *value > 0) {
+        upstream_response_meta.insert("upstream_latency_ms".to_string(), json!(value));
+    }
+    if let Some(value) = ttft_ms.filter(|value| *value > 0) {
+        upstream_response_meta.insert("ttft_ms".to_string(), json!(value));
+    }
+    if let Some(value) = upstream_calls.filter(|value| *value > 0) {
+        upstream_response_meta.insert("upstream_calls".to_string(), json!(value));
+    }
+    let runtime_metrics_value = Value::Object(upstream_response_meta.clone());
     ctx.emit_status(
         "render",
         Some("upstream_call"),
         "success",
         "upstream.response",
-        Some(json!({
-            "latency_ms": ctx.started_at.elapsed().as_millis() as i64,
-        })),
+        Some(runtime_metrics_value.clone()),
     );
 
     let assistant_meta = build_assistant_meta(
         assistant_blocks,
         &model_id,
         &provider_model_id,
+        Some(runtime_metrics_value),
         if input.compare_only {
             AssistantMetaMode::CompareCandidate
         } else {
@@ -1741,6 +1763,25 @@ fn extract_summary_text(summary: Option<&Value>) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+fn extract_response_runtime_metrics(response: &Value) -> (Option<i64>, Option<i64>, Option<i64>) {
+    let metrics = response
+        .get("runtime_metrics")
+        .and_then(|value| value.as_object());
+    let upstream_latency_ms = metrics
+        .and_then(|value| value.get("upstream_latency_ms"))
+        .and_then(|value| value.as_i64())
+        .filter(|value| *value > 0);
+    let ttft_ms = metrics
+        .and_then(|value| value.get("ttft_ms"))
+        .and_then(|value| value.as_i64())
+        .filter(|value| *value > 0);
+    let upstream_calls = metrics
+        .and_then(|value| value.get("upstream_calls"))
+        .and_then(|value| value.as_i64())
+        .filter(|value| *value > 0);
+    (upstream_latency_ms, ttft_ms, upstream_calls)
+}
+
 #[derive(Debug, Clone, Copy)]
 enum AssistantMetaMode {
     Canonical,
@@ -1751,6 +1792,7 @@ fn build_assistant_meta(
     assistant_blocks: Vec<Value>,
     model_id: &str,
     provider_model_id: &str,
+    runtime_metrics: Option<Value>,
     mode: AssistantMetaMode,
 ) -> Option<Value> {
     let mut meta = serde_json::Map::new();
@@ -1762,6 +1804,9 @@ fn build_assistant_meta(
         "provider_model_id".to_string(),
         Value::String(provider_model_id.to_string()),
     );
+    if let Some(runtime_metrics) = runtime_metrics {
+        meta.insert("runtime_metrics".to_string(), runtime_metrics);
+    }
     if matches!(mode, AssistantMetaMode::CompareCandidate) {
         meta.insert("compare_candidate".to_string(), Value::Bool(true));
     }

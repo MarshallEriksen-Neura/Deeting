@@ -53,8 +53,14 @@
         "upstreamRequestBatch": "上游请求 · 整段",
         "upstreamStreaming": "流式输出中",
         "upstreamResponse": "上游响应 {latency}ms",
+        "upstreamResponseWithBreakdown": "总耗时 {total}ms · 上游 {upstream}ms · 本地 {local}ms",
         "toolCall": "工具调用 {name}",
         "assistantSelected": "当前由 {name} 接管"
+      },
+      "metrics": {
+        "total": "总 {value}",
+        "upstream": "上游 {value}",
+        "local": "本地 {value}"
       }
     },
     "workspace": {

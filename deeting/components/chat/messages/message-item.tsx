@@ -34,6 +34,48 @@ interface MessageItemProps {
   onFinalizeCompare?: (messageId: string, modelKey: string) => void
 }
 
+type RuntimeMetrics = {
+  totalLatencyMs: number | null
+  upstreamLatencyMs: number | null
+  localLatencyMs: number | null
+}
+
+const toPositiveMs = (value: unknown): number | null => {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed <= 0) return null
+  return Math.round(parsed)
+}
+
+const formatLatencyValue = (ms: number) => {
+  if (ms >= 1000) {
+    const seconds = ms / 1000
+    return seconds >= 10 ? `${seconds.toFixed(1)}s` : `${seconds.toFixed(2)}s`
+  }
+  return `${ms}ms`
+}
+
+const extractRuntimeMetrics = (metaInfo?: Record<string, unknown>): RuntimeMetrics | null => {
+  const raw = metaInfo?.runtime_metrics
+  if (!raw || typeof raw !== "object") return null
+  const metrics = raw as Record<string, unknown>
+  const totalLatencyMs = toPositiveMs(metrics.total_latency_ms ?? metrics.latency_ms)
+  const upstreamLatencyMs = toPositiveMs(metrics.upstream_latency_ms)
+  const localLatencyMs =
+    toPositiveMs(metrics.orchestrator_latency_ms) ??
+    (totalLatencyMs !== null && upstreamLatencyMs !== null
+      ? Math.max(totalLatencyMs - upstreamLatencyMs, 0)
+      : null)
+
+  if (totalLatencyMs === null && upstreamLatencyMs === null && localLatencyMs === null) {
+    return null
+  }
+  return {
+    totalLatencyMs,
+    upstreamLatencyMs,
+    localLatencyMs,
+  }
+}
+
 /**
  * MessageItem 组件 - 单条消息展示组件
  * 
@@ -77,6 +119,22 @@ export const MessageItem = React.memo<MessageItemProps>(
       return message.blocks ?? []
     }, [message.blocks, message.role])
     const activeCompareCandidate = compareState?.candidates[compareState.activeModelKey] ?? null
+    const runtimeMetricsSummary = React.useMemo(() => {
+      if (message.role !== "assistant") return null
+      const metrics = extractRuntimeMetrics(message.metaInfo as Record<string, unknown> | undefined)
+      if (!metrics) return null
+      const parts: string[] = []
+      if (metrics.totalLatencyMs !== null) {
+        parts.push(t("status.metrics.total", { value: formatLatencyValue(metrics.totalLatencyMs) }))
+      }
+      if (metrics.upstreamLatencyMs !== null) {
+        parts.push(t("status.metrics.upstream", { value: formatLatencyValue(metrics.upstreamLatencyMs) }))
+      }
+      if (metrics.localLatencyMs !== null) {
+        parts.push(t("status.metrics.local", { value: formatLatencyValue(metrics.localLatencyMs) }))
+      }
+      return parts.length > 0 ? parts.join(" · ") : null
+    }, [message.metaInfo, message.role, t])
     const assistantCopyContent = React.useMemo(() => {
       if (activeCompareCandidate) {
         return activeCompareCandidate.content
@@ -162,12 +220,19 @@ export const MessageItem = React.memo<MessageItemProps>(
                   disabled={isActive || compareState?.isFinalizing}
                 />
               )}
-              <span className="text-[10px] opacity-70 text-muted-foreground ml-auto">
-                {new Date(message.createdAt).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </span>
+              <div className="ml-auto flex items-center gap-2">
+                {runtimeMetricsSummary ? (
+                  <span className="text-[10px] text-muted-foreground/80">
+                    {runtimeMetricsSummary}
+                  </span>
+                ) : null}
+                <span className="text-[10px] opacity-70 text-muted-foreground">
+                  {new Date(message.createdAt).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+              </div>
             </div>
             {onCompareWithModel ? (
               <CompareModelDialog
@@ -214,13 +279,14 @@ export const MessageItem = React.memo<MessageItemProps>(
       prevProps.message.blocks === nextProps.message.blocks
 
     // 附件未变化
+    const prevAttachments = prevProps.message.attachments ?? []
+    const nextAttachments = nextProps.message.attachments ?? []
     const attachmentsUnchanged =
-      prevProps.message.attachments?.length ===
-        nextProps.message.attachments?.length &&
-      prevProps.message.attachments?.every(
+      prevAttachments.length === nextAttachments.length &&
+      prevAttachments.every(
         (att, idx) =>
-          att.id === nextProps.message.attachments?.[idx]?.id &&
-          att.url === nextProps.message.attachments?.[idx]?.url
+          att.id === nextAttachments[idx]?.id &&
+          att.url === nextAttachments[idx]?.url
       )
 
     // 激活状态未变化

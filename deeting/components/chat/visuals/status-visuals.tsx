@@ -6,6 +6,123 @@ import { StatusPill } from "@/components/ui/status-pill";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 
+/* ------------------------------------------------------------------ */
+/*  TerminalStream – 毛玻璃终端风格的流式状态展示                        */
+/* ------------------------------------------------------------------ */
+
+export function TerminalStream({
+  steps,
+  activeIndex,
+  label,
+  detail,
+}: {
+  steps: Array<{ key: string; label: string }>;
+  activeIndex: number;
+  label: string;
+  detail?: string | null;
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-lg overflow-hidden",
+        "border border-slate-200/60 dark:border-white/[0.08]",
+        "bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl",
+        "shadow-sm",
+      )}
+    >
+      {/* ── Title bar ── */}
+      <div
+        className={cn(
+          "flex items-center gap-2 px-3 py-1.5",
+          "bg-slate-50/80 dark:bg-zinc-800/80",
+          "border-b border-slate-200/50 dark:border-white/[0.06]",
+        )}
+      >
+        <div className="flex gap-1.5">
+          <span className="w-[7px] h-[7px] rounded-full bg-[#ff5f57]/70" />
+          <span className="w-[7px] h-[7px] rounded-full bg-[#febc2e]/70" />
+          <span className="w-[7px] h-[7px] rounded-full bg-[#28c840]/70" />
+        </div>
+        <span className="text-[10px] font-mono text-slate-400 dark:text-zinc-500 tracking-wide select-none">
+          {label}
+        </span>
+      </div>
+
+      {/* ── Terminal body ── */}
+      <div className="px-3 py-2.5 font-mono text-[12px] leading-relaxed space-y-0.5">
+        {steps.map((step, index) => {
+          const done = index < activeIndex;
+          const active = index === activeIndex;
+          const pending = index > activeIndex;
+
+          return (
+            <motion.div
+              key={step.key}
+              initial={{ opacity: 0, x: -6 }}
+              animate={{ opacity: pending ? 0.35 : 1, x: 0 }}
+              transition={{ delay: index * 0.06, duration: 0.25 }}
+              className="flex items-center gap-1.5"
+            >
+              {/* Prefix symbol */}
+              <span
+                className={cn(
+                  "w-3 text-center shrink-0 select-none",
+                  done && "text-emerald-500",
+                  active && "text-blue-500",
+                  pending && "text-slate-300 dark:text-zinc-600",
+                )}
+              >
+                {done ? "✓" : active ? "›" : "·"}
+              </span>
+
+              {/* Step label */}
+              <span
+                className={cn(
+                  "transition-colors duration-200",
+                  done && "text-slate-500 dark:text-zinc-400",
+                  active && "text-slate-700 dark:text-zinc-200",
+                  pending && "text-slate-300 dark:text-zinc-600",
+                )}
+              >
+                {step.label}
+              </span>
+
+              {/* Active animated dots */}
+              {active && (
+                <span className="text-blue-400 dark:text-blue-500 animate-pulse tracking-[0.2em] ml-0.5">
+                  ···
+                </span>
+              )}
+            </motion.div>
+          );
+        })}
+
+        {/* Detail line */}
+        {detail && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            className="pt-1 flex items-center gap-1 text-[10px] text-slate-400 dark:text-zinc-600"
+          >
+            <span className="select-none">└─</span>
+            <StatusPill text={detail} tone="subtle" size="xs" isLoading />
+          </motion.div>
+        )}
+
+        {/* Blinking block cursor */}
+        <div className="pt-0.5 h-4 flex items-center">
+          <span className="inline-block w-[6px] h-[14px] bg-blue-500/60 dark:bg-blue-400/60 animate-[terminal-blink_1s_step-end_infinite]" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Legacy components – kept for backward compatibility                */
+/* ------------------------------------------------------------------ */
+
+/** @deprecated Use TerminalStream instead */
 export function StatusStream({
   steps,
   activeIndex,
@@ -19,64 +136,12 @@ export function StatusStream({
   label: string;
   detail?: string | null;
 }) {
-  const remembering = steps[activeIndex]?.key === "remember";
-
   return (
-    <div
-      className={cn(
-        "rounded-xl border border-slate-200/70 dark:border-white/10 bg-white/85 dark:bg-white/5",
-        "px-3 py-2 backdrop-blur-sm transition-all duration-300 min-w-[180px]",
-        compact ? "text-[10px]" : "text-xs",
-        remembering && "bg-blue-50/60 dark:bg-blue-500/10 border-blue-200/50 dark:border-blue-500/30"
-      )}
-    >
-      <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-slate-600 dark:text-muted-foreground/80 font-medium">
-        <span>{label}</span>
-      </div>
-      <div className={cn("mt-2 flex flex-col", compact ? "gap-1" : "gap-1.5")}>
-        {steps.map((step, index) => {
-          const done = index < activeIndex;
-          const active = index === activeIndex;
-          return (
-            <div key={step.key} className="flex items-center gap-2 text-slate-600 dark:text-muted-foreground transition-colors duration-300">
-              {done ? (
-                <div className="w-3 h-3 flex items-center justify-center">
-                    <Check className="w-2.5 h-2.5 text-emerald-500" />
-                </div>
-              ) : active ? (
-                <div className="relative flex h-3 w-3 items-center justify-center">
-                  <span className="absolute inline-flex h-full w-full rounded-full bg-blue-500/20 animate-ping"></span>
-                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-blue-500"></span>
-                </div>
-              ) : (
-                <div className="w-3 h-3 flex items-center justify-center">
-                     <span className="h-1 w-1 rounded-full bg-slate-400/40 dark:bg-muted-foreground/30" />
-                </div>
-              )}
-              <span className={cn(
-                  "transition-colors duration-300",
-                  active ? "text-foreground font-medium" : "text-slate-500 dark:text-muted-foreground/70",
-                  done && "text-slate-600 dark:text-muted-foreground/80"
-              )}>
-                {step.label}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-      {detail ? (
-        <motion.div 
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            className="mt-2"
-        >
-          <StatusPill text={detail} tone="subtle" isLoading={activeIndex === 2} />
-        </motion.div>
-      ) : null}
-    </div>
+    <TerminalStream steps={steps} activeIndex={activeIndex} label={label} detail={detail} />
   );
 }
 
+/** @deprecated Use TerminalStream instead */
 export function HolographicPulse({ label, className }: { label: string, className?: string }) {
   return (
     <div
@@ -85,10 +150,7 @@ export function HolographicPulse({ label, className }: { label: string, classNam
         className
       )}
     >
-        {/* Animated Gradient Background */}
         <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 via-purple-500/5 to-blue-500/5 animate-[shimmer_3s_infinite] bg-[length:200%_100%]" />
-        
-        {/* Content */}
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
              <div className="relative">
                 <div className="absolute -inset-2 bg-blue-500/20 rounded-full blur-xl animate-pulse" />
@@ -98,8 +160,6 @@ export function HolographicPulse({ label, className }: { label: string, classNam
                 {label}
              </span>
         </div>
-
-        {/* Scanline Effect */}
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-blue-500/5 to-transparent h-[20%] w-full animate-[scan_2s_linear_infinite]" />
     </div>
   );

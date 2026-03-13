@@ -20,6 +20,44 @@ fn now_rfc3339() -> String {
         .unwrap_or_default()
 }
 
+fn inject_runtime_metrics(
+    response: &mut serde_json::Value,
+    upstream_latency_ms: i64,
+    ttft_ms: Option<i64>,
+    upstream_calls: i64,
+) {
+    let Some(object) = response.as_object_mut() else {
+        return;
+    };
+
+    let mut metrics = object
+        .get("runtime_metrics")
+        .and_then(|value| value.as_object())
+        .cloned()
+        .unwrap_or_default();
+    if upstream_latency_ms > 0 {
+        metrics.insert(
+            "upstream_latency_ms".to_string(),
+            serde_json::json!(upstream_latency_ms),
+        );
+    }
+    if let Some(ttft) = ttft_ms.filter(|value| *value > 0) {
+        metrics.insert("ttft_ms".to_string(), serde_json::json!(ttft));
+    }
+    if upstream_calls > 0 {
+        metrics.insert(
+            "upstream_calls".to_string(),
+            serde_json::json!(upstream_calls),
+        );
+    }
+    if !metrics.is_empty() {
+        object.insert(
+            "runtime_metrics".to_string(),
+            serde_json::Value::Object(metrics),
+        );
+    }
+}
+
 pub(crate) async fn resolve_local_model_connection(
     app_state: &AppState,
     requested_model: &str,
@@ -216,6 +254,7 @@ async fn request_platform_chat_via_proxy(
             request = request.header("Authorization", format!("Bearer {}", token));
         }
     }
+    let call_start = std::time::Instant::now();
     let response = request.send().await.map_err(to_string)?;
     let status = response.status();
     let raw_text = response.text().await.map_err(to_string)?;
@@ -234,7 +273,16 @@ async fn request_platform_chat_via_proxy(
             truncate_upstream_body(&raw_text, 300)
         )
     })?;
-    Ok(normalize_chat_completion_response(out))
+    let raw_ttft_ms = extract_ttft_ms_from_response(&out);
+    let mut normalized = normalize_chat_completion_response(out);
+    let normalized_ttft_ms = extract_ttft_ms_from_response(&normalized).or(raw_ttft_ms);
+    inject_runtime_metrics(
+        &mut normalized,
+        call_start.elapsed().as_millis() as i64,
+        normalized_ttft_ms,
+        1,
+    );
+    Ok(normalized)
 }
 
 pub(crate) async fn request_provider_chat_completion(
@@ -400,6 +448,7 @@ pub(crate) async fn request_provider_chat_completion(
     let reported_cost = extract_billing_amount_from_response(&transformed)
         .or(raw_billing_amount)
         .unwrap_or(computed_cost);
+    let ttft_ms = extract_ttft_ms_from_response(&transformed).or(raw_ttft_ms);
     record_gateway_log(
         app_state.mcp.store.clone(),
         GatewayLogEntry {
@@ -410,7 +459,7 @@ pub(crate) async fn request_provider_chat_completion(
             model: effective_model.clone(),
             status_code: status.as_u16() as i64,
             duration_ms: latency_ms as i64,
-            ttft_ms: extract_ttft_ms_from_response(&transformed).or(raw_ttft_ms),
+            ttft_ms,
             upstream_url: Some(prepared.display_url()),
             input_tokens,
             output_tokens,
@@ -422,7 +471,9 @@ pub(crate) async fn request_provider_chat_completion(
             ..Default::default()
         },
     );
-    Ok(normalize_chat_completion_response(transformed))
+    let mut normalized = normalize_chat_completion_response(transformed);
+    inject_runtime_metrics(&mut normalized, latency_ms as i64, ttft_ms, 1);
+    Ok(normalized)
 }
 
 pub(crate) fn normalize_chat_completion_response(raw: serde_json::Value) -> serde_json::Value {

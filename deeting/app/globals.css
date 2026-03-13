@@ -519,6 +519,12 @@ a:focus-visible {
 .stagger-9 { animation-delay: 400ms; }
 .stagger-10 { animation-delay: 450ms; }
 
+/* Terminal cursor blink */
+@keyframes terminal-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
 /* iOS 风格的微光效果 */
 @keyframes shimmer {
   0% {

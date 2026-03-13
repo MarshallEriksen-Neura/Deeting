@@ -53,8 +53,14 @@
         "upstreamRequestBatch": "Upstream request · batch",
         "upstreamStreaming": "Streaming output",
         "upstreamResponse": "Upstream response {latency}ms",
+        "upstreamResponseWithBreakdown": "Total {total}ms · upstream {upstream}ms · local {local}ms",
         "toolCall": "Tool call {name}",
         "assistantSelected": "Now handled by {name}"
+      },
+      "metrics": {
+        "total": "Total {value}",
+        "upstream": "Upstream {value}",
+        "local": "Local {value}"
       }
     },
     "workspace": {
