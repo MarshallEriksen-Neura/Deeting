@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Download, Plug, Shield } from "lucide-react"
+import { Download, Plug, Settings2, Shield } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -9,6 +9,7 @@ import { CardContent, CardFooter, CardHeader } from "@/components/ui/card"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
 import type { PluginMarketSkillItem } from "@/lib/api/plugin-market"
+import type { LocalSkillRuntimeStatus } from "@/lib/api/plugin-market"
 
 const COLOR_OPTIONS = [
   "from-blue-500 to-cyan-500",
@@ -31,13 +32,27 @@ const pickColor = (id: string) => {
 
 interface PluginCardProps {
   plugin: PluginMarketSkillItem
+  runtimeStatus?: LocalSkillRuntimeStatus | null
   onInstall?: (plugin: PluginMarketSkillItem) => void
   onUninstall?: (skillId: string) => void
+  onConfigure?: (plugin: PluginMarketSkillItem) => void
 }
 
-export function PluginCard({ plugin, onInstall, onUninstall }: PluginCardProps) {
+export function PluginCard({ plugin, runtimeStatus, onInstall, onUninstall, onConfigure }: PluginCardProps) {
   const t = useTranslations("plugins")
   const color = pickColor(plugin.id)
+  const runtimeBadge =
+    runtimeStatus == null
+      ? null
+      : runtimeStatus.runnable_now
+        ? { label: t("runtimeStatus.ready"), className: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" }
+        : runtimeStatus.missing_bins.length > 0
+          ? { label: t("runtimeStatus.missingBin"), className: "bg-amber-500/10 text-amber-700 border-amber-500/20" }
+          : runtimeStatus.missing_env.length > 0
+            ? { label: t("runtimeStatus.missingEnv"), className: "bg-amber-500/10 text-amber-700 border-amber-500/20" }
+            : runtimeStatus.missing_config.length > 0
+              ? { label: t("runtimeStatus.missingConfig"), className: "bg-blue-500/10 text-blue-700 border-blue-500/20" }
+              : { label: t("runtimeStatus.docsOnly"), className: "bg-muted text-muted-foreground border-border" }
 
   return (
     <div className="group relative transition-all duration-300 hover:-translate-y-1 hover:shadow-xl rounded-xl bg-white dark:bg-zinc-900 border border-border overflow-hidden flex flex-col h-full">
@@ -65,12 +80,19 @@ export function PluginCard({ plugin, onInstall, onUninstall }: PluginCardProps) 
               <p className="text-xs text-muted-foreground">v{plugin.version}</p>
             )}
           </div>
-          <Badge
-            variant={plugin.status === "active" ? "default" : "secondary"}
-            className="text-[10px] uppercase tracking-wide shrink-0 ml-2"
-          >
-            {t(`status.${plugin.status}`)}
-          </Badge>
+          <div className="flex flex-col gap-1 items-end">
+            <Badge
+              variant={plugin.status === "active" ? "default" : "secondary"}
+              className="text-[10px] uppercase tracking-wide shrink-0 ml-2"
+            >
+              {t(`status.${plugin.status}`)}
+            </Badge>
+            {runtimeBadge && (
+              <Badge variant="outline" className={cn("text-[10px] shrink-0 ml-2", runtimeBadge.className)}>
+                {runtimeBadge.label}
+              </Badge>
+            )}
+          </div>
         </div>
       </CardHeader>
 
@@ -78,24 +100,48 @@ export function PluginCard({ plugin, onInstall, onUninstall }: PluginCardProps) 
         <p className="text-sm text-muted-foreground line-clamp-3 min-h-[2.5rem]">
           {plugin.description || t("card.noDescription")}
         </p>
+        {runtimeStatus && !runtimeStatus.runnable_now && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            {runtimeStatus.blocking_reason
+              ? t(`runtimeStatus.reason.${runtimeStatus.blocking_reason}`)
+              : t("runtimeStatus.reason.unknown")}
+          </p>
+        )}
       </CardContent>
 
       <CardFooter className="px-4 py-4 border-t bg-muted/30 flex justify-between items-center mt-auto">
         <div className="flex items-center gap-1 text-xs text-muted-foreground">
           <Shield size={12} />
-          <span>{t("card.permissions")}</span>
+          <span>
+            {runtimeStatus && !runtimeStatus.runnable_now
+              ? t("card.missingRuntime")
+              : t("card.permissions")}
+          </span>
         </div>
 
         {plugin.installed ? (
-          <Button
-            size="sm"
-            variant="outline"
-            className="rounded-full px-4 h-8 text-xs font-bold text-green-600 border-green-600/30 hover:bg-red-50 hover:text-red-600 hover:border-red-600/30 dark:hover:bg-red-950/20 transition-colors group/btn"
-            onClick={() => onUninstall?.(plugin.id)}
-          >
-            <span className="group-hover/btn:hidden">{t("card.installed")}</span>
-            <span className="hidden group-hover/btn:inline">{t("card.uninstall")}</span>
-          </Button>
+          <div className="flex items-center gap-2">
+            {runtimeStatus && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="rounded-full px-3 h-8 text-xs"
+                onClick={() => onConfigure?.(plugin)}
+              >
+                <Settings2 size={14} className="mr-1" />
+                {t("card.configure")}
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              className="rounded-full px-4 h-8 text-xs font-bold text-green-600 border-green-600/30 hover:bg-red-50 hover:text-red-600 hover:border-red-600/30 dark:hover:bg-red-950/20 transition-colors group/btn"
+              onClick={() => onUninstall?.(plugin.id)}
+            >
+              <span className="group-hover/btn:hidden">{t("card.installed")}</span>
+              <span className="hidden group-hover/btn:inline">{t("card.uninstall")}</span>
+            </Button>
+          </div>
         ) : (
           <Button
             size="sm"

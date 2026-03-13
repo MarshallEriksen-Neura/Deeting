@@ -18,6 +18,7 @@ export const PluginMarketSkillItemSchema = z.object({
   installed: z.boolean().default(false),
   created_at: z.string().nullable().optional(),
   updated_at: z.string().nullable().optional(),
+  compatibility: z.unknown().optional(),
 })
 
 export const PluginInstallationItemSchema = z.object({
@@ -35,6 +36,35 @@ export const PluginInstallationItemSchema = z.object({
 
 export type PluginMarketSkillItem = z.infer<typeof PluginMarketSkillItemSchema>
 export type PluginInstallationItem = z.infer<typeof PluginInstallationItemSchema>
+
+export const LocalSkillRuntimeRequirementStatusSchema = z.object({
+  key: z.string(),
+  configured: z.boolean(),
+  source: z.string().nullable().optional(),
+})
+
+export const LocalSkillRuntimeStatusSchema = z.object({
+  skill_id: z.string(),
+  display_name: z.string(),
+  installed_version: z.string().nullable().optional(),
+  is_enabled: z.boolean(),
+  execution_mode: z.string(),
+  ecosystem: z.string(),
+  runnable_now: z.boolean(),
+  required_bins: z.array(z.string()).default([]),
+  missing_bins: z.array(z.string()).default([]),
+  required_env: z.array(LocalSkillRuntimeRequirementStatusSchema).default([]),
+  missing_env: z.array(z.string()).default([]),
+  required_config: z.array(LocalSkillRuntimeRequirementStatusSchema).default([]),
+  missing_config: z.array(z.string()).default([]),
+  blocking_reason: z.string().nullable().optional(),
+  install_hints: z.array(z.string()).default([]),
+  compatibility: z.unknown(),
+  current_env: z.record(z.string(), z.string()).default({}),
+  current_config: z.record(z.string(), z.unknown()).default({}),
+})
+
+export type LocalSkillRuntimeStatus = z.infer<typeof LocalSkillRuntimeStatusSchema>
 
 export function isUserVisiblePlugin(plugin: PluginMarketSkillItem) {
   return plugin.source_kind !== "official"
@@ -183,4 +213,31 @@ export async function submitPluginRepo(payload: {
     method: "POST",
     data: payload,
   })
+}
+
+export async function fetchLocalSkillRuntimeStatuses(): Promise<LocalSkillRuntimeStatus[]> {
+  if (!isTauriRuntime()) {
+    return []
+  }
+  const { invoke } = await import("@tauri-apps/api/core")
+  const data = await invoke("list_local_skill_runtime_statuses")
+  return z.array(LocalSkillRuntimeStatusSchema).parse(data)
+}
+
+export async function updateLocalSkillRuntimeSettings(
+  skillId: string,
+  payload: {
+    env_json?: Record<string, string>
+    config_json?: Record<string, unknown>
+  }
+): Promise<LocalSkillRuntimeStatus> {
+  if (!isTauriRuntime()) {
+    throw new Error("Local skill runtime settings require desktop runtime")
+  }
+  const { invoke } = await import("@tauri-apps/api/core")
+  const data = await invoke("update_local_skill_runtime_settings", {
+    skillId,
+    payload,
+  })
+  return LocalSkillRuntimeStatusSchema.parse(data)
 }

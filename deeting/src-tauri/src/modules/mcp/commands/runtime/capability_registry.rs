@@ -79,6 +79,7 @@ pub(crate) async fn build_capability_registry(
                 .and_then(|value| value.as_str())
                 .unwrap_or("");
             let pkg_name = asset.get("pkg_name").and_then(|value| value.as_str());
+            let asset_metadata = asset.get("metadata");
             let tool_contract_source = tool_contracts.get(tool_name).cloned();
 
             CapabilityRegistryEntry {
@@ -88,6 +89,7 @@ pub(crate) async fn build_capability_registry(
                     asset_id,
                     tool_name,
                     pkg_name,
+                    asset_metadata,
                     &enabled_assistant_ids,
                     &enabled_skill_ids,
                     &tool_availability_catalog,
@@ -139,6 +141,7 @@ impl RegistryAvailability {
         asset_id: &str,
         tool_name: &str,
         pkg_name: Option<&str>,
+        asset_metadata: Option<&Value>,
         enabled_assistant_ids: &HashSet<String>,
         enabled_skill_ids: &HashSet<String>,
         tool_availability_catalog: &ToolAvailabilityCatalog,
@@ -159,6 +162,35 @@ impl RegistryAvailability {
         }
 
         match asset_type {
+            "skill_tool" => {
+                let explicit_skill_id = asset_metadata
+                    .and_then(|value| value.get("skill_id"))
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty());
+                let resolved_skill_id = explicit_skill_id.or(pkg_name.map(str::trim));
+                if let Some(skill_id) = resolved_skill_id {
+                    if !enabled_skill_ids.contains(skill_id) {
+                        return Self {
+                            class: ToolAvailabilityClass::NeedsSetup,
+                            install_required: false,
+                            activation_required: true,
+                            recommended_action: "enable_skill",
+                            status_reason: "skill_installed_but_disabled",
+                        };
+                    }
+                    return Self::from_tool_availability(&fallback_local_tool_availability(
+                        resolved_skill_id,
+                    ));
+                }
+                Self {
+                    class: ToolAvailabilityClass::Unavailable,
+                    install_required: false,
+                    activation_required: false,
+                    recommended_action: "review",
+                    status_reason: "skill_binding_missing_skill_reference",
+                }
+            }
             "tool" => {
                 if let Some(skill_id) = pkg_name.filter(|value| value.starts_with("skill.")) {
                     if !enabled_skill_ids.contains(skill_id) {

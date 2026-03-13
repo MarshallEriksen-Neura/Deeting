@@ -83,8 +83,8 @@ fn render_skill_recipe_prompt(recipes: &[Value]) -> Option<String> {
 
     let mut lines = vec![
         "## Installed Skills".to_string(),
-        "These are docs-first skills. They are guidance bundles, not direct model tools or MCP tools.".to_string(),
-        "Read the recipe details first. Only use direct tools when search_sdk explicitly returns a callable capability.".to_string(),
+        "These are installed skill bundles. Treat recipe entries as guidance, and only call a skill directly when search_sdk returns a callable skill binding.".to_string(),
+        "Read the recipe details first. Direct execution is allowed only for explicit callable capabilities surfaced by search_sdk.".to_string(),
     ];
 
     for recipe in recipes {
@@ -2192,7 +2192,7 @@ mod tests {
 
         assert!(prompt.contains("## Installed Skills"));
         assert!(prompt.contains("Planner"));
-        assert!(prompt.contains("docs-first"));
+        assert!(prompt.contains("callable skill binding"));
         assert!(prompt.contains("read_skill_docs"));
         assert!(prompt.contains("SKILL.md"));
         assert!(prompt.contains("backend=main.py"));

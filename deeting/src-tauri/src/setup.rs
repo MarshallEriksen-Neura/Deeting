@@ -70,7 +70,8 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
             crate::modules::mcp::store::McpStore::with_pool_and_write_pool(
                 global_pool.clone(),
                 global_write_pool,
-            ),
+                &database_url,
+            )?,
         );
         store.init().await?;
         store.ensure_local_source().await?;

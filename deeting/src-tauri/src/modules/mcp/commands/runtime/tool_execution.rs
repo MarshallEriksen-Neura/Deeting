@@ -1,6 +1,7 @@
 use super::super::{common_impl::to_string, support::*};
 use super::remote_transport::{call_local_stdio_tool, call_remote_sse_tool};
 use super::tool_resolution::resolve_callable_mcp_tool_by_ref;
+use crate::modules::mcp::store::LocalSkillToolBindingSnapshot;
 
 const TOOL_CALL_MARKER: &str = "__DEETING_TOOL_CALL_REQUEST__";
 const MAX_MARKER_REEXEC: usize = 8;
@@ -10,6 +11,261 @@ fn parse_timeout_from_tool(tool: &McpTool) -> u64 {
         .ok()
         .and_then(|v| v.get("execution")?.get("timeout_seconds")?.as_u64())
         .unwrap_or(60)
+}
+
+pub(crate) async fn resolve_skill_binding_by_ref(
+    store: &crate::modules::mcp::store::McpStore,
+    binding_id: Option<&str>,
+    callable_name: Option<&str>,
+) -> Result<Option<LocalSkillToolBindingSnapshot>, String> {
+    store
+        .get_enabled_local_skill_tool_binding_by_ref(binding_id, callable_name)
+        .await
+        .map_err(to_string)
+}
+
+fn build_skill_binding_fingerprint(binding: &LocalSkillToolBindingSnapshot) -> String {
+    format!("{}:{}", binding.binding_id, binding.updated_at)
+}
+
+fn build_command_for_skill_binding(
+    binding: &LocalSkillToolBindingSnapshot,
+    arguments: &Value,
+) -> Result<(String, Vec<String>), String> {
+    let mut cli_args = arguments
+        .get("args")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    match binding.runtime.as_str() {
+        "python" => {
+            let mut args = vec![binding.entry_path.clone()];
+            args.append(&mut cli_args);
+            Ok((
+                if cfg!(target_os = "windows") {
+                    "python".to_string()
+                } else {
+                    "python3".to_string()
+                },
+                args,
+            ))
+        }
+        "node" => {
+            let mut args = vec![binding.entry_path.clone()];
+            args.append(&mut cli_args);
+            Ok(("node".to_string(), args))
+        }
+        "bash" => {
+            let mut args = vec![binding.entry_path.clone()];
+            args.append(&mut cli_args);
+            Ok(("bash".to_string(), args))
+        }
+        other => Err(format!(
+            "unsupported skill binding runtime '{}' for {}",
+            other, binding.callable_name
+        )),
+    }
+}
+
+async fn resolve_skill_binding_env(
+    store: &crate::modules::mcp::store::McpStore,
+    binding: &LocalSkillToolBindingSnapshot,
+) -> Result<Option<HashMap<String, String>>, String> {
+    let mut env = HashMap::new();
+    env.insert("DEETING_SKILL_ID".to_string(), binding.skill_id.clone());
+    env.insert(
+        "DEETING_SKILL_ACTION_ID".to_string(),
+        binding.tool_name.clone(),
+    );
+    if binding.skill_id == "official.skills.crawler"
+        || matches!(
+            binding.tool_name.as_str(),
+            "fetch_web_content" | "crawl_website"
+        )
+    {
+        if let Some(override_url) = resolve_effective_desktop_scout_base_url(store)
+            .await
+            .map_err(to_string)?
+        {
+            env.insert(SCOUT_SERVICE_URL_ENV_KEY.to_string(), override_url);
+        }
+    }
+    if let Some(install) = store
+        .get_local_skill_install_detail(&binding.skill_id)
+        .await
+        .map_err(to_string)?
+    {
+        let secret_env = store
+            .get_local_skill_env_secrets(&binding.skill_id)
+            .await
+            .map_err(to_string)?;
+        env.extend(secret_env);
+
+        if let Some(user_settings) = install.user_settings_json.as_ref() {
+            if let Some(config_json) = user_settings.get("config_json") {
+                env.insert(
+                    "DEETING_SKILL_CONFIG_JSON".to_string(),
+                    config_json.to_string(),
+                );
+            }
+        }
+    }
+    if env.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(env))
+    }
+}
+
+async fn resolve_skill_binding_config_json(
+    store: &crate::modules::mcp::store::McpStore,
+    binding: &LocalSkillToolBindingSnapshot,
+) -> Result<Option<Value>, String> {
+    let install = store
+        .get_local_skill_install_detail(&binding.skill_id)
+        .await
+        .map_err(to_string)?;
+    Ok(install
+        .and_then(|detail| detail.user_settings_json)
+        .and_then(|settings| settings.get("config_json").cloned()))
+}
+
+fn build_script_runner_payload(
+    binding: &LocalSkillToolBindingSnapshot,
+    arguments: &Value,
+    config_json: Option<&Value>,
+) -> Value {
+    let input_payload = arguments
+        .get("input")
+        .cloned()
+        .unwrap_or_else(|| match arguments {
+            Value::Object(object) => {
+                let mut filtered = object.clone();
+                filtered.remove("args");
+                Value::Object(filtered)
+            }
+            _ => arguments.clone(),
+        });
+
+    let context = serde_json::json!({
+        "skill_id": binding.skill_id,
+        "tool_name": binding.tool_name,
+        "callable_name": binding.callable_name,
+        "binding_kind": binding.binding_kind,
+    });
+
+    match input_payload {
+        Value::Object(mut object) => {
+            if let Some(config) = config_json {
+                object.insert("__deeting_config".to_string(), config.clone());
+            }
+            object.insert("__deeting_context".to_string(), context);
+            Value::Object(object)
+        }
+        other => serde_json::json!({
+            "input": other,
+            "__deeting_config": config_json.cloned().unwrap_or_else(|| serde_json::json!({})),
+            "__deeting_context": context,
+        }),
+    }
+}
+
+async fn execute_skill_binding(
+    store: &crate::modules::mcp::store::McpStore,
+    binding: &LocalSkillToolBindingSnapshot,
+    arguments: &Value,
+) -> Result<Value, String> {
+    let (command, args) = build_command_for_skill_binding(binding, arguments)?;
+    let env = resolve_skill_binding_env(store, binding).await?;
+    let config_json = resolve_skill_binding_config_json(store, binding).await?;
+
+    // Resolve skill directory for working directory
+    let skill_dir = std::path::Path::new(&binding.entry_path)
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.to_path_buf());
+
+    let mut cmd = tokio::process::Command::new(command);
+    cmd.args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+
+    // Set working directory to skill root for relative path resolution
+    if let Some(ref dir) = skill_dir {
+        cmd.current_dir(dir);
+    }
+
+    if let Some(env_map) = env {
+        cmd.envs(env_map);
+    }
+
+    log::info!(
+        "Executing skill binding '{}' (runtime={}, timeout={}s, work_dir={})",
+        binding.callable_name,
+        binding.runtime,
+        binding.timeout_seconds,
+        skill_dir
+            .as_deref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default()
+    );
+
+    let mut child = cmd.spawn().map_err(to_string)?;
+    if let Some(mut stdin) = child.stdin.take() {
+        let payload = if binding.binding_kind == "script_runner" {
+            build_script_runner_payload(binding, arguments, config_json.as_ref())
+        } else {
+            serde_json::json!({
+                "method": binding.tool_name,
+                "arguments": arguments,
+            })
+        };
+        let payload_bytes = serde_json::to_vec(&payload).map_err(to_string)?;
+        if !payload_bytes.is_empty() {
+            stdin.write_all(&payload_bytes).await.map_err(to_string)?;
+        }
+    }
+
+    let output = match tokio::time::timeout(
+        std::time::Duration::from_secs(binding.timeout_seconds.max(1)),
+        child.wait_with_output(),
+    )
+    .await
+    {
+        Ok(result) => result.map_err(|err| format!("skill binding execution error: {}", err))?,
+        Err(_) => {
+            return Err(format!(
+                "skill binding '{}' timed out after {}s",
+                binding.callable_name, binding.timeout_seconds
+            ))
+        }
+    };
+
+    if !output.status.success() {
+        return Err(format!(
+            "skill binding '{}' failed (exit={}): {}",
+            binding.callable_name,
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    if output.stdout.is_empty() {
+        return Ok(serde_json::json!({ "ok": true }));
+    }
+    serde_json::from_slice::<Value>(&output.stdout).or_else(|_| {
+        Ok(serde_json::json!({
+            "ok": true,
+            "raw": String::from_utf8_lossy(&output.stdout).to_string(),
+        }))
+    })
 }
 
 pub(crate) async fn execute_local_mcp_tool(
@@ -250,6 +506,41 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_tool_ref(
     arguments: Value,
     require_approval: bool,
 ) -> Result<Value, String> {
+    if let Some(binding) =
+        resolve_skill_binding_by_ref(store, tool_id.as_deref(), tool_name.as_deref()).await?
+    {
+        if require_approval {
+            let approval_token = Uuid::new_v4().to_string();
+            let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+            let pending = crate::modules::mcp::PendingToolCall {
+                tool_id: Some(binding.binding_id.clone()),
+                tool_name: binding.callable_name.clone(),
+                arguments: arguments.clone(),
+                call_id: approval_context.call_id.clone(),
+                execution_token: approval_context.execution_token.clone(),
+                tool_fingerprint: build_skill_binding_fingerprint(&binding),
+                created_at_unix_ms: now as i128,
+                expires_at_unix_ms: now as i128 + 5 * 60 * 1000,
+            };
+            pending_tool_calls
+                .write()
+                .await
+                .insert(approval_token.clone(), pending);
+            return Ok(serde_json::json!({
+                "status": "REQUIRES_APPROVAL",
+                "approval_token": approval_token,
+                "tool_id": binding.binding_id,
+                "tool_name": binding.callable_name,
+                "arguments": arguments,
+                "description": binding.description,
+                "risk_level": risk_level.unwrap_or("MEDIUM"),
+                "risk_reasons": risk_reasons,
+                "expires_in_ms": 5 * 60 * 1000,
+            }));
+        }
+        return execute_skill_binding(store, &binding, &arguments).await;
+    }
+
     let tool = resolve_callable_mcp_tool_by_ref(store, tool_id.as_deref(), tool_name.as_deref())
         .await
         .map_err(|err| err.to_string())?;
@@ -335,6 +626,30 @@ pub(crate) async fn approve_mcp_tool_inner_with_context(
             return Err("approval context mismatch (execution_token)".to_string());
         }
     }
+    if let Some(binding) = resolve_skill_binding_by_ref(
+        store,
+        pending.tool_id.as_deref(),
+        Some(pending.tool_name.as_str()),
+    )
+    .await?
+    {
+        if build_skill_binding_fingerprint(&binding) != pending.tool_fingerprint {
+            pending_tool_calls.write().await.remove(approval_token);
+            return Err(
+                "skill binding changed after approval prompt; request was cancelled".to_string(),
+            );
+        }
+        if pending_tool_calls
+            .write()
+            .await
+            .remove(approval_token)
+            .is_none()
+        {
+            return Err("pending tool call already consumed".to_string());
+        }
+        return execute_skill_binding(store, &binding, &pending.arguments).await;
+    }
+
     let tool = resolve_callable_mcp_tool_by_ref(
         store,
         pending.tool_id.as_deref(),

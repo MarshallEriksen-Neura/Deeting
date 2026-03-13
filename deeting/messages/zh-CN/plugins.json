@@ -39,15 +39,32 @@
       "install": "安装",
       "installing": "安装中...",
       "installed": "已安装",
+      "configure": "配置",
       "uninstall": "卸载",
       "noDescription": "暂无描述",
-      "permissions": "需要权限"
+      "permissions": "需要权限",
+      "missingRuntime": "缺少运行配置"
     },
     "status": {
       "active": "可用",
       "pending": "审核中",
       "disabled": "已禁用",
       "draft": "草稿"
+    },
+    "runtimeStatus": {
+      "ready": "可运行",
+      "missingBin": "缺少依赖",
+      "missingEnv": "缺少环境变量",
+      "missingConfig": "缺少配置项",
+      "docsOnly": "仅文档",
+      "reason": {
+        "skill_disabled": "该技能当前被禁用",
+        "missing_binary": "缺少本地运行依赖",
+        "missing_env": "缺少环境变量",
+        "missing_config": "缺少配置项",
+        "docs_only": "该技能当前仅支持文档指导",
+        "unknown": "当前暂不可运行"
+      }
     },
     "dialog": {
       "title": "权限确认",
@@ -105,6 +122,31 @@
       "successTitle": "仓库已提交",
       "successDesc": "插件正在解析中，稍后将显示在市场列表。",
       "error": "仓库提交失败，请重试。"
+    },
+    "runtimeConfig": {
+      "title": "配置 {name}",
+      "description": "补齐该技能运行所需的环境变量与配置项。配置仅保存在本地桌面端。",
+      "noRuntimeStatus": "当前没有可用的本地运行状态。",
+      "executionMode": "执行模式：{mode}",
+      "ecosystem": "技能生态：{ecosystem}",
+      "binSection": "本地依赖",
+      "binMissing": "{name} 未安装或不可用",
+      "binReady": "{name} 已可用",
+      "envSection": "环境变量",
+      "configSection": "配置项",
+      "noEnvRequired": "该技能当前没有声明必需环境变量。",
+      "noConfigRequired": "该技能当前没有声明必需配置项。",
+      "envPlaceholder": "输入变量值（本地保存）",
+      "configPlaceholder": "输入配置值",
+      "configured": "已配置，来源：{source}",
+      "missing": "未配置",
+      "installHints": "安装提示",
+      "save": "保存配置",
+      "saving": "保存中...",
+      "savedTitle": "技能配置已保存",
+      "savedDesc": "本地运行配置已更新，可重新尝试运行。",
+      "saveFailedTitle": "保存失败",
+      "saveFailedDesc": "无法更新本地技能配置，请稍后重试。"
     }
   }
 }

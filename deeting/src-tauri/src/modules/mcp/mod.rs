@@ -227,6 +227,155 @@ impl McpRuntimeState {
         }
     }
 
+    pub fn assess_skill_binding_risk(
+        &self,
+        binding: &crate::modules::mcp::store::LocalSkillToolBindingSnapshot,
+        arguments: &Value,
+    ) -> ToolRiskAssessment {
+        let mut score = 0_i32;
+        let mut reasons = Vec::new();
+
+        // Base score for skill binding execution
+        score += 1;
+        reasons.push("skill binding executes local runtime".to_string());
+
+        // === Binding Kind Risk ===
+        match binding.binding_kind.as_str() {
+            "script_runner" => {
+                score += 1;
+                reasons.push("auto-generated from scripts/ directory".to_string());
+            }
+            "deeting_tool" => {
+                // Official tools have lower base risk
+            }
+            other => {
+                score += 1;
+                reasons.push(format!("binding kind: {}", other));
+            }
+        }
+
+        // === Runtime Risk ===
+        let runtime = binding.runtime.to_lowercase();
+        match runtime.as_str() {
+            "bash" => {
+                score += 3;
+                reasons.push("bash runtime has full shell access".to_string());
+            }
+            "python" => {
+                score += 2;
+                reasons.push("python runtime can access filesystem/network".to_string());
+            }
+            "node" => {
+                score += 2;
+                reasons.push("node runtime can access filesystem/network".to_string());
+            }
+            _ => {
+                score += 1;
+                reasons.push(format!("unknown runtime: {}", runtime));
+            }
+        }
+
+        // === Argument Risk Detection ===
+        let arg_str = arguments.to_string().to_lowercase();
+
+        // Critical keywords (immediate high risk)
+        let critical_keywords = [
+            "rm -rf",
+            "rm -fr",
+            "del /",
+            "format ",
+            "dd if=",
+            "mkfs",
+            "fdisk",
+            "> /dev/",
+            "curl | bash",
+            "curl | sh",
+            "wget |",
+            "eval (",
+            "exec (",
+            "/bin/sh -c",
+            "/bin/bash -c",
+        ];
+        for kw in critical_keywords {
+            if arg_str.contains(kw) {
+                score += 3;
+                reasons.push(format!("critical keyword detected: {}", kw));
+            }
+        }
+
+        // Warning keywords (medium risk)
+        let warning_keywords = [
+            "powershell",
+            "pwsh",
+            "cmd.exe",
+            "wscript",
+            "cscript",
+            "rundll32",
+            "mshta",
+            "shutdown",
+            "reboot",
+            "sudo ",
+            "chmod 777",
+            "chown ",
+            ">/etc/",
+            ">/root/",
+            ">/home/",
+        ];
+        for kw in warning_keywords {
+            if arg_str.contains(kw) {
+                score += 2;
+                reasons.push(format!("warning keyword detected: {}", kw));
+            }
+        }
+
+        // === Path Sensitivity Check ===
+        if let Some(path) = arguments.get("path").and_then(Value::as_str) {
+            let sensitive_paths = ["/etc", "/root", "/home", "/usr", "/bin", "/sbin", "/boot"];
+            for sensitive in sensitive_paths {
+                if path.starts_with(sensitive) {
+                    score += 2;
+                    reasons.push(format!("access to sensitive path: {}", sensitive));
+                    break;
+                }
+            }
+        }
+
+        // === Network Risk Check ===
+        if let Some(url) = arguments.get("url").and_then(Value::as_str) {
+            if url.starts_with("http://") {
+                score += 1;
+                reasons.push("network request over insecure HTTP".to_string());
+            }
+            if url.contains("localhost") || url.contains("127.0.0.1") {
+                score += 1;
+                reasons.push("network request to local endpoint".to_string());
+            }
+        }
+
+        // === High-Risk Tool Name Check ===
+        if self.is_high_risk_tool(&binding.tool_name) {
+            score += 2;
+            reasons.push("tool name matches high-risk pattern".to_string());
+        }
+
+        // === Risk Level Determination ===
+        let (risk_level, requires_approval) = if score >= 6 {
+            ("CRITICAL", true)
+        } else if score >= 4 {
+            ("HIGH", true)
+        } else if score >= 2 {
+            ("MEDIUM", true)
+        } else {
+            ("LOW", false)
+        };
+
+        ToolRiskAssessment {
+            requires_approval,
+            risk_level,
+            reasons,
+        }
+    }
+
     pub fn build_approval_context(
         &self,
         call_id: Option<&str>,

@@ -95,6 +95,36 @@ pub(crate) async fn build_capability_search_result(
         })
         .count();
 
+    let capability_groups = json!({
+        "skill_tools": capabilities
+            .iter()
+            .filter(|item| item.get("asset_namespace").and_then(Value::as_str) == Some("skill"))
+            .cloned()
+            .collect::<Vec<_>>(),
+        "user_mcp_tools": capabilities
+            .iter()
+            .filter(|item| item.get("asset_namespace").and_then(Value::as_str) == Some("user_mcp"))
+            .cloned()
+            .collect::<Vec<_>>(),
+        "core_tools": capabilities
+            .iter()
+            .filter(|item| item.get("asset_namespace").and_then(Value::as_str) == Some("core"))
+            .cloned()
+            .collect::<Vec<_>>(),
+    });
+    let recipe_groups = json!({
+        "skills": recipes
+            .iter()
+            .filter(|item| item.get("asset_namespace").and_then(Value::as_str) == Some("skill"))
+            .cloned()
+            .collect::<Vec<_>>(),
+        "assistants": recipes
+            .iter()
+            .filter(|item| item.get("asset_type").and_then(Value::as_str) == Some("assistant"))
+            .cloned()
+            .collect::<Vec<_>>(),
+    });
+
     json!({
         "format_version": SEARCH_RESULT_FORMAT_VERSION,
         "runtime_protocol_version": crate::modules::code_mode::contract::RUNTIME_PROTOCOL_VERSION,
@@ -104,13 +134,15 @@ pub(crate) async fn build_capability_search_result(
         "count": capabilities.len() + recipes.len() + orchestration_primitives.len(),
         "capabilities": capabilities,
         "recipes": recipes,
+        "capability_groups": capability_groups,
+        "recipe_groups": recipe_groups,
         "orchestration_primitives": orchestration_primitives,
         "routing_hint": {
             "default_path": "direct_capability_call",
             "programmatic_path": "execute_code_plan",
             "direct_callable_capability_count": direct_callable_capability_count,
         },
-        "usage_hint": "优先从 capabilities 里选择 direct host 能力直接调用；recipes 表示需要安装、启用或激活的 skill/assistant bundle，本身不是可直接执行的 tool。只有在需要多步程序逻辑、循环、条件分支或结果聚合时，才进入 orchestration_primitives 里的 execute_code_plan。",
+        "usage_hint": "优先从 capability_groups.skill_tools 与 capability_groups.user_mcp_tools 中选择 direct host 能力直接调用；recipe_groups.skills 表示 skill bundle 的指导性入口，本身不是可直接执行的 tool。只有在需要多步程序逻辑、循环、条件分支或结果聚合时，才进入 orchestration_primitives 里的 execute_code_plan。",
         "availability": {
             "enabled_assistant_count": registry.enabled_assistant_count,
         }
@@ -297,15 +329,17 @@ fn materialize_ranked_entry(
     lexical_score: Option<f64>,
     rank_score: f64,
 ) -> Value {
-    let skill_backed_tool = pkg_name
-        .as_deref()
-        .is_some_and(|value| value.starts_with("skill."));
+    let asset_namespace =
+        resolve_asset_namespace(asset_type, source_type, pkg_name.as_deref(), asset_metadata);
+    let skill_backed_tool =
+        asset_namespace == "skill" && matches!(asset_type, "tool" | "skill_tool");
     let group = classify_semantic_group(name, asset_type, pkg_name.as_deref(), availability);
     let mut value = json!({
         "capability_id": id,
         "name": name,
         "description": description,
         "asset_type": asset_type,
+        "asset_namespace": asset_namespace,
         "source": format!("local_{}", source_type),
         "pkg_name": pkg_name,
         "assistant_id": assistant_id,
@@ -324,11 +358,61 @@ fn materialize_ranked_entry(
     });
 
     if let Some(object) = value.as_object_mut() {
+        if let Some(metadata) = asset_metadata {
+            if let Some(binding_id) = metadata.get("binding_id") {
+                object.insert("binding_id".to_string(), binding_id.clone());
+            }
+            if let Some(execution_lane) = metadata.get("execution_lane") {
+                object.insert("execution_lane".to_string(), execution_lane.clone());
+            }
+            if let Some(compatibility) = metadata.get("compatibility") {
+                if let Some(runnable_now) = compatibility
+                    .get("eligibility")
+                    .and_then(|value| value.get("runnable_now"))
+                {
+                    object.insert("runnable_now".to_string(), runnable_now.clone());
+                }
+                if let Some(missing_env) = compatibility
+                    .get("eligibility")
+                    .and_then(|value| value.get("missing_env"))
+                {
+                    object.insert("missing_env".to_string(), missing_env.clone());
+                }
+                if let Some(missing_config) = compatibility
+                    .get("eligibility")
+                    .and_then(|value| value.get("missing_config"))
+                {
+                    object.insert("missing_config".to_string(), missing_config.clone());
+                }
+                let blocking_reason = if compatibility
+                    .get("eligibility")
+                    .and_then(|value| value.get("runnable_now"))
+                    .and_then(Value::as_bool)
+                    == Some(false)
+                {
+                    Some(json!(compatibility
+                        .get("execution_mode")
+                        .and_then(Value::as_str)
+                        .unwrap_or("not_runnable")))
+                } else {
+                    None
+                };
+                if let Some(blocking_reason) = blocking_reason {
+                    object.insert("blocking_reason".to_string(), blocking_reason);
+                }
+            }
+        }
         match group {
             SemanticGroup::Capability => {
                 object.insert("semantic_kind".to_string(), json!("capability"));
                 object.insert("invocation_mode".to_string(), json!("direct"));
-                object.insert("execution_plane".to_string(), json!("host"));
+                object.insert(
+                    "execution_plane".to_string(),
+                    json!(asset_metadata
+                        .and_then(|metadata| metadata.get("execution_lane"))
+                        .and_then(Value::as_str)
+                        .unwrap_or("host")),
+                );
             }
             SemanticGroup::Recipe => {
                 object.insert("semantic_kind".to_string(), json!("recipe"));
@@ -336,6 +420,9 @@ fn materialize_ranked_entry(
                 object.insert("recommended_path".to_string(), json!("install_or_activate"));
                 if asset_type == "skill" || skill_backed_tool {
                     if let Some(metadata) = asset_metadata {
+                        if let Some(compatibility) = metadata.get("compatibility") {
+                            object.insert("compatibility".to_string(), compatibility.clone());
+                        }
                         if let Some(source_metadata) = metadata.get("source_metadata") {
                             if let Some(doc_excerpt) = source_metadata
                                 .get("doc_excerpt")
@@ -394,7 +481,9 @@ fn classify_semantic_group(
     if matches!(name.trim(), "search_sdk" | "execute_code_plan") {
         return SemanticGroup::OrchestrationPrimitive;
     }
-    if asset_type == "tool" && pkg_name.is_some_and(|value| value.starts_with("skill.")) {
+    if asset_type == "skill_tool"
+        || (asset_type == "tool" && pkg_name.is_some_and(|value| value.starts_with("skill.")))
+    {
         return if availability.is_direct_callable() {
             SemanticGroup::Capability
         } else {
@@ -422,6 +511,34 @@ fn push_semantic_group(
         "orchestration_primitive" => orchestration_primitives.push(item),
         _ => capabilities.push(item),
     }
+}
+
+fn resolve_asset_namespace(
+    asset_type: &str,
+    source_type: &str,
+    pkg_name: Option<&str>,
+    asset_metadata: Option<&Value>,
+) -> &'static str {
+    if matches!(asset_type, "skill" | "skill_tool") {
+        return "skill";
+    }
+    if matches!(asset_type, "assistant") {
+        return "assistant";
+    }
+    if matches!(source_type, "code_mode_core") {
+        return "core";
+    }
+    if asset_metadata
+        .and_then(|metadata| metadata.get("asset_namespace"))
+        .and_then(Value::as_str)
+        == Some("skill")
+    {
+        return "skill";
+    }
+    if source_type == "mcp" || pkg_name.is_some_and(|value| value.starts_with("mcp.")) {
+        return "user_mcp";
+    }
+    "local"
 }
 
 fn build_tool_contract(

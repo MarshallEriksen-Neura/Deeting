@@ -1,6 +1,7 @@
 use super::{common_impl::to_string, support::*};
-use serde_json::{Map as JsonMap, Value as JsonValue};
+use serde_json::{json, Map as JsonMap, Value as JsonValue};
 use std::{
+    collections::HashMap,
     ffi::OsStr,
     path::{Path, PathBuf},
 };
@@ -97,6 +98,37 @@ pub(crate) async fn register_local_skills_from_scan_targets_inner(
                 .await
                 .map_err(to_string)?;
 
+            let bindings = collect_local_skill_tool_bindings(&skill_path, &skill_def)?;
+            store
+                .replace_local_skill_tool_bindings(
+                    id,
+                    &bindings
+                        .iter()
+                        .map(
+                            |binding| crate::modules::mcp::store::LocalSkillToolBindingUpsert {
+                                binding_id: binding.binding_id.clone(),
+                                binding_kind: binding.binding_kind.clone(),
+                                callable_name: binding.callable_name.clone(),
+                                tool_name: binding.tool_name.clone(),
+                                description: binding.description.clone(),
+                                input_schema_json: binding
+                                    .input_schema
+                                    .as_ref()
+                                    .map(|value| value.to_string()),
+                                output_schema_json: binding
+                                    .output_schema
+                                    .as_ref()
+                                    .map(|value| value.to_string()),
+                                entry_path: binding.entry_path.clone(),
+                                runtime: binding.runtime.clone(),
+                                timeout_seconds: binding.timeout_seconds,
+                            },
+                        )
+                        .collect::<Vec<_>>(),
+                )
+                .await
+                .map_err(to_string)?;
+
             let _ = memory_state.service.delete_assets_by_package(id).await;
 
             let final_source_type = if *source_prefix == "system_plugin" {
@@ -117,6 +149,15 @@ pub(crate) async fn register_local_skills_from_scan_targets_inner(
                     &final_source_type,
                 )
                 .await?;
+                index_local_skill_tool_binding_assets(
+                    provider_state.clone(),
+                    memory_state.clone(),
+                    id,
+                    &skill_def.display_name,
+                    &bindings,
+                    &final_source_type,
+                )
+                .await?;
             } else {
                 let provider_state_clone = provider_state.clone();
                 let memory_state_clone = memory_state.clone();
@@ -126,6 +167,9 @@ pub(crate) async fn register_local_skills_from_scan_targets_inner(
                 let doc_excerpt = skill_def.doc_excerpt.clone();
                 let manifest_json = skill_def.manifest_json.clone();
                 let final_source_type_clone = final_source_type.clone();
+                let bindings_clone = bindings.clone();
+                let provider_state_clone_for_bindings = provider_state.clone();
+                let memory_state_clone_for_bindings = memory_state.clone();
                 tauri::async_runtime::spawn(async move {
                     let _ = index_local_skill_bundle_asset(
                         provider_state_clone,
@@ -135,6 +179,15 @@ pub(crate) async fn register_local_skills_from_scan_targets_inner(
                         &description,
                         doc_excerpt.as_deref(),
                         &manifest_json,
+                        &final_source_type_clone,
+                    )
+                    .await;
+                    let _ = index_local_skill_tool_binding_assets(
+                        provider_state_clone_for_bindings,
+                        memory_state_clone_for_bindings,
+                        &skill_id,
+                        &display_name,
+                        &bindings_clone,
                         &final_source_type_clone,
                     )
                     .await;
@@ -206,6 +259,8 @@ fn parse_deeting_manifest(raw: &str) -> Result<DeetingManifest, String> {
     serde_json::from_str::<DeetingManifest>(raw).map_err(|e| format!("invalid deeting.json: {}", e))
 }
 
+const DEFAULT_SKILL_ACTION_TIMEOUT_SECS: u64 = 60;
+
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub(crate) struct LocalSkillDefinition {
@@ -222,10 +277,53 @@ pub(crate) struct LocalSkillDefinition {
     pub(crate) doc_excerpt: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct LocalSkillToolBindingDefinition {
+    pub(crate) binding_id: String,
+    pub(crate) binding_kind: String,
+    pub(crate) callable_name: String,
+    pub(crate) tool_name: String,
+    pub(crate) description: String,
+    pub(crate) input_schema: Option<JsonValue>,
+    pub(crate) output_schema: Option<JsonValue>,
+    pub(crate) entry_path: String,
+    pub(crate) runtime: String,
+    pub(crate) timeout_seconds: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct SkillToolManifest {
+    #[serde(default)]
+    tools: Vec<SkillToolManifestEntry>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct SkillToolManifestEntry {
+    name: String,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    parameters: Option<JsonValue>,
+    #[serde(default)]
+    input_schema: Option<JsonValue>,
+    #[serde(default)]
+    output_schema: Option<JsonValue>,
+}
+
+#[derive(Debug, Clone)]
+struct LocalSkillScriptBindingCandidate {
+    tool_name: String,
+    entry_path: String,
+    runtime: String,
+}
+
 #[derive(Debug, Default)]
 struct SkillBundleSnapshot {
     visible_entries: Vec<String>,
     doc_paths: Vec<String>,
+    script_paths: Vec<String>,
+    reference_paths: Vec<String>,
+    resource_paths: Vec<String>,
     doc_excerpt: Option<String>,
     frontmatter: Option<JsonValue>,
     package_metadata: Option<JsonValue>,
@@ -253,6 +351,26 @@ fn is_probably_text_document(path: &Path) -> bool {
     )
 }
 
+fn is_probably_script(path: &Path) -> bool {
+    let Some(ext) = path.extension().and_then(|ext| ext.to_str()) else {
+        return false;
+    };
+    matches!(
+        ext.to_ascii_lowercase().as_str(),
+        "py" | "js" | "mjs" | "cjs" | "sh" | "bash" | "zsh" | "ts"
+    )
+}
+
+fn script_tool_name_from_path(path: &Path) -> String {
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("run");
+    normalize_skill_dir_name(stem)
+}
+
 fn trim_excerpt(content: &str, max_chars: usize) -> String {
     let compact = content
         .lines()
@@ -269,6 +387,157 @@ fn first_non_empty_line(content: &str) -> Option<String> {
         .map(str::trim)
         .find(|line| !line.is_empty())
         .map(|line| line.to_string())
+}
+
+pub(crate) fn callable_skill_binding_name(skill_id: &str, tool_name: &str) -> String {
+    let normalized_skill_id = skill_id.trim().trim_matches('.').to_ascii_lowercase();
+    let normalized_tool_name = tool_name.trim().trim_matches('.').to_ascii_lowercase();
+    format!("skill.{normalized_skill_id}.{normalized_tool_name}")
+}
+
+fn skill_tool_binding_id(skill_id: &str, tool_name: &str) -> String {
+    format!("skill_binding::{skill_id}::{tool_name}")
+}
+
+fn read_skill_tool_manifest(path: &Path) -> Result<Vec<SkillToolManifestEntry>, String> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let raw = std::fs::read_to_string(path).map_err(to_string)?;
+    let manifest = serde_yaml::from_str::<SkillToolManifest>(&raw).map_err(to_string)?;
+    Ok(manifest
+        .tools
+        .into_iter()
+        .filter(|entry| !entry.name.trim().is_empty())
+        .collect())
+}
+
+pub(crate) fn resolve_skill_backend_entry_path(
+    skill_path: &Path,
+    manifest_json: &str,
+) -> Result<Option<PathBuf>, String> {
+    let manifest = serde_json::from_str::<JsonValue>(manifest_json).map_err(to_string)?;
+    Ok(manifest
+        .get("entry")
+        .and_then(|value| value.get("backend"))
+        .and_then(JsonValue::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|entry| skill_path.join(entry)))
+}
+
+pub(crate) fn resolve_skill_execution_timeout(manifest_json: &str) -> Result<u64, String> {
+    let manifest = serde_json::from_str::<JsonValue>(manifest_json).map_err(to_string)?;
+    Ok(manifest
+        .get("execution")
+        .and_then(|value| value.get("timeout_seconds"))
+        .and_then(JsonValue::as_u64)
+        .unwrap_or(DEFAULT_SKILL_ACTION_TIMEOUT_SECS))
+}
+
+pub(crate) fn resolve_skill_entry_runtime(entry_path: &Path) -> Result<&'static str, String> {
+    match entry_path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("py") => Ok("python"),
+        Some("js") | Some("mjs") | Some("cjs") => Ok("node"),
+        Some("sh") => Ok("bash"),
+        _ => Err(format!(
+            "unsupported skill action backend entry: {}",
+            entry_path.display()
+        )),
+    }
+}
+
+pub(crate) fn collect_local_skill_tool_bindings(
+    skill_path: &Path,
+    skill_def: &LocalSkillDefinition,
+) -> Result<Vec<LocalSkillToolBindingDefinition>, String> {
+    let timeout_seconds = resolve_skill_execution_timeout(&skill_def.manifest_json)?;
+    let mut bindings = Vec::new();
+
+    if let Some(backend_entry) =
+        resolve_skill_backend_entry_path(skill_path, &skill_def.manifest_json)?
+    {
+        let runtime = resolve_skill_entry_runtime(&backend_entry)?.to_string();
+        let entries = read_skill_tool_manifest(&skill_path.join("llm-tool.yaml"))?;
+        bindings.extend(
+            entries
+                .into_iter()
+                .map(|entry| LocalSkillToolBindingDefinition {
+                    binding_id: skill_tool_binding_id(&skill_def.skill_id, &entry.name),
+                    binding_kind: "deeting_tool".to_string(),
+                    callable_name: callable_skill_binding_name(&skill_def.skill_id, &entry.name),
+                    tool_name: entry.name.clone(),
+                    description: entry.description.unwrap_or_else(|| {
+                        format!("Callable tool binding for {}", skill_def.display_name)
+                    }),
+                    input_schema: entry.parameters.or(entry.input_schema),
+                    output_schema: entry.output_schema,
+                    entry_path: backend_entry.to_string_lossy().to_string(),
+                    runtime: runtime.clone(),
+                    timeout_seconds,
+                }),
+        );
+    }
+
+    let existing_tool_names = bindings
+        .iter()
+        .map(|binding| binding.tool_name.clone())
+        .collect::<HashSet<_>>();
+    let generated_scripts =
+        collect_generated_script_binding_candidates(skill_path, &existing_tool_names)?;
+    bindings.extend(generated_scripts.into_iter().map(|candidate| {
+        LocalSkillToolBindingDefinition {
+            binding_id: skill_tool_binding_id(&skill_def.skill_id, &candidate.tool_name),
+            binding_kind: "script_runner".to_string(),
+            callable_name: callable_skill_binding_name(&skill_def.skill_id, &candidate.tool_name),
+            tool_name: candidate.tool_name.clone(),
+            description: format!(
+                "Generated script binding for {} ({})",
+                skill_def.display_name, candidate.tool_name
+            ),
+            input_schema: Some(build_generated_script_input_schema()),
+            output_schema: None,
+            entry_path: candidate.entry_path,
+            runtime: candidate.runtime,
+            timeout_seconds,
+        }
+    }));
+
+    Ok(bindings)
+}
+
+fn collect_generated_script_binding_candidates(
+    skill_path: &Path,
+    existing_tool_names: &HashSet<String>,
+) -> Result<Vec<LocalSkillScriptBindingCandidate>, String> {
+    let scripts_dir = skill_path.join("scripts");
+    if !scripts_dir.exists() || !scripts_dir.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut candidates = Vec::new();
+    for entry in std::fs::read_dir(&scripts_dir).map_err(to_string)? {
+        let path = entry.map_err(to_string)?.path();
+        if path.is_dir() || !is_probably_script(&path) {
+            continue;
+        }
+        let tool_name = script_tool_name_from_path(&path);
+        if tool_name.is_empty() || existing_tool_names.contains(&tool_name) {
+            continue;
+        }
+        let runtime = resolve_skill_entry_runtime(&path)?.to_string();
+        candidates.push(LocalSkillScriptBindingCandidate {
+            tool_name,
+            entry_path: path.to_string_lossy().to_string(),
+            runtime,
+        });
+    }
+    candidates.sort_by(|left, right| left.tool_name.cmp(&right.tool_name));
+    Ok(candidates)
 }
 
 fn parse_frontmatter(content: &str) -> Option<JsonValue> {
@@ -341,6 +610,368 @@ fn read_package_metadata(skill_path: &Path) -> Option<JsonValue> {
     }
 }
 
+fn relative_skill_path(skill_path: &Path, path: &Path) -> String {
+    path.strip_prefix(skill_path)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+fn first_path_segment(value: &str) -> Option<&str> {
+    value
+        .split('/')
+        .next()
+        .filter(|segment| !segment.is_empty())
+}
+
+fn extract_openclaw_metadata(frontmatter: Option<&JsonValue>) -> Option<JsonValue> {
+    frontmatter
+        .and_then(|value| value.get("metadata"))
+        .and_then(|value| value.get("openclaw"))
+        .cloned()
+}
+
+fn value_to_string_list(value: Option<&JsonValue>) -> Vec<String> {
+    match value {
+        Some(JsonValue::String(raw)) => {
+            let normalized = raw.trim();
+            if normalized.is_empty() {
+                Vec::new()
+            } else {
+                vec![normalized.to_string()]
+            }
+        }
+        Some(JsonValue::Array(items)) => items
+            .iter()
+            .filter_map(|item| item.as_str())
+            .map(str::trim)
+            .filter(|item| !item.is_empty())
+            .map(str::to_string)
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn binary_exists(binary: &str) -> bool {
+    let candidate = binary.trim();
+    if candidate.is_empty() {
+        return false;
+    }
+    let path_var = std::env::var_os("PATH").unwrap_or_default();
+    for base in std::env::split_paths(&path_var) {
+        let full = base.join(candidate);
+        if full.is_file() {
+            return true;
+        }
+        if cfg!(target_os = "windows") {
+            for ext in ["exe", "cmd", "bat"] {
+                if base.join(format!("{candidate}.{ext}")).is_file() {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn build_generated_script_input_schema() -> JsonValue {
+    json!({
+        "type": "object",
+        "properties": {
+            "input": {
+                "description": "Optional JSON payload written to stdin for the script.",
+                "oneOf": [
+                    { "type": "object" },
+                    { "type": "array" },
+                    { "type": "string" },
+                    { "type": "number" },
+                    { "type": "boolean" }
+                ]
+            },
+            "args": {
+                "type": "array",
+                "description": "Optional CLI arguments appended after the script path.",
+                "items": { "type": "string" }
+            }
+        }
+    })
+}
+
+fn build_skill_compatibility_metadata(
+    snapshot: &SkillBundleSnapshot,
+    parsed_manifest: Option<&DeetingManifest>,
+    frontmatter: Option<&JsonValue>,
+) -> JsonValue {
+    let openclaw = extract_openclaw_metadata(frontmatter);
+    let skill_key = openclaw
+        .as_ref()
+        .and_then(|value| value.get("skillKey"))
+        .and_then(JsonValue::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let requires = openclaw
+        .as_ref()
+        .and_then(|value| value.get("requires"))
+        .cloned()
+        .unwrap_or_else(|| JsonValue::Object(JsonMap::new()));
+    let required_bins = value_to_string_list(requires.get("bin").or_else(|| requires.get("bins")));
+    let required_env = value_to_string_list(requires.get("env"));
+    let required_config = value_to_string_list(requires.get("config"));
+    let install_hints = value_to_string_list(
+        openclaw
+            .as_ref()
+            .and_then(|value| value.get("install"))
+            .or_else(|| requires.get("install")),
+    );
+    let missing_bins = required_bins
+        .iter()
+        .filter(|item| !binary_exists(item))
+        .cloned()
+        .collect::<Vec<_>>();
+    let missing_env = required_env
+        .iter()
+        .filter(|item| {
+            std::env::var(item)
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+                .is_none()
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let execution_mode = if parsed_manifest.is_some() && snapshot.tool_manifest_path.is_some() {
+        "deeting_binding"
+    } else if !snapshot.script_paths.is_empty() {
+        "script_guidance"
+    } else {
+        "docs_only"
+    };
+    let ecosystem = if openclaw.is_some() {
+        "openclaw_agentskills"
+    } else {
+        "agentskills_compatible"
+    };
+
+    json!({
+        "ecosystem": ecosystem,
+        "execution_mode": execution_mode,
+        "supports_deeting_binding": parsed_manifest.is_some() && snapshot.tool_manifest_path.is_some(),
+        "has_scripts": !snapshot.script_paths.is_empty(),
+        "has_references": !snapshot.reference_paths.is_empty(),
+        "has_resources": !snapshot.resource_paths.is_empty(),
+        "skill_key": skill_key,
+        "requires": {
+            "bin": required_bins,
+            "env": required_env,
+            "config": required_config
+        },
+        "install_hints": install_hints,
+        "eligibility": {
+            "runnable_now": missing_bins.is_empty() && missing_env.is_empty() && required_config.is_empty(),
+            "missing_bins": missing_bins,
+            "missing_env": missing_env,
+            "missing_config": required_config
+        },
+        "openclaw": openclaw
+    })
+}
+
+async fn configured_env_source(
+    store: &crate::modules::mcp::store::McpStore,
+    skill_id: &str,
+    key: &str,
+    user_env_keys: &HashMap<String, String>,
+) -> Option<String> {
+    if user_env_keys.contains_key(key) {
+        return Some("local_secret_store".to_string());
+    }
+    if store
+        .has_local_skill_env_secret(skill_id, key)
+        .await
+        .ok()
+        .unwrap_or(false)
+    {
+        return Some("local_secret_store".to_string());
+    }
+    if std::env::var(key)
+        .ok()
+        .map(|value| !value.trim().is_empty())
+        .unwrap_or(false)
+    {
+        return Some("process_env".to_string());
+    }
+    None
+}
+
+fn configured_config_source(key: &str, user_config: &HashMap<String, JsonValue>) -> Option<String> {
+    if user_config.get(key).is_some() {
+        Some("user_settings".to_string())
+    } else {
+        None
+    }
+}
+
+fn parse_user_settings_maps(
+    user_settings_json: Option<&JsonValue>,
+) -> (HashMap<String, String>, HashMap<String, JsonValue>) {
+    let env_json = user_settings_json
+        .and_then(|value| value.get("env_json"))
+        .and_then(JsonValue::as_object)
+        .map(|obj| {
+            obj.iter()
+                .filter_map(|(key, value)| {
+                    value.as_str().map(|text| (key.clone(), text.to_string()))
+                })
+                .collect::<HashMap<_, _>>()
+        })
+        .unwrap_or_default();
+    let config_json = user_settings_json
+        .and_then(|value| value.get("config_json"))
+        .and_then(JsonValue::as_object)
+        .map(|obj| {
+            obj.iter()
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect()
+        })
+        .unwrap_or_default();
+    (env_json, config_json)
+}
+
+async fn build_local_skill_runtime_status(
+    store: &crate::modules::mcp::store::McpStore,
+    install: &crate::modules::mcp::store::LocalSkillInstallDetail,
+) -> Result<LocalSkillRuntimeStatus, String> {
+    let manifest = serde_json::from_str::<JsonValue>(&install.manifest_json).map_err(to_string)?;
+    let compatibility = manifest
+        .get("compatibility")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let (plain_env, current_config) = parse_user_settings_maps(install.user_settings_json.as_ref());
+    let stored_secrets = store
+        .get_local_skill_env_secrets(&install.skill_id)
+        .await
+        .map_err(to_string)?;
+    let execution_mode = compatibility
+        .get("execution_mode")
+        .and_then(JsonValue::as_str)
+        .unwrap_or("docs_only")
+        .to_string();
+    let ecosystem = compatibility
+        .get("ecosystem")
+        .and_then(JsonValue::as_str)
+        .unwrap_or("unknown")
+        .to_string();
+    let install_hints = value_to_string_list(compatibility.get("install_hints"));
+    let display_name = manifest
+        .get("name")
+        .and_then(JsonValue::as_str)
+        .unwrap_or(install.skill_id.as_str())
+        .to_string();
+
+    let env_keys = value_to_string_list(
+        compatibility
+            .get("requires")
+            .and_then(|value| value.get("env")),
+    );
+    let required_bins = value_to_string_list(
+        compatibility
+            .get("requires")
+            .and_then(|value| value.get("bin")),
+    );
+    let config_keys = value_to_string_list(
+        compatibility
+            .get("requires")
+            .and_then(|value| value.get("config")),
+    );
+    let missing_bins = value_to_string_list(
+        compatibility
+            .get("eligibility")
+            .and_then(|value| value.get("missing_bins")),
+    );
+
+    let required_env = env_keys
+        .iter()
+        .map(|key| async {
+            let source =
+                configured_env_source(store, &install.skill_id, key, &stored_secrets).await;
+            LocalSkillRuntimeRequirementStatus {
+                key: key.clone(),
+                configured: source.is_some(),
+                source,
+            }
+        })
+        .collect::<Vec<_>>();
+    let mut resolved_required_env = Vec::with_capacity(required_env.len());
+    for item in required_env {
+        resolved_required_env.push(item.await);
+    }
+    let missing_env = resolved_required_env
+        .iter()
+        .filter(|item| !item.configured)
+        .map(|item| item.key.clone())
+        .collect::<Vec<_>>();
+
+    let required_config = config_keys
+        .iter()
+        .map(|key| {
+            let source = configured_config_source(key, &current_config);
+            LocalSkillRuntimeRequirementStatus {
+                key: key.clone(),
+                configured: source.is_some(),
+                source,
+            }
+        })
+        .collect::<Vec<_>>();
+    let missing_config = required_config
+        .iter()
+        .filter(|item| !item.configured)
+        .map(|item| item.key.clone())
+        .collect::<Vec<_>>();
+
+    let blocking_reason = if !install.is_enabled {
+        Some("skill_disabled".to_string())
+    } else if !missing_bins.is_empty() {
+        Some("missing_binary".to_string())
+    } else if !missing_env.is_empty() {
+        Some("missing_env".to_string())
+    } else if !missing_config.is_empty() {
+        Some("missing_config".to_string())
+    } else {
+        compatibility
+            .get("execution_mode")
+            .and_then(JsonValue::as_str)
+            .filter(|mode| *mode == "docs_only")
+            .map(|_| "docs_only".to_string())
+    };
+
+    Ok(LocalSkillRuntimeStatus {
+        skill_id: install.skill_id.clone(),
+        display_name,
+        installed_version: install.installed_version.clone(),
+        is_enabled: install.is_enabled,
+        execution_mode,
+        ecosystem,
+        runnable_now: install.is_enabled
+            && missing_bins.is_empty()
+            && missing_env.is_empty()
+            && missing_config.is_empty(),
+        required_bins,
+        missing_bins,
+        required_env: resolved_required_env,
+        missing_env,
+        required_config,
+        missing_config,
+        blocking_reason,
+        install_hints,
+        compatibility,
+        current_env: plain_env
+            .keys()
+            .map(|key| (key.clone(), "".to_string()))
+            .collect(),
+        current_config,
+    })
+}
+
 fn collect_skill_bundle_snapshot(skill_path: &Path) -> Result<SkillBundleSnapshot, String> {
     let mut snapshot = SkillBundleSnapshot::default();
     let mut root_entries = std::fs::read_dir(skill_path).map_err(to_string)?;
@@ -390,6 +1021,13 @@ fn collect_skill_bundle_snapshot(skill_path: &Path) -> Result<SkillBundleSnapsho
         if path.file_name() == Some(OsStr::new("llm-tool.yaml")) {
             snapshot.tool_manifest_path = Some(path.clone());
         }
+        let rel = relative_skill_path(skill_path, &path);
+        match first_path_segment(&rel) {
+            Some("scripts") if is_probably_script(&path) => snapshot.script_paths.push(rel.clone()),
+            Some("references") => snapshot.reference_paths.push(rel.clone()),
+            Some("assets") => snapshot.resource_paths.push(rel.clone()),
+            _ => {}
+        }
         if doc_sections.len() >= SKILL_DOC_SCAN_LIMIT || !is_probably_text_document(&path) {
             continue;
         }
@@ -402,11 +1040,6 @@ fn collect_skill_bundle_snapshot(skill_path: &Path) -> Result<SkillBundleSnapsho
         let Ok(raw) = std::fs::read_to_string(&path) else {
             continue;
         };
-        let rel = path
-            .strip_prefix(skill_path)
-            .unwrap_or(&path)
-            .to_string_lossy()
-            .replace('\\', "/");
         if snapshot.frontmatter.is_none() {
             snapshot.frontmatter = parse_frontmatter(&raw);
         }
@@ -547,6 +1180,8 @@ pub(crate) fn resolve_local_skill_definition(
         .as_ref()
         .map(|manifest| manifest.execution.timeout_seconds)
         .unwrap_or_else(default_timeout);
+    let compatibility =
+        build_skill_compatibility_metadata(&snapshot, parsed_manifest.as_ref(), frontmatter);
 
     let mut source_metadata = JsonMap::new();
     source_metadata.insert(
@@ -566,6 +1201,9 @@ pub(crate) fn resolve_local_skill_definition(
         serde_json::json!({
             "has_ui": snapshot.has_ui,
             "has_tool_manifest": snapshot.tool_manifest_path.is_some(),
+            "script_paths": snapshot.script_paths,
+            "reference_paths": snapshot.reference_paths,
+            "resource_paths": snapshot.resource_paths,
         }),
     );
     if let Some(doc_excerpt) = snapshot
@@ -636,6 +1274,7 @@ pub(crate) fn resolve_local_skill_definition(
         "source_metadata".to_string(),
         JsonValue::Object(source_metadata),
     );
+    manifest_value.insert("compatibility".to_string(), compatibility);
     if let Some(version) = version.clone() {
         manifest_value.insert("version".to_string(), JsonValue::String(version));
     }
@@ -786,6 +1425,43 @@ pub struct SkillInstallResult {
     pub skill_id: String,
     pub tool_count: usize,
     pub install_path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LocalSkillRuntimeRequirementStatus {
+    pub key: String,
+    pub configured: bool,
+    pub source: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LocalSkillRuntimeStatus {
+    pub skill_id: String,
+    pub display_name: String,
+    pub installed_version: Option<String>,
+    pub is_enabled: bool,
+    pub execution_mode: String,
+    pub ecosystem: String,
+    pub runnable_now: bool,
+    pub required_bins: Vec<String>,
+    pub missing_bins: Vec<String>,
+    pub required_env: Vec<LocalSkillRuntimeRequirementStatus>,
+    pub missing_env: Vec<String>,
+    pub required_config: Vec<LocalSkillRuntimeRequirementStatus>,
+    pub missing_config: Vec<String>,
+    pub blocking_reason: Option<String>,
+    pub install_hints: Vec<String>,
+    pub compatibility: JsonValue,
+    pub current_env: HashMap<String, String>,
+    pub current_config: HashMap<String, JsonValue>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateLocalSkillRuntimeSettingsRequest {
+    #[serde(default)]
+    pub env_json: Option<HashMap<String, String>>,
+    #[serde(default)]
+    pub config_json: Option<HashMap<String, JsonValue>>,
 }
 
 pub(crate) async fn install_skill_to_local(
@@ -957,6 +1633,48 @@ pub(crate) async fn reindex_local_skill_bundle_asset(
         &skill_def.manifest_json,
         infer_local_skill_asset_source_type(&skill_path),
     )
+    .await?;
+
+    let bindings = collect_local_skill_tool_bindings(&skill_path, &skill_def)?;
+    app_state
+        .mcp
+        .store
+        .replace_local_skill_tool_bindings(
+            normalized_skill_id,
+            &bindings
+                .iter()
+                .map(
+                    |binding| crate::modules::mcp::store::LocalSkillToolBindingUpsert {
+                        binding_id: binding.binding_id.clone(),
+                        binding_kind: binding.binding_kind.clone(),
+                        callable_name: binding.callable_name.clone(),
+                        tool_name: binding.tool_name.clone(),
+                        description: binding.description.clone(),
+                        input_schema_json: binding
+                            .input_schema
+                            .as_ref()
+                            .map(|value| value.to_string()),
+                        output_schema_json: binding
+                            .output_schema
+                            .as_ref()
+                            .map(|value| value.to_string()),
+                        entry_path: binding.entry_path.clone(),
+                        runtime: binding.runtime.clone(),
+                        timeout_seconds: binding.timeout_seconds,
+                    },
+                )
+                .collect::<Vec<_>>(),
+        )
+        .await
+        .map_err(to_string)?;
+    index_local_skill_tool_binding_assets(
+        app_state.providers.clone(),
+        app_state.memory.clone(),
+        normalized_skill_id,
+        &skill_def.display_name,
+        &bindings,
+        infer_local_skill_asset_source_type(&skill_path),
+    )
     .await
 }
 
@@ -1042,12 +1760,158 @@ async fn index_local_skill_bundle_asset(
     Ok(())
 }
 
+async fn index_local_skill_tool_binding_assets(
+    provider_state: std::sync::Arc<crate::modules::providers::ProviderState>,
+    memory_state: std::sync::Arc<crate::modules::memory::MemoryState>,
+    skill_id: &str,
+    skill_display_name: &str,
+    bindings: &[LocalSkillToolBindingDefinition],
+    source_type: &str,
+) -> Result<(), String> {
+    for binding in bindings {
+        let mut body = format!(
+            "skill: {}\nskill_id: {}\ncallable_name: {}\ntool_name: {}\ndescription: {}\nexecution_lane: skill_runtime",
+            skill_display_name,
+            skill_id,
+            binding.callable_name,
+            binding.tool_name,
+            binding.description
+        );
+        if let Some(input_schema) = binding.input_schema.as_ref() {
+            body.push_str("\ninput_schema:\n");
+            body.push_str(&input_schema.to_string());
+        }
+        if let Some(output_schema) = binding.output_schema.as_ref() {
+            body.push_str("\noutput_schema:\n");
+            body.push_str(&output_schema.to_string());
+        }
+
+        let vector = provider_state
+            .embedding
+            .embed_text(&body)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let metadata = serde_json::json!({
+            "asset_namespace": "skill",
+            "binding_id": binding.binding_id,
+            "binding_kind": binding.binding_kind,
+            "skill_id": skill_id,
+            "tool_name": binding.tool_name,
+            "callable_name": binding.callable_name,
+            "execution_lane": "skill_runtime",
+            "input_schema": binding.input_schema,
+            "output_schema": binding.output_schema,
+            "entry_path": binding.entry_path,
+            "runtime": binding.runtime,
+            "timeout_seconds": binding.timeout_seconds,
+        });
+
+        memory_state
+            .store
+            .upsert_asset(
+                binding.binding_id.clone(),
+                binding.callable_name.clone(),
+                binding.description.clone(),
+                "skill_tool".to_string(),
+                source_type.to_string(),
+                Some(skill_id.to_string()),
+                vector,
+                Some(metadata),
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn register_local_skills(
     app: AppHandle,
     app_state: State<'_, AppState>,
 ) -> Result<usize, String> {
     register_local_skills_inner(app, app_state.inner()).await
+}
+
+#[tauri::command]
+pub async fn list_local_skill_runtime_statuses(
+    app_state: State<'_, AppState>,
+) -> Result<Vec<LocalSkillRuntimeStatus>, String> {
+    let installs = app_state
+        .mcp
+        .store
+        .list_local_skill_install_details()
+        .await
+        .map_err(to_string)?;
+    let mut statuses = Vec::with_capacity(installs.len());
+    for install in &installs {
+        statuses
+            .push(build_local_skill_runtime_status(app_state.mcp.store.as_ref(), install).await?);
+    }
+    Ok(statuses)
+}
+
+#[tauri::command]
+pub async fn update_local_skill_runtime_settings(
+    app_state: State<'_, AppState>,
+    skill_id: String,
+    payload: UpdateLocalSkillRuntimeSettingsRequest,
+) -> Result<LocalSkillRuntimeStatus, String> {
+    let normalized_skill_id = skill_id.trim().to_string();
+    if normalized_skill_id.is_empty() {
+        return Err("skill_id is required".to_string());
+    }
+    let installs = app_state
+        .mcp
+        .store
+        .list_local_skill_install_details()
+        .await
+        .map_err(to_string)?;
+    let install = installs
+        .into_iter()
+        .find(|item| item.skill_id == normalized_skill_id)
+        .ok_or_else(|| format!("local skill {} is not installed", normalized_skill_id))?;
+
+    let mut settings = install
+        .user_settings_json
+        .clone()
+        .unwrap_or_else(|| json!({}));
+    if !settings.is_object() {
+        settings = json!({});
+    }
+    let settings_obj = settings
+        .as_object_mut()
+        .ok_or_else(|| "skill settings must be an object".to_string())?;
+    if let Some(env_json) = payload.env_json.as_ref() {
+        app_state
+            .mcp
+            .store
+            .replace_local_skill_env_secrets(&normalized_skill_id, env_json)
+            .await
+            .map_err(to_string)?;
+        settings_obj.remove("env_json");
+    }
+    if let Some(config_json) = payload.config_json {
+        settings_obj.insert("config_json".to_string(), json!(config_json));
+    }
+
+    app_state
+        .mcp
+        .store
+        .update_local_skill_user_settings(&normalized_skill_id, &settings)
+        .await
+        .map_err(to_string)?;
+
+    let updated = app_state
+        .mcp
+        .store
+        .list_local_skill_install_details()
+        .await
+        .map_err(to_string)?
+        .into_iter()
+        .find(|item| item.skill_id == normalized_skill_id)
+        .ok_or_else(|| format!("local skill {} missing after update", normalized_skill_id))?;
+    build_local_skill_runtime_status(app_state.mcp.store.as_ref(), &updated).await
 }
 
 #[tauri::command]
@@ -1238,6 +2102,102 @@ mod tests {
                 .pointer("/capabilities/0")
                 .and_then(|value| value.as_str()),
             Some("user_skill")
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn resolve_local_skill_definition_captures_openclaw_metadata_and_scripts() {
+        let dir = temp_skill_dir("openclaw-compat-skill");
+        std::fs::write(
+            dir.join("SKILL.md"),
+            concat!(
+                "---\n",
+                "name: weather helper\n",
+                "description: OpenClaw compatible weather skill\n",
+                "metadata:\n",
+                "  openclaw:\n",
+                "    skillKey: clawhub.weather\n",
+                "    requires:\n",
+                "      env: [OPENWEATHER_API_KEY]\n",
+                "      bin: [python3]\n",
+                "      config: [weather.city]\n",
+                "    install:\n",
+                "      - pip install -r requirements.txt\n",
+                "---\n\n",
+                "Use scripts/fetch_weather.py to fetch weather data.\n"
+            ),
+        )
+        .expect("write skill docs");
+        std::fs::create_dir_all(dir.join("scripts")).expect("create scripts dir");
+        std::fs::create_dir_all(dir.join("references")).expect("create references dir");
+        std::fs::create_dir_all(dir.join("assets")).expect("create assets dir");
+        std::fs::write(
+            dir.join("scripts").join("fetch_weather.py"),
+            "print('ok')\n",
+        )
+        .expect("write script");
+        std::fs::write(
+            dir.join("references").join("usage.md"),
+            "Reference content for this skill.",
+        )
+        .expect("write reference");
+        std::fs::write(dir.join("assets").join("icon.svg"), "<svg />").expect("write asset");
+
+        let resolved = resolve_local_skill_definition(&dir, "user_skill", None, None)
+            .expect("resolve skill")
+            .expect("skill exists");
+
+        let manifest: JsonValue =
+            serde_json::from_str(&resolved.manifest_json).expect("manifest json");
+        assert_eq!(
+            manifest
+                .pointer("/compatibility/ecosystem")
+                .and_then(|value| value.as_str()),
+            Some("openclaw_agentskills")
+        );
+        assert_eq!(
+            manifest
+                .pointer("/compatibility/execution_mode")
+                .and_then(|value| value.as_str()),
+            Some("script_guidance")
+        );
+        assert_eq!(
+            manifest
+                .pointer("/compatibility/skill_key")
+                .and_then(|value| value.as_str()),
+            Some("clawhub.weather")
+        );
+        assert_eq!(
+            manifest
+                .pointer("/compatibility/requires/config/0")
+                .and_then(|value| value.as_str()),
+            Some("weather.city")
+        );
+        assert_eq!(
+            manifest
+                .pointer("/compatibility/eligibility/missing_config/0")
+                .and_then(|value| value.as_str()),
+            Some("weather.city")
+        );
+        assert_eq!(
+            manifest
+                .pointer("/source_metadata/assets/script_paths/0")
+                .and_then(|value| value.as_str()),
+            Some("scripts/fetch_weather.py")
+        );
+        assert_eq!(
+            manifest
+                .pointer("/source_metadata/assets/reference_paths/0")
+                .and_then(|value| value.as_str()),
+            Some("references/usage.md")
+        );
+        assert_eq!(
+            manifest
+                .pointer("/source_metadata/assets/resource_paths/0")
+                .and_then(|value| value.as_str()),
+            Some("assets/icon.svg")
         );
 
         let _ = std::fs::remove_dir_all(dir);

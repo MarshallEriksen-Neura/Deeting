@@ -41,6 +41,7 @@ use crate::modules::mcp::types::{
     McpSourceType, McpTool, McpToolConfigPayload, McpToolStatus, McpTrustLevel,
     UpdateLocalAssistantRequest,
 };
+use crate::modules::providers::store::secret_store::SecretStore;
 
 const DEFAULT_LOCAL_SOURCE_PATH: &str = "~/.config/deeting/mcp.json";
 const DEFAULT_CLOUD_SOURCE_NAME: &str = "Deeting Cloud";
@@ -63,6 +64,7 @@ pub struct McpStore {
     /// Serializes all transactional writes at the pool level, eliminating
     /// SQLite "database is locked" errors from concurrent write contention.
     pub(crate) write_pool: SqlitePool,
+    pub(crate) secret_store: SecretStore,
 }
 
 #[derive(Debug, Clone)]
@@ -86,6 +88,47 @@ pub struct LocalSkillInstallSnapshot {
     pub is_enabled: bool,
     pub runtime: Option<String>,
     pub install_path: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct LocalSkillInstallDetail {
+    pub skill_id: String,
+    pub installed_version: Option<String>,
+    pub is_enabled: bool,
+    pub runtime: Option<String>,
+    pub install_path: String,
+    pub manifest_json: String,
+    pub user_settings_json: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone)]
+pub struct LocalSkillToolBindingSnapshot {
+    pub binding_id: String,
+    pub binding_kind: String,
+    pub skill_id: String,
+    pub callable_name: String,
+    pub tool_name: String,
+    pub description: String,
+    pub input_schema: Option<serde_json::Value>,
+    pub output_schema: Option<serde_json::Value>,
+    pub entry_path: String,
+    pub runtime: String,
+    pub timeout_seconds: u64,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct LocalSkillToolBindingUpsert {
+    pub binding_id: String,
+    pub binding_kind: String,
+    pub callable_name: String,
+    pub tool_name: String,
+    pub description: String,
+    pub input_schema_json: Option<String>,
+    pub output_schema_json: Option<String>,
+    pub entry_path: String,
+    pub runtime: String,
+    pub timeout_seconds: u64,
 }
 
 mod assistants;
@@ -112,18 +155,37 @@ impl McpStore {
             .connect_with(options)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
-        Ok(Self { pool, write_pool })
+        let secret_store =
+            SecretStore::new(database_url).map_err(|err| McpError::Storage(err.to_string()))?;
+        Ok(Self {
+            pool,
+            write_pool,
+            secret_store,
+        })
     }
 
     pub fn with_pool(pool: SqlitePool) -> Self {
+        let secret_store =
+            SecretStore::new("sqlite::memory:").expect("init in-memory secret store for mcp");
         Self {
             write_pool: pool.clone(),
             pool,
+            secret_store,
         }
     }
 
-    pub fn with_pool_and_write_pool(pool: SqlitePool, write_pool: SqlitePool) -> Self {
-        Self { pool, write_pool }
+    pub fn with_pool_and_write_pool(
+        pool: SqlitePool,
+        write_pool: SqlitePool,
+        database_url: &str,
+    ) -> Result<Self, McpError> {
+        let secret_store =
+            SecretStore::new(database_url).map_err(|err| McpError::Storage(err.to_string()))?;
+        Ok(Self {
+            pool,
+            write_pool,
+            secret_store,
+        })
     }
 
     /// Begin a write transaction on the dedicated single-connection write pool.
@@ -368,6 +430,67 @@ impl McpStore {
             r#"
             CREATE INDEX IF NOT EXISTS idx_local_skill_install_user_enabled
             ON local_skill_install(user_id, is_enabled);
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS local_skill_tool_binding (
+              user_id TEXT NOT NULL,
+              binding_id TEXT NOT NULL,
+              binding_kind TEXT NOT NULL,
+              skill_id TEXT NOT NULL,
+              callable_name TEXT NOT NULL,
+              tool_name TEXT NOT NULL,
+              description TEXT NOT NULL,
+              input_schema_json TEXT,
+              output_schema_json TEXT,
+              entry_path TEXT NOT NULL,
+              runtime TEXT NOT NULL,
+              timeout_seconds INTEGER NOT NULL,
+              updated_at TEXT NOT NULL,
+              PRIMARY KEY (user_id, binding_id)
+            );
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_local_skill_tool_binding_callable_name
+            ON local_skill_tool_binding(user_id, callable_name);
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_local_skill_tool_binding_skill_id
+            ON local_skill_tool_binding(user_id, skill_id);
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS local_skill_secret (
+              user_id TEXT NOT NULL,
+              skill_id TEXT NOT NULL,
+              env_key TEXT NOT NULL,
+              secret_ciphertext TEXT NOT NULL,
+              secret_key_version INTEGER NOT NULL DEFAULT 0,
+              updated_at TEXT NOT NULL,
+              PRIMARY KEY (user_id, skill_id, env_key)
+            );
             "#,
         )
         .execute(&self.pool)

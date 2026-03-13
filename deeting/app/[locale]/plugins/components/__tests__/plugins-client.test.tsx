@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { PluginsClient as DashboardPluginsClient } from "@/app/[locale]/dashboard/plugins/components/plugins-client"
 import { PluginsClient as PublicPluginsClient } from "@/app/[locale]/plugins/components/plugins-client"
 import { isDesktopRuntime } from "@/lib/api/plugin-market"
+import { useLocalSkillRuntimeStatuses } from "@/hooks/use-local-skill-runtime-statuses"
 import { usePluginMarket } from "@/lib/swr/use-plugin-market"
 
 jest.mock("next-intl", () => ({
@@ -27,6 +28,10 @@ jest.mock("@/hooks/use-debounce", () => ({
   useDebounce: (value: string) => value,
 }))
 
+jest.mock("@/hooks/use-local-skill-runtime-statuses", () => ({
+  useLocalSkillRuntimeStatuses: jest.fn(),
+}))
+
 jest.mock("@/lib/swr/use-plugin-market", () => ({
   usePluginMarket: jest.fn(),
 }))
@@ -35,6 +40,8 @@ jest.mock("@/lib/api/plugin-market", () => ({
   installPlugin: jest.fn(),
   uninstallPlugin: jest.fn(),
   submitPluginRepo: jest.fn(),
+  fetchLocalSkillRuntimeStatuses: jest.fn(async () => []),
+  updateLocalSkillRuntimeSettings: jest.fn(),
   isDesktopRuntime: jest.fn(),
   isUserVisiblePlugin: (plugin: { source_kind?: string }) => plugin.source_kind !== "official",
 }))
@@ -78,8 +85,14 @@ jest.mock("@/components/plugins/import-repo-dialog", () => ({
   ImportRepoDialog: () => <button type="button">import-repo</button>,
 }))
 
+jest.mock("@/components/plugins/skill-runtime-config-sheet", () => ({
+  SkillRuntimeConfigSheet: () => null,
+}))
+
 const mockUsePluginMarket = usePluginMarket as jest.MockedFunction<typeof usePluginMarket>
 const mockIsDesktopRuntime = isDesktopRuntime as jest.MockedFunction<typeof isDesktopRuntime>
+const mockUseLocalSkillRuntimeStatuses =
+  useLocalSkillRuntimeStatuses as jest.MockedFunction<typeof useLocalSkillRuntimeStatuses>
 
 describe("PluginsClient store-only actions", () => {
   const mockMutate = jest.fn()
@@ -87,6 +100,10 @@ describe("PluginsClient store-only actions", () => {
   beforeEach(() => {
     jest.clearAllMocks()
     mockIsDesktopRuntime.mockReturnValue(true)
+    mockUseLocalSkillRuntimeStatuses.mockReturnValue({
+      runtimeStatuses: {},
+      refreshRuntimeStatuses: jest.fn(),
+    })
     mockUsePluginMarket.mockReturnValue({
       plugins: [
         {

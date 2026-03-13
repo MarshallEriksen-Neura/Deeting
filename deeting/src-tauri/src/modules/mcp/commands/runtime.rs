@@ -84,6 +84,7 @@ pub(crate) use summary_generation::{
 pub(crate) use tool_execution::{
     approve_mcp_tool_inner_with_context, execute_local_mcp_tool, execute_mcp_tool,
     execute_or_queue_mcp_tool_call_with_tool_ref, reject_mcp_tool_inner,
+    resolve_skill_binding_by_ref,
 };
 pub(crate) use tool_resolution::{
     build_db_tool_availability_catalog, build_desktop_mcp_tool_views,
@@ -118,5 +119,6 @@ pub(crate) use onboarding::{derive_skill_name_from_repo_url, parse_skill_onboard
 pub(crate) use remote_transport::list_local_stdio_tools;
 #[cfg(test)]
 pub(crate) use tool_execution::{
-    approve_mcp_tool_inner, execute_or_queue_mcp_tool_call, resolve_skill_env,
+    approve_mcp_tool_inner, execute_or_queue_mcp_tool_call,
+    execute_or_queue_mcp_tool_call_with_context, resolve_skill_env,
 };

@@ -39,15 +39,32 @@
       "install": "Install",
       "installing": "Installing...",
       "installed": "Installed",
+      "configure": "Configure",
       "uninstall": "Uninstall",
       "noDescription": "No description",
-      "permissions": "Permissions required"
+      "permissions": "Permissions required",
+      "missingRuntime": "Runtime setup required"
     },
     "status": {
       "active": "Active",
       "pending": "Pending",
       "disabled": "Disabled",
       "draft": "Draft"
+    },
+    "runtimeStatus": {
+      "ready": "Ready",
+      "missingBin": "Missing dependency",
+      "missingEnv": "Missing env",
+      "missingConfig": "Missing config",
+      "docsOnly": "Docs only",
+      "reason": {
+        "skill_disabled": "This skill is currently disabled",
+        "missing_binary": "Missing local runtime dependency",
+        "missing_env": "Missing environment variable",
+        "missing_config": "Missing config value",
+        "docs_only": "This skill currently supports documentation guidance only",
+        "unknown": "This skill is not runnable yet"
+      }
     },
     "dialog": {
       "title": "Permission Confirmation",
@@ -105,6 +122,31 @@
       "successTitle": "Repository submitted",
       "successDesc": "The plugin is being ingested and will appear shortly.",
       "error": "Failed to submit repository. Please try again."
+    },
+    "runtimeConfig": {
+      "title": "Configure {name}",
+      "description": "Provide the environment variables and config values this skill needs. These settings stay on the local desktop runtime.",
+      "noRuntimeStatus": "No local runtime status is available yet.",
+      "executionMode": "Execution mode: {mode}",
+      "ecosystem": "Skill ecosystem: {ecosystem}",
+      "binSection": "Local Dependencies",
+      "binMissing": "{name} is missing or unavailable",
+      "binReady": "{name} is available",
+      "envSection": "Environment Variables",
+      "configSection": "Config Values",
+      "noEnvRequired": "This skill does not currently declare any required environment variables.",
+      "noConfigRequired": "This skill does not currently declare any required config values.",
+      "envPlaceholder": "Enter value (stored locally)",
+      "configPlaceholder": "Enter config value",
+      "configured": "Configured via {source}",
+      "missing": "Missing",
+      "installHints": "Install Hints",
+      "save": "Save Settings",
+      "saving": "Saving...",
+      "savedTitle": "Skill settings saved",
+      "savedDesc": "Local runtime settings were updated.",
+      "saveFailedTitle": "Save failed",
+      "saveFailedDesc": "Could not update local skill settings. Please try again."
     }
   }
 }

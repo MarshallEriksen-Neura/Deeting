@@ -208,17 +208,39 @@ const toAssistantDTO = (
 }
 
 async function getLocalAssistantDTOById(assistantId: string): Promise<AssistantDTO> {
-  const [entities, versions] = await Promise.all([
-    invokeTauri<LocalAssistantEntityPayload[]>("list_local_assistant_entities"),
-    invokeTauri<LocalAssistantVersionPayload[]>("list_local_assistant_versions", {
-      assistant_id: assistantId,
-    }),
-  ])
+  const { entities, versions } = await getLocalAssistantBaseData()
   const entity = (entities ?? []).find((item) => item.id === assistantId)
   if (!entity) {
     throw new Error("local assistant not found")
   }
-  return AssistantDTOSchema.parse(toAssistantDTO(entity, versions ?? []))
+  const entityVersions = (versions ?? []).filter((v) => v.assistant_id === assistantId)
+  return AssistantDTOSchema.parse(toAssistantDTO(entity, entityVersions))
+}
+
+// Shared cache for local assistant base data to avoid duplicate Tauri calls
+let localAssistantBaseDataCache: Promise<{
+  entities: LocalAssistantEntityPayload[]
+  versions: LocalAssistantVersionPayload[]
+}> | null = null
+
+export function invalidateLocalAssistantCache() {
+  localAssistantBaseDataCache = null
+}
+
+async function getLocalAssistantBaseData(): Promise<{
+  entities: LocalAssistantEntityPayload[]
+  versions: LocalAssistantVersionPayload[]
+}> {
+  if (localAssistantBaseDataCache) {
+    return localAssistantBaseDataCache
+  }
+
+  localAssistantBaseDataCache = Promise.all([
+    invokeTauri<LocalAssistantEntityPayload[]>("list_local_assistant_entities"),
+    invokeTauri<LocalAssistantVersionPayload[]>("list_local_assistant_versions"),
+  ]).then(([entities, versions]) => ({ entities: entities ?? [], versions: versions ?? [] }))
+
+  return localAssistantBaseDataCache
 }
 
 const normalizeTagForMatch = (tag: string) => tag.replace(/^#/, "").trim().toLowerCase()
@@ -239,10 +261,7 @@ export async function fetchAssistantMarket(query: AssistantMarketQuery) {
   if (isTauriRuntime()) {
     await trySyncLocalSystemAssetsFromCloud()
 
-    const [entities, versions] = await Promise.all([
-      invokeTauri<LocalAssistantEntityPayload[]>("list_local_assistant_entities"),
-      invokeTauri<LocalAssistantVersionPayload[]>("list_local_assistant_versions"),
-    ])
+    const { entities, versions } = await getLocalAssistantBaseData()
 
     const versionsByAssistant = new Map<string, LocalAssistantVersionPayload[]>()
     for (const version of versions ?? []) {
@@ -334,10 +353,7 @@ export async function fetchAssistantInstalls(params: { cursor?: string | null; s
   if (isTauriRuntime()) {
     await trySyncLocalSystemAssetsFromCloud()
 
-    const [entities, versions] = await Promise.all([
-      invokeTauri<LocalAssistantEntityPayload[]>("list_local_assistant_entities"),
-      invokeTauri<LocalAssistantVersionPayload[]>("list_local_assistant_versions"),
-    ])
+    const { entities, versions } = await getLocalAssistantBaseData()
 
     const versionMap = new Map<string, LocalAssistantVersionPayload[]>()
     for (const version of versions ?? []) {
@@ -421,10 +437,7 @@ export async function fetchAssistantTags() {
 
 export async function fetchOwnedAssistants(params: { cursor?: string | null; size?: number }) {
   if (isTauriRuntime()) {
-    const [entities, versions] = await Promise.all([
-      invokeTauri<LocalAssistantEntityPayload[]>("list_local_assistant_entities"),
-      invokeTauri<LocalAssistantVersionPayload[]>("list_local_assistant_versions"),
-    ])
+    const { entities, versions } = await getLocalAssistantBaseData()
 
     const versionMap = new Map<string, LocalAssistantVersionPayload[]>()
 
@@ -606,6 +619,7 @@ export async function createAssistant(payload: {
         cloud_id: null,
       },
     })
+    invalidateLocalAssistantCache()
     return getLocalAssistantDTOById(id)
   }
 
@@ -656,6 +670,7 @@ export async function updateAssistant(
         cloud_id: null,
       },
     })
+    invalidateLocalAssistantCache()
     return getLocalAssistantDTOById(assistantId)
   }
 
@@ -670,6 +685,7 @@ export async function updateAssistant(
 export async function deleteAssistant(assistantId: string) {
   if (isTauriRuntime()) {
     await invokeTauri<void>("delete_local_assistant", { id: assistantId })
+    invalidateLocalAssistantCache()
     return
   }
 

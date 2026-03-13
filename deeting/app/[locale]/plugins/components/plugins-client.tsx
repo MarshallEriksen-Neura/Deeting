@@ -11,11 +11,14 @@ import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { PluginCard } from "@/components/plugins/plugin-card"
 import { PermissionConfirmDialog } from "@/components/plugins/permission-confirm-dialog"
+import { SkillRuntimeConfigSheet } from "@/components/plugins/skill-runtime-config-sheet"
+import { useLocalSkillRuntimeStatuses } from "@/hooks/use-local-skill-runtime-statuses"
 import { usePluginMarket } from "@/lib/swr/use-plugin-market"
 import {
   installPlugin,
   isUserVisiblePlugin,
   uninstallPlugin,
+  updateLocalSkillRuntimeSettings,
 } from "@/lib/api/plugin-market"
 import { useDebounce } from "@/hooks/use-debounce"
 import type { PluginMarketSkillItem } from "@/lib/api/plugin-market"
@@ -33,11 +36,15 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
   const debouncedQuery = useDebounce(searchQuery, 300)
 
   const { plugins, isLoading, error, mutate } = usePluginMarket()
+  const { runtimeStatuses, refreshRuntimeStatuses } = useLocalSkillRuntimeStatuses()
 
   // Permission dialog state
   const [dialogOpen, setDialogOpen] = React.useState(false)
   const [selectedPlugin, setSelectedPlugin] = React.useState<PluginMarketSkillItem | null>(null)
   const [isInstalling, setIsInstalling] = React.useState(false)
+  const [selectedRuntimePlugin, setSelectedRuntimePlugin] = React.useState<PluginMarketSkillItem | null>(null)
+  const [configSheetOpen, setConfigSheetOpen] = React.useState(false)
+  const [isSavingRuntimeConfig, setIsSavingRuntimeConfig] = React.useState(false)
 
   const handleInstallClick = React.useCallback((plugin: PluginMarketSkillItem) => {
     setSelectedPlugin(plugin)
@@ -55,6 +62,7 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
         )
         setDialogOpen(false)
         await mutate()
+        await refreshRuntimeStatuses()
       } catch {
         toast.error(t("toast.installFailedTitle"), {
           description: t("toast.installFailedDesc"),
@@ -63,7 +71,7 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
         setIsInstalling(false)
       }
     },
-    [mutate, selectedPlugin?.name, t]
+    [mutate, refreshRuntimeStatuses, selectedPlugin?.name, t]
   )
 
   const handleUninstall = React.useCallback(
@@ -74,13 +82,41 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
           description: t("toast.uninstalledDesc"),
         })
         await mutate()
+        await refreshRuntimeStatuses()
       } catch {
         toast.error(t("toast.uninstallFailedTitle"), {
           description: t("toast.uninstallFailedDesc"),
         })
       }
     },
-    [mutate, t]
+    [mutate, refreshRuntimeStatuses, t]
+  )
+
+  const handleConfigure = React.useCallback((plugin: PluginMarketSkillItem) => {
+    setSelectedRuntimePlugin(plugin)
+    setConfigSheetOpen(true)
+  }, [])
+
+  const handleSaveRuntimeConfig = React.useCallback(
+    async (payload: { env_json: Record<string, string>; config_json: Record<string, unknown> }) => {
+      if (!selectedRuntimePlugin) return
+      setIsSavingRuntimeConfig(true)
+      try {
+        await updateLocalSkillRuntimeSettings(selectedRuntimePlugin.id, payload)
+        await refreshRuntimeStatuses()
+        toast.success(t("runtimeConfig.savedTitle"), {
+          description: t("runtimeConfig.savedDesc"),
+        })
+        setConfigSheetOpen(false)
+      } catch {
+        toast.error(t("runtimeConfig.saveFailedTitle"), {
+          description: t("runtimeConfig.saveFailedDesc"),
+        })
+      } finally {
+        setIsSavingRuntimeConfig(false)
+      }
+    },
+    [refreshRuntimeStatuses, selectedRuntimePlugin, t],
   )
 
   const userVisiblePlugins = React.useMemo(
@@ -208,8 +244,10 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
               <PluginCard
                 key={plugin.id}
                 plugin={plugin}
+                runtimeStatus={runtimeStatuses[plugin.id] ?? null}
                 onInstall={handleInstallClick}
                 onUninstall={handleUninstall}
+                onConfigure={handleConfigure}
               />
             ))}
       </div>
@@ -221,6 +259,16 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
         plugin={selectedPlugin}
         onConfirm={handleConfirmInstall}
         isInstalling={isInstalling}
+      />
+      <SkillRuntimeConfigSheet
+        open={configSheetOpen}
+        onOpenChange={setConfigSheetOpen}
+        plugin={selectedRuntimePlugin}
+        runtimeStatus={
+          selectedRuntimePlugin ? runtimeStatuses[selectedRuntimePlugin.id] ?? null : null
+        }
+        isSaving={isSavingRuntimeConfig}
+        onSave={handleSaveRuntimeConfig}
       />
     </div>
   )

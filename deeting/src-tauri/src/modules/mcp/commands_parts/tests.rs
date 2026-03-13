@@ -43,6 +43,15 @@ mod tests {
         store
     }
 
+    fn create_temp_skill_root(test_name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "deeting-skill-root-{test_name}-{}",
+            Uuid::new_v4().simple()
+        ));
+        std::fs::create_dir_all(&dir).expect("create temp skill root");
+        dir
+    }
+
     async fn create_test_memory_state(
         test_name: &str,
         vector_dim: i32,
@@ -1065,6 +1074,434 @@ for raw_line in sys.stdin:
         assert!(matched.get("required_parameters").is_some());
         assert!(matched.get("python_stub").is_some());
 
+        server_handle.abort();
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[tokio::test]
+    async fn register_local_skills_materializes_skill_tool_bindings_and_assets() {
+        let test_name = "skill-binding-materialization";
+        let (base_url, server_handle) = start_mock_embedding_server(HashMap::new()).await;
+        let provider_state = std::sync::Arc::new(create_test_provider_state(test_name, &base_url).await);
+        let memory_state = std::sync::Arc::new(create_test_memory_state(test_name, 3).await);
+        let store = create_test_store(test_name).await;
+        let root = create_temp_skill_root(test_name);
+        let skill_dir = root.join("weather-skill");
+        std::fs::create_dir_all(&skill_dir).expect("create skill dir");
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            "# Weather Skill\n\nUse this skill to fetch weather data.",
+        )
+        .expect("write skill docs");
+        std::fs::write(
+            skill_dir.join("deeting.json"),
+            serde_json::json!({
+                "id": "official.skills.weather",
+                "name": "Weather Skill",
+                "description": "Weather data skill",
+                "entry": { "backend": "main.py" },
+                "runtime": ["local"],
+                "execution": { "timeout_seconds": 15 }
+            })
+            .to_string(),
+        )
+        .expect("write manifest");
+        std::fs::write(
+            skill_dir.join("main.py"),
+            "import json,sys\npayload=json.load(sys.stdin)\njson.dump({\"ok\": True, \"method\": payload.get(\"method\"), \"arguments\": payload.get(\"arguments\", {})}, sys.stdout)\n",
+        )
+        .expect("write backend entry");
+        std::fs::write(
+            skill_dir.join("llm-tool.yaml"),
+            "tools:\n  - name: get_weather\n    description: Fetch weather data\n    parameters:\n      type: object\n      properties:\n        city:\n          type: string\n      required: [city]\n",
+        )
+        .expect("write tool manifest");
+
+        let count = register_local_skills_from_scan_targets_inner(
+            &[(root.clone(), "user_skill")],
+            "",
+            &store,
+            provider_state.clone(),
+            memory_state.clone(),
+            true,
+        )
+        .await
+        .expect("register local skills");
+
+        assert_eq!(count, 1);
+        let bindings = store
+            .list_enabled_local_skill_tool_bindings()
+            .await
+            .expect("list bindings");
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].skill_id, "official.skills.weather");
+        assert_eq!(
+            bindings[0].callable_name,
+            "skill.official.skills.weather.get_weather"
+        );
+        assert_eq!(bindings[0].tool_name, "get_weather");
+
+        let assets = memory_state
+            .service
+            .list_assets_catalog()
+            .await
+            .expect("list assets");
+        let binding_asset = assets
+            .iter()
+            .find(|asset| asset.get("asset_type").and_then(serde_json::Value::as_str) == Some("skill_tool"))
+            .expect("skill tool asset");
+        assert_eq!(
+            binding_asset.get("name").and_then(serde_json::Value::as_str),
+            Some("skill.official.skills.weather.get_weather")
+        );
+        assert_eq!(
+            binding_asset
+                .get("metadata")
+                .and_then(|value| value.get("asset_namespace"))
+                .and_then(serde_json::Value::as_str),
+            Some("skill")
+        );
+        assert_eq!(
+            binding_asset
+                .get("metadata")
+                .and_then(|value| value.get("binding_id"))
+                .and_then(serde_json::Value::as_str),
+            Some("skill_binding::official.skills.weather::get_weather")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+        server_handle.abort();
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[tokio::test]
+    async fn execute_or_queue_executes_skill_binding_by_callable_name() {
+        let store = create_test_store("execute-skill-binding").await;
+        let root = create_temp_skill_root("execute-skill-binding");
+        let skill_dir = root.join("weather-skill");
+        std::fs::create_dir_all(&skill_dir).expect("create skill dir");
+        std::fs::write(
+            skill_dir.join("deeting.json"),
+            serde_json::json!({
+                "id": "official.skills.weather",
+                "name": "Weather Skill",
+                "entry": { "backend": "main.py" },
+                "runtime": ["local"],
+                "execution": { "timeout_seconds": 15 }
+            })
+            .to_string(),
+        )
+        .expect("write manifest");
+        std::fs::write(
+            skill_dir.join("main.py"),
+            "import json,sys\npayload=json.load(sys.stdin)\njson.dump({\"tool\": payload.get(\"method\"), \"city\": payload.get(\"arguments\", {}).get(\"city\")}, sys.stdout)\n",
+        )
+        .expect("write backend entry");
+
+        store
+            .upsert_local_skill_install(
+                "official.skills.weather",
+                Some("1.0.0"),
+                Some("local"),
+                &std::fs::read_to_string(skill_dir.join("deeting.json")).expect("read manifest"),
+                &skill_dir.to_string_lossy(),
+            )
+            .await
+            .expect("upsert skill install");
+        store
+            .replace_local_skill_tool_bindings(
+                "official.skills.weather",
+                &[crate::modules::mcp::store::LocalSkillToolBindingUpsert {
+                    binding_id: "skill_binding::official.skills.weather::get_weather".to_string(),
+                    binding_kind: "deeting_tool".to_string(),
+                    callable_name: "skill.official.skills.weather.get_weather".to_string(),
+                    tool_name: "get_weather".to_string(),
+                    description: "Fetch weather".to_string(),
+                    input_schema_json: Some(
+                        serde_json::json!({
+                            "type": "object",
+                            "properties": { "city": { "type": "string" } },
+                            "required": ["city"]
+                        })
+                        .to_string(),
+                    ),
+                    output_schema_json: None,
+                    entry_path: skill_dir.join("main.py").to_string_lossy().to_string(),
+                    runtime: "python".to_string(),
+                    timeout_seconds: 15,
+                }],
+            )
+            .await
+            .expect("replace skill bindings");
+
+        let pending_tool_calls =
+            RwLock::new(HashMap::<String, crate::modules::mcp::PendingToolCall>::new());
+        let result = execute_or_queue_mcp_tool_call(
+            &store,
+            &pending_tool_calls,
+            "skill.official.skills.weather.get_weather".to_string(),
+            serde_json::json!({"city": "Paris"}),
+            false,
+        )
+        .await
+        .expect("execute skill binding");
+
+        assert_eq!(result["tool"], serde_json::json!("get_weather"));
+        assert_eq!(result["city"], serde_json::json!("Paris"));
+        assert!(pending_tool_calls.read().await.is_empty());
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[tokio::test]
+    async fn execute_or_queue_executes_script_runner_binding_with_input_payload() {
+        let store = create_test_store("execute-script-runner-binding").await;
+        let root = create_temp_skill_root("execute-script-runner-binding");
+        let skill_dir = root.join("openclaw-weather");
+        std::fs::create_dir_all(skill_dir.join("scripts")).expect("create scripts dir");
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            "# Script-backed weather skill\n",
+        )
+        .expect("write docs");
+        std::fs::write(
+            skill_dir.join("scripts").join("fetch_weather.py"),
+            "import json,sys\npayload=json.load(sys.stdin)\nconfig=payload.get(\"__deeting_config\", {})\njson.dump({\"mode\":\"script_runner\", \"city\": payload.get(\"city\") or payload.get(\"input\", {}).get(\"city\"), \"region\": config.get(\"region\")}, sys.stdout)\n",
+        )
+        .expect("write script");
+
+        store
+            .upsert_local_skill_install(
+                "openclaw-weather",
+                Some("0.1.0"),
+                Some("local"),
+                "{\"id\":\"openclaw-weather\",\"name\":\"OpenClaw Weather\",\"runtime\":[\"local\"],\"execution\":{\"timeout_seconds\":15}}",
+                &skill_dir.to_string_lossy(),
+            )
+            .await
+            .expect("upsert skill install");
+        store
+            .replace_local_skill_tool_bindings(
+                "openclaw-weather",
+                &[crate::modules::mcp::store::LocalSkillToolBindingUpsert {
+                    binding_id: "skill_binding::openclaw-weather::fetch_weather".to_string(),
+                    binding_kind: "script_runner".to_string(),
+                    callable_name: "skill.openclaw-weather.fetch_weather".to_string(),
+                    tool_name: "fetch_weather".to_string(),
+                    description: "Generated script binding".to_string(),
+                    input_schema_json: Some(
+                        serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "input": { "type": "object" },
+                                "args": { "type": "array", "items": { "type": "string" } }
+                            }
+                        })
+                        .to_string(),
+                    ),
+                    output_schema_json: None,
+                    entry_path: skill_dir
+                        .join("scripts")
+                        .join("fetch_weather.py")
+                        .to_string_lossy()
+                        .to_string(),
+                    runtime: "python".to_string(),
+                    timeout_seconds: 15,
+                }],
+            )
+            .await
+            .expect("replace bindings");
+        store
+            .update_local_skill_user_settings(
+                "openclaw-weather",
+                &serde_json::json!({
+                    "config_json": { "region": "apac" }
+                }),
+            )
+            .await
+            .expect("save skill config");
+
+        let pending_tool_calls =
+            RwLock::new(HashMap::<String, crate::modules::mcp::PendingToolCall>::new());
+        let result = execute_or_queue_mcp_tool_call(
+            &store,
+            &pending_tool_calls,
+            "skill.openclaw-weather.fetch_weather".to_string(),
+            serde_json::json!({"input": {"city": "Tokyo"}}),
+            false,
+        )
+        .await
+        .expect("execute script runner binding");
+
+        assert_eq!(result["mode"], serde_json::json!("script_runner"));
+        assert_eq!(result["city"], serde_json::json!("Tokyo"));
+        assert_eq!(result["region"], serde_json::json!("apac"));
+        assert!(pending_tool_calls.read().await.is_empty());
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[tokio::test]
+    async fn execute_or_queue_requires_approval_for_bash_script_runner_binding() {
+        let store = create_test_store("approve-script-runner-binding").await;
+        let root = create_temp_skill_root("approve-script-runner-binding");
+        let skill_dir = root.join("shell-skill");
+        std::fs::create_dir_all(skill_dir.join("scripts")).expect("create scripts dir");
+        std::fs::write(
+            skill_dir.join("scripts").join("cleanup.sh"),
+            "#!/usr/bin/env bash\necho ok\n",
+        )
+        .expect("write script");
+
+        store
+            .upsert_local_skill_install(
+                "shell-skill",
+                Some("0.1.0"),
+                Some("local"),
+                "{\"id\":\"shell-skill\",\"name\":\"Shell Skill\",\"runtime\":[\"local\"],\"execution\":{\"timeout_seconds\":15}}",
+                &skill_dir.to_string_lossy(),
+            )
+            .await
+            .expect("upsert install");
+        store
+            .replace_local_skill_tool_bindings(
+                "shell-skill",
+                &[crate::modules::mcp::store::LocalSkillToolBindingUpsert {
+                    binding_id: "skill_binding::shell-skill::cleanup".to_string(),
+                    binding_kind: "script_runner".to_string(),
+                    callable_name: "skill.shell-skill.cleanup".to_string(),
+                    tool_name: "cleanup".to_string(),
+                    description: "Shell cleanup".to_string(),
+                    input_schema_json: None,
+                    output_schema_json: None,
+                    entry_path: skill_dir
+                        .join("scripts")
+                        .join("cleanup.sh")
+                        .to_string_lossy()
+                        .to_string(),
+                    runtime: "bash".to_string(),
+                    timeout_seconds: 15,
+                }],
+            )
+            .await
+            .expect("replace bindings");
+
+        let binding = store
+            .get_enabled_local_skill_tool_binding_by_ref(None, Some("skill.shell-skill.cleanup"))
+            .await
+            .expect("load binding")
+            .expect("binding");
+
+        let pending_tool_calls =
+            RwLock::new(HashMap::<String, crate::modules::mcp::PendingToolCall>::new());
+        let queued = execute_or_queue_mcp_tool_call_with_context(
+            &crate::modules::mcp::ToolApprovalContext::default(),
+            Some("HIGH"),
+            vec!["binding runtime is bash shell".to_string()],
+            None,
+            &store,
+            &pending_tool_calls,
+            "skill.shell-skill.cleanup".to_string(),
+            serde_json::json!({}),
+            true,
+        )
+        .await
+        .expect("queue approval");
+
+        assert_eq!(queued["status"], serde_json::json!("REQUIRES_APPROVAL"));
+        assert_eq!(queued["risk_level"], serde_json::json!("HIGH"));
+        assert_eq!(pending_tool_calls.read().await.len(), 1);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[tokio::test]
+    async fn register_local_skills_generates_script_runner_binding_for_openclaw_style_skill() {
+        let test_name = "skill-script-binding";
+        let (base_url, server_handle) = start_mock_embedding_server(HashMap::new()).await;
+        let provider_state =
+            std::sync::Arc::new(create_test_provider_state(test_name, &base_url).await);
+        let memory_state = std::sync::Arc::new(create_test_memory_state(test_name, 3).await);
+        let store = create_test_store(test_name).await;
+        let root = create_temp_skill_root(test_name);
+        let skill_dir = root.join("openclaw-weather");
+        std::fs::create_dir_all(skill_dir.join("scripts")).expect("create scripts dir");
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            concat!(
+                "---\n",
+                "name: openclaw weather\n",
+                "description: Script-backed weather helper\n",
+                "metadata:\n",
+                "  openclaw:\n",
+                "    skillKey: clawhub.weather\n",
+                "    requires:\n",
+                "      env: [OPENWEATHER_API_KEY]\n",
+                "---\n\n",
+                "Run scripts/fetch_weather.py.\n"
+            ),
+        )
+        .expect("write skill docs");
+        std::fs::write(
+            skill_dir.join("scripts").join("fetch_weather.py"),
+            "import json,sys\npayload=json.load(sys.stdin)\njson.dump({\"mode\":\"script_runner\", \"city\": payload.get(\"city\") or payload.get(\"input\", {}).get(\"city\")}, sys.stdout)\n",
+        )
+        .expect("write script");
+
+        let count = register_local_skills_from_scan_targets_inner(
+            &[(root.clone(), "user_skill")],
+            "",
+            &store,
+            provider_state.clone(),
+            memory_state.clone(),
+            true,
+        )
+        .await
+        .expect("register local skills");
+
+        assert_eq!(count, 1);
+        let bindings = store
+            .list_enabled_local_skill_tool_bindings()
+            .await
+            .expect("list bindings");
+        let binding = bindings
+            .iter()
+            .find(|binding| binding.binding_kind == "script_runner")
+            .expect("script runner binding");
+        assert_eq!(binding.tool_name, "fetch_weather");
+        assert_eq!(
+            binding.callable_name,
+            "skill.openclaw_weather.fetch_weather"
+        );
+
+        let search = build_local_sdk_search_result_with_runtime(
+            &store,
+            &provider_state.embedding,
+            memory_state.service.as_ref(),
+            "天气 script skill",
+            8,
+        )
+        .await;
+        let skill_tools = search["capability_groups"]["skill_tools"]
+            .as_array()
+            .expect("skill tools array");
+        let matched = skill_tools
+            .iter()
+            .find(|item| item["name"] == serde_json::json!("skill.openclaw_weather.fetch_weather"))
+            .expect("script runner surfaced");
+        assert_eq!(matched["asset_type"], serde_json::json!("skill_tool"));
+        assert_eq!(matched["asset_namespace"], serde_json::json!("skill"));
+        assert_eq!(matched["runnable_now"], serde_json::json!(false));
+        assert_eq!(
+            matched["missing_env"][0],
+            serde_json::json!("OPENWEATHER_API_KEY")
+        );
+        assert_eq!(matched["blocking_reason"], serde_json::json!("script_guidance"));
+
+        let _ = std::fs::remove_dir_all(root);
         server_handle.abort();
     }
 
