@@ -328,18 +328,16 @@ export function LoginForm({ onSuccess, onError, className }: LoginFormProps) {
               </GlassButton>
 
               <div className="text-center">
-                {/* Turnstile for resend */}
+                {/* Invisible Turnstile for resend (auto-verifies without user interaction) */}
                 {TURNSTILE_SITE_KEY && (
-                  <div className="mb-2 flex justify-center">
-                    <Turnstile
-                      ref={captchaRef}
-                      siteKey={TURNSTILE_SITE_KEY}
-                      onSuccess={setCaptchaToken}
-                      onExpire={() => setCaptchaToken(null)}
-                      onError={() => setCaptchaToken(null)}
-                      options={{ size: "flexible", theme: "light" }}
-                    />
-                  </div>
+                  <Turnstile
+                    ref={captchaRef}
+                    siteKey={TURNSTILE_SITE_KEY}
+                    onSuccess={setCaptchaToken}
+                    onExpire={() => setCaptchaToken(null)}
+                    onError={() => setCaptchaToken(null)}
+                    options={{ size: "invisible", theme: "light" }}
+                  />
                 )}
                 <GlassButton
                   type="button"

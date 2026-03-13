@@ -196,7 +196,7 @@ pub(crate) fn build_local_execution_policy(decision: &LocalRouteDecision) -> Loc
         LocalRouteKind::Worker => LocalExecutionPolicy {
             route: LocalRouteKind::Worker,
             plane: LocalExecutionPlane::WorkerReasoning,
-            allowed_tool_names: Vec::new(),
+            allowed_tool_names: vec![SEARCH_SDK_TOOL_NAME.to_string()],
             inject_code_mode_protocol: false,
             allow_worker_delegation: true,
             capability_snapshot: None,
@@ -271,7 +271,10 @@ fn enrich_execution_policy_with_runtime_discovery(
     mut policy: LocalExecutionPolicy,
     runtime_discovery: Option<&RuntimeDiscoveryBundle>,
 ) -> LocalExecutionPolicy {
-    if policy.route != LocalRouteKind::Direct {
+    if !matches!(
+        policy.route,
+        LocalRouteKind::Direct | LocalRouteKind::Worker
+    ) {
         policy.capability_snapshot = None;
         policy.allowed_tool_names = normalize_tool_names(policy.allowed_tool_names);
         return policy;
@@ -574,7 +577,7 @@ mod tests {
         let policy = build_local_execution_policy(&decision);
         assert_eq!(policy.route, LocalRouteKind::Worker);
         assert_eq!(policy.plane, LocalExecutionPlane::WorkerReasoning);
-        assert!(policy.allowed_tool_names.is_empty());
+        assert!(policy.allows_tool(SEARCH_SDK_TOOL_NAME));
         assert!(policy.allow_worker_delegation);
         assert!(!policy.inject_code_mode_protocol);
     }
@@ -641,5 +644,58 @@ mod tests {
         assert!(policy.allows_tool(SEARCH_SDK_TOOL_NAME));
         assert!(policy.allows_tool(SYS_SUBMIT_ONBOARDING_REQUEST_TOOL_NAME));
         assert!(!policy.allow_worker_delegation);
+    }
+
+    #[test]
+    fn build_local_control_plane_result_enriches_worker_policy_with_direct_capabilities() {
+        let decision = LocalRouteDecision {
+            route: LocalRouteKind::Worker,
+            reasons: vec!["multiple_direct_candidates".to_string()],
+            profile: TaskProfile {
+                explicit_route: None,
+                has_batch_scope: false,
+                wants_programmatic_logic: false,
+                wants_analysis: false,
+                wants_single_action: true,
+                destructive_intent: false,
+                approval_sensitive: false,
+            },
+            evidence: RouteEvidence {
+                direct_callable_capability_count: 2,
+                has_code_mode_executor: true,
+                any_mutating_capability: false,
+                any_high_risk_capability: false,
+                direct_capability_names: vec![
+                    "weather_lookup".to_string(),
+                    "tavily_search".to_string(),
+                ],
+            },
+        };
+        let runtime_discovery = RuntimeDiscoveryBundle::from_search_result(serde_json::json!({
+            "capabilities": [
+                {
+                    "name": "weather_lookup",
+                    "invocation_mode": "direct",
+                    "status": { "callable": true }
+                },
+                {
+                    "name": "tavily_search",
+                    "invocation_mode": "direct",
+                    "status": { "callable": true }
+                }
+            ]
+        }));
+        let result = build_local_control_plane_result(
+            &[],
+            Some(runtime_discovery),
+            Some(decision.clone()),
+            Some(build_local_execution_policy(&decision)),
+        );
+        let policy = result.execution_policy;
+        assert_eq!(policy.route, LocalRouteKind::Worker);
+        assert!(policy.allows_tool(SEARCH_SDK_TOOL_NAME));
+        assert!(policy.allows_tool("weather_lookup"));
+        assert!(policy.allows_tool("tavily_search"));
+        assert!(policy.capability_snapshot.is_some());
     }
 }

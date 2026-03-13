@@ -98,7 +98,7 @@ pub(crate) fn select_local_route_with_evidence(
         )
     } else if evidence.direct_callable_capability_count > 1 && profile.wants_single_action {
         (
-            LocalRouteKind::Worker,
+            LocalRouteKind::Direct,
             vec!["multiple_direct_candidates".to_string()],
         )
     } else {
@@ -625,6 +625,16 @@ mod tests {
                 high_risk: false,
                 expected_route: LocalRouteKind::Direct,
                 expected_reason: "single_direct_callable",
+            },
+            RouteCase {
+                name: "multi direct single-action lookup",
+                query: "查一下今天天津天气",
+                direct_callable_capability_count: 2,
+                has_code_mode_executor: true,
+                mutating: false,
+                high_risk: false,
+                expected_route: LocalRouteKind::Direct,
+                expected_reason: "multiple_direct_candidates",
             },
         ];
 
