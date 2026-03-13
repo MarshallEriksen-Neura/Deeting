@@ -22,6 +22,7 @@ export type ChatCompletionRequest = {
   regenerate?: boolean
   compare_only?: boolean
   context?: LocalContextSnapshot | unknown
+  metadata?: Record<string, unknown>
 }
 
 export type ChatCompletionResponse = {

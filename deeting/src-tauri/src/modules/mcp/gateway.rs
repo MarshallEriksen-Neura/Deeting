@@ -45,6 +45,7 @@ pub struct LocalChatCompletionRequest {
     pub session_id: Option<String>,
     pub regenerate: Option<bool>,
     pub compare_only: Option<bool>,
+    pub metadata: Option<Value>,
 }
 
 #[derive(Serialize)]
@@ -577,6 +578,8 @@ fn history_message_text(content: Option<&Value>) -> Option<String> {
 fn map_request_to_orchestrator_input(
     payload: LocalChatCompletionRequest,
 ) -> Result<LocalOrchestratorInput, String> {
+    let selected_knowledge_file_ids =
+        extract_selected_knowledge_file_ids(payload.metadata.as_ref());
     let session_id = normalize_optional_string(payload.session_id.as_deref())
         .ok_or_else(|| "session_id is required for desktop local chat".to_string())?;
     let stream = payload.stream.unwrap_or(true);
@@ -602,6 +605,7 @@ fn map_request_to_orchestrator_input(
         request_id: normalize_optional_string(payload.request_id.as_deref()),
         stream,
         status_stream,
+        selected_knowledge_file_ids,
     })
 }
 
@@ -609,6 +613,52 @@ fn normalize_optional_string(value: Option<&str>) -> Option<String> {
     value
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty())
+}
+
+fn extract_selected_knowledge_file_ids(metadata: Option<&Value>) -> Vec<String> {
+    let mut ids = Vec::new();
+    let Some(metadata) = metadata else {
+        return ids;
+    };
+
+    let from_knowledge = metadata
+        .get("knowledge")
+        .and_then(|value| value.get("doc_ids"))
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    for value in from_knowledge {
+        let normalized = value.trim();
+        if normalized.is_empty() || ids.iter().any(|existing| existing == normalized) {
+            continue;
+        }
+        ids.push(normalized.to_string());
+    }
+
+    let fallback = metadata
+        .get("selected_doc_ids")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    for value in fallback {
+        let normalized = value.trim();
+        if normalized.is_empty() || ids.iter().any(|existing| existing == normalized) {
+            continue;
+        }
+        ids.push(normalized.to_string());
+    }
+
+    ids
 }
 
 fn build_stream_error_payload(

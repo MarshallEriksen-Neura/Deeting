@@ -8,28 +8,25 @@ use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
 
 #[cfg(test)]
-use std::collections::HashMap;
-#[cfg(test)]
 use crate::modules::custom_task_agents::types::{
     CustomTaskAgentInvocationKind, CustomTaskAgentProfile,
 };
 #[cfg(test)]
 use crate::modules::mcp::commands::runtime::select_local_route;
 use crate::modules::mcp::commands::runtime::{
-    build_local_control_plane_result, build_local_control_plane_status_meta,
-    build_default_local_execution_policy, build_local_execution_policy,
+    build_default_local_execution_policy, build_local_control_plane_result,
+    build_local_control_plane_status_meta, build_local_execution_policy,
     build_runtime_discovery_bundle_with_runtime, maybe_override_route_with_custom_task_agent,
     render_local_route_prompt, run_local_execution_plane, select_local_route_with_evidence,
-    LocalControlPlaneResult, LocalExecutionRequest, LocalExecutionPolicy, LocalRouteDecision,
+    LocalControlPlaneResult, LocalExecutionPolicy, LocalExecutionRequest, LocalRouteDecision,
     RuntimeDiscoveryBundle,
 };
 #[cfg(test)]
 use crate::modules::mcp::commands::runtime::{
     build_local_prelude_messages, parse_router_prompt_local_context,
     render_local_base_system_prompt, render_local_router_base_prompt,
-    router_prompt_default_local_context,
-    router_prompt_response_language_for_locale_pref, select_custom_task_agent_candidate,
-    LocalRouteKind, PromptAssets,
+    router_prompt_default_local_context, router_prompt_response_language_for_locale_pref,
+    select_custom_task_agent_candidate, LocalRouteKind, PromptAssets,
 };
 use crate::modules::mcp::commands::{
     generate_local_conversation_title_with_model, resolve_local_model_connection,
@@ -38,6 +35,8 @@ use crate::modules::mcp::types::{CreateConversationMessageRequest, LocalChatInpu
 use crate::modules::memory::types::{LocalMemoryItem, LocalMemoryListQuery, LocalMemorySearchItem};
 use crate::modules::providers::model_guard::ensure_required_local_models_configured;
 use crate::state::AppState;
+#[cfg(test)]
+use std::collections::HashMap;
 
 const LOCAL_DELTA_CHUNK_CHARS: usize = 64;
 const DESKTOP_PERSONA_PROMPT_KEY: &str = "chat.persona_prompt";
@@ -259,6 +258,7 @@ fn build_desktop_local_chat_engine(
         Box::new(SummaryInjectionStep),
         Box::new(PersonaPromptInjectionStep),
         Box::new(SemanticMemoryInjectionStep),
+        Box::new(SelectedKnowledgeInjectionStep),
         Box::new(RouteSelectionStep),
         Box::new(SkillRecipeInjectionStep),
         Box::new(ActiveCapabilityHintStep),
@@ -281,6 +281,7 @@ pub struct LocalOrchestratorInput {
     pub request_id: Option<String>,
     pub stream: bool,
     pub status_stream: bool,
+    pub selected_knowledge_file_ids: Vec<String>,
 }
 
 struct LocalWorkflowContext {
@@ -309,6 +310,7 @@ struct LocalWorkflowContext {
     status_state: Option<String>,
     status_code: Option<String>,
     status_meta: Option<Value>,
+    selected_knowledge_file_ids: Vec<String>,
 }
 
 impl LocalWorkflowContext {
@@ -346,6 +348,7 @@ impl LocalWorkflowContext {
             status_state: None,
             status_code: None,
             status_meta: None,
+            selected_knowledge_file_ids: input.selected_knowledge_file_ids.clone(),
         }
     }
 
@@ -818,6 +821,191 @@ impl SemanticMemoryInjectionStep {
             .map(InjectedMemory::from_item)
             .collect())
     }
+}
+
+struct SelectedKnowledgeInjectionStep;
+
+impl LocalWorkflowStep<LocalWorkflowContext> for SelectedKnowledgeInjectionStep {
+    fn name(&self) -> &'static str {
+        "selected_knowledge_injection"
+    }
+
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a mut LocalWorkflowContext,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            if ctx.selected_knowledge_file_ids.is_empty() {
+                return Ok(());
+            }
+
+            let query = latest_user_message(&ctx.messages)
+                .and_then(normalize_knowledge_search_query)
+                .unwrap_or_default();
+            if query.is_empty() {
+                ctx.emit_status(
+                    "remember",
+                    Some("selected_knowledge_injection"),
+                    "success",
+                    "knowledge.context.loaded",
+                    Some(json!({
+                        "selected_files": ctx.selected_knowledge_file_ids.len(),
+                        "count": 0,
+                        "query_empty": true,
+                    })),
+                );
+                return Ok(());
+            }
+
+            ctx.emit_status(
+                "remember",
+                Some("selected_knowledge_injection"),
+                "running",
+                "knowledge.context.loading",
+                Some(json!({
+                    "selected_files": ctx.selected_knowledge_file_ids.len(),
+                })),
+            );
+
+            let lexical_hits = match ctx
+                .app_state
+                .knowledge
+                .store
+                .search_local_knowledge_chunks(&query, Some(40))
+                .await
+            {
+                Ok(value) => value,
+                Err(err) => {
+                    log::warn!(
+                        "selected_knowledge_injection: lexical search failed session={} err={}",
+                        ctx.session_id,
+                        err
+                    );
+                    ctx.emit_status(
+                        "remember",
+                        Some("selected_knowledge_injection"),
+                        "success",
+                        "knowledge.context.loaded",
+                        Some(json!({
+                            "selected_files": ctx.selected_knowledge_file_ids.len(),
+                            "count": 0,
+                            "search_error": true,
+                        })),
+                    );
+                    return Ok(());
+                }
+            };
+
+            let selected_ids: HashSet<String> = ctx
+                .selected_knowledge_file_ids
+                .iter()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+                .collect();
+            if selected_ids.is_empty() {
+                return Ok(());
+            }
+
+            let mut selected_hits = Vec::new();
+            for hit in lexical_hits {
+                if !selected_ids.contains(hit.file_id.as_str()) {
+                    continue;
+                }
+                selected_hits.push(hit);
+                if selected_hits.len() >= 4 {
+                    break;
+                }
+            }
+
+            if selected_hits.is_empty() {
+                ctx.emit_status(
+                    "remember",
+                    Some("selected_knowledge_injection"),
+                    "success",
+                    "knowledge.context.loaded",
+                    Some(json!({
+                        "selected_files": selected_ids.len(),
+                        "count": 0,
+                    })),
+                );
+                return Ok(());
+            }
+
+            let lines = selected_hits
+                .iter()
+                .map(|hit| {
+                    let snippet = compact_knowledge_snippet(&hit.content, 260);
+                    format!("- [{} #{}] {}", hit.file_name, hit.index + 1, snippet)
+                })
+                .collect::<Vec<_>>();
+            ctx.push_system_message(format!(
+                "## Selected Knowledge Context\nUse the following excerpts from user-selected local knowledge files when they are relevant:\n{}",
+                lines.join("\n")
+            ));
+
+            ctx.emit_status(
+                "remember",
+                Some("selected_knowledge_injection"),
+                "success",
+                "knowledge.context.loaded",
+                Some(json!({
+                    "selected_files": selected_ids.len(),
+                    "count": lines.len(),
+                })),
+            );
+            Ok(())
+        })
+    }
+}
+
+fn normalize_knowledge_search_query(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if !trimmed.starts_with('[') {
+        return Some(trimmed.to_string());
+    }
+
+    let parsed = serde_json::from_str::<Value>(trimmed).ok()?;
+    let blocks = parsed.as_array()?;
+    let mut text_parts = Vec::new();
+    for block in blocks {
+        let Some(block_type) = block.get("type").and_then(Value::as_str) else {
+            continue;
+        };
+        if block_type != "text" {
+            continue;
+        }
+        let text = block
+            .get("text")
+            .and_then(Value::as_str)
+            .or_else(|| block.get("content").and_then(Value::as_str))
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        if let Some(value) = text {
+            text_parts.push(value.to_string());
+        }
+    }
+    if text_parts.is_empty() {
+        return Some(trimmed.to_string());
+    }
+    Some(text_parts.join("\n"))
+}
+
+fn compact_knowledge_snippet(content: &str, max_chars: usize) -> String {
+    let normalized = content
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim()
+        .to_string();
+    if normalized.chars().count() <= max_chars {
+        return normalized;
+    }
+
+    let compact = normalized.chars().take(max_chars).collect::<String>();
+    format!("{}...", compact)
 }
 
 struct ActiveCapabilityHintStep;

@@ -144,6 +144,7 @@ interface ChatStore {
   // === 输入状态 ===
   input: string
   attachments: ChatImageAttachment[]
+  selectedKnowledgeFileIds: string[]
 
   // === 配置状态 ===
   config: ChatConfig
@@ -186,6 +187,9 @@ interface ChatStore {
   addAttachments: (attachments: ChatImageAttachment[]) => void
   removeAttachment: (attachmentId: string) => void
   clearAttachments: () => void
+  setSelectedKnowledgeFileIds: (fileIds: string[]) => void
+  toggleSelectedKnowledgeFileId: (fileId: string) => void
+  clearSelectedKnowledgeFileIds: () => void
   setConfig: (config: Partial<ChatConfig>) => void
   setStreamEnabled: (enabled: boolean) => void
   setModels: (models: ModelInfo[]) => void
@@ -223,6 +227,7 @@ export const useChatStore = create<ChatStore>()(
       // === 输入状态初始值 ===
       input: "",
       attachments: [],
+      selectedKnowledgeFileIds: [],
 
       // === 配置状态初始值 ===
       config: {
@@ -277,6 +282,7 @@ export const useChatStore = create<ChatStore>()(
                   messages: [],
                   input: "",
                   attachments: [],
+                  selectedKnowledgeFileIds: [],
                   errorMessage: null,
                   statusStage: null,
                   statusCode: null,
@@ -337,6 +343,7 @@ export const useChatStore = create<ChatStore>()(
             messages: [],
             input: "",
             attachments: [],
+            selectedKnowledgeFileIds: [],
             errorMessage: null,
             statusStage: null,
             statusCode: null,
@@ -349,7 +356,7 @@ export const useChatStore = create<ChatStore>()(
 
         try {
           // Step 1: 获取 agent 数据
-          let selectedAssistant: ChatAssistant | null = localAssistant ?? null
+          const selectedAssistant: ChatAssistant | null = localAssistant ?? null
 
           // 之前会从 API 获取 assistant 列表，现已移除，因为 chat 页面不再支持切换 assistant
           /*
@@ -622,6 +629,39 @@ export const useChatStore = create<ChatStore>()(
 
       clearAttachments: () => set({ attachments: [] }),
 
+      setSelectedKnowledgeFileIds: (fileIds) =>
+        set({
+          selectedKnowledgeFileIds: Array.from(
+            new Set(
+              fileIds
+                .map((value) => value.trim())
+                .filter((value) => value.length > 0)
+            )
+          ),
+        }),
+
+      toggleSelectedKnowledgeFileId: (fileId) =>
+        set((state) => {
+          const normalized = fileId.trim()
+          if (!normalized) return state
+          const exists = state.selectedKnowledgeFileIds.includes(normalized)
+          if (exists) {
+            return {
+              selectedKnowledgeFileIds: state.selectedKnowledgeFileIds.filter(
+                (id) => id !== normalized
+              ),
+            }
+          }
+          return {
+            selectedKnowledgeFileIds: [
+              ...state.selectedKnowledgeFileIds,
+              normalized,
+            ],
+          }
+        }),
+
+      clearSelectedKnowledgeFileIds: () => set({ selectedKnowledgeFileIds: [] }),
+
       setConfig: (newConfig) =>
         set((state) => ({ config: { ...state.config, ...newConfig } })),
 
@@ -733,6 +773,7 @@ export const useChatStore = create<ChatStore>()(
           compareByMessageId: {},
           input: "",
           attachments: [],
+          selectedKnowledgeFileIds: [],
           initialized: false, // 重置初始化状态
           sessionId: null,
           errorMessage: null,
@@ -750,6 +791,7 @@ export const useChatStore = create<ChatStore>()(
           compareByMessageId: {},
           input: "",
           attachments: [],
+          selectedKnowledgeFileIds: [],
           sessionId: null,
           initialized: false,
           errorMessage: null,
@@ -769,6 +811,7 @@ export const useChatStore = create<ChatStore>()(
           compareByMessageId: {},
           input: "",
           attachments: [],
+          selectedKnowledgeFileIds: [],
           initialized: false,
           isLoading: false,
           globalLoading: false,
@@ -816,9 +859,13 @@ export const useChatInput = () =>
   useChatStore((state) => ({
     input: state.input,
     attachments: state.attachments,
+    selectedKnowledgeFileIds: state.selectedKnowledgeFileIds,
     setInput: state.setInput,
     setAttachments: state.setAttachments,
     addAttachments: state.addAttachments,
     removeAttachment: state.removeAttachment,
     clearAttachments: state.clearAttachments,
+    setSelectedKnowledgeFileIds: state.setSelectedKnowledgeFileIds,
+    toggleSelectedKnowledgeFileId: state.toggleSelectedKnowledgeFileId,
+    clearSelectedKnowledgeFileIds: state.clearSelectedKnowledgeFileIds,
   }))

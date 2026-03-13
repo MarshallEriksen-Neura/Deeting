@@ -433,6 +433,7 @@ async fn handle_feishu_chat_event(
         request_id: None,
         stream: false,
         status_stream: false,
+        selected_knowledge_file_ids: Vec::new(),
     };
 
     // Execute local orchestrated chat without streaming back to UI.

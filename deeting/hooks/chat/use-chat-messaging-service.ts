@@ -98,6 +98,22 @@ function buildChatMessages(history: Message[], systemPrompt?: string): ChatMessa
   return mapped
 }
 
+function buildKnowledgeSelectionMetadata(selectedKnowledgeFileIds: string[]) {
+  const docIds = Array.from(
+    new Set(
+      selectedKnowledgeFileIds
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0)
+    )
+  )
+  if (docIds.length === 0) return undefined
+  return {
+    knowledge: {
+      doc_ids: docIds,
+    },
+  }
+}
+
 function mapConversationMessages(rawMessages: Array<{ role?: string; content?: unknown; turn_index?: number | null }>) {
   return normalizeConversationMessages(rawMessages as ConversationMessage[], { idPrefix: "conv" })
 }
@@ -382,11 +398,12 @@ export function useChatMessagingService() {
   const {
     input,
     attachments,
+    selectedKnowledgeFileIds,
     messages,
     config,
     models,
     selectedAssistant,
-    agentId: selectedAssistantId,
+    selectedAssistantId,
     streamEnabled,
     setInput,
     clearAttachments,
@@ -765,6 +782,7 @@ export function useChatMessagingService() {
         request_id: createRequestId(),
         assistant_id: assistantId,
         session_id: resolvedSessionId ?? undefined,
+        metadata: buildKnowledgeSelectionMetadata(selectedKnowledgeFileIds),
       }
       requestIdRef.current = payload.request_id ?? null
       activeRequestRouteRef.current = preferLocalRoute ? "local_gateway" : "cloud"
@@ -810,6 +828,7 @@ export function useChatMessagingService() {
   }, [
     input,
     attachments,
+    selectedKnowledgeFileIds,
     messages,
     config,
     models,
@@ -895,6 +914,7 @@ export function useChatMessagingService() {
         assistant_id: assistantId,
         session_id: resolvedSessionId ?? undefined,
         regenerate: true,
+        metadata: buildKnowledgeSelectionMetadata(selectedKnowledgeFileIds),
       }
       requestIdRef.current = payload.request_id ?? null
       activeRequestRouteRef.current = preferLocalRoute ? "local_gateway" : "cloud"
@@ -942,6 +962,7 @@ export function useChatMessagingService() {
     models,
     selectedAssistant,
     selectedAssistantId,
+    selectedKnowledgeFileIds,
     cancelActiveRequest,
     setMessages,
     mergeMessageMeta,
@@ -1067,6 +1088,7 @@ export function useChatMessagingService() {
           assistant_id: assistantId,
           session_id: resolvedSessionId,
           compare_only: true,
+          metadata: buildKnowledgeSelectionMetadata(selectedKnowledgeFileIds),
         },
         preferLocalRoute: true,
         errorBlockIdBase: `${targetMessageId}-${compareModelKey}`,
@@ -1163,6 +1185,7 @@ export function useChatMessagingService() {
     ensureCompareState,
     setCompareActiveCandidate,
     selectedAssistantId,
+    selectedKnowledgeFileIds,
     resolveCurrentSessionId,
     upsertCompareCandidate,
     runStreamedRequest,

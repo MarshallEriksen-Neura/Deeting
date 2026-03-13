@@ -1,8 +1,8 @@
 'use client';
 
-import { ArrowUp, Sparkles, Plus, ChevronDown, Sliders, MessageSquarePlus, Paperclip, X, Square, FileText, Bot, Play } from 'lucide-react';
+import { ArrowUp, Sparkles, Plus, Sliders, MessageSquarePlus, Paperclip, X, Square, FileText, Bot, Play, Check, Loader2 } from 'lucide-react';
 import { Link } from '@/i18n/routing';
-import { useMemo, useRef, useState, useCallback, memo } from 'react';
+import { useMemo, useRef, useState, useCallback, useEffect, memo } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useShallow } from 'zustand/react/shallow';
@@ -19,6 +19,8 @@ import { formatFileSize } from '@/lib/utils/file';
 import { buildChatAttachments, UPLOAD_ERROR_CODES, ATTACHMENT_INVALID_ERROR_CODES } from '@/lib/chat/attachments';
 import { createConversation } from '@/lib/api/conversations';
 import { useChatMessaging } from '@/hooks/chat/use-chat-messaging';
+import { listLocalUserDocuments } from '@/lib/api/knowledge';
+import type { KnowledgeFile } from '@/types/knowledge';
 
 /**
  * ControlsContainer - 聊天控制面板组件
@@ -41,12 +43,17 @@ function ControlsContainer() {
   const searchParams = useSearchParams();
   const [showMenu, setShowMenu] = useState(false);
   const [isParamsOpen, setIsParamsOpen] = useState(false);
+  const [isKnowledgePickerOpen, setIsKnowledgePickerOpen] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [knowledgeFiles, setKnowledgeFiles] = useState<KnowledgeFile[]>([]);
+  const [knowledgeLoading, setKnowledgeLoading] = useState(false);
+  const [knowledgeLoadError, setKnowledgeLoadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const t = useI18n('chat');
   const {
     input,
     attachments,
+    selectedKnowledgeFileIds,
     setInput,
     setMessages,
     selectedAssistant,
@@ -56,6 +63,8 @@ function ControlsContainer() {
     addAttachments,
     removeAttachment,
     clearAttachments,
+    toggleSelectedKnowledgeFileId,
+    clearSelectedKnowledgeFileIds,
     isLoading,
     setSessionId,
     setGlobalLoading,
@@ -64,6 +73,7 @@ function ControlsContainer() {
     useShallow((state) => ({
       input: state.input,
       attachments: state.attachments,
+      selectedKnowledgeFileIds: state.selectedKnowledgeFileIds,
       setInput: state.setInput,
       setMessages: state.setMessages,
       selectedAssistant: state.selectedAssistant,
@@ -73,6 +83,8 @@ function ControlsContainer() {
       addAttachments: state.addAttachments,
       removeAttachment: state.removeAttachment,
       clearAttachments: state.clearAttachments,
+      toggleSelectedKnowledgeFileId: state.toggleSelectedKnowledgeFileId,
+      clearSelectedKnowledgeFileIds: state.clearSelectedKnowledgeFileIds,
       isLoading: state.isLoading,
       setSessionId: state.setSessionId,
       setGlobalLoading: state.setGlobalLoading,
@@ -116,7 +128,11 @@ function ControlsContainer() {
       models[0],
     [models, config.model]
   );
-  
+
+  const knowledgeFileMap = useMemo(() => {
+    return new Map(knowledgeFiles.map((file) => [file.id, file]));
+  }, [knowledgeFiles]);
+
   const isGenerating = isLoading;
   const canContinueGeneration = useMemo(
     () =>
@@ -131,6 +147,27 @@ function ControlsContainer() {
   const handleParamsOpenChange = useCallback((open: boolean) => {
     setIsParamsOpen(open);
   }, []);
+
+  const loadIndexedKnowledgeFiles = useCallback(async () => {
+    if (!isTauriRuntime) return;
+    setKnowledgeLoading(true);
+    setKnowledgeLoadError(null);
+    try {
+      const files = await listLocalUserDocuments({ status: "indexed" });
+      setKnowledgeFiles(files);
+    } catch (error) {
+      console.warn("load_indexed_knowledge_files_failed", error);
+      setKnowledgeLoadError(t("controls.knowledgePickerLoadFailed"));
+    } finally {
+      setKnowledgeLoading(false);
+    }
+  }, [isTauriRuntime, t]);
+
+  useEffect(() => {
+    if (!isTauriRuntime) return;
+    if (!isKnowledgePickerOpen) return;
+    void loadIndexedKnowledgeFiles();
+  }, [isTauriRuntime, isKnowledgePickerOpen, loadIndexedKnowledgeFiles]);
 
   const handleNewChat = useCallback(async () => {
     resetSession();
@@ -255,6 +292,22 @@ function ControlsContainer() {
   const handleFileInputClick = useCallback(() => {
     fileInputRef.current?.click();
   }, []);
+
+  const handleKnowledgePickerOpenChange = useCallback((open: boolean) => {
+    setIsKnowledgePickerOpen(open);
+  }, []);
+
+  const handleToggleKnowledgeFile = useCallback((fileId: string) => {
+    toggleSelectedKnowledgeFileId(fileId);
+  }, [toggleSelectedKnowledgeFileId]);
+
+  const handleRemoveKnowledgeFile = useCallback((fileId: string) => {
+    toggleSelectedKnowledgeFileId(fileId);
+  }, [toggleSelectedKnowledgeFileId]);
+
+  const handleClearKnowledgeFiles = useCallback(() => {
+    clearSelectedKnowledgeFileIds();
+  }, [clearSelectedKnowledgeFileIds]);
 
   const handleSendOrCancel = useCallback(() => {
     if (isGenerating) {
@@ -424,6 +477,43 @@ function ControlsContainer() {
         </div>
       ) : null}
 
+      {isTauriRuntime && selectedKnowledgeFileIds.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 px-1">
+          {selectedKnowledgeFileIds.map((fileId) => {
+            const file = knowledgeFileMap.get(fileId);
+            return (
+              <div
+                key={fileId}
+                className="group relative flex h-8 max-w-[240px] shrink-0 items-center gap-2 rounded-full border border-sky-200/80 bg-sky-50 px-3 text-xs text-sky-700 dark:border-sky-400/30 dark:bg-sky-500/10 dark:text-sky-200"
+              >
+                <span className="truncate">
+                  {file?.name ?? fileId}
+                </span>
+                <button
+                  type="button"
+                  className="inline-flex h-4 w-4 items-center justify-center rounded-full hover:bg-sky-200/60 dark:hover:bg-sky-500/30"
+                  onClick={() => handleRemoveKnowledgeFile(fileId)}
+                  aria-label={t("controls.knowledgeRemove")}
+                  disabled={isLoading}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            );
+          })}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 rounded-full px-3 text-xs text-slate-600 dark:text-white/70"
+            onClick={handleClearKnowledgeFiles}
+            disabled={isLoading}
+          >
+            {t("controls.knowledgeClear")}
+          </Button>
+        </div>
+      ) : null}
+
       {attachmentError ? (
         <div className="text-center text-xs font-medium text-red-500/90 dark:text-red-400/90">{attachmentError}</div>
       ) : null}
@@ -522,6 +612,90 @@ function ControlsContainer() {
               </div>
             </div>
           )}
+
+          {isTauriRuntime ? (
+            <Popover open={isKnowledgePickerOpen} onOpenChange={handleKnowledgePickerOpenChange}>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={t("controls.knowledge")}
+                  className="min-h-[44px] min-w-[44px] size-10 rounded-full bg-slate-100/80 dark:bg-white/5 text-slate-600 dark:text-white/70 hover:bg-slate-200/70 dark:hover:bg-white/10 transition-colors cursor-pointer"
+                  disabled={isLoading}
+                >
+                  <FileText className="w-5 h-5" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                side="top"
+                align="start"
+                className="w-80 max-w-[calc(100vw-1rem)] rounded-2xl border border-slate-200/70 dark:border-white/10 bg-white/95 dark:bg-[#0a0a0a]/95 shadow-2xl backdrop-blur-2xl"
+              >
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-sm font-semibold text-slate-700 dark:text-white/85">
+                    {t("controls.knowledgePickerTitle")}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 rounded-full px-2 text-xs"
+                    onClick={() => void loadIndexedKnowledgeFiles()}
+                    disabled={knowledgeLoading}
+                  >
+                    {knowledgeLoading ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      t("controls.knowledgeRefresh")
+                    )}
+                  </Button>
+                </div>
+
+                {knowledgeLoading ? (
+                  <div className="flex h-24 items-center justify-center text-sm text-slate-500 dark:text-white/50">
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {t("controls.knowledgePickerLoading")}
+                  </div>
+                ) : knowledgeLoadError ? (
+                  <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-600 dark:border-red-400/30 dark:bg-red-500/10 dark:text-red-300">
+                    {knowledgeLoadError}
+                  </div>
+                ) : knowledgeFiles.length === 0 ? (
+                  <div className="rounded-xl border border-slate-200/80 bg-slate-50 p-3 text-xs text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-white/50">
+                    {t("controls.knowledgePickerEmpty")}
+                  </div>
+                ) : (
+                  <div className="max-h-64 space-y-1 overflow-y-auto pr-1">
+                    {knowledgeFiles.map((file) => {
+                      const isSelected = selectedKnowledgeFileIds.includes(file.id);
+                      return (
+                        <button
+                          key={file.id}
+                          type="button"
+                          className={cn(
+                            "flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left transition-colors",
+                            isSelected
+                              ? "bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-200"
+                              : "hover:bg-slate-100/80 dark:hover:bg-white/10"
+                          )}
+                          onClick={() => handleToggleKnowledgeFile(file.id)}
+                        >
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-xs font-medium">{file.name}</span>
+                            <span className="block truncate text-[10px] text-slate-500 dark:text-white/45">
+                              {formatFileSize(file.size)} · {file.chunks ?? 0} chunks
+                            </span>
+                          </span>
+                          {isSelected ? <Check className="h-4 w-4 shrink-0" /> : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </PopoverContent>
+            </Popover>
+          ) : null}
 
           <Button
             type="button"
