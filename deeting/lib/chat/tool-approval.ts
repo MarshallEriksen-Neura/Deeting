@@ -161,3 +161,40 @@ export function createRejectedToolResultBlock(
     result: { error: errorMessage },
   }
 }
+
+export function extractLocalChatApprovalResume(result: unknown): {
+  approved_tool_result: unknown
+  continuation_blocks: MessageBlock[]
+  error?: string
+} | null {
+  const payload = toRecord(result)
+  if (!payload) return null
+  const status = asTrimmedString(payload.status)
+  if (status !== "LOCAL_CHAT_RESUMED" && status !== "LOCAL_CHAT_RESUME_FAILED") {
+    return null
+  }
+
+  const continuationBlocks = Array.isArray(payload.continuation_blocks)
+    ? (payload.continuation_blocks.filter(
+        (block): block is MessageBlock =>
+          Boolean(block && typeof block === "object" && "type" in (block as Record<string, unknown>))
+      ) as MessageBlock[])
+    : []
+
+  return {
+    approved_tool_result: payload.approved_tool_result,
+    continuation_blocks: continuationBlocks,
+    error: asTrimmedString(payload.error) ?? undefined,
+  }
+}
+
+export function createLocalChatResumeErrorBlock(
+  approval: BridgeToolPendingApproval,
+  errorMessage: string
+): MessageBlock {
+  return {
+    id: `${approval.meta.call_id}-resume-error`,
+    type: "error",
+    message: errorMessage,
+  }
+}

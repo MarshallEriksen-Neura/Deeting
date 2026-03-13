@@ -1,6 +1,9 @@
 use super::{
     common_impl::to_string,
-    runtime::{approve_mcp_tool_inner_with_context, reject_mcp_tool_inner},
+    runtime::{
+        approve_mcp_tool_inner_with_context, reject_mcp_tool_inner,
+        resume_suspended_local_chat_after_approval,
+    },
     source_management_impl::CloudSubscriptionItem,
     support::*,
 };
@@ -221,6 +224,7 @@ pub(crate) async fn sync_cloud_subscriptions_inner(
 
 #[tauri::command]
 pub async fn approve_mcp_tool(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     approval_token: Option<String>,
     #[allow(non_snake_case)] approvalToken: Option<String>,
@@ -239,14 +243,22 @@ pub async fn approve_mcp_tool(
         execution_token.or(executionToken).as_deref(),
     );
 
-    approve_mcp_tool_inner_with_context(
+    let approved = approve_mcp_tool_inner_with_context(
         &approval_context,
         Some(&state.mcp),
         state.mcp.store.as_ref(),
         state.mcp.pending_tool_calls.as_ref(),
         &token,
     )
-    .await
+    .await?;
+
+    if let Some(resumed) =
+        resume_suspended_local_chat_after_approval(&app, &state, &token, &approved).await?
+    {
+        return Ok(resumed);
+    }
+
+    Ok(approved)
 }
 
 #[tauri::command]
@@ -261,5 +273,11 @@ pub async fn reject_mcp_tool(
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "approval token is required".to_string())?;
     reject_mcp_tool_inner(state.mcp.pending_tool_calls.as_ref(), &token).await;
+    state
+        .mcp
+        .suspended_local_chat_executions
+        .write()
+        .await
+        .remove(&token);
     Ok(())
 }

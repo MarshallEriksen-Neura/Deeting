@@ -152,7 +152,11 @@ describe("ToolApprovalDialog", () => {
   })
 
   it("writes approved local-chat tool results back into the matching assistant message", async () => {
-    mockInvoke.mockResolvedValueOnce({ crawled_pages: 3 } as unknown)
+    mockInvoke.mockResolvedValueOnce({
+      status: "LOCAL_CHAT_RESUMED",
+      approved_tool_result: { crawled_pages: 3 },
+      continuation_blocks: [{ id: "resume-text-1", type: "text", content: "Finished crawl." }],
+    } as unknown)
 
     act(() => {
       useChatStore.setState({
@@ -217,6 +221,10 @@ describe("ToolApprovalDialog", () => {
           callId: "call-local-1",
           status: "success",
           result: { crawled_pages: 3 },
+        }),
+        expect.objectContaining({
+          type: "text",
+          content: "Finished crawl.",
         }),
       ])
     )

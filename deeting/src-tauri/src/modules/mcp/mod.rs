@@ -32,6 +32,14 @@ pub struct PendingToolCall {
     pub expires_at_unix_ms: i128,
 }
 
+#[derive(Clone)]
+pub struct SuspendedLocalChatExecutionEnvelope {
+    pub approved_tool_result: Value,
+    pub continuation_blocks: Vec<Value>,
+    pub response: Option<Value>,
+    pub error: Option<String>,
+}
+
 #[derive(Clone, Default)]
 pub struct ToolApprovalContext {
     pub call_id: Option<String>,
@@ -68,6 +76,8 @@ pub struct McpRuntimeState {
     pub client: Client,
     pub bridge: Arc<McpBridgeState>,
     pub pending_tool_calls: Arc<RwLock<HashMap<String, PendingToolCall>>>,
+    pub(crate) suspended_local_chat_executions:
+        Arc<RwLock<HashMap<String, crate::modules::mcp::commands::runtime::SuspendedLocalChatExecution>>>,
     pub local_chat_tasks: Arc<RwLock<HashMap<String, AbortHandle>>>,
     pub local_gateway: Arc<crate::modules::mcp::gateway::LocalGatewayServer>,
 }
@@ -85,6 +95,7 @@ impl McpRuntimeState {
             client: Client::new(),
             bridge: Arc::new(McpBridgeState::new(cloud_base_url)),
             pending_tool_calls: Arc::new(RwLock::new(HashMap::new())),
+            suspended_local_chat_executions: Arc::new(RwLock::new(HashMap::new())),
             local_chat_tasks: Arc::new(RwLock::new(HashMap::new())),
             local_gateway: Arc::new(crate::modules::mcp::gateway::LocalGatewayServer::new()),
         }

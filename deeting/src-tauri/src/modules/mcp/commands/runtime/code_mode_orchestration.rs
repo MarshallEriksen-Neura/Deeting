@@ -97,6 +97,14 @@ enum LocalToolCallProcessingOutcome {
         results: Vec<String>,
         capability_update: Option<LocalCapabilityActivationUpdate>,
     },
+    Interrupted {
+        approval_token: String,
+        tool_call_meta: Vec<serde_json::Value>,
+        results: Vec<String>,
+        capability_update: Option<LocalCapabilityActivationUpdate>,
+        call_id: String,
+        tool_name: String,
+    },
 }
 
 struct LocalChatAutoCodeModeState {
@@ -119,6 +127,92 @@ struct LocalChatAutoCodeModeState {
 
 struct LocalChatAutoCodeModeOutput {
     response: serde_json::Value,
+    all_tool_call_meta: Vec<serde_json::Value>,
+}
+
+#[derive(Clone)]
+pub(crate) struct SuspendedLocalChatExecution {
+    max_rounds: usize,
+    round: usize,
+    trace_id: String,
+    execution_policy: LocalExecutionPolicy,
+    model_connection: LocalModelConnection,
+    orchestrated_messages: Vec<LocalChatInputMessage>,
+    chat_ctx: LocalConversationChatContext,
+    temperature: Option<f32>,
+    max_tokens: Option<u32>,
+    active_capability: Option<LocalCapabilityActivationState>,
+    all_tool_call_meta: Vec<serde_json::Value>,
+    runtime_metrics: RuntimeMetricsAccumulator,
+    last_capability_snapshot: Option<serde_json::Value>,
+    last_response: Option<serde_json::Value>,
+    pending_response: serde_json::Value,
+    pending_tool_call_meta: Vec<serde_json::Value>,
+    pending_results: Vec<String>,
+    pending_capability_update: Option<LocalCapabilityActivationUpdate>,
+    pending_call_id: String,
+    pending_tool_name: String,
+    existing_meta_count: usize,
+}
+
+impl SuspendedLocalChatExecution {
+    fn from_state(
+        state: &LocalChatAutoCodeModeState,
+        pending_response: &serde_json::Value,
+        pending_tool_call_meta: &[serde_json::Value],
+        pending_results: &[String],
+        pending_capability_update: Option<LocalCapabilityActivationUpdate>,
+        pending_call_id: String,
+        pending_tool_name: String,
+    ) -> Self {
+        Self {
+            max_rounds: state.max_rounds,
+            round: state.round,
+            trace_id: state.trace_id.clone(),
+            execution_policy: state.execution_policy.clone(),
+            model_connection: state.model_connection.clone(),
+            orchestrated_messages: state.orchestrated_messages.clone(),
+            chat_ctx: state.chat_ctx.clone(),
+            temperature: state.temperature,
+            max_tokens: state.max_tokens,
+            active_capability: state.active_capability.clone(),
+            all_tool_call_meta: state.all_tool_call_meta.clone(),
+            runtime_metrics: state.runtime_metrics.clone(),
+            last_capability_snapshot: state.last_capability_snapshot.clone(),
+            last_response: state.last_response.clone(),
+            pending_response: pending_response.clone(),
+            pending_tool_call_meta: pending_tool_call_meta.to_vec(),
+            pending_results: pending_results.to_vec(),
+            pending_capability_update,
+            pending_call_id,
+            pending_tool_name,
+            existing_meta_count: state.all_tool_call_meta.len() + pending_tool_call_meta.len(),
+        }
+    }
+
+    fn into_runtime_state(self) -> LocalChatAutoCodeModeState {
+        LocalChatAutoCodeModeState {
+            max_rounds: self.max_rounds,
+            round: self.round,
+            trace_id: self.trace_id.clone(),
+            execution_policy: self.execution_policy,
+            model_connection: self.model_connection,
+            orchestrated_messages: self.orchestrated_messages,
+            chat_ctx: self.chat_ctx,
+            temperature: self.temperature,
+            max_tokens: self.max_tokens,
+            active_capability: self.active_capability,
+            all_tool_call_meta: self.all_tool_call_meta,
+            runtime_metrics: self.runtime_metrics,
+            last_capability_snapshot: self.last_capability_snapshot,
+            last_response: self.last_response,
+            realtime_emitter: LocalRealtimeToolTraceEmitter::new(
+                None,
+                Some(self.trace_id.as_str()),
+                None,
+            ),
+        }
+    }
 }
 
 pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
@@ -231,7 +325,10 @@ async fn continue_local_chat_complete_with_auto_code_mode(
                 fallback["tool_trace_streamed"] = serde_json::json!(true);
             }
             state.runtime_metrics.inject_into_response(&mut fallback);
-            return Ok(LocalChatAutoCodeModeOutput { response: fallback });
+            return Ok(LocalChatAutoCodeModeOutput {
+                response: fallback,
+                all_tool_call_meta: state.all_tool_call_meta.clone(),
+            });
         }
 
         let effective_allowed_tool_names = state
@@ -267,7 +364,10 @@ async fn continue_local_chat_complete_with_auto_code_mode(
                 enriched["tool_trace_streamed"] = serde_json::json!(true);
             }
             state.runtime_metrics.inject_into_response(&mut enriched);
-            return Ok(LocalChatAutoCodeModeOutput { response: enriched });
+            return Ok(LocalChatAutoCodeModeOutput {
+                response: enriched,
+                all_tool_call_meta: state.all_tool_call_meta.clone(),
+            });
         }
 
         state.last_response = Some(response.clone());
@@ -290,7 +390,10 @@ async fn continue_local_chat_complete_with_auto_code_mode(
                 capability_update,
             } => {
                 if !synthesized {
-                    return Ok(LocalChatAutoCodeModeOutput { response });
+                    return Ok(LocalChatAutoCodeModeOutput {
+                        response,
+                        all_tool_call_meta: state.all_tool_call_meta.clone(),
+                    });
                 }
                 finalize_tool_round(
                     &mut state.orchestrated_messages,
@@ -302,6 +405,47 @@ async fn continue_local_chat_complete_with_auto_code_mode(
                     capability_update,
                 );
                 state.all_tool_call_meta.extend(tool_call_meta);
+            }
+            LocalToolCallProcessingOutcome::Interrupted {
+                approval_token,
+                tool_call_meta,
+                results,
+                capability_update,
+                call_id,
+                tool_name,
+            } => {
+                let suspended = SuspendedLocalChatExecution::from_state(
+                    &state,
+                    &response,
+                    &tool_call_meta,
+                    &results,
+                    capability_update,
+                    call_id,
+                    tool_name,
+                );
+                app_state
+                    .mcp
+                    .suspended_local_chat_executions
+                    .write()
+                    .await
+                    .insert(approval_token, suspended);
+
+                let mut current_tool_call_meta = state.all_tool_call_meta.clone();
+                current_tool_call_meta.extend(tool_call_meta);
+                let mut interrupted = serde_json::json!({ "content": "" });
+                if !current_tool_call_meta.is_empty() {
+                    interrupted["tool_trace_blocks"] = serde_json::Value::Array(
+                        build_local_tool_trace_blocks(&current_tool_call_meta),
+                    );
+                }
+                if state.realtime_emitter.emitted_any {
+                    interrupted["tool_trace_streamed"] = serde_json::json!(true);
+                }
+                state.runtime_metrics.inject_into_response(&mut interrupted);
+                return Ok(LocalChatAutoCodeModeOutput {
+                    response: interrupted,
+                    all_tool_call_meta: current_tool_call_meta,
+                });
             }
         }
     }
@@ -887,6 +1031,21 @@ async fn maybe_handle_local_code_mode_tool_calls(
                                     "Tool call '{}' requires approval before execution.",
                                     tool_name
                                 ));
+                                if let Some(approval_token) = tool_result
+                                    .get("approval_token")
+                                    .and_then(serde_json::Value::as_str)
+                                    .map(str::trim)
+                                    .filter(|value| !value.is_empty())
+                                {
+                                    return LocalToolCallProcessingOutcome::Interrupted {
+                                        approval_token: approval_token.to_string(),
+                                        tool_call_meta,
+                                        results,
+                                        capability_update,
+                                        call_id: call.id.clone().unwrap_or_default(),
+                                        tool_name,
+                                    };
+                                }
                             } else {
                                 results.push(format!(
                                     "Tool call '{}' executed successfully.",
@@ -962,6 +1121,21 @@ async fn maybe_handle_local_code_mode_tool_calls(
                                         "Tool call '{}' requires approval before execution.",
                                         tool_name
                                     ));
+                                    if let Some(approval_token) = tool_result
+                                        .get("approval_token")
+                                        .and_then(serde_json::Value::as_str)
+                                        .map(str::trim)
+                                        .filter(|value| !value.is_empty())
+                                    {
+                                        return LocalToolCallProcessingOutcome::Interrupted {
+                                            approval_token: approval_token.to_string(),
+                                            tool_call_meta,
+                                            results,
+                                            capability_update,
+                                            call_id: call.id.clone().unwrap_or_default(),
+                                            tool_name,
+                                        };
+                                    }
                                 } else {
                                     results.push(format!(
                                         "Tool call '{}' executed successfully.",
@@ -1015,6 +1189,118 @@ async fn maybe_handle_local_code_mode_tool_calls(
         tool_call_meta,
         results,
         capability_update,
+    }
+}
+
+fn apply_approved_tool_result_to_suspended_round(
+    suspended: &mut SuspendedLocalChatExecution,
+    tool_result: &serde_json::Value,
+) {
+    if let Some(last_result) = suspended.pending_results.last_mut() {
+        *last_result = format!(
+            "Tool call '{}' executed successfully.",
+            suspended.pending_tool_name
+        );
+    }
+    for item in &mut suspended.pending_tool_call_meta {
+        let matches_call_id = item
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .map(|value| value == suspended.pending_call_id)
+            .unwrap_or(false);
+        if !matches_call_id {
+            continue;
+        }
+        if let Some(object) = item.as_object_mut() {
+            object.insert("status".to_string(), serde_json::json!("success"));
+            object.insert("result".to_string(), tool_result.clone());
+            object.remove("error");
+            object.remove("error_code");
+        }
+        break;
+    }
+}
+
+fn build_local_chat_resume_continuation_blocks(
+    resumed_response: &serde_json::Value,
+    continuation_meta: &[serde_json::Value],
+) -> Vec<serde_json::Value> {
+    let mut blocks = if continuation_meta.is_empty() {
+        Vec::new()
+    } else {
+        build_local_tool_trace_blocks(continuation_meta)
+    };
+    if let Some(content) = resumed_response
+        .get("content")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        blocks.push(serde_json::json!({
+            "type": "text",
+            "content": content,
+        }));
+    }
+    blocks
+}
+
+pub(crate) async fn resume_suspended_local_chat_after_approval(
+    app: &AppHandle,
+    app_state: &AppState,
+    approval_token: &str,
+    tool_result: &serde_json::Value,
+) -> Result<Option<serde_json::Value>, String> {
+    let mut suspended = app_state
+        .mcp
+        .suspended_local_chat_executions
+        .write()
+        .await
+        .remove(approval_token);
+    let Some(mut suspended) = suspended.take() else {
+        return Ok(None);
+    };
+
+    apply_approved_tool_result_to_suspended_round(&mut suspended, tool_result);
+
+    let baseline_meta_count = suspended.existing_meta_count;
+    let pending_response = suspended.pending_response.clone();
+    let pending_tool_call_meta = suspended.pending_tool_call_meta.clone();
+    let pending_results = suspended.pending_results.clone();
+    let pending_capability_update = suspended.pending_capability_update.clone();
+
+    let mut state = suspended.into_runtime_state();
+    finalize_tool_round(
+        &mut state.orchestrated_messages,
+        &mut state.active_capability,
+        state.round,
+        &pending_response,
+        &pending_tool_call_meta,
+        &pending_results,
+        pending_capability_update,
+    );
+    state
+        .all_tool_call_meta
+        .extend(pending_tool_call_meta.clone());
+
+    match continue_local_chat_complete_with_auto_code_mode(app, app_state, state).await {
+        Ok(output) => {
+            let continuation_meta = output
+                .all_tool_call_meta
+                .get(baseline_meta_count..)
+                .unwrap_or(&[]);
+            Ok(Some(serde_json::json!({
+                "status": "LOCAL_CHAT_RESUMED",
+                "approved_tool_result": tool_result,
+                "continuation_blocks": build_local_chat_resume_continuation_blocks(&output.response, continuation_meta),
+                "response": output.response,
+            })))
+        }
+        Err(err) => Ok(Some(serde_json::json!({
+            "status": "LOCAL_CHAT_RESUME_FAILED",
+            "approved_tool_result": tool_result,
+            "continuation_blocks": [],
+            "error": err,
+        }))),
     }
 }
 

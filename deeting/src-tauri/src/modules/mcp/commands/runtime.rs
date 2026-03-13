@@ -44,7 +44,10 @@ pub(crate) use code_mode_catalog::{
     build_local_code_mode_entry_tools_with_allowlist, build_local_sdk_search_result_with_runtime,
     resolve_dynamic_direct_capability_tool_name,
 };
-pub(crate) use code_mode_orchestration::run_local_chat_complete_with_auto_code_mode;
+pub(crate) use code_mode_orchestration::{
+    resume_suspended_local_chat_after_approval, run_local_chat_complete_with_auto_code_mode,
+    SuspendedLocalChatExecution,
+};
 #[cfg(test)]
 pub(crate) use config::apply_config_payload_to_store;
 pub(crate) use config::{apply_config_payload, now_rfc3339, read_local_mcp_config};

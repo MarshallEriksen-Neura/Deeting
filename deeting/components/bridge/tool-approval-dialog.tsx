@@ -22,12 +22,15 @@ import { Loader2, ShieldAlert } from "lucide-react"
 import { useChatStore } from "@/store/chat-store"
 import {
   createApprovedToolResultBlock,
+  createLocalChatResumeErrorBlock,
   createRejectedToolResultBlock,
+  extractLocalChatApprovalResume,
 } from "@/lib/chat/tool-approval"
 
 export function ToolApprovalDialog() {
   const { pending, clear } = useBridgeApprovalStore()
   const upsertMessageToolResult = useChatStore((state) => state.upsertMessageToolResult)
+  const appendMessageBlocks = useChatStore((state) => state.appendMessageBlocks)
   const [loading, setLoading] = useState(false)
 
   if (!pending) return null
@@ -52,9 +55,19 @@ export function ToolApprovalDialog() {
       })
 
       if (pending.meta.message_id) {
-        const successBlock = createApprovedToolResultBlock(pending, result)
+        const resumePayload = extractLocalChatApprovalResume(result)
+        const approvedToolResult = resumePayload?.approved_tool_result ?? result
+        const successBlock = createApprovedToolResultBlock(pending, approvedToolResult)
         if (successBlock) {
           upsertMessageToolResult(pending.meta.message_id, successBlock)
+        }
+        if (resumePayload?.continuation_blocks?.length) {
+          appendMessageBlocks(pending.meta.message_id, resumePayload.continuation_blocks)
+        }
+        if (resumePayload?.error) {
+          appendMessageBlocks(pending.meta.message_id, [
+            createLocalChatResumeErrorBlock(pending, resumePayload.error),
+          ])
         }
       }
 
