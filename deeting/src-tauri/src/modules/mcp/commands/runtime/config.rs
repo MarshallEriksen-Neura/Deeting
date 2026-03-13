@@ -2,6 +2,7 @@ use super::super::support::*;
 use super::remote_transport::{
     list_local_stdio_tools, list_remote_sse_tools, RemoteDiscoveredTool,
 };
+use crate::modules::custom_task_agents::skill_actions::sanitize_callable_name;
 use crate::modules::mcp::store::McpStore;
 use std::collections::{HashMap, HashSet};
 
@@ -224,7 +225,8 @@ async fn upsert_remote_sse_tool(
             server_name
         ))
     })?;
-    let identifier = discovered_tool_identifier(source, "remote", server_name, &discovered.name);
+    let sanitized_name = sanitize_callable_name(&discovered.name);
+    let identifier = discovered_tool_identifier(source, "remote", server_name, &sanitized_name);
     let existing_tool = store
         .get_tool_by_source_identifier(&source.id, &identifier)
         .await?;
@@ -244,7 +246,7 @@ async fn upsert_remote_sse_tool(
         existing_tool,
         ToolUpsertSpec {
             identifier,
-            name: discovered.name.clone(),
+            name: sanitized_name,
             capabilities,
             description,
             command: None,
@@ -319,7 +321,8 @@ async fn upsert_local_stdio_tool(
             server_name
         ))
     })?;
-    let identifier = discovered_tool_identifier(source, "stdio", server_name, &discovered.name);
+    let sanitized_name = sanitize_callable_name(&discovered.name);
+    let identifier = discovered_tool_identifier(source, "stdio", server_name, &sanitized_name);
     let existing_tool = store
         .get_tool_by_source_identifier(&source.id, &identifier)
         .await?;
@@ -341,7 +344,7 @@ async fn upsert_local_stdio_tool(
         existing_tool,
         ToolUpsertSpec {
             identifier,
-            name: discovered.name.clone(),
+            name: sanitized_name,
             capabilities,
             description,
             command: Some(command),

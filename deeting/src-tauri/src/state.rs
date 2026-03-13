@@ -5,6 +5,8 @@ use crate::modules::memory::MemoryState;
 use crate::modules::monitor::MonitorState;
 use crate::modules::providers::ProviderState;
 use crate::modules::sandbox::SandboxState;
+use std::sync::OnceLock;
+use tauri::AppHandle;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -37,4 +39,23 @@ impl AppState {
             monitor: std::sync::Arc::new(monitor),
         }
     }
+}
+
+static GLOBAL_APP_STATE: OnceLock<AppState> = OnceLock::new();
+static GLOBAL_APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
+
+pub fn set_global_app_state(app_state: AppState) {
+    let _ = GLOBAL_APP_STATE.set(app_state);
+}
+
+pub fn set_global_app_handle(app_handle: AppHandle) {
+    let _ = GLOBAL_APP_HANDLE.set(app_handle);
+}
+
+pub fn global_app_state() -> Option<AppState> {
+    GLOBAL_APP_STATE.get().cloned()
+}
+
+pub fn global_app_handle() -> Option<AppHandle> {
+    GLOBAL_APP_HANDLE.get().cloned()
 }

@@ -281,11 +281,11 @@ pub(crate) fn callable_skill_action_name(skill_id: &str, action_id: &str) -> Str
     )
 }
 
-fn sanitize_callable_name(value: &str) -> String {
+pub fn sanitize_callable_name(value: &str) -> String {
     let mut output = String::new();
     for ch in value.chars() {
-        if ch.is_ascii_alphanumeric() {
-            output.push(ch.to_ascii_lowercase());
+        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+            output.push(ch);
         } else {
             output.push('_');
         }

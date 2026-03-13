@@ -28,6 +28,37 @@ fn build_skill_binding_fingerprint(binding: &LocalSkillToolBindingSnapshot) -> S
     format!("{}:{}", binding.binding_id, binding.updated_at)
 }
 
+fn resolve_deeting_sdk_pythonpath(binding: &LocalSkillToolBindingSnapshot) -> Option<String> {
+    let env_override = std::env::var("DEETING_SDK_PYTHONPATH")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    if env_override.is_some() {
+        return env_override;
+    }
+
+    let entry_path = std::path::Path::new(&binding.entry_path);
+    let mut current = entry_path.parent();
+    while let Some(path) = current {
+        if path.file_name().and_then(|value| value.to_str()) == Some("official-skills") {
+            let candidate = path
+                .parent()
+                .map(|parent| parent.join("deeting-sdk"))
+                .filter(|candidate| candidate.exists());
+            if let Some(candidate) = candidate {
+                return Some(candidate.to_string_lossy().to_string());
+            }
+        }
+        current = path.parent();
+    }
+
+    std::env::current_dir()
+        .ok()
+        .map(|cwd| cwd.join("packages").join("deeting-sdk"))
+        .filter(|candidate| candidate.exists())
+        .map(|candidate| candidate.to_string_lossy().to_string())
+}
+
 fn build_command_for_skill_binding(
     binding: &LocalSkillToolBindingSnapshot,
     arguments: &Value,
@@ -83,6 +114,16 @@ async fn resolve_skill_binding_env(
         "DEETING_SKILL_ACTION_ID".to_string(),
         binding.tool_name.clone(),
     );
+    if binding.binding_kind == "deeting_tool" && binding.runtime == "python" {
+        if let Some(pythonpath) = resolve_deeting_sdk_pythonpath(binding) {
+            let merged = std::env::var("PYTHONPATH")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+                .map(|existing| format!("{pythonpath}:{existing}"))
+                .unwrap_or(pythonpath);
+            env.insert("PYTHONPATH".to_string(), merged);
+        }
+    }
     if binding.skill_id == "official.skills.crawler"
         || matches!(
             binding.tool_name.as_str(),
@@ -121,6 +162,145 @@ async fn resolve_skill_binding_env(
     } else {
         Ok(Some(env))
     }
+}
+
+async fn dispatch_internal_skill_host_tool(
+    tool_name: &str,
+    arguments: &Value,
+) -> Result<Option<Value>, String> {
+    match tool_name.trim() {
+        "register_local_skills" => {
+            let app_handle = crate::state::global_app_handle()
+                .ok_or_else(|| "global app handle is unavailable".to_string())?;
+            let app_state = crate::state::global_app_state()
+                .ok_or_else(|| "global app state is unavailable".to_string())?;
+            let count =
+                crate::modules::mcp::commands::register_local_skills_inner(app_handle, &app_state)
+                    .await?;
+            Ok(Some(serde_json::json!({
+                "status": "ok",
+                "registered": count,
+                "arguments": arguments,
+            })))
+        }
+        _ => Ok(None),
+    }
+}
+
+async fn execute_deeting_tool_binding(
+    store: &crate::modules::mcp::store::McpStore,
+    binding: &LocalSkillToolBindingSnapshot,
+    arguments: &Value,
+) -> Result<Value, String> {
+    let timeout_secs = binding.timeout_seconds.max(1);
+    let mut tool_results: Vec<serde_json::Value> = Vec::new();
+    for attempt in 0..=MAX_MARKER_REEXEC {
+        let (command, args) = build_command_for_skill_binding(binding, arguments)?;
+        let env = resolve_skill_binding_env(store, binding).await?;
+        let skill_dir = std::path::Path::new(&binding.entry_path)
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.to_path_buf());
+
+        let mut cmd = tokio::process::Command::new(command);
+        cmd.args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
+        if let Some(ref dir) = skill_dir {
+            cmd.current_dir(dir);
+        }
+        let runtime_context = serde_json::json!({
+            "tool_results": tool_results,
+            "max_tool_calls": MAX_MARKER_REEXEC,
+        });
+        let mut env_map = env.unwrap_or_default();
+        env_map.insert(
+            "DEETING_RUNTIME_CONTEXT".to_string(),
+            serde_json::to_string(&runtime_context).unwrap_or_default(),
+        );
+        if !env_map.is_empty() {
+            cmd.envs(env_map);
+        }
+
+        let mut child = cmd.spawn().map_err(to_string)?;
+        if let Some(mut stdin) = child.stdin.take() {
+            let payload = serde_json::json!({
+                "method": binding.tool_name,
+                "arguments": arguments,
+            });
+            let payload_bytes = serde_json::to_vec(&payload).map_err(to_string)?;
+            stdin.write_all(&payload_bytes).await.map_err(to_string)?;
+        }
+        let output = match tokio::time::timeout(
+            std::time::Duration::from_secs(timeout_secs),
+            child.wait_with_output(),
+        )
+        .await
+        {
+            Ok(result) => {
+                result.map_err(|err| format!("skill binding execution error: {}", err))?
+            }
+            Err(_) => {
+                return Err(format!(
+                    "skill binding '{}' timed out after {}s",
+                    binding.callable_name, timeout_secs
+                ))
+            }
+        };
+        let stdout_str = String::from_utf8_lossy(&output.stdout).to_string();
+        if let Some(marker_payload) = extract_tool_call_marker(&stdout_str) {
+            let requested_tool = marker_payload
+                .get("tool_name")
+                .and_then(|value| value.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let requested_args = marker_payload
+                .get("arguments")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!({}));
+            if requested_tool.is_empty() {
+                return Err("skill requested a tool call with empty tool_name".to_string());
+            }
+            if attempt >= MAX_MARKER_REEXEC {
+                return Err(format!(
+                    "skill exceeded {} marker re-execution rounds",
+                    MAX_MARKER_REEXEC
+                ));
+            }
+            if let Some(result) =
+                dispatch_internal_skill_host_tool(&requested_tool, &requested_args).await?
+            {
+                tool_results.push(result);
+                continue;
+            }
+            tool_results.push(serde_json::json!({
+                "status": "error",
+                "error": format!("desktop skill binding host bridge cannot resolve '{}'", requested_tool)
+            }));
+            continue;
+        }
+        if !output.status.success() {
+            return Err(format!(
+                "skill binding '{}' failed (exit={}): {}",
+                binding.callable_name,
+                output.status,
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+        if output.stdout.is_empty() {
+            return Ok(serde_json::json!({ "ok": true }));
+        }
+        return serde_json::from_slice::<Value>(&output.stdout).or_else(|_| {
+            Ok(serde_json::json!({
+                "ok": true,
+                "raw": stdout_str,
+            }))
+        });
+    }
+    Err("skill binding marker loop exhausted".to_string())
 }
 
 async fn resolve_skill_binding_config_json(
@@ -181,6 +361,9 @@ async fn execute_skill_binding(
     binding: &LocalSkillToolBindingSnapshot,
     arguments: &Value,
 ) -> Result<Value, String> {
+    if binding.binding_kind == "deeting_tool" && binding.runtime == "python" {
+        return execute_deeting_tool_binding(store, binding, arguments).await;
+    }
     let (command, args) = build_command_for_skill_binding(binding, arguments)?;
     let env = resolve_skill_binding_env(store, binding).await?;
     let config_json = resolve_skill_binding_config_json(store, binding).await?;

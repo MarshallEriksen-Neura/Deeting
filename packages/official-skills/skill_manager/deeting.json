@@ -14,17 +14,6 @@
           "query": {
             "type": "string",
             "description": "Search query (e.g., 'pdf', 'weather', 'testing')"
-          },
-          "ecosystem": {
-            "type": "string",
-            "enum": ["all", "claude", "openclaw", "cursor", "windsurf"],
-            "default": "all",
-            "description": "Filter by ecosystem"
-          },
-          "limit": {
-            "type": "integer",
-            "default": 10,
-            "description": "Maximum number of results"
           }
         },
         "required": ["query"]
@@ -44,6 +33,10 @@
             "type": "array",
             "items": { "type": "string" },
             "description": "Specific skill names to install (if package contains multiple)"
+          },
+          "install_all": {
+            "type": "boolean",
+            "description": "Install all skills from the package into the managed global agent directory."
           }
         },
         "required": ["package"]
@@ -62,13 +55,7 @@
       "description": "Update all installed skills to their latest versions",
       "input_schema": {
         "type": "object",
-        "properties": {
-          "skill_ids": {
-            "type": "array",
-            "items": { "type": "string" },
-            "description": "Specific skill IDs to update (optional, defaults to all)"
-          }
-        }
+        "properties": {}
       }
     },
     {
@@ -93,12 +80,12 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "skill_id": {
+          "skill_name": {
             "type": "string",
-            "description": "ID of the skill to uninstall"
+            "description": "Installed skill identifier to remove"
           }
         },
-        "required": ["skill_id"]
+        "required": ["skill_name"]
       }
     }
   ]

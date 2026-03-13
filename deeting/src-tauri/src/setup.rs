@@ -129,6 +129,8 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     let sync_state = state.clone();
     app.manage(state);
+    crate::state::set_global_app_state(sync_state.clone());
+    crate::state::set_global_app_handle(app.handle().clone());
     let sync_state_for_mcp = sync_state.clone();
     let app_handle_for_mcp_tasks = app.handle().clone();
 
