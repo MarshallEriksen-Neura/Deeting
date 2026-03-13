@@ -29,6 +29,17 @@ async fn connect_sse_client(
         Ok(client) => Ok(client),
         Err(primary_error) => {
             if !is_http_405_method_not_allowed_error(&primary_error) {
+                if looks_like_legacy_sse_endpoint_url(sse_url) {
+                    match connect_legacy_sse_proxy_client(sse_url).await {
+                        Ok(proxy_client) => return Ok(proxy_client),
+                        Err(proxy_error) => {
+                            return Err(format!(
+                                "{}; legacy SSE proxy fallback failed: {}",
+                                primary_error, proxy_error
+                            ));
+                        }
+                    }
+                }
                 return Err(primary_error);
             }
 
@@ -69,11 +80,13 @@ async fn connect_sse_client(
                 primary_error
             };
 
-            if let Ok(proxy_client) = connect_legacy_sse_proxy_client(sse_url).await {
-                return Ok(proxy_client);
+            match connect_legacy_sse_proxy_client(sse_url).await {
+                Ok(proxy_client) => Ok(proxy_client),
+                Err(proxy_error) => Err(format!(
+                    "{}; legacy SSE proxy fallback failed: {}",
+                    streamable_error, proxy_error
+                )),
             }
-
-            Err(streamable_error)
         }
     }
 }
@@ -142,6 +155,13 @@ fn client_info() -> ClientInfo {
 fn is_http_405_method_not_allowed_error(error_text: &str) -> bool {
     let normalized = error_text.to_ascii_lowercase();
     normalized.contains("http 405") || normalized.contains("405 method not allowed")
+}
+
+fn looks_like_legacy_sse_endpoint_url(url: &str) -> bool {
+    reqwest::Url::parse(url)
+        .ok()
+        .map(|parsed| parsed.path().trim_end_matches('/').ends_with("/sse"))
+        .unwrap_or(false)
 }
 
 fn is_executable_file(path: &Path) -> bool {
@@ -574,7 +594,7 @@ mod tests {
     use super::{
         build_url_with_same_origin, extract_legacy_sse_endpoint_path,
         heuristic_streamable_http_fallback_urls, is_http_405_method_not_allowed_error,
-        legacy_sse_proxy_command_candidates,
+        legacy_sse_proxy_command_candidates, looks_like_legacy_sse_endpoint_url,
     };
 
     #[test]
@@ -613,6 +633,16 @@ mod tests {
         assert_eq!(candidates.len(), 2);
         assert_eq!(candidates[0], "https://mcp.example.com/abc123/mcp");
         assert_eq!(candidates[1], "https://mcp.example.com/mcp");
+    }
+
+    #[test]
+    fn detects_legacy_sse_endpoint_url() {
+        assert!(looks_like_legacy_sse_endpoint_url(
+            "https://mcp.example.com/abc123/sse"
+        ));
+        assert!(!looks_like_legacy_sse_endpoint_url(
+            "https://mcp.example.com/mcp"
+        ));
     }
 
     #[test]
