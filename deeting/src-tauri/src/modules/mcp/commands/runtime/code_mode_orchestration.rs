@@ -6,8 +6,8 @@ use super::{
     build_local_tool_trace_blocks, execute_or_queue_mcp_tool_call_with_tool_ref,
     extract_chat_tool_calls, install_local_skill_from_onboarding_request,
     request_provider_chat_completion, resolve_callable_mcp_tool_by_ref,
-    resolve_local_capability_activation_state, resolve_skill_binding_by_ref,
-    LocalCapabilityActivationState, LocalExecutionPolicy,
+    resolve_dynamic_direct_capability_tool_name, resolve_local_capability_activation_state,
+    resolve_skill_binding_by_ref, LocalCapabilityActivationState, LocalExecutionPolicy,
     LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION, LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
 };
 use crate::modules::mcp::commands::common_impl::LocalModelConnection;
@@ -480,7 +480,12 @@ async fn maybe_handle_local_code_mode_tool_calls(
     let mut capability_update = None;
 
     for call in tool_calls {
-        let tool_name = call.name.trim().to_lowercase();
+        let requested_tool_name = call.name.trim().to_lowercase();
+        let tool_name = resolve_dynamic_direct_capability_tool_name(
+            &requested_tool_name,
+            last_capability_snapshot.as_ref(),
+        )
+        .unwrap_or(requested_tool_name);
         let call_id = call.id.clone().unwrap_or_default();
         if !effective_allowed_tool_names
             .iter()
@@ -1036,6 +1041,7 @@ fn build_execution_contract_from_search_result(
 mod tests {
     use super::*;
     use crate::modules::mcp::commands::runtime::build_local_tool_call_install_gate_error_meta;
+    use crate::modules::mcp::commands::runtime::dynamic_capability_alias;
     use crate::modules::mcp::commands::runtime::LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE;
 
     #[test]
@@ -1078,5 +1084,27 @@ mod tests {
         );
         assert_eq!(meta["status"], serde_json::json!("error"));
         assert_eq!(meta["name"], serde_json::json!("stock_quotes"));
+    }
+
+    #[test]
+    fn resolves_direct_capability_alias_back_to_callable_name() {
+        let alias = dynamic_capability_alias("skill.official.skills.weather.get_weather");
+        let resolved = resolve_dynamic_direct_capability_tool_name(
+            &alias,
+            Some(&serde_json::json!({
+                "capabilities": [
+                    {
+                        "name": "skill.official.skills.weather.get_weather",
+                        "invocation_mode": "direct",
+                        "status": {"callable": true}
+                    }
+                ]
+            })),
+        );
+
+        assert_eq!(
+            resolved.as_deref(),
+            Some("skill.official.skills.weather.get_weather")
+        );
     }
 }

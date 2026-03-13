@@ -65,84 +65,71 @@ describe("assistant install apis", () => {
     delete windowWithTauri.__TAURI_INTERNALS__
   })
 
-  it("fetches assistant installs via tauri command", async () => {
+  it("fetches assistant installs via web request even in tauri runtime", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
-    mockInvoke.mockImplementation(async (command: string) => {
-      if (command === "sync_local_system_assets") {
-        return {
-          fetched_count: 1,
-          assistant_fetched_count: 1,
-          skill_fetched_count: 0,
-          upserted_count: 1,
-          hidden_count: 0,
-          metadata_only_count: 0,
-          executable_count: 1,
-          archived_count: 0,
-          skill_install_fetched_count: 0,
-          skill_install_upserted_count: 0,
-          skill_reinstalled_count: 0,
-          skill_failed_count: 0,
-          disabled_skill_count: 0,
-          archived_assistant_count: 0,
-        }
-      }
-      if (command === "list_local_assistant_entities") {
-        return [
-          {
-            id: installItem.assistant_id,
-            owner_user_id: null,
-            visibility: "public",
-            status: "published",
-            share_slug: null,
-            summary: installItem.assistant.summary,
-            icon_id: installItem.assistant.icon_id,
-            current_version_id: installItem.assistant.current_version_id,
-            published_at: null,
-            install_count: 1,
-            rating_avg: 0,
-            rating_count: 0,
-          },
-        ]
-      }
-      if (command === "list_local_assistant_versions") {
-        return [
-          {
-            ...installItem.assistant.version,
-            assistant_id: installItem.assistant_id,
-          },
-        ]
-      }
-      throw new Error(`Unexpected command: ${command}`)
+    mockRequest.mockResolvedValue({
+      items: [installItem],
+      next_page: null,
+      previous_page: null,
     })
 
     const result = await fetchAssistantInstalls({ size: 20 })
 
     expect(result.items).toHaveLength(1)
     expect(result.items[0].assistant_id).toBe(installItem.assistant_id)
-    expect(mockRequest).not.toHaveBeenCalled()
+    expect(mockRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: "/api/v1/assistants/installs",
+        method: "GET",
+        params: { size: 20 },
+      })
+    )
+    expect(mockInvoke).not.toHaveBeenCalled()
   })
 
-  it("disallows assistant install in tauri runtime", async () => {
+  it("allows assistant install in tauri runtime via cloud request", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
-    await expect(
-      installAssistant(installItem.assistant_id, {
-        follow_latest: true,
+    mockRequest.mockResolvedValue({})
+
+    await installAssistant(installItem.assistant_id, {
+      follow_latest: true,
+    })
+
+    expect(mockRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: `/api/v1/assistants/${installItem.assistant_id}/install`,
+        method: "POST",
+        data: { follow_latest: true },
       })
-    ).rejects.toThrow("assistant install is cloud-only")
+    )
+    expect(mockInvoke).not.toHaveBeenCalled()
   })
 
-  it("disallows assistant install updates in tauri runtime", async () => {
+  it("allows assistant install updates in tauri runtime via cloud request", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
-    await expect(
-      updateAssistantInstall(installItem.assistant_id, {
-        alias: "my-alias",
-        follow_latest: false,
-        pinned_version_id: "3c1855f8-4080-4f67-8bdf-d00adaf42cae",
+    mockRequest.mockResolvedValue({})
+
+    await updateAssistantInstall(installItem.assistant_id, {
+      alias: "my-alias",
+      follow_latest: false,
+      pinned_version_id: "3c1855f8-4080-4f67-8bdf-d00adaf42cae",
+    })
+
+    expect(mockRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: `/api/v1/assistants/${installItem.assistant_id}/install`,
+        method: "PATCH",
+        data: {
+          alias: "my-alias",
+          follow_latest: false,
+          pinned_version_id: "3c1855f8-4080-4f67-8bdf-d00adaf42cae",
+        },
       })
-    ).rejects.toThrow("assistant install update is cloud-only")
+    )
+    expect(mockInvoke).not.toHaveBeenCalled()
   })
 
   it("falls back to web request outside tauri runtime", async () => {

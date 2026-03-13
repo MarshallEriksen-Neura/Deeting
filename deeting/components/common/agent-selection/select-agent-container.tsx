@@ -7,7 +7,6 @@ import { useTranslations } from 'next-intl';
 import { CreateAgentModal } from '@/components/assistants/create-agent-modal';
 import { GlassButton } from '@/components/ui/glass-button';
 import { GlassCard } from '@/components/ui/glass-card';
-import { useMarketStore } from '@/store/market-store';
 import { useChatService } from '@/hooks/use-chat-service';
 import { useUserProfile } from '@/hooks/use-user';
 
@@ -29,24 +28,8 @@ export function SelectAgentContainer() {
   const router = useRouter();
   const t = useTranslations('assistants');
   const tCommon = useTranslations('common');
-  const installedAgents = useMarketStore((state) => state.installedAgents);
-  const localAssistants = useMarketStore((state) => state.localAssistants);
-  const loadLocalAssistants = useMarketStore((state) => state.loadLocalAssistants);
-  const loaded = useMarketStore((state) => state.loaded);
   const { profile } = useUserProfile();
-  const isTauri = process.env.NEXT_PUBLIC_IS_TAURI === "true";
-  const { assistants: cloudAssistants, removeAssistantOptimistic } = useChatService({ enabled: !isTauri });
-
-  React.useEffect(() => {
-    if (loaded || !isTauri) return;
-    void loadLocalAssistants();
-  }, [isTauri, loaded, loadLocalAssistants]);
-
-  // 使用 useMemo 缓存助手映射
-  const assistantMap = React.useMemo(
-    () => (isTauri ? new Map(localAssistants.map((assistant) => [assistant.id, assistant])) : new Map()),
-    [isTauri, localAssistants]
-  );
+  const { assistants: cloudAssistants, removeAssistantOptimistic } = useChatService({ enabled: true });
 
   // 使用 useMemo 缓存云端助手列表
   const cloudAgents = React.useMemo(
@@ -67,7 +50,7 @@ export function SelectAgentContainer() {
     [cloudAssistants]
   );
 
-  const displayAgents = isTauri ? installedAgents : cloudAgents;
+  const displayAgents = cloudAgents;
 
   // 使用 useCallback 缓存事件处理函数
   const handleSelectAgent = React.useCallback(
@@ -120,29 +103,27 @@ export function SelectAgentContainer() {
             onClick={handleCreateAgent}
           />
           {displayAgents.map((agent) => {
-            const record = assistantMap.get(agent.id);
-            // In Cloud mode, allow editing if current user is the owner
             const canEdit =
-              isTauri || (agent.ownerUserId && profile?.id && agent.ownerUserId === profile.id);
+              Boolean(agent.ownerUserId && profile?.id && agent.ownerUserId === profile.id);
 
             return (
-              <AgentCard
-                key={agent.id}
-                icon={<MessageSquare className="w-6 h-6 text-blue-400" />}
-                name={agent.name}
-                desc={record?.description ?? agent.desc ?? ''}
-                onClick={() => handleSelectAgent(agent.id)}
-                action={
+          <AgentCard
+            key={agent.id}
+            icon={<MessageSquare className="w-6 h-6 text-blue-400" />}
+            name={agent.name}
+            desc={agent.desc ?? ''}
+            onClick={() => handleSelectAgent(agent.id)}
+            action={
                   canEdit ? (
                     <CreateAgentModal
-                      mode={isTauri ? "local" : "cloud"}
+                      mode="cloud"
                       assistant={{
                         id: agent.id,
                         name: agent.name,
-                        desc: record?.description ?? agent.desc ?? '',
-                        systemPrompt: record?.system_prompt ?? agent.systemPrompt ?? '',
-                        tags: record?.tags ?? agent.tags ?? [],
-                        iconId: record?.avatar ?? agent.icon ?? 'lucide:bot',
+                        desc: agent.desc ?? '',
+                        systemPrompt: agent.systemPrompt ?? '',
+                        tags: agent.tags ?? [],
+                        iconId: agent.icon ?? 'lucide:bot',
                         color: agent.color,
                       }}
                       onUpdated={(assistantId) => {
@@ -151,9 +132,7 @@ export function SelectAgentContainer() {
                       }}
                       onDeleted={(assistantId) => {
                         if (!assistantId) return
-                        if (!isTauri) {
-                          removeAssistantOptimistic(assistantId)
-                        }
+                        removeAssistantOptimistic(assistantId)
                         // 删除助手后不跳转，保持在当前页面
                       }}
                       trigger={

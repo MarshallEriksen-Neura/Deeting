@@ -27,10 +27,10 @@ describe("assistant tags api", () => {
     delete windowWithTauri.__TAURI_INTERNALS__
   })
 
-  it("fetches assistant tags via tauri command", async () => {
+  it("fetches assistant tags via web endpoint even in tauri runtime", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
-    mockInvoke.mockResolvedValue([
+    mockRequest.mockResolvedValue([
       {
         id: "ca8c65e1-ffdd-45aa-8f58-b7709ed318de",
         name: "#chat",
@@ -43,8 +43,13 @@ describe("assistant tags api", () => {
 
     expect(result).toHaveLength(1)
     expect(result[0].name).toBe("#chat")
-    expect(mockInvoke).toHaveBeenCalledWith("list_local_assistant_tags", undefined)
-    expect(mockRequest).not.toHaveBeenCalled()
+    expect(mockRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: "/api/v1/assistants/tags",
+        method: "GET",
+      })
+    )
+    expect(mockInvoke).not.toHaveBeenCalled()
   })
 
   it("fetches assistant tags via web endpoint outside tauri runtime", async () => {

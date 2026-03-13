@@ -38,8 +38,11 @@ pub(crate) use chat_completion::{
 };
 #[cfg(test)]
 pub(crate) use code_mode_catalog::build_local_code_mode_entry_tools;
+#[cfg(test)]
+pub(crate) use code_mode_catalog::dynamic_capability_alias;
 pub(crate) use code_mode_catalog::{
     build_local_code_mode_entry_tools_with_allowlist, build_local_sdk_search_result_with_runtime,
+    resolve_dynamic_direct_capability_tool_name,
 };
 pub(crate) use code_mode_orchestration::run_local_chat_complete_with_auto_code_mode;
 #[cfg(test)]

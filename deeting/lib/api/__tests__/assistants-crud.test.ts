@@ -26,31 +26,6 @@ const windowWithTauri = window as Window & {
 const assistantId = "ca8c65e1-ffdd-45aa-8f58-b7709ed318de"
 const versionId = "3c1855f8-4080-4f67-8bdf-d00adaf42cae"
 
-const localEntity = {
-  id: assistantId,
-  owner_user_id: null,
-  visibility: "private",
-  status: "published",
-  share_slug: null,
-  summary: "summary",
-  icon_id: "lucide:bot",
-  current_version_id: versionId,
-  published_at: null,
-  install_count: 0,
-  rating_avg: 0,
-  rating_count: 0,
-}
-
-const localVersion = {
-  id: versionId,
-  assistant_id: assistantId,
-  version: "1.0.0",
-  name: "assistant-v1",
-  description: "desc",
-  system_prompt: "you are assistant",
-  tags: ["#chat"],
-}
-
 describe("assistant crud api", () => {
   afterEach(() => {
     mockRequest.mockReset()
@@ -60,13 +35,33 @@ describe("assistant crud api", () => {
     delete windowWithTauri.__TAURI_INTERNALS__
   })
 
-  it("creates assistant via tauri commands", async () => {
+  it("creates assistant via cloud request in tauri runtime", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
-    mockInvoke
-      .mockResolvedValueOnce(assistantId as unknown)
-      .mockResolvedValueOnce([localEntity] as unknown)
-      .mockResolvedValueOnce([localVersion] as unknown)
+    mockRequest.mockResolvedValueOnce({
+      id: assistantId,
+      owner_user_id: null,
+      visibility: "private",
+      status: "draft",
+      share_slug: null,
+      summary: "summary",
+      icon_id: "lucide:bot",
+      current_version_id: versionId,
+      published_at: null,
+      versions: [
+        {
+          id: versionId,
+          version: "1.0.0",
+          name: "assistant-v1",
+          description: "desc",
+          system_prompt: "you are assistant",
+          tags: ["#chat"],
+        },
+      ],
+      install_count: 0,
+      rating_avg: 0,
+      rating_count: 0,
+    })
 
     const result = await createAssistant({
       visibility: "private",
@@ -86,34 +81,54 @@ describe("assistant crud api", () => {
     })
 
     expect(result.id).toBe(assistantId)
-    expect(mockInvoke).toHaveBeenNthCalledWith(
+    expect(mockRequest).toHaveBeenNthCalledWith(
       1,
-      "create_local_assistant",
       expect.objectContaining({
-        payload: expect.objectContaining({
-          name: "assistant-v1",
-          description: "summary",
-          avatar: "lucide:bot",
-          system_prompt: "you are assistant",
-          model_config: {
-            model: "gpt-4o-mini",
-            provider_model_id: "22222222-2222-4222-8222-222222222222",
-          },
+        url: "/api/v1/assistants",
+        method: "POST",
+        data: expect.objectContaining({
+          version: expect.objectContaining({
+            name: "assistant-v1",
+            system_prompt: "you are assistant",
+            model_config: {
+              model: "gpt-4o-mini",
+              provider_model_id: "22222222-2222-4222-8222-222222222222",
+            },
+            tags: ["#chat"],
+          }),
         }),
       })
     )
-    expect(mockRequest).not.toHaveBeenCalled()
+    expect(mockInvoke).not.toHaveBeenCalled()
   })
 
-  it("updates assistant via tauri commands", async () => {
+  it("updates assistant via cloud request in tauri runtime", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
-    mockInvoke
-      .mockResolvedValueOnce({
+    mockRequest.mockResolvedValueOnce({
         id: assistantId,
+        owner_user_id: null,
+        visibility: "private",
+        status: "published",
+        share_slug: null,
+        summary: "new-summary",
+        icon_id: "lucide:brain",
+        current_version_id: versionId,
+        published_at: null,
+        versions: [
+          {
+            id: versionId,
+            version: "1.0.1",
+            name: "assistant-v1",
+            description: "new-desc",
+            system_prompt: "new prompt",
+            tags: ["#chat"],
+          },
+        ],
+        install_count: 0,
+        rating_avg: 0,
+        rating_count: 0,
       } as unknown)
-      .mockResolvedValueOnce([localEntity] as unknown)
-      .mockResolvedValueOnce([localVersion] as unknown)
 
     const result = await updateAssistant(assistantId, {
       summary: "new-summary",
@@ -130,60 +145,61 @@ describe("assistant crud api", () => {
     })
 
     expect(result.id).toBe(assistantId)
-    expect(mockInvoke).toHaveBeenNthCalledWith(
+    expect(mockRequest).toHaveBeenNthCalledWith(
       1,
-      "update_local_assistant",
       expect.objectContaining({
-        id: assistantId,
-        payload: expect.objectContaining({
-          description: "new-summary",
-          avatar: "lucide:brain",
-          system_prompt: "new prompt",
-          model_config: {
-            model: "gpt-4.1",
-            provider_model_id: "33333333-3333-4333-8333-333333333333",
-          },
+        url: `/api/v1/assistants/${assistantId}`,
+        method: "PATCH",
+        data: expect.objectContaining({
+          summary: "new-summary",
+          icon_id: "lucide:brain",
+          version: expect.objectContaining({
+            name: "assistant-v1",
+            system_prompt: "new prompt",
+            model_config: {
+              model: "gpt-4.1",
+              provider_model_id: "33333333-3333-4333-8333-333333333333",
+            },
+          }),
         }),
       })
     )
-    expect(mockRequest).not.toHaveBeenCalled()
+    expect(mockInvoke).not.toHaveBeenCalled()
   })
 
-  it("deletes assistant via tauri command", async () => {
+  it("deletes assistant via cloud request in tauri runtime", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
-    mockInvoke.mockResolvedValue(undefined as unknown)
+    mockRequest.mockResolvedValueOnce({} as unknown)
 
     await deleteAssistant(assistantId)
 
-    expect(mockInvoke).toHaveBeenCalledWith("delete_local_assistant", { id: assistantId })
-    expect(mockRequest).not.toHaveBeenCalled()
+    expect(mockRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: `/api/v1/assistants/${assistantId}`,
+        method: "DELETE",
+      })
+    )
+    expect(mockInvoke).not.toHaveBeenCalled()
   })
 
-  it("rejects cloud-only assistant operations in tauri runtime", async () => {
+  it("submits assistant review via cloud request in tauri runtime", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
+    mockRequest.mockResolvedValueOnce({
+      message: "assistant submitted for review",
+    })
 
-    await expect(
-      createAssistant({
-        visibility: "public",
-        status: "published",
-        share_to_market: true,
-        version: {
-          name: "assistant-v1",
-          system_prompt: "you are assistant",
-        },
-      })
-    ).rejects.toThrow("cloud-only")
-    await expect(
-      updateAssistant(assistantId, {
-        visibility: "public",
-      })
-    ).rejects.toThrow("cloud-only")
-    await expect(submitAssistantForReview(assistantId)).rejects.toThrow("cloud-only")
+    const result = await submitAssistantForReview(assistantId)
 
+    expect(result.message).toBe("assistant submitted for review")
+    expect(mockRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: `/api/v1/assistants/${assistantId}/submit`,
+        method: "POST",
+      })
+    )
     expect(mockInvoke).not.toHaveBeenCalled()
-    expect(mockRequest).not.toHaveBeenCalled()
   })
 
   it("falls back to web crud outside tauri runtime", async () => {

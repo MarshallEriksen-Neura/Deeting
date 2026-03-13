@@ -2,7 +2,6 @@
 
 import { useMemo, useEffect, useRef } from "react"
 import { useChatStore, type ChatAssistant } from "@/store/chat-store"
-import { useMarketStore } from "@/store/market-store"
 
 interface UseChatAgentProps {
   selectedAssistantId: string
@@ -11,20 +10,13 @@ interface UseChatAgentProps {
 }
 
 export function useChatAgent({ selectedAssistantId, isTauriRuntime, cloudAssistant }: UseChatAgentProps) {
-  const installedAgents = useMarketStore((state) => state.installedAgents)
-  const loadLocalAssistants = useMarketStore((state) => state.loadLocalAssistants)
-  const marketLoaded = useMarketStore((state) => state.loaded)
-
   const { setSelectedAssistantId, setSelectedAssistant } = useChatStore()
-
-  // 获取本地代理
-  const localAgent = installedAgents.find(a => a.id === selectedAssistantId)
 
   // 合并云端/本地代理
   const agent = useMemo(() => {
-    if (isTauriRuntime) return localAgent
+    if (isTauriRuntime) return null
     return cloudAssistant
-  }, [isTauriRuntime, localAgent, cloudAssistant])
+  }, [isTauriRuntime, cloudAssistant])
 
   // 使用 ref 跟踪上一个 agent.id，避免重复同步
   const prevAgentIdRef = useRef<string | null>(null)
@@ -43,16 +35,9 @@ export function useChatAgent({ selectedAssistantId, isTauriRuntime, cloudAssista
     setSelectedAssistantId(selectedAssistantId)
   }, [selectedAssistantId, setSelectedAssistantId])
 
-  // Tauri 代理加载
-  useEffect(() => {
-    if (!isTauriRuntime) return
-    if (marketLoaded) return
-    void loadLocalAssistants()
-  }, [marketLoaded, loadLocalAssistants, isTauriRuntime])
-
   return {
     agent,
-    localAgent,
-    marketLoaded,
+    localAgent: null,
+    marketLoaded: true,
   }
 }

@@ -3,7 +3,6 @@
 import * as React from "react"
 import { useSearchParams } from "next/navigation"
 import { useChatStore } from "@/store/chat-store"
-import { useMarketStore } from "@/store/market-store"
 import { ChatLayout } from "./chat-layout"
 import { ChatContent } from "./chat-content"
 import { ChatErrorBoundary } from "./chat-error-boundary"
@@ -42,9 +41,6 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
     []
   )
 
-  const loadLocalAssistants = useMarketStore((state) => state.loadLocalAssistants)
-  const marketLoaded = useMarketStore((state) => state.loaded)
-
   // 获取 sessionId（稳定计算，不依赖 state）
   const sessionId = React.useMemo(() => {
     const querySessionId = searchParams?.get("session")?.trim()
@@ -62,21 +58,9 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
     const initKey = `${runtimeAgentId}:${sessionId ?? ""}`
     if (initCalledRef.current === initKey) return
 
-    if (isTauriRuntime) {
-      if (!marketLoaded) return
-      initCalledRef.current = initKey
-      void initSession("", sessionId, null)
-    } else {
-      initCalledRef.current = initKey
-      void initSession(agentId, sessionId, null)
-    }
-  }, [agentId, sessionId, isTauriRuntime, marketLoaded, initSession])
-
-  // Tauri 环境：加载本地 assistants
-  React.useEffect(() => {
-    if (!isTauriRuntime || marketLoaded) return
-    void loadLocalAssistants()
-  }, [isTauriRuntime, marketLoaded, loadLocalAssistants])
+    initCalledRef.current = initKey
+    void initSession(isTauriRuntime ? "" : agentId, sessionId, null)
+  }, [agentId, sessionId, isTauriRuntime, initSession])
 
   // 显示加载状态
   const showLoading = !initialized || (isLoading && !selectedAssistant)

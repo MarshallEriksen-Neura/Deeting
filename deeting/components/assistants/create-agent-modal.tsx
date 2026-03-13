@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useForm, type UseFormReturn } from "react-hook-form"
+import { useForm, type Resolver, type UseFormReturn } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import { Plus, Loader2, Sparkles, Trash2, Check, ChevronDown, X } from "lucide-react"
@@ -53,7 +53,6 @@ import { Switch } from "@/components/ui/switch"
 import { createAssistant, updateAssistant, deleteAssistant as deleteCloudAssistant } from "@/lib/api"
 import { useAssistantTags } from "@/lib/swr/use-assistant-tags"
 import { cn } from "@/lib/utils"
-import { useMarketStore } from "@/store/market-store"
 import { ProviderIconPicker } from "@/components/providers/provider-icon-picker"
 
 const COLOR_OPTIONS = [
@@ -100,7 +99,7 @@ interface CreateAgentModalProps {
 }
 
 export function CreateAgentModal({
-  mode = "local",
+  mode = "cloud",
   trigger,
   assistant,
   onCreated,
@@ -122,17 +121,7 @@ export function CreateAgentModal({
     }
     onOpenChange?.(nextOpen)
   }
-  const createLocalAssistant = useMarketStore((state) => state.createLocalAssistant)
-  const updateLocalAssistant = useMarketStore((state) => state.updateLocalAssistant)
-  const deleteLocalAssistant = useMarketStore((state) => state.deleteLocalAssistant)
-  const isTauriRuntime = React.useMemo(
-    () =>
-      process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
-      typeof window !== "undefined" &&
-      ("__TAURI_INTERNALS__" in window || "__TAURI__" in window),
-    []
-  )
-  const effectiveMode = isTauriRuntime ? "local" : mode
+  const effectiveMode = mode
   const isEditMode = Boolean(assistant)
   const [isDeleting, setIsDeleting] = React.useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
@@ -163,8 +152,13 @@ export function CreateAgentModal({
         }),
         color: z.string(),
         shareToMarket: z.boolean().optional(),
-      }),
+      }) as z.ZodType<AssistantFormValues>,
     [t]
+  )
+
+  const resolver = React.useMemo(
+    () => zodResolver(formSchema as any) as unknown as Resolver<AssistantFormValues>,
+    [formSchema]
   )
 
   const defaultValues = React.useMemo(
@@ -181,9 +175,9 @@ export function CreateAgentModal({
   )
 
   const form = useForm<AssistantFormValues>({
-    resolver: zodResolver(formSchema),
+    resolver,
     defaultValues,
-  })
+  }) as UseFormReturn<AssistantFormValues>
 
   React.useEffect(() => {
     if (currentOpen) {
@@ -208,59 +202,35 @@ export function CreateAgentModal({
     })()
     try {
       let createdId: string | undefined
-      if (effectiveMode === "local") {
-        if (assistant) {
-          await updateLocalAssistant(assistant.id, {
+      const shareToMarket = Boolean(values.shareToMarket)
+      if (assistant) {
+        await updateAssistant(assistant.id, {
+          visibility: shareToMarket ? "public" : "private",
+          status: shareToMarket ? "published" : "draft",
+          summary: desc ? desc.slice(0, 200) : null,
+          icon_id: values.iconId,
+          version: {
             name: values.name,
             description: desc || null,
-            avatar: values.iconId,
             system_prompt: values.systemPrompt,
             tags: tagsArray,
-            visibility: "private",
-            source: "local",
-          })
-        } else {
-          createdId = await createLocalAssistant({
-            name: values.name,
-            description: desc || null,
-            avatar: values.iconId,
-            system_prompt: values.systemPrompt,
-            tags: tagsArray,
-            visibility: "private",
-            source: "local",
-          })
-        }
+          },
+        })
       } else {
-        const shareToMarket = Boolean(values.shareToMarket)
-        if (assistant) {
-          await updateAssistant(assistant.id, {
-            visibility: shareToMarket ? "public" : "private",
-            status: shareToMarket ? "published" : "draft",
-            summary: desc ? desc.slice(0, 200) : null,
-            icon_id: values.iconId,
-            version: {
-              name: values.name,
-              description: desc || null,
-              system_prompt: values.systemPrompt,
-              tags: tagsArray,
-            },
-          })
-        } else {
-          const created = await createAssistant({
-            visibility: shareToMarket ? "public" : "private",
-            status: shareToMarket ? "published" : "draft",
-            summary: desc ? desc.slice(0, 200) : null,
-            icon_id: values.iconId,
-            share_to_market: shareToMarket,
-            version: {
-              name: values.name,
-              description: desc || null,
-              system_prompt: values.systemPrompt,
-              tags: tagsArray,
-            },
-          })
-          createdId = created?.id
-        }
+        const created = await createAssistant({
+          visibility: shareToMarket ? "public" : "private",
+          status: shareToMarket ? "published" : "draft",
+          summary: desc ? desc.slice(0, 200) : null,
+          icon_id: values.iconId,
+          share_to_market: shareToMarket,
+          version: {
+            name: values.name,
+            description: desc || null,
+            system_prompt: values.systemPrompt,
+            tags: tagsArray,
+          },
+        })
+        createdId = created?.id
       }
 
       if (assistant) {
@@ -292,11 +262,7 @@ export function CreateAgentModal({
     if (!assistant) return
     try {
       setIsDeleting(true)
-      if (effectiveMode === "local") {
-        await deleteLocalAssistant(assistant.id)
-      } else {
-        await deleteCloudAssistant(assistant.id)
-      }
+      await deleteCloudAssistant(assistant.id)
       toast.success(t("toast.assistantDeletedTitle"), {
         description: t("toast.assistantDeletedDesc", { name: assistant.name }),
       })
@@ -392,12 +358,12 @@ export function CreateAgentModal({
                     {t("edit.delete")}
                   </Button>
                   <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>{t("edit.deleteConfirmTitle")}</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        {t("edit.deleteConfirmDesc", { name: assistant?.name })}
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>{t("edit.deleteConfirmTitle")}</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          {t("edit.deleteConfirmDesc", { name: assistant?.name ?? "" })}
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
                     <AlertDialogFooter>
                       <AlertDialogCancel>{t("edit.deleteConfirmCancel")}</AlertDialogCancel>
                       <AlertDialogAction asChild>
