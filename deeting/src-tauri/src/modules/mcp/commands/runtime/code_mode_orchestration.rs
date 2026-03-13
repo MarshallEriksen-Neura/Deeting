@@ -3,8 +3,9 @@ use super::{
     append_streamable_local_tool_result_blocks, build_auto_code_mode_tool_feedback,
     build_local_code_mode_entry_tools_with_allowlist, build_local_consult_expert_network_result,
     build_local_sdk_search_result_with_runtime, build_local_tool_call_install_gate_error_meta,
-    build_local_tool_trace_blocks, extract_chat_tool_calls,
-    install_local_skill_from_onboarding_request, request_provider_chat_completion,
+    build_local_tool_trace_blocks, execute_or_queue_mcp_tool_call_with_tool_ref,
+    extract_chat_tool_calls, install_local_skill_from_onboarding_request,
+    request_provider_chat_completion, resolve_callable_mcp_tool_by_ref,
     resolve_local_capability_activation_state, LocalCapabilityActivationState,
     LocalExecutionPolicy, LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
     LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
@@ -180,7 +181,7 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
         active_capability: None,
         all_tool_call_meta: Vec::new(),
         runtime_metrics: RuntimeMetricsAccumulator::default(),
-        last_capability_snapshot: None,
+        last_capability_snapshot: execution_policy.capability_snapshot.clone(),
         last_response: None,
         realtime_emitter: LocalRealtimeToolTraceEmitter::new(
             event_tx,
@@ -233,8 +234,12 @@ async fn continue_local_chat_complete_with_auto_code_mode(
             return Ok(LocalChatAutoCodeModeOutput { response: fallback });
         }
 
+        let effective_allowed_tool_names = state
+            .execution_policy
+            .effective_allowed_tool_names(state.last_capability_snapshot.as_ref());
         let tools = build_local_code_mode_entry_tools_with_allowlist(
-            &state.execution_policy.allowed_tool_names,
+            &effective_allowed_tool_names,
+            state.last_capability_snapshot.as_ref(),
         );
         let response = request_provider_chat_completion(
             app_state,
@@ -271,7 +276,7 @@ async fn continue_local_chat_complete_with_auto_code_mode(
             app_state,
             &response,
             &state.chat_ctx,
-            &state.execution_policy,
+            &effective_allowed_tool_names,
             state.active_capability.as_ref(),
             &mut state.last_capability_snapshot,
             &mut state.realtime_emitter,
@@ -455,7 +460,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
     app_state: &AppState,
     chat_response: &serde_json::Value,
     chat_ctx: &LocalConversationChatContext,
-    execution_policy: &LocalExecutionPolicy,
+    effective_allowed_tool_names: &[String],
     active_capability: Option<&LocalCapabilityActivationState>,
     last_capability_snapshot: &mut Option<serde_json::Value>,
     realtime_emitter: &mut LocalRealtimeToolTraceEmitter,
@@ -477,7 +482,10 @@ async fn maybe_handle_local_code_mode_tool_calls(
     for call in tool_calls {
         let tool_name = call.name.trim().to_lowercase();
         let call_id = call.id.clone().unwrap_or_default();
-        if !execution_policy.allows_tool(&tool_name) {
+        if !effective_allowed_tool_names
+            .iter()
+            .any(|item| item == &tool_name)
+        {
             synthesized = true;
             let error = format!(
                 "tool '{}' is not enabled for the current execution policy",
@@ -832,25 +840,95 @@ async fn maybe_handle_local_code_mode_tool_calls(
             }
         } else {
             synthesized = true;
-            let error = format!(
-                "tool '{}' is not installed or enabled in local desktop runtime",
-                tool_name
-            );
             realtime_emitter.emit_execution_section_once();
             realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call.id,"toolName":tool_name,"status":"running"})]);
-            let meta = build_local_tool_call_install_gate_error_meta(
-                call.id.as_deref(),
-                &tool_name,
-                &error,
-            );
-            let mut streamed_blocks = Vec::new();
-            append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
-            realtime_emitter.emit_blocks(streamed_blocks);
-            tool_call_meta.push(meta);
-            results.push(format!(
-                "Tool call '{}' failed [{}]: {}",
-                tool_name, LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE, error
-            ));
+            match resolve_callable_mcp_tool_by_ref(
+                app_state.mcp.store.as_ref(),
+                None,
+                Some(&tool_name),
+            )
+            .await
+            {
+                Ok(tool) => {
+                    let risk = app_state.mcp.assess_tool_risk(&tool, &call.arguments);
+                    let approval_context = app_state
+                        .mcp
+                        .build_approval_context(call.id.as_deref(), None);
+                    match execute_or_queue_mcp_tool_call_with_tool_ref(
+                        &approval_context,
+                        Some(risk.risk_level),
+                        risk.reasons,
+                        Some(&app_state.mcp),
+                        app_state.mcp.store.as_ref(),
+                        app_state.mcp.pending_tool_calls.as_ref(),
+                        Some(tool.id.clone()),
+                        Some(tool.name.clone()),
+                        call.arguments.clone(),
+                        risk.requires_approval,
+                    )
+                    .await
+                    {
+                        Ok(tool_result) => {
+                            let requires_approval = tool_result
+                                .get("status")
+                                .and_then(serde_json::Value::as_str)
+                                .map(|status| status == "REQUIRES_APPROVAL")
+                                .unwrap_or(false);
+                            let meta = serde_json::json!({
+                                "id": call.id,
+                                "name": tool_name,
+                                "status": if requires_approval { "requires_approval" } else { "success" },
+                                "result": tool_result,
+                            });
+                            let mut streamed_blocks = Vec::new();
+                            append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+                            realtime_emitter.emit_blocks(streamed_blocks);
+                            tool_call_meta.push(meta);
+                            if requires_approval {
+                                results.push(format!(
+                                    "Tool call '{}' requires approval before execution.",
+                                    tool_name
+                                ));
+                            } else {
+                                results.push(format!(
+                                    "Tool call '{}' executed successfully.",
+                                    tool_name
+                                ));
+                            }
+                        }
+                        Err(err) => {
+                            let meta = serde_json::json!({
+                                "id": call.id,
+                                "name": tool_name,
+                                "status": "error",
+                                "error_code": "LOCAL_TOOL_EXECUTION_FAILED",
+                                "error": err,
+                            });
+                            let mut streamed_blocks = Vec::new();
+                            append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+                            realtime_emitter.emit_blocks(streamed_blocks);
+                            tool_call_meta.push(meta);
+                            results.push(format!("Tool call '{}' failed: {}", tool_name, err));
+                        }
+                    }
+                }
+                Err(err) => {
+                    let error = err.to_string();
+                    let meta = build_local_tool_call_install_gate_error_meta(
+                        call.id.as_deref(),
+                        &tool_name,
+                        &error,
+                    );
+                    let mut streamed_blocks = Vec::new();
+                    append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+                    realtime_emitter.emit_blocks(streamed_blocks);
+                    tool_call_meta.push(meta);
+                    results.push(format!(
+                        "Tool call '{}' failed [{}]: {}",
+                        tool_name, LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE, error
+                    ));
+                }
+            }
         }
     }
     LocalToolCallProcessingOutcome::Completed {

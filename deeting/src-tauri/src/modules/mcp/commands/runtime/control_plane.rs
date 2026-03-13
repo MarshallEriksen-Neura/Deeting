@@ -16,7 +16,7 @@ use crate::modules::providers::embedding::EmbeddingService;
 use crate::state::AppState;
 use serde::Serialize;
 use serde_json::{json, Value};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 pub(crate) const SEARCH_SDK_TOOL_NAME: &str = "search_sdk";
 pub(crate) const EXECUTE_CODE_PLAN_TOOL_NAME: &str = "execute_code_plan";
@@ -88,6 +88,7 @@ pub(crate) struct LocalExecutionPolicy {
     pub(crate) allowed_tool_names: Vec<String>,
     pub(crate) inject_code_mode_protocol: bool,
     pub(crate) allow_worker_delegation: bool,
+    pub(crate) capability_snapshot: Option<Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -109,8 +110,34 @@ pub(crate) struct LocalControlPlaneResult {
 }
 
 impl LocalExecutionPolicy {
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn allows_tool(&self, tool_name: &str) -> bool {
-        self.allowed_tool_names.iter().any(|item| item == tool_name)
+        let normalized = tool_name.trim().to_lowercase();
+        if normalized.is_empty() {
+            return false;
+        }
+        self.allowed_tool_names
+            .iter()
+            .any(|item| item == &normalized)
+    }
+
+    pub(crate) fn effective_allowed_tool_names(
+        &self,
+        capability_snapshot: Option<&Value>,
+    ) -> Vec<String> {
+        let mut names = self.allowed_tool_names.clone();
+        if self.route == LocalRouteKind::Direct {
+            if let Some(snapshot) = capability_snapshot {
+                if let Ok(direct_names) =
+                    crate::modules::capability_control_plane::extract_direct_callable_capability_names(
+                        snapshot,
+                    )
+                {
+                    names.extend(direct_names);
+                }
+            }
+        }
+        normalize_tool_names(names)
     }
 
     pub(crate) fn prompt_tool_names(&self) -> Vec<String> {
@@ -152,18 +179,27 @@ pub(crate) fn build_default_local_execution_policy() -> LocalExecutionPolicy {
         allowed_tool_names: Vec::new(),
         inject_code_mode_protocol: false,
         allow_worker_delegation: false,
+        capability_snapshot: None,
     }
 }
 
 pub(crate) fn build_local_execution_policy(decision: &LocalRouteDecision) -> LocalExecutionPolicy {
     match decision.route {
-        LocalRouteKind::Direct => build_default_local_execution_policy(),
+        LocalRouteKind::Direct => LocalExecutionPolicy {
+            route: LocalRouteKind::Direct,
+            plane: LocalExecutionPlane::ResponseOnly,
+            allowed_tool_names: vec![SEARCH_SDK_TOOL_NAME.to_string()],
+            inject_code_mode_protocol: false,
+            allow_worker_delegation: false,
+            capability_snapshot: None,
+        },
         LocalRouteKind::Worker => LocalExecutionPolicy {
             route: LocalRouteKind::Worker,
             plane: LocalExecutionPlane::WorkerReasoning,
             allowed_tool_names: Vec::new(),
             inject_code_mode_protocol: false,
             allow_worker_delegation: true,
+            capability_snapshot: None,
         },
         LocalRouteKind::CodeMode => LocalExecutionPolicy {
             route: LocalRouteKind::CodeMode,
@@ -171,6 +207,7 @@ pub(crate) fn build_local_execution_policy(decision: &LocalRouteDecision) -> Loc
             allowed_tool_names: full_code_mode_tool_names(),
             inject_code_mode_protocol: true,
             allow_worker_delegation: false,
+            capability_snapshot: None,
         },
     }
 }
@@ -182,6 +219,7 @@ pub(crate) fn build_local_execution_policy_status_meta(policy: &LocalExecutionPo
         "allowed_tool_names": policy.allowed_tool_names,
         "inject_code_mode_protocol": policy.inject_code_mode_protocol,
         "allow_worker_delegation": policy.allow_worker_delegation,
+        "has_capability_snapshot": policy.capability_snapshot.is_some(),
     })
 }
 
@@ -205,7 +243,10 @@ pub(crate) fn build_local_control_plane_result(
     route_decision: Option<LocalRouteDecision>,
     execution_policy: Option<LocalExecutionPolicy>,
 ) -> LocalControlPlaneResult {
-    let execution_policy = execution_policy.unwrap_or_else(build_default_local_execution_policy);
+    let execution_policy = enrich_execution_policy_with_runtime_discovery(
+        execution_policy.unwrap_or_else(build_default_local_execution_policy),
+        runtime_discovery.as_ref(),
+    );
     let prompt_assets = PromptAssets::from_system_messages(system_messages);
     let prompt_plan = build_local_prompt_plan(&prompt_assets, Some(&execution_policy));
     let status_meta = route_decision
@@ -224,6 +265,37 @@ pub(crate) fn build_local_control_plane_result(
         prompt_plan,
         status_meta,
     }
+}
+
+fn enrich_execution_policy_with_runtime_discovery(
+    mut policy: LocalExecutionPolicy,
+    runtime_discovery: Option<&RuntimeDiscoveryBundle>,
+) -> LocalExecutionPolicy {
+    if policy.route != LocalRouteKind::Direct {
+        policy.capability_snapshot = None;
+        policy.allowed_tool_names = normalize_tool_names(policy.allowed_tool_names);
+        return policy;
+    }
+
+    let mut allowed = policy.allowed_tool_names.clone();
+    if !allowed.iter().any(|name| name == SEARCH_SDK_TOOL_NAME) {
+        allowed.push(SEARCH_SDK_TOOL_NAME.to_string());
+    }
+    if let Some(discovery) = runtime_discovery {
+        policy.capability_snapshot = Some(discovery.raw_search_result().clone());
+        if let Ok(direct_names) =
+            crate::modules::capability_control_plane::extract_direct_callable_capability_names(
+                discovery.raw_search_result(),
+            )
+        {
+            allowed.extend(direct_names);
+        }
+    } else {
+        policy.capability_snapshot = None;
+    }
+
+    policy.allowed_tool_names = normalize_tool_names(allowed);
+    policy
 }
 
 pub(crate) fn full_code_mode_tool_names() -> Vec<String> {
@@ -445,6 +517,19 @@ fn extract_array_items(search_result: &Value, field: &str) -> Vec<Value> {
         .unwrap_or_default()
 }
 
+fn normalize_tool_names<I>(names: I) -> Vec<String>
+where
+    I: IntoIterator<Item = String>,
+{
+    names
+        .into_iter()
+        .map(|name| name.trim().to_lowercase())
+        .filter(|name| !name.is_empty())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
 fn split_match_terms(input: &str) -> HashSet<String> {
     input
         .split(|ch: char| !ch.is_alphanumeric())
@@ -492,6 +577,38 @@ mod tests {
         assert!(policy.allowed_tool_names.is_empty());
         assert!(policy.allow_worker_delegation);
         assert!(!policy.inject_code_mode_protocol);
+    }
+
+    #[test]
+    fn build_local_execution_policy_exposes_direct_search_sdk_lane() {
+        let decision = LocalRouteDecision {
+            route: LocalRouteKind::Direct,
+            reasons: vec!["single_direct_callable".to_string()],
+            profile: TaskProfile {
+                explicit_route: None,
+                has_batch_scope: false,
+                wants_programmatic_logic: false,
+                wants_analysis: false,
+                wants_single_action: true,
+                destructive_intent: false,
+                approval_sensitive: false,
+            },
+            evidence: RouteEvidence {
+                direct_callable_capability_count: 1,
+                has_code_mode_executor: true,
+                any_mutating_capability: false,
+                any_high_risk_capability: false,
+                direct_capability_names: vec!["weather".to_string()],
+            },
+        };
+
+        let policy = build_local_execution_policy(&decision);
+        assert_eq!(policy.route, LocalRouteKind::Direct);
+        assert_eq!(policy.plane, LocalExecutionPlane::ResponseOnly);
+        assert!(policy.allows_tool(SEARCH_SDK_TOOL_NAME));
+        assert!(!policy.inject_code_mode_protocol);
+        assert!(!policy.allow_worker_delegation);
+        assert!(policy.capability_snapshot.is_none());
     }
 
     #[test]

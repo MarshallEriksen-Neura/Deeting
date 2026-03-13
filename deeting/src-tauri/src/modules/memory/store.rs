@@ -48,6 +48,7 @@ impl MemoryStore {
 
     pub async fn init_with_dim(&self, embedding_dim: i32) -> Result<(), MemoryError> {
         let table_names = self.conn.table_names().execute().await?;
+        let mut resolved_memory_dim = embedding_dim;
 
         if !table_names.iter().any(|name| name == LOCAL_MEMORY_TABLE) {
             // Fresh install: create V3 schema directly
@@ -55,7 +56,21 @@ impl MemoryStore {
                 .create_empty_table(LOCAL_MEMORY_TABLE, local_memory_schema_v3(embedding_dim))
                 .execute()
                 .await?;
+            resolved_memory_dim = embedding_dim;
         } else {
+            let table = self.conn.open_table(LOCAL_MEMORY_TABLE).execute().await?;
+            let schema = table.schema().await?;
+            let schema_dim = local_memory_embedding_dimension_from_schema(schema.as_ref());
+            if let Some(existing_dim) = schema_dim {
+                resolved_memory_dim = existing_dim;
+                if existing_dim != embedding_dim {
+                    log::warn!(
+                        "memory init requested embedding dim {} but existing local_memories schema uses {}; keeping schema dimension",
+                        embedding_dim,
+                        existing_dim
+                    );
+                }
+            }
             // Existing table: check if migration is needed
             let current_version = crate::modules::memory::migration::detect_schema_version(
                 &self.conn,
@@ -63,14 +78,16 @@ impl MemoryStore {
             )
             .await?;
             if current_version < crate::modules::memory::migration::CURRENT_MEMORY_SCHEMA_VERSION {
+                let migration_dim = schema_dim.unwrap_or(embedding_dim);
                 crate::modules::memory::migration::migrate_to_latest(
                     &self.conn,
                     LOCAL_MEMORY_TABLE,
                     current_version,
                     crate::modules::memory::migration::CURRENT_MEMORY_SCHEMA_VERSION,
-                    embedding_dim,
+                    migration_dim,
                 )
                 .await?;
+                resolved_memory_dim = migration_dim;
             }
         }
 
@@ -98,7 +115,7 @@ impl MemoryStore {
         }
 
         self.embedding_dim
-            .store(embedding_dim, AtomicOrdering::Relaxed);
+            .store(resolved_memory_dim, AtomicOrdering::Relaxed);
 
         Ok(())
     }
@@ -1591,6 +1608,16 @@ fn local_asset_vector_dimension_from_schema(schema: &Schema) -> Option<i32> {
         })
 }
 
+fn local_memory_embedding_dimension_from_schema(schema: &Schema) -> Option<i32> {
+    schema
+        .field_with_name("embedding")
+        .ok()
+        .and_then(|field| match field.data_type() {
+            DataType::FixedSizeList(_, size) => Some(*size),
+            _ => None,
+        })
+}
+
 fn build_filter_sql(
     session_id: Option<&str>,
     capability_id: Option<&str>,
@@ -2113,6 +2140,40 @@ mod tests {
         assert_eq!(restored.tags, original.tags);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id, original.id);
+    }
+
+    #[tokio::test]
+    async fn init_uses_existing_memory_schema_dimension_after_restart() {
+        let uri = test_path("restart-memory-dim");
+        let store = MemoryStore::new(&uri).await.expect("create initial store");
+        store.init().await.expect("init initial store");
+        store
+            .recreate_local_memory_table(4)
+            .await
+            .expect("recreate memory table");
+        drop(store);
+
+        let restarted = MemoryStore::new(&uri)
+            .await
+            .expect("create restarted store");
+        restarted.init().await.expect("init restarted store");
+
+        restarted
+            .append_with_embedding(
+                CreateLocalMemoryRequest {
+                    content: "stores with existing dimension".into(),
+                    session_id: None,
+                    capability_id: None,
+                    meta_info: None,
+                    category: Some("fact".into()),
+                    source: Some("auto_extraction".into()),
+                    tags: None,
+                },
+                test_embedding_with_dim(4),
+                Some("test".into()),
+            )
+            .await
+            .expect("append memory with restored dimension");
     }
 
     #[tokio::test]

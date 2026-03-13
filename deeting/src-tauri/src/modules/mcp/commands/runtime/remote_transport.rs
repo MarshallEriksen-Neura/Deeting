@@ -8,7 +8,12 @@ use rmcp::{
     },
     ServiceExt,
 };
-use std::{collections::HashMap, process::Stdio};
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+    process::Stdio,
+};
 
 #[derive(Debug, Clone)]
 pub(crate) struct RemoteDiscoveredTool {
@@ -88,7 +93,7 @@ async fn connect_legacy_sse_proxy_client(
 ) -> Result<RunningService<RoleClient, ClientInfo>, String> {
     let mut last_error: Option<String> = None;
     for (command, args) in legacy_sse_proxy_command_candidates(sse_url) {
-        match connect_local_stdio_client(command, &args, None).await {
+        match connect_local_stdio_client(&command, &args, None).await {
             Ok(client) => {
                 warn!(
                     "remote MCP legacy SSE proxy fallback succeeded: url='{}' command='{}'",
@@ -139,18 +144,218 @@ fn is_http_405_method_not_allowed_error(error_text: &str) -> bool {
     normalized.contains("http 405") || normalized.contains("405 method not allowed")
 }
 
-fn legacy_sse_proxy_command_candidates(sse_url: &str) -> Vec<(&'static str, Vec<String>)> {
-    vec![
-        ("mcp-remote", vec![sse_url.to_string()]),
-        (
-            "npx",
+fn is_executable_file(path: &Path) -> bool {
+    path.is_file()
+}
+
+fn binary_name_variants(binary_name: &str) -> Vec<String> {
+    let mut variants = vec![binary_name.to_string()];
+    if cfg!(target_os = "windows") {
+        for suffix in [".cmd", ".exe", ".bat"] {
+            variants.push(format!("{}{}", binary_name, suffix));
+        }
+    }
+    variants
+}
+
+fn append_binary_from_dir(candidates: &mut Vec<String>, directory: &Path, variants: &[String]) {
+    for variant in variants {
+        let candidate = directory.join(variant);
+        if is_executable_file(&candidate) {
+            let candidate = candidate.to_string_lossy().to_string();
+            if !candidates.contains(&candidate) {
+                candidates.push(candidate);
+            }
+        }
+    }
+}
+
+fn discover_binary_paths(binary_name: &str) -> Vec<String> {
+    let mut candidates = Vec::new();
+    let variants = binary_name_variants(binary_name);
+
+    if let Ok(path_env) = std::env::var("PATH") {
+        for segment in std::env::split_paths(&path_env) {
+            if segment.as_os_str().is_empty() {
+                continue;
+            }
+            append_binary_from_dir(&mut candidates, &segment, &variants);
+        }
+    }
+
+    let mut static_dirs = Vec::new();
+    if cfg!(target_os = "windows") {
+        if let Ok(app_data) = std::env::var("APPDATA") {
+            static_dirs.push(PathBuf::from(app_data).join("npm"));
+        }
+        if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+            static_dirs.push(
+                PathBuf::from(local_app_data)
+                    .join("Programs")
+                    .join("nodejs"),
+            );
+        }
+        if let Ok(program_files) = std::env::var("ProgramFiles") {
+            static_dirs.push(PathBuf::from(program_files).join("nodejs"));
+        }
+        if let Ok(program_files_x86) = std::env::var("ProgramFiles(x86)") {
+            static_dirs.push(PathBuf::from(program_files_x86).join("nodejs"));
+        }
+    } else {
+        for prefix in [
+            "/usr/local/bin",
+            "/usr/bin",
+            "/bin",
+            "/opt/homebrew/bin",
+            "/opt/local/bin",
+        ] {
+            static_dirs.push(PathBuf::from(prefix));
+        }
+    }
+    for directory in static_dirs {
+        append_binary_from_dir(&mut candidates, &directory, &variants);
+    }
+
+    if let Ok(nvm_bin) = std::env::var("NVM_BIN") {
+        append_binary_from_dir(&mut candidates, &PathBuf::from(nvm_bin), &variants);
+    }
+
+    if let Ok(nvm_dir) = std::env::var("NVM_DIR") {
+        let nvm_versions_dir = PathBuf::from(nvm_dir).join("versions/node");
+        if let Ok(entries) = fs::read_dir(nvm_versions_dir) {
+            let mut nvm_candidates = Vec::new();
+            for entry in entries.flatten() {
+                for variant in &variants {
+                    let candidate = entry.path().join("bin").join(variant);
+                    if is_executable_file(&candidate) {
+                        nvm_candidates.push(candidate.to_string_lossy().to_string());
+                    }
+                }
+            }
+            nvm_candidates.sort();
+            nvm_candidates.reverse();
+            for candidate in nvm_candidates {
+                if !candidates.contains(&candidate) {
+                    candidates.push(candidate);
+                }
+            }
+        }
+    }
+
+    if let Ok(home) = std::env::var("HOME") {
+        let nvm_versions_dir = PathBuf::from(home).join(".nvm/versions/node");
+        if let Ok(entries) = fs::read_dir(nvm_versions_dir) {
+            let mut nvm_candidates = Vec::new();
+            for entry in entries.flatten() {
+                for variant in &variants {
+                    let candidate = entry.path().join("bin").join(variant);
+                    if is_executable_file(&candidate) {
+                        nvm_candidates.push(candidate.to_string_lossy().to_string());
+                    }
+                }
+            }
+            nvm_candidates.sort();
+            nvm_candidates.reverse();
+            for candidate in nvm_candidates {
+                if !candidates.contains(&candidate) {
+                    candidates.push(candidate);
+                }
+            }
+        }
+    }
+
+    candidates
+}
+
+fn is_windows_cmd_script(command: &str) -> bool {
+    if !cfg!(target_os = "windows") {
+        return false;
+    }
+    let normalized = command.to_ascii_lowercase();
+    normalized.ends_with(".cmd") || normalized.ends_with(".bat")
+}
+
+fn push_unique_command_candidate(
+    candidates: &mut Vec<(String, Vec<String>)>,
+    command: String,
+    args: Vec<String>,
+) {
+    if !candidates.iter().any(|(existing_command, existing_args)| {
+        existing_command == &command && existing_args == &args
+    }) {
+        candidates.push((command, args));
+    }
+}
+
+fn legacy_sse_proxy_command_candidates(sse_url: &str) -> Vec<(String, Vec<String>)> {
+    let mut candidates = Vec::new();
+
+    for command in discover_binary_paths("mcp-remote") {
+        if is_windows_cmd_script(&command) {
+            push_unique_command_candidate(
+                &mut candidates,
+                "cmd".to_string(),
+                vec!["/C".to_string(), command, sse_url.to_string()],
+            );
+        } else {
+            push_unique_command_candidate(&mut candidates, command, vec![sse_url.to_string()]);
+        }
+    }
+    for command in discover_binary_paths("npx") {
+        if is_windows_cmd_script(&command) {
+            push_unique_command_candidate(
+                &mut candidates,
+                "cmd".to_string(),
+                vec![
+                    "/C".to_string(),
+                    command,
+                    "-y".to_string(),
+                    "mcp-remote".to_string(),
+                    sse_url.to_string(),
+                ],
+            );
+        } else {
+            push_unique_command_candidate(
+                &mut candidates,
+                command,
+                vec![
+                    "-y".to_string(),
+                    "mcp-remote".to_string(),
+                    sse_url.to_string(),
+                ],
+            );
+        }
+    }
+
+    push_unique_command_candidate(
+        &mut candidates,
+        "mcp-remote".to_string(),
+        vec![sse_url.to_string()],
+    );
+    push_unique_command_candidate(
+        &mut candidates,
+        "npx".to_string(),
+        vec![
+            "-y".to_string(),
+            "mcp-remote".to_string(),
+            sse_url.to_string(),
+        ],
+    );
+    if cfg!(target_os = "windows") {
+        push_unique_command_candidate(
+            &mut candidates,
+            "cmd".to_string(),
             vec![
+                "/C".to_string(),
+                "npx".to_string(),
                 "-y".to_string(),
                 "mcp-remote".to_string(),
                 sse_url.to_string(),
             ],
-        ),
-    ]
+        );
+    }
+
+    candidates
 }
 
 fn build_url_with_same_origin(origin: &reqwest::Url, endpoint: &str) -> Option<String> {
@@ -413,13 +618,16 @@ mod tests {
     #[test]
     fn builds_legacy_sse_proxy_command_candidates() {
         let candidates = legacy_sse_proxy_command_candidates("https://mcp.example.com/abc123/sse");
-        assert_eq!(candidates.len(), 2);
-        assert_eq!(candidates[0].0, "mcp-remote");
-        assert_eq!(candidates[0].1, vec!["https://mcp.example.com/abc123/sse"]);
-        assert_eq!(candidates[1].0, "npx");
-        assert_eq!(
-            candidates[1].1,
-            vec!["-y", "mcp-remote", "https://mcp.example.com/abc123/sse"]
-        );
+        assert!(candidates
+            .iter()
+            .any(|item| item.0 == "mcp-remote"
+                && item.1 == vec!["https://mcp.example.com/abc123/sse"]));
+        assert!(candidates.iter().any(|item| item.0 == "npx"
+            && item.1
+                == vec![
+                    "-y".to_string(),
+                    "mcp-remote".to_string(),
+                    "https://mcp.example.com/abc123/sse".to_string()
+                ]));
     }
 }

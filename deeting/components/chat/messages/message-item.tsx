@@ -111,9 +111,9 @@ export const MessageItem = React.memo<MessageItemProps>(
     const [compareDialogOpen, setCompareDialogOpen] = React.useState(false)
 
     // 判断是否为最后一条助手消息（用于 reveal 动画）
+    // 无论 stream 是否开启，只要是最新的非历史助手消息就启用打字机效果
     const isLastAssistantMessage = message.role === "assistant" && message.id === lastAssistantId
-    const shouldReveal = !isTyping && !streamEnabled && isLastAssistantMessage
-    const typingEnabled = isLastAssistantMessage && !message.fromHistory && (streamEnabled || shouldReveal)
+    const typingEnabled = isLastAssistantMessage && !message.fromHistory
     const assistantParts = React.useMemo<MessageBlock[]>(() => {
       if (message.role !== "assistant") return []
       return message.blocks ?? []
