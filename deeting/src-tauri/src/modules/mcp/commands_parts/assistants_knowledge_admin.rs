@@ -47,9 +47,10 @@ pub(crate) async fn reindex_desktop_tool_asset(
 /// Fire-and-forget: embed all chunks of a successfully indexed document into LanceDB.
 ///
 /// Reads chunks from SQLite, embeds each via the embedding service, and upserts
-/// into local_assets with `package_id = "knowledge:{document_id}"`.
+/// into `user_knowledge_chunks` with `pkg_name = {document_id}`.
 pub(crate) fn spawn_embed_knowledge_chunks(app_state: &AppState, file: &LocalKnowledgeFile) {
-    if file.status != "indexed" {
+    let status = file.status.trim().to_ascii_lowercase();
+    if status != "indexed" && status != "active" {
         return;
     }
     let document_id = file.id.clone();
@@ -81,9 +82,10 @@ pub(crate) fn spawn_embed_knowledge_chunks(app_state: &AppState, file: &LocalKno
             }
         };
 
-        let pkg_name = format!("knowledge:{}", document_id);
-        // Delete old embeddings for this document before re-inserting
-        let _ = memory_service.delete_assets_by_package(&pkg_name).await;
+        // Delete old embeddings for this document before re-inserting.
+        let _ = memory_service
+            .delete_knowledge_chunk_assets_by_document_id(&document_id)
+            .await;
 
         for chunk in &chunks {
             let embed_result = providers.embedding.embed_text(&chunk.content).await;
@@ -108,13 +110,13 @@ pub(crate) fn spawn_embed_knowledge_chunks(app_state: &AppState, file: &LocalKno
             });
 
             if let Err(e) = memory_service
-                .upsert_asset(
+                .upsert_knowledge_chunk_asset(
                     chunk.id.clone(),
+                    document_id.clone(),
                     document_name.clone(),
                     chunk.content.clone(),
-                    "knowledge_chunk".to_string(),
-                    "local_document".to_string(),
-                    Some(pkg_name.clone()),
+                    chunk.index,
+                    chunk.token_count,
                     vector,
                     Some(metadata),
                 )

@@ -20,6 +20,7 @@ use crate::modules::memory::types::{
 
 const LOCAL_MEMORY_TABLE: &str = "local_memories";
 const LOCAL_ASSET_TABLE: &str = "local_assets";
+const USER_KNOWLEDGE_CHUNK_TABLE: &str = "user_knowledge_chunks";
 const DEFAULT_LOCAL_ASSET_VECTOR_DIM: i32 = 1536;
 pub(crate) const DEFAULT_MEMORY_EMBEDDING_DIM: i32 = 1536;
 
@@ -77,6 +78,19 @@ impl MemoryStore {
             self.conn
                 .create_empty_table(
                     LOCAL_ASSET_TABLE,
+                    local_asset_schema(DEFAULT_LOCAL_ASSET_VECTOR_DIM),
+                )
+                .execute()
+                .await?;
+        }
+
+        if !table_names
+            .iter()
+            .any(|name| name == USER_KNOWLEDGE_CHUNK_TABLE)
+        {
+            self.conn
+                .create_empty_table(
+                    USER_KNOWLEDGE_CHUNK_TABLE,
                     local_asset_schema(DEFAULT_LOCAL_ASSET_VECTOR_DIM),
                 )
                 .execute()
@@ -143,6 +157,69 @@ impl MemoryStore {
         vector: Vec<f32>,
         metadata: Option<serde_json::Value>,
     ) -> Result<(), MemoryError> {
+        self.upsert_asset_into_table(
+            LOCAL_ASSET_TABLE,
+            id,
+            name,
+            description,
+            asset_type,
+            source_type,
+            pkg_name,
+            vector,
+            metadata,
+        )
+        .await
+    }
+
+    pub async fn upsert_knowledge_chunk_asset(
+        &self,
+        id: String,
+        document_id: String,
+        document_name: String,
+        content: String,
+        chunk_index: i64,
+        token_count: i64,
+        vector: Vec<f32>,
+        metadata: Option<serde_json::Value>,
+    ) -> Result<(), MemoryError> {
+        let mut merged_meta = metadata.unwrap_or_else(|| serde_json::json!({}));
+        if let Some(obj) = merged_meta.as_object_mut() {
+            obj.entry("document_id".to_string())
+                .or_insert_with(|| serde_json::Value::String(document_id.clone()));
+            obj.entry("document_name".to_string())
+                .or_insert_with(|| serde_json::Value::String(document_name.clone()));
+            obj.entry("chunk_index".to_string())
+                .or_insert_with(|| serde_json::Value::from(chunk_index));
+            obj.entry("token_count".to_string())
+                .or_insert_with(|| serde_json::Value::from(token_count));
+        }
+
+        self.upsert_asset_into_table(
+            USER_KNOWLEDGE_CHUNK_TABLE,
+            id,
+            document_name,
+            content,
+            "knowledge_chunk".to_string(),
+            "local_document".to_string(),
+            Some(document_id),
+            vector,
+            Some(merged_meta),
+        )
+        .await
+    }
+
+    async fn upsert_asset_into_table(
+        &self,
+        table_name: &str,
+        id: String,
+        name: String,
+        description: String,
+        asset_type: String,
+        source_type: String,
+        pkg_name: Option<String>,
+        vector: Vec<f32>,
+        metadata: Option<serde_json::Value>,
+    ) -> Result<(), MemoryError> {
         let now = now_rfc3339();
         let metadata_str = metadata.map(|v| v.to_string());
         let vector_opt = vector.into_iter().map(Some).collect::<Vec<Option<f32>>>();
@@ -154,10 +231,10 @@ impl MemoryStore {
             ));
         }
 
-        let table = self.conn.open_table(LOCAL_ASSET_TABLE).execute().await?;
+        let table = self.conn.open_table(table_name).execute().await?;
         let table_schema = table.schema().await?;
         let expected_dim = local_asset_vector_dimension_from_schema(table_schema.as_ref())
-            .ok_or_else(|| MemoryError::validation("local_assets vector field is missing"))?;
+            .ok_or_else(|| MemoryError::validation(format!("{table_name} vector field is missing")))?;
         if expected_dim != vector_dim {
             return Err(MemoryError::validation(format!(
                 "embedding vector dimension mismatch: table expects {expected_dim}, got {vector_dim}; please rebuild local embedding index"
@@ -225,6 +302,29 @@ impl MemoryStore {
         Ok(())
     }
 
+    pub async fn delete_knowledge_chunk_assets_by_document_id(
+        &self,
+        document_id: &str,
+    ) -> Result<(), MemoryError> {
+        let table_names = self.conn.table_names().execute().await?;
+        if !table_names
+            .iter()
+            .any(|name| name == USER_KNOWLEDGE_CHUNK_TABLE)
+        {
+            return Ok(());
+        }
+
+        let table = self
+            .conn
+            .open_table(USER_KNOWLEDGE_CHUNK_TABLE)
+            .execute()
+            .await?;
+        table
+            .delete(&format!("pkg_name = '{}'", sql_escape(document_id)))
+            .await?;
+        Ok(())
+    }
+
     pub async fn delete_assets_by_ids(&self, asset_ids: &[String]) -> Result<(), MemoryError> {
         if asset_ids.is_empty() {
             return Ok(());
@@ -262,25 +362,16 @@ impl MemoryStore {
         limit: usize,
         asset_type: Option<&str>,
     ) -> Result<Vec<serde_json::Value>, MemoryError> {
-        let table = self.conn.open_table(LOCAL_ASSET_TABLE).execute().await?;
-        let mut vector_query = table.vector_search(vector.clone())?.limit(limit);
+        self.search_assets_in_table(LOCAL_ASSET_TABLE, vector, limit, asset_type)
+            .await
+    }
 
-        if let Some(t) = asset_type {
-            vector_query = vector_query.only_if(format!("asset_type = '{}'", sql_escape(t)));
-        }
-
-        match vector_query.execute().await {
-            Ok(stream) => {
-                let batches = stream.try_collect::<Vec<_>>().await?;
-                let results = read_asset_search_batches(&batches)?;
-                if !results.is_empty() {
-                    return Ok(results);
-                }
-            }
-            Err(_) => {}
-        }
-
-        self.search_assets_linear_fallback(vector, limit, asset_type)
+    pub async fn search_knowledge_chunk_assets(
+        &self,
+        vector: Vec<f32>,
+        limit: usize,
+    ) -> Result<Vec<serde_json::Value>, MemoryError> {
+        self.search_assets_in_table(USER_KNOWLEDGE_CHUNK_TABLE, vector, limit, None)
             .await
     }
 
@@ -322,13 +413,43 @@ impl MemoryStore {
         Ok(results)
     }
 
-    async fn search_assets_linear_fallback(
+    async fn search_assets_in_table(
         &self,
+        table_name: &str,
         vector: Vec<f32>,
         limit: usize,
         asset_type: Option<&str>,
     ) -> Result<Vec<serde_json::Value>, MemoryError> {
-        let table = self.conn.open_table(LOCAL_ASSET_TABLE).execute().await?;
+        let table = self.conn.open_table(table_name).execute().await?;
+        let mut vector_query = table.vector_search(vector.clone())?.limit(limit);
+
+        if let Some(t) = asset_type {
+            vector_query = vector_query.only_if(format!("asset_type = '{}'", sql_escape(t)));
+        }
+
+        match vector_query.execute().await {
+            Ok(stream) => {
+                let batches = stream.try_collect::<Vec<_>>().await?;
+                let results = read_asset_search_batches(&batches)?;
+                if !results.is_empty() {
+                    return Ok(results);
+                }
+            }
+            Err(_) => {}
+        }
+
+        self.search_assets_linear_fallback_in_table(table_name, vector, limit, asset_type)
+            .await
+    }
+
+    async fn search_assets_linear_fallback_in_table(
+        &self,
+        table_name: &str,
+        vector: Vec<f32>,
+        limit: usize,
+        asset_type: Option<&str>,
+    ) -> Result<Vec<serde_json::Value>, MemoryError> {
+        let table = self.conn.open_table(table_name).execute().await?;
         let batches = table
             .query()
             .execute()

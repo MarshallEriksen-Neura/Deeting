@@ -293,7 +293,7 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
         open={editServerOpen}
         onOpenChange={handleEditServerOpenChange}
         onSave={handleUpdateServer}
-        onToggleTool={editServer?.server_type === "sse" ? handleToggleServerTool : undefined}
+        onToggleTool={editServer && (editServer.server_type === "sse" || editServer.server_type === "streamable-http") ? handleToggleServerTool : undefined}
         loading={updateServer.isMutating}
         toggleLoading={toolToggleMutation.isMutating}
       />

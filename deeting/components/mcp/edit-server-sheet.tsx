@@ -59,7 +59,7 @@ export function EditServerSheet({
   const [isEnabled, setIsEnabled] = useState(() => Boolean(server?.is_enabled))
 
   const serverType = useMemo(() => server?.server_type ?? "sse", [server])
-  const isRemote = serverType === "sse"
+  const isRemote = serverType === "sse" || serverType === "streamable-http"
 
   if (!server) return null
 

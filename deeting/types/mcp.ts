@@ -26,7 +26,7 @@ export interface MCPSource {
   status: MCPSourceStatus
   isReadOnly: boolean
   trustLevel: MCPSourceTrustLevel
-  serverType?: "sse" | "stdio"
+  serverType?: "sse" | "stdio" | "streamable-http"
   createdAt?: string
   updatedAt?: string
 }

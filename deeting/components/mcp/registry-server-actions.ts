@@ -7,7 +7,7 @@ import type { MCPTool } from "@/types/mcp"
 import {
   getMcpRegistryServer,
   getMcpRegistryServerId,
-  resolveMcpRegistrySseServer,
+  resolveMcpRegistryRemoteServer,
 } from "./registry-guards"
 import {
   getMcpRegistryErrorNotification,
@@ -63,7 +63,11 @@ interface UseMcpRegistryServerActionsOptions {
 }
 
 export const getFirstRemoteMcpRegistryServerId = (servers: readonly McpServer[]): string | null => {
-  return servers.find((server) => server.server_type === "sse" && server.sse_url)?.id ?? null
+  return servers.find(
+    (server) =>
+      (server.server_type === "sse" || server.server_type === "streamable-http") &&
+      server.sse_url
+  )?.id ?? null
 }
 
 export const resolveMcpRegistryEditableServer = (
@@ -218,7 +222,7 @@ export function useMcpRegistryServerActions({
   const handleToggleServerEnabled = useCallback(async (tool: MCPTool, enabled: boolean) => {
     if (isTauri) return
 
-    const resolution = resolveMcpRegistrySseServer(tool, serverById)
+    const resolution = resolveMcpRegistryRemoteServer(tool, serverById)
     if (resolution.kind === "missing_server") {
       addNotification(getMcpRegistryNotification(t, "missing_server"))
       return

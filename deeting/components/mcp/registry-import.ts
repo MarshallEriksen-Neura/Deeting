@@ -119,7 +119,11 @@ export const getMcpRegistryImportResultCounts = (
 export const getFirstImportedRemoteMcpRegistryServerId = (
   servers: readonly Pick<McpServer, "id" | "server_type" | "sse_url">[]
 ): string | null => {
-  return servers.find((server) => server.server_type === "sse" && server.sse_url)?.id ?? null
+  return servers.find(
+    (server) =>
+      (server.server_type === "sse" || server.server_type === "streamable-http") &&
+      server.sse_url
+  )?.id ?? null
 }
 
 export function useMcpRegistryImportAction({

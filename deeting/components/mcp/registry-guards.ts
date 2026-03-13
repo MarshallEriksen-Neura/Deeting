@@ -3,7 +3,7 @@ import type { MCPTool } from "@/types/mcp"
 
 type McpRegistryServerRef = Pick<MCPTool, "id" | "sourceId">
 
-type McpRegistrySseServerResolution =
+type McpRegistryRemoteServerResolution =
   | { kind: "missing_server", serverId: string }
   | { kind: "unsupported_server", serverId: string, server: McpServer }
   | { kind: "ok", serverId: string, server: McpServer }
@@ -19,10 +19,10 @@ export const getMcpRegistryServer = (
   return serverById.get(getMcpRegistryServerId(tool)) ?? null
 }
 
-export const resolveMcpRegistrySseServer = (
+export const resolveMcpRegistryRemoteServer = (
   tool: McpRegistryServerRef,
   serverById: ReadonlyMap<string, McpServer>
-): McpRegistrySseServerResolution => {
+): McpRegistryRemoteServerResolution => {
   const serverId = getMcpRegistryServerId(tool)
   const server = serverById.get(serverId)
 
@@ -30,7 +30,7 @@ export const resolveMcpRegistrySseServer = (
     return { kind: "missing_server", serverId }
   }
 
-  if (server.server_type !== "sse") {
+  if (server.server_type !== "sse" && server.server_type !== "streamable-http") {
     return { kind: "unsupported_server", serverId, server }
   }
 

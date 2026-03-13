@@ -26,10 +26,20 @@ const remoteServer: McpServer = {
 
 describe("registry server actions", () => {
   it("finds editable and syncable remote server targets", () => {
-    const serverById = new Map([[remoteServer.id, remoteServer]])
+    const streamableHttpServer: McpServer = {
+      ...remoteServer,
+      id: "server-2",
+      server_type: "streamable-http",
+      sse_url: "https://example.com/mcp",
+    }
+    const serverById = new Map([
+      [remoteServer.id, remoteServer],
+      [streamableHttpServer.id, streamableHttpServer],
+    ])
     const tool = { id: "tool-1", source: "url" as const, sourceId: remoteServer.id }
 
     expect(getFirstRemoteMcpRegistryServerId([remoteServer])).toBe(remoteServer.id)
+    expect(getFirstRemoteMcpRegistryServerId([{ ...remoteServer, server_type: "stdio", sse_url: null }, streamableHttpServer])).toBe(streamableHttpServer.id)
     expect(resolveMcpRegistryEditableServer(tool, serverById)).toEqual({ kind: "ok", server: remoteServer })
     expect(resolveMcpRegistrySyncServerTarget(tool)).toEqual({ kind: "ok", serverId: remoteServer.id })
   })

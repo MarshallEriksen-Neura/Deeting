@@ -148,7 +148,7 @@ export const mapRemoteServerToolRecordToTool = (tool: McpServerToolRecordLike, s
 }
 
 export const mapRemoteServerToRuntimeTool = (server: McpServer): MCPTool => {
-  const isRemote = server.server_type === "sse"
+  const isRemote = server.server_type === "sse" || server.server_type === "streamable-http"
   const desiredEnabled = server.desired_enabled ?? server.is_enabled
   const runtimeReady = server.runtime_ready ?? (server.status === "active" || server.is_enabled)
 

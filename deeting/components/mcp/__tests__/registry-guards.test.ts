@@ -2,7 +2,7 @@ import type { McpServer } from "@/lib/api/mcp"
 import {
   getMcpRegistryServer,
   getMcpRegistryServerId,
-  resolveMcpRegistrySseServer,
+  resolveMcpRegistryRemoteServer,
 } from "@/components/mcp/registry-guards"
 
 const baseServer: McpServer = {
@@ -41,28 +41,41 @@ describe("registry guards", () => {
     expect(getMcpRegistryServer({ id: "missing" }, serverById)).toBeNull()
   })
 
-  it("resolves missing, unsupported and sse server cases", () => {
+  it("resolves missing, unsupported and remote server cases", () => {
     const stdioServer: McpServer = { ...baseServer, id: "server-2", server_type: "stdio", sse_url: null }
+    const streamableHttpServer: McpServer = {
+      ...baseServer,
+      id: "server-3",
+      server_type: "streamable-http",
+      sse_url: "https://example.com/mcp",
+    }
     const serverById = new Map<string, McpServer>([
       [baseServer.id, baseServer],
       [stdioServer.id, stdioServer],
+      [streamableHttpServer.id, streamableHttpServer],
     ])
 
-    expect(resolveMcpRegistrySseServer({ id: "tool-1", sourceId: "missing" }, serverById)).toEqual({
+    expect(resolveMcpRegistryRemoteServer({ id: "tool-1", sourceId: "missing" }, serverById)).toEqual({
       kind: "missing_server",
       serverId: "missing",
     })
 
-    expect(resolveMcpRegistrySseServer({ id: "tool-2", sourceId: "server-2" }, serverById)).toEqual({
+    expect(resolveMcpRegistryRemoteServer({ id: "tool-2", sourceId: "server-2" }, serverById)).toEqual({
       kind: "unsupported_server",
       serverId: "server-2",
       server: stdioServer,
     })
 
-    expect(resolveMcpRegistrySseServer({ id: "tool-3", sourceId: "server-1" }, serverById)).toEqual({
+    expect(resolveMcpRegistryRemoteServer({ id: "tool-3", sourceId: "server-1" }, serverById)).toEqual({
       kind: "ok",
       serverId: "server-1",
       server: baseServer,
+    })
+
+    expect(resolveMcpRegistryRemoteServer({ id: "tool-4", sourceId: "server-3" }, serverById)).toEqual({
+      kind: "ok",
+      serverId: "server-3",
+      server: streamableHttpServer,
     })
   })
 })

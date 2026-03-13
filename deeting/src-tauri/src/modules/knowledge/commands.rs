@@ -229,10 +229,13 @@ pub async fn delete_local_user_document(
         .await
         .map_err(to_string)?;
 
-    let pkg_name = format!("knowledge:{}", file_id);
     let memory_service = state.memory.service.clone();
+    let file_id_for_cleanup = file_id.clone();
     tokio::spawn(async move {
-        if let Err(err) = memory_service.delete_assets_by_package(&pkg_name).await {
+        if let Err(err) = memory_service
+            .delete_knowledge_chunk_assets_by_document_id(&file_id_for_cleanup)
+            .await
+        {
             log::warn!(
                 "delete_local_user_document: failed to clean up embeddings: {}",
                 err

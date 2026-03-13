@@ -549,6 +549,40 @@ impl MemoryService {
         self.store.delete_assets_by_package(pkg_name).await
     }
 
+    pub async fn upsert_knowledge_chunk_asset(
+        &self,
+        id: String,
+        document_id: String,
+        document_name: String,
+        content: String,
+        chunk_index: i64,
+        token_count: i64,
+        vector: Vec<f32>,
+        metadata: Option<serde_json::Value>,
+    ) -> Result<(), MemoryError> {
+        self.store
+            .upsert_knowledge_chunk_asset(
+                id,
+                document_id,
+                document_name,
+                content,
+                chunk_index,
+                token_count,
+                vector,
+                metadata,
+            )
+            .await
+    }
+
+    pub async fn delete_knowledge_chunk_assets_by_document_id(
+        &self,
+        document_id: &str,
+    ) -> Result<(), MemoryError> {
+        self.store
+            .delete_knowledge_chunk_assets_by_document_id(document_id)
+            .await
+    }
+
     pub async fn delete_assets_by_ids(&self, asset_ids: &[String]) -> Result<(), MemoryError> {
         self.store.delete_assets_by_ids(asset_ids).await
     }
@@ -574,10 +608,7 @@ impl MemoryService {
 
     // --- knowledge search ---
 
-    /// Semantic search for knowledge chunks via LanceDB local_assets.
-    ///
-    /// Embeds the query, searches local_assets filtered by package_id prefix "knowledge:",
-    /// then joins with SQLite chunk metadata to produce enriched results.
+    /// Semantic search for knowledge chunks via LanceDB `user_knowledge_chunks`.
     pub async fn search_knowledge(
         &self,
         query: &str,
@@ -600,20 +631,15 @@ impl MemoryService {
         };
 
         let clamped_limit = limit.clamp(1, 100);
-        // Over-fetch to allow post-filtering by package_id prefix
-        let overfetch = clamped_limit * 3;
         let results = self
             .store
-            .search_assets(query_vector, overfetch, None)
+            .search_knowledge_chunk_assets(query_vector, clamped_limit)
             .await?;
 
         let mut hits = Vec::new();
         for item in results {
-            let pkg_name = item.get("pkg_name").and_then(|v| v.as_str()).unwrap_or("");
-            if !pkg_name.starts_with("knowledge:") {
-                continue;
-            }
-            let document_id = pkg_name.strip_prefix("knowledge:").map(|s| s.to_string());
+            let pkg_name = item.get("pkg_name").and_then(|v| v.as_str());
+            let document_id = pkg_name.map(|value| value.to_string());
             let chunk_id = item
                 .get("id")
                 .and_then(|v| v.as_str())
@@ -650,9 +676,6 @@ impl MemoryService {
                 metadata,
             });
 
-            if hits.len() >= clamped_limit {
-                break;
-            }
         }
 
         Ok(hits)

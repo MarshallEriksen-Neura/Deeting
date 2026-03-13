@@ -9,7 +9,7 @@ export const McpServerSchema = z.object({
   description: z.string().nullable().optional(),
   sse_url: z.string().nullable().optional(),
   is_enabled: z.boolean(),
-  server_type: z.enum(["sse", "stdio"]),
+  server_type: z.enum(["sse", "stdio", "streamable-http"]),
   auth_type: z.string(),
   secret_ref_id: z.string().nullable().optional(),
   tools_count: z.number(),
@@ -89,7 +89,7 @@ export type McpToolTestResponse = z.infer<typeof McpToolTestResponseSchema>
 export interface McpServerCreateRequest {
   name: string
   description?: string | null
-  server_type?: "sse" | "stdio"
+  server_type?: "sse" | "stdio" | "streamable-http"
   sse_url?: string | null
   auth_type?: "bearer" | "api_key" | "none"
   secret_value?: string | null
@@ -100,7 +100,7 @@ export interface McpServerCreateRequest {
 export interface McpServerUpdateRequest {
   name?: string
   description?: string | null
-  server_type?: "sse" | "stdio"
+  server_type?: "sse" | "stdio" | "streamable-http"
   sse_url?: string | null
   auth_type?: "bearer" | "api_key" | "none"
   secret_value?: string | null
