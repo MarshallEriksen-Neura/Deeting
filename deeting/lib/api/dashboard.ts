@@ -460,7 +460,7 @@ export async function fetchProviderHealth(options?: {
         }
 
         const models = await invokeTauri<LocalProviderModel[]>("list_local_provider_models", {
-          instance_id: instance.id,
+          instanceId: instance.id,
         })
         const activeModels = (models ?? []).filter((item) => item.is_active !== false)
         const latencies = activeModels.map(toProviderLatency).filter((value) => value > 0)

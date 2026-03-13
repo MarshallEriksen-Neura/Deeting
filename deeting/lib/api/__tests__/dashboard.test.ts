@@ -236,6 +236,9 @@ describe("dashboard apis", () => {
     expect(errors).toHaveLength(1)
     expect(errors[0]?.errorCode).toBe("BAD_GATEWAY")
     expect(mockInvoke).toHaveBeenCalledWith("list_local_provider_instances", undefined)
+    expect(mockInvoke).toHaveBeenCalledWith("list_local_provider_models", {
+      instanceId: "inst-1",
+    })
   })
 
   it("falls back to http request outside tauri runtime", async () => {
