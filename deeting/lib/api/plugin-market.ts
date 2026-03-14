@@ -61,6 +61,13 @@ export const LocalSkillRuntimeStatusSchema = z.object({
   missing_config: z.array(z.string()).default([]),
   blocking_reason: z.string().nullable().optional(),
   install_hints: z.array(z.string()).default([]),
+  runtime_install_supported: z.boolean().default(false),
+  runtime_install_state: z.string().default("unsupported"),
+  runtime_install_manager: z.string().nullable().optional(),
+  runtime_manager_available: z.boolean().default(false),
+  runtime_install_error: z.string().nullable().optional(),
+  runtime_requirements_path: z.string().nullable().optional(),
+  runtime_python_path: z.string().nullable().optional(),
   compatibility: z.unknown(),
   current_env: z.record(z.string(), z.string()).default({}),
   current_config: z.record(z.string(), z.unknown()).default({}),
@@ -240,6 +247,19 @@ export async function updateLocalSkillRuntimeSettings(
   const data = await invoke("update_local_skill_runtime_settings", {
     skillId,
     payload,
+  })
+  return LocalSkillRuntimeStatusSchema.parse(data)
+}
+
+export async function installLocalSkillRuntime(
+  skillId: string
+): Promise<LocalSkillRuntimeStatus> {
+  if (!isTauriRuntime()) {
+    throw new Error("Local skill runtime install requires desktop runtime")
+  }
+  const { invoke } = await import("@tauri-apps/api/core")
+  const data = await invoke("install_local_skill_runtime", {
+    skillId,
   })
   return LocalSkillRuntimeStatusSchema.parse(data)
 }

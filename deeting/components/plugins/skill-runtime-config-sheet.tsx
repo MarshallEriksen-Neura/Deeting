@@ -26,10 +26,12 @@ interface SkillRuntimeConfigSheetProps {
   plugin: PluginMarketSkillItem | null
   runtimeStatus: LocalSkillRuntimeStatus | null
   isSaving?: boolean
+  isInstallingRuntime?: boolean
   onSave: (payload: {
     env_json: Record<string, string>
     config_json: Record<string, unknown>
   }) => void
+  onInstallRuntime?: () => void
 }
 
 export function SkillRuntimeConfigSheet({
@@ -38,7 +40,9 @@ export function SkillRuntimeConfigSheet({
   plugin,
   runtimeStatus,
   isSaving = false,
+  isInstallingRuntime = false,
   onSave,
+  onInstallRuntime,
 }: SkillRuntimeConfigSheetProps) {
   const t = useTranslations("plugins")
   const [envDraft, setEnvDraft] = React.useState<Record<string, string>>({})
@@ -88,6 +92,9 @@ export function SkillRuntimeConfigSheet({
   const adapterKindLabel = runtimeStatus
     ? t(`runtimeLabels.adapterKind.${runtimeStatus.adapter_kind}`)
     : "-"
+  const canInstallRuntime =
+    Boolean(runtimeStatus?.runtime_install_supported) &&
+    runtimeStatus?.runtime_install_state !== "ready"
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -113,12 +120,59 @@ export function SkillRuntimeConfigSheet({
               <div>{t("runtimeConfig.adapterKind", { adapter: adapterKindLabel })}</div>
               <div>{t("runtimeConfig.ecosystem", { ecosystem: runtimeStatus.ecosystem })}</div>
               <div>{t("runtimeConfig.executionMode", { mode: runtimeStatus.execution_mode })}</div>
+              {runtimeStatus.runtime_install_supported && (
+                <div>
+                  {t("runtimeConfig.runtimeManager", {
+                    manager: runtimeStatus.runtime_install_manager ?? "unknown",
+                  })}
+                </div>
+              )}
               <div>
                 {runtimeStatus.runnable_now
                   ? t("runtimeStatus.ready")
                   : t(`runtimeStatus.reason.${runtimeStatus.blocking_reason ?? "unknown"}`)}
               </div>
             </div>
+
+            {runtimeStatus.runtime_install_supported && (
+              <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
+                <h3 className="text-sm font-medium">{t("runtimeConfig.runtimeSection")}</h3>
+                <p className="text-sm text-muted-foreground">
+                  {t(`runtimeConfig.installState.${runtimeStatus.runtime_install_state}`)}
+                </p>
+                {runtimeStatus.runtime_install_error && (
+                  <p className="text-xs text-destructive whitespace-pre-wrap break-words">
+                    {runtimeStatus.runtime_install_error}
+                  </p>
+                )}
+                {runtimeStatus.runtime_python_path && (
+                  <p className="text-xs text-muted-foreground break-all">
+                    {t("runtimeConfig.pythonPath", {
+                      path: runtimeStatus.runtime_python_path,
+                    })}
+                  </p>
+                )}
+                {runtimeStatus.runtime_requirements_path && (
+                  <p className="text-xs text-muted-foreground break-all">
+                    {t("runtimeConfig.requirementsPath", {
+                      path: runtimeStatus.runtime_requirements_path,
+                    })}
+                  </p>
+                )}
+                {canInstallRuntime && (
+                  <Button
+                    variant="outline"
+                    onClick={onInstallRuntime}
+                    disabled={isInstallingRuntime || !runtimeStatus.runtime_manager_available}
+                  >
+                    {isInstallingRuntime && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {isInstallingRuntime
+                      ? t("runtimeConfig.installingRuntime")
+                      : t("runtimeConfig.installRuntime")}
+                  </Button>
+                )}
+              </div>
+            )}
 
             {runtimeStatus.missing_bins.length > 0 && (
               <div className="space-y-3">

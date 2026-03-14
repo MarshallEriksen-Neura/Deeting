@@ -37,6 +37,7 @@ jest.mock("@/lib/swr/use-plugin-market", () => ({
 }))
 
 jest.mock("@/lib/api/plugin-market", () => ({
+  installLocalSkillRuntime: jest.fn(),
   installPlugin: jest.fn(),
   uninstallPlugin: jest.fn(),
   submitPluginRepo: jest.fn(),
@@ -110,6 +111,7 @@ describe("PluginsClient store-only actions", () => {
           id: "official.skills.memory",
           name: "Memory",
           description: "Built-in memory skill",
+          status: "active",
           installed: true,
           source_kind: "official",
         },
@@ -117,11 +119,13 @@ describe("PluginsClient store-only actions", () => {
           id: "skill.find-skills",
           name: "Find Skills",
           description: "Locate available skills",
+          status: "active",
           installed: true,
           source_kind: "community",
         },
       ],
       isLoading: false,
+      isValidating: false,
       error: undefined,
       mutate: mockMutate,
     })
@@ -133,9 +137,9 @@ describe("PluginsClient store-only actions", () => {
   ])("does not expose local maintenance actions from %s", (_label, view) => {
     render(view)
 
-    expect(screen.queryByRole("button", { name: "page.syncAction" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "page.syncReinstallAction" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "page.repairIndexAction" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "page.syncAction" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "page.syncReinstallAction" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "page.repairIndexAction" })).toBeNull()
   })
 
   it.each([
@@ -144,7 +148,7 @@ describe("PluginsClient store-only actions", () => {
   ])("hides official skills in %s", (_label, view) => {
     render(view)
 
-    expect(screen.queryByText("Memory")).not.toBeInTheDocument()
-    expect(screen.getByText("Find Skills")).toBeInTheDocument()
+    expect(screen.queryByText("Memory")).toBeNull()
+    expect(screen.getByText("Find Skills")).toBeTruthy()
   })
 })

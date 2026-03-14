@@ -50,6 +50,10 @@ export function PluginCard({ plugin, runtimeStatus, onInstall, onUninstall, onCo
       ? null
       : runtimeStatus.runnable_now
         ? { label: t("runtimeStatus.ready"), className: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" }
+        : runtimeStatus.runtime_install_supported && runtimeStatus.runtime_install_state === "install_failed"
+          ? { label: t("runtimeStatus.installFailed"), className: "bg-red-500/10 text-red-700 border-red-500/20" }
+          : runtimeStatus.runtime_install_supported && runtimeStatus.runtime_install_state !== "ready"
+            ? { label: t("runtimeStatus.installRequired"), className: "bg-amber-500/10 text-amber-700 border-amber-500/20" }
         : runtimeStatus.missing_bins.length > 0
           ? { label: t("runtimeStatus.missingBin"), className: "bg-amber-500/10 text-amber-700 border-amber-500/20" }
           : runtimeStatus.missing_env.length > 0

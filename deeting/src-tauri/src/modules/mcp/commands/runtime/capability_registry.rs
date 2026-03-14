@@ -58,7 +58,8 @@ pub(crate) async fn build_capability_registry(
     let tool_contracts = load_tool_contract_sources(mcp_store).await;
     let mut assets = memory_store.list_assets_catalog().await.unwrap_or_default();
     assets.extend(build_core_tool_assets());
-    let current_user = crate::modules::mcp::desktop_capabilities::desktop_current_user_info_optional().await;
+    let current_user =
+        crate::modules::mcp::desktop_capabilities::desktop_current_user_info_optional().await;
 
     let entries = assets
         .into_iter()
@@ -116,7 +117,8 @@ fn asset_visible_to_desktop_user(
         .get("restricted")
         .and_then(Value::as_bool)
         .or_else(|| {
-            asset.get("metadata")
+            asset
+                .get("metadata")
                 .and_then(|metadata| metadata.get("restricted"))
                 .and_then(Value::as_bool)
         })
@@ -125,31 +127,32 @@ fn asset_visible_to_desktop_user(
         .get("allowed_roles")
         .and_then(Value::as_array)
         .map(|items| {
-            items.iter()
+            items
+                .iter()
                 .filter_map(Value::as_str)
                 .map(ToString::to_string)
                 .collect::<Vec<_>>()
         })
         .or_else(|| {
-            asset.get("metadata")
+            asset
+                .get("metadata")
                 .and_then(|metadata| metadata.get("allowed_roles"))
                 .and_then(Value::as_array)
                 .map(|items| {
-                    items.iter()
+                    items
+                        .iter()
                         .filter_map(Value::as_str)
                         .map(ToString::to_string)
                         .collect::<Vec<_>>()
                 })
         })
         .unwrap_or_default();
-    let id_hint = asset
-        .get("id")
-        .and_then(Value::as_str)
-        .or_else(|| {
-            asset.get("metadata")
-                .and_then(|metadata| metadata.get("skill_id"))
-                .and_then(Value::as_str)
-        });
+    let id_hint = asset.get("id").and_then(Value::as_str).or_else(|| {
+        asset
+            .get("metadata")
+            .and_then(|metadata| metadata.get("skill_id"))
+            .and_then(Value::as_str)
+    });
     crate::modules::mcp::desktop_capabilities::desktop_user_can_access_restricted_asset(
         current_user,
         restricted,

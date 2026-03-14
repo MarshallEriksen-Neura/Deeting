@@ -149,13 +149,13 @@ pub async fn dispatch_official_skill_capability(
         "assistant.onboarding.submit" => dispatch_assistant_onboarding_submit(arguments)
             .await
             .map(Some),
-        "cloud.assistant_ingest.submit" => {
-            dispatch_cloud_assistant_ingest_submit(arguments).await.map(Some)
-        }
+        "cloud.assistant_ingest.submit" => dispatch_cloud_assistant_ingest_submit(arguments)
+            .await
+            .map(Some),
         "cloud.provider_preset.list" => dispatch_cloud_provider_preset_list().await.map(Some),
-        "cloud.provider_preset.upsert" => {
-            dispatch_cloud_provider_preset_upsert(arguments).await.map(Some)
-        }
+        "cloud.provider_preset.upsert" => dispatch_cloud_provider_preset_upsert(arguments)
+            .await
+            .map(Some),
         _ => Ok(None),
     }
 }
@@ -280,12 +280,12 @@ async fn desktop_current_user_info() -> Result<DesktopCurrentUserInfo, String> {
         .await
         .map_err(|err| err.to_string())?;
     if !response.status().is_success() {
-        return Err(format!(
-            "users/me returned {}",
-            response.status().as_u16()
-        ));
+        return Err(format!("users/me returned {}", response.status().as_u16()));
     }
-    response.json::<DesktopCurrentUserInfo>().await.map_err(|err| err.to_string())
+    response
+        .json::<DesktopCurrentUserInfo>()
+        .await
+        .map_err(|err| err.to_string())
 }
 
 async fn ensure_desktop_admin_role(capability_id: &str) -> Result<(), String> {
@@ -432,7 +432,10 @@ async fn dispatch_cloud_provider_preset_list() -> Result<Value, String> {
             body
         ));
     }
-    response.json::<Value>().await.map_err(|err| err.to_string())
+    response
+        .json::<Value>()
+        .await
+        .map_err(|err| err.to_string())
 }
 
 async fn dispatch_cloud_provider_preset_upsert(arguments: &Value) -> Result<Value, String> {
@@ -459,7 +462,10 @@ async fn dispatch_cloud_provider_preset_upsert(arguments: &Value) -> Result<Valu
             body
         ));
     }
-    response.json::<Value>().await.map_err(|err| err.to_string())
+    response
+        .json::<Value>()
+        .await
+        .map_err(|err| err.to_string())
 }
 
 async fn dispatch_provider_verify(arguments: &Value) -> Result<Value, String> {
@@ -538,5 +544,8 @@ async fn dispatch_cloud_assistant_ingest_submit(arguments: &Value) -> Result<Val
             body
         ));
     }
-    response.json::<Value>().await.map_err(|err| err.to_string())
+    response
+        .json::<Value>()
+        .await
+        .map_err(|err| err.to_string())
 }

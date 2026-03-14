@@ -15,6 +15,7 @@ import { SkillRuntimeConfigSheet } from "@/components/plugins/skill-runtime-conf
 import { useLocalSkillRuntimeStatuses } from "@/hooks/use-local-skill-runtime-statuses"
 import { usePluginMarket } from "@/lib/swr/use-plugin-market"
 import {
+  installLocalSkillRuntime,
   installPlugin,
   isUserVisiblePlugin,
   uninstallPlugin,
@@ -45,6 +46,7 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
   const [selectedRuntimePlugin, setSelectedRuntimePlugin] = React.useState<PluginMarketSkillItem | null>(null)
   const [configSheetOpen, setConfigSheetOpen] = React.useState(false)
   const [isSavingRuntimeConfig, setIsSavingRuntimeConfig] = React.useState(false)
+  const [isInstallingRuntime, setIsInstallingRuntime] = React.useState(false)
 
   const handleInstallClick = React.useCallback((plugin: PluginMarketSkillItem) => {
     setSelectedPlugin(plugin)
@@ -118,6 +120,29 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
     },
     [refreshRuntimeStatuses, selectedRuntimePlugin, t],
   )
+
+  const handleInstallRuntime = React.useCallback(async () => {
+    if (!selectedRuntimePlugin) return
+    setIsInstallingRuntime(true)
+    try {
+      await installLocalSkillRuntime(selectedRuntimePlugin.id)
+      await refreshRuntimeStatuses()
+      toast.success(t("runtimeConfig.installRuntimeSuccessTitle"), {
+        description: t("runtimeConfig.installRuntimeSuccessDesc"),
+      })
+    } catch (error) {
+      const description =
+        error instanceof Error && error.message.trim().length > 0
+          ? error.message
+          : t("runtimeConfig.installRuntimeFailedDesc")
+      toast.error(t("runtimeConfig.installRuntimeFailedTitle"), {
+        description,
+      })
+      await refreshRuntimeStatuses()
+    } finally {
+      setIsInstallingRuntime(false)
+    }
+  }, [refreshRuntimeStatuses, selectedRuntimePlugin, t])
 
   const userVisiblePlugins = React.useMemo(
     () => plugins.filter(isUserVisiblePlugin),
@@ -268,7 +293,9 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
           selectedRuntimePlugin ? runtimeStatuses[selectedRuntimePlugin.id] ?? null : null
         }
         isSaving={isSavingRuntimeConfig}
+        isInstallingRuntime={isInstallingRuntime}
         onSave={handleSaveRuntimeConfig}
+        onInstallRuntime={handleInstallRuntime}
       />
     </div>
   )

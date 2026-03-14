@@ -1531,11 +1531,12 @@ pub async fn execute_local_orchestrated_chat(
     let delegated_worker = execution_outcome.delegated_worker;
     let response_json = execution_outcome.response_json;
 
-    let response_text = response_json
+    let mut response_text = response_json
         .get("content")
         .and_then(|value| value.as_str())
         .unwrap_or_default()
         .to_string();
+    let mut response_text_was_synthesized_from_error = false;
     ctx.emit_status(
         "render",
         Some("upstream_call"),
@@ -1565,6 +1566,16 @@ pub async fn execute_local_orchestrated_chat(
             ctx.emit_blocks(trace_blocks.clone());
         }
         assistant_blocks.extend(trace_blocks);
+    }
+
+    if response_text.trim().is_empty() {
+        if let Some(summary) = latest_tool_error_summary(
+            &assistant_blocks,
+            fallback_prefers_chinese(ctx.control_plane_result.as_ref()),
+        ) {
+            response_text = summary;
+            response_text_was_synthesized_from_error = true;
+        }
     }
 
     ctx.emit_stream_delta_chunks(&response_text);
@@ -1750,7 +1761,7 @@ pub async fn execute_local_orchestrated_chat(
         "trace_id": trace_id,
         "choices": [{
             "index": 0,
-            "finish_reason": "stop",
+            "finish_reason": derive_local_finish_reason(response_text_was_synthesized_from_error),
             "message": message,
         }],
     });
@@ -1984,6 +1995,64 @@ fn extract_content_text(content: Value) -> String {
             .unwrap_or_else(|| serde_json::to_string(&Value::Object(obj)).unwrap_or_default()),
         Value::Null => String::new(),
         other => serde_json::to_string(&other).unwrap_or_default(),
+    }
+}
+
+fn fallback_prefers_chinese(control_plane_result: Option<&LocalControlPlaneResult>) -> bool {
+    control_plane_result
+        .map(|result| result.prompt_plan.response_language)
+        .map(|value| value.to_ascii_lowercase().contains("zh"))
+        .unwrap_or_else(crate::tray::desktop_prefers_zh)
+}
+
+fn latest_tool_error_summary(tool_trace_blocks: &[Value], prefers_chinese: bool) -> Option<String> {
+    let error_block = tool_trace_blocks.iter().rev().find(|block| {
+        block.get("type").and_then(Value::as_str) == Some("tool_result")
+            && block.get("status").and_then(Value::as_str) == Some("error")
+    })?;
+
+    let tool_name = error_block
+        .get("toolName")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("unknown_tool");
+    let error_code = error_block
+        .pointer("/result/error_code")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let error_message = error_block
+        .pointer("/result/error")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("tool call failed");
+
+    Some(if prefers_chinese {
+        match error_code {
+            Some(code) => format!(
+                "工具调用失败：{}。原因：{}（错误码：{}）",
+                tool_name, error_message, code
+            ),
+            None => format!("工具调用失败：{}。原因：{}", tool_name, error_message),
+        }
+    } else {
+        match error_code {
+            Some(code) => format!(
+                "Tool call failed: {}. Reason: {} (error code: {})",
+                tool_name, error_message, code
+            ),
+            None => format!("Tool call failed: {}. Reason: {}", tool_name, error_message),
+        }
+    })
+}
+
+fn derive_local_finish_reason(response_text_was_synthesized_from_error: bool) -> &'static str {
+    if response_text_was_synthesized_from_error {
+        "error"
+    } else {
+        "stop"
     }
 }
 
@@ -2359,6 +2428,52 @@ mod tests {
         assert!(!memory.is_boot);
         assert_eq!(memory.memory_tier.as_deref(), Some("core"));
         assert_eq!(memory.recall_when.as_deref(), Some("architecture"));
+    }
+
+    #[test]
+    fn latest_tool_error_summary_formats_latest_error_for_chinese() {
+        let blocks = vec![
+            json!({
+                "type": "tool_result",
+                "toolName": "search_sdk",
+                "status": "success",
+                "result": {}
+            }),
+            json!({
+                "type": "tool_result",
+                "toolName": "skill.official.skills.crawler.fetch_web_content",
+                "status": "error",
+                "result": {
+                    "error": "skill binding 'skill.official.skills.crawler.fetch_web_content' failed (exit=1): [!] Error: 'httpx' library not found in the python environment.",
+                    "error_code": "LOCAL_TOOL_EXECUTION_FAILED"
+                }
+            }),
+        ];
+
+        let summary = latest_tool_error_summary(&blocks, true).expect("tool error summary");
+
+        assert!(summary.contains("工具调用失败"));
+        assert!(summary.contains("skill.official.skills.crawler.fetch_web_content"));
+        assert!(summary.contains("httpx"));
+        assert!(summary.contains("LOCAL_TOOL_EXECUTION_FAILED"));
+    }
+
+    #[test]
+    fn latest_tool_error_summary_returns_none_without_error_blocks() {
+        let blocks = vec![json!({
+            "type": "tool_result",
+            "toolName": "search_sdk",
+            "status": "success",
+            "result": {}
+        })];
+
+        assert!(latest_tool_error_summary(&blocks, false).is_none());
+    }
+
+    #[test]
+    fn derive_local_finish_reason_uses_error_for_synthesized_failure_text() {
+        assert_eq!(derive_local_finish_reason(true), "error");
+        assert_eq!(derive_local_finish_reason(false), "stop");
     }
 
     #[test]

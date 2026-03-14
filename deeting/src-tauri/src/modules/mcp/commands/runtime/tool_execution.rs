@@ -104,6 +104,88 @@ fn build_command_for_skill_binding(
     }
 }
 
+fn python_executable_candidates(base_dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut candidates = vec![base_dir.join(".venv").join("bin").join("python")];
+    if cfg!(target_os = "windows") {
+        candidates.insert(0, base_dir.join(".venv").join("Scripts").join("python.exe"));
+    }
+    candidates
+}
+
+async fn resolve_preferred_python_command_for_binding(
+    store: &crate::modules::mcp::store::McpStore,
+    binding: &LocalSkillToolBindingSnapshot,
+) -> Result<Option<String>, String> {
+    let install = store
+        .get_local_skill_install_detail(&binding.skill_id)
+        .await
+        .map_err(to_string)?;
+    let Some(install) = install else {
+        return Ok(None);
+    };
+
+    if let Some(user_settings) = install.user_settings_json.as_ref() {
+        if let Some(path) = user_settings
+            .get("runtime_install")
+            .and_then(Value::as_object)
+            .and_then(|value| value.get("python_path"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            let candidate = std::path::PathBuf::from(path);
+            if candidate.is_file() {
+                return Ok(Some(candidate.to_string_lossy().to_string()));
+            }
+        }
+    }
+
+    let install_root = std::path::PathBuf::from(install.install_path.trim());
+    for candidate in python_executable_candidates(&install_root) {
+        if candidate.is_file() {
+            return Ok(Some(candidate.to_string_lossy().to_string()));
+        }
+    }
+
+    Ok(None)
+}
+
+async fn build_command_for_skill_binding_with_store(
+    store: &crate::modules::mcp::store::McpStore,
+    binding: &LocalSkillToolBindingSnapshot,
+    arguments: &Value,
+) -> Result<(String, Vec<String>), String> {
+    let mut cli_args = arguments
+        .get("args")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    if binding.runtime == "python" {
+        let mut args = vec![binding.entry_path.clone()];
+        args.append(&mut cli_args);
+        if let Some(command) = resolve_preferred_python_command_for_binding(store, binding).await? {
+            return Ok((command, args));
+        }
+        return Ok((
+            if cfg!(target_os = "windows") {
+                "python".to_string()
+            } else {
+                "python3".to_string()
+            },
+            args,
+        ));
+    }
+
+    build_command_for_skill_binding(binding, arguments)
+}
+
 async fn resolve_skill_binding_env(
     store: &crate::modules::mcp::store::McpStore,
     binding: &LocalSkillToolBindingSnapshot,
@@ -182,7 +264,8 @@ async fn execute_deeting_tool_binding(
     let timeout_secs = binding.timeout_seconds.max(1);
     let mut tool_results: Vec<serde_json::Value> = Vec::new();
     for attempt in 0..=MAX_MARKER_REEXEC {
-        let (command, args) = build_command_for_skill_binding(binding, arguments)?;
+        let (command, args) =
+            build_command_for_skill_binding_with_store(store, binding, arguments).await?;
         let env = resolve_skill_binding_env(store, binding).await?;
         let skill_dir = std::path::Path::new(&binding.entry_path)
             .parent()
@@ -351,7 +434,8 @@ async fn execute_skill_binding(
     if binding.binding_kind == "deeting_tool" && binding.runtime == "python" {
         return execute_deeting_tool_binding(store, binding, arguments).await;
     }
-    let (command, args) = build_command_for_skill_binding(binding, arguments)?;
+    let (command, args) =
+        build_command_for_skill_binding_with_store(store, binding, arguments).await?;
     let env = resolve_skill_binding_env(store, binding).await?;
     let config_json = resolve_skill_binding_config_json(store, binding).await?;
 

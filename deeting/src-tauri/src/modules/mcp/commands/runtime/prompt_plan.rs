@@ -245,9 +245,8 @@ mod tests {
             "semantically requires reading, searching, fetching, inspecting, verifying, or executing"
         ));
         assert!(prompt.contains("Do not wait for the user to explicitly say \"use a tool\""));
-        assert!(prompt.contains(
-            "use it as the default discovery step for unknown-capability questions"
-        ));
+        assert!(prompt
+            .contains("use it as the default discovery step for unknown-capability questions"));
         assert!(prompt.contains("Do not treat `search_sdk` as a mandatory preflight"));
         assert!(prompt.contains(
             "Before saying you cannot access, open, read, verify, inspect, or know something"

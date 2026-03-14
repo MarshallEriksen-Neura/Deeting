@@ -141,6 +141,13 @@ describe("plugin market api", () => {
       missing_config: [],
       blocking_reason: "script_runner",
       install_hints: ["pip install -r requirements.txt"],
+      runtime_install_supported: true,
+      runtime_install_state: "needs_install",
+      runtime_install_manager: "uv",
+      runtime_manager_available: true,
+      runtime_install_error: null,
+      runtime_requirements_path: "/tmp/openclaw-weather/requirements.txt",
+      runtime_python_path: null,
       compatibility: {},
       current_env: {},
       current_config: {},
@@ -149,5 +156,6 @@ describe("plugin market api", () => {
     expect(parsed.adapter_kind).toBe("openclaw_script")
     expect(parsed.normalized_execution_surface).toBe("script_runner")
     expect(parsed.blocking_reason).toBe("script_runner")
+    expect(parsed.runtime_install_manager).toBe("uv")
   })
 })

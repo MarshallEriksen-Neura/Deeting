@@ -422,7 +422,8 @@ mod tests {
             .expect("adapt gemini");
 
         assert_eq!(
-            result["choices"][0]["message"]["tool_calls"][0]["extra_content"]["google"]["thought_signature"],
+            result["choices"][0]["message"]["tool_calls"][0]["extra_content"]["google"]
+                ["thought_signature"],
             json!("sig-123")
         );
     }

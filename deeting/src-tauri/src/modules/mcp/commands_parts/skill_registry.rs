@@ -904,6 +904,185 @@ fn parse_user_settings_maps(
     (env_json, config_json)
 }
 
+const LOCAL_SKILL_RUNTIME_MANAGER_UV: &str = "uv";
+const LOCAL_SKILL_RUNTIME_STATE_READY: &str = "ready";
+const LOCAL_SKILL_RUNTIME_STATE_NEEDS_INSTALL: &str = "needs_install";
+const LOCAL_SKILL_RUNTIME_STATE_INSTALL_FAILED: &str = "install_failed";
+const LOCAL_SKILL_RUNTIME_STATE_UNSUPPORTED: &str = "unsupported";
+
+#[derive(Debug, Clone)]
+struct ManagedPythonRuntimeStatus {
+    supported: bool,
+    state: &'static str,
+    manager: Option<String>,
+    manager_available: bool,
+    requirements_path: Option<String>,
+    python_path: Option<String>,
+    install_error: Option<String>,
+}
+
+fn skill_runtime_settings_object(
+    user_settings_json: Option<&JsonValue>,
+) -> Option<&serde_json::Map<String, JsonValue>> {
+    user_settings_json.and_then(JsonValue::as_object)
+}
+
+fn stored_runtime_install_object(
+    user_settings_json: Option<&JsonValue>,
+) -> Option<&serde_json::Map<String, JsonValue>> {
+    skill_runtime_settings_object(user_settings_json)?
+        .get("runtime_install")?
+        .as_object()
+}
+
+fn stored_runtime_install_error(user_settings_json: Option<&JsonValue>) -> Option<String> {
+    stored_runtime_install_object(user_settings_json)?
+        .get("last_error")
+        .and_then(JsonValue::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn python_venv_candidates(base_dir: &Path) -> Vec<PathBuf> {
+    let mut candidates = vec![base_dir.join(".venv").join("bin").join("python")];
+    if cfg!(target_os = "windows") {
+        candidates.insert(0, base_dir.join(".venv").join("Scripts").join("python.exe"));
+    }
+    candidates
+}
+
+fn stored_runtime_python_path(user_settings_json: Option<&JsonValue>) -> Option<String> {
+    stored_runtime_install_object(user_settings_json)?
+        .get("python_path")
+        .and_then(JsonValue::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn resolve_existing_runtime_python_path(
+    install: &crate::modules::mcp::store::LocalSkillInstallDetail,
+) -> Option<String> {
+    if let Some(stored) = stored_runtime_python_path(install.user_settings_json.as_ref()) {
+        let candidate = PathBuf::from(stored.trim());
+        if candidate.is_file() {
+            return Some(candidate.to_string_lossy().to_string());
+        }
+    }
+
+    let install_root = PathBuf::from(install.install_path.trim());
+    for candidate in python_venv_candidates(&install_root) {
+        if candidate.is_file() {
+            return Some(candidate.to_string_lossy().to_string());
+        }
+    }
+    None
+}
+
+fn resolve_managed_python_runtime_status(
+    install: &crate::modules::mcp::store::LocalSkillInstallDetail,
+) -> ManagedPythonRuntimeStatus {
+    let install_root = PathBuf::from(install.install_path.trim());
+    let requirements_path = install_root.join("requirements.txt");
+    if !requirements_path.is_file() {
+        return ManagedPythonRuntimeStatus {
+            supported: false,
+            state: LOCAL_SKILL_RUNTIME_STATE_UNSUPPORTED,
+            manager: None,
+            manager_available: false,
+            requirements_path: None,
+            python_path: resolve_existing_runtime_python_path(install),
+            install_error: stored_runtime_install_error(install.user_settings_json.as_ref()),
+        };
+    }
+
+    let source_prefix = infer_local_skill_asset_source_type(&install_root);
+    let supports_python = resolve_local_skill_definition(&install_root, source_prefix, None, None)
+        .ok()
+        .flatten()
+        .and_then(|skill_def| collect_local_skill_tool_bindings(&install_root, &skill_def).ok())
+        .map(|bindings| {
+            bindings
+                .into_iter()
+                .any(|binding| binding.runtime == "python")
+        })
+        .unwrap_or(false);
+    if !supports_python {
+        return ManagedPythonRuntimeStatus {
+            supported: false,
+            state: LOCAL_SKILL_RUNTIME_STATE_UNSUPPORTED,
+            manager: None,
+            manager_available: false,
+            requirements_path: Some(requirements_path.to_string_lossy().to_string()),
+            python_path: resolve_existing_runtime_python_path(install),
+            install_error: stored_runtime_install_error(install.user_settings_json.as_ref()),
+        };
+    }
+
+    let python_path = resolve_existing_runtime_python_path(install);
+    let manager_available = binary_exists(LOCAL_SKILL_RUNTIME_MANAGER_UV);
+    let install_error = stored_runtime_install_error(install.user_settings_json.as_ref());
+    let state = if python_path.is_some() {
+        LOCAL_SKILL_RUNTIME_STATE_READY
+    } else if install_error.is_some() {
+        LOCAL_SKILL_RUNTIME_STATE_INSTALL_FAILED
+    } else {
+        LOCAL_SKILL_RUNTIME_STATE_NEEDS_INSTALL
+    };
+
+    ManagedPythonRuntimeStatus {
+        supported: true,
+        state,
+        manager: Some(LOCAL_SKILL_RUNTIME_MANAGER_UV.to_string()),
+        manager_available,
+        requirements_path: Some(requirements_path.to_string_lossy().to_string()),
+        python_path,
+        install_error,
+    }
+}
+
+fn normalize_skill_settings_json(user_settings_json: Option<&JsonValue>) -> JsonValue {
+    match user_settings_json {
+        Some(JsonValue::Object(object)) => JsonValue::Object(object.clone()),
+        _ => json!({}),
+    }
+}
+
+fn upsert_runtime_install_metadata(
+    settings: &mut JsonValue,
+    state: &str,
+    manager: Option<&str>,
+    requirements_path: Option<&Path>,
+    python_path: Option<&Path>,
+    last_error: Option<&str>,
+) -> Result<(), String> {
+    if !settings.is_object() {
+        *settings = json!({});
+    }
+    let object = settings
+        .as_object_mut()
+        .ok_or_else(|| "skill settings must be an object".to_string())?;
+
+    let mut runtime_install = serde_json::Map::new();
+    runtime_install.insert("state".to_string(), json!(state));
+    runtime_install.insert("manager".to_string(), json!(manager));
+    runtime_install.insert(
+        "requirements_path".to_string(),
+        json!(requirements_path.map(|value| value.to_string_lossy().to_string())),
+    );
+    runtime_install.insert(
+        "python_path".to_string(),
+        json!(python_path.map(|value| value.to_string_lossy().to_string())),
+    );
+    runtime_install.insert("last_error".to_string(), json!(last_error));
+    object.insert(
+        "runtime_install".to_string(),
+        JsonValue::Object(runtime_install),
+    );
+    Ok(())
+}
+
 async fn build_local_skill_runtime_status(
     store: &crate::modules::mcp::store::McpStore,
     install: &crate::modules::mcp::store::LocalSkillInstallDetail,
@@ -960,11 +1139,31 @@ async fn build_local_skill_runtime_status(
             .get("requires")
             .and_then(|value| value.get("config")),
     );
-    let missing_bins = value_to_string_list(
+    let mut required_bins = required_bins;
+    let mut missing_bins = value_to_string_list(
         compatibility
             .get("eligibility")
             .and_then(|value| value.get("missing_bins")),
     );
+    let managed_python = resolve_managed_python_runtime_status(install);
+    if managed_python.supported {
+        if managed_python.python_path.is_some() {
+            missing_bins.retain(|item| !matches!(item.as_str(), "python" | "python3"));
+        } else if !managed_python.manager_available {
+            if !required_bins
+                .iter()
+                .any(|item| item == LOCAL_SKILL_RUNTIME_MANAGER_UV)
+            {
+                required_bins.push(LOCAL_SKILL_RUNTIME_MANAGER_UV.to_string());
+            }
+            if !missing_bins
+                .iter()
+                .any(|item| item == LOCAL_SKILL_RUNTIME_MANAGER_UV)
+            {
+                missing_bins.push(LOCAL_SKILL_RUNTIME_MANAGER_UV.to_string());
+            }
+        }
+    }
 
     let required_env = env_keys
         .iter()
@@ -1007,6 +1206,19 @@ async fn build_local_skill_runtime_status(
 
     let blocking_reason = if !install.is_enabled {
         Some("skill_disabled".to_string())
+    } else if managed_python.supported
+        && managed_python.state == LOCAL_SKILL_RUNTIME_STATE_INSTALL_FAILED
+    {
+        Some("runtime_install_failed".to_string())
+    } else if managed_python.supported
+        && managed_python.state == LOCAL_SKILL_RUNTIME_STATE_NEEDS_INSTALL
+        && !managed_python.manager_available
+    {
+        Some("runtime_manager_missing".to_string())
+    } else if managed_python.supported
+        && managed_python.state == LOCAL_SKILL_RUNTIME_STATE_NEEDS_INSTALL
+    {
+        Some("runtime_install_required".to_string())
     } else if !missing_bins.is_empty() {
         Some("missing_binary".to_string())
     } else if !missing_env.is_empty() {
@@ -1031,6 +1243,8 @@ async fn build_local_skill_runtime_status(
         adapter_kind,
         normalized_execution_surface,
         runnable_now: install.is_enabled
+            && (!managed_python.supported
+                || managed_python.state == LOCAL_SKILL_RUNTIME_STATE_READY)
             && missing_bins.is_empty()
             && missing_env.is_empty()
             && missing_config.is_empty(),
@@ -1042,6 +1256,13 @@ async fn build_local_skill_runtime_status(
         missing_config,
         blocking_reason,
         install_hints,
+        runtime_install_supported: managed_python.supported,
+        runtime_install_state: managed_python.state.to_string(),
+        runtime_install_manager: managed_python.manager,
+        runtime_manager_available: managed_python.manager_available,
+        runtime_install_error: managed_python.install_error,
+        runtime_requirements_path: managed_python.requirements_path,
+        runtime_python_path: managed_python.python_path,
         compatibility,
         current_env: plain_env
             .keys()
@@ -1063,7 +1284,8 @@ fn local_skill_visible_to_current_user(
         .get("allowed_roles")
         .and_then(JsonValue::as_array)
         .map(|items| {
-            items.iter()
+            items
+                .iter()
                 .filter_map(JsonValue::as_str)
                 .map(ToString::to_string)
                 .collect::<Vec<_>>()
@@ -1559,6 +1781,13 @@ pub struct LocalSkillRuntimeStatus {
     pub missing_config: Vec<String>,
     pub blocking_reason: Option<String>,
     pub install_hints: Vec<String>,
+    pub runtime_install_supported: bool,
+    pub runtime_install_state: String,
+    pub runtime_install_manager: Option<String>,
+    pub runtime_manager_available: bool,
+    pub runtime_install_error: Option<String>,
+    pub runtime_requirements_path: Option<String>,
+    pub runtime_python_path: Option<String>,
     pub compatibility: JsonValue,
     pub current_env: HashMap<String, String>,
     pub current_config: HashMap<String, JsonValue>,
@@ -1892,7 +2121,8 @@ async fn index_local_skill_tool_binding_assets(
         .and_then(|value| value.get("allowed_roles"))
         .and_then(JsonValue::as_array)
         .map(|items| {
-            items.iter()
+            items
+                .iter()
                 .filter_map(JsonValue::as_str)
                 .map(ToString::to_string)
                 .collect::<Vec<_>>()
@@ -2051,6 +2281,179 @@ pub async fn update_local_skill_runtime_settings(
         .into_iter()
         .find(|item| item.skill_id == normalized_skill_id)
         .ok_or_else(|| format!("local skill {} missing after update", normalized_skill_id))?;
+    build_local_skill_runtime_status(app_state.mcp.store.as_ref(), &updated).await
+}
+
+fn local_skill_runtime_root(app: &AppHandle, skill_id: &str) -> Result<PathBuf, String> {
+    Ok(app
+        .path()
+        .app_data_dir()
+        .map_err(to_string)?
+        .join("skills")
+        .join(".runtime")
+        .join(normalize_skill_dir_name(skill_id)))
+}
+
+async fn run_command_capture(program: &str, args: &[String], workdir: &Path) -> Result<(), String> {
+    let output = tokio::process::Command::new(program)
+        .args(args)
+        .current_dir(workdir)
+        .output()
+        .await
+        .map_err(to_string)?;
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let detail = if !stderr.is_empty() {
+        stderr
+    } else if !stdout.is_empty() {
+        stdout
+    } else {
+        "unknown error".to_string()
+    };
+    Err(format!(
+        "{} {} failed (exit={}): {}",
+        program,
+        args.join(" "),
+        output.status,
+        detail
+    ))
+}
+
+#[tauri::command]
+pub async fn install_local_skill_runtime(
+    app: AppHandle,
+    app_state: State<'_, AppState>,
+    skill_id: String,
+) -> Result<LocalSkillRuntimeStatus, String> {
+    let normalized_skill_id = skill_id.trim().to_string();
+    if normalized_skill_id.is_empty() {
+        return Err("skill_id is required".to_string());
+    }
+
+    let install = app_state
+        .mcp
+        .store
+        .get_local_skill_install_detail(&normalized_skill_id)
+        .await
+        .map_err(to_string)?
+        .ok_or_else(|| format!("local skill {} is not installed", normalized_skill_id))?;
+
+    let managed_python = resolve_managed_python_runtime_status(&install);
+    if !managed_python.supported {
+        return Err(format!(
+            "local skill {} does not expose a managed Python runtime in phase 1",
+            normalized_skill_id
+        ));
+    }
+    if !managed_python.manager_available {
+        return Err("uv is required to install local skill runtime".to_string());
+    }
+
+    let requirements_path = managed_python
+        .requirements_path
+        .as_deref()
+        .map(PathBuf::from)
+        .ok_or_else(|| {
+            format!(
+                "local skill {} is missing requirements.txt",
+                normalized_skill_id
+            )
+        })?;
+    let runtime_root = local_skill_runtime_root(&app, &normalized_skill_id)?;
+    let venv_root = runtime_root.join(".venv");
+    let python_path = python_venv_candidates(&runtime_root)
+        .into_iter()
+        .next()
+        .ok_or_else(|| "unable to resolve virtualenv python path".to_string())?;
+
+    if let Some(parent) = runtime_root.parent() {
+        std::fs::create_dir_all(parent).map_err(to_string)?;
+    }
+    if runtime_root.exists() {
+        std::fs::remove_dir_all(&runtime_root).map_err(to_string)?;
+    }
+    std::fs::create_dir_all(&runtime_root).map_err(to_string)?;
+
+    let mut settings = normalize_skill_settings_json(install.user_settings_json.as_ref());
+    let install_result = async {
+        run_command_capture(
+            LOCAL_SKILL_RUNTIME_MANAGER_UV,
+            &[
+                String::from("venv"),
+                venv_root.to_string_lossy().to_string(),
+            ],
+            &runtime_root,
+        )
+        .await?;
+        run_command_capture(
+            LOCAL_SKILL_RUNTIME_MANAGER_UV,
+            &[
+                String::from("pip"),
+                String::from("install"),
+                String::from("--python"),
+                python_path.to_string_lossy().to_string(),
+                String::from("-r"),
+                requirements_path.to_string_lossy().to_string(),
+            ],
+            &runtime_root,
+        )
+        .await
+    }
+    .await;
+
+    match install_result {
+        Ok(()) => {
+            upsert_runtime_install_metadata(
+                &mut settings,
+                LOCAL_SKILL_RUNTIME_STATE_READY,
+                Some(LOCAL_SKILL_RUNTIME_MANAGER_UV),
+                Some(&requirements_path),
+                Some(&python_path),
+                None,
+            )?;
+        }
+        Err(err) => {
+            upsert_runtime_install_metadata(
+                &mut settings,
+                LOCAL_SKILL_RUNTIME_STATE_INSTALL_FAILED,
+                Some(LOCAL_SKILL_RUNTIME_MANAGER_UV),
+                Some(&requirements_path),
+                None,
+                Some(&err),
+            )?;
+            app_state
+                .mcp
+                .store
+                .update_local_skill_user_settings(&normalized_skill_id, &settings)
+                .await
+                .map_err(to_string)?;
+            return Err(err);
+        }
+    }
+
+    app_state
+        .mcp
+        .store
+        .update_local_skill_user_settings(&normalized_skill_id, &settings)
+        .await
+        .map_err(to_string)?;
+
+    let updated = app_state
+        .mcp
+        .store
+        .get_local_skill_install_detail(&normalized_skill_id)
+        .await
+        .map_err(to_string)?
+        .ok_or_else(|| {
+            format!(
+                "local skill {} missing after runtime install",
+                normalized_skill_id
+            )
+        })?;
     build_local_skill_runtime_status(app_state.mcp.store.as_ref(), &updated).await
 }
 

@@ -762,7 +762,9 @@ fn render_anthropic_message_from_canonical(message: &Value) -> Option<Value> {
     };
 
     let mut content_blocks = Vec::new();
-    if let Some(text) = anthropic_text_from_content(message.get("content")).filter(|value| !value.trim().is_empty()) {
+    if let Some(text) =
+        anthropic_text_from_content(message.get("content")).filter(|value| !value.trim().is_empty())
+    {
         content_blocks.push(json!({ "type": "text", "text": text }));
     }
     if let Some(tool_calls) = message.get("tool_calls").and_then(|value| value.as_array()) {
@@ -891,7 +893,9 @@ fn render_google_gemini_message_from_canonical(message: &Value) -> Option<Value>
             }
         }));
     } else {
-        if let Some(text) = anthropic_text_from_content(message.get("content")).filter(|value| !value.trim().is_empty()) {
+        if let Some(text) = anthropic_text_from_content(message.get("content"))
+            .filter(|value| !value.trim().is_empty())
+        {
             parts.push(json!({ "text": text }));
         }
         if let Some(tool_calls) = message.get("tool_calls").and_then(|value| value.as_array()) {
@@ -942,8 +946,9 @@ fn parse_gemini_tool_response_payload(content: Option<&Value>) -> Value {
     };
     match content {
         Value::Object(object) => Value::Object(object.clone()),
-        Value::String(text) => serde_json::from_str::<Value>(text)
-            .unwrap_or_else(|_| json!({ "content": text })),
+        Value::String(text) => {
+            serde_json::from_str::<Value>(text).unwrap_or_else(|_| json!({ "content": text }))
+        }
         other => json!({ "content": other }),
     }
 }
