@@ -1,6 +1,6 @@
 {
   "name": "create-deeting-plugin",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Scaffold a new Deeting OS plugin instantly.",
   "type": "module",
   "main": "./src/index.ts",
