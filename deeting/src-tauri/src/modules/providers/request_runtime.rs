@@ -2129,6 +2129,123 @@ mod tests {
     }
 
     #[test]
+    fn prepare_provider_request_google_gemini_renders_function_call_and_response_replay() {
+        let mut preset = mock_preset();
+        preset.provider = "google".to_string();
+        preset.protocol_profiles = json!({
+            "chat": {
+                "runtime_version": "v2",
+                "schema_version": "2026-03-07",
+                "profile_id": "google:chat:google_gemini",
+                "provider": "google",
+                "protocol_family": "google_gemini",
+                "capability": "chat",
+                "transport": {
+                    "method": "POST",
+                    "path": "v1beta/models/gemini:generateContent",
+                    "query_template": {},
+                    "header_template": {}
+                },
+                "request": {
+                    "template_engine": "google_gemini",
+                    "request_template": {
+                        "model": null,
+                        "contents": null
+                    }
+                },
+                "response": {
+                    "decoder": { "name": "google_gemini", "config": {} },
+                    "response_template": {}
+                },
+                "stream": {
+                    "stream_decoder": { "name": "openai_chat_events", "config": {} }
+                },
+                "auth": { "auth_policy": "inherit", "config": {} },
+                "features": {
+                    "supports_messages": true,
+                    "supports_input_items": false
+                },
+                "defaults": {
+                    "headers": {},
+                    "query": {},
+                    "body": {}
+                }
+            }
+        });
+        let instance = mock_instance(json!({ "protocol": "google", "auto_append_v1": false }));
+        let mut model = mock_model(&["chat"]);
+        model.upstream_path = "v1beta/models/gemini:generateContent".to_string();
+
+        let prepared = prepare_provider_request(
+            Some(&preset),
+            &instance,
+            &model,
+            Some("sk-test"),
+            "chat",
+            json!({
+                "model": "gemini-2.5-pro",
+                "messages": [
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "call_123",
+                                "name": "search_sdk",
+                                "arguments": { "query": "tool replay" },
+                                "extra_content": {
+                                    "google": {
+                                        "thought_signature": "sig-123"
+                                    }
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "role": "tool",
+                        "tool_call_id": "call_123",
+                        "name": "search_sdk",
+                        "content": "{\"status\":\"ok\"}"
+                    }
+                ],
+                "stream": false
+            }),
+            None,
+            None,
+        )
+        .expect("prepare gemini replay request");
+
+        assert_eq!(
+            prepared.body["contents"],
+            json!([
+                {
+                    "role": "model",
+                    "parts": [
+                        {
+                            "functionCall": {
+                                "name": "search_sdk",
+                                "args": { "query": "tool replay" }
+                            },
+                            "thoughtSignature": "sig-123"
+                        }
+                    ]
+                },
+                {
+                    "role": "user",
+                    "parts": [
+                        {
+                            "functionResponse": {
+                                "name": "search_sdk",
+                                "response": { "status": "ok" }
+                            }
+                        }
+                    ]
+                }
+            ])
+        );
+    }
+
+    #[test]
     fn build_effective_config_prefers_protocol_profiles_when_present() {
         let mut preset = mock_preset();
         preset.protocol_profiles = json!({

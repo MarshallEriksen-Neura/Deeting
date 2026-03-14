@@ -1,0 +1,128 @@
+---
+title: ui/index.html 前端握手与渲染说明
+description: 了解插件 UI 如何与 Deeting 宿主通信，以及前端页面需要遵循的基本握手流程。
+---
+
+## 这页讲什么
+
+如果你的插件除了后端逻辑，还需要一个前端界面，那么这页就是关键说明。
+
+在当前模板里，前端入口通常是：
+
+```text
+ui/index.html
+```
+
+这个页面不是一个随便放静态 HTML 的位置，它需要遵循宿主和插件之间的消息交互约定。
+
+## 前端 UI 为什么需要握手
+
+Deeting 宿主不会默认把数据直接塞进你的页面里。  
+更准确地说，插件 UI 会运行在受控环境里，然后通过消息机制和宿主交换状态。
+
+这意味着：
+
+- 页面加载完成后，需要告诉宿主“我准备好了”
+- 宿主拿到这个信号后，才会把数据发给插件 UI
+- 如果主题变化，宿主也会通过消息同步
+
+## 当前模板里的核心流程
+
+默认模板的交互流程可以理解成下面 4 步：
+
+1. 宿主加载 `ui/index.html`
+2. 插件前端通过 `postMessage` 发送 `DEETING_PLUGIN_READY`
+3. 宿主再发送数据消息给前端
+4. 前端收到数据后再真正渲染内容
+
+## 模板里已经有哪些消息类型
+
+根据当前模板，前端主要监听这些消息：
+
+- `DEETING_DATA`
+  宿主把数据 payload 发送进来
+
+- `DEETING_THEME_CHANGE`
+  宿主通知当前主题变化
+
+同时，前端会主动发送：
+
+- `DEETING_PLUGIN_READY`
+  告诉宿主页面已经准备好接收数据
+
+## 一个最小握手示例
+
+```javascript
+window.addEventListener('message', (event) => {
+  const { type, payload, title } = event.data;
+
+  if (type === 'DEETING_DATA') {
+    render(payload, title);
+  }
+
+  if (type === 'DEETING_THEME_CHANGE') {
+    document.documentElement.classList.toggle('dark', payload === 'dark');
+  }
+});
+
+window.parent.postMessage({ type: 'DEETING_PLUGIN_READY' }, '*');
+```
+
+## 前端页面至少应该做到什么
+
+一个最小可用的插件 UI，建议至少做到：
+
+1. 页面加载后发送 ready 信号
+2. 能正确接收宿主发送的数据
+3. 能在没有数据时显示一个初始状态
+4. 能响应主题变化
+
+## 当前模板在做什么
+
+默认模板做了这些事情：
+
+- 提供一个简单的卡片式 UI 容器
+- 监听消息事件
+- 在收到 `DEETING_DATA` 后更新界面
+- 在收到主题切换消息后给根节点加上或移除 `dark`
+- 在页面就绪后发送 `DEETING_PLUGIN_READY`
+
+这对最小演示插件已经够用了。
+
+## 写 `ui/index.html` 时最容易犯的错误
+
+1. 页面没有发送 `DEETING_PLUGIN_READY`
+2. 等待数据的状态没处理好，导致页面一片空白
+3. 只处理数据，不处理主题
+4. 前端自己假设数据结构，但没有和 `main.py` 的返回保持一致
+
+## 你该怎样和后端配合
+
+前端 UI 的数据来源，最终还是你的 `main.py`。
+
+所以更合理的协作方式是：
+
+1. 先明确 `main.py` 会返回什么结构
+2. 再在前端按这个结构渲染
+3. 如果后端返回结构改了，前端一起改
+
+不要把前端和后端当成彼此独立的两份产品。
+
+## 如果你需要更复杂的 UI
+
+模板里的 `index.html` 只是起点，不是上限。
+
+如果你需要更复杂的页面，可以继续扩展：
+
+- 更细的布局
+- 图表或卡片
+- 多区块状态展示
+- 加载态、空态、错误态
+
+但不管页面多复杂，握手与消息同步这层协议都要保留。
+
+## 接下来读什么
+
+- 想理解插件整体流程：阅读 [插件开发指南](./plugin-development-guide)
+- 想理解后端入口：阅读 [llm-tool.yaml 编写说明](./llm-tool-yaml-reference) 和 [SKILL.md 编写说明](./skill-md-reference)
+- 想了解如何发布：阅读 [插件发布指南](./plugin-publishing-guide)

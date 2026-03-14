@@ -1490,7 +1490,7 @@ mod tests {
     }
 
     #[test]
-    fn structured_tool_replay_messages_use_openai_chat_shape_only_for_openai_chat() {
+    fn structured_tool_replay_messages_use_family_gates_for_supported_protocols() {
         let response = serde_json::json!({
             "content": "",
             "tool_calls": [
@@ -1516,8 +1516,20 @@ mod tests {
         assert_eq!(openai_replay[1].role, "tool");
         assert_eq!(openai_replay[1].tool_call_id.as_deref(), Some("call_123"));
 
+        let anthropic_replay =
+            build_structured_tool_replay_messages("anthropic_messages", &response, &meta)
+                .expect("anthropic replay");
+        assert_eq!(anthropic_replay.len(), 2);
+        assert_eq!(anthropic_replay[1].role, "tool");
+
+        let gemini_replay =
+            build_structured_tool_replay_messages("google_gemini", &response, &meta)
+                .expect("gemini replay");
+        assert_eq!(gemini_replay.len(), 2);
+        assert_eq!(gemini_replay[1].role, "tool");
+
         assert!(
-            build_structured_tool_replay_messages("anthropic_messages", &response, &meta).is_none()
+            build_structured_tool_replay_messages("openai_responses", &response, &meta).is_none()
         );
     }
 }
