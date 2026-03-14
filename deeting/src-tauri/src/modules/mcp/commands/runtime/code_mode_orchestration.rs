@@ -1,5 +1,7 @@
 use super::super::{common_impl::to_string, support::*};
 use super::{
+    LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION, LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
+    LocalCapabilityActivationState, LocalExecutionPolicy,
     append_streamable_local_tool_result_blocks, build_auto_code_mode_tool_feedback,
     build_local_code_mode_entry_tools_with_allowlist, build_local_consult_expert_network_result,
     build_local_sdk_search_result_with_runtime, build_local_tool_call_install_gate_error_meta,
@@ -7,8 +9,7 @@ use super::{
     extract_chat_tool_calls, install_local_skill_from_onboarding_request,
     request_provider_chat_completion, resolve_callable_mcp_tool_by_ref,
     resolve_dynamic_direct_capability_tool_name, resolve_local_capability_activation_state,
-    resolve_skill_binding_by_ref, LocalCapabilityActivationState, LocalExecutionPolicy,
-    LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION, LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
+    resolve_skill_binding_by_ref,
 };
 use crate::modules::mcp::commands::common_impl::LocalModelConnection;
 
@@ -559,6 +560,9 @@ fn serialize_tool_replay_content(item: &serde_json::Value) -> String {
         if let Some(text) = result.as_str() {
             return text.to_string();
         }
+        if let Some(extracted) = extract_mcp_result_text_content(result) {
+            return extracted;
+        }
         return serde_json::to_string(result).unwrap_or_else(|_| "{}".to_string());
     }
 
@@ -568,6 +572,45 @@ fn serialize_tool_replay_content(item: &serde_json::Value) -> String {
         "error_code": item.get("error_code").cloned().unwrap_or(serde_json::json!(null)),
     }))
     .unwrap_or_else(|_| "{}".to_string())
+}
+
+fn extract_mcp_result_text_content(result: &serde_json::Value) -> Option<String> {
+    let object = result.as_object()?;
+    let content = object.get("content")?.as_array()?;
+    let mut parts = Vec::new();
+
+    for item in content {
+        let Some(block) = item.as_object() else {
+            continue;
+        };
+        let block_type = block
+            .get("type")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .unwrap_or_default();
+
+        match block_type {
+            "text" => {
+                let text = block
+                    .get("text")
+                    .or_else(|| block.get("content"))
+                    .and_then(|value| value.as_str())
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty());
+                if let Some(text) = text {
+                    parts.push(text.to_string());
+                }
+            }
+            "image" => parts.push("[Image Content]".to_string()),
+            _ => {}
+        }
+    }
+
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("\n"))
+    }
 }
 
 fn apply_capability_update(
@@ -1421,9 +1464,9 @@ fn build_execution_contract_from_search_result(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::modules::mcp::commands::runtime::LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE;
     use crate::modules::mcp::commands::runtime::build_local_tool_call_install_gate_error_meta;
     use crate::modules::mcp::commands::runtime::dynamic_capability_alias;
-    use crate::modules::mcp::commands::runtime::LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE;
 
     #[test]
     fn build_execution_contract_from_search_result_requires_capabilities() {
@@ -1530,6 +1573,32 @@ mod tests {
 
         assert!(
             build_structured_tool_replay_messages("openai_responses", &response, &meta).is_none()
+        );
+    }
+
+    #[test]
+    fn serialize_tool_replay_content_extracts_standard_mcp_text_content() {
+        let item = serde_json::json!({
+            "id": "call_tavily",
+            "name": "tavily-search",
+            "status": "success",
+            "result": {
+                "content": [
+                    { "type": "text", "text": "Detailed Results:" },
+                    { "type": "text", "text": "1. Example result body" }
+                ],
+                "structuredContent": {
+                    "results": [
+                        { "title": "Example", "url": "https://example.com" }
+                    ]
+                },
+                "isError": false
+            }
+        });
+
+        assert_eq!(
+            serialize_tool_replay_content(&item),
+            "Detailed Results:\n1. Example result body"
         );
     }
 }

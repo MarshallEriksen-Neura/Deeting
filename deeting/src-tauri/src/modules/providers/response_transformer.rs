@@ -429,7 +429,7 @@ mod tests {
 }
 
 #[cfg(test)]
-mod tests {
+mod openai_responses_tests {
     use super::ResponseTransformer;
     use serde_json::json;
 

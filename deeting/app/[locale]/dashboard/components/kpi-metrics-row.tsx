@@ -30,7 +30,7 @@ export function KPIMetricsRow() {
         ? `$${stats.financial.monthlySpent.toFixed(2)}`
         : "$0.00",
       subValue: stats?.financial.quotaUsedPercent
-        ? `${stats.financial.quotaUsedPercent}%`
+        ? `${stats.financial.quotaUsedPercent.toFixed(1)}%`
         : "0%",
       subLabel: t("financial.quotaUsed"),
       miniChart: stats?.financial.quotaUsedPercent ? (
@@ -192,7 +192,7 @@ function TrendIndicator({ value, inverse = false }: { value: number; inverse?: b
           strokeLinejoin="round"
         />
       </svg>
-      {displayValue}%
+      {displayValue.toFixed(1)}%
     </span>
   )
 }
