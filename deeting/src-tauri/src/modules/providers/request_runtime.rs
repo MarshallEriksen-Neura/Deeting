@@ -111,7 +111,7 @@ pub fn prepare_provider_request(
             value
         })
         .unwrap_or_else(|| json!({}));
-    let _canonical_request = build_canonical_request_from_value(
+    let canonical_request = build_canonical_request_from_value(
         &request_data,
         capability,
         protocol_profile.protocol_family.as_str(),
@@ -122,6 +122,7 @@ pub fn prepare_provider_request(
         preset.map(|item| item.provider.as_str()),
         capability,
         model,
+        &canonical_request,
     );
     let hb = build_handlebars();
     let rendered_url = render_string(
@@ -387,6 +388,7 @@ fn build_render_context(
     provider: Option<&str>,
     capability: &str,
     model: &ProviderModel,
+    canonical_request: &crate::modules::providers::protocols::CanonicalRequest,
 ) -> Value {
     let mut context = request_data.clone();
     let request_value = Value::Object(request_data.clone());
@@ -417,6 +419,10 @@ fn build_render_context(
             "routing_config": model.routing_config,
             "config_override": model.config_override,
         }),
+    );
+    context.insert(
+        "canonical_request".to_string(),
+        serde_json::to_value(canonical_request).unwrap_or_else(|_| json!({})),
     );
     Value::Object(context)
 }
@@ -588,11 +594,357 @@ fn apply_request_builder(config: &Value, rendered_body: Value, context: &Value) 
         .unwrap_or_default();
 
     match builder_type.trim() {
+        "openai_chat_messages_from_canonical" => {
+            openai_chat_messages_from_canonical_builder(rendered_body, context)
+        }
+        "anthropic_messages_from_canonical" => {
+            anthropic_messages_from_canonical_builder(rendered_body, context)
+        }
+        "google_gemini_contents_from_canonical" => {
+            google_gemini_contents_from_canonical_builder(rendered_body, context)
+        }
         "ark_content_array" => ark_content_array_builder(&input, config),
         "responses_input_from_messages_or_items" => {
             responses_input_from_messages_or_items_builder(rendered_body, &input)
         }
         _ => rendered_body,
+    }
+}
+
+fn openai_chat_messages_from_canonical_builder(rendered_body: Value, context: &Value) -> Value {
+    let mut body = rendered_body.as_object().cloned().unwrap_or_default();
+    let Some(messages) = context
+        .get("canonical_request")
+        .and_then(|value| value.get("messages"))
+        .and_then(|value| value.as_array())
+    else {
+        return Value::Object(body);
+    };
+
+    let rendered_messages: Vec<Value> = messages
+        .iter()
+        .filter_map(render_openai_chat_message_from_canonical)
+        .collect();
+    if !rendered_messages.is_empty() {
+        body.insert("messages".to_string(), Value::Array(rendered_messages));
+    }
+
+    Value::Object(body)
+}
+
+fn render_openai_chat_message_from_canonical(message: &Value) -> Option<Value> {
+    let role = message.get("role").and_then(|value| value.as_str())?;
+    let mut object = Map::new();
+    object.insert("role".to_string(), Value::String(role.to_string()));
+
+    if let Some(name) = message
+        .get("name")
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.trim().is_empty())
+    {
+        object.insert("name".to_string(), Value::String(name.to_string()));
+    }
+
+    if let Some(content) = message.get("content").filter(|value| !value.is_null()) {
+        object.insert("content".to_string(), content.clone());
+    }
+
+    if let Some(tool_calls) = message.get("tool_calls").and_then(|value| value.as_array()) {
+        let rendered_tool_calls: Vec<Value> = tool_calls
+            .iter()
+            .filter_map(|call| {
+                let name = call.get("name").and_then(|value| value.as_str())?;
+                let arguments = call.get("arguments").cloned().unwrap_or_else(|| json!({}));
+                let serialized_arguments = match arguments {
+                    Value::String(text) => text,
+                    other => serde_json::to_string(&other).ok()?,
+                };
+                Some(json!({
+                    "id": call.get("id").and_then(|value| value.as_str()).unwrap_or_default(),
+                    "type": call.get("type").and_then(|value| value.as_str()).unwrap_or("function"),
+                    "function": {
+                        "name": name,
+                        "arguments": serialized_arguments,
+                    }
+                }))
+            })
+            .collect();
+        if !rendered_tool_calls.is_empty() {
+            object.insert("tool_calls".to_string(), Value::Array(rendered_tool_calls));
+            object
+                .entry("content".to_string())
+                .or_insert_with(|| Value::String(String::new()));
+        }
+    }
+
+    if let Some(tool_call_id) = message
+        .get("tool_call_id")
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.trim().is_empty())
+    {
+        object.insert(
+            "tool_call_id".to_string(),
+            Value::String(tool_call_id.to_string()),
+        );
+        object
+            .entry("content".to_string())
+            .or_insert_with(|| Value::String(String::new()));
+    }
+
+    Some(Value::Object(object))
+}
+
+fn anthropic_messages_from_canonical_builder(rendered_body: Value, context: &Value) -> Value {
+    let mut body = rendered_body.as_object().cloned().unwrap_or_default();
+    let Some(messages) = context
+        .get("canonical_request")
+        .and_then(|value| value.get("messages"))
+        .and_then(|value| value.as_array())
+    else {
+        return Value::Object(body);
+    };
+
+    let system_text = messages
+        .iter()
+        .filter(|message| message.get("role").and_then(|value| value.as_str()) == Some("system"))
+        .filter_map(|message| anthropic_text_from_content(message.get("content")))
+        .filter(|value| !value.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    if !system_text.trim().is_empty() && !body.contains_key("system") {
+        body.insert("system".to_string(), Value::String(system_text));
+    }
+
+    let mut rendered_messages = Vec::new();
+    let mut pending_tool_results = Vec::new();
+    for message in messages {
+        let role = message
+            .get("role")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
+        if role == "system" {
+            continue;
+        }
+        if role == "tool" {
+            if let Some(block) = render_anthropic_tool_result_block(message) {
+                pending_tool_results.push(block);
+            }
+            continue;
+        }
+        if !pending_tool_results.is_empty() {
+            rendered_messages.push(json!({
+                "role": "user",
+                "content": Value::Array(std::mem::take(&mut pending_tool_results)),
+            }));
+        }
+        if let Some(rendered) = render_anthropic_message_from_canonical(message) {
+            rendered_messages.push(rendered);
+        }
+    }
+    if !pending_tool_results.is_empty() {
+        rendered_messages.push(json!({
+            "role": "user",
+            "content": Value::Array(pending_tool_results),
+        }));
+    }
+
+    if !rendered_messages.is_empty() {
+        body.insert("messages".to_string(), Value::Array(rendered_messages));
+    }
+    Value::Object(body)
+}
+
+fn render_anthropic_message_from_canonical(message: &Value) -> Option<Value> {
+    let role = message.get("role").and_then(|value| value.as_str())?;
+    let anthropic_role = match role {
+        "assistant" => "assistant",
+        _ => "user",
+    };
+
+    let mut content_blocks = Vec::new();
+    if let Some(text) = anthropic_text_from_content(message.get("content")).filter(|value| !value.trim().is_empty()) {
+        content_blocks.push(json!({ "type": "text", "text": text }));
+    }
+    if let Some(tool_calls) = message.get("tool_calls").and_then(|value| value.as_array()) {
+        for call in tool_calls {
+            let Some(name) = call.get("name").and_then(|value| value.as_str()) else {
+                continue;
+            };
+            let input = call.get("arguments").cloned().unwrap_or_else(|| json!({}));
+            content_blocks.push(json!({
+                "type": "tool_use",
+                "id": call.get("id").and_then(|value| value.as_str()).unwrap_or_default(),
+                "name": name,
+                "input": match input {
+                    Value::String(text) => serde_json::from_str::<Value>(&text).unwrap_or_else(|_| json!({ "raw": text })),
+                    other => other,
+                }
+            }));
+        }
+    }
+
+    if content_blocks.is_empty() {
+        return None;
+    }
+
+    Some(json!({
+        "role": anthropic_role,
+        "content": Value::Array(content_blocks),
+    }))
+}
+
+fn render_anthropic_tool_result_block(message: &Value) -> Option<Value> {
+    let tool_use_id = message
+        .get("tool_call_id")
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.trim().is_empty())?;
+    let content = anthropic_tool_result_content(message.get("content"))?;
+    Some(json!({
+        "type": "tool_result",
+        "tool_use_id": tool_use_id,
+        "content": content,
+    }))
+}
+
+fn anthropic_tool_result_content(content: Option<&Value>) -> Option<Value> {
+    let content = content?;
+    match content {
+        Value::Null => Some(Value::String(String::new())),
+        Value::String(text) => Some(Value::String(text.clone())),
+        other => serde_json::to_string(other).ok().map(Value::String),
+    }
+}
+
+fn anthropic_text_from_content(content: Option<&Value>) -> Option<String> {
+    let content = content?;
+    match content {
+        Value::String(text) => Some(text.clone()),
+        Value::Null => None,
+        other => serde_json::to_string(other).ok(),
+    }
+}
+
+fn google_gemini_contents_from_canonical_builder(rendered_body: Value, context: &Value) -> Value {
+    let mut body = rendered_body.as_object().cloned().unwrap_or_default();
+    let Some(messages) = context
+        .get("canonical_request")
+        .and_then(|value| value.get("messages"))
+        .and_then(|value| value.as_array())
+    else {
+        return Value::Object(body);
+    };
+
+    let system_text = messages
+        .iter()
+        .filter(|message| message.get("role").and_then(|value| value.as_str()) == Some("system"))
+        .filter_map(|message| anthropic_text_from_content(message.get("content")))
+        .filter(|value| !value.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    if !system_text.trim().is_empty() && !body.contains_key("system_instruction") {
+        body.insert(
+            "system_instruction".to_string(),
+            json!({
+                "parts": [{ "text": system_text }]
+            }),
+        );
+    }
+
+    let mut contents = Vec::new();
+    for message in messages {
+        let Some(rendered) = render_google_gemini_message_from_canonical(message) else {
+            continue;
+        };
+        contents.push(rendered);
+    }
+
+    if !contents.is_empty() {
+        body.insert("contents".to_string(), Value::Array(contents));
+    }
+    Value::Object(body)
+}
+
+fn render_google_gemini_message_from_canonical(message: &Value) -> Option<Value> {
+    let role = message.get("role").and_then(|value| value.as_str())?;
+    if role == "system" {
+        return None;
+    }
+
+    let gemini_role = if role == "assistant" { "model" } else { "user" };
+    let mut parts = Vec::new();
+
+    if role == "tool" {
+        let function_name = message
+            .get("name")
+            .and_then(|value| value.as_str())
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| {
+                message
+                    .get("tool_call_id")
+                    .and_then(|value| value.as_str())
+                    .filter(|value| !value.trim().is_empty())
+            })?;
+        parts.push(json!({
+            "functionResponse": {
+                "name": function_name,
+                "response": parse_gemini_tool_response_payload(message.get("content")),
+            }
+        }));
+    } else {
+        if let Some(text) = anthropic_text_from_content(message.get("content")).filter(|value| !value.trim().is_empty()) {
+            parts.push(json!({ "text": text }));
+        }
+        if let Some(tool_calls) = message.get("tool_calls").and_then(|value| value.as_array()) {
+            for call in tool_calls {
+                let Some(name) = call.get("name").and_then(|value| value.as_str()) else {
+                    continue;
+                };
+                let args = call.get("arguments").cloned().unwrap_or_else(|| json!({}));
+                let thought_signature = call
+                    .get("extra_content")
+                    .and_then(|value| value.get("google"))
+                    .and_then(|value| value.get("thought_signature"))
+                    .cloned();
+                let mut part = json!({
+                    "functionCall": {
+                        "name": name,
+                        "args": match args {
+                            Value::String(text) => serde_json::from_str::<Value>(&text).unwrap_or_else(|_| json!({ "raw": text })),
+                            other => other,
+                        }
+                    }
+                });
+                if let Some(signature) = thought_signature {
+                    if !signature.is_null() {
+                        if let Some(object) = part.as_object_mut() {
+                            object.insert("thoughtSignature".to_string(), signature);
+                        }
+                    }
+                }
+                parts.push(part);
+            }
+        }
+    }
+
+    if parts.is_empty() {
+        return None;
+    }
+
+    Some(json!({
+        "role": gemini_role,
+        "parts": parts,
+    }))
+}
+
+fn parse_gemini_tool_response_payload(content: Option<&Value>) -> Value {
+    let Some(content) = content else {
+        return json!({});
+    };
+    match content {
+        Value::Object(object) => Value::Object(object.clone()),
+        Value::String(text) => serde_json::from_str::<Value>(text)
+            .unwrap_or_else(|_| json!({ "content": text })),
+        other => json!({ "content": other }),
     }
 }
 
@@ -1518,6 +1870,262 @@ mod tests {
         assert_eq!(prepared.body["model"], json!("gpt-5.3-codex"));
         assert_eq!(prepared.body["input"], json!("hello responses"));
         assert!(prepared.body.get("messages").is_none());
+    }
+
+    #[test]
+    fn prepare_provider_request_openai_chat_renders_structured_tool_replay_messages() {
+        let preset = mock_preset();
+        let instance = mock_instance(json!({ "protocol": "openai", "auto_append_v1": true }));
+        let model = mock_model(&["chat"]);
+
+        let prepared = prepare_provider_request(
+            Some(&preset),
+            &instance,
+            &model,
+            Some("sk-test"),
+            "chat",
+            json!({
+                "model": "gpt-4o-mini",
+                "messages": [
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "call_123",
+                                "name": "search_sdk",
+                                "arguments": { "query": "tool replay" }
+                            }
+                        ]
+                    },
+                    {
+                        "role": "tool",
+                        "tool_call_id": "call_123",
+                        "content": "{\"status\":\"ok\"}"
+                    }
+                ],
+                "stream": false
+            }),
+            None,
+            None,
+        )
+        .expect("prepare request with structured tool replay");
+
+        assert_eq!(
+            prepared.body["messages"],
+            json!([
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call_123",
+                            "type": "function",
+                            "function": {
+                                "name": "search_sdk",
+                                "arguments": "{\"query\":\"tool replay\"}"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_123",
+                    "content": "{\"status\":\"ok\"}"
+                }
+            ])
+        );
+    }
+
+    #[test]
+    fn prepare_provider_request_anthropic_renders_tool_use_and_tool_result_blocks() {
+        let mut preset = mock_preset();
+        preset.provider = "anthropic".to_string();
+        preset.protocol_profiles = json!({
+            "chat": {
+                "runtime_version": "v2",
+                "schema_version": "2026-03-07",
+                "profile_id": "anthropic:chat:anthropic_messages",
+                "provider": "anthropic",
+                "protocol_family": "anthropic_messages",
+                "capability": "chat",
+                "transport": {
+                    "method": "POST",
+                    "path": "v1/messages",
+                    "query_template": {},
+                    "header_template": {}
+                },
+                "request": {
+                    "template_engine": "anthropic_messages",
+                    "request_template": {
+                        "model": null,
+                        "messages": null
+                    }
+                },
+                "response": {
+                    "decoder": { "name": "anthropic_messages", "config": {} },
+                    "response_template": {}
+                },
+                "stream": {
+                    "stream_decoder": { "name": "anthropic_messages_events", "config": {} }
+                },
+                "auth": { "auth_policy": "inherit", "config": {} },
+                "features": {
+                    "supports_messages": true,
+                    "supports_input_items": false
+                },
+                "defaults": {
+                    "headers": {},
+                    "query": {},
+                    "body": {}
+                }
+            }
+        });
+        let instance = mock_instance(json!({ "protocol": "anthropic", "auto_append_v1": false }));
+        let mut model = mock_model(&["chat"]);
+        model.upstream_path = "v1/messages".to_string();
+
+        let prepared = prepare_provider_request(
+            Some(&preset),
+            &instance,
+            &model,
+            Some("sk-test"),
+            "chat",
+            json!({
+                "model": "claude-sonnet",
+                "messages": [
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "call_123",
+                                "name": "search_sdk",
+                                "arguments": { "query": "tool replay" }
+                            }
+                        ]
+                    },
+                    {
+                        "role": "tool",
+                        "tool_call_id": "call_123",
+                        "content": "{\"status\":\"ok\"}"
+                    }
+                ],
+                "stream": false
+            }),
+            None,
+            None,
+        )
+        .expect("prepare anthropic request with structured tool replay");
+
+        assert_eq!(
+            prepared.body["messages"],
+            json!([
+                {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "call_123",
+                            "name": "search_sdk",
+                            "input": { "query": "tool replay" }
+                        }
+                    ]
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_123",
+                            "content": "{\"status\":\"ok\"}"
+                        }
+                    ]
+                }
+            ])
+        );
+    }
+
+    #[test]
+    fn prepare_provider_request_google_gemini_builds_contents_from_messages() {
+        let mut preset = mock_preset();
+        preset.provider = "google".to_string();
+        preset.protocol_profiles = json!({
+            "chat": {
+                "runtime_version": "v2",
+                "schema_version": "2026-03-07",
+                "profile_id": "google:chat:google_gemini",
+                "provider": "google",
+                "protocol_family": "google_gemini",
+                "capability": "chat",
+                "transport": {
+                    "method": "POST",
+                    "path": "v1beta/models/gemini:generateContent",
+                    "query_template": {},
+                    "header_template": {}
+                },
+                "request": {
+                    "template_engine": "google_gemini",
+                    "request_template": {
+                        "model": null,
+                        "contents": null
+                    }
+                },
+                "response": {
+                    "decoder": { "name": "google_gemini", "config": {} },
+                    "response_template": {}
+                },
+                "stream": {
+                    "stream_decoder": { "name": "openai_chat_events", "config": {} }
+                },
+                "auth": { "auth_policy": "inherit", "config": {} },
+                "features": {
+                    "supports_messages": true,
+                    "supports_input_items": false
+                },
+                "defaults": {
+                    "headers": {},
+                    "query": {},
+                    "body": {}
+                }
+            }
+        });
+        let instance = mock_instance(json!({ "protocol": "google", "auto_append_v1": false }));
+        let mut model = mock_model(&["chat"]);
+        model.upstream_path = "v1beta/models/gemini:generateContent".to_string();
+
+        let prepared = prepare_provider_request(
+            Some(&preset),
+            &instance,
+            &model,
+            Some("sk-test"),
+            "chat",
+            json!({
+                "model": "gemini-2.5-pro",
+                "messages": [
+                    { "role": "system", "content": "be concise" },
+                    { "role": "user", "content": "hello gemini" }
+                ],
+                "stream": false
+            }),
+            None,
+            None,
+        )
+        .expect("prepare gemini request");
+
+        assert_eq!(
+            prepared.body["system_instruction"],
+            json!({ "parts": [{ "text": "be concise" }] })
+        );
+        assert_eq!(
+            prepared.body["contents"],
+            json!([
+                {
+                    "role": "user",
+                    "parts": [{ "text": "hello gemini" }]
+                }
+            ])
+        );
     }
 
     #[test]

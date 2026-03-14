@@ -1,0 +1,127 @@
+---
+title: deeting.json Reference
+description: Understand what deeting.json is responsible for inside a Deeting plugin package.
+---
+
+## What this file is
+
+`deeting.json` is the metadata and runtime declaration file for a plugin package.
+
+It answers a few basic questions:
+
+- what this plugin is
+- what version it is
+- where its entrypoints are
+- which permissions it needs
+- which capabilities it exposes
+
+It is best treated as the package manifest, not as behavior guidance or backend logic.
+
+## Minimal example
+
+```json
+{
+  "id": "com.deeting.template",
+  "name": "Deeting Plugin Template",
+  "version": "1.0.0",
+  "author": "Deeting Team",
+  "description": "A starter template for building Deeting plugins with logic and UI.",
+  "entry": {
+    "backend": "main.py",
+    "ui": "ui/index.html"
+  },
+  "permissions": [
+    "network.outbound",
+    "tools.read"
+  ],
+  "capabilities": {
+    "llm_tools": "llm-tool.yaml"
+  }
+}
+```
+
+## Common fields
+
+### `id`
+
+The unique identifier of the plugin.
+
+Keep it stable. If the plugin is already published, changing it casually is usually a bad idea.
+
+### `name`
+
+The display name shown to users.
+
+Keep it short, readable, and tied to the plugin's purpose.
+
+### `version`
+
+The plugin version.
+
+Update it when you make a real release change.
+
+### `author`
+
+The author or team behind the plugin.
+
+### `description`
+
+A short explanation of what the plugin does.
+
+Focus on problem and use case, not on long-form marketing copy.
+
+### `entry`
+
+Entrypoint declarations.
+
+Typical fields:
+
+- `backend` for the execution entrypoint, usually `main.py`
+- `ui` for optional frontend rendering, usually `ui/index.html`
+
+### `permissions`
+
+Runtime permissions.
+
+Only request what the plugin actually needs.
+
+Examples:
+
+- `network.outbound`
+- `tools.read`
+
+### `capabilities`
+
+Capability declarations.
+
+In the default template, the key one is:
+
+- `llm_tools`
+
+This points to `llm-tool.yaml`, where the actual callable tool contract lives.
+
+## What `deeting.json` should not do
+
+Do not use it for:
+
+- backend implementation
+- detailed callable parameter definitions
+- behavioral guidance about when tools should be used
+
+Those belong in:
+
+- `main.py`
+- `llm-tool.yaml`
+- `SKILL.md`
+
+## Common mistakes
+
+1. Changing entry files without updating `entry`
+2. Moving tool schema files without updating `capabilities`
+3. Adding too many permissions without knowing which are truly required
+4. Mixing behavioral documentation into the package manifest
+
+## What to read next
+
+- Want the callable tool contract: read [llm-tool.yaml Reference](./llm-tool-yaml-reference)
+- Want the end-to-end workflow: read [Plugin Development Guide](./plugin-development-guide)

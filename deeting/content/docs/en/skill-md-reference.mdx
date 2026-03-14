@@ -1,0 +1,70 @@
+---
+title: SKILL.md Reference
+description: Understand what SKILL.md is responsible for in a Deeting plugin and how to write it well.
+---
+
+## What this file is
+
+`SKILL.md` is the behavior guidance file for a plugin.
+
+It is different from `llm-tool.yaml`.  
+`llm-tool.yaml` defines what is callable, while `SKILL.md` focuses on:
+
+- when the plugin should be used
+- when it should not be used
+- the behavioral boundaries of the plugin
+- safety notes and usage constraints
+
+Think of it as behavior and guardrail documentation, not as an execution contract.
+
+## What `SKILL.md` should cover
+
+It is a good place for:
+
+- overall plugin purpose
+- intended use cases
+- non-use cases
+- limits, safety notes, and coordination rules
+- reminders about keeping docs and implementation aligned
+
+## What `SKILL.md` should not replace
+
+It should not replace:
+
+- `llm-tool.yaml`
+- `main.py`
+- `deeting.json`
+
+Those files still own executable schema, implementation, and package metadata.
+
+## A useful structure
+
+Most plugin `SKILL.md` files should include:
+
+- frontmatter with `name` and `description`
+- an overview
+- available tools
+- usage notes
+- limits or safety notes
+
+## Common mistakes
+
+1. Writing `SKILL.md` as if it were another tool schema
+2. Letting old tool names remain after code changes
+3. Explaining what the plugin does, but not when it should not be used
+4. Letting the document drift away from `main.py` and `llm-tool.yaml`
+
+## Relationship with other files
+
+Keep `SKILL.md` aligned with:
+
+1. `llm-tool.yaml`
+2. `main.py`
+
+If a tool changes name, disappears, or changes behavior, update the guidance too.
+
+## What to read next
+
+- Want the callable schema: read [llm-tool.yaml Reference](./llm-tool-yaml-reference)
+- Want the package manifest details: read [deeting.json Reference](./deeting-json-reference)
+- Want the full workflow: read [Plugin Development Guide](./plugin-development-guide)

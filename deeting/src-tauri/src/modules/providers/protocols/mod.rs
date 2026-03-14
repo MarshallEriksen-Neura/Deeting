@@ -8,6 +8,7 @@ pub use bridge::{
 };
 pub use canonical::{
     CanonicalClientContext, CanonicalInputItem, CanonicalMessage, CanonicalRequest,
+    CanonicalToolCall,
 };
 pub use profile::{
     ProfileAuthConfig, ProfileDefaults, ProfileFeatureFlags, ProfileRequestConfig,

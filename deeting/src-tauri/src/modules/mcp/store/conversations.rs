@@ -2045,6 +2045,9 @@ impl McpStore {
             .map(|(_, role, content)| LocalChatInputMessage {
                 role,
                 content: content.unwrap_or_default(),
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
             })
             .collect();
 
@@ -2089,6 +2092,9 @@ impl McpStore {
                 LocalChatInputMessage {
                     role: message.role,
                     content,
+                    tool_calls: vec![],
+                    tool_call_id: None,
+                    name: None,
                 }
             })
             .collect();

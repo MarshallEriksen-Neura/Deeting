@@ -202,14 +202,23 @@ mod tests {
             LocalChatInputMessage {
                 role: "user".to_string(),
                 content: "older".to_string(),
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
             },
             LocalChatInputMessage {
                 role: "assistant".to_string(),
                 content: "reply".to_string(),
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
             },
             LocalChatInputMessage {
                 role: "user".to_string(),
                 content: "newest".to_string(),
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
             },
         ]);
 

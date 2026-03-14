@@ -24,10 +24,36 @@ fn default_internal_channel() -> String {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CanonicalToolCall {
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default = "default_function_type")]
+    pub r#type: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub arguments: Option<Value>,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub extra_content: Value,
+}
+
+fn default_function_type() -> String {
+    "function".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CanonicalMessage {
     pub role: String,
     #[serde(default)]
     pub content: Value,
+    #[serde(default)]
+    pub tool_calls: Vec<CanonicalToolCall>,
+    #[serde(default)]
+    pub tool_call_id: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

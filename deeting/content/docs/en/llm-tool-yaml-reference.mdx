@@ -1,0 +1,105 @@
+---
+title: llm-tool.yaml Reference
+description: Understand how to define the callable tool contract for a Deeting plugin.
+---
+
+## What this file is
+
+`llm-tool.yaml` is the callable tool contract for a plugin.
+
+Its job is to define:
+
+- the tool name
+- what the tool does
+- which parameters it accepts
+- which parameters are required
+
+This is the file that best represents what the host can actually call.
+
+## Minimal example
+
+```yaml
+name: hello_deeting
+description: "A simple tool to greet the user and show a status dashboard."
+parameters:
+  type: object
+  properties:
+    name:
+      type: string
+      description: "The name of the person to greet."
+  required: ["name"]
+```
+
+## Core fields
+
+### `name`
+
+The tool name.
+
+It must stay aligned with the `tool_name` handled in `main.py`.
+
+### `description`
+
+A short explanation of what the tool does.
+
+Write it so a caller can quickly understand when to use it.
+
+### `parameters`
+
+The parameter contract.
+
+In the default template, this is expressed as:
+
+- `type: object`
+- `properties`
+- `required`
+
+## How to define better parameters
+
+Best practices:
+
+1. Start with the smallest useful parameter set
+2. Give every parameter a clear type
+3. Give every parameter a readable description
+4. Only mark truly mandatory fields as required
+
+## Relationship with other files
+
+This file must stay aligned with:
+
+1. `main.py`
+2. `SKILL.md`
+
+Think of the relationship like this:
+
+- `llm-tool.yaml` defines what is callable
+- `main.py` implements how it runs
+- `SKILL.md` explains when and why it should be used
+
+## Common mistakes
+
+1. Renaming the tool here but not in `main.py`
+2. Changing parameters here without updating argument handling
+3. Writing descriptions that are too vague to be useful
+4. Making the tool surface too large too early
+
+## A safe writing order
+
+1. Define the tool name and purpose
+2. Define the smallest useful parameter set
+3. Implement `main.py`
+4. Sync `SKILL.md`
+
+## When to split into multiple tools
+
+If one tool starts to handle too many unrelated actions, it is usually time to split it.
+
+In most cases, a cleaner design is:
+
+- one tool for one clear action
+- multiple tools for clearly different actions
+
+## What to read next
+
+- Want the package manifest view: read [deeting.json Reference](./deeting-json-reference)
+- Want the full plugin workflow: read [Plugin Development Guide](./plugin-development-guide)

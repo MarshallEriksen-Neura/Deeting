@@ -26,6 +26,9 @@ mod tests {
         let assets = PromptAssets::from_system_messages(&[LocalChatInputMessage {
             role: "system".to_string(),
             content: "hello".to_string(),
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
         }]);
 
         assert_eq!(assets.system_messages().len(), 1);

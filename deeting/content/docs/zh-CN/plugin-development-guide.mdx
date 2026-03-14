@@ -1,0 +1,139 @@
+---
+title: 插件开发指南
+description: 从环境准备到脚手架使用，快速开始开发 Deeting 插件。
+---
+
+## 这页适合谁
+
+如果你准备自己开发一个 Deeting 插件，建议从这页开始。
+
+和主仓库开发不同，插件开发的目标通常更明确：
+
+- 暴露一个可调用工具
+- 接入外部服务或内部能力
+- 选择性提供一个前端 UI
+- 通过标准插件结构接入 Deeting
+
+## 环境准备
+
+开始之前，建议先准备好下面这些环境：
+
+- `Node.js`
+  用于运行脚手架、构建前端资源，以及处理部分开发工具链。
+
+- `Python`
+  默认插件模板里的后端入口是 `main.py`，所以本机需要可用的 Python 环境。
+
+- `Bun`
+  推荐使用 Bun 来运行脚手架：
+
+  ```bash
+  bunx create-deeting-plugin
+  ```
+
+- `Windows + WSL`
+  如果你在 Windows 上开发，建议优先安装 WSL。这样在处理 Python、Node、脚手架和部分本地开发依赖时会更稳定，也更接近仓库当前的推荐开发体验。
+
+## 最短开始路径
+
+如果你只想尽快起一个可运行的插件，可以按这个顺序做：
+
+1. 安装 Node.js、Python 和 Bun
+2. Windows 用户先准备 WSL
+3. 运行 `bunx create-deeting-plugin`
+4. 先定义你的 tool 契约
+5. 再实现 `main.py`
+6. 最后补行为说明和可选 UI
+
+## 用 `create-deeting-plugin` 起一个插件
+
+推荐命令：
+
+```bash
+bunx create-deeting-plugin
+```
+
+它会交互式地创建一个标准插件目录，帮你省去大量初始化工作。
+
+## 脚手架会生成什么
+
+一个标准插件通常会包含下面这些文件：
+
+- `deeting.json`
+  用来描述插件元数据、权限、入口文件和能力声明。
+
+- `main.py`
+  后端执行入口。核心约定是实现：
+
+  ```python
+  async def invoke(tool_name, args, deeting):
+      ...
+  ```
+
+- `llm-tool.yaml`
+  可执行工具契约。它决定宿主真正能调用什么，以及参数结构是什么。
+
+- `SKILL.md`
+  行为说明与边界说明。它帮助模型理解什么时候该用、什么时候不该用。
+
+- `ui/index.html`
+  可选前端界面入口。如果你的插件需要可视化展示，就在这里处理前端。
+
+## 先理解每个文件的职责
+
+插件开发里最容易出问题的地方，不是写不出逻辑，而是把职责写混了。
+
+- `llm-tool.yaml`
+  负责定义“可调用能力是什么”
+
+- `main.py`
+  负责实现“这个能力怎么执行”
+
+- `SKILL.md`
+  负责说明“什么时候该用、怎么安全地用”
+
+- `deeting.json`
+  负责描述“这个插件是什么、权限是什么、入口在哪里”
+
+- `ui/index.html`
+  负责“如果要渲染前端，怎么展示”
+
+## 最重要的一条规则：保持同步
+
+如果你改了工具名、参数结构或行为，请至少同步这三份文件：
+
+1. `llm-tool.yaml`
+2. `main.py`
+3. `SKILL.md`
+
+建议顺序是：
+
+1. 先改契约
+2. 再改实现
+3. 最后改说明
+
+## 一个推荐的插件开发顺序
+
+1. 明确插件只做一件什么事
+2. 在 `llm-tool.yaml` 里定义最小参数集
+3. 在 `main.py` 中实现最小闭环
+4. 本地验证返回结果是否合理
+5. 如果需要展示，再补 `ui/index.html`
+6. 最后把说明补进 `SKILL.md`
+
+## 初次开发时的建议
+
+- 不要一开始就做过大的插件
+- 先做一个单一工具、单一路径的最小版本
+- 不要让 `deeting.json`、`main.py`、`SKILL.md` 各讲各的
+- 如果你在 Windows 上遇到环境问题，优先回头检查 WSL 和基础依赖
+
+## 接下来读什么
+
+- 想逐字段理解插件清单：阅读 [deeting.json 字段说明](./deeting-json-reference)
+- 想逐字段理解工具契约：阅读 [llm-tool.yaml 编写说明](./llm-tool-yaml-reference)
+- 想补齐行为说明：阅读 [SKILL.md 编写说明](./skill-md-reference)
+- 想了解怎么真正发出去：阅读 [插件发布指南](./plugin-publishing-guide)
+- 想理解整体插件和主仓库关系：阅读 [开发者指南](./developer-guide)
+- 想理解接入边界：阅读 [集成指南](./integration)
+- 想先从用户视角理解产品：阅读 [快速开始](./getting-started)

@@ -1,0 +1,131 @@
+---
+title: SKILL.md 编写说明
+description: 了解 SKILL.md 在 Deeting 插件中的职责，以及应该如何编写行为说明与使用边界。
+---
+
+## 这是什么
+
+`SKILL.md` 是插件的行为说明文件。
+
+它和 `llm-tool.yaml` 不同。  
+`llm-tool.yaml` 负责定义“可以调用什么”，而 `SKILL.md` 更关注：
+
+- 什么时候应该使用这个插件
+- 什么时候不应该使用
+- 这个插件的行为边界是什么
+- 使用时有哪些注意事项和安全限制
+
+所以，最好把它理解成“行为与约束文档”，而不是执行契约。
+
+## 一个最小示例
+
+```md
+---
+name: hello_deeting
+description: "A simple tool to greet the user and show a status dashboard."
+---
+
+# Deeting Plugin Template
+
+## Overview
+
+Use `SKILL.md` as behavior guidance for this plugin.
+
+## Available Tools
+
+- `hello_deeting` — Greets the user and renders a simple status dashboard.
+
+## Usage Notes
+
+- Rename `hello_deeting` in `SKILL.md`, `main.py`, and `llm-tool.yaml` together.
+```
+
+## `SKILL.md` 负责什么
+
+它最适合承载这些内容：
+
+- 插件整体用途
+- 工具适用场景
+- 何时该调用、何时不该调用
+- 风险提醒与限制
+- 与其他文件的同步约束
+
+## `SKILL.md` 不负责什么
+
+它不适合承担这些职责：
+
+- 不负责声明可执行参数结构
+- 不负责实现运行逻辑
+- 不负责替代 `deeting.json`
+
+这些应该分别放在：
+
+- `llm-tool.yaml`
+- `main.py`
+- `deeting.json`
+
+## 一份好用的 `SKILL.md` 通常包含什么
+
+建议至少包含下面几个部分：
+
+### Frontmatter
+
+```yaml
+name: your_tool_name
+description: "One-line description"
+```
+
+这个名字应和你的工具名保持一致。
+
+### Overview
+
+一句到几句话说明插件总体做什么。
+
+### Available Tools
+
+列出当前插件暴露的工具，以及每个工具的一句话用途。
+
+### Usage Notes
+
+写清楚：
+
+- 什么时候适合调用
+- 什么时候不适合调用
+- 哪些文件需要同步更新
+
+### Safety / Limits
+
+如果插件涉及外部调用、写入、网络请求或其他风险行为，建议把限制写清楚。
+
+## 写作时最容易犯的错误
+
+1. 把 `SKILL.md` 写成另一个 `llm-tool.yaml`
+2. 把执行逻辑细节都堆进来，导致说明臃肿
+3. 工具名已经改了，但文档里还是旧名字
+4. 没写“不该用”的情况，导致边界不清楚
+
+## 推荐写法
+
+可以按下面这个思路写：
+
+1. 先一句话解释这个插件干什么
+2. 再列当前有哪些工具
+3. 再说明什么时候该用
+4. 再说明什么时候不该用
+5. 最后写清楚和 `main.py`、`llm-tool.yaml` 的同步关系
+
+## 和其他文件的关系
+
+`SKILL.md` 应与这两份文件保持一致：
+
+1. `llm-tool.yaml`
+2. `main.py`
+
+如果一个工具已经不存在，`SKILL.md` 里就不应该继续描述它。  
+如果一个工具已经换了名字，这里也应该同步更新。
+
+## 接下来读什么
+
+- 想看工具契约：阅读 [llm-tool.yaml 编写说明](./llm-tool-yaml-reference)
+- 想看插件清单字段：阅读 [deeting.json 字段说明](./deeting-json-reference)
+- 想回到完整流程：阅读 [插件开发指南](./plugin-development-guide)

@@ -19,6 +19,10 @@ export const routing = defineRouting({
       "zh-CN": "/profile",
       en: "/profile",
     },
+    "/docs": {
+      "zh-CN": "/docs",
+      en: "/docs",
+    },
     "/chat": {
       "zh-CN": "/chat",
       en: "/chat",

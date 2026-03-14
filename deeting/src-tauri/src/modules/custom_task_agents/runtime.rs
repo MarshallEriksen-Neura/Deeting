@@ -190,6 +190,9 @@ pub(crate) async fn preview_custom_task_agent(
             messages.push(LocalChatInputMessage {
                 role: "assistant".to_string(),
                 content: content.to_string(),
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
             });
         }
 
@@ -266,6 +269,9 @@ pub(crate) async fn preview_custom_task_agent(
         messages.push(LocalChatInputMessage {
             role: "user".to_string(),
             content: build_callable_feedback_message(round, &action_results),
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
         });
     }
 
@@ -389,10 +395,16 @@ fn build_initial_messages(
         LocalChatInputMessage {
             role: "system".to_string(),
             content: system_lines.join("\n"),
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
         },
         LocalChatInputMessage {
             role: "user".to_string(),
             content: message.to_string(),
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
         },
     ]
 }

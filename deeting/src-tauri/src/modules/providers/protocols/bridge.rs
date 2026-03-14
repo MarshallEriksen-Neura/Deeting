@@ -2,6 +2,7 @@ use serde_json::{json, Value};
 
 use crate::modules::providers::protocols::canonical::{
     CanonicalClientContext, CanonicalInputItem, CanonicalMessage, CanonicalRequest,
+    CanonicalToolCall,
 };
 use crate::modules::providers::protocols::profile::{
     ProfileAuthConfig, ProfileDefaults, ProfileFeatureFlags, ProfileRequestConfig,
@@ -15,6 +16,9 @@ pub fn infer_protocol_family(protocol: &str, upstream_path: &str) -> &'static st
     if proto.contains("anthropic") || proto.contains("claude") {
         return "anthropic_messages";
     }
+    if proto.contains("gemini") || proto.contains("google") || proto.contains("vertex") {
+        return "google_gemini";
+    }
     if path.contains("responses") || proto.contains("responses") {
         return "openai_responses";
     }
@@ -27,6 +31,7 @@ pub fn template_matches_family(template: &Value, protocol_family: &str) -> bool 
     };
     match protocol_family {
         "openai_responses" => object.contains_key("input"),
+        "google_gemini" => object.contains_key("contents"),
         "openai_chat" | "anthropic_messages" => object.contains_key("messages"),
         _ => true,
     }
@@ -52,6 +57,10 @@ pub fn build_protocol_profile(
                 .unwrap_or_else(|| profile.provider.clone());
             profile.capability = capability.to_string();
             profile.transport.path = model.upstream_path.clone();
+            if profile.request.request_builder.is_none() {
+                profile.request.request_builder =
+                    builtin_request_builder(profile.protocol_family.as_str());
+            }
             profile.defaults.headers = deep_merge_json(&profile.defaults.headers, resolved_headers);
             profile.defaults.body = deep_merge_json(&profile.defaults.body, default_params);
             return profile;
@@ -189,6 +198,15 @@ pub fn build_canonical_request_from_value(
                     Some(CanonicalMessage {
                         role: role.to_string(),
                         content: item.get("content").cloned().unwrap_or(Value::Null),
+                        tool_calls: canonical_tool_calls_from_message(item),
+                        tool_call_id: item
+                            .get("tool_call_id")
+                            .and_then(|value| value.as_str())
+                            .map(|value| value.to_string()),
+                        name: item
+                            .get("name")
+                            .and_then(|value| value.as_str())
+                            .map(|value| value.to_string()),
                     })
                 })
                 .collect::<Vec<_>>()
@@ -314,6 +332,7 @@ fn canonical_input_items_from_messages(messages: &[CanonicalMessage]) -> Vec<Can
 fn builtin_template_engine(protocol_family: &str) -> &'static str {
     match protocol_family {
         "anthropic_messages" => "anthropic_messages",
+        "google_gemini" => "google_gemini",
         _ => "openai_compat",
     }
 }
@@ -327,6 +346,10 @@ fn builtin_request_template(capability: &str, protocol_family: &str) -> Value {
             "temperature": Value::Null,
             "max_output_tokens": Value::Null,
         }),
+        ("chat", "google_gemini") => json!({
+            "model": Value::Null,
+            "contents": Value::Null,
+        }),
         ("embedding", _) => json!({ "model": Value::Null, "input": Value::Null }),
         _ => json!({
             "model": Value::Null,
@@ -339,6 +362,24 @@ fn builtin_request_template(capability: &str, protocol_family: &str) -> Value {
 }
 
 fn builtin_request_builder(protocol_family: &str) -> Option<RuntimeHook> {
+    if protocol_family == "openai_chat" {
+        return Some(RuntimeHook {
+            name: "openai_chat_messages_from_canonical".to_string(),
+            config: json!({}),
+        });
+    }
+    if protocol_family == "anthropic_messages" {
+        return Some(RuntimeHook {
+            name: "anthropic_messages_from_canonical".to_string(),
+            config: json!({}),
+        });
+    }
+    if protocol_family == "google_gemini" {
+        return Some(RuntimeHook {
+            name: "google_gemini_contents_from_canonical".to_string(),
+            config: json!({}),
+        });
+    }
     if protocol_family == "openai_responses" {
         return Some(RuntimeHook {
             name: "responses_input_from_messages_or_items".to_string(),
@@ -346,6 +387,62 @@ fn builtin_request_builder(protocol_family: &str) -> Option<RuntimeHook> {
         });
     }
     None
+}
+
+fn canonical_tool_calls_from_message(item: &Value) -> Vec<CanonicalToolCall> {
+    item.get("tool_calls")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|call| {
+                    let name = call
+                        .get("name")
+                        .and_then(|value| value.as_str())
+                        .or_else(|| {
+                            call.get("function")
+                                .and_then(|value| value.get("name"))
+                                .and_then(|value| value.as_str())
+                        })?
+                        .to_string();
+                    let arguments = call
+                        .get("arguments")
+                        .cloned()
+                        .or_else(|| {
+                            call.get("function")
+                                .and_then(|value| value.get("arguments"))
+                                .cloned()
+                        })
+                        .map(|value| match value {
+                            Value::String(text) => serde_json::from_str::<Value>(&text)
+                                .unwrap_or_else(|_| Value::String(text)),
+                            other => other,
+                        });
+                    Some(CanonicalToolCall {
+                        id: call
+                            .get("id")
+                            .and_then(|value| value.as_str())
+                            .map(|value| value.to_string()),
+                        r#type: call
+                            .get("type")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("function")
+                            .to_string(),
+                        name: Some(name),
+                        arguments,
+                        status: call
+                            .get("status")
+                            .and_then(|value| value.as_str())
+                            .map(|value| value.to_string()),
+                        extra_content: call
+                            .get("extra_content")
+                            .cloned()
+                            .unwrap_or_else(|| json!({})),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn builtin_response_decoder(protocol_family: &str) -> RuntimeHook {
@@ -449,6 +546,14 @@ mod tests {
         assert_eq!(
             infer_protocol_family("openai", "v1/chat/completions"),
             "openai_chat"
+        );
+    }
+
+    #[test]
+    fn infer_protocol_family_detects_google_gemini() {
+        assert_eq!(
+            infer_protocol_family("google", "v1beta/models/gemini:generateContent"),
+            "google_gemini"
         );
     }
 
@@ -571,5 +676,28 @@ mod tests {
         assert_eq!(profile.request.request_template["input"], Value::Null);
         assert_eq!(profile.defaults.headers["X-Test"], json!("1"));
         assert_eq!(profile.defaults.body["temperature"], json!(0.2));
+    }
+
+    #[test]
+    fn build_protocol_profile_backfills_openai_chat_request_builder_for_stored_profile() {
+        let profile = build_protocol_profile(
+            Some(&mock_preset()),
+            &mock_model("v1/chat/completions"),
+            "chat",
+            "openai",
+            &json!({}),
+            &json!({}),
+            &json!({}),
+        );
+
+        assert_eq!(profile.protocol_family, "openai_chat");
+        assert_eq!(
+            profile
+                .request
+                .request_builder
+                .as_ref()
+                .map(|item| item.name.as_str()),
+            Some("openai_chat_messages_from_canonical")
+        );
     }
 }

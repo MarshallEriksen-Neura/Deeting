@@ -128,6 +128,48 @@ describe("useChatStore selected assistant normalization", () => {
     expect(message?.blocks?.some((block) => block.type === "tool_result")).toBe(true)
   })
 
+  it("appendMessageBlocks should replace the matching tool call by callId", () => {
+    useChatStore.setState({
+      messages: [
+        {
+          id: "assistant-tool-call-1",
+          role: "assistant",
+          content: "",
+          createdAt: 1,
+          blocks: [
+            {
+              id: "call-1-old",
+              type: "tool_call",
+              callId: "call-1",
+              toolName: "skill.official.skills.crawler.fetch_web_content",
+              status: "running",
+            } as MessageBlock,
+          ],
+        },
+      ],
+    })
+
+    useChatStore.getState().appendMessageBlocks("assistant-tool-call-1", [
+      {
+        id: "call-1-new",
+        type: "tool_call",
+        callId: "call-1",
+        toolName: "skill.official.skills.crawler.fetch_web_content",
+        status: "error",
+      } as MessageBlock,
+    ])
+
+    const message = useChatStore.getState().messages[0]
+    const toolCalls = message?.blocks?.filter((block) => block.type === "tool_call") ?? []
+
+    expect(toolCalls).toHaveLength(1)
+    expect(toolCalls[0]).toMatchObject({
+      id: "call-1-old",
+      callId: "call-1",
+      status: "error",
+    })
+  })
+
   it("setMessageBlocks should clear assistant content when no text block exists", () => {
     useChatStore.setState({
       messages: [

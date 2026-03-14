@@ -7,6 +7,7 @@ use crate::modules::ai_upstream::gateway_log_recorder::{
 };
 use crate::modules::ai_upstream::types::LocalModelConnection;
 use crate::modules::mcp::types::LocalChatInputMessage;
+use crate::modules::providers::protocols::infer_protocol_family;
 use crate::state::AppState;
 use uuid::Uuid;
 
@@ -77,6 +78,20 @@ pub(crate) async fn resolve_local_model_connection(
             return Ok(LocalModelConnection {
                 provider_model_id: model.id.to_string(),
                 model_id: model.model_id,
+                protocol_family: infer_protocol_family(
+                    app_state
+                        .providers
+                        .store
+                        .get_instance_connection(&model.instance_id.to_string())
+                        .await
+                        .map_err(to_string)?
+                        .ok_or_else(|| "provider instance connection not found".to_string())?
+                        .protocol
+                        .as_deref()
+                        .unwrap_or("openai"),
+                    model.upstream_path.as_str(),
+                )
+                .to_string(),
             });
         }
     }
@@ -111,6 +126,20 @@ pub(crate) async fn resolve_local_model_connection(
         return Ok(LocalModelConnection {
             provider_model_id: matched.id.to_string(),
             model_id: matched.model_id.clone(),
+            protocol_family: infer_protocol_family(
+                app_state
+                    .providers
+                    .store
+                    .get_instance_connection(&matched.instance_id.to_string())
+                    .await
+                    .map_err(to_string)?
+                    .ok_or_else(|| "provider instance connection not found".to_string())?
+                    .protocol
+                    .as_deref()
+                    .unwrap_or("openai"),
+                matched.upstream_path.as_str(),
+            )
+            .to_string(),
         });
     }
 
@@ -118,6 +147,20 @@ pub(crate) async fn resolve_local_model_connection(
     Ok(LocalModelConnection {
         provider_model_id: selected.id.to_string(),
         model_id: selected.model_id.clone(),
+        protocol_family: infer_protocol_family(
+            app_state
+                .providers
+                .store
+                .get_instance_connection(&selected.instance_id.to_string())
+                .await
+                .map_err(to_string)?
+                .ok_or_else(|| "provider instance connection not found".to_string())?
+                .protocol
+                .as_deref()
+                .unwrap_or("openai"),
+            selected.upstream_path.as_str(),
+        )
+        .to_string(),
     })
 }
 
@@ -541,7 +584,11 @@ pub(crate) fn normalize_chat_completion_response(raw: serde_json::Value) -> serd
                     normalized_tool_calls.push(serde_json::json!({
                         "id": call.get("id").and_then(|value| value.as_str()).unwrap_or_default(),
                         "name": function_name,
-                        "arguments": arguments
+                        "arguments": arguments,
+                        "extra_content": call
+                            .get("extra_content")
+                            .cloned()
+                            .unwrap_or_else(|| serde_json::json!({}))
                     }));
                 }
             }

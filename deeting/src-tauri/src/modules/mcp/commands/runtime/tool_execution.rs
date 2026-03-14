@@ -689,8 +689,8 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_tool_ref(
         resolve_skill_binding_by_ref(store, tool_id.as_deref(), tool_name.as_deref()).await?
     {
         let tool_fingerprint = build_skill_binding_fingerprint(&binding);
-        let approval_grant_key = risk_assessment
-            .and_then(|risk| risk.session_grant_key(&tool_fingerprint));
+        let approval_grant_key =
+            risk_assessment.and_then(|risk| risk.session_grant_key(&tool_fingerprint));
         let approved_by_grant = if require_approval {
             if let (Some(runtime), Some(key)) = (runtime_state, approval_grant_key.as_ref()) {
                 runtime
@@ -745,8 +745,8 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_tool_ref(
     let tool_fingerprint = runtime_state
         .map(|runtime| runtime.tool_fingerprint(&tool))
         .unwrap_or_else(|| tool.config_hash.clone());
-    let approval_grant_key = risk_assessment
-        .and_then(|risk| risk.session_grant_key(&tool_fingerprint));
+    let approval_grant_key =
+        risk_assessment.and_then(|risk| risk.session_grant_key(&tool_fingerprint));
     let approved_by_grant = if require_approval {
         if let (Some(runtime), Some(key)) = (runtime_state, approval_grant_key.as_ref()) {
             runtime
@@ -908,8 +908,7 @@ pub(crate) async fn approve_mcp_tool_inner_with_context(
     }
     let result = execute_mcp_tool(store, &tool, &pending.arguments).await?;
     if let (Some(runtime), Some(key)) = (runtime_state, pending.approval_grant_key.as_deref()) {
-        if let Some(grant) = crate::modules::mcp::SessionApprovalGrant::from_key(key, now as i128)
-        {
+        if let Some(grant) = crate::modules::mcp::SessionApprovalGrant::from_key(key, now as i128) {
             runtime
                 .session_approval_grants
                 .write()

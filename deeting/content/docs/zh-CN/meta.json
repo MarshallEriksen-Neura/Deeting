@@ -1,0 +1,18 @@
+{
+  "title": "Deeting 文档中心",
+  "pages": [
+    "index",
+    "brand-story",
+    "getting-started",
+    "desktop-features",
+    "plugin-development-guide",
+    "deeting-json-reference",
+    "llm-tool-yaml-reference",
+    "skill-md-reference",
+    "plugin-publishing-guide",
+    "developer-guide",
+    "integration",
+    "release-notes",
+    "ideas-rfc"
+  ]
+}

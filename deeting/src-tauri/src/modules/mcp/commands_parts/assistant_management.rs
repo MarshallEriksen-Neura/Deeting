@@ -404,10 +404,16 @@ pub async fn preview_local_assistant(
         LocalChatInputMessage {
             role: "system".to_string(),
             content: assistant.system_prompt,
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
         },
         LocalChatInputMessage {
             role: "user".to_string(),
             content: payload.message,
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
         },
     ];
     let response = request_provider_chat_completion(

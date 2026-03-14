@@ -86,7 +86,10 @@ impl ToolRiskAssessment {
     pub fn grant_eligible(&self) -> bool {
         self.boundary_class == ApprovalBoundaryClass::SoftBoundary
             && !matches!(self.operation_class, RiskOperationClass::ProcessExec)
-            && matches!(self.target_class, RiskTargetClass::PublicInternet | RiskTargetClass::Unknown)
+            && matches!(
+                self.target_class,
+                RiskTargetClass::PublicInternet | RiskTargetClass::Unknown
+            )
     }
 
     pub fn session_grant_key(&self, tool_fingerprint: &str) -> Option<String> {
@@ -508,7 +511,10 @@ pub fn assess_skill_binding_risk(
     )
 }
 
-pub fn classify_scan_runtime_risk(runtime: Option<&str>, file_path: Option<&str>) -> ToolRiskAssessment {
+pub fn classify_scan_runtime_risk(
+    runtime: Option<&str>,
+    file_path: Option<&str>,
+) -> ToolRiskAssessment {
     let runtime = runtime
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -516,7 +522,10 @@ pub fn classify_scan_runtime_risk(runtime: Option<&str>, file_path: Option<&str>
         .to_lowercase();
     let path = file_path.unwrap_or_default().to_lowercase();
 
-    if runtime == "bash" || path.ends_with(".sh") || path.ends_with(".bat") || path.ends_with(".ps1")
+    if runtime == "bash"
+        || path.ends_with(".sh")
+        || path.ends_with(".bat")
+        || path.ends_with(".ps1")
     {
         return ToolRiskAssessment {
             requires_approval: true,
@@ -539,7 +548,10 @@ pub fn classify_scan_runtime_risk(runtime: Option<&str>, file_path: Option<&str>
         return ToolRiskAssessment {
             requires_approval: true,
             risk_level: "MEDIUM",
-            reasons: vec!["bundle includes runtime code that may perform network or filesystem reads".to_string()],
+            reasons: vec![
+                "bundle includes runtime code that may perform network or filesystem reads"
+                    .to_string(),
+            ],
             operation_class: RiskOperationClass::Unknown,
             target_class: RiskTargetClass::Unknown,
             boundary_class: ApprovalBoundaryClass::SoftBoundary,
@@ -611,7 +623,9 @@ fn max_boundary(
 
 fn is_sensitive_path(path: &str) -> bool {
     let sensitive_paths = ["/etc", "/root", "/home", "/usr", "/bin", "/sbin", "/boot"];
-    sensitive_paths.iter().any(|prefix| path.starts_with(prefix))
+    sensitive_paths
+        .iter()
+        .any(|prefix| path.starts_with(prefix))
 }
 
 fn classify_url_target(url: &str) -> Option<RiskTargetClass> {
@@ -773,7 +787,10 @@ mod tests {
         );
         let key = risk.session_grant_key("fingerprint-1");
 
-        assert_eq!(key.as_deref(), Some("fingerprint-1|network_read|public_internet|soft_boundary"));
+        assert_eq!(
+            key.as_deref(),
+            Some("fingerprint-1|network_read|public_internet|soft_boundary")
+        );
         assert!(risk.grant_eligible());
     }
 

@@ -18,7 +18,13 @@ const LOCAL_ROUTER_BASE_PROMPT_TEMPLATE: &str = concat!(
     "- Only switch into tool or code workflow when discovery, execution, installation, or system interaction is actually needed.\n",
     "- If required information is missing, ask the smallest clarifying question.\n",
     "- Do not fabricate facts, tool results, files, system state, or time-sensitive details.\n",
-    "- Be concise by default."
+    "- Be concise by default.\n\n",
+    "## Tool Initiative Rules\n",
+    "- Infer whether the user's goal semantically requires reading, searching, fetching, inspecting, verifying, or executing something beyond the current message.\n",
+    "- If a tool would materially improve confidence or accuracy, use it proactively. Do not wait for the user to explicitly say \"use a tool\".\n",
+    "- Prefer the lightest matching tool: single page or document -> fetch/read; multi-page or site exploration -> crawl/search; local files, repo state, or system facts -> inspection tools; multi-step transformations -> code workflow.\n",
+    "- Before saying you cannot access, open, read, verify, inspect, or know something, first check whether an available tool can obtain it.\n",
+    "- If no suitable tool is available or the tool attempt fails, explain the limitation briefly and continue with the best honest fallback."
 );
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -170,6 +176,9 @@ pub(crate) fn build_local_prelude_messages(
         prelude_messages.push(LocalChatInputMessage {
             role: "system".to_string(),
             content: base_system_prompt,
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
         });
     }
     prelude_messages.extend(prompt_assets.system_messages().iter().cloned());
@@ -190,6 +199,9 @@ mod tests {
         let assets = PromptAssets::from_system_messages(&[LocalChatInputMessage {
             role: "system".to_string(),
             content: "## Injected Asset".to_string(),
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
         }]);
 
         let plan = build_local_prompt_plan(&assets, Some(&build_default_local_execution_policy()));
@@ -217,5 +229,20 @@ mod tests {
 
         assert!(rendered.contains("## Code Mode Protocol"));
         assert!(rendered.contains("search_sdk"));
+    }
+
+    #[test]
+    fn render_local_router_base_prompt_includes_tool_initiative_rules() {
+        let prompt =
+            render_local_router_base_prompt("2026-03-14", "UTC", "Simplified Chinese (zh-CN)");
+
+        assert!(prompt.contains("## Tool Initiative Rules"));
+        assert!(prompt.contains(
+            "semantically requires reading, searching, fetching, inspecting, verifying, or executing"
+        ));
+        assert!(prompt.contains("Do not wait for the user to explicitly say \"use a tool\""));
+        assert!(prompt.contains(
+            "Before saying you cannot access, open, read, verify, inspect, or know something"
+        ));
     }
 }

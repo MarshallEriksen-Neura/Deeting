@@ -19,9 +19,8 @@ use tokio::task::AbortHandle;
 use crate::modules::mcp::bridge::McpBridgeState;
 use crate::modules::mcp::process::ProcessManager;
 pub use crate::modules::mcp::risk::{
-    assess_mcp_tool_risk, assess_skill_binding_risk, is_high_risk_tool_name,
-    ApprovalBoundaryClass, RiskOperationClass, RiskTargetClass, SessionApprovalGrant,
-    ToolRiskAssessment,
+    assess_mcp_tool_risk, assess_skill_binding_risk, is_high_risk_tool_name, ApprovalBoundaryClass,
+    RiskOperationClass, RiskTargetClass, SessionApprovalGrant, ToolRiskAssessment,
 };
 use crate::modules::mcp::store::McpStore;
 use crate::modules::mcp::types::McpTool;
@@ -77,8 +76,11 @@ pub struct McpRuntimeState {
     pub bridge: Arc<McpBridgeState>,
     pub pending_tool_calls: Arc<RwLock<HashMap<String, PendingToolCall>>>,
     pub(crate) session_approval_grants: Arc<RwLock<HashMap<String, SessionApprovalGrant>>>,
-    pub(crate) suspended_local_chat_executions:
-        Arc<RwLock<HashMap<String, crate::modules::mcp::commands::runtime::SuspendedLocalChatExecution>>>,
+    pub(crate) suspended_local_chat_executions: Arc<
+        RwLock<
+            HashMap<String, crate::modules::mcp::commands::runtime::SuspendedLocalChatExecution>,
+        >,
+    >,
     pub local_chat_tasks: Arc<RwLock<HashMap<String, AbortHandle>>>,
     pub local_gateway: Arc<crate::modules::mcp::gateway::LocalGatewayServer>,
 }

@@ -168,6 +168,9 @@ fn build_delegated_worker_execution(
                     "[Delegated Custom Task Agent Completed: {}]\nUse the delegated result as authoritative for the delegated subtask. Do not re-run the delegated task unless the user asks or the result is blocked.",
                     profile.name
                 ),
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
             };
             let user_message = LocalChatInputMessage {
                 role: "user".to_string(),
@@ -175,6 +178,9 @@ fn build_delegated_worker_execution(
                     "## Delegated Agent Result\n{}\n\nUse this delegated result to answer the user's original request. Do not re-run the delegated task.",
                     pretty_payload
                 ),
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
             };
             DelegatedWorkerExecution {
                 feedback_messages: vec![system_message, user_message],
@@ -203,10 +209,16 @@ fn build_delegated_worker_execution(
                     "[Delegated Custom Task Agent Failed: {}]\nThe delegated task failed. You may continue with your own reasoning and explain the fallback clearly.",
                     profile.name
                 ),
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
             };
             let user_message = LocalChatInputMessage {
                 role: "user".to_string(),
                 content: format!("## Delegated Agent Failure\n{}", pretty_payload),
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
             };
             DelegatedWorkerExecution {
                 feedback_messages: vec![system_message, user_message],

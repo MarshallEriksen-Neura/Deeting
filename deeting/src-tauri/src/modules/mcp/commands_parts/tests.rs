@@ -2548,6 +2548,7 @@ for raw_line in sys.stdin:
             id: Some("call_unknown".to_string()),
             name: "do_magic".to_string(),
             arguments: serde_json::json!({}),
+            extra_content: None,
         };
         let error = "tool 'do_magic' is not installed or enabled in local desktop runtime";
         let meta =

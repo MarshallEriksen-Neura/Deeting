@@ -6,9 +6,12 @@ describe("shouldHideGlobalHeader", () => {
     "/chat/select-agent",
     "/spec-agent",
     "/video",
+    "/docs",
     "/en/chat",
+    "/en/docs",
     "/en/spec-agent",
     "/zh-CN/video",
+    "/zh-CN/docs",
   ])("hides header on %s", (pathname) => {
     expect(shouldHideGlobalHeader(pathname)).toBe(true)
   })

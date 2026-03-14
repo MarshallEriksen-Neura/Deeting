@@ -361,6 +361,9 @@ impl LocalWorkflowContext {
         self.system_messages.push(LocalChatInputMessage {
             role: "system".to_string(),
             content: trimmed.to_string(),
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
         });
     }
 
@@ -1877,6 +1880,9 @@ fn convert_history_message_to_chat_input(
     LocalChatInputMessage {
         role: message.role,
         content,
+        tool_calls: vec![],
+        tool_call_id: None,
+        name: None,
     }
 }
 

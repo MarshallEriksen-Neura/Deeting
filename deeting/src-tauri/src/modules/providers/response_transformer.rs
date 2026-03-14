@@ -243,12 +243,21 @@ impl ResponseTransformer {
                         } else if let Some(func_call) =
                             part.get("functionCall").or(part.get("function_call"))
                         {
+                            let thought_signature = part
+                                .get("thoughtSignature")
+                                .or_else(|| part.get("thought_signature"))
+                                .cloned();
                             tool_calls.push(json!({
                                 "id": format!("gemini-func-{}", idx),
                                 "type": "function",
                                 "function": {
                                     "name": func_call.get("name"),
                                     "arguments": serde_json::to_string(func_call.get("args").unwrap_or(&json!({}))).unwrap_or_default()
+                                },
+                                "extra_content": {
+                                    "google": {
+                                        "thought_signature": thought_signature
+                                    }
                                 }
                             }));
                         }
@@ -385,6 +394,37 @@ impl ResponseTransformer {
                     .unwrap_or(input_tokens + output_tokens)
             }
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn adapt_gemini_preserves_thought_signature_in_tool_call_extra_content() {
+        let transformer = ResponseTransformer::new();
+        let result = transformer
+            .adapt_gemini(json!({
+                "candidates": [{
+                    "content": {
+                        "parts": [{
+                            "functionCall": {
+                                "name": "search_docs",
+                                "args": { "q": "tool replay" }
+                            },
+                            "thoughtSignature": "sig-123"
+                        }]
+                    },
+                    "finishReason": "STOP"
+                }]
+            }))
+            .expect("adapt gemini");
+
+        assert_eq!(
+            result["choices"][0]["message"]["tool_calls"][0]["extra_content"]["google"]["thought_signature"],
+            json!("sig-123")
+        );
     }
 }
 

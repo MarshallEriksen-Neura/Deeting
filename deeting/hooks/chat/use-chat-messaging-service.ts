@@ -153,7 +153,7 @@ function parseStreamResponseBody(data: unknown): Record<string, unknown> | null 
   return null
 }
 
-function extractAssistantResponseBlocks(responseBody: Record<string, unknown>): MessageBlock[] {
+function extractAssistantMetaBlocks(responseBody: Record<string, unknown>): MessageBlock[] {
   const choices = Array.isArray(responseBody.choices) ? responseBody.choices : []
   const firstChoice = choices[0]
   const responseMessage = firstChoice && typeof firstChoice === "object"
@@ -167,10 +167,29 @@ function extractAssistantResponseBlocks(responseBody: Record<string, unknown>): 
   const metaInfo = messageObject.meta_info && typeof messageObject.meta_info === "object"
     ? (messageObject.meta_info as Record<string, unknown>)
     : null
-  const metaBlocks = Array.isArray(metaInfo?.blocks)
+  return Array.isArray(metaInfo?.blocks)
     ? ((metaInfo.blocks as unknown[]).filter(isValidBlock) as MessageBlock[])
     : []
+}
 
+export function extractAssistantResponseToolBlocks(responseBody: Record<string, unknown>): MessageBlock[] {
+  return extractAssistantMetaBlocks(responseBody).filter(
+    (block) => block.type === "tool_call" || block.type === "tool_result"
+  )
+}
+
+function extractAssistantResponseBlocks(responseBody: Record<string, unknown>): MessageBlock[] {
+  const choices = Array.isArray(responseBody.choices) ? responseBody.choices : []
+  const firstChoice = choices[0]
+  const responseMessage = firstChoice && typeof firstChoice === "object"
+    ? (firstChoice as Record<string, unknown>).message
+    : null
+  if (!responseMessage || typeof responseMessage !== "object") {
+    return []
+  }
+
+  const messageObject = responseMessage as Record<string, unknown>
+  const metaBlocks = extractAssistantMetaBlocks(responseBody)
   const nextBlocks: MessageBlock[] = metaBlocks.filter(
     (block) => block.type !== "tool_call" && block.type !== "tool_result"
   )
@@ -708,6 +727,11 @@ export function useChatMessagingService() {
           }
           if (typeof responseBody.trace_id === "string") {
             onTraceId?.(responseBody.trace_id)
+          }
+
+          const responseToolBlocks = extractAssistantResponseToolBlocks(responseBody)
+          if (responseToolBlocks.length > 0) {
+            onBlocks(responseToolBlocks)
           }
 
           const responseBlocks = extractAssistantResponseBlocks(responseBody)

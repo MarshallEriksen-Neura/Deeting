@@ -59,6 +59,9 @@ pub(crate) async fn request_local_auxiliary_text(
         vec![LocalChatInputMessage {
             role: "user".to_string(),
             content: prompt.to_string(),
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
         }],
         None,
         Some(LOCAL_CONVERSATION_AUXILIARY_TEMPERATURE),

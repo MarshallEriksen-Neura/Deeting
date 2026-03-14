@@ -2,4 +2,5 @@
 pub(crate) struct LocalModelConnection {
     pub(crate) provider_model_id: String,
     pub(crate) model_id: String,
+    pub(crate) protocol_family: String,
 }

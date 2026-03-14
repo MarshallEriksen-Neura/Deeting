@@ -1,4 +1,5 @@
 import {
+  extractAssistantResponseToolBlocks,
   filterIncomingStructuredBlocks,
   shouldAppendFinalResponseBlocks,
 } from "@/hooks/chat/use-chat-messaging-service"
@@ -31,5 +32,36 @@ describe("local chat stream dedupe helpers", () => {
         receivedStructuredBlocks: true,
       })
     ).toBe(false)
+  })
+
+  it("keeps final tool status blocks from completion payload for stream cleanup", () => {
+    expect(
+      extractAssistantResponseToolBlocks({
+        choices: [
+          {
+            message: {
+              content: "",
+              meta_info: {
+                blocks: [
+                  {
+                    type: "tool_call",
+                    callId: "call-fetch-1",
+                    toolName: "skill.official.skills.crawler.fetch_web_content",
+                    status: "error",
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      })
+    ).toEqual([
+      {
+        type: "tool_call",
+        callId: "call-fetch-1",
+        toolName: "skill.official.skills.crawler.fetch_web_content",
+        status: "error",
+      },
+    ])
   })
 })

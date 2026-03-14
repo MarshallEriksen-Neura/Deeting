@@ -1,0 +1,80 @@
+---
+title: Deeting 文档中心
+description: 面向公开用户和开发者的 Deeting 官方文档入口。
+---
+
+<div className="not-prose mb-8 overflow-hidden rounded-2xl border border-border bg-black">
+  <video
+    className="w-full"
+    autoPlay
+    muted
+    loop
+    playsInline
+    controls
+    poster="/images/deeting.jpeg"
+  >
+    <source src="/videos/logo.mp4" type="video/mp4" />
+  </video>
+</div>
+
+<div className="not-prose mb-8 overflow-hidden rounded-2xl border border-border bg-card p-6">
+  <div className="flex flex-col gap-6 md:flex-row md:items-center">
+    <img
+      src="/images/logo.svg"
+      alt="Deeting logo"
+      className="h-14 w-auto shrink-0"
+    />
+    <div className="space-y-2">
+      <h1 className="m-0 text-3xl font-semibold text-foreground">谛听 Deeting</h1>
+      <p className="m-0 text-base text-muted-foreground">
+        智能上下文与记忆中枢
+      </p>
+      <p className="m-0 text-sm font-medium tracking-wide text-foreground/80">
+        Listen. Remember. Evolve.
+      </p>
+    </div>
+  </div>
+</div>
+
+## 你可以在这里找到什么
+
+- 产品快速开始与账号上手
+- 桌面端已融入能力与使用边界
+- 开发环境、仓库结构与贡献方式
+- API、MCP 与插件接入说明
+- 版本更新与兼容性提示
+
+## 建议先从这里开始
+
+- `普通用户`
+  从 [快速开始](./getting-started) 开始，先理解产品和使用路径。
+
+- `桌面端用户`
+  先看 [桌面端功能](./desktop-features)，再判断是否需要本地环境或额外能力。
+
+- `开发者`
+  如果你准备开发插件，建议直接从 [插件开发指南](./plugin-development-guide) 开始。
+
+## 开发前环境提醒
+
+如果你准备自己开发插件或参与部分本地能力开发，建议提前准备：
+
+- Node.js
+- Python
+- Bun
+- Windows 用户优先安装 WSL
+
+更完整的说明见 [插件开发指南](./plugin-development-guide)。
+
+## 推荐阅读顺序
+
+1. 先看 [为什么叫谛听](./brand-story)
+2. 普通用户先看 [快速开始](./getting-started)
+3. 桌面端用户看 [桌面端功能](./desktop-features)
+4. 外部开发者看 [插件开发指南](./plugin-development-guide)
+5. 需要接入时看 [集成指南](./integration)
+6. 参与平台开发时看 [开发者指南](./developer-guide)
+
+## 公开范围
+
+文档中心面向公开访问。`Ideas / RFC` 区域会标记为实验性内容，用来说明正在探索中的方向，不代表已经稳定交付。

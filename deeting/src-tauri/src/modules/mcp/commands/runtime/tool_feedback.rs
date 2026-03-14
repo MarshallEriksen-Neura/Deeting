@@ -60,6 +60,7 @@ pub(crate) fn extract_chat_tool_calls(response: &serde_json::Value) -> Vec<Local
                     id,
                     name,
                     arguments: args,
+                    extra_content: tc.get("extra_content").cloned(),
                 });
             }
         }

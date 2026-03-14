@@ -259,6 +259,9 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
                 "- User skills directory: $APP_DATA_DIR/skills/<skill_id>/.\n",
                 "- Do NOT use opencode, codex, openclaw, or any other platform's skill paths or manifest format.\n",
             ).to_string(),
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
         });
     }
 
@@ -398,6 +401,7 @@ async fn continue_local_chat_complete_with_auto_code_mode(
                 finalize_tool_round(
                     &mut state.orchestrated_messages,
                     &mut state.active_capability,
+                    &state.model_connection.protocol_family,
                     state.round,
                     &response,
                     &tool_call_meta,
@@ -454,6 +458,7 @@ async fn continue_local_chat_complete_with_auto_code_mode(
 fn finalize_tool_round(
     orchestrated_messages: &mut Vec<LocalChatInputMessage>,
     active_capability: &mut Option<LocalCapabilityActivationState>,
+    protocol_family: &str,
     round: usize,
     response: &serde_json::Value,
     tool_call_meta: &[serde_json::Value],
@@ -461,6 +466,13 @@ fn finalize_tool_round(
     capability_update: Option<LocalCapabilityActivationUpdate>,
 ) {
     apply_capability_update(orchestrated_messages, active_capability, capability_update);
+
+    if let Some(replay_messages) =
+        build_structured_tool_replay_messages(protocol_family, response, tool_call_meta)
+    {
+        orchestrated_messages.extend(replay_messages);
+        return;
+    }
 
     let tool_feedback = build_auto_code_mode_tool_feedback(round, tool_call_meta, results);
     let assistant_content = response
@@ -472,12 +484,90 @@ fn finalize_tool_round(
         orchestrated_messages.push(LocalChatInputMessage {
             role: "assistant".to_string(),
             content: assistant_content,
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
         });
     }
     orchestrated_messages.push(LocalChatInputMessage {
         role: "user".to_string(),
         content: tool_feedback,
+        tool_calls: vec![],
+        tool_call_id: None,
+        name: None,
     });
+}
+
+fn build_structured_tool_replay_messages(
+    protocol_family: &str,
+    response: &serde_json::Value,
+    tool_call_meta: &[serde_json::Value],
+) -> Option<Vec<LocalChatInputMessage>> {
+    if protocol_family != "openai_chat"
+        && protocol_family != "anthropic_messages"
+        && protocol_family != "google_gemini"
+    {
+        return None;
+    }
+
+    let tool_calls = extract_chat_tool_calls(response);
+    if tool_calls.is_empty() || tool_call_meta.is_empty() {
+        return None;
+    }
+
+    let assistant_content = response
+        .get("content")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let mut messages = Vec::with_capacity(1 + tool_call_meta.len());
+    messages.push(LocalChatInputMessage {
+        role: "assistant".to_string(),
+        content: assistant_content,
+        tool_calls,
+        tool_call_id: None,
+        name: None,
+    });
+
+    for item in tool_call_meta {
+        let Some(call_id) = item
+            .get("id")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        messages.push(LocalChatInputMessage {
+            role: "tool".to_string(),
+            content: serialize_tool_replay_content(item),
+            tool_calls: vec![],
+            tool_call_id: Some(call_id.to_string()),
+            name: item
+                .get("name")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string()),
+        });
+    }
+
+    Some(messages)
+}
+
+fn serialize_tool_replay_content(item: &serde_json::Value) -> String {
+    if let Some(result) = item.get("result") {
+        if let Some(text) = result.as_str() {
+            return text.to_string();
+        }
+        return serde_json::to_string(result).unwrap_or_else(|_| "{}".to_string());
+    }
+
+    serde_json::to_string(&serde_json::json!({
+        "status": item.get("status").cloned().unwrap_or(serde_json::json!("unknown")),
+        "error": item.get("error").cloned().unwrap_or(serde_json::json!(null)),
+        "error_code": item.get("error_code").cloned().unwrap_or(serde_json::json!(null)),
+    }))
+    .unwrap_or_else(|_| "{}".to_string())
 }
 
 fn apply_capability_update(
@@ -502,6 +592,9 @@ fn apply_capability_update(
                             format!("Relevant capability focus: {}", capability_summary.trim())
                         },
                     ),
+                    tool_calls: vec![],
+                    tool_call_id: None,
+                    name: None,
                 });
             }
             LocalCapabilityActivationUpdate::Deactivate {
@@ -516,6 +609,9 @@ fn apply_capability_update(
                         "[Expert Capability Detached: {}]\n\nReturn to the default capability-neutral state for this request while keeping the fixed desktop persona unchanged.",
                         label,
                     ),
+                    tool_calls: vec![],
+                    tool_call_id: None,
+                    name: None,
                 });
             }
         }
@@ -1270,6 +1366,7 @@ pub(crate) async fn resume_suspended_local_chat_after_approval(
     finalize_tool_round(
         &mut state.orchestrated_messages,
         &mut state.active_capability,
+        &state.model_connection.protocol_family,
         state.round,
         &pending_response,
         &pending_tool_call_meta,
@@ -1389,6 +1486,38 @@ mod tests {
         assert_eq!(
             resolved.as_deref(),
             Some("skill.official.skills.weather.get_weather")
+        );
+    }
+
+    #[test]
+    fn structured_tool_replay_messages_use_openai_chat_shape_only_for_openai_chat() {
+        let response = serde_json::json!({
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call_123",
+                    "name": "search_sdk",
+                    "arguments": { "query": "tool replay" }
+                }
+            ]
+        });
+        let meta = vec![serde_json::json!({
+            "id": "call_123",
+            "name": "search_sdk",
+            "status": "success",
+            "result": { "ok": true }
+        })];
+
+        let openai_replay = build_structured_tool_replay_messages("openai_chat", &response, &meta)
+            .expect("openai replay");
+        assert_eq!(openai_replay.len(), 2);
+        assert_eq!(openai_replay[0].role, "assistant");
+        assert_eq!(openai_replay[0].tool_calls.len(), 1);
+        assert_eq!(openai_replay[1].role, "tool");
+        assert_eq!(openai_replay[1].tool_call_id.as_deref(), Some("call_123"));
+
+        assert!(
+            build_structured_tool_replay_messages("anthropic_messages", &response, &meta).is_none()
         );
     }
 }

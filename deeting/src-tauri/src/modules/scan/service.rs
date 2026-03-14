@@ -331,7 +331,10 @@ fn build_bundle_document(
     }
 
     if !snapshot.high_risk_script_paths.is_empty() {
-        let risk = classify_scan_runtime_risk(Some("bash"), snapshot.high_risk_script_paths.first().map(|s| s.as_str()));
+        let risk = classify_scan_runtime_risk(
+            Some("bash"),
+            snapshot.high_risk_script_paths.first().map(|s| s.as_str()),
+        );
         status = "needs_review".to_string();
         findings.push(ScanFinding {
             id: Uuid::new_v4().to_string(),

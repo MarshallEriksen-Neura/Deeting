@@ -19,6 +19,25 @@ function isEmptyTextLikeBlock(block: MessageBlock): boolean {
   return false
 }
 
+function upsertToolBlock(next: MessageBlock[], block: MessageBlock): boolean {
+  if (block.type !== "tool_call" && block.type !== "tool_result") return false
+  const callId = typeof block.callId === "string" ? block.callId.trim() : ""
+  if (!callId) return false
+
+  const existingIndex = next.findIndex(
+    (candidate) => candidate.type === block.type && candidate.callId === callId
+  )
+  if (existingIndex < 0) return false
+
+  const existing = next[existingIndex]
+  next[existingIndex] = {
+    ...existing,
+    ...block,
+    id: existing.id || block.id,
+  }
+  return true
+}
+
 function applyToolResultStatuses(blocks: MessageBlock[]): MessageBlock[] {
   const normalized = [...blocks]
   for (const block of normalized) {
@@ -80,6 +99,10 @@ export function appendMessageBlocks(
       } else {
         next.push(block)
       }
+      continue
+    }
+
+    if (upsertToolBlock(next, block)) {
       continue
     }
 

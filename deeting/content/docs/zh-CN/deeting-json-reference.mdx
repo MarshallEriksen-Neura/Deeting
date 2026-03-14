@@ -1,0 +1,168 @@
+---
+title: deeting.json 字段说明
+description: 了解 Deeting 插件包中的 deeting.json 负责什么，以及常见字段该怎么理解。
+---
+
+## 这是什么
+
+`deeting.json` 是插件包的元数据与运行声明文件。
+
+它负责回答几个最基本的问题：
+
+- 这个插件是谁
+- 版本是什么
+- 入口文件在哪里
+- 需要什么权限
+- 暴露了哪些能力
+
+它不是行为说明文件，也不是后端逻辑文件。  
+更适合把它理解成“插件清单”。
+
+## 一个最小示例
+
+```json
+{
+  "id": "com.deeting.template",
+  "name": "Deeting Plugin Template",
+  "version": "1.0.0",
+  "author": "Deeting Team",
+  "description": "A starter template for building Deeting plugins with logic and UI.",
+  "entry": {
+    "backend": "main.py",
+    "ui": "ui/index.html"
+  },
+  "permissions": [
+    "network.outbound",
+    "tools.read"
+  ],
+  "capabilities": {
+    "llm_tools": "llm-tool.yaml"
+  }
+}
+```
+
+## 常见字段说明
+
+### `id`
+
+插件的唯一标识。
+
+建议：
+
+- 保持稳定，不要频繁改
+- 使用可区分命名空间的形式
+- 一旦插件已经发布，尽量不要随意变更
+
+### `name`
+
+插件展示名称，用于让用户识别你的插件。
+
+建议写法：
+
+- 简短
+- 可读
+- 能表达插件用途
+
+### `version`
+
+插件版本号。
+
+建议：
+
+- 每次有实际发布变更时更新
+- 尽量使用清晰的一致规则
+
+### `author`
+
+插件作者或团队名。
+
+如果你准备公开发布，这个字段会直接影响别人如何识别插件来源。
+
+### `description`
+
+一句话说明插件做什么。
+
+建议重点写：
+
+- 它解决什么问题
+- 它最适合什么场景
+
+不要把这里写成很长的设计文案。
+
+### `entry`
+
+入口声明，告诉宿主插件从哪里开始加载。
+
+常见字段：
+
+- `backend`
+  后端执行入口，通常是 `main.py`
+
+- `ui`
+  可选前端入口，通常是 `ui/index.html`
+
+如果插件不需要独立 UI，可以只保留后端入口。
+
+### `permissions`
+
+权限声明。
+
+这个字段非常重要，因为它直接影响插件在运行时可以做什么。
+
+常见例子：
+
+- `network.outbound`
+  插件需要访问外部网络
+
+- `tools.read`
+  插件需要读取工具相关信息或宿主能力
+
+原则上：
+
+- 只申请真正需要的权限
+- 不要为了图省事一次性申请过多权限
+
+### `capabilities`
+
+能力声明，用于把插件中真正可执行的能力暴露给宿主。
+
+在当前模板里，最关键的是：
+
+- `llm_tools`
+  指向 `llm-tool.yaml`
+
+这表示真正可调用的工具契约定义在另外一个文件里，而不是直接写在 `deeting.json` 本身。
+
+## `deeting.json` 不负责什么
+
+为了避免职责混乱，最好记住它不负责这些事情：
+
+- 不负责实现工具逻辑
+- 不负责描述何时应该调用工具
+- 不负责定义详细参数结构
+
+这些分别应该放到：
+
+- `main.py`
+- `SKILL.md`
+- `llm-tool.yaml`
+
+## 修改时最容易犯的错误
+
+1. 改了入口文件，但忘了同步 `entry`
+2. 改了工具契约路径，但忘了更新 `capabilities`
+3. 权限越加越多，最后不清楚真正依赖什么
+4. 把行为说明写进 `deeting.json`，导致职责混乱
+
+## 推荐做法
+
+每次改 `deeting.json` 时，顺手检查这三件事：
+
+1. 入口文件还存在吗
+2. 权限是否仍然最小化
+3. `capabilities` 指向的文件是否和当前实现一致
+
+## 接下来读什么
+
+- 想看工具契约怎么写：阅读 [llm-tool.yaml 编写说明](./llm-tool-yaml-reference)
+- 想回到整体插件流程：阅读 [插件开发指南](./plugin-development-guide)
