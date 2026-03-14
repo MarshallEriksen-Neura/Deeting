@@ -1,23 +1,24 @@
 ---
 name: hello_deeting
-description: "A simple tool to greet the user and show a status dashboard."
+description: "A simple local Deeting plugin that greets the user and emits a UI card."
 ---
 
 # Deeting Plugin Template
 
 ## Overview
 
-Use `SKILL.md` as behavior guidance for this plugin (non-executable contract).
+Use `SKILL.md` as behavior guidance for this plugin.
 
-- Keep `deeting.json` focused on metadata, runtime, permissions, and UI entrypoints.
-- Keep callable tool schema in `llm-tool.yaml` (or generated equivalent) so host/MCP can register executable tools.
-- Keep `main.py` aligned with the tool names and behavior described here.
+- `deeting.json` stores metadata, runtime, permissions, and UI/backend entrypoints.
+- `llm-tool.yaml` defines the callable tool contract in the current `tools:` format.
+- `main.py` is a stdin-driven backend entrypoint that dispatches `method`/`arguments`.
 
 ## Available Tools
 
-- `hello_deeting` — Greets the user and renders a simple status dashboard. Required: `name`.
+- `hello_deeting` — Greet the user and render a simple status card. Required: `name`.
 
 ## Usage Notes
 
-- Rename `hello_deeting` in `SKILL.md`, `main.py`, and `llm-tool.yaml` together.
+- Rename the tool in `SKILL.md`, `llm-tool.yaml`, and `main.py` together.
+- Keep the backend entrypoint JSON-in / JSON-out contract intact.
 - Keep `ui/index.html` if the plugin renders frontend content.

@@ -13,7 +13,7 @@
   ],
   "scripts": {
     "dev": "bun ./src/index.ts",
-    "prepublishOnly": "cp -r ../templates/default-plugin ./templates"
+    "prepublishOnly": "rm -rf ./templates && mkdir -p ./templates && cp -r ../templates/default-plugin ./templates/default-plugin"
   },
   "dependencies": {
     "prompts": "^2.4.2",

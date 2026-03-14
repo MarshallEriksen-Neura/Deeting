@@ -37,8 +37,8 @@ async function run() {
     process.exit(1);
   }
 
-  // 兼容逻辑：优先寻找同目录下的 templates（npm 模式），否则寻找上层（monorepo 模式）
-  let templateDir = join(__dirname, "../templates");
+  // Prefer the packaged canonical default-plugin directory; fall back to the monorepo source template.
+  let templateDir = join(__dirname, "../templates/default-plugin");
   if (!existsSync(templateDir)) {
     templateDir = join(__dirname, "../../templates/default-plugin");
   }
@@ -51,7 +51,7 @@ async function run() {
     console.log(kleur.green("\n✅ Success! Your plugin is ready."));
     console.log("\nNext steps:");
     console.log(kleur.yellow(`  cd ${response.projectName}`));
-    console.log(kleur.yellow("  # Edit SKILL.md, main.py, and ui/index.html"));
+    console.log(kleur.yellow("  # Edit SKILL.md, llm-tool.yaml, main.py, and ui/index.html"));
     console.log(kleur.yellow("  # Push to GitHub and install in Deeting OS!\n"));
   } catch (err) {
     console.error(kleur.red("Error copying template:"), err);

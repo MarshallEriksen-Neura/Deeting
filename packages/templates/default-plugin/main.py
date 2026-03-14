@@ -1,32 +1,51 @@
-from typing import Any
+import asyncio
+import json
+import sys
+from typing import Any, Dict
 
-async def invoke(tool_name: str, args: dict[str, Any], deeting: Any) -> Any:
-    """
-    Primary backend entrypoint for the skill/plugin.
+try:
+    from deeting import deeting
+except ImportError:
+    deeting = None
 
-    :param tool_name: Tool selected by the host. Keep it aligned with SKILL.md
-        and, when present, llm-tool.yaml.
-    :param args: Arguments passed to the selected tool.
-    :param deeting: Deeting SDK object with call_tool, render, log, and related helpers.
-    """
-    deeting.log(f"Executing tool: {tool_name} with args: {args}")
-    
-    if tool_name == "hello_deeting":
-        name = args.get("name", "Stranger")
-        message = f"Hello {name}! This is your custom plugin speaking."
-        
-        # Optional UI block
-        deeting.render(
-            view_type="bento.grid",
-            title="Plugin Response",
-            payload={
-                "items": [
-                    {"title": "Status", "value": "Active", "color": "emerald"},
-                    {"title": "User", "value": name}
-                ]
-            }
-        )
-        
-        return {"message": message}
-    
-    raise ValueError(f"Unknown tool: {tool_name}")
+
+async def hello_deeting(name: str = "Stranger") -> Dict[str, Any]:
+    if not deeting:
+        return {"status": "error", "message": "Deeting SDK not found"}
+
+    message = f"Hello {name}! This is your custom plugin speaking."
+    deeting.log(f"Executing hello_deeting for {name}")
+    deeting.render(
+        view_type="bento.grid",
+        title="Plugin Response",
+        payload={
+            "items": [
+                {"title": "Status", "value": "Active", "color": "emerald"},
+                {"title": "User", "value": name},
+            ]
+        },
+    )
+    return {"status": "success", "message": message}
+
+
+async def handle_input() -> None:
+    try:
+        raw_input = sys.stdin.read()
+        if not raw_input:
+            return
+        data = json.loads(raw_input)
+        method = data.get("method") or data.get("tool")
+        args = data.get("arguments") or data.get("params") or {}
+
+        if method == "hello_deeting":
+            result = await hello_deeting(**args)
+        else:
+            result = {"error": f"Unknown method: {method}"}
+
+        print(json.dumps(result, ensure_ascii=False))
+    except Exception as exc:
+        print(json.dumps({"error": str(exc)}, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    asyncio.run(handle_input())

@@ -8,6 +8,10 @@
     "backend": "main.py",
     "ui": "ui/index.html"
   },
+  "runtime": ["local"],
+  "execution": {
+    "timeout_seconds": 60
+  },
   "permissions": [
     "network.outbound",
     "tools.read"
