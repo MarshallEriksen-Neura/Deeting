@@ -116,10 +116,10 @@ pub(crate) fn select_local_route_with_evidence(
 pub(crate) fn render_local_route_prompt(decision: &LocalRouteDecision) -> String {
     let route_guidance = match decision.route {
         LocalRouteKind::Direct => {
-            "Prefer direct answer or one direct callable capability. Do not escalate into execute_code_plan unless the user clearly needs programmatic orchestration."
+            "Prefer direct answer or one direct callable capability. If capability choice is the blocker, use search_sdk once to discover the best direct capability before answering or refusing. Do not escalate into execute_code_plan unless the user clearly needs programmatic orchestration."
         }
         LocalRouteKind::Worker => {
-            "Treat this as analysis/planning/decomposition work. Prefer reasoning and structured recommendations over programmatic execution."
+            "Treat this as analysis/planning/decomposition work. Prefer reasoning and structured recommendations over programmatic execution. If the analysis depends on unknown runtime capabilities or installed tools, use search_sdk once before concluding what is or is not possible."
         }
         LocalRouteKind::CodeMode => {
             "Treat this as programmatic orchestration work. Prefer search_sdk plus execute_code_plan when execution is required."
@@ -672,6 +672,21 @@ mod tests {
         assert!(prompt.contains("## Runtime Route Decision"));
         assert!(prompt.contains("Selected route: codemode"));
         assert!(prompt.contains("execute_code_plan"));
+    }
+
+    #[test]
+    fn render_local_route_prompt_mentions_worker_search_sdk_discovery_rule() {
+        let decision = select_local_route(
+            "分析下桌面端现在能不能调用官方 skill，给我结论",
+            &fake_search_result(0, true, false, false),
+        );
+        assert_eq!(decision.route, LocalRouteKind::Worker);
+
+        let prompt = render_local_route_prompt(&decision);
+
+        assert!(prompt.contains("Selected route: worker"));
+        assert!(prompt.contains("use search_sdk once"));
+        assert!(prompt.contains("unknown runtime capabilities or installed tools"));
     }
 
     fn fake_search_result(

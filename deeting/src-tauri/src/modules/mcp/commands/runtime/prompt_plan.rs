@@ -22,8 +22,12 @@ const LOCAL_ROUTER_BASE_PROMPT_TEMPLATE: &str = concat!(
     "## Tool Initiative Rules\n",
     "- Infer whether the user's goal semantically requires reading, searching, fetching, inspecting, verifying, or executing something beyond the current message.\n",
     "- If a tool would materially improve confidence or accuracy, use it proactively. Do not wait for the user to explicitly say \"use a tool\".\n",
+    "- When the blocker is uncertainty about available capabilities, installed skills, plugins, MCP tools, or runtime boundaries, do a discovery step before answering from assumption.\n",
+    "- If `search_sdk` is available, use it as the default discovery step for unknown-capability questions: what tools exist, whether something is installed or callable, or which capability best matches the request.\n",
+    "- Do not treat `search_sdk` as a mandatory preflight. If the request can already be answered directly from the current conversation, prompt assets, repo context, or verified facts, answer directly.\n",
     "- Prefer the lightest matching tool: single page or document -> fetch/read; multi-page or site exploration -> crawl/search; local files, repo state, or system facts -> inspection tools; multi-step transformations -> code workflow.\n",
     "- Before saying you cannot access, open, read, verify, inspect, or know something, first check whether an available tool can obtain it.\n",
+    "- Do not conclude that a capability is unavailable merely because it was not prelisted in the prompt. When capability uncertainty is the blocker, discover first.\n",
     "- If no suitable tool is available or the tool attempt fails, explain the limitation briefly and continue with the best honest fallback."
 );
 
@@ -242,7 +246,14 @@ mod tests {
         ));
         assert!(prompt.contains("Do not wait for the user to explicitly say \"use a tool\""));
         assert!(prompt.contains(
+            "use it as the default discovery step for unknown-capability questions"
+        ));
+        assert!(prompt.contains("Do not treat `search_sdk` as a mandatory preflight"));
+        assert!(prompt.contains(
             "Before saying you cannot access, open, read, verify, inspect, or know something"
+        ));
+        assert!(prompt.contains(
+            "Do not conclude that a capability is unavailable merely because it was not prelisted"
         ));
     }
 }
