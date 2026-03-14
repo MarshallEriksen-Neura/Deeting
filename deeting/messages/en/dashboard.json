@@ -59,6 +59,16 @@
       "description": "Review local scan output, security signals, and index reconciliation for doc-first assets"
     },
     "scanReviewsPage": {
+      "executionSurface": {
+        "recipe": "Recipe guidance",
+        "script_runner": "Script runner",
+        "desktop_capability": "Desktop host capability"
+      },
+      "adapterKind": {
+        "docs_bundle": "Docs bundle adapter",
+        "openclaw_script": "OpenClaw script adapter",
+        "deeting_tool_binding": "Deeting host binding adapter"
+      },
       "stats": {
         "documents": "Documents",
         "skillBundles": "Skill Bundles",

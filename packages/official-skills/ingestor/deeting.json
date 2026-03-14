@@ -4,16 +4,18 @@
   "name": "Asset Ingestor",
   "version": "1.0.0",
   "author": "Deeting Team",
-  "description": "Smart asset discovery and onboarding. Can turn URLs into structured Assistants or Skills.",
+  "description": "Smart assistant discovery and onboarding from URLs.",
   "entry": {
     "backend": "main.py"
   },
+  "restricted": true,
+  "allowed_roles": ["admin"],
   "permissions": [
     "network.outbound",
     "tools.call",
     "assistants.write"
   ],
-  "runtime": ["cloud", "local"],
+  "runtime": ["local"],
   "execution": {
     "timeout_seconds": 120
   },

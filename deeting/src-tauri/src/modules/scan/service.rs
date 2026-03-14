@@ -73,6 +73,12 @@ struct BundleSnapshot {
     manifest_id: Option<String>,
     manifest_name: Option<String>,
     manifest_runtime: Option<String>,
+    tool_manifest_present: bool,
+    openclaw_metadata_present: bool,
+    compatibility_execution_mode: Option<String>,
+    compatibility_ecosystem: Option<String>,
+    adapter_kind: Option<String>,
+    normalized_execution_surface: Option<String>,
     package_present: bool,
 }
 
@@ -137,11 +143,13 @@ pub fn scan_directory(
         }
         findings.push(orphan_install_finding(install, assets));
         if !has_skill_asset(&install.skill_id, assets) {
+            let install_snapshot = fallback_bundle_snapshot_for_install(install);
             findings.push(asset_missing_finding(
                 &install.skill_id,
                 &install.install_path,
                 Some("install_snapshot".to_string()),
                 "reindex_bundle",
+                &install_snapshot,
             ));
         }
     }
@@ -184,6 +192,7 @@ pub fn scan_file(
                     &snapshot.bundle_id,
                     normalize_path(path),
                     normalize_path(parent),
+                    &snapshot,
                 ));
             }
             if !has_skill_asset(&snapshot.bundle_id, assets) {
@@ -196,6 +205,7 @@ pub fn scan_file(
                     } else {
                         "register_bundle"
                     },
+                    &snapshot,
                 ));
             }
         }
@@ -243,7 +253,12 @@ fn build_bundle_document(
             ),
             document_path: Some(normalized_path.clone()),
             bundle_id: Some(snapshot.bundle_id.clone()),
-            metadata: Some(json!({ "error": error })),
+            metadata: Some(json!({
+                "error": error,
+                "adapter_kind": snapshot.adapter_kind.clone(),
+                "normalized_execution_surface": snapshot.normalized_execution_surface.clone(),
+                "ecosystem": snapshot.compatibility_ecosystem.clone(),
+            })),
             action: None,
         });
     }
@@ -254,6 +269,7 @@ fn build_bundle_document(
             &snapshot.bundle_id,
             normalized_path.clone(),
             normalized_path.clone(),
+            &snapshot,
         ));
     }
 
@@ -269,7 +285,12 @@ fn build_bundle_document(
             ),
             document_path: Some(normalized_path.clone()),
             bundle_id: Some(snapshot.bundle_id.clone()),
-            metadata: Some(json!({ "expected_path": "SKILL.md" })),
+            metadata: Some(json!({
+                "expected_path": "SKILL.md",
+                "adapter_kind": snapshot.adapter_kind.clone(),
+                "normalized_execution_surface": snapshot.normalized_execution_surface.clone(),
+                "ecosystem": snapshot.compatibility_ecosystem.clone(),
+            })),
             action: None,
         });
     }
@@ -290,6 +311,9 @@ fn build_bundle_document(
                 metadata: Some(json!({
                     "manifest_id": snapshot.manifest_id.clone(),
                     "manifest_name": snapshot.manifest_name.clone(),
+                    "adapter_kind": snapshot.adapter_kind.clone(),
+                    "normalized_execution_surface": snapshot.normalized_execution_surface.clone(),
+                    "ecosystem": snapshot.compatibility_ecosystem.clone(),
                 })),
                 action: None,
             });
@@ -310,6 +334,9 @@ fn build_bundle_document(
                 metadata: Some(json!({
                     "manifest_id": snapshot.manifest_id.clone(),
                     "manifest_name": snapshot.manifest_name.clone(),
+                    "adapter_kind": snapshot.adapter_kind.clone(),
+                    "normalized_execution_surface": snapshot.normalized_execution_surface.clone(),
+                    "ecosystem": snapshot.compatibility_ecosystem.clone(),
                 })),
                 action: None,
             });
@@ -327,6 +354,7 @@ fn build_bundle_document(
             } else {
                 "register_bundle"
             },
+            &snapshot,
         ));
     }
 
@@ -352,6 +380,9 @@ fn build_bundle_document(
                 "target_class": risk.target_class.as_str(),
                 "boundary_class": risk.boundary_class.as_str(),
                 "script_paths": snapshot.high_risk_script_paths.clone(),
+                "adapter_kind": snapshot.adapter_kind.clone(),
+                "normalized_execution_surface": snapshot.normalized_execution_surface.clone(),
+                "ecosystem": snapshot.compatibility_ecosystem.clone(),
             })),
             action: None,
         });
@@ -379,6 +410,9 @@ fn build_bundle_document(
                 "target_class": risk.target_class.as_str(),
                 "boundary_class": risk.boundary_class.as_str(),
                 "script_paths": snapshot.runtime_script_paths.clone(),
+                "adapter_kind": snapshot.adapter_kind.clone(),
+                "normalized_execution_surface": snapshot.normalized_execution_surface.clone(),
+                "ecosystem": snapshot.compatibility_ecosystem.clone(),
             })),
             action: None,
         });
@@ -394,10 +428,16 @@ fn build_bundle_document(
         "manifest_id": snapshot.manifest_id.clone(),
         "manifest_name": snapshot.manifest_name.clone(),
         "manifest_runtime": snapshot.manifest_runtime.clone(),
+        "tool_manifest_present": snapshot.tool_manifest_present,
+        "adapter_kind": snapshot.adapter_kind.clone(),
+        "normalized_execution_surface": snapshot.normalized_execution_surface.clone(),
+        "execution_mode": snapshot.compatibility_execution_mode.clone(),
+        "ecosystem": snapshot.compatibility_ecosystem.clone(),
         "script_count": snapshot.script_paths.len(),
         "runtime_script_count": snapshot.runtime_script_paths.len(),
         "high_risk_script_count": snapshot.high_risk_script_paths.len(),
         "risk_preview": scan_bundle_risk_preview(&snapshot),
+        "execution": scan_bundle_execution_metadata(&snapshot),
         "package_present": snapshot.package_present,
         "install": install.map(|item| json!({
             "is_enabled": item.is_enabled,
@@ -523,6 +563,7 @@ fn collect_bundle_snapshot(path: &Path) -> Result<BundleSnapshot, String> {
     if snapshot.description.is_none() {
         snapshot.description = snapshot.excerpt.clone();
     }
+    normalize_scan_bundle_execution_metadata(&mut snapshot);
 
     Ok(snapshot)
 }
@@ -574,6 +615,9 @@ fn walk_bundle(
                 Ok(value) => apply_json_metadata(snapshot, &value),
                 Err(error) => snapshot.manifest_invalid = Some(error),
             }
+        }
+        if path.file_name() == Some(OsStr::new("llm-tool.yaml")) {
+            snapshot.tool_manifest_present = true;
         }
         if path.file_name() == Some(OsStr::new("package.json")) {
             snapshot.package_present = true;
@@ -714,6 +758,15 @@ fn scan_bundle_risk_preview(snapshot: &BundleSnapshot) -> Value {
     })
 }
 
+fn scan_bundle_execution_metadata(snapshot: &BundleSnapshot) -> Value {
+    json!({
+        "adapter_kind": snapshot.adapter_kind.clone(),
+        "normalized_execution_surface": snapshot.normalized_execution_surface.clone(),
+        "ecosystem": snapshot.compatibility_ecosystem.clone(),
+        "execution_mode": snapshot.compatibility_execution_mode.clone(),
+    })
+}
+
 fn orphan_install_finding(
     install: &LocalSkillInstallSnapshot,
     assets: &[AssetIndexSnapshot],
@@ -756,10 +809,23 @@ fn orphan_install_finding(
     }
 }
 
+fn fallback_bundle_snapshot_for_install(install: &LocalSkillInstallSnapshot) -> BundleSnapshot {
+    BundleSnapshot {
+        bundle_id: install.skill_id.clone(),
+        display_name: install.skill_id.clone(),
+        manifest_runtime: install.runtime.clone(),
+        compatibility_ecosystem: Some("agentskills_compatible".to_string()),
+        adapter_kind: Some("docs_bundle".to_string()),
+        normalized_execution_surface: Some("recipe".to_string()),
+        ..Default::default()
+    }
+}
+
 fn install_missing_finding(
     skill_id: &str,
     document_path: String,
     bundle_path: String,
+    snapshot: &BundleSnapshot,
 ) -> ScanFinding {
     let metadata_bundle_path = bundle_path.clone();
     ScanFinding {
@@ -772,7 +838,12 @@ fn install_missing_finding(
         ),
         document_path: Some(document_path),
         bundle_id: Some(skill_id.to_string()),
-        metadata: Some(json!({ "bundle_path": metadata_bundle_path })),
+        metadata: Some(json!({
+            "bundle_path": metadata_bundle_path,
+            "adapter_kind": snapshot.adapter_kind.clone(),
+            "normalized_execution_surface": snapshot.normalized_execution_surface.clone(),
+            "ecosystem": snapshot.compatibility_ecosystem.clone(),
+        })),
         action: Some(ScanFindingAction {
             kind: "register_bundle".to_string(),
             bundle_id: Some(skill_id.to_string()),
@@ -787,6 +858,7 @@ fn asset_missing_finding(
     document_path: &str,
     source: Option<String>,
     action_kind: &str,
+    snapshot: &BundleSnapshot,
 ) -> ScanFinding {
     let metadata_source = source.clone();
     ScanFinding {
@@ -796,7 +868,12 @@ fn asset_missing_finding(
         message: format!("Skill bundle {} has no local asset index", skill_id),
         document_path: Some(document_path.to_string()),
         bundle_id: Some(skill_id.to_string()),
-        metadata: Some(json!({ "source": metadata_source })),
+        metadata: Some(json!({
+            "source": metadata_source,
+            "adapter_kind": snapshot.adapter_kind.clone(),
+            "normalized_execution_surface": snapshot.normalized_execution_surface.clone(),
+            "ecosystem": snapshot.compatibility_ecosystem.clone(),
+        })),
         action: Some(ScanFindingAction {
             kind: action_kind.to_string(),
             bundle_id: Some(skill_id.to_string()),
@@ -846,6 +923,102 @@ fn apply_json_metadata(snapshot: &mut BundleSnapshot, value: &Value) {
     }
     if snapshot.description.is_none() {
         snapshot.description = select_json_string(value, &["description", "summary"]);
+    }
+    if snapshot.compatibility_execution_mode.is_none() {
+        snapshot.compatibility_execution_mode = value
+            .get("compatibility")
+            .and_then(|compatibility| compatibility.get("execution_mode"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|item| !item.is_empty())
+            .map(ToString::to_string);
+    }
+    if snapshot.compatibility_ecosystem.is_none() {
+        snapshot.compatibility_ecosystem = value
+            .get("compatibility")
+            .and_then(|compatibility| compatibility.get("ecosystem"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|item| !item.is_empty())
+            .map(ToString::to_string);
+    }
+    if snapshot.adapter_kind.is_none() {
+        snapshot.adapter_kind = value
+            .get("compatibility")
+            .and_then(|compatibility| compatibility.get("adapter_kind"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|item| !item.is_empty())
+            .map(ToString::to_string);
+    }
+    if snapshot.normalized_execution_surface.is_none() {
+        snapshot.normalized_execution_surface = value
+            .get("compatibility")
+            .and_then(|compatibility| compatibility.get("normalized_execution_surface"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|item| !item.is_empty())
+            .map(ToString::to_string);
+    }
+    if value
+        .get("metadata")
+        .and_then(|metadata| metadata.get("openclaw"))
+        .is_some()
+        || value.get("openclaw").is_some()
+    {
+        snapshot.openclaw_metadata_present = true;
+    }
+}
+
+fn normalize_scan_bundle_execution_metadata(snapshot: &mut BundleSnapshot) {
+    if snapshot.compatibility_ecosystem.is_none() {
+        snapshot.compatibility_ecosystem = Some(
+            if snapshot.openclaw_metadata_present {
+                "openclaw_agentskills"
+            } else {
+                "agentskills_compatible"
+            }
+            .to_string(),
+        );
+    }
+
+    if snapshot.compatibility_execution_mode.is_none() {
+        snapshot.compatibility_execution_mode = Some(
+            if snapshot.manifest_present && snapshot.tool_manifest_present {
+                "deeting_binding"
+            } else if !snapshot.script_paths.is_empty() {
+                "script_guidance"
+            } else {
+                "docs_only"
+            }
+            .to_string(),
+        );
+    }
+
+    if snapshot.adapter_kind.is_none() {
+        snapshot.adapter_kind = Some(
+            if snapshot.manifest_present && snapshot.tool_manifest_present {
+                "deeting_tool_binding"
+            } else if !snapshot.script_paths.is_empty() && snapshot.openclaw_metadata_present {
+                "openclaw_script"
+            } else {
+                "docs_bundle"
+            }
+            .to_string(),
+        );
+    }
+
+    if snapshot.normalized_execution_surface.is_none() {
+        snapshot.normalized_execution_surface = Some(
+            if snapshot.manifest_present && snapshot.tool_manifest_present {
+                "desktop_capability"
+            } else if !snapshot.script_paths.is_empty() {
+                "script_runner"
+            } else {
+                "recipe"
+            }
+            .to_string(),
+        );
     }
 }
 
@@ -1171,6 +1344,57 @@ mod tests {
         assert_eq!(run.summary.missing_skill_doc_count, 1);
         assert_eq!(run.summary.high_risk_script_count, 1);
         assert!(run.summary.security_warning_count >= 4);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn scan_directory_emits_normalized_execution_metadata_for_openclaw_bundle() {
+        let root = temp_dir("scan-openclaw");
+        let skill_dir = root.join("openclaw-weather");
+        std::fs::create_dir_all(skill_dir.join("scripts")).expect("create scripts dir");
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            concat!(
+                "---\n",
+                "name: weather helper\n",
+                "description: OpenClaw compatible weather skill\n",
+                "metadata:\n",
+                "  openclaw:\n",
+                "    skillKey: clawhub.weather\n",
+                "---\n\n",
+                "Use scripts/fetch_weather.py to fetch weather data.\n"
+            ),
+        )
+        .expect("write skill docs");
+        std::fs::write(
+            skill_dir.join("scripts").join("fetch_weather.py"),
+            "print('ok')\n",
+        )
+        .expect("write script");
+
+        let run = scan_directory(&root, &[], &[]).expect("scan directory");
+        let document = run
+            .documents
+            .iter()
+            .find(|item| item.document_kind == "skill_bundle")
+            .expect("skill bundle document");
+        let metadata = document.metadata.as_ref().expect("scan metadata");
+
+        assert_eq!(
+            metadata.get("adapter_kind").and_then(Value::as_str),
+            Some("openclaw_script")
+        );
+        assert_eq!(
+            metadata
+                .get("normalized_execution_surface")
+                .and_then(Value::as_str),
+            Some("script_runner")
+        );
+        assert_eq!(
+            metadata.get("ecosystem").and_then(Value::as_str),
+            Some("openclaw_agentskills")
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }

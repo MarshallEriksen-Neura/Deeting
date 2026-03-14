@@ -1,4 +1,5 @@
 import {
+  LocalSkillRuntimeStatusSchema,
   fetchPluginMarket,
   syncLocalSkillInstallsFromCloud,
 } from "@/lib/api/plugin-market"
@@ -119,5 +120,34 @@ describe("plugin market api", () => {
       limit: 500,
       reinstallMissing: false,
     })
+  })
+
+  it("parses local skill runtime status with normalized execution fields", () => {
+    const parsed = LocalSkillRuntimeStatusSchema.parse({
+      skill_id: "skill.openclaw_weather",
+      display_name: "OpenClaw Weather",
+      installed_version: "1.0.0",
+      is_enabled: true,
+      execution_mode: "script_guidance",
+      ecosystem: "openclaw_agentskills",
+      adapter_kind: "openclaw_script",
+      normalized_execution_surface: "script_runner",
+      runnable_now: false,
+      required_bins: ["python3"],
+      missing_bins: [],
+      required_env: [{ key: "OPENWEATHER_API_KEY", configured: false }],
+      missing_env: ["OPENWEATHER_API_KEY"],
+      required_config: [],
+      missing_config: [],
+      blocking_reason: "script_runner",
+      install_hints: ["pip install -r requirements.txt"],
+      compatibility: {},
+      current_env: {},
+      current_config: {},
+    })
+
+    expect(parsed.adapter_kind).toBe("openclaw_script")
+    expect(parsed.normalized_execution_surface).toBe("script_runner")
+    expect(parsed.blocking_reason).toBe("script_runner")
   })
 })

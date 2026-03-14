@@ -325,7 +325,7 @@ async def install_skill_from_git_fallback(
 async def refresh_skill_index() -> Dict[str, Any]:
     if not deeting:
         return {"status": "skipped", "message": "Not running in Deeting environment"}
-    result = deeting.call_tool("register_local_skills")
+    result = deeting.call_tool("skill_registry.refresh")
     return {"status": "ok", "result": result}
 
 

@@ -41,6 +41,10 @@ interface PluginCardProps {
 export function PluginCard({ plugin, runtimeStatus, onInstall, onUninstall, onConfigure }: PluginCardProps) {
   const t = useTranslations("plugins")
   const color = pickColor(plugin.id)
+  const surfaceLabel =
+    runtimeStatus == null
+      ? null
+      : t(`runtimeLabels.executionSurface.${runtimeStatus.normalized_execution_surface}`)
   const runtimeBadge =
     runtimeStatus == null
       ? null
@@ -100,6 +104,11 @@ export function PluginCard({ plugin, runtimeStatus, onInstall, onUninstall, onCo
         <p className="text-sm text-muted-foreground line-clamp-3 min-h-[2.5rem]">
           {plugin.description || t("card.noDescription")}
         </p>
+        {surfaceLabel && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            {t("runtimeConfig.executionSurface", { surface: surfaceLabel })}
+          </p>
+        )}
         {runtimeStatus && !runtimeStatus.runnable_now && (
           <p className="mt-2 text-xs text-muted-foreground">
             {runtimeStatus.blocking_reason

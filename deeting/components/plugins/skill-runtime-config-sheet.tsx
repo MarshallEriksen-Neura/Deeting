@@ -82,6 +82,12 @@ export function SkillRuntimeConfigSheet({
   }, [configDraft, envDraft, onSave])
 
   const pluginName = plugin?.name ?? runtimeStatus?.display_name ?? "-"
+  const executionSurfaceLabel = runtimeStatus
+    ? t(`runtimeLabels.executionSurface.${runtimeStatus.normalized_execution_surface}`)
+    : "-"
+  const adapterKindLabel = runtimeStatus
+    ? t(`runtimeLabels.adapterKind.${runtimeStatus.adapter_kind}`)
+    : "-"
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -103,8 +109,10 @@ export function SkillRuntimeConfigSheet({
         ) : (
           <div className="space-y-6 px-4 py-6">
             <div className="rounded-lg border bg-muted/40 p-3 text-sm">
-              <div>{t("runtimeConfig.executionMode", { mode: runtimeStatus.execution_mode })}</div>
+              <div>{t("runtimeConfig.executionSurface", { surface: executionSurfaceLabel })}</div>
+              <div>{t("runtimeConfig.adapterKind", { adapter: adapterKindLabel })}</div>
               <div>{t("runtimeConfig.ecosystem", { ecosystem: runtimeStatus.ecosystem })}</div>
+              <div>{t("runtimeConfig.executionMode", { mode: runtimeStatus.execution_mode })}</div>
               <div>
                 {runtimeStatus.runnable_now
                   ? t("runtimeStatus.ready")

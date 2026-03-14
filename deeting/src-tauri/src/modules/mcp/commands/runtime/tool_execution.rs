@@ -168,23 +168,10 @@ async fn dispatch_internal_skill_host_tool(
     tool_name: &str,
     arguments: &Value,
 ) -> Result<Option<Value>, String> {
-    match tool_name.trim() {
-        "register_local_skills" => {
-            let app_handle = crate::state::global_app_handle()
-                .ok_or_else(|| "global app handle is unavailable".to_string())?;
-            let app_state = crate::state::global_app_state()
-                .ok_or_else(|| "global app state is unavailable".to_string())?;
-            let count =
-                crate::modules::mcp::commands::register_local_skills_inner(app_handle, &app_state)
-                    .await?;
-            Ok(Some(serde_json::json!({
-                "status": "ok",
-                "registered": count,
-                "arguments": arguments,
-            })))
-        }
-        _ => Ok(None),
-    }
+    crate::modules::mcp::desktop_capabilities::dispatch_official_skill_capability(
+        tool_name, arguments,
+    )
+    .await
 }
 
 async fn execute_deeting_tool_binding(
@@ -278,7 +265,7 @@ async fn execute_deeting_tool_binding(
             }
             tool_results.push(serde_json::json!({
                 "status": "error",
-                "error": format!("desktop skill binding host bridge cannot resolve '{}'", requested_tool)
+                "error": format!("desktop skill binding host bridge cannot resolve desktop capability '{}'", requested_tool)
             }));
             continue;
         }
@@ -928,4 +915,60 @@ pub(crate) async fn reject_mcp_tool_inner(
         .await
         .remove(approval_token)
         .is_some()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn capability_bridge_registry_exposes_desktop_official_skill_capabilities() {
+        let specs = [
+            "skill_registry.refresh",
+            "memory.append",
+            "memory.search",
+            "monitor.create",
+            "monitor.list",
+            "provider_preset.list",
+            "provider_preset.upsert",
+            "provider.verify",
+            "cloud.assistant_ingest.submit",
+            "cloud.provider_preset.list",
+            "cloud.provider_preset.upsert",
+        ];
+
+        for capability_id in specs {
+            let spec = crate::modules::mcp::desktop_capabilities::find_official_skill_capability(
+                capability_id,
+            )
+            .unwrap_or_else(|| {
+                panic!("missing desktop official-skill capability: {capability_id}")
+            });
+            assert_eq!(spec.id, capability_id);
+            assert!(spec.callable_from_official_skill);
+            if capability_id.starts_with("cloud.") {
+                assert!(spec.admin_only);
+            }
+        }
+    }
+
+    #[test]
+    fn capability_bridge_registry_does_not_treat_legacy_host_tool_names_as_contract() {
+        assert!(
+            crate::modules::mcp::desktop_capabilities::find_official_skill_capability(
+                "register_local_skills",
+            )
+            .is_none()
+        );
+        assert!(
+            crate::modules::mcp::desktop_capabilities::find_official_skill_capability(
+                "list_user_memories",
+            )
+            .is_none()
+        );
+        assert!(
+            crate::modules::mcp::desktop_capabilities::find_official_skill_capability(
+                "create_monitor",
+            )
+            .is_none()
+        );
+    }
 }

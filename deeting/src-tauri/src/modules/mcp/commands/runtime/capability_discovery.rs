@@ -366,6 +366,17 @@ fn materialize_ranked_entry(
                 object.insert("execution_lane".to_string(), execution_lane.clone());
             }
             if let Some(compatibility) = metadata.get("compatibility") {
+                if let Some(adapter_kind) = compatibility.get("adapter_kind") {
+                    object.insert("adapter_kind".to_string(), adapter_kind.clone());
+                }
+                if let Some(normalized_execution_surface) =
+                    compatibility.get("normalized_execution_surface")
+                {
+                    object.insert(
+                        "normalized_execution_surface".to_string(),
+                        normalized_execution_surface.clone(),
+                    );
+                }
                 if let Some(runnable_now) = compatibility
                     .get("eligibility")
                     .and_then(|value| value.get("runnable_now"))
@@ -391,7 +402,8 @@ fn materialize_ranked_entry(
                     == Some(false)
                 {
                     Some(json!(compatibility
-                        .get("execution_mode")
+                        .get("normalized_execution_surface")
+                        .or_else(|| compatibility.get("execution_mode"))
                         .and_then(Value::as_str)
                         .unwrap_or("not_runnable")))
                 } else {

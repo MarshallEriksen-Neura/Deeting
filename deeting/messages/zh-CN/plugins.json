@@ -62,8 +62,24 @@
         "missing_binary": "缺少本地运行依赖",
         "missing_env": "缺少环境变量",
         "missing_config": "缺少配置项",
+        "script_runner": "该技能通过本地脚本运行，需先补齐运行条件",
+        "desktop_capability": "该技能依赖桌面宿主能力，当前仍未满足执行条件",
+        "recipe": "该技能当前以说明和配方形式提供",
         "docs_only": "该技能当前仅支持文档指导",
         "unknown": "当前暂不可运行"
+      }
+    },
+    "runtimeLabels": {
+      "executionSurface": {
+        "recipe": "配方指导",
+        "script_runner": "脚本执行",
+        "desktop_capability": "桌面宿主能力"
+      },
+      "adapterKind": {
+        "docs_bundle": "文档包适配器",
+        "openclaw_script": "OpenClaw 脚本适配器",
+        "deeting_tool_binding": "Deeting 宿主绑定适配器",
+        "unknown": "未知适配器"
       }
     },
     "dialog": {
@@ -127,6 +143,8 @@
       "title": "配置 {name}",
       "description": "补齐该技能运行所需的环境变量与配置项。配置仅保存在本地桌面端。",
       "noRuntimeStatus": "当前没有可用的本地运行状态。",
+      "executionSurface": "执行语义：{surface}",
+      "adapterKind": "适配器：{adapter}",
       "executionMode": "执行模式：{mode}",
       "ecosystem": "技能生态：{ecosystem}",
       "binSection": "本地依赖",

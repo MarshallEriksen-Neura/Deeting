@@ -10,13 +10,12 @@ except ImportError:
 
 async def add_knowledge_chunk(content: str, metadata: dict = None) -> Dict[str, Any]:
     if deeting:
-        return deeting.call_tool("add_knowledge_chunk", content=content, meta_info=metadata)
+        return deeting.call_tool("memory.append", content=content, metadata=metadata)
     return {"status": "error", "message": "SDK not found"}
 
 async def search_knowledge(query: str, scope: str = "all", limit: int = 5) -> Dict[str, Any]:
     if deeting:
-        # Map to system memory list/search
-        return deeting.call_tool("list_user_memories", query=query, limit=limit)
+        return deeting.call_tool("memory.search", query=query, limit=limit, scope=scope)
     return {"status": "error", "message": "SDK not found"}
 
 async def handle_input():

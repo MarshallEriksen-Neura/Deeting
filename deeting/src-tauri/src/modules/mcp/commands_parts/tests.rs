@@ -1495,12 +1495,20 @@ for raw_line in sys.stdin:
             .expect("script runner surfaced");
         assert_eq!(matched["asset_type"], serde_json::json!("skill_tool"));
         assert_eq!(matched["asset_namespace"], serde_json::json!("skill"));
+        assert_eq!(
+            matched["adapter_kind"],
+            serde_json::json!("openclaw_script")
+        );
+        assert_eq!(
+            matched["normalized_execution_surface"],
+            serde_json::json!("script_runner")
+        );
         assert_eq!(matched["runnable_now"], serde_json::json!(false));
         assert_eq!(
             matched["missing_env"][0],
             serde_json::json!("OPENWEATHER_API_KEY")
         );
-        assert_eq!(matched["blocking_reason"], serde_json::json!("script_guidance"));
+        assert_eq!(matched["blocking_reason"], serde_json::json!("script_runner"));
 
         let _ = std::fs::remove_dir_all(root);
         server_handle.abort();
@@ -1555,6 +1563,58 @@ for raw_line in sys.stdin:
             serde_json::json!("install_skill")
         );
         assert_eq!(hint["semantic_kind"], serde_json::json!("recipe"));
+
+        server_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn search_sdk_hides_restricted_admin_skill_for_non_admin_desktop_user() {
+        let query = "import assistant from url";
+        let (base_url, server_handle) = start_mock_embedding_server(HashMap::from([(
+            query.to_lowercase(),
+            vec![0.0, 1.0, 0.5],
+        )]))
+        .await;
+        let provider_state = create_test_provider_state("sdk-restricted-skill", &base_url).await;
+        let memory_state = create_test_memory_state("sdk-restricted-skill", 3).await;
+        let store = create_test_store("sdk-restricted-skill").await;
+
+        memory_state
+            .store
+            .upsert_asset(
+                "official.skills.ingestor".to_string(),
+                "Asset Ingestor".to_string(),
+                "Admin-only assistant ingest skill".to_string(),
+                "skill".to_string(),
+                "builtin".to_string(),
+                Some("official.skills.ingestor".to_string()),
+                vec![0.0, 1.0, 0.5],
+                Some(serde_json::json!({
+                    "id": "official.skills.ingestor",
+                    "restricted": true,
+                    "allowed_roles": ["admin"],
+                    "compatibility": {
+                        "adapter_kind": "deeting_tool_binding",
+                        "normalized_execution_surface": "desktop_capability"
+                    }
+                })),
+            )
+            .await
+            .expect("insert restricted skill asset");
+
+        let result = build_local_sdk_search_result_with_runtime(
+            &store,
+            &provider_state.embedding,
+            memory_state.service.as_ref(),
+            query,
+            8,
+        )
+        .await;
+
+        let recipes = result["recipes"].as_array().expect("recipes array");
+        assert!(recipes
+            .iter()
+            .all(|item| item["name"] != serde_json::json!("Asset Ingestor")));
 
         server_handle.abort();
     }
@@ -2290,7 +2350,7 @@ for raw_line in sys.stdin:
 
     #[tokio::test]
     async fn search_sdk_surfaces_core_onboarding_and_execution_tools() {
-        let query = "帮我安装一个本地 skill 并执行代码计划";
+        let query = "install a local skill, create a monitor task, and execute a code plan";
         let (base_url, server_handle) = start_mock_embedding_server(HashMap::from([(
             query.to_lowercase(),
             vec![0.0, 0.0, 0.0],
@@ -2314,6 +2374,14 @@ for raw_line in sys.stdin:
             .iter()
             .find(|item| item["name"] == serde_json::json!("sys_submit_onboarding_request"))
             .expect("onboarding core tool");
+        let monitor_create = callable
+            .iter()
+            .find(|item| item["name"] == serde_json::json!("monitor.create"))
+            .expect("monitor create core tool");
+        let monitor_list = callable
+            .iter()
+            .find(|item| item["name"] == serde_json::json!("monitor.list"))
+            .expect("monitor list core tool");
         let execute = result["orchestration_primitives"]
             .as_array()
             .expect("orchestration primitives array")
@@ -2322,6 +2390,12 @@ for raw_line in sys.stdin:
             .expect("execute core tool");
         assert_eq!(onboarding["risk_level"], serde_json::json!("HIGH"));
         assert_eq!(onboarding["mutating"], serde_json::json!(true));
+        assert_eq!(monitor_create["asset_namespace"], serde_json::json!("core"));
+        assert_eq!(monitor_create["invocation_mode"], serde_json::json!("direct"));
+        assert_eq!(monitor_create["risk_level"], serde_json::json!("HIGH"));
+        assert_eq!(monitor_list["asset_namespace"], serde_json::json!("core"));
+        assert_eq!(monitor_list["invocation_mode"], serde_json::json!("direct"));
+        assert_eq!(monitor_list["risk_level"], serde_json::json!("LOW"));
         assert_eq!(execute["risk_level"], serde_json::json!("HIGH"));
         assert!(execute["permission_scope"]
             .as_array()

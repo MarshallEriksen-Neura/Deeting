@@ -1,7 +1,5 @@
 use super::super::{common_impl::to_string, support::*};
 use super::{
-    LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION, LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
-    LocalCapabilityActivationState, LocalExecutionPolicy,
     append_streamable_local_tool_result_blocks, build_auto_code_mode_tool_feedback,
     build_local_code_mode_entry_tools_with_allowlist, build_local_consult_expert_network_result,
     build_local_sdk_search_result_with_runtime, build_local_tool_call_install_gate_error_meta,
@@ -9,7 +7,8 @@ use super::{
     extract_chat_tool_calls, install_local_skill_from_onboarding_request,
     request_provider_chat_completion, resolve_callable_mcp_tool_by_ref,
     resolve_dynamic_direct_capability_tool_name, resolve_local_capability_activation_state,
-    resolve_skill_binding_by_ref,
+    resolve_skill_binding_by_ref, LocalCapabilityActivationState, LocalExecutionPolicy,
+    LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION, LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
 };
 use crate::modules::mcp::commands::common_impl::LocalModelConnection;
 
@@ -1464,9 +1463,9 @@ fn build_execution_contract_from_search_result(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modules::mcp::commands::runtime::LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE;
     use crate::modules::mcp::commands::runtime::build_local_tool_call_install_gate_error_meta;
     use crate::modules::mcp::commands::runtime::dynamic_capability_alias;
+    use crate::modules::mcp::commands::runtime::LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE;
 
     #[test]
     fn build_execution_contract_from_search_result_requires_capabilities() {

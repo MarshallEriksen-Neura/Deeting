@@ -9,50 +9,31 @@ except ImportError:
     deeting = None
 
 async def ingest_assistant_from_url(url: str, instruction: str = "") -> Dict[str, Any]:
-    """Analyze a URL and submit an onboarding request to the host."""
+    """Analyze a URL on desktop, then persist the result through the cloud admin API."""
     if not deeting:
         return {"status": "error", "message": "Deeting SDK not available"}
 
     print(f"[*] Analyzing source: {url}...", file=sys.stderr)
     
-    # 1. Reuse existing crawler skill
-    crawl_result = await deeting.call_tool("fetch_web_content", url=url)
+    crawl_result = await deeting.call_tool("web.fetch", url=url)
     if not crawl_result or crawl_result.get("status") == "error":
         return {"status": "error", "message": f"Crawl failed: {crawl_result.get('error')}"}
 
     content = crawl_result.get("markdown", "")[:15000]
-    
-    # 2. Intelligent Refinement (Delegated to Host LLM)
-    # We ask the host to refine the persona and return structured JSON
-    refinement_prompt = f"""
-    URL: {url}
-    Context: {content}
-    Custom Instruction: {instruction}
-    """
-    
-    print(f"[*] Extracting metadata via System LLM...", file=sys.stderr)
-    analysis = await deeting.call_tool("sys_refine_asset_metadata", prompt=refinement_prompt, asset_type="assistant")
-    
-    if not analysis or "error" in analysis:
-        return {"status": "error", "message": "Metadata extraction failed"}
 
-    # 3. THE ELEGANT STEP: Submit Onboarding Request
-    # We don't save. We ASK the host to onboard this structured asset.
-    # The host will decide whether to Review (Cloud) or Direct Save (Desktop).
-    print(f"[*] Submitting onboarding request for '{analysis.get('name')}'...", file=sys.stderr)
-    
+    print("[*] Submitting assistant ingest result to cloud admin persistence...", file=sys.stderr)
     submit_res = await deeting.call_tool(
-        "sys_submit_onboarding_request", 
-        asset_type="assistant",
-        payload=analysis,
-        source_url=url
+        "cloud.assistant_ingest.submit",
+        source_url=url,
+        content_excerpt=content,
+        instruction=instruction,
     )
-    
+
     return {
         "status": "success",
-        "action": submit_res.get("action", "submitted"), # e.g., "created" or "pending_review"
+        "action": submit_res.get("action", "submitted"),
         "asset_id": submit_res.get("id"),
-        "name": analysis.get("name")
+        "name": submit_res.get("name"),
     }
 
 async def handle_input():

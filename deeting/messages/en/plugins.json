@@ -62,8 +62,24 @@
         "missing_binary": "Missing local runtime dependency",
         "missing_env": "Missing environment variable",
         "missing_config": "Missing config value",
+        "script_runner": "This skill runs through local scripts and still needs runtime setup",
+        "desktop_capability": "This skill depends on desktop host capabilities and is not ready yet",
+        "recipe": "This skill is currently available as guidance and recipes",
         "docs_only": "This skill currently supports documentation guidance only",
         "unknown": "This skill is not runnable yet"
+      }
+    },
+    "runtimeLabels": {
+      "executionSurface": {
+        "recipe": "Recipe guidance",
+        "script_runner": "Script runner",
+        "desktop_capability": "Desktop host capability"
+      },
+      "adapterKind": {
+        "docs_bundle": "Docs bundle adapter",
+        "openclaw_script": "OpenClaw script adapter",
+        "deeting_tool_binding": "Deeting host binding adapter",
+        "unknown": "Unknown adapter"
       }
     },
     "dialog": {
@@ -127,6 +143,8 @@
       "title": "Configure {name}",
       "description": "Provide the environment variables and config values this skill needs. These settings stay on the local desktop runtime.",
       "noRuntimeStatus": "No local runtime status is available yet.",
+      "executionSurface": "Execution surface: {surface}",
+      "adapterKind": "Adapter: {adapter}",
       "executionMode": "Execution mode: {mode}",
       "ecosystem": "Skill ecosystem: {ecosystem}",
       "binSection": "Local Dependencies",

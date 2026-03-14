@@ -67,6 +67,16 @@ function readRiskMetadata(metadata: unknown) {
   }
 }
 
+function readExecutionMetadata(metadata: unknown) {
+  const meta = toRecord(metadata)
+  if (!meta) return null
+  return {
+    adapterKind: asTrimmedString(meta.adapter_kind),
+    executionSurface: asTrimmedString(meta.normalized_execution_surface),
+    ecosystem: asTrimmedString(meta.ecosystem),
+  }
+}
+
 function formatRiskTuple(parts: Array<string | null>) {
   const compact = parts.filter((part): part is string => Boolean(part))
   return compact.length > 0 ? compact.join(" · ") : null
@@ -151,14 +161,25 @@ export function PageContent() {
       header: t("table.documents.headers.summary"),
       render: (row) => {
         const riskPreview = readRiskPreview(row.metadata)
+        const executionMeta = readExecutionMetadata(row.metadata)
         const riskLine = formatRiskTuple([
           riskPreview?.riskLevel,
           riskPreview?.operationClass,
           riskPreview?.boundaryClass,
         ])
+        const executionLine = formatRiskTuple([
+          executionMeta?.executionSurface
+            ? t(`executionSurface.${executionMeta.executionSurface}`)
+            : null,
+          executionMeta?.adapterKind
+            ? t(`adapterKind.${executionMeta.adapterKind}`)
+            : null,
+          executionMeta?.ecosystem,
+        ])
         return (
           <div className="max-w-[320px] space-y-1 text-xs text-[var(--muted)]">
             <div>{row.excerpt ?? "—"}</div>
+            {executionLine ? <div>{executionLine}</div> : null}
             {riskLine ? <div className="font-mono">{riskLine}</div> : null}
           </div>
         )
@@ -187,15 +208,26 @@ export function PageContent() {
       header: t("table.findings.headers.message"),
       render: (row) => {
         const riskMeta = readRiskMetadata(row.metadata)
+        const executionMeta = readExecutionMetadata(row.metadata)
         const riskLine = formatRiskTuple([
           riskMeta?.riskLevel,
           riskMeta?.operationClass,
           riskMeta?.targetClass,
           riskMeta?.boundaryClass,
         ])
+        const executionLine = formatRiskTuple([
+          executionMeta?.executionSurface
+            ? t(`executionSurface.${executionMeta.executionSurface}`)
+            : null,
+          executionMeta?.adapterKind
+            ? t(`adapterKind.${executionMeta.adapterKind}`)
+            : null,
+          executionMeta?.ecosystem,
+        ])
         return (
           <div className="max-w-[420px] space-y-1 text-xs text-[var(--muted)]">
             <div>{row.message}</div>
+            {executionLine ? <div>{executionLine}</div> : null}
             {riskLine ? <div className="font-mono">{riskLine}</div> : null}
           </div>
         )

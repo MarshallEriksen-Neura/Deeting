@@ -155,6 +155,7 @@ pub(crate) async fn register_local_skills_from_scan_targets_inner(
                     id,
                     &skill_def.display_name,
                     &bindings,
+                    &skill_def.manifest_json,
                     &final_source_type,
                 )
                 .await?;
@@ -188,6 +189,7 @@ pub(crate) async fn register_local_skills_from_scan_targets_inner(
                         &skill_id,
                         &display_name,
                         &bindings_clone,
+                        &manifest_json,
                         &final_source_type_clone,
                     )
                     .await;
@@ -329,6 +331,67 @@ struct SkillBundleSnapshot {
     package_metadata: Option<JsonValue>,
     tool_manifest_path: Option<PathBuf>,
     has_ui: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NormalizedSkillAdapterKind {
+    DeetingToolBinding,
+    OpenClawScript,
+    DocsBundle,
+}
+
+impl NormalizedSkillAdapterKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::DeetingToolBinding => "deeting_tool_binding",
+            Self::OpenClawScript => "openclaw_script",
+            Self::DocsBundle => "docs_bundle",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NormalizedSkillExecutionSurface {
+    DesktopCapability,
+    ScriptRunner,
+    Recipe,
+}
+
+impl NormalizedSkillExecutionSurface {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::DesktopCapability => "desktop_capability",
+            Self::ScriptRunner => "script_runner",
+            Self::Recipe => "recipe",
+        }
+    }
+}
+
+fn classify_normalized_skill_execution(
+    snapshot: &SkillBundleSnapshot,
+    parsed_manifest: Option<&DeetingManifest>,
+    frontmatter: Option<&JsonValue>,
+) -> (NormalizedSkillAdapterKind, NormalizedSkillExecutionSurface) {
+    if parsed_manifest.is_some() && snapshot.tool_manifest_path.is_some() {
+        return (
+            NormalizedSkillAdapterKind::DeetingToolBinding,
+            NormalizedSkillExecutionSurface::DesktopCapability,
+        );
+    }
+    if !snapshot.script_paths.is_empty() {
+        return (
+            if extract_openclaw_metadata(frontmatter).is_some() {
+                NormalizedSkillAdapterKind::OpenClawScript
+            } else {
+                NormalizedSkillAdapterKind::DocsBundle
+            },
+            NormalizedSkillExecutionSurface::ScriptRunner,
+        );
+    }
+    (
+        NormalizedSkillAdapterKind::DocsBundle,
+        NormalizedSkillExecutionSurface::Recipe,
+    )
 }
 
 const SKILL_DOC_SCAN_DEPTH: usize = 2;
@@ -703,6 +766,8 @@ fn build_skill_compatibility_metadata(
     frontmatter: Option<&JsonValue>,
 ) -> JsonValue {
     let openclaw = extract_openclaw_metadata(frontmatter);
+    let (adapter_kind, normalized_surface) =
+        classify_normalized_skill_execution(snapshot, parsed_manifest, frontmatter);
     let skill_key = openclaw
         .as_ref()
         .and_then(|value| value.get("skillKey"))
@@ -755,6 +820,8 @@ fn build_skill_compatibility_metadata(
     json!({
         "ecosystem": ecosystem,
         "execution_mode": execution_mode,
+        "adapter_kind": adapter_kind.as_str(),
+        "normalized_execution_surface": normalized_surface.as_str(),
         "supports_deeting_binding": parsed_manifest.is_some() && snapshot.tool_manifest_path.is_some(),
         "has_scripts": !snapshot.script_paths.is_empty(),
         "has_references": !snapshot.reference_paths.is_empty(),
@@ -861,6 +928,16 @@ async fn build_local_skill_runtime_status(
         .and_then(JsonValue::as_str)
         .unwrap_or("unknown")
         .to_string();
+    let adapter_kind = compatibility
+        .get("adapter_kind")
+        .and_then(JsonValue::as_str)
+        .unwrap_or("unknown")
+        .to_string();
+    let normalized_execution_surface = compatibility
+        .get("normalized_execution_surface")
+        .and_then(JsonValue::as_str)
+        .unwrap_or("recipe")
+        .to_string();
     let install_hints = value_to_string_list(compatibility.get("install_hints"));
     let display_name = manifest
         .get("name")
@@ -951,6 +1028,8 @@ async fn build_local_skill_runtime_status(
         is_enabled: install.is_enabled,
         execution_mode,
         ecosystem,
+        adapter_kind,
+        normalized_execution_surface,
         runnable_now: install.is_enabled
             && missing_bins.is_empty()
             && missing_env.is_empty()
@@ -970,6 +1049,33 @@ async fn build_local_skill_runtime_status(
             .collect(),
         current_config,
     })
+}
+
+fn local_skill_visible_to_current_user(
+    manifest: &JsonValue,
+    current_user: Option<&crate::modules::mcp::desktop_capabilities::DesktopCurrentUserInfo>,
+) -> bool {
+    let restricted = manifest
+        .get("restricted")
+        .and_then(JsonValue::as_bool)
+        .unwrap_or(false);
+    let allowed_roles = manifest
+        .get("allowed_roles")
+        .and_then(JsonValue::as_array)
+        .map(|items| {
+            items.iter()
+                .filter_map(JsonValue::as_str)
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let id_hint = manifest.get("id").and_then(JsonValue::as_str);
+    crate::modules::mcp::desktop_capabilities::desktop_user_can_access_restricted_asset(
+        current_user,
+        restricted,
+        &allowed_roles,
+        id_hint,
+    )
 }
 
 fn collect_skill_bundle_snapshot(skill_path: &Path) -> Result<SkillBundleSnapshot, String> {
@@ -1442,6 +1548,8 @@ pub struct LocalSkillRuntimeStatus {
     pub is_enabled: bool,
     pub execution_mode: String,
     pub ecosystem: String,
+    pub adapter_kind: String,
+    pub normalized_execution_surface: String,
     pub runnable_now: bool,
     pub required_bins: Vec<String>,
     pub missing_bins: Vec<String>,
@@ -1673,6 +1781,7 @@ pub(crate) async fn reindex_local_skill_bundle_asset(
         normalized_skill_id,
         &skill_def.display_name,
         &bindings,
+        &skill_def.manifest_json,
         infer_local_skill_asset_source_type(&skill_path),
     )
     .await
@@ -1766,8 +1875,29 @@ async fn index_local_skill_tool_binding_assets(
     skill_id: &str,
     skill_display_name: &str,
     bindings: &[LocalSkillToolBindingDefinition],
+    skill_manifest_json: &str,
     source_type: &str,
 ) -> Result<(), String> {
+    let manifest_value = serde_json::from_str::<JsonValue>(skill_manifest_json).ok();
+    let compatibility = manifest_value
+        .as_ref()
+        .and_then(|value| value.get("compatibility").cloned());
+    let restricted = manifest_value
+        .as_ref()
+        .and_then(|value| value.get("restricted"))
+        .and_then(JsonValue::as_bool)
+        .unwrap_or(false);
+    let allowed_roles = manifest_value
+        .as_ref()
+        .and_then(|value| value.get("allowed_roles"))
+        .and_then(JsonValue::as_array)
+        .map(|items| {
+            items.iter()
+                .filter_map(JsonValue::as_str)
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     for binding in bindings {
         let mut body = format!(
             "skill: {}\nskill_id: {}\ncallable_name: {}\ntool_name: {}\ndescription: {}\nexecution_lane: skill_runtime",
@@ -1805,6 +1935,9 @@ async fn index_local_skill_tool_binding_assets(
             "entry_path": binding.entry_path,
             "runtime": binding.runtime,
             "timeout_seconds": binding.timeout_seconds,
+            "compatibility": compatibility,
+            "restricted": restricted,
+            "allowed_roles": allowed_roles,
         });
 
         memory_state
@@ -1837,6 +1970,8 @@ pub async fn register_local_skills(
 pub async fn list_local_skill_runtime_statuses(
     app_state: State<'_, AppState>,
 ) -> Result<Vec<LocalSkillRuntimeStatus>, String> {
+    let current_user =
+        crate::modules::mcp::desktop_capabilities::desktop_current_user_info_optional().await;
     let installs = app_state
         .mcp
         .store
@@ -1845,6 +1980,11 @@ pub async fn list_local_skill_runtime_statuses(
         .map_err(to_string)?;
     let mut statuses = Vec::with_capacity(installs.len());
     for install in &installs {
+        let manifest =
+            serde_json::from_str::<JsonValue>(&install.manifest_json).map_err(to_string)?;
+        if !local_skill_visible_to_current_user(&manifest, current_user.as_ref()) {
+            continue;
+        }
         statuses
             .push(build_local_skill_runtime_status(app_state.mcp.store.as_ref(), install).await?);
     }
@@ -2030,6 +2170,18 @@ mod tests {
         );
         assert_eq!(
             manifest
+                .pointer("/compatibility/adapter_kind")
+                .and_then(|value| value.as_str()),
+            Some("docs_bundle")
+        );
+        assert_eq!(
+            manifest
+                .pointer("/compatibility/normalized_execution_surface")
+                .and_then(|value| value.as_str()),
+            Some("recipe")
+        );
+        assert_eq!(
+            manifest
                 .pointer("/source_metadata/source_repo")
                 .and_then(|value| value.as_str()),
             Some("https://github.com/example/find-skills.git")
@@ -2052,12 +2204,63 @@ mod tests {
 
         let manifest: JsonValue =
             serde_json::from_str(&resolved.manifest_json).expect("manifest json");
-        assert_eq!(resolved.skill_id, "tool-skill");
+        assert!(resolved.skill_id.contains("tool-skill"));
         assert_eq!(
             manifest
                 .pointer("/source_metadata/assets/has_tool_manifest")
                 .and_then(|value| value.as_bool()),
             Some(true)
+        );
+        assert_eq!(
+            manifest
+                .pointer("/compatibility/normalized_execution_surface")
+                .and_then(|value| value.as_str()),
+            Some("recipe")
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn resolve_local_skill_definition_marks_deeting_binding_as_desktop_capability_surface() {
+        let dir = temp_skill_dir("desktop-capability-skill");
+        std::fs::write(dir.join("notes.txt"), "Desktop host capability skill.")
+            .expect("write docs");
+        std::fs::write(
+            dir.join("deeting.json"),
+            serde_json::json!({
+                "id": "desktop-capability-skill",
+                "name": "Desktop Capability Skill",
+                "runtime": ["local"],
+                "execution": { "timeout_seconds": 30 }
+            })
+            .to_string(),
+        )
+        .expect("write manifest");
+        std::fs::write(
+            dir.join("llm-tool.yaml"),
+            "tools:\n  - name: ping_host\n    description: Ping desktop host capability.\n    parameters: { type: object, properties: {} }\n",
+        )
+        .expect("write tool manifest");
+        std::fs::write(dir.join("main.py"), "print('hello')\n").expect("write entrypoint");
+
+        let resolved = resolve_local_skill_definition(&dir, "user_skill", None, None)
+            .expect("resolve skill")
+            .expect("skill exists");
+
+        let manifest: JsonValue =
+            serde_json::from_str(&resolved.manifest_json).expect("manifest json");
+        assert_eq!(
+            manifest
+                .pointer("/compatibility/adapter_kind")
+                .and_then(|value| value.as_str()),
+            Some("deeting_tool_binding")
+        );
+        assert_eq!(
+            manifest
+                .pointer("/compatibility/normalized_execution_surface")
+                .and_then(|value| value.as_str()),
+            Some("desktop_capability")
         );
 
         let _ = std::fs::remove_dir_all(dir);
@@ -2159,9 +2362,21 @@ mod tests {
         );
         assert_eq!(
             manifest
+                .pointer("/compatibility/adapter_kind")
+                .and_then(|value| value.as_str()),
+            Some("openclaw_script")
+        );
+        assert_eq!(
+            manifest
                 .pointer("/compatibility/execution_mode")
                 .and_then(|value| value.as_str()),
             Some("script_guidance")
+        );
+        assert_eq!(
+            manifest
+                .pointer("/compatibility/normalized_execution_surface")
+                .and_then(|value| value.as_str()),
+            Some("script_runner")
         );
         assert_eq!(
             manifest

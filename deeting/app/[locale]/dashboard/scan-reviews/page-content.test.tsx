@@ -102,6 +102,9 @@ const mockRun = {
     bundle_id: "skill.find-skills",
     document_path: "/tmp/skills/skill.find-skills/SKILL.md",
     metadata: {
+      adapter_kind: "openclaw_script",
+      normalized_execution_surface: "script_runner",
+      ecosystem: "openclaw_agentskills",
       risk_level: "medium",
       operation_class: "network_read",
       target_class: "public_internet",
@@ -177,6 +180,9 @@ describe("Dashboard scan reviews page", () => {
             sha256: null,
             excerpt: "Bundle summary",
             metadata: {
+              adapter_kind: "openclaw_script",
+              normalized_execution_surface: "script_runner",
+              ecosystem: "openclaw_agentskills",
               risk_preview: {
                 risk_level: "medium",
                 operation_class: "network_read",
@@ -195,6 +201,11 @@ describe("Dashboard scan reviews page", () => {
 
     render(<PageContent />)
 
+    expect(
+      screen.getAllByText(
+        'executionSurface.script_runner · adapterKind.openclaw_script · openclaw_agentskills'
+      )
+    ).toHaveLength(2)
     expect(screen.getByText("medium · network_read · soft_boundary")).toBeInTheDocument()
     expect(screen.getByText("medium · network_read · public_internet · soft_boundary")).toBeInTheDocument()
   })

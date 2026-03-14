@@ -1,5 +1,6 @@
 pub mod bridge;
 pub mod commands;
+pub mod desktop_capabilities;
 pub mod error;
 pub mod gateway;
 pub mod local_orchestrator;

@@ -50,6 +50,8 @@ export const LocalSkillRuntimeStatusSchema = z.object({
   is_enabled: z.boolean(),
   execution_mode: z.string(),
   ecosystem: z.string(),
+  adapter_kind: z.string().default("unknown"),
+  normalized_execution_surface: z.string().default("recipe"),
   runnable_now: z.boolean(),
   required_bins: z.array(z.string()).default([]),
   missing_bins: z.array(z.string()).default([]),

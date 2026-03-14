@@ -59,6 +59,16 @@
       "description": "查看本地扫描结果、风险信号以及 doc-first 资产的索引对账情况"
     },
     "scanReviewsPage": {
+      "executionSurface": {
+        "recipe": "配方指导",
+        "script_runner": "脚本执行",
+        "desktop_capability": "桌面宿主能力"
+      },
+      "adapterKind": {
+        "docs_bundle": "文档包适配器",
+        "openclaw_script": "OpenClaw 脚本适配器",
+        "deeting_tool_binding": "Deeting 宿主绑定适配器"
+      },
       "stats": {
         "documents": "文档数",
         "skillBundles": "技能包",

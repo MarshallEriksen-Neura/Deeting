@@ -10,12 +10,12 @@ except ImportError:
 
 async def sys_create_monitor(**kwargs) -> Dict[str, Any]:
     if deeting:
-        return deeting.call_tool("create_monitor", **kwargs)
+        return deeting.call_tool("monitor.create", **kwargs)
     return {"status": "error", "message": "SDK not found"}
 
 async def sys_list_monitors() -> Dict[str, Any]:
     if deeting:
-        return deeting.call_tool("list_monitors")
+        return deeting.call_tool("monitor.list")
     return {"status": "error", "message": "SDK not found"}
 
 async def handle_input():
