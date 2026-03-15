@@ -18,7 +18,13 @@ use std::sync::Arc;
 use std::time::Duration;
 use tauri::{App, AppHandle, Manager};
 
+fn ensure_rustls_crypto_provider() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
+    ensure_rustls_crypto_provider();
+
     if cfg!(debug_assertions) {
         app.handle().plugin(
             tauri_plugin_log::Builder::default()
