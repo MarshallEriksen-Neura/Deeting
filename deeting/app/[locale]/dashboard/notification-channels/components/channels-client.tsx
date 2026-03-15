@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useMemo } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import {
   Bell,
@@ -15,11 +15,20 @@ import {
   MessageSquare,
   ChevronDown,
   ChevronUp,
+  Sparkles,
 } from "lucide-react"
 import { GlassCard } from "@/components/ui/glass-card"
 import { Switch } from "@/components/ui/switch"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 import { useNotificationChannels } from "@/lib/swr/use-notification-channels"
+import { useChatService } from "@/hooks/use-chat-service"
 import type {
   ChannelType,
   ChannelConfig,
@@ -435,7 +444,9 @@ const FIELD_DEFS: Record<ChannelType, FieldDef[]> = {
     {
       key: "bot_model",
       label: "回复模型",
-      placeholder: "openai/gpt-4.1（可选）",
+      placeholder: "选择一个回复模型（可选）",
+      type: "select",
+      description: "留空时使用桌面端当前默认的秘书/聊天模型。",
     },
     {
       key: "bot_system_prompt",
@@ -531,6 +542,31 @@ const FIELD_DEFS: Record<ChannelType, FieldDef[]> = {
   ],
 }
 
+const FEISHU_FIELD_GROUPS = [
+  {
+    title: "基础通知",
+    description: "用于主动推送通知；如果你只关心桌面机器人直连，可以先留空 Webhook。",
+    keys: ["webhook_url", "chat_ids", "bot_open_id"],
+  },
+  {
+    title: "桌面 IM",
+    description: "决定桌面端是否直接接入飞书机器人，以及直连 / Relay 的选择方式。",
+    keys: [
+      "im_enabled",
+      "transport_preference",
+      "bot_app_id",
+      "bot_app_secret",
+      "relay_base_url",
+      "relay_shared_secret",
+    ],
+  },
+  {
+    title: "回复行为",
+    description: "控制机器人收到消息后的模型和回复风格。",
+    keys: ["bot_model", "bot_system_prompt"],
+  },
+] as const
+
 type ChannelFormValue = string | boolean
 
 function configToFormValues(
@@ -578,6 +614,11 @@ function ChannelConfigForm({
 }) {
   const fields = FIELD_DEFS[channelType]
   const required = CHANNEL_REQUIRED_FIELDS[channelType]
+  const { modelGroups, isLoadingModels } = useChatService({
+    enabled: channelType === "feishu",
+    modelCapability: "chat",
+    fetchAssistants: false,
+  })
 
   const [values, setValues] = useState<Record<string, ChannelFormValue>>(() =>
     configToFormValues(fields, initialConfig)
@@ -597,6 +638,20 @@ function ChannelConfigForm({
 
   const setValue = (key: string, val: ChannelFormValue) =>
     setValues((prev) => ({ ...prev, [key]: val }))
+
+  const botModelOptions = useMemo(() => {
+    if (channelType !== "feishu") return []
+    return modelGroups.flatMap((group) =>
+      group.models.map((model) => {
+        const value = model.provider_model_id ?? model.id
+        const provider = group.provider || model.owned_by || group.instance_name
+        return {
+          value,
+          label: `${model.id}${provider ? ` · ${provider}` : ""}`,
+        }
+      })
+    )
+  }, [channelType, modelGroups])
 
   useEffect(() => {
     let active = true
@@ -732,6 +787,11 @@ function ChannelConfigForm({
   }
 
   const isValid = validateConfig()
+  const isFeishuImEnabled = channelType === "feishu" ? Boolean(values.im_enabled) : false
+  const transportPreference =
+    channelType === "feishu" && typeof values.transport_preference === "string"
+      ? values.transport_preference
+      : "auto"
 
   const handleSave = async () => {
     if (!isValid) return
@@ -762,6 +822,50 @@ function ChannelConfigForm({
     }
   }
 
+  const isFieldMuted = (fieldKey: string) => {
+    if (channelType !== "feishu") return false
+    if (["bot_app_id", "bot_app_secret"].includes(fieldKey)) {
+      return !isFeishuImEnabled || transportPreference === "relay"
+    }
+    if (["relay_base_url", "relay_shared_secret"].includes(fieldKey)) {
+      return !isFeishuImEnabled || transportPreference === "direct"
+    }
+    if (["bot_model", "bot_system_prompt"].includes(fieldKey)) {
+      return !isFeishuImEnabled
+    }
+    return false
+  }
+
+  const renderField = (field: FieldDef) => {
+    const muted = isFieldMuted(field.key)
+    const disabled = loadingConfig || muted
+    return (
+      <div
+        key={field.key}
+        className={cn(
+          "transition-all",
+          muted && "opacity-45"
+        )}
+      >
+        <FormField
+          label={field.label}
+          placeholder={field.placeholder}
+          type={field.type}
+          value={values[field.key] ?? (field.valueKind === "boolean" ? false : "")}
+          onChange={(v) => setValue(field.key, v)}
+          required={required.includes(field.key)}
+          description={
+            field.key === "bot_model" && isLoadingModels
+              ? "正在加载可用聊天模型..."
+              : field.description
+          }
+          options={field.key === "bot_model" ? botModelOptions : field.options}
+          disabled={disabled}
+        />
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-3">
       {/* Display name */}
@@ -773,19 +877,48 @@ function ChannelConfigForm({
       />
 
       {/* Channel-specific fields */}
-      {fields.map((f) => (
-        <FormField
-          key={f.key}
-          label={f.label}
-          placeholder={f.placeholder}
-          type={f.type}
-          value={values[f.key] ?? (f.valueKind === "boolean" ? false : "")}
-          onChange={(v) => setValue(f.key, v)}
-          required={required.includes(f.key)}
-          description={f.description}
-          options={f.options}
-        />
-      ))}
+      {channelType === "feishu" ? (
+        <div className="space-y-4">
+          {FEISHU_FIELD_GROUPS.map((group) => (
+            <div
+              key={group.title}
+              className="rounded-2xl border border-white/8 bg-[var(--foreground)]/[0.02] p-4"
+            >
+              <div className="mb-3 flex items-start gap-3">
+                <div className="mt-0.5 rounded-xl bg-[var(--primary)]/10 p-2 text-[var(--primary)]">
+                  <Sparkles className="h-3.5 w-3.5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-[var(--foreground)]">
+                    {group.title}
+                  </div>
+                  <div className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
+                    {group.description}
+                  </div>
+                  {group.title === "桌面 IM" && !isFeishuImEnabled ? (
+                    <div className="mt-2 text-[11px] text-amber-500">
+                      当前未启用桌面 IM，下面的直连与回复字段会暂时弱化显示。
+                    </div>
+                  ) : null}
+                  {group.title === "桌面 IM" && isFeishuImEnabled ? (
+                    <div className="mt-2 text-[11px] text-[var(--muted)]">
+                      当前偏好：{transportPreference === "auto" ? "自动" : transportPreference === "direct" ? "直连" : "Relay"}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+              <div className="space-y-3">
+                {group.keys.map((key) => {
+                  const field = fields.find((item) => item.key === key)
+                  return field ? renderField(field) : null
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        fields.map(renderField)
+      )}
 
       {channelType === "feishu" && imRuntimeHint && (
         <div className="rounded-xl border border-white/10 bg-[var(--foreground)]/[0.03] px-3 py-2 text-xs text-[var(--muted)]">
@@ -876,6 +1009,7 @@ function FormField({
   required,
   description,
   options,
+  disabled = false,
 }: {
   label: string
   placeholder: string
@@ -885,6 +1019,7 @@ function FormField({
   required?: boolean
   description?: string
   options?: Array<{ value: string; label: string }>
+  disabled?: boolean
 }) {
   return (
     <div>
@@ -898,27 +1033,33 @@ function FormField({
           <Switch
             checked={Boolean(value)}
             onCheckedChange={onChange}
+            disabled={disabled}
           />
         </div>
       ) : type === "select" ? (
-        <select
+        <Select
           value={typeof value === "string" ? value : ""}
-          onChange={(e) => onChange(e.target.value)}
-          className="w-full rounded-xl border border-white/10 bg-[var(--foreground)]/[0.03] px-3 py-2 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--primary)]/40 focus:ring-1 focus:ring-[var(--primary)]/20"
+          onValueChange={(nextValue) => onChange(nextValue)}
+          disabled={disabled}
         >
-          <option value="">{placeholder}</option>
-          {(options ?? []).map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger className="w-full rounded-xl border border-white/10 bg-[var(--foreground)]/[0.03] px-3 py-2 text-sm text-[var(--foreground)]">
+            <SelectValue placeholder={placeholder} />
+          </SelectTrigger>
+          <SelectContent>
+            {(options ?? []).map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       ) : type === "textarea" ? (
         <textarea
           value={typeof value === "string" ? value : ""}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           rows={4}
+          disabled={disabled}
           className="w-full rounded-xl border border-white/10 bg-[var(--foreground)]/[0.03] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted)]/40 outline-none transition-colors focus:border-[var(--primary)]/40 focus:ring-1 focus:ring-[var(--primary)]/20"
         />
       ) : (
@@ -927,6 +1068,7 @@ function FormField({
           value={typeof value === "string" ? value : ""}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
+          disabled={disabled}
           className="w-full rounded-xl border border-white/10 bg-[var(--foreground)]/[0.03] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted)]/40 outline-none transition-colors focus:border-[var(--primary)]/40 focus:ring-1 focus:ring-[var(--primary)]/20"
         />
       )}
