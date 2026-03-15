@@ -122,6 +122,14 @@ export function PluginCard({ plugin, runtimeStatus, onInstall, onUninstall, onCo
               : t("runtimeStatus.reason.unknown")}
           </p>
         )}
+        {runtimeStatus?.runtime_install_error && !runtimeStatus.runnable_now && (
+          <p
+            className="mt-2 line-clamp-3 text-[11px] text-destructive break-words"
+            title={runtimeStatus.runtime_install_error}
+          >
+            {runtimeStatus.runtime_install_error}
+          </p>
+        )}
       </CardContent>
 
       <CardFooter className="px-4 py-4 border-t bg-muted/30 flex justify-between items-center mt-auto">
