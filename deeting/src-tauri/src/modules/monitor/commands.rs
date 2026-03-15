@@ -151,7 +151,10 @@ pub async fn delete_local_notification_channel(
     app_handle: tauri::AppHandle,
     channel_id: String,
 ) -> Result<LocalNotificationChannelDeleteResponse, String> {
-    let response = state.monitor.delete_notification_channel(channel_id).await?;
+    let response = state
+        .monitor
+        .delete_notification_channel(channel_id)
+        .await?;
     crate::modules::im::runtime::spawn_im_runtime_worker(state.inner().clone(), app_handle);
     Ok(response)
 }

@@ -10,8 +10,8 @@ use crate::state::AppState;
 use super::feishu::{FeishuClient, FeishuConfig};
 use super::handlers::{build_card_action_response, generate_local_chat_reply};
 use super::{
-    build_settings_snapshot, resolve_transport, ImClient, ImConnectionProfile, ImEvent,
-    ImPlatform, ImTransportKind, ImTransportPreference, LocalImSettingsSnapshot, MessageContent,
+    build_settings_snapshot, resolve_transport, ImClient, ImConnectionProfile, ImEvent, ImPlatform,
+    ImTransportKind, ImTransportPreference, LocalImSettingsSnapshot, MessageContent,
     SendMessageRequest,
 };
 
@@ -23,7 +23,8 @@ fn im_worker_slot() -> &'static Mutex<Option<ImWorkerHandle>> {
 }
 
 fn config_string(value: &Value, key: &str) -> Option<String> {
-    value.get(key)
+    value
+        .get(key)
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -66,7 +67,8 @@ fn derive_profile_from_notification_channel(
         .display_name
         .clone()
         .unwrap_or_else(|| "Feishu".to_string());
-    profile.enabled = channel.is_active && config_bool(&channel.config, "im_enabled").unwrap_or(false);
+    profile.enabled =
+        channel.is_active && config_bool(&channel.config, "im_enabled").unwrap_or(false);
     profile.transport_preference = transport_preference;
     profile.direct_config.feishu_app_id =
         config_string(&channel.config, "bot_app_id").unwrap_or_default();
@@ -127,7 +129,10 @@ async fn run_feishu_direct_profile_worker(
         ..Default::default()
     });
     let (event_tx, mut event_rx) = mpsc::channel(256);
-    client.start(event_tx).await.map_err(|err| err.to_string())?;
+    client
+        .start(event_tx)
+        .await
+        .map_err(|err| err.to_string())?;
 
     while let Some(event) = event_rx.recv().await {
         match event {
@@ -183,11 +188,19 @@ async fn run_feishu_direct_profile_worker(
                     .unwrap_or("用户");
                 let quoted = text.trim();
                 let quoted_preview = if quoted.len() > 60 {
-                    format!("{}…", quoted.chars().take(57).collect::<String>().trim_end())
+                    format!(
+                        "{}…",
+                        quoted.chars().take(57).collect::<String>().trim_end()
+                    )
                 } else {
                     quoted.to_string()
                 };
-                let display_reply = format!("| 回复 {}: {}\n\n{}", user_ref, quoted_preview, reply_text.trim());
+                let display_reply = format!(
+                    "| 回复 {}: {}\n\n{}",
+                    user_ref,
+                    quoted_preview,
+                    reply_text.trim()
+                );
                 if let Err(e) = client
                     .send_message(SendMessageRequest {
                         chat_id: chat_id.clone(),

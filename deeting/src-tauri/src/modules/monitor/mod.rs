@@ -13,9 +13,9 @@ use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
-use crate::modules::mcp::local_orchestrator::{LocalOrchestrationEngine, LocalWorkflowStep};
 use crate::modules::im::feishu::{FeishuClient, FeishuConfig};
 use crate::modules::im::{ImClient, MessageContent, SendMessageRequest};
+use crate::modules::mcp::local_orchestrator::{LocalOrchestrationEngine, LocalWorkflowStep};
 use crate::modules::monitor::store::MonitorStore;
 use crate::modules::monitor::types::{
     LocalExecutionResult, LocalMonitorActionResponse, LocalMonitorCreateResponse,
@@ -914,7 +914,10 @@ impl MonitorState {
             app_secret,
             ..Default::default()
         });
-        let text = truncate(format!("{}\n\n{}\n\n{}", title, content, payload).as_str(), 4000);
+        let text = truncate(
+            format!("{}\n\n{}\n\n{}", title, content, payload).as_str(),
+            4000,
+        );
         for chat_id in &chat_ids {
             client
                 .send_message(SendMessageRequest {

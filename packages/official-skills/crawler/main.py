@@ -3,6 +3,7 @@ import sys
 import os
 import asyncio
 from typing import Dict, Any, List
+import traceback
 
 # Ensure we can import httpx
 try:
@@ -49,11 +50,37 @@ async def fetch_web_content(url: str, js_mode: bool = True) -> Dict[str, Any]:
                 "url": url
             }
         except httpx.HTTPStatusError as e:
-            print(f"[!] HTTP Error: {e.response.status_code} - {e.response.text}", file=sys.stderr)
-            return {"status": "error", "error": f"Scout Service Error ({e.response.status_code}): {e.response.text}"}
+            response_text = (e.response.text or "").strip()
+            print(
+                f"[!] HTTP Error: {e.response.status_code} - {response_text}",
+                file=sys.stderr,
+            )
+            return {
+                "status": "error",
+                "error": f"Scout Service Error ({e.response.status_code}): {response_text}",
+            }
+        except httpx.TimeoutException as e:
+            detail = f"{type(e).__name__}: {e!r}"
+            print(f"[!] Scout Request Timed Out: {detail}", file=sys.stderr)
+            return {
+                "status": "error",
+                "error": f"Scout Service Timeout: {detail}",
+            }
+        except httpx.RequestError as e:
+            detail = f"{type(e).__name__}: {e!r}"
+            print(f"[!] Scout Request Error: {detail}", file=sys.stderr)
+            return {
+                "status": "error",
+                "error": f"Scout Service Request Error: {detail}",
+            }
         except Exception as e:
-            print(f"[!] Scout Request Failed: {str(e)}", file=sys.stderr)
-            return {"status": "error", "error": f"Scout Service Unavailable: {str(e)}"}
+            detail = f"{type(e).__name__}: {e!r}"
+            print(f"[!] Scout Request Failed: {detail}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
+            return {
+                "status": "error",
+                "error": f"Scout Service Unavailable: {detail}",
+            }
 
 async def crawl_website(url: str, max_depth: int = 2, max_pages: int = 10) -> Dict[str, Any]:
     # Simple recursive crawl using fetch_web_content

@@ -157,8 +157,8 @@ pub fn resolve_transport(profile: &ImConnectionProfile) -> ImTransportResolution
                 ImTransportResolution {
                     effective: ImTransportKind::Unavailable,
                     reason_code: ImTransportReasonCode::NoAvailableTransport,
-                    user_message:
-                        "This platform does not support direct transport yet.".to_string(),
+                    user_message: "This platform does not support direct transport yet."
+                        .to_string(),
                 }
             }
         }
@@ -184,8 +184,8 @@ pub fn resolve_transport(profile: &ImConnectionProfile) -> ImTransportResolution
                 ImTransportResolution {
                     effective: ImTransportKind::Direct,
                     reason_code: ImTransportReasonCode::DirectSupported,
-                    user_message:
-                        "Direct transport is available, so auto mode selected it.".to_string(),
+                    user_message: "Direct transport is available, so auto mode selected it."
+                        .to_string(),
                 }
             } else if has_relay_config {
                 ImTransportResolution {
@@ -215,9 +215,7 @@ pub fn resolve_transport(profile: &ImConnectionProfile) -> ImTransportResolution
     }
 }
 
-pub fn resolve_profiles(
-    profiles: &[ImConnectionProfile],
-) -> Vec<ResolvedImConnectionProfile> {
+pub fn resolve_profiles(profiles: &[ImConnectionProfile]) -> Vec<ResolvedImConnectionProfile> {
     profiles
         .iter()
         .map(|profile| ResolvedImConnectionProfile {
@@ -268,10 +266,7 @@ mod tests {
         let resolved = resolve_transport(&profile);
 
         assert_eq!(resolved.effective, ImTransportKind::Direct);
-        assert_eq!(
-            resolved.reason_code,
-            ImTransportReasonCode::DirectSupported
-        );
+        assert_eq!(resolved.reason_code, ImTransportReasonCode::DirectSupported);
     }
 
     #[test]

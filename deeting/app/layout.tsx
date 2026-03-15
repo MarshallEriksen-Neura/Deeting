@@ -4,7 +4,6 @@ import { DesktopOAuthListener } from "@/components/auth/desktop-oauth-listener";
 import { DownloadAppModal } from "@/components/ui/modal/download-app-modal";
 import { DesktopUpdateGuard } from "@/components/common/desktop-update-guard";
 import { BridgeMonitor } from "@/components/bridge/bridge-monitor";
-import { ToolApprovalDialog } from "@/components/bridge/tool-approval-dialog";
 import { PlatformProvider } from "@/lib/platform/provider";
 import "./globals.css";
 
@@ -33,7 +32,6 @@ export default function RootLayout({
             <DownloadAppModal />
             {isTauri && <DesktopUpdateGuard />}
             {isTauri && isDesktopUserCloudSyncEnabled && <BridgeMonitor />}
-            {isTauri && <ToolApprovalDialog />}
           </ThemeProvider>
         </PlatformProvider>
       </body>

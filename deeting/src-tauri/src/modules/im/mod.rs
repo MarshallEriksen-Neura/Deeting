@@ -1,26 +1,26 @@
 //! IM (Instant Messaging) 模块
-//! 
+//!
 //! 提供多平台即时消息集成支持，包括：
 //! - 飞书 (WebSocket 长连接)
 //! - Telegram (HTTP 长轮询)
-//! 
+//!
 //! 特性：
 //! - 统一的事件模型
 //! - 可扩展的平台支持
 //! - 无需公网 IP (飞书、Telegram)
 
-mod types;
+pub(crate) mod handlers;
 mod manager;
 mod profile;
-pub(crate) mod handlers;
 pub mod runtime;
+mod types;
 
 pub mod feishu;
 pub mod telegram;
 
-pub use types::*;
 pub use manager::{ImManager, ImManagerBuilder};
 pub use profile::*;
+pub use types::*;
 
 #[cfg(test)]
 mod tests {

@@ -1,5 +1,5 @@
-use serde::{Deserialize, Deserializer, Serialize};
 use prost::Message;
+use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Deserialize)]
 #[serde(untagged)]
@@ -92,7 +92,11 @@ pub struct FeishuMessageEvent {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeishuSender {
-    #[serde(rename = "sender_type", default, deserialize_with = "deserialize_default_string")]
+    #[serde(
+        rename = "sender_type",
+        default,
+        deserialize_with = "deserialize_default_string"
+    )]
     pub sender_type: String,
     #[serde(rename = "sender_id")]
     pub sender_id: FeishuSenderId,
@@ -110,19 +114,43 @@ pub struct FeishuSenderId {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeishuMessage {
-    #[serde(rename = "message_id", default, deserialize_with = "deserialize_default_string")]
+    #[serde(
+        rename = "message_id",
+        default,
+        deserialize_with = "deserialize_default_string"
+    )]
     pub message_id: String,
-    #[serde(rename = "root_id", default, deserialize_with = "deserialize_default_string")]
+    #[serde(
+        rename = "root_id",
+        default,
+        deserialize_with = "deserialize_default_string"
+    )]
     pub root_id: String,
-    #[serde(rename = "parent_id", default, deserialize_with = "deserialize_default_string")]
+    #[serde(
+        rename = "parent_id",
+        default,
+        deserialize_with = "deserialize_default_string"
+    )]
     pub parent_id: String,
     #[serde(rename = "create_time", deserialize_with = "deserialize_string_or_int")]
     pub create_time: String,
-    #[serde(rename = "chat_id", default, deserialize_with = "deserialize_default_string")]
+    #[serde(
+        rename = "chat_id",
+        default,
+        deserialize_with = "deserialize_default_string"
+    )]
     pub chat_id: String,
-    #[serde(rename = "chat_type", default, deserialize_with = "deserialize_default_string")]
+    #[serde(
+        rename = "chat_type",
+        default,
+        deserialize_with = "deserialize_default_string"
+    )]
     pub chat_type: String,
-    #[serde(rename = "message_type", default, deserialize_with = "deserialize_default_string")]
+    #[serde(
+        rename = "message_type",
+        default,
+        deserialize_with = "deserialize_default_string"
+    )]
     pub message_type: String,
     #[serde(default, deserialize_with = "deserialize_default_string")]
     pub content: String,
@@ -171,9 +199,17 @@ pub struct FeishuCardAction {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeishuCardContext {
-    #[serde(rename = "open_message_id", default, deserialize_with = "deserialize_default_string")]
+    #[serde(
+        rename = "open_message_id",
+        default,
+        deserialize_with = "deserialize_default_string"
+    )]
     pub open_message_id: String,
-    #[serde(rename = "open_chat_id", default, deserialize_with = "deserialize_default_string")]
+    #[serde(
+        rename = "open_chat_id",
+        default,
+        deserialize_with = "deserialize_default_string"
+    )]
     pub open_chat_id: String,
 }
 
@@ -188,19 +224,39 @@ pub struct FeishuCardOperator {
 /// 飞书卡片回调请求 (旧版)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LegacyCardCallback {
-    #[serde(rename = "type", default, deserialize_with = "deserialize_default_string")]
+    #[serde(
+        rename = "type",
+        default,
+        deserialize_with = "deserialize_default_string"
+    )]
     pub callback_type: String,
     #[serde(default, deserialize_with = "deserialize_default_string")]
     pub challenge: String,
     #[serde(default, deserialize_with = "deserialize_default_string")]
     pub token: String,
-    #[serde(rename = "open_id", default, deserialize_with = "deserialize_default_string")]
+    #[serde(
+        rename = "open_id",
+        default,
+        deserialize_with = "deserialize_default_string"
+    )]
     pub open_id: String,
-    #[serde(rename = "user_id", default, deserialize_with = "deserialize_default_string")]
+    #[serde(
+        rename = "user_id",
+        default,
+        deserialize_with = "deserialize_default_string"
+    )]
     pub user_id: String,
-    #[serde(rename = "open_message_id", default, deserialize_with = "deserialize_default_string")]
+    #[serde(
+        rename = "open_message_id",
+        default,
+        deserialize_with = "deserialize_default_string"
+    )]
     pub open_message_id: String,
-    #[serde(rename = "open_chat_id", default, deserialize_with = "deserialize_default_string")]
+    #[serde(
+        rename = "open_chat_id",
+        default,
+        deserialize_with = "deserialize_default_string"
+    )]
     pub open_chat_id: String,
     pub action: FeishuCardAction,
 }

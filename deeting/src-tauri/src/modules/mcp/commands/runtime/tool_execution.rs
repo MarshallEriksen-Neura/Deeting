@@ -9,6 +9,247 @@ use crate::modules::skill_runtime::{
 const TOOL_CALL_MARKER: &str = "__DEETING_TOOL_CALL_REQUEST__";
 const MAX_MARKER_REEXEC: usize = 8;
 
+fn truncate_for_skill_log(raw: &str, max_chars: usize) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    let mut out = String::with_capacity(trimmed.len().min(max_chars));
+    for ch in trimmed.chars().take(max_chars) {
+        out.push(ch);
+    }
+    if trimmed.chars().count() > max_chars {
+        out.push_str("...");
+    }
+    out
+}
+
+fn summarize_skill_binding_env(env: &HashMap<String, String>) -> Value {
+    let mut env_keys = env.keys().cloned().collect::<Vec<_>>();
+    env_keys.sort();
+    serde_json::json!({
+        "keys": env_keys,
+        "pythonpath": env.get("PYTHONPATH"),
+        "scout_service_url": env.get("SCOUT_SERVICE_URL"),
+        "deeting_skill_id": env.get("DEETING_SKILL_ID"),
+        "deeting_skill_action_id": env.get("DEETING_SKILL_ACTION_ID"),
+        "has_skill_config_json": env.contains_key("DEETING_SKILL_CONFIG_JSON"),
+        "has_runtime_context": env.contains_key("DEETING_RUNTIME_CONTEXT"),
+    })
+}
+
+fn summarize_tool_arguments(arguments: &Value) -> Value {
+    match arguments {
+        Value::Object(map) => {
+            let mut keys = map.keys().cloned().collect::<Vec<_>>();
+            keys.sort();
+            serde_json::json!({
+                "kind": "object",
+                "keys": keys,
+            })
+        }
+        Value::Array(items) => serde_json::json!({
+            "kind": "array",
+            "len": items.len(),
+        }),
+        Value::Null => serde_json::json!({ "kind": "null" }),
+        other => serde_json::json!({
+            "kind": "scalar",
+            "value": other,
+        }),
+    }
+}
+
+fn build_skill_binding_launch_meta(
+    binding: &LocalSkillToolBindingSnapshot,
+    command: &str,
+    args: &[String],
+    skill_dir: Option<&std::path::Path>,
+    env: Option<&HashMap<String, String>>,
+    marker_attempt: Option<usize>,
+) -> Value {
+    serde_json::json!({
+        "skill_id": binding.skill_id,
+        "callable_name": binding.callable_name,
+        "tool_name": binding.tool_name,
+        "binding_kind": binding.binding_kind,
+        "runtime": binding.runtime,
+        "timeout_seconds": binding.timeout_seconds,
+        "entry_path": binding.entry_path,
+        "work_dir": skill_dir.map(|path| path.display().to_string()),
+        "command": command,
+        "args": args,
+        "marker_attempt": marker_attempt,
+        "env": env.map(summarize_skill_binding_env),
+    })
+}
+
+fn log_skill_binding_launch(
+    binding: &LocalSkillToolBindingSnapshot,
+    command: &str,
+    args: &[String],
+    skill_dir: Option<&std::path::Path>,
+    env: Option<&HashMap<String, String>>,
+    marker_attempt: Option<usize>,
+) {
+    log::info!(
+        "skill_binding_launch {}",
+        build_skill_binding_launch_meta(binding, command, args, skill_dir, env, marker_attempt)
+    );
+}
+
+fn log_skill_binding_timeout(
+    binding: &LocalSkillToolBindingSnapshot,
+    command: &str,
+    args: &[String],
+    skill_dir: Option<&std::path::Path>,
+    env: Option<&HashMap<String, String>>,
+    marker_attempt: Option<usize>,
+) {
+    log::warn!(
+        "skill_binding_timeout {}",
+        build_skill_binding_launch_meta(binding, command, args, skill_dir, env, marker_attempt)
+    );
+}
+
+fn log_skill_binding_failure(
+    binding: &LocalSkillToolBindingSnapshot,
+    command: &str,
+    args: &[String],
+    skill_dir: Option<&std::path::Path>,
+    env: Option<&HashMap<String, String>>,
+    marker_attempt: Option<usize>,
+    status: &std::process::ExitStatus,
+    stdout: &[u8],
+    stderr: &[u8],
+) {
+    let meta =
+        build_skill_binding_launch_meta(binding, command, args, skill_dir, env, marker_attempt);
+    let stdout_preview = truncate_for_skill_log(&String::from_utf8_lossy(stdout), 600);
+    let stderr_preview = truncate_for_skill_log(&String::from_utf8_lossy(stderr), 600);
+    log::warn!(
+        "skill_binding_failure {}",
+        serde_json::json!({
+            "launch": meta,
+            "exit_status": status.to_string(),
+            "stdout_preview": stdout_preview,
+            "stderr_preview": stderr_preview,
+        })
+    );
+}
+
+fn log_skill_binding_spawn_failure(
+    binding: &LocalSkillToolBindingSnapshot,
+    command: &str,
+    args: &[String],
+    skill_dir: Option<&std::path::Path>,
+    env: Option<&HashMap<String, String>>,
+    marker_attempt: Option<usize>,
+    error: &str,
+) {
+    log::warn!(
+        "skill_binding_spawn_failure {}",
+        serde_json::json!({
+            "launch": build_skill_binding_launch_meta(binding, command, args, skill_dir, env, marker_attempt),
+            "error": error,
+        })
+    );
+}
+
+fn log_skill_binding_lookup_start(
+    tool_id: Option<&str>,
+    tool_name: Option<&str>,
+    arguments: &Value,
+) {
+    log::info!(
+        "skill_binding_lookup_start {}",
+        serde_json::json!({
+            "tool_id": tool_id,
+            "tool_name": tool_name,
+            "arguments": summarize_tool_arguments(arguments),
+        })
+    );
+}
+
+fn log_skill_binding_lookup_hit(
+    tool_id: Option<&str>,
+    tool_name: Option<&str>,
+    binding: &LocalSkillToolBindingSnapshot,
+) {
+    log::info!(
+        "skill_binding_lookup_hit {}",
+        serde_json::json!({
+            "tool_id": tool_id,
+            "tool_name": tool_name,
+            "skill_id": binding.skill_id,
+            "binding_id": binding.binding_id,
+            "callable_name": binding.callable_name,
+            "entry_path": binding.entry_path,
+            "runtime": binding.runtime,
+            "binding_kind": binding.binding_kind,
+        })
+    );
+}
+
+fn log_skill_binding_lookup_miss(tool_id: Option<&str>, tool_name: Option<&str>) {
+    log::info!(
+        "skill_binding_lookup_miss {}",
+        serde_json::json!({
+            "tool_id": tool_id,
+            "tool_name": tool_name,
+        })
+    );
+}
+
+fn log_skill_binding_lookup_failure(tool_id: Option<&str>, tool_name: Option<&str>, error: &str) {
+    log::warn!(
+        "skill_binding_lookup_failure {}",
+        serde_json::json!({
+            "tool_id": tool_id,
+            "tool_name": tool_name,
+            "error": error,
+        })
+    );
+}
+
+fn log_skill_binding_preflight_failure(
+    binding: &LocalSkillToolBindingSnapshot,
+    stage: &str,
+    error: &str,
+) {
+    log::warn!(
+        "skill_binding_preflight_failure {}",
+        serde_json::json!({
+            "skill_id": binding.skill_id,
+            "binding_id": binding.binding_id,
+            "callable_name": binding.callable_name,
+            "tool_name": binding.tool_name,
+            "entry_path": binding.entry_path,
+            "runtime": binding.runtime,
+            "binding_kind": binding.binding_kind,
+            "stage": stage,
+            "error": error,
+        })
+    );
+}
+
+fn log_skill_binding_stage(binding: &LocalSkillToolBindingSnapshot, stage: &str, details: Value) {
+    log::info!(
+        "skill_binding_stage {}",
+        serde_json::json!({
+            "skill_id": binding.skill_id,
+            "binding_id": binding.binding_id,
+            "callable_name": binding.callable_name,
+            "tool_name": binding.tool_name,
+            "entry_path": binding.entry_path,
+            "runtime": binding.runtime,
+            "binding_kind": binding.binding_kind,
+            "stage": stage,
+            "details": details,
+        })
+    );
+}
+
 fn parse_timeout_from_tool(tool: &McpTool) -> u64 {
     serde_json::from_str::<serde_json::Value>(&tool.config_json)
         .ok()
@@ -112,6 +353,13 @@ async fn build_command_for_skill_binding_with_store(
     binding: &LocalSkillToolBindingSnapshot,
     arguments: &Value,
 ) -> Result<(String, Vec<String>), String> {
+    log_skill_binding_stage(
+        binding,
+        "build_command.start",
+        serde_json::json!({
+            "arguments": summarize_tool_arguments(arguments),
+        }),
+    );
     let mut cli_args = arguments
         .get("args")
         .and_then(Value::as_array)
@@ -128,8 +376,26 @@ async fn build_command_for_skill_binding_with_store(
         let mut args = vec![binding.entry_path.clone()];
         args.append(&mut cli_args);
         if let Some(command) = resolve_runtime_command_for_binding(store, binding).await? {
+            log_skill_binding_stage(
+                binding,
+                "build_command.done",
+                serde_json::json!({
+                    "command": command,
+                    "args": args,
+                    "runtime_command_resolved": true,
+                }),
+            );
             return Ok((command, args));
         }
+        log_skill_binding_stage(
+            binding,
+            "build_command.done",
+            serde_json::json!({
+                "command": if cfg!(target_os = "windows") { "python" } else { "python3" },
+                "args": args,
+                "runtime_command_resolved": false,
+            }),
+        );
         return Ok((
             if cfg!(target_os = "windows") {
                 "python".to_string()
@@ -140,13 +406,24 @@ async fn build_command_for_skill_binding_with_store(
         ));
     }
 
-    build_command_for_skill_binding(binding, arguments)
+    let resolved = build_command_for_skill_binding(binding, arguments)?;
+    log_skill_binding_stage(
+        binding,
+        "build_command.done",
+        serde_json::json!({
+            "command": resolved.0,
+            "args": resolved.1,
+            "runtime_command_resolved": false,
+        }),
+    );
+    Ok(resolved)
 }
 
 async fn resolve_skill_binding_env(
     store: &crate::modules::mcp::store::McpStore,
     binding: &LocalSkillToolBindingSnapshot,
 ) -> Result<Option<HashMap<String, String>>, String> {
+    log_skill_binding_stage(binding, "resolve_env.start", serde_json::json!({}));
     let mut env = HashMap::new();
     env.insert("DEETING_SKILL_ID".to_string(), binding.skill_id.clone());
     env.insert(
@@ -200,8 +477,22 @@ async fn resolve_skill_binding_env(
         env.extend(runtime_env);
     }
     if env.is_empty() {
+        log_skill_binding_stage(
+            binding,
+            "resolve_env.done",
+            serde_json::json!({
+                "env": serde_json::Value::Null,
+            }),
+        );
         Ok(None)
     } else {
+        log_skill_binding_stage(
+            binding,
+            "resolve_env.done",
+            serde_json::json!({
+                "env": summarize_skill_binding_env(&env),
+            }),
+        );
         Ok(Some(env))
     }
 }
@@ -221,26 +512,33 @@ async fn execute_deeting_tool_binding(
     binding: &LocalSkillToolBindingSnapshot,
     arguments: &Value,
 ) -> Result<Value, String> {
+    log_skill_binding_stage(
+        binding,
+        "execute_deeting_tool_binding.enter",
+        serde_json::json!({
+            "arguments": summarize_tool_arguments(arguments),
+        }),
+    );
     let timeout_secs = binding.timeout_seconds.max(1);
     let mut tool_results: Vec<serde_json::Value> = Vec::new();
     for attempt in 0..=MAX_MARKER_REEXEC {
-        let (command, args) =
-            build_command_for_skill_binding_with_store(store, binding, arguments).await?;
-        let env = resolve_skill_binding_env(store, binding).await?;
+        let (command, args) = build_command_for_skill_binding_with_store(store, binding, arguments)
+            .await
+            .map_err(|err| {
+                log_skill_binding_preflight_failure(binding, "build_command", &err);
+                err
+            })?;
+        let env = resolve_skill_binding_env(store, binding)
+            .await
+            .map_err(|err| {
+                log_skill_binding_preflight_failure(binding, "resolve_env", &err);
+                err
+            })?;
         let skill_dir = std::path::Path::new(&binding.entry_path)
             .parent()
             .and_then(|p| p.parent())
             .map(|p| p.to_path_buf());
 
-        let mut cmd = tokio::process::Command::new(command);
-        cmd.args(args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-        if let Some(ref dir) = skill_dir {
-            cmd.current_dir(dir);
-        }
         let runtime_context = serde_json::json!({
             "tool_results": tool_results,
             "max_tool_calls": MAX_MARKER_REEXEC,
@@ -250,11 +548,39 @@ async fn execute_deeting_tool_binding(
             "DEETING_RUNTIME_CONTEXT".to_string(),
             serde_json::to_string(&runtime_context).unwrap_or_default(),
         );
+        log_skill_binding_launch(
+            binding,
+            &command,
+            &args,
+            skill_dir.as_deref(),
+            Some(&env_map),
+            Some(attempt),
+        );
+        let mut cmd = tokio::process::Command::new(&command);
+        cmd.args(&args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
+        if let Some(ref dir) = skill_dir {
+            cmd.current_dir(dir);
+        }
         if !env_map.is_empty() {
-            cmd.envs(env_map);
+            cmd.envs(&env_map);
         }
 
-        let mut child = cmd.spawn().map_err(to_string)?;
+        let mut child = cmd.spawn().map_err(|err| {
+            log_skill_binding_spawn_failure(
+                binding,
+                &command,
+                &args,
+                skill_dir.as_deref(),
+                Some(&env_map),
+                Some(attempt),
+                &err.to_string(),
+            );
+            to_string(err)
+        })?;
         if let Some(mut stdin) = child.stdin.take() {
             let payload = serde_json::json!({
                 "method": binding.tool_name,
@@ -273,12 +599,33 @@ async fn execute_deeting_tool_binding(
                 result.map_err(|err| format!("skill binding execution error: {}", err))?
             }
             Err(_) => {
+                log_skill_binding_timeout(
+                    binding,
+                    &command,
+                    &args,
+                    skill_dir.as_deref(),
+                    Some(&env_map),
+                    Some(attempt),
+                );
                 return Err(format!(
                     "skill binding '{}' timed out after {}s",
                     binding.callable_name, timeout_secs
-                ))
+                ));
             }
         };
+        if !output.status.success() {
+            log_skill_binding_failure(
+                binding,
+                &command,
+                &args,
+                skill_dir.as_deref(),
+                Some(&env_map),
+                Some(attempt),
+                &output.status,
+                &output.stdout,
+                &output.stderr,
+            );
+        }
         let stdout_str = String::from_utf8_lossy(&output.stdout).to_string();
         if let Some(marker_payload) = extract_tool_call_marker(&stdout_str) {
             let requested_tool = marker_payload
@@ -391,12 +738,28 @@ async fn execute_skill_binding(
     binding: &LocalSkillToolBindingSnapshot,
     arguments: &Value,
 ) -> Result<Value, String> {
+    log_skill_binding_stage(
+        binding,
+        "execute_skill_binding.enter",
+        serde_json::json!({
+            "arguments": summarize_tool_arguments(arguments),
+        }),
+    );
     if binding.binding_kind == "deeting_tool" && binding.runtime == "python" {
         return execute_deeting_tool_binding(store, binding, arguments).await;
     }
-    let (command, args) =
-        build_command_for_skill_binding_with_store(store, binding, arguments).await?;
-    let env = resolve_skill_binding_env(store, binding).await?;
+    let (command, args) = build_command_for_skill_binding_with_store(store, binding, arguments)
+        .await
+        .map_err(|err| {
+            log_skill_binding_preflight_failure(binding, "build_command", &err);
+            err
+        })?;
+    let env = resolve_skill_binding_env(store, binding)
+        .await
+        .map_err(|err| {
+            log_skill_binding_preflight_failure(binding, "resolve_env", &err);
+            err
+        })?;
     let config_json = resolve_skill_binding_config_json(store, binding).await?;
 
     // Resolve skill directory for working directory
@@ -404,22 +767,6 @@ async fn execute_skill_binding(
         .parent()
         .and_then(|p| p.parent())
         .map(|p| p.to_path_buf());
-
-    let mut cmd = tokio::process::Command::new(command);
-    cmd.args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-
-    // Set working directory to skill root for relative path resolution
-    if let Some(ref dir) = skill_dir {
-        cmd.current_dir(dir);
-    }
-
-    if let Some(env_map) = env {
-        cmd.envs(env_map);
-    }
 
     log::info!(
         "Executing skill binding '{}' (runtime={}, timeout={}s, work_dir={})",
@@ -431,8 +778,42 @@ async fn execute_skill_binding(
             .map(|p| p.display().to_string())
             .unwrap_or_default()
     );
+    log_skill_binding_launch(
+        binding,
+        &command,
+        &args,
+        skill_dir.as_deref(),
+        env.as_ref(),
+        None,
+    );
+    let mut cmd = tokio::process::Command::new(&command);
+    cmd.args(&args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
 
-    let mut child = cmd.spawn().map_err(to_string)?;
+    // Set working directory to skill root for relative path resolution
+    if let Some(ref dir) = skill_dir {
+        cmd.current_dir(dir);
+    }
+
+    if let Some(ref env_map) = env {
+        cmd.envs(env_map);
+    }
+
+    let mut child = cmd.spawn().map_err(|err| {
+        log_skill_binding_spawn_failure(
+            binding,
+            &command,
+            &args,
+            skill_dir.as_deref(),
+            env.as_ref(),
+            None,
+            &err.to_string(),
+        );
+        to_string(err)
+    })?;
     if let Some(mut stdin) = child.stdin.take() {
         let payload = if binding.binding_kind == "script_runner" {
             build_script_runner_payload(binding, arguments, config_json.as_ref())
@@ -456,14 +837,33 @@ async fn execute_skill_binding(
     {
         Ok(result) => result.map_err(|err| format!("skill binding execution error: {}", err))?,
         Err(_) => {
+            log_skill_binding_timeout(
+                binding,
+                &command,
+                &args,
+                skill_dir.as_deref(),
+                env.as_ref(),
+                None,
+            );
             return Err(format!(
                 "skill binding '{}' timed out after {}s",
                 binding.callable_name, binding.timeout_seconds
-            ))
+            ));
         }
     };
 
     if !output.status.success() {
+        log_skill_binding_failure(
+            binding,
+            &command,
+            &args,
+            skill_dir.as_deref(),
+            env.as_ref(),
+            None,
+            &output.status,
+            &output.stdout,
+            &output.stderr,
+        );
         return Err(format!(
             "skill binding '{}' failed (exit={}): {}",
             binding.callable_name,
@@ -716,9 +1116,16 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_tool_ref(
     arguments: Value,
     require_approval: bool,
 ) -> Result<Value, String> {
-    if let Some(binding) =
-        resolve_skill_binding_by_ref(store, tool_id.as_deref(), tool_name.as_deref()).await?
-    {
+    log_skill_binding_lookup_start(tool_id.as_deref(), tool_name.as_deref(), &arguments);
+    let resolved_binding =
+        resolve_skill_binding_by_ref(store, tool_id.as_deref(), tool_name.as_deref())
+            .await
+            .map_err(|err| {
+                log_skill_binding_lookup_failure(tool_id.as_deref(), tool_name.as_deref(), &err);
+                err
+            })?;
+    if let Some(binding) = resolved_binding {
+        log_skill_binding_lookup_hit(tool_id.as_deref(), tool_name.as_deref(), &binding);
         let tool_fingerprint = build_skill_binding_fingerprint(&binding);
         let approval_grant_key =
             risk_assessment.and_then(|risk| risk.session_grant_key(&tool_fingerprint));
@@ -737,6 +1144,16 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_tool_ref(
         };
 
         if require_approval && !approved_by_grant {
+            log_skill_binding_stage(
+                &binding,
+                "approval.required",
+                serde_json::json!({
+                    "require_approval": require_approval,
+                    "approved_by_grant": approved_by_grant,
+                    "has_runtime_state": runtime_state.is_some(),
+                    "has_risk_assessment": risk_assessment.is_some(),
+                }),
+            );
             let approval_token = Uuid::new_v4().to_string();
             let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
             let pending = crate::modules::mcp::PendingToolCall {
@@ -767,8 +1184,17 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_tool_ref(
                 "expires_in_ms": 5 * 60 * 1000,
             }));
         }
+        log_skill_binding_stage(
+            &binding,
+            "execute_via_skill_binding.dispatch",
+            serde_json::json!({
+                "require_approval": require_approval,
+                "approved_by_grant": approved_by_grant,
+            }),
+        );
         return execute_skill_binding(store, &binding, &arguments).await;
     }
+    log_skill_binding_lookup_miss(tool_id.as_deref(), tool_name.as_deref());
 
     let tool = resolve_callable_mcp_tool_by_ref(store, tool_id.as_deref(), tool_name.as_deref())
         .await

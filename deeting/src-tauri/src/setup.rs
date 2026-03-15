@@ -1,4 +1,5 @@
 use crate::modules::code_mode::CodeModeState;
+use crate::modules::im::runtime::spawn_im_runtime_worker;
 use crate::modules::knowledge::KnowledgeState;
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::process::ProcessManager;
@@ -7,7 +8,6 @@ use crate::modules::mcp::McpRuntimeState;
 use crate::modules::memory::MemoryState;
 use crate::modules::monitor::MonitorState;
 use crate::modules::providers::ProviderState;
-use crate::modules::im::runtime::spawn_im_runtime_worker;
 use crate::modules::sandbox::SandboxState;
 use crate::state::AppState;
 use crate::utils::*;
@@ -17,6 +17,17 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{App, AppHandle, Manager};
+use tauri_plugin_log::{Target, TargetKind};
+
+const DESKTOP_RUNTIME_DEBUG_LOG_TARGET_PREFIXES: &[&str] =
+    &["app_lib::modules::mcp::commands::runtime::tool_execution"];
+
+fn should_skip_file_log_for_target(target: &str) -> bool {
+    let normalized = target.trim();
+    DESKTOP_RUNTIME_DEBUG_LOG_TARGET_PREFIXES
+        .iter()
+        .any(|prefix| normalized.starts_with(prefix))
+}
 
 fn ensure_rustls_crypto_provider() {
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -28,6 +39,12 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     if cfg!(debug_assertions) {
         app.handle().plugin(
             tauri_plugin_log::Builder::default()
+                .clear_targets()
+                .targets([
+                    Target::new(TargetKind::Stdout),
+                    Target::new(TargetKind::LogDir { file_name: None })
+                        .filter(|metadata| !should_skip_file_log_for_target(metadata.target())),
+                ])
                 .level(log::LevelFilter::Info)
                 .build(),
         )?;

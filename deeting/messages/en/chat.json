@@ -279,6 +279,31 @@
       "expand": "Show details",
       "collapse": "Collapse"
     },
+    "approvalDialog": {
+      "title": "Approval required",
+      "description": "The AI is requesting permission to run a high-risk tool on your local system.",
+      "toolLabel": "Tool",
+      "argumentsLabel": "Arguments",
+      "summaryLabel": "Summary",
+      "warningTitle": "Review before continuing",
+      "warning": "This action may modify files or execute system commands. Only allow it if you trust the current conversation and this specific request.",
+      "actions": {
+        "reject": "Deny",
+        "approve": "Allow execution",
+        "approving": "Running..."
+      },
+      "risk": {
+        "title": "Risk level {level}"
+      },
+      "toast": {
+        "approved": "Tool {toolName} executed successfully",
+        "rejected": "Tool execution cancelled",
+        "executionFailed": "Execution failed: {message}"
+      },
+      "result": {
+        "userRejected": "User rejected tool execution"
+      }
+    },
     "voice": {
       "listening": "Listening...",
       "processing": "Processing...",

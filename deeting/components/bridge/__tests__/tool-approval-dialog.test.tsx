@@ -12,6 +12,37 @@ import { toast } from "sonner"
 import { useChatStore } from "@/store/chat-store"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
 
+jest.mock("next-intl", () => ({
+  useTranslations: (namespace?: string) => {
+    const messages: Record<string, string> = {
+      "chat.approvalDialog.title": "审批确认",
+      "chat.approvalDialog.description": "当前 AI 正请求在本地执行一个高风险工具。",
+      "chat.approvalDialog.toolLabel": "工具",
+      "chat.approvalDialog.argumentsLabel": "参数",
+      "chat.approvalDialog.summaryLabel": "说明",
+      "chat.approvalDialog.warningTitle": "执行前请确认",
+      "chat.approvalDialog.warning":
+        "该操作可能修改文件或执行系统命令，仅在你信任当前会话时才允许。",
+      "chat.approvalDialog.actions.reject": "拒绝",
+      "chat.approvalDialog.actions.approve": "批准执行",
+      "chat.approvalDialog.actions.approving": "执行中...",
+      "chat.approvalDialog.toast.approved": "工具 {toolName} 已执行",
+      "chat.approvalDialog.toast.rejected": "已取消工具执行",
+      "chat.approvalDialog.toast.executionFailed": "执行失败：{message}",
+      "chat.approvalDialog.result.userRejected": "用户已拒绝工具执行",
+      "chat.approvalDialog.risk.title": "风险等级 {level}",
+    }
+
+    return (key: string, values?: Record<string, string | number>) => {
+      const template = messages[namespace ? `${namespace}.${key}` : key] ?? key
+      return Object.entries(values ?? {}).reduce(
+        (result, [name, value]) => result.replace(`{${name}}`, String(value)),
+        template
+      )
+    }
+  },
+}))
+
 jest.mock("@/components/ui/alert-dialog", () => ({
   AlertDialog: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
   AlertDialogAction: ({
@@ -43,9 +74,7 @@ jest.mock("@/components/ui/alert-dialog", () => ({
   AlertDialogContent: ({ children, className }: React.PropsWithChildren<{ className?: string }>) => (
     <div className={className}>{children}</div>
   ),
-  AlertDialogDescription: ({ children, className }: React.PropsWithChildren<{ className?: string }>) => (
-    <div className={className}>{children}</div>
-  ),
+  AlertDialogDescription: ({ children }: React.PropsWithChildren<{ className?: string; asChild?: boolean }>) => <>{children}</>,
   AlertDialogFooter: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
   AlertDialogHeader: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
   AlertDialogTitle: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
@@ -100,7 +129,7 @@ describe("ToolApprovalDialog", () => {
     })
 
     render(<ToolApprovalDialog />)
-    fireEvent.click(screen.getByRole("button", { name: /allow execution/i }))
+    fireEvent.click(screen.getByRole("button", { name: "批准执行" }))
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("approve_mcp_tool", {
@@ -119,7 +148,7 @@ describe("ToolApprovalDialog", () => {
       },
       execution_token: "exec-1",
     })
-    expect(toast.success).toHaveBeenCalledWith("Tool write_file executed successfully")
+    expect(toast.success).toHaveBeenCalledWith("工具 write_file 已执行")
     expect(useBridgeApprovalStore.getState().pending).toBeNull()
   })
 
@@ -143,12 +172,52 @@ describe("ToolApprovalDialog", () => {
     render(<ToolApprovalDialog />)
 
     expect(
-      screen.getByText(/AI is requesting to execute a high-risk tool/i).parentElement
+      screen.getByText("当前 AI 正请求在本地执行一个高风险工具。").parentElement
     ).toHaveClass("max-h-[60vh]", "overflow-y-auto")
-    expect(screen.getByText("write_file").parentElement).toHaveClass(
+    expect(screen.getByText("参数").nextElementSibling).toHaveClass(
       "max-h-[40vh]",
       "overflow-y-auto"
     )
+  })
+
+  it("uses translated rejection copy when the user denies execution", async () => {
+    mockInvoke.mockResolvedValueOnce(undefined as never)
+    mockBridgeCallTool.mockResolvedValueOnce({ ok: true } as never)
+
+    act(() => {
+      useBridgeApprovalStore.getState().setPending(
+        createBridgeToolApproval({
+          approval_token: "approval-3",
+          tool_name: "write_file",
+          arguments: { path: "demo.txt" },
+          meta: {
+            call_id: "call-3",
+            execution_token: "exec-3",
+            message_id: "assistant-reject-1",
+          },
+        })
+      )
+    })
+
+    render(<ToolApprovalDialog />)
+    fireEvent.click(screen.getByRole("button", { name: "拒绝" }))
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("reject_mcp_tool", {
+        approvalToken: "approval-3",
+      })
+    })
+
+    expect(mockBridgeCallTool).toHaveBeenCalledWith({
+      tool_name: "write_file",
+      arguments: {
+        call_id: "call-3",
+        result: { error: "用户已拒绝工具执行" },
+        ok: false,
+      },
+      execution_token: "exec-3",
+    })
+    expect(toast.info).toHaveBeenCalledWith("已取消工具执行")
   })
 
   it("writes approved local-chat tool results back into the matching assistant message", async () => {
@@ -203,7 +272,7 @@ describe("ToolApprovalDialog", () => {
     })
 
     render(<ToolApprovalDialog />)
-    fireEvent.click(screen.getByRole("button", { name: /allow execution/i }))
+    fireEvent.click(screen.getByRole("button", { name: "批准执行" }))
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("approve_mcp_tool", {

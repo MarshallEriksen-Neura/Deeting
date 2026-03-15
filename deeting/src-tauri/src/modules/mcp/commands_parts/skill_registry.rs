@@ -2089,24 +2089,23 @@ pub async fn register_local_skills(
 /// Automatically install runtimes for official skills that need it.
 /// Called once after `register_local_skills_inner` during app startup.
 /// Each install runs in a background task so it never blocks the launch.
-pub(crate) async fn auto_install_official_skill_runtimes(
-    app: &AppHandle,
-    app_state: &AppState,
-) {
-    let installs = match app_state
-        .mcp
-        .store
-        .list_local_skill_install_details()
-        .await
-    {
+pub(crate) async fn auto_install_official_skill_runtimes(app: &AppHandle, app_state: &AppState) {
+    let installs = match app_state.mcp.store.list_local_skill_install_details().await {
         Ok(list) => list,
         Err(err) => {
-            log::warn!("auto_install_official_skill_runtimes: failed to list installs: {}", err);
+            log::warn!(
+                "auto_install_official_skill_runtimes: failed to list installs: {}",
+                err
+            );
             return;
         }
     };
 
-    let official_skills_marker = format!("{}official-skills{}", std::path::MAIN_SEPARATOR, std::path::MAIN_SEPARATOR);
+    let official_skills_marker = format!(
+        "{}official-skills{}",
+        std::path::MAIN_SEPARATOR,
+        std::path::MAIN_SEPARATOR
+    );
     let official_skills_marker_alt = "/official-skills/";
 
     for install in installs {
@@ -2142,10 +2141,11 @@ pub(crate) async fn auto_install_official_skill_runtimes(
         );
 
         // Mark as installing
-        let requirements_path = runtime_status.requirements_path.as_deref().map(PathBuf::from);
-        let requirements_hash = requirements_path
+        let requirements_path = runtime_status
+            .requirements_path
             .as_deref()
-            .and_then(compute_file_sha256);
+            .map(PathBuf::from);
+        let requirements_hash = requirements_path.as_deref().and_then(compute_file_sha256);
         let mut settings = normalize_runtime_settings_json(install.user_settings_json.as_ref());
         if upsert_runtime_install_metadata(
             &mut settings,
@@ -2185,13 +2185,8 @@ pub(crate) async fn auto_install_official_skill_runtimes(
                     {
                         let mut ready_settings =
                             normalize_runtime_settings_json(detail.user_settings_json.as_ref());
-                        let (
-                            _provider_kind,
-                            manager,
-                            req_path,
-                            req_hash,
-                            cmd_path,
-                        ) = runtime_install_metadata_from_outcome(&outcome);
+                        let (_provider_kind, manager, req_path, req_hash, cmd_path) =
+                            runtime_install_metadata_from_outcome(&outcome);
                         if upsert_runtime_install_metadata(
                             &mut ready_settings,
                             LOCAL_SKILL_RUNTIME_STATE_READY,

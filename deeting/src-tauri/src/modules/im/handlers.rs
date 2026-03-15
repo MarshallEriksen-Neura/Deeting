@@ -4,7 +4,8 @@ use crate::modules::im::{CardActionResponse, ToastResponse, ToastType};
 use crate::state::AppState;
 
 fn action_string(value: &Value, key: &str) -> Option<String> {
-    value.get(key)
+    value
+        .get(key)
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -115,7 +116,11 @@ pub(crate) async fn build_card_action_response(
 
     let response = match normalized_action.as_str() {
         "useful" | "useless" => {
-            let score = if normalized_action == "useful" { 1.0 } else { 0.0 };
+            let score = if normalized_action == "useful" {
+                1.0
+            } else {
+                0.0
+            };
             if let Some(trace_id) = action_string(action_value, "trace_id") {
                 app_state
                     .mcp
@@ -133,7 +138,10 @@ pub(crate) async fn build_card_action_response(
                 action_string(action_value, "monitor_task_id"),
                 action_string(action_value, "log_id"),
             ) {
-                app_state.monitor.submit_feedback(task_id, log_id, score).await?;
+                app_state
+                    .monitor
+                    .submit_feedback(task_id, log_id, score)
+                    .await?;
                 toast_response("感谢反馈，监控结果已更新。", ToastType::Success)
             } else {
                 toast_response("缺少反馈标识，无法记录本地反馈。", ToastType::Error)

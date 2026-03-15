@@ -177,19 +177,22 @@ pub enum ConnectionMode {
 pub trait ImClient: Send + Sync {
     /// 获取平台类型
     fn platform(&self) -> ImPlatform;
-    
+
     /// 获取当前连接状态
     fn status(&self) -> ConnectionStatus;
-    
+
     /// 启动客户端
     async fn start(&self, event_tx: mpsc::Sender<ImEvent>) -> Result<(), ImError>;
-    
+
     /// 停止客户端
     async fn stop(&self) -> Result<(), ImError>;
-    
+
     /// 发送消息
-    async fn send_message(&self, request: SendMessageRequest) -> Result<SendMessageResponse, ImError>;
-    
+    async fn send_message(
+        &self,
+        request: SendMessageRequest,
+    ) -> Result<SendMessageResponse, ImError>;
+
     /// 回复卡片动作
     async fn reply_card_action(
         &self,
@@ -230,28 +233,28 @@ pub enum ToastType {
 pub enum ImError {
     #[error("配置错误: {0}")]
     ConfigError(String),
-    
+
     #[error("连接错误: {0}")]
     ConnectionError(String),
-    
+
     #[error("认证错误: {0}")]
     AuthError(String),
-    
+
     #[error("发送失败: {0}")]
     SendError(String),
-    
+
     #[error("解析错误: {0}")]
     ParseError(String),
-    
+
     #[error("平台错误 [{code}]: {message}")]
     PlatformError { code: i32, message: String },
-    
+
     #[error("超时")]
     Timeout,
-    
+
     #[error("未实现")]
     NotImplemented,
-    
+
     #[error("{0}")]
     Other(String),
 }

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useTranslations } from "next-intl"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,18 +33,12 @@ export function ToolApprovalDialog() {
   const upsertMessageToolResult = useChatStore((state) => state.upsertMessageToolResult)
   const appendMessageBlocks = useChatStore((state) => state.appendMessageBlocks)
   const [loading, setLoading] = useState(false)
+  const t = useTranslations("chat.approvalDialog")
 
   if (!pending) return null
 
-  const dialogCopy = {
-    title: "Security Confirmation",
-    intro:
-      "AI is requesting to execute a high-risk tool on your local system:",
-    successMessage: `Tool ${pending.tool_name} executed successfully`,
-    rejectMessage: "Tool execution cancelled by user",
-    warning:
-      "Warning: This tool may modify files or execute system commands. Only allow if you trust the current AI conversation.",
-  }
+  const rejectedErrorMessage = t("result.userRejected")
+  const formattedArguments = JSON.stringify(pending.arguments, null, 2)
 
   const handleApprove = async () => {
     setLoading(true)
@@ -83,12 +78,12 @@ export function ToolApprovalDialog() {
         })
       }
 
-      toast.success(dialogCopy.successMessage)
+      toast.success(t("toast.approved", { toolName: pending.tool_name }))
       clear()
     } catch (err: unknown) {
       console.error("[ApprovalDialog] Execution failed", err)
       const errorMessage = err instanceof Error ? err.message : String(err)
-      toast.error(`Execution failed: ${errorMessage}`)
+      toast.error(t("toast.executionFailed", { message: errorMessage }))
 
       if (isBridgeToolApproval(pending)) {
         if (pending.meta.message_id) {
@@ -122,7 +117,7 @@ export function ToolApprovalDialog() {
       })
 
       if (pending.meta.message_id) {
-        const rejectedBlock = createRejectedToolResultBlock(pending)
+        const rejectedBlock = createRejectedToolResultBlock(pending, rejectedErrorMessage)
         if (rejectedBlock) {
           upsertMessageToolResult(pending.meta.message_id, rejectedBlock)
         }
@@ -133,14 +128,14 @@ export function ToolApprovalDialog() {
           tool_name: pending.tool_name,
           arguments: {
             call_id: pending.meta.call_id,
-            result: { error: "User rejected tool execution" },
+            result: { error: rejectedErrorMessage },
             ok: false,
           },
           execution_token: pending.meta.execution_token,
         })
       }
 
-      toast.info(dialogCopy.rejectMessage)
+      toast.info(t("toast.rejected"))
     } catch (err) {
       console.error("[ApprovalDialog] Reject failed", err)
     } finally {
@@ -154,43 +149,72 @@ export function ToolApprovalDialog() {
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2 text-destructive">
             <ShieldAlert className="h-5 w-5" />
-            {dialogCopy.title}
+            {t("title")}
           </AlertDialogTitle>
-          <AlertDialogDescription className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
-            <p>
-              {dialogCopy.intro}
-            </p>
-            <div className="max-h-[40vh] overflow-y-auto rounded-md bg-muted p-3 text-xs font-mono">
-              <div className="mb-1 text-primary font-bold">{pending.tool_name}</div>
-              <pre className="whitespace-pre-wrap break-all text-muted-foreground">
-                {JSON.stringify(pending.arguments, null, 2)}
-              </pre>
-            </div>
-            {pending.description && (
-              <p className="text-xs italic text-muted-foreground">
-                &quot;{pending.description}&quot;
-              </p>
-            )}
-            {!!pending.risk_reasons?.length && (
-              <div className="rounded border border-destructive/40 bg-destructive/5 p-2 text-xs">
-                <div className="mb-1 font-semibold text-destructive">
-                  Risk {pending.risk_level ?? "HIGH"}
+          <AlertDialogDescription asChild>
+            <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1 text-sm text-muted-foreground">
+              <p>{t("description")}</p>
+
+              <div className="space-y-2 rounded-lg border bg-muted/50 p-3">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium uppercase tracking-wide text-foreground/80">
+                    {t("toolLabel")}
+                  </p>
+                  <div className="font-mono text-xs font-semibold text-foreground">
+                    {pending.tool_name}
+                  </div>
                 </div>
-                <ul className="list-disc pl-4 space-y-1 text-muted-foreground">
-                  {pending.risk_reasons.map((reason, idx) => (
-                    <li key={`${idx}-${reason}`}>{reason}</li>
-                  ))}
-                </ul>
+
+                <div className="space-y-1">
+                  <p className="text-xs font-medium uppercase tracking-wide text-foreground/80">
+                    {t("argumentsLabel")}
+                  </p>
+                  <div className="max-h-[40vh] overflow-y-auto rounded-md bg-background p-3 text-xs font-mono">
+                    <pre className="whitespace-pre-wrap break-all text-muted-foreground">
+                      {formattedArguments}
+                    </pre>
+                  </div>
+                </div>
               </div>
-            )}
-            <p className="rounded border border-yellow-200 bg-yellow-50 p-2 text-xs text-yellow-600 dark:border-yellow-900 dark:bg-yellow-950/30 dark:text-yellow-400">
-              {dialogCopy.warning}
-            </p>
+
+              {pending.description && (
+                <div className="space-y-1">
+                  <p className="text-xs font-medium uppercase tracking-wide text-foreground/80">
+                    {t("summaryLabel")}
+                  </p>
+                  <p className="text-xs italic text-muted-foreground">
+                    &quot;{pending.description}&quot;
+                  </p>
+                </div>
+              )}
+
+              {!!pending.risk_reasons?.length && (
+                <div className="space-y-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-xs">
+                  <div className="font-semibold text-destructive">
+                    {t("risk.title", { level: pending.risk_level ?? "HIGH" })}
+                  </div>
+                  <ul className="list-disc space-y-1 pl-4 text-muted-foreground">
+                    {pending.risk_reasons.map((reason, idx) => (
+                      <li key={`${idx}-${reason}`}>{reason}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-xs dark:border-yellow-900 dark:bg-yellow-950/30">
+                <p className="font-medium text-yellow-800 dark:text-yellow-300">
+                  {t("warningTitle")}
+                </p>
+                <p className="mt-1 text-yellow-700 dark:text-yellow-400">
+                  {t("warning")}
+                </p>
+              </div>
+            </div>
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel onClick={handleReject} disabled={loading}>
-            Deny
+            {t("actions.reject")}
           </AlertDialogCancel>
           <AlertDialogAction
             onClick={(e) => {
@@ -203,7 +227,7 @@ export function ToolApprovalDialog() {
             {loading ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : null}
-            Allow Execution
+            {loading ? t("actions.approving") : t("actions.approve")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

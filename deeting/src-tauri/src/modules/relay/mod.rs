@@ -296,10 +296,7 @@ pub async fn start_relay_profile_worker(
 ) -> Result<(), String> {
     let relay_url = profile.relay_config.base_url.trim().to_string();
     if relay_url.is_empty() {
-        return Err(format!(
-            "relay profile {} is missing base_url",
-            profile.id
-        ));
+        return Err(format!("relay profile {} is missing base_url", profile.id));
     }
 
     let shared_secret = Some(profile.relay_config.shared_secret.trim().to_string())
