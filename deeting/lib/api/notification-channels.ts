@@ -28,12 +28,16 @@ export interface ChannelConfig {
   // Feishu / DingTalk / Webhook
   webhook_url?: string
   // Feishu bot advanced config
+  im_enabled?: boolean
+  transport_preference?: "auto" | "direct" | "relay"
   chat_ids?: string[]
   bot_open_id?: string
   bot_model?: string
   bot_system_prompt?: string
   bot_app_id?: string
   bot_app_secret?: string
+  relay_base_url?: string
+  relay_shared_secret?: string
   // Telegram
   bot_token?: string
   chat_id?: string
@@ -177,7 +181,7 @@ export const CHANNEL_META: Record<
     label: "飞书",
     icon: "feishu",
     color: "text-blue-400",
-    description: "通过飞书机器人 Webhook 推送消息",
+    description: "通过飞书机器人发送通知，并可作为桌面 IM 接入配置入口",
   },
   dingtalk: {
     label: "钉钉",
@@ -207,7 +211,7 @@ export const CHANNEL_META: Record<
 
 /** Fields required per channel type for form validation */
 export const CHANNEL_REQUIRED_FIELDS: Record<ChannelType, string[]> = {
-  feishu: ["webhook_url"],
+  feishu: [],
   dingtalk: ["webhook_url"],
   telegram: ["bot_token", "chat_id"],
   email: ["smtp_host", "smtp_port", "from_email", "to_email"],

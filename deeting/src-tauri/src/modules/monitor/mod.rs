@@ -14,6 +14,8 @@ use tokio::task::JoinHandle;
 use uuid::Uuid;
 
 use crate::modules::mcp::local_orchestrator::{LocalOrchestrationEngine, LocalWorkflowStep};
+use crate::modules::im::feishu::{FeishuClient, FeishuConfig};
+use crate::modules::im::{ImClient, MessageContent, SendMessageRequest};
 use crate::modules::monitor::store::MonitorStore;
 use crate::modules::monitor::types::{
     LocalExecutionResult, LocalMonitorActionResponse, LocalMonitorCreateResponse,
@@ -868,34 +870,60 @@ impl MonitorState {
         content: &str,
         payload: &Value,
     ) -> Result<String, String> {
-        let webhook_url = config_string(&channel.config, "webhook_url")
-            .ok_or_else(|| "缺少 webhook_url".to_string())?;
         let text = format!("{}\n\n{}", title, content);
-        let body = json!({
-            "msg_type": "text",
-            "content": { "text": truncate(text.as_str(), 4000) },
-            "meta": payload,
-        });
-        let response = self
-            .shared
-            .client
-            .post(webhook_url.as_str())
-            .json(&body)
-            .send()
-            .await
-            .map_err(|err| format!("请求失败: {}", err))?;
-        let status = response.status();
-        let body_json: Value = response.json().await.unwrap_or_else(|_| json!({}));
-        if !status.is_success() {
-            return Err(format!("HTTP {}", status.as_u16()));
+        if let Some(webhook_url) = config_string(&channel.config, "webhook_url") {
+            let body = json!({
+                "msg_type": "text",
+                "content": { "text": truncate(text.as_str(), 4000) },
+                "meta": payload,
+            });
+            let response = self
+                .shared
+                .client
+                .post(webhook_url.as_str())
+                .json(&body)
+                .send()
+                .await
+                .map_err(|err| format!("请求失败: {}", err))?;
+            let status = response.status();
+            let body_json: Value = response.json().await.unwrap_or_else(|_| json!({}));
+            if !status.is_success() {
+                return Err(format!("HTTP {}", status.as_u16()));
+            }
+            if body_json.get("code").and_then(Value::as_i64).unwrap_or(0) != 0 {
+                let msg = body_json
+                    .get("msg")
+                    .or_else(|| body_json.get("message"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("feishu error");
+                return Err(msg.to_string());
+            }
+            return Ok("发送成功".to_string());
         }
-        if body_json.get("code").and_then(Value::as_i64).unwrap_or(0) != 0 {
-            let msg = body_json
-                .get("msg")
-                .or_else(|| body_json.get("message"))
-                .and_then(Value::as_str)
-                .unwrap_or("feishu error");
-            return Err(msg.to_string());
+
+        let app_id = config_string(&channel.config, "bot_app_id")
+            .ok_or_else(|| "缺少 webhook_url 或 bot_app_id".to_string())?;
+        let app_secret = config_string(&channel.config, "bot_app_secret")
+            .ok_or_else(|| "缺少 bot_app_secret".to_string())?;
+        let chat_ids = config_string_list(&channel.config, "chat_ids");
+        if chat_ids.is_empty() {
+            return Err("缺少 chat_ids".to_string());
+        }
+        let client = FeishuClient::new(FeishuConfig {
+            app_id,
+            app_secret,
+            ..Default::default()
+        });
+        let text = truncate(format!("{}\n\n{}\n\n{}", title, content, payload).as_str(), 4000);
+        for chat_id in &chat_ids {
+            client
+                .send_message(SendMessageRequest {
+                    chat_id: chat_id.clone(),
+                    content: MessageContent::Text { text: text.clone() },
+                    reply_to: None,
+                })
+                .await
+                .map_err(|err| err.to_string())?;
         }
         Ok("发送成功".to_string())
     }
@@ -1774,6 +1802,28 @@ fn config_string(config: &Value, key: &str) -> Option<String> {
         .and_then(Value::as_str)
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+fn config_string_list(config: &Value, key: &str) -> Vec<String> {
+    let Some(value) = config.get(key) else {
+        return Vec::new();
+    };
+    match value {
+        Value::Array(items) => items
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .collect(),
+        Value::String(text) => text
+            .split(|ch| ch == '\n' || ch == ',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 
 fn is_supported_notification_channel(value: &str) -> bool {

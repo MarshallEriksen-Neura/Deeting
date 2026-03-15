@@ -102,7 +102,6 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::relay::restart_relay_event_worker,
         crate::modules::im::runtime::restart_im_runtime_worker,
         crate::modules::im::runtime::get_local_im_settings,
-        crate::modules::im::runtime::update_local_im_settings,
         crate::modules::mcp::bridge::set_mcp_backend_url,
         crate::modules::mcp::bridge::start_mcp_log_stream,
         crate::modules::mcp::bridge::stop_mcp_log_stream,

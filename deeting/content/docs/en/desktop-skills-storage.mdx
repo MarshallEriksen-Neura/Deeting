@@ -1,0 +1,94 @@
+---
+title: Desktop Skills Storage
+description: Local storage paths for official and user skills on the Deeting desktop app.
+---
+
+## Overview
+
+The desktop app (Tauri) scans two directories on startup to register local skills: **Official Skills** and **User Skills**.
+
+The scan logic is managed by `resolve_local_skill_scan_targets()`, which returns two scan targets, iterates each directory, parses `deeting.json` manifests, and persists them into the local SQLite database.
+
+## Official Skills
+
+Official skills are bundled with the app and cannot be modified by users.
+
+| Environment | Path |
+|-------------|------|
+| Development | `packages/official-skills/` |
+| Production (bundled) | `{resource_dir}/official-skills/` |
+
+- Bundle config: `tauri.conf.json` — `"packages/official-skills/": "official-skills/"`
+- Database source prefix: `system_plugin`
+- Current list: `memory`, `crawler`, `ingestor`, `expert_network`, `monitor`, `provider_registry`, `skill_manager`, `weather-plugin`
+
+## User Skills
+
+User skills are stored under the `skills/` subdirectory of Tauri's `app_data_dir`.
+
+App identifier: `com.deeting.app`
+
+| OS | Path |
+|----|------|
+| macOS | `~/Library/Application Support/com.deeting.app/skills/` |
+| Windows | `C:\Users\{user}\AppData\Roaming\com.deeting.app\skills\` |
+| Linux | `~/.local/share/com.deeting.app/skills/` |
+
+- Database source prefix: `user_skill`
+- The directory is created automatically if it does not exist
+- Users can install skills from Git repos via `install_skill_from_repo`
+- Uninstall is restricted to this directory only (safety check)
+
+## Skill Runtime
+
+Installed skill dependencies (virtual environments / node_modules) are stored in the `.runtime` hidden directory alongside user skills:
+
+```
+{app_data_dir}/skills/.runtime/{normalized_skill_id}/
+```
+
+| Runtime | Package Manager | Dependency File |
+|---------|----------------|-----------------|
+| Python | uv | `requirements.txt` |
+| Node | npm | `package.json` |
+
+Runtime states: `needs_install` → `installing` → `ready` / `install_failed` / `needs_reinstall`
+
+## Directory Structure
+
+```
+~/Library/Application Support/com.deeting.app/   (macOS example)
+└── skills/
+    ├── my-custom-skill/                  # User skill
+    │   ├── deeting.json                  # Skill manifest
+    │   ├── main.py                       # Entry point
+    │   ├── requirements.txt              # Python deps
+    │   └── llm-tool.yaml                 # Tool declarations
+    └── .runtime/                         # Runtime directory
+        └── my-custom-skill/
+            └── .venv/                    # Python venv
+
+{resource_dir}/                           (App bundled resources)
+└── official-skills/
+    ├── memory/
+    │   ├── deeting.json
+    │   └── main.py
+    ├── crawler/
+    ├── skill_manager/
+    └── ...
+```
+
+## Scan & Registration Flow
+
+```
+App startup
+  └─ register_local_skills()
+       └─ resolve_local_skill_scan_targets()
+            ├─ official-skills dir → system_plugin
+            └─ user skills dir    → user_skill
+       └─ iterate each subdirectory
+            ├─ parse deeting.json
+            ├─ upsert_local_skill_install → SQLite
+            ├─ collect_local_skill_tool_bindings → register tools
+            └─ index_local_skill_bundle_asset → vector index
+```

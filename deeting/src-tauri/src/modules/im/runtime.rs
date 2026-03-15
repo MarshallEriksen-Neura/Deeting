@@ -1,6 +1,7 @@
 use std::sync::{Mutex, OnceLock};
 
 use log::{info, warn};
+use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
@@ -10,8 +11,8 @@ use super::feishu::{FeishuClient, FeishuConfig};
 use super::handlers::{build_card_action_response, generate_local_chat_reply};
 use super::{
     build_settings_snapshot, resolve_transport, ImClient, ImConnectionProfile, ImEvent,
-    ImPlatform, ImTransportKind, LocalImSettingsSnapshot, MessageContent, SendMessageRequest,
-    IM_CONNECTION_PROFILES_CONFIG_KEY,
+    ImPlatform, ImTransportKind, ImTransportPreference, LocalImSettingsSnapshot, MessageContent,
+    SendMessageRequest,
 };
 
 type ImWorkerHandle = tauri::async_runtime::JoinHandle<()>;
@@ -21,14 +22,60 @@ fn im_worker_slot() -> &'static Mutex<Option<ImWorkerHandle>> {
     IM_WORKER_HANDLE.get_or_init(|| Mutex::new(None))
 }
 
-fn legacy_profile_from_relay_values(base_url: &str, shared_secret: &str) -> Option<ImConnectionProfile> {
-    if base_url.trim().is_empty() && shared_secret.trim().is_empty() {
+fn config_string(value: &Value, key: &str) -> Option<String> {
+    value.get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn config_bool(value: &Value, key: &str) -> Option<bool> {
+    value.get(key).and_then(Value::as_bool)
+}
+
+fn derive_profile_from_notification_channel(
+    channel: &crate::modules::monitor::types::LocalNotificationChannel,
+) -> Option<ImConnectionProfile> {
+    if channel.channel.trim().to_lowercase() != "feishu" {
         return None;
     }
+
+    let transport_preference = match config_string(&channel.config, "transport_preference")
+        .as_deref()
+        .unwrap_or("auto")
+    {
+        "direct" => ImTransportPreference::Direct,
+        "relay" => ImTransportPreference::Relay,
+        _ => ImTransportPreference::Auto,
+    };
+
+    let has_im_fields = config_bool(&channel.config, "im_enabled").unwrap_or(false)
+        || config_string(&channel.config, "bot_app_id").is_some()
+        || config_string(&channel.config, "bot_app_secret").is_some()
+        || config_string(&channel.config, "relay_base_url").is_some()
+        || config_string(&channel.config, "relay_shared_secret").is_some()
+        || config_string(&channel.config, "transport_preference").is_some();
+    if !has_im_fields {
+        return None;
+    }
+
     let mut profile = ImConnectionProfile::default_feishu();
-    profile.enabled = true;
-    profile.relay_config.base_url = base_url.trim().to_string();
-    profile.relay_config.shared_secret = shared_secret.trim().to_string();
+    profile.id = format!("notification-channel:{}", channel.id);
+    profile.display_name = channel
+        .display_name
+        .clone()
+        .unwrap_or_else(|| "Feishu".to_string());
+    profile.enabled = channel.is_active && config_bool(&channel.config, "im_enabled").unwrap_or(false);
+    profile.transport_preference = transport_preference;
+    profile.direct_config.feishu_app_id =
+        config_string(&channel.config, "bot_app_id").unwrap_or_default();
+    profile.direct_config.feishu_app_secret =
+        config_string(&channel.config, "bot_app_secret").unwrap_or_default();
+    profile.relay_config.base_url =
+        config_string(&channel.config, "relay_base_url").unwrap_or_default();
+    profile.relay_config.shared_secret =
+        config_string(&channel.config, "relay_shared_secret").unwrap_or_default();
     Some(profile)
 }
 
@@ -55,57 +102,18 @@ fn normalize_profiles(mut profiles: Vec<ImConnectionProfile>) -> Vec<ImConnectio
 pub(crate) async fn load_im_connection_profiles(
     app_state: &AppState,
 ) -> Result<Vec<ImConnectionProfile>, String> {
-    let raw = app_state
-        .mcp
-        .store
-        .get_desktop_config(IM_CONNECTION_PROFILES_CONFIG_KEY)
-        .await
-        .map_err(|err| err.to_string())?;
-
-    if let Some(serialized) = raw.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
-        let profiles: Vec<ImConnectionProfile> =
-            serde_json::from_str(serialized).map_err(|err| err.to_string())?;
-        return Ok(normalize_profiles(profiles));
-    }
-
-    let legacy_relay_base_url = app_state
-        .mcp
-        .store
-        .get_desktop_config("relay.base_url")
+    let channels = app_state
+        .monitor
+        .list_notification_channels()
         .await
         .map_err(|err| err.to_string())?
-        .unwrap_or_default();
-    let legacy_relay_shared_secret = app_state
-        .mcp
-        .store
-        .get_desktop_config("relay.shared_secret")
-        .await
-        .map_err(|err| err.to_string())?
-        .unwrap_or_default();
-
-    let profiles = legacy_profile_from_relay_values(
-        legacy_relay_base_url.as_str(),
-        legacy_relay_shared_secret.as_str(),
-    )
-    .into_iter()
-    .collect();
+        .items;
+    let profiles = channels
+        .iter()
+        .filter_map(derive_profile_from_notification_channel)
+        .collect();
 
     Ok(normalize_profiles(profiles))
-}
-
-pub(crate) async fn save_im_connection_profiles(
-    app_state: &AppState,
-    profiles: Vec<ImConnectionProfile>,
-) -> Result<Vec<ImConnectionProfile>, String> {
-    let normalized_profiles = normalize_profiles(profiles);
-    let serialized = serde_json::to_string(&normalized_profiles).map_err(|err| err.to_string())?;
-    app_state
-        .mcp
-        .store
-        .set_desktop_config(IM_CONNECTION_PROFILES_CONFIG_KEY, serialized.as_str())
-        .await
-        .map_err(|err| err.to_string())?;
-    Ok(normalized_profiles)
 }
 
 async fn run_feishu_direct_profile_worker(
@@ -202,17 +210,6 @@ pub async fn get_local_im_settings(
     state: tauri::State<'_, AppState>,
 ) -> Result<LocalImSettingsSnapshot, String> {
     let profiles = load_im_connection_profiles(state.inner()).await?;
-    Ok(build_settings_snapshot(profiles))
-}
-
-#[tauri::command]
-pub async fn update_local_im_settings(
-    state: tauri::State<'_, AppState>,
-    profiles: Vec<ImConnectionProfile>,
-    app_handle: tauri::AppHandle,
-) -> Result<LocalImSettingsSnapshot, String> {
-    let profiles = save_im_connection_profiles(state.inner(), profiles).await?;
-    spawn_im_runtime_worker(state.inner().clone(), app_handle);
     Ok(build_settings_snapshot(profiles))
 }
 

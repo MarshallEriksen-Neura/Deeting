@@ -2,8 +2,6 @@ use serde::{Deserialize, Serialize};
 
 use super::ImPlatform;
 
-pub const IM_CONNECTION_PROFILES_CONFIG_KEY: &str = "im.connection_profiles";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ImTransportPreference {

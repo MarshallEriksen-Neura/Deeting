@@ -95,14 +95,11 @@ impl MemoryService {
         payload: CreateLocalMemoryRequest,
         embedding: Vec<f32>,
     ) -> Result<LocalMemoryItem, MemoryError> {
-        // Find the most similar existing memory
+        // Find the most similar existing memory (search globally, not scoped by
+        // session/capability, so that cross-session duplicates are detected).
         let top1 = self
             .store
-            .find_top1_similar(
-                embedding.clone(),
-                payload.session_id.as_deref(),
-                payload.capability_id.as_deref(),
-            )
+            .find_top1_similar(embedding.clone(), None, None)
             .await?;
 
         match top1 {
@@ -230,13 +227,10 @@ impl MemoryService {
         payload: CreateLocalMemoryRequest,
         embedding: Vec<f32>,
     ) -> Result<WriteGuardResult, MemoryError> {
+        // Search globally for dedup (not scoped by session/capability).
         let top1 = self
             .store
-            .find_top1_similar(
-                embedding.clone(),
-                payload.session_id.as_deref(),
-                payload.capability_id.as_deref(),
-            )
+            .find_top1_similar(embedding.clone(), None, None)
             .await?;
 
         match top1 {

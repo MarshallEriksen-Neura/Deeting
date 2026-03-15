@@ -67,43 +67,17 @@
       "unavailableDesc": "Configure local embedding models in the desktop app.",
       "download": "Get the desktop app",
       "scopeBadge": "Local only",
-      "im": {
-        "title": "Desktop IM Transport",
-        "description": "Configure Feishu direct long-connection access with optional Relay fallback. Auto mode prefers direct transport and only falls back when direct is unavailable.",
-        "securityHint": "Direct mode does not require an extra server. If you keep Relay as a fallback, use your own VPS or internal network with a strong shared secret.",
-        "enabledLabel": "Enable Feishu transport",
-        "enabledHelp": "When disabled, this desktop app will not start the Feishu connection.",
-        "transportPreferenceLabel": "Transport preference",
-        "transportPreferencePlaceholder": "Select transport mode",
-        "transportPreferenceHelp": "Auto prefers direct. Forced direct or forced Relay will not silently switch to the other path.",
-        "transport": {
-          "auto": "Auto",
-          "direct": "Direct",
-          "relay": "Relay"
-        },
-        "effectiveTransportLabel": "Effective transport",
-        "effectiveTransportHelp": "Saving recalculates the active path and restarts the desktop IM runtime.",
-        "effective": {
-          "direct": "Direct",
-          "relay": "Relay",
-          "unavailable": "Unavailable"
-        },
-        "directTitle": "Direct credentials",
-        "directDescription": "Feishu now supports long-connection event delivery. Provide App ID / App Secret so the desktop app can connect directly.",
-        "appIdLabel": "Feishu App ID",
-        "appIdHelp": "For example cli_xxx. Used to obtain the tenant access token and establish the Feishu connection.",
-        "appSecretLabel": "Feishu App Secret",
-        "appSecretHelp": "Stored only on this desktop app for direct Feishu authentication.",
-        "relayTitle": "Relay fallback",
-        "relayDescription": "Use this only when you explicitly want a proxy hop, or when auto mode must fall back from direct transport.",
-        "relayBaseUrlLabel": "Relay base URL",
-        "relayBaseUrlHelp": "For example https://your-relay.example.com. Used for explicit Relay mode or auto fallback.",
-        "relaySharedSecretLabel": "Relay shared secret",
-        "relaySharedSecretHelp": "Must match RELAY_SHARED_SECRET configured for deeting-relay. Used to authenticate desktop ↔ Relay traffic.",
-        "platformLabel": "Feishu",
+      "relay": {
+        "title": "Desktop Relay Gateway",
+        "description": "Configure the lightweight deeting-relay endpoint so Feishu messages can be proxied to your desktop for local execution.",
+        "securityHint": "We recommend running the relay on your own VPS or internal network with a strong shared secret.",
+        "baseUrlLabel": "Relay base URL",
+        "baseUrlHelp": "For example https://your-relay.example.com. Should match the Feishu callback configuration.",
+        "sharedSecretLabel": "Shared secret",
+        "sharedSecretHelp": "Must match RELAY_SHARED_SECRET configured for deeting-relay. Used to authenticate desktop ↔ relay traffic.",
         "showSecret": "Show",
         "hideSecret": "Hide",
-        "footerHint": "Used only by this desktop app, never synced to cloud. Saving automatically reloads the desktop IM runtime."
+        "footerHint": "Used only by this desktop app, never synced to cloud. Saving automatically reloads the relay worker with the new settings."
       },
       "scout": {
         "title": "Desktop Scout Service",
@@ -266,7 +240,7 @@
       "rebuildRecommended": "Embedding model changed. Rebuilding local memories and vector indexes is recommended.",
       "rebuildSuccess": "Rebuild completed at dimension {dimension} (memories {memoryIndexed}/{memoryFailed}, assets {assetIndexed}/{assetFailed})",
       "rebuildFailed": "Rebuilding local memories and vector indexes failed. Please try again.",
-      "desktopImUpdated": "Desktop IM settings updated. The runtime was reloaded automatically.",
+      "desktopRelayUpdated": "Desktop relay settings updated. The relay worker was reloaded automatically.",
       "desktopScoutUpdated": "Desktop Scout settings updated",
       "desktopObjectStorageUpdated": "Desktop object storage settings updated"
     }

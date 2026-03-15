@@ -122,29 +122,38 @@ pub async fn get_local_notification_channel(
 #[tauri::command]
 pub async fn create_local_notification_channel(
     state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
     payload: LocalNotificationChannelCreateRequest,
 ) -> Result<LocalNotificationChannelCreateResponse, String> {
-    state.monitor.create_notification_channel(payload).await
+    let response = state.monitor.create_notification_channel(payload).await?;
+    crate::modules::im::runtime::spawn_im_runtime_worker(state.inner().clone(), app_handle);
+    Ok(response)
 }
 
 #[tauri::command]
 pub async fn update_local_notification_channel(
     state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
     channel_id: String,
     payload: LocalNotificationChannelUpdateRequest,
 ) -> Result<LocalNotificationChannelUpdateResponse, String> {
-    state
+    let response = state
         .monitor
         .update_notification_channel(channel_id, payload)
-        .await
+        .await?;
+    crate::modules::im::runtime::spawn_im_runtime_worker(state.inner().clone(), app_handle);
+    Ok(response)
 }
 
 #[tauri::command]
 pub async fn delete_local_notification_channel(
     state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
     channel_id: String,
 ) -> Result<LocalNotificationChannelDeleteResponse, String> {
-    state.monitor.delete_notification_channel(channel_id).await
+    let response = state.monitor.delete_notification_channel(channel_id).await?;
+    crate::modules::im::runtime::spawn_im_runtime_worker(state.inner().clone(), app_handle);
+    Ok(response)
 }
 
 #[tauri::command]

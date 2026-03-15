@@ -67,43 +67,17 @@
       "unavailableDesc": "请在桌面端配置本地 embedding 模型。",
       "download": "前往获取桌面端",
       "scopeBadge": "仅本地",
-      "im": {
-        "title": "桌面 IM 接入",
-        "description": "配置飞书本地直连与 Relay 兜底策略。自动模式会优先使用本地长连接，只有直连不可用时才回退到 Relay。",
-        "securityHint": "直连模式不要求额外服务器；如需 Relay 兜底，建议使用自建 VPS 或内网部署并配置高强度共享密钥。",
-        "enabledLabel": "启用飞书接入",
-        "enabledHelp": "关闭后当前桌面端不会启动飞书连接。",
-        "transportPreferenceLabel": "传输偏好",
-        "transportPreferencePlaceholder": "选择传输模式",
-        "transportPreferenceHelp": "自动模式优先直连；强制直连或强制 Relay 时不会静默切换到另一条链路。",
-        "transport": {
-          "auto": "自动",
-          "direct": "直连",
-          "relay": "Relay"
-        },
-        "effectiveTransportLabel": "当前生效链路",
-        "effectiveTransportHelp": "保存后会根据当前配置重新计算并重启桌面 IM 运行时。",
-        "effective": {
-          "direct": "Direct",
-          "relay": "Relay",
-          "unavailable": "不可用"
-        },
-        "directTitle": "直连凭据",
-        "directDescription": "飞书官方推荐使用长连接接收事件。填写 App ID / App Secret 后，桌面端可直接建立连接。",
-        "appIdLabel": "飞书 App ID",
-        "appIdHelp": "例如 cli_xxx。用于获取 tenant access token 并建立飞书长连接。",
-        "appSecretLabel": "飞书 App Secret",
-        "appSecretHelp": "仅保存在当前桌面端，用于飞书直连鉴权。",
-        "relayTitle": "Relay 兜底",
-        "relayDescription": "仅当你明确需要中转，或自动模式下直连不可用时使用。",
-        "relayBaseUrlLabel": "Relay 服务地址",
-        "relayBaseUrlHelp": "例如 https://your-relay.example.com。用于显式 Relay 或自动回退。",
-        "relaySharedSecretLabel": "Relay 共享密钥",
-        "relaySharedSecretHelp": "与 deeting-relay 的 RELAY_SHARED_SECRET 一致，用于桌面端与 Relay 的鉴权。",
-        "platformLabel": "飞书",
+      "relay": {
+        "title": "桌面 Relay 转发",
+        "description": "配置轻量级 deeting-relay 服务地址，让飞书消息可以通过云端中转到本地桌面执行。",
+        "securityHint": "建议在内网或自建 VPS 上部署 relay，并设置强随机密钥。",
+        "baseUrlLabel": "Relay 服务地址",
+        "baseUrlHelp": "例如 https://your-relay.example.com，需与飞书回调配置保持一致。",
+        "sharedSecretLabel": "共享密钥",
+        "sharedSecretHelp": "与 deeting-relay 的 RELAY_SHARED_SECRET 保持一致，用于桌面端与 relay 之间的鉴权。",
         "showSecret": "显示",
         "hideSecret": "隐藏",
-        "footerHint": "仅本机桌面端使用，不会同步到云端。保存后会自动重载桌面 IM 运行时。"
+        "footerHint": "仅本机桌面端使用，不会同步到云端。保存后会自动重载 relay 后台连接。"
       },
       "scout": {
         "title": "桌面 Scout 服务",
@@ -266,7 +240,7 @@
       "rebuildRecommended": "检测到 embedding 模型变更，建议立即重建本地记忆与向量索引。",
       "rebuildSuccess": "重建完成（向量维度 {dimension}；记忆 成功 {memoryIndexed} / 失败 {memoryFailed}；资产 成功 {assetIndexed} / 失败 {assetFailed}）",
       "rebuildFailed": "本地记忆与向量索引重建失败，请稍后重试",
-      "desktopImUpdated": "桌面 IM 配置已更新，已自动重载后台连接",
+      "desktopRelayUpdated": "桌面 Relay 配置已更新，已自动重载后台连接",
       "desktopScoutUpdated": "桌面 Scout 配置已更新",
       "desktopObjectStorageUpdated": "桌面对象存储配置已更新"
     }

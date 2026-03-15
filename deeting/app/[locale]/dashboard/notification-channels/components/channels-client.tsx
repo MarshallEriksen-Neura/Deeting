@@ -34,6 +34,12 @@ import {
   deleteNotificationChannel,
   testNotificationChannel,
 } from "@/lib/api/notification-channels"
+import { getDesktopImSettings, getPrimaryFeishuResolution } from "@/lib/api/desktop-im"
+
+const isDesktopRuntime = () =>
+  process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
+  typeof window !== "undefined" &&
+  ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
 
 // =====================
 // Channel icon mapping (lucide fallbacks for IM icons)
@@ -400,9 +406,10 @@ type FieldDef = {
   key: string
   label: string
   placeholder: string
-  type?: "text" | "number" | "password" | "textarea"
-  valueKind?: "string" | "number" | "string[]"
+  type?: "text" | "number" | "password" | "textarea" | "switch" | "select"
+  valueKind?: "string" | "number" | "string[]" | "boolean"
   description?: string
+  options?: Array<{ value: string; label: string }>
 }
 
 const FIELD_DEFS: Record<ChannelType, FieldDef[]> = {
@@ -446,6 +453,39 @@ const FIELD_DEFS: Record<ChannelType, FieldDef[]> = {
       label: "飞书 App Secret",
       placeholder: "可选，渠道级覆盖",
       type: "password",
+    },
+    {
+      key: "im_enabled",
+      label: "启用桌面 IM",
+      placeholder: "",
+      type: "switch",
+      valueKind: "boolean",
+      description: "启用后，桌面端会根据下面的直连 / Relay 配置启动飞书机器人接入。",
+    },
+    {
+      key: "transport_preference",
+      label: "桌面传输偏好",
+      placeholder: "选择传输模式",
+      type: "select",
+      options: [
+        { value: "auto", label: "自动" },
+        { value: "direct", label: "直连" },
+        { value: "relay", label: "Relay" },
+      ],
+      description: "自动模式优先直连；强制直连或强制 Relay 时不会静默切换到另一条链路。",
+    },
+    {
+      key: "relay_base_url",
+      label: "Relay 服务地址",
+      placeholder: "https://your-relay.example.com",
+      description: "仅在自动回退或强制 Relay 时使用。",
+    },
+    {
+      key: "relay_shared_secret",
+      label: "Relay 共享密钥",
+      placeholder: "可选，Relay 模式使用",
+      type: "password",
+      description: "与 deeting-relay 的 RELAY_SHARED_SECRET 保持一致。",
     },
   ],
   dingtalk: [
@@ -491,12 +531,21 @@ const FIELD_DEFS: Record<ChannelType, FieldDef[]> = {
   ],
 }
 
-function configToFormValues(fields: FieldDef[], config?: ChannelConfig): Record<string, string> {
+type ChannelFormValue = string | boolean
+
+function configToFormValues(
+  fields: FieldDef[],
+  config?: ChannelConfig
+): Record<string, ChannelFormValue> {
   if (!config) return {}
-  const values: Record<string, string> = {}
+  const values: Record<string, ChannelFormValue> = {}
   for (const field of fields) {
     const raw = (config as Record<string, unknown>)[field.key]
     if (raw === undefined || raw === null) continue
+    if (field.valueKind === "boolean") {
+      values[field.key] = Boolean(raw)
+      continue
+    }
     if (field.valueKind === "string[]") {
       if (Array.isArray(raw)) {
         values[field.key] = raw.map((item) => String(item).trim()).filter(Boolean).join("\n")
@@ -530,7 +579,7 @@ function ChannelConfigForm({
   const fields = FIELD_DEFS[channelType]
   const required = CHANNEL_REQUIRED_FIELDS[channelType]
 
-  const [values, setValues] = useState<Record<string, string>>(() =>
+  const [values, setValues] = useState<Record<string, ChannelFormValue>>(() =>
     configToFormValues(fields, initialConfig)
   )
   const [displayName, setDisplayName] = useState(initialDisplayName ?? "")
@@ -541,8 +590,12 @@ function ChannelConfigForm({
     success: boolean
     message: string | null
   } | null>(null)
+  const [imRuntimeHint, setImRuntimeHint] = useState<{
+    effective: string
+    message: string
+  } | null>(null)
 
-  const setValue = (key: string, val: string) =>
+  const setValue = (key: string, val: ChannelFormValue) =>
     setValues((prev) => ({ ...prev, [key]: val }))
 
   useEffect(() => {
@@ -575,11 +628,50 @@ function ChannelConfigForm({
     }
   }, [channelId, fields, initialConfig])
 
+  useEffect(() => {
+    let active = true
+    if (channelType !== "feishu" || !isDesktopRuntime()) {
+      setImRuntimeHint(null)
+      return () => {
+        active = false
+      }
+    }
+
+    const loadRuntimeHint = async () => {
+      try {
+        const snapshot = await getDesktopImSettings()
+        const resolution = getPrimaryFeishuResolution(snapshot)
+        if (!active) return
+        if (resolution) {
+          setImRuntimeHint({
+            effective: resolution.resolution.effective,
+            message: resolution.resolution.user_message,
+          })
+        } else {
+          setImRuntimeHint(null)
+        }
+      } catch {
+        if (active) {
+          setImRuntimeHint(null)
+        }
+      }
+    }
+
+    void loadRuntimeHint()
+    return () => {
+      active = false
+    }
+  }, [channelType, initialConfig, channelId])
+
   const buildConfig = (): ChannelConfig => {
     const config: ChannelConfig = {}
     for (const f of fields) {
       const val = values[f.key]
-      if (val !== undefined && val !== "") {
+      if (f.valueKind === "boolean") {
+        ;(config as Record<string, unknown>)[f.key] = Boolean(val)
+        continue
+      }
+      if (typeof val === "string" && val !== "") {
         if (f.valueKind === "string[]") {
           const items = val
             .split(/\r?\n|,/)
@@ -604,7 +696,42 @@ function ChannelConfigForm({
     return config
   }
 
-  const isValid = required.every((k) => values[k]?.trim())
+  const validateConfig = () => {
+    if (channelType !== "feishu") {
+      return required.every((key) => {
+        const value = values[key]
+        return typeof value === "string" && value.trim().length > 0
+      })
+    }
+
+    const hasWebhook = typeof values.webhook_url === "string" && values.webhook_url.trim().length > 0
+    const imEnabled = Boolean(values.im_enabled)
+    const preference =
+      (typeof values.transport_preference === "string" && values.transport_preference) || "auto"
+    const hasDirectCreds =
+      typeof values.bot_app_id === "string" &&
+      values.bot_app_id.trim().length > 0 &&
+      typeof values.bot_app_secret === "string" &&
+      values.bot_app_secret.trim().length > 0
+    const hasRelayBaseUrl =
+      typeof values.relay_base_url === "string" && values.relay_base_url.trim().length > 0
+
+    if (!hasWebhook && !imEnabled) {
+      return false
+    }
+    if (!imEnabled) {
+      return true
+    }
+    if (preference === "direct") {
+      return hasDirectCreds
+    }
+    if (preference === "relay") {
+      return hasRelayBaseUrl
+    }
+    return hasDirectCreds || hasRelayBaseUrl
+  }
+
+  const isValid = validateConfig()
 
   const handleSave = async () => {
     if (!isValid) return
@@ -652,12 +779,22 @@ function ChannelConfigForm({
           label={f.label}
           placeholder={f.placeholder}
           type={f.type}
-          value={values[f.key] ?? ""}
+          value={values[f.key] ?? (f.valueKind === "boolean" ? false : "")}
           onChange={(v) => setValue(f.key, v)}
           required={required.includes(f.key)}
           description={f.description}
+          options={f.options}
         />
       ))}
+
+      {channelType === "feishu" && imRuntimeHint && (
+        <div className="rounded-xl border border-white/10 bg-[var(--foreground)]/[0.03] px-3 py-2 text-xs text-[var(--muted)]">
+          <div className="font-medium text-[var(--foreground)]">
+            当前桌面 IM: {imRuntimeHint.effective}
+          </div>
+          <div className="mt-1">{imRuntimeHint.message}</div>
+        </div>
+      )}
 
       {/* Test result */}
       <AnimatePresence>
@@ -738,14 +875,16 @@ function FormField({
   type = "text",
   required,
   description,
+  options,
 }: {
   label: string
   placeholder: string
-  value: string
-  onChange: (v: string) => void
-  type?: "text" | "number" | "password" | "textarea"
+  value: string | boolean
+  onChange: (v: string | boolean) => void
+  type?: "text" | "number" | "password" | "textarea" | "switch" | "select"
   required?: boolean
   description?: string
+  options?: Array<{ value: string; label: string }>
 }) {
   return (
     <div>
@@ -753,9 +892,30 @@ function FormField({
         {label}
         {required && <span className="text-red-400">*</span>}
       </label>
-      {type === "textarea" ? (
+      {type === "switch" ? (
+        <div className="flex items-center justify-between rounded-xl border border-white/10 bg-[var(--foreground)]/[0.03] px-3 py-2">
+          <span className="text-sm text-[var(--foreground)]">{placeholder || label}</span>
+          <Switch
+            checked={Boolean(value)}
+            onCheckedChange={onChange}
+          />
+        </div>
+      ) : type === "select" ? (
+        <select
+          value={typeof value === "string" ? value : ""}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full rounded-xl border border-white/10 bg-[var(--foreground)]/[0.03] px-3 py-2 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--primary)]/40 focus:ring-1 focus:ring-[var(--primary)]/20"
+        >
+          <option value="">{placeholder}</option>
+          {(options ?? []).map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      ) : type === "textarea" ? (
         <textarea
-          value={value}
+          value={typeof value === "string" ? value : ""}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           rows={4}
@@ -764,7 +924,7 @@ function FormField({
       ) : (
         <input
           type={type}
-          value={value}
+          value={typeof value === "string" ? value : ""}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           className="w-full rounded-xl border border-white/10 bg-[var(--foreground)]/[0.03] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted)]/40 outline-none transition-colors focus:border-[var(--primary)]/40 focus:ring-1 focus:ring-[var(--primary)]/20"

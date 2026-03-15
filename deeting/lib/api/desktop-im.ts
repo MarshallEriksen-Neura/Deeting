@@ -107,12 +107,3 @@ export async function getDesktopImSettings(): Promise<DesktopImSettingsSnapshot>
   assertDesktopRuntime()
   return invokeTauri<DesktopImSettingsSnapshot>("get_local_im_settings")
 }
-
-export async function updateDesktopImSettings(
-  profiles: DesktopImConnectionProfile[]
-): Promise<DesktopImSettingsSnapshot> {
-  assertDesktopRuntime()
-  return invokeTauri<DesktopImSettingsSnapshot>("update_local_im_settings", {
-    profiles,
-  })
-}
