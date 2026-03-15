@@ -656,13 +656,32 @@ fn looks_like_skill_bundle_dir(path: &Path) -> Result<bool, String> {
     if !path.exists() || !path.is_dir() {
         return Ok(false);
     }
-    match collect_bundle_snapshot(path) {
-        Ok(snapshot) => Ok(snapshot.manifest_present
-            || snapshot.package_present
-            || !snapshot.doc_paths.is_empty()
-            || !snapshot.script_paths.is_empty()),
-        Err(_) => Ok(false),
+
+    let entries = std::fs::read_dir(path)
+        .map_err(to_string)?
+        .filter_map(|entry| entry.ok())
+        .collect::<Vec<_>>();
+
+    for entry in entries {
+        let entry_path = entry.path();
+        if !entry_path.is_file() {
+            continue;
+        }
+        if is_hidden_name(&entry.file_name()) {
+            continue;
+        }
+
+        let file_name = entry_path.file_name();
+        if file_name == Some(OsStr::new("deeting.json"))
+            || file_name == Some(OsStr::new("package.json"))
+            || file_name == Some(OsStr::new("SKILL.md"))
+            || file_name == Some(OsStr::new("llm-tool.yaml"))
+        {
+            return Ok(true);
+        }
     }
+
+    Ok(false)
 }
 
 fn ensure_directory(path: &Path) -> Result<(), String> {
@@ -1395,6 +1414,60 @@ mod tests {
             metadata.get("ecosystem").and_then(Value::as_str),
             Some("openclaw_agentskills")
         );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn scan_directory_treats_skill_container_root_as_directory_not_bundle() {
+        let root = temp_dir("official-skills-root");
+
+        std::fs::write(root.join("__init__.py"), "# root marker\n").expect("write root marker");
+
+        let crawler_dir = root.join("crawler");
+        std::fs::create_dir_all(&crawler_dir).expect("create crawler dir");
+        std::fs::write(
+            crawler_dir.join("deeting.json"),
+            r#"{
+  "id":"official.skills.crawler",
+  "name":"Scout Crawler",
+  "runtime":["cloud","local"]
+}"#,
+        )
+        .expect("write crawler manifest");
+        std::fs::write(crawler_dir.join("SKILL.md"), "# Scout Crawler\n")
+            .expect("write crawler doc");
+
+        let interpreter_dir = root.join("code_interpreter");
+        std::fs::create_dir_all(&interpreter_dir).expect("create interpreter dir");
+        std::fs::write(
+            interpreter_dir.join("deeting.json"),
+            r#"{
+  "id":"official.skills.code_interpreter",
+  "name":"Code Interpreter",
+  "runtime":["cloud","local"]
+}"#,
+        )
+        .expect("write interpreter manifest");
+        std::fs::write(interpreter_dir.join("SKILL.md"), "# Code Interpreter\n")
+            .expect("write interpreter doc");
+
+        let run = scan_directory(&root, &[], &[]).expect("scan directory");
+
+        assert_eq!(run.summary.skill_bundle_count, 2);
+        assert_eq!(run.documents.len(), 2);
+        assert!(run
+            .documents
+            .iter()
+            .all(|item| item.path != normalize_path(&root)));
+        assert!(run.documents.iter().any(|item| {
+            item.bundle_id.as_deref() == Some("official-skills-crawler")
+                || item.bundle_id.as_deref() == Some("official.skills.crawler")
+        }));
+        assert!(run.documents.iter().any(|item| {
+            item.bundle_id.as_deref() == Some("official-skills-code-interpreter")
+                || item.bundle_id.as_deref() == Some("official.skills.code_interpreter")
+        }));
 
         let _ = std::fs::remove_dir_all(root);
     }

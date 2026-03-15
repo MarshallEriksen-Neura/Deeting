@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
 use crate::modules::mcp::commands::skill_registry_impl::resolve_local_skill_scan_targets;
 use crate::state::AppState;
