@@ -5,7 +5,6 @@ use async_trait::async_trait;
 use futures_util::{SinkExt, StreamExt};
 use log::{debug, error, info, warn};
 use reqwest::Client;
-use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
@@ -136,13 +135,16 @@ impl FeishuClient {
     
     /// 获取 WebSocket 连接地址
     async fn get_ws_url(&self) -> Result<String, ImError> {
-        let token = self.get_tenant_access_token().await?;
-        
-        let url = "https://open.feishu.cn/open-apis/callback/v2/websocket/endpoint";
-        
+        let url = "https://open.feishu.cn/callback/ws/endpoint";
+        let body = serde_json::json!({
+            "AppID": self.config.app_id,
+            "AppSecret": self.config.app_secret,
+        });
+
         let resp = self.http
             .post(url)
-            .header("Authorization", format!("Bearer {}", token))
+            .header("locale", "zh")
+            .json(&body)
             .send()
             .await
             .map_err(|e| ImError::ConnectionError(e.to_string()))?;
@@ -150,13 +152,8 @@ impl FeishuClient {
         if !resp.status().is_success() {
             return Err(ImError::ConnectionError(format!("HTTP {}", resp.status())));
         }
-        
-        #[derive(Deserialize)]
-        struct WsEndpointData {
-            endpoint: String,
-        }
-        
-        let result: FeishuApiResponse<WsEndpointData> = resp
+
+        let result: WsConnectConfigResponse = resp
             .json()
             .await
             .map_err(|e| ImError::ParseError(e.to_string()))?;
@@ -164,10 +161,14 @@ impl FeishuClient {
         if result.code != 0 {
             return Err(ImError::ConnectionError(format!("code {}: {}", result.code, result.msg)));
         }
-        
-        result.data
-            .map(|d| d.endpoint)
-            .ok_or_else(|| ImError::ConnectionError("响应数据为空".to_string()))
+
+        let data = result
+            .data
+            .ok_or_else(|| ImError::ConnectionError("响应数据为空".to_string()))?;
+        if data.url.trim().is_empty() {
+            return Err(ImError::ConnectionError("WebSocket URL 为空".to_string()));
+        }
+        Ok(data.url)
     }
     
     /// 处理 WebSocket 消息

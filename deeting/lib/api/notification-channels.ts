@@ -109,7 +109,7 @@ export async function fetchNotificationChannel(
 ): Promise<NotificationChannel> {
   if (isTauriRuntime()) {
     return invokeTauri<NotificationChannel>("get_local_notification_channel", {
-      channel_id: channelId,
+      channelId,
     })
   }
   return request<NotificationChannel>({
@@ -136,7 +136,7 @@ export async function updateNotificationChannel(
 ): Promise<{ id: string; message: string }> {
   if (isTauriRuntime()) {
     return invokeTauri<{ id: string; message: string }>("update_local_notification_channel", {
-      channel_id: channelId,
+      channelId,
       payload: data,
     })
   }
@@ -148,7 +148,7 @@ export async function deleteNotificationChannel(
 ): Promise<{ message: string }> {
   if (isTauriRuntime()) {
     return invokeTauri<{ message: string }>("delete_local_notification_channel", {
-      channel_id: channelId,
+      channelId,
     })
   }
   return request({ url: `${BASE}/${channelId}`, method: "DELETE" })

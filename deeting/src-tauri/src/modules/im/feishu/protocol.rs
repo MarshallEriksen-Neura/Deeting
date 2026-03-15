@@ -190,6 +190,33 @@ pub struct WsConnectionInfo {
     pub expire: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsClientConfig {
+    #[serde(rename = "PingInterval", default)]
+    pub ping_interval: u64,
+    #[serde(rename = "ReconnectCount", default)]
+    pub reconnect_count: i32,
+    #[serde(rename = "ReconnectInterval", default)]
+    pub reconnect_interval: u64,
+    #[serde(rename = "ReconnectNonce", default)]
+    pub reconnect_nonce: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsConnectConfigData {
+    #[serde(rename = "URL", default)]
+    pub url: String,
+    #[serde(rename = "ClientConfig")]
+    pub client_config: WsClientConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsConnectConfigResponse {
+    pub code: i32,
+    pub msg: String,
+    pub data: Option<WsConnectConfigData>,
+}
+
 /// 发送消息请求
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SendMessageReq {
