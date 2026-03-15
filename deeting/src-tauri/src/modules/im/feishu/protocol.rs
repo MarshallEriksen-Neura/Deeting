@@ -13,10 +13,12 @@ fn deserialize_string_or_int<'de, D>(deserializer: D) -> Result<String, D::Error
 where
     D: Deserializer<'de>,
 {
-    match StringOrInt::deserialize(deserializer)? {
-        StringOrInt::S(s) => Ok(s),
-        StringOrInt::I(n) => Ok(n.to_string()),
-    }
+    let opt: Option<StringOrInt> = Option::deserialize(deserializer)?;
+    Ok(match opt {
+        Some(StringOrInt::S(s)) => s,
+        Some(StringOrInt::I(n)) => n.to_string(),
+        None => String::new(),
+    })
 }
 
 /// 反序列化 Option 时间戳：飞书可能返回字符串或整数
@@ -29,6 +31,14 @@ where
         StringOrInt::S(s) => s,
         StringOrInt::I(n) => n.to_string(),
     }))
+}
+
+/// 反序列化可空字符串：飞书部分字段会显式返回 null。
+fn deserialize_default_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserialize_string_or_int(deserializer)
 }
 
 /// 飞书 WebSocket 消息头
@@ -70,13 +80,13 @@ pub struct UrlVerification {
 pub struct FeishuMessageEvent {
     pub sender: FeishuSender,
     pub message: FeishuMessage,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_default_string")]
     pub tenant_key: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeishuSender {
-    #[serde(rename = "sender_type", default)]
+    #[serde(rename = "sender_type", default, deserialize_with = "deserialize_default_string")]
     pub sender_type: String,
     #[serde(rename = "sender_id")]
     pub sender_id: FeishuSenderId,
@@ -84,30 +94,31 @@ pub struct FeishuSender {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeishuSenderId {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_default_string")]
     pub open_id: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_default_string")]
     pub user_id: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_default_string")]
     pub union_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeishuMessage {
-    #[serde(rename = "message_id")]
+    #[serde(rename = "message_id", default, deserialize_with = "deserialize_default_string")]
     pub message_id: String,
-    #[serde(rename = "root_id", default)]
+    #[serde(rename = "root_id", default, deserialize_with = "deserialize_default_string")]
     pub root_id: String,
-    #[serde(rename = "parent_id", default)]
+    #[serde(rename = "parent_id", default, deserialize_with = "deserialize_default_string")]
     pub parent_id: String,
     #[serde(rename = "create_time", deserialize_with = "deserialize_string_or_int")]
     pub create_time: String,
-    #[serde(rename = "chat_id")]
+    #[serde(rename = "chat_id", default, deserialize_with = "deserialize_default_string")]
     pub chat_id: String,
-    #[serde(rename = "chat_type", default)]
+    #[serde(rename = "chat_type", default, deserialize_with = "deserialize_default_string")]
     pub chat_type: String,
-    #[serde(rename = "message_type", default)]
+    #[serde(rename = "message_type", default, deserialize_with = "deserialize_default_string")]
     pub message_type: String,
+    #[serde(default, deserialize_with = "deserialize_default_string")]
     pub content: String,
     #[serde(default)]
     pub mentions: Vec<FeishuMention>,
@@ -115,26 +126,26 @@ pub struct FeishuMessage {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeishuMention {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_default_string")]
     pub key: String,
     #[serde(default)]
     pub id: FeishuMentionId,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_default_string")]
     pub name: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FeishuMentionId {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_default_string")]
     pub open_id: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_default_string")]
     pub user_id: String,
 }
 
 /// 飞书卡片回调事件
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeishuCardEvent {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_default_string")]
     pub token: String,
     pub action: FeishuCardAction,
     pub context: FeishuCardContext,
@@ -143,9 +154,9 @@ pub struct FeishuCardEvent {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeishuCardAction {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_default_string")]
     pub tag: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_default_string")]
     pub name: String,
     pub value: serde_json::Value,
     #[serde(default)]
@@ -154,36 +165,36 @@ pub struct FeishuCardAction {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeishuCardContext {
-    #[serde(rename = "open_message_id", default)]
+    #[serde(rename = "open_message_id", default, deserialize_with = "deserialize_default_string")]
     pub open_message_id: String,
-    #[serde(rename = "open_chat_id", default)]
+    #[serde(rename = "open_chat_id", default, deserialize_with = "deserialize_default_string")]
     pub open_chat_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeishuCardOperator {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_default_string")]
     pub open_id: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_default_string")]
     pub user_id: String,
 }
 
 /// 飞书卡片回调请求 (旧版)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LegacyCardCallback {
-    #[serde(rename = "type", default)]
+    #[serde(rename = "type", default, deserialize_with = "deserialize_default_string")]
     pub callback_type: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_default_string")]
     pub challenge: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_default_string")]
     pub token: String,
-    #[serde(rename = "open_id", default)]
+    #[serde(rename = "open_id", default, deserialize_with = "deserialize_default_string")]
     pub open_id: String,
-    #[serde(rename = "user_id", default)]
+    #[serde(rename = "user_id", default, deserialize_with = "deserialize_default_string")]
     pub user_id: String,
-    #[serde(rename = "open_message_id", default)]
+    #[serde(rename = "open_message_id", default, deserialize_with = "deserialize_default_string")]
     pub open_message_id: String,
-    #[serde(rename = "open_chat_id", default)]
+    #[serde(rename = "open_chat_id", default, deserialize_with = "deserialize_default_string")]
     pub open_chat_id: String,
     pub action: FeishuCardAction,
 }
@@ -303,4 +314,87 @@ pub struct SendMessageReq {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SendMessageResp {
     pub message_id: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FeishuCardEvent, FeishuMessageEvent};
+    use serde_json::json;
+
+    #[test]
+    fn feishu_message_event_accepts_null_optional_string_fields() {
+        let payload = json!({
+            "tenant_key": null,
+            "sender": {
+                "sender_type": "user",
+                "sender_id": {
+                    "open_id": "ou_xxx",
+                    "user_id": "cli_xxx",
+                    "union_id": null
+                }
+            },
+            "message": {
+                "message_id": "om_xxx",
+                "root_id": null,
+                "parent_id": null,
+                "create_time": "1742010000000",
+                "chat_id": "oc_xxx",
+                "chat_type": "p2p",
+                "message_type": "text",
+                "content": "{\"text\":\"hello\"}",
+                "mentions": [
+                    {
+                        "key": "@_user_1",
+                        "id": {
+                            "open_id": null,
+                            "user_id": "cli_mention"
+                        },
+                        "name": null
+                    }
+                ]
+            }
+        });
+
+        let event: FeishuMessageEvent =
+            serde_json::from_value(payload).expect("message event should deserialize");
+
+        assert_eq!(event.message.message_id, "om_xxx");
+        assert_eq!(event.message.root_id, "");
+        assert_eq!(event.message.parent_id, "");
+        assert_eq!(event.sender.sender_id.union_id, "");
+        assert_eq!(event.message.mentions[0].id.open_id, "");
+        assert_eq!(event.message.mentions[0].name, "");
+    }
+
+    #[test]
+    fn feishu_card_event_accepts_null_optional_string_fields() {
+        let payload = json!({
+            "token": "callback_token",
+            "action": {
+                "tag": null,
+                "name": null,
+                "value": {
+                    "event": "approve"
+                },
+                "form_value": null
+            },
+            "context": {
+                "open_message_id": null,
+                "open_chat_id": "oc_xxx"
+            },
+            "operator": {
+                "open_id": null,
+                "user_id": "cli_xxx"
+            }
+        });
+
+        let event: FeishuCardEvent =
+            serde_json::from_value(payload).expect("card event should deserialize");
+
+        assert_eq!(event.action.tag, "");
+        assert_eq!(event.action.name, "");
+        assert_eq!(event.context.open_message_id, "");
+        assert_eq!(event.operator.open_id, "");
+        assert!(event.action.form_value.is_null());
+    }
 }

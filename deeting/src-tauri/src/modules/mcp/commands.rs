@@ -50,6 +50,7 @@ pub(crate) use runtime::{
     start_local_conversation_summary_worker, start_local_periodic_worker, sync_source_inner,
 };
 pub(crate) use skill_registry_impl::register_local_skills_inner;
+pub(crate) use skill_registry_impl::auto_install_official_skill_runtimes;
 #[cfg(test)]
 pub(crate) use support::*;
 pub(crate) use support::{resolve_effective_desktop_scout_base_url, SCOUT_SERVICE_URL_ENV_KEY};

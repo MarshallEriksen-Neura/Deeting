@@ -2048,6 +2048,176 @@ pub async fn register_local_skills(
     register_local_skills_inner(app, app_state.inner()).await
 }
 
+/// Automatically install runtimes for official skills that need it.
+/// Called once after `register_local_skills_inner` during app startup.
+/// Each install runs in a background task so it never blocks the launch.
+pub(crate) async fn auto_install_official_skill_runtimes(
+    app: &AppHandle,
+    app_state: &AppState,
+) {
+    let installs = match app_state
+        .mcp
+        .store
+        .list_local_skill_install_details()
+        .await
+    {
+        Ok(list) => list,
+        Err(err) => {
+            log::warn!("auto_install_official_skill_runtimes: failed to list installs: {}", err);
+            return;
+        }
+    };
+
+    let official_skills_marker = format!("{}official-skills{}", std::path::MAIN_SEPARATOR, std::path::MAIN_SEPARATOR);
+    let official_skills_marker_alt = "/official-skills/";
+
+    for install in installs {
+        let is_official = install.install_path.contains(&official_skills_marker)
+            || install.install_path.contains(official_skills_marker_alt);
+        if !is_official {
+            continue;
+        }
+
+        let runtime_status = detect_local_skill_runtime(&install);
+        if !runtime_status.supported {
+            continue;
+        }
+        if !runtime_status.manager_available {
+            log::info!(
+                "auto_install_official_skill_runtimes: skipping {} — runtime manager ({}) not available",
+                install.skill_id,
+                runtime_status.manager.as_deref().unwrap_or("unknown"),
+            );
+            continue;
+        }
+
+        let dominated_by_ready = runtime_status.state == LOCAL_SKILL_RUNTIME_STATE_READY;
+        let needs_work = runtime_status.state == LOCAL_SKILL_RUNTIME_STATE_NEEDS_INSTALL
+            || runtime_status.state == LOCAL_SKILL_RUNTIME_STATE_NEEDS_REINSTALL;
+        if dominated_by_ready || !needs_work {
+            continue;
+        }
+
+        log::info!(
+            "auto_install_official_skill_runtimes: scheduling runtime install for official skill {}",
+            install.skill_id,
+        );
+
+        // Mark as installing
+        let requirements_path = runtime_status.requirements_path.as_deref().map(PathBuf::from);
+        let requirements_hash = requirements_path
+            .as_deref()
+            .and_then(compute_file_sha256);
+        let mut settings = normalize_runtime_settings_json(install.user_settings_json.as_ref());
+        if upsert_runtime_install_metadata(
+            &mut settings,
+            LOCAL_SKILL_RUNTIME_STATE_INSTALLING,
+            runtime_status
+                .manager
+                .as_deref()
+                .or(Some(LOCAL_SKILL_RUNTIME_MANAGER_UV)),
+            requirements_path.as_deref(),
+            requirements_hash.as_deref(),
+            None,
+            None,
+        )
+        .is_ok()
+        {
+            let _ = app_state
+                .mcp
+                .store
+                .update_local_skill_user_settings(&install.skill_id, &settings)
+                .await;
+        }
+
+        // Spawn background install
+        let app_handle = app.clone();
+        let app_state_cloned = app_state.clone();
+        let skill_id = install.skill_id.clone();
+        tauri::async_runtime::spawn(async move {
+            match install_managed_local_skill_runtime(&app_handle, &app_state_cloned, &skill_id)
+                .await
+            {
+                Ok(outcome) => {
+                    if let Ok(Some(detail)) = app_state_cloned
+                        .mcp
+                        .store
+                        .get_local_skill_install_detail(&skill_id)
+                        .await
+                    {
+                        let mut ready_settings =
+                            normalize_runtime_settings_json(detail.user_settings_json.as_ref());
+                        let (
+                            _provider_kind,
+                            manager,
+                            req_path,
+                            req_hash,
+                            cmd_path,
+                        ) = runtime_install_metadata_from_outcome(&outcome);
+                        if upsert_runtime_install_metadata(
+                            &mut ready_settings,
+                            LOCAL_SKILL_RUNTIME_STATE_READY,
+                            manager,
+                            req_path,
+                            req_hash,
+                            cmd_path,
+                            None,
+                        )
+                        .is_ok()
+                        {
+                            let _ = app_state_cloned
+                                .mcp
+                                .store
+                                .update_local_skill_user_settings(&skill_id, &ready_settings)
+                                .await;
+                        }
+                    }
+                    log::info!(
+                        "auto_install_official_skill_runtimes: {} runtime installed successfully",
+                        skill_id,
+                    );
+                }
+                Err(err) => {
+                    if let Ok(Some(detail)) = app_state_cloned
+                        .mcp
+                        .store
+                        .get_local_skill_install_detail(&skill_id)
+                        .await
+                    {
+                        let resolved = detect_local_skill_runtime(&detail);
+                        let mut failed_settings =
+                            normalize_runtime_settings_json(detail.user_settings_json.as_ref());
+                        let req_path = resolved.requirements_path.as_deref().map(PathBuf::from);
+                        let req_hash = req_path.as_deref().and_then(compute_file_sha256);
+                        let _ = upsert_runtime_install_metadata(
+                            &mut failed_settings,
+                            LOCAL_SKILL_RUNTIME_STATE_INSTALL_FAILED,
+                            resolved
+                                .manager
+                                .as_deref()
+                                .or(Some(LOCAL_SKILL_RUNTIME_MANAGER_UV)),
+                            req_path.as_deref(),
+                            req_hash.as_deref(),
+                            None,
+                            Some(&err),
+                        );
+                        let _ = app_state_cloned
+                            .mcp
+                            .store
+                            .update_local_skill_user_settings(&skill_id, &failed_settings)
+                            .await;
+                    }
+                    log::warn!(
+                        "auto_install_official_skill_runtimes: {} runtime install failed: {}",
+                        skill_id,
+                        err,
+                    );
+                }
+            }
+        });
+    }
+}
+
 #[tauri::command]
 pub async fn list_local_skill_runtime_statuses(
     app_state: State<'_, AppState>,
