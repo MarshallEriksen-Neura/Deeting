@@ -2,6 +2,9 @@ use super::super::{common_impl::to_string, support::*};
 use super::remote_transport::{call_local_stdio_tool, call_remote_sse_tool};
 use super::tool_resolution::resolve_callable_mcp_tool_by_ref;
 use crate::modules::mcp::store::LocalSkillToolBindingSnapshot;
+use crate::modules::skill_runtime::{
+    resolve_runtime_command_for_binding, resolve_runtime_env_for_binding,
+};
 
 const TOOL_CALL_MARKER: &str = "__DEETING_TOOL_CALL_REQUEST__";
 const MAX_MARKER_REEXEC: usize = 8;
@@ -104,52 +107,6 @@ fn build_command_for_skill_binding(
     }
 }
 
-fn python_executable_candidates(base_dir: &std::path::Path) -> Vec<std::path::PathBuf> {
-    let mut candidates = vec![base_dir.join(".venv").join("bin").join("python")];
-    if cfg!(target_os = "windows") {
-        candidates.insert(0, base_dir.join(".venv").join("Scripts").join("python.exe"));
-    }
-    candidates
-}
-
-async fn resolve_preferred_python_command_for_binding(
-    store: &crate::modules::mcp::store::McpStore,
-    binding: &LocalSkillToolBindingSnapshot,
-) -> Result<Option<String>, String> {
-    let install = store
-        .get_local_skill_install_detail(&binding.skill_id)
-        .await
-        .map_err(to_string)?;
-    let Some(install) = install else {
-        return Ok(None);
-    };
-
-    if let Some(user_settings) = install.user_settings_json.as_ref() {
-        if let Some(path) = user_settings
-            .get("runtime_install")
-            .and_then(Value::as_object)
-            .and_then(|value| value.get("python_path"))
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        {
-            let candidate = std::path::PathBuf::from(path);
-            if candidate.is_file() {
-                return Ok(Some(candidate.to_string_lossy().to_string()));
-            }
-        }
-    }
-
-    let install_root = std::path::PathBuf::from(install.install_path.trim());
-    for candidate in python_executable_candidates(&install_root) {
-        if candidate.is_file() {
-            return Ok(Some(candidate.to_string_lossy().to_string()));
-        }
-    }
-
-    Ok(None)
-}
-
 async fn build_command_for_skill_binding_with_store(
     store: &crate::modules::mcp::store::McpStore,
     binding: &LocalSkillToolBindingSnapshot,
@@ -170,7 +127,7 @@ async fn build_command_for_skill_binding_with_store(
     if binding.runtime == "python" {
         let mut args = vec![binding.entry_path.clone()];
         args.append(&mut cli_args);
-        if let Some(command) = resolve_preferred_python_command_for_binding(store, binding).await? {
+        if let Some(command) = resolve_runtime_command_for_binding(store, binding).await? {
             return Ok((command, args));
         }
         return Ok((
@@ -238,6 +195,9 @@ async fn resolve_skill_binding_env(
                 );
             }
         }
+    }
+    if let Some(runtime_env) = resolve_runtime_env_for_binding(store, binding).await? {
+        env.extend(runtime_env);
     }
     if env.is_empty() {
         Ok(None)

@@ -37,7 +37,7 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
   const debouncedQuery = useDebounce(searchQuery, 300)
 
   const { plugins, isLoading, error, mutate } = usePluginMarket()
-  const { runtimeStatuses, refreshRuntimeStatuses } = useLocalSkillRuntimeStatuses()
+  const { runtimeStatuses, hasInstallingRuntime, refreshRuntimeStatuses } = useLocalSkillRuntimeStatuses()
 
   // Permission dialog state
   const [dialogOpen, setDialogOpen] = React.useState(false)
@@ -125,12 +125,12 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
     if (!selectedRuntimePlugin) return
     setIsInstallingRuntime(true)
     try {
-      await installLocalSkillRuntime(selectedRuntimePlugin.id)
-      await refreshRuntimeStatuses()
-      toast.success(t("runtimeConfig.installRuntimeSuccessTitle"), {
-        description: t("runtimeConfig.installRuntimeSuccessDesc"),
-      })
-    } catch (error) {
+        await installLocalSkillRuntime(selectedRuntimePlugin.id)
+        await refreshRuntimeStatuses()
+        toast.success(t("runtimeConfig.installRuntimeStartedTitle"), {
+          description: t("runtimeConfig.installRuntimeStartedDesc"),
+        })
+      } catch (error) {
       const description =
         error instanceof Error && error.message.trim().length > 0
           ? error.message
@@ -143,6 +143,11 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
       setIsInstallingRuntime(false)
     }
   }, [refreshRuntimeStatuses, selectedRuntimePlugin, t])
+
+  React.useEffect(() => {
+    if (!hasInstallingRuntime) return
+    void mutate()
+  }, [hasInstallingRuntime, mutate])
 
   const userVisiblePlugins = React.useMemo(
     () => plugins.filter(isUserVisiblePlugin),

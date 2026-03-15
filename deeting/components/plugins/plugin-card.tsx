@@ -50,6 +50,8 @@ export function PluginCard({ plugin, runtimeStatus, onInstall, onUninstall, onCo
       ? null
       : runtimeStatus.runnable_now
         ? { label: t("runtimeStatus.ready"), className: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" }
+        : runtimeStatus.runtime_install_state === "installing"
+          ? { label: t("runtimeStatus.installing"), className: "bg-blue-500/10 text-blue-700 border-blue-500/20" }
         : runtimeStatus.runtime_install_supported && runtimeStatus.runtime_install_state === "install_failed"
           ? { label: t("runtimeStatus.installFailed"), className: "bg-red-500/10 text-red-700 border-red-500/20" }
           : runtimeStatus.runtime_install_supported && runtimeStatus.runtime_install_state !== "ready"

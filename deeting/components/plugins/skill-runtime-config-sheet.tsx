@@ -92,6 +92,8 @@ export function SkillRuntimeConfigSheet({
   const adapterKindLabel = runtimeStatus
     ? t(`runtimeLabels.adapterKind.${runtimeStatus.adapter_kind}`)
     : "-"
+  const isRuntimeInstalling =
+    isInstallingRuntime || runtimeStatus?.runtime_install_state === "installing"
   const canInstallRuntime =
     Boolean(runtimeStatus?.runtime_install_supported) &&
     runtimeStatus?.runtime_install_state !== "ready"
@@ -120,6 +122,9 @@ export function SkillRuntimeConfigSheet({
               <div>{t("runtimeConfig.adapterKind", { adapter: adapterKindLabel })}</div>
               <div>{t("runtimeConfig.ecosystem", { ecosystem: runtimeStatus.ecosystem })}</div>
               <div>{t("runtimeConfig.executionMode", { mode: runtimeStatus.execution_mode })}</div>
+              {runtimeStatus.runtime_kind && (
+                <div>{t("runtimeConfig.runtimeKind", { kind: runtimeStatus.runtime_kind })}</div>
+              )}
               {runtimeStatus.runtime_install_supported && (
                 <div>
                   {t("runtimeConfig.runtimeManager", {
@@ -145,17 +150,17 @@ export function SkillRuntimeConfigSheet({
                     {runtimeStatus.runtime_install_error}
                   </p>
                 )}
-                {runtimeStatus.runtime_python_path && (
+                {runtimeStatus.runtime_command_path && (
                   <p className="text-xs text-muted-foreground break-all">
-                    {t("runtimeConfig.pythonPath", {
-                      path: runtimeStatus.runtime_python_path,
+                    {t("runtimeConfig.commandPath", {
+                      path: runtimeStatus.runtime_command_path,
                     })}
                   </p>
                 )}
-                {runtimeStatus.runtime_requirements_path && (
+                {runtimeStatus.runtime_dependency_manifest_path && (
                   <p className="text-xs text-muted-foreground break-all">
-                    {t("runtimeConfig.requirementsPath", {
-                      path: runtimeStatus.runtime_requirements_path,
+                    {t("runtimeConfig.dependencyManifestPath", {
+                      path: runtimeStatus.runtime_dependency_manifest_path,
                     })}
                   </p>
                 )}
@@ -163,10 +168,10 @@ export function SkillRuntimeConfigSheet({
                   <Button
                     variant="outline"
                     onClick={onInstallRuntime}
-                    disabled={isInstallingRuntime || !runtimeStatus.runtime_manager_available}
+                    disabled={isRuntimeInstalling || !runtimeStatus.runtime_manager_available}
                   >
-                    {isInstallingRuntime && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    {isInstallingRuntime
+                    {isRuntimeInstalling && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {isRuntimeInstalling
                       ? t("runtimeConfig.installingRuntime")
                       : t("runtimeConfig.installRuntime")}
                   </Button>
