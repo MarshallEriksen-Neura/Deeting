@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use tauri::{AppHandle, Manager, State};
 
+use crate::modules::mcp::commands::skill_registry_impl::resolve_local_skill_scan_targets;
 use crate::state::AppState;
 
 use super::actions::{
@@ -22,7 +23,7 @@ pub async fn scan_directory(
     app_state: State<'_, AppState>,
     path: Option<String>,
 ) -> Result<ScanRun, String> {
-    let target = resolve_scan_directory_target(&app, path)?;
+    let targets = resolve_scan_directory_targets(&app, path)?;
     let installs = app_state
         .mcp
         .store
@@ -39,7 +40,15 @@ pub async fn scan_directory(
         .filter_map(AssetIndexSnapshot::from_catalog_value)
         .collect::<Vec<_>>();
 
-    run_scan_directory(&target, &installs, &assets)
+    let mut runs = Vec::new();
+    for target in targets {
+        if !target.exists() {
+            continue;
+        }
+        runs.push(run_scan_directory(&target, &installs, &assets)?);
+    }
+
+    merge_scan_runs(runs)
 }
 
 #[tauri::command]
@@ -84,19 +93,54 @@ pub async fn run_scan_review_actions(
     execute_scan_review_actions(app_state.inner(), request).await
 }
 
-fn resolve_scan_directory_target(app: &AppHandle, path: Option<String>) -> Result<PathBuf, String> {
+fn resolve_scan_directory_targets(
+    app: &AppHandle,
+    path: Option<String>,
+) -> Result<Vec<PathBuf>, String> {
     if let Some(path) = path
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
     {
-        return Ok(PathBuf::from(path));
+        return Ok(vec![PathBuf::from(path)]);
     }
 
-    let skills_dir = app.path().app_data_dir().map_err(to_string)?.join("skills");
-    if !skills_dir.exists() {
-        std::fs::create_dir_all(&skills_dir).map_err(to_string)?;
+    let targets = resolve_local_skill_scan_targets(app)?
+        .into_iter()
+        .map(|(path, _source_prefix)| path)
+        .collect::<Vec<_>>();
+    Ok(targets)
+}
+
+fn merge_scan_runs(mut runs: Vec<ScanRun>) -> Result<ScanRun, String> {
+    let mut merged = runs
+        .drain(..1)
+        .next()
+        .ok_or_else(|| "no scan targets available".to_string())?;
+
+    if runs.is_empty() {
+        return Ok(merged);
     }
-    Ok(skills_dir)
+
+    let mut target_paths = vec![merged.target_path.clone()];
+    for run in runs {
+        target_paths.push(run.target_path.clone());
+        merged.finished_at = run.finished_at;
+        merged.summary.document_count += run.summary.document_count;
+        merged.summary.finding_count += run.summary.finding_count;
+        merged.summary.warning_count += run.summary.warning_count;
+        merged.summary.error_count += run.summary.error_count;
+        merged.summary.skill_bundle_count += run.summary.skill_bundle_count;
+        merged.summary.index_missing_count += run.summary.index_missing_count;
+        merged.summary.install_missing_count += run.summary.install_missing_count;
+        merged.summary.security_warning_count += run.summary.security_warning_count;
+        merged.summary.high_risk_script_count += run.summary.high_risk_script_count;
+        merged.summary.missing_skill_doc_count += run.summary.missing_skill_doc_count;
+        merged.documents.extend(run.documents);
+        merged.findings.extend(run.findings);
+    }
+
+    merged.target_path = target_paths.join(", ");
+    Ok(merged)
 }
 
 fn to_string(error: impl std::fmt::Display) -> String {
