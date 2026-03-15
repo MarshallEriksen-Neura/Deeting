@@ -4,15 +4,17 @@ use crate::modules::im::types::*;
 use async_trait::async_trait;
 use futures_util::{SinkExt, StreamExt};
 use log::{debug, error, info, warn};
+use prost::Message;
 use reqwest::Client;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::time::{interval, sleep};
-use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
+use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream, tungstenite::Message as WsMessage};
 
 /// 飞书 WebSocket 客户端配置
 #[derive(Debug, Clone)]
@@ -47,9 +49,20 @@ pub struct FeishuClient {
     status: Arc<RwLock<ConnectionStatus>>,
     access_token: Arc<RwLock<Option<String>>>,
     token_expire: Arc<AtomicI64>,
+    frame_cache: Arc<Mutex<HashMap<String, PartialProtoFrame>>>,
     running: Arc<AtomicBool>,
     stop_signal: Arc<tokio::sync::Notify>,
 }
+
+#[derive(Debug, Clone)]
+struct PartialProtoFrame {
+    total_parts: usize,
+    trace_id: Option<String>,
+    parts: BTreeMap<usize, Vec<u8>>,
+}
+
+type FeishuWriteHalf =
+    futures_util::stream::SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, WsMessage>;
 
 impl FeishuClient {
     pub fn new(config: FeishuConfig) -> Self {
@@ -59,6 +72,7 @@ impl FeishuClient {
             status: Arc::new(RwLock::new(ConnectionStatus::Disconnected)),
             access_token: Arc::new(RwLock::new(None)),
             token_expire: Arc::new(AtomicI64::new(0)),
+            frame_cache: Arc::new(Mutex::new(HashMap::new())),
             running: Arc::new(AtomicBool::new(false)),
             stop_signal: Arc::new(tokio::sync::Notify::new()),
         }
@@ -172,7 +186,7 @@ impl FeishuClient {
     }
     
     /// 处理 WebSocket 消息
-    async fn handle_ws_message(
+    async fn handle_ws_text_message(
         &self,
         text: &str,
         event_tx: &mpsc::Sender<ImEvent>,
@@ -258,6 +272,203 @@ impl FeishuClient {
         }
         
         Ok(())
+    }
+
+    async fn handle_event_payload(
+        &self,
+        payload: &Value,
+        event_tx: &mpsc::Sender<ImEvent>,
+    ) -> Result<(), ImError> {
+        let header = payload.get("header").cloned().unwrap_or(Value::Null);
+        let event = payload.get("event").cloned().unwrap_or(Value::Null);
+        let event_type = header
+            .get("event_type")
+            .and_then(Value::as_str)
+            .or_else(|| event.get("type").and_then(Value::as_str))
+            .unwrap_or("")
+            .trim()
+            .to_string();
+
+        match event_type.as_str() {
+            "im.message.receive_v1" => {
+                let event_data: FeishuMessageEvent = serde_json::from_value(event.clone())
+                    .map_err(|err| ImError::ParseError(err.to_string()))?;
+                if event_data.message.message_type != "text" {
+                    return Ok(());
+                }
+                if event_data.sender.sender_type.to_lowercase() != "user" {
+                    return Ok(());
+                }
+                info!(
+                    "收到飞书消息事件 chat_id={} message_id={}",
+                    event_data.message.chat_id, event_data.message.message_id
+                );
+                let header_data: WsHeader = serde_json::from_value(header)
+                    .map_err(|err| ImError::ParseError(err.to_string()))?;
+                let im_event = convert_message_event(&event_data, &header_data, payload.clone());
+                event_tx
+                    .send(im_event)
+                    .await
+                    .map_err(|err| ImError::SendError(err.to_string()))?;
+            }
+            "card.action.trigger" | "card.action.trigger_v1" => {
+                let event_data: FeishuCardEvent = serde_json::from_value(event.clone())
+                    .map_err(|err| ImError::ParseError(err.to_string()))?;
+                let header_data: WsHeader = serde_json::from_value(header)
+                    .map_err(|err| ImError::ParseError(err.to_string()))?;
+                let im_event = convert_card_event(&event_data, &header_data, payload.clone());
+                event_tx
+                    .send(im_event)
+                    .await
+                    .map_err(|err| ImError::SendError(err.to_string()))?;
+            }
+            "url_verification" => {
+                info!("收到飞书 URL 验证事件");
+            }
+            other => {
+                debug!("忽略飞书事件类型: {}", other);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn frame_header<'a>(headers: &'a [ProtoHeader], key: &str) -> Option<&'a str> {
+        headers
+            .iter()
+            .find(|header| header.key == key)
+            .map(|header| header.value.as_str())
+    }
+
+    async fn merge_event_payload(&self, frame: &ProtoFrame) -> Option<Vec<u8>> {
+        let message_id = Self::frame_header(&frame.headers, FEISHU_HEADER_MESSAGE_ID)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("seq:{}:log:{}", frame.seq_id, frame.log_id));
+        let total_parts = Self::frame_header(&frame.headers, FEISHU_HEADER_SUM)
+            .and_then(|value| value.parse::<usize>().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(1);
+        let part_index = Self::frame_header(&frame.headers, FEISHU_HEADER_SEQ)
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(0);
+        let trace_id = Self::frame_header(&frame.headers, FEISHU_HEADER_TRACE_ID)
+            .map(str::to_string);
+
+        if total_parts <= 1 {
+            return Some(frame.payload.clone());
+        }
+
+        let mut cache = self.frame_cache.lock().await;
+        let entry = cache
+            .entry(message_id.clone())
+            .or_insert_with(|| PartialProtoFrame {
+                total_parts,
+                trace_id: trace_id.clone(),
+                parts: BTreeMap::new(),
+            });
+        entry.total_parts = total_parts;
+        if entry.trace_id.is_none() {
+            entry.trace_id = trace_id;
+        }
+        entry.parts.insert(part_index, frame.payload.clone());
+
+        if entry.parts.len() < entry.total_parts {
+            return None;
+        }
+
+        let mut merged = Vec::new();
+        for index in 0..entry.total_parts {
+            let part = entry.parts.get(&index)?;
+            merged.extend_from_slice(part);
+        }
+        cache.remove(&message_id);
+        Some(merged)
+    }
+
+    async fn send_frame_response(
+        &self,
+        write: &Arc<Mutex<FeishuWriteHalf>>,
+        frame: &ProtoFrame,
+        payload: &[u8],
+        biz_rt_ms: u128,
+    ) -> Result<(), ImError> {
+        let mut headers = frame.headers.clone();
+        headers.push(ProtoHeader {
+            key: FEISHU_HEADER_BIZ_RT.to_string(),
+            value: biz_rt_ms.to_string(),
+        });
+        let response = ProtoFrame {
+            seq_id: frame.seq_id,
+            log_id: frame.log_id,
+            service: frame.service,
+            method: frame.method,
+            headers,
+            payload_encoding: frame.payload_encoding.clone(),
+            payload_type: frame.payload_type.clone(),
+            payload: payload.to_vec(),
+            log_id_new: frame.log_id_new.clone(),
+        };
+        let encoded = response.encode_to_vec();
+        let mut writer = write.lock().await;
+        writer
+            .send(WsMessage::Binary(encoded))
+            .await
+            .map_err(|err| ImError::SendError(err.to_string()))
+    }
+
+    async fn handle_ws_binary_message(
+        &self,
+        binary: &[u8],
+        event_tx: &mpsc::Sender<ImEvent>,
+        write: &Arc<Mutex<FeishuWriteHalf>>,
+    ) -> Result<(), ImError> {
+        let frame = ProtoFrame::decode(binary).map_err(|err| ImError::ParseError(err.to_string()))?;
+        let frame_type = Self::frame_header(&frame.headers, FEISHU_HEADER_TYPE).unwrap_or("");
+
+        match frame.method {
+            FEISHU_FRAME_TYPE_CONTROL => {
+                if frame_type == FEISHU_MESSAGE_TYPE_PONG && !frame.payload.is_empty() {
+                    debug!(
+                        "收到飞书二进制 pong: {}",
+                        String::from_utf8_lossy(&frame.payload)
+                    );
+                }
+                Ok(())
+            }
+            FEISHU_FRAME_TYPE_DATA => {
+                if frame_type != FEISHU_MESSAGE_TYPE_EVENT {
+                    return Ok(());
+                }
+                let Some(payload) = self.merge_event_payload(&frame).await else {
+                    debug!("飞书事件分片未收齐，等待更多分片");
+                    return Ok(());
+                };
+                let start = std::time::Instant::now();
+                let payload_str =
+                    String::from_utf8(payload).map_err(|err| ImError::ParseError(err.to_string()))?;
+                let payload_json: Value =
+                    serde_json::from_str(&payload_str).map_err(|err| ImError::ParseError(err.to_string()))?;
+                let result = self.handle_event_payload(&payload_json, event_tx).await;
+                let ack_payload = match &result {
+                    Ok(_) => serde_json::to_vec(&serde_json::json!({ "code": 200 }))
+                        .map_err(|err| ImError::ParseError(err.to_string()))?,
+                    Err(err) => serde_json::to_vec(&serde_json::json!({
+                        "code": 500,
+                        "msg": err.to_string(),
+                    }))
+                    .map_err(|encode_err| ImError::ParseError(encode_err.to_string()))?,
+                };
+                self.send_frame_response(write, &frame, &ack_payload, start.elapsed().as_millis())
+                    .await?;
+                result
+            }
+            other => {
+                debug!("未知飞书二进制 frame method: {}", other);
+                Ok(())
+            }
+        }
     }
     
     /// 运行 WebSocket 连接循环
@@ -363,8 +574,13 @@ impl FeishuClient {
                     msg = read.next() => {
                         match msg {
                             Some(Ok(WsMessage::Text(text))) => {
-                                if let Err(e) = self.handle_ws_message(&text, &event_tx).await {
+                                if let Err(e) = self.handle_ws_text_message(&text, &event_tx).await {
                                     warn!("处理消息失败: {}", e);
+                                }
+                            }
+                            Some(Ok(WsMessage::Binary(binary))) => {
+                                if let Err(e) = self.handle_ws_binary_message(&binary, &event_tx, &write).await {
+                                    warn!("处理飞书二进制消息失败: {}", e);
                                 }
                             }
                             Some(Ok(WsMessage::Ping(data))) => {

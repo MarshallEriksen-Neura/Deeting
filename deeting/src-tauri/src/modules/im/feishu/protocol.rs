@@ -1,4 +1,5 @@
 use serde::{Deserialize, Deserializer, Serialize};
+use prost::Message;
 
 #[derive(Deserialize)]
 #[serde(untagged)]
@@ -247,6 +248,48 @@ pub struct WsConnectConfigResponse {
     pub msg: String,
     pub data: Option<WsConnectConfigData>,
 }
+
+#[derive(Clone, PartialEq, Message)]
+pub struct ProtoHeader {
+    #[prost(string, tag = "1")]
+    pub key: String,
+    #[prost(string, tag = "2")]
+    pub value: String,
+}
+
+#[derive(Clone, PartialEq, Message)]
+pub struct ProtoFrame {
+    #[prost(uint64, tag = "1")]
+    pub seq_id: u64,
+    #[prost(uint64, tag = "2")]
+    pub log_id: u64,
+    #[prost(int32, tag = "3")]
+    pub service: i32,
+    #[prost(int32, tag = "4")]
+    pub method: i32,
+    #[prost(message, repeated, tag = "5")]
+    pub headers: Vec<ProtoHeader>,
+    #[prost(string, tag = "6")]
+    pub payload_encoding: String,
+    #[prost(string, tag = "7")]
+    pub payload_type: String,
+    #[prost(bytes = "vec", tag = "8")]
+    pub payload: Vec<u8>,
+    #[prost(string, tag = "9")]
+    pub log_id_new: String,
+}
+
+pub const FEISHU_FRAME_TYPE_CONTROL: i32 = 0;
+pub const FEISHU_FRAME_TYPE_DATA: i32 = 1;
+pub const FEISHU_MESSAGE_TYPE_EVENT: &str = "event";
+pub const FEISHU_MESSAGE_TYPE_PING: &str = "ping";
+pub const FEISHU_MESSAGE_TYPE_PONG: &str = "pong";
+pub const FEISHU_HEADER_TYPE: &str = "type";
+pub const FEISHU_HEADER_MESSAGE_ID: &str = "message_id";
+pub const FEISHU_HEADER_SUM: &str = "sum";
+pub const FEISHU_HEADER_SEQ: &str = "seq";
+pub const FEISHU_HEADER_TRACE_ID: &str = "trace_id";
+pub const FEISHU_HEADER_BIZ_RT: &str = "biz_rt";
 
 /// 发送消息请求
 #[derive(Debug, Clone, Serialize, Deserialize)]
