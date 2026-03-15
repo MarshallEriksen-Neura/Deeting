@@ -1,6 +1,6 @@
 use super::{
     managed_runtime_root_from_install_path, python_venv_candidates, runtime_root_for_skill,
-    LocalSkillRuntimeInstallOutcome, LocalSkillRuntimeProviderKind,
+    LocalSkillRuntimeInstallOutcome, LocalSkillRuntimeProvider, LocalSkillRuntimeProviderKind,
     LocalSkillRuntimeStatusSnapshot, LOCAL_SKILL_RUNTIME_MANAGER_UV,
     LOCAL_SKILL_RUNTIME_STATE_INSTALLING, LOCAL_SKILL_RUNTIME_STATE_INSTALL_FAILED,
     LOCAL_SKILL_RUNTIME_STATE_NEEDS_INSTALL, LOCAL_SKILL_RUNTIME_STATE_NEEDS_REINSTALL,
@@ -10,6 +10,7 @@ use crate::modules::mcp::store::{
     LocalSkillInstallDetail, LocalSkillToolBindingSnapshot, McpStore,
 };
 use crate::state::AppState;
+use async_trait::async_trait;
 use serde_json::Value as JsonValue;
 use sha2::Digest;
 use std::path::{Path, PathBuf};
@@ -191,6 +192,37 @@ pub(crate) fn detect_python_runtime(
         command_path,
         install_error,
     })
+}
+
+pub(crate) struct PythonRuntimeProvider;
+pub(crate) static PYTHON_RUNTIME_PROVIDER: PythonRuntimeProvider = PythonRuntimeProvider;
+
+#[async_trait]
+impl LocalSkillRuntimeProvider for PythonRuntimeProvider {
+    fn kind(&self) -> LocalSkillRuntimeProviderKind {
+        LocalSkillRuntimeProviderKind::Python
+    }
+
+    fn detect(&self, install: &LocalSkillInstallDetail) -> Option<LocalSkillRuntimeStatusSnapshot> {
+        detect_python_runtime(install)
+    }
+
+    async fn install(
+        &self,
+        app: &AppHandle,
+        app_state: &AppState,
+        skill_id: &str,
+    ) -> Result<LocalSkillRuntimeInstallOutcome, String> {
+        install_python_runtime(app, app_state, skill_id).await
+    }
+
+    async fn resolve_command(
+        &self,
+        store: &McpStore,
+        binding: &LocalSkillToolBindingSnapshot,
+    ) -> Result<Option<String>, String> {
+        resolve_preferred_python_command_for_binding(store, binding).await
+    }
 }
 
 async fn run_command_capture(program: &str, args: &[String], workdir: &Path) -> Result<(), String> {

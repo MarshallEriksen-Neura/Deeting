@@ -5,6 +5,7 @@ use crate::modules::mcp::store::{
     LocalSkillInstallDetail, LocalSkillToolBindingSnapshot, McpStore,
 };
 use crate::state::AppState;
+use async_trait::async_trait;
 use serde_json::{json, Value as JsonValue};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -55,6 +56,30 @@ pub(crate) struct LocalSkillRuntimeInstallOutcome {
     pub(crate) command_path: PathBuf,
 }
 
+#[async_trait]
+pub(crate) trait LocalSkillRuntimeProvider: Send + Sync {
+    fn kind(&self) -> LocalSkillRuntimeProviderKind;
+    fn detect(&self, install: &LocalSkillInstallDetail) -> Option<LocalSkillRuntimeStatusSnapshot>;
+    async fn install(
+        &self,
+        app: &AppHandle,
+        app_state: &AppState,
+        skill_id: &str,
+    ) -> Result<LocalSkillRuntimeInstallOutcome, String>;
+    async fn resolve_command(
+        &self,
+        store: &McpStore,
+        binding: &LocalSkillToolBindingSnapshot,
+    ) -> Result<Option<String>, String>;
+    async fn resolve_env(
+        &self,
+        _store: &McpStore,
+        _binding: &LocalSkillToolBindingSnapshot,
+    ) -> Result<Option<HashMap<String, String>>, String> {
+        Ok(None)
+    }
+}
+
 pub(crate) fn normalize_runtime_dir_name(skill_id: &str) -> String {
     let mut out = String::with_capacity(skill_id.len());
     for ch in skill_id.chars() {
@@ -80,6 +105,13 @@ pub(crate) fn runtime_root_for_skill(app: &AppHandle, skill_id: &str) -> Result<
         .join("skills")
         .join(".runtime")
         .join(normalize_runtime_dir_name(skill_id)))
+}
+
+fn providers() -> [&'static dyn LocalSkillRuntimeProvider; 2] {
+    [
+        &python::PYTHON_RUNTIME_PROVIDER,
+        &node::NODE_RUNTIME_PROVIDER,
+    ]
 }
 
 pub(crate) fn python_venv_candidates(base_dir: &Path) -> Vec<PathBuf> {
@@ -166,25 +198,19 @@ pub(crate) fn upsert_runtime_install_metadata(
 pub(crate) fn detect_local_skill_runtime(
     install: &LocalSkillInstallDetail,
 ) -> LocalSkillRuntimeStatusSnapshot {
-    [
-        LocalSkillRuntimeProviderKind::Python,
-        LocalSkillRuntimeProviderKind::Node,
-    ]
-    .iter()
-    .find_map(|kind| match kind {
-        LocalSkillRuntimeProviderKind::Python => python::detect_python_runtime(install),
-        LocalSkillRuntimeProviderKind::Node => node::detect_node_runtime(install),
-    })
-    .unwrap_or(LocalSkillRuntimeStatusSnapshot {
-        provider_kind: None,
-        supported: false,
-        state: LOCAL_SKILL_RUNTIME_STATE_UNSUPPORTED,
-        manager: None,
-        manager_available: false,
-        requirements_path: None,
-        command_path: None,
-        install_error: None,
-    })
+    providers()
+        .into_iter()
+        .find_map(|provider| provider.detect(install))
+        .unwrap_or(LocalSkillRuntimeStatusSnapshot {
+            provider_kind: None,
+            supported: false,
+            state: LOCAL_SKILL_RUNTIME_STATE_UNSUPPORTED,
+            manager: None,
+            manager_available: false,
+            requirements_path: None,
+            command_path: None,
+            install_error: None,
+        })
 }
 
 pub(crate) async fn install_local_skill_runtime(
@@ -200,40 +226,48 @@ pub(crate) async fn install_local_skill_runtime(
         .map_err(|err| err.to_string())?
         .ok_or_else(|| format!("local skill {} is not installed", skill_id))?;
     let runtime = detect_local_skill_runtime(&install);
-    match runtime.provider_kind {
-        Some(LocalSkillRuntimeProviderKind::Python) => {
-            python::install_python_runtime(app, app_state, skill_id).await
-        }
-        Some(LocalSkillRuntimeProviderKind::Node) => {
-            node::install_node_runtime(app, app_state, skill_id).await
-        }
-        None => Err(format!(
+    let Some(provider_kind) = runtime.provider_kind else {
+        return Err(format!(
             "local skill {} does not expose a managed runtime in the current phase",
             skill_id
-        )),
-    }
+        ));
+    };
+    let provider = providers()
+        .into_iter()
+        .find(|provider| provider.kind() == provider_kind)
+        .ok_or_else(|| {
+            format!(
+                "runtime provider '{}' is not registered",
+                provider_kind.as_str()
+            )
+        })?;
+    provider.install(app, app_state, skill_id).await
 }
 
 pub(crate) async fn resolve_runtime_command_for_binding(
     store: &McpStore,
     binding: &LocalSkillToolBindingSnapshot,
 ) -> Result<Option<String>, String> {
-    match binding.runtime.as_str() {
-        "python" => python::resolve_preferred_python_command_for_binding(store, binding).await,
-        "node" => node::resolve_preferred_node_command_for_binding(store, binding).await,
-        _ => Ok(None),
-    }
+    let Some(provider) = providers()
+        .into_iter()
+        .find(|provider| provider.kind().as_str() == binding.runtime.as_str())
+    else {
+        return Ok(None);
+    };
+    provider.resolve_command(store, binding).await
 }
 
 pub(crate) async fn resolve_runtime_env_for_binding(
     store: &McpStore,
     binding: &LocalSkillToolBindingSnapshot,
 ) -> Result<Option<HashMap<String, String>>, String> {
-    match binding.runtime.as_str() {
-        "python" => Ok(None),
-        "node" => node::resolve_node_runtime_env_for_binding(store, binding).await,
-        _ => Ok(None),
-    }
+    let Some(provider) = providers()
+        .into_iter()
+        .find(|provider| provider.kind().as_str() == binding.runtime.as_str())
+    else {
+        return Ok(None);
+    };
+    provider.resolve_env(store, binding).await
 }
 
 pub(crate) fn runtime_install_metadata_from_outcome(
