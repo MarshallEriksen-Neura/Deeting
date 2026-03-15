@@ -1,4 +1,34 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum StringOrInt {
+    S(String),
+    I(i64),
+}
+
+/// 反序列化时间戳字段：飞书可能返回字符串或整数（毫秒）
+fn deserialize_string_or_int<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match StringOrInt::deserialize(deserializer)? {
+        StringOrInt::S(s) => Ok(s),
+        StringOrInt::I(n) => Ok(n.to_string()),
+    }
+}
+
+/// 反序列化 Option 时间戳：飞书可能返回字符串或整数
+fn deserialize_opt_string_or_int<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt: Option<StringOrInt> = Option::deserialize(deserializer)?;
+    Ok(opt.map(|v| match v {
+        StringOrInt::S(s) => s,
+        StringOrInt::I(n) => n.to_string(),
+    }))
+}
 
 /// 飞书 WebSocket 消息头
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -17,6 +47,7 @@ pub struct WsHeader {
 pub struct WsFrame {
     #[serde(rename = "type")]
     pub frame_type: String,
+    #[serde(default, deserialize_with = "deserialize_opt_string_or_int")]
     pub ts: Option<String>,
     pub uuid: Option<String>,
     pub data: Option<serde_json::Value>,
@@ -68,7 +99,7 @@ pub struct FeishuMessage {
     pub root_id: String,
     #[serde(rename = "parent_id", default)]
     pub parent_id: String,
-    #[serde(rename = "create_time")]
+    #[serde(rename = "create_time", deserialize_with = "deserialize_string_or_int")]
     pub create_time: String,
     #[serde(rename = "chat_id")]
     pub chat_id: String,
