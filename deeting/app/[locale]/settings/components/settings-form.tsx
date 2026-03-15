@@ -33,9 +33,10 @@ import {
   useUserEmbeddingConfig,
   useUserSecretary,
 } from "@/lib/swr/use-embedding-settings";
+import type { DesktopImSettingsSnapshot } from "@/lib/api/desktop-im";
 import { DesktopEmbeddingSettingsCard } from "./desktop-embedding-settings-card";
+import { DesktopImSettingsCard } from "./desktop-relay-settings-card";
 import { DesktopObjectStorageSettingsCard } from "./desktop-object-storage-settings-card";
-import { DesktopRelaySettingsCard } from "./desktop-relay-settings-card";
 import { DesktopScoutSettingsCard } from "./desktop-scout-settings-card";
 import { DesktopSandboxSettingsCard } from "./desktop-sandbox-settings-card";
 import { AgentSettingsCard } from "./agent-settings-card";
@@ -97,6 +98,8 @@ export function SettingsForm({
   });
 
   const [isSaving, setIsSaving] = React.useState(false);
+  const [imSettingsSnapshot, setImSettingsSnapshot] =
+    React.useState<DesktopImSettingsSnapshot | null>(null);
   const [hasPendingRebuild, setHasPendingRebuild] = React.useState(false);
   const [isRebuildPromptOpen, setIsRebuildPromptOpen] = React.useState(false);
   const [isRebuilding, setIsRebuilding] = React.useState(false);
@@ -109,8 +112,12 @@ export function SettingsForm({
     defaultValues: {
       secretaryModel: "",
       desktopEmbeddingProviderModelId: "",
-      relayBaseUrl: "",
-      relaySharedSecret: "",
+      imFeishuEnabled: false,
+      imFeishuTransportPreference: "auto",
+      imFeishuAppId: "",
+      imFeishuAppSecret: "",
+      imFeishuRelayBaseUrl: "",
+      imFeishuRelaySharedSecret: "",
       scoutBaseUrl: "",
       objectStorageProvider: "cloudflare_r2_s3",
       objectStorageBucket: "",
@@ -138,8 +145,13 @@ export function SettingsForm({
     let cancelled = false;
 
     const syncSettings = async () => {
-      let relayBaseUrl = "";
-      let relaySharedSecret = "";
+      let imFeishuEnabled = false;
+      let imFeishuTransportPreference: SettingsFormValues["imFeishuTransportPreference"] =
+        "auto";
+      let imFeishuAppId = "";
+      let imFeishuAppSecret = "";
+      let imFeishuRelayBaseUrl = "";
+      let imFeishuRelaySharedSecret = "";
       let scoutBaseUrl = "";
       let objectStorageProvider: SettingsFormValues["objectStorageProvider"] =
         "cloudflare_r2_s3";
@@ -155,18 +167,27 @@ export function SettingsForm({
 
       if (isTauriRuntime) {
         try {
-          const { getDesktopRelaySettings } =
-            await import("@/lib/api/desktop-relay");
+          const { getDesktopImSettings, getPrimaryFeishuProfile } =
+            await import("@/lib/api/desktop-im");
           const { getDesktopScoutBaseUrl } =
             await import("@/lib/api/desktop-config");
           const { fetchDesktopObjectStorageConfig } = await import(
             "@/lib/api/desktop-object-storage"
           );
-          const current = await getDesktopRelaySettings();
+          const current = await getDesktopImSettings();
+          const feishuProfile = getPrimaryFeishuProfile(current);
           const objectStorageConfig = await fetchDesktopObjectStorageConfig();
           if (!cancelled) {
-            relayBaseUrl = current.relayBaseUrl ?? "";
-            relaySharedSecret = current.relaySharedSecret ?? "";
+            setImSettingsSnapshot(current);
+            imFeishuEnabled = feishuProfile.enabled ?? false;
+            imFeishuTransportPreference =
+              feishuProfile.transport_preference ?? "auto";
+            imFeishuAppId = feishuProfile.direct_config?.feishu_app_id ?? "";
+            imFeishuAppSecret =
+              feishuProfile.direct_config?.feishu_app_secret ?? "";
+            imFeishuRelayBaseUrl = feishuProfile.relay_config?.base_url ?? "";
+            imFeishuRelaySharedSecret =
+              feishuProfile.relay_config?.shared_secret ?? "";
             scoutBaseUrl = await getDesktopScoutBaseUrl();
             objectStorageProvider =
               objectStorageConfig?.provider ?? "cloudflare_r2_s3";
@@ -184,7 +205,7 @@ export function SettingsForm({
             objectStorageEnabled = objectStorageConfig?.is_enabled ?? false;
           }
         } catch (error) {
-          console.warn("[desktop-settings] load relay settings failed", error);
+          console.warn("[desktop-settings] load IM settings failed", error);
         }
       }
 
@@ -197,8 +218,12 @@ export function SettingsForm({
         desktopEmbeddingProviderModelId: isTauriRuntime
           ? (userEmbeddingConfig?.provider_model_id ?? "")
           : "",
-        relayBaseUrl,
-        relaySharedSecret,
+        imFeishuEnabled,
+        imFeishuTransportPreference,
+        imFeishuAppId,
+        imFeishuAppSecret,
+        imFeishuRelayBaseUrl,
+        imFeishuRelaySharedSecret,
         scoutBaseUrl,
         objectStorageProvider,
         objectStorageBucket,
@@ -290,7 +315,7 @@ export function SettingsForm({
     setIsSaving(true);
     try {
       let desktopEmbeddingChanged = false;
-      let relaySettingsChanged = false;
+      let imSettingsChanged = false;
       let scoutSettingsChanged = false;
       let objectStorageChanged = false;
 
@@ -333,10 +358,14 @@ export function SettingsForm({
           desktopEmbeddingChanged = true;
         }
 
-        // Desktop relay settings (only meaningful in Tauri runtime)
+        // Desktop IM settings (only meaningful in Tauri runtime)
         if (isTauriRuntime) {
-          const { getDesktopRelaySettings, updateDesktopRelaySettings } =
-            await import("@/lib/api/desktop-relay");
+          const {
+            createDefaultFeishuProfile,
+            getDesktopImSettings,
+            getPrimaryFeishuProfile,
+            updateDesktopImSettings,
+          } = await import("@/lib/api/desktop-im");
           const { getDesktopScoutBaseUrl, setDesktopScoutBaseUrl } =
             await import("@/lib/api/desktop-config");
           const {
@@ -344,22 +373,39 @@ export function SettingsForm({
             updateDesktopObjectStorageConfig,
           } = await import("@/lib/api/desktop-object-storage");
           try {
-            const current = await getDesktopRelaySettings();
+            const current = imSettingsSnapshot ?? (await getDesktopImSettings());
+            const currentFeishuProfile = getPrimaryFeishuProfile(current);
             const currentObjectStorage =
               await fetchDesktopObjectStorageConfig();
-            const nextBaseUrl = values.relayBaseUrl.trim();
-            const nextSecret = values.relaySharedSecret.trim();
+            const nextFeishuProfile = {
+              ...createDefaultFeishuProfile(),
+              ...currentFeishuProfile,
+              enabled: values.imFeishuEnabled,
+              transport_preference: values.imFeishuTransportPreference,
+              direct_config: {
+                ...createDefaultFeishuProfile().direct_config,
+                ...currentFeishuProfile.direct_config,
+                feishu_app_id: values.imFeishuAppId.trim(),
+                feishu_app_secret: values.imFeishuAppSecret.trim(),
+              },
+              relay_config: {
+                ...createDefaultFeishuProfile().relay_config,
+                ...currentFeishuProfile.relay_config,
+                base_url: values.imFeishuRelayBaseUrl.trim(),
+                shared_secret: values.imFeishuRelaySharedSecret.trim(),
+              },
+            };
             const currentScoutBaseUrl = (await getDesktopScoutBaseUrl()).trim();
             const nextScoutBaseUrl = values.scoutBaseUrl.trim();
-            if (
-              nextBaseUrl !== (current.relayBaseUrl ?? "") ||
-              nextSecret !== (current.relaySharedSecret ?? "")
-            ) {
-              await updateDesktopRelaySettings({
-                relayBaseUrl: nextBaseUrl,
-                relaySharedSecret: nextSecret,
-              });
-              relaySettingsChanged = true;
+            const currentImSignature = JSON.stringify(currentFeishuProfile);
+            const nextImSignature = JSON.stringify(nextFeishuProfile);
+            if (nextImSignature !== currentImSignature) {
+              const nextProfiles = current.profiles
+                .filter((profile) => profile.platform !== "feishu")
+                .concat(nextFeishuProfile);
+              const nextSnapshot = await updateDesktopImSettings(nextProfiles);
+              setImSettingsSnapshot(nextSnapshot);
+              imSettingsChanged = true;
             }
             if (nextScoutBaseUrl !== currentScoutBaseUrl) {
               await setDesktopScoutBaseUrl(nextScoutBaseUrl);
@@ -425,7 +471,7 @@ export function SettingsForm({
             }
           } catch (error) {
             console.warn(
-              "[desktop-settings] update relay/scout/object-storage settings failed",
+              "[desktop-settings] update im/scout/object-storage settings failed",
               error,
             );
           }
@@ -445,18 +491,8 @@ export function SettingsForm({
         toast(t("toast.rebuildRecommended"));
       }
 
-      if (relaySettingsChanged) {
-        if (isTauriRuntime) {
-          import("@tauri-apps/api/core")
-            .then(({ invoke }) => invoke("restart_relay_event_worker"))
-            .catch((error) => {
-              console.warn(
-                "[desktop-settings] restart relay worker after relay update failed",
-                error,
-              );
-            });
-        }
-        toast(t("toast.desktopRelayUpdated"));
+      if (imSettingsChanged) {
+        toast(t("toast.desktopImUpdated"));
       }
       if (scoutSettingsChanged) {
         if (isTauriRuntime) {
@@ -603,7 +639,7 @@ export function SettingsForm({
             </div>
           )}
 
-          {/* Relay section */}
+          {/* IM section */}
           {activeSection === "relay" && (
             <div className="flex flex-col gap-6">
               <DesktopScoutSettingsCard
@@ -611,10 +647,11 @@ export function SettingsForm({
                 isTauriRuntime={isTauriRuntime}
                 canEditDesktop={canEditDesktop}
               />
-              <DesktopRelaySettingsCard
+              <DesktopImSettingsCard
                 control={form.control}
                 isTauriRuntime={isTauriRuntime}
                 canEditDesktop={canEditDesktop}
+                snapshot={imSettingsSnapshot}
               />
             </div>
           )}

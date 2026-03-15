@@ -180,10 +180,6 @@ pub(crate) fn upsert_runtime_install_metadata(
     );
     runtime_install.insert("requirements_hash".to_string(), json!(requirements_hash));
     runtime_install.insert(
-        "python_path".to_string(),
-        json!(command_path.map(|value| value.to_string_lossy().to_string())),
-    );
-    runtime_install.insert(
         "command_path".to_string(),
         json!(command_path.map(|value| value.to_string_lossy().to_string())),
     );

@@ -7,7 +7,7 @@ use crate::modules::mcp::McpRuntimeState;
 use crate::modules::memory::MemoryState;
 use crate::modules::monitor::MonitorState;
 use crate::modules::providers::ProviderState;
-use crate::modules::relay::spawn_relay_event_worker;
+use crate::modules::im::runtime::spawn_im_runtime_worker;
 use crate::modules::sandbox::SandboxState;
 use crate::state::AppState;
 use crate::utils::*;
@@ -177,9 +177,9 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    let relay_state = sync_state.clone();
-    let relay_app_handle = app.handle().clone();
-    spawn_relay_event_worker(relay_state, relay_app_handle);
+    let im_state = sync_state.clone();
+    let im_app_handle = app.handle().clone();
+    spawn_im_runtime_worker(im_state, im_app_handle);
 
     let platform_sync_state = sync_state.clone();
     tauri::async_runtime::spawn(async move {

@@ -48,9 +48,10 @@ fn stored_runtime_install_state(user_settings_json: Option<&JsonValue>) -> Optio
         .map(str::to_string)
 }
 
-fn stored_runtime_python_path(user_settings_json: Option<&JsonValue>) -> Option<String> {
+fn stored_runtime_command_path(user_settings_json: Option<&JsonValue>) -> Option<String> {
     stored_runtime_install_object(user_settings_json)?
-        .get("python_path")
+        .get("command_path")
+        .or_else(|| stored_runtime_install_object(user_settings_json)?.get("python_path"))
         .and_then(JsonValue::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -121,7 +122,7 @@ fn has_python_entrypoint(install_root: &Path, install: &LocalSkillInstallDetail)
 }
 
 fn resolve_existing_runtime_python_path(install: &LocalSkillInstallDetail) -> Option<String> {
-    if let Some(stored) = stored_runtime_python_path(install.user_settings_json.as_ref()) {
+    if let Some(stored) = stored_runtime_command_path(install.user_settings_json.as_ref()) {
         let candidate = PathBuf::from(stored.trim());
         if candidate.is_file() {
             return Some(candidate.to_string_lossy().to_string());

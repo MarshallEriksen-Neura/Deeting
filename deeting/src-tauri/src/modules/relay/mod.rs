@@ -1,39 +1,21 @@
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
 
 use log::warn;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 use tokio::time::{sleep, Duration};
 
+use crate::modules::im::handlers::{build_card_action_response, generate_local_chat_reply};
+use crate::modules::im::ImConnectionProfile;
 use crate::state::AppState;
-
-type RelayWorkerHandle = tauri::async_runtime::JoinHandle<()>;
-
-fn relay_worker_slot() -> &'static Mutex<Option<RelayWorkerHandle>> {
-    static RELAY_WORKER_HANDLE: OnceLock<Mutex<Option<RelayWorkerHandle>>> = OnceLock::new();
-    RELAY_WORKER_HANDLE.get_or_init(|| Mutex::new(None))
-}
-
-pub fn spawn_relay_event_worker(app_state: AppState, app_handle: tauri::AppHandle) {
-    let mut slot = relay_worker_slot()
-        .lock()
-        .expect("relay worker mutex should not be poisoned");
-    if let Some(handle) = slot.take() {
-        handle.abort();
-    }
-    let handle = tauri::async_runtime::spawn(async move {
-        start_relay_event_worker(app_state, app_handle).await;
-    });
-    *slot = Some(handle);
-}
 
 #[tauri::command]
 pub fn restart_relay_event_worker(
     state: tauri::State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
-    spawn_relay_event_worker(state.inner().clone(), app_handle);
+    crate::modules::im::runtime::restart_im_runtime_worker(state, app_handle)?;
     Ok(())
 }
 
@@ -307,52 +289,28 @@ impl RelayClient {
     }
 }
 
-/// Background worker that continuously pulls events from the relay and
-/// handles simple Feishu chat events by piping them through the local
-/// orchestrator.
-pub async fn start_relay_event_worker(app_state: AppState, app_handle: tauri::AppHandle) {
-    // Prefer persisted desktop_config, fall back to environment variables for
-    // backwards compatibility or power users.
-    let stored_base_url = app_state
-        .mcp
-        .store
-        .get_desktop_config("relay.base_url")
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or_default();
-    let mut relay_url = stored_base_url.trim().to_string();
+pub async fn start_relay_profile_worker(
+    app_state: AppState,
+    app_handle: tauri::AppHandle,
+    profile: ImConnectionProfile,
+) -> Result<(), String> {
+    let relay_url = profile.relay_config.base_url.trim().to_string();
     if relay_url.is_empty() {
-        relay_url = std::env::var("DEETING_RELAY_BASE_URL")
-            .unwrap_or_else(|_| String::new())
-            .trim()
-            .to_string();
-    }
-    if relay_url.is_empty() {
-        warn!("relay integration disabled: no base URL configured");
-        return;
+        return Err(format!(
+            "relay profile {} is missing base_url",
+            profile.id
+        ));
     }
 
-    let stored_secret = app_state
-        .mcp
-        .store
-        .get_desktop_config("relay.shared_secret")
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or_default();
-    let shared_secret = if !stored_secret.trim().is_empty() {
-        Some(stored_secret.trim().to_string())
-    } else {
-        std::env::var("DEETING_RELAY_SHARED_SECRET")
-            .ok()
-            .map(|v| v.trim().to_string())
-            .filter(|v| !v.is_empty())
-    };
-
-    let agent_name = std::env::var("COMPUTERNAME")
-        .or_else(|_| std::env::var("HOSTNAME"))
-        .unwrap_or_else(|_| "deeting-desktop".to_string());
+    let shared_secret = Some(profile.relay_config.shared_secret.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let agent_name = format!(
+        "{}-{}",
+        std::env::var("COMPUTERNAME")
+            .or_else(|_| std::env::var("HOSTNAME"))
+            .unwrap_or_else(|_| "deeting-desktop".to_string()),
+        profile.id
+    );
 
     let client = RelayClient::new(RelayConfig {
         base_url: relay_url,
@@ -367,8 +325,14 @@ pub async fn start_relay_event_worker(app_state: AppState, app_handle: tauri::Ap
                     if event.source == "feishu" {
                         let result = match event.kind.as_str() {
                             "chat" => {
-                                handle_feishu_chat_event(&app_state, &app_handle, &client, &event)
-                                    .await
+                                handle_feishu_chat_event(
+                                    &app_state,
+                                    &app_handle,
+                                    &client,
+                                    &profile,
+                                    &event,
+                                )
+                                .await
                             }
                             "card_action" => {
                                 handle_feishu_card_action_event(&app_state, &client, &event).await
@@ -397,112 +361,24 @@ async fn handle_feishu_chat_event(
     app_state: &AppState,
     app_handle: &tauri::AppHandle,
     client: &RelayClient,
+    profile: &ImConnectionProfile,
     event: &RelayEvent,
 ) -> Result<(), String> {
-    use crate::modules::mcp::local_orchestrator::{
-        execute_local_orchestrated_chat, LocalOrchestratorInput,
-    };
-
-    let text = event.text.trim();
-    if text.is_empty() {
-        return Ok(());
-    }
-
-    let session_id = format!("feishu_chat_{}", event.chat_id);
-
-    // For now we reuse the secretary model configured locally.
-    let secretary = app_state
-        .providers
-        .store
-        .get_or_create_user_secretary()
-        .await
-        .map_err(|err| err.to_string())?;
-
-    let (model_name, provider_model_id) = resolve_secretary_model_selection(&secretary);
-
-    let input = LocalOrchestratorInput {
-        model: model_name,
-        provider_model_id,
-        session_id,
-        capability_id: None,
-        regenerate: false,
-        compare_only: false,
-        user_content: Some(text.to_string()),
-        temperature: Some(0.2),
-        max_tokens: Some(512),
-        request_id: None,
-        stream: false,
-        status_stream: false,
-        selected_knowledge_file_ids: Vec::new(),
-    };
-
-    // Execute local orchestrated chat without streaming back to UI.
-    let response = execute_local_orchestrated_chat(
-        app_handle,
+    let session_id = format!("im:{}:chat:{}", profile.id, event.chat_id);
+    let Some(reply_text) = generate_local_chat_reply(
         app_state,
-        input,
-        uuid::Uuid::new_v4().to_string(),
-        None,
+        app_handle,
+        event.text.as_str(),
+        session_id.as_str(),
     )
-    .await?;
-
-    let reply_text = response
-        .get("choices")
-        .and_then(|choices| choices.as_array())
-        .and_then(|choices| choices.get(0))
-        .and_then(|choice| choice.get("message"))
-        .and_then(|msg| msg.get("content"))
-        .and_then(|value| value.as_str())
-        .unwrap_or("")
-        .trim()
-        .to_string();
-
-    if reply_text.is_empty() {
+    .await?
+    else {
         return Ok(());
-    }
+    };
 
     client
         .reply_event(&event.id, &event.chat_id, &reply_text)
         .await
-}
-
-fn resolve_secretary_model_selection(
-    secretary: &crate::modules::providers::types::UserSecretary,
-) -> (String, Option<String>) {
-    // `model_name` is kept only as a legacy fallback for stored secretary selections.
-    let model_reference = secretary
-        .model_name
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("gpt-4o-mini")
-        .to_string();
-    let provider_model_id = secretary
-        .provider_model_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string);
-    (model_reference, provider_model_id)
-}
-
-fn relay_action_string(event: &RelayEvent, key: &str) -> Option<String> {
-    event
-        .action_value
-        .get(key)
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| value.to_string())
-}
-
-fn build_card_toast_response(message: &str, toast_type: &str) -> Value {
-    json!({
-        "toast": {
-            "type": toast_type,
-            "content": message,
-        }
-    })
 }
 
 async fn handle_feishu_card_action_event(
@@ -510,82 +386,17 @@ async fn handle_feishu_card_action_event(
     client: &RelayClient,
     event: &RelayEvent,
 ) -> Result<(), String> {
-    use crate::modules::mcp::types::LocalTraceFeedbackRequest;
-    use crate::modules::monitor::types::LocalMonitorTaskIdRequest;
-
-    let action_event = if !event.action_event.trim().is_empty() {
-        event.action_event.trim().to_string()
-    } else {
-        relay_action_string(event, "event").unwrap_or_default()
-    };
-
-    let callback_response = match action_event.as_str() {
-        "useful" | "useless" => {
-            let score = if action_event == "useful" { 1.0 } else { 0.0 };
-            if let Some(trace_id) = relay_action_string(event, "trace_id") {
-                app_state
-                    .mcp
-                    .store
-                    .create_local_trace_feedback(LocalTraceFeedbackRequest {
-                        trace_id,
-                        score,
-                        comment: None,
-                        tags: Some(vec!["feishu".to_string(), action_event.clone()]),
-                    })
-                    .await
-                    .map_err(|err| err.to_string())?;
-                build_card_toast_response("感谢反馈，已记录本地 trace 反馈。", "success")
-            } else if let (Some(task_id), Some(log_id)) = (
-                relay_action_string(event, "monitor_task_id"),
-                relay_action_string(event, "log_id"),
-            ) {
-                app_state
-                    .monitor
-                    .submit_feedback(task_id, log_id, score)
-                    .await?;
-                build_card_toast_response("感谢反馈，监控结果已更新。", "success")
-            } else {
-                build_card_toast_response("缺少反馈标识，无法记录本地反馈。", "error")
-            }
-        }
-        "pause" => {
-            if let Some(task_id) = relay_action_string(event, "monitor_task_id") {
-                let response = app_state
-                    .monitor
-                    .pause_task(LocalMonitorTaskIdRequest { task_id })
-                    .await?;
-                build_card_toast_response(response.message.as_str(), "success")
-            } else {
-                build_card_toast_response("缺少监控任务 ID，无法暂停任务。", "error")
-            }
-        }
-        "dialogue" => {
-            if let Some(dialogue_url) = relay_action_string(event, "dialogue_url") {
-                build_card_toast_response(
-                    format!("请在桌面端打开对话入口：{}", dialogue_url).as_str(),
-                    "success",
-                )
-            } else if let Some(assistant_id) = relay_action_string(event, "assistant_id") {
-                build_card_toast_response(
-                    format!("请在桌面端打开助手对话（assistant_id={}）。", assistant_id).as_str(),
-                    "success",
-                )
-            } else {
-                build_card_toast_response("未找到可用的桌面对话入口。", "error")
-            }
-        }
-        "" => build_card_toast_response("缺少卡片动作标识。", "error"),
-        other => {
-            build_card_toast_response(format!("暂不支持的卡片动作：{}", other).as_str(), "error")
-        }
-    };
-
+    let response =
+        build_card_action_response(app_state, event.action_event.as_str(), &event.action_value)
+            .await?;
+    let callback_response = serde_json::to_value(&response).map_err(|err| err.to_string())?;
     client.reply_card_action(&event.id, callback_response).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn relay_event_deserializes_card_action_payload() {
@@ -605,55 +416,6 @@ mod tests {
 
         assert_eq!(event.kind, "card_action");
         assert_eq!(event.action_event, "pause");
-        assert_eq!(
-            relay_action_string(&event, "monitor_task_id").as_deref(),
-            Some("task-1")
-        );
-    }
-
-    #[test]
-    fn build_card_toast_response_returns_expected_shape() {
-        let response = build_card_toast_response("ok", "success");
-        assert_eq!(response["toast"]["type"], "success");
-        assert_eq!(response["toast"]["content"], "ok");
-    }
-
-    #[test]
-    fn resolve_secretary_model_selection_prefers_provider_model_id() {
-        let secretary = crate::modules::providers::types::UserSecretary {
-            id: "11111111-1111-4111-8111-111111111111".to_string(),
-            user_id: "00000000-0000-0000-0000-000000000000".to_string(),
-            name: "deeting".to_string(),
-            model_name: Some("gpt-4o-mini".to_string()),
-            provider_model_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
-            created_at: "2026-03-10T00:00:00Z".to_string(),
-            updated_at: "2026-03-10T00:00:01Z".to_string(),
-        };
-
-        let (model_name, provider_model_id) = resolve_secretary_model_selection(&secretary);
-
-        assert_eq!(model_name, "gpt-4o-mini");
-        assert_eq!(
-            provider_model_id.as_deref(),
-            Some("22222222-2222-4222-8222-222222222222")
-        );
-    }
-
-    #[test]
-    fn resolve_secretary_model_selection_uses_default_when_secretary_empty() {
-        let secretary = crate::modules::providers::types::UserSecretary {
-            id: "11111111-1111-4111-8111-111111111111".to_string(),
-            user_id: "00000000-0000-0000-0000-000000000000".to_string(),
-            name: "deeting".to_string(),
-            model_name: None,
-            provider_model_id: Some("  ".to_string()),
-            created_at: "2026-03-10T00:00:00Z".to_string(),
-            updated_at: "2026-03-10T00:00:01Z".to_string(),
-        };
-
-        let (model_name, provider_model_id) = resolve_secretary_model_selection(&secretary);
-
-        assert_eq!(model_name, "gpt-4o-mini");
-        assert_eq!(provider_model_id, None);
+        assert_eq!(event.action_value["monitor_task_id"], "task-1");
     }
 }

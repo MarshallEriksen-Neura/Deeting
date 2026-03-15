@@ -36,6 +36,8 @@ tauri-plugin-deep-link = "2.4.7"
 tauri-plugin-single-instance = { version = "2.4.0", features = ["deep-link"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time", "process", "io-util", "fs"] }
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"] }
+chrono = { version = "0.4", features = ["serde"] }
 futures-util = "0.3"
 base64 = "0.22"
 aes-gcm = "0.10"
