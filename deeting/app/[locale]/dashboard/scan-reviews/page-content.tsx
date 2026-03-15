@@ -2,8 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { useLocale, useTranslations } from "next-intl"
-import useSWR from "swr"
-import { AlertTriangle, Database, Files, RefreshCcw } from "lucide-react"
+import { AlertTriangle, Database, Files, FileSearch, FolderSearch, Loader2, RefreshCcw } from "lucide-react"
 import {
   AdminDataTable,
   AdminFilterBar,
@@ -13,14 +12,20 @@ import {
   type StatCardData,
 } from "@/components/admin"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { isTauriRuntime } from "@/lib/api/desktop-config"
 import {
   runScanReviewAction,
   runScanReviewActions,
   scanDirectoryReview,
+  scanFileReview,
   type LocalScanFindingAction,
   type LocalScanRun,
 } from "@/lib/api/local-scan"
+
+/* -------------------------------------------------------------------------- */
+/*  Helpers                                                                    */
+/* -------------------------------------------------------------------------- */
 
 function formatDate(value: string | null | undefined, locale: string) {
   if (!value) return "—"
@@ -82,23 +87,102 @@ function formatRiskTuple(parts: Array<string | null>) {
   return compact.length > 0 ? compact.join(" · ") : null
 }
 
+/* -------------------------------------------------------------------------- */
+/*  PageContent                                                                */
+/* -------------------------------------------------------------------------- */
+
 export function PageContent() {
   const t = useTranslations("dashboard.scanReviewsPage")
   const locale = useLocale()
   const supported = isTauriRuntime()
+
+  // ── Scan input ───────────────────────────────────────────
+  const [targetPath, setTargetPath] = useState("")
+
+  // ── Scan result ──────────────────────────────────────────
+  const [data, setData] = useState<LocalScanRun | null>(null)
+  const [isScanning, setIsScanning] = useState(false)
+  const [scanError, setScanError] = useState<string | null>(null)
+  const [lastScanType, setLastScanType] = useState<"file" | "directory" | null>(null)
+
+  // ── Filters ──────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState("")
   const [severityFilter, setSeverityFilter] = useState("")
   const [boundaryFilter, setBoundaryFilter] = useState("")
   const [operationFilter, setOperationFilter] = useState("")
+
+  // ── Action feedback ──────────────────────────────────────
   const [feedback, setFeedback] = useState<string | null>(null)
   const [actioningId, setActioningId] = useState<string | null>(null)
   const [batchRunning, setBatchRunning] = useState(false)
-  const { data, error, isLoading, isValidating, mutate } = useSWR<LocalScanRun | null>(
-    supported ? "desktop-scan-review" : null,
-    () => scanDirectoryReview()
-  )
+
+  // ── Scan handlers ────────────────────────────────────────
+
+  const handleScan = async () => {
+    const normalized = targetPath.trim()
+    if (!normalized) return
+    setIsScanning(true)
+    setScanError(null)
+    setFeedback(null)
+    try {
+      const result = await scanFileReview(normalized)
+      setData(result)
+      setLastScanType("file")
+    } catch {
+      try {
+        const result = await scanDirectoryReview({ path: normalized })
+        setData(result)
+        setLastScanType("directory")
+      } catch (err) {
+        setScanError(err instanceof Error ? err.message : t("empty.failed"))
+      }
+    } finally {
+      setIsScanning(false)
+    }
+  }
+
+  const handleScanAll = async () => {
+    setIsScanning(true)
+    setScanError(null)
+    setFeedback(null)
+    try {
+      const result = await scanDirectoryReview()
+      setData(result)
+      setLastScanType("directory")
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : t("empty.failed"))
+    } finally {
+      setIsScanning(false)
+    }
+  }
+
+  const handleRescan = async () => {
+    setFeedback(null)
+    setScanError(null)
+    setIsScanning(true)
+    try {
+      const path = targetPath.trim()
+      let result: LocalScanRun | null = null
+      if (lastScanType === "file" && path) {
+        result = await scanFileReview(path)
+      } else if (lastScanType === "directory" && path) {
+        result = await scanDirectoryReview({ path })
+      } else {
+        result = await scanDirectoryReview()
+      }
+      setData(result)
+      setFeedback(t("feedback.refreshed"))
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : t("empty.failed"))
+    } finally {
+      setIsScanning(false)
+    }
+  }
+
+  // ── Filtered data ────────────────────────────────────────
 
   const query = searchQuery.trim().toLowerCase()
+
   const documents = useMemo(() => {
     const rows = data?.documents ?? []
     return rows.filter((row) => {
@@ -133,6 +217,53 @@ export function PageContent() {
     () => (data?.findings ?? []).flatMap((row) => (row.action ? [row.action] : [])),
     [data?.findings]
   )
+
+  // ── Action handlers ──────────────────────────────────────
+
+  const handleFindingAction = async (finding: LocalScanRun["findings"][number]) => {
+    const action = finding.action
+    if (!action) return
+    setFeedback(null)
+    setActioningId(finding.id)
+    try {
+      const result = await runScanReviewAction(action)
+      setFeedback(result?.message ?? t("feedback.actionApplied"))
+      await handleRescan()
+    } catch (actionError) {
+      setFeedback(actionError instanceof Error ? actionError.message : t("feedback.actionFailed"))
+    } finally {
+      setActioningId(null)
+    }
+  }
+
+  const handleBatchFix = async () => {
+    if (!actionableFindings.length) return
+    setFeedback(null)
+    setBatchRunning(true)
+    try {
+      const result = await runScanReviewActions(actionableFindings)
+      setFeedback(
+        result
+          ? t("feedback.batchApplied", {
+              applied: result.applied,
+              failed: result.failed,
+              skipped: result.skipped,
+            })
+          : t("feedback.actionApplied")
+      )
+      await handleRescan()
+    } catch (actionError) {
+      setFeedback(actionError instanceof Error ? actionError.message : t("feedback.actionFailed"))
+    } finally {
+      setBatchRunning(false)
+    }
+  }
+
+  const renderFindingActionLabel = (action: LocalScanFindingAction) => {
+    return t(`actions.${action.kind}`)
+  }
+
+  // ── Column definitions ───────────────────────────────────
 
   const documentColumns: ColumnDef<LocalScanRun["documents"][number]>[] = [
     {
@@ -235,157 +366,211 @@ export function PageContent() {
     },
   ]
 
-  const handleRescan = async () => {
-    setFeedback(null)
-    try {
-      await mutate()
-      setFeedback(t("feedback.refreshed"))
-    } catch (refreshError) {
-      setFeedback(refreshError instanceof Error ? refreshError.message : t("empty.failed"))
-    }
-  }
-
-  const handleFindingAction = async (finding: LocalScanRun["findings"][number]) => {
-    const action = finding.action
-    if (!action) return
-    setFeedback(null)
-    setActioningId(finding.id)
-    try {
-      const result = await runScanReviewAction(action)
-      setFeedback(result?.message ?? t("feedback.actionApplied"))
-      await mutate()
-    } catch (actionError) {
-      setFeedback(actionError instanceof Error ? actionError.message : t("feedback.actionFailed"))
-    } finally {
-      setActioningId(null)
-    }
-  }
-
-  const handleBatchFix = async () => {
-    if (!actionableFindings.length) return
-    setFeedback(null)
-    setBatchRunning(true)
-    try {
-      const result = await runScanReviewActions(actionableFindings)
-      setFeedback(
-        result
-          ? t("feedback.batchApplied", {
-              applied: result.applied,
-              failed: result.failed,
-              skipped: result.skipped,
-            })
-          : t("feedback.actionApplied")
-      )
-      await mutate()
-    } catch (actionError) {
-      setFeedback(actionError instanceof Error ? actionError.message : t("feedback.actionFailed"))
-    } finally {
-      setBatchRunning(false)
-    }
-  }
-
-  const renderFindingActionLabel = (action: LocalScanFindingAction) => {
-    return t(`actions.${action.kind}`)
-  }
+  // ── Render ───────────────────────────────────────────────
 
   return (
     <>
-      <AdminStatCards stats={stats} columns={4} />
-      <AdminFilterBar
-        searchPlaceholder={t("filters.searchPlaceholder")}
-        onSearch={setSearchQuery}
-        onFilterChange={(key, value) => {
-          if (key === "severity") setSeverityFilter(value)
-          if (key === "boundary") setBoundaryFilter(value)
-          if (key === "operation") setOperationFilter(value)
-        }}
-        filters={[
-          {
-            key: "severity",
-            label: t("filters.severity"),
-            options: [
-              { label: t("severity.error"), value: "error" },
-              { label: t("severity.warn"), value: "warn" },
-              { label: t("severity.info"), value: "info" },
-            ],
-          },
-          {
-            key: "boundary",
-            label: t("filters.boundary"),
-            options: [
-              { label: t("boundary.hard_boundary"), value: "hard_boundary" },
-              { label: t("boundary.soft_boundary"), value: "soft_boundary" },
-              { label: t("boundary.none"), value: "none" },
-            ],
-          },
-          {
-            key: "operation",
-            label: t("filters.operation"),
-            options: [
-              { label: t("operation.process_exec"), value: "process_exec" },
-              { label: t("operation.filesystem_write"), value: "filesystem_write" },
-              { label: t("operation.filesystem_read"), value: "filesystem_read" },
-              { label: t("operation.network_read"), value: "network_read" },
-              { label: t("operation.unknown"), value: "unknown" },
-            ],
-          },
-        ]}
-        actions={
-          <div className="flex flex-wrap gap-2">
+      {/* Scan Input Area */}
+      {!data ? (
+        <div className="flex flex-col items-center justify-center rounded-xl border border-gray-200/80 dark:border-white/10 bg-white dark:bg-white/[0.02] px-6 py-16 text-center shadow-sm dark:shadow-2xl/10">
+          <FileSearch className="mb-4 size-10 text-[var(--muted)]" />
+          <h3 className="text-base font-semibold">{t("scanInput.title")}</h3>
+          <p className="mt-1 max-w-sm text-sm text-[var(--muted)]">{t("scanInput.description")}</p>
+
+          <div className="mt-6 flex w-full max-w-lg items-center gap-2">
+            <Input
+              value={targetPath}
+              onChange={(e) => setTargetPath(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") void handleScan() }}
+              placeholder={t("scanInput.placeholder")}
+              disabled={!supported || isScanning}
+              className="flex-1"
+            />
             <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void handleBatchFix()}
-              disabled={!supported || batchRunning || actionableFindings.length === 0}
+              onClick={() => void handleScan()}
+              disabled={!supported || isScanning || !targetPath.trim()}
+              className="cursor-pointer"
             >
-              {batchRunning ? t("actions.fixingAll") : t("actions.fixAll")}
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => void handleRescan()} disabled={!supported || isValidating || batchRunning}>
-              <RefreshCcw className="size-3.5" />
-              {isValidating ? t("actions.rescanning") : t("actions.rescan")}
+              {isScanning ? (
+                <>
+                  <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                  {t("scanInput.scanning")}
+                </>
+              ) : (
+                t("scanInput.scan")
+              )}
             </Button>
           </div>
-        }
-      />
-      {feedback && <p className="text-xs text-[var(--muted)]" role="status">{feedback}</p>}
-      {data && (
-        <div className="grid gap-2 text-xs text-[var(--muted)] md:grid-cols-3">
-          <div>{t("summary.target")}: {data.target_path}</div>
-          <div>{t("summary.finishedAt")}: {formatDate(data.finished_at, locale)}</div>
-          <div>{t("summary.findings")}: {data.summary.finding_count}</div>
+
+          <div className="my-5 flex w-full max-w-lg items-center gap-3">
+            <div className="h-px flex-1 bg-gray-200 dark:bg-white/10" />
+            <span className="text-xs text-[var(--muted)]">{t("scanInput.or")}</span>
+            <div className="h-px flex-1 bg-gray-200 dark:bg-white/10" />
+          </div>
+
+          <Button
+            variant="outline"
+            onClick={() => void handleScanAll()}
+            disabled={!supported || isScanning}
+            className="cursor-pointer"
+          >
+            <FolderSearch className="mr-1.5 size-3.5" />
+            {isScanning ? t("scanInput.scanning") : t("scanInput.scanAll")}
+          </Button>
+
+          {!supported && (
+            <p className="mt-6 text-xs text-[var(--muted)]">{t("empty.desktopOnly")}</p>
+          )}
+          {scanError && (
+            <p className="mt-4 text-sm text-red-500 dark:text-red-400" role="alert">{scanError}</p>
+          )}
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200/80 dark:border-white/10 bg-white dark:bg-white/[0.02] px-3 py-2.5 shadow-sm dark:shadow-2xl/10">
+          <Input
+            value={targetPath}
+            onChange={(e) => setTargetPath(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") void handleScan() }}
+            placeholder={t("scanInput.placeholder")}
+            disabled={isScanning}
+            className="min-w-[200px] flex-1"
+          />
+          <Button
+            size="sm"
+            onClick={() => void handleScan()}
+            disabled={isScanning || !targetPath.trim()}
+            className="cursor-pointer"
+          >
+            {isScanning ? (
+              <>
+                <Loader2 className="mr-1 size-3 animate-spin" />
+                {t("scanInput.scanning")}
+              </>
+            ) : (
+              t("scanInput.scan")
+            )}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void handleScanAll()}
+            disabled={isScanning}
+            className="cursor-pointer"
+          >
+            <FolderSearch className="mr-1 size-3" />
+            {t("scanInput.scanAll")}
+          </Button>
         </div>
       )}
-      <div className="space-y-6">
-        <section className="space-y-3">
-          <h3 className="text-sm font-semibold">{t("table.documents.title")}</h3>
-          <AdminDataTable
-            columns={documentColumns}
-            data={documents}
-            emptyMessage={!supported ? t("empty.desktopOnly") : isLoading ? t("empty.loading") : error ? t("empty.failed") : t("empty.noDocuments")}
-          />
-        </section>
-        <section className="space-y-3">
-          <h3 className="text-sm font-semibold">{t("table.findings.title")}</h3>
-          <AdminDataTable
-            columns={findingColumns}
-            data={findings}
-            emptyMessage={!supported ? t("empty.desktopOnly") : isLoading ? t("empty.loading") : error ? t("empty.failed") : t("empty.noFindings")}
-            rowActions={hasFindingActions ? (row) => {
-              if (!row.action) return null
-              return (
+
+      {/* Results */}
+      {data && (
+        <>
+          <AdminStatCards stats={stats} columns={4} />
+          <AdminFilterBar
+            searchPlaceholder={t("filters.searchPlaceholder")}
+            onSearch={setSearchQuery}
+            onFilterChange={(key, value) => {
+              if (key === "severity") setSeverityFilter(value)
+              if (key === "boundary") setBoundaryFilter(value)
+              if (key === "operation") setOperationFilter(value)
+            }}
+            filters={[
+              {
+                key: "severity",
+                label: t("filters.severity"),
+                options: [
+                  { label: t("severity.error"), value: "error" },
+                  { label: t("severity.warn"), value: "warn" },
+                  { label: t("severity.info"), value: "info" },
+                ],
+              },
+              {
+                key: "boundary",
+                label: t("filters.boundary"),
+                options: [
+                  { label: t("boundary.hard_boundary"), value: "hard_boundary" },
+                  { label: t("boundary.soft_boundary"), value: "soft_boundary" },
+                  { label: t("boundary.none"), value: "none" },
+                ],
+              },
+              {
+                key: "operation",
+                label: t("filters.operation"),
+                options: [
+                  { label: t("operation.process_exec"), value: "process_exec" },
+                  { label: t("operation.filesystem_write"), value: "filesystem_write" },
+                  { label: t("operation.filesystem_read"), value: "filesystem_read" },
+                  { label: t("operation.network_read"), value: "network_read" },
+                  { label: t("operation.unknown"), value: "unknown" },
+                ],
+              },
+            ]}
+            actions={
+              <div className="flex flex-wrap gap-2">
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => void handleFindingAction(row)}
-                  disabled={batchRunning || actioningId === row.id}
+                  onClick={() => void handleBatchFix()}
+                  disabled={batchRunning || actionableFindings.length === 0}
+                  className="cursor-pointer"
                 >
-                  {actioningId === row.id ? t("actions.running") : renderFindingActionLabel(row.action)}
+                  {batchRunning ? t("actions.fixingAll") : t("actions.fixAll")}
                 </Button>
-              )
-            } : undefined}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleRescan()}
+                  disabled={isScanning || batchRunning}
+                  className="cursor-pointer"
+                >
+                  <RefreshCcw className="size-3.5" />
+                  {isScanning ? t("actions.rescanning") : t("actions.rescan")}
+                </Button>
+              </div>
+            }
           />
-        </section>
-      </div>
+          {feedback && <p className="text-xs text-[var(--muted)]" role="status">{feedback}</p>}
+          {scanError && <p className="text-sm text-red-500 dark:text-red-400" role="alert">{scanError}</p>}
+          <div className="grid gap-2 text-xs text-[var(--muted)] md:grid-cols-3">
+            <div>{t("summary.target")}: {data.target_path}</div>
+            <div>{t("summary.finishedAt")}: {formatDate(data.finished_at, locale)}</div>
+            <div>{t("summary.findings")}: {data.summary.finding_count}</div>
+          </div>
+          <div className="space-y-6">
+            <section className="space-y-3">
+              <h3 className="text-sm font-semibold">{t("table.documents.title")}</h3>
+              <AdminDataTable
+                columns={documentColumns}
+                data={documents}
+                emptyMessage={t("empty.noDocuments")}
+              />
+            </section>
+            <section className="space-y-3">
+              <h3 className="text-sm font-semibold">{t("table.findings.title")}</h3>
+              <AdminDataTable
+                columns={findingColumns}
+                data={findings}
+                emptyMessage={t("empty.noFindings")}
+                rowActions={hasFindingActions ? (row) => {
+                  if (!row.action) return null
+                  return (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleFindingAction(row)}
+                      disabled={batchRunning || actioningId === row.id}
+                      className="cursor-pointer"
+                    >
+                      {actioningId === row.id ? t("actions.running") : renderFindingActionLabel(row.action)}
+                    </Button>
+                  )
+                } : undefined}
+              />
+            </section>
+          </div>
+        </>
+      )}
     </>
   )
 }

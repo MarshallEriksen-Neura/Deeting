@@ -142,6 +142,15 @@
           }
         }
       },
+      "scanInput": {
+        "title": "扫描技能文件或目录",
+        "description": "检查技能包中的问题、缺失注册和安全风险",
+        "placeholder": "输入文件或目录路径...",
+        "scan": "扫描",
+        "scanAll": "扫描全部技能目录",
+        "scanning": "扫描中...",
+        "or": "或"
+      },
       "empty": {
         "desktopOnly": "仅桌面端支持本地扫描审查",
         "loading": "正在加载扫描结果...",

@@ -142,6 +142,15 @@
           }
         }
       },
+      "scanInput": {
+        "title": "Scan a skill file or directory",
+        "description": "Check for issues, missing registrations, and security risks in skill bundles",
+        "placeholder": "Enter file or directory path...",
+        "scan": "Scan",
+        "scanAll": "Scan All Skill Directories",
+        "scanning": "Scanning...",
+        "or": "or"
+      },
       "empty": {
         "desktopOnly": "Local scan review is only available in the desktop app",
         "loading": "Loading scan results...",
