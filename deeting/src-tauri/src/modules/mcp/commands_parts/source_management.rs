@@ -4,8 +4,8 @@ use super::{
     common_impl::to_string,
     runtime::{build_desktop_mcp_tool_views, now_rfc3339, sync_source_inner, DesktopMcpToolView},
     skill_registry_impl::{
-        materialize_skill_repo_to_dir, register_local_skills_inner, resolve_local_skill_definition,
-        resolve_local_skill_scan_targets,
+        is_hidden_name, materialize_skill_repo_to_dir, register_local_skills_inner,
+        resolve_local_skill_definition, resolve_local_skill_scan_targets,
     },
     support::*,
 };
@@ -224,10 +224,14 @@ pub(crate) async fn local_skill_registration_self_heal_needed(
 
         let entries = std::fs::read_dir(skills_root).map_err(to_string)?;
         for entry in entries {
-            let path = match entry.map_err(to_string) {
-                Ok(entry) => entry.path(),
+            let entry = match entry.map_err(to_string) {
+                Ok(entry) => entry,
                 Err(err) => return Err(err),
             };
+            if is_hidden_name(&entry.file_name()) {
+                continue;
+            }
+            let path = entry.path();
             if !path.is_dir() {
                 continue;
             }

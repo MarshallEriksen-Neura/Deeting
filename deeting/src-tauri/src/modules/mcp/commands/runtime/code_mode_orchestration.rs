@@ -130,6 +130,23 @@ struct LocalChatAutoCodeModeOutput {
     all_tool_call_meta: Vec<serde_json::Value>,
 }
 
+fn enrich_response_with_tool_trace(
+    mut response: serde_json::Value,
+    tool_call_meta: &[serde_json::Value],
+    tool_trace_streamed: bool,
+    runtime_metrics: &RuntimeMetricsAccumulator,
+) -> serde_json::Value {
+    if !tool_call_meta.is_empty() {
+        response["tool_trace_blocks"] =
+            serde_json::Value::Array(build_local_tool_trace_blocks(tool_call_meta));
+    }
+    if tool_trace_streamed {
+        response["tool_trace_streamed"] = serde_json::json!(true);
+    }
+    runtime_metrics.inject_into_response(&mut response);
+    response
+}
+
 #[derive(Clone)]
 pub(crate) struct SuspendedLocalChatExecution {
     max_rounds: usize,
@@ -316,20 +333,16 @@ async fn continue_local_chat_complete_with_auto_code_mode(
                 "agentic loop exceeded {} rounds, returning last response",
                 state.max_rounds
             );
-            let mut fallback = state.last_response.unwrap_or_else(|| {
+            let fallback = state.last_response.unwrap_or_else(|| {
                 serde_json::json!({"content": "Tool execution reached the maximum number of rounds."})
             });
-            if !state.all_tool_call_meta.is_empty() {
-                fallback["tool_trace_blocks"] = serde_json::Value::Array(
-                    build_local_tool_trace_blocks(&state.all_tool_call_meta),
-                );
-            }
-            if state.realtime_emitter.emitted_any {
-                fallback["tool_trace_streamed"] = serde_json::json!(true);
-            }
-            state.runtime_metrics.inject_into_response(&mut fallback);
             return Ok(LocalChatAutoCodeModeOutput {
-                response: fallback,
+                response: enrich_response_with_tool_trace(
+                    fallback,
+                    &state.all_tool_call_meta,
+                    state.realtime_emitter.emitted_any,
+                    &state.runtime_metrics,
+                ),
                 all_tool_call_meta: state.all_tool_call_meta.clone(),
             });
         }
@@ -357,18 +370,13 @@ async fn continue_local_chat_complete_with_auto_code_mode(
         state.runtime_metrics.observe_response(&response);
 
         if extract_chat_tool_calls(&response).is_empty() {
-            let mut enriched = response;
-            if !state.all_tool_call_meta.is_empty() {
-                enriched["tool_trace_blocks"] = serde_json::Value::Array(
-                    build_local_tool_trace_blocks(&state.all_tool_call_meta),
-                );
-            }
-            if state.realtime_emitter.emitted_any {
-                enriched["tool_trace_streamed"] = serde_json::json!(true);
-            }
-            state.runtime_metrics.inject_into_response(&mut enriched);
             return Ok(LocalChatAutoCodeModeOutput {
-                response: enriched,
+                response: enrich_response_with_tool_trace(
+                    response,
+                    &state.all_tool_call_meta,
+                    state.realtime_emitter.emitted_any,
+                    &state.runtime_metrics,
+                ),
                 all_tool_call_meta: state.all_tool_call_meta.clone(),
             });
         }
@@ -393,9 +401,16 @@ async fn continue_local_chat_complete_with_auto_code_mode(
                 capability_update,
             } => {
                 if !synthesized {
+                    let mut current_tool_call_meta = state.all_tool_call_meta.clone();
+                    current_tool_call_meta.extend(tool_call_meta);
                     return Ok(LocalChatAutoCodeModeOutput {
-                        response,
-                        all_tool_call_meta: state.all_tool_call_meta.clone(),
+                        response: enrich_response_with_tool_trace(
+                            response,
+                            &current_tool_call_meta,
+                            state.realtime_emitter.emitted_any,
+                            &state.runtime_metrics,
+                        ),
+                        all_tool_call_meta: current_tool_call_meta,
                     });
                 }
                 finalize_tool_round(
@@ -436,18 +451,14 @@ async fn continue_local_chat_complete_with_auto_code_mode(
 
                 let mut current_tool_call_meta = state.all_tool_call_meta.clone();
                 current_tool_call_meta.extend(tool_call_meta);
-                let mut interrupted = serde_json::json!({ "content": "" });
-                if !current_tool_call_meta.is_empty() {
-                    interrupted["tool_trace_blocks"] = serde_json::Value::Array(
-                        build_local_tool_trace_blocks(&current_tool_call_meta),
-                    );
-                }
-                if state.realtime_emitter.emitted_any {
-                    interrupted["tool_trace_streamed"] = serde_json::json!(true);
-                }
-                state.runtime_metrics.inject_into_response(&mut interrupted);
+                let interrupted = serde_json::json!({ "content": "" });
                 return Ok(LocalChatAutoCodeModeOutput {
-                    response: interrupted,
+                    response: enrich_response_with_tool_trace(
+                        interrupted,
+                        &current_tool_call_meta,
+                        state.realtime_emitter.emitted_any,
+                        &state.runtime_metrics,
+                    ),
                     all_tool_call_meta: current_tool_call_meta,
                 });
             }
@@ -1572,6 +1583,51 @@ mod tests {
 
         assert!(
             build_structured_tool_replay_messages("openai_responses", &response, &meta).is_none()
+        );
+    }
+
+    #[test]
+    fn enrich_response_with_tool_trace_includes_error_result_blocks() {
+        let response = serde_json::json!({
+            "content": ""
+        });
+        let meta = vec![
+            serde_json::json!({
+                "id": "call_search",
+                "name": "search_sdk",
+                "status": "success",
+                "result": { "ok": true }
+            }),
+            serde_json::json!({
+                "id": "call_crawler",
+                "name": "skill.official.skills.crawler.fetch_web_content",
+                "status": "error",
+                "error_code": "LOCAL_TOOL_EXECUTION_FAILED",
+                "error": "crawler failed"
+            }),
+        ];
+        let metrics = RuntimeMetricsAccumulator::default();
+
+        let enriched = enrich_response_with_tool_trace(response, &meta, true, &metrics);
+        let blocks = enriched
+            .get("tool_trace_blocks")
+            .and_then(serde_json::Value::as_array)
+            .expect("tool trace blocks should be present");
+
+        assert!(blocks.iter().any(|block| {
+            block.get("type").and_then(|v| v.as_str()) == Some("tool_result")
+                && block.get("status").and_then(|v| v.as_str()) == Some("error")
+                && block.get("toolName").and_then(|v| v.as_str())
+                    == Some("skill.official.skills.crawler.fetch_web_content")
+                && block
+                    .get("result")
+                    .and_then(|v| v.get("error"))
+                    .and_then(|v| v.as_str())
+                    == Some("crawler failed")
+        }));
+        assert_eq!(
+            enriched.get("tool_trace_streamed"),
+            Some(&serde_json::json!(true))
         );
     }
 

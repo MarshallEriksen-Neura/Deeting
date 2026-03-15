@@ -4581,6 +4581,30 @@ for raw_line in sys.stdin:
     }
 
     #[tokio::test]
+    async fn local_skill_registration_self_heal_needed_ignores_hidden_runtime_dirs() {
+        let store = create_test_store("system-assets-self-heal-hidden-runtime").await;
+        let memory_state =
+            create_test_memory_state("system-assets-self-heal-hidden-runtime", 3).await;
+        let skill_root = create_temp_skill_root("system-assets-hidden-runtime");
+        let hidden_runtime_dir = skill_root.join(".runtime");
+        std::fs::create_dir_all(&hidden_runtime_dir).expect("create hidden runtime dir");
+        std::fs::write(hidden_runtime_dir.join("README.txt"), "managed runtime files")
+            .expect("write hidden runtime marker");
+
+        assert!(
+            !local_skill_registration_self_heal_needed(
+                &store,
+                Some(&memory_state.service),
+                std::slice::from_ref(&skill_root),
+            )
+            .await
+            .expect("hidden runtime dir should be ignored")
+        );
+
+        let _ = std::fs::remove_dir_all(&skill_root);
+    }
+
+    #[tokio::test]
     async fn register_local_skills_from_scan_targets_inner_restores_deleted_skill_indices() {
         let test_name = "system-assets-self-heal-restore";
         let store = create_test_store(test_name).await;
@@ -4686,6 +4710,81 @@ for raw_line in sys.stdin:
         )
         .await
         .expect("self-heal cleared after restore"));
+
+        server_handle.abort();
+        let _ = std::fs::remove_dir_all(&skill_root);
+    }
+
+    #[tokio::test]
+    async fn register_local_skills_from_scan_targets_inner_ignores_hidden_runtime_dirs() {
+        let test_name = "system-assets-ignore-hidden-runtime";
+        let store = create_test_store(test_name).await;
+        let (base_url, server_handle) = start_mock_embedding_server(HashMap::from([(
+            "name: visible\ndescription: visible skill".to_string(),
+            vec![0.41, 0.42, 0.43],
+        )]))
+        .await;
+        let provider_state =
+            std::sync::Arc::new(create_test_provider_state(test_name, &base_url).await);
+        let memory_state = std::sync::Arc::new(create_test_memory_state(test_name, 3).await);
+        let skill_root = create_temp_skill_root("ignore-hidden-runtime");
+
+        let visible_skill_dir = skill_root.join("skill.visible");
+        std::fs::create_dir_all(&visible_skill_dir).expect("create visible skill dir");
+        std::fs::write(
+            visible_skill_dir.join("deeting.json"),
+            r#"{"id":"skill.visible","name":"Visible Skill","description":"visible skill","runtime":["local"]}"#,
+        )
+        .expect("write visible manifest");
+        std::fs::write(
+            visible_skill_dir.join("llm-tool.yaml"),
+            "tools:\n  - name: visible\n    description: visible skill\n",
+        )
+        .expect("write visible tool spec");
+
+        let hidden_runtime_dir = skill_root.join(".runtime");
+        std::fs::create_dir_all(&hidden_runtime_dir).expect("create hidden runtime dir");
+        std::fs::write(hidden_runtime_dir.join("README.txt"), "managed runtime files")
+            .expect("write hidden runtime marker");
+        store
+            .upsert_local_skill_install(
+                ".runtime",
+                Some("0.0.0"),
+                Some("python"),
+                r#"{"id":".runtime","name":".runtime"}"#,
+                hidden_runtime_dir.to_string_lossy().as_ref(),
+            )
+            .await
+            .expect("seed hidden runtime pseudo install");
+
+        let scan_targets = vec![(skill_root.clone(), "user_skill")];
+        let indexed = register_local_skills_from_scan_targets_inner(
+            &scan_targets,
+            "/tmp/deeting-sdk",
+            &store,
+            provider_state,
+            memory_state,
+            true,
+        )
+        .await
+        .expect("register visible skill while ignoring hidden runtime dir");
+
+        assert_eq!(indexed, 1);
+        assert_eq!(
+            store
+                .get_local_skill_install_path("skill.visible")
+                .await
+                .expect("get visible skill install path")
+                .as_deref(),
+            Some(visible_skill_dir.to_string_lossy().as_ref())
+        );
+        assert!(
+            store
+                .get_local_skill_install_path(".runtime")
+                .await
+                .expect("lookup hidden runtime pseudo skill")
+                .is_none()
+        );
 
         server_handle.abort();
         let _ = std::fs::remove_dir_all(&skill_root);

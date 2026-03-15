@@ -75,13 +75,18 @@ pub(crate) async fn register_local_skills_from_scan_targets_inner(
     wait_for_vector_index: bool,
 ) -> Result<usize, String> {
     let mut total_indexed = 0;
+    cleanup_hidden_local_skill_installs(scan_targets, store, memory_state.as_ref()).await?;
 
     for (dir_path, source_prefix) in scan_targets {
         if !dir_path.exists() {
             continue;
         }
         for entry in std::fs::read_dir(dir_path).map_err(to_string)? {
-            let skill_path = entry.map_err(to_string)?.path();
+            let entry = entry.map_err(to_string)?;
+            if is_hidden_name(&entry.file_name()) {
+                continue;
+            }
+            let skill_path = entry.path();
             if !skill_path.is_dir() {
                 continue;
             }
@@ -209,6 +214,39 @@ pub(crate) async fn register_local_skills_from_scan_targets_inner(
     }
 
     Ok(total_indexed)
+}
+
+async fn cleanup_hidden_local_skill_installs(
+    scan_targets: &[(std::path::PathBuf, &'static str)],
+    store: &crate::modules::mcp::store::McpStore,
+    memory_state: &crate::modules::memory::MemoryState,
+) -> Result<(), String> {
+    let installs = store.list_local_skill_installs().await.map_err(to_string)?;
+    for install in installs {
+        let install_path = Path::new(&install.install_path);
+        if !scan_targets
+            .iter()
+            .any(|(root, _)| install_path.starts_with(root))
+        {
+            continue;
+        }
+        let Some(name) = install_path.file_name() else {
+            continue;
+        };
+        if !is_hidden_name(name) {
+            continue;
+        }
+
+        store
+            .delete_local_skill_install(&install.skill_id)
+            .await
+            .map_err(to_string)?;
+        let _ = memory_state
+            .service
+            .delete_assets_by_package(&install.skill_id)
+            .await;
+    }
+    Ok(())
 }
 
 fn is_allowed_skill_repo_url(repo_url: &str) -> bool {
@@ -407,7 +445,7 @@ const SKILL_DOC_SCAN_DEPTH: usize = 2;
 const SKILL_DOC_SCAN_LIMIT: usize = 6;
 const SKILL_DOC_FILE_SIZE_LIMIT: u64 = 256 * 1024;
 
-fn is_hidden_name(name: &OsStr) -> bool {
+pub(crate) fn is_hidden_name(name: &OsStr) -> bool {
     name.to_str()
         .map(|value| value.starts_with('.'))
         .unwrap_or(false)
