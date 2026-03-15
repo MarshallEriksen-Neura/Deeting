@@ -1412,6 +1412,47 @@ impl McpStore {
         Ok(LocalConversationCreateResponse { session_id, title })
     }
 
+    /// 若指定 session_id 的会话不存在则创建（用于 IM 等按固定 session_id 首次入站）
+    pub async fn ensure_local_conversation_for_session_id(
+        &self,
+        session_id: &str,
+    ) -> Result<(), McpError> {
+        let normalized = session_id.trim().to_string();
+        if normalized.is_empty() {
+            return Err(McpError::Validation("session_id is required".to_string()));
+        }
+        let exists = sqlx::query(
+            r#"
+            SELECT id FROM conversation_session WHERE id = ? LIMIT 1;
+            "#,
+        )
+        .bind(&normalized)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| McpError::Storage(e.to_string()))?;
+        if exists.is_some() {
+            return Ok(());
+        }
+        let now = now_rfc3339()?;
+        sqlx::query(
+            r#"
+            INSERT INTO conversation_session (
+              id, tenant_id, user_id, assistant_id, channel, status, preset_id, title,
+              message_count, last_summary_version, first_message_at, last_active_at, created_at, updated_at
+            )
+            VALUES (?, NULL, NULL, NULL, 'internal', 'active', NULL, NULL, 0, 0, NULL, ?, ?, ?);
+            "#,
+        )
+        .bind(&normalized)
+        .bind(&now)
+        .bind(&now)
+        .bind(&now)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| McpError::Storage(e.to_string()))?;
+        Ok(())
+    }
+
     pub async fn find_latest_local_fact_extraction_candidate_session(
         &self,
     ) -> Result<Option<String>, McpError> {

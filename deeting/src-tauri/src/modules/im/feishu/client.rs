@@ -306,10 +306,14 @@ impl FeishuClient {
                 let header_data: WsHeader = serde_json::from_value(header)
                     .map_err(|err| ImError::ParseError(err.to_string()))?;
                 let im_event = convert_message_event(&event_data, &header_data, payload.clone());
-                event_tx
-                    .send(im_event)
-                    .await
-                    .map_err(|err| ImError::SendError(err.to_string()))?;
+                if let Err(e) = event_tx.send(im_event).await {
+                    let msg = e.to_string();
+                    if msg.contains("closed") || msg.contains("dropped") {
+                        warn!("事件接收端已关闭，无法投递消息事件 chat_id={} message_id={}", event_data.message.chat_id, event_data.message.message_id);
+                    } else {
+                        return Err(ImError::SendError(msg));
+                    }
+                }
             }
             "card.action.trigger" | "card.action.trigger_v1" => {
                 let event_data: FeishuCardEvent = serde_json::from_value(event.clone())
@@ -317,10 +321,14 @@ impl FeishuClient {
                 let header_data: WsHeader = serde_json::from_value(header)
                     .map_err(|err| ImError::ParseError(err.to_string()))?;
                 let im_event = convert_card_event(&event_data, &header_data, payload.clone());
-                event_tx
-                    .send(im_event)
-                    .await
-                    .map_err(|err| ImError::SendError(err.to_string()))?;
+                if let Err(e) = event_tx.send(im_event).await {
+                    let msg = e.to_string();
+                    if msg.contains("closed") || msg.contains("dropped") {
+                        warn!("事件接收端已关闭，无法投递卡片事件");
+                    } else {
+                        return Err(ImError::SendError(msg));
+                    }
+                }
             }
             "url_verification" => {
                 info!("收到飞书 URL 验证事件");
@@ -627,11 +635,13 @@ impl FeishuClient {
     }
     
     /// 发送消息 API
+    /// 若指定 root_id，回复会挂在对应消息下（飞书展示为「x 条回复」）
     async fn send_message_api(
         &self,
         chat_id: &str,
         content: &str,
         msg_type: &str,
+        root_id: Option<&str>,
     ) -> Result<String, ImError> {
         let token = self.get_tenant_access_token().await?;
         
@@ -639,11 +649,14 @@ impl FeishuClient {
             "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id"
         );
         
-        let body = serde_json::json!({
+        let mut body = serde_json::json!({
             "receive_id": chat_id,
             "msg_type": msg_type,
             "content": content,
         });
+        if let Some(rid) = root_id.filter(|s| !s.trim().is_empty()) {
+            body["root_id"] = serde_json::Value::String(rid.to_string());
+        }
         
         let resp = self.http
             .post(&url)
@@ -754,7 +767,10 @@ impl ImClient for FeishuClient {
     
     async fn send_message(&self, request: SendMessageRequest) -> Result<SendMessageResponse, ImError> {
         let content = build_message_content(&request.content)?;
-        let message_id = self.send_message_api(&request.chat_id, &content, "text").await?;
+        let root_id = request.reply_to.as_deref();
+        let message_id = self
+            .send_message_api(&request.chat_id, &content, "text", root_id)
+            .await?;
         
         Ok(SendMessageResponse {
             message_id,

@@ -42,12 +42,18 @@ where
 }
 
 /// 飞书 WebSocket 消息头
+/// 注：二进制事件推送的 header 中 nonce 可能缺失，故使用 default
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsHeader {
+    #[serde(default)]
     pub app_id: String,
+    #[serde(default)]
     pub nonce: String,
+    #[serde(default)]
     pub timestamp: String,
+    #[serde(default)]
     pub event_type: String,
+    #[serde(default)]
     pub event_id: String,
     pub tenant_key: Option<String>,
     pub token: Option<String>,

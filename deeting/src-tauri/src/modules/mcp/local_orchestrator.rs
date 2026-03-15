@@ -1409,6 +1409,16 @@ pub async fn execute_local_orchestrated_chat(
             .ok_or_else(|| "missing user message content".to_string())?;
 
         store
+            .ensure_local_conversation_for_session_id(&session_id)
+            .await
+            .map_err(|e| {
+                format!(
+                    "chat step=ensure_conversation session={} err={}",
+                    session_id, e
+                )
+            })?;
+
+        store
             .append_local_conversation_message(CreateConversationMessageRequest {
                 session_id: session_id.clone(),
                 role: "user".to_string(),

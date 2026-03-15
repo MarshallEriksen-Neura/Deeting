@@ -133,42 +133,107 @@ async fn run_feishu_direct_profile_worker(
         match event {
             ImEvent::Message {
                 chat_id,
+                message_id,
+                sender,
                 content: MessageContent::Text { text },
                 ..
             } => {
                 let session_id = format!("im:{}:chat:{}", profile.id, chat_id);
-                let Some(reply_text) = generate_local_chat_reply(
+                let reply_to = Some(message_id.clone());
+                // 先发一条即时确认，挂在用户消息下（与官方 OpenClaw 类似的回复线程体验）
+                let ack = "收到，正在处理中…";
+                if let Err(e) = client
+                    .send_message(SendMessageRequest {
+                        chat_id: chat_id.clone(),
+                        content: MessageContent::Text {
+                            text: ack.to_string(),
+                        },
+                        reply_to: reply_to.clone(),
+                    })
+                    .await
+                {
+                    warn!(
+                        "im_direct_profile ack_send_failed profile={} chat_id={} err={}",
+                        profile.id, chat_id, e
+                    );
+                }
+                let reply_text = match generate_local_chat_reply(
                     &app_state,
                     &app_handle,
                     text.as_str(),
                     session_id.as_str(),
                 )
-                .await?
-                else {
-                    continue;
+                .await
+                {
+                    Ok(Some(t)) => t,
+                    Ok(None) => continue,
+                    Err(e) => {
+                        warn!(
+                            "im_direct_profile chat_reply_failed profile={} session={} err={}",
+                            profile.id, session_id, e
+                        );
+                        continue;
+                    }
                 };
-
-                client
+                // 回复内容带上引用格式：回复 用户名: 原文，与官方 OpenClaw 展示一致
+                let user_ref = sender
+                    .name
+                    .as_deref()
+                    .filter(|s| !s.trim().is_empty())
+                    .unwrap_or("用户");
+                let quoted = text.trim();
+                let quoted_preview = if quoted.len() > 60 {
+                    format!("{}…", quoted.chars().take(57).collect::<String>().trim_end())
+                } else {
+                    quoted.to_string()
+                };
+                let display_reply = format!("| 回复 {}: {}\n\n{}", user_ref, quoted_preview, reply_text.trim());
+                if let Err(e) = client
                     .send_message(SendMessageRequest {
-                        chat_id,
-                        content: MessageContent::Text { text: reply_text },
-                        reply_to: None,
+                        chat_id: chat_id.clone(),
+                        content: MessageContent::Text {
+                            text: display_reply,
+                        },
+                        reply_to,
                     })
                     .await
-                    .map_err(|err| err.to_string())?;
+                {
+                    warn!(
+                        "im_direct_profile send_message_failed profile={} chat_id={} err={}",
+                        profile.id, chat_id, e
+                    );
+                }
             }
             ImEvent::CardAction {
                 callback_token,
                 action,
                 ..
             } => {
-                let response =
-                    build_card_action_response(&app_state, action.event.as_str(), &action.value)
-                        .await?;
-                client
+                let response = match build_card_action_response(
+                    &app_state,
+                    action.event.as_str(),
+                    &action.value,
+                )
+                .await
+                {
+                    Ok(r) => r,
+                    Err(e) => {
+                        warn!(
+                            "im_direct_profile card_action_response_failed profile={} err={}",
+                            profile.id, e
+                        );
+                        continue;
+                    }
+                };
+                if let Err(e) = client
                     .reply_card_action(callback_token.as_str(), response)
                     .await
-                    .map_err(|err| err.to_string())?;
+                {
+                    warn!(
+                        "im_direct_profile reply_card_action_failed profile={} err={}",
+                        profile.id, e
+                    );
+                }
             }
             ImEvent::ConnectionStatus { status, .. } => {
                 info!(
