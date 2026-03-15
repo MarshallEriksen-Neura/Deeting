@@ -112,7 +112,7 @@ impl FeishuClient {
             return Err(ImError::AuthError(format!("HTTP {}", resp.status())));
         }
         
-        let result: FeishuApiResponse<TenantAccessToken> = resp
+        let result: TenantAccessTokenResponse = resp
             .json()
             .await
             .map_err(|e| ImError::ParseError(e.to_string()))?;
@@ -120,17 +120,18 @@ impl FeishuClient {
         if result.code != 0 {
             return Err(ImError::AuthError(format!("code {}: {}", result.code, result.msg)));
         }
-        
-        let data = result.data.ok_or_else(|| ImError::AuthError("响应数据为空".to_string()))?;
+        if result.tenant_access_token.trim().is_empty() {
+            return Err(ImError::AuthError("tenant_access_token 为空".to_string()));
+        }
         
         // 缓存 token，提前 5 分钟过期
-        let expire_time = chrono::Utc::now().timestamp() + data.expire as i64 - 300;
+        let expire_time = chrono::Utc::now().timestamp() + result.expire as i64 - 300;
         self.token_expire.store(expire_time, Ordering::SeqCst);
         
         let mut token = self.access_token.write().await;
-        *token = Some(data.token.clone());
+        *token = Some(result.tenant_access_token.clone());
         
-        Ok(data.token)
+        Ok(result.tenant_access_token)
     }
     
     /// 获取 WebSocket 连接地址

@@ -172,6 +172,17 @@ pub struct TenantAccessToken {
     pub expire: i32,
 }
 
+/// 自建应用获取 tenant_access_token 的响应是顶层字段，不在 `data` 里。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TenantAccessTokenResponse {
+    pub code: i32,
+    pub msg: String,
+    #[serde(rename = "tenant_access_token", default)]
+    pub tenant_access_token: String,
+    #[serde(default)]
+    pub expire: i32,
+}
+
 /// WebSocket 连接信息
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsConnectionInfo {
