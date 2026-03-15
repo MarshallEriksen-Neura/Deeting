@@ -35,7 +35,6 @@ import {
 } from "@/lib/swr/use-embedding-settings";
 import { DesktopEmbeddingSettingsCard } from "./desktop-embedding-settings-card";
 import { DesktopObjectStorageSettingsCard } from "./desktop-object-storage-settings-card";
-import { DesktopRelaySettingsCard } from "./desktop-relay-settings-card";
 import { DesktopScoutSettingsCard } from "./desktop-scout-settings-card";
 import { DesktopSandboxSettingsCard } from "./desktop-sandbox-settings-card";
 import { AgentSettingsCard } from "./agent-settings-card";
@@ -109,8 +108,6 @@ export function SettingsForm({
     defaultValues: {
       secretaryModel: "",
       desktopEmbeddingProviderModelId: "",
-      relayBaseUrl: "",
-      relaySharedSecret: "",
       scoutBaseUrl: "",
       objectStorageProvider: "cloudflare_r2_s3",
       objectStorageBucket: "",
@@ -138,8 +135,6 @@ export function SettingsForm({
     let cancelled = false;
 
     const syncSettings = async () => {
-      let relayBaseUrl = "";
-      let relaySharedSecret = "";
       let scoutBaseUrl = "";
       let objectStorageProvider: SettingsFormValues["objectStorageProvider"] =
         "cloudflare_r2_s3";
@@ -155,18 +150,13 @@ export function SettingsForm({
 
       if (isTauriRuntime) {
         try {
-          const { getDesktopRelaySettings } =
-            await import("@/lib/api/desktop-relay");
           const { getDesktopScoutBaseUrl } =
             await import("@/lib/api/desktop-config");
           const { fetchDesktopObjectStorageConfig } = await import(
             "@/lib/api/desktop-object-storage"
           );
-          const current = await getDesktopRelaySettings();
           const objectStorageConfig = await fetchDesktopObjectStorageConfig();
           if (!cancelled) {
-            relayBaseUrl = current.relayBaseUrl ?? "";
-            relaySharedSecret = current.relaySharedSecret ?? "";
             scoutBaseUrl = await getDesktopScoutBaseUrl();
             objectStorageProvider =
               objectStorageConfig?.provider ?? "cloudflare_r2_s3";
@@ -184,7 +174,10 @@ export function SettingsForm({
             objectStorageEnabled = objectStorageConfig?.is_enabled ?? false;
           }
         } catch (error) {
-          console.warn("[desktop-settings] load relay settings failed", error);
+          console.warn(
+            "[desktop-settings] load scout/object-storage settings failed",
+            error,
+          );
         }
       }
 
@@ -197,8 +190,6 @@ export function SettingsForm({
         desktopEmbeddingProviderModelId: isTauriRuntime
           ? (userEmbeddingConfig?.provider_model_id ?? "")
           : "",
-        relayBaseUrl,
-        relaySharedSecret,
         scoutBaseUrl,
         objectStorageProvider,
         objectStorageBucket,
@@ -290,7 +281,6 @@ export function SettingsForm({
     setIsSaving(true);
     try {
       let desktopEmbeddingChanged = false;
-      let relaySettingsChanged = false;
       let scoutSettingsChanged = false;
       let objectStorageChanged = false;
 
@@ -333,10 +323,8 @@ export function SettingsForm({
           desktopEmbeddingChanged = true;
         }
 
-        // Desktop relay settings (only meaningful in Tauri runtime)
+        // Desktop-local settings are only meaningful in Tauri runtime.
         if (isTauriRuntime) {
-          const { getDesktopRelaySettings, updateDesktopRelaySettings } =
-            await import("@/lib/api/desktop-relay");
           const { getDesktopScoutBaseUrl, setDesktopScoutBaseUrl } =
             await import("@/lib/api/desktop-config");
           const {
@@ -344,23 +332,10 @@ export function SettingsForm({
             updateDesktopObjectStorageConfig,
           } = await import("@/lib/api/desktop-object-storage");
           try {
-            const current = await getDesktopRelaySettings();
             const currentObjectStorage =
               await fetchDesktopObjectStorageConfig();
-            const nextBaseUrl = values.relayBaseUrl.trim();
-            const nextSecret = values.relaySharedSecret.trim();
             const currentScoutBaseUrl = (await getDesktopScoutBaseUrl()).trim();
             const nextScoutBaseUrl = values.scoutBaseUrl.trim();
-            if (
-              nextBaseUrl !== (current.relayBaseUrl ?? "") ||
-              nextSecret !== (current.relaySharedSecret ?? "")
-            ) {
-              await updateDesktopRelaySettings({
-                relayBaseUrl: nextBaseUrl,
-                relaySharedSecret: nextSecret,
-              });
-              relaySettingsChanged = true;
-            }
             if (nextScoutBaseUrl !== currentScoutBaseUrl) {
               await setDesktopScoutBaseUrl(nextScoutBaseUrl);
               scoutSettingsChanged = true;
@@ -425,7 +400,7 @@ export function SettingsForm({
             }
           } catch (error) {
             console.warn(
-              "[desktop-settings] update relay/scout/object-storage settings failed",
+              "[desktop-settings] update scout/object-storage settings failed",
               error,
             );
           }
@@ -443,20 +418,6 @@ export function SettingsForm({
         setRebuildProgress(null);
         setIsRebuildPromptOpen(true);
         toast(t("toast.rebuildRecommended"));
-      }
-
-      if (relaySettingsChanged) {
-        if (isTauriRuntime) {
-          import("@tauri-apps/api/core")
-            .then(({ invoke }) => invoke("restart_relay_event_worker"))
-            .catch((error) => {
-              console.warn(
-                "[desktop-settings] restart relay worker after relay update failed",
-                error,
-              );
-            });
-        }
-        toast(t("toast.desktopRelayUpdated"));
       }
       if (scoutSettingsChanged) {
         if (isTauriRuntime) {
@@ -607,11 +568,6 @@ export function SettingsForm({
           {activeSection === "relay" && (
             <div className="flex flex-col gap-6">
               <DesktopScoutSettingsCard
-                control={form.control}
-                isTauriRuntime={isTauriRuntime}
-                canEditDesktop={canEditDesktop}
-              />
-              <DesktopRelaySettingsCard
                 control={form.control}
                 isTauriRuntime={isTauriRuntime}
                 canEditDesktop={canEditDesktop}

@@ -67,18 +67,6 @@
       "unavailableDesc": "请在桌面端配置本地 embedding 模型。",
       "download": "前往获取桌面端",
       "scopeBadge": "仅本地",
-      "relay": {
-        "title": "桌面 Relay 转发",
-        "description": "配置轻量级 deeting-relay 服务地址，让飞书消息可以通过云端中转到本地桌面执行。",
-        "securityHint": "建议在内网或自建 VPS 上部署 relay，并设置强随机密钥。",
-        "baseUrlLabel": "Relay 服务地址",
-        "baseUrlHelp": "例如 https://your-relay.example.com，需与飞书回调配置保持一致。",
-        "sharedSecretLabel": "共享密钥",
-        "sharedSecretHelp": "与 deeting-relay 的 RELAY_SHARED_SECRET 保持一致，用于桌面端与 relay 之间的鉴权。",
-        "showSecret": "显示",
-        "hideSecret": "隐藏",
-        "footerHint": "仅本机桌面端使用，不会同步到云端。保存后会自动重载 relay 后台连接。"
-      },
       "scout": {
         "title": "桌面 Scout 服务",
         "description": "配置本地官方爬虫工具使用的 Scout 抓取服务地址，可填写你自建的 Scout，也可填写官方服务地址。",
@@ -223,8 +211,8 @@
       "storageDesc": "桌面端 OSS 存储桶",
       "agent": "Agent",
       "agentDesc": "工具执行设置",
-      "relay": "IM",
-      "relayDesc": "直连或 Relay 接入"
+      "relay": "本地服务",
+      "relayDesc": "Scout 等桌面端本地配置"
     },
     "actions": {
       "hint": "云端、桌面与个人设置互不影响，请按需保存。",
@@ -240,7 +228,6 @@
       "rebuildRecommended": "检测到 embedding 模型变更，建议立即重建本地记忆与向量索引。",
       "rebuildSuccess": "重建完成（向量维度 {dimension}；记忆 成功 {memoryIndexed} / 失败 {memoryFailed}；资产 成功 {assetIndexed} / 失败 {assetFailed}）",
       "rebuildFailed": "本地记忆与向量索引重建失败，请稍后重试",
-      "desktopRelayUpdated": "桌面 Relay 配置已更新，已自动重载后台连接",
       "desktopScoutUpdated": "桌面 Scout 配置已更新",
       "desktopObjectStorageUpdated": "桌面对象存储配置已更新"
     }

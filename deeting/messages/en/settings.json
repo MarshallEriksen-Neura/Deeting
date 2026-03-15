@@ -67,18 +67,6 @@
       "unavailableDesc": "Configure local embedding models in the desktop app.",
       "download": "Get the desktop app",
       "scopeBadge": "Local only",
-      "relay": {
-        "title": "Desktop Relay Gateway",
-        "description": "Configure the lightweight deeting-relay endpoint so Feishu messages can be proxied to your desktop for local execution.",
-        "securityHint": "We recommend running the relay on your own VPS or internal network with a strong shared secret.",
-        "baseUrlLabel": "Relay base URL",
-        "baseUrlHelp": "For example https://your-relay.example.com. Should match the Feishu callback configuration.",
-        "sharedSecretLabel": "Shared secret",
-        "sharedSecretHelp": "Must match RELAY_SHARED_SECRET configured for deeting-relay. Used to authenticate desktop ↔ relay traffic.",
-        "showSecret": "Show",
-        "hideSecret": "Hide",
-        "footerHint": "Used only by this desktop app, never synced to cloud. Saving automatically reloads the relay worker with the new settings."
-      },
       "scout": {
         "title": "Desktop Scout Service",
         "description": "Configure the Scout crawler endpoint used by local official crawler tools. You can point it to your own Scout deployment or the official service URL.",
@@ -223,8 +211,8 @@
       "storageDesc": "Desktop OSS buckets",
       "agent": "Agent",
       "agentDesc": "Tool execution settings",
-      "relay": "IM",
-      "relayDesc": "Direct or Relay transport"
+      "relay": "Local Services",
+      "relayDesc": "Desktop Scout and other local-only settings"
     },
     "actions": {
       "hint": "Cloud, desktop, and personal settings are independent. Save as needed.",
@@ -240,7 +228,6 @@
       "rebuildRecommended": "Embedding model changed. Rebuilding local memories and vector indexes is recommended.",
       "rebuildSuccess": "Rebuild completed at dimension {dimension} (memories {memoryIndexed}/{memoryFailed}, assets {assetIndexed}/{assetFailed})",
       "rebuildFailed": "Rebuilding local memories and vector indexes failed. Please try again.",
-      "desktopRelayUpdated": "Desktop relay settings updated. The relay worker was reloaded automatically.",
       "desktopScoutUpdated": "Desktop Scout settings updated",
       "desktopObjectStorageUpdated": "Desktop object storage settings updated"
     }
