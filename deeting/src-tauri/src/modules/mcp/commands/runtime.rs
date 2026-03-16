@@ -33,6 +33,10 @@ pub(crate) use asset_indexing::rebuild_local_knowledge_vector_index;
 pub(crate) use background_workers::{
     start_local_conversation_summary_worker, start_local_periodic_worker, sync_source_inner,
 };
+pub(crate) use capability_registry::{
+    build_capability_assets_for_read_mode, capability_asset_match_key,
+    is_legacy_control_plane_asset, CapabilityRegistryReadMode,
+};
 pub(crate) use chat_completion::{
     request_provider_chat_completion, resolve_local_model_connection,
 };

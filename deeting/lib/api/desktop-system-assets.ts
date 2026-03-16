@@ -57,9 +57,68 @@ const LocalMaintenanceLogListResponseSchema = z.object({
   items: z.array(LocalMaintenanceLogItemSchema),
 })
 
+const LocalCapabilityRegistryDiagnosticsBucketSchema = z.object({
+  key: z.string(),
+  count: z.number(),
+})
+
+const LocalCapabilityRegistryDiagnosticsItemSchema = z.object({
+  capability_id: z.string(),
+  source_kind: z.string(),
+  asset_kind: z.string(),
+  package_id: z.string(),
+  package_version: z.string().nullable().optional(),
+  title: z.string(),
+  tool_name: z.string().nullable().optional(),
+  callable_name: z.string().nullable().optional(),
+  execution_surface: z.string(),
+  activation_state: z.string(),
+  runtime_state: z.string(),
+  search_index_state: z.string(),
+  generation: z.number(),
+  is_direct_callable: z.boolean(),
+  updated_at: z.string(),
+})
+
+const LocalCapabilityRegistryParityItemSchema = z.object({
+  key: z.string(),
+  asset_id: z.string().nullable().optional(),
+  name: z.string().nullable().optional(),
+  source_type: z.string(),
+  asset_type: z.string(),
+  package_id: z.string().nullable().optional(),
+})
+
+const LocalCapabilityRegistryDiagnosticsResponseSchema = z.object({
+  read_path_enabled: z.boolean(),
+  read_path_mode: z.string(),
+  legacy_control_plane_reads_enabled: z.boolean(),
+  current_generation: z.number(),
+  total: z.number(),
+  direct_callable_count: z.number(),
+  source_kind_counts: z.array(LocalCapabilityRegistryDiagnosticsBucketSchema),
+  memory_source_type_counts: z.array(LocalCapabilityRegistryDiagnosticsBucketSchema),
+  asset_kind_counts: z.array(LocalCapabilityRegistryDiagnosticsBucketSchema),
+  activation_state_counts: z.array(LocalCapabilityRegistryDiagnosticsBucketSchema),
+  runtime_state_counts: z.array(LocalCapabilityRegistryDiagnosticsBucketSchema),
+  search_index_state_counts: z.array(LocalCapabilityRegistryDiagnosticsBucketSchema),
+  legacy_only_asset_count: z.number(),
+  registry_first_only_asset_count: z.number(),
+  migration_gaps: z.array(z.string()),
+  legacy_only_assets: z.array(LocalCapabilityRegistryParityItemSchema),
+  registry_first_only_assets: z.array(LocalCapabilityRegistryParityItemSchema),
+  items: z.array(LocalCapabilityRegistryDiagnosticsItemSchema),
+})
+
 export type LocalMaintenanceActionRequest = z.infer<typeof LocalMaintenanceActionRequestSchema>
 export type LocalMaintenanceLogItem = z.infer<typeof LocalMaintenanceLogItemSchema>
 export type LocalMaintenanceLogListResponse = z.infer<typeof LocalMaintenanceLogListResponseSchema>
+export type LocalCapabilityRegistryDiagnosticsResponse = z.infer<
+  typeof LocalCapabilityRegistryDiagnosticsResponseSchema
+>
+export type LocalCapabilityRegistryParityItem = z.infer<
+  typeof LocalCapabilityRegistryParityItemSchema
+>
 
 async function invokeTauri<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke } = await import("@tauri-apps/api/core")
@@ -192,4 +251,15 @@ export async function listLocalMaintenanceLogs(options?: {
     },
   })
   return LocalMaintenanceLogListResponseSchema.parse(data)
+}
+
+export async function getLocalCapabilityRegistryDiagnostics(): Promise<LocalCapabilityRegistryDiagnosticsResponse | null> {
+  if (!isTauriRuntime()) {
+    return null
+  }
+
+  const data = await invokeTauri<LocalCapabilityRegistryDiagnosticsResponse>(
+    "get_local_capability_registry_diagnostics"
+  )
+  return LocalCapabilityRegistryDiagnosticsResponseSchema.parse(data)
 }

@@ -1457,6 +1457,42 @@
         "description": "这里承接全局系统同步和修复类动作。扫描审查页只保留扫描结果、发现项和定向修复。",
         "note": "技能安装对账优先使用同步动作；只有在本地资产索引需要整体重建时才使用全量修复。"
       },
+      "diagnostics": {
+        "title": "能力注册表切换诊断",
+        "description": "这里对比 legacy control-plane 结果和 registry-first 结果，方便在关闭旧读路径前检查差异。",
+        "summary": {
+          "readMode": "读取模式",
+          "legacyReads": "Legacy 读取",
+          "registryEntries": "注册表条目",
+          "directCallable": "可直接调用",
+          "legacyOnly": "仅 legacy 可见",
+          "registryFirstOnly": "仅 registry-first 可见"
+        },
+        "boolean": {
+          "enabled": "已开启",
+          "disabled": "已关闭"
+        },
+        "readMode": {
+          "overlay": "Overlay",
+          "registry_first": "Registry First",
+          "legacy_only": "Legacy Only"
+        },
+        "migrationGaps": {
+          "title": "迁移缺口",
+          "empty": "当前注册表快照中未发现迁移缺口。",
+          "kind": {
+            "core": "缺少 core tools",
+            "mcp": "缺少 MCP tools",
+            "skill": "缺少 skills",
+            "assistant": "缺少 assistants"
+          }
+        },
+        "parity": {
+          "legacyOnlyTitle": "仅存在于 legacy control-plane",
+          "registryFirstOnlyTitle": "仅存在于 registry-first 结果",
+          "empty": "当前没有发现 parity 差异。"
+        }
+      },
       "actions": {
         "syncAction": "同步本地安装记录",
         "syncReinstallAction": "同步并重装缺失项",

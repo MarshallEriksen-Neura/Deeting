@@ -531,6 +531,14 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
       if (!toolCallSummary) return null;
       return `${t("status.flow.calls", { count: toolCallSummary.totalCalls })} · ${toolCallSummary.highlights}`;
     }, [t, toolCallSummary]);
+    const liveStatusLabel = useMemo(
+      () => t(streamEnabled ? "status.header.answering" : "status.header.processing"),
+      [streamEnabled, t]
+    );
+    const terminalPlaceholder = useMemo(
+      () => t("status.placeholder.waiting"),
+      [t]
+    );
 
     // 将 tool_result 与对应的 tool_call 配对（通过 callId）
     const { resultMap, pairedResultIndices } = useMemo(() => {
@@ -590,6 +598,14 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
         firstToolCallIndex: entries.length > 0 ? entries[0].index : -1,
       };
     }, [parts, isActive]);
+    const shouldRevealCallChain = useMemo(() => {
+      if (hasContent) return true;
+      if (toolCallEntries.length > 0) return true;
+      if (stableActiveStep > 0) return true;
+      if (stageHistory.length > 1) return true;
+      if (statusStage && statusStage !== "listen") return true;
+      return false;
+    }, [hasContent, stageHistory.length, stableActiveStep, statusStage, toolCallEntries.length]);
 
     const consoleTitle = useMemo(() => {
       for (const part of parts) {
@@ -632,6 +648,9 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                     steps={steps}
                     activeIndex={stableActiveStep}
                     label={streamEnabled ? t("status.flow.stream") : t("status.flow.batch")}
+                    statusLabel={liveStatusLabel}
+                    placeholder={terminalPlaceholder}
+                    showPlaceholder={!shouldRevealCallChain}
                     detail={stableDetail ?? statusDetail}
                     detailRepeat={Math.max(detailRepeat, repeatCountFromMeta)}
                     activity={streamActivity}
@@ -1199,6 +1218,13 @@ const ToolCallGroup = memo<{
       const pseudoParts: MessageBlock[] = toolCalls.map(({ part }) => part);
       return summarizeToolCalls(pseudoParts);
     }, [toolCalls]);
+    const summaryKey = isActive
+      ? summary?.allInternal
+        ? "toolGroup.liveSkillSummary"
+        : "toolGroup.liveSummary"
+      : summary?.allInternal
+        ? "toolGroup.skillSummary"
+        : "toolGroup.summary";
 
     return (
       <Collapsible open={isOpen} onOpenChange={setIsOpen} className="w-full">
@@ -1207,20 +1233,30 @@ const ToolCallGroup = memo<{
             ref={groupRef}
             className={cn(
             "flex items-center gap-3 p-3 rounded-lg border text-sm w-full max-w-md transition-all cursor-pointer select-none border-border bg-card hover:bg-muted/50",
+            isActive && "border-blue-200 bg-blue-50/60 dark:border-blue-900 dark:bg-blue-900/20",
             containsRecentApproval &&
               "border-emerald-300 bg-emerald-50/70 shadow-[0_0_0_3px_rgba(16,185,129,0.14)] dark:border-emerald-700 dark:bg-emerald-950/20"
           )}>
-            <div className="w-8 h-8 rounded flex items-center justify-center shrink-0 bg-muted text-muted-foreground">
-              <Terminal size={16} />
+            <div
+              className={cn(
+                "w-8 h-8 rounded flex items-center justify-center shrink-0",
+                isActive
+                  ? "bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300"
+                  : "bg-muted text-muted-foreground"
+              )}
+            >
+              {isActive ? <Loader2 size={16} className="animate-spin" /> : <Terminal size={16} />}
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <span className="font-semibold font-mono text-sm">
-                  {t(summary?.allInternal ? "toolGroup.skillSummary" : "toolGroup.summary", { count: toolCalls.length })}
+                  {t(summaryKey, { count: toolCalls.length })}
                 </span>
-                <Badge variant="outline" className="text-[10px] h-5 font-normal text-muted-foreground">
-                  {summary?.allInternal ? "Skill" : "MCP"}
-                </Badge>
+                {!isActive ? (
+                  <Badge variant="outline" className="text-[10px] h-5 font-normal text-muted-foreground">
+                    {summary?.allInternal ? "Skill" : "MCP"}
+                  </Badge>
+                ) : null}
                 {isActive ? (
                   <Badge variant="outline" className="text-[10px] h-5 font-normal border-blue-200 text-blue-600 dark:border-blue-800 dark:text-blue-300">
                     LIVE

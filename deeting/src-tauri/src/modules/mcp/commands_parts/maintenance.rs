@@ -1,4 +1,4 @@
-use serde_json::json;
+use serde_json::{json, Value};
 use tauri::{AppHandle, State};
 
 use crate::modules::mcp::commands::assistant_management_impl::index_local_assistants;
@@ -7,9 +7,9 @@ use crate::modules::mcp::commands::skill_registry_impl::register_local_skills_in
 use crate::modules::mcp::commands::source_management_impl::reset_local_asset_catalog_then_sync_inner;
 use crate::modules::mcp::types::{
     LocalCapabilityRegistryDiagnosticsBucket, LocalCapabilityRegistryDiagnosticsItem,
-    LocalCapabilityRegistryDiagnosticsResponse, LocalMaintenanceActionRequest,
-    LocalMaintenanceLogItem, LocalMaintenanceLogListResponse, LocalMaintenanceLogQuery,
-    LocalSystemAssetRepairResponse,
+    LocalCapabilityRegistryDiagnosticsResponse, LocalCapabilityRegistryParityItem,
+    LocalMaintenanceActionRequest, LocalMaintenanceLogItem, LocalMaintenanceLogListResponse,
+    LocalMaintenanceLogQuery, LocalSystemAssetRepairResponse,
 };
 use crate::state::AppState;
 
@@ -73,6 +73,8 @@ pub async fn get_local_capability_registry_diagnostics(
 pub(crate) async fn build_local_capability_registry_diagnostics(
     state: &AppState,
 ) -> Result<LocalCapabilityRegistryDiagnosticsResponse, String> {
+    let read_path_mode =
+        crate::modules::mcp::commands::runtime::CapabilityRegistryReadMode::RegistryFirst;
     let entries = state
         .mcp
         .store
@@ -85,6 +87,20 @@ pub(crate) async fn build_local_capability_registry_diagnostics(
         .list_assets_catalog()
         .await
         .map_err(to_string)?;
+    let registry_first_assets =
+        crate::modules::mcp::commands::runtime::build_capability_assets_for_read_mode(
+            memory_assets.clone(),
+            &entries,
+            crate::modules::mcp::commands::runtime::CapabilityRegistryReadMode::RegistryFirst,
+        );
+    let registry_first_asset_map = build_control_plane_asset_map(registry_first_assets);
+    let legacy_only_asset_map =
+        crate::modules::mcp::commands::runtime::build_capability_assets_for_read_mode(
+            memory_assets.clone(),
+            &entries,
+            crate::modules::mcp::commands::runtime::CapabilityRegistryReadMode::LegacyOnly,
+        );
+    let legacy_control_plane_asset_map = build_control_plane_asset_map(legacy_only_asset_map);
     let current_generation = state
         .mcp
         .store
@@ -92,6 +108,7 @@ pub(crate) async fn build_local_capability_registry_diagnostics(
         .await
         .map_err(to_string)?;
     let read_path_enabled = true;
+    let legacy_control_plane_reads_enabled = false;
     let registry_mcp_count = entries
         .iter()
         .filter(|entry| entry.source_kind == "mcp")
@@ -126,38 +143,15 @@ pub(crate) async fn build_local_capability_registry_diagnostics(
         .iter()
         .filter(|entry| entry.source_kind == "assistant")
         .count();
-    let legacy_only_assets = memory_assets
+    let legacy_only_assets = legacy_control_plane_asset_map
         .iter()
-        .filter_map(|asset| {
-            let asset_id = asset.get("id").and_then(Value::as_str)?.trim().to_string();
-            if asset_id.is_empty() {
-                return None;
-            }
-            let source_type = asset
-                .get("source_type")
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            let asset_type = asset
-                .get("asset_type")
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            let is_registry_covered = match (source_type, asset_type) {
-                ("builtin" | "user", "skill" | "skill_tool") => entries
-                    .iter()
-                    .any(|entry| entry.capability_id == asset_id || entry.package_id == asset_id),
-                ("mcp", "tool") => entries.iter().any(|entry| entry.capability_id == asset_id),
-                ("code_mode_core", "tool") => entries.iter().any(|entry| {
-                    entry.asset_kind == "core_tool"
-                        && entry
-                            .tool_name
-                            .as_deref()
-                            .map(|name| name == asset["name"].as_str().unwrap_or_default())
-                            .unwrap_or(false)
-                }),
-                _ => true,
-            };
-            (!is_registry_covered).then_some(asset_id)
-        })
+        .filter(|(key, _)| !registry_first_asset_map.contains_key(*key))
+        .filter_map(|(key, asset)| build_parity_item(key, asset))
+        .collect::<Vec<_>>();
+    let registry_first_only_assets = registry_first_asset_map
+        .iter()
+        .filter(|(key, _)| !legacy_control_plane_asset_map.contains_key(*key))
+        .filter_map(|(key, asset)| build_parity_item(key, asset))
         .collect::<Vec<_>>();
     let mut migration_gaps = Vec::new();
     if registry_core_count < core_tool_count {
@@ -175,6 +169,8 @@ pub(crate) async fn build_local_capability_registry_diagnostics(
 
     Ok(LocalCapabilityRegistryDiagnosticsResponse {
         read_path_enabled,
+        read_path_mode: read_path_mode.as_str().to_string(),
+        legacy_control_plane_reads_enabled,
         current_generation,
         total: entries.len() as i64,
         direct_callable_count: entries
@@ -204,7 +200,10 @@ pub(crate) async fn build_local_capability_registry_diagnostics(
                 .map(|entry| entry.search_index_state.as_str()),
         ),
         legacy_only_asset_count: legacy_only_assets.len() as i64,
+        registry_first_only_asset_count: registry_first_only_assets.len() as i64,
         migration_gaps,
+        legacy_only_assets,
+        registry_first_only_assets,
         items: entries
             .into_iter()
             .map(|entry| LocalCapabilityRegistryDiagnosticsItem {
@@ -328,6 +327,63 @@ async fn persist_action_log(
         .map_err(to_string)
 }
 
+fn build_control_plane_asset_map(assets: Vec<Value>) -> std::collections::BTreeMap<String, Value> {
+    assets
+        .into_iter()
+        .filter(|asset| {
+            crate::modules::mcp::commands::runtime::is_legacy_control_plane_asset(asset)
+        })
+        .filter_map(|asset| {
+            let key = crate::modules::mcp::commands::runtime::capability_asset_match_key(&asset)?;
+            Some((key, asset))
+        })
+        .collect()
+}
+
+fn build_parity_item(key: &str, asset: &Value) -> Option<LocalCapabilityRegistryParityItem> {
+    let source_type = asset.get("source_type").and_then(Value::as_str)?.trim();
+    let asset_type = asset.get("asset_type").and_then(Value::as_str)?.trim();
+    if source_type.is_empty() || asset_type.is_empty() {
+        return None;
+    }
+    let asset_id = asset
+        .get("id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let name = asset
+        .get("name")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let package_id = asset
+        .get("pkg_name")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            asset
+                .get("metadata")
+                .and_then(|metadata| metadata.get("skill_id"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        });
+
+    Some(LocalCapabilityRegistryParityItem {
+        key: key.to_string(),
+        asset_id,
+        name,
+        source_type: source_type.to_string(),
+        asset_type: asset_type.to_string(),
+        package_id,
+    })
+}
+
 fn build_registry_buckets<'a>(
     values: impl Iterator<Item = &'a str>,
 ) -> Vec<LocalCapabilityRegistryDiagnosticsBucket> {
@@ -360,5 +416,47 @@ mod tests {
         assert_eq!(buckets[1].count, 1);
         assert_eq!(buckets[2].key, "registered");
         assert_eq!(buckets[2].count, 1);
+    }
+
+    #[test]
+    fn build_control_plane_asset_map_filters_to_cutover_assets() {
+        let map = build_control_plane_asset_map(vec![
+            json!({
+                "id": "skill.alpha",
+                "asset_type": "skill",
+                "source_type": "user",
+                "pkg_name": "skill.alpha",
+            }),
+            json!({
+                "id": "cloud.skill.alpha",
+                "asset_type": "skill",
+                "source_type": "cloud_mirror",
+            }),
+        ]);
+
+        assert_eq!(map.len(), 1);
+        assert!(map.contains_key("skill_bundle:skill.alpha"));
+    }
+
+    #[test]
+    fn build_parity_item_extracts_display_fields() {
+        let item = build_parity_item(
+            "skill_tool:skill.alpha::install",
+            &json!({
+                "id": "skill_binding::skill.alpha::install",
+                "name": "skill.skill.alpha.install",
+                "asset_type": "skill_tool",
+                "source_type": "user",
+                "pkg_name": "skill.alpha",
+            }),
+        )
+        .expect("parity item");
+
+        assert_eq!(item.key, "skill_tool:skill.alpha::install");
+        assert_eq!(
+            item.asset_id.as_deref(),
+            Some("skill_binding::skill.alpha::install")
+        );
+        assert_eq!(item.package_id.as_deref(), Some("skill.alpha"));
     }
 }

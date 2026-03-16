@@ -82,6 +82,26 @@ describe("AIResponseBubble debug panel", () => {
     expect(screen.getByTestId("terminal-stream")).toBeInTheDocument();
   });
 
+  it("shows a lightweight waiting state before the call chain is revealed", () => {
+    render(
+      <AIResponseBubble
+        parts={[]}
+        isActive
+        streamEnabled
+        statusStage="listen"
+      />
+    );
+
+    const latestCall = terminalStreamMock.mock.calls[terminalStreamMock.mock.calls.length - 1];
+    const latestProps = latestCall?.[0] as
+      | { showPlaceholder?: boolean; placeholder?: string; statusLabel?: string }
+      | undefined;
+
+    expect(latestProps?.showPlaceholder).toBe(true);
+    expect(latestProps?.placeholder).toBe("status.placeholder.waiting");
+    expect(latestProps?.statusLabel).toBe("status.header.answering");
+  });
+
   it("hides terminal stream when a tool-linked ui block is present", () => {
     const parts: MessageBlock[] = [
       { id: "tool-1", type: "tool_call", callId: "call-1", toolName: "search_sdk", status: "success" },
@@ -120,7 +140,7 @@ describe("AIResponseBubble debug panel", () => {
     render(<AIResponseBubble parts={parts} isActive />);
 
     expect(screen.getByText("LIVE")).toBeInTheDocument();
-    expect(screen.getByText("toolGroup.skillSummary")).toBeInTheDocument();
+    expect(screen.getByText("toolGroup.liveSkillSummary")).toBeInTheDocument();
   });
 
   it("renders tool-linked ui inside the matching tool block without duplicating the widget", () => {
@@ -173,9 +193,10 @@ describe("AIResponseBubble debug panel", () => {
 
     const latestCall = terminalStreamMock.mock.calls[terminalStreamMock.mock.calls.length - 1];
     const latestProps = latestCall?.[0] as
-      | { detailRepeat?: number }
+      | { detailRepeat?: number; showPlaceholder?: boolean }
       | undefined;
     expect(latestProps?.detailRepeat).toBe(5);
+    expect(latestProps?.showPlaceholder).toBe(true);
   });
 
   it("does not show sandbox label for search_sdk console", () => {

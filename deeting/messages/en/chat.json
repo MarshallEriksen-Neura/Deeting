@@ -28,6 +28,10 @@
     },
     "status": {
       "thinking": "{name} is thinking...",
+      "header": {
+        "processing": "Working",
+        "answering": "Responding"
+      },
       "flow": {
         "stream": "Live output",
         "batch": "Constructing",
@@ -42,6 +46,7 @@
         "finish": "Finalizing asset"
       },
       "placeholder": {
+        "waiting": "I've received your request. Please wait...",
         "stream": "Streaming response...",
         "batch": "Constructing the answer..."
       },
@@ -275,6 +280,8 @@
     "toolGroup": {
       "summary": "Used {count} tools",
       "skillSummary": "Used {count} skills",
+      "liveSummary": "Call chain · {count} steps",
+      "liveSkillSummary": "Skill chain · {count} steps",
       "codeExecution": "Code Execution",
       "expand": "Show details",
       "collapse": "Collapse"

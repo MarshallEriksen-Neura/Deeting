@@ -12,6 +12,7 @@ __pycache__/
 .specify/
 .mcp.json
 opencode.json
+target-codex-warnings/
 .tmp/
 .omc/
 .omx/

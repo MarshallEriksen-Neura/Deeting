@@ -3,11 +3,11 @@ use super::{
     assistants_knowledge_admin_impl::{index_mcp_tools, sync_cloud_subscriptions_inner},
     common_impl::to_string,
     runtime::{build_desktop_mcp_tool_views, now_rfc3339, sync_source_inner, DesktopMcpToolView},
-    skill_registry_impl::{
-        is_hidden_name, register_local_skills_inner, resolve_local_skill_definition,
-    },
+    skill_registry_impl::register_local_skills_inner,
     support::*,
 };
+#[cfg(test)]
+use super::skill_registry_impl::{is_hidden_name, resolve_local_skill_definition};
 
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct CloudSubscriptionTool {
@@ -133,6 +133,7 @@ async fn fetch_system_asset_sync_feed(
         .map_err(to_string)
 }
 
+#[cfg(test)]
 async fn local_skill_registration_needs_reindex(
     store: &crate::modules::mcp::store::McpStore,
     memory_service: Option<&crate::modules::memory::service::MemoryService>,
@@ -165,6 +166,7 @@ async fn local_skill_registration_needs_reindex(
     Ok(false)
 }
 
+#[cfg(test)]
 pub(crate) async fn local_skill_registration_self_heal_needed(
     store: &crate::modules::mcp::store::McpStore,
     memory_service: Option<&crate::modules::memory::service::MemoryService>,

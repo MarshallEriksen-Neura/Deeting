@@ -2,16 +2,34 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::{json, Value};
 
+use super::core_tool_contracts::build_core_tool_assets;
 use super::tool_resolution::ToolAvailabilityClass;
 use super::{
     build_db_tool_availability_catalog, fallback_local_tool_availability, ToolAvailability,
     ToolAvailabilityCatalog,
 };
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum CapabilityRegistryReadMode {
+    #[default]
+    RegistryFirst,
+    LegacyOnly,
+}
+
+impl CapabilityRegistryReadMode {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::RegistryFirst => "registry_first",
+            Self::LegacyOnly => "legacy_only",
+        }
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct CapabilityRegistry {
     pub entries: Vec<CapabilityRegistryEntry>,
     pub enabled_assistant_count: usize,
+    pub read_path_mode: CapabilityRegistryReadMode,
 }
 
 #[derive(Clone)]
@@ -43,6 +61,7 @@ pub(crate) async fn build_capability_registry(
     mcp_store: &crate::modules::mcp::store::McpStore,
     memory_store: &crate::modules::memory::service::MemoryService,
 ) -> CapabilityRegistry {
+    let read_path_mode = CapabilityRegistryReadMode::RegistryFirst;
     let enabled_assistant_ids = mcp_store
         .list_enabled_local_assistant_ids()
         .await
@@ -55,41 +74,13 @@ pub(crate) async fn build_capability_registry(
         .await
         .unwrap_or_default();
     let tool_contracts = load_tool_contract_sources(mcp_store).await;
-    let mut assets = memory_store.list_assets_catalog().await.unwrap_or_default();
+    let memory_assets = memory_store.list_assets_catalog().await.unwrap_or_default();
     let registry_entries = mcp_store
         .list_local_capability_registry_entries()
         .await
         .unwrap_or_default();
-    let registry_skill_package_ids = registry_entries
-        .iter()
-        .filter(|entry| matches!(entry.asset_kind.as_str(), "skill_bundle" | "skill_tool"))
-        .map(|entry| entry.package_id.clone())
-        .collect::<HashSet<_>>();
-    let registry_mcp_tool_ids = registry_entries
-        .iter()
-        .filter(|entry| entry.asset_kind == "mcp_tool")
-        .map(|entry| entry.package_id.clone())
-        .collect::<HashSet<_>>();
-    let registry_core_tool_names = registry_entries
-        .iter()
-        .filter(|entry| entry.asset_kind == "core_tool")
-        .filter_map(|entry| entry.tool_name.clone())
-        .collect::<HashSet<_>>();
-    let registry_assistant_ids = registry_entries
-        .iter()
-        .filter(|entry| entry.asset_kind == "assistant")
-        .map(|entry| entry.package_id.clone())
-        .collect::<HashSet<_>>();
-    assets
-        .retain(|asset| !replaced_by_local_capability_registry(asset, &registry_skill_package_ids));
-    assets.retain(|asset| !replaced_by_db_mcp_tool(asset, &registry_mcp_tool_ids));
-    assets.retain(|asset| !replaced_by_core_tool_registry(asset, &registry_core_tool_names));
-    assets.retain(|asset| !replaced_by_assistant_registry(asset, &registry_assistant_ids));
-    assets.extend(
-        registry_entries
-            .iter()
-            .map(local_capability_registry_entry_to_asset),
-    );
+    let assets =
+        build_capability_assets_for_read_mode(memory_assets, &registry_entries, read_path_mode);
     let current_user =
         crate::modules::mcp::desktop_capabilities::desktop_current_user_info_optional().await;
 
@@ -125,6 +116,7 @@ pub(crate) async fn build_capability_registry(
                     tool_name,
                     pkg_name,
                     asset_metadata,
+                    read_path_mode,
                     &enabled_assistant_ids,
                     &enabled_skill_ids,
                     &tool_availability_catalog,
@@ -138,9 +130,138 @@ pub(crate) async fn build_capability_registry(
     CapabilityRegistry {
         entries,
         enabled_assistant_count: enabled_assistant_ids.len(),
+        read_path_mode,
     }
 }
 
+pub(crate) fn build_capability_assets_for_read_mode(
+    mut memory_assets: Vec<Value>,
+    registry_entries: &[crate::modules::mcp::store::LocalCapabilityRegistrySnapshot],
+    read_path_mode: CapabilityRegistryReadMode,
+) -> Vec<Value> {
+    if matches!(read_path_mode, CapabilityRegistryReadMode::LegacyOnly) {
+        memory_assets.extend(build_core_tool_assets());
+    }
+    if matches!(read_path_mode, CapabilityRegistryReadMode::LegacyOnly) {
+        return memory_assets;
+    }
+
+    memory_assets.retain(|asset| !is_legacy_control_plane_asset(asset));
+
+    memory_assets.extend(
+        registry_entries
+            .iter()
+            .map(local_capability_registry_entry_to_asset),
+    );
+    memory_assets
+}
+
+pub(crate) fn is_legacy_control_plane_asset(asset: &Value) -> bool {
+    let source_type = asset
+        .get("source_type")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let asset_type = asset
+        .get("asset_type")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    matches!(
+        (source_type, asset_type),
+        ("builtin" | "user", "skill" | "skill_tool")
+            | ("mcp", "tool")
+            | ("code_mode_core", "tool")
+            | ("local_assistant", "assistant")
+    )
+}
+
+pub(crate) fn capability_asset_match_key(asset: &Value) -> Option<String> {
+    let source_type = asset
+        .get("source_type")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default();
+    let asset_type = asset
+        .get("asset_type")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default();
+    let asset_id = asset
+        .get("id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let metadata = asset.get("metadata");
+
+    match (source_type, asset_type) {
+        ("builtin" | "user", "skill") => asset
+            .get("pkg_name")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .or_else(|| {
+                metadata
+                    .and_then(|value| value.get("skill_id"))
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+            })
+            .or(asset_id)
+            .map(|value| format!("skill_bundle:{value}")),
+        ("builtin" | "user", "skill_tool") => metadata
+            .and_then(|value| value.get("binding_id"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .or_else(|| asset_id.map(str::to_string))
+            .or_else(|| {
+                let skill_id = asset
+                    .get("pkg_name")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+                    .or_else(|| {
+                        metadata
+                            .and_then(|value| value.get("skill_id"))
+                            .and_then(Value::as_str)
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                            .map(str::to_string)
+                    })?;
+                let tool_name = metadata
+                    .and_then(|value| value.get("tool_name"))
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+                    .or_else(|| {
+                        asset
+                            .get("name")
+                            .and_then(Value::as_str)
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                            .map(str::to_string)
+                    })?;
+                Some(format!("{skill_id}::{tool_name}"))
+            })
+            .map(|value| format!("skill_tool:{value}")),
+        ("mcp", "tool") => asset_id.map(|value| format!("mcp_tool:{value}")),
+        ("code_mode_core", "tool") => asset_id
+            .or_else(|| {
+                asset
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+            })
+            .map(|value| format!("core_tool:{value}")),
+        ("local_assistant", "assistant") => asset_id.map(|value| format!("assistant:{value}")),
+        _ => asset_id.map(|value| format!("generic:{source_type}:{asset_type}:{value}")),
+    }
+}
+
+#[cfg(test)]
 fn replaced_by_local_capability_registry(
     asset: &Value,
     registry_package_ids: &HashSet<String>,
@@ -347,6 +468,7 @@ fn local_capability_registry_entry_to_asset(
     }
 }
 
+#[cfg(test)]
 fn replaced_by_db_mcp_tool(asset: &Value, db_mcp_tool_ids: &HashSet<String>) -> bool {
     let asset_type = asset
         .get("asset_type")
@@ -366,6 +488,7 @@ fn replaced_by_db_mcp_tool(asset: &Value, db_mcp_tool_ids: &HashSet<String>) -> 
     db_mcp_tool_ids.contains(id)
 }
 
+#[cfg(test)]
 fn replaced_by_core_tool_registry(asset: &Value, core_tool_names: &HashSet<String>) -> bool {
     let asset_type = asset
         .get("asset_type")
@@ -388,6 +511,7 @@ fn replaced_by_core_tool_registry(asset: &Value, core_tool_names: &HashSet<Strin
     core_tool_names.contains(name)
 }
 
+#[cfg(test)]
 fn replaced_by_assistant_registry(asset: &Value, assistant_ids: &HashSet<String>) -> bool {
     let asset_type = asset
         .get("asset_type")
@@ -407,6 +531,7 @@ fn replaced_by_assistant_registry(asset: &Value, assistant_ids: &HashSet<String>
     assistant_ids.contains(id)
 }
 
+#[cfg(test)]
 fn db_mcp_tool_to_asset(tool: &crate::modules::mcp::types::McpTool) -> Value {
     json!({
         "id": tool.id,
@@ -524,6 +649,7 @@ impl RegistryAvailability {
         tool_name: &str,
         pkg_name: Option<&str>,
         asset_metadata: Option<&Value>,
+        read_path_mode: CapabilityRegistryReadMode,
         enabled_assistant_ids: &HashSet<String>,
         enabled_skill_ids: &HashSet<String>,
         tool_availability_catalog: &ToolAvailabilityCatalog,
@@ -549,6 +675,11 @@ impl RegistryAvailability {
                     local_skill_registry_availability_override(asset_metadata)
                 {
                     return availability;
+                }
+                if matches!(read_path_mode, CapabilityRegistryReadMode::RegistryFirst) {
+                    return Self::missing_registry_readiness(
+                        "skill_tool_registry_metadata_missing",
+                    );
                 }
                 let explicit_skill_id = asset_metadata
                     .and_then(|value| value.get("skill_id"))
@@ -583,8 +714,18 @@ impl RegistryAvailability {
                     if let Some(availability) = mcp_registry_availability_override(asset_metadata) {
                         return availability;
                     }
+                    if matches!(read_path_mode, CapabilityRegistryReadMode::RegistryFirst) {
+                        return Self::missing_registry_readiness(
+                            "mcp_tool_registry_metadata_missing",
+                        );
+                    }
                 }
                 if let Some(skill_id) = pkg_name.filter(|value| value.starts_with("skill.")) {
+                    if matches!(read_path_mode, CapabilityRegistryReadMode::RegistryFirst) {
+                        return Self::missing_registry_readiness(
+                            "skill_tool_registry_metadata_missing",
+                        );
+                    }
                     if !enabled_skill_ids.contains(skill_id) {
                         return Self {
                             class: ToolAvailabilityClass::NeedsSetup,
@@ -610,6 +751,11 @@ impl RegistryAvailability {
                     {
                         return availability;
                     }
+                    if matches!(read_path_mode, CapabilityRegistryReadMode::RegistryFirst) {
+                        return Self::missing_registry_readiness(
+                            "core_tool_registry_metadata_missing",
+                        );
+                    }
                     return Self {
                         class: ToolAvailabilityClass::CallableDirect,
                         install_required: false,
@@ -619,11 +765,19 @@ impl RegistryAvailability {
                     };
                 }
                 if source_type == "mcp" {
+                    if matches!(read_path_mode, CapabilityRegistryReadMode::RegistryFirst) {
+                        return Self::missing_registry_readiness(
+                            "mcp_tool_registry_metadata_missing",
+                        );
+                    }
                     if let Some(availability) =
                         tool_availability_catalog.get_for_asset(asset_id, tool_name)
                     {
                         return Self::from_tool_availability(availability);
                     }
+                }
+                if matches!(read_path_mode, CapabilityRegistryReadMode::RegistryFirst) {
+                    return Self::missing_registry_readiness("tool_registry_metadata_missing");
                 }
                 Self::from_tool_availability(&fallback_local_tool_availability(pkg_name))
             }
@@ -631,6 +785,9 @@ impl RegistryAvailability {
                 if let Some(availability) = assistant_registry_availability_override(asset_metadata)
                 {
                     return availability;
+                }
+                if matches!(read_path_mode, CapabilityRegistryReadMode::RegistryFirst) {
+                    return Self::missing_registry_readiness("assistant_registry_metadata_missing");
                 }
                 if enabled_assistant_ids.contains(asset_id) {
                     Self {
@@ -667,6 +824,16 @@ impl RegistryAvailability {
             activation_required: availability.activation_required,
             recommended_action: availability.recommended_action,
             status_reason: availability.status_reason,
+        }
+    }
+
+    fn missing_registry_readiness(status_reason: &'static str) -> Self {
+        Self {
+            class: ToolAvailabilityClass::Unavailable,
+            install_required: false,
+            activation_required: false,
+            recommended_action: "review",
+            status_reason,
         }
     }
 
@@ -1150,5 +1317,115 @@ mod tests {
 
         assert_eq!(asset["asset_type"], json!("assistant"));
         assert_eq!(asset["source_type"], json!("local_assistant"));
+    }
+
+    #[test]
+    fn capability_registry_read_mode_defaults_to_registry_first() {
+        assert_eq!(
+            CapabilityRegistryReadMode::default(),
+            CapabilityRegistryReadMode::RegistryFirst
+        );
+    }
+
+    #[test]
+    fn registry_first_mode_filters_legacy_local_assets_but_keeps_cloud_mirror_assets() {
+        let assets = build_capability_assets_for_read_mode(
+            vec![
+                json!({
+                    "id": "skill.alpha",
+                    "asset_type": "skill",
+                    "source_type": "user",
+                }),
+                json!({
+                    "id": "cloud.skill.alpha",
+                    "asset_type": "skill",
+                    "source_type": "cloud_mirror",
+                }),
+            ],
+            &[],
+            CapabilityRegistryReadMode::RegistryFirst,
+        );
+
+        assert_eq!(assets.len(), 1);
+        assert_eq!(assets[0]["id"], json!("cloud.skill.alpha"));
+    }
+
+    #[test]
+    fn legacy_only_mode_keeps_core_tool_assets_available() {
+        let assets = build_capability_assets_for_read_mode(
+            Vec::new(),
+            &[],
+            CapabilityRegistryReadMode::LegacyOnly,
+        );
+        assert!(assets.iter().any(|asset| {
+            asset.get("source_type").and_then(Value::as_str) == Some("code_mode_core")
+                && asset.get("name").and_then(Value::as_str) == Some("search_sdk")
+        }));
+    }
+
+    #[test]
+    fn capability_asset_match_key_aligns_legacy_and_registry_skill_bundles() {
+        let registry_asset = local_capability_registry_entry_to_asset(
+            &crate::modules::mcp::store::LocalCapabilityRegistrySnapshot {
+                capability_id: "skill_bundle::skill.alpha".to_string(),
+                source_kind: "user".to_string(),
+                asset_kind: "skill_bundle".to_string(),
+                package_id: "skill.alpha".to_string(),
+                package_version: Some("1.0.0".to_string()),
+                title: "Skill Alpha".to_string(),
+                description: "Bundle".to_string(),
+                tool_name: None,
+                callable_name: None,
+                binding_kind: None,
+                execution_surface: "recipe".to_string(),
+                runtime: Some("local".to_string()),
+                entry_path: None,
+                is_direct_callable: false,
+                activation_state: "enabled".to_string(),
+                runtime_state: "not_required".to_string(),
+                search_index_state: "ready".to_string(),
+                generation: 1,
+                descriptor_json: json!({
+                    "manifest": {
+                        "id": "skill.alpha",
+                        "name": "Skill Alpha"
+                    }
+                }),
+                updated_at: "2026-03-16T00:00:00Z".to_string(),
+            },
+        );
+        let legacy_asset = json!({
+            "id": "skill.alpha",
+            "asset_type": "skill",
+            "source_type": "user",
+            "pkg_name": "skill.alpha",
+        });
+
+        assert_eq!(
+            capability_asset_match_key(&registry_asset),
+            capability_asset_match_key(&legacy_asset)
+        );
+    }
+
+    #[test]
+    fn registry_first_mode_does_not_fallback_to_legacy_skill_state_without_metadata() {
+        let availability = RegistryAvailability::from_asset(
+            "skill_tool",
+            "user",
+            "skill_binding::skill.alpha::install",
+            "skill.skill.alpha.install",
+            Some("skill.alpha"),
+            None,
+            CapabilityRegistryReadMode::RegistryFirst,
+            &HashSet::new(),
+            &HashSet::from(["skill.alpha".to_string()]),
+            &ToolAvailabilityCatalog::default(),
+        );
+
+        assert_eq!(availability.class, ToolAvailabilityClass::Unavailable);
+        assert_eq!(
+            availability.status_reason,
+            "skill_tool_registry_metadata_missing"
+        );
     }
 }

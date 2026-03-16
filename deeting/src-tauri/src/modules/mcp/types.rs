@@ -819,8 +819,20 @@ pub struct LocalCapabilityRegistryDiagnosticsItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalCapabilityRegistryParityItem {
+    pub key: String,
+    pub asset_id: Option<String>,
+    pub name: Option<String>,
+    pub source_type: String,
+    pub asset_type: String,
+    pub package_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalCapabilityRegistryDiagnosticsResponse {
     pub read_path_enabled: bool,
+    pub read_path_mode: String,
+    pub legacy_control_plane_reads_enabled: bool,
     pub current_generation: i64,
     pub total: i64,
     pub direct_callable_count: i64,
@@ -831,7 +843,10 @@ pub struct LocalCapabilityRegistryDiagnosticsResponse {
     pub runtime_state_counts: Vec<LocalCapabilityRegistryDiagnosticsBucket>,
     pub search_index_state_counts: Vec<LocalCapabilityRegistryDiagnosticsBucket>,
     pub legacy_only_asset_count: i64,
+    pub registry_first_only_asset_count: i64,
     pub migration_gaps: Vec<String>,
+    pub legacy_only_assets: Vec<LocalCapabilityRegistryParityItem>,
+    pub registry_first_only_assets: Vec<LocalCapabilityRegistryParityItem>,
     pub items: Vec<LocalCapabilityRegistryDiagnosticsItem>,
 }
 

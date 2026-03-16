@@ -714,7 +714,7 @@ impl McpStore {
             .bind(LOCAL_DESKTOP_USER_ID)
             .bind(cloud_marker);
 
-        for skill_id in normalized_skill_ids {
+        for skill_id in normalized_skill_ids.iter().cloned() {
             query = query.bind(skill_id);
         }
 
@@ -746,7 +746,7 @@ impl McpStore {
             "UPDATE local_skill_install\n             SET is_enabled = 0, updated_at = ?\n             WHERE user_id = ?\n               AND is_enabled = 1\n               AND skill_id IN ({placeholders});"
         );
         let mut query = sqlx::query(&sql).bind(&now).bind(LOCAL_DESKTOP_USER_ID);
-        for skill_id in normalized_skill_ids {
+        for skill_id in normalized_skill_ids.iter().cloned() {
             query = query.bind(skill_id);
         }
         let result = query

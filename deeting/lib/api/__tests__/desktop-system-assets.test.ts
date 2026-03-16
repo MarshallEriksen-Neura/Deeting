@@ -1,4 +1,5 @@
 import {
+  getLocalCapabilityRegistryDiagnostics,
   listLocalMaintenanceLogs,
   repairLocalSystemAssetIndexFromCloud,
   runLocalMaintenanceAction,
@@ -150,5 +151,45 @@ describe("desktop system assets api", () => {
         status: undefined,
       },
     })
+  })
+
+  it("loads local capability registry diagnostics", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue({
+      read_path_enabled: true,
+      read_path_mode: "registry_first",
+      legacy_control_plane_reads_enabled: false,
+      current_generation: 5,
+      total: 8,
+      direct_callable_count: 4,
+      source_kind_counts: [],
+      memory_source_type_counts: [],
+      asset_kind_counts: [],
+      activation_state_counts: [],
+      runtime_state_counts: [],
+      search_index_state_counts: [],
+      legacy_only_asset_count: 1,
+      registry_first_only_asset_count: 0,
+      migration_gaps: ["mcp"],
+      legacy_only_assets: [
+        {
+          key: "skill_tool:skill.alpha::install",
+          asset_id: "skill_binding::skill.alpha::install",
+          name: "skill.skill.alpha.install",
+          source_type: "user",
+          asset_type: "skill_tool",
+          package_id: "skill.alpha",
+        },
+      ],
+      registry_first_only_assets: [],
+      items: [],
+    } as unknown)
+
+    const result = await getLocalCapabilityRegistryDiagnostics()
+
+    expect(result?.read_path_mode).toBe("registry_first")
+    expect(result?.legacy_only_assets).toHaveLength(1)
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_capability_registry_diagnostics")
   })
 })

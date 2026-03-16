@@ -28,6 +28,10 @@
     },
     "status": {
       "thinking": "{name} 正在思考...",
+      "header": {
+        "processing": "正在处理",
+        "answering": "正在回答"
+      },
       "flow": {
         "stream": "实时输出",
         "batch": "构建中",
@@ -42,6 +46,7 @@
         "finish": "最终渲染"
       },
       "placeholder": {
+        "waiting": "我已收到你的请求，请稍候...",
         "stream": "正在输出内容...",
         "batch": "正在构建答案容器..."
       },
@@ -275,6 +280,8 @@
     "toolGroup": {
       "summary": "调用了 {count} 个工具",
       "skillSummary": "使用了 {count} 项技能",
+      "liveSummary": "调用链 · {count} 步",
+      "liveSkillSummary": "技能链 · {count} 步",
       "codeExecution": "代码执行",
       "expand": "展开详情",
       "collapse": "收起"

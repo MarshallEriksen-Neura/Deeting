@@ -42,7 +42,6 @@ pub struct BoxLiteInstallationRecord {
 
 #[derive(Debug, Clone)]
 struct BoxLiteReleaseAsset {
-    python_abi: &'static str,
     asset_name: &'static str,
     sha256: &'static str,
 }
@@ -131,22 +130,18 @@ pub fn supported_python_abis_label() -> &'static str {
 fn release_asset_for_python_abi(python_abi: &str) -> Result<BoxLiteReleaseAsset, SandboxError> {
     let release = match python_abi {
         "cp310" => BoxLiteReleaseAsset {
-            python_abi: "cp310",
             asset_name: "boxlite-0.6.0-cp310-cp310-manylinux_2_28_x86_64.whl",
             sha256: "eefc50988d788cd691c64c095d8020e7153922462cc72af807632e0355ad1f18",
         },
         "cp311" => BoxLiteReleaseAsset {
-            python_abi: "cp311",
             asset_name: "boxlite-0.6.0-cp311-cp311-manylinux_2_28_x86_64.whl",
             sha256: "ba7f50cadc630a20ab46d7255b9d94a3c0b6fb905e37717747e1d9523d0b6b1c",
         },
         "cp312" => BoxLiteReleaseAsset {
-            python_abi: "cp312",
             asset_name: "boxlite-0.6.0-cp312-cp312-manylinux_2_28_x86_64.whl",
             sha256: "42ea936b0dd692a6550f7e4c5309cd51d86b0b25cf5c1789d58093db3f0409fe",
         },
         "cp313" => BoxLiteReleaseAsset {
-            python_abi: "cp313",
             asset_name: "boxlite-0.6.0-cp313-cp313-manylinux_2_28_x86_64.whl",
             sha256: "53352002d36c73b0652d3c8bb18ae7d09715db6d9f89488505896b53bee972a7",
         },
@@ -263,12 +258,12 @@ mod tests {
     #[test]
     fn release_asset_supports_known_python_abis() {
         assert_eq!(
-            release_asset_for_python_abi("cp310").unwrap().python_abi,
-            "cp310"
+            release_asset_for_python_abi("cp310").unwrap().asset_name,
+            "boxlite-0.6.0-cp310-cp310-manylinux_2_28_x86_64.whl"
         );
         assert_eq!(
-            release_asset_for_python_abi("cp311").unwrap().python_abi,
-            "cp311"
+            release_asset_for_python_abi("cp311").unwrap().asset_name,
+            "boxlite-0.6.0-cp311-cp311-manylinux_2_28_x86_64.whl"
         );
         assert!(release_asset_for_python_abi("cp39").is_err());
     }

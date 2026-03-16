@@ -19,163 +19,164 @@ export function TerminalStream({
   steps,
   activeIndex,
   label,
+  statusLabel,
   detail,
   detailRepeat = 1,
   activity,
   history = [],
   compact = false,
+  placeholder,
+  showPlaceholder = false,
 }: {
   steps: Array<{ key: string; label: string }>;
   activeIndex: number;
   label: string;
+  statusLabel?: string;
   detail?: string | null;
   detailRepeat?: number;
   activity?: string | null;
   history?: TerminalStreamHistoryItem[];
   compact?: boolean;
+  placeholder?: string | null;
+  showPlaceholder?: boolean;
 }) {
   const stepCount = Math.max(steps.length, 1);
   const safeActiveIndex = Math.min(Math.max(activeIndex, 0), stepCount - 1);
-  const progressPercent = Math.round(((safeActiveIndex + 1) / stepCount) * 100);
+  const visibleStepUpperBound = Math.min(safeActiveIndex + 1, stepCount - 1);
+  const visibleSteps = useMemo(
+    () => steps.filter((_, index) => index <= visibleStepUpperBound),
+    [steps, visibleStepUpperBound]
+  );
   const tailHistory = useMemo(() => history.slice(-3), [history]);
 
   return (
-    <div
-      className={cn(
-        "rounded-lg overflow-hidden",
-        "border border-slate-200/60 dark:border-white/[0.08]",
-        "bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl",
-        "shadow-sm transition-all",
-        compact && "border-slate-200/80 dark:border-white/[0.12]",
-      )}
-    >
-      {/* ── Title bar ── */}
+    <div className="space-y-3">
+      <StatusPill
+        text={statusLabel || label}
+        tone="default"
+        size="sm"
+        isLoading
+        className="w-fit"
+      />
+
       <div
         className={cn(
-          "flex items-center gap-2 px-3 py-1.5",
-          "bg-slate-50/80 dark:bg-zinc-800/80",
-          "border-b border-slate-200/50 dark:border-white/[0.06]",
+          "rounded-2xl border px-4 py-3 shadow-sm transition-all",
+          "border-slate-200/80 bg-white/70 dark:border-zinc-800 dark:bg-zinc-900/55",
+          compact ? "space-y-2.5" : "space-y-3"
         )}
       >
-        <div className="flex gap-1.5">
-          <span className="w-[7px] h-[7px] rounded-full bg-[#ff5f57]/70" />
-          <span className="w-[7px] h-[7px] rounded-full bg-[#febc2e]/70" />
-          <span className="w-[7px] h-[7px] rounded-full bg-[#28c840]/70" />
-        </div>
-        <span className="text-[10px] font-mono text-slate-400 dark:text-zinc-500 tracking-wide select-none">
-          {label}
-        </span>
-        <div className="ml-auto text-[10px] font-mono text-slate-400 dark:text-zinc-500">
-          {progressPercent}%
-        </div>
-      </div>
-
-      {/* ── Terminal body ── */}
-      <div className={cn(
-        "px-3 font-mono text-[12px] leading-relaxed",
-        compact ? "py-2 space-y-1" : "py-2.5 space-y-0.5",
-      )}>
-        <div className="h-1 w-full overflow-hidden rounded-full bg-slate-200/70 dark:bg-zinc-800">
-          <motion.div
-            className="h-full rounded-full bg-gradient-to-r from-blue-500/80 to-emerald-500/70"
-            initial={{ width: 0 }}
-            animate={{ width: `${progressPercent}%` }}
-            transition={{ duration: 0.25, ease: "easeOut" }}
-          />
-        </div>
-
-        {activity ? (
-          <div className="rounded-md border border-slate-200/80 bg-slate-50/70 px-2 py-1 text-[10px] text-slate-500 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-300">
-            {activity}
+        {showPlaceholder ? (
+          <div className="space-y-3">
+            <div className="flex items-start gap-3">
+              <div className="flex h-4 w-4 shrink-0 items-center justify-center">
+                <span className="h-2.5 w-2.5 rounded-full bg-slate-300 dark:bg-zinc-500" />
+              </div>
+              <div className="min-w-0 text-sm text-slate-600 dark:text-zinc-300">
+                {placeholder || label}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 pl-7">
+              {[0, 1, 2].map((dot) => (
+                <span
+                  key={dot}
+                  className="h-2.5 w-2.5 rounded-full bg-blue-400/70 animate-pulse"
+                  style={{ animationDelay: `${dot * 160}ms` }}
+                />
+              ))}
+            </div>
           </div>
-        ) : null}
+        ) : (
+          <>
+            <div className={cn("space-y-2 font-mono", compact && "text-[11px]")}>
+              {visibleSteps.map((step, index) => {
+                const done = index < safeActiveIndex;
+                const active = index === safeActiveIndex;
+                const pending = index > safeActiveIndex;
 
-        {steps.map((step, index) => {
-          const done = index < safeActiveIndex;
-          const active = index === safeActiveIndex;
-          const pending = index > safeActiveIndex;
+                return (
+                  <motion.div
+                    key={step.key}
+                    initial={{ opacity: 0, x: -6 }}
+                    animate={{ opacity: pending ? 0.45 : 1, x: 0 }}
+                    transition={{ delay: index * 0.05, duration: 0.2 }}
+                    className="flex items-start gap-3"
+                  >
+                    <div className="flex w-4 shrink-0 justify-center pt-0.5">
+                      <span
+                        className={cn(
+                          "w-3 text-center select-none text-sm leading-none",
+                          done && "text-emerald-500",
+                          active && "text-blue-500",
+                          pending && "text-slate-300 dark:text-zinc-600",
+                        )}
+                      >
+                        {done ? "v" : active ? ">" : "."}
+                      </span>
+                    </div>
 
-          return (
-            <motion.div
-              key={step.key}
-              initial={{ opacity: 0, x: -6 }}
-              animate={{ opacity: pending ? 0.35 : 1, x: 0 }}
-              transition={{ delay: index * 0.06, duration: 0.25 }}
-              className={cn("flex items-center gap-1.5", compact && "text-[11px]")}
-            >
-              {/* Prefix symbol */}
-              <span
-                className={cn(
-                  "w-3 text-center shrink-0 select-none",
-                  done && "text-emerald-500",
-                  active && "text-blue-500",
-                  pending && "text-slate-300 dark:text-zinc-600",
-                )}
-              >
-                {done ? "✓" : active ? "›" : "·"}
-              </span>
+                    <div className="min-w-0 flex-1">
+                      <div
+                        className={cn(
+                          "text-sm leading-6 transition-colors duration-200",
+                          done && "text-slate-500 dark:text-zinc-400",
+                          active && "text-slate-800 dark:text-zinc-100",
+                          pending && "text-slate-300 dark:text-zinc-600",
+                        )}
+                      >
+                        {step.label}
+                        {active ? (
+                          <span className="ml-1.5 text-blue-400 dark:text-blue-500 animate-pulse tracking-[0.2em]">
+                            ...
+                          </span>
+                        ) : null}
+                      </div>
 
-              {/* Step label */}
-              <span
-                className={cn(
-                  "transition-colors duration-200",
-                  done && "text-slate-500 dark:text-zinc-400 line-through decoration-slate-300/80 dark:decoration-zinc-700",
-                  active && "text-slate-700 dark:text-zinc-200",
-                  pending && "text-slate-300 dark:text-zinc-600",
-                )}
-              >
-                {step.label}
-              </span>
+                      {active && detail ? (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: "auto" }}
+                          className="mt-1 flex flex-wrap items-center gap-1.5"
+                        >
+                          <StatusPill text={detail} tone="subtle" size="xs" isLoading />
+                          {detailRepeat > 1 ? (
+                            <span className="rounded border border-blue-200/80 bg-blue-50/70 px-1.5 py-0.5 font-mono text-[9px] text-blue-500 dark:border-blue-900/80 dark:bg-blue-950/30 dark:text-blue-300">
+                              x{detailRepeat}
+                            </span>
+                          ) : null}
+                        </motion.div>
+                      ) : null}
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
 
-              {/* Active animated dots */}
-              {active && (
-                <span className="text-blue-400 dark:text-blue-500 animate-pulse tracking-[0.2em] ml-0.5">
-                  ···
-                </span>
-              )}
-            </motion.div>
-          );
-        })}
-
-        {/* Detail line */}
-        {detail && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            className="pt-1 flex items-center gap-1 text-[10px] text-slate-400 dark:text-zinc-500"
-          >
-            <span className="select-none">└─</span>
-            <StatusPill text={detail} tone="subtle" size="xs" isLoading />
-            {detailRepeat > 1 ? (
-              <span className="rounded border border-blue-200/80 bg-blue-50/70 px-1.5 py-0.5 font-mono text-[9px] text-blue-500 dark:border-blue-900/80 dark:bg-blue-950/30 dark:text-blue-300">
-                x{detailRepeat}
-              </span>
+            {activity ? (
+              <div className="pl-7 text-xs text-slate-500 dark:text-zinc-400">
+                {activity}
+              </div>
             ) : null}
-          </motion.div>
+
+            {tailHistory.length > 1 ? (
+              <div className="flex flex-wrap gap-1 pl-7">
+                {tailHistory.map((item, idx) => (
+                  <span
+                    key={`${item.key}-${idx}`}
+                    className={cn(
+                      "rounded-md border px-1.5 py-0.5 text-[9px] font-mono",
+                      idx === tailHistory.length - 1
+                        ? "border-blue-200/80 bg-blue-50/80 text-blue-500 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300"
+                        : "border-slate-200/80 bg-white/70 text-slate-400 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-500",
+                    )}
+                  >
+                    {item.label}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </>
         )}
-
-        {tailHistory.length > 1 ? (
-          <div className="pt-1 flex flex-wrap gap-1">
-            {tailHistory.map((item, idx) => (
-              <span
-                key={`${item.key}-${idx}`}
-                className={cn(
-                  "rounded-md border px-1.5 py-0.5 text-[9px] font-mono",
-                  idx === tailHistory.length - 1
-                    ? "border-blue-200/80 bg-blue-50/80 text-blue-500 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300"
-                    : "border-slate-200/80 bg-white/70 text-slate-400 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-500",
-                )}
-              >
-                {item.label}
-              </span>
-            ))}
-          </div>
-        ) : null}
-
-        {/* Blinking block cursor */}
-        <div className={cn("h-4 flex items-center", compact ? "pt-0" : "pt-0.5")}>
-          <span className="inline-block w-[6px] h-[14px] bg-blue-500/60 dark:bg-blue-400/60 animate-[terminal-blink_1s_step-end_infinite]" />
-        </div>
       </div>
     </div>
   );

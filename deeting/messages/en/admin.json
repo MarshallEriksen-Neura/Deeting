@@ -1457,6 +1457,42 @@
         "description": "Use these controls for full-system sync and repair tasks. Scan reviews keeps only scan findings and targeted fix actions.",
         "note": "Use sync actions for skill install reconciliation. Use full repair only when the local asset index needs a complete rebuild."
       },
+      "diagnostics": {
+        "title": "Capability registry cutover",
+        "description": "Compare legacy control-plane assets with registry-first results before turning off old read paths.",
+        "summary": {
+          "readMode": "Read mode",
+          "legacyReads": "Legacy reads",
+          "registryEntries": "Registry entries",
+          "directCallable": "Direct callable",
+          "legacyOnly": "Legacy only",
+          "registryFirstOnly": "Registry-first only"
+        },
+        "boolean": {
+          "enabled": "Enabled",
+          "disabled": "Disabled"
+        },
+        "readMode": {
+          "overlay": "Overlay",
+          "registry_first": "Registry first",
+          "legacy_only": "Legacy only"
+        },
+        "migrationGaps": {
+          "title": "Migration gaps",
+          "empty": "No migration gaps detected in the current registry snapshot.",
+          "kind": {
+            "core": "Core tools missing",
+            "mcp": "MCP tools missing",
+            "skill": "Skills missing",
+            "assistant": "Assistants missing"
+          }
+        },
+        "parity": {
+          "legacyOnlyTitle": "Only in legacy control plane",
+          "registryFirstOnlyTitle": "Only in registry-first result",
+          "empty": "No parity differences detected."
+        }
+      },
       "actions": {
         "syncAction": "Sync local installs",
         "syncReinstallAction": "Sync + reinstall missing",

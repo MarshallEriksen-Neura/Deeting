@@ -305,7 +305,9 @@ impl McpStore {
             .into_iter()
             .find(|assistant| assistant.id == normalized_assistant_id)
         else {
-            return self.delete_local_capability_registry_entries(&normalized_assistant_id);
+            return self
+                .delete_local_capability_registry_entries(&normalized_assistant_id)
+                .await;
         };
         let entry = build_assistant_registry_entry(
             &assistant,
@@ -359,7 +361,9 @@ impl McpStore {
             .get_local_skill_install_detail(&normalized_skill_id)
             .await?
         else {
-            return self.delete_local_capability_registry_entries(&normalized_skill_id);
+            return self
+                .delete_local_capability_registry_entries(&normalized_skill_id)
+                .await;
         };
         let bindings = self
             .list_local_skill_tool_bindings_for_skill(&normalized_skill_id)
