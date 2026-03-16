@@ -179,7 +179,7 @@ export const MessageItem = React.memo<MessageItemProps>(
       >
         {/* 消息气泡 */}
         {message.role === "assistant" ? (
-          <div className="w-fit max-w-[75%]">
+          <div className="w-full max-w-[85%]">
             {compareState && onCompareWithModel && onFinalizeCompare ? (
               <CompareResponseShell
                 messageId={message.id}
@@ -246,7 +246,7 @@ export const MessageItem = React.memo<MessageItemProps>(
             ) : null}
           </div>
         ) : (
-          <div className="relative min-w-0 max-w-[85%] px-5 py-3.5 rounded-2xl rounded-tr-none text-[15px] leading-relaxed tracking-wide shadow-md bg-primary/90 backdrop-blur-sm border border-primary/20 text-primary-foreground">
+          <div className="relative min-w-0 max-w-[85%] px-5 py-3.5 rounded-2xl rounded-tr-none text-[15px] leading-relaxed tracking-wide bg-gradient-to-br from-primary/75 to-primary/90 backdrop-blur-md border border-white/15 shadow-lg shadow-primary/10 text-primary-foreground">
             {message.attachments?.length ? (
               <div className="mb-3">
                 <MessageAttachments

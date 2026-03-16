@@ -739,13 +739,13 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
     return (
       <div
         className={cn(
-          "w-fit max-w-full rounded-2xl rounded-tl-none text-[15px] leading-relaxed",
-          "bg-white/95 dark:bg-zinc-900/95 border border-slate-100 dark:border-zinc-800 text-foreground",
-          "shadow-sm backdrop-blur-sm overflow-hidden"
+          "w-full max-w-full text-[15px] leading-relaxed",
+          "border-l-[3px] border-l-primary/25 dark:border-l-primary/35",
+          "text-foreground overflow-hidden"
         )}
         data-slot="glass-card"
         >
-          <div className="px-5 py-3.5 min-w-0 overflow-hidden">
+          <div className="pl-4 pr-1 py-2 min-w-0 overflow-hidden">
             {shouldShowStatusRail ? (
               <motion.div
                 key="terminal-stream"
