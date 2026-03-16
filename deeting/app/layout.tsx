@@ -19,7 +19,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="antialiased">
+      <body className={isTauri ? "antialiased pt-9" : "antialiased"}>
         <PlatformProvider>
           <ThemeProvider
             attribute="class"

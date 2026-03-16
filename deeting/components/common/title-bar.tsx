@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Minus, Square, X, AppWindow } from "lucide-react";
+import { Minus, Square, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const isTauriRuntime = () => {
@@ -60,64 +60,63 @@ export function TitleBar() {
     <div
       data-tauri-drag-region
       className={cn(
+        "fixed top-0 left-0 right-0 z-[60]",
         "h-9 flex items-center justify-between px-3 select-none",
-        "bg-[var(--surface)]/95 backdrop-blur-md",
-        "border-b border-[var(--border)]",
+        "bg-transparent backdrop-blur-sm",
         "transition-colors duration-200"
       )}
     >
-      {/* 左侧：Logo 和标题 */}
+      {/* 左侧：标题 */}
       <div
         data-tauri-drag-region
-        className="flex items-center gap-2 text-[var(--foreground)]"
+        className="flex items-center gap-2"
       >
-        <div className="w-5 h-5 rounded-md bg-gradient-to-br from-[var(--primary)] to-[var(--teal-accent)] flex items-center justify-center">
-          <AppWindow className="w-3 h-3 text-white" />
-        </div>
-        <span className="text-xs font-medium tracking-tight">Deeting</span>
+        <span
+          className="text-sm font-semibold tracking-wide bg-gradient-to-r from-[var(--primary)] to-[var(--teal-accent)] bg-clip-text text-transparent"
+          style={{ fontFamily: "'AlibabaPuHuiTi', sans-serif" }}
+        >
+          Deeting
+        </span>
       </div>
 
       {/* 中间：拖拽区域 */}
       <div data-tauri-drag-region className="flex-1 h-full" />
 
       {/* 右侧：窗口控制按钮 */}
-      <div className="flex items-center gap-1">
-        {/* 最小化按钮 */}
+      <div className="flex items-center">
         <button
           onClick={handleMinimize}
           className={cn(
-            "w-8 h-6 flex items-center justify-center rounded",
-            "text-[var(--muted)] hover:text-[var(--foreground)]",
-            "hover:bg-[var(--muted-surface)]/50",
-            "transition-all duration-150"
+            "w-12 h-9 flex items-center justify-center",
+            "text-[var(--foreground)]/50 hover:text-[var(--foreground)]",
+            "hover:bg-black/5 dark:hover:bg-white/8",
+            "transition-colors duration-150"
           )}
           aria-label="最小化"
         >
           <Minus className="w-3.5 h-3.5" />
         </button>
 
-        {/* 最大化/还原按钮 */}
         <button
           onClick={handleMaximize}
           className={cn(
-            "w-8 h-6 flex items-center justify-center rounded",
-            "text-[var(--muted)] hover:text-[var(--foreground)]",
-            "hover:bg-[var(--muted-surface)]/50",
-            "transition-all duration-150"
+            "w-12 h-9 flex items-center justify-center",
+            "text-[var(--foreground)]/50 hover:text-[var(--foreground)]",
+            "hover:bg-black/5 dark:hover:bg-white/8",
+            "transition-colors duration-150"
           )}
           aria-label={isMaximized ? "还原" : "最大化"}
         >
           <Square className={cn("w-3 h-3", isMaximized && "scale-75")} />
         </button>
 
-        {/* 关闭按钮 */}
         <button
           onClick={handleClose}
           className={cn(
-            "w-8 h-6 flex items-center justify-center rounded",
-            "text-[var(--muted)] hover:text-white",
+            "w-12 h-9 flex items-center justify-center",
+            "text-[var(--foreground)]/50 hover:text-white",
             "hover:bg-red-500",
-            "transition-all duration-150"
+            "transition-colors duration-150"
           )}
           aria-label="关闭"
         >

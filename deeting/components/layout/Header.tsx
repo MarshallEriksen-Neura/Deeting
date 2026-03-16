@@ -89,7 +89,8 @@ export function Header({
     <header
       className={cn(
         // iOS-style floating header
-        "fixed top-4 left-4 right-4 z-50",
+        "fixed left-4 right-4 z-50",
+        isTauri ? "top-[calc(2.25rem+1rem)]" : "top-4",
         // Glassmorphism effect
         "bg-white/70 dark:bg-slate-900/70 backdrop-blur-2xl",
         // iOS-style border and shadow
