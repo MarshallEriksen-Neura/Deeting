@@ -24,17 +24,23 @@ impl Default for ShellExecutorConfig {
 pub struct ExecutorConfig {
     #[serde(default = "default_timeout")]
     pub default_timeout_seconds: u64,
-    
+
     #[serde(default = "default_max_timeout")]
     pub max_timeout_seconds: u64,
-    
+
     #[serde(default = "default_max_concurrent")]
     pub max_concurrent_executions: usize,
 }
 
-fn default_timeout() -> u64 { 300 }
-fn default_max_timeout() -> u64 { 1800 }
-fn default_max_concurrent() -> usize { 10 }
+fn default_timeout() -> u64 {
+    300
+}
+fn default_max_timeout() -> u64 {
+    1800
+}
+fn default_max_concurrent() -> usize {
+    10
+}
 
 impl Default for ExecutorConfig {
     fn default() -> Self {
@@ -51,10 +57,10 @@ impl Default for ExecutorConfig {
 pub struct PolicyConfig {
     #[serde(default)]
     pub whitelist: Vec<String>,
-    
+
     #[serde(default)]
     pub blacklist_patterns: Vec<String>,
-    
+
     #[serde(default)]
     pub dangerous_patterns: Vec<String>,
 }
@@ -82,7 +88,7 @@ impl Default for PolicyConfig {
                 "del /s /q C:\\".to_string(),
                 "curl | bash".to_string(),
                 "wget | sh".to_string(),
-                ":(){ :|:& };:".to_string(),  // Fork bomb
+                ":(){ :|:& };:".to_string(), // Fork bomb
             ],
             dangerous_patterns: vec![
                 "rm -rf".to_string(),
@@ -101,7 +107,7 @@ impl Default for PolicyConfig {
 pub struct PathRestrictionsConfig {
     #[serde(default = "default_allowed_paths")]
     pub allowed_paths: Vec<String>,
-    
+
     #[serde(default = "default_forbidden_paths")]
     pub forbidden_paths: Vec<String>,
 }
@@ -142,17 +148,23 @@ impl Default for PathRestrictionsConfig {
 pub struct ApprovalConfig {
     #[serde(default = "default_auto_approve_whitelist")]
     pub auto_approve_whitelist: bool,
-    
+
     #[serde(default = "default_require_confirmation_dangerous")]
     pub require_confirmation_dangerous: bool,
-    
+
     #[serde(default = "default_cache_ttl")]
     pub cache_ttl_seconds: u64,
 }
 
-fn default_auto_approve_whitelist() -> bool { true }
-fn default_require_confirmation_dangerous() -> bool { true }
-fn default_cache_ttl() -> u64 { 3600 } // 1 hour
+fn default_auto_approve_whitelist() -> bool {
+    true
+}
+fn default_require_confirmation_dangerous() -> bool {
+    true
+}
+fn default_cache_ttl() -> u64 {
+    3600
+} // 1 hour
 
 impl Default for ApprovalConfig {
     fn default() -> Self {
@@ -169,19 +181,23 @@ impl Default for ApprovalConfig {
 pub struct AuditConfig {
     #[serde(default = "default_audit_enabled")]
     pub enabled: bool,
-    
+
     #[serde(default = "default_log_file")]
     pub log_file: String,
-    
+
     #[serde(default = "default_retention_days")]
     pub retention_days: u64,
 }
 
-fn default_audit_enabled() -> bool { true }
-fn default_log_file() -> String { 
-    "$APP_DATA/deeting/logs/shell_executor.log".to_string() 
+fn default_audit_enabled() -> bool {
+    true
 }
-fn default_retention_days() -> u64 { 30 }
+fn default_log_file() -> String {
+    "$APP_DATA/deeting/logs/shell_executor.log".to_string()
+}
+fn default_retention_days() -> u64 {
+    30
+}
 
 impl Default for AuditConfig {
     fn default() -> Self {
@@ -195,7 +211,9 @@ impl Default for AuditConfig {
 
 /// 为 ShellExecutorConfig 实现 create_policy_checker 方法
 impl ShellExecutorConfig {
-    pub fn create_policy_checker(&self) -> Box<dyn crate::modules::shell_executor::policy::CommandPolicyChecker> {
+    pub fn create_policy_checker(
+        &self,
+    ) -> Box<dyn crate::modules::shell_executor::policy::CommandPolicyChecker> {
         Box::new(crate::modules::shell_executor::policy::DefaultPolicyChecker::new(&self.policy))
     }
 }

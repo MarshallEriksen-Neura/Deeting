@@ -15,7 +15,7 @@ impl TimeoutGuard {
             timeout: Duration::from_secs(timeout_seconds),
         }
     }
-    
+
     /// 检查是否超时
     pub fn check_timeout(&self) -> Result<(), String> {
         if self.start_time.elapsed() > self.timeout {
@@ -24,7 +24,7 @@ impl TimeoutGuard {
             Ok(())
         }
     }
-    
+
     /// 获取剩余时间
     pub fn remaining(&self) -> Duration {
         self.timeout.saturating_sub(self.start_time.elapsed())

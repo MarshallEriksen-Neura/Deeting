@@ -1,3 +1,5 @@
+#[cfg(test)]
+use super::skill_registry_impl::{is_hidden_name, resolve_local_skill_definition};
 use super::{
     assistant_management_impl::index_local_assistants,
     assistants_knowledge_admin_impl::{index_mcp_tools, sync_cloud_subscriptions_inner},
@@ -6,8 +8,6 @@ use super::{
     skill_registry_impl::register_local_skills_inner,
     support::*,
 };
-#[cfg(test)]
-use super::skill_registry_impl::{is_hidden_name, resolve_local_skill_definition};
 
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct CloudSubscriptionTool {

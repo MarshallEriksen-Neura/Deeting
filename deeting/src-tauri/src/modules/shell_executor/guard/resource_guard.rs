@@ -16,19 +16,19 @@ impl ResourceGuard {
             current_count: Arc::new(AtomicUsize::new(0)),
         }
     }
-    
+
     /// 尝试获取执行槽
     pub fn try_acquire(&self) -> Result<ResourceSlot, String> {
         loop {
             let current = self.current_count.load(Ordering::Relaxed);
-            
+
             if current >= self.max_concurrent {
                 return Err(format!(
                     "Maximum concurrent executions ({}) reached",
                     self.max_concurrent
                 ));
             }
-            
+
             match self.current_count.compare_exchange_weak(
                 current,
                 current + 1,

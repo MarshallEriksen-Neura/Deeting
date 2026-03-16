@@ -5,6 +5,7 @@ import { DownloadAppModal } from "@/components/ui/modal/download-app-modal";
 import { DesktopUpdateGuard } from "@/components/common/desktop-update-guard";
 import { BridgeMonitor } from "@/components/bridge/bridge-monitor";
 import { PlatformProvider } from "@/lib/platform/provider";
+import { TitleBar } from "@/components/common/title-bar";
 import "./globals.css";
 
 const isTauri = process.env.NEXT_PUBLIC_IS_TAURI === "true";
@@ -26,6 +27,7 @@ export default function RootLayout({
             enableSystem
             disableTransitionOnChange
           >
+            {isTauri && <TitleBar />}
             <AuthSync />
             {isTauri && <DesktopOAuthListener />}
             {children}

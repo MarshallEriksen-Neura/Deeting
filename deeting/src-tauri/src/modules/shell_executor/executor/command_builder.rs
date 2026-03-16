@@ -7,7 +7,7 @@ pub struct CommandBuilder;
 
 impl CommandBuilder {
     /// 构建命令和参数
-    /// 
+    ///
     /// 根据平台自动选择 shell:
     /// - Windows: cmd.exe /C
     /// - Unix: sh -c
@@ -30,7 +30,7 @@ impl CommandBuilder {
     /// 构建命令并返回完整命令字符串(用于日志)
     pub fn build_command_string(command: &str, args: &[String]) -> String {
         let (program, program_args) = Self::build(command, args);
-        
+
         if program_args.is_empty() {
             program
         } else {

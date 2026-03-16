@@ -10,7 +10,7 @@ use crate::modules::skill_runtime::{
 };
 use serde_json::{json, Map as JsonMap, Value as JsonValue};
 use std::{
-    collections::HashMap,
+    collections::{BTreeSet, HashMap},
     ffi::OsStr,
     path::{Path, PathBuf},
 };
@@ -38,6 +38,106 @@ fn derive_skill_id_from_identifier(raw: Option<&str>) -> Option<&str> {
         return None;
     }
     Some(normalized.split('/').next().unwrap_or(normalized))
+}
+
+fn normalize_installed_skill_match_id(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let mut normalized = String::with_capacity(trimmed.len());
+    let mut previous_was_separator = false;
+    for ch in trimmed.chars().flat_map(|value| value.to_lowercase()) {
+        if ch.is_ascii_alphanumeric() {
+            normalized.push(ch);
+            previous_was_separator = false;
+        } else if !previous_was_separator {
+            normalized.push('-');
+            previous_was_separator = true;
+        }
+    }
+
+    let normalized = normalized.trim_matches('-').to_string();
+    if normalized.is_empty() {
+        None
+    } else {
+        Some(normalized)
+    }
+}
+
+fn normalize_installed_skill_repo_key(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let mut normalized = trimmed.replace('\\', "/").to_ascii_lowercase();
+    if let Some(rest) = normalized.strip_prefix("git@github.com:") {
+        normalized = format!("https://github.com/{rest}");
+    }
+    while normalized.ends_with('/') {
+        normalized.pop();
+    }
+    if let Some(stripped) = normalized.strip_suffix(".git") {
+        normalized = stripped.to_string();
+    }
+    if normalized.is_empty() {
+        None
+    } else {
+        Some(format!("repo:{normalized}"))
+    }
+}
+
+fn insert_installed_skill_id_key(keys: &mut BTreeSet<String>, raw: &str) {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    keys.insert(trimmed.to_string());
+    if let Some(normalized) = normalize_installed_skill_match_id(trimmed) {
+        keys.insert(normalized);
+    }
+}
+
+fn insert_installed_skill_repo_key(keys: &mut BTreeSet<String>, raw: &str) {
+    if let Some(normalized) = normalize_installed_skill_repo_key(raw) {
+        keys.insert(normalized);
+    }
+}
+
+fn collect_local_skill_match_keys(
+    install: &crate::modules::mcp::store::LocalSkillInstallDetail,
+) -> Vec<String> {
+    let mut keys = BTreeSet::new();
+
+    insert_installed_skill_id_key(&mut keys, &install.skill_id);
+    if let Some(name) = Path::new(&install.install_path)
+        .file_name()
+        .and_then(|value| value.to_str())
+    {
+        insert_installed_skill_id_key(&mut keys, name);
+    }
+
+    if let Ok(manifest) = serde_json::from_str::<JsonValue>(&install.manifest_json) {
+        for pointer in [
+            "/id",
+            "/source_metadata/openclaw/package/name",
+            "/source_metadata/openclaw/package/displayName",
+        ] {
+            if let Some(value) = manifest.pointer(pointer).and_then(JsonValue::as_str) {
+                insert_installed_skill_id_key(&mut keys, value);
+            }
+        }
+        if let Some(value) = manifest
+            .pointer("/source_metadata/source_repo")
+            .and_then(JsonValue::as_str)
+        {
+            insert_installed_skill_repo_key(&mut keys, value);
+        }
+    }
+
+    keys.into_iter().collect()
 }
 
 pub(crate) fn resolve_local_skill_scan_targets(
@@ -2807,16 +2907,17 @@ pub async fn uninstall_skill(
 pub async fn list_local_installed_skill_ids(
     app_state: State<'_, AppState>,
 ) -> Result<Vec<String>, String> {
-    let mut ids = app_state
+    let installs = app_state
         .mcp
         .store
-        .list_enabled_local_skill_ids()
+        .list_local_skill_install_details()
         .await
-        .map_err(to_string)?
-        .into_iter()
-        .collect::<Vec<_>>();
-    ids.sort();
-    Ok(ids)
+        .map_err(to_string)?;
+    let mut keys = BTreeSet::new();
+    for install in installs.into_iter().filter(|item| item.is_enabled) {
+        keys.extend(collect_local_skill_match_keys(&install));
+    }
+    Ok(keys.into_iter().collect())
 }
 
 pub(crate) async fn register_local_skills_inner(
@@ -3447,5 +3548,40 @@ mod tests {
         assert!(!temp_dir.exists());
 
         let _ = std::fs::remove_dir_all(skills_dir);
+    }
+
+    #[test]
+    fn collect_local_skill_match_keys_includes_aliases_and_repo_keys() {
+        let install = crate::modules::mcp::store::LocalSkillInstallDetail {
+            skill_id: "official.skills.skill_manager".to_string(),
+            installed_version: Some("1.1.0".to_string()),
+            is_enabled: true,
+            runtime: Some("local".to_string()),
+            install_path: std::env::temp_dir()
+                .join("skill_manager")
+                .to_string_lossy()
+                .to_string(),
+            manifest_json: json!({
+                "id": "official.skills.skill_manager",
+                "source_metadata": {
+                    "source_repo": "https://github.com/Deeting/skill-manager.git",
+                    "openclaw": {
+                        "package": {
+                            "name": "skill_manager"
+                        }
+                    }
+                }
+            })
+            .to_string(),
+            user_settings_json: None,
+        };
+
+        let keys = collect_local_skill_match_keys(&install);
+
+        assert!(keys.contains(&"official.skills.skill_manager".to_string()));
+        assert!(keys.contains(&"official-skills-skill-manager".to_string()));
+        assert!(keys.contains(&"skill_manager".to_string()));
+        assert!(keys.contains(&"skill-manager".to_string()));
+        assert!(keys.contains(&"repo:https://github.com/deeting/skill-manager".to_string()));
     }
 }

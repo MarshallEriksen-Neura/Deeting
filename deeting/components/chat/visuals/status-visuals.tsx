@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Sparkles } from "lucide-react";
+import { Check, Sparkles, Zap } from "lucide-react";
 import { StatusPill } from "@/components/ui/status-pill";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
@@ -27,6 +27,7 @@ export function TerminalStream({
   compact = false,
   placeholder,
   showPlaceholder = false,
+  completed = false,
 }: {
   steps: Array<{ key: string; label: string }>;
   activeIndex: number;
@@ -39,144 +40,144 @@ export function TerminalStream({
   compact?: boolean;
   placeholder?: string | null;
   showPlaceholder?: boolean;
+  completed?: boolean;
 }) {
   const stepCount = Math.max(steps.length, 1);
-  const safeActiveIndex = Math.min(Math.max(activeIndex, 0), stepCount - 1);
-  const visibleStepUpperBound = Math.min(safeActiveIndex + 1, stepCount - 1);
-  const visibleSteps = useMemo(
-    () => steps.filter((_, index) => index <= visibleStepUpperBound),
-    [steps, visibleStepUpperBound]
-  );
+  const safeActiveIndex = completed
+    ? stepCount - 1
+    : Math.min(Math.max(activeIndex, 0), stepCount - 1);
+  const visibleSteps = useMemo(() => steps, [steps]);
   const tailHistory = useMemo(() => history.slice(-3), [history]);
+  const resolvedDetail = showPlaceholder ? placeholder || detail || label : detail;
 
   return (
-    <div className="space-y-3">
-      <StatusPill
-        text={statusLabel || label}
-        tone="default"
-        size="sm"
-        isLoading
-        className="w-fit"
-      />
+    <div className={cn("space-y-2.5", compact && "space-y-2")}>
+      <div className="flex flex-wrap items-center gap-2">
+        <StatusPill
+          text={statusLabel || label}
+          tone={completed ? "success" : "default"}
+          size="sm"
+          isLoading={!completed}
+          className="w-fit"
+        />
+        {activity ? (
+          <div className="min-w-0 flex-1 truncate text-[11px] text-slate-500 dark:text-zinc-400">
+            {activity}
+          </div>
+        ) : null}
+      </div>
 
       <div
         className={cn(
-          "rounded-2xl border px-4 py-3 shadow-sm transition-all",
-          "border-slate-200/80 bg-white/70 dark:border-zinc-800 dark:bg-zinc-900/55",
-          compact ? "space-y-2.5" : "space-y-3"
+          "rounded-[22px] border px-4 py-3 shadow-sm transition-all",
+          completed
+            ? "border-emerald-200/80 bg-emerald-50/45 dark:border-emerald-900/70 dark:bg-emerald-950/15"
+            : "border-slate-200/80 bg-white/72 dark:border-zinc-800 dark:bg-zinc-900/55"
         )}
       >
-        {showPlaceholder ? (
-          <div className="space-y-3">
-            <div className="flex items-start gap-3">
-              <div className="flex h-4 w-4 shrink-0 items-center justify-center">
-                <span className="h-2.5 w-2.5 rounded-full bg-slate-300 dark:bg-zinc-500" />
-              </div>
-              <div className="min-w-0 text-sm text-slate-600 dark:text-zinc-300">
-                {placeholder || label}
-              </div>
-            </div>
-            <div className="flex items-center gap-2 pl-7">
-              {[0, 1, 2].map((dot) => (
-                <span
-                  key={dot}
-                  className="h-2.5 w-2.5 rounded-full bg-blue-400/70 animate-pulse"
-                  style={{ animationDelay: `${dot * 160}ms` }}
-                />
-              ))}
-            </div>
-          </div>
-        ) : (
-          <>
-            <div className={cn("space-y-2 font-mono", compact && "text-[11px]")}>
-              {visibleSteps.map((step, index) => {
-                const done = index < safeActiveIndex;
-                const active = index === safeActiveIndex;
-                const pending = index > safeActiveIndex;
+        <div className={cn("space-y-2.5 font-mono", compact && "text-[11px]")}>
+          {visibleSteps.map((step, index) => {
+            const done = completed || index < safeActiveIndex;
+            const active = !completed && index === safeActiveIndex;
+            const pending = !done && !active;
+            const isLast = index === visibleSteps.length - 1;
 
-                return (
-                  <motion.div
-                    key={step.key}
-                    initial={{ opacity: 0, x: -6 }}
-                    animate={{ opacity: pending ? 0.45 : 1, x: 0 }}
-                    transition={{ delay: index * 0.05, duration: 0.2 }}
-                    className="flex items-start gap-3"
-                  >
-                    <div className="flex w-4 shrink-0 justify-center pt-0.5">
-                      <span
-                        className={cn(
-                          "w-3 text-center select-none text-sm leading-none",
-                          done && "text-emerald-500",
-                          active && "text-blue-500",
-                          pending && "text-slate-300 dark:text-zinc-600",
-                        )}
-                      >
-                        {done ? "v" : active ? ">" : "."}
-                      </span>
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <div
-                        className={cn(
-                          "text-sm leading-6 transition-colors duration-200",
-                          done && "text-slate-500 dark:text-zinc-400",
-                          active && "text-slate-800 dark:text-zinc-100",
-                          pending && "text-slate-300 dark:text-zinc-600",
-                        )}
-                      >
-                        {step.label}
-                        {active ? (
-                          <span className="ml-1.5 text-blue-400 dark:text-blue-500 animate-pulse tracking-[0.2em]">
-                            ...
-                          </span>
-                        ) : null}
-                      </div>
-
-                      {active && detail ? (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: "auto" }}
-                          className="mt-1 flex flex-wrap items-center gap-1.5"
-                        >
-                          <StatusPill text={detail} tone="subtle" size="xs" isLoading />
-                          {detailRepeat > 1 ? (
-                            <span className="rounded border border-blue-200/80 bg-blue-50/70 px-1.5 py-0.5 font-mono text-[9px] text-blue-500 dark:border-blue-900/80 dark:bg-blue-950/30 dark:text-blue-300">
-                              x{detailRepeat}
-                            </span>
-                          ) : null}
-                        </motion.div>
-                      ) : null}
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </div>
-
-            {activity ? (
-              <div className="pl-7 text-xs text-slate-500 dark:text-zinc-400">
-                {activity}
-              </div>
-            ) : null}
-
-            {tailHistory.length > 1 ? (
-              <div className="flex flex-wrap gap-1 pl-7">
-                {tailHistory.map((item, idx) => (
+            return (
+              <motion.div
+                key={step.key}
+                initial={{ opacity: 0, x: -6 }}
+                animate={{ opacity: pending ? 0.5 : 1, x: 0 }}
+                transition={{ delay: index * 0.04, duration: 0.2 }}
+                className="flex items-start gap-3"
+              >
+                <div className="flex w-5 shrink-0 flex-col items-center pt-0.5">
                   <span
-                    key={`${item.key}-${idx}`}
                     className={cn(
-                      "rounded-md border px-1.5 py-0.5 text-[9px] font-mono",
-                      idx === tailHistory.length - 1
-                        ? "border-blue-200/80 bg-blue-50/80 text-blue-500 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300"
-                        : "border-slate-200/80 bg-white/70 text-slate-400 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-500",
+                      "flex h-5 w-5 items-center justify-center rounded-full border",
+                      done &&
+                        "border-emerald-200 bg-emerald-100/90 text-emerald-600 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300",
+                      active &&
+                        "border-blue-200 bg-blue-100/90 text-blue-600 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300",
+                      pending &&
+                        "border-slate-200 bg-white/80 text-slate-300 dark:border-zinc-800 dark:bg-zinc-900/70 dark:text-zinc-600"
                     )}
                   >
-                    {item.label}
+                    {done ? (
+                      <Check className="h-3 w-3" />
+                    ) : active ? (
+                      <Zap className="h-3 w-3 animate-pulse" />
+                    ) : (
+                      <Sparkles className="h-3 w-3" />
+                    )}
                   </span>
-                ))}
-              </div>
-            ) : null}
-          </>
-        )}
+                  {!isLast ? (
+                    <span
+                      className={cn(
+                        "mt-1 w-px flex-1",
+                        done
+                          ? "bg-emerald-200 dark:bg-emerald-900"
+                          : active
+                            ? "bg-blue-200 dark:bg-blue-900"
+                            : "bg-slate-200 dark:bg-zinc-800"
+                      )}
+                    />
+                  ) : null}
+                </div>
+
+                <div className="min-w-0 flex-1 pb-2">
+                  <div
+                    className={cn(
+                      "text-sm leading-6 transition-colors duration-200",
+                      done && "text-slate-700 dark:text-zinc-200",
+                      active && "text-slate-900 dark:text-white",
+                      pending && "text-slate-400 dark:text-zinc-500"
+                    )}
+                  >
+                    {step.label}
+                    {active ? (
+                      <span className="ml-1.5 text-blue-400 dark:text-blue-500 animate-pulse tracking-[0.2em]">
+                        ...
+                      </span>
+                    ) : null}
+                  </div>
+
+                  {active && resolvedDetail ? (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      className="mt-1 flex flex-wrap items-center gap-1.5"
+                    >
+                      <StatusPill text={resolvedDetail} tone="subtle" size="xs" isLoading />
+                      {detailRepeat > 1 ? (
+                        <span className="rounded border border-blue-200/80 bg-blue-50/70 px-1.5 py-0.5 font-mono text-[9px] text-blue-500 dark:border-blue-900/80 dark:bg-blue-950/30 dark:text-blue-300">
+                          x{detailRepeat}
+                        </span>
+                      ) : null}
+                    </motion.div>
+                  ) : null}
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+
+        {tailHistory.length > 1 ? (
+          <div className="mt-1 flex flex-wrap gap-1 pl-8">
+            {tailHistory.map((item, idx) => (
+              <span
+                key={`${item.key}-${idx}`}
+                className={cn(
+                  "rounded-md border px-1.5 py-0.5 text-[9px] font-mono",
+                  idx === tailHistory.length - 1
+                    ? "border-blue-200/80 bg-blue-50/80 text-blue-500 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300"
+                    : "border-slate-200/80 bg-white/70 text-slate-400 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-500"
+                )}
+              >
+                {item.label}
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -206,6 +207,7 @@ export function StatusStream({
       activeIndex={activeIndex}
       label={label}
       detail={detail}
+      completed={false}
     />
   );
 }

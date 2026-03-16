@@ -71,6 +71,56 @@ describe("plugin market api", () => {
     expect(mockInvoke).toHaveBeenCalledWith("list_local_installed_skill_ids", undefined)
   })
 
+  it("matches installed plugins by normalized local alias keys", async () => {
+    mockInvoke.mockImplementation(async (command: string) => {
+      if (command === "list_local_installed_skill_ids") {
+        return ["skill-manager"]
+      }
+      return null
+    })
+    mockRequest.mockResolvedValue([
+      {
+        id: "skill_manager",
+        name: "Skill Manager",
+        description: "desc",
+        version: "1.1.0",
+        source_repo: null,
+        source_revision: null,
+        status: "active",
+        installed: false,
+      },
+    ])
+
+    const result = await fetchPluginMarket()
+
+    expect(result[0]?.installed).toBe(true)
+  })
+
+  it("matches installed plugins by source repo when ids drift", async () => {
+    mockInvoke.mockImplementation(async (command: string) => {
+      if (command === "list_local_installed_skill_ids") {
+        return ["repo:https://github.com/example/alpha-skill"]
+      }
+      return null
+    })
+    mockRequest.mockResolvedValue([
+      {
+        id: "market.alpha",
+        name: "Alpha Skill",
+        description: "desc",
+        version: "1.0.0",
+        source_repo: "https://github.com/example/alpha-skill.git",
+        source_revision: "main",
+        status: "active",
+        installed: false,
+      },
+    ])
+
+    const result = await fetchPluginMarket()
+
+    expect(result[0]?.installed).toBe(true)
+  })
+
   it("installs plugin locally via tauri command", async () => {
     mockInvoke.mockResolvedValue({
       skill_id: "skill.alpha",

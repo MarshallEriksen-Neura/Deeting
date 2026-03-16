@@ -1,12 +1,13 @@
 //! Host 执行器 - 在用户机器上执行命令
 
-use super::{ShellExecutor, ShellExecutionRequest, ShellExecutionResult, ShellExecutionError};
 use super::command_builder::CommandBuilder;
-use crate::modules::shell_executor::{
-    CommandPolicyChecker, PathGuard, AuditLogger,
-    ShellExecutorConfig,
+use super::{ShellExecutionError, ShellExecutionRequest, ShellExecutionResult, ShellExecutor};
+use crate::modules::mcp::{
+    ApprovalBoundaryClass, RiskOperationClass, RiskTargetClass, ToolRiskAssessment,
 };
-use crate::modules::mcp::{ToolRiskAssessment, RiskOperationClass, RiskTargetClass, ApprovalBoundaryClass};
+use crate::modules::shell_executor::{
+    AuditLogger, CommandPolicyChecker, PathGuard, ShellExecutorConfig,
+};
 use async_trait::async_trait;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -30,7 +31,7 @@ impl HostShellExecutor {
             config,
         }
     }
-    
+
     /// 评估命令风险 (复用现有系统)
     pub fn assess_risk(&self, command: &str, arguments: &serde_json::Value) -> ToolRiskAssessment {
         let mut score = 0_i32;
@@ -38,10 +39,10 @@ impl HostShellExecutor {
         let mut operation_class = RiskOperationClass::ProcessExec;
         let mut target_class = RiskTargetClass::Host;
         let mut boundary_class = ApprovalBoundaryClass::None;
-        
+
         let command_lower = command.to_lowercase();
         let arg_str = arguments.to_string().to_lowercase();
-        
+
         // 检查白名单
         if self.policy_checker.is_allowed(command) {
             return ToolRiskAssessment {
@@ -53,7 +54,7 @@ impl HostShellExecutor {
                 boundary_class: ApprovalBoundaryClass::None,
             };
         }
-        
+
         // 检查黑名单
         if let Some(reason) = self.policy_checker.is_denied(command) {
             return ToolRiskAssessment {
@@ -65,18 +66,18 @@ impl HostShellExecutor {
                 boundary_class: ApprovalBoundaryClass::HardBoundary,
             };
         }
-        
+
         // 检查危险模式
         if self.policy_checker.is_dangerous(command) {
             score += 3;
             reasons.push("dangerous pattern detected".to_string());
             boundary_class = ApprovalBoundaryClass::HardBoundary;
         }
-        
+
         // 基本风险评估
         score += 1;
         reasons.push("shell command execution".to_string());
-        
+
         // 关键关键词检测
         let critical_keywords = [
             "rm -rf",
@@ -90,7 +91,7 @@ impl HostShellExecutor {
             "curl | bash",
             "wget |",
         ];
-        
+
         for kw in critical_keywords {
             if command_lower.contains(kw) || arg_str.contains(kw) {
                 score += 5;
@@ -98,16 +99,10 @@ impl HostShellExecutor {
                 boundary_class = ApprovalBoundaryClass::HardBoundary;
             }
         }
-        
+
         // 警告关键词
-        let warning_keywords = [
-            "sudo",
-            "chmod 777",
-            "chown",
-            ">/etc/",
-            ">/root/",
-        ];
-        
+        let warning_keywords = ["sudo", "chmod 777", "chown", ">/etc/", ">/root/"];
+
         for kw in warning_keywords {
             if command_lower.contains(kw) || arg_str.contains(kw) {
                 score += 2;
@@ -115,7 +110,7 @@ impl HostShellExecutor {
                 boundary_class = ApprovalBoundaryClass::HardBoundary;
             }
         }
-        
+
         // 确定风险级别
         let (risk_level, requires_approval) = if score >= 6 {
             ("CRITICAL", true)
@@ -126,7 +121,7 @@ impl HostShellExecutor {
         } else {
             ("LOW", true) // 默认需要审批
         };
-        
+
         ToolRiskAssessment {
             requires_approval,
             risk_level,
@@ -145,16 +140,16 @@ impl ShellExecutor for HostShellExecutor {
         request: ShellExecutionRequest,
     ) -> Result<ShellExecutionResult, ShellExecutionError> {
         let start_time = Instant::now();
-        
+
         // 1. 路径验证
         if let Some(ref cwd) = request.working_dir {
             self.validate_path(cwd)
                 .map_err(ShellExecutionError::PathNotAllowed)?;
         }
-        
+
         // 2. 执行命令
         let result = self.execute_internal(&request).await?;
-        
+
         // 3. 审计日志
         self.audit_logger.log_execution(
             &request.command,
@@ -163,7 +158,7 @@ impl ShellExecutor for HostShellExecutor {
             start_time.elapsed().as_millis() as u64,
             "auto_approved", // 审批由外部系统处理
         );
-        
+
         Ok(ShellExecutionResult {
             stdout: result.stdout,
             stderr: result.stderr,
@@ -174,15 +169,15 @@ impl ShellExecutor for HostShellExecutor {
             approval_level: "auto_approved".to_string(),
         })
     }
-    
+
     fn check_policy(&self, command: &str) -> crate::modules::shell_executor::policy::CommandPolicy {
         self.policy_checker.check(command)
     }
-    
+
     fn validate_path(&self, path: &PathBuf) -> Result<(), String> {
         self.path_guard.validate(path)
     }
-    
+
     fn config(&self) -> &ShellExecutorConfig {
         &self.config
     }
@@ -194,29 +189,31 @@ impl HostShellExecutor {
         request: &ShellExecutionRequest,
     ) -> Result<InternalResult, ShellExecutionError> {
         let (program, args) = CommandBuilder::build(&request.command, &request.args);
-        
+
         let mut cmd = Command::new(program);
         cmd.args(&args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        
+
         if let Some(ref cwd) = request.working_dir {
             cmd.current_dir(cwd);
         }
-        
+
         for (key, value) in &request.env {
             cmd.env(key, value);
         }
-        
+
         let timeout = Duration::from_secs(
-            request.timeout_seconds.min(self.config.executor.max_timeout_seconds)
+            request
+                .timeout_seconds
+                .min(self.config.executor.max_timeout_seconds),
         );
-        
+
         let output = tokio::time::timeout(timeout, cmd.output())
             .await
             .map_err(|_| ShellExecutionError::Timeout)?
             .map_err(|e| ShellExecutionError::ExecutionFailed(e.to_string()))?;
-        
+
         Ok(InternalResult {
             stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
             stderr: String::from_utf8_lossy(&output.stderr).into_owned(),

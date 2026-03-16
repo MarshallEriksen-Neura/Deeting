@@ -1,10 +1,12 @@
 //! 默认策略检查器 - 组合所有检查器
 
-use super::{CommandPolicyChecker, CommandPolicy, WhitelistChecker, BlacklistChecker, DangerDetector};
+use super::{
+    BlacklistChecker, CommandPolicy, CommandPolicyChecker, DangerDetector, WhitelistChecker,
+};
 use crate::modules::shell_executor::config::PolicyConfig;
 
 /// 默认策略检查器
-/// 
+///
 /// 按顺序执行检查:
 /// 1. 黑名单检查 -> 如果匹配则直接拒绝
 /// 2. 危险模式检测 -> 如果匹配则要求危险确认
@@ -33,7 +35,7 @@ impl CommandPolicyChecker for DefaultPolicyChecker {
             CommandPolicy::Denied(reason) => return CommandPolicy::Denied(reason),
             _ => {}
         }
-        
+
         // 2. 危险模式检测
         match self.danger_detector.check(command) {
             CommandPolicy::RequiresApproval(level, message) => {
@@ -41,12 +43,12 @@ impl CommandPolicyChecker for DefaultPolicyChecker {
             }
             _ => {}
         }
-        
+
         // 3. 白名单检查
         if self.whitelist.is_whitelisted(command) {
             return CommandPolicy::Allowed;
         }
-        
+
         // 4. 默认: 要求标准确认
         CommandPolicy::RequiresApproval(
             super::ApprovalLevel::Standard,

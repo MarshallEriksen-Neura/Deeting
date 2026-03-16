@@ -1,6 +1,6 @@
 //! 白名单检查器
 
-use super::{CommandPolicyChecker, CommandPolicy};
+use super::{CommandPolicy, CommandPolicyChecker};
 use crate::modules::shell_executor::config::PolicyConfig;
 
 /// 白名单检查器
@@ -14,24 +14,24 @@ impl WhitelistChecker {
             whitelist: config.whitelist.clone(),
         }
     }
-    
+
     /// 检查命令是否在白名单中
     pub fn is_whitelisted(&self, command: &str) -> bool {
         let command_lower = command.to_lowercase().trim().to_string();
-        
+
         self.whitelist.iter().any(|pattern| {
             let pattern_lower = pattern.to_lowercase().trim().to_string();
-            
+
             // 完全匹配
             if command_lower == pattern_lower {
                 return true;
             }
-            
+
             // 前缀匹配 (例如: "git status" 匹配 "git")
             if command_lower.starts_with(&format!("{} ", pattern_lower)) {
                 return true;
             }
-            
+
             false
         })
     }

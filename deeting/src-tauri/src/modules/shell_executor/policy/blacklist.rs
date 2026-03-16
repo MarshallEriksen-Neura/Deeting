@@ -1,6 +1,6 @@
 //! 黑名单检查器
 
-use super::{CommandPolicyChecker, CommandPolicy};
+use super::{CommandPolicy, CommandPolicyChecker};
 use crate::modules::shell_executor::config::PolicyConfig;
 
 /// 黑名单检查器
@@ -14,14 +14,14 @@ impl BlacklistChecker {
             blacklist_patterns: config.blacklist_patterns.clone(),
         }
     }
-    
+
     /// 检查命令是否在黑名单中
     pub fn is_blacklisted(&self, command: &str) -> Option<String> {
         let command_lower = command.to_lowercase();
-        
+
         for pattern in &self.blacklist_patterns {
             let pattern_lower = pattern.to_lowercase();
-            
+
             // 子串匹配
             if command_lower.contains(&pattern_lower) {
                 return Some(format!(
@@ -30,7 +30,7 @@ impl BlacklistChecker {
                 ));
             }
         }
-        
+
         None
     }
 }

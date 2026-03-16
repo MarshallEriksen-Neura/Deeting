@@ -102,7 +102,7 @@ describe("AIResponseBubble debug panel", () => {
     expect(latestProps?.statusLabel).toBe("status.header.answering");
   });
 
-  it("hides terminal stream when a tool-linked ui block is present", () => {
+  it("keeps terminal stream visible when a tool-linked ui block is present", () => {
     const parts: MessageBlock[] = [
       { id: "tool-1", type: "tool_call", callId: "call-1", toolName: "search_sdk", status: "success" },
       {
@@ -126,7 +126,7 @@ describe("AIResponseBubble debug panel", () => {
 
     render(<AIResponseBubble parts={parts} isActive streamEnabled statusStage="render" />);
 
-    expect(screen.queryByTestId("terminal-stream")).not.toBeInTheDocument();
+    expect(screen.getByTestId("terminal-stream")).toBeInTheDocument();
     expect(screen.getByText("SDK Search")).toBeInTheDocument();
     expect(screen.getByTestId("view-block")).toBeInTheDocument();
   });
@@ -139,8 +139,8 @@ describe("AIResponseBubble debug panel", () => {
 
     render(<AIResponseBubble parts={parts} isActive />);
 
-    expect(screen.getByText("LIVE")).toBeInTheDocument();
     expect(screen.getByText("toolGroup.liveSkillSummary")).toBeInTheDocument();
+    expect(screen.getByText("SDK Search")).toBeInTheDocument();
   });
 
   it("renders tool-linked ui inside the matching tool block without duplicating the widget", () => {

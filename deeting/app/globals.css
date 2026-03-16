@@ -763,6 +763,53 @@ html:not(.dark) [data-slot="glass-button"][data-variant="secondary"] {
   }
 }
 
+/* ============================================
+   Tauri Desktop Title Bar Styles
+   ============================================ */
+
+/* 桌面端窗口整体布局 */
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+/* 标题栏按钮不可拖拽 */
+[data-tauri-drag-region] button,
+[data-tauri-drag-region] a {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* 桌面端主内容区域需要减去标题栏高度 */
+@media (display-mode: window-controls-overlay) {
+  body {
+    padding-top: env(titlebar-area-height, 36px);
+  }
+}
+
+/* 标题栏玻璃态增强 */
+[data-tauri-drag-region].bg-\[var\(--surface\)\] {
+  box-shadow: 0 1px 0 0 var(--border);
+}
+
+/* 深色模式标题栏 */
+html.dark [data-tauri-drag-region] {
+  background: linear-gradient(
+    180deg,
+    var(--surface) 0%,
+    color-mix(in oklch, var(--surface) 98%, transparent) 100%
+  );
+}
+
+/* 浅色模式标题栏 */
+html:not(.dark) [data-tauri-drag-region] {
+  background: linear-gradient(
+    180deg,
+    var(--surface) 0%,
+    color-mix(in oklch, var(--surface) 98%, #f8f7ff) 100%
+  );
+}
+
 @theme inline {
   --animate-blob: blob 7s infinite;
   --animate-pulse-slow: pulse 6s cubic-bezier(0.4, 0, 0.6, 1) infinite;

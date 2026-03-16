@@ -100,6 +100,59 @@ async function invokeTauri<T>(command: string, args?: Record<string, unknown>): 
   return invoke<T>(command, args)
 }
 
+function normalizeInstalledSkillId(value: string): string | null {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return null
+  }
+
+  let normalized = ""
+  let previousWasSeparator = false
+  for (const char of trimmed.toLowerCase()) {
+    if ((char >= "a" && char <= "z") || (char >= "0" && char <= "9")) {
+      normalized += char
+      previousWasSeparator = false
+    } else if (!previousWasSeparator) {
+      normalized += "-"
+      previousWasSeparator = true
+    }
+  }
+
+  const canonical = normalized.replace(/^-+|-+$/g, "")
+  return canonical.length > 0 ? canonical : null
+}
+
+function normalizeInstalledSkillRepoKey(value?: string | null): string | null {
+  const trimmed = value?.trim()
+  if (!trimmed) {
+    return null
+  }
+
+  let normalized = trimmed.replace(/\\/g, "/").toLowerCase()
+  if (normalized.startsWith("git@github.com:")) {
+    normalized = `https://github.com/${normalized.slice("git@github.com:".length)}`
+  }
+  normalized = normalized.replace(/\/+$/g, "").replace(/\.git$/g, "")
+  return normalized.length > 0 ? `repo:${normalized}` : null
+}
+
+function buildInstalledSkillMatchKeys(plugin: PluginMarketSkillItem): string[] {
+  const keys = new Set<string>()
+  const rawId = plugin.id.trim()
+  if (rawId) {
+    keys.add(rawId)
+  }
+  const normalizedId = normalizeInstalledSkillId(plugin.id)
+  if (normalizedId) {
+    keys.add(normalizedId)
+  }
+  const repoKey = normalizeInstalledSkillRepoKey(plugin.source_repo)
+  if (repoKey) {
+    keys.add(repoKey)
+  }
+  return Array.from(keys)
+}
+
 async function listLocalInstalledSkillIds(): Promise<Set<string>> {
   if (!isTauriRuntime()) {
     return new Set()
@@ -126,7 +179,7 @@ export async function fetchPluginMarket(query: PluginMarketQuery = {}) {
     const installedIds = await listLocalInstalledSkillIds()
     return plugins.map((plugin) => ({
       ...plugin,
-      installed: installedIds.has(plugin.id),
+      installed: buildInstalledSkillMatchKeys(plugin).some((key) => installedIds.has(key)),
     }))
   } catch (error) {
     console.warn("[plugin-market] load local installed skill ids failed", error)

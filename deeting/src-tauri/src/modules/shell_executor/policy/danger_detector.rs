@@ -1,6 +1,6 @@
 //! 危险模式检测器
 
-use super::{CommandPolicyChecker, CommandPolicy, ApprovalLevel};
+use super::{ApprovalLevel, CommandPolicy, CommandPolicyChecker};
 use crate::modules::shell_executor::config::PolicyConfig;
 
 /// 危险模式检测器
@@ -14,20 +14,20 @@ impl DangerDetector {
             dangerous_patterns: config.dangerous_patterns.clone(),
         }
     }
-    
+
     /// 检测命令是否包含危险模式
     pub fn detect_danger(&self, command: &str) -> Option<(String, ApprovalLevel)> {
         let command_lower = command.to_lowercase();
-        
+
         // 极度危险的命令 (直接拒绝)
         let critical_patterns = [
             "rm -rf /",
             "rm -rf /*",
             "mkfs",
             "dd if=/dev/zero",
-            ":(){ :|:& };:",  // Fork bomb
+            ":(){ :|:& };:", // Fork bomb
         ];
-        
+
         for pattern in &critical_patterns {
             if command_lower.contains(pattern) {
                 return Some((
@@ -36,7 +36,7 @@ impl DangerDetector {
                 ));
             }
         }
-        
+
         // 配置的危险模式
         for pattern in &self.dangerous_patterns {
             if command_lower.contains(&pattern.to_lowercase()) {
@@ -46,7 +46,7 @@ impl DangerDetector {
                 ));
             }
         }
-        
+
         None
     }
 }

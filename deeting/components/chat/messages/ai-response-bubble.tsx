@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
-import { AlertTriangle, Brain, ChevronDown, Loader2, Terminal } from "lucide-react";
+import { AlertTriangle, Brain, Check, ChevronDown, Loader2, Terminal, Zap } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -10,7 +10,7 @@ import { useBridgeApprovalStore } from "@/lib/chat/bridge-approval-store";
 import { useI18n } from "@/hooks/use-i18n";
 import type { MessageBlock, UIBlock as MessageUIBlock } from "@/lib/chat/message-protocol";
 import { MarkdownViewer } from "@/components/chat/markdown-viewer";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   TerminalStream,
   type TerminalStreamHistoryItem,
@@ -218,6 +218,109 @@ function summarizeToolCalls(parts: MessageBlock[]) {
     highlights: sorted.join(" · "),
     allInternal,
   };
+}
+
+type ToolVisualState = "running" | "success" | "error" | "pending";
+
+function toInlinePreview(value: string, maxLength = 96): string | null {
+  const normalized = value
+    .replace(/```json/gi, " ")
+    .replace(/```/g, " ")
+    .replace(/\r?\n+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return null;
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+function summarizeUnknownValue(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string") return toInlinePreview(value);
+  if (Array.isArray(value)) {
+    if (value.length === 0) return null;
+    return toInlinePreview(
+      value
+        .slice(0, 3)
+        .map((item) => summarizeUnknownValue(item) ?? String(item))
+        .join(" · ")
+    );
+  }
+  const record = toRecord(value);
+  if (record) {
+    for (const key of ["summary", "message", "title", "status", "text", "content", "error"]) {
+      const nextValue = record[key];
+      if (typeof nextValue === "string" && nextValue.trim()) {
+        return toInlinePreview(nextValue);
+      }
+    }
+    try {
+      return toInlinePreview(JSON.stringify(record));
+    } catch {
+      return null;
+    }
+  }
+  try {
+    return toInlinePreview(JSON.stringify(value));
+  } catch {
+    return toInlinePreview(String(value));
+  }
+}
+
+function resolveToolVisualState(status?: string, resultBlock?: MessageBlock): ToolVisualState {
+  const normalized = (status ?? "").trim().toLowerCase();
+  if (normalized === "error" || normalized === "failed") return "error";
+  if (normalized === "running" || normalized === "pending") return "running";
+  if (normalized === "success" || normalized === "succeeded") return "success";
+  if (resultBlock?.status === "error") return "error";
+  if (resultBlock) return "success";
+  return "pending";
+}
+
+function resolveToolPreview(
+  args?: string,
+  resultBlock?: MessageBlock,
+  uiBlocks: MessageUIBlock[] = []
+): string | null {
+  for (const uiBlock of uiBlocks) {
+    if (typeof uiBlock.title === "string" && uiBlock.title.trim()) {
+      return toInlinePreview(uiBlock.title);
+    }
+  }
+  const resultPreview = summarizeUnknownValue(resultBlock?.result);
+  if (resultPreview) return resultPreview;
+  if (typeof args === "string" && args.trim()) {
+    return toInlinePreview(args);
+  }
+  return null;
+}
+
+function ToolStateGlyph({ state }: { state: ToolVisualState }) {
+  return (
+    <span
+      className={cn(
+        "flex h-5 w-5 items-center justify-center rounded-full border",
+        state === "running" &&
+          "border-blue-200 bg-blue-100/90 text-blue-600 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300",
+        state === "success" &&
+          "border-emerald-200 bg-emerald-100/90 text-emerald-600 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300",
+        state === "error" &&
+          "border-red-200 bg-red-100/90 text-red-600 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300",
+        state === "pending" &&
+          "border-slate-200 bg-white/90 text-slate-400 dark:border-zinc-800 dark:bg-zinc-900/80 dark:text-zinc-500"
+      )}
+    >
+      {state === "running" ? (
+        <Zap size={11} className="animate-pulse" />
+      ) : state === "success" ? (
+        <Check size={11} />
+      ) : state === "error" ? (
+        <AlertTriangle size={11} />
+      ) : (
+        <Terminal size={11} />
+      )}
+    </span>
+  );
 }
 
 const SkillInstallStatusCard = memo<{ insight: SkillInstallInsight }>(function SkillInstallStatusCard({
@@ -484,17 +587,21 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
 
     useEffect(() => {
       if (!isActive) {
-        setStableActiveStep(0);
+        if (!hasContent) {
+          setStableActiveStep(0);
+        }
         return;
       }
       setStableActiveStep((prev) => Math.max(prev, activeStep));
-    }, [activeStep, isActive]);
+    }, [activeStep, hasContent, isActive]);
 
     useEffect(() => {
       if (!isActive) {
-        setStableDetail(null);
-        setDetailRepeat(1);
-        lastDetailRef.current = null;
+        if (!hasContent) {
+          setStableDetail(null);
+          setDetailRepeat(1);
+          lastDetailRef.current = null;
+        }
         return;
       }
       const nextDetail = typeof statusDetail === "string" ? statusDetail.trim() : "";
@@ -506,11 +613,13 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
       lastDetailRef.current = nextDetail;
       setStableDetail(nextDetail);
       setDetailRepeat(1);
-    }, [isActive, statusDetail]);
+    }, [hasContent, isActive, statusDetail]);
 
     useEffect(() => {
       if (!isActive) {
-        setStageHistory((prev) => (prev.length === 0 ? prev : []));
+        if (!hasContent) {
+          setStageHistory((prev) => (prev.length === 0 ? prev : []));
+        }
         return;
       }
       const fallbackStage = steps[Math.min(stableActiveStep, steps.length - 1)]?.key ?? null;
@@ -524,7 +633,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
         const withoutDuplicate = prev.filter((entry) => entry.key !== stageKey);
         return [...withoutDuplicate, { key: stageKey, label: stageLabel }].slice(-6);
       });
-    }, [isActive, statusStage, stableActiveStep, steps]);
+    }, [hasContent, isActive, statusStage, stableActiveStep, steps]);
 
     const toolCallSummary = useMemo(() => summarizeToolCalls(parts), [parts]);
     const streamActivity = useMemo(() => {
@@ -606,6 +715,14 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
       if (statusStage && statusStage !== "listen") return true;
       return false;
     }, [hasContent, stageHistory.length, stableActiveStep, statusStage, toolCallEntries.length]);
+    const hasToolActivity = useMemo(
+      () => toolCallEntries.length > 0 || pairedResultIndices.size > 0 || hasCallLinkedUi,
+      [hasCallLinkedUi, pairedResultIndices.size, toolCallEntries.length]
+    );
+    const shouldShowStatusRail = isActive || hasContent || hasToolActivity || Boolean(statusStage);
+    const statusRailCompleted = !isActive && (hasContent || hasToolActivity);
+    const displayedStepIndex = statusRailCompleted ? steps.length - 1 : stableActiveStep;
+    const terminalDetail = isActive ? stableDetail ?? statusDetail : null;
 
     const consoleTitle = useMemo(() => {
       for (const part of parts) {
@@ -634,32 +751,29 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
         data-slot="glass-card"
         >
           <div className="px-5 py-3.5 min-w-0 overflow-hidden">
-            {/* Terminal stream – persistent in compact mode after content arrives */}
-            <AnimatePresence mode="sync">
-              {isActive && !hasCallLinkedUi && (
-                <motion.div
-                  key="terminal-stream"
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10, height: 0, marginBottom: 0, transition: { duration: 0.3, ease: "easeInOut" } }}
-                  className="mb-3"
-                >
-                  <TerminalStream
-                    steps={steps}
-                    activeIndex={stableActiveStep}
-                    label={streamEnabled ? t("status.flow.stream") : t("status.flow.batch")}
-                    statusLabel={liveStatusLabel}
-                    placeholder={terminalPlaceholder}
-                    showPlaceholder={!shouldRevealCallChain}
-                    detail={stableDetail ?? statusDetail}
-                    detailRepeat={Math.max(detailRepeat, repeatCountFromMeta)}
-                    activity={streamActivity}
-                    history={stageHistory}
-                    compact={hasContent}
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {shouldShowStatusRail ? (
+              <motion.div
+                key="terminal-stream"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mb-4"
+              >
+                <TerminalStream
+                  steps={steps}
+                  activeIndex={displayedStepIndex}
+                  label={streamEnabled ? t("status.flow.stream") : t("status.flow.batch")}
+                  statusLabel={liveStatusLabel}
+                  placeholder={terminalPlaceholder}
+                  showPlaceholder={!shouldRevealCallChain}
+                  detail={terminalDetail}
+                  detailRepeat={Math.max(detailRepeat, repeatCountFromMeta)}
+                  activity={streamActivity}
+                  history={stageHistory}
+                  compact={hasContent || hasToolActivity}
+                  completed={statusRailCompleted}
+                />
+              </motion.div>
+            ) : null}
 
             {hasContent && (
               <motion.div
@@ -1006,8 +1120,6 @@ const ToolCallBlock = memo<{
     const [isOpen, setIsOpen] = useState(false);
     const cardRef = useRef<HTMLDivElement>(null);
     const recentApprovedExecution = useBridgeApprovalStore((state) => state.recentApprovedExecution);
-    const isRunning = status === 'running';
-    const isError = status === 'error';
     const hasResult = !!resultBlock;
     const hasUi = uiBlocks.length > 0;
     const hasExpandableContent = hasResult || hasUi;
@@ -1027,11 +1139,6 @@ const ToolCallBlock = memo<{
       return () => cancelAnimationFrame(frame);
     }, [isRecentlyApproved]);
 
-    useEffect(() => {
-      if (!hasUi) return;
-      setIsOpen(true);
-    }, [hasUi]);
-
     // TaskLiveBlock special case
     const taskLiveId = useMemo(() => {
       if (!resultBlock || resultBlock.status === 'error') return null;
@@ -1050,6 +1157,14 @@ const ToolCallBlock = memo<{
       () => extractSkillInstallInsight(resultBlock?.toolName || name, resultBlock?.result),
       [resultBlock?.toolName, name, resultBlock?.result]
     );
+    const visualState = useMemo(
+      () => resolveToolVisualState(status, resultBlock),
+      [resultBlock, status]
+    );
+    const preview = useMemo(
+      () => resolveToolPreview(args, resultBlock, uiBlocks),
+      [args, resultBlock, uiBlocks]
+    );
 
     const resultContent = useMemo(() => {
       return formatObjectAsMarkdown(resultBlock?.result);
@@ -1057,62 +1172,80 @@ const ToolCallBlock = memo<{
 
     const isResultError = resultBlock?.status === "error";
 
-    const card = (
-      <div
-        ref={cardRef}
-        className={cn(
-        "flex items-center gap-3 p-3 rounded-lg border text-sm w-full transition-all duration-500",
-        hasUi ? "max-w-2xl" : "max-w-md",
-        isRunning
-          ? "border-blue-200 bg-blue-50/50 dark:border-blue-900 dark:bg-blue-900/20"
-          : "border-border bg-card",
-        isError && "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-900/20",
-        isRecentlyApproved &&
-          "border-emerald-300 bg-emerald-50/80 shadow-[0_0_0_3px_rgba(16,185,129,0.18)] dark:border-emerald-700 dark:bg-emerald-950/30",
-        hasExpandableContent && !isRunning && "cursor-pointer select-none hover:bg-muted/50"
-      )}>
-        {/* Icon Status */}
-        <div className={cn(
-          "w-8 h-8 rounded flex items-center justify-center shrink-0",
-          isRunning
-            ? "bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300"
-            : "bg-muted text-muted-foreground",
-          isRecentlyApproved &&
-            "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300",
-          isError && "bg-red-100 text-red-500 dark:bg-red-900 dark:text-red-300"
-        )}>
-          {isRunning ? <Loader2 size={16} className="animate-spin"/> : <Terminal size={16}/>}
-        </div>
+    useEffect(() => {
+      if (!hasUi && !taskLiveId) return;
+      setIsOpen(true);
+    }, [hasUi, taskLiveId]);
 
-        {/* Info */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between">
-            <span className="font-semibold font-mono truncate">{humanizeToolName(name)}</span>
-            <div className="flex items-center gap-2 pl-2">
-              {isRecentlyApproved ? (
-                <Badge
-                  variant="outline"
-                  className="h-5 border-emerald-300 text-[10px] font-normal text-emerald-700 dark:border-emerald-700 dark:text-emerald-300"
-                >
-                  {t("approvalDialog.badges.approved")}
-                </Badge>
+    const card = (
+      <div ref={cardRef} className="w-full">
+        <div className="flex items-stretch gap-3">
+          <div className="flex w-5 shrink-0 flex-col items-center">
+            <div className="pt-0.5">
+              <ToolStateGlyph state={visualState} />
+            </div>
+            {hasExpandableContent ? (
+              <span
+                className={cn(
+                  "mt-1 w-px flex-1 min-h-4",
+                  visualState === "error"
+                    ? "bg-red-200 dark:bg-red-900"
+                    : visualState === "success"
+                      ? "bg-emerald-200 dark:bg-emerald-900"
+                      : "bg-blue-200 dark:bg-blue-900"
+                )}
+              />
+            ) : null}
+          </div>
+
+          <div
+            className={cn(
+              "min-w-0 flex-1 rounded-2xl border px-3 py-2.5 text-sm transition-all duration-300",
+              visualState === "running" &&
+                "border-blue-200/80 bg-blue-50/55 dark:border-blue-900 dark:bg-blue-950/20",
+              visualState === "success" && "border-slate-200/80 bg-white/85 dark:border-zinc-800 dark:bg-zinc-900/70",
+              visualState === "pending" && "border-slate-200/80 bg-white/80 dark:border-zinc-800 dark:bg-zinc-900/65",
+              visualState === "error" &&
+                "border-red-200/80 bg-red-50/55 dark:border-red-900 dark:bg-red-950/20",
+              isRecentlyApproved &&
+                "border-emerald-300 bg-emerald-50/80 shadow-[0_0_0_3px_rgba(16,185,129,0.14)] dark:border-emerald-700 dark:bg-emerald-950/25",
+              hasExpandableContent && "cursor-pointer select-none hover:bg-muted/30"
+            )}
+          >
+            <div className="flex items-start gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="truncate text-sm font-semibold text-foreground">
+                    {humanizeToolName(name)}
+                  </span>
+                  <Badge variant="outline" className="h-5 text-[10px] font-normal text-muted-foreground">
+                    {isInternalTool(name) ? "Skill" : "MCP"}
+                  </Badge>
+                  {isRecentlyApproved ? (
+                    <Badge
+                      variant="outline"
+                      className="h-5 border-emerald-300 text-[10px] font-normal text-emerald-700 dark:border-emerald-700 dark:text-emerald-300"
+                    >
+                      {t("approvalDialog.badges.approved")}
+                    </Badge>
+                  ) : null}
+                </div>
+                {preview ? (
+                  <div className="mt-1 truncate text-[12px] leading-5 text-muted-foreground">
+                    {preview}
+                  </div>
+                ) : null}
+              </div>
+
+              {hasExpandableContent ? (
+                <div className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-muted-foreground">
+                  <span>{t(isOpen ? "toolGroup.collapse" : "toolGroup.expand")}</span>
+                  <ChevronDown size={14} className={cn("transition-transform duration-200", !isOpen && "-rotate-90")} />
+                </div>
               ) : null}
-              <Badge variant="outline" className="text-[10px] h-5 font-normal text-muted-foreground">
-                {isInternalTool(name) ? "Skill" : "MCP"}
-              </Badge>
             </div>
           </div>
-          <div className="text-xs text-muted-foreground truncate font-mono mt-0.5 opacity-80">
-            {args}
-          </div>
         </div>
-
-        {/* Expand/Collapse indicator */}
-        {hasExpandableContent && !isRunning && (
-          <div className="text-muted-foreground">
-            <ChevronDown size={16} className={cn("transition-transform duration-200", !isOpen && "-rotate-90")} />
-          </div>
-        )}
       </div>
     );
 
@@ -1124,7 +1257,7 @@ const ToolCallBlock = memo<{
           {card}
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="mt-2">
+          <div className="mt-2 ml-8">
             {taskLiveId ? (
               <TaskLiveBlock taskId={taskLiveId} />
             ) : skillInstallInsight ? (
@@ -1134,7 +1267,7 @@ const ToolCallBlock = memo<{
                 {uiBlocks.map((uiBlock, index) => (
                   <div
                     key={uiBlock.id || `${callId || name || "tool"}-ui-${index}`}
-                    className="overflow-hidden rounded-lg border border-border/80 bg-background/80 p-2"
+                    className="overflow-hidden rounded-2xl border border-border/80 bg-background/80 p-2"
                   >
                     <ViewBlock
                       viewType={uiBlock.viewType}
@@ -1147,15 +1280,17 @@ const ToolCallBlock = memo<{
                 <ToolDebugPanel debug={resultBlock?.debug} />
               </div>
             ) : (
-              <div className={cn(
-                "rounded-lg border p-3 text-sm overflow-hidden",
-                isResultError
-                  ? "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-900/20"
-                  : "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-900/20"
-              )}>
+              <div
+                className={cn(
+                  "rounded-2xl border p-3 text-sm overflow-hidden",
+                  isResultError
+                    ? "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-900/20"
+                    : "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-900/20"
+                )}
+              >
                 <div className="mb-2 flex items-center justify-between">
                   <div className="font-mono text-xs font-semibold truncate">
-                    {resultBlock.toolName || resultBlock.callId || "result"}
+                    {resultBlock?.toolName || resultBlock?.callId || "result"}
                   </div>
                   <Badge variant="outline" className="h-5 text-[10px] font-normal shrink-0">
                     {isResultError ? "ERROR" : "OUTPUT"}
@@ -1196,12 +1331,21 @@ const ToolCallGroup = memo<{
       () => toolCalls.some(({ part }) => part.callId === recentApprovedCallId),
       [recentApprovedCallId, toolCalls]
     );
+    const hasResolvedResult = useMemo(
+      () =>
+        toolCalls.some(({ part }) => {
+          const callId = typeof part.callId === "string" ? part.callId : "";
+          if (!callId) return false;
+          return resultMap.has(callId) || (uiBlocksByCallId.get(callId)?.length ?? 0) > 0;
+        }),
+      [resultMap, toolCalls, uiBlocksByCallId]
+    );
 
     useEffect(() => {
-      if (isActive || containsRecentApproval) {
+      if (isActive || containsRecentApproval || hasResolvedResult) {
         setIsOpen(true);
       }
-    }, [containsRecentApproval, isActive]);
+    }, [containsRecentApproval, hasResolvedResult, isActive]);
 
     useEffect(() => {
       if (!containsRecentApproval) return;
@@ -1225,6 +1369,7 @@ const ToolCallGroup = memo<{
       : summary?.allInternal
         ? "toolGroup.skillSummary"
         : "toolGroup.summary";
+    const groupState: ToolVisualState = isActive ? "running" : hasResolvedResult ? "success" : "pending";
 
     return (
       <Collapsible open={isOpen} onOpenChange={setIsOpen} className="w-full">
@@ -1232,49 +1377,43 @@ const ToolCallGroup = memo<{
           <div
             ref={groupRef}
             className={cn(
-            "flex items-center gap-3 p-3 rounded-lg border text-sm w-full max-w-md transition-all cursor-pointer select-none border-border bg-card hover:bg-muted/50",
-            isActive && "border-blue-200 bg-blue-50/60 dark:border-blue-900 dark:bg-blue-900/20",
-            containsRecentApproval &&
-              "border-emerald-300 bg-emerald-50/70 shadow-[0_0_0_3px_rgba(16,185,129,0.14)] dark:border-emerald-700 dark:bg-emerald-950/20"
-          )}>
-            <div
-              className={cn(
-                "w-8 h-8 rounded flex items-center justify-center shrink-0",
-                isActive
-                  ? "bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300"
-                  : "bg-muted text-muted-foreground"
-              )}
-            >
-              {isActive ? <Loader2 size={16} className="animate-spin" /> : <Terminal size={16} />}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold font-mono text-sm">
-                  {t(summaryKey, { count: toolCalls.length })}
-                </span>
-                {!isActive ? (
-                  <Badge variant="outline" className="text-[10px] h-5 font-normal text-muted-foreground">
+              "w-full rounded-2xl border px-3 py-2.5 text-sm transition-all cursor-pointer select-none hover:bg-muted/30",
+              groupState === "running" &&
+                "border-blue-200/80 bg-blue-50/55 dark:border-blue-900 dark:bg-blue-950/20",
+              groupState === "success" &&
+                "border-slate-200/80 bg-white/82 dark:border-zinc-800 dark:bg-zinc-900/70",
+              groupState === "pending" &&
+                "border-slate-200/80 bg-white/80 dark:border-zinc-800 dark:bg-zinc-900/65",
+              containsRecentApproval &&
+                "border-emerald-300 bg-emerald-50/70 shadow-[0_0_0_3px_rgba(16,185,129,0.14)] dark:border-emerald-700 dark:bg-emerald-950/20"
+            )}
+          >
+            <div className="flex items-start gap-3">
+              <div className="pt-0.5">
+                <ToolStateGlyph state={groupState} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-semibold text-foreground">
+                    {t(summaryKey, { count: toolCalls.length })}
+                  </span>
+                  <Badge variant="outline" className="h-5 text-[10px] font-normal text-muted-foreground">
                     {summary?.allInternal ? "Skill" : "MCP"}
                   </Badge>
-                ) : null}
-                {isActive ? (
-                  <Badge variant="outline" className="text-[10px] h-5 font-normal border-blue-200 text-blue-600 dark:border-blue-800 dark:text-blue-300">
-                    LIVE
-                  </Badge>
-                ) : null}
+                </div>
+                <div className="mt-1 truncate text-[12px] text-muted-foreground">
+                  {summary?.highlights || "-"}
+                </div>
               </div>
-              <div className="text-xs text-muted-foreground truncate font-mono mt-0.5 opacity-80">
-                {summary?.highlights || "-"}
+              <div className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-muted-foreground">
+                <span>{t(isOpen ? "toolGroup.collapse" : "toolGroup.expand")}</span>
+                <ChevronDown size={14} className={cn("transition-transform duration-200", !isOpen && "-rotate-90")} />
               </div>
             </div>
-            <ChevronDown size={16} className={cn(
-              "text-muted-foreground transition-transform duration-200",
-              !isOpen && "-rotate-90"
-            )} />
           </div>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="mt-2 space-y-2 pl-3 border-l-2 border-border/50">
+          <div className="mt-3 space-y-2">
             {toolCalls.map(({ part, index }) => (
               <ToolCallBlock
                 key={`tool-${index}`}
@@ -1300,6 +1439,7 @@ const ToolResultBlock = memo<{
   result?: unknown;
   debug?: Record<string, unknown>;
 }>(function ToolResultBlock({ name, callId, status, result, debug }) {
+  const t = useI18n("chat");
   const [isOpen, setIsOpen] = useState(false);
   const title = humanizeToolName(name) || callId || "tool_result";
   const isError = status === "error";
@@ -1325,41 +1465,60 @@ const ToolResultBlock = memo<{
   const content = useMemo(() => {
     return formatObjectAsMarkdown(result);
   }, [result]);
+  const preview = useMemo(() => summarizeUnknownValue(result), [result]);
+  const visualState: ToolVisualState = isError ? "error" : "success";
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen} className="w-full">
       <CollapsibleTrigger asChild>
-        <div className={cn(
-          "flex items-center gap-3 p-3 rounded-lg border text-sm w-full max-w-md transition-all cursor-pointer select-none hover:bg-muted/50",
-          isError
-            ? "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-900/20"
-            : "border-border bg-card"
-        )}>
-          <div className={cn(
-            "w-8 h-8 rounded flex items-center justify-center shrink-0",
-            isError
-              ? "bg-red-100 text-red-500 dark:bg-red-900 dark:text-red-300"
-              : "bg-muted text-muted-foreground"
-          )}>
-            <Terminal size={16} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between">
-              <span className="font-semibold font-mono truncate">{title}</span>
-              <Badge variant="outline" className="text-[10px] h-5 font-normal text-muted-foreground shrink-0">
-                {isError ? "ERROR" : "OUTPUT"}
-              </Badge>
+        <div className="w-full">
+          <div className="flex items-stretch gap-3">
+            <div className="flex w-5 shrink-0 flex-col items-center">
+              <div className="pt-0.5">
+                <ToolStateGlyph state={visualState} />
+              </div>
+              <span
+                className={cn(
+                  "mt-1 w-px flex-1 min-h-4",
+                  isError ? "bg-red-200 dark:bg-red-900" : "bg-emerald-200 dark:bg-emerald-900"
+                )}
+              />
             </div>
-          </div>
-          <div className="text-muted-foreground">
-            <ChevronDown size={16} className={cn("transition-transform duration-200", !isOpen && "-rotate-90")} />
+            <div
+              className={cn(
+                "min-w-0 flex-1 rounded-2xl border px-3 py-2.5 text-sm transition-all cursor-pointer select-none hover:bg-muted/30",
+                isError
+                  ? "border-red-200/80 bg-red-50/55 dark:border-red-900 dark:bg-red-950/20"
+                  : "border-slate-200/80 bg-white/85 dark:border-zinc-800 dark:bg-zinc-900/70"
+              )}
+            >
+              <div className="flex items-start gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="truncate text-sm font-semibold text-foreground">{title}</span>
+                    <Badge variant="outline" className="h-5 text-[10px] font-normal text-muted-foreground shrink-0">
+                      {isError ? "ERROR" : "OUTPUT"}
+                    </Badge>
+                  </div>
+                  {preview ? (
+                    <div className="mt-1 truncate text-[12px] text-muted-foreground">
+                      {preview}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-muted-foreground">
+                  <span>{t(isOpen ? "toolGroup.collapse" : "toolGroup.expand")}</span>
+                  <ChevronDown size={14} className={cn("transition-transform duration-200", !isOpen && "-rotate-90")} />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className="mt-2">
+        <div className="mt-2 ml-8">
           <div className={cn(
-            "rounded-lg border p-3 text-sm overflow-hidden",
+            "rounded-2xl border p-3 text-sm overflow-hidden",
             isError
               ? "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-900/20"
               : "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-900/20"
