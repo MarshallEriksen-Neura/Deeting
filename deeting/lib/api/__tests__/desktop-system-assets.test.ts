@@ -68,16 +68,16 @@ describe("desktop system assets api", () => {
       skill_reindexed_count: 3,
       assistant_reindexed_count: 2,
       sync: {
-        fetched_count: 2,
+        fetched_count: 1,
         assistant_fetched_count: 1,
-        skill_fetched_count: 1,
-        upserted_count: 2,
+        skill_fetched_count: 0,
+        upserted_count: 1,
         hidden_count: 0,
         metadata_only_count: 0,
-        executable_count: 2,
+        executable_count: 1,
         archived_count: 0,
-        skill_install_fetched_count: 1,
-        skill_install_upserted_count: 1,
+        skill_install_fetched_count: 0,
+        skill_install_upserted_count: 0,
         skill_reinstalled_count: 0,
         skill_failed_count: 0,
         disabled_skill_count: 0,
@@ -114,20 +114,20 @@ describe("desktop system assets api", () => {
     windowWithTauri.__TAURI__ = {}
     mockInvoke.mockResolvedValue({
       id: "log-1",
-      kind: "sync_local_installs",
+      kind: "repair_local_index",
       status: "success",
       message: "ok",
-      details: { skill_install_upserted_count: 2 },
+      details: { assistant_reindexed_count: 2 },
       created_at: "2026-03-11T00:00:00Z",
     } as unknown)
 
-    const result = await runLocalMaintenanceAction({ kind: "sync_local_installs" })
+    const result = await runLocalMaintenanceAction({ kind: "repair_local_index" })
 
     expect(result?.status).toBe("success")
     expect(mockInvoke).toHaveBeenCalledWith("run_local_maintenance_action", {
       accessToken: "desktop-token",
       request: {
-        kind: "sync_local_installs",
+        kind: "repair_local_index",
         limit: 500,
         reinstallMissing: false,
       },

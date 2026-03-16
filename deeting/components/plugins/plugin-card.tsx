@@ -41,6 +41,9 @@ interface PluginCardProps {
 export function PluginCard({ plugin, runtimeStatus, onInstall, onUninstall, onConfigure }: PluginCardProps) {
   const t = useTranslations("plugins")
   const color = pickColor(plugin.id)
+  const canInstall = typeof onInstall === "function"
+  const canUninstall = typeof onUninstall === "function"
+  const canConfigure = typeof onConfigure === "function"
   const surfaceLabel =
     runtimeStatus == null
       ? null
@@ -144,7 +147,7 @@ export function PluginCard({ plugin, runtimeStatus, onInstall, onUninstall, onCo
 
         {plugin.installed ? (
           <div className="flex items-center gap-2">
-            {runtimeStatus && (
+            {runtimeStatus && canConfigure && (
               <Button
                 size="sm"
                 variant="outline"
@@ -155,17 +158,23 @@ export function PluginCard({ plugin, runtimeStatus, onInstall, onUninstall, onCo
                 {t("card.configure")}
               </Button>
             )}
-            <Button
-              size="sm"
-              variant="outline"
-              className="rounded-full px-4 h-8 text-xs font-bold text-green-600 border-green-600/30 hover:bg-red-50 hover:text-red-600 hover:border-red-600/30 dark:hover:bg-red-950/20 transition-colors group/btn"
-              onClick={() => onUninstall?.(plugin.id)}
-            >
-              <span className="group-hover/btn:hidden">{t("card.installed")}</span>
-              <span className="hidden group-hover/btn:inline">{t("card.uninstall")}</span>
-            </Button>
+            {canUninstall ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="rounded-full px-4 h-8 text-xs font-bold text-green-600 border-green-600/30 hover:bg-red-50 hover:text-red-600 hover:border-red-600/30 dark:hover:bg-red-950/20 transition-colors group/btn"
+                onClick={() => onUninstall?.(plugin.id)}
+              >
+                <span className="group-hover/btn:hidden">{t("card.installed")}</span>
+                <span className="hidden group-hover/btn:inline">{t("card.uninstall")}</span>
+              </Button>
+            ) : (
+              <Badge variant="outline" className="text-xs">
+                {t("card.installed")}
+              </Badge>
+            )}
           </div>
-        ) : (
+        ) : canInstall ? (
           <Button
             size="sm"
             className="rounded-full px-4 h-8 text-xs font-bold shadow-lg transition-all duration-300"
@@ -174,7 +183,7 @@ export function PluginCard({ plugin, runtimeStatus, onInstall, onUninstall, onCo
             <Download size={14} className="mr-1" />
             {t("card.install")}
           </Button>
-        )}
+        ) : null}
       </CardFooter>
     </div>
   )

@@ -3917,34 +3917,8 @@ for raw_line in sys.stdin:
     }
 
     #[tokio::test]
-    async fn sync_local_system_assets_inner_persists_registry_and_disables_non_executable_assets() {
+    async fn sync_local_system_assets_inner_persists_assistant_registry_only() {
         let store = create_test_store("system-assets-sync-inner").await;
-
-        let cloud_settings = serde_json::json!({"sync_source": "cloud_plugin_market"});
-        store
-            .upsert_local_skill_install_state(
-                "skill.hidden",
-                Some("1.0.0"),
-                true,
-                Some("python"),
-                r#"{"id":"skill.hidden"}"#,
-                "/tmp/skill.hidden",
-                Some(&cloud_settings),
-            )
-            .await
-            .expect("seed hidden skill install");
-        store
-            .upsert_local_skill_install_state(
-                "skill.meta",
-                Some("1.0.0"),
-                true,
-                Some("python"),
-                r#"{"id":"skill.meta"}"#,
-                "/tmp/skill.meta",
-                Some(&cloud_settings),
-            )
-            .await
-            .expect("seed metadata skill install");
 
         let assistant = CloudSystemAssistantSnapshot {
             assistant_id: "assistant.hidden".to_string(),
@@ -3982,46 +3956,6 @@ for raw_line in sys.stdin:
 
         let payload = serde_json::json!({
             "items": [
-                {
-                    "asset_id": "skill:skill.hidden",
-                    "title": "Hidden Skill",
-                    "description": "no local exec",
-                    "asset_kind": "skill_bundle",
-                    "owner_scope": "system",
-                    "source_kind": "official",
-                    "version": "1.0.0",
-                    "artifact_ref": null,
-                    "checksum": null,
-                    "metadata_json": {"registry_entity": "skill", "manifest": {"id": "skill.hidden"}},
-                    "policy_snapshot": {
-                        "visibility_scope": "authenticated",
-                        "local_sync_policy": "hidden",
-                        "execution_policy": "allowed",
-                        "permission_grants": [],
-                        "allowed_role_names": [],
-                        "materialization_state": "hidden"
-                    }
-                },
-                {
-                    "asset_id": "skill:skill.meta",
-                    "title": "Meta Skill",
-                    "description": "metadata only",
-                    "asset_kind": "skill_bundle",
-                    "owner_scope": "system",
-                    "source_kind": "official",
-                    "version": "1.0.0",
-                    "artifact_ref": null,
-                    "checksum": null,
-                    "metadata_json": {"registry_entity": "skill", "manifest": {"id": "skill.meta"}},
-                    "policy_snapshot": {
-                        "visibility_scope": "authenticated",
-                        "local_sync_policy": "metadata_only",
-                        "execution_policy": "approval_required",
-                        "permission_grants": [],
-                        "allowed_role_names": [],
-                        "materialization_state": "metadata_only"
-                    }
-                },
                 {
                     "asset_id": "assistant:assistant.hidden",
                     "title": "Hidden Assistant",
@@ -4118,22 +4052,15 @@ for raw_line in sys.stdin:
         .await
         .expect("sync local system assets");
 
-        assert_eq!(response.fetched_count, 4);
+        assert_eq!(response.fetched_count, 2);
         assert_eq!(response.assistant_fetched_count, 2);
-        assert_eq!(response.skill_fetched_count, 2);
-        assert_eq!(response.upserted_count, 4);
-        assert_eq!(response.hidden_count, 2);
-        assert_eq!(response.metadata_only_count, 1);
+        assert_eq!(response.skill_fetched_count, 0);
+        assert_eq!(response.upserted_count, 2);
+        assert_eq!(response.hidden_count, 1);
+        assert_eq!(response.metadata_only_count, 0);
         assert_eq!(response.executable_count, 1);
-        assert_eq!(response.disabled_skill_count, 2);
+        assert_eq!(response.disabled_skill_count, 0);
         assert_eq!(response.archived_assistant_count, 1);
-
-        let enabled_skills = store
-            .list_enabled_local_skill_ids()
-            .await
-            .expect("list enabled skills");
-        assert!(!enabled_skills.contains("skill.hidden"));
-        assert!(!enabled_skills.contains("skill.meta"));
 
         let archived_status: String = sqlx::query_scalar(
             "SELECT status FROM assistant WHERE id = 'assistant.hidden' LIMIT 1;",
@@ -4328,59 +4255,56 @@ for raw_line in sys.stdin:
     }
 
     #[tokio::test]
-    async fn sync_local_system_assets_inner_syncs_skill_install_state_from_unified_feed() {
-        let store = create_test_store("system-assets-sync-skill-installs").await;
-        let stale_cloud_settings = serde_json::json!({
-            "sync_source": "cloud_plugin_market",
-            "alias": "stale"
-        });
+    async fn sync_local_system_assets_inner_no_longer_syncs_skill_install_state() {
+        let store = create_test_store("system-assets-skip-skill-installs").await;
         store
-            .upsert_local_skill_install_state(
-                "skill.stale",
-                Some("0.9.0"),
-                true,
+            .upsert_local_skill_install(
+                "skill.local-only",
+                Some("1.0.0"),
                 Some("python"),
-                r#"{"id":"skill.stale"}"#,
-                "/tmp/skill.stale",
-                Some(&stale_cloud_settings),
+                r#"{"id":"skill.local-only"}"#,
+                "/tmp/skill.local-only",
             )
             .await
-            .expect("seed stale cloud skill install");
+            .expect("seed local-only skill install");
 
         let payload = serde_json::json!({
             "items": [{
-                "asset_id": "skill:skill.installed",
-                "title": "Installed Skill",
-                "description": "projected via system assets",
-                "asset_kind": "skill_bundle",
+                "asset_id": "assistant:assistant.exec",
+                "title": "Executable Assistant",
+                "description": "ok",
+                "asset_kind": "assistant_template",
                 "owner_scope": "system",
                 "source_kind": "official",
-                "version": "1.2.3",
-                "artifact_ref": "https://github.com/example/installed-skill",
-                "checksum": "rev-123",
+                "version": "1.0.0",
+                "artifact_ref": null,
+                "checksum": null,
                 "metadata_json": {
-                    "registry_entity": "skill",
-                    "skill_id": "skill.installed",
-                    "runtime": "python",
-                    "manifest": {
-                        "id": "skill.installed",
-                        "name": "Installed Skill",
-                        "version": "1.2.3",
-                        "permissions": ["network_read"]
-                    },
-                    "user_install": {
-                        "alias": "desktop-installed",
-                        "config_json": {"region": "global"},
-                        "granted_permissions": ["network_read"],
-                        "installed_revision": "rev-123",
-                        "is_enabled": true
+                    "registry_entity": "assistant",
+                    "assistant_id": "assistant.exec",
+                    "current_version_id": "assistant.exec.v1",
+                    "summary": "Executable assistant summary",
+                    "icon_id": "lucide:bot",
+                    "share_slug": "assistant-exec",
+                    "published_at": "2024-01-02T00:00:00Z",
+                    "install_count": 12,
+                    "rating_avg": 4.5,
+                    "rating_count": 3,
+                    "version": {
+                        "id": "assistant.exec.v1",
+                        "version": "1.0.0",
+                        "name": "Executable Assistant",
+                        "description": "ok",
+                        "system_prompt": "be helpful",
+                        "tags": ["utility", "system"],
+                        "published_at": "2024-01-02T00:00:00Z"
                     }
                 },
                 "policy_snapshot": {
                     "visibility_scope": "authenticated",
                     "local_sync_policy": "full",
                     "execution_policy": "allowed",
-                    "permission_grants": ["network_read"],
+                    "permission_grants": [],
                     "allowed_role_names": [],
                     "materialization_state": "executable"
                 }
@@ -4388,58 +4312,33 @@ for raw_line in sys.stdin:
         });
         let (mock_base_url, server_handle) = start_mock_system_assets_server(payload).await;
 
-        let mut skills_dir = std::env::temp_dir();
-        skills_dir.push(format!(
-            "deeting-system-assets-skill-installs-{}",
-            Uuid::new_v4()
-        ));
-        std::fs::create_dir_all(&skills_dir).expect("create system-assets skills dir");
-
         let response = sync_local_system_assets_inner(
             &store,
             &reqwest::Client::new(),
             &mock_base_url,
             "test-access-token",
             100,
-            Some(&skills_dir),
+            None,
             false,
         )
         .await
-        .expect("sync unified skill installs");
+        .expect("sync assistant-only system assets");
 
-        assert_eq!(response.skill_install_fetched_count, 1);
-        assert_eq!(response.assistant_fetched_count, 0);
-        assert_eq!(response.skill_fetched_count, 1);
-        assert_eq!(response.skill_install_upserted_count, 1);
+        assert_eq!(response.skill_install_fetched_count, 0);
+        assert_eq!(response.assistant_fetched_count, 1);
+        assert_eq!(response.skill_fetched_count, 0);
+        assert_eq!(response.skill_install_upserted_count, 0);
         assert_eq!(response.skill_reinstalled_count, 0);
         assert_eq!(response.skill_failed_count, 0);
-        assert_eq!(response.disabled_skill_count, 1);
+        assert_eq!(response.disabled_skill_count, 0);
 
         let enabled = store
             .list_enabled_local_skill_ids()
             .await
             .expect("list enabled local skills");
-        assert!(enabled.contains("skill.installed"));
-        assert!(!enabled.contains("skill.stale"));
-
-        let installed_version: String = sqlx::query_scalar(
-            "SELECT installed_version FROM local_skill_install WHERE skill_id = 'skill.installed' LIMIT 1;",
-        )
-        .fetch_one(&store.pool)
-        .await
-        .expect("read installed skill version");
-        assert_eq!(installed_version, "rev-123");
-
-        let user_settings_json: String = sqlx::query_scalar(
-            "SELECT user_settings_json FROM local_skill_install WHERE skill_id = 'skill.installed' LIMIT 1;",
-        )
-        .fetch_one(&store.pool)
-        .await
-        .expect("read installed skill settings");
-        assert!(user_settings_json.contains("desktop-installed"));
+        assert!(enabled.contains("skill.local-only"));
 
         server_handle.abort();
-        let _ = std::fs::remove_dir_all(&skills_dir);
     }
 
     #[tokio::test]

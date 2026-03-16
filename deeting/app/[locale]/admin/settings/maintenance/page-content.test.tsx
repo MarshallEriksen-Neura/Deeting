@@ -80,26 +80,14 @@ describe("Admin maintenance settings page", () => {
     })
   })
 
-  it("runs local install sync", async () => {
-    mockRunLocalMaintenanceAction.mockResolvedValue({
-      id: "log-2",
-      kind: "sync_local_installs",
-      status: "success",
-      message: "sync complete",
-      details: {
-        skill_install_fetched_count: 2,
-        skill_install_upserted_count: 2,
-        skill_failed_count: 0,
-      },
-      created_at: "2026-03-11T00:00:01Z",
-    })
-
+  it("only exposes repair action after cloud install sync removal", () => {
     render(<PageContent />)
-    fireEvent.click(screen.getByRole("button", { name: "actions.syncAction" }))
 
-    await waitFor(() => {
-      expect(mockRunLocalMaintenanceAction).toHaveBeenCalledWith({ kind: "sync_local_installs", reinstallMissing: false })
-    })
+    expect(screen.queryByRole("button", { name: "actions.syncAction" })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole("button", { name: "actions.syncReinstallAction" })
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "actions.repairIndexAction" })).toBeInTheDocument()
   })
 
   it("confirms before running full repair", async () => {

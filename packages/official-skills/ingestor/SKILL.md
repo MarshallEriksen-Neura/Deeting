@@ -1,22 +1,23 @@
 ---
 name: ingestor
-description: "Smart assistant discovery and onboarding from URLs."
+description: "Assistant ingest persistence for already-collected content."
 ---
 
 # Asset Ingestor
 
 ## Overview
 
-Smart assistant discovery and onboarding from URLs.
+Persist already-collected content for assistant ingest.
 
 - Runtime: `local`
 - Restricted: `admin`
-- Permissions: `network.outbound`, `tools.call`, `assistants.write`
+- Permissions: `tools.call`, `assistants.write`
 
 ## Available Tools
 
-- `ingest_assistant_from_url` — Crawl a URL on desktop and submit the resulting assistant to cloud admin persistence. Required: `url`. Optional: `instruction`.
+- `submit_assistant_ingest` — Submit content that has already been collected by search/crawl tools to cloud admin persistence. Required: `source_url`, `content`. Optional: `instruction`.
 
 ## Usage Notes
 
+- Use search or crawl tools first when you need to gather content from a URL.
 - Keep requests within the tools listed above.

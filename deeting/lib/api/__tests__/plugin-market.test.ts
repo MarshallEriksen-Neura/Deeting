@@ -1,14 +1,14 @@
 import {
   LocalSkillRuntimeStatusSchema,
   fetchPluginMarket,
-  syncLocalSkillInstallsFromCloud,
+  installPlugin,
+  uninstallPlugin,
 } from "@/lib/api/plugin-market"
 import { request } from "@/lib/http"
 import { invoke } from "@tauri-apps/api/core"
 
 jest.mock("@/lib/http", () => ({
   request: jest.fn(),
-  getAuthToken: jest.fn(() => "desktop-token"),
 }))
 
 jest.mock("@tauri-apps/api/core", () => ({
@@ -37,58 +37,10 @@ describe("plugin market api", () => {
     delete windowWithTauri.__TAURI_INTERNALS__
   })
 
-  it("syncs local skill installs from unified system assets", async () => {
+  it("merges local installed skill ids into plugin market items", async () => {
     mockInvoke.mockImplementation(async (command: string) => {
-      if (command === "sync_local_system_assets") {
-        return {
-          fetched_count: 1,
-          assistant_fetched_count: 0,
-          skill_fetched_count: 1,
-          upserted_count: 1,
-          hidden_count: 0,
-          metadata_only_count: 0,
-          executable_count: 1,
-          archived_count: 0,
-          skill_install_fetched_count: 1,
-          skill_install_upserted_count: 1,
-          skill_reinstalled_count: 0,
-          skill_failed_count: 0,
-          disabled_skill_count: 0,
-          archived_assistant_count: 0,
-        }
-      }
-      return null
-    })
-
-    const result = await syncLocalSkillInstallsFromCloud({ force: true })
-
-    expect(result?.fetched_count).toBe(1)
-    expect(mockInvoke).toHaveBeenNthCalledWith(1, "sync_local_system_assets", {
-      accessToken: "desktop-token",
-      limit: 500,
-      reinstallMissing: false,
-    })
-  })
-
-  it("fetches plugin market after desktop sync", async () => {
-    mockInvoke.mockImplementation(async (command: string) => {
-      if (command === "sync_local_system_assets") {
-        return {
-          fetched_count: 0,
-          assistant_fetched_count: 0,
-          skill_fetched_count: 0,
-          upserted_count: 0,
-          hidden_count: 0,
-          metadata_only_count: 0,
-          executable_count: 0,
-          archived_count: 0,
-          skill_install_fetched_count: 0,
-          skill_install_upserted_count: 0,
-          skill_reinstalled_count: 0,
-          skill_failed_count: 0,
-          disabled_skill_count: 0,
-          archived_assistant_count: 0,
-        }
+      if (command === "list_local_installed_skill_ids") {
+        return ["skill.alpha"]
       }
       return null
     })
@@ -98,8 +50,8 @@ describe("plugin market api", () => {
         name: "Alpha Skill",
         description: "desc",
         version: "1.0.0",
-        source_repo: null,
-        source_revision: null,
+        source_repo: "https://github.com/example/alpha",
+        source_revision: "main",
         status: "active",
         installed: false,
       },
@@ -108,6 +60,7 @@ describe("plugin market api", () => {
     const result = await fetchPluginMarket({ q: "alpha" })
 
     expect(result).toHaveLength(1)
+    expect(result[0]?.installed).toBe(true)
     expect(mockRequest).toHaveBeenCalledWith(
       expect.objectContaining({
         url: "/api/v1/plugin-market/plugins",
@@ -115,10 +68,40 @@ describe("plugin market api", () => {
         params: { q: "alpha" },
       })
     )
-    expect(mockInvoke).toHaveBeenCalledWith("sync_local_system_assets", {
-      accessToken: "desktop-token",
-      limit: 500,
-      reinstallMissing: false,
+    expect(mockInvoke).toHaveBeenCalledWith("list_local_installed_skill_ids", undefined)
+  })
+
+  it("installs plugin locally via tauri command", async () => {
+    mockInvoke.mockResolvedValue({
+      skill_id: "skill.alpha",
+      tool_count: 3,
+      install_path: "/tmp/skill.alpha",
+    })
+
+    const result = await installPlugin(
+      {
+        id: "skill.alpha",
+        source_repo: "https://github.com/example/alpha",
+        source_revision: "main",
+      },
+      { alias: "alpha-local" }
+    )
+
+    expect(result.skill_id).toBe("skill.alpha")
+    expect(mockInvoke).toHaveBeenCalledWith("install_skill_from_repo", {
+      repoUrl: "https://github.com/example/alpha",
+      revision: "main",
+      alias: "alpha-local",
+    })
+  })
+
+  it("uninstalls plugin locally via tauri command", async () => {
+    mockInvoke.mockResolvedValue(null)
+
+    await uninstallPlugin("skill.alpha")
+
+    expect(mockInvoke).toHaveBeenCalledWith("uninstall_skill", {
+      skillId: "skill.alpha",
     })
   })
 

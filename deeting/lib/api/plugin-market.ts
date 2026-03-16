@@ -2,7 +2,7 @@ import { z } from "zod"
 
 import { request } from "@/lib/http"
 
-import { syncLocalSystemAssetsFromCloud } from "./desktop-system-assets"
+import { isTauriRuntime } from "./desktop-config"
 
 const PLUGIN_MARKET_BASE = "/api/v1/plugin-market"
 
@@ -76,102 +76,65 @@ export const LocalSkillRuntimeStatusSchema = z.object({
 
 export type LocalSkillRuntimeStatus = z.infer<typeof LocalSkillRuntimeStatusSchema>
 
+const LocalSkillInstallResultSchema = z.object({
+  skill_id: z.string(),
+  tool_count: z.number(),
+  install_path: z.string(),
+})
+
 export function isUserVisiblePlugin(plugin: PluginMarketSkillItem) {
   return plugin.source_kind !== "official"
 }
-
-export const LocalSkillInstallSyncItemSchema = z.object({
-  skill_id: z.string(),
-  is_enabled: z.boolean(),
-  installed_revision: z.string().nullable().optional(),
-  install_path: z.string(),
-  status: z.string(),
-  reinstalled: z.boolean(),
-  error: z.string().nullable().optional(),
-})
-
-export const LocalSkillInstallSyncResponseSchema = z.object({
-  fetched_count: z.number(),
-  upserted_count: z.number(),
-  reinstalled_count: z.number(),
-  failed_count: z.number(),
-  items: z.array(LocalSkillInstallSyncItemSchema).default([]),
-})
-
-export type LocalSkillInstallSyncResponse = z.infer<typeof LocalSkillInstallSyncResponseSchema>
 
 export type PluginMarketQuery = {
   q?: string
   limit?: number
 }
 
-const isTauriRuntime = () =>
-  process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
-  typeof window !== "undefined" &&
-  ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
-
-type LocalSkillSyncOptions = {
-  reinstallMissing?: boolean
-  force?: boolean
-}
-
 export function isDesktopRuntime() {
   return isTauriRuntime()
 }
 
-export async function syncLocalSkillInstallsFromCloud(
-  options: LocalSkillSyncOptions = {}
-): Promise<LocalSkillInstallSyncResponse | null> {
-  if (!isTauriRuntime()) {
-    return null
-  }
-
-  const result = await syncLocalSystemAssetsFromCloud({
-    force: options.reinstallMissing || Boolean(options.force),
-    reinstallMissing: options.reinstallMissing ?? false,
-  })
-  if (!result) {
-    return null
-  }
-
-  return LocalSkillInstallSyncResponseSchema.parse({
-    fetched_count: result.skill_install_fetched_count,
-    upserted_count: result.skill_install_upserted_count,
-    reinstalled_count: result.skill_reinstalled_count,
-    failed_count: result.skill_failed_count,
-    items: [],
-  })
+async function invokeTauri<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  const { invoke } = await import("@tauri-apps/api/core")
+  return invoke<T>(command, args)
 }
 
-async function trySyncLocalSkillInstallsFromCloud(
-  options: LocalSkillSyncOptions = {}
-): Promise<LocalSkillInstallSyncResponse | null> {
-  try {
-    return await syncLocalSkillInstallsFromCloud(options)
-  } catch (error) {
-    console.warn("[plugin-market] sync local skill installs from cloud failed", error)
-    return null
+async function listLocalInstalledSkillIds(): Promise<Set<string>> {
+  if (!isTauriRuntime()) {
+    return new Set()
   }
+
+  const data = await invokeTauri<string[]>("list_local_installed_skill_ids")
+  const ids = z.array(z.string()).parse(data)
+  return new Set(ids)
 }
 
 export async function fetchPluginMarket(query: PluginMarketQuery = {}) {
-  if (isTauriRuntime()) {
-    await trySyncLocalSkillInstallsFromCloud({ reinstallMissing: false })
-  }
-
   const data = await request({
     url: `${PLUGIN_MARKET_BASE}/plugins`,
     method: "GET",
     params: query,
   })
-  return z.array(PluginMarketSkillItemSchema).parse(data)
+  const plugins = z.array(PluginMarketSkillItemSchema).parse(data)
+
+  if (!isTauriRuntime()) {
+    return plugins
+  }
+
+  try {
+    const installedIds = await listLocalInstalledSkillIds()
+    return plugins.map((plugin) => ({
+      ...plugin,
+      installed: installedIds.has(plugin.id),
+    }))
+  } catch (error) {
+    console.warn("[plugin-market] load local installed skill ids failed", error)
+    return plugins
+  }
 }
 
 export async function fetchPluginInstalls() {
-  if (isTauriRuntime()) {
-    await trySyncLocalSkillInstallsFromCloud({ reinstallMissing: false })
-  }
-
   const data = await request({
     url: `${PLUGIN_MARKET_BASE}/installs`,
     method: "GET",
@@ -180,35 +143,43 @@ export async function fetchPluginInstalls() {
 }
 
 export async function installPlugin(
-  skillId: string,
+  plugin: Pick<PluginMarketSkillItem, "id" | "source_repo" | "source_revision">,
   payload?: { alias?: string; config_json?: Record<string, unknown> }
 ) {
+  if (isTauriRuntime()) {
+    const repoUrl = (plugin.source_repo ?? "").trim()
+    if (!repoUrl) {
+      throw new Error("Local desktop install requires source_repo")
+    }
+
+    const data = await invokeTauri("install_skill_from_repo", {
+      repoUrl,
+      revision: plugin.source_revision ?? undefined,
+      alias: payload?.alias ?? undefined,
+    })
+    return LocalSkillInstallResultSchema.parse(data)
+  }
+
   const data = await request({
-    url: `${PLUGIN_MARKET_BASE}/plugins/${skillId}/install`,
+    url: `${PLUGIN_MARKET_BASE}/plugins/${plugin.id}/install`,
     method: "POST",
     data: payload ?? {},
   })
-  const install = PluginInstallationItemSchema.parse(data)
-  if (isTauriRuntime()) {
-    await trySyncLocalSkillInstallsFromCloud({
-      reinstallMissing: true,
-      force: true,
-    })
-  }
-  return install
+  return PluginInstallationItemSchema.parse(data)
 }
 
 export async function uninstallPlugin(skillId: string) {
+  if (isTauriRuntime()) {
+    await invokeTauri("uninstall_skill", {
+      skillId,
+    })
+    return null
+  }
+
   const response = await request({
     url: `${PLUGIN_MARKET_BASE}/plugins/${skillId}/install`,
     method: "DELETE",
   })
-  if (isTauriRuntime()) {
-    await trySyncLocalSkillInstallsFromCloud({
-      reinstallMissing: false,
-      force: true,
-    })
-  }
   return response
 }
 
@@ -229,8 +200,7 @@ export async function fetchLocalSkillRuntimeStatuses(): Promise<LocalSkillRuntim
   if (!isTauriRuntime()) {
     return []
   }
-  const { invoke } = await import("@tauri-apps/api/core")
-  const data = await invoke("list_local_skill_runtime_statuses")
+  const data = await invokeTauri("list_local_skill_runtime_statuses")
   return z.array(LocalSkillRuntimeStatusSchema).parse(data)
 }
 
@@ -244,8 +214,7 @@ export async function updateLocalSkillRuntimeSettings(
   if (!isTauriRuntime()) {
     throw new Error("Local skill runtime settings require desktop runtime")
   }
-  const { invoke } = await import("@tauri-apps/api/core")
-  const data = await invoke("update_local_skill_runtime_settings", {
+  const data = await invokeTauri("update_local_skill_runtime_settings", {
     skillId,
     payload,
   })
@@ -258,8 +227,7 @@ export async function installLocalSkillRuntime(
   if (!isTauriRuntime()) {
     throw new Error("Local skill runtime install requires desktop runtime")
   }
-  const { invoke } = await import("@tauri-apps/api/core")
-  const data = await invoke("install_local_skill_runtime", {
+  const data = await invokeTauri("install_local_skill_runtime", {
     skillId,
   })
   return LocalSkillRuntimeStatusSchema.parse(data)

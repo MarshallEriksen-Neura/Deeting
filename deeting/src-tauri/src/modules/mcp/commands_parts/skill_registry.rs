@@ -1692,6 +1692,7 @@ pub(crate) async fn install_skill_to_local(
     app_state: &AppState,
     repo_url: &str,
     revision: Option<&str>,
+    alias: Option<&str>,
 ) -> Result<SkillInstallResult, String> {
     let skill_install_start = std::time::Instant::now();
     let skills_dir = app.path().app_data_dir().map_err(to_string)?.join("skills");
@@ -1714,6 +1715,13 @@ pub(crate) async fn install_skill_to_local(
         )
         .await
         .map_err(to_string)?;
+
+    if let Some(alias) = alias.map(str::trim).filter(|value| !value.is_empty()) {
+        store
+            .update_local_skill_user_settings(&skill_id, &json!({ "alias": alias }))
+            .await
+            .map_err(to_string)?;
+    }
 
     let indexed_tools = register_local_skills_inner(app.clone(), app_state)
         .await
@@ -2527,8 +2535,16 @@ pub async fn install_skill_from_repo(
     app_state: State<'_, AppState>,
     repo_url: String,
     revision: Option<String>,
+    alias: Option<String>,
 ) -> Result<SkillInstallResult, String> {
-    install_skill_to_local(&app, app_state.inner(), &repo_url, revision.as_deref()).await
+    install_skill_to_local(
+        &app,
+        app_state.inner(),
+        &repo_url,
+        revision.as_deref(),
+        alias.as_deref(),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -2538,6 +2554,22 @@ pub async fn uninstall_skill(
     skill_id: String,
 ) -> Result<(), String> {
     uninstall_local_skill(&app, app_state.inner(), &skill_id).await
+}
+
+#[tauri::command]
+pub async fn list_local_installed_skill_ids(
+    app_state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    let mut ids = app_state
+        .mcp
+        .store
+        .list_enabled_local_skill_ids()
+        .await
+        .map_err(to_string)?
+        .into_iter()
+        .collect::<Vec<_>>();
+    ids.sort();
+    Ok(ids)
 }
 
 pub(crate) async fn register_local_skills_inner(

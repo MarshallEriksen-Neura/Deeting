@@ -47,7 +47,7 @@ export function PageContent() {
   const t = useTranslations("admin.maintenanceSettingsPage")
   const locale = useLocale()
   const supported = isTauriRuntime()
-  const [mode, setMode] = useState<"sync" | "reinstall" | "repair" | null>(null)
+  const [mode, setMode] = useState<"repair" | null>(null)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [repairConfirmOpen, setRepairConfirmOpen] = useState(false)
   const { data: history, mutate } = useSWR(
@@ -108,23 +108,6 @@ export function PageContent() {
     },
   ]
 
-  const handleSystemSync = async (reinstallMissing: boolean) => {
-    setFeedback(null)
-    setMode(reinstallMissing ? "reinstall" : "sync")
-    try {
-      const result = await runLocalMaintenanceAction({
-        kind: reinstallMissing ? "sync_reinstall_missing" : "sync_local_installs",
-        reinstallMissing,
-      })
-      setFeedback(result ? formatLogMessage(result) : t("feedback.syncAppliedNoop"))
-      await mutate()
-    } catch (error) {
-      setFeedback(error instanceof Error ? error.message : t("feedback.maintenanceFailed"))
-    } finally {
-      setMode(null)
-    }
-  }
-
   const handleRepair = async () => {
     setRepairConfirmOpen(false)
     setFeedback(null)
@@ -153,12 +136,6 @@ export function PageContent() {
         ) : (
           <>
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" onClick={() => void handleSystemSync(false)} disabled={mode !== null}>
-                {mode === "sync" ? t("actions.syncing") : t("actions.syncAction")}
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => void handleSystemSync(true)} disabled={mode !== null}>
-                {mode === "reinstall" ? t("actions.syncing") : t("actions.syncReinstallAction")}
-              </Button>
               <Button variant="outline" size="sm" onClick={() => setRepairConfirmOpen(true)} disabled={mode !== null}>
                 {mode === "repair" ? t("actions.repairingAction") : t("actions.repairIndexAction")}
               </Button>

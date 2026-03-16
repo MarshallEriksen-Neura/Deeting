@@ -4,14 +4,13 @@
   "name": "Asset Ingestor",
   "version": "1.0.0",
   "author": "Deeting Team",
-  "description": "Smart assistant discovery and onboarding from URLs.",
+  "description": "Assistant ingest persistence for already-collected content.",
   "entry": {
     "backend": "main.py"
   },
   "restricted": true,
   "allowed_roles": ["admin"],
   "permissions": [
-    "network.outbound",
     "tools.call",
     "assistants.write"
   ],

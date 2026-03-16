@@ -1,48 +1,38 @@
-# Plugin Market API（GitHub 提交与用户安装）
+# Plugin Market API（GitHub 提交与桌面本地安装）
 
-- 前置条件：需要登录（Bearer Token），路由前缀 `/api/v1`。
-- 目标：实现 `GitHub 源码 -> 管理员审核 -> 用户安装 -> 桌面本地执行` 的最小闭环。
+- 前置条件：需要登录（Bearer Token），路由前缀 `/api/v1`
+- 目标：明确当前闭环是 `GitHub 源码 -> 管理员审核 -> 市场展示 -> 桌面本地安装/执行`
 
-## 架构边界（定稿）
+## 架构边界（当前）
 
-- 云端在这条链路中是 **control plane / 弹药库**，不再承担用户提交后自动 AI/sandbox 冒烟的职责。
-- `skill_registry` 是技能主数据真源；`system_asset` 中 `registry_entity=skill`、`asset_kind=skill_bundle` 的记录是给桌面同步用的 projection。
-- 插件商店展示与桌面同步 **直接读取数据库 projection**，不以 Qdrant 成功与否为前置条件。
-- Qdrant 中的 skill collection 只作为可选语义索引层；即使 skill Qdrant 同步失败，也不应阻断：
-  - 插件商店展示
-  - 管理员审核流转
-  - 桌面 metadata 同步
-  - 用户桌面安装
-- 用户提交 `repo_url` 后：
-  - 只做 ingestion / metadata 入库
-  - 状态进入 `needs_review`
-  - 等待管理员审核
-  - **不会**自动触发 dry-run / self-heal / sandbox 执行
-- 管理员审核通过后：
-  - skill 进入 `active`
-  - skill projection 写入 `system_asset`
-  - skill Qdrant 同步作为附加索引动作触发，但不是商店/同步闭环前置条件
+- 云端是 control plane：
+  - `skill_registry` 作为技能主数据真源
+  - `system_asset` 中 `registry_entity=skill`、`asset_kind=skill_bundle` 的记录作为桌面同步 projection
+  - 市场列表、审核状态、repo ingestion 都由云端负责
+- 桌面是 data plane：
+  - `local_skill_install` 是本地安装真源
+  - skill bundle 的下载、物化、运行时准备、执行都在桌面完成
+- 结论：
+  - 云端不再保存用户级 skill 安装状态
+  - 云端不再提供 repo plugin 的安装/卸载/执行/UI session 产品能力
 
-## 市场插件列表
+## 可用接口
+
+### 市场插件列表
 
 - `GET /plugin-market/plugins`
-- Query：
+- Query:
   - `q`：按 `id/name/description` 搜索（可选）
   - `limit`：返回数量，默认 50，范围 1-100
 - 响应：`PluginMarketSkillItem[]`
 - 说明：
-  - 仅返回 `skill_registry.status=active` 且 `source_repo` 非空的仓库插件。
-  - `installed` 标识当前用户是否已安装并启用。
+  - 仅返回 `skill_registry.status=active` 的市场技能
+  - `installed` 字段仅作兼容保留；桌面端应以本地安装真源为准，不应再把云端返回值当作安装态事实
 
-## 我的安装列表
-
-- `GET /plugin-market/installs`
-- 响应：`PluginInstallationItem[]`
-
-## 提交 GitHub 仓库
+### 提交 GitHub 仓库
 
 - `POST /plugin-market/plugins/submit`
-- Body：
+- Body:
   ```json
   {
     "repo_url": "https://github.com/org/repo",
@@ -59,95 +49,71 @@
   }
   ```
 - 说明：
-  - 该接口会下发 `skill_registry.ingest_repo` 异步任务。
-  - 网关会透传当前 `user_id` 到任务，便于后续通知与审计。
-  - ingestion 成功后，若提交来源是插件商店，则技能进入 `needs_review`，等待管理员审核。
-  - 提交后不再自动执行 dry-run / self-heal / sandbox 冒烟。
+  - 该接口会下发 `skill_registry.ingest_repo` 异步任务
+  - ingestion 成功后，技能进入 `needs_review`，等待管理员审核
+  - 提交后不会自动触发 dry-run / self-heal / sandbox 冒烟
 
-## 安装插件
+## 已下线 / 兼容保留接口
+
+以下接口已不再承载产品能力，仅用于兼容旧客户端或明确返回停用信息：
+
+### 我的安装列表
+
+- `GET /plugin-market/installs`
+- 当前行为：返回空列表
+- 原因：用户级安装状态已经迁移为桌面本地真源
+
+### 安装插件
 
 - `POST /plugin-market/plugins/{skill_id}/install`
-- Body：
-  ```json
-  {
-    "alias": "optional alias",
-    "config_json": {}
-  }
-  ```
-- 响应：`PluginInstallationItem`
-- 状态码：
-  - `201`：首次安装
-  - `200`：已安装记录被重新启用/更新
-- 说明：
-  - 安装只发生在桌面 / 本地 runtime。
-  - 安装后桌面端负责：
-    - 下载或物化 skill 包
-    - 写入本地安装状态
-    - 创建本地 skill docs / recipe / 资产索引
-  - 云端不负责为桌面执行创建本地运行时索引。
+- 当前行为：返回 `410 Gone`
+- 提示语义：改为在桌面端执行本地安装
 
-## 卸载插件
+### 卸载插件
 
 - `DELETE /plugin-market/plugins/{skill_id}/install`
-- 响应：`MessageResponse`
-- 错误：
-  - `404 installation not found`
+- 当前行为：返回 `410 Gone`
+- 提示语义：改为在桌面端执行本地卸载
 
-## 签发插件 UI 会话 URL
+### 签发插件 UI 会话 URL
 
 - `POST /plugin-market/plugins/{skill_id}/ui/session`
-- Body：
-  ```json
-  {
-    "ttl_seconds": 300
-  }
-  ```
-- 响应：`PluginUiSessionResponse`
-  ```json
-  {
-    "skill_id": "com.example.stock",
-    "revision": "main",
-    "renderer_asset_path": "index.html",
-    "renderer_url": "https://deeting.app/api/v1/plugin-market/ui/t/<token>/index.html",
-    "expires_at": 1740000000
-  }
-  ```
-- 说明：
-  - 仅已安装且启用该插件的用户可签发。
-  - URL 内嵌短时签名 token（默认 300 秒，范围 30-1800 秒）。
+- 当前行为：返回 `410 Gone`
+- 原因：repo plugin 的 UI session 已改为桌面本地使用场景，不再由云端签发
 
-## 读取插件 UI 资产（签名 token）
+### 读取插件 UI 资产
 
 - `GET /plugin-market/ui/t/{token}/{asset_path}`
-- 示例：
-  - `GET /plugin-market/ui/t/<token>/index.html`
-  - `GET /plugin-market/ui/t/<token>/app.js`
 - 说明：
-  - 该接口不依赖 Bearer Header，靠 token 验签与过期时间控制访问。
-  - 访问路径做目录穿越防护，仅允许读取该插件版本 bundle 目录内文件。
+  - 该接口保留为历史 token 的解析端点
+  - 新的云端 token 不再继续签发
 
-## 运行时约束（实现说明）
+## 运行时约束（当前）
 
-- 检索层：JIT 对 `skill__*` 结果增加用户安装过滤。
-  - `source_repo` 为空（系统技能）保持可检索。
-  - `source_repo` 非空（仓库插件）必须在 `user_skill_installation` 启用后才可检索。
-- 执行层：`SkillRuntimeExecutor` 对仓库插件执行前校验安装关系，防止绕过检索层直接调用。
-- 插件入口契约：
-  - 若仓库存在 `deeting.json`，运行时按 `entry.backend`（默认 `main.py`）加载，并调用：
-    - `async def invoke(tool_name, args, deeting)`
-  - 运行时统一注入 `DeetingRuntime`（`deeting.call_tool / deeting.render`）。
-  - 若仓库不存在 `deeting.json`，回退到 `usage_spec.example_code`（legacy）。
-- UI 资产提纯：
-  - ingest 时若检测到 `deeting.json.entry.renderer`，会把其所在目录提取到持久化目录：
-    - `.../plugins/ui-bundles/{skill_id}/{revision}/`
-  - 若该目录已存在且存在完成标记文件，会跳过重复拷贝（幂等）。
-- UI 协议增强（Skill Runner）：
-  - 当仓库插件运行时返回 `render_blocks`，后端会自动尝试签发 `renderer_url`。
-  - 成功时，返回给前端的 block 会标准化为 `view_type=plugin.iframe`，并在 `metadata.renderer_url` 写入签名地址。
-  - 若签发失败，保留原始 `view_type` 作为降级路径（不阻断工具执行）。
+- 检索层：
+  - 云端搜索不再把 repo-based marketplace plugin 作为可执行技能暴露
+  - builtin/system skill 仍按原有能力参与云端检索
+- 执行层：
+  - `SkillRuntimeExecutor` 对 `source_repo` 型 skill 默认拒绝云端执行
+  - 唯一保留的例外是内部 `dry_run` / 审核类流程
+- UI 层：
+  - `SkillRunner` 若无法获取云端 `renderer_url`，保留原始 `view_type` 作为降级路径
+  - 新的 repo plugin 云端 iframe 能力已关闭
 
----
+## 当前推荐路径
 
-变更记录
-- 2026-02-24：新增 Plugin Market 提交/安装/卸载与安装态过滤。
-- 2026-02-24：新增插件 UI bundle 提纯、UI session 签发与 token 资产读取接口。
+- 市场浏览：云端 `/plugin-market/plugins`
+- Repo 提交：云端 `/plugin-market/plugins/submit`
+- 安装 / 卸载 / 运行：
+  - 桌面端本地命令
+  - 本地 SQLite `local_skill_install`
+  - 本地 skill 目录与本地 runtime
+
+## 变更记录
+
+- 2026-03-16：
+  - 下线云端用户安装状态
+  - `GET /plugin-market/installs` 改为空列表
+  - `POST/DELETE /plugins/{skill_id}/install` 改为 `410 Gone`
+  - `POST /plugins/{skill_id}/ui/session` 改为 `410 Gone`
+  - 桌面端安装真源统一收敛到本地

@@ -3,22 +3,22 @@
     "page": {
       "installed": {
         "title": "我的插件",
-        "description": "管理当前用户已安装的插件。"
+        "description": "管理当前桌面端已安装的插件。"
       },
       "market": {
         "title": "插件市场",
-        "description": "发现并安装社区插件，扩展你的 Agent 能力。"
+        "description": "浏览社区插件；安装行为仅发生在桌面本地。"
       },
       "marketEntry": "前往插件市场",
       "syncAction": "仅同步",
-      "syncReinstallAction": "同步并重装缺失",
+      "syncReinstallAction": "同步并重装缺失项",
       "repairIndexAction": "修复本地索引",
       "repairingAction": "修复中...",
       "syncing": "同步中...",
       "hero": {
         "titlePrefix": "探索",
         "titleHighlight": "插件生态",
-        "subtitle": "从社区发现强大插件，一键安装，让你的 AI Agent 如虎添翼。"
+        "subtitle": "从社区发现强大插件，并在桌面端本地安装使用。"
       },
       "search": {
         "placeholder": "搜索插件名称或描述..."
@@ -29,7 +29,7 @@
       },
       "emptyInstalled": {
         "title": "暂无已安装插件",
-        "description": "可前往插件市场安装后再回来管理。"
+        "description": "请在桌面端安装插件后再回来管理。"
       },
       "error": {
         "loadFailed": "加载失败：{message}"
@@ -92,7 +92,7 @@
     },
     "dialog": {
       "title": "权限确认",
-      "description": "安装插件 「{name}」 前，请确认以下权限授权：",
+      "description": "在本地安装插件「{name}」前，请确认以下权限授权：",
       "permissionsLabel": "该插件将获得以下权限：",
       "confirm": "确认安装",
       "cancel": "取消",
@@ -113,12 +113,12 @@
       "network": "发送网络请求"
     },
     "toast": {
-      "installedTitle": "插件「{name}」安装成功",
-      "installedDesc": "插件已启用，可在 Agent 中使用。",
+      "installedTitle": "插件「{name}」已完成本地安装",
+      "installedDesc": "插件已在当前桌面端启用，可在 Agent 中使用。",
       "installFailedTitle": "安装失败",
       "installFailedDesc": "请稍后重试。",
-      "uninstalledTitle": "插件已卸载",
-      "uninstalledDesc": "该插件已从你的环境中移除。",
+      "uninstalledTitle": "插件已从本地卸载",
+      "uninstalledDesc": "该插件已从当前桌面端环境中移除。",
       "uninstallFailedTitle": "卸载失败",
       "uninstallFailedDesc": "请稍后重试。",
       "syncSuccessTitle": "安装状态已同步",

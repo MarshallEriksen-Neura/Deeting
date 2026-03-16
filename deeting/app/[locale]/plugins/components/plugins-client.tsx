@@ -15,6 +15,7 @@ import { SkillRuntimeConfigSheet } from "@/components/plugins/skill-runtime-conf
 import { useLocalSkillRuntimeStatuses } from "@/hooks/use-local-skill-runtime-statuses"
 import { usePluginMarket } from "@/lib/swr/use-plugin-market"
 import {
+  isDesktopRuntime,
   installLocalSkillRuntime,
   installPlugin,
   isUserVisiblePlugin,
@@ -33,6 +34,7 @@ interface PluginsClientProps {
 export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
   const t = useTranslations("plugins")
   const isMarketMode = mode === "market"
+  const canManageLocalInstalls = isDesktopRuntime()
   const [searchQuery, setSearchQuery] = React.useState("")
   const debouncedQuery = useDebounce(searchQuery, 300)
 
@@ -55,9 +57,11 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
 
   const handleConfirmInstall = React.useCallback(
     async (skillId: string, alias?: string) => {
+      const plugin = selectedPlugin
+      if (!plugin) return
       setIsInstalling(true)
       try {
-        await installPlugin(skillId, alias ? { alias } : undefined)
+        await installPlugin(plugin, alias ? { alias } : undefined)
         toast.success(
           t("toast.installedTitle", { name: selectedPlugin?.name ?? skillId }),
           { description: t("toast.installedDesc") }
@@ -73,7 +77,7 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
         setIsInstalling(false)
       }
     },
-    [mutate, refreshRuntimeStatuses, selectedPlugin?.name, t]
+    [mutate, refreshRuntimeStatuses, selectedPlugin, selectedPlugin?.name, t]
   )
 
   const handleUninstall = React.useCallback(
@@ -275,9 +279,9 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
                 key={plugin.id}
                 plugin={plugin}
                 runtimeStatus={runtimeStatuses[plugin.id] ?? null}
-                onInstall={handleInstallClick}
-                onUninstall={handleUninstall}
-                onConfigure={handleConfigure}
+                onInstall={canManageLocalInstalls ? handleInstallClick : undefined}
+                onUninstall={canManageLocalInstalls ? handleUninstall : undefined}
+                onConfigure={canManageLocalInstalls ? handleConfigure : undefined}
               />
             ))}
       </div>

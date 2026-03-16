@@ -114,6 +114,11 @@
 - 建立统一的 `local_skill_install` 与安装目录生命周期管理。
 - 当前进展：已落地 `local_skill_install` 表与扫描写入（`register_local_skills` upsert），并将对话检索接入已启用安装过滤（assistant + skill 双门禁）。
 3. Phase 3（可选）
+- 更新（2026-03-16）：该阶段已取消。
+- 云端不再保存用户级 skill 安装状态。
+- 桌面端不再从 `/api/v1/plugin-market/installs` 或 skill feed 同步安装态。
+- 当前唯一安装真源为桌面本地 `local_skill_install`。
+- 下方旧的“当前进展”记录仅保留历史背景，已不再适用。
 - 增加跨设备“安装清单同步 + 自动重装”。
 - 当前进展：已新增桌面命令 `sync_local_skill_installs_from_cloud`（轻同步拉取 `/api/v1/plugin-market/installs`），并支持 `reinstall_missing=true` 时按云端安装清单尝试本地重装（git clone）后落库。
 - 当前进展（前端接入）：桌面端插件市场请求前会自动触发轻同步（失败降级）；安装/卸载后会强制触发一次同步；插件页新增手动入口并拆分为“仅同步”与“同步并重装缺失”两类操作。

@@ -99,6 +99,16 @@ jest.mock("sonner", () => ({
 const mockInvoke = invoke as jest.MockedFunction<typeof invoke>
 const mockBridgeCallTool = bridgeCallTool as jest.MockedFunction<typeof bridgeCallTool>
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 describe("ToolApprovalDialog", () => {
   afterEach(() => {
     mockInvoke.mockReset()
@@ -150,6 +160,53 @@ describe("ToolApprovalDialog", () => {
     })
     expect(toast.success).toHaveBeenCalledWith("工具 write_file 已执行")
     expect(useBridgeApprovalStore.getState().pending).toBeNull()
+  })
+
+  it("closes the dialog immediately after local approval succeeds even if bridge callback is still pending", async () => {
+    const deferredBridge = createDeferred<{ ok: boolean }>()
+    mockInvoke.mockResolvedValueOnce({ ok: true } as unknown)
+    mockBridgeCallTool.mockReturnValueOnce(deferredBridge.promise as never)
+
+    act(() => {
+      useBridgeApprovalStore.getState().setPending(
+        createBridgeToolApproval({
+          approval_token: "approval-bridge-pending-1",
+          tool_name: "write_file",
+          arguments: { path: "demo.txt" },
+          meta: {
+            call_id: "call-bridge-pending-1",
+            execution_token: "exec-bridge-pending-1",
+          },
+        })
+      )
+    })
+
+    render(<ToolApprovalDialog />)
+    fireEvent.click(screen.getByRole("button", { name: "批准执行" }))
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("approve_mcp_tool", {
+        approvalToken: "approval-bridge-pending-1",
+        callId: "call-bridge-pending-1",
+        executionToken: "exec-bridge-pending-1",
+      })
+    })
+
+    await waitFor(() => {
+      expect(useBridgeApprovalStore.getState().pending).toBeNull()
+    })
+
+    expect(mockBridgeCallTool).toHaveBeenCalledWith({
+      tool_name: "write_file",
+      arguments: {
+        call_id: "call-bridge-pending-1",
+        result: { ok: true },
+        ok: true,
+      },
+      execution_token: "exec-bridge-pending-1",
+    })
+
+    deferredBridge.resolve({ ok: true })
   })
 
   it("constrains long approval content so the footer actions remain reachable", () => {

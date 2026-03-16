@@ -108,7 +108,6 @@ Use database tables as the source of truth for:
 - assistant metadata and versions
 - skill metadata and review state
 - system asset sync projections
-- user skill installation state (cloud-side account record)
 
 Do **not** require Qdrant to answer:
 - what skills are in plugin market
@@ -162,9 +161,9 @@ Carries:
 - manifest
 - artifact_ref
 - checksum
-- user_install metadata snapshot (for desktop install sync)
 
 Does not carry:
+- user install state
 - mandatory cloud semantic lookup dependency
 - executable runtime state itself (execution is resolved by local/host tool registry)
 
@@ -197,6 +196,7 @@ Does not carry:
 ### Desktop Install
 - assistant templates: no install required
 - skill bundles: install required
+- local desktop storage is the only install-state truth
 
 ### Desktop Self-Heal
 - self-heal should focus on local skill install / local indexes

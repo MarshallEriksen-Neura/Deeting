@@ -91,6 +91,7 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::mcp::commands::skill_registry_impl::update_local_skill_runtime_settings,
         crate::modules::mcp::commands::skill_registry_impl::install_local_skill_runtime,
         crate::modules::mcp::commands::skill_registry_impl::install_skill_from_repo,
+        crate::modules::mcp::commands::skill_registry_impl::list_local_installed_skill_ids,
         crate::modules::mcp::commands::skill_registry_impl::uninstall_skill,
         crate::modules::mcp::commands::config_and_skills_impl::sync_official_skills_index,
         crate::modules::mcp::commands::config_and_skills_impl::enable_local_skill,

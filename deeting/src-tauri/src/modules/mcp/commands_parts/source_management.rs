@@ -4,8 +4,7 @@ use super::{
     common_impl::to_string,
     runtime::{build_desktop_mcp_tool_views, now_rfc3339, sync_source_inner, DesktopMcpToolView},
     skill_registry_impl::{
-        is_hidden_name, materialize_skill_repo_to_dir, register_local_skills_inner,
-        resolve_local_skill_definition, resolve_local_skill_scan_targets,
+        is_hidden_name, register_local_skills_inner, resolve_local_skill_definition,
     },
     support::*,
 };
@@ -50,27 +49,6 @@ struct CloudSystemAssetAssistantMetadata {
     rating_avg: Option<f64>,
     rating_count: Option<i64>,
     version: Option<CloudSystemAssetAssistantMetadataVersion>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct CloudSystemAssetSkillUserInstallMetadata {
-    alias: Option<String>,
-    #[serde(default)]
-    config_json: Value,
-    #[serde(default)]
-    granted_permissions: Vec<String>,
-    installed_revision: Option<String>,
-    is_enabled: Option<bool>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct CloudSystemAssetSkillMetadata {
-    registry_entity: Option<String>,
-    skill_id: Option<String>,
-    runtime: Option<String>,
-    #[serde(default)]
-    manifest: Value,
-    user_install: Option<CloudSystemAssetSkillUserInstallMetadata>,
 }
 
 fn assistant_snapshot_from_system_asset(
@@ -135,26 +113,6 @@ fn assistant_snapshot_from_system_asset(
     })
 }
 
-fn skill_metadata_from_system_asset(
-    item: &CloudSystemAssetSyncItem,
-) -> Option<(String, CloudSystemAssetSkillMetadata)> {
-    let skill_id = item
-        .asset_id
-        .strip_prefix("skill:")
-        .map(str::to_string)
-        .filter(|raw| !raw.trim().is_empty())?;
-    let metadata: CloudSystemAssetSkillMetadata =
-        serde_json::from_value(item.metadata_json.clone()).ok()?;
-    if metadata.registry_entity.as_deref() != Some("skill") {
-        return None;
-    }
-    let metadata_skill_id = metadata.skill_id.clone().unwrap_or(skill_id.clone());
-    if metadata_skill_id.trim().is_empty() {
-        return None;
-    }
-    Some((metadata_skill_id.trim().to_string(), metadata))
-}
-
 async fn fetch_system_asset_sync_feed(
     client: &reqwest::Client,
     url: &str,
@@ -173,11 +131,6 @@ async fn fetch_system_asset_sync_feed(
         .json()
         .await
         .map_err(to_string)
-}
-
-fn read_skill_manifest_json(manifest_path: &Path) -> Option<Value> {
-    let raw = std::fs::read_to_string(manifest_path).ok()?;
-    serde_json::from_str::<Value>(&raw).ok()
 }
 
 async fn local_skill_registration_needs_reindex(
@@ -264,32 +217,26 @@ pub(crate) async fn sync_local_system_assets_inner(
     base_url: &str,
     access_token: &str,
     limit: i64,
-    skills_dir: Option<&Path>,
-    reinstall_missing: bool,
+    _skills_dir: Option<&Path>,
+    _reinstall_missing: bool,
 ) -> Result<LocalSystemAssetSyncResponse, String> {
     let normalized_base_url = base_url.trim_end_matches('/');
     let assistants_url = format!("{normalized_base_url}/api/v1/system-assets/assistants");
-    let skills_url = format!("{normalized_base_url}/api/v1/system-assets/skills");
     let assistant_response =
         fetch_system_asset_sync_feed(client, &assistants_url, access_token, limit).await?;
-    let skill_response =
-        fetch_system_asset_sync_feed(client, &skills_url, access_token, limit).await?;
     let assistant_fetched_count = assistant_response.items.len() as i64;
-    let skill_fetched_count = skill_response.items.len() as i64;
-    let mut items = assistant_response.items;
-    items.extend(skill_response.items);
+    let skill_fetched_count = 0_i64;
+    let items = assistant_response.items;
 
     let mut upserted_count = 0_i64;
     let mut hidden_count = 0_i64;
     let mut metadata_only_count = 0_i64;
     let mut executable_count = 0_i64;
-    let mut skill_install_fetched_count = 0_i64;
-    let mut skill_install_upserted_count = 0_i64;
-    let mut skill_reinstalled_count = 0_i64;
-    let mut skill_failed_count = 0_i64;
+    let skill_install_fetched_count = 0_i64;
+    let skill_install_upserted_count = 0_i64;
+    let skill_reinstalled_count = 0_i64;
+    let skill_failed_count = 0_i64;
     let mut asset_ids = Vec::new();
-    let mut skill_ids_to_disable: HashSet<String> = HashSet::new();
-    let mut cloud_installed_skill_ids: Vec<String> = Vec::new();
     let mut active_assistant_snapshots: Vec<CloudSystemAssistantSnapshot> = Vec::new();
     let mut active_assistant_ids: HashSet<String> = HashSet::new();
 
@@ -308,155 +255,7 @@ pub(crate) async fn sync_local_system_assets_inner(
             _ => executable_count += 1,
         }
 
-        if let Some(skill_id) = item.asset_id.strip_prefix("skill:") {
-            if let Some((installed_skill_id, skill_metadata)) =
-                skill_metadata_from_system_asset(item)
-            {
-                if let Some(user_install) = skill_metadata.user_install {
-                    skill_install_fetched_count += 1;
-                    cloud_installed_skill_ids.push(installed_skill_id.clone());
-
-                    if let Some(skills_root) = skills_dir {
-                        let install_path = skills_root.join(&installed_skill_id);
-                        let install_path_str = install_path.to_string_lossy().to_string();
-                        let is_enabled = user_install.is_enabled.unwrap_or(true);
-                        let mut status = "synced".to_string();
-                        let mut reinstalled = false;
-                        let installed_revision = user_install
-                            .installed_revision
-                            .clone()
-                            .or_else(|| item.checksum.clone());
-
-                        if reinstall_missing && is_enabled && !install_path.exists() {
-                            if let Some(repo_url) = item
-                                .artifact_ref
-                                .as_deref()
-                                .filter(|raw| !raw.trim().is_empty())
-                            {
-                                match materialize_skill_repo_to_dir(
-                                    skills_root,
-                                    repo_url,
-                                    installed_revision.as_deref(),
-                                    "user_skill",
-                                    Some(&installed_skill_id),
-                                )
-                                .await
-                                {
-                                    Ok(_) => {
-                                        reinstalled = true;
-                                        skill_reinstalled_count += 1;
-                                    }
-                                    Err(_err) => {
-                                        status = "failed_reinstall".to_string();
-                                    }
-                                }
-                            } else {
-                                status = "failed_reinstall".to_string();
-                            }
-                        }
-
-                        let manifest_path = install_path.join("deeting.json");
-                        let manifest =
-                            read_skill_manifest_json(&manifest_path).unwrap_or_else(|| {
-                                let mut manifest = match skill_metadata.manifest.clone() {
-                                    Value::Object(map) => Value::Object(map),
-                                    _ => serde_json::json!({}),
-                                };
-                                if let Some(obj) = manifest.as_object_mut() {
-                                    obj.entry("id")
-                                        .or_insert_with(|| serde_json::json!(installed_skill_id));
-                                    obj.entry("name")
-                                        .or_insert_with(|| serde_json::json!(item.title));
-                                    if let Some(description) = item.description.as_ref() {
-                                        obj.entry("description")
-                                            .or_insert_with(|| serde_json::json!(description));
-                                    }
-                                    if !item.version.trim().is_empty() {
-                                        obj.entry("version")
-                                            .or_insert_with(|| serde_json::json!(item.version));
-                                    }
-                                    if let Some(repo_url) = item.artifact_ref.as_ref() {
-                                        obj.entry("source_repo")
-                                            .or_insert_with(|| serde_json::json!(repo_url));
-                                    }
-                                    if let Some(revision) =
-                                        installed_revision.as_ref().or(item.checksum.as_ref())
-                                    {
-                                        obj.entry("source_revision")
-                                            .or_insert_with(|| serde_json::json!(revision));
-                                    }
-                                    if let Some(runtime) = skill_metadata.runtime.as_ref() {
-                                        obj.entry("runtime")
-                                            .or_insert_with(|| serde_json::json!(runtime));
-                                    }
-                                }
-                                manifest
-                            });
-                        let manifest_json = serde_json::to_string(&manifest).map_err(to_string)?;
-                        let runtime = manifest
-                            .get("runtime")
-                            .and_then(|value| value.as_str())
-                            .or(skill_metadata.runtime.as_deref());
-                        let installed_version = installed_revision
-                            .clone()
-                            .or_else(|| {
-                                manifest
-                                    .get("version")
-                                    .and_then(|value| value.as_str())
-                                    .map(|value| value.to_string())
-                            })
-                            .or_else(|| {
-                                let value = item.version.trim();
-                                if value.is_empty() {
-                                    None
-                                } else {
-                                    Some(value.to_string())
-                                }
-                            });
-                        let user_settings = serde_json::json!({
-                            "alias": user_install.alias,
-                            "config_json": user_install.config_json,
-                            "granted_permissions": user_install.granted_permissions,
-                            "sync_source": "cloud_plugin_market",
-                        });
-
-                        match store
-                            .upsert_local_skill_install_state(
-                                &installed_skill_id,
-                                installed_version.as_deref(),
-                                is_enabled,
-                                runtime,
-                                &manifest_json,
-                                &install_path_str,
-                                Some(&user_settings),
-                            )
-                            .await
-                        {
-                            Ok(_) => {
-                                skill_install_upserted_count += 1;
-                                if status == "synced" && !is_enabled {
-                                    status = "disabled_synced".to_string();
-                                } else if status == "synced" && reinstalled {
-                                    status = "reinstalled".to_string();
-                                } else if status == "synced" && !install_path.exists() {
-                                    status = "metadata_synced".to_string();
-                                }
-                            }
-                            Err(_err) => {
-                                status = "failed".to_string();
-                            }
-                        }
-
-                        if status.starts_with("failed") {
-                            skill_failed_count += 1;
-                        }
-                    }
-                }
-            }
-            if matches!(state, "hidden" | "metadata_only") {
-                skill_ids_to_disable.insert(skill_id.to_string());
-            }
-        } else if item.asset_id.strip_prefix("assistant:").is_some() {
+        if item.asset_id.strip_prefix("assistant:").is_some() {
             if state != "hidden" {
                 if let Some(snapshot) = assistant_snapshot_from_system_asset(item) {
                     active_assistant_ids.insert(snapshot.assistant_id.clone());
@@ -475,15 +274,7 @@ pub(crate) async fn sync_local_system_assets_inner(
         .archive_missing_cloud_system_assets(&asset_ids)
         .await
         .map_err(to_string)?;
-    let disabled_hidden_skill_count = store
-        .disable_local_skills_by_ids(&skill_ids_to_disable.into_iter().collect::<Vec<_>>())
-        .await
-        .map_err(to_string)?;
-    let disabled_missing_skill_count = store
-        .disable_missing_cloud_managed_local_skills(&cloud_installed_skill_ids)
-        .await
-        .map_err(to_string)?;
-    let disabled_skill_count = disabled_hidden_skill_count + disabled_missing_skill_count;
+    let disabled_skill_count = 0_i64;
     let archived_assistant_count = store
         .archive_missing_cloud_system_assistants_by_ids(
             &active_assistant_ids.into_iter().collect::<Vec<_>>(),
@@ -546,7 +337,7 @@ pub async fn sync_cloud_subscriptions(
 
 #[tauri::command]
 pub async fn sync_local_system_assets(
-    app: AppHandle,
+    _app: AppHandle,
     state: State<'_, AppState>,
     access_token: String,
     limit: Option<i64>,
@@ -559,53 +350,16 @@ pub async fn sync_local_system_assets(
     let page_limit = limit.unwrap_or(500).clamp(1, 500);
     let enable_reinstall = reinstall_missing.unwrap_or(false);
     let base_url = state.mcp.cloud_base_url.read().await.clone();
-    let skills_dir = app.path().app_data_dir().map_err(to_string)?.join("skills");
-    std::fs::create_dir_all(&skills_dir).map_err(to_string)?;
-    let skill_scan_roots = resolve_local_skill_scan_targets(&app)?
-        .into_iter()
-        .map(|(path, _)| path)
-        .collect::<Vec<_>>();
-    let response = sync_local_system_assets_inner(
+    sync_local_system_assets_inner(
         state.mcp.store.as_ref(),
         &state.mcp.client,
         &base_url,
         normalized_token.as_str(),
         page_limit,
-        Some(&skills_dir),
+        None,
         enable_reinstall,
     )
-    .await?;
-
-    let needs_skill_reindex = if response.skill_reinstalled_count > 0 {
-        true
-    } else if response.skill_install_fetched_count > 0 {
-        match local_skill_registration_self_heal_needed(
-            state.mcp.store.as_ref(),
-            Some(&state.memory.service),
-            &skill_scan_roots,
-        )
-        .await
-        {
-            Ok(value) => value,
-            Err(err) => {
-                warn!("sync_local_system_assets self-heal check failed: {}", err);
-                false
-            }
-        }
-    } else {
-        false
-    };
-
-    if needs_skill_reindex {
-        if let Err(err) = register_local_skills_inner(app, state.inner()).await {
-            warn!(
-                "sync_local_system_assets register_local_skills failed: {}",
-                err
-            );
-        }
-    }
-
-    Ok(response)
+    .await
 }
 
 #[tauri::command]
@@ -623,8 +377,6 @@ pub async fn repair_local_system_asset_index(
     let page_limit = limit.unwrap_or(500).clamp(1, 500);
     let enable_reinstall = reinstall_missing.unwrap_or(false);
     let base_url = state.mcp.cloud_base_url.read().await.clone();
-    let skills_dir = app.path().app_data_dir().map_err(to_string)?.join("skills");
-    std::fs::create_dir_all(&skills_dir).map_err(to_string)?;
 
     let probe_vector = state
         .providers
@@ -646,7 +398,7 @@ pub async fn repair_local_system_asset_index(
         normalized_token.as_str(),
         page_limit,
         vector_dimension,
-        Some(&skills_dir),
+        None,
         enable_reinstall,
     )
     .await?;

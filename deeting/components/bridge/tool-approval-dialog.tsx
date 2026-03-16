@@ -41,66 +41,75 @@ export function ToolApprovalDialog() {
   const formattedArguments = JSON.stringify(pending.arguments, null, 2)
 
   const handleApprove = async () => {
+    const approval = pending
+    if (!approval) return
+
     setLoading(true)
     try {
       const result = await invoke("approve_mcp_tool", {
-        approvalToken: pending.approval_token,
-        callId: pending.meta.call_id,
-        executionToken: pending.meta.execution_token,
+        approvalToken: approval.approval_token,
+        callId: approval.meta.call_id,
+        executionToken: approval.meta.execution_token,
       })
 
-      if (pending.meta.message_id) {
+      if (approval.meta.message_id) {
         const resumePayload = extractLocalChatApprovalResume(result)
         const approvedToolResult = resumePayload?.approved_tool_result ?? result
-        const successBlock = createApprovedToolResultBlock(pending, approvedToolResult)
+        const successBlock = createApprovedToolResultBlock(approval, approvedToolResult)
         if (successBlock) {
-          upsertMessageToolResult(pending.meta.message_id, successBlock)
+          upsertMessageToolResult(approval.meta.message_id, successBlock)
         }
         if (resumePayload?.continuation_blocks?.length) {
-          appendMessageBlocks(pending.meta.message_id, resumePayload.continuation_blocks)
+          appendMessageBlocks(approval.meta.message_id, resumePayload.continuation_blocks)
         }
         if (resumePayload?.error) {
-          appendMessageBlocks(pending.meta.message_id, [
-            createLocalChatResumeErrorBlock(pending, resumePayload.error),
+          appendMessageBlocks(approval.meta.message_id, [
+            createLocalChatResumeErrorBlock(approval, resumePayload.error),
           ])
         }
       }
 
-      if (pending.meta.execution_token) {
-        await bridgeCallTool({
-          tool_name: pending.tool_name,
-          arguments: {
-            call_id: pending.meta.call_id,
-            result,
-            ok: true,
-          },
-          execution_token: pending.meta.execution_token,
-        })
-      }
-
-      toast.success(t("toast.approved", { toolName: pending.tool_name }))
       clear()
+      toast.success(t("toast.approved", { toolName: approval.tool_name }))
+
+      if (approval.meta.execution_token) {
+        try {
+          await bridgeCallTool({
+            tool_name: approval.tool_name,
+            arguments: {
+              call_id: approval.meta.call_id,
+              result,
+              ok: true,
+            },
+            execution_token: approval.meta.execution_token,
+          })
+        } catch (err: unknown) {
+          console.error("[ApprovalDialog] Bridge callback failed after approval", err)
+          const errorMessage = err instanceof Error ? err.message : String(err)
+          toast.error(t("toast.executionFailed", { message: errorMessage }))
+        }
+      }
     } catch (err: unknown) {
       console.error("[ApprovalDialog] Execution failed", err)
       const errorMessage = err instanceof Error ? err.message : String(err)
       toast.error(t("toast.executionFailed", { message: errorMessage }))
 
-      if (isBridgeToolApproval(pending)) {
-        if (pending.meta.message_id) {
-          const errorBlock = createRejectedToolResultBlock(pending, errorMessage)
+      if (isBridgeToolApproval(approval)) {
+        if (approval.meta.message_id) {
+          const errorBlock = createRejectedToolResultBlock(approval, errorMessage)
           if (errorBlock) {
-            upsertMessageToolResult(pending.meta.message_id, errorBlock)
+            upsertMessageToolResult(approval.meta.message_id, errorBlock)
           }
         }
-        if (pending.meta.execution_token) {
+        if (approval.meta.execution_token) {
           await bridgeCallTool({
-            tool_name: pending.tool_name,
+            tool_name: approval.tool_name,
             arguments: {
-              call_id: pending.meta.call_id,
+              call_id: approval.meta.call_id,
               result: { error: errorMessage },
               ok: false,
             },
-            execution_token: pending.meta.execution_token,
+            execution_token: approval.meta.execution_token,
           })
         }
       }
@@ -111,34 +120,41 @@ export function ToolApprovalDialog() {
   }
 
   const handleReject = async () => {
+    const approval = pending
+    if (!approval) return
+
     try {
       await invoke("reject_mcp_tool", {
-        approvalToken: pending.approval_token,
+        approvalToken: approval.approval_token,
       })
 
-      if (pending.meta.message_id) {
-        const rejectedBlock = createRejectedToolResultBlock(pending, rejectedErrorMessage)
+      if (approval.meta.message_id) {
+        const rejectedBlock = createRejectedToolResultBlock(approval, rejectedErrorMessage)
         if (rejectedBlock) {
-          upsertMessageToolResult(pending.meta.message_id, rejectedBlock)
+          upsertMessageToolResult(approval.meta.message_id, rejectedBlock)
         }
       }
 
-      if (pending.meta.execution_token) {
-        await bridgeCallTool({
-          tool_name: pending.tool_name,
-          arguments: {
-            call_id: pending.meta.call_id,
-            result: { error: rejectedErrorMessage },
-            ok: false,
-          },
-          execution_token: pending.meta.execution_token,
-        })
-      }
-
+      clear()
       toast.info(t("toast.rejected"))
+
+      if (approval.meta.execution_token) {
+        try {
+          await bridgeCallTool({
+            tool_name: approval.tool_name,
+            arguments: {
+              call_id: approval.meta.call_id,
+              result: { error: rejectedErrorMessage },
+              ok: false,
+            },
+            execution_token: approval.meta.execution_token,
+          })
+        } catch (err) {
+          console.error("[ApprovalDialog] Bridge callback failed after reject", err)
+        }
+      }
     } catch (err) {
       console.error("[ApprovalDialog] Reject failed", err)
-    } finally {
       clear()
     }
   }
