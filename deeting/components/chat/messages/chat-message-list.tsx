@@ -9,6 +9,7 @@ import { AIResponseBubble } from "./ai-response-bubble"
 import { cn } from "@/lib/utils"
 import type { Message, ChatAssistant } from "@/store/chat-store"
 import { useI18n } from "@/hooks/use-i18n"
+import { deriveAssistantActivityState } from "@/lib/chat/assistant-activity"
 
 interface ChatMessageListProps {
   messages: Message[]
@@ -252,17 +253,38 @@ export function ChatMessageList({
     (index: number) => {
       const msg = messages[index]
       if (!msg) return null
+      const embeddedActivity =
+        msg.role === "assistant"
+          ? deriveAssistantActivityState(msg.blocks)
+          : { isActive: false, statusStage: null, statusCode: null, statusMeta: null }
+      const isStreamedActive = msg.id === lastAssistantId && isTyping
+      const isMessageActive = isStreamedActive || embeddedActivity.isActive
+      const effectiveStatusStage = isStreamedActive
+        ? msg.id === lastAssistantId
+          ? statusStage
+          : null
+        : embeddedActivity.statusStage
+      const effectiveStatusCode = isStreamedActive
+        ? msg.id === lastAssistantId
+          ? statusCode
+          : null
+        : embeddedActivity.statusCode
+      const effectiveStatusMeta = isStreamedActive
+        ? msg.id === lastAssistantId
+          ? statusMeta
+          : null
+        : embeddedActivity.statusMeta
 
       return (
         <MessageItem
           key={msg.id}
           message={msg}
           agent={agent}
-          isActive={msg.id === lastAssistantId && isTyping}
+          isActive={isMessageActive}
           streamEnabled={streamEnabled}
-          statusStage={msg.id === lastAssistantId ? statusStage : null}
-          statusCode={msg.id === lastAssistantId ? statusCode : null}
-          statusMeta={msg.id === lastAssistantId ? statusMeta : null}
+          statusStage={effectiveStatusStage}
+          statusCode={effectiveStatusCode}
+          statusMeta={effectiveStatusMeta}
           lastAssistantId={lastAssistantId}
           isTyping={isTyping}
           onRegenerate={onRegenerate}

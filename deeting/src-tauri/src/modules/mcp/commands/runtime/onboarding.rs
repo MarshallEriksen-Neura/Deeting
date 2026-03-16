@@ -42,7 +42,7 @@ pub(crate) async fn install_local_skill_from_onboarding_request(
     payload: &serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     let (repo_url, skill_name) = parse_skill_onboarding_payload(payload)?;
-    let result = install_skill_to_local(app, app_state, &repo_url, None, None).await?;
+    let result = install_skill_to_local(app, app_state, &repo_url, None, None, None).await?;
     Ok(serde_json::json!({
         "action": "skill_installed",
         "repo_url": repo_url,

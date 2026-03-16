@@ -92,7 +92,7 @@ impl ShellExecuteCoreTool {
     pub fn assess_risk(
         &self,
         command: &str,
-        arguments: &Value,
+        _arguments: &Value,
     ) -> crate::modules::mcp::ToolRiskAssessment {
         use crate::modules::mcp::{
             ApprovalBoundaryClass, RiskOperationClass, RiskTargetClass, ToolRiskAssessment,

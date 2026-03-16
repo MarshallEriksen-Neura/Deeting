@@ -246,7 +246,7 @@ export const MessageItem = React.memo<MessageItemProps>(
             ) : null}
           </div>
         ) : (
-          <div className="relative min-w-0 max-w-[85%] px-5 py-3.5 rounded-2xl rounded-tr-none text-[15px] leading-relaxed tracking-wide bg-stone-100 dark:bg-zinc-800 border border-stone-200/70 dark:border-zinc-700 shadow-sm text-foreground">
+          <div className="chat-user-bubble relative min-w-0 max-w-[85%] rounded-2xl rounded-tr-none border px-5 py-3.5 text-[15px] leading-relaxed tracking-wide">
             {message.attachments?.length ? (
               <div className="mb-3">
                 <MessageAttachments
@@ -260,7 +260,7 @@ export const MessageItem = React.memo<MessageItemProps>(
               content={message.content}
               className="chat-markdown chat-markdown-user"
             />
-            <div className="text-[10px] mt-1 opacity-70 text-right text-muted-foreground">
+            <div className="chat-user-bubble-meta mt-1 text-right text-[10px]">
               {new Date(message.createdAt).toLocaleTimeString([], {
                 hour: "2-digit",
                 minute: "2-digit",
@@ -362,7 +362,7 @@ const MessageAttachments = React.memo<MessageAttachmentsProps>(
       (attachment) => attachment.kind === "file" || Boolean(attachment.fileId)
     )
     const gridCols = imageAttachments.length > 2 ? "grid-cols-3" : "grid-cols-2"
-    const cardBg = variant === "user" ? "bg-white/10" : "bg-muted/40"
+    const cardBg = variant === "user" ? "chat-user-attachment-card" : "border-white/10 bg-muted/40"
 
     return (
       <div className="space-y-2">
@@ -376,7 +376,7 @@ const MessageAttachments = React.memo<MessageAttachmentsProps>(
               >
                 <div
                   className={cn(
-                    "relative overflow-hidden rounded-xl border border-white/10 shadow-sm cursor-zoom-in group",
+                    "relative cursor-zoom-in overflow-hidden rounded-xl border shadow-sm group",
                     cardBg
                   )}
                 >
@@ -403,13 +403,18 @@ const MessageAttachments = React.memo<MessageAttachmentsProps>(
               <div
                 key={attachment.id}
                 className={cn(
-                  "flex items-center gap-3 rounded-xl border border-white/10 px-3 py-2 text-[12px] shadow-sm",
+                  "flex items-center gap-3 rounded-xl border px-3 py-2 text-[12px] shadow-sm",
                   variant === "user"
-                    ? "bg-white/10 text-primary-foreground"
-                    : "bg-muted/40 text-foreground"
+                    ? "chat-user-attachment-card"
+                    : "border-white/10 bg-muted/40 text-foreground"
                 )}
               >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-black/10 text-current">
+                <div
+                  className={cn(
+                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-current",
+                    variant === "user" ? "bg-black/6 dark:bg-white/10" : "bg-black/10"
+                  )}
+                >
                   <FileText className="h-4 w-4" />
                 </div>
                 <div className="min-w-0 flex-1">

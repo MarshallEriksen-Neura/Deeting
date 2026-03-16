@@ -54,6 +54,18 @@ export function resolveStatusDetail(
       const name = String(meta?.assistant_name ?? "")
       return t("status.detail.assistantSelected", { name })
     }
+    case "approval.required": {
+      const name = String(meta?.tool_name ?? "").trim()
+      return name
+        ? t("status.detail.approvalRequired", { name })
+        : t("status.detail.approvalRequiredFallback")
+    }
+    case "approval.executing": {
+      const name = String(meta?.tool_name ?? "").trim()
+      return name
+        ? t("status.detail.approvalExecuting", { name })
+        : t("status.detail.approvalExecutingFallback")
+    }
     default:
       return null
   }

@@ -10,7 +10,7 @@ use tokio::sync::Mutex;
 /// 审计日志存储
 pub struct AuditStore {
     log_file: Arc<Mutex<File>>,
-    log_path: PathBuf,
+    _log_path: PathBuf,
 }
 
 impl AuditStore {
@@ -29,7 +29,7 @@ impl AuditStore {
 
         Ok(Self {
             log_file: Arc::new(Mutex::new(file)),
-            log_path,
+            _log_path: log_path,
         })
     }
 
@@ -45,7 +45,8 @@ impl AuditStore {
     }
 
     /// 清理过期日志
-    pub fn cleanup_old_logs(&self, retention_days: u64) -> Result<(), String> {
+    #[allow(dead_code)]
+    pub fn cleanup_old_logs(&self, _retention_days: u64) -> Result<(), String> {
         // TODO: 实现日志轮转和清理
         // 读取日志文件,删除超过保留期的条目
         Ok(())

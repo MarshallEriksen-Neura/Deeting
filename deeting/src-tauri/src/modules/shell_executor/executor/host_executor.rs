@@ -33,11 +33,12 @@ impl HostShellExecutor {
     }
 
     /// 评估命令风险 (复用现有系统)
+    #[allow(dead_code)]
     pub fn assess_risk(&self, command: &str, arguments: &serde_json::Value) -> ToolRiskAssessment {
         let mut score = 0_i32;
         let mut reasons = Vec::new();
-        let mut operation_class = RiskOperationClass::ProcessExec;
-        let mut target_class = RiskTargetClass::Host;
+        let operation_class = RiskOperationClass::ProcessExec;
+        let target_class = RiskTargetClass::Host;
         let mut boundary_class = ApprovalBoundaryClass::None;
 
         let command_lower = command.to_lowercase();

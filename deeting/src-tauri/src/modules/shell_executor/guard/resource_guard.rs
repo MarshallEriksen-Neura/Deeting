@@ -4,11 +4,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 /// 资源保护器
+#[allow(dead_code)]
 pub struct ResourceGuard {
     max_concurrent: usize,
     current_count: Arc<AtomicUsize>,
 }
 
+#[allow(dead_code)]
 impl ResourceGuard {
     pub fn new(max_concurrent: usize) -> Self {
         Self {
@@ -48,6 +50,7 @@ impl ResourceGuard {
 
 /// 资源槽
 /// 当 drop 时自动释放
+#[allow(dead_code)]
 pub struct ResourceSlot {
     counter: Arc<AtomicUsize>,
 }

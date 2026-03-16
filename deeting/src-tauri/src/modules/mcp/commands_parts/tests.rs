@@ -2,8 +2,7 @@
 mod tests {
     use super::*;
     use crate::modules::mcp::commands::runtime::{
-        apply_config_payload_to_store, execute_or_queue_mcp_tool_call_with_context,
-        list_local_stdio_tools,
+        execute_or_queue_mcp_tool_call_with_context,
     };
     use axum::{
         extract::State as AxumState,

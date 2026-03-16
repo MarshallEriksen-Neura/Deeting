@@ -1,7 +1,5 @@
 //! 命令构建器 - 跨平台命令构建
 
-use std::env;
-
 /// 命令构建器
 pub struct CommandBuilder;
 
@@ -28,6 +26,7 @@ impl CommandBuilder {
     }
 
     /// 构建命令并返回完整命令字符串(用于日志)
+    #[allow(dead_code)]
     pub fn build_command_string(command: &str, args: &[String]) -> String {
         let (program, program_args) = Self::build(command, args);
 

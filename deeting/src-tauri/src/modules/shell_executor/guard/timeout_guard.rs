@@ -3,11 +3,13 @@
 use std::time::{Duration, Instant};
 
 /// 超时保护器
+#[allow(dead_code)]
 pub struct TimeoutGuard {
     start_time: Instant,
     timeout: Duration,
 }
 
+#[allow(dead_code)]
 impl TimeoutGuard {
     pub fn new(timeout_seconds: u64) -> Self {
         Self {

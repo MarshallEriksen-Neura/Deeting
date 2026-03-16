@@ -1,7 +1,6 @@
 //! 配置类型定义
 
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 
 /// Shell Executor 配置
 #[derive(Debug, Clone, Serialize, Deserialize)]

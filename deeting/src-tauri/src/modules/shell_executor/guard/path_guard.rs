@@ -1,7 +1,7 @@
 //! 路径限制保护
 
 use crate::modules::shell_executor::config::PathRestrictionsConfig;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// 路径保护器
 pub struct PathGuard {

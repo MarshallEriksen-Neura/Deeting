@@ -92,6 +92,11 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  --chat-user-bubble-bg: color-mix(in oklch, var(--surface) 93%, #efe2cf 7%);
+  --chat-user-bubble-border: color-mix(in oklch, var(--border) 72%, #d8c8b4 28%);
+  --chat-user-bubble-fg: color-mix(in oklch, var(--foreground) 92%, #6d5846 8%);
+  --chat-user-bubble-muted-fg: color-mix(in oklch, var(--foreground) 52%, transparent);
+  --chat-user-bubble-attachment-bg: color-mix(in oklch, var(--surface) 88%, #eadbc8 12%);
 
   /* Global scrollbar palette (light by default) */
   --scrollbar-track: color-mix(in oklch, var(--surface) 88%, transparent);
@@ -116,6 +121,11 @@ html.dark {
   --primary-soft: #a6b0ff;
   --teal-accent: #21c9c3;
   --gradient: linear-gradient(135deg, #8b7bff 0%, #5ec8ff 55%, #a6e1ff 100%);
+  --chat-user-bubble-bg: color-mix(in oklch, var(--surface) 86%, #d6c0a6 14%);
+  --chat-user-bubble-border: color-mix(in oklch, var(--border) 70%, #cbb299 30%);
+  --chat-user-bubble-fg: color-mix(in oklch, white 90%, #ead7c1 10%);
+  --chat-user-bubble-muted-fg: color-mix(in oklch, white 62%, transparent);
+  --chat-user-bubble-attachment-bg: color-mix(in oklch, var(--surface) 78%, #cbb299 22%);
 }
 
 @theme inline {
@@ -229,6 +239,43 @@ body {
   --color-prettylights-syntax-keyword: var(--primary-foreground);
   --color-prettylights-syntax-string: var(--primary-foreground);
   --color-prettylights-syntax-variable: var(--primary-foreground);
+}
+
+.chat-user-bubble {
+  background: var(--chat-user-bubble-bg);
+  border-color: var(--chat-user-bubble-border);
+  color: var(--chat-user-bubble-fg);
+  backdrop-filter: blur(18px) saturate(1.02);
+  -webkit-backdrop-filter: blur(18px) saturate(1.02);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    0 10px 24px -22px rgba(110, 86, 61, 0.28),
+    0 2px 6px -4px rgba(110, 86, 61, 0.16);
+}
+
+.chat-user-bubble .chat-markdown-user {
+  --chat-link-color: color-mix(in oklch, var(--primary) 56%, #725c48 44%);
+  --fgColor-default: var(--chat-user-bubble-fg);
+  --fgColor-muted: var(--chat-user-bubble-muted-fg);
+  --fgColor-accent: var(--chat-link-color);
+  --bgColor-muted: color-mix(in oklch, var(--chat-user-bubble-fg) 8%, transparent);
+  --borderColor-default: color-mix(in oklch, var(--chat-user-bubble-fg) 16%, transparent);
+  --color-prettylights-syntax-comment: color-mix(in oklch, var(--chat-user-bubble-fg) 62%, transparent);
+  --color-prettylights-syntax-constant: var(--chat-user-bubble-fg);
+  --color-prettylights-syntax-entity: color-mix(in oklch, var(--chat-link-color) 82%, var(--chat-user-bubble-fg) 18%);
+  --color-prettylights-syntax-keyword: color-mix(in oklch, var(--chat-link-color) 64%, var(--chat-user-bubble-fg) 36%);
+  --color-prettylights-syntax-string: color-mix(in oklch, var(--chat-user-bubble-fg) 88%, var(--chat-link-color) 12%);
+  --color-prettylights-syntax-variable: color-mix(in oklch, var(--chat-user-bubble-fg) 82%, var(--chat-link-color) 18%);
+}
+
+.chat-user-bubble-meta {
+  color: var(--chat-user-bubble-muted-fg);
+}
+
+.chat-user-attachment-card {
+  background: var(--chat-user-bubble-attachment-bg);
+  border-color: var(--chat-user-bubble-border);
+  color: var(--chat-user-bubble-fg);
 }
 
 .chat-markdown-assistant {

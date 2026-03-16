@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowUp, Sparkles, Plus, Sliders, MessageSquarePlus, Paperclip, X, Square, FileText, Bot, Play, Check, Loader2 } from 'lucide-react';
+import { ArrowUp, Sparkles, Plus, Sliders, MessageSquarePlus, Paperclip, X, Square, FileText, Play, Check, Loader2 } from 'lucide-react';
 import { Link } from '@/i18n/routing';
 import { useMemo, useRef, useState, useCallback, useEffect, memo } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
@@ -29,7 +29,7 @@ import type { KnowledgeFile } from '@/types/knowledge';
  * - 消息输入和发送
  * - 附件管理（图片上传、预览、删除）
  * - 参数配置（temperature, topP）
- * - 桌面固定人格与能力路由
+ * - 桌面知识文件挂载
  * - 新建会话
  * - 模式切换（聊天/图像/代码）
  * 
@@ -583,21 +583,7 @@ function ControlsContainer() {
              <MessageSquarePlus className="w-5 h-5" />
           </Button>
 
-          {isTauriRuntime ? (
-            <div className="min-h-[44px] h-11 rounded-full px-3 gap-2 bg-slate-100/80 dark:bg-white/5 flex items-center">
-              <span className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white shadow-sm bg-gradient-to-br from-sky-500 to-cyan-500">
-                <Bot className="w-4 h-4 text-white" />
-              </span>
-              <div className="flex flex-col items-start leading-tight">
-                <span className="text-[10px] uppercase tracking-[0.12em] text-slate-500 dark:text-white/40">
-                  {t("routing.persona")}
-                </span>
-                <span className="text-[13px] font-semibold text-slate-700 dark:text-white/80 max-w-[160px] truncate">
-                  {t("routing.personaDesc")}
-                </span>
-              </div>
-            </div>
-          ) : (
+          {isTauriRuntime ? null : (
             <div className="min-h-[44px] h-11 rounded-full px-3 gap-2 bg-slate-100/80 dark:bg-white/5 flex items-center">
               <span className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white shadow-sm bg-gradient-to-br ${activeAssistant?.color ?? "from-slate-400 to-slate-600"}`}>
                 {(activeAssistant?.name?.trim().slice(0, 1).toUpperCase() ?? "A")}

@@ -170,6 +170,49 @@ describe("useChatStore selected assistant normalization", () => {
     })
   })
 
+  it("appendMessageBlocks should keep a matching tool call in requires_approval state", () => {
+    useChatStore.setState({
+      messages: [
+        {
+          id: "assistant-tool-call-approval-1",
+          role: "assistant",
+          content: "",
+          createdAt: 1,
+          blocks: [
+            {
+              id: "call-approval-1",
+              type: "tool_call",
+              callId: "call-approval-1",
+              toolName: "skill.official.skills.crawler.fetch_web_content",
+              status: "running",
+            } as MessageBlock,
+          ],
+        },
+      ],
+    })
+
+    useChatStore.getState().appendMessageBlocks("assistant-tool-call-approval-1", [
+      {
+        id: "result-approval-1",
+        type: "tool_result",
+        callId: "call-approval-1",
+        toolName: "skill.official.skills.crawler.fetch_web_content",
+        status: "requires_approval",
+        result: {
+          status: "REQUIRES_APPROVAL",
+          approval_token: "approval-1",
+        },
+      } as MessageBlock,
+    ])
+
+    const message = useChatStore.getState().messages[0]
+    const toolCall = message?.blocks?.find((block) => block.type === "tool_call")
+    const toolResult = message?.blocks?.find((block) => block.type === "tool_result")
+
+    expect(toolCall).toMatchObject({ status: "requires_approval" })
+    expect(toolResult).toMatchObject({ status: "requires_approval" })
+  })
+
   it("setMessageBlocks should clear assistant content when no text block exists", () => {
     useChatStore.setState({
       messages: [

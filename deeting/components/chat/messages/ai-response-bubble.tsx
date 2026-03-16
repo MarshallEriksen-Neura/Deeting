@@ -6,6 +6,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { resolveStatusDetail } from "@/lib/chat/status-detail";
+import { isToolApprovalResultBlock } from "@/lib/chat/assistant-activity";
 import { useBridgeApprovalStore } from "@/lib/chat/bridge-approval-store";
 import { useI18n } from "@/hooks/use-i18n";
 import type { MessageBlock, UIBlock as MessageUIBlock } from "@/lib/chat/message-protocol";
@@ -270,9 +271,14 @@ function summarizeUnknownValue(value: unknown): string | null {
 function resolveToolVisualState(status?: string, resultBlock?: MessageBlock): ToolVisualState {
   const normalized = (status ?? "").trim().toLowerCase();
   if (normalized === "error" || normalized === "failed") return "error";
+  if (normalized === "requires_approval") return "pending";
   if (normalized === "running" || normalized === "pending") return "running";
-  if (normalized === "success" || normalized === "succeeded") return "success";
+  if (normalized === "success" || normalized === "succeeded") {
+    if (resultBlock && isToolApprovalResultBlock(resultBlock)) return "pending";
+    return "success";
+  }
   if (resultBlock?.status === "error") return "error";
+  if (resultBlock && isToolApprovalResultBlock(resultBlock)) return "pending";
   if (resultBlock) return "success";
   return "pending";
 }
@@ -1164,6 +1170,7 @@ const ToolCallBlock = memo<{
     }, [resultBlock?.result]);
 
     const isResultError = resultBlock?.status === "error";
+    const isResultPendingApproval = Boolean(resultBlock && isToolApprovalResultBlock(resultBlock));
 
     useEffect(() => {
       if (!hasUi && !taskLiveId) return;
@@ -1185,7 +1192,9 @@ const ToolCallBlock = memo<{
                     ? "bg-red-200 dark:bg-red-900"
                     : visualState === "success"
                       ? "bg-emerald-200 dark:bg-emerald-900"
-                      : "bg-blue-200 dark:bg-blue-900"
+                      : visualState === "pending"
+                        ? "bg-amber-200 dark:bg-amber-900"
+                        : "bg-blue-200 dark:bg-blue-900"
                 )}
               />
             ) : null}
@@ -1278,7 +1287,9 @@ const ToolCallBlock = memo<{
                   "rounded-2xl border p-3 text-sm overflow-hidden",
                   isResultError
                     ? "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-900/20"
-                    : "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-900/20"
+                    : isResultPendingApproval
+                      ? "border-amber-200 bg-amber-50/50 dark:border-amber-900 dark:bg-amber-900/20"
+                      : "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-900/20"
                 )}
               >
                 <div className="mb-2 flex items-center justify-between">
@@ -1286,7 +1297,7 @@ const ToolCallBlock = memo<{
                     {resultBlock?.toolName || resultBlock?.callId || "result"}
                   </div>
                   <Badge variant="outline" className="h-5 text-[10px] font-normal shrink-0">
-                    {isResultError ? "ERROR" : "OUTPUT"}
+                    {isResultError ? "ERROR" : isResultPendingApproval ? "APPROVAL" : "OUTPUT"}
                   </Badge>
                 </div>
                 {resultContent ? (
@@ -1333,6 +1344,17 @@ const ToolCallGroup = memo<{
         }),
       [resultMap, toolCalls, uiBlocksByCallId]
     );
+    const hasPendingApproval = useMemo(
+      () =>
+        toolCalls.some(({ part }) => {
+          if (part.status === "requires_approval") return true;
+          const callId = typeof part.callId === "string" ? part.callId : "";
+          if (!callId) return false;
+          const resultBlock = resultMap.get(callId);
+          return Boolean(resultBlock && isToolApprovalResultBlock(resultBlock));
+        }),
+      [resultMap, toolCalls]
+    );
 
     useEffect(() => {
       if (isActive || containsRecentApproval || hasResolvedResult) {
@@ -1362,7 +1384,7 @@ const ToolCallGroup = memo<{
       : summary?.allInternal
         ? "toolGroup.skillSummary"
         : "toolGroup.summary";
-    const groupState: ToolVisualState = isActive ? "running" : hasResolvedResult ? "success" : "pending";
+    const groupState: ToolVisualState = isActive ? "running" : hasPendingApproval ? "pending" : hasResolvedResult ? "success" : "pending";
 
     return (
       <Collapsible open={isOpen} onOpenChange={setIsOpen} className="w-full">
@@ -1428,7 +1450,7 @@ const ToolCallGroup = memo<{
 const ToolResultBlock = memo<{
   name?: string;
   callId?: string;
-  status?: "success" | "error";
+  status?: "success" | "error" | "requires_approval";
   result?: unknown;
   debug?: Record<string, unknown>;
 }>(function ToolResultBlock({ name, callId, status, result, debug }) {
@@ -1436,6 +1458,14 @@ const ToolResultBlock = memo<{
   const [isOpen, setIsOpen] = useState(false);
   const title = humanizeToolName(name) || callId || "tool_result";
   const isError = status === "error";
+  const isPendingApproval = isToolApprovalResultBlock({
+    id: callId || "tool-result",
+    type: "tool_result",
+    callId,
+    toolName: name,
+    status,
+    result,
+  } as MessageBlock);
   const skillInstallInsight = useMemo(
     () => extractSkillInstallInsight(name, result),
     [name, result]
@@ -1459,7 +1489,7 @@ const ToolResultBlock = memo<{
     return formatObjectAsMarkdown(result);
   }, [result]);
   const preview = useMemo(() => summarizeUnknownValue(result), [result]);
-  const visualState: ToolVisualState = isError ? "error" : "success";
+  const visualState: ToolVisualState = isError ? "error" : isPendingApproval ? "pending" : "success";
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen} className="w-full">
@@ -1473,7 +1503,11 @@ const ToolResultBlock = memo<{
               <span
                 className={cn(
                   "mt-1 w-px flex-1 min-h-4",
-                  isError ? "bg-red-200 dark:bg-red-900" : "bg-emerald-200 dark:bg-emerald-900"
+                  isError
+                    ? "bg-red-200 dark:bg-red-900"
+                    : isPendingApproval
+                      ? "bg-amber-200 dark:bg-amber-900"
+                      : "bg-emerald-200 dark:bg-emerald-900"
                 )}
               />
             </div>
@@ -1482,7 +1516,9 @@ const ToolResultBlock = memo<{
                 "min-w-0 flex-1 rounded-2xl border px-3 py-2.5 text-sm transition-all cursor-pointer select-none hover:bg-muted/30",
                 isError
                   ? "border-red-200/80 bg-red-50/55 dark:border-red-900 dark:bg-red-950/20"
-                  : "border-slate-200/80 bg-white/85 dark:border-zinc-800 dark:bg-zinc-900/70"
+                  : isPendingApproval
+                    ? "border-amber-200/80 bg-amber-50/55 dark:border-amber-900 dark:bg-amber-950/20"
+                    : "border-slate-200/80 bg-white/85 dark:border-zinc-800 dark:bg-zinc-900/70"
               )}
             >
               <div className="flex items-start gap-3">
@@ -1490,7 +1526,7 @@ const ToolResultBlock = memo<{
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="truncate text-sm font-semibold text-foreground">{title}</span>
                     <Badge variant="outline" className="h-5 text-[10px] font-normal text-muted-foreground shrink-0">
-                      {isError ? "ERROR" : "OUTPUT"}
+                      {isError ? "ERROR" : isPendingApproval ? "APPROVAL" : "OUTPUT"}
                     </Badge>
                   </div>
                   {preview ? (
@@ -1514,7 +1550,9 @@ const ToolResultBlock = memo<{
             "rounded-2xl border p-3 text-sm overflow-hidden",
             isError
               ? "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-900/20"
-              : "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-900/20"
+              : isPendingApproval
+                ? "border-amber-200 bg-amber-50/50 dark:border-amber-900 dark:bg-amber-900/20"
+                : "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-900/20"
           )}>
             {skillInstallInsight ? (
               <SkillInstallStatusCard insight={skillInstallInsight} />

@@ -66,7 +66,7 @@ describe("ControlsContainer (web)", () => {
     expect(screen.queryByLabelText("routing.override")).toBeNull()
   })
 
-  it("should render fixed persona pill on desktop", () => {
+  it("should not render fixed persona pill on desktop", () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     Object.defineProperty(window, "__TAURI__", {
       configurable: true,
@@ -74,8 +74,8 @@ describe("ControlsContainer (web)", () => {
     })
     render(<ControlsContainer />)
 
-    expect(screen.getByText("routing.persona")).toBeInTheDocument()
-    expect(screen.getByText("routing.personaDesc")).toBeInTheDocument()
+    expect(screen.queryByText("routing.persona")).not.toBeInTheDocument()
+    expect(screen.queryByText("routing.personaDesc")).not.toBeInTheDocument()
   })
 
   it("shows continue button and triggers continue callback after interruption", () => {

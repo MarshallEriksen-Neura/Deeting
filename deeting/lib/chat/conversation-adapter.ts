@@ -121,10 +121,18 @@ const normalizeBlocks = (blocks: MessageBlock[], messageId: string): MessageBloc
     if (block.type === "tool_call") {
       return {
         ...normalizedBase,
+        callId: typeof block.callId === "string" ? block.callId : undefined,
         toolName: typeof block.toolName === "string" ? block.toolName : undefined,
         toolArgs:
           typeof block.toolArgs === "string"
             ? normalizeTextValue(block.toolArgs)
+            : undefined,
+        status:
+          block.status === "running" ||
+          block.status === "success" ||
+          block.status === "error" ||
+          block.status === "requires_approval"
+            ? block.status
             : undefined,
       }
     }
@@ -139,7 +147,9 @@ const normalizeBlocks = (blocks: MessageBlock[], messageId: string): MessageBloc
         callId: typeof block.callId === "string" ? block.callId : undefined,
         toolName: typeof block.toolName === "string" ? block.toolName : undefined,
         status:
-          block.status === "success" || block.status === "error"
+          block.status === "success" ||
+          block.status === "error" ||
+          block.status === "requires_approval"
             ? block.status
             : undefined,
         result:

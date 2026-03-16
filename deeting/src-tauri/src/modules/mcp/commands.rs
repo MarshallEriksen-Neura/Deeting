@@ -57,17 +57,16 @@ pub(crate) use support::{resolve_effective_desktop_scout_base_url, SCOUT_SERVICE
 
 #[cfg(test)]
 pub(crate) use runtime::{
-    approve_mcp_tool_inner, execute_or_queue_mcp_tool_call, normalize_chat_completion_response,
-    process_next_local_conversation_summary_job_with_store, reject_mcp_tool_inner,
-    resolve_skill_env,
-};
-#[cfg(test)]
-pub(crate) use runtime::{
     build_auto_code_mode_tool_feedback, build_local_consult_expert_network_result_with_runtime,
     build_local_tool_call_install_gate_error_meta, build_local_tool_trace_blocks,
     derive_skill_name_from_repo_url, extract_chat_tool_calls, hash_config,
     parse_skill_onboarding_payload, read_local_mcp_config,
     LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
+};
+#[cfg(test)]
+pub(crate) use runtime::{
+    normalize_chat_completion_response, process_next_local_conversation_summary_job_with_store,
+    reject_mcp_tool_inner, resolve_skill_env,
 };
 #[cfg(test)]
 pub(crate) use skill_registry_impl::{

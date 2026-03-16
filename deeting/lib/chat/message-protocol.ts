@@ -48,14 +48,14 @@ export interface ToolCallBlock extends BaseBlock {
   callId?: string
   toolName?: string
   toolArgs?: string
-  status?: 'running' | 'success' | 'error'
+  status?: 'running' | 'success' | 'error' | 'requires_approval'
 }
 
 export interface ToolResultBlock extends BaseBlock {
   type: 'tool_result'
   callId?: string
   toolName?: string
-  status?: 'success' | 'error'
+  status?: 'success' | 'error' | 'requires_approval'
   result?: unknown
   ui?: unknown
   debug?: Record<string, unknown>

@@ -61,7 +61,11 @@
         "upstreamResponse": "Upstream response {latency}ms",
         "upstreamResponseWithBreakdown": "Total {total}ms · upstream {upstream}ms · local {local}ms",
         "toolCall": "Tool call {name}",
-        "assistantSelected": "Now handled by {name}"
+        "assistantSelected": "Now handled by {name}",
+        "approvalRequired": "Waiting for approval to run {name}",
+        "approvalRequiredFallback": "Waiting for your approval",
+        "approvalExecuting": "Approved, now running {name}",
+        "approvalExecutingFallback": "Approved, now running the tool"
       },
       "metrics": {
         "total": "Total {value}",

@@ -1,4 +1,5 @@
 import type { MessageBlock, ToolResultBlock } from "@/lib/chat/message-protocol"
+import { isToolApprovalResultBlock } from "@/lib/chat/assistant-activity"
 
 export function extractAssistantTextFromBlocks(blocks?: MessageBlock[]): string {
   if (!Array.isArray(blocks) || blocks.length === 0) return ""
@@ -51,7 +52,7 @@ function applyToolResultStatuses(blocks: MessageBlock[]): MessageBlock[] {
     const toolCall = normalized[toolCallIndex] as MessageBlock & { status?: string }
     normalized[toolCallIndex] = {
       ...toolCall,
-      status: block.status === "error" ? "error" : "success",
+      status: block.status === "error" ? "error" : isToolApprovalResultBlock(block) ? "requires_approval" : "success",
     }
   }
   return normalized
