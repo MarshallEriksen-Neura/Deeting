@@ -29,6 +29,12 @@ const OFFICIAL_SKILL_CAPABILITIES: &[DesktopOfficialSkillCapabilitySpec] = &[
         admin_only: false,
     },
     DesktopOfficialSkillCapabilitySpec {
+        id: "skill_registry.diagnostics",
+        kind: DesktopCapabilityKind::SystemAction,
+        callable_from_official_skill: true,
+        admin_only: false,
+    },
+    DesktopOfficialSkillCapabilitySpec {
         id: "memory.append",
         kind: DesktopCapabilityKind::DirectCapability,
         callable_from_official_skill: true,
@@ -138,6 +144,7 @@ pub async fn dispatch_official_skill_capability(
 
     match spec.id {
         "skill_registry.refresh" => dispatch_skill_registry_refresh(arguments).await.map(Some),
+        "skill_registry.diagnostics" => dispatch_skill_registry_diagnostics().await.map(Some),
         "memory.append" => dispatch_memory_append(arguments).await.map(Some),
         "memory.search" => dispatch_memory_search(arguments).await.map(Some),
         "monitor.create" => dispatch_monitor_create(arguments).await.map(Some),
@@ -323,6 +330,17 @@ async fn dispatch_skill_registry_refresh(arguments: &Value) -> Result<Value, Str
         "registered": count,
         "arguments": arguments,
     }))
+}
+
+async fn dispatch_skill_registry_diagnostics() -> Result<Value, String> {
+    let app_state = global_app_state_required()?;
+    serde_json::to_value(
+        crate::modules::mcp::commands::maintenance_impl::build_local_capability_registry_diagnostics(
+            &app_state,
+        )
+        .await?,
+    )
+    .map_err(|err| err.to_string())
 }
 
 async fn dispatch_memory_append(arguments: &Value) -> Result<Value, String> {

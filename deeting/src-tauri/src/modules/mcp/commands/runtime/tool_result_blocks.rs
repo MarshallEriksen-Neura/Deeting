@@ -108,6 +108,18 @@ fn map_render_block_to_ui_block(
         "type".to_string(),
         serde_json::Value::String("ui".to_string()),
     );
+    if !call_id.trim().is_empty() {
+        block.insert(
+            "callId".to_string(),
+            serde_json::Value::String(call_id.to_string()),
+        );
+    }
+    if !tool_name.trim().is_empty() {
+        block.insert(
+            "toolName".to_string(),
+            serde_json::Value::String(tool_name.to_string()),
+        );
+    }
     block.insert(
         "viewType".to_string(),
         serde_json::Value::String(view_type.to_string()),

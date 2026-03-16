@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { resolveStatusDetail } from "@/lib/chat/status-detail";
 import { useBridgeApprovalStore } from "@/lib/chat/bridge-approval-store";
 import { useI18n } from "@/hooks/use-i18n";
-import type { MessageBlock } from "@/lib/chat/message-protocol";
+import type { MessageBlock, UIBlock as MessageUIBlock } from "@/lib/chat/message-protocol";
 import { MarkdownViewer } from "@/components/chat/markdown-viewer";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -547,6 +547,33 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
       return { resultMap: map, pairedResultIndices: paired };
     }, [parts]);
 
+    const { uiBlocksByCallId, pairedUiIndices, hasCallLinkedUi } = useMemo(() => {
+      const toolCallIds = new Set<string>();
+      const map = new Map<string, MessageUIBlock[]>();
+      const paired = new Set<number>();
+      let hasLinkedUi = false;
+
+      parts.forEach((part) => {
+        if (part.type === "tool_call" && typeof part.callId === "string" && part.callId.trim().length > 0) {
+          toolCallIds.add(part.callId.trim());
+        }
+      });
+
+      parts.forEach((part, index) => {
+        if (part.type !== "ui") return;
+        const callId = typeof part.callId === "string" ? part.callId.trim() : "";
+        if (!callId || !toolCallIds.has(callId)) return;
+
+        hasLinkedUi = true;
+        paired.add(index);
+        const existing = map.get(callId) ?? [];
+        existing.push(part);
+        map.set(callId, existing);
+      });
+
+      return { uiBlocksByCallId: map, pairedUiIndices: paired, hasCallLinkedUi: hasLinkedUi };
+    }, [parts]);
+
     // 当非活跃消息的工具调用数量超过阈值时，将它们分组折叠展示
     const { shouldGroupTools, toolCallEntries, firstToolCallIndex } = useMemo(() => {
       const entries: Array<{ part: MessageBlock; index: number }> = [];
@@ -593,7 +620,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
           <div className="px-5 py-3.5 min-w-0 overflow-hidden">
             {/* Terminal stream – persistent in compact mode after content arrives */}
             <AnimatePresence mode="sync">
-              {isActive && (
+              {isActive && !hasCallLinkedUi && (
                 <motion.div
                   key="terminal-stream"
                   initial={{ opacity: 0, y: 6 }}
@@ -669,6 +696,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                             <ToolCallGroup
                               toolCalls={toolCallEntries}
                               resultMap={resultMap}
+                              uiBlocksByCallId={uiBlocksByCallId}
                               isActive={isActive}
                             />
                           </motion.div>
@@ -689,6 +717,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                           args={part.toolArgs}
                           status={part.status}
                           resultBlock={part.callId ? resultMap.get(part.callId) : undefined}
+                          uiBlocks={part.callId ? uiBlocksByCallId.get(part.callId) : undefined}
                         />
                       </motion.div>
                     );
@@ -717,6 +746,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
 
                   // --- D. UI 视图块（插件渲染） ---
                   if (part.type === 'ui') {
+                    if (pairedUiIndices.has(index)) return null;
                     return (
                       <motion.div
                         key={`ui-${index}`}
@@ -837,8 +867,10 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
         prevPart.message !== nextPart.message ||
         prevPart.status !== nextPart.status ||
         prevPart.cost !== nextPart.cost ||
+        (prevPart as any).title !== (nextPart as any).title ||
         (prevPart as any).viewType !== (nextPart as any).viewType ||
-        (prevPart as any).payload !== (nextPart as any).payload
+        (prevPart as any).payload !== (nextPart as any).payload ||
+        JSON.stringify((prevPart as any).metadata) !== JSON.stringify((nextPart as any).metadata)
       );
     });
     
@@ -948,8 +980,9 @@ const ToolCallBlock = memo<{
   args?: string;
   status?: string;
   resultBlock?: MessageBlock;
+  uiBlocks?: MessageUIBlock[];
 }>(
-  function ToolCallBlock({ callId, name, args, status, resultBlock }) {
+  function ToolCallBlock({ callId, name, args, status, resultBlock, uiBlocks = [] }) {
     const t = useI18n("chat");
     const [isOpen, setIsOpen] = useState(false);
     const cardRef = useRef<HTMLDivElement>(null);
@@ -957,6 +990,8 @@ const ToolCallBlock = memo<{
     const isRunning = status === 'running';
     const isError = status === 'error';
     const hasResult = !!resultBlock;
+    const hasUi = uiBlocks.length > 0;
+    const hasExpandableContent = hasResult || hasUi;
     const isRecentlyApproved =
       typeof callId === "string" &&
       callId.length > 0 &&
@@ -972,6 +1007,11 @@ const ToolCallBlock = memo<{
       });
       return () => cancelAnimationFrame(frame);
     }, [isRecentlyApproved]);
+
+    useEffect(() => {
+      if (!hasUi) return;
+      setIsOpen(true);
+    }, [hasUi]);
 
     // TaskLiveBlock special case
     const taskLiveId = useMemo(() => {
@@ -1002,14 +1042,15 @@ const ToolCallBlock = memo<{
       <div
         ref={cardRef}
         className={cn(
-        "flex items-center gap-3 p-3 rounded-lg border text-sm w-full max-w-md transition-all duration-500",
+        "flex items-center gap-3 p-3 rounded-lg border text-sm w-full transition-all duration-500",
+        hasUi ? "max-w-2xl" : "max-w-md",
         isRunning
           ? "border-blue-200 bg-blue-50/50 dark:border-blue-900 dark:bg-blue-900/20"
           : "border-border bg-card",
         isError && "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-900/20",
         isRecentlyApproved &&
           "border-emerald-300 bg-emerald-50/80 shadow-[0_0_0_3px_rgba(16,185,129,0.18)] dark:border-emerald-700 dark:bg-emerald-950/30",
-        hasResult && !isRunning && "cursor-pointer select-none hover:bg-muted/50"
+        hasExpandableContent && !isRunning && "cursor-pointer select-none hover:bg-muted/50"
       )}>
         {/* Icon Status */}
         <div className={cn(
@@ -1048,7 +1089,7 @@ const ToolCallBlock = memo<{
         </div>
 
         {/* Expand/Collapse indicator */}
-        {hasResult && !isRunning && (
+        {hasExpandableContent && !isRunning && (
           <div className="text-muted-foreground">
             <ChevronDown size={16} className={cn("transition-transform duration-200", !isOpen && "-rotate-90")} />
           </div>
@@ -1056,7 +1097,7 @@ const ToolCallBlock = memo<{
       </div>
     );
 
-    if (!hasResult) return card;
+    if (!hasExpandableContent) return card;
 
     return (
       <Collapsible open={isOpen} onOpenChange={setIsOpen} className="w-full">
@@ -1069,6 +1110,23 @@ const ToolCallBlock = memo<{
               <TaskLiveBlock taskId={taskLiveId} />
             ) : skillInstallInsight ? (
               <SkillInstallStatusCard insight={skillInstallInsight} />
+            ) : hasUi ? (
+              <div className="space-y-3">
+                {uiBlocks.map((uiBlock, index) => (
+                  <div
+                    key={uiBlock.id || `${callId || name || "tool"}-ui-${index}`}
+                    className="overflow-hidden rounded-lg border border-border/80 bg-background/80 p-2"
+                  >
+                    <ViewBlock
+                      viewType={uiBlock.viewType}
+                      payload={uiBlock.payload}
+                      title={uiBlock.title}
+                      metadata={uiBlock.metadata}
+                    />
+                  </div>
+                ))}
+                <ToolDebugPanel debug={resultBlock?.debug} />
+              </div>
             ) : (
               <div className={cn(
                 "rounded-lg border p-3 text-sm overflow-hidden",
@@ -1105,9 +1163,10 @@ const ToolCallBlock = memo<{
 const ToolCallGroup = memo<{
   toolCalls: Array<{ part: MessageBlock; index: number }>;
   resultMap: Map<string, MessageBlock>;
+  uiBlocksByCallId: Map<string, MessageUIBlock[]>;
   isActive: boolean;
 }>(
-  function ToolCallGroup({ toolCalls, resultMap, isActive }) {
+  function ToolCallGroup({ toolCalls, resultMap, uiBlocksByCallId, isActive }) {
     const [isOpen, setIsOpen] = useState(isActive);
     const groupRef = useRef<HTMLDivElement>(null);
     const t = useI18n("chat");
@@ -1188,6 +1247,7 @@ const ToolCallGroup = memo<{
                 args={part.toolArgs}
                 status={part.status}
                 resultBlock={part.callId ? resultMap.get(part.callId) : undefined}
+                uiBlocks={part.callId ? uiBlocksByCallId.get(part.callId) : undefined}
               />
             ))}
           </div>

@@ -13,6 +13,30 @@ jest.mock("@/components/chat/markdown-viewer", () => ({
   MarkdownViewer: ({ content }: { content: string }) => <div>{content}</div>,
 }));
 
+jest.mock("next/dynamic", () => ({
+  __esModule: true,
+  default: () => {
+    const React = require("react");
+    const ViewBlock = require("@/components/views/view-block").default;
+    return function DynamicViewBlock(props: Record<string, unknown>) {
+      return React.createElement(ViewBlock, props);
+    };
+  },
+}));
+
+jest.mock("@/components/views/view-block", () => ({
+  __esModule: true,
+  default: ({
+    viewType,
+    payload,
+    title,
+  }: {
+    viewType: string;
+    payload: unknown;
+    title?: string;
+  }) => <div data-testid="view-block">{`${title ?? viewType}:${JSON.stringify(payload)}`}</div>,
+}));
+
 jest.mock("@/hooks/chat/use-typewriter", () => ({
   useTypewriter: (content: string) => ({ displayed: content }),
 }));
@@ -58,6 +82,35 @@ describe("AIResponseBubble debug panel", () => {
     expect(screen.getByTestId("terminal-stream")).toBeInTheDocument();
   });
 
+  it("hides terminal stream when a tool-linked ui block is present", () => {
+    const parts: MessageBlock[] = [
+      { id: "tool-1", type: "tool_call", callId: "call-1", toolName: "search_sdk", status: "success" },
+      {
+        id: "result-1",
+        type: "tool_result",
+        callId: "call-1",
+        toolName: "search_sdk",
+        status: "success",
+        result: { ok: true },
+      },
+      {
+        id: "ui-1",
+        type: "ui",
+        callId: "call-1",
+        toolName: "search_sdk",
+        viewType: "table.simple",
+        title: "Execution Table",
+        payload: { rows: [{ name: "Alice" }] },
+      },
+    ];
+
+    render(<AIResponseBubble parts={parts} isActive streamEnabled statusStage="render" />);
+
+    expect(screen.queryByTestId("terminal-stream")).not.toBeInTheDocument();
+    expect(screen.getByText("SDK Search")).toBeInTheDocument();
+    expect(screen.getByTestId("view-block")).toBeInTheDocument();
+  });
+
   it("groups active multi-tool calls into one live block", () => {
     const parts: MessageBlock[] = [
       { id: "tool-1", type: "tool_call", toolName: "search_sdk", status: "success" },
@@ -68,6 +121,42 @@ describe("AIResponseBubble debug panel", () => {
 
     expect(screen.getByText("LIVE")).toBeInTheDocument();
     expect(screen.getByText("toolGroup.skillSummary")).toBeInTheDocument();
+  });
+
+  it("renders tool-linked ui inside the matching tool block without duplicating the widget", () => {
+    const parts: MessageBlock[] = [
+      { id: "tool-1", type: "tool_call", callId: "call-ui-1", toolName: "search_sdk", status: "success" },
+      {
+        id: "result-ui-1",
+        type: "tool_result",
+        callId: "call-ui-1",
+        toolName: "search_sdk",
+        status: "success",
+        result: { summary: "done" },
+      },
+      {
+        id: "ui-linked-1",
+        type: "ui",
+        callId: "call-ui-1",
+        toolName: "search_sdk",
+        viewType: "table.simple",
+        title: "Execution Table",
+        payload: { rows: [{ name: "Alice" }] },
+      },
+      {
+        id: "ui-standalone-1",
+        type: "ui",
+        viewType: "chart.line",
+        title: "Standalone Chart",
+        payload: { points: [1, 2, 3] },
+      },
+    ];
+
+    render(<AIResponseBubble parts={parts} />);
+
+    expect(screen.getAllByTestId("view-block")).toHaveLength(2);
+    expect(screen.getByText('Execution Table:{"rows":[{"name":"Alice"}]}')).toBeInTheDocument();
+    expect(screen.getByText('Standalone Chart:{"points":[1,2,3]}')).toBeInTheDocument();
   });
 
   it("forwards repeat_count from status meta to terminal stream", () => {

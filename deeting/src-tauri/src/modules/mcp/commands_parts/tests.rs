@@ -41,6 +41,17 @@ mod tests {
             .ensure_local_source()
             .await
             .expect("ensure local source");
+        crate::modules::mcp::commands::runtime::sync_core_tool_registry_entries(&store)
+            .await
+            .expect("sync core tool registry");
+        store
+            .sync_all_mcp_tool_registry_entries()
+            .await
+            .expect("sync mcp tool registry");
+        store
+            .sync_all_assistant_registry_entries()
+            .await
+            .expect("sync assistant registry");
         store
     }
 
@@ -1085,7 +1096,7 @@ for raw_line in sys.stdin:
         let (base_url, server_handle) = start_mock_embedding_server(HashMap::new()).await;
         let provider_state = std::sync::Arc::new(create_test_provider_state(test_name, &base_url).await);
         let memory_state = std::sync::Arc::new(create_test_memory_state(test_name, 3).await);
-        let store = create_test_store(test_name).await;
+        let store = std::sync::Arc::new(create_test_store(test_name).await);
         let root = create_temp_skill_root(test_name);
         let skill_dir = root.join("weather-skill");
         std::fs::create_dir_all(&skill_dir).expect("create skill dir");
@@ -1121,7 +1132,7 @@ for raw_line in sys.stdin:
         let count = register_local_skills_from_scan_targets_inner(
             &[(root.clone(), "user_skill")],
             "",
-            &store,
+            store.clone(),
             provider_state.clone(),
             memory_state.clone(),
             true,
@@ -1426,7 +1437,7 @@ for raw_line in sys.stdin:
         let provider_state =
             std::sync::Arc::new(create_test_provider_state(test_name, &base_url).await);
         let memory_state = std::sync::Arc::new(create_test_memory_state(test_name, 3).await);
-        let store = create_test_store(test_name).await;
+        let store = std::sync::Arc::new(create_test_store(test_name).await);
         let root = create_temp_skill_root(test_name);
         let skill_dir = root.join("openclaw-weather");
         std::fs::create_dir_all(skill_dir.join("scripts")).expect("create scripts dir");
@@ -1455,7 +1466,7 @@ for raw_line in sys.stdin:
         let count = register_local_skills_from_scan_targets_inner(
             &[(root.clone(), "user_skill")],
             "",
-            &store,
+            store.clone(),
             provider_state.clone(),
             memory_state.clone(),
             true,
@@ -2583,6 +2594,14 @@ for raw_line in sys.stdin:
         assert_eq!(
             ui_block.get("viewType").and_then(|v| v.as_str()),
             Some("table.simple")
+        );
+        assert_eq!(
+            ui_block.get("callId").and_then(|v| v.as_str()),
+            Some("call_exec_1")
+        );
+        assert_eq!(
+            ui_block.get("toolName").and_then(|v| v.as_str()),
+            Some("execute_code_plan")
         );
         assert_eq!(
             ui_block
@@ -4506,7 +4525,7 @@ for raw_line in sys.stdin:
     #[tokio::test]
     async fn register_local_skills_from_scan_targets_inner_restores_deleted_skill_indices() {
         let test_name = "system-assets-self-heal-restore";
-        let store = create_test_store(test_name).await;
+        let store = std::sync::Arc::new(create_test_store(test_name).await);
         let (base_url, server_handle) = start_mock_embedding_server(HashMap::from([(
             "name: repair\ndescription: repair the local skill index".to_string(),
             vec![0.31, 0.32, 0.33],
@@ -4540,7 +4559,7 @@ for raw_line in sys.stdin:
         let indexed = register_local_skills_from_scan_targets_inner(
             &scan_targets,
             "/tmp/deeting-sdk",
-            &store,
+            store.clone(),
             provider_state.clone(),
             memory_state.clone(),
             true,
@@ -4582,7 +4601,7 @@ for raw_line in sys.stdin:
         let restored = register_local_skills_from_scan_targets_inner(
             &scan_targets,
             "/tmp/deeting-sdk",
-            &store,
+            store.clone(),
             provider_state.clone(),
             memory_state.clone(),
             true,
@@ -4617,7 +4636,7 @@ for raw_line in sys.stdin:
     #[tokio::test]
     async fn register_local_skills_from_scan_targets_inner_ignores_hidden_runtime_dirs() {
         let test_name = "system-assets-ignore-hidden-runtime";
-        let store = create_test_store(test_name).await;
+        let store = std::sync::Arc::new(create_test_store(test_name).await);
         let (base_url, server_handle) = start_mock_embedding_server(HashMap::from([(
             "name: visible\ndescription: visible skill".to_string(),
             vec![0.41, 0.42, 0.43],
@@ -4660,7 +4679,7 @@ for raw_line in sys.stdin:
         let indexed = register_local_skills_from_scan_targets_inner(
             &scan_targets,
             "/tmp/deeting-sdk",
-            &store,
+            store.clone(),
             provider_state,
             memory_state,
             true,

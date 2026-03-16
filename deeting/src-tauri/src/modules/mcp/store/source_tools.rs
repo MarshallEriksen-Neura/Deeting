@@ -67,6 +67,8 @@ impl McpStore {
         .execute(&self.pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
+        self.sync_local_skill_registry_entry_from_store(&normalized_skill_id)
+            .await?;
 
         Ok(())
     }
@@ -262,7 +264,39 @@ impl McpStore {
         tx.commit()
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
+        self.sync_local_skill_registry_entry_from_store(&normalized_skill_id)
+            .await?;
         Ok(bindings.len() as i64)
+    }
+
+    pub async fn list_local_skill_tool_bindings_for_skill(
+        &self,
+        skill_id: &str,
+    ) -> Result<Vec<LocalSkillToolBindingSnapshot>, McpError> {
+        let normalized_skill_id = skill_id.trim().to_string();
+        if normalized_skill_id.is_empty() {
+            return Err(McpError::validation("skill_id is required"));
+        }
+
+        let rows = sqlx::query(
+            r#"
+            SELECT binding_id, skill_id, callable_name, tool_name, description,
+                   binding_kind, input_schema_json, output_schema_json, entry_path, runtime,
+                   timeout_seconds, updated_at
+            FROM local_skill_tool_binding
+            WHERE user_id = ? AND skill_id = ?
+            ORDER BY tool_name ASC;
+            "#,
+        )
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(&normalized_skill_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        rows.into_iter()
+            .map(local_skill_tool_binding_from_row)
+            .collect::<Result<Vec<_>, _>>()
     }
 
     pub async fn list_enabled_local_skill_tool_bindings(
@@ -635,6 +669,8 @@ impl McpStore {
         .execute(&self.pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
+        self.sync_local_skill_registry_entry_from_store(&normalized_skill_id)
+            .await?;
 
         Ok(())
     }
@@ -686,6 +722,11 @@ impl McpStore {
             .execute(&self.pool)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
+        for skill_id in &normalized_skill_ids {
+            let _ = self
+                .update_local_capability_registry_states(skill_id, Some("disabled"), None, None)
+                .await?;
+        }
         Ok(result.rows_affected() as i64)
     }
 
@@ -712,6 +753,11 @@ impl McpStore {
             .execute(&self.pool)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
+        for skill_id in &normalized_skill_ids {
+            let _ = self
+                .sync_local_skill_registry_entry_from_store(skill_id)
+                .await?;
+        }
         Ok(result.rows_affected() as i64)
     }
 
@@ -1065,6 +1111,7 @@ impl McpStore {
                 .get_tool(&existing_id)
                 .await?
                 .ok_or_else(|| McpError::NotFound("tool missing after update".to_string()))?;
+            self.sync_mcp_tool_registry_entry(&updated).await?;
             return Ok(updated);
         }
 
@@ -1073,9 +1120,12 @@ impl McpStore {
             .find_tool_id_by_source_identifier(tool.source_id.as_str(), tool.identifier.as_deref())
             .await?
             .ok_or_else(|| McpError::NotFound("tool missing after insert".to_string()))?;
-        self.get_tool(&created)
+        let tool = self
+            .get_tool(&created)
             .await?
-            .ok_or_else(|| McpError::NotFound("tool missing after insert".to_string()))
+            .ok_or_else(|| McpError::NotFound("tool missing after insert".to_string()))?;
+        self.sync_mcp_tool_registry_entry(&tool).await?;
+        Ok(tool)
     }
 
     pub async fn set_tool_status(
@@ -1101,6 +1151,9 @@ impl McpStore {
         .execute(&self.pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
+        if let Some(tool) = self.get_tool(id).await? {
+            self.sync_mcp_tool_registry_entry(&tool).await?;
+        }
         Ok(())
     }
 
@@ -1451,11 +1504,23 @@ impl McpStore {
     }
 
     pub async fn delete_tools_by_source_id(&self, source_id: &str) -> Result<i64, McpError> {
+        let tool_ids = self
+            .list_tools()
+            .await?
+            .into_iter()
+            .filter(|tool| tool.source_id.as_deref() == Some(source_id))
+            .map(|tool| tool.id)
+            .collect::<Vec<_>>();
         let result = sqlx::query("DELETE FROM mcp_tools WHERE source_id = ?;")
             .bind(source_id)
             .execute(&self.pool)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
+        for tool_id in tool_ids {
+            let _ = self
+                .delete_local_capability_registry_entries(&tool_id)
+                .await?;
+        }
         Ok(result.rows_affected() as i64)
     }
 
@@ -1477,6 +1542,11 @@ impl McpStore {
             .execute(&self.pool)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
+        for tool_id in tool_ids {
+            let _ = self
+                .delete_local_capability_registry_entries(tool_id)
+                .await?;
+        }
         Ok(result.rows_affected() as i64)
     }
 
@@ -1491,6 +1561,12 @@ impl McpStore {
 
     pub async fn delete_local_skill_install(&self, skill_id: &str) -> Result<(), McpError> {
         let mut tx = self.begin_write().await?;
+        sqlx::query("DELETE FROM local_capability_registry WHERE user_id = ? AND package_id = ?;")
+            .bind(LOCAL_DESKTOP_USER_ID)
+            .bind(skill_id)
+            .execute(tx.as_mut())
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
         sqlx::query("DELETE FROM local_skill_tool_binding WHERE user_id = ? AND skill_id = ?;")
             .bind(LOCAL_DESKTOP_USER_ID)
             .bind(skill_id)

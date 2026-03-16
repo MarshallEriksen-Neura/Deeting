@@ -57,6 +57,7 @@ const LOCAL_CONVERSATION_SUMMARY_MIN_INTERVAL_SECONDS: i64 = 120;
 const LOCAL_CONVERSATION_SUMMARY_IDLE_SECONDS: i64 = 600;
 const LOCAL_CONVERSATION_IDLE_CHECK_BATCH_SIZE: i64 = 50;
 const LOCAL_PERIODIC_TASK_MAX_ERROR_CHARS: usize = 2000;
+const LOCAL_CAPABILITY_REGISTRY_GENERATION_KEY: &str = "local_capability_registry_generation";
 
 pub struct McpStore {
     pub(crate) pool: SqlitePool,
@@ -131,7 +132,55 @@ pub struct LocalSkillToolBindingUpsert {
     pub timeout_seconds: u64,
 }
 
+#[derive(Debug, Clone)]
+pub struct LocalCapabilityRegistrySnapshot {
+    pub capability_id: String,
+    pub source_kind: String,
+    pub asset_kind: String,
+    pub package_id: String,
+    pub package_version: Option<String>,
+    pub title: String,
+    pub description: String,
+    pub tool_name: Option<String>,
+    pub callable_name: Option<String>,
+    pub binding_kind: Option<String>,
+    pub execution_surface: String,
+    pub runtime: Option<String>,
+    pub entry_path: Option<String>,
+    pub is_direct_callable: bool,
+    pub activation_state: String,
+    pub runtime_state: String,
+    pub search_index_state: String,
+    pub generation: i64,
+    pub descriptor_json: serde_json::Value,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct LocalCapabilityRegistryUpsert {
+    pub capability_id: String,
+    pub source_kind: String,
+    pub asset_kind: String,
+    pub package_id: String,
+    pub package_version: Option<String>,
+    pub title: String,
+    pub description: String,
+    pub tool_name: Option<String>,
+    pub callable_name: Option<String>,
+    pub binding_kind: Option<String>,
+    pub execution_surface: String,
+    pub runtime: Option<String>,
+    pub entry_path: Option<String>,
+    pub is_direct_callable: bool,
+    pub activation_state: String,
+    pub runtime_state: String,
+    pub search_index_state: String,
+    pub generation: i64,
+    pub descriptor_json: String,
+}
+
 mod assistants;
+mod capability_registry;
 mod conversations;
 mod helpers;
 mod source_tools;
@@ -474,6 +523,59 @@ impl McpStore {
             r#"
             CREATE INDEX IF NOT EXISTS idx_local_skill_tool_binding_skill_id
             ON local_skill_tool_binding(user_id, skill_id);
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS local_capability_registry (
+              user_id TEXT NOT NULL,
+              capability_id TEXT NOT NULL,
+              source_kind TEXT NOT NULL,
+              asset_kind TEXT NOT NULL,
+              package_id TEXT NOT NULL,
+              package_version TEXT,
+              title TEXT NOT NULL,
+              description TEXT NOT NULL,
+              tool_name TEXT,
+              callable_name TEXT,
+              binding_kind TEXT,
+              execution_surface TEXT NOT NULL,
+              runtime TEXT,
+              entry_path TEXT,
+              is_direct_callable INTEGER NOT NULL DEFAULT 0,
+              activation_state TEXT NOT NULL,
+              runtime_state TEXT NOT NULL,
+              search_index_state TEXT NOT NULL,
+              generation INTEGER NOT NULL DEFAULT 0,
+              descriptor_json TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              PRIMARY KEY (user_id, capability_id)
+            );
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_local_capability_registry_package
+            ON local_capability_registry(user_id, package_id);
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_local_capability_registry_source_kind
+            ON local_capability_registry(user_id, source_kind, asset_kind);
             "#,
         )
         .execute(&self.pool)

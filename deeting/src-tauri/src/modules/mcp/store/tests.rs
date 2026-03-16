@@ -1,5 +1,6 @@
 use super::McpStore;
 use crate::modules::mcp::types::LocalGatewayLogQuery;
+use serde_json::json;
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -251,6 +252,111 @@ async fn init_drops_skill_refs_without_retargeting_assistant_install() {
     .execute(&store.pool)
     .await
     .expect("assistant_install should still reference assistant_version");
+}
+
+#[tokio::test]
+async fn local_capability_registry_roundtrips_and_cleans_up_with_skill_install() {
+    let store = create_test_store("local-capability-registry").await;
+    store.init().await.expect("init store");
+
+    store
+        .upsert_local_skill_install(
+            "skill.alpha",
+            Some("1.0.0"),
+            Some("local"),
+            r#"{"id":"skill.alpha","name":"Skill Alpha"}"#,
+            "C:/skills/skill.alpha",
+        )
+        .await
+        .expect("insert local skill install");
+
+    let generation = store
+        .next_local_capability_registry_generation()
+        .await
+        .expect("next generation");
+    assert_eq!(generation, 1);
+
+    store
+        .replace_local_capability_registry_entries(
+            "skill.alpha",
+            &[
+                crate::modules::mcp::store::LocalCapabilityRegistryUpsert {
+                    capability_id: "skill_bundle::skill.alpha".to_string(),
+                    source_kind: "user".to_string(),
+                    asset_kind: "skill_bundle".to_string(),
+                    package_id: "skill.alpha".to_string(),
+                    package_version: Some("1.0.0".to_string()),
+                    title: "Skill Alpha".to_string(),
+                    description: "Bundle entry".to_string(),
+                    tool_name: None,
+                    callable_name: None,
+                    binding_kind: None,
+                    execution_surface: "recipe".to_string(),
+                    runtime: Some("local".to_string()),
+                    entry_path: None,
+                    is_direct_callable: false,
+                    activation_state: "enabled".to_string(),
+                    runtime_state: "registered".to_string(),
+                    search_index_state: "pending".to_string(),
+                    generation,
+                    descriptor_json: json!({
+                        "capability_id": "skill_bundle::skill.alpha",
+                        "asset_kind": "skill_bundle"
+                    })
+                    .to_string(),
+                },
+                crate::modules::mcp::store::LocalCapabilityRegistryUpsert {
+                    capability_id: "skill_tool::skill.alpha::install".to_string(),
+                    source_kind: "user".to_string(),
+                    asset_kind: "skill_tool".to_string(),
+                    package_id: "skill.alpha".to_string(),
+                    package_version: Some("1.0.0".to_string()),
+                    title: "Skill Alpha / install".to_string(),
+                    description: "Install skill alpha".to_string(),
+                    tool_name: Some("install".to_string()),
+                    callable_name: Some("skill.skill.alpha.install".to_string()),
+                    binding_kind: Some("deeting_tool".to_string()),
+                    execution_surface: "desktop_capability".to_string(),
+                    runtime: Some("python".to_string()),
+                    entry_path: Some("C:/skills/skill.alpha/main.py".to_string()),
+                    is_direct_callable: true,
+                    activation_state: "enabled".to_string(),
+                    runtime_state: "registered".to_string(),
+                    search_index_state: "pending".to_string(),
+                    generation,
+                    descriptor_json: json!({
+                        "capability_id": "skill_tool::skill.alpha::install",
+                        "callable_name": "skill.skill.alpha.install"
+                    })
+                    .to_string(),
+                },
+            ],
+        )
+        .await
+        .expect("replace capability registry entries");
+
+    let entries = store
+        .list_local_capability_registry_entries_for_package("skill.alpha")
+        .await
+        .expect("list capability registry entries");
+    assert_eq!(entries.len(), 2);
+    assert!(entries.iter().any(|entry| {
+        entry.asset_kind == "skill_tool"
+            && entry.callable_name.as_deref() == Some("skill.skill.alpha.install")
+            && entry.is_direct_callable
+    }));
+    assert!(entries.iter().all(|entry| entry.generation == generation));
+
+    store
+        .delete_local_skill_install("skill.alpha")
+        .await
+        .expect("delete local skill install");
+
+    let remaining = store
+        .list_local_capability_registry_entries_for_package("skill.alpha")
+        .await
+        .expect("list remaining capability registry entries");
+    assert!(remaining.is_empty());
 }
 
 #[tokio::test]

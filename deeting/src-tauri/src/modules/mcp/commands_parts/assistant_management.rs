@@ -160,7 +160,18 @@ pub async fn delete_local_assistant(state: State<'_, AppState>, id: String) -> R
         .store
         .delete_local_assistant(&id)
         .await
-        .map_err(to_string)
+        .map_err(to_string)?;
+    let _ = state
+        .mcp
+        .store
+        .delete_local_capability_registry_entries(id.trim())
+        .await;
+    let _ = state
+        .memory
+        .service
+        .delete_assets_by_ids(&[id.trim().to_string()])
+        .await;
+    Ok(())
 }
 
 #[tauri::command]

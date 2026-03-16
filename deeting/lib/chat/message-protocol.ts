@@ -89,6 +89,8 @@ export interface ErrorBlock extends BaseBlock {
 
 export interface UIBlock extends BaseBlock {
   type: 'ui'
+  callId?: string
+  toolName?: string
   viewType: string
   payload: unknown
   title?: string

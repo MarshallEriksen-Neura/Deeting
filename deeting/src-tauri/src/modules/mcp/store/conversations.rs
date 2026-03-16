@@ -997,6 +997,7 @@ impl McpStore {
             &now,
         )
         .await?;
+        self.sync_assistant_registry_entry(&id).await?;
 
         Ok(id)
     }
@@ -1101,6 +1102,7 @@ impl McpStore {
             &now,
         )
         .await?;
+        self.sync_assistant_registry_entry(id).await?;
 
         self.get_local_assistant(id)
             .await?
@@ -1139,6 +1141,7 @@ impl McpStore {
             return Err(McpError::NotFound("assistant not found".to_string()));
         }
         self.delete_assistant_messages(id).await?;
+        let _ = self.delete_local_capability_registry_entries(id).await?;
         Ok(())
     }
 

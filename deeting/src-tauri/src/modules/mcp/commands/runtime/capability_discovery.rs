@@ -296,7 +296,7 @@ fn rank_registry_entry(
         lexical_score,
         rank_score,
     );
-    if availability.is_direct_callable() && asset_type == "tool" {
+    if availability.is_direct_callable() && matches!(asset_type, "tool" | "skill_tool") {
         if let Some(contract) = build_tool_contract(
             name,
             description,
@@ -359,6 +359,17 @@ fn materialize_ranked_entry(
 
     if let Some(object) = value.as_object_mut() {
         if let Some(metadata) = asset_metadata {
+            for field in [
+                "activation_state",
+                "runtime_state",
+                "search_index_state",
+                "generation",
+                "execution_surface",
+            ] {
+                if let Some(value) = metadata.get(field) {
+                    object.insert(field.to_string(), value.clone());
+                }
+            }
             if let Some(binding_id) = metadata.get("binding_id") {
                 object.insert("binding_id".to_string(), binding_id.clone());
             }
@@ -411,6 +422,18 @@ fn materialize_ranked_entry(
                 };
                 if let Some(blocking_reason) = blocking_reason {
                     object.insert("blocking_reason".to_string(), blocking_reason);
+                }
+            }
+            if let Some(status) = object.get_mut("status").and_then(Value::as_object_mut) {
+                for field in [
+                    "activation_state",
+                    "runtime_state",
+                    "search_index_state",
+                    "generation",
+                ] {
+                    if let Some(value) = metadata.get(field) {
+                        status.insert(field.to_string(), value.clone());
+                    }
                 }
             }
         }

@@ -167,3 +167,76 @@ pub(crate) fn code_mode_core_tools() -> Vec<CoreToolContract> {
         },
     ]
 }
+
+fn core_tool_execution_surface(tool_name: &str) -> &'static str {
+    match tool_name {
+        "execute_code_plan" => "sandbox",
+        _ => "host",
+    }
+}
+
+fn core_tool_risk_runtime_state(tool_name: &str) -> &'static str {
+    let _ = tool_name;
+    "ready"
+}
+
+pub(crate) fn build_core_tool_registry_entries(
+    generation: i64,
+) -> Vec<crate::modules::mcp::store::LocalCapabilityRegistryUpsert> {
+    code_mode_core_tools()
+        .into_iter()
+        .map(
+            |tool| crate::modules::mcp::store::LocalCapabilityRegistryUpsert {
+                capability_id: format!("core.{}", tool.name),
+                source_kind: "core".to_string(),
+                asset_kind: "core_tool".to_string(),
+                package_id: "code_mode.core".to_string(),
+                package_version: Some("1".to_string()),
+                title: tool.name.to_string(),
+                description: tool.description.to_string(),
+                tool_name: Some(tool.name.to_string()),
+                callable_name: None,
+                binding_kind: None,
+                execution_surface: core_tool_execution_surface(tool.name).to_string(),
+                runtime: Some(core_tool_execution_surface(tool.name).to_string()),
+                entry_path: None,
+                is_direct_callable: true,
+                activation_state: "enabled".to_string(),
+                runtime_state: core_tool_risk_runtime_state(tool.name).to_string(),
+                search_index_state: "not_required".to_string(),
+                generation,
+                descriptor_json: json!({
+                    "capability_id": format!("core.{}", tool.name),
+                    "tool_name": tool.name,
+                    "description": tool.description,
+                    "input_schema": tool.input_schema,
+                    "output_schema": tool.output_schema,
+                    "permission_scope": tool.permission_scope,
+                    "read_only": tool.read_only,
+                    "mutating": tool.mutating,
+                    "risk_level": tool.risk_level,
+                    "example_arguments": tool.example_arguments,
+                    "activation_state": "enabled",
+                    "runtime_state": core_tool_risk_runtime_state(tool.name),
+                    "search_index_state": "not_required",
+                    "execution_surface": core_tool_execution_surface(tool.name),
+                })
+                .to_string(),
+            },
+        )
+        .collect()
+}
+
+pub(crate) async fn sync_core_tool_registry_entries(
+    store: &crate::modules::mcp::store::McpStore,
+) -> Result<i64, String> {
+    let generation = store
+        .next_local_capability_registry_generation()
+        .await
+        .map_err(|err| err.to_string())?;
+    let entries = build_core_tool_registry_entries(generation);
+    store
+        .replace_local_capability_registry_entries("code_mode.core", &entries)
+        .await
+        .map_err(|err| err.to_string())
+}

@@ -4,12 +4,12 @@ use tauri::{AppHandle, State};
 use crate::modules::mcp::commands::assistant_management_impl::index_local_assistants;
 use crate::modules::mcp::commands::common_impl::to_string;
 use crate::modules::mcp::commands::skill_registry_impl::register_local_skills_inner;
-use crate::modules::mcp::commands::source_management_impl::{
-    reset_local_asset_catalog_then_sync_inner,
-};
+use crate::modules::mcp::commands::source_management_impl::reset_local_asset_catalog_then_sync_inner;
 use crate::modules::mcp::types::{
-    LocalMaintenanceActionRequest, LocalMaintenanceLogItem, LocalMaintenanceLogListResponse,
-    LocalMaintenanceLogQuery, LocalSystemAssetRepairResponse,
+    LocalCapabilityRegistryDiagnosticsBucket, LocalCapabilityRegistryDiagnosticsItem,
+    LocalCapabilityRegistryDiagnosticsResponse, LocalMaintenanceActionRequest,
+    LocalMaintenanceLogItem, LocalMaintenanceLogListResponse, LocalMaintenanceLogQuery,
+    LocalSystemAssetRepairResponse,
 };
 use crate::state::AppState;
 
@@ -61,6 +61,171 @@ pub async fn list_local_maintenance_logs(
         .list_local_maintenance_logs(query)
         .await
         .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn get_local_capability_registry_diagnostics(
+    state: State<'_, AppState>,
+) -> Result<LocalCapabilityRegistryDiagnosticsResponse, String> {
+    build_local_capability_registry_diagnostics(state.inner()).await
+}
+
+pub(crate) async fn build_local_capability_registry_diagnostics(
+    state: &AppState,
+) -> Result<LocalCapabilityRegistryDiagnosticsResponse, String> {
+    let entries = state
+        .mcp
+        .store
+        .list_local_capability_registry_entries()
+        .await
+        .map_err(to_string)?;
+    let memory_assets = state
+        .memory
+        .service
+        .list_assets_catalog()
+        .await
+        .map_err(to_string)?;
+    let current_generation = state
+        .mcp
+        .store
+        .current_local_capability_registry_generation()
+        .await
+        .map_err(to_string)?;
+    let read_path_enabled = true;
+    let registry_mcp_count = entries
+        .iter()
+        .filter(|entry| entry.source_kind == "mcp")
+        .count();
+    let registry_skill_packages = entries
+        .iter()
+        .filter(|entry| matches!(entry.asset_kind.as_str(), "skill_bundle" | "skill_tool"))
+        .map(|entry| entry.package_id.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    let registry_core_count = entries
+        .iter()
+        .filter(|entry| entry.asset_kind == "core_tool")
+        .count();
+    let local_skill_install_count = state
+        .mcp
+        .store
+        .list_local_skill_installs()
+        .await
+        .map_err(to_string)?
+        .len();
+    let mcp_tool_count = state.mcp.store.list_tools().await.map_err(to_string)?.len();
+    let core_tool_count =
+        crate::modules::mcp::commands::runtime::build_core_tool_registry_entries(0).len();
+    let assistant_count = state
+        .mcp
+        .store
+        .list_local_assistants()
+        .await
+        .map_err(to_string)?
+        .len();
+    let registry_assistant_count = entries
+        .iter()
+        .filter(|entry| entry.source_kind == "assistant")
+        .count();
+    let legacy_only_assets = memory_assets
+        .iter()
+        .filter_map(|asset| {
+            let asset_id = asset.get("id").and_then(Value::as_str)?.trim().to_string();
+            if asset_id.is_empty() {
+                return None;
+            }
+            let source_type = asset
+                .get("source_type")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let asset_type = asset
+                .get("asset_type")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let is_registry_covered = match (source_type, asset_type) {
+                ("builtin" | "user", "skill" | "skill_tool") => entries
+                    .iter()
+                    .any(|entry| entry.capability_id == asset_id || entry.package_id == asset_id),
+                ("mcp", "tool") => entries.iter().any(|entry| entry.capability_id == asset_id),
+                ("code_mode_core", "tool") => entries.iter().any(|entry| {
+                    entry.asset_kind == "core_tool"
+                        && entry
+                            .tool_name
+                            .as_deref()
+                            .map(|name| name == asset["name"].as_str().unwrap_or_default())
+                            .unwrap_or(false)
+                }),
+                _ => true,
+            };
+            (!is_registry_covered).then_some(asset_id)
+        })
+        .collect::<Vec<_>>();
+    let mut migration_gaps = Vec::new();
+    if registry_core_count < core_tool_count {
+        migration_gaps.push("core".to_string());
+    }
+    if registry_mcp_count < mcp_tool_count {
+        migration_gaps.push("mcp".to_string());
+    }
+    if registry_skill_packages.len() < local_skill_install_count {
+        migration_gaps.push("skill".to_string());
+    }
+    if registry_assistant_count < assistant_count {
+        migration_gaps.push("assistant".to_string());
+    }
+
+    Ok(LocalCapabilityRegistryDiagnosticsResponse {
+        read_path_enabled,
+        current_generation,
+        total: entries.len() as i64,
+        direct_callable_count: entries
+            .iter()
+            .filter(|entry| entry.is_direct_callable)
+            .count() as i64,
+        source_kind_counts: build_registry_buckets(
+            entries.iter().map(|entry| entry.source_kind.as_str()),
+        ),
+        memory_source_type_counts: build_registry_buckets(
+            memory_assets
+                .iter()
+                .filter_map(|asset| asset.get("source_type").and_then(Value::as_str)),
+        ),
+        asset_kind_counts: build_registry_buckets(
+            entries.iter().map(|entry| entry.asset_kind.as_str()),
+        ),
+        activation_state_counts: build_registry_buckets(
+            entries.iter().map(|entry| entry.activation_state.as_str()),
+        ),
+        runtime_state_counts: build_registry_buckets(
+            entries.iter().map(|entry| entry.runtime_state.as_str()),
+        ),
+        search_index_state_counts: build_registry_buckets(
+            entries
+                .iter()
+                .map(|entry| entry.search_index_state.as_str()),
+        ),
+        legacy_only_asset_count: legacy_only_assets.len() as i64,
+        migration_gaps,
+        items: entries
+            .into_iter()
+            .map(|entry| LocalCapabilityRegistryDiagnosticsItem {
+                capability_id: entry.capability_id,
+                source_kind: entry.source_kind,
+                asset_kind: entry.asset_kind,
+                package_id: entry.package_id,
+                package_version: entry.package_version,
+                title: entry.title,
+                tool_name: entry.tool_name,
+                callable_name: entry.callable_name,
+                execution_surface: entry.execution_surface,
+                activation_state: entry.activation_state,
+                runtime_state: entry.runtime_state,
+                search_index_state: entry.search_index_state,
+                generation: entry.generation,
+                is_direct_callable: entry.is_direct_callable,
+                updated_at: entry.updated_at,
+            })
+            .collect(),
+    })
 }
 
 async fn execute_repair_action(
@@ -161,4 +326,39 @@ async fn persist_action_log(
         .create_local_maintenance_log(kind, status, &message, details.as_ref())
         .await
         .map_err(to_string)
+}
+
+fn build_registry_buckets<'a>(
+    values: impl Iterator<Item = &'a str>,
+) -> Vec<LocalCapabilityRegistryDiagnosticsBucket> {
+    let mut counts = std::collections::BTreeMap::<String, i64>::new();
+    for value in values {
+        let normalized = value.trim();
+        if normalized.is_empty() {
+            continue;
+        }
+        *counts.entry(normalized.to_string()).or_insert(0) += 1;
+    }
+    counts
+        .into_iter()
+        .map(|(key, count)| LocalCapabilityRegistryDiagnosticsBucket { key, count })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_registry_buckets_counts_sorted_values() {
+        let buckets =
+            build_registry_buckets(["pending", "registered", "pending", "ready"].into_iter());
+        assert_eq!(buckets.len(), 3);
+        assert_eq!(buckets[0].key, "pending");
+        assert_eq!(buckets[0].count, 2);
+        assert_eq!(buckets[1].key, "ready");
+        assert_eq!(buckets[1].count, 1);
+        assert_eq!(buckets[2].key, "registered");
+        assert_eq!(buckets[2].count, 1);
+    }
 }

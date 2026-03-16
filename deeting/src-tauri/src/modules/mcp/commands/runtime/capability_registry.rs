@@ -1,8 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
-use super::core_tool_contracts::build_core_tool_assets;
 use super::tool_resolution::ToolAvailabilityClass;
 use super::{
     build_db_tool_availability_catalog, fallback_local_tool_availability, ToolAvailability,
@@ -57,7 +56,40 @@ pub(crate) async fn build_capability_registry(
         .unwrap_or_default();
     let tool_contracts = load_tool_contract_sources(mcp_store).await;
     let mut assets = memory_store.list_assets_catalog().await.unwrap_or_default();
-    assets.extend(build_core_tool_assets());
+    let registry_entries = mcp_store
+        .list_local_capability_registry_entries()
+        .await
+        .unwrap_or_default();
+    let registry_skill_package_ids = registry_entries
+        .iter()
+        .filter(|entry| matches!(entry.asset_kind.as_str(), "skill_bundle" | "skill_tool"))
+        .map(|entry| entry.package_id.clone())
+        .collect::<HashSet<_>>();
+    let registry_mcp_tool_ids = registry_entries
+        .iter()
+        .filter(|entry| entry.asset_kind == "mcp_tool")
+        .map(|entry| entry.package_id.clone())
+        .collect::<HashSet<_>>();
+    let registry_core_tool_names = registry_entries
+        .iter()
+        .filter(|entry| entry.asset_kind == "core_tool")
+        .filter_map(|entry| entry.tool_name.clone())
+        .collect::<HashSet<_>>();
+    let registry_assistant_ids = registry_entries
+        .iter()
+        .filter(|entry| entry.asset_kind == "assistant")
+        .map(|entry| entry.package_id.clone())
+        .collect::<HashSet<_>>();
+    assets
+        .retain(|asset| !replaced_by_local_capability_registry(asset, &registry_skill_package_ids));
+    assets.retain(|asset| !replaced_by_db_mcp_tool(asset, &registry_mcp_tool_ids));
+    assets.retain(|asset| !replaced_by_core_tool_registry(asset, &registry_core_tool_names));
+    assets.retain(|asset| !replaced_by_assistant_registry(asset, &registry_assistant_ids));
+    assets.extend(
+        registry_entries
+            .iter()
+            .map(local_capability_registry_entry_to_asset),
+    );
     let current_user =
         crate::modules::mcp::desktop_capabilities::desktop_current_user_info_optional().await;
 
@@ -107,6 +139,301 @@ pub(crate) async fn build_capability_registry(
         entries,
         enabled_assistant_count: enabled_assistant_ids.len(),
     }
+}
+
+fn replaced_by_local_capability_registry(
+    asset: &Value,
+    registry_package_ids: &HashSet<String>,
+) -> bool {
+    let asset_type = asset
+        .get("asset_type")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if !matches!(asset_type, "skill" | "skill_tool") {
+        return false;
+    }
+    let source_type = asset
+        .get("source_type")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if !matches!(source_type, "builtin" | "user") {
+        return false;
+    }
+    let package_id = asset
+        .get("pkg_name")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            asset
+                .get("metadata")
+                .and_then(|metadata| metadata.get("skill_id"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+        });
+    package_id
+        .map(|value| registry_package_ids.contains(value))
+        .unwrap_or(false)
+}
+
+fn local_capability_registry_entry_to_asset(
+    entry: &crate::modules::mcp::store::LocalCapabilityRegistrySnapshot,
+) -> Value {
+    let descriptor = &entry.descriptor_json;
+    let restricted = descriptor
+        .get("restricted")
+        .and_then(Value::as_bool)
+        .or_else(|| {
+            descriptor
+                .get("manifest")
+                .and_then(|manifest| manifest.get("restricted"))
+                .and_then(Value::as_bool)
+        })
+        .unwrap_or(false);
+    let allowed_roles = descriptor
+        .get("allowed_roles")
+        .and_then(Value::as_array)
+        .cloned()
+        .or_else(|| {
+            descriptor
+                .get("manifest")
+                .and_then(|manifest| manifest.get("allowed_roles"))
+                .and_then(Value::as_array)
+                .cloned()
+        })
+        .unwrap_or_default();
+
+    match entry.asset_kind.as_str() {
+        "assistant" => json!({
+            "id": entry.capability_id,
+            "name": entry.title,
+            "description": entry.description,
+            "asset_type": "assistant",
+            "source_type": "local_assistant",
+            "pkg_name": entry.package_id,
+            "metadata": descriptor,
+        }),
+        "mcp_tool" => json!({
+            "id": entry.capability_id,
+            "name": entry.tool_name.as_deref().unwrap_or(entry.title.as_str()),
+            "description": entry.description,
+            "asset_type": "tool",
+            "source_type": "mcp",
+            "pkg_name": descriptor
+                .get("source_id")
+                .and_then(Value::as_str)
+                .map(|value| format!("mcp.{}", value))
+                .unwrap_or_else(|| "mcp.local".to_string()),
+            "metadata": descriptor,
+        }),
+        "core_tool" => json!({
+            "id": entry.capability_id,
+            "name": entry.tool_name.as_deref().unwrap_or(entry.title.as_str()),
+            "description": entry.description,
+            "asset_type": "tool",
+            "source_type": "code_mode_core",
+            "pkg_name": "code_mode.core",
+            "metadata": descriptor,
+        }),
+        "skill_tool" => {
+            let binding_id = descriptor
+                .get("binding_id")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or(entry.capability_id.as_str());
+            let callable_name = entry
+                .callable_name
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+                .or_else(|| descriptor.get("callable_name").and_then(Value::as_str))
+                .unwrap_or(entry.title.as_str());
+            let tool_name = entry
+                .tool_name
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+                .or_else(|| descriptor.get("tool_name").and_then(Value::as_str))
+                .unwrap_or(callable_name);
+            json!({
+                "id": binding_id,
+                "name": callable_name,
+                "description": entry.description,
+                "asset_type": "skill_tool",
+                "source_type": entry.source_kind,
+                "pkg_name": entry.package_id,
+                "restricted": restricted,
+                "allowed_roles": allowed_roles,
+                "metadata": {
+                    "asset_namespace": "skill",
+                    "registry_capability_id": entry.capability_id,
+                    "binding_id": binding_id,
+                    "binding_kind": entry.binding_kind,
+                    "skill_id": entry.package_id,
+                    "tool_name": tool_name,
+                    "callable_name": callable_name,
+                    "execution_lane": "skill_runtime",
+                    "execution_surface": entry.execution_surface,
+                    "runtime": entry.runtime,
+                    "entry_path": entry.entry_path,
+                    "input_schema": descriptor.get("input_schema").cloned(),
+                    "output_schema": descriptor.get("output_schema").cloned(),
+                    "timeout_seconds": descriptor.get("timeout_seconds").cloned(),
+                    "compatibility": descriptor.get("compatibility").cloned().or_else(|| {
+                        descriptor
+                            .get("manifest")
+                            .and_then(|manifest| manifest.get("compatibility"))
+                            .cloned()
+                    }),
+                    "restricted": restricted,
+                    "allowed_roles": allowed_roles,
+                    "activation_state": entry.activation_state,
+                    "runtime_state": entry.runtime_state,
+                    "search_index_state": entry.search_index_state,
+                    "generation": entry.generation,
+                }
+            })
+        }
+        _ => {
+            let asset_id = descriptor
+                .get("skill_id")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or(entry.package_id.as_str());
+            let description = descriptor
+                .get("description")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+                .unwrap_or_else(|| entry.description.clone());
+            let mut metadata = descriptor.get("manifest").cloned().unwrap_or_else(|| {
+                json!({
+                    "id": entry.package_id,
+                    "name": entry.title,
+                    "description": entry.description,
+                })
+            });
+            if let Some(object) = metadata.as_object_mut() {
+                object.insert(
+                    "registry_capability_id".to_string(),
+                    json!(entry.capability_id.clone()),
+                );
+                object.insert(
+                    "activation_state".to_string(),
+                    json!(entry.activation_state.clone()),
+                );
+                object.insert(
+                    "runtime_state".to_string(),
+                    json!(entry.runtime_state.clone()),
+                );
+                object.insert(
+                    "search_index_state".to_string(),
+                    json!(entry.search_index_state.clone()),
+                );
+                object.insert("generation".to_string(), json!(entry.generation));
+            }
+            json!({
+                "id": asset_id,
+                "name": entry.title,
+                "description": description,
+                "asset_type": "skill",
+                "source_type": entry.source_kind,
+                "pkg_name": entry.package_id,
+                "restricted": restricted,
+                "allowed_roles": allowed_roles,
+                "metadata": metadata,
+            })
+        }
+    }
+}
+
+fn replaced_by_db_mcp_tool(asset: &Value, db_mcp_tool_ids: &HashSet<String>) -> bool {
+    let asset_type = asset
+        .get("asset_type")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if asset_type != "tool" {
+        return false;
+    }
+    let source_type = asset
+        .get("source_type")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if source_type != "mcp" {
+        return false;
+    }
+    let id = asset.get("id").and_then(Value::as_str).unwrap_or_default();
+    db_mcp_tool_ids.contains(id)
+}
+
+fn replaced_by_core_tool_registry(asset: &Value, core_tool_names: &HashSet<String>) -> bool {
+    let asset_type = asset
+        .get("asset_type")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if asset_type != "tool" {
+        return false;
+    }
+    let source_type = asset
+        .get("source_type")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if source_type != "code_mode_core" {
+        return false;
+    }
+    let name = asset
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    core_tool_names.contains(name)
+}
+
+fn replaced_by_assistant_registry(asset: &Value, assistant_ids: &HashSet<String>) -> bool {
+    let asset_type = asset
+        .get("asset_type")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if asset_type != "assistant" {
+        return false;
+    }
+    let source_type = asset
+        .get("source_type")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if source_type != "local_assistant" {
+        return false;
+    }
+    let id = asset.get("id").and_then(Value::as_str).unwrap_or_default();
+    assistant_ids.contains(id)
+}
+
+fn db_mcp_tool_to_asset(tool: &crate::modules::mcp::types::McpTool) -> Value {
+    json!({
+        "id": tool.id,
+        "name": tool.name,
+        "description": tool.description,
+        "asset_type": "tool",
+        "source_type": "mcp",
+        "pkg_name": tool
+            .source_id
+            .as_deref()
+            .map(|source_id| format!("mcp.{}", source_id))
+            .unwrap_or_else(|| "mcp.local".to_string()),
+        "metadata": {
+            "asset_namespace": "user_mcp",
+            "source_id": tool.source_id,
+            "identifier": tool.identifier,
+            "transport": tool.transport_label(),
+            "remote_sse_url": tool.remote_sse_url(),
+            "remote_tool_name": tool.remote_tool_name(),
+            "remote_server_name": tool.remote_server_name(),
+            "capabilities": tool.capabilities,
+            "read_only": tool.is_read_only,
+            "command": tool.command,
+            "args": tool.args,
+            "status": tool.status.as_str(),
+        }
+    })
 }
 
 fn asset_visible_to_desktop_user(
@@ -218,6 +545,11 @@ impl RegistryAvailability {
 
         match asset_type {
             "skill_tool" => {
+                if let Some(availability) =
+                    local_skill_registry_availability_override(asset_metadata)
+                {
+                    return availability;
+                }
                 let explicit_skill_id = asset_metadata
                     .and_then(|value| value.get("skill_id"))
                     .and_then(Value::as_str)
@@ -247,6 +579,11 @@ impl RegistryAvailability {
                 }
             }
             "tool" => {
+                if source_type == "mcp" {
+                    if let Some(availability) = mcp_registry_availability_override(asset_metadata) {
+                        return availability;
+                    }
+                }
                 if let Some(skill_id) = pkg_name.filter(|value| value.starts_with("skill.")) {
                     if !enabled_skill_ids.contains(skill_id) {
                         return Self {
@@ -269,6 +606,10 @@ impl RegistryAvailability {
                     ));
                 }
                 if source_type == "code_mode_core" {
+                    if let Some(availability) = core_registry_availability_override(asset_metadata)
+                    {
+                        return availability;
+                    }
                     return Self {
                         class: ToolAvailabilityClass::CallableDirect,
                         install_required: false,
@@ -287,6 +628,10 @@ impl RegistryAvailability {
                 Self::from_tool_availability(&fallback_local_tool_availability(pkg_name))
             }
             "assistant" => {
+                if let Some(availability) = assistant_registry_availability_override(asset_metadata)
+                {
+                    return availability;
+                }
                 if enabled_assistant_ids.contains(asset_id) {
                     Self {
                         class: ToolAvailabilityClass::Unavailable,
@@ -331,5 +676,479 @@ impl RegistryAvailability {
 
     pub(crate) fn needs_setup(&self) -> bool {
         matches!(self.class, ToolAvailabilityClass::NeedsSetup)
+    }
+}
+
+fn local_skill_registry_availability_override(
+    asset_metadata: Option<&Value>,
+) -> Option<RegistryAvailability> {
+    let metadata = asset_metadata?;
+    let activation_state = metadata
+        .get("activation_state")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+    if activation_state != "enabled" {
+        return Some(RegistryAvailability {
+            class: ToolAvailabilityClass::NeedsSetup,
+            install_required: false,
+            activation_required: true,
+            recommended_action: "enable_skill",
+            status_reason: "skill_installed_but_disabled",
+        });
+    }
+
+    let runtime_state = metadata
+        .get("runtime_state")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("unknown");
+
+    Some(match runtime_state {
+        "ready" | "not_required" => RegistryAvailability {
+            class: ToolAvailabilityClass::CallableDirect,
+            install_required: false,
+            activation_required: false,
+            recommended_action: "execute",
+            status_reason: "ready_in_local_runtime",
+        },
+        "needs_install" => RegistryAvailability {
+            class: ToolAvailabilityClass::NeedsSetup,
+            install_required: true,
+            activation_required: false,
+            recommended_action: "install_skill_runtime",
+            status_reason: "skill_runtime_install_required",
+        },
+        "needs_reinstall" => RegistryAvailability {
+            class: ToolAvailabilityClass::NeedsSetup,
+            install_required: true,
+            activation_required: false,
+            recommended_action: "reinstall_skill_runtime",
+            status_reason: "skill_runtime_reinstall_required",
+        },
+        "installing" => RegistryAvailability {
+            class: ToolAvailabilityClass::Unavailable,
+            install_required: false,
+            activation_required: false,
+            recommended_action: "wait_for_runtime",
+            status_reason: "skill_runtime_installing",
+        },
+        "install_failed" => RegistryAvailability {
+            class: ToolAvailabilityClass::Unavailable,
+            install_required: false,
+            activation_required: false,
+            recommended_action: "review",
+            status_reason: "skill_runtime_install_failed",
+        },
+        "unsupported" => RegistryAvailability {
+            class: ToolAvailabilityClass::Unavailable,
+            install_required: false,
+            activation_required: false,
+            recommended_action: "review",
+            status_reason: "skill_runtime_unsupported",
+        },
+        _ => RegistryAvailability {
+            class: ToolAvailabilityClass::Unavailable,
+            install_required: false,
+            activation_required: false,
+            recommended_action: "review",
+            status_reason: "skill_runtime_unknown",
+        },
+    })
+}
+
+fn mcp_registry_availability_override(
+    asset_metadata: Option<&Value>,
+) -> Option<RegistryAvailability> {
+    let metadata = asset_metadata?;
+    let runtime_state = metadata
+        .get("runtime_state")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+
+    Some(match runtime_state {
+        "ready" => RegistryAvailability {
+            class: ToolAvailabilityClass::CallableDirect,
+            install_required: false,
+            activation_required: false,
+            recommended_action: "execute",
+            status_reason: "ready_via_registry_runtime",
+        },
+        "stopped" => RegistryAvailability {
+            class: ToolAvailabilityClass::NeedsSetup,
+            install_required: false,
+            activation_required: true,
+            recommended_action: "start_tool",
+            status_reason: "tool_installed_but_stopped",
+        },
+        "pending" => RegistryAvailability {
+            class: ToolAvailabilityClass::Unavailable,
+            install_required: false,
+            activation_required: false,
+            recommended_action: "wait_for_runtime",
+            status_reason: "tool_runtime_pending",
+        },
+        "error" => RegistryAvailability {
+            class: ToolAvailabilityClass::Unavailable,
+            install_required: false,
+            activation_required: false,
+            recommended_action: "review",
+            status_reason: "tool_runtime_error",
+        },
+        _ => RegistryAvailability {
+            class: ToolAvailabilityClass::Unavailable,
+            install_required: false,
+            activation_required: false,
+            recommended_action: "review",
+            status_reason: "tool_runtime_unknown",
+        },
+    })
+}
+
+fn core_registry_availability_override(
+    asset_metadata: Option<&Value>,
+) -> Option<RegistryAvailability> {
+    let metadata = asset_metadata?;
+    let activation_state = metadata
+        .get("activation_state")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+    if activation_state != "enabled" {
+        return Some(RegistryAvailability {
+            class: ToolAvailabilityClass::Unavailable,
+            install_required: false,
+            activation_required: false,
+            recommended_action: "review",
+            status_reason: "core_tool_disabled",
+        });
+    }
+    Some(RegistryAvailability {
+        class: ToolAvailabilityClass::CallableDirect,
+        install_required: false,
+        activation_required: false,
+        recommended_action: "execute",
+        status_reason: "core_code_mode_tool",
+    })
+}
+
+fn assistant_registry_availability_override(
+    asset_metadata: Option<&Value>,
+) -> Option<RegistryAvailability> {
+    let metadata = asset_metadata?;
+    let activation_state = metadata
+        .get("activation_state")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+    if activation_state == "enabled" {
+        return Some(RegistryAvailability {
+            class: ToolAvailabilityClass::Unavailable,
+            install_required: false,
+            activation_required: false,
+            recommended_action: "consult_then_activate",
+            status_reason: "assistant_available_for_activation",
+        });
+    }
+    Some(RegistryAvailability {
+        class: ToolAvailabilityClass::NeedsSetup,
+        install_required: false,
+        activation_required: true,
+        recommended_action: "enable_assistant",
+        status_reason: "assistant_installed_but_disabled",
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_registry_skill_assets_replace_memory_backed_skill_assets() {
+        let registry_packages = HashSet::from(["skill.alpha".to_string()]);
+        assert!(replaced_by_local_capability_registry(
+            &json!({
+                "asset_type": "skill_tool",
+                "source_type": "user",
+                "pkg_name": "skill.alpha",
+            }),
+            &registry_packages
+        ));
+        assert!(replaced_by_local_capability_registry(
+            &json!({
+                "asset_type": "skill",
+                "source_type": "builtin",
+                "metadata": { "skill_id": "skill.alpha" },
+            }),
+            &registry_packages
+        ));
+        assert!(!replaced_by_local_capability_registry(
+            &json!({
+                "asset_type": "skill",
+                "source_type": "cloud_mirror",
+                "pkg_name": "skill.alpha",
+            }),
+            &registry_packages
+        ));
+    }
+
+    #[test]
+    fn local_registry_skill_tool_asset_uses_binding_id_and_callable_name() {
+        let asset = local_capability_registry_entry_to_asset(
+            &crate::modules::mcp::store::LocalCapabilityRegistrySnapshot {
+                capability_id: "skill_tool::skill.alpha::install".to_string(),
+                source_kind: "user".to_string(),
+                asset_kind: "skill_tool".to_string(),
+                package_id: "skill.alpha".to_string(),
+                package_version: Some("1.0.0".to_string()),
+                title: "Skill Alpha / install".to_string(),
+                description: "Install alpha".to_string(),
+                tool_name: Some("install".to_string()),
+                callable_name: Some("skill.skill.alpha.install".to_string()),
+                binding_kind: Some("deeting_tool".to_string()),
+                execution_surface: "desktop_capability".to_string(),
+                runtime: Some("python".to_string()),
+                entry_path: Some("C:/skills/skill.alpha/main.py".to_string()),
+                is_direct_callable: true,
+                activation_state: "enabled".to_string(),
+                runtime_state: "registered".to_string(),
+                search_index_state: "pending".to_string(),
+                generation: 3,
+                descriptor_json: json!({
+                    "binding_id": "skill_binding::skill.alpha::install",
+                    "tool_name": "install",
+                    "callable_name": "skill.skill.alpha.install",
+                    "input_schema": {"type":"object","properties":{"package":{"type":"string"}}},
+                    "restricted": false,
+                    "allowed_roles": [],
+                }),
+                updated_at: "2026-03-16T00:00:00Z".to_string(),
+            },
+        );
+
+        assert_eq!(asset["id"], json!("skill_binding::skill.alpha::install"));
+        assert_eq!(asset["name"], json!("skill.skill.alpha.install"));
+        assert_eq!(asset["asset_type"], json!("skill_tool"));
+        assert_eq!(asset["metadata"]["skill_id"], json!("skill.alpha"));
+        assert_eq!(asset["metadata"]["tool_name"], json!("install"));
+    }
+
+    #[test]
+    fn local_registry_skill_bundle_asset_keeps_readiness_metadata() {
+        let asset = local_capability_registry_entry_to_asset(
+            &crate::modules::mcp::store::LocalCapabilityRegistrySnapshot {
+                capability_id: "skill_bundle::skill.alpha".to_string(),
+                source_kind: "user".to_string(),
+                asset_kind: "skill_bundle".to_string(),
+                package_id: "skill.alpha".to_string(),
+                package_version: Some("1.0.0".to_string()),
+                title: "Skill Alpha".to_string(),
+                description: "Bundle".to_string(),
+                tool_name: None,
+                callable_name: None,
+                binding_kind: None,
+                execution_surface: "recipe".to_string(),
+                runtime: Some("local".to_string()),
+                entry_path: None,
+                is_direct_callable: false,
+                activation_state: "disabled".to_string(),
+                runtime_state: "not_required".to_string(),
+                search_index_state: "pending".to_string(),
+                generation: 7,
+                descriptor_json: json!({
+                    "manifest": {
+                        "id": "skill.alpha",
+                        "name": "Skill Alpha"
+                    }
+                }),
+                updated_at: "2026-03-16T00:00:00Z".to_string(),
+            },
+        );
+
+        assert_eq!(asset["asset_type"], json!("skill"));
+        assert_eq!(asset["metadata"]["activation_state"], json!("disabled"));
+        assert_eq!(asset["metadata"]["search_index_state"], json!("pending"));
+        assert_eq!(asset["metadata"]["generation"], json!(7));
+    }
+
+    #[test]
+    fn db_mcp_tools_replace_memory_backed_mcp_assets() {
+        let ids = HashSet::from(["tool-1".to_string()]);
+        assert!(replaced_by_db_mcp_tool(
+            &json!({
+                "id": "tool-1",
+                "asset_type": "tool",
+                "source_type": "mcp",
+            }),
+            &ids
+        ));
+        assert!(!replaced_by_db_mcp_tool(
+            &json!({
+                "id": "tool-1",
+                "asset_type": "skill_tool",
+                "source_type": "mcp",
+            }),
+            &ids
+        ));
+    }
+
+    #[test]
+    fn db_mcp_tool_asset_preserves_transport_metadata() {
+        let asset = db_mcp_tool_to_asset(&crate::modules::mcp::types::McpTool {
+            id: "tool-1".to_string(),
+            identifier: Some("search_web".to_string()),
+            name: "search_web".to_string(),
+            source_type: crate::modules::mcp::types::McpSourceType::Local,
+            source_id: Some("source-1".to_string()),
+            status: crate::modules::mcp::types::McpToolStatus::Healthy,
+            ping_ms: Some(12),
+            capabilities: vec!["network".to_string()],
+            description: "Search the web".to_string(),
+            error: None,
+            command: Some("python".to_string()),
+            args: Some(vec!["tool.py".to_string()]),
+            env: None,
+            config_json: "{}".to_string(),
+            pending_config_json: None,
+            config_hash: "hash".to_string(),
+            pending_config_hash: None,
+            conflict_status: crate::modules::mcp::types::McpConflictStatus::None,
+            is_read_only: false,
+            is_new: false,
+            created_at: "2026-03-16T00:00:00Z".to_string(),
+            updated_at: "2026-03-16T00:00:00Z".to_string(),
+        });
+
+        assert_eq!(asset["id"], json!("tool-1"));
+        assert_eq!(asset["source_type"], json!("mcp"));
+        assert_eq!(asset["metadata"]["asset_namespace"], json!("user_mcp"));
+        assert_eq!(asset["metadata"]["transport"], json!("stdio"));
+    }
+
+    #[test]
+    fn core_registry_replaces_runtime_core_assets() {
+        let names = HashSet::from(["search_sdk".to_string()]);
+        assert!(replaced_by_core_tool_registry(
+            &json!({
+                "asset_type": "tool",
+                "source_type": "code_mode_core",
+                "name": "search_sdk",
+            }),
+            &names
+        ));
+    }
+
+    #[test]
+    fn assistant_registry_replaces_local_assistant_assets() {
+        let ids = HashSet::from(["assistant-1".to_string()]);
+        assert!(replaced_by_assistant_registry(
+            &json!({
+                "id": "assistant-1",
+                "asset_type": "assistant",
+                "source_type": "local_assistant",
+            }),
+            &ids
+        ));
+    }
+
+    #[test]
+    fn local_registry_runtime_state_changes_availability() {
+        let availability = local_skill_registry_availability_override(Some(&json!({
+            "activation_state": "enabled",
+            "runtime_state": "needs_install"
+        })))
+        .expect("availability");
+        assert_eq!(availability.class, ToolAvailabilityClass::NeedsSetup);
+        assert!(availability.install_required);
+        assert_eq!(availability.recommended_action, "install_skill_runtime");
+    }
+
+    #[test]
+    fn local_registry_disabled_skill_requires_enable_action() {
+        let availability = local_skill_registry_availability_override(Some(&json!({
+            "activation_state": "disabled",
+            "runtime_state": "ready"
+        })))
+        .expect("availability");
+        assert_eq!(availability.class, ToolAvailabilityClass::NeedsSetup);
+        assert!(availability.activation_required);
+        assert_eq!(availability.recommended_action, "enable_skill");
+    }
+
+    #[test]
+    fn mcp_registry_stopped_tool_requires_start() {
+        let availability = mcp_registry_availability_override(Some(&json!({
+            "runtime_state": "stopped"
+        })))
+        .expect("availability");
+        assert_eq!(availability.class, ToolAvailabilityClass::NeedsSetup);
+        assert!(availability.activation_required);
+        assert_eq!(availability.recommended_action, "start_tool");
+    }
+
+    #[test]
+    fn core_registry_enabled_tool_is_direct_callable() {
+        let availability = core_registry_availability_override(Some(&json!({
+            "activation_state": "enabled"
+        })))
+        .expect("availability");
+        assert_eq!(availability.class, ToolAvailabilityClass::CallableDirect);
+        assert_eq!(availability.recommended_action, "execute");
+    }
+
+    #[test]
+    fn assistant_registry_enabled_entry_allows_consult_activation() {
+        let availability = assistant_registry_availability_override(Some(&json!({
+            "activation_state": "enabled"
+        })))
+        .expect("availability");
+        assert_eq!(availability.class, ToolAvailabilityClass::Unavailable);
+        assert_eq!(availability.recommended_action, "consult_then_activate");
+    }
+
+    #[test]
+    fn assistant_registry_disabled_entry_requires_enable() {
+        let availability = assistant_registry_availability_override(Some(&json!({
+            "activation_state": "disabled"
+        })))
+        .expect("availability");
+        assert_eq!(availability.class, ToolAvailabilityClass::NeedsSetup);
+        assert_eq!(availability.recommended_action, "enable_assistant");
+    }
+
+    #[test]
+    fn assistant_registry_asset_is_emitted_as_local_assistant() {
+        let asset = local_capability_registry_entry_to_asset(
+            &crate::modules::mcp::store::LocalCapabilityRegistrySnapshot {
+                capability_id: "assistant-1".to_string(),
+                source_kind: "assistant".to_string(),
+                asset_kind: "assistant".to_string(),
+                package_id: "assistant-1".to_string(),
+                package_version: None,
+                title: "Research Assistant".to_string(),
+                description: "Helps with research".to_string(),
+                tool_name: None,
+                callable_name: None,
+                binding_kind: None,
+                execution_surface: "assistant".to_string(),
+                runtime: None,
+                entry_path: None,
+                is_direct_callable: false,
+                activation_state: "enabled".to_string(),
+                runtime_state: "not_required".to_string(),
+                search_index_state: "auxiliary".to_string(),
+                generation: 9,
+                descriptor_json: json!({
+                    "assistant_id": "assistant-1",
+                    "name": "Research Assistant"
+                }),
+                updated_at: "2026-03-16T00:00:00Z".to_string(),
+            },
+        );
+
+        assert_eq!(asset["asset_type"], json!("assistant"));
+        assert_eq!(asset["source_type"], json!("local_assistant"));
     }
 }

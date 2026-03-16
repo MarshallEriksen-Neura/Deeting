@@ -99,6 +99,17 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         store.init().await?;
         store.ensure_local_source().await?;
         store.ensure_cloud_source(&cloud_base_url).await?;
+        crate::modules::mcp::commands::runtime::sync_core_tool_registry_entries(store.as_ref())
+            .await
+            .map_err(McpError::Storage)?;
+        store
+            .sync_all_mcp_tool_registry_entries()
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+        store
+            .sync_all_assistant_registry_entries()
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
         let process_manager = ProcessManager::new(store.clone(), handle);
         let mcp_state = McpRuntimeState::new(store, process_manager, cloud_base_url);
 

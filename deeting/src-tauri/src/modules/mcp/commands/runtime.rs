@@ -63,6 +63,9 @@ pub(crate) use control_plane::{
     select_worker_custom_task_agent, LocalControlPlaneResult, LocalExecutionPolicy,
     RuntimeDiscoveryBundle,
 };
+pub(crate) use core_tool_contracts::{
+    build_core_tool_registry_entries, sync_core_tool_registry_entries,
+};
 pub(crate) use execution_plane::{run_local_execution_plane, LocalExecutionRequest};
 pub(crate) use onboarding::install_local_skill_from_onboarding_request;
 #[cfg(test)]

@@ -755,6 +755,8 @@ impl McpStore {
 
         self.refresh_assistant_install_count(&normalized_assistant_id, &now)
             .await?;
+        self.sync_assistant_registry_entry(&normalized_assistant_id)
+            .await?;
 
         self.get_local_assistant_install_item(&normalized_assistant_id)
             .await?
@@ -901,6 +903,8 @@ impl McpStore {
         .execute(&self.pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
+        self.sync_assistant_registry_entry(&normalized_assistant_id)
+            .await?;
 
         self.get_local_assistant_install_item(&normalized_assistant_id)
             .await?
@@ -933,6 +937,8 @@ impl McpStore {
         }
 
         self.refresh_assistant_install_count(&normalized_assistant_id, &now)
+            .await?;
+        self.sync_assistant_registry_entry(&normalized_assistant_id)
             .await?;
 
         Ok(())
