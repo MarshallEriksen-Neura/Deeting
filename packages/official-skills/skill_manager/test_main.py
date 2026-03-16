@@ -8,6 +8,39 @@ import main
 
 
 class SkillManagerTests(unittest.TestCase):
+    def test_render_shell_command_quotes_windows_paths(self) -> None:
+        with mock.patch.object(main.sys, "platform", "win32"):
+            rendered = main.render_shell_command(
+                ["mklink", "/J", r"C:\Users\Test User\skill-link", r"C:\Users\Test User\skill-source"]
+            )
+
+        self.assertIn('"C:\\Users\\Test User\\skill-link"', rendered)
+        self.assertIn('"C:\\Users\\Test User\\skill-source"', rendered)
+
+    def test_run_command_uses_shell_execute_when_sdk_available(self) -> None:
+        runtime = mock.Mock()
+        runtime.call_tool.return_value = {
+            "stdout": "find-skills",
+            "stderr": "",
+            "exit_code": 0,
+            "duration_ms": 42,
+            "approval_level": "approved",
+        }
+
+        with mock.patch.object(main, "deeting", runtime):
+            result = main.run_command(["npx", "-y", "skills", "find", "testing"], env={"DEBUG": "1"})
+
+        runtime.call_tool.assert_called_once_with(
+            "shell_execute",
+            command=main.render_shell_command(["npx", "-y", "skills", "find", "testing"]),
+            working_dir=None,
+            timeout_seconds=main.COMMAND_TIMEOUT_SECONDS,
+            env={"DEBUG": "1"},
+        )
+        self.assertEqual(result["returncode"], 0)
+        self.assertEqual(result["transport"], "shell_execute")
+        self.assertEqual(result["stdout"], "find-skills")
+
     def test_build_add_command_targets_managed_agent(self) -> None:
         command = main.build_add_command(
             "vercel-labs/agent-skills",

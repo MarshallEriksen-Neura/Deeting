@@ -1,11 +1,12 @@
 import asyncio
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, Sequence
+from typing import Any, Dict, Mapping, Sequence
 
 try:
     from deeting import deeting
@@ -61,30 +62,100 @@ def ensure_required_tools(*tool_names: str) -> None:
         raise RuntimeError(f"missing required tools: {', '.join(missing)}")
 
 
-def run_command(command: Sequence[str], *, check: bool = True) -> Dict[str, Any]:
-    # On Windows, use shell=True to properly resolve .cmd/.bat files (e.g., npx.cmd)
-    use_shell = sys.platform == "win32"
-    
+def render_shell_command(command: Sequence[str]) -> str:
+    command_list = [str(part) for part in command]
+    if not command_list:
+        raise RuntimeError("command is required")
+    if sys.platform == "win32":
+        return subprocess.list2cmdline(command_list)
+    return shlex.join(command_list)
+
+
+def run_local_subprocess(
+    command: Sequence[str],
+    *,
+    check: bool = True,
+    working_dir: Path | None = None,
+    env: Mapping[str, str] | None = None,
+    use_shell: bool | None = None,
+) -> Dict[str, Any]:
+    if use_shell is None:
+        # On Windows, shell=True helps resolve .cmd/.bat files like npx.cmd.
+        use_shell = sys.platform == "win32"
+
+    command_list = [str(part) for part in command]
+    popen_command: str | list[str]
+    if use_shell:
+        popen_command = render_shell_command(command_list)
+    else:
+        popen_command = command_list
+
     completed = subprocess.run(
-        list(command),
+        popen_command,
         text=True,
         capture_output=True,
         timeout=COMMAND_TIMEOUT_SECONDS,
         check=False,
         shell=use_shell,
-        encoding='utf-8',
-        errors='replace',  # Replace undecodable characters instead of failing
+        cwd=str(working_dir) if working_dir else None,
+        env={**os.environ, **{str(key): str(value) for key, value in (env or {}).items()}},
+        encoding="utf-8",
+        errors="replace",  # Replace undecodable characters instead of failing
     )
     result = {
-        "command": list(command),
+        "command": command_list,
         "returncode": completed.returncode,
         "stdout": (completed.stdout or "").strip(),
         "stderr": (completed.stderr or "").strip(),
+        "transport": "local_subprocess",
     }
     if check and completed.returncode != 0:
         detail = result["stderr"] or result["stdout"] or f"command failed with exit code {completed.returncode}"
         raise RuntimeError(detail)
     return result
+
+
+def run_command(
+    command: Sequence[str],
+    *,
+    check: bool = True,
+    working_dir: Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> Dict[str, Any]:
+    command_list = [str(part) for part in command]
+    if not command_list:
+        raise RuntimeError("command is required")
+
+    if deeting:
+        shell_result = deeting.call_tool(
+            "shell_execute",
+            command=render_shell_command(command_list),
+            working_dir=str(working_dir) if working_dir else None,
+            timeout_seconds=COMMAND_TIMEOUT_SECONDS,
+            env={str(key): str(value) for key, value in (env or {}).items()},
+        )
+        if not isinstance(shell_result, dict):
+            raise RuntimeError("shell_execute returned an invalid response")
+        result = {
+            "command": command_list,
+            "returncode": shell_result.get("exit_code", -1),
+            "stdout": str(shell_result.get("stdout") or "").strip(),
+            "stderr": str(shell_result.get("stderr") or "").strip(),
+            "duration_ms": shell_result.get("duration_ms"),
+            "approval_level": shell_result.get("approval_level"),
+            "transport": "shell_execute",
+        }
+        if check and result["returncode"] != 0:
+            detail = result["stderr"] or result["stdout"] or f"command failed with exit code {result['returncode']}"
+            raise RuntimeError(detail)
+        return result
+
+    return run_local_subprocess(
+        command_list,
+        check=check,
+        working_dir=working_dir,
+        env=env,
+    )
 
 
 def list_agent_skills(skills_dir: Path) -> Dict[str, Path]:
@@ -106,8 +177,8 @@ def remove_existing_path(path: Path) -> None:
         path.unlink()
         return
     if sys.platform == "win32":
-        removed = subprocess.run(["cmd", "/c", "rmdir", str(path)], check=False)
-        if removed.returncode == 0:
+        removed = run_command(["rmdir", str(path)], check=False)
+        if removed["returncode"] == 0:
             return
     shutil.rmtree(path)
 
@@ -116,7 +187,7 @@ def create_directory_link(target: Path, link_path: Path) -> None:
     remove_existing_path(link_path)
     link_path.parent.mkdir(parents=True, exist_ok=True)
     if sys.platform == "win32":
-        subprocess.run(["cmd", "/c", "mklink", "/J", str(link_path), str(target)], check=True)
+        run_command(["mklink", "/J", str(link_path), str(target)], check=True)
     else:
         os.symlink(str(target), str(link_path), target_is_directory=True)
 
