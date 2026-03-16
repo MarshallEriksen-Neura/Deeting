@@ -246,7 +246,7 @@ export const MessageItem = React.memo<MessageItemProps>(
             ) : null}
           </div>
         ) : (
-          <div className="relative min-w-0 max-w-[85%] px-5 py-3.5 rounded-2xl rounded-tr-none text-[15px] leading-relaxed tracking-wide bg-gradient-to-br from-primary/75 to-primary/90 backdrop-blur-md border border-white/15 shadow-lg shadow-primary/10 text-primary-foreground">
+          <div className="relative min-w-0 max-w-[85%] px-5 py-3.5 rounded-2xl rounded-tr-none text-[15px] leading-relaxed tracking-wide bg-muted/70 dark:bg-zinc-800/70 backdrop-blur-sm border border-border/40 shadow-sm text-foreground">
             {message.attachments?.length ? (
               <div className="mb-3">
                 <MessageAttachments
@@ -260,7 +260,7 @@ export const MessageItem = React.memo<MessageItemProps>(
               content={message.content}
               className="chat-markdown chat-markdown-user"
             />
-            <div className="text-[10px] mt-1 opacity-70 text-right text-primary-foreground/80">
+            <div className="text-[10px] mt-1 opacity-70 text-right text-muted-foreground">
               {new Date(message.createdAt).toLocaleTimeString([], {
                 hour: "2-digit",
                 minute: "2-digit",
