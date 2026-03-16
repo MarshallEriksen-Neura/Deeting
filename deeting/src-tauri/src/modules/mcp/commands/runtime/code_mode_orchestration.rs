@@ -273,8 +273,9 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
                 "When the user asks to install, create, or manage skills:\n",
                 "- Deeting skills are capability bundles centered on SKILL.md, deeting.json, and callable tool bindings derived from llm-tool.yaml when present.\n",
                 "- Use the install_skill_from_repo tool or sys_submit_onboarding_request to install skills.\n",
+                "- After external or manual skill installs, use refresh_skill_index to rescan shared and managed skill directories.\n",
                 "- User skills directory: $APP_DATA_DIR/skills/<skill_id>/.\n",
-                "- Do NOT use opencode, codex, openclaw, or any other platform's skill paths or manifest format.\n",
+                "- Shared agent skills directory: ~/.agents/skills/.\n",
             ).to_string(),
             tool_calls: vec![],
             tool_call_id: None,
@@ -1128,6 +1129,37 @@ async fn maybe_handle_local_code_mode_tool_calls(
                         tool_call_meta.push(meta);
                         results.push(format!("Skill onboarding failed: {}", err));
                     }
+                }
+            }
+        } else if tool_name == "refresh_skill_index" {
+            realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call.id,"toolName":tool_name,"status":"running"})]);
+            match crate::modules::mcp::commands::register_local_skills_inner(app.clone(), app_state)
+                .await
+            {
+                Ok(registered) => {
+                    synthesized = true;
+                    let result = serde_json::json!({
+                        "status": "ok",
+                        "registered": registered,
+                    });
+                    let meta = serde_json::json!({"id":call.id,"name":tool_name,"status":"success","result":result});
+                    let mut streamed_blocks = Vec::new();
+                    append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+                    realtime_emitter.emit_blocks(streamed_blocks);
+                    tool_call_meta.push(meta);
+                    results.push(format!(
+                        "Skill index refreshed successfully. Registered {} local skills.",
+                        registered
+                    ));
+                }
+                Err(err) => {
+                    synthesized = true;
+                    let meta = serde_json::json!({"id":call.id,"name":tool_name,"status":"error","error":err.to_string()});
+                    let mut streamed_blocks = Vec::new();
+                    append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+                    realtime_emitter.emit_blocks(streamed_blocks);
+                    tool_call_meta.push(meta);
+                    results.push(format!("Skill index refresh failed: {}", err));
                 }
             }
         } else {

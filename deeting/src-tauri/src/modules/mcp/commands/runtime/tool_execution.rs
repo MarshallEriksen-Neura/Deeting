@@ -501,7 +501,6 @@ async fn resolve_skill_binding_env(
 enum OfficialSkillHostToolRoute {
     DesktopCapability,
     SearchSdk,
-    ShellExecute,
     Unsupported,
 }
 
@@ -524,9 +523,6 @@ fn resolve_official_skill_host_tool_route(
 
     match normalized_tool_name {
         "search_sdk" => OfficialSkillHostToolRoute::SearchSdk,
-        "shell_execute" if binding.skill_id == "official.skills.skill_manager" => {
-            OfficialSkillHostToolRoute::ShellExecute
-        }
         _ => OfficialSkillHostToolRoute::Unsupported,
     }
 }
@@ -556,14 +552,6 @@ async fn dispatch_official_skill_search_sdk(
     )
 }
 
-async fn dispatch_official_skill_shell_execute(arguments: &Value) -> Result<Value, String> {
-    let home_dir = dirs::home_dir()
-        .ok_or_else(|| "desktop home directory is unavailable for shell_execute".to_string())?;
-    crate::modules::shell_executor::core_tool::ShellExecuteCoreTool::new(home_dir)
-        .execute(arguments.clone())
-        .await
-}
-
 async fn dispatch_internal_skill_host_tool(
     store: &crate::modules::mcp::store::McpStore,
     binding: &LocalSkillToolBindingSnapshot,
@@ -579,11 +567,6 @@ async fn dispatch_internal_skill_host_tool(
         }
         OfficialSkillHostToolRoute::SearchSdk => {
             dispatch_official_skill_search_sdk(store, arguments)
-                .await
-                .map(Some)
-        }
-        OfficialSkillHostToolRoute::ShellExecute => {
-            dispatch_official_skill_shell_execute(arguments)
                 .await
                 .map(Some)
         }
@@ -1556,16 +1539,10 @@ mod tests {
     }
 
     #[test]
-    fn official_skill_host_tool_route_limits_shell_execute_to_skill_manager() {
-        let skill_manager_binding = sample_binding("official.skills.skill_manager");
+    fn official_skill_host_tool_route_rejects_shell_execute() {
+        let binding = sample_binding("official.skills.expert_network");
         assert_eq!(
-            resolve_official_skill_host_tool_route(&skill_manager_binding, "shell_execute"),
-            OfficialSkillHostToolRoute::ShellExecute
-        );
-
-        let other_binding = sample_binding("official.skills.expert_network");
-        assert_eq!(
-            resolve_official_skill_host_tool_route(&other_binding, "shell_execute"),
+            resolve_official_skill_host_tool_route(&binding, "shell_execute"),
             OfficialSkillHostToolRoute::Unsupported
         );
     }

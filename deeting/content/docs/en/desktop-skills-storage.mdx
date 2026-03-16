@@ -5,9 +5,9 @@ description: Local storage paths for official and user skills on the Deeting des
 
 ## Overview
 
-The desktop app (Tauri) scans two directories on startup to register local skills: **Official Skills** and **User Skills**.
+The desktop app (Tauri) scans multiple directories on startup to register local skills: **Official Skills**, **Deeting-managed User Skills**, and the **shared agent skills directory**.
 
-The scan logic is managed by `resolve_local_skill_scan_targets()`, which returns two scan targets, iterates each directory, parses `deeting.json` manifests, and persists them into the local SQLite database.
+The scan logic is managed by `resolve_local_skill_scan_targets()`, which returns scan targets, iterates each directory, parses `deeting.json` manifests, and persists them into the local SQLite database.
 
 ## Official Skills
 
@@ -22,7 +22,7 @@ Official skills are bundled with the app and cannot be modified by users.
 - Database source prefix: `system_plugin`
 - Current list: `memory`, `crawler`, `ingestor`, `expert_network`, `monitor`, `provider_registry`, `skill_manager`, `weather-plugin`
 
-## User Skills
+## Deeting-managed User Skills
 
 User skills are stored under the `skills/` subdirectory of Tauri's `app_data_dir`.
 
@@ -38,6 +38,20 @@ App identifier: `com.deeting.app`
 - The directory is created automatically if it does not exist
 - Users can install skills from Git repos via `install_skill_from_repo`
 - Uninstall is restricted to this directory only (safety check)
+
+## Shared Agent Skills
+
+The desktop app also scans the shared agent skills directory under the user's home directory so it can directly pick up skills installed by ecosystems like `npx skills add` or OpenClaw.
+
+| OS | Path |
+|----|------|
+| macOS | `~/.agents/skills/` |
+| Windows | `C:\Users\{user}\.agents\skills\` |
+| Linux | `~/.agents/skills/` |
+
+- These skills are registered and executed as local skills, but the directory itself is not managed by Deeting
+- Deeting does not copy them into `app_data_dir/skills/`
+- To remove them, use the external ecosystem that installed them, such as `npx skills remove ...`
 
 ## Skill Runtime
 
@@ -85,7 +99,8 @@ App startup
   └─ register_local_skills()
        └─ resolve_local_skill_scan_targets()
             ├─ official-skills dir → system_plugin
-            └─ user skills dir    → user_skill
+            ├─ user skills dir    → user_skill
+            └─ ~/.agents/skills   → user_skill
        └─ iterate each subdirectory
             ├─ parse deeting.json
             ├─ upsert_local_skill_install → SQLite

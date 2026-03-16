@@ -166,6 +166,27 @@ pub(crate) fn code_mode_core_tools() -> Vec<CoreToolContract> {
             }),
         },
         CoreToolContract {
+            name: "refresh_skill_index",
+            description: "Rescan local skill directories and rebuild the desktop skill registry after external installs, manual file changes, or shared-skill updates.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {}
+            }),
+            output_schema: json!({
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string"},
+                    "registered": {"type": "integer"}
+                },
+                "required": ["status", "registered"]
+            }),
+            permission_scope: &["skill_registry_write", "local_catalog_refresh"],
+            read_only: false,
+            mutating: true,
+            risk_level: "LOW",
+            example_arguments: json!({}),
+        },
+        CoreToolContract {
             name: "shell_execute",
             description: "Execute shell commands on the user's machine with security checks and user approval. Supports cross-platform command execution (Windows: cmd, Linux/Mac: sh). Automatically handles encoding (UTF-8/GBK) and provides timeout control.",
             input_schema: json!({

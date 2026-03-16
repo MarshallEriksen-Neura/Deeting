@@ -5,9 +5,9 @@ description: 桌面端官方技能与用户技能的本地存储目录结构说�
 
 ## 概览
 
-桌面端（Tauri）在启动时会扫描两个目录来注册本地技能：**官方技能**和**用户技能**。
+桌面端（Tauri）在启动时会扫描多个目录来注册本地技能：**官方技能**、**Deeting 受管用户技能**，以及 **共享代理技能目录**。
 
-扫描逻辑由 `resolve_local_skill_scan_targets()` 统一管理，返回两组扫描目标后逐目录遍历、解析 `deeting.json`，并写入本地 SQLite。
+扫描逻辑由 `resolve_local_skill_scan_targets()` 统一管理，返回扫描目标后逐目录遍历、解析 `deeting.json`，并写入本地 SQLite。
 
 ## 官方技能（Official Skills）
 
@@ -22,7 +22,7 @@ description: 桌面端官方技能与用户技能的本地存储目录结构说�
 - 数据库标记：`system_plugin`
 - 当前包含：`memory`、`crawler`、`ingestor`、`expert_network`、`monitor`、`provider_registry`、`skill_manager`、`weather-plugin`
 
-## 用户技能（User Skills）
+## Deeting 受管用户技能（Managed User Skills）
 
 用户技能存放在 Tauri 的 `app_data_dir` 下的 `skills/` 子目录。
 
@@ -38,6 +38,20 @@ description: 桌面端官方技能与用户技能的本地存储目录结构说�
 - 目录不存在时会自动创建
 - 用户可通过 `install_skill_from_repo` 从 Git 仓库安装技能到此目录
 - 卸载时只允许删除此目录下的内容（安全校验）
+
+## 共享代理技能目录（Shared Agent Skills）
+
+桌面端还会扫描用户主目录下的共享代理技能目录，用来直接接入 `npx skills add` / OpenClaw 生态安装出来的技能。
+
+| 操作系统 | 路径 |
+|----------|------|
+| macOS | `~/.agents/skills/` |
+| Windows | `C:\Users\{user}\.agents\skills\` |
+| Linux | `~/.agents/skills/` |
+
+- 这些技能会被当作本地用户技能注册和调用，但目录本身不由 Deeting 管理
+- Deeting 不会把 skill 再复制到 `app_data_dir/skills/`
+- 卸载这类技能需要回到外部生态自己移除，例如 `npx skills remove ...`
 
 ## 技能运行时（Runtime）
 
@@ -85,7 +99,8 @@ App 启动
   └─ register_local_skills()
        └─ resolve_local_skill_scan_targets()
             ├─ official-skills 目录 → system_plugin
-            └─ user skills 目录   → user_skill
+            ├─ user skills 目录   → user_skill
+            └─ ~/.agents/skills → user_skill
        └─ 遍历每个子目录
             ├─ 读取 deeting.json
             ├─ upsert_local_skill_install → 写入 SQLite

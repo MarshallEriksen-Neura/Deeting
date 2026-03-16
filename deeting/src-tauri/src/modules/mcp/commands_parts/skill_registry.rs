@@ -241,6 +241,10 @@ async fn migrate_conflicting_local_skill_installs_for_path(
     Ok(())
 }
 
+fn resolve_shared_agent_skills_dir() -> Option<PathBuf> {
+    dirs::home_dir().map(|home| home.join(".agents").join("skills"))
+}
+
 pub(crate) fn resolve_local_skill_scan_targets(
     app: &AppHandle,
 ) -> Result<Vec<(std::path::PathBuf, &'static str)>, String> {
@@ -261,10 +265,19 @@ pub(crate) fn resolve_local_skill_scan_targets(
         let _ = std::fs::create_dir_all(&user_skills_dir);
     }
 
-    Ok(vec![
+    let mut scan_targets = vec![
         (official_skills_dir, "system_plugin"),
         (user_skills_dir, "user_skill"),
-    ])
+    ];
+
+    if let Some(shared_agent_skills_dir) = resolve_shared_agent_skills_dir()
+        .filter(|path| path.exists())
+        .filter(|path| !local_skill_install_paths_match(path, &scan_targets[1].0))
+    {
+        scan_targets.push((shared_agent_skills_dir, "user_skill"));
+    }
+
+    Ok(scan_targets)
 }
 
 pub(crate) async fn register_local_skills_from_scan_targets_inner(
@@ -2384,7 +2397,14 @@ pub(crate) async fn uninstall_local_skill(
 
     let managed_skills_root = app.path().app_data_dir().map_err(to_string)?.join("skills");
     if !install_path.starts_with(&managed_skills_root) {
-        return Err("cannot uninstall official (read-only) skills".to_string());
+        let normalized_install_path = install_path.to_string_lossy().replace('\\', "/");
+        if normalized_install_path.contains("/official-skills/") {
+            return Err("cannot uninstall official (read-only) skills".to_string());
+        }
+        return Err(
+            "cannot uninstall externally managed skills; remove them from the shared agent skills directory"
+                .to_string(),
+        );
     }
 
     if let Err(e) = app_state
@@ -2613,6 +2633,7 @@ pub(crate) async fn auto_install_official_skill_runtimes(app: &AppHandle, app_st
             .as_deref()
             .map(PathBuf::from);
         let requirements_hash = requirements_path.as_deref().and_then(compute_file_sha256);
+        let runtime_root = runtime_root_for_skill(app, &install.skill_id).ok();
         let mut settings = normalize_runtime_settings_json(install.user_settings_json.as_ref());
         if upsert_runtime_install_metadata(
             &mut settings,
@@ -2621,6 +2642,7 @@ pub(crate) async fn auto_install_official_skill_runtimes(app: &AppHandle, app_st
                 .manager
                 .as_deref()
                 .or(Some(LOCAL_SKILL_RUNTIME_MANAGER_UV)),
+            runtime_root.as_deref(),
             requirements_path.as_deref(),
             requirements_hash.as_deref(),
             None,
@@ -2652,12 +2674,13 @@ pub(crate) async fn auto_install_official_skill_runtimes(app: &AppHandle, app_st
                     {
                         let mut ready_settings =
                             normalize_runtime_settings_json(detail.user_settings_json.as_ref());
-                        let (_provider_kind, manager, req_path, req_hash, cmd_path) =
+                        let (_provider_kind, manager, runtime_root, req_path, req_hash, cmd_path) =
                             runtime_install_metadata_from_outcome(&outcome);
                         if upsert_runtime_install_metadata(
                             &mut ready_settings,
                             LOCAL_SKILL_RUNTIME_STATE_READY,
                             manager,
+                            runtime_root,
                             req_path,
                             req_hash,
                             cmd_path,
@@ -2689,6 +2712,7 @@ pub(crate) async fn auto_install_official_skill_runtimes(app: &AppHandle, app_st
                             normalize_runtime_settings_json(detail.user_settings_json.as_ref());
                         let req_path = resolved.requirements_path.as_deref().map(PathBuf::from);
                         let req_hash = req_path.as_deref().and_then(compute_file_sha256);
+                        let runtime_root = runtime_root_for_skill(&app_handle, &skill_id).ok();
                         let _ = upsert_runtime_install_metadata(
                             &mut failed_settings,
                             LOCAL_SKILL_RUNTIME_STATE_INSTALL_FAILED,
@@ -2696,6 +2720,7 @@ pub(crate) async fn auto_install_official_skill_runtimes(app: &AppHandle, app_st
                                 .manager
                                 .as_deref()
                                 .or(Some(LOCAL_SKILL_RUNTIME_MANAGER_UV)),
+                            runtime_root.as_deref(),
                             req_path.as_deref(),
                             req_hash.as_deref(),
                             None,
@@ -2849,6 +2874,7 @@ pub async fn install_local_skill_runtime(
     let mut settings = normalize_runtime_settings_json(install.user_settings_json.as_ref());
     let requirements_hash = compute_file_sha256(&requirements_path)
         .ok_or_else(|| format!("failed to read {}", requirements_path.display()))?;
+    let runtime_root = runtime_root_for_skill(&app, &normalized_skill_id)?;
     upsert_runtime_install_metadata(
         &mut settings,
         LOCAL_SKILL_RUNTIME_STATE_INSTALLING,
@@ -2856,6 +2882,7 @@ pub async fn install_local_skill_runtime(
             .manager
             .as_deref()
             .or(Some(LOCAL_SKILL_RUNTIME_MANAGER_UV)),
+        Some(&runtime_root),
         Some(&requirements_path),
         Some(requirements_hash.as_str()),
         None,
@@ -2892,6 +2919,7 @@ pub async fn install_local_skill_runtime(
                     let (
                         _provider_kind,
                         manager,
+                        runtime_root,
                         requirements_path,
                         requirements_hash,
                         command_path,
@@ -2900,6 +2928,7 @@ pub async fn install_local_skill_runtime(
                         &mut ready_settings,
                         LOCAL_SKILL_RUNTIME_STATE_READY,
                         manager,
+                        runtime_root,
                         requirements_path,
                         requirements_hash,
                         command_path,
@@ -2931,6 +2960,8 @@ pub async fn install_local_skill_runtime(
                             resolved.requirements_path.as_deref().map(PathBuf::from);
                         let requirements_hash =
                             requirements_path.as_deref().and_then(compute_file_sha256);
+                        let runtime_root =
+                            runtime_root_for_skill(&app_handle, &skill_id_for_task).ok();
                         if upsert_runtime_install_metadata(
                             &mut failed_settings,
                             LOCAL_SKILL_RUNTIME_STATE_INSTALL_FAILED,
@@ -2938,6 +2969,7 @@ pub async fn install_local_skill_runtime(
                                 .manager
                                 .as_deref()
                                 .or(Some(LOCAL_SKILL_RUNTIME_MANAGER_UV)),
+                            runtime_root.as_deref(),
                             requirements_path.as_deref(),
                             requirements_hash.as_deref(),
                             None,
@@ -3485,6 +3517,56 @@ mod tests {
     }
 
     #[test]
+    fn detect_local_skill_runtime_reports_ready_for_shared_python_when_runtime_root_recorded() {
+        let dir = temp_skill_dir("managed-python-shared-runtime");
+        let runtime_root = temp_skill_dir("managed-python-shared-runtime-root");
+        let skill_id = "managed.python.shared";
+        write_managed_python_skill(&dir, skill_id);
+        let requirements_path = dir.join("requirements.txt");
+        let requirements_hash = compute_file_sha256(&requirements_path).expect("requirements hash");
+        let python_path = if cfg!(target_os = "windows") {
+            runtime_root
+                .join(".venv")
+                .join("Scripts")
+                .join("python.exe")
+        } else {
+            runtime_root.join(".venv").join("bin").join("python")
+        };
+        std::fs::create_dir_all(python_path.parent().expect("venv parent"))
+            .expect("create shared runtime venv dir");
+        std::fs::write(&python_path, "").expect("write fake shared runtime python");
+
+        let install = crate::modules::mcp::store::LocalSkillInstallDetail {
+            skill_id: skill_id.to_string(),
+            installed_version: Some("1.0.0".to_string()),
+            is_enabled: true,
+            runtime: Some("local".to_string()),
+            install_path: dir.to_string_lossy().to_string(),
+            manifest_json: std::fs::read_to_string(dir.join("deeting.json"))
+                .expect("read manifest"),
+            user_settings_json: Some(json!({
+                "runtime_install": {
+                    "runtime_root": runtime_root.to_string_lossy().to_string(),
+                    "command_path": python_path.to_string_lossy().to_string(),
+                    "requirements_hash": requirements_hash,
+                }
+            })),
+        };
+
+        let status = detect_local_skill_runtime(&install);
+
+        assert!(status.supported);
+        assert_eq!(status.state, LOCAL_SKILL_RUNTIME_STATE_READY);
+        assert_eq!(
+            status.command_path.as_deref(),
+            Some(python_path.to_string_lossy().as_ref())
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+        let _ = std::fs::remove_dir_all(runtime_root);
+    }
+
+    #[test]
     fn detect_local_skill_runtime_reports_needs_reinstall_when_requirements_change() {
         let dir = temp_skill_dir("managed-python-reinstall");
         let skill_id = "managed.python.reinstall";
@@ -3589,6 +3671,57 @@ mod tests {
     }
 
     #[test]
+    fn detect_local_skill_runtime_reports_ready_for_shared_node_when_runtime_root_recorded() {
+        let dir = temp_skill_dir("managed-node-shared-runtime");
+        let runtime_root = temp_skill_dir("managed-node-shared-runtime-root");
+        let skill_id = "managed.node.shared";
+        write_managed_node_skill(&dir, skill_id);
+        std::fs::create_dir_all(runtime_root.join("node_modules"))
+            .expect("create shared runtime node_modules");
+        let command_path = if cfg!(target_os = "windows") {
+            runtime_root.join("node.exe")
+        } else {
+            runtime_root.join("node")
+        };
+        std::fs::write(&command_path, "").expect("write fake node command");
+        let package_json_path = dir.join("package.json");
+        let package_hash = compute_file_sha256(&package_json_path).expect("package hash");
+
+        let install = crate::modules::mcp::store::LocalSkillInstallDetail {
+            skill_id: skill_id.to_string(),
+            installed_version: Some("1.0.0".to_string()),
+            is_enabled: true,
+            runtime: Some("local".to_string()),
+            install_path: dir.to_string_lossy().to_string(),
+            manifest_json: std::fs::read_to_string(dir.join("deeting.json"))
+                .expect("read manifest"),
+            user_settings_json: Some(json!({
+                "runtime_install": {
+                    "runtime_root": runtime_root.to_string_lossy().to_string(),
+                    "command_path": command_path.to_string_lossy().to_string(),
+                    "requirements_hash": package_hash,
+                }
+            })),
+        };
+
+        let status = detect_local_skill_runtime(&install);
+
+        assert_eq!(
+            status.provider_kind,
+            Some(LocalSkillRuntimeProviderKind::Node)
+        );
+        assert!(status.supported);
+        assert_eq!(status.state, LOCAL_SKILL_RUNTIME_STATE_READY);
+        assert_eq!(
+            status.command_path.as_deref(),
+            Some(command_path.to_string_lossy().as_ref())
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+        let _ = std::fs::remove_dir_all(runtime_root);
+    }
+
+    #[test]
     fn detect_local_skill_runtime_reports_needs_reinstall_for_node_when_package_changes() {
         let dir = temp_skill_dir("managed-node-reinstall");
         let skill_id = "managed.node.reinstall";
@@ -3620,6 +3753,84 @@ mod tests {
         assert_eq!(status.state, LOCAL_SKILL_RUNTIME_STATE_NEEDS_REINSTALL);
 
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn resolve_runtime_env_for_shared_node_binding_uses_recorded_runtime_root() {
+        let (database_url, db_path) = temp_sqlite_url("shared-node-runtime-env");
+        let store = crate::modules::mcp::store::McpStore::new(&database_url)
+            .await
+            .expect("create store");
+        store.init().await.expect("init store");
+
+        let dir = temp_skill_dir("shared-node-runtime-env-skill");
+        let runtime_root = temp_skill_dir("shared-node-runtime-env-root");
+        let skill_id = "managed.node.shared.env";
+        write_managed_node_skill(&dir, skill_id);
+        let node_modules_dir = runtime_root.join("node_modules");
+        let bin_dir = node_modules_dir.join(".bin");
+        std::fs::create_dir_all(&bin_dir).expect("create node bin dir");
+        std::fs::write(bin_dir.join("demo"), "").expect("write fake node bin");
+        let command_path = if cfg!(target_os = "windows") {
+            runtime_root.join("node.exe")
+        } else {
+            runtime_root.join("node")
+        };
+        std::fs::write(&command_path, "").expect("write fake node command");
+
+        store
+            .upsert_local_skill_install_state(
+                skill_id,
+                Some("1.0.0"),
+                true,
+                Some("local"),
+                &std::fs::read_to_string(dir.join("deeting.json")).expect("read manifest"),
+                dir.to_string_lossy().as_ref(),
+                Some(&json!({
+                    "runtime_install": {
+                        "runtime_root": runtime_root.to_string_lossy().to_string(),
+                        "command_path": command_path.to_string_lossy().to_string(),
+                    }
+                })),
+            )
+            .await
+            .expect("seed install");
+
+        let binding = crate::modules::mcp::store::LocalSkillToolBindingSnapshot {
+            binding_id: "binding-demo".to_string(),
+            skill_id: skill_id.to_string(),
+            callable_name: "skill.demo".to_string(),
+            tool_name: "demo".to_string(),
+            description: "demo".to_string(),
+            binding_kind: "script_runner".to_string(),
+            input_schema: None,
+            output_schema: None,
+            entry_path: dir.join("main.js").to_string_lossy().to_string(),
+            runtime: "node".to_string(),
+            timeout_seconds: 30,
+            updated_at: "2026-03-16T00:00:00Z".to_string(),
+        };
+
+        let env = crate::modules::skill_runtime::resolve_runtime_env_for_binding(&store, &binding)
+            .await
+            .expect("resolve runtime env")
+            .expect("shared node runtime env");
+
+        assert_eq!(
+            env.get("NODE_PATH").map(String::as_str),
+            Some(node_modules_dir.to_string_lossy().as_ref())
+        );
+        assert!(env
+            .get("PATH")
+            .map(|value| value.contains(bin_dir.to_string_lossy().as_ref()))
+            .unwrap_or(false));
+
+        drop(store);
+        let _ = std::fs::remove_file(&db_path);
+        let _ = std::fs::remove_file(db_path.with_extension("db-shm"));
+        let _ = std::fs::remove_file(db_path.with_extension("db-wal"));
+        let _ = std::fs::remove_dir_all(dir);
+        let _ = std::fs::remove_dir_all(runtime_root);
     }
 
     #[test]

@@ -51,6 +51,7 @@ pub(crate) struct LocalSkillRuntimeStatusSnapshot {
 pub(crate) struct LocalSkillRuntimeInstallOutcome {
     pub(crate) provider_kind: LocalSkillRuntimeProviderKind,
     pub(crate) manager: String,
+    pub(crate) runtime_root: PathBuf,
     pub(crate) requirements_path: PathBuf,
     pub(crate) requirements_hash: String,
     pub(crate) command_path: PathBuf,
@@ -134,6 +135,18 @@ pub(crate) fn managed_runtime_root_from_install_path(
     )
 }
 
+pub(crate) fn stored_runtime_root_path(user_settings_json: Option<&JsonValue>) -> Option<PathBuf> {
+    user_settings_json
+        .and_then(JsonValue::as_object)
+        .and_then(|object| object.get("runtime_install"))
+        .and_then(JsonValue::as_object)
+        .and_then(|object| object.get("runtime_root"))
+        .and_then(JsonValue::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+}
+
 pub(crate) fn compute_file_sha256(path: &Path) -> Option<String> {
     python::compute_file_sha256(path)
 }
@@ -149,6 +162,7 @@ pub(crate) fn upsert_runtime_install_metadata(
     settings: &mut JsonValue,
     state: &str,
     manager: Option<&str>,
+    runtime_root: Option<&Path>,
     requirements_path: Option<&Path>,
     requirements_hash: Option<&str>,
     command_path: Option<&Path>,
@@ -160,6 +174,11 @@ pub(crate) fn upsert_runtime_install_metadata(
     let object = settings
         .as_object_mut()
         .ok_or_else(|| "skill settings must be an object".to_string())?;
+    let existing_runtime_root = object
+        .get("runtime_install")
+        .and_then(JsonValue::as_object)
+        .and_then(|runtime_install| runtime_install.get("runtime_root"))
+        .cloned();
 
     let mut runtime_install = serde_json::Map::new();
     runtime_install.insert("state".to_string(), json!(state));
@@ -183,6 +202,12 @@ pub(crate) fn upsert_runtime_install_metadata(
         "command_path".to_string(),
         json!(command_path.map(|value| value.to_string_lossy().to_string())),
     );
+    if let Some(value) = runtime_root
+        .map(|value| JsonValue::String(value.to_string_lossy().to_string()))
+        .or(existing_runtime_root)
+    {
+        runtime_install.insert("runtime_root".to_string(), value);
+    }
     runtime_install.insert("last_error".to_string(), json!(last_error));
     object.insert(
         "runtime_install".to_string(),
@@ -272,12 +297,14 @@ pub(crate) fn runtime_install_metadata_from_outcome(
     LocalSkillRuntimeProviderKind,
     Option<&str>,
     Option<&Path>,
+    Option<&Path>,
     Option<&str>,
     Option<&Path>,
 ) {
     (
         outcome.provider_kind,
         Some(outcome.manager.as_str()),
+        Some(outcome.runtime_root.as_path()),
         Some(outcome.requirements_path.as_path()),
         Some(outcome.requirements_hash.as_str()),
         Some(outcome.command_path.as_path()),

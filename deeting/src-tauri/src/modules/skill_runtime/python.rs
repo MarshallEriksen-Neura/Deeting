@@ -1,7 +1,7 @@
 use super::{
     managed_runtime_root_from_install_path, python_venv_candidates, runtime_root_for_skill,
-    LocalSkillRuntimeInstallOutcome, LocalSkillRuntimeProvider, LocalSkillRuntimeProviderKind,
-    LocalSkillRuntimeStatusSnapshot, LOCAL_SKILL_RUNTIME_MANAGER_UV,
+    stored_runtime_root_path, LocalSkillRuntimeInstallOutcome, LocalSkillRuntimeProvider,
+    LocalSkillRuntimeProviderKind, LocalSkillRuntimeStatusSnapshot, LOCAL_SKILL_RUNTIME_MANAGER_UV,
     LOCAL_SKILL_RUNTIME_STATE_INSTALLING, LOCAL_SKILL_RUNTIME_STATE_INSTALL_FAILED,
     LOCAL_SKILL_RUNTIME_STATE_NEEDS_INSTALL, LOCAL_SKILL_RUNTIME_STATE_NEEDS_REINSTALL,
     LOCAL_SKILL_RUNTIME_STATE_READY, LOCAL_SKILL_RUNTIME_STATE_UNSUPPORTED,
@@ -133,6 +133,14 @@ fn resolve_existing_runtime_python_path(install: &LocalSkillInstallDetail) -> Op
     for candidate in python_venv_candidates(&install_root) {
         if candidate.is_file() {
             return Some(candidate.to_string_lossy().to_string());
+        }
+    }
+
+    if let Some(runtime_root) = stored_runtime_root_path(install.user_settings_json.as_ref()) {
+        for candidate in python_venv_candidates(&runtime_root) {
+            if candidate.is_file() {
+                return Some(candidate.to_string_lossy().to_string());
+            }
         }
     }
 
@@ -346,6 +354,7 @@ pub(crate) async fn install_python_runtime(
     Ok(LocalSkillRuntimeInstallOutcome {
         provider_kind: LocalSkillRuntimeProviderKind::Python,
         manager: LOCAL_SKILL_RUNTIME_MANAGER_UV.to_string(),
+        runtime_root,
         requirements_path,
         requirements_hash,
         command_path,

@@ -1,10 +1,10 @@
 use super::{
     compute_file_sha256, managed_runtime_root_from_install_path, runtime_root_for_skill,
-    LocalSkillRuntimeInstallOutcome, LocalSkillRuntimeProvider, LocalSkillRuntimeProviderKind,
-    LocalSkillRuntimeStatusSnapshot, LOCAL_SKILL_RUNTIME_MANAGER_NPM,
-    LOCAL_SKILL_RUNTIME_STATE_INSTALLING, LOCAL_SKILL_RUNTIME_STATE_INSTALL_FAILED,
-    LOCAL_SKILL_RUNTIME_STATE_NEEDS_INSTALL, LOCAL_SKILL_RUNTIME_STATE_NEEDS_REINSTALL,
-    LOCAL_SKILL_RUNTIME_STATE_READY,
+    stored_runtime_root_path, LocalSkillRuntimeInstallOutcome, LocalSkillRuntimeProvider,
+    LocalSkillRuntimeProviderKind, LocalSkillRuntimeStatusSnapshot,
+    LOCAL_SKILL_RUNTIME_MANAGER_NPM, LOCAL_SKILL_RUNTIME_STATE_INSTALLING,
+    LOCAL_SKILL_RUNTIME_STATE_INSTALL_FAILED, LOCAL_SKILL_RUNTIME_STATE_NEEDS_INSTALL,
+    LOCAL_SKILL_RUNTIME_STATE_NEEDS_REINSTALL, LOCAL_SKILL_RUNTIME_STATE_READY,
 };
 use crate::modules::mcp::store::{
     LocalSkillInstallDetail, LocalSkillToolBindingSnapshot, McpStore,
@@ -130,6 +130,11 @@ fn existing_node_runtime_root(install: &LocalSkillInstallDetail) -> Option<PathB
     let direct_node_modules = install_root.join("node_modules");
     if direct_node_modules.is_dir() {
         return Some(install_root);
+    }
+    if let Some(runtime_root) = stored_runtime_root_path(install.user_settings_json.as_ref()) {
+        if runtime_root.join("node_modules").is_dir() {
+            return Some(runtime_root);
+        }
     }
     let runtime_root = managed_runtime_root_from_install_path(&install_root, &install.skill_id)?;
     if runtime_root.join("node_modules").is_dir() {
@@ -339,6 +344,7 @@ pub(crate) async fn install_node_runtime(
     Ok(LocalSkillRuntimeInstallOutcome {
         provider_kind: LocalSkillRuntimeProviderKind::Node,
         manager: LOCAL_SKILL_RUNTIME_MANAGER_NPM.to_string(),
+        runtime_root,
         requirements_path: package_json_path,
         requirements_hash: package_hash,
         command_path,

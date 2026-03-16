@@ -1,25 +1,14 @@
 {
   "$schema": "../deeting-manifest-schema.json",
   "id": "official.skills.skill_manager",
-  "name": "Skill Manager",
-  "version": "1.1.0",
+  "name": "Skill Installation Guide",
+  "version": "2.0.0",
   "author": "Deeting Team",
-  "description": "Manage Deeting skills through npx skills and keep them linked into the Deeting local skills directory.",
-  "entry": {
-    "backend": "main.py"
-  },
-  "permissions": [
-    "fs.read",
-    "fs.write",
-    "shell.execute"
-  ],
+  "description": "Guidance for installing skills into shared directories that Deeting scans and can refresh directly.",
   "runtime": [
     "local"
   ],
   "execution": {
-    "timeout_seconds": 120
-  },
-  "capabilities": {
-    "llm_tools": "llm-tool.yaml"
+    "timeout_seconds": 30
   }
 }

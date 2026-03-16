@@ -24,6 +24,7 @@ pub(crate) const CONSULT_EXPERT_NETWORK_TOOL_NAME: &str = "consult_expert_networ
 pub(crate) const ATTACH_CAPABILITY_TOOL_NAME: &str = "attach_capability";
 pub(crate) const DETACH_CAPABILITY_TOOL_NAME: &str = "detach_capability";
 pub(crate) const SYS_SUBMIT_ONBOARDING_REQUEST_TOOL_NAME: &str = "sys_submit_onboarding_request";
+pub(crate) const REFRESH_SKILL_INDEX_TOOL_NAME: &str = "refresh_skill_index";
 
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
@@ -298,6 +299,7 @@ pub(crate) fn full_code_mode_tool_names() -> Vec<String> {
         ATTACH_CAPABILITY_TOOL_NAME,
         DETACH_CAPABILITY_TOOL_NAME,
         SYS_SUBMIT_ONBOARDING_REQUEST_TOOL_NAME,
+        REFRESH_SKILL_INDEX_TOOL_NAME,
     ]
     .into_iter()
     .map(str::to_string)
@@ -632,6 +634,7 @@ mod tests {
         assert!(policy.inject_code_mode_protocol);
         assert!(policy.allows_tool(SEARCH_SDK_TOOL_NAME));
         assert!(policy.allows_tool(SYS_SUBMIT_ONBOARDING_REQUEST_TOOL_NAME));
+        assert!(policy.allows_tool(REFRESH_SKILL_INDEX_TOOL_NAME));
         assert!(!policy.allow_worker_delegation);
     }
 
