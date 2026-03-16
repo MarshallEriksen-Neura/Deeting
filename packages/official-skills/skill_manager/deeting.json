@@ -1,92 +1,25 @@
 {
-  "id": "skill_manager",
+  "$schema": "../deeting-manifest-schema.json",
+  "id": "official.skills.skill_manager",
   "name": "Skill Manager",
-  "version": "1.0.0",
-  "description": "Manage Deeting skills through npx skills ecosystem",
-  "runtime": ["local"],
-  "tools": [
-    {
-      "name": "find_skills",
-      "description": "Search for skills in the npx skills ecosystem (61K+ skills from Claude, OpenClaw, Cursor, etc.)",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "query": {
-            "type": "string",
-            "description": "Search query (e.g., 'pdf', 'weather', 'testing')"
-          }
-        },
-        "required": ["query"]
-      }
-    },
-    {
-      "name": "add_skill",
-      "description": "Install a skill from npx skills ecosystem and link it to Deeting's skills directory",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "package": {
-            "type": "string",
-            "description": "Package in format 'owner/repo@skill-name' (e.g., 'anthropics/skills@pdf')"
-          },
-          "skill_names": {
-            "type": "array",
-            "items": { "type": "string" },
-            "description": "Specific skill names to install (if package contains multiple)"
-          },
-          "install_all": {
-            "type": "boolean",
-            "description": "Install all skills from the package into the managed global agent directory."
-          }
-        },
-        "required": ["package"]
-      }
-    },
-    {
-      "name": "check_skill_updates",
-      "description": "Check for available updates to installed skills",
-      "input_schema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "update_skills",
-      "description": "Update all installed skills to their latest versions",
-      "input_schema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "inspect_skill_environment",
-      "description": "Check local environment for skill requirements (git, node, npx, python3)",
-      "input_schema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "refresh_skill_index",
-      "description": "Refresh Deeting's skill index after manual changes to skills directory",
-      "input_schema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "uninstall_skill",
-      "description": "Remove an installed skill from Deeting",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "skill_name": {
-            "type": "string",
-            "description": "Installed skill identifier to remove"
-          }
-        },
-        "required": ["skill_name"]
-      }
-    }
-  ]
+  "version": "1.1.0",
+  "author": "Deeting Team",
+  "description": "Manage Deeting skills through npx skills and keep them linked into the Deeting local skills directory.",
+  "entry": {
+    "backend": "main.py"
+  },
+  "permissions": [
+    "fs.read",
+    "fs.write",
+    "shell.execute"
+  ],
+  "runtime": [
+    "local"
+  ],
+  "execution": {
+    "timeout_seconds": 120
+  },
+  "capabilities": {
+    "llm_tools": "llm-tool.yaml"
+  }
 }

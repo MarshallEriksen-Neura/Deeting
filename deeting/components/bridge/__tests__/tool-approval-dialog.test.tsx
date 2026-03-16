@@ -26,6 +26,8 @@ jest.mock("next-intl", () => ({
       "chat.approvalDialog.actions.reject": "拒绝",
       "chat.approvalDialog.actions.approve": "批准执行",
       "chat.approvalDialog.actions.approving": "执行中...",
+      "chat.approvalDialog.badges.approved": "已批准",
+      "chat.approvalDialog.toast.approvedPending": "已批准，正在执行 {toolName}",
       "chat.approvalDialog.toast.approved": "工具 {toolName} 已执行",
       "chat.approvalDialog.toast.rejected": "已取消工具执行",
       "chat.approvalDialog.toast.executionFailed": "执行失败：{message}",
@@ -116,6 +118,7 @@ describe("ToolApprovalDialog", () => {
     jest.clearAllMocks()
     act(() => {
       useBridgeApprovalStore.getState().clear()
+      useBridgeApprovalStore.getState().clearRecentApprovedExecution()
       useChatStore.getState().resetSession()
     })
   })
@@ -207,6 +210,151 @@ describe("ToolApprovalDialog", () => {
     })
 
     deferredBridge.resolve({ ok: true })
+  })
+
+  it("resets loading when a new approval arrives after the previous approval was cleared", async () => {
+    const firstApproval = createDeferred<unknown>()
+    mockInvoke.mockReturnValueOnce(firstApproval.promise as never)
+    mockInvoke.mockResolvedValueOnce({ ok: true } as unknown)
+
+    render(<ToolApprovalDialog />)
+
+    act(() => {
+      useBridgeApprovalStore.getState().setPending(
+        createBridgeToolApproval({
+          approval_token: "approval-seq-1",
+          tool_name: "write_file",
+          arguments: { path: "first.txt" },
+          meta: {
+            call_id: "call-seq-1",
+          },
+        })
+      )
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "批准执行" }))
+
+    await waitFor(() => {
+      expect(useBridgeApprovalStore.getState().pending).toBeNull()
+    })
+
+    act(() => {
+      useBridgeApprovalStore.getState().setPending(
+        createBridgeToolApproval({
+          approval_token: "approval-seq-2",
+          tool_name: "write_file",
+          arguments: { path: "second.txt" },
+          meta: {
+            call_id: "call-seq-2",
+          },
+        })
+      )
+    })
+
+    const secondApproveButton = screen.getByRole("button", { name: "批准执行" })
+    expect(secondApproveButton).not.toBeDisabled()
+
+    fireEvent.click(secondApproveButton)
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenNthCalledWith(2, "approve_mcp_tool", {
+        approvalToken: "approval-seq-2",
+        callId: "call-seq-2",
+        executionToken: undefined,
+      })
+    })
+
+    await act(async () => {
+      firstApproval.resolve({ ok: true } as unknown)
+      await firstApproval.promise
+    })
+  })
+
+  it("closes immediately and restores the matching local tool call to running while approval is in flight", async () => {
+    const deferredApproval = createDeferred<unknown>()
+    mockInvoke.mockReturnValueOnce(deferredApproval.promise as never)
+
+    act(() => {
+      useChatStore.setState({
+        messages: [
+          {
+            id: "assistant-local-running-1",
+            role: "assistant",
+            content: "",
+            createdAt: 1,
+            blocks: [
+              {
+                id: "call-local-running-1",
+                type: "tool_call",
+                callId: "call-local-running-1",
+                toolName: "skill.official.skills.crawler.crawl_website",
+                status: "success",
+              } as MessageBlock,
+              {
+                id: "result-local-running-1",
+                type: "tool_result",
+                callId: "call-local-running-1",
+                toolName: "skill.official.skills.crawler.crawl_website",
+                status: "success",
+                result: {
+                  status: "REQUIRES_APPROVAL",
+                  approval_token: "approval-local-running-1",
+                  tool_name: "skill.official.skills.crawler.crawl_website",
+                  arguments: { url: "https://example.com" },
+                },
+              } as MessageBlock,
+            ],
+          },
+        ],
+      })
+      useBridgeApprovalStore.getState().setPending(
+        createBridgeToolApproval({
+          approval_token: "approval-local-running-1",
+          tool_name: "skill.official.skills.crawler.crawl_website",
+          arguments: { url: "https://example.com" },
+          meta: {
+            call_id: "call-local-running-1",
+            message_id: "assistant-local-running-1",
+          },
+        })
+      )
+    })
+
+    render(<ToolApprovalDialog />)
+    fireEvent.click(screen.getByRole("button", { name: "批准执行" }))
+
+    await waitFor(() => {
+      expect(useBridgeApprovalStore.getState().pending).toBeNull()
+    })
+
+    const blocks = useChatStore.getState().messages[0]?.blocks ?? []
+    expect(blocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "tool_call",
+          callId: "call-local-running-1",
+          status: "running",
+        }),
+      ])
+    )
+    expect(
+      blocks.some(
+        (block) => block.type === "tool_result" && block.callId === "call-local-running-1"
+      )
+    ).toBe(false)
+    expect(toast.success).toHaveBeenCalledWith(
+      "已批准，正在执行 skill.official.skills.crawler.crawl_website"
+    )
+
+    deferredApproval.resolve({ ok: true })
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("approve_mcp_tool", {
+        approvalToken: "approval-local-running-1",
+        callId: "call-local-running-1",
+        executionToken: undefined,
+      })
+    })
   })
 
   it("constrains long approval content so the footer actions remain reachable", () => {

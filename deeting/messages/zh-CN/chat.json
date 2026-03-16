@@ -295,7 +295,11 @@
       "risk": {
         "title": "风险等级 {level}"
       },
+      "badges": {
+        "approved": "已批准"
+      },
       "toast": {
+        "approvedPending": "已批准，正在执行 {toolName}",
         "approved": "工具 {toolName} 已执行",
         "rejected": "已取消工具执行",
         "executionFailed": "执行失败：{message}"

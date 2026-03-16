@@ -295,7 +295,11 @@
       "risk": {
         "title": "Risk level {level}"
       },
+      "badges": {
+        "approved": "Approved"
+      },
       "toast": {
+        "approvedPending": "Approved. Running {toolName} locally",
         "approved": "Tool {toolName} executed successfully",
         "rejected": "Tool execution cancelled",
         "executionFailed": "Execution failed: {message}"

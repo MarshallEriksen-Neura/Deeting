@@ -130,6 +130,42 @@ export function enqueueBridgeToolApproval(approval: BridgeToolPendingApproval): 
   return true
 }
 
+export function createOptimisticApprovalExecutionBlocks(
+  approval: BridgeToolPendingApproval,
+  blocks: MessageBlock[]
+): MessageBlock[] {
+  if (!Array.isArray(blocks) || blocks.length === 0) return blocks
+
+  const callId = approval.meta.call_id?.trim()
+  if (!callId) return blocks
+
+  let changed = false
+  const next: MessageBlock[] = []
+
+  for (const block of blocks) {
+    if (block.type === "tool_result" && block.callId === callId) {
+      const payload = extractToolApprovalPayload(block.result)
+      if (payload?.approval_token === approval.approval_token) {
+        changed = true
+        continue
+      }
+    }
+
+    if (block.type === "tool_call" && block.callId === callId && block.status !== "running") {
+      changed = true
+      next.push({
+        ...block,
+        status: "running",
+      })
+      continue
+    }
+
+    next.push(block)
+  }
+
+  return changed ? next : blocks
+}
+
 export function createApprovedToolResultBlock(
   approval: BridgeToolPendingApproval,
   result: unknown

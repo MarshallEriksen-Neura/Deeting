@@ -6,6 +6,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { resolveStatusDetail } from "@/lib/chat/status-detail";
+import { useBridgeApprovalStore } from "@/lib/chat/bridge-approval-store";
 import { useI18n } from "@/hooks/use-i18n";
 import type { MessageBlock } from "@/lib/chat/message-protocol";
 import { MarkdownViewer } from "@/components/chat/markdown-viewer";
@@ -683,6 +684,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                         transition={{ type: "spring", stiffness: 120, damping: 18 }}
                       >
                         <ToolCallBlock
+                          callId={part.callId}
                           name={part.toolName}
                           args={part.toolArgs}
                           status={part.status}
@@ -941,16 +943,35 @@ const CapabilityTransitionCard = memo<{
 
 // === 组件：MCP 工具块（可折叠展示结果） ===
 const ToolCallBlock = memo<{
+  callId?: string;
   name?: string;
   args?: string;
   status?: string;
   resultBlock?: MessageBlock;
 }>(
-  function ToolCallBlock({ name, args, status, resultBlock }) {
+  function ToolCallBlock({ callId, name, args, status, resultBlock }) {
+    const t = useI18n("chat");
     const [isOpen, setIsOpen] = useState(false);
+    const cardRef = useRef<HTMLDivElement>(null);
+    const recentApprovedExecution = useBridgeApprovalStore((state) => state.recentApprovedExecution);
     const isRunning = status === 'running';
     const isError = status === 'error';
     const hasResult = !!resultBlock;
+    const isRecentlyApproved =
+      typeof callId === "string" &&
+      callId.length > 0 &&
+      recentApprovedExecution?.call_id === callId;
+
+    useEffect(() => {
+      if (!isRecentlyApproved) return;
+      const frame = requestAnimationFrame(() => {
+        cardRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      });
+      return () => cancelAnimationFrame(frame);
+    }, [isRecentlyApproved]);
 
     // TaskLiveBlock special case
     const taskLiveId = useMemo(() => {
@@ -978,12 +999,16 @@ const ToolCallBlock = memo<{
     const isResultError = resultBlock?.status === "error";
 
     const card = (
-      <div className={cn(
-        "flex items-center gap-3 p-3 rounded-lg border text-sm w-full max-w-md transition-all",
+      <div
+        ref={cardRef}
+        className={cn(
+        "flex items-center gap-3 p-3 rounded-lg border text-sm w-full max-w-md transition-all duration-500",
         isRunning
           ? "border-blue-200 bg-blue-50/50 dark:border-blue-900 dark:bg-blue-900/20"
           : "border-border bg-card",
         isError && "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-900/20",
+        isRecentlyApproved &&
+          "border-emerald-300 bg-emerald-50/80 shadow-[0_0_0_3px_rgba(16,185,129,0.18)] dark:border-emerald-700 dark:bg-emerald-950/30",
         hasResult && !isRunning && "cursor-pointer select-none hover:bg-muted/50"
       )}>
         {/* Icon Status */}
@@ -992,6 +1017,8 @@ const ToolCallBlock = memo<{
           isRunning
             ? "bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300"
             : "bg-muted text-muted-foreground",
+          isRecentlyApproved &&
+            "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300",
           isError && "bg-red-100 text-red-500 dark:bg-red-900 dark:text-red-300"
         )}>
           {isRunning ? <Loader2 size={16} className="animate-spin"/> : <Terminal size={16}/>}
@@ -1001,9 +1028,19 @@ const ToolCallBlock = memo<{
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between">
             <span className="font-semibold font-mono truncate">{humanizeToolName(name)}</span>
-            <Badge variant="outline" className="text-[10px] h-5 font-normal text-muted-foreground">
-              {isInternalTool(name) ? "Skill" : "MCP"}
-            </Badge>
+            <div className="flex items-center gap-2 pl-2">
+              {isRecentlyApproved ? (
+                <Badge
+                  variant="outline"
+                  className="h-5 border-emerald-300 text-[10px] font-normal text-emerald-700 dark:border-emerald-700 dark:text-emerald-300"
+                >
+                  {t("approvalDialog.badges.approved")}
+                </Badge>
+              ) : null}
+              <Badge variant="outline" className="text-[10px] h-5 font-normal text-muted-foreground">
+                {isInternalTool(name) ? "Skill" : "MCP"}
+              </Badge>
+            </div>
           </div>
           <div className="text-xs text-muted-foreground truncate font-mono mt-0.5 opacity-80">
             {args}
@@ -1072,13 +1109,32 @@ const ToolCallGroup = memo<{
 }>(
   function ToolCallGroup({ toolCalls, resultMap, isActive }) {
     const [isOpen, setIsOpen] = useState(isActive);
+    const groupRef = useRef<HTMLDivElement>(null);
     const t = useI18n("chat");
+    const recentApprovedCallId = useBridgeApprovalStore(
+      (state) => state.recentApprovedExecution?.call_id ?? null
+    );
+    const containsRecentApproval = useMemo(
+      () => toolCalls.some(({ part }) => part.callId === recentApprovedCallId),
+      [recentApprovedCallId, toolCalls]
+    );
 
     useEffect(() => {
-      if (isActive) {
+      if (isActive || containsRecentApproval) {
         setIsOpen(true);
       }
-    }, [isActive]);
+    }, [containsRecentApproval, isActive]);
+
+    useEffect(() => {
+      if (!containsRecentApproval) return;
+      const frame = requestAnimationFrame(() => {
+        groupRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      });
+      return () => cancelAnimationFrame(frame);
+    }, [containsRecentApproval]);
 
     const summary = useMemo(() => {
       const pseudoParts: MessageBlock[] = toolCalls.map(({ part }) => part);
@@ -1088,9 +1144,12 @@ const ToolCallGroup = memo<{
     return (
       <Collapsible open={isOpen} onOpenChange={setIsOpen} className="w-full">
         <CollapsibleTrigger asChild>
-          <div className={cn(
-            "flex items-center gap-3 p-3 rounded-lg border text-sm w-full max-w-md transition-all cursor-pointer select-none",
-            "border-border bg-card hover:bg-muted/50"
+          <div
+            ref={groupRef}
+            className={cn(
+            "flex items-center gap-3 p-3 rounded-lg border text-sm w-full max-w-md transition-all cursor-pointer select-none border-border bg-card hover:bg-muted/50",
+            containsRecentApproval &&
+              "border-emerald-300 bg-emerald-50/70 shadow-[0_0_0_3px_rgba(16,185,129,0.14)] dark:border-emerald-700 dark:bg-emerald-950/20"
           )}>
             <div className="w-8 h-8 rounded flex items-center justify-center shrink-0 bg-muted text-muted-foreground">
               <Terminal size={16} />
@@ -1124,6 +1183,7 @@ const ToolCallGroup = memo<{
             {toolCalls.map(({ part, index }) => (
               <ToolCallBlock
                 key={`tool-${index}`}
+                callId={part.callId}
                 name={part.toolName}
                 args={part.toolArgs}
                 status={part.status}

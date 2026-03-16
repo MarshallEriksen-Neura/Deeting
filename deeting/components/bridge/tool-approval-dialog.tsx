@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useTranslations } from "next-intl"
 import {
   AlertDialog,
@@ -13,6 +13,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import {
+  announceBridgeApprovalExecution,
   isBridgeToolApproval,
   useBridgeApprovalStore,
 } from "@/lib/chat/bridge-approval-store"
@@ -22,6 +23,7 @@ import { toast } from "sonner"
 import { Loader2, ShieldAlert } from "lucide-react"
 import { useChatStore } from "@/store/chat-store"
 import {
+  createOptimisticApprovalExecutionBlocks,
   createApprovedToolResultBlock,
   createLocalChatResumeErrorBlock,
   createRejectedToolResultBlock,
@@ -30,21 +32,37 @@ import {
 
 export function ToolApprovalDialog() {
   const { pending, clear } = useBridgeApprovalStore()
+  const setMessageBlocks = useChatStore((state) => state.setMessageBlocks)
   const upsertMessageToolResult = useChatStore((state) => state.upsertMessageToolResult)
   const appendMessageBlocks = useChatStore((state) => state.appendMessageBlocks)
   const [loading, setLoading] = useState(false)
   const t = useTranslations("chat.approvalDialog")
+  const approvalToken = pending?.approval_token ?? null
+
+  useEffect(() => {
+    setLoading(false)
+  }, [approvalToken])
 
   if (!pending) return null
 
   const rejectedErrorMessage = t("result.userRejected")
   const formattedArguments = JSON.stringify(pending.arguments, null, 2)
 
-  const handleApprove = async () => {
-    const approval = pending
-    if (!approval) return
+  const applyOptimisticExecutionState = (approval: typeof pending) => {
+    if (!approval.meta.message_id) return
 
-    setLoading(true)
+    const message = useChatStore
+      .getState()
+      .messages.find((candidate) => candidate.id === approval.meta.message_id)
+    if (!message?.blocks?.length) return
+
+    const nextBlocks = createOptimisticApprovalExecutionBlocks(approval, message.blocks)
+    if (nextBlocks !== message.blocks) {
+      setMessageBlocks(approval.meta.message_id, nextBlocks)
+    }
+  }
+
+  const executeApprovedTool = async (approval: typeof pending) => {
     try {
       const result = await invoke("approve_mcp_tool", {
         approvalToken: approval.approval_token,
@@ -69,8 +87,9 @@ export function ToolApprovalDialog() {
         }
       }
 
-      clear()
-      toast.success(t("toast.approved", { toolName: approval.tool_name }))
+      if (!approval.meta.message_id) {
+        toast.success(t("toast.approved", { toolName: approval.tool_name }))
+      }
 
       if (approval.meta.execution_token) {
         try {
@@ -113,10 +132,21 @@ export function ToolApprovalDialog() {
           })
         }
       }
-      clear()
-    } finally {
-      setLoading(false)
     }
+  }
+
+  const handleApprove = () => {
+    const approval = pending
+    if (!approval) return
+
+    setLoading(true)
+    applyOptimisticExecutionState(approval)
+    announceBridgeApprovalExecution(approval)
+    if (approval.meta.message_id) {
+      toast.success(t("toast.approvedPending", { toolName: approval.tool_name }))
+    }
+    clear()
+    void executeApprovedTool(approval)
   }
 
   const handleReject = async () => {
