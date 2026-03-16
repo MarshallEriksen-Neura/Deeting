@@ -165,12 +165,69 @@ pub(crate) fn code_mode_core_tools() -> Vec<CoreToolContract> {
                 }
             }),
         },
+        CoreToolContract {
+            name: "shell_execute",
+            description: "Execute shell commands on the user's machine with security checks and user approval. Supports cross-platform command execution (Windows: cmd, Linux/Mac: sh). Automatically handles encoding (UTF-8/GBK) and provides timeout control.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "The command to execute (e.g., 'npm install', 'git status')"
+                    },
+                    "args": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Optional arguments for the command"
+                    },
+                    "working_dir": {
+                        "type": "string",
+                        "description": "Working directory for command execution. Must be within allowed paths (user directories)."
+                    },
+                    "timeout_seconds": {
+                        "type": "integer",
+                        "description": "Execution timeout in seconds",
+                        "default": 300,
+                        "minimum": 5,
+                        "maximum": 1800
+                    },
+                    "env": {
+                        "type": "object",
+                        "additionalProperties": { "type": "string" },
+                        "description": "Environment variables for the command"
+                    }
+                },
+                "required": ["command"]
+            }),
+            output_schema: json!({
+                "type": "object",
+                "properties": {
+                    "stdout": {"type": "string"},
+                    "stderr": {"type": "string"},
+                    "exit_code": {"type": "integer"},
+                    "command": {"type": "string"},
+                    "working_dir": {"type": "string"},
+                    "duration_ms": {"type": "integer"},
+                    "approval_level": {"type": "string"}
+                },
+                "required": ["stdout", "stderr", "exit_code", "command", "duration_ms", "approval_level"]
+            }),
+            permission_scope: &["shell_execution", "host_access"],
+            read_only: false,
+            mutating: true,
+            risk_level: "MEDIUM",
+            example_arguments: json!({
+                "command": "git status",
+                "working_dir": "/home/user/project"
+            }),
+        },
     ]
 }
 
 fn core_tool_execution_surface(tool_name: &str) -> &'static str {
     match tool_name {
         "execute_code_plan" => "sandbox",
+        "shell_execute" => "host",
         _ => "host",
     }
 }

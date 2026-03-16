@@ -62,18 +62,24 @@ def ensure_required_tools(*tool_names: str) -> None:
 
 
 def run_command(command: Sequence[str], *, check: bool = True) -> Dict[str, Any]:
+    # On Windows, use shell=True to properly resolve .cmd/.bat files (e.g., npx.cmd)
+    use_shell = sys.platform == "win32"
+    
     completed = subprocess.run(
         list(command),
         text=True,
         capture_output=True,
         timeout=COMMAND_TIMEOUT_SECONDS,
         check=False,
+        shell=use_shell,
+        encoding='utf-8',
+        errors='replace',  # Replace undecodable characters instead of failing
     )
     result = {
         "command": list(command),
         "returncode": completed.returncode,
-        "stdout": completed.stdout.strip(),
-        "stderr": completed.stderr.strip(),
+        "stdout": (completed.stdout or "").strip(),
+        "stderr": (completed.stderr or "").strip(),
     }
     if check and completed.returncode != 0:
         detail = result["stderr"] or result["stdout"] or f"command failed with exit code {completed.returncode}"
@@ -456,6 +462,11 @@ async def install_skill_from_git(repo_url: str, skill_name: str) -> Dict[str, An
 
 
 async def handle_input() -> None:
+    # Set stdout encoding to UTF-8 on Windows to handle non-ASCII characters
+    if sys.platform == "win32" and sys.stdout.encoding != "utf-8":
+        import codecs
+        sys.stdout = codecs.getwriter("utf-8")(sys.stdout.buffer, "replace")
+    
     try:
         raw_input = sys.stdin.read()
         if not raw_input:

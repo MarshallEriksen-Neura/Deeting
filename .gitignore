@@ -10,6 +10,7 @@ __pycache__/
 .codex/
 .workflow/
 .specify/
+.uv-cache/
 .mcp.json
 opencode.json
 target-codex-warnings/

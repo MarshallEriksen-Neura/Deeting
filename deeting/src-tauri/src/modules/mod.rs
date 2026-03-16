@@ -13,4 +13,5 @@ pub mod providers;
 pub mod relay;
 pub mod sandbox;
 pub mod scan;
+pub mod shell_executor;
 pub mod skill_runtime;
