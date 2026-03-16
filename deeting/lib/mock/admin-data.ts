@@ -31,7 +31,6 @@ export const dashboardStats = {
   revokedApiKeys: 23,
   requestsToday: 48520,
   successRate: 99.2,
-  pendingReviews: 7,
   pendingKnowledgeReviews: 3,
   monthlySpend: 2847.56,
   totalBalance: 15420.80,

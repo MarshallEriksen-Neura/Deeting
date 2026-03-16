@@ -1,7 +1,6 @@
 import {
   createAssistant,
   deleteAssistant,
-  submitAssistantForReview,
   updateAssistant,
 } from "@/lib/api/assistants"
 import { request } from "@/lib/http"
@@ -183,25 +182,6 @@ describe("assistant crud api", () => {
     expect(mockInvoke).not.toHaveBeenCalled()
   })
 
-  it("submits assistant review via cloud request in tauri runtime", async () => {
-    process.env.NEXT_PUBLIC_IS_TAURI = "true"
-    windowWithTauri.__TAURI__ = {}
-    mockRequest.mockResolvedValueOnce({
-      message: "assistant submitted for review",
-    })
-
-    const result = await submitAssistantForReview(assistantId)
-
-    expect(result.message).toBe("assistant submitted for review")
-    expect(mockRequest).toHaveBeenCalledWith(
-      expect.objectContaining({
-        url: `/api/v1/assistants/${assistantId}/submit`,
-        method: "POST",
-      })
-    )
-    expect(mockInvoke).not.toHaveBeenCalled()
-  })
-
   it("falls back to web crud outside tauri runtime", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "false"
     mockRequest
@@ -254,9 +234,6 @@ describe("assistant crud api", () => {
         rating_count: 1,
       })
       .mockResolvedValueOnce({})
-      .mockResolvedValueOnce({
-        message: "assistant submitted for review",
-      })
 
     await createAssistant({
       visibility: "private",
@@ -274,7 +251,6 @@ describe("assistant crud api", () => {
       },
     })
     await deleteAssistant(assistantId)
-    await submitAssistantForReview(assistantId)
 
     expect(mockRequest).toHaveBeenNthCalledWith(
       1,
@@ -295,13 +271,6 @@ describe("assistant crud api", () => {
       expect.objectContaining({
         url: `/api/v1/assistants/${assistantId}`,
         method: "DELETE",
-      })
-    )
-    expect(mockRequest).toHaveBeenNthCalledWith(
-      4,
-      expect.objectContaining({
-        url: `/api/v1/assistants/${assistantId}/submit`,
-        method: "POST",
       })
     )
     expect(mockInvoke).not.toHaveBeenCalled()

@@ -89,12 +89,6 @@ const OFFICIAL_SKILL_CAPABILITIES: &[DesktopOfficialSkillCapabilitySpec] = &[
         admin_only: false,
     },
     DesktopOfficialSkillCapabilitySpec {
-        id: "cloud.assistant_ingest.submit",
-        kind: DesktopCapabilityKind::SystemAction,
-        callable_from_official_skill: true,
-        admin_only: true,
-    },
-    DesktopOfficialSkillCapabilitySpec {
         id: "cloud.provider_preset.list",
         kind: DesktopCapabilityKind::DirectCapability,
         callable_from_official_skill: true,
@@ -154,9 +148,6 @@ pub async fn dispatch_official_skill_capability(
         "provider.verify" => dispatch_provider_verify(arguments).await.map(Some),
         "web.fetch" => dispatch_web_fetch(arguments).await.map(Some),
         "assistant.onboarding.submit" => dispatch_assistant_onboarding_submit(arguments)
-            .await
-            .map(Some),
-        "cloud.assistant_ingest.submit" => dispatch_cloud_assistant_ingest_submit(arguments)
             .await
             .map(Some),
         "cloud.provider_preset.list" => dispatch_cloud_provider_preset_list().await.map(Some),
@@ -250,17 +241,6 @@ pub(crate) fn desktop_user_can_access_restricted_asset(
     if allowed.iter().any(|role| role == "admin") {
         if matches!(
             id_hint,
-            Some("official.skills.ingestor") | Some("cloud.assistant_ingest.submit")
-        ) {
-            return current_user
-                .permission_flags
-                .get("can_assistant_manage")
-                .copied()
-                .unwrap_or_default()
-                > 0;
-        }
-        if matches!(
-            id_hint,
             Some("official.skills.provider_registry")
                 | Some("cloud.provider_preset.list")
                 | Some("cloud.provider_preset.upsert")
@@ -298,15 +278,6 @@ async fn desktop_current_user_info() -> Result<DesktopCurrentUserInfo, String> {
 async fn ensure_desktop_admin_role(capability_id: &str) -> Result<(), String> {
     let current_user = desktop_current_user_info().await?;
     let allowed = match capability_id {
-        "cloud.assistant_ingest.submit" => {
-            current_user.is_superuser
-                || current_user
-                    .permission_flags
-                    .get("can_assistant_manage")
-                    .copied()
-                    .unwrap_or_default()
-                    > 0
-        }
         "cloud.provider_preset.list" | "cloud.provider_preset.upsert" => current_user.is_superuser,
         _ => true,
     };
@@ -537,33 +508,4 @@ async fn dispatch_assistant_onboarding_submit(arguments: &Value) -> Result<Value
         "action": "created",
         "id": id,
     }))
-}
-
-async fn dispatch_cloud_assistant_ingest_submit(arguments: &Value) -> Result<Value, String> {
-    let app_state = global_app_state_required()?;
-    let base_url = desktop_cloud_base_url(&app_state).await?;
-    let token = desktop_auth_token(&app_state).await?;
-    let response = reqwest::Client::new()
-        .post(format!(
-            "{}/api/v1/admin/assistants/ingest-from-desktop",
-            base_url
-        ))
-        .header("Authorization", format!("Bearer {}", token))
-        .json(arguments)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!(
-            "admin/assistants/ingest-from-desktop returned {}: {}",
-            status.as_u16(),
-            body
-        ));
-    }
-    response
-        .json::<Value>()
-        .await
-        .map_err(|err| err.to_string())
 }

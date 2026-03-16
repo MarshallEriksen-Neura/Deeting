@@ -8,8 +8,9 @@ import {
   type AssistantDTO,
 } from "@/lib/api/assistants"
 
-export function useAssistantOwned(size = 20) {
-  const key = ["assistant-owned", { cursor: null, size }]
+export function useAssistantOwned(size = 20, options?: { enabled?: boolean }) {
+  const enabled = options?.enabled ?? true
+  const key = enabled ? ["assistant-owned", { cursor: null, size }] : null
   const { data, error, isLoading, mutate } = useSWR<
     { items: AssistantDTO[]; next_cursor?: string | null; size?: number },
     ApiError

@@ -18,6 +18,8 @@ target-codex-warnings/
 .omc/
 .omx/
 .agents/
+target-codex-shell/
+
 backend/__pycache__
 backend/*.py[oc]
 backend/build/

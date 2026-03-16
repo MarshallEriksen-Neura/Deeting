@@ -10,12 +10,13 @@ import { Button } from "@/components/ui/button"
 import { AgentCard } from "@/components/assistants/agent-card"
 import { CreateAgentModal } from "@/components/assistants/create-agent-modal"
 import { InfiniteList } from "@/components/ui/infinite-list"
-import { installAssistant } from "@/lib/api"
+import { installAssistant, installLocalAssistant } from "@/lib/api"
+import { useLocalAssistantLibrary } from "@/lib/swr/use-local-assistant-library"
+import { useLocalAssistantTags } from "@/lib/swr/use-local-assistant-tags"
 import { useAssistantMarket } from "@/lib/swr/use-assistant-market"
 import { useAssistantTags } from "@/lib/swr/use-assistant-tags"
 import { useAssistantOwned } from "@/lib/swr/use-assistant-owned"
 import type { AssistantCardData } from "@/components/assistants/types"
-import { toast } from "sonner"
 
 const PAGE_SIZE = 8
 const COLOR_OPTIONS = [
@@ -82,14 +83,25 @@ export default function AssistantsPage() {
     q: searchQuery,
     tags: selectedTags,
     size: PAGE_SIZE,
-  })
+  }, { enabled: !isTauriRuntime })
 
   const {
     items: ownedItems,
     isLoading: ownedLoading,
     mutate: mutateOwned,
-  } = useAssistantOwned(20)
-  const { tags: marketTags } = useAssistantTags()
+  } = useAssistantOwned(20, { enabled: !isTauriRuntime })
+  const { tags: cloudTags } = useAssistantTags(!isTauriRuntime)
+  const {
+    items: localLibraryItems,
+    isLoading: localLibraryLoading,
+    error: localLibraryError,
+    mutate: mutateLocalLibrary,
+  } = useLocalAssistantLibrary(isTauriRuntime)
+  const {
+    tags: localTags,
+    mutate: mutateLocalTags,
+  } = useLocalAssistantTags(isTauriRuntime)
+  const marketTags = isTauriRuntime ? localTags : cloudTags
 
   React.useEffect(() => {
     reset()
@@ -98,7 +110,7 @@ export default function AssistantsPage() {
   const [modalOpen, setModalOpen] = React.useState(false)
   const [editing, setEditing] = React.useState<EditableAssistant | undefined>(undefined)
 
-  const ownedEditableMap = React.useMemo(() => {
+  const cloudOwnedEditableMap = React.useMemo(() => {
     const map: Record<string, EditableAssistant> = {}
     ownedItems.forEach((assistant) => {
       const current =
@@ -119,6 +131,27 @@ export default function AssistantsPage() {
     return map
   }, [ownedItems])
 
+  const localEditableMap = React.useMemo(() => {
+    const map: Record<string, EditableAssistant> = {}
+    localLibraryItems.forEach((item) => {
+      map[item.assistant.id] = {
+        id: item.assistant.id,
+        name: item.version?.name || item.assistant.name,
+        desc:
+          item.entity?.summary ||
+          item.version?.description ||
+          item.assistant.description ||
+          "",
+        systemPrompt: item.version?.system_prompt || item.assistant.system_prompt,
+        tags: normalizeTags(item.version?.tags.length ? item.version.tags : item.assistant.tags),
+        iconId: item.assistant.avatar || item.entity?.icon_id || "lucide:bot",
+        color: pickColor(item.assistant.id),
+        visibility: item.assistant.visibility,
+      }
+    })
+    return map
+  }, [localLibraryItems])
+
   const handleCreate = React.useCallback(() => {
     setEditing(undefined)
     setModalOpen(true)
@@ -126,12 +159,14 @@ export default function AssistantsPage() {
 
   const handleEdit = React.useCallback(
     (assistantId: string) => {
-      const target = ownedEditableMap[assistantId]
+      const target = isTauriRuntime
+        ? localEditableMap[assistantId]
+        : cloudOwnedEditableMap[assistantId]
       if (!target) return
       setEditing(target)
       setModalOpen(true)
     },
-    [ownedEditableMap]
+    [cloudOwnedEditableMap, isTauriRuntime, localEditableMap]
   )
 
   const ownedCards = React.useMemo<AssistantCardData[]>(() => {
@@ -155,12 +190,31 @@ export default function AssistantsPage() {
           summary: assistant.summary,
           author: assistant.owner_user_id ? t("author.me") : t("author.system"),
           color: pickColor(assistant.id),
-          visibility: assistant.visibility,
-          status: assistant.status,
         }
       })
       .filter(Boolean) as AssistantCardData[]
   }, [ownedItems, t])
+
+  const localCards = React.useMemo<AssistantCardData[]>(() => {
+    return localLibraryItems.map((item) => ({
+      id: item.assistant.id,
+      name: item.version?.name || item.assistant.name,
+      description:
+        item.entity?.summary ||
+        item.version?.description ||
+        item.assistant.description ||
+        "",
+      tags: normalizeTags(item.version?.tags.length ? item.version.tags : item.assistant.tags),
+      installCount: item.entity?.install_count || 0,
+      ratingAvg: item.entity?.rating_avg || 0,
+      installed: item.installed,
+      isOwned: true,
+      iconId: item.assistant.avatar || item.entity?.icon_id,
+      summary: item.entity?.summary || item.assistant.description,
+      author: t("author.me"),
+      color: pickColor(item.assistant.id),
+    }))
+  }, [localLibraryItems, t])
 
   const marketCards = React.useMemo<AssistantCardData[]>(() => {
     return marketItems.map((item) => ({
@@ -195,37 +249,84 @@ export default function AssistantsPage() {
     [ownedCards, searchQuery, selectedTags]
   )
 
+  const filteredLocal = React.useMemo(
+    () =>
+      localCards.filter(
+        (agent) =>
+          matchesQuery(agent, searchQuery) &&
+          (selectedTags.length === 0 ||
+            agent.tags.some((tag) => selectedTags.includes(tag)))
+      ),
+    [localCards, searchQuery, selectedTags]
+  )
+
   const mergedAgents = React.useMemo(() => {
+    if (isTauriRuntime) {
+      return filteredLocal
+    }
     const marketOnly = marketCards.filter((agent) => !ownedIds.has(agent.id))
     return [...filteredOwned, ...marketOnly]
-  }, [filteredOwned, marketCards, ownedIds])
+  }, [filteredLocal, filteredOwned, isTauriRuntime, marketCards, ownedIds])
 
-  const isInitialLoading = (isLoading || ownedLoading) && mergedAgents.length === 0
+  const isInitialLoading = isTauriRuntime
+    ? localLibraryLoading && mergedAgents.length === 0
+    : (isLoading || ownedLoading) && mergedAgents.length === 0
+  const shouldShowBlockingLoadError = isTauriRuntime
+    ? !!localLibraryError && mergedAgents.length === 0
+    : !!error && mergedAgents.length === 0
 
   const handleInstall = React.useCallback(
     async (assistantId: string, options?: { followLatest?: boolean }) => {
+      if (isTauriRuntime) {
+        await installLocalAssistant(
+          assistantId,
+          options ? { follow_latest: options.followLatest } : undefined
+        )
+        await mutateLocalLibrary()
+        return
+      }
+
       await installAssistant(
         assistantId,
         options ? { follow_latest: options.followLatest } : undefined
       )
       await mutateMarket()
     },
-    [mutateMarket]
+    [isTauriRuntime, mutateLocalLibrary, mutateMarket]
   )
 
   return (
     <div className="min-h-screen bg-muted/20 p-8 space-y-8 animate-in fade-in duration-700">
       <CreateAgentModal
-        mode="cloud"
+        mode={isTauriRuntime ? "local" : "cloud"}
         trigger={null}
         open={modalOpen}
         onOpenChange={setModalOpen}
         assistant={editing}
         onCreated={() => {
+          if (isTauriRuntime) {
+            mutateLocalLibrary()
+            mutateLocalTags()
+            return
+          }
           mutateOwned()
           mutateMarket()
         }}
         onUpdated={() => {
+          if (isTauriRuntime) {
+            mutateLocalLibrary()
+            mutateLocalTags()
+            return
+          }
+          mutateOwned()
+          mutateMarket()
+        }}
+        onDeleted={() => {
+          if (isTauriRuntime) {
+            mutateLocalLibrary()
+            mutateLocalTags()
+            return
+          }
           mutateOwned()
           mutateMarket()
         }}
@@ -293,10 +394,10 @@ export default function AssistantsPage() {
 
       {/* 3. 助手网格 (使用 InfiniteList) */}
       <InfiniteList
-        isLoading={isLoadingMore}
-        isError={!!error}
-        hasMore={hasMore}
-        onLoadMore={loadMore}
+        isLoading={isTauriRuntime ? false : isLoadingMore}
+        isError={shouldShowBlockingLoadError}
+        hasMore={isTauriRuntime ? false : hasMore}
+        onLoadMore={isTauriRuntime ? undefined : loadMore}
         useScrollArea={false} // 使用 Body 滚动
         className="pb-20"
       >
@@ -321,7 +422,7 @@ export default function AssistantsPage() {
               <AgentCard
                 key={agent.id}
                 agent={agent}
-                onInstall={isTauriRuntime ? undefined : handleInstall}
+                onInstall={handleInstall}
                 onEdit={handleEdit}
               />
             ))

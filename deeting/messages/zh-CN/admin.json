@@ -27,8 +27,6 @@
       },
       "pendingActions": {
         "title": "待处理事项",
-        "assistantReviewsTitle": "助手审核",
-        "assistantReviewsSubtitle": "等待审批",
         "knowledgeReviewsTitle": "知识审核",
         "knowledgeReviewsSubtitle": "等待处理",
         "pluginReviewsTitle": "插件审核",
@@ -121,47 +119,6 @@
         "loading": "正在加载助手...",
         "failed": "加载助手失败",
         "noData": "暂无助手数据"
-      }
-    },
-    "assistantReviews": {
-      "title": "助手审核",
-      "description": "审核待发布的助手与标签"
-    },
-    "assistantReviewsPage": {
-      "status": {
-        "pending": "待审核",
-        "approved": "已通过",
-        "rejected": "已拒绝"
-      },
-      "stats": {
-        "pending": "待审核",
-        "approved": "已通过",
-        "rejected": "已拒绝"
-      },
-      "feedback": {
-        "approved": "已通过 {name}",
-        "rejected": "已拒绝 {name}",
-        "operationFailed": "操作失败"
-      },
-      "table": {
-        "headers": {
-          "assistant": "助手",
-          "submitter": "提交人",
-          "status": "状态",
-          "submitted": "提交时间",
-          "reviewer": "审核人",
-          "reviewed": "审核时间",
-          "reason": "原因"
-        }
-      },
-      "filters": {
-        "searchPlaceholder": "搜索审核任务...",
-        "status": "状态"
-      },
-      "empty": {
-        "loading": "正在加载审核任务...",
-        "failed": "加载审核任务失败",
-        "noData": "暂无审核任务"
       }
     },
     "specKnowledge": {
@@ -1454,8 +1411,8 @@
     "maintenanceSettingsPage": {
       "section": {
         "title": "桌面端维护",
-        "description": "这里承接全局系统同步和修复类动作。扫描审查页只保留扫描结果、发现项和定向修复。",
-        "note": "技能安装对账优先使用同步动作；只有在本地资产索引需要整体重建时才使用全量修复。"
+        "description": "这里用于重建本地能力注册表与索引，不再依赖云端助手同步。",
+        "note": "修复会清空并重建本地资产索引，然后重新索引本地 skills、MCP tools、assistants 和知识资产。"
       },
       "diagnostics": {
         "title": "能力注册表切换诊断",
@@ -1505,6 +1462,7 @@
         "syncReinstallApplied": "同步并重装完成 · 拉取 {fetched} 条，写入 {upserted} 条，重装 {reinstalled} 条，失败 {failed} 条",
         "syncAppliedNoop": "本次没有可应用的桌面同步变更",
         "repairApplied": "本地索引修复完成 · 拉取 {fetched} 条，写入 {upserted} 条，技能 {skills} 项，助手 {assistants} 项",
+        "repairAppliedLocal": "本地重建完成 · 注册表 {registry} 项，技能 {skills} 项，MCP 工具 {mcpTools} 项，助手 {assistants} 项，知识 {knowledge} 项",
         "repairAppliedNoop": "本次没有可应用的本地索引修复变更",
         "maintenanceFailed": "维护操作失败"
       },
@@ -1532,8 +1490,8 @@
       },
       "repairConfirm": {
         "title": "确认修复本地索引？",
-        "description": "该操作会重建本地系统资产索引，并通过当前同步链路重新回灌技能与助手数据。",
-        "warning": "历史本地资产索引会先被清空再重建；如果当前桌面端未完成同步或登录失效，重建结果可能不完整。",
+        "description": "该操作会重建本地能力注册表与索引，并重新索引桌面端已有的技能、工具、助手和知识数据。",
+        "warning": "历史本地资产索引会先被清空再重建；重建期间相关搜索与发现能力可能短暂不完整。",
         "confirm": "确认修复",
         "cancel": "取消"
       }

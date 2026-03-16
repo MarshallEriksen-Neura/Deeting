@@ -2,14 +2,15 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, State};
 
 use crate::modules::mcp::commands::assistant_management_impl::index_local_assistants;
+use crate::modules::mcp::commands::assistants_knowledge_admin_impl::index_mcp_tools;
 use crate::modules::mcp::commands::common_impl::to_string;
+use crate::modules::mcp::commands::runtime::sync_core_tool_registry_entries;
 use crate::modules::mcp::commands::skill_registry_impl::register_local_skills_inner;
-use crate::modules::mcp::commands::source_management_impl::reset_local_asset_catalog_then_sync_inner;
 use crate::modules::mcp::types::{
     LocalCapabilityRegistryDiagnosticsBucket, LocalCapabilityRegistryDiagnosticsItem,
     LocalCapabilityRegistryDiagnosticsResponse, LocalCapabilityRegistryParityItem,
     LocalMaintenanceActionRequest, LocalMaintenanceLogItem, LocalMaintenanceLogListResponse,
-    LocalMaintenanceLogQuery, LocalSystemAssetRepairResponse,
+    LocalMaintenanceLogQuery,
 };
 use crate::state::AppState;
 
@@ -17,31 +18,16 @@ use crate::state::AppState;
 pub async fn run_local_maintenance_action(
     app: AppHandle,
     state: State<'_, AppState>,
-    access_token: String,
     request: LocalMaintenanceActionRequest,
 ) -> Result<LocalMaintenanceLogItem, String> {
-    let normalized_token = access_token.trim().to_string();
-    if normalized_token.is_empty() {
-        return Err("access token is required".to_string());
-    }
-
     let kind = request.kind.trim().to_string();
     if kind.is_empty() {
         return Err("maintenance action kind is required".to_string());
     }
 
-    let page_limit = request.limit.unwrap_or(500).clamp(1, 500);
-    let enable_reinstall = request.reinstall_missing.unwrap_or(false);
     let log_item = match kind.as_str() {
         "repair_local_index" => {
-            let result = execute_repair_action(
-                app,
-                state.inner(),
-                &normalized_token,
-                page_limit,
-                enable_reinstall,
-            )
-            .await;
+            let result = execute_repair_action(app, state.inner()).await;
             persist_action_log(state.inner(), &kind, result).await?
         }
         other => return Err(format!("unsupported maintenance action: {}", other)),
@@ -230,11 +216,7 @@ pub(crate) async fn build_local_capability_registry_diagnostics(
 async fn execute_repair_action(
     app: AppHandle,
     state: &AppState,
-    access_token: &str,
-    limit: i64,
-    reinstall_missing: bool,
 ) -> Result<(String, serde_json::Value), String> {
-    let base_url = state.mcp.cloud_base_url.read().await.clone();
     let probe_vector = state
         .providers
         .embedding
@@ -247,19 +229,32 @@ async fn execute_repair_action(
         return Err("embedding model returned empty vector".to_string());
     }
 
-    let sync = reset_local_asset_catalog_then_sync_inner(
-        &state.memory.service,
-        state.mcp.store.as_ref(),
-        &state.mcp.client,
-        &base_url,
-        access_token,
-        limit,
-        vector_dimension,
-        None,
-        reinstall_missing,
-    )
-    .await?;
+    state
+        .memory
+        .service
+        .recreate_local_asset_table(vector_dimension)
+        .await
+        .map_err(to_string)?;
+
+    let core_registry_count =
+        sync_core_tool_registry_entries(state.mcp.store.as_ref()).await? as i64;
+    let mcp_registry_count = state
+        .mcp
+        .store
+        .sync_all_mcp_tool_registry_entries()
+        .await
+        .map_err(to_string)?;
+    let assistant_registry_count = state
+        .mcp
+        .store
+        .sync_all_assistant_registry_entries()
+        .await
+        .map_err(to_string)?;
     let skill_reindexed_count = register_local_skills_inner(app.clone(), state).await? as i64;
+    let tools = state.mcp.store.list_tools().await.map_err(to_string)?;
+    let mcp_tool_reindexed_count = tools.len() as i64;
+    index_mcp_tools(state, &tools).await;
+
     let assistants = state
         .mcp
         .store
@@ -277,35 +272,48 @@ async fn execute_repair_action(
         .filter(|assistant| enabled_assistant_ids.contains(assistant.id.as_str()))
         .count() as i64;
     index_local_assistants(state, &assistants).await;
+    let knowledge_reindexed_count =
+        crate::modules::mcp::commands::rebuild_local_knowledge_vector_index(state).await? as i64;
 
-    let response = LocalSystemAssetRepairResponse {
-        vector_dimension: vector_dimension as i64,
+    Ok(build_repair_log_payload(
+        vector_dimension as i64,
+        core_registry_count,
+        mcp_registry_count,
+        assistant_registry_count,
         skill_reindexed_count,
+        mcp_tool_reindexed_count,
         assistant_reindexed_count,
-        sync,
-    };
-    Ok(build_repair_log_payload(response))
+        knowledge_reindexed_count,
+    ))
 }
 
 fn build_repair_log_payload(
-    response: LocalSystemAssetRepairResponse,
+    vector_dimension: i64,
+    core_registry_count: i64,
+    mcp_registry_count: i64,
+    assistant_registry_count: i64,
+    skill_reindexed_count: i64,
+    mcp_tool_reindexed_count: i64,
+    assistant_reindexed_count: i64,
+    knowledge_reindexed_count: i64,
 ) -> (String, serde_json::Value) {
     (
         format!(
-            "Rebuilt local asset index and reindexed {} skills / {} assistants",
-            response.skill_reindexed_count, response.assistant_reindexed_count
+            "Rebuilt local asset index and reindexed {} skills / {} MCP tools / {} assistants / {} knowledge assets",
+            skill_reindexed_count,
+            mcp_tool_reindexed_count,
+            assistant_reindexed_count,
+            knowledge_reindexed_count
         ),
         json!({
-            "vector_dimension": response.vector_dimension,
-            "skill_reindexed_count": response.skill_reindexed_count,
-            "assistant_reindexed_count": response.assistant_reindexed_count,
-            "sync": {
-                "assets_fetched": response.sync.fetched_count,
-                "skill_install_fetched_count": response.sync.skill_install_fetched_count,
-                "skill_install_upserted_count": response.sync.skill_install_upserted_count,
-                "skill_reinstalled_count": response.sync.skill_reinstalled_count,
-                "skill_failed_count": response.sync.skill_failed_count,
-            }
+            "vector_dimension": vector_dimension,
+            "core_registry_count": core_registry_count,
+            "mcp_registry_count": mcp_registry_count,
+            "assistant_registry_count": assistant_registry_count,
+            "skill_reindexed_count": skill_reindexed_count,
+            "mcp_tool_reindexed_count": mcp_tool_reindexed_count,
+            "assistant_reindexed_count": assistant_reindexed_count,
+            "knowledge_reindexed_count": knowledge_reindexed_count,
         }),
     )
 }

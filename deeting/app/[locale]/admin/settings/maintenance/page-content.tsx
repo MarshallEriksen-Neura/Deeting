@@ -65,6 +65,23 @@ export function PageContent() {
   const formatLogMessage = (item: LocalMaintenanceLogItem) => {
     if (item.status === "failed") return item.message
     if (item.kind === "repair_local_index") {
+      const mcpTools = getDetailNumber(item.details, "mcp_tool_reindexed_count")
+      const registryEntries =
+        getDetailNumber(item.details, "core_registry_count") +
+        getDetailNumber(item.details, "mcp_registry_count") +
+        getDetailNumber(item.details, "assistant_registry_count")
+      const knowledge = getDetailNumber(item.details, "knowledge_reindexed_count")
+
+      if (mcpTools > 0 || registryEntries > 0 || knowledge > 0) {
+        return t("feedback.repairAppliedLocal", {
+          registry: registryEntries,
+          skills: getDetailNumber(item.details, "skill_reindexed_count"),
+          mcpTools,
+          assistants: getDetailNumber(item.details, "assistant_reindexed_count"),
+          knowledge,
+        })
+      }
+
       return t("feedback.repairApplied", {
         fetched: getNestedDetailNumber(item.details, "sync", "assets_fetched"),
         upserted: getNestedDetailNumber(item.details, "sync", "skill_install_upserted_count"),

@@ -186,12 +186,6 @@ export const adminNavigation: NavGroup[] = [
         icon: "sparkles",
       },
       {
-        id: "assistant-reviews",
-        label: "nav.assistantReviews",
-        href: "/admin/assistant-reviews",
-        icon: "checkSquare",
-      },
-      {
         id: "spec-knowledge",
         label: "nav.specKnowledge",
         href: "/admin/spec-knowledge-candidates",

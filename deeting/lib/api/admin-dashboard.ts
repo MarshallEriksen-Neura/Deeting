@@ -85,13 +85,11 @@ export async function fetchAdminAssistantsTotal(params?: {
 }
 
 const PendingReviewCountsSchema = z.object({
-  assistant_reviews: z.number(),
   knowledge_reviews: z.number(),
   plugin_reviews: z.number(),
 })
 
 export async function fetchAdminPendingReviewCounts(): Promise<{
-  assistant_reviews: number
   knowledge_reviews: number
   plugin_reviews: number
 }> {
@@ -1193,7 +1191,6 @@ type AdminAssistantCreatePayload = {
   status?: "draft" | "published" | "archived"
   summary?: string
   icon_id?: string
-  share_to_market?: boolean
   version: {
     version?: string
     name: string
@@ -1226,26 +1223,6 @@ const CursorPageSchema = z.object({
   previous_page: z.string().nullable().optional(),
   total: z.number().int().nonnegative().optional(),
 }).passthrough()
-
-const ReviewTaskSchema = z.object({
-  id: z.string(),
-  entity_type: z.string(),
-  entity_id: z.string(),
-  status: z.string(),
-  submitter_user_id: z.string().nullable().optional(),
-  reviewer_user_id: z.string().nullable().optional(),
-  submitted_at: z.string().nullable().optional(),
-  reviewed_at: z.string().nullable().optional(),
-  reason: z.string().nullable().optional(),
-  created_at: z.string(),
-  updated_at: z.string(),
-}).passthrough()
-
-export const AssistantReviewPageSchema = CursorPageSchema.extend({
-  items: z.array(ReviewTaskSchema).default([]),
-})
-
-export type AssistantReviewTask = z.infer<typeof ReviewTaskSchema>
 
 const PluginMarketReviewFindingSchema = z.object({
   severity: z.string().nullable().optional(),
@@ -1287,43 +1264,6 @@ export const PluginMarketReviewListSchema = createOffsetPageSchema(
 )
 
 export type PluginMarketReviewItem = z.infer<typeof PluginMarketReviewItemSchema>
-
-export async function fetchAdminAssistantReviews(params?: {
-  status_filter?: string
-}) {
-  const data = await request<unknown>({
-    url: `${ADMIN_BASE}/assistant-reviews`,
-    method: "GET",
-    params: {
-      status_filter: params?.status_filter,
-    },
-  })
-  return AssistantReviewPageSchema.parse(data)
-}
-
-export async function approveAdminAssistantReview(
-  assistantId: string,
-  reason?: string
-) {
-  const data = await request<unknown>({
-    url: `${ADMIN_BASE}/assistant-reviews/${assistantId}/approve`,
-    method: "POST",
-    data: { reason: reason ?? "approved by admin dashboard" },
-  })
-  return ReviewTaskSchema.parse(data)
-}
-
-export async function rejectAdminAssistantReview(
-  assistantId: string,
-  reason?: string
-) {
-  const data = await request<unknown>({
-    url: `${ADMIN_BASE}/assistant-reviews/${assistantId}/reject`,
-    method: "POST",
-    data: { reason: reason ?? "rejected by admin dashboard" },
-  })
-  return ReviewTaskSchema.parse(data)
-}
 
 export async function fetchAdminPluginMarketReviews(params?: {
   skip?: number

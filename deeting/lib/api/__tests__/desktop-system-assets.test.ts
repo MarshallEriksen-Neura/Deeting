@@ -1,19 +1,12 @@
 import {
   getLocalCapabilityRegistryDiagnostics,
   listLocalMaintenanceLogs,
-  repairLocalSystemAssetIndexFromCloud,
   runLocalMaintenanceAction,
-  syncLocalSystemAssetsFromCloud,
-  tryRepairLocalSystemAssetIndexFromCloud,
 } from "@/lib/api/desktop-system-assets"
 import { invoke } from "@tauri-apps/api/core"
 
 jest.mock("@tauri-apps/api/core", () => ({
   invoke: jest.fn(),
-}))
-
-jest.mock("@/lib/http", () => ({
-  getAuthToken: jest.fn(() => "desktop-token"),
 }))
 
 const mockInvoke = invoke as jest.MockedFunction<typeof invoke>
@@ -31,85 +24,6 @@ describe("desktop system assets api", () => {
     delete windowWithTauri.__TAURI_INTERNALS__
   })
 
-  it("syncs local system assets via tauri command", async () => {
-    process.env.NEXT_PUBLIC_IS_TAURI = "true"
-    windowWithTauri.__TAURI__ = {}
-    mockInvoke.mockResolvedValue({
-      fetched_count: 1,
-      assistant_fetched_count: 1,
-      skill_fetched_count: 0,
-      upserted_count: 1,
-      hidden_count: 0,
-      metadata_only_count: 0,
-      executable_count: 1,
-      archived_count: 0,
-      skill_install_fetched_count: 0,
-      skill_install_upserted_count: 0,
-      skill_reinstalled_count: 0,
-      skill_failed_count: 0,
-      disabled_skill_count: 0,
-      archived_assistant_count: 0,
-    } as unknown)
-
-    const result = await syncLocalSystemAssetsFromCloud({ force: true, limit: 42 })
-
-    expect(result?.fetched_count).toBe(1)
-    expect(mockInvoke).toHaveBeenCalledWith("sync_local_system_assets", {
-      accessToken: "desktop-token",
-      limit: 42,
-      reinstallMissing: false,
-    })
-  })
-
-  it("repairs local system asset index via tauri command", async () => {
-    process.env.NEXT_PUBLIC_IS_TAURI = "true"
-    windowWithTauri.__TAURI__ = {}
-    mockInvoke.mockResolvedValue({
-      vector_dimension: 1536,
-      skill_reindexed_count: 3,
-      assistant_reindexed_count: 2,
-      sync: {
-        fetched_count: 1,
-        assistant_fetched_count: 1,
-        skill_fetched_count: 0,
-        upserted_count: 1,
-        hidden_count: 0,
-        metadata_only_count: 0,
-        executable_count: 1,
-        archived_count: 0,
-        skill_install_fetched_count: 0,
-        skill_install_upserted_count: 0,
-        skill_reinstalled_count: 0,
-        skill_failed_count: 0,
-        disabled_skill_count: 0,
-        archived_assistant_count: 0,
-      },
-    } as unknown)
-
-    const result = await repairLocalSystemAssetIndexFromCloud({ reinstallMissing: true })
-
-    expect(result?.vector_dimension).toBe(1536)
-    expect(result?.skill_reindexed_count).toBe(3)
-    expect(mockInvoke).toHaveBeenCalledWith("repair_local_system_asset_index", {
-      accessToken: "desktop-token",
-      limit: 500,
-      reinstallMissing: true,
-    })
-  })
-
-  it("returns null when repair fails in try helper", async () => {
-    process.env.NEXT_PUBLIC_IS_TAURI = "true"
-    windowWithTauri.__TAURI__ = {}
-    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {})
-    mockInvoke.mockRejectedValue(new Error("boom"))
-
-    const result = await tryRepairLocalSystemAssetIndexFromCloud()
-
-    expect(result).toBeNull()
-    expect(warnSpy).toHaveBeenCalled()
-    warnSpy.mockRestore()
-  })
-
   it("runs local maintenance action through tauri wrapper", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
@@ -118,7 +32,16 @@ describe("desktop system assets api", () => {
       kind: "repair_local_index",
       status: "success",
       message: "ok",
-      details: { assistant_reindexed_count: 2 },
+      details: {
+        vector_dimension: 1536,
+        core_registry_count: 4,
+        mcp_registry_count: 2,
+        assistant_registry_count: 3,
+        skill_reindexed_count: 1,
+        mcp_tool_reindexed_count: 2,
+        assistant_reindexed_count: 2,
+        knowledge_reindexed_count: 5,
+      },
       created_at: "2026-03-11T00:00:00Z",
     } as unknown)
 
@@ -126,7 +49,6 @@ describe("desktop system assets api", () => {
 
     expect(result?.status).toBe("success")
     expect(mockInvoke).toHaveBeenCalledWith("run_local_maintenance_action", {
-      accessToken: "desktop-token",
       request: {
         kind: "repair_local_index",
         limit: 500,

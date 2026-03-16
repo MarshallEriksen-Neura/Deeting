@@ -21,12 +21,19 @@ type AssistantMarketState = {
   mutate: SWRResult<CursorPage<AssistantMarketItem>>["mutate"]
 }
 
-export function useAssistantMarket(query: AssistantMarketQuery): AssistantMarketState {
+export function useAssistantMarket(
+  query: AssistantMarketQuery,
+  options?: { enabled?: boolean }
+): AssistantMarketState {
+  const enabled = options?.enabled ?? true
   const pageSize = query.size ?? 8
   const tagsKey = (query.tags || []).join("|")
 
   const getKey = React.useCallback(
     (pageIndex: number, previousPageData: CursorPage<AssistantMarketItem> | null) => {
+      if (!enabled) {
+        return null
+      }
       if (previousPageData && !previousPageData.next_page) {
         return null
       }
@@ -38,7 +45,7 @@ export function useAssistantMarket(query: AssistantMarketQuery): AssistantMarket
         tags: query.tags || undefined,
       }
     },
-    [pageSize, query.q, tagsKey]
+    [enabled, pageSize, query.q, tagsKey]
   )
 
   const {

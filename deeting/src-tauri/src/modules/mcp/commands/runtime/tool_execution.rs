@@ -497,14 +497,98 @@ async fn resolve_skill_binding_env(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OfficialSkillHostToolRoute {
+    DesktopCapability,
+    SearchSdk,
+    ShellExecute,
+    Unsupported,
+}
+
+fn resolve_official_skill_host_tool_route(
+    binding: &LocalSkillToolBindingSnapshot,
+    tool_name: &str,
+) -> OfficialSkillHostToolRoute {
+    let normalized_tool_name = tool_name.trim();
+    if normalized_tool_name.is_empty() {
+        return OfficialSkillHostToolRoute::Unsupported;
+    }
+
+    if crate::modules::mcp::desktop_capabilities::find_official_skill_capability(
+        normalized_tool_name,
+    )
+    .is_some()
+    {
+        return OfficialSkillHostToolRoute::DesktopCapability;
+    }
+
+    match normalized_tool_name {
+        "search_sdk" => OfficialSkillHostToolRoute::SearchSdk,
+        "shell_execute" if binding.skill_id == "official.skills.skill_manager" => {
+            OfficialSkillHostToolRoute::ShellExecute
+        }
+        _ => OfficialSkillHostToolRoute::Unsupported,
+    }
+}
+
+async fn dispatch_official_skill_search_sdk(
+    store: &crate::modules::mcp::store::McpStore,
+    arguments: &Value,
+) -> Result<Value, String> {
+    let app_state = crate::state::global_app_state()
+        .ok_or_else(|| "global app state is unavailable".to_string())?;
+    let query = arguments.get("query").and_then(Value::as_str).unwrap_or("");
+    let limit = arguments
+        .get("limit")
+        .and_then(Value::as_u64)
+        .map(|value| value as usize)
+        .unwrap_or(8);
+
+    Ok(
+        crate::modules::mcp::commands::runtime::build_local_sdk_search_result_with_runtime(
+            store,
+            &app_state.providers.embedding,
+            app_state.memory.service.as_ref(),
+            query,
+            limit,
+        )
+        .await,
+    )
+}
+
+async fn dispatch_official_skill_shell_execute(arguments: &Value) -> Result<Value, String> {
+    let home_dir = dirs::home_dir()
+        .ok_or_else(|| "desktop home directory is unavailable for shell_execute".to_string())?;
+    crate::modules::shell_executor::core_tool::ShellExecuteCoreTool::new(home_dir)
+        .execute(arguments.clone())
+        .await
+}
+
 async fn dispatch_internal_skill_host_tool(
+    store: &crate::modules::mcp::store::McpStore,
+    binding: &LocalSkillToolBindingSnapshot,
     tool_name: &str,
     arguments: &Value,
 ) -> Result<Option<Value>, String> {
-    crate::modules::mcp::desktop_capabilities::dispatch_official_skill_capability(
-        tool_name, arguments,
-    )
-    .await
+    match resolve_official_skill_host_tool_route(binding, tool_name) {
+        OfficialSkillHostToolRoute::DesktopCapability => {
+            crate::modules::mcp::desktop_capabilities::dispatch_official_skill_capability(
+                tool_name, arguments,
+            )
+            .await
+        }
+        OfficialSkillHostToolRoute::SearchSdk => {
+            dispatch_official_skill_search_sdk(store, arguments)
+                .await
+                .map(Some)
+        }
+        OfficialSkillHostToolRoute::ShellExecute => {
+            dispatch_official_skill_shell_execute(arguments)
+                .await
+                .map(Some)
+        }
+        OfficialSkillHostToolRoute::Unsupported => Ok(None),
+    }
 }
 
 async fn execute_deeting_tool_binding(
@@ -648,14 +732,15 @@ async fn execute_deeting_tool_binding(
                 ));
             }
             if let Some(result) =
-                dispatch_internal_skill_host_tool(&requested_tool, &requested_args).await?
+                dispatch_internal_skill_host_tool(store, binding, &requested_tool, &requested_args)
+                    .await?
             {
                 tool_results.push(result);
                 continue;
             }
             tool_results.push(serde_json::json!({
                 "status": "error",
-                "error": format!("desktop skill binding host bridge cannot resolve desktop capability '{}'", requested_tool)
+                "error": format!("desktop skill binding host bridge cannot resolve tool '{}'", requested_tool)
             }));
             continue;
         }
@@ -1389,6 +1474,26 @@ pub(crate) async fn reject_mcp_tool_inner(
 
 #[cfg(test)]
 mod tests {
+    use super::{resolve_official_skill_host_tool_route, OfficialSkillHostToolRoute};
+    use crate::modules::mcp::store::LocalSkillToolBindingSnapshot;
+
+    fn sample_binding(skill_id: &str) -> LocalSkillToolBindingSnapshot {
+        LocalSkillToolBindingSnapshot {
+            binding_id: "binding-demo".to_string(),
+            binding_kind: "deeting_tool".to_string(),
+            skill_id: skill_id.to_string(),
+            callable_name: "demo.callable".to_string(),
+            tool_name: "demo_tool".to_string(),
+            description: "demo".to_string(),
+            input_schema: None,
+            output_schema: None,
+            entry_path: "packages/official-skills/demo/main.py".to_string(),
+            runtime: "python".to_string(),
+            timeout_seconds: 30,
+            updated_at: "2026-03-16T00:00:00Z".to_string(),
+        }
+    }
+
     #[test]
     fn capability_bridge_registry_exposes_desktop_official_skill_capabilities() {
         let specs = [
@@ -1400,7 +1505,6 @@ mod tests {
             "provider_preset.list",
             "provider_preset.upsert",
             "provider.verify",
-            "cloud.assistant_ingest.submit",
             "cloud.provider_preset.list",
             "cloud.provider_preset.upsert",
         ];
@@ -1439,6 +1543,39 @@ mod tests {
                 "create_monitor",
             )
             .is_none()
+        );
+    }
+
+    #[test]
+    fn official_skill_host_tool_route_allows_search_sdk_for_official_skills() {
+        let binding = sample_binding("official.skills.expert_network");
+        assert_eq!(
+            resolve_official_skill_host_tool_route(&binding, "search_sdk"),
+            OfficialSkillHostToolRoute::SearchSdk
+        );
+    }
+
+    #[test]
+    fn official_skill_host_tool_route_limits_shell_execute_to_skill_manager() {
+        let skill_manager_binding = sample_binding("official.skills.skill_manager");
+        assert_eq!(
+            resolve_official_skill_host_tool_route(&skill_manager_binding, "shell_execute"),
+            OfficialSkillHostToolRoute::ShellExecute
+        );
+
+        let other_binding = sample_binding("official.skills.expert_network");
+        assert_eq!(
+            resolve_official_skill_host_tool_route(&other_binding, "shell_execute"),
+            OfficialSkillHostToolRoute::Unsupported
+        );
+    }
+
+    #[test]
+    fn official_skill_host_tool_route_preserves_desktop_capability_dispatch() {
+        let binding = sample_binding("official.skills.monitor");
+        assert_eq!(
+            resolve_official_skill_host_tool_route(&binding, "monitor.list"),
+            OfficialSkillHostToolRoute::DesktopCapability
         );
     }
 }

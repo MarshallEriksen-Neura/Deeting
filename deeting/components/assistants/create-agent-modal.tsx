@@ -49,9 +49,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Switch } from "@/components/ui/switch"
-import { createAssistant, updateAssistant, deleteAssistant as deleteCloudAssistant } from "@/lib/api"
+import {
+  createAssistant,
+  createLocalAssistant,
+  deleteAssistant as deleteCloudAssistant,
+  deleteLocalAssistant as deleteLocalAssistantApi,
+  updateAssistant,
+  updateLocalAssistant,
+} from "@/lib/api"
 import { useAssistantTags } from "@/lib/swr/use-assistant-tags"
+import { useLocalAssistantTags } from "@/lib/swr/use-local-assistant-tags"
 import { cn } from "@/lib/utils"
 import { ProviderIconPicker } from "@/components/providers/provider-icon-picker"
 
@@ -73,7 +80,6 @@ type AssistantFormValues = {
   tags: string[]
   iconId: string
   color: string
-  shareToMarket?: boolean
 }
 
 interface EditableAssistant {
@@ -125,7 +131,9 @@ export function CreateAgentModal({
   const isEditMode = Boolean(assistant)
   const [isDeleting, setIsDeleting] = React.useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
-  const { tags: assistantTags } = useAssistantTags()
+  const { tags: cloudAssistantTags } = useAssistantTags(effectiveMode === "cloud")
+  const { tags: localAssistantTags } = useLocalAssistantTags(effectiveMode === "local")
+  const assistantTags = effectiveMode === "local" ? localAssistantTags : cloudAssistantTags
   const stripTagPrefix = React.useCallback((value: string) => value.replace(/^#+/, ""), [])
   const tagOptions = React.useMemo(() => {
     const names = assistantTags
@@ -151,7 +159,6 @@ export function CreateAgentModal({
           message: t("create.validation.iconRequired"),
         }),
         color: z.string(),
-        shareToMarket: z.boolean().optional(),
       }) as z.ZodType<AssistantFormValues>,
     [t]
   )
@@ -169,7 +176,6 @@ export function CreateAgentModal({
       tags: assistant?.tags?.map(stripTagPrefix) ?? [],
       iconId: assistant?.iconId ?? "lucide:bot",
       color: assistant?.color ?? "from-blue-500 to-cyan-500",
-      shareToMarket: effectiveMode === "cloud" ? assistant?.visibility === "public" : false,
     }),
     [assistant, effectiveMode, stripTagPrefix]
   )
@@ -202,35 +208,55 @@ export function CreateAgentModal({
     })()
     try {
       let createdId: string | undefined
-      const shareToMarket = Boolean(values.shareToMarket)
       if (assistant) {
-        await updateAssistant(assistant.id, {
-          visibility: shareToMarket ? "public" : "private",
-          status: shareToMarket ? "published" : "draft",
-          summary: desc ? desc.slice(0, 200) : null,
-          icon_id: values.iconId,
-          version: {
+        if (effectiveMode === "local") {
+          await updateLocalAssistant(assistant.id, {
             name: values.name,
             description: desc || null,
+            avatar: values.iconId,
             system_prompt: values.systemPrompt,
             tags: tagsArray,
-          },
-        })
+            visibility: assistant.visibility ?? "private",
+          })
+        } else {
+          await updateAssistant(assistant.id, {
+            visibility: "private",
+            status: "published",
+            summary: desc ? desc.slice(0, 200) : null,
+            icon_id: values.iconId,
+            version: {
+              name: values.name,
+              description: desc || null,
+              system_prompt: values.systemPrompt,
+              tags: tagsArray,
+            },
+          })
+        }
       } else {
-        const created = await createAssistant({
-          visibility: shareToMarket ? "public" : "private",
-          status: shareToMarket ? "published" : "draft",
-          summary: desc ? desc.slice(0, 200) : null,
-          icon_id: values.iconId,
-          share_to_market: shareToMarket,
-          version: {
+        if (effectiveMode === "local") {
+          createdId = await createLocalAssistant({
             name: values.name,
             description: desc || null,
+            avatar: values.iconId,
             system_prompt: values.systemPrompt,
             tags: tagsArray,
-          },
-        })
-        createdId = created?.id
+            visibility: "private",
+          })
+        } else {
+          const created = await createAssistant({
+            visibility: "private",
+            status: "published",
+            summary: desc ? desc.slice(0, 200) : null,
+            icon_id: values.iconId,
+            version: {
+              name: values.name,
+              description: desc || null,
+              system_prompt: values.systemPrompt,
+              tags: tagsArray,
+            },
+          })
+          createdId = created?.id
+        }
       }
 
       if (assistant) {
@@ -262,7 +288,11 @@ export function CreateAgentModal({
     if (!assistant) return
     try {
       setIsDeleting(true)
-      await deleteCloudAssistant(assistant.id)
+      if (effectiveMode === "local") {
+        await deleteLocalAssistantApi(assistant.id)
+      } else {
+        await deleteCloudAssistant(assistant.id)
+      }
       toast.success(t("toast.assistantDeletedTitle"), {
         description: t("toast.assistantDeletedDesc", { name: assistant.name }),
       })
@@ -334,10 +364,6 @@ export function CreateAgentModal({
               optionalSuffix={optionalSuffix}
               resetKey={`${currentOpen}-${assistant?.id ?? "new"}`}
             />
-
-            {effectiveMode === "cloud" ? (
-              <AssistantShareField form={form} t={t} />
-            ) : null}
 
             <AssistantPromptField form={form} t={t} />
 
@@ -670,33 +696,6 @@ function AssistantPromptField({ form, t }: AssistantFieldProps) {
           </FormControl>
           <FormDescription>{t("create.systemPromptHelp")}</FormDescription>
           <FormMessage />
-        </FormItem>
-      )}
-    />
-  )
-}
-
-function AssistantShareField({ form, t }: AssistantFieldProps) {
-  return (
-    <FormField
-      control={form.control}
-      name="shareToMarket"
-      render={({ field }) => (
-        <FormItem className="rounded-xl border border-white/10 bg-white/5 p-4">
-          <div className="flex items-center justify-between gap-4">
-            <div className="space-y-1">
-              <FormLabel>{t("create.shareLabel")}</FormLabel>
-              <FormDescription>{t("create.shareHelp")}</FormDescription>
-              {field.value ? (
-                <FormDescription className="text-xs text-muted-foreground">
-                  {t("create.shareHint")}
-                </FormDescription>
-              ) : null}
-            </div>
-            <FormControl>
-              <Switch checked={field.value} onCheckedChange={field.onChange} />
-            </FormControl>
-          </div>
         </FormItem>
       )}
     />

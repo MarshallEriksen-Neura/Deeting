@@ -694,10 +694,9 @@ describe("admin dashboard api", () => {
     expect(mockInvoke).not.toHaveBeenCalled()
   })
 
-  it("aggregates pending assistant, knowledge, and plugin review counts", async () => {
+  it("aggregates pending knowledge and plugin review counts", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "false"
     mockRequest.mockResolvedValueOnce({
-      assistant_reviews: 2,
       knowledge_reviews: 3,
       plugin_reviews: 4,
     })
@@ -705,7 +704,6 @@ describe("admin dashboard api", () => {
     const result = await fetchAdminPendingReviewCounts()
 
     expect(result).toEqual({
-      assistant_reviews: 2,
       knowledge_reviews: 3,
       plugin_reviews: 4,
     })

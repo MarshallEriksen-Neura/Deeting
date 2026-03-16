@@ -2,7 +2,7 @@
 
 import { useLocale, useTranslations } from "next-intl"
 import Link from "next/link"
-import { CheckCircle, Clock, DollarSign, Zap, Activity, Shield } from "lucide-react"
+import { Clock, DollarSign, Zap, Activity, Shield } from "lucide-react"
 import { GlassCard } from "@/components/ui/glass-card"
 
 interface PendingActionsCardProps {
@@ -33,28 +33,6 @@ export function PendingActionsCard({
         {t("pendingActions.title")}
       </h3>
       <div className="space-y-3">
-        <Link
-          href="/admin/assistant-reviews"
-          className="flex cursor-pointer items-center justify-between rounded-lg bg-white/[0.02] px-3 py-3 transition-colors hover:bg-white/[0.05]"
-        >
-          <div className="flex items-center gap-3">
-            <div className="flex size-8 items-center justify-center rounded-lg bg-amber-500/10">
-              <CheckCircle className="size-4 text-amber-400" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-[var(--foreground)]">
-                {t("pendingActions.assistantReviewsTitle")}
-              </p>
-              <p className="text-xs text-[var(--muted)]">
-                {t("pendingActions.assistantReviewsSubtitle")}
-              </p>
-            </div>
-          </div>
-          <span className="flex size-6 items-center justify-center rounded-full bg-amber-500/10 text-xs font-bold text-amber-400">
-            {pendingReviews?.assistant_reviews ?? 0}
-          </span>
-        </Link>
-
         <Link
           href="/admin/knowledge/reviews"
           className="flex cursor-pointer items-center justify-between rounded-lg bg-white/[0.02] px-3 py-3 transition-colors hover:bg-white/[0.05]"

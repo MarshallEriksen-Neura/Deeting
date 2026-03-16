@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthSync } from "@/components/auth/auth-sync";
 import { DesktopOAuthListener } from "@/components/auth/desktop-oauth-listener";
@@ -11,6 +12,7 @@ import "./globals.css";
 const isTauri = process.env.NEXT_PUBLIC_IS_TAURI === "true";
 const isDesktopUserCloudSyncEnabled =
   process.env.NEXT_PUBLIC_DESKTOP_ALLOW_USER_CLOUD_SYNC === "true";
+const desktopTitleBarHeight = isTauri ? "2.25rem" : "0px";
 
 export default function RootLayout({
   children,
@@ -19,7 +21,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={isTauri ? "antialiased pt-9" : "antialiased"}>
+      <body
+        className={isTauri ? "antialiased pt-[var(--desktop-title-bar-height)]" : "antialiased"}
+        style={
+          {
+            "--desktop-title-bar-height": desktopTitleBarHeight,
+          } as CSSProperties
+        }
+      >
         <PlatformProvider>
           <ThemeProvider
             attribute="class"

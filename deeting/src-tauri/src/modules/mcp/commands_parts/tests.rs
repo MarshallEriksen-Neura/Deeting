@@ -1592,15 +1592,15 @@ for raw_line in sys.stdin:
         memory_state
             .store
             .upsert_asset(
-                "official.skills.ingestor".to_string(),
-                "Asset Ingestor".to_string(),
-                "Admin-only assistant ingest skill".to_string(),
+                "official.skills.provider_registry".to_string(),
+                "Provider Registry".to_string(),
+                "Admin-only provider registry skill".to_string(),
                 "skill".to_string(),
                 "builtin".to_string(),
-                Some("official.skills.ingestor".to_string()),
+                Some("official.skills.provider_registry".to_string()),
                 vec![0.0, 1.0, 0.5],
                 Some(serde_json::json!({
-                    "id": "official.skills.ingestor",
+                    "id": "official.skills.provider_registry",
                     "restricted": true,
                     "allowed_roles": ["admin"],
                     "compatibility": {
@@ -1624,7 +1624,7 @@ for raw_line in sys.stdin:
         let recipes = result["recipes"].as_array().expect("recipes array");
         assert!(recipes
             .iter()
-            .all(|item| item["name"] != serde_json::json!("Asset Ingestor")));
+            .all(|item| item["name"] != serde_json::json!("Provider Registry")));
 
         server_handle.abort();
     }

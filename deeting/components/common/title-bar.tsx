@@ -61,7 +61,7 @@ export function TitleBar() {
       data-tauri-drag-region
       className={cn(
         "fixed top-0 left-0 right-0 z-[60]",
-        "h-9 flex items-center justify-between px-3 select-none",
+        "h-[var(--desktop-title-bar-height,2.25rem)] flex items-center justify-between px-3 select-none",
         "bg-transparent backdrop-blur-sm",
         "transition-colors duration-200"
       )}
@@ -87,7 +87,7 @@ export function TitleBar() {
         <button
           onClick={handleMinimize}
           className={cn(
-            "w-12 h-9 flex items-center justify-center",
+            "w-12 h-full flex items-center justify-center",
             "text-[var(--foreground)]/50 hover:text-[var(--foreground)]",
             "hover:bg-black/5 dark:hover:bg-white/8",
             "transition-colors duration-150"
@@ -100,7 +100,7 @@ export function TitleBar() {
         <button
           onClick={handleMaximize}
           className={cn(
-            "w-12 h-9 flex items-center justify-center",
+            "w-12 h-full flex items-center justify-center",
             "text-[var(--foreground)]/50 hover:text-[var(--foreground)]",
             "hover:bg-black/5 dark:hover:bg-white/8",
             "transition-colors duration-150"
@@ -113,7 +113,7 @@ export function TitleBar() {
         <button
           onClick={handleClose}
           className={cn(
-            "w-12 h-9 flex items-center justify-center",
+            "w-12 h-full flex items-center justify-center",
             "text-[var(--foreground)]/50 hover:text-white",
             "hover:bg-red-500",
             "transition-colors duration-150"

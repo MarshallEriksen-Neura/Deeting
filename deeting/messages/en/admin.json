@@ -27,8 +27,6 @@
       },
       "pendingActions": {
         "title": "Pending Actions",
-        "assistantReviewsTitle": "Assistant Reviews",
-        "assistantReviewsSubtitle": "Awaiting approval",
         "knowledgeReviewsTitle": "Knowledge Reviews",
         "knowledgeReviewsSubtitle": "Pending processing",
         "pluginReviewsTitle": "Plugin Reviews",
@@ -121,47 +119,6 @@
         "loading": "Loading assistants...",
         "failed": "Failed to load assistants",
         "noData": "No assistants found"
-      }
-    },
-    "assistantReviews": {
-      "title": "Assistant Reviews",
-      "description": "Review pending assistants and tags"
-    },
-    "assistantReviewsPage": {
-      "status": {
-        "pending": "Pending",
-        "approved": "Approved",
-        "rejected": "Rejected"
-      },
-      "stats": {
-        "pending": "Pending",
-        "approved": "Approved",
-        "rejected": "Rejected"
-      },
-      "feedback": {
-        "approved": "Approved {name}",
-        "rejected": "Rejected {name}",
-        "operationFailed": "Operation failed"
-      },
-      "table": {
-        "headers": {
-          "assistant": "Assistant",
-          "submitter": "Submitter",
-          "status": "Status",
-          "submitted": "Submitted",
-          "reviewer": "Reviewer",
-          "reviewed": "Reviewed",
-          "reason": "Reason"
-        }
-      },
-      "filters": {
-        "searchPlaceholder": "Search reviews...",
-        "status": "Status"
-      },
-      "empty": {
-        "loading": "Loading reviews...",
-        "failed": "Failed to load reviews",
-        "noData": "No reviews found"
       }
     },
     "specKnowledge": {
@@ -1454,8 +1411,8 @@
     "maintenanceSettingsPage": {
       "section": {
         "title": "Desktop maintenance",
-        "description": "Use these controls for full-system sync and repair tasks. Scan reviews keeps only scan findings and targeted fix actions.",
-        "note": "Use sync actions for skill install reconciliation. Use full repair only when the local asset index needs a complete rebuild."
+        "description": "Use this to rebuild the local capability registry and index. It no longer depends on cloud assistant sync.",
+        "note": "Repair clears and rebuilds the local asset index, then reindexes local skills, MCP tools, assistants, and knowledge assets."
       },
       "diagnostics": {
         "title": "Capability registry cutover",
@@ -1505,6 +1462,7 @@
         "syncReinstallApplied": "Sync + reinstall complete · fetched {fetched}, upserted {upserted}, reinstalled {reinstalled}, failed {failed}",
         "syncAppliedNoop": "No desktop sync changes were applied",
         "repairApplied": "Local index repaired · fetched {fetched}, upserted {upserted}, skills {skills}, assistants {assistants}",
+        "repairAppliedLocal": "Local rebuild complete · registry {registry}, skills {skills}, MCP tools {mcpTools}, assistants {assistants}, knowledge {knowledge}",
         "repairAppliedNoop": "No local index repair changes were applied",
         "maintenanceFailed": "Maintenance action failed"
       },
@@ -1532,8 +1490,8 @@
       },
       "repairConfirm": {
         "title": "Repair local index?",
-        "description": "This rebuilds the local system asset index and rehydrates skills and assistants from the current sync pipeline.",
-        "warning": "Existing local asset index entries will be cleared before rebuild. If desktop sync or auth is not ready, the rebuilt result may be incomplete.",
+        "description": "This rebuilds the local capability registry and index, then reindexes existing desktop skills, tools, assistants, and knowledge data.",
+        "warning": "Existing local asset index entries will be cleared before rebuild. Search and discovery may be temporarily incomplete during the rebuild.",
         "confirm": "Repair index",
         "cancel": "Cancel"
       }

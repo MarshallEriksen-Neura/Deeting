@@ -3,9 +3,6 @@ import { z } from "zod"
 import { request } from "@/lib/http"
 
 const ASSISTANTS_BASE = "/api/v1/assistants"
-const assistantMessageResponseSchema = z.object({
-  message: z.string(),
-})
 
 const isTauriRuntime = () =>
   process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
@@ -134,6 +131,58 @@ export const AssistantTagSchema = z.object({
 
 export type AssistantTag = z.infer<typeof AssistantTagSchema>
 
+export const LocalAssistantSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  avatar: z.string().nullable().optional(),
+  system_prompt: z.string(),
+  model_config: z.unknown().nullable().optional(),
+  tags: z.array(z.string()).default([]),
+  visibility: z.string(),
+  source: z.string(),
+  cloud_id: z.string().nullable().optional(),
+  is_deleted: z.boolean(),
+  created_at: z.string(),
+  updated_at: z.string(),
+})
+
+export const LocalAssistantEntitySchema = z.object({
+  id: z.string().uuid(),
+  owner_user_id: z.string().uuid().nullable().optional(),
+  visibility: z.string(),
+  status: z.string(),
+  share_slug: z.string().nullable().optional(),
+  summary: z.string().nullable().optional(),
+  icon_id: z.string().nullable().optional(),
+  install_count: z.number().default(0),
+  rating_avg: z.number().default(0),
+  rating_count: z.number().default(0),
+  current_version_id: z.string().uuid().nullable().optional(),
+  published_at: z.string().nullable().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
+})
+
+export const LocalAssistantVersionSchema = z.object({
+  id: z.string().uuid(),
+  assistant_id: z.string().uuid(),
+  version: z.string(),
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  system_prompt: z.string(),
+  model_config: z.unknown().nullable().optional(),
+  tags: z.array(z.string()).default([]),
+  changelog: z.string().nullable().optional(),
+  published_at: z.string().nullable().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
+})
+
+export type LocalAssistant = z.infer<typeof LocalAssistantSchema>
+export type LocalAssistantEntity = z.infer<typeof LocalAssistantEntitySchema>
+export type LocalAssistantVersion = z.infer<typeof LocalAssistantVersionSchema>
+
 export type AssistantMarketQuery = {
   cursor?: string | null
   size?: number
@@ -174,6 +223,170 @@ export async function fetchOwnedAssistants(params: { cursor?: string | null; siz
     params,
   })
   return AssistantListResponseSchema.parse(data)
+}
+
+export async function listLocalAssistants() {
+  if (!isTauriRuntime()) {
+    throw new Error("listLocalAssistants is only supported in Tauri runtime")
+  }
+
+  const data = await invokeTauri<unknown>("list_local_assistants")
+  return z.array(LocalAssistantSchema).parse(data)
+}
+
+export async function listLocalAssistantEntities() {
+  if (!isTauriRuntime()) {
+    throw new Error("listLocalAssistantEntities is only supported in Tauri runtime")
+  }
+
+  const data = await invokeTauri<unknown>("list_local_assistant_entities")
+  return z.array(LocalAssistantEntitySchema).parse(data)
+}
+
+export async function listLocalAssistantVersions(assistantId?: string) {
+  if (!isTauriRuntime()) {
+    throw new Error("listLocalAssistantVersions is only supported in Tauri runtime")
+  }
+
+  const data = assistantId
+    ? await invokeTauri<unknown>("list_local_assistant_versions", {
+        assistant_id: assistantId,
+      })
+    : await invokeTauri<unknown>("list_local_assistant_versions")
+  return z.array(LocalAssistantVersionSchema).parse(data)
+}
+
+export async function listLocalAssistantTags() {
+  if (!isTauriRuntime()) {
+    throw new Error("listLocalAssistantTags is only supported in Tauri runtime")
+  }
+
+  const data = await invokeTauri<unknown>("list_local_assistant_tags")
+  return z.array(AssistantTagSchema).parse(data)
+}
+
+export async function listLocalAssistantInstallations(params?: {
+  cursor?: string | null
+  size?: number
+}) {
+  if (!isTauriRuntime()) {
+    throw new Error("listLocalAssistantInstallations is only supported in Tauri runtime")
+  }
+
+  const data = await invokeTauri<unknown>("list_local_assistant_installations", {
+    query: {
+      cursor: params?.cursor ?? null,
+      size: params?.size ?? 50,
+    },
+  })
+  return AssistantInstallPageSchema.parse(data)
+}
+
+export async function createLocalAssistant(payload: {
+  name: string
+  description?: string | null
+  avatar?: string | null
+  system_prompt: string
+  model_config?: Record<string, unknown> | null
+  tags?: string[]
+  visibility?: string
+  source?: string
+  cloud_id?: string | null
+}) {
+  if (!isTauriRuntime()) {
+    throw new Error("createLocalAssistant is only supported in Tauri runtime")
+  }
+
+  const data = await invokeTauri<unknown>("create_local_assistant", {
+    payload,
+  })
+  return z.string().uuid().parse(data)
+}
+
+export async function updateLocalAssistant(
+  assistantId: string,
+  payload: {
+    name?: string
+    description?: string | null
+    avatar?: string | null
+    system_prompt?: string
+    model_config?: Record<string, unknown> | null
+    tags?: string[]
+    visibility?: string
+    source?: string
+    cloud_id?: string | null
+  }
+) {
+  if (!isTauriRuntime()) {
+    throw new Error("updateLocalAssistant is only supported in Tauri runtime")
+  }
+
+  const data = await invokeTauri<unknown>("update_local_assistant", {
+    id: assistantId,
+    payload,
+  })
+  return LocalAssistantSchema.parse(data)
+}
+
+export async function deleteLocalAssistant(assistantId: string) {
+  if (!isTauriRuntime()) {
+    throw new Error("deleteLocalAssistant is only supported in Tauri runtime")
+  }
+
+  await invokeTauri("delete_local_assistant", { id: assistantId })
+}
+
+export async function installLocalAssistant(
+  assistantId: string,
+  payload?: {
+    follow_latest?: boolean
+    pinned_version_id?: string | null
+  }
+) {
+  if (!isTauriRuntime()) {
+    throw new Error("installLocalAssistant is only supported in Tauri runtime")
+  }
+
+  const data = await invokeTauri<unknown>("install_local_assistant", {
+    assistant_id: assistantId,
+    payload: {
+      follow_latest: payload?.follow_latest ?? true,
+      pinned_version_id: payload?.pinned_version_id ?? null,
+    },
+  })
+  return AssistantInstallItemSchema.parse(data)
+}
+
+export async function updateLocalAssistantInstallation(
+  assistantId: string,
+  payload: {
+    alias?: string | null
+    icon_override?: string | null
+    pinned_version_id?: string | null
+    follow_latest?: boolean | null
+    is_enabled?: boolean | null
+    sort_order?: number | null
+  }
+) {
+  if (!isTauriRuntime()) {
+    throw new Error("updateLocalAssistantInstallation is only supported in Tauri runtime")
+  }
+
+  const data = await invokeTauri<unknown>("update_local_assistant_installation", {
+    assistant_id: assistantId,
+    payload,
+  })
+  return AssistantInstallItemSchema.parse(data)
+}
+
+export async function uninstallLocalAssistant(assistantId: string) {
+  if (!isTauriRuntime()) {
+    throw new Error("uninstallLocalAssistant is only supported in Tauri runtime")
+  }
+
+  await invokeTauri("delete_local_assistant_installation", {
+    assistant_id: assistantId,
+  })
 }
 
 export async function installAssistant(
@@ -282,7 +495,6 @@ export async function createAssistant(payload: {
   status: string
   summary?: string | null
   icon_id?: string | null
-  share_to_market?: boolean
   version: {
     name: string
     description?: string | null
@@ -331,12 +543,4 @@ export async function deleteAssistant(assistantId: string) {
     url: `${ASSISTANTS_BASE}/${assistantId}`,
     method: "DELETE",
   })
-}
-
-export async function submitAssistantForReview(assistantId: string) {
-  const data = await request({
-    url: `${ASSISTANTS_BASE}/${assistantId}/submit`,
-    method: "POST",
-  })
-  return assistantMessageResponseSchema.parse(data)
 }
