@@ -635,11 +635,6 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
       });
     }, [hasContent, isActive, statusStage, stableActiveStep, steps]);
 
-    const toolCallSummary = useMemo(() => summarizeToolCalls(parts), [parts]);
-    const streamActivity = useMemo(() => {
-      if (!toolCallSummary) return null;
-      return `${t("status.flow.calls", { count: toolCallSummary.totalCalls })} · ${toolCallSummary.highlights}`;
-    }, [t, toolCallSummary]);
     const liveStatusLabel = useMemo(
       () => t(streamEnabled ? "status.header.answering" : "status.header.processing"),
       [streamEnabled, t]
@@ -767,8 +762,6 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                   showPlaceholder={!shouldRevealCallChain}
                   detail={terminalDetail}
                   detailRepeat={Math.max(detailRepeat, repeatCountFromMeta)}
-                  activity={streamActivity}
-                  history={stageHistory}
                   compact={hasContent || hasToolActivity}
                   completed={statusRailCompleted}
                 />

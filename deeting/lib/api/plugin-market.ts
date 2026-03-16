@@ -209,6 +209,7 @@ export async function installPlugin(
       repoUrl,
       revision: plugin.source_revision ?? undefined,
       alias: payload?.alias ?? undefined,
+      expectedSkillId: plugin.id,
     })
     return LocalSkillInstallResultSchema.parse(data)
   }

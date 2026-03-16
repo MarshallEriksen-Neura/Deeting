@@ -142,6 +142,7 @@ describe("plugin market api", () => {
       repoUrl: "https://github.com/example/alpha",
       revision: "main",
       alias: "alpha-local",
+      expectedSkillId: "skill.alpha",
     })
   })
 

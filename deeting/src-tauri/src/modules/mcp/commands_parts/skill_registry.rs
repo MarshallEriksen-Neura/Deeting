@@ -140,6 +140,107 @@ fn collect_local_skill_match_keys(
     keys.into_iter().collect()
 }
 
+fn normalize_skill_install_path_for_compare(path: &Path) -> String {
+    if let Ok(canonical) = std::fs::canonicalize(path) {
+        return canonical
+            .to_string_lossy()
+            .replace('\\', "/")
+            .to_ascii_lowercase();
+    }
+    path.to_string_lossy()
+        .replace('\\', "/")
+        .trim_end_matches('/')
+        .to_ascii_lowercase()
+}
+
+fn local_skill_install_paths_match(left: &Path, right: &Path) -> bool {
+    normalize_skill_install_path_for_compare(left)
+        == normalize_skill_install_path_for_compare(right)
+}
+
+fn merge_local_skill_user_settings(
+    primary: Option<&JsonValue>,
+    legacy: Option<&JsonValue>,
+) -> Option<JsonValue> {
+    match (primary, legacy) {
+        (Some(JsonValue::Object(primary_map)), Some(JsonValue::Object(legacy_map))) => {
+            let mut merged = primary_map.clone();
+            for (key, value) in legacy_map {
+                merged.entry(key.clone()).or_insert_with(|| value.clone());
+            }
+            Some(JsonValue::Object(merged))
+        }
+        (Some(primary), _) => Some(primary.clone()),
+        (None, Some(legacy)) => Some(legacy.clone()),
+        (None, None) => None,
+    }
+}
+
+async fn migrate_conflicting_local_skill_installs_for_path(
+    store: &crate::modules::mcp::store::McpStore,
+    canonical_skill_id: &str,
+    install_path: &Path,
+) -> Result<(), String> {
+    let installs = store
+        .list_local_skill_install_details()
+        .await
+        .map_err(to_string)?;
+    let Some(canonical_install) = installs
+        .iter()
+        .find(|item| {
+            item.skill_id == canonical_skill_id
+                && local_skill_install_paths_match(Path::new(&item.install_path), install_path)
+        })
+        .cloned()
+    else {
+        return Ok(());
+    };
+
+    let conflicting_installs = installs
+        .into_iter()
+        .filter(|item| item.skill_id != canonical_skill_id)
+        .filter(|item| local_skill_install_paths_match(Path::new(&item.install_path), install_path))
+        .collect::<Vec<_>>();
+    if conflicting_installs.is_empty() {
+        return Ok(());
+    }
+
+    let merged_settings = conflicting_installs.iter().fold(
+        canonical_install.user_settings_json.clone(),
+        |current, install| {
+            merge_local_skill_user_settings(current.as_ref(), install.user_settings_json.as_ref())
+        },
+    );
+    if merged_settings != canonical_install.user_settings_json {
+        store
+            .upsert_local_skill_install_state(
+                &canonical_install.skill_id,
+                canonical_install.installed_version.as_deref(),
+                canonical_install.is_enabled,
+                canonical_install.runtime.as_deref(),
+                &canonical_install.manifest_json,
+                &canonical_install.install_path,
+                merged_settings.as_ref(),
+            )
+            .await
+            .map_err(to_string)?;
+    }
+
+    for conflicting in conflicting_installs {
+        log::info!(
+            "migrating legacy local skill install '{}' into canonical '{}'",
+            conflicting.skill_id,
+            canonical_skill_id
+        );
+        store
+            .delete_local_skill_install(&conflicting.skill_id)
+            .await
+            .map_err(to_string)?;
+    }
+
+    Ok(())
+}
+
 pub(crate) fn resolve_local_skill_scan_targets(
     app: &AppHandle,
 ) -> Result<Vec<(std::path::PathBuf, &'static str)>, String> {
@@ -216,6 +317,8 @@ pub(crate) async fn register_local_skills_from_scan_targets_inner(
                 )
                 .await
                 .map_err(to_string)?;
+            migrate_conflicting_local_skill_installs_for_path(store.as_ref(), id, &skill_path)
+                .await?;
 
             let bindings = collect_local_skill_tool_bindings(&skill_path, &skill_def)?;
             store
@@ -1996,11 +2099,18 @@ pub(crate) async fn install_skill_to_local(
     repo_url: &str,
     revision: Option<&str>,
     alias: Option<&str>,
+    expected_skill_id: Option<&str>,
 ) -> Result<SkillInstallResult, String> {
     let skill_install_start = std::time::Instant::now();
     let skills_dir = app.path().app_data_dir().map_err(to_string)?.join("skills");
-    let materialized =
-        materialize_skill_repo_to_dir(&skills_dir, repo_url, revision, "user_skill", None).await?;
+    let materialized = materialize_skill_repo_to_dir(
+        &skills_dir,
+        repo_url,
+        revision,
+        "user_skill",
+        expected_skill_id,
+    )
+    .await?;
     let skill_def = materialized.skill_def;
     let skill_id = skill_def.skill_id.clone();
     let final_dir = materialized.install_path;
@@ -2018,6 +2128,8 @@ pub(crate) async fn install_skill_to_local(
         )
         .await
         .map_err(to_string)?;
+    migrate_conflicting_local_skill_installs_for_path(store.as_ref(), &skill_id, &final_dir)
+        .await?;
 
     if let Some(alias) = alias.map(str::trim).filter(|value| !value.is_empty()) {
         store
@@ -2883,13 +2995,20 @@ pub async fn install_skill_from_repo(
     repo_url: String,
     revision: Option<String>,
     alias: Option<String>,
+    expected_skill_id: Option<String>,
+    #[allow(non_snake_case)] expectedSkillId: Option<String>,
 ) -> Result<SkillInstallResult, String> {
+    let normalized_expected_skill_id = expectedSkillId
+        .or(expected_skill_id)
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
     install_skill_to_local(
         &app,
         app_state.inner(),
         &repo_url,
         revision.as_deref(),
         alias.as_deref(),
+        normalized_expected_skill_id.as_deref(),
     )
     .await
 }
@@ -2968,6 +3087,18 @@ mod tests {
         ));
         std::fs::create_dir_all(&dir).expect("create temp skill dir");
         dir
+    }
+
+    fn temp_sqlite_url(prefix: &str) -> (String, PathBuf) {
+        let path = std::env::temp_dir().join(format!(
+            "deeting-{}-{}.db",
+            prefix,
+            uuid::Uuid::new_v4().simple()
+        ));
+        (
+            format!("sqlite:{}", path.to_string_lossy().replace('\\', "/")),
+            path,
+        )
     }
 
     fn write_managed_python_skill(dir: &Path, skill_id: &str) {
@@ -3583,5 +3714,95 @@ mod tests {
         assert!(keys.contains(&"skill_manager".to_string()));
         assert!(keys.contains(&"skill-manager".to_string()));
         assert!(keys.contains(&"repo:https://github.com/deeting/skill-manager".to_string()));
+    }
+
+    #[test]
+    fn merge_local_skill_user_settings_fills_missing_keys_from_legacy() {
+        let merged = merge_local_skill_user_settings(
+            Some(&json!({
+                "runtime_install": {
+                    "state": "ready"
+                }
+            })),
+            Some(&json!({
+                "alias": "legacy-manager",
+                "runtime_install": {
+                    "state": "installing"
+                }
+            })),
+        )
+        .expect("merged settings");
+
+        assert_eq!(
+            merged,
+            json!({
+                "runtime_install": {
+                    "state": "ready"
+                },
+                "alias": "legacy-manager"
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn migrate_conflicting_local_skill_installs_for_path_removes_legacy_ids() {
+        let (database_url, db_path) = temp_sqlite_url("skill-install-migration");
+        let store = crate::modules::mcp::store::McpStore::new(&database_url)
+            .await
+            .expect("create store");
+        store.init().await.expect("init store");
+
+        let skill_dir = temp_skill_dir("skill-install-migration-dir");
+        let legacy_settings = json!({ "alias": "legacy-manager" });
+        store
+            .upsert_local_skill_install_state(
+                "skill_manager",
+                Some("1.0.0"),
+                true,
+                Some("local"),
+                &json!({ "id": "skill_manager" }).to_string(),
+                skill_dir.to_string_lossy().as_ref(),
+                Some(&legacy_settings),
+            )
+            .await
+            .expect("seed legacy install");
+        store
+            .upsert_local_skill_install_state(
+                "official.skills.skill_manager",
+                Some("1.1.0"),
+                true,
+                Some("local"),
+                &json!({ "id": "official.skills.skill_manager" }).to_string(),
+                skill_dir.to_string_lossy().as_ref(),
+                None,
+            )
+            .await
+            .expect("seed canonical install");
+
+        migrate_conflicting_local_skill_installs_for_path(
+            &store,
+            "official.skills.skill_manager",
+            &skill_dir,
+        )
+        .await
+        .expect("migrate duplicate installs");
+
+        let canonical = store
+            .get_local_skill_install_detail("official.skills.skill_manager")
+            .await
+            .expect("get canonical install")
+            .expect("canonical install exists");
+        assert_eq!(canonical.user_settings_json, Some(legacy_settings));
+        assert!(store
+            .get_local_skill_install_detail("skill_manager")
+            .await
+            .expect("get legacy install")
+            .is_none());
+
+        drop(store);
+        let _ = std::fs::remove_file(&db_path);
+        let _ = std::fs::remove_file(db_path.with_extension("db-shm"));
+        let _ = std::fs::remove_file(db_path.with_extension("db-wal"));
+        let _ = std::fs::remove_dir_all(skill_dir);
     }
 }
