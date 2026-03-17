@@ -3,7 +3,7 @@ pub(crate) mod asset_indexing;
 mod background_workers;
 pub(crate) mod capability_discovery;
 mod capability_registry;
-mod chat_completion;
+pub(crate) mod chat_completion;
 mod code_mode_catalog;
 mod code_mode_orchestration;
 mod config;
@@ -17,22 +17,25 @@ mod prompt_plan;
 mod remote_transport;
 mod route_selector;
 mod search_ranking;
-mod summary_format;
-mod summary_generation;
-mod text_utils;
 mod tool_execution;
 mod tool_feedback;
 mod tool_resolution;
 mod tool_result_blocks;
 mod tool_trace;
 
+pub(crate) use crate::modules::conversations::summary_format::build_local_summary_from_window;
+pub(crate) use crate::modules::conversations::summary_generation::{
+    generate_local_conversation_summary_with_model, generate_local_conversation_title_with_model,
+    request_local_auxiliary_text, LOCAL_CONVERSATION_SUMMARY_WORKER_IDLE_INTERVAL_SECS,
+};
+pub(crate) use crate::modules::conversations::summary_workers::{
+    start_local_conversation_summary_worker, start_local_periodic_worker,
+};
 pub(crate) use activation::{
     resolve_local_capability_activation_state, LocalCapabilityActivationState,
 };
 pub(crate) use asset_indexing::rebuild_local_knowledge_vector_index;
-pub(crate) use background_workers::{
-    start_local_conversation_summary_worker, start_local_periodic_worker, sync_source_inner,
-};
+pub(crate) use background_workers::sync_source_inner;
 pub(crate) use capability_registry::{
     build_capability_assets_for_read_mode, capability_asset_match_key,
     is_legacy_control_plane_asset, CapabilityRegistryReadMode,
@@ -89,11 +92,6 @@ pub(crate) use route_selector::{
     build_local_route_status_meta, render_local_route_prompt, select_local_route_with_evidence,
     LocalRouteDecision, LocalRouteKind,
 };
-pub(crate) use summary_format::build_local_summary_from_window;
-pub(crate) use summary_generation::{
-    generate_local_conversation_summary_with_model, generate_local_conversation_title_with_model,
-    request_local_auxiliary_text, LOCAL_CONVERSATION_SUMMARY_WORKER_IDLE_INTERVAL_SECS,
-};
 pub(crate) use tool_execution::{
     approve_mcp_tool_inner_with_context, execute_local_mcp_tool, execute_mcp_tool,
     execute_or_queue_mcp_tool_call_with_tool_ref, reject_mcp_tool_inner,
@@ -119,7 +117,7 @@ pub(crate) use tool_trace::{
 };
 
 #[cfg(test)]
-pub(crate) use background_workers::process_next_local_conversation_summary_job_with_store;
+pub(crate) use crate::modules::conversations::summary_workers::process_next_local_conversation_summary_job_with_store;
 #[cfg(test)]
 pub(crate) use chat_completion::normalize_chat_completion_response;
 #[cfg(test)]

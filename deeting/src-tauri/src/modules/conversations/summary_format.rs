@@ -1,5 +1,5 @@
-use super::super::support::*;
 use super::text_utils::truncate_text_chars;
+use crate::modules::mcp::types::LocalConversationHistoryMessage;
 
 pub(crate) const LOCAL_CONVERSATION_SUMMARY_MAX_CHARS: usize = 2000;
 pub(crate) const LOCAL_CONVERSATION_SUMMARY_PROMPT_INPUT_MAX_CHARS: usize = 4000;

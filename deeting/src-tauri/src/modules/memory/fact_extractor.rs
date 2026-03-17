@@ -47,23 +47,24 @@ pub async fn extract_and_store_facts(
 
     let prompt = FACT_EXTRACTION_PROMPT_TEMPLATE.replace("{conversation}", truncated);
 
-    let extracted = match crate::modules::mcp::commands::request_local_auxiliary_text(
-        app_state,
-        provider_model_id,
-        model_id,
-        &prompt,
-        FACT_EXTRACTION_MAX_TOKENS,
-        Some(session_id),
-    )
-    .await
-    {
-        Ok(Some(text)) => text,
-        Ok(None) => return,
-        Err(e) => {
-            log::warn!("fact extraction LLM call failed: {}", e);
-            return;
-        }
-    };
+    let extracted =
+        match crate::modules::conversations::summary_generation::request_local_auxiliary_text(
+            app_state,
+            provider_model_id,
+            model_id,
+            &prompt,
+            FACT_EXTRACTION_MAX_TOKENS,
+            Some(session_id),
+        )
+        .await
+        {
+            Ok(Some(text)) => text,
+            Ok(None) => return,
+            Err(e) => {
+                log::warn!("fact extraction LLM call failed: {}", e);
+                return;
+            }
+        };
 
     let facts = match parse_fact_array(&extracted) {
         Some(facts) => facts,

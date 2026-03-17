@@ -1,4 +1,4 @@
-mod support;
+pub(crate) mod support;
 
 #[path = "commands_parts/admin_conversations.rs"]
 pub(crate) mod admin_conversations_impl;
@@ -78,10 +78,6 @@ pub use conversation_management_impl::{
 pub use maintenance_impl::{
     get_local_capability_registry_diagnostics, list_local_maintenance_logs,
     run_local_maintenance_action,
-};
-pub use skill_registry_impl::{
-    install_local_skill_runtime, install_skill_from_repo, list_local_installed_skill_ids,
-    list_local_skill_runtime_statuses, uninstall_skill, update_local_skill_runtime_settings,
 };
 pub use skill_registry_refresh_impl::register_local_skills;
 pub use source_management_impl::{

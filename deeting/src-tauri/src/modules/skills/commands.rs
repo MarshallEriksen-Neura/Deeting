@@ -51,7 +51,7 @@ fn discover_visible_skill_paths(
             if !skill_path.is_dir() {
                 continue;
             }
-            let resolved = crate::modules::mcp::commands::resolve_local_skill_definition(
+            let resolved = crate::modules::skills::registry_impl::resolve_local_skill_definition(
                 &skill_path,
                 source_prefix,
                 None,
@@ -122,14 +122,16 @@ pub(crate) async fn register_local_skills_inner(
     app: AppHandle,
     app_state: &AppState,
 ) -> Result<usize, String> {
-    let purged = crate::modules::mcp::commands::purge_legacy_skill_tool_state(app_state).await?;
+    let purged =
+        crate::modules::skills::registry_impl::purge_legacy_skill_tool_state(app_state).await?;
     if purged > 0 {
         log::info!(
             "register_local_skills_refresh: purged {} legacy skill-tool state entries before refresh",
             purged
         );
     }
-    let scan_targets = crate::modules::mcp::commands::resolve_local_skill_scan_targets(&app)?;
+    let scan_targets =
+        crate::modules::skills::registry_scan::resolve_local_skill_scan_targets(&app)?;
     let pruned = prune_stale_local_skill_state(&scan_targets, app_state).await?;
     if pruned > 0 {
         log::info!(
@@ -150,7 +152,7 @@ pub(crate) async fn register_local_skills_inner(
                 .join("deeting-sdk")
         });
     let sdk_pythonpath = sdk_dir.to_string_lossy().to_string();
-    crate::modules::mcp::commands::register_local_skills_from_scan_targets_inner(
+    crate::modules::skills::registry_scan::register_local_skills_from_scan_targets_inner(
         &scan_targets,
         &sdk_pythonpath,
         app_state.mcp.store.clone(),
@@ -246,7 +248,7 @@ pub async fn enable_local_skill(
         ));
     }
 
-    crate::modules::mcp::commands::reindex_local_skill_bundle_asset(
+    crate::modules::skills::registry_impl::reindex_local_skill_bundle_asset(
         state.inner(),
         &normalized_skill_id,
     )
@@ -286,8 +288,7 @@ pub async fn disable_local_skill(
 pub async fn list_local_skill_runtime_statuses(
     app_state: State<'_, AppState>,
 ) -> Result<Vec<crate::modules::mcp::types::LocalSkillRuntimeStatus>, String> {
-    crate::modules::mcp::commands::skill_registry_impl::list_local_skill_runtime_statuses(app_state)
-        .await
+    crate::modules::skills::registry_impl::list_local_skill_runtime_statuses(app_state).await
 }
 
 #[tauri::command]
@@ -296,7 +297,7 @@ pub async fn update_local_skill_runtime_settings(
     skill_id: String,
     payload: crate::modules::mcp::types::UpdateLocalSkillRuntimeSettingsRequest,
 ) -> Result<crate::modules::mcp::types::LocalSkillRuntimeStatus, String> {
-    crate::modules::mcp::commands::skill_registry_impl::update_local_skill_runtime_settings(
+    crate::modules::skills::registry_impl::update_local_skill_runtime_settings(
         app_state, skill_id, payload,
     )
     .await
@@ -308,10 +309,8 @@ pub async fn install_local_skill_runtime(
     app_state: State<'_, AppState>,
     skill_id: String,
 ) -> Result<crate::modules::mcp::types::LocalSkillRuntimeStatus, String> {
-    crate::modules::mcp::commands::skill_registry_impl::install_local_skill_runtime(
-        app, app_state, skill_id,
-    )
-    .await
+    crate::modules::skills::registry_impl::install_local_skill_runtime(app, app_state, skill_id)
+        .await
 }
 
 #[tauri::command]
@@ -324,7 +323,7 @@ pub async fn install_skill_from_repo(
     expected_skill_id: Option<String>,
     #[allow(non_snake_case)] expectedSkillId: Option<String>,
 ) -> Result<crate::modules::mcp::types::SkillInstallResult, String> {
-    crate::modules::mcp::commands::skill_registry_impl::install_skill_from_repo(
+    crate::modules::skills::registry_impl::install_skill_from_repo(
         app,
         app_state,
         repo_url,
@@ -342,14 +341,12 @@ pub async fn uninstall_skill(
     app_state: State<'_, AppState>,
     skill_id: String,
 ) -> Result<(), String> {
-    crate::modules::mcp::commands::skill_registry_impl::uninstall_skill(app, app_state, skill_id)
-        .await
+    crate::modules::skills::registry_impl::uninstall_skill(app, app_state, skill_id).await
 }
 
 #[tauri::command]
 pub async fn list_local_installed_skill_ids(
     app_state: State<'_, AppState>,
 ) -> Result<Vec<String>, String> {
-    crate::modules::mcp::commands::skill_registry_impl::list_local_installed_skill_ids(app_state)
-        .await
+    crate::modules::skills::registry_impl::list_local_installed_skill_ids(app_state).await
 }

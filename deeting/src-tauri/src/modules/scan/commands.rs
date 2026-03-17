@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use tauri::{AppHandle, State};
 
-use crate::modules::mcp::commands::resolve_local_skill_scan_targets;
+use crate::modules::skills::registry_scan::resolve_local_skill_scan_targets;
 use crate::state::AppState;
 
 use super::actions::{
