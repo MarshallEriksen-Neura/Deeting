@@ -1,11 +1,9 @@
 #[cfg(test)]
 use super::skill_registry_impl::{is_hidden_name, resolve_local_skill_definition};
 use super::{
-    assistant_management_impl::index_local_assistants,
     assistants_knowledge_admin_impl::{index_mcp_tools, sync_cloud_subscriptions_inner},
     common_impl::to_string,
     runtime::{build_desktop_mcp_tool_views, now_rfc3339, sync_source_inner, DesktopMcpToolView},
-    skill_registry_impl::register_local_skills_inner,
     support::*,
 };
 
@@ -25,6 +23,7 @@ pub(crate) struct CloudSubscriptionItem {
     pub(crate) tool: CloudSubscriptionTool,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Deserialize)]
 struct CloudSystemAssetAssistantMetadataVersion {
     id: Option<String>,
@@ -36,6 +35,7 @@ struct CloudSystemAssetAssistantMetadataVersion {
     published_at: Option<String>,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Deserialize)]
 struct CloudSystemAssetAssistantMetadata {
     registry_entity: Option<String>,
@@ -51,6 +51,7 @@ struct CloudSystemAssetAssistantMetadata {
     version: Option<CloudSystemAssetAssistantMetadataVersion>,
 }
 
+#[cfg(test)]
 fn assistant_snapshot_from_system_asset(
     item: &CloudSystemAssetSyncItem,
 ) -> Option<CloudSystemAssistantSnapshot> {
@@ -113,6 +114,7 @@ fn assistant_snapshot_from_system_asset(
     })
 }
 
+#[cfg(test)]
 async fn fetch_system_asset_sync_feed(
     client: &reqwest::Client,
     url: &str,
@@ -213,6 +215,7 @@ pub(crate) async fn local_skill_registration_self_heal_needed(
     Ok(false)
 }
 
+#[cfg(test)]
 pub(crate) async fn sync_local_system_assets_inner(
     store: &crate::modules::mcp::store::McpStore,
     client: &reqwest::Client,
@@ -301,6 +304,7 @@ pub(crate) async fn sync_local_system_assets_inner(
     })
 }
 
+#[cfg(test)]
 pub(crate) async fn reset_local_asset_catalog_then_sync_inner(
     memory_service: &crate::modules::memory::service::MemoryService,
     store: &crate::modules::mcp::store::McpStore,
@@ -335,102 +339,6 @@ pub async fn sync_cloud_subscriptions(
     access_token: String,
 ) -> Result<Vec<McpTool>, String> {
     sync_cloud_subscriptions_inner(&state.mcp, access_token).await
-}
-
-#[tauri::command]
-pub async fn sync_local_system_assets(
-    _app: AppHandle,
-    state: State<'_, AppState>,
-    access_token: String,
-    limit: Option<i64>,
-    reinstall_missing: Option<bool>,
-) -> Result<LocalSystemAssetSyncResponse, String> {
-    let normalized_token = access_token.trim().to_string();
-    if normalized_token.is_empty() {
-        return Err("access token is required".to_string());
-    }
-    let page_limit = limit.unwrap_or(500).clamp(1, 500);
-    let enable_reinstall = reinstall_missing.unwrap_or(false);
-    let base_url = state.mcp.cloud_base_url.read().await.clone();
-    sync_local_system_assets_inner(
-        state.mcp.store.as_ref(),
-        &state.mcp.client,
-        &base_url,
-        normalized_token.as_str(),
-        page_limit,
-        None,
-        enable_reinstall,
-    )
-    .await
-}
-
-#[tauri::command]
-pub async fn repair_local_system_asset_index(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    access_token: String,
-    limit: Option<i64>,
-    reinstall_missing: Option<bool>,
-) -> Result<LocalSystemAssetRepairResponse, String> {
-    let normalized_token = access_token.trim().to_string();
-    if normalized_token.is_empty() {
-        return Err("access token is required".to_string());
-    }
-    let page_limit = limit.unwrap_or(500).clamp(1, 500);
-    let enable_reinstall = reinstall_missing.unwrap_or(false);
-    let base_url = state.mcp.cloud_base_url.read().await.clone();
-
-    let probe_vector = state
-        .providers
-        .embedding
-        .embed_text("local_system_asset_index_repair_probe")
-        .await
-        .map_err(to_string)?;
-    let vector_dimension = i32::try_from(probe_vector.len())
-        .map_err(|_| "embedding vector dimension is too large".to_string())?;
-    if vector_dimension <= 0 {
-        return Err("embedding model returned empty vector".to_string());
-    }
-
-    let sync = reset_local_asset_catalog_then_sync_inner(
-        &state.memory.service,
-        state.mcp.store.as_ref(),
-        &state.mcp.client,
-        &base_url,
-        normalized_token.as_str(),
-        page_limit,
-        vector_dimension,
-        None,
-        enable_reinstall,
-    )
-    .await?;
-
-    let skill_reindexed_count =
-        register_local_skills_inner(app.clone(), state.inner()).await? as i64;
-    let assistants = state
-        .mcp
-        .store
-        .list_local_assistants()
-        .await
-        .map_err(to_string)?;
-    let enabled_assistant_ids = state
-        .mcp
-        .store
-        .list_enabled_local_assistant_ids()
-        .await
-        .unwrap_or_default();
-    let assistant_reindexed_count = assistants
-        .iter()
-        .filter(|assistant| enabled_assistant_ids.contains(assistant.id.as_str()))
-        .count() as i64;
-    index_local_assistants(state.inner(), &assistants).await;
-
-    Ok(LocalSystemAssetRepairResponse {
-        vector_dimension: vector_dimension as i64,
-        skill_reindexed_count,
-        assistant_reindexed_count,
-        sync,
-    })
 }
 
 #[tauri::command]

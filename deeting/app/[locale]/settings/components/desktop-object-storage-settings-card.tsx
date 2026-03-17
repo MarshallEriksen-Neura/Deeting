@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import type { Control } from "react-hook-form"
+import { useWatch, type Control } from "react-hook-form"
 import { Database, Eye, EyeOff, HardDriveDownload, KeyRound, Link2 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -45,6 +45,8 @@ export function DesktopObjectStorageSettingsCard({
 }: DesktopObjectStorageSettingsCardProps) {
   const t = useI18n("settings")
   const [showSecret, setShowSecret] = useState(false)
+  const provider = useWatch({ control, name: "objectStorageProvider" }) ?? "cloudflare_r2_s3"
+  const isAliyunOss = provider === "aliyun_oss"
 
   if (!isTauriRuntime) {
     return null
@@ -136,9 +138,19 @@ export function DesktopObjectStorageSettingsCard({
               <FormItem>
                 <FormLabel>{t("storage.bucketLabel")}</FormLabel>
                 <FormControl>
-                  <Input {...field} placeholder="deeting-assets" disabled={isDisabled} />
+                  <Input
+                    {...field}
+                    placeholder={t(
+                      isAliyunOss
+                        ? "storage.bucketPlaceholderAliyun"
+                        : "storage.bucketPlaceholder",
+                    )}
+                    disabled={isDisabled}
+                  />
                 </FormControl>
-                <FormDescription>{t("storage.bucketHelp")}</FormDescription>
+                <FormDescription>
+                  {t(isAliyunOss ? "storage.bucketHelpAliyun" : "storage.bucketHelp")}
+                </FormDescription>
               </FormItem>
             )}
           />
@@ -152,11 +164,17 @@ export function DesktopObjectStorageSettingsCard({
                 <FormControl>
                   <Input
                     {...field}
-                    placeholder={t("storage.regionPlaceholder")}
+                    placeholder={t(
+                      isAliyunOss
+                        ? "storage.regionPlaceholderAliyun"
+                        : "storage.regionPlaceholder",
+                    )}
                     disabled={isDisabled}
                   />
                 </FormControl>
-                <FormDescription>{t("storage.regionHelp")}</FormDescription>
+                <FormDescription>
+                  {t(isAliyunOss ? "storage.regionHelpAliyun" : "storage.regionHelp")}
+                </FormDescription>
               </FormItem>
             )}
           />
@@ -169,7 +187,9 @@ export function DesktopObjectStorageSettingsCard({
                 <div className="flex items-center justify-between gap-3">
                   <div className="space-y-1">
                     <FormLabel>{t("storage.pathStyleLabel")}</FormLabel>
-                    <FormDescription>{t("storage.pathStyleHelp")}</FormDescription>
+                    <FormDescription>
+                      {t(isAliyunOss ? "storage.pathStyleHelpAliyun" : "storage.pathStyleHelp")}
+                    </FormDescription>
                   </div>
                   <FormControl>
                     <Switch
@@ -198,13 +218,19 @@ export function DesktopObjectStorageSettingsCard({
                   <Input
                     {...field}
                     type="url"
-                    placeholder={t("storage.endpointPlaceholder")}
+                    placeholder={t(
+                      isAliyunOss
+                        ? "storage.endpointPlaceholderAliyun"
+                        : "storage.endpointPlaceholder",
+                    )}
                     className="pl-8"
                     disabled={isDisabled}
                   />
                 </div>
               </FormControl>
-              <FormDescription>{t("storage.endpointHelp")}</FormDescription>
+              <FormDescription>
+                {t(isAliyunOss ? "storage.endpointHelpAliyun" : "storage.endpointHelp")}
+              </FormDescription>
             </FormItem>
           )}
         />
@@ -220,11 +246,21 @@ export function DesktopObjectStorageSettingsCard({
                   <Input
                     {...field}
                     type="url"
-                    placeholder={t("storage.publicBaseUrlPlaceholder")}
+                    placeholder={t(
+                      isAliyunOss
+                        ? "storage.publicBaseUrlPlaceholderAliyun"
+                        : "storage.publicBaseUrlPlaceholder",
+                    )}
                     disabled={isDisabled}
                   />
                 </FormControl>
-                <FormDescription>{t("storage.publicBaseUrlHelp")}</FormDescription>
+                <FormDescription>
+                  {t(
+                    isAliyunOss
+                      ? "storage.publicBaseUrlHelpAliyun"
+                      : "storage.publicBaseUrlHelp",
+                  )}
+                </FormDescription>
               </FormItem>
             )}
           />

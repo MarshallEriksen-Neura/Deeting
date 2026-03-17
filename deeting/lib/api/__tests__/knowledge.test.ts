@@ -4,12 +4,16 @@
   deleteFile,
   deleteFolder,
   fetchFileChunks,
+  getKnowledgeUploadAccept,
+  getKnowledgeUploadFileTypes,
+  getKnowledgeUploadMaxBytes,
   getFile,
   getFileDownloadUrl,
   fetchKnowledgeStats,
   fetchKnowledgeTree,
   listLocalUserDocuments,
   retryFile,
+  splitKnowledgeUploadFiles,
   uploadFile,
   updateFile,
   updateFolder,
@@ -34,6 +38,95 @@ const originalTauriFlag = process.env.NEXT_PUBLIC_IS_TAURI
 const windowWithTauri = window as Window & {
   __TAURI__?: unknown
   __TAURI_INTERNALS__?: unknown
+}
+
+function createStoredZip(files: Record<string, string>): Uint8Array {
+  const encoder = new TextEncoder()
+  const fileEntries = Object.entries(files).map(([name, content]) => ({
+    name,
+    nameBytes: encoder.encode(name),
+    contentBytes: encoder.encode(content),
+  }))
+
+  const localChunks: Uint8Array[] = []
+  const centralChunks: Uint8Array[] = []
+  let offset = 0
+
+  for (const entry of fileEntries) {
+    const localHeader = new Uint8Array(30)
+    const localView = new DataView(localHeader.buffer)
+    localView.setUint32(0, 0x04034b50, true)
+    localView.setUint16(4, 20, true)
+    localView.setUint16(8, 0, true)
+    localView.setUint16(10, 0, true)
+    localView.setUint32(14, 0, true)
+    localView.setUint32(18, entry.contentBytes.length, true)
+    localView.setUint32(22, entry.contentBytes.length, true)
+    localView.setUint16(26, entry.nameBytes.length, true)
+    localView.setUint16(28, 0, true)
+    localChunks.push(localHeader, entry.nameBytes, entry.contentBytes)
+
+    const centralHeader = new Uint8Array(46)
+    const centralView = new DataView(centralHeader.buffer)
+    centralView.setUint32(0, 0x02014b50, true)
+    centralView.setUint16(4, 20, true)
+    centralView.setUint16(6, 20, true)
+    centralView.setUint16(10, 0, true)
+    centralView.setUint16(12, 0, true)
+    centralView.setUint32(16, 0, true)
+    centralView.setUint32(20, entry.contentBytes.length, true)
+    centralView.setUint32(24, entry.contentBytes.length, true)
+    centralView.setUint16(28, entry.nameBytes.length, true)
+    centralView.setUint16(30, 0, true)
+    centralView.setUint16(32, 0, true)
+    centralView.setUint16(34, 0, true)
+    centralView.setUint16(36, 0, true)
+    centralView.setUint32(38, 0, true)
+    centralView.setUint32(42, offset, true)
+    centralChunks.push(centralHeader, entry.nameBytes)
+
+    offset += localHeader.length + entry.nameBytes.length + entry.contentBytes.length
+  }
+
+  const centralDirectorySize = centralChunks.reduce((total, chunk) => total + chunk.length, 0)
+  const endOfCentralDirectory = new Uint8Array(22)
+  const eocdView = new DataView(endOfCentralDirectory.buffer)
+  eocdView.setUint32(0, 0x06054b50, true)
+  eocdView.setUint16(8, fileEntries.length, true)
+  eocdView.setUint16(10, fileEntries.length, true)
+  eocdView.setUint32(12, centralDirectorySize, true)
+  eocdView.setUint32(16, offset, true)
+  eocdView.setUint16(20, 0, true)
+
+  const totalSize =
+    offset + centralDirectorySize + endOfCentralDirectory.length
+  const output = new Uint8Array(totalSize)
+  let cursor = 0
+  for (const chunk of [...localChunks, ...centralChunks, endOfCentralDirectory]) {
+    output.set(chunk, cursor)
+    cursor += chunk.length
+  }
+  return output
+}
+
+function createMinimalDocxFile(name = "sample.docx"): File {
+  const documentXml =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+    "<w:body>" +
+    "<w:p><w:r><w:t>Hello</w:t></w:r></w:p>" +
+    "<w:p><w:r><w:t>world</w:t></w:r></w:p>" +
+    "</w:body>" +
+    "</w:document>"
+  const bytes = createStoredZip({
+    "[Content_Types].xml":
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"></Types>',
+    "word/document.xml": documentXml,
+  })
+  return new File([bytes], name, {
+    type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  })
 }
 
 describe("knowledge api", () => {
@@ -298,10 +391,10 @@ describe("knowledge api", () => {
     expect(chunks.total).toBe(1)
     expect(chunks.items[0]?.id).toBe("c-1")
     expect(mockInvoke).toHaveBeenNthCalledWith(1, "get_local_user_document", {
-      file_id: "d-10",
+      fileId: "d-10",
     })
     expect(mockInvoke).toHaveBeenNthCalledWith(2, "update_local_user_document", {
-      file_id: "d-10",
+      fileId: "d-10",
       payload: {
         name: "note-renamed.md",
         folder_id: "f-1",
@@ -309,13 +402,13 @@ describe("knowledge api", () => {
       },
     })
     expect(mockInvoke).toHaveBeenNthCalledWith(3, "delete_local_user_document", {
-      file_id: "d-10",
+      fileId: "d-10",
     })
     expect(mockInvoke).toHaveBeenNthCalledWith(4, "retry_local_user_document", {
-      file_id: "d-10",
+      fileId: "d-10",
     })
     expect(mockInvoke).toHaveBeenNthCalledWith(5, "list_local_user_document_chunks", {
-      file_id: "d-10",
+      fileId: "d-10",
       query: {
         offset: 0,
         limit: 20,
@@ -398,6 +491,70 @@ describe("knowledge api", () => {
     global.fetch = originalFetch
   })
 
+  it("limits local upload affordances to offline doc-aware types in tauri runtime", () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+
+    expect(getKnowledgeUploadFileTypes()).toEqual(["txt", "docx", "md", "csv", "html", "json"])
+    expect(getKnowledgeUploadAccept()).toBe(".txt,.docx,.md,.csv,.html,.json")
+    expect(getKnowledgeUploadMaxBytes()).toBe(2 * 1024 * 1024)
+
+    const { accepted, rejected } = splitKnowledgeUploadFiles([
+      { name: "notes.md" },
+      { name: "sample1.docx" },
+      { name: "paper.pdf" },
+    ])
+
+    expect(accepted).toEqual([{ name: "notes.md" }, { name: "sample1.docx" }])
+    expect(rejected).toEqual([{ name: "paper.pdf" }])
+  })
+
+  it("uploads local docx file via tauri document command", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    const originalFetch = global.fetch
+    global.fetch = jest.fn().mockResolvedValue({ ok: true } as Response)
+    mockInvoke
+      .mockResolvedValueOnce({
+        provider: "cloudflare_r2_s3",
+        object_key: "desktop/uploads/knowledge/sample.docx",
+        upload_url: "https://example.r2.cloudflarestorage.com/upload",
+        method: "PUT",
+        headers: {},
+        asset_url: "https://cdn.example.com/knowledge/sample.docx",
+        expires_at: "2026-03-10T00:15:00Z",
+      } as unknown)
+      .mockResolvedValueOnce({
+        id: "d-22",
+        name: "sample.docx",
+        file_type: "docx",
+        size: 512,
+        status: "indexed",
+        chunks: 1,
+        error_message: null,
+        folder_id: null,
+        created_at: "2026-03-03T00:00:00Z",
+        updated_at: "2026-03-03T00:00:01Z",
+      } as unknown)
+
+    const uploaded = await uploadFile(createMinimalDocxFile())
+
+    expect(uploaded.id).toBe("d-22")
+    expect(uploaded.status).toBe("active")
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, "create_local_user_document", {
+      payload: expect.objectContaining({
+        filename: "sample.docx",
+        folder_id: null,
+        status: "processing",
+        meta_info: expect.objectContaining({
+          file_type: "docx",
+          raw_text: "Hello\n\nworld",
+        }),
+      }),
+    })
+    global.fetch = originalFetch
+  })
+
   it("gets local knowledge download url via tauri command", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
@@ -407,7 +564,7 @@ describe("knowledge api", () => {
 
     expect(url).toBe("https://cdn.example.com/knowledge/local.txt")
     expect(mockInvoke).toHaveBeenCalledWith("get_local_user_document_download_url", {
-      file_id: "d-20",
+      fileId: "d-20",
     })
   })
 

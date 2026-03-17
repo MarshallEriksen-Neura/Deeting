@@ -242,268 +242,46 @@ async fn migrate_conflicting_local_skill_installs_for_path(
 }
 
 fn resolve_shared_agent_skills_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|home| home.join(".agents").join("skills"))
+    crate::modules::mcp::commands::skill_registry_scan_impl::resolve_shared_agent_skills_dir()
 }
 
 fn resolve_workspace_official_skills_dir() -> PathBuf {
-    std::env::current_dir()
-        .unwrap_or_default()
-        .join("packages")
-        .join("official-skills")
+    crate::modules::mcp::commands::skill_registry_scan_impl::resolve_workspace_official_skills_dir()
 }
 
 fn select_official_skills_scan_dir(
     workspace_official_skills_dir: PathBuf,
     bundled_official_skills_dir: Option<PathBuf>,
 ) -> PathBuf {
-    if workspace_official_skills_dir.exists() {
-        workspace_official_skills_dir
-    } else {
-        bundled_official_skills_dir
-            .filter(|path| path.exists())
-            .unwrap_or(workspace_official_skills_dir)
-    }
+    crate::modules::mcp::commands::skill_registry_scan_impl::select_official_skills_scan_dir(
+        workspace_official_skills_dir,
+        bundled_official_skills_dir,
+    )
 }
 
 pub(crate) fn resolve_local_skill_scan_targets(
     app: &AppHandle,
 ) -> Result<Vec<(std::path::PathBuf, &'static str)>, String> {
-    let workspace_official_skills_dir = resolve_workspace_official_skills_dir();
-    let bundled_official_skills_dir = app
-        .path()
-        .resource_dir()
-        .ok()
-        .map(|p| p.join("official-skills"));
-    let official_skills_dir =
-        select_official_skills_scan_dir(workspace_official_skills_dir, bundled_official_skills_dir);
-    let user_skills_dir = app.path().app_data_dir().map_err(to_string)?.join("skills");
-    if !user_skills_dir.exists() {
-        let _ = std::fs::create_dir_all(&user_skills_dir);
-    }
-
-    let mut scan_targets = vec![
-        (official_skills_dir, "system_plugin"),
-        (user_skills_dir, "user_skill"),
-    ];
-
-    if let Some(shared_agent_skills_dir) = resolve_shared_agent_skills_dir()
-        .filter(|path| path.exists())
-        .filter(|path| !local_skill_install_paths_match(path, &scan_targets[1].0))
-    {
-        scan_targets.push((shared_agent_skills_dir, "user_skill"));
-    }
-
-    Ok(scan_targets)
+    crate::modules::mcp::commands::skill_registry_scan_impl::resolve_local_skill_scan_targets(app)
 }
 
 pub(crate) async fn register_local_skills_from_scan_targets_inner(
     scan_targets: &[(std::path::PathBuf, &'static str)],
-    _sdk_pythonpath: &str,
+    sdk_pythonpath: &str,
     store: std::sync::Arc<crate::modules::mcp::store::McpStore>,
     provider_state: std::sync::Arc<crate::modules::providers::ProviderState>,
     memory_state: std::sync::Arc<crate::modules::memory::MemoryState>,
     wait_for_vector_index: bool,
 ) -> Result<usize, String> {
-    let mut total_indexed = 0;
-    cleanup_hidden_local_skill_installs(scan_targets, store.as_ref(), memory_state.as_ref())
-        .await?;
-    let registry_generation = store
-        .next_local_capability_registry_generation()
-        .await
-        .map_err(to_string)?;
-
-    for (dir_path, source_prefix) in scan_targets {
-        if !dir_path.exists() {
-            continue;
-        }
-        for entry in std::fs::read_dir(dir_path).map_err(to_string)? {
-            let entry = entry.map_err(to_string)?;
-            if is_hidden_name(&entry.file_name()) {
-                continue;
-            }
-            let skill_path = entry.path();
-            if !skill_path.is_dir() {
-                continue;
-            }
-            let Some(skill_def) =
-                resolve_local_skill_definition(&skill_path, source_prefix, None, None)?
-            else {
-                continue;
-            };
-
-            let id = skill_def.skill_id.as_str();
-            let version = skill_def.version.as_deref();
-            let runtime_str = skill_def.runtime_values.join(",");
-            let runtime = Some(runtime_str.as_str());
-
-            store
-                .upsert_local_skill_install(
-                    id,
-                    version,
-                    runtime,
-                    &skill_def.manifest_json,
-                    &skill_path.to_string_lossy(),
-                )
-                .await
-                .map_err(to_string)?;
-            migrate_conflicting_local_skill_installs_for_path(store.as_ref(), id, &skill_path)
-                .await?;
-
-            let bindings = collect_local_skill_tool_bindings(&skill_path, &skill_def)?;
-            store
-                .replace_local_skill_tool_bindings(
-                    id,
-                    &bindings
-                        .iter()
-                        .map(
-                            |binding| crate::modules::mcp::store::LocalSkillToolBindingUpsert {
-                                binding_id: binding.binding_id.clone(),
-                                binding_kind: binding.binding_kind.clone(),
-                                callable_name: binding.callable_name.clone(),
-                                tool_name: binding.tool_name.clone(),
-                                description: binding.description.clone(),
-                                input_schema_json: binding
-                                    .input_schema
-                                    .as_ref()
-                                    .map(|value| value.to_string()),
-                                output_schema_json: binding
-                                    .output_schema
-                                    .as_ref()
-                                    .map(|value| value.to_string()),
-                                entry_path: binding.entry_path.clone(),
-                                runtime: binding.runtime.clone(),
-                                timeout_seconds: binding.timeout_seconds,
-                            },
-                        )
-                        .collect::<Vec<_>>(),
-                )
-                .await
-                .map_err(to_string)?;
-
-            let final_source_type = if *source_prefix == "system_plugin" {
-                "builtin"
-            } else {
-                "user"
-            }
-            .to_string();
-            let install_detail = store
-                .get_local_skill_install_detail(id)
-                .await
-                .map_err(to_string)?
-                .ok_or_else(|| format!("local skill install {} missing after upsert", id))?;
-            let activation_state = registry_activation_state_for_install(&install_detail);
-            let runtime_state = registry_runtime_state_for_install(&install_detail);
-            let search_index_state = "pending";
-            let registry_entries = build_local_skill_registry_entries(
-                &skill_path,
-                &skill_def,
-                &bindings,
-                &final_source_type,
-                activation_state,
-                &runtime_state,
-                search_index_state,
-                registry_generation,
-            )?;
-            store
-                .replace_local_capability_registry_entries(id, &registry_entries)
-                .await
-                .map_err(to_string)?;
-
-            let _ = memory_state.service.delete_assets_by_package(id).await;
-
-            if wait_for_vector_index {
-                if let Err(err) = index_local_skill_bundle_asset(
-                    provider_state.clone(),
-                    memory_state.clone(),
-                    id,
-                    &skill_def.display_name,
-                    &skill_def.description,
-                    skill_def.doc_excerpt.as_deref(),
-                    &skill_def.manifest_json,
-                    &final_source_type,
-                )
-                .await
-                {
-                    let _ = store
-                        .update_local_capability_registry_states(id, None, None, Some("failed"))
-                        .await;
-                    return Err(err);
-                }
-                if let Err(err) = index_local_skill_tool_binding_assets(
-                    provider_state.clone(),
-                    memory_state.clone(),
-                    id,
-                    &skill_def.display_name,
-                    &bindings,
-                    &skill_def.manifest_json,
-                    &final_source_type,
-                )
-                .await
-                {
-                    let _ = store
-                        .update_local_capability_registry_states(id, None, None, Some("failed"))
-                        .await;
-                    return Err(err);
-                }
-                store
-                    .update_local_capability_registry_states(id, None, None, Some("ready"))
-                    .await
-                    .map_err(to_string)?;
-            } else {
-                let provider_state_clone = provider_state.clone();
-                let memory_state_clone = memory_state.clone();
-                let store_clone = store.clone();
-                let skill_id = id.to_string();
-                let display_name = skill_def.display_name.clone();
-                let description = skill_def.description.clone();
-                let doc_excerpt = skill_def.doc_excerpt.clone();
-                let manifest_json = skill_def.manifest_json.clone();
-                let final_source_type_clone = final_source_type.clone();
-                let bindings_clone = bindings.clone();
-                let provider_state_clone_for_bindings = provider_state.clone();
-                let memory_state_clone_for_bindings = memory_state.clone();
-                tauri::async_runtime::spawn(async move {
-                    let bundle_result = index_local_skill_bundle_asset(
-                        provider_state_clone,
-                        memory_state_clone,
-                        &skill_id,
-                        &display_name,
-                        &description,
-                        doc_excerpt.as_deref(),
-                        &manifest_json,
-                        &final_source_type_clone,
-                    )
-                    .await;
-                    let binding_result = index_local_skill_tool_binding_assets(
-                        provider_state_clone_for_bindings,
-                        memory_state_clone_for_bindings,
-                        &skill_id,
-                        &display_name,
-                        &bindings_clone,
-                        &manifest_json,
-                        &final_source_type_clone,
-                    )
-                    .await;
-                    let search_index_state = if bundle_result.is_ok() && binding_result.is_ok() {
-                        "ready"
-                    } else {
-                        "failed"
-                    };
-                    let _ = store_clone
-                        .update_local_capability_registry_states(
-                            &skill_id,
-                            None,
-                            None,
-                            Some(search_index_state),
-                        )
-                        .await;
-                });
-            }
-            total_indexed += 1;
-        }
-    }
-
-    Ok(total_indexed)
+    crate::modules::mcp::commands::skill_registry_scan_impl::register_local_skills_from_scan_targets_inner(
+        scan_targets,
+        sdk_pythonpath,
+        store,
+        provider_state,
+        memory_state,
+        wait_for_vector_index,
+    )
+    .await
 }
 
 async fn cleanup_hidden_local_skill_installs(
@@ -2586,7 +2364,11 @@ pub async fn register_local_skills(
     app: AppHandle,
     app_state: State<'_, AppState>,
 ) -> Result<usize, String> {
-    register_local_skills_inner(app, app_state.inner()).await
+    crate::modules::mcp::commands::skill_registry_refresh_impl::register_local_skills(
+        app,
+        app_state,
+    )
+    .await
 }
 
 /// Automatically install runtimes for official skills that need it.
@@ -3091,34 +2873,9 @@ pub(crate) async fn register_local_skills_inner(
     app: AppHandle,
     app_state: &AppState,
 ) -> Result<usize, String> {
-    let purged = purge_legacy_skill_tool_state(app_state).await?;
-    if purged > 0 {
-        log::info!(
-            "purged {} legacy skill-tool state entries before reindex",
-            purged
-        );
-    }
-    let scan_targets = resolve_local_skill_scan_targets(&app)?;
-    let sdk_dir = app
-        .path()
-        .resource_dir()
-        .ok()
-        .map(|p| p.join("deeting-sdk"))
-        .filter(|p| p.exists())
-        .unwrap_or_else(|| {
-            std::env::current_dir()
-                .unwrap_or_default()
-                .join("packages")
-                .join("deeting-sdk")
-        });
-    let sdk_pythonpath = sdk_dir.to_string_lossy().to_string();
-    register_local_skills_from_scan_targets_inner(
-        &scan_targets,
-        &sdk_pythonpath,
-        app_state.mcp.store.clone(),
-        app_state.providers.clone(),
-        app_state.memory.clone(),
-        false,
+    crate::modules::mcp::commands::skill_registry_refresh_impl::register_local_skills_inner(
+        app,
+        app_state,
     )
     .await
 }

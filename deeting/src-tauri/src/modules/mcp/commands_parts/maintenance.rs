@@ -5,7 +5,7 @@ use crate::modules::mcp::commands::assistant_management_impl::index_local_assist
 use crate::modules::mcp::commands::assistants_knowledge_admin_impl::index_mcp_tools;
 use crate::modules::mcp::commands::common_impl::to_string;
 use crate::modules::mcp::commands::runtime::sync_core_tool_registry_entries;
-use crate::modules::mcp::commands::skill_registry_impl::register_local_skills_inner;
+use crate::modules::mcp::commands::register_local_skills_inner;
 use crate::modules::mcp::types::{
     LocalCapabilityRegistryDiagnosticsBucket, LocalCapabilityRegistryDiagnosticsItem,
     LocalCapabilityRegistryDiagnosticsResponse, LocalCapabilityRegistryParityItem,

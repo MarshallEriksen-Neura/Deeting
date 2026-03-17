@@ -18,8 +18,12 @@ pub(crate) mod config_and_skills_impl;
 pub(crate) mod conversation_management_impl;
 #[path = "commands_parts/maintenance.rs"]
 pub(crate) mod maintenance_impl;
-#[path = "commands_parts/skill_registry.rs"]
+#[path = "commands_parts/skill_registry_impl.rs"]
 pub(crate) mod skill_registry_impl;
+#[path = "commands_parts/skill_registry_scan.rs"]
+pub(crate) mod skill_registry_scan_impl;
+#[path = "commands_parts/skill_registry_refresh.rs"]
+pub(crate) mod skill_registry_refresh_impl;
 #[path = "commands_parts/source_management.rs"]
 pub(crate) mod source_management_impl;
 #[path = "commands_parts/sources_tools_and_chat.rs"]
@@ -50,7 +54,7 @@ pub(crate) use runtime::{
     start_local_conversation_summary_worker, start_local_periodic_worker, sync_source_inner,
 };
 pub(crate) use skill_registry_impl::auto_install_official_skill_runtimes;
-pub(crate) use skill_registry_impl::register_local_skills_inner;
+pub(crate) use skill_registry_refresh_impl::register_local_skills_inner;
 #[cfg(test)]
 pub(crate) use support::*;
 pub(crate) use support::{resolve_effective_desktop_scout_base_url, SCOUT_SERVICE_URL_ENV_KEY};
@@ -69,9 +73,9 @@ pub(crate) use runtime::{
     reject_mcp_tool_inner, resolve_skill_env,
 };
 #[cfg(test)]
-pub(crate) use skill_registry_impl::{
-    normalize_skill_dir_name, register_local_skills_from_scan_targets_inner,
-};
+pub(crate) use skill_registry_impl::normalize_skill_dir_name;
+#[cfg(test)]
+pub(crate) use skill_registry_scan_impl::register_local_skills_from_scan_targets_inner;
 #[cfg(test)]
 pub(crate) use source_management_impl::{
     local_skill_registration_self_heal_needed, reset_local_asset_catalog_then_sync_inner,

@@ -85,7 +85,7 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::mcp::commands::maintenance_impl::run_local_maintenance_action,
         crate::modules::mcp::commands::maintenance_impl::list_local_maintenance_logs,
         crate::modules::mcp::commands::maintenance_impl::get_local_capability_registry_diagnostics,
-        crate::modules::mcp::commands::skill_registry_impl::register_local_skills,
+        crate::modules::mcp::commands::skill_registry_refresh_impl::register_local_skills,
         crate::modules::mcp::commands::skill_registry_impl::list_local_skill_runtime_statuses,
         crate::modules::mcp::commands::skill_registry_impl::update_local_skill_runtime_settings,
         crate::modules::mcp::commands::skill_registry_impl::install_local_skill_runtime,

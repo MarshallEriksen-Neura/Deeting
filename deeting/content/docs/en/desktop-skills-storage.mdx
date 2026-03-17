@@ -1,6 +1,6 @@
 ---
 title: Desktop Skills Storage
-description: Local storage paths for official and user skills on the Deeting desktop app.
+description: Current storage boundaries for official skills, shared agent skills, and direct desktop refresh on Deeting.
 ---
 
 ## Overview
@@ -8,6 +8,8 @@ description: Local storage paths for official and user skills on the Deeting des
 The desktop app (Tauri) scans multiple directories on startup to register local skills: **Official Skills**, **Deeting-managed User Skills**, and the **shared agent skills directory**.
 
 The scan logic is managed by `resolve_local_skill_scan_targets()`, which returns scan targets, iterates each directory, parses `deeting.json` manifests, and persists them into the local SQLite database.
+
+After an external install, Deeting no longer needs `skill_manager` to mirror or relink the bundle. As long as the skill lands in a scanned directory, AI or the desktop UI can trigger `refresh_skill_index` / `register_local_skills` to rescan it directly.
 
 ## Official Skills
 
@@ -20,7 +22,7 @@ Official skills are bundled with the app and cannot be modified by users.
 
 - Bundle config: `tauri.conf.json` — `"packages/official-skills/": "official-skills/"`
 - Database source prefix: `system_plugin`
-- Current list: `memory`, `crawler`, `ingestor`, `expert_network`, `monitor`, `provider_registry`, `skill_manager`, `weather-plugin`
+- Current list: `memory`, `crawler`, `ingestor`, `expert_network`, `monitor`, `provider_registry`, `skill_manager` (guidance-only bundle), `weather-plugin`
 
 ## Deeting-managed User Skills
 
@@ -52,6 +54,7 @@ The desktop app also scans the shared agent skills directory under the user's ho
 - These skills are registered and executed as local skills, but the directory itself is not managed by Deeting
 - Deeting does not copy them into `app_data_dir/skills/`
 - To remove them, use the external ecosystem that installed them, such as `npx skills remove ...`
+- If the desktop app has not picked up a newly installed shared skill yet, call `refresh_skill_index`
 
 ## Skill Runtime
 
@@ -91,6 +94,62 @@ Runtime states: `needs_install` → `installing` → `ready` / `install_failed` 
     ├── skill_manager/
     └── ...
 ```
+
+## Scan Reviews Page
+
+The desktop frontend currently includes a dedicated Scan Reviews page that makes this local scan pipeline visible. It is not a separate installation flow and not a new skill system. It is a UI surface over the existing `scan_file`, `scan_directory`, and `run_scan_review_action(s)` capabilities.
+
+The page is designed to solve three practical problems:
+
+- Trigger a local scan for a single file, a single directory, or all default skill directories
+- Split results into two views: "documents / skill bundles" and "findings"
+- Apply a small set of safe, targeted repair actions for registration and indexing drift
+
+### What The Page Can Do
+
+- Scan a single file: useful for quickly checking a script, `deeting.json`, or one standalone document
+- Scan a single directory: useful for checking whether one skill bundle can be recognized correctly
+- Scan all default directories: this goes through `resolve_local_skill_scan_targets()` and covers official skills, managed user skills, and shared agent skills
+- Filter findings: the current frontend supports filtering by severity, boundary class, and operation class
+- Run batch repair: the page collects currently actionable findings and sends them through the batch action API
+
+### What The Page Checks
+
+The scan module is a static inspection pass. It does not execute skill code. The current checks focus on locally observable problems:
+
+- Registration and index consistency: a bundle exists on disk but has no local install record, or has no local asset index
+- Stale install records: the database still points to a missing path, or the on-disk content is no longer recognizable as a valid bundle
+- Manifest and documentation completeness: invalid `deeting.json`, missing identity fields, missing runtime declaration, or missing `SKILL.md`
+- Execution-surface risk signals: whether the bundle contains shell scripts, batch files, PowerShell, Python, Node.js, or other executable code paths
+
+### How To Read The Security Signals
+
+The current "security check" is an execution-surface risk hint. It is not a vulnerability scanner and not a malware auditor.
+
+- Shell, bat, and PowerShell surfaces are marked as high risk and usually map to `process_exec` + `hard_boundary`
+- Python, JavaScript, and TypeScript runtime code is marked as medium risk and usually maps to a `soft_boundary`
+- Bundles without an obvious execution surface are shown as low risk or with no boundary signal
+
+These labels are meant to help distinguish docs-first bundles, runtime-code bundles, and bundles that need host execution privileges. They are not a final security verdict.
+
+### What The Page Can Repair
+
+The frontend currently exposes only three automatic actions:
+
+- `register_bundle`: create the missing local install record for a bundle already present on disk
+- `reindex_bundle`: rebuild the local asset/search index for a bundle
+- `cleanup_missing_install`: remove a stale local install record that points to missing content
+
+These actions repair registration and indexing state. They do not rewrite skill code, add missing `SKILL.md` or manifest fields, or install runtime dependencies for you.
+
+### What The Page Does Not Do
+
+- It does not install skill runtime dependencies
+- It does not execute the skill for dynamic verification
+- It does not perform third-party dependency vulnerability scanning
+- It does not replace the design work of `SKILL.md`, `llm-tool.yaml`, or `deeting.json`
+
+If the page reports a structural problem, the right fix is still to update the bundle itself and then rescan.
 
 ## Scan & Registration Flow
 

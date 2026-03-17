@@ -4,6 +4,8 @@
 
 > 源码入口：`deeting/src-tauri/src/modules/mcp/commands_parts/skill_registry.rs` → `resolve_local_skill_scan_targets()`
 
+外部安装完成后，不需要再通过 `skill_manager` 做镜像或链接。只要 skill 落进扫描目录，AI 或桌面端都可以直接调用 `refresh_skill_index` / `register_local_skills` 触发重新入库。
+
 ## 1. 官方技能（Official Skills）
 
 | 环境 | 路径 | 说明 |
@@ -13,7 +15,7 @@
 
 - 数据库 source 前缀：`system_plugin`
 - 打包配置见 `deeting/src-tauri/tauri.conf.json`：`"packages/official-skills/": "official-skills/"`
-- 当前官方技能列表：`memory`、`crawler`、`ingestor`、`expert_network`、`monitor`、`provider_registry`、`skill_manager`、`weather-plugin`
+- 当前官方技能列表：`memory`、`crawler`、`ingestor`、`expert_network`、`monitor`、`provider_registry`、`skill_manager`（指导型 bundle）、`weather-plugin`
 
 ## 2. Deeting 受管用户技能（Managed User Skills）
 
@@ -43,6 +45,7 @@
 - 这些技能会被当作本地用户技能注册和调用，但目录本身不由 Deeting 管理
 - Deeting 不会把 skill 再复制到 `app_data_dir/skills/`
 - 卸载这类技能需要回到外部生态自己移除，例如 `npx skills remove ...`
+- 如果外部安装后桌面端尚未看到新 skill，可直接调用 `refresh_skill_index`
 
 ## 4. 技能运行时（Skill Runtime）
 

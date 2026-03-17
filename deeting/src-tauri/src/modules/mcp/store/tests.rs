@@ -360,6 +360,57 @@ async fn local_capability_registry_roundtrips_and_cleans_up_with_skill_install()
 }
 
 #[tokio::test]
+async fn get_enabled_local_skill_tool_binding_by_ref_self_heals_missing_entry_path() {
+    let store = create_test_store("missing-skill-binding-entry").await;
+    store.init().await.expect("init store");
+
+    store
+        .upsert_local_skill_install(
+            "skill.missing",
+            Some("1.0.0"),
+            Some("local"),
+            r#"{"id":"skill.missing","name":"Missing Skill"}"#,
+            "C:/skills/skill.missing",
+        )
+        .await
+        .expect("insert local skill install");
+    store
+        .replace_local_skill_tool_bindings(
+            "skill.missing",
+            &[crate::modules::mcp::store::LocalSkillToolBindingUpsert {
+                binding_id: "skill_binding::skill.missing::install".to_string(),
+                binding_kind: "script_runner".to_string(),
+                callable_name: "skill.skill.missing.install".to_string(),
+                tool_name: "install".to_string(),
+                description: "Install missing skill".to_string(),
+                input_schema_json: None,
+                output_schema_json: None,
+                entry_path: "C:/definitely-missing/skill.missing/main.py".to_string(),
+                runtime: "python".to_string(),
+                timeout_seconds: 60,
+            }],
+        )
+        .await
+        .expect("insert local skill binding");
+
+    let binding = store
+        .get_enabled_local_skill_tool_binding_by_ref(None, Some("skill.skill.missing.install"))
+        .await
+        .expect("query missing binding");
+    assert!(binding.is_none());
+    assert!(store
+        .get_local_skill_install_path("skill.missing")
+        .await
+        .expect("query local install path")
+        .is_none());
+    assert!(store
+        .list_local_skill_tool_bindings_for_skill("skill.missing")
+        .await
+        .expect("list remaining bindings")
+        .is_empty());
+}
+
+#[tokio::test]
 async fn gateway_log_queries_filter_by_dimensions_and_stats() {
     let store = create_test_store("gateway-log-dimensions").await;
     store.init().await.expect("init store");

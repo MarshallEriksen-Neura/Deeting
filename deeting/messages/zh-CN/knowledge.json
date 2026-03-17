@@ -119,6 +119,7 @@
       "shareFailed": "获取分享链接失败",
       "retryStarted": "已重新开始处理",
       "retryFailed": "重试失败",
+      "unsupportedTypes": "当前运行模式仅支持 {types}，已跳过 {count} 个不支持的文件",
       "uploadSuccess": "成功上传 {count} 个文件",
       "uploadFailed": "{count} 个文件上传失败"
     }

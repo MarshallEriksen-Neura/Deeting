@@ -119,6 +119,7 @@
       "shareFailed": "Failed to get share link",
       "retryStarted": "Retry started",
       "retryFailed": "Retry failed",
+      "unsupportedTypes": "This runtime only supports {types}. Skipped {count} unsupported file(s).",
       "uploadSuccess": "{count} file(s) uploaded successfully",
       "uploadFailed": "{count} file(s) failed to upload"
     }

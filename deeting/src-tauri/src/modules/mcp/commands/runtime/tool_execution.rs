@@ -38,6 +38,22 @@ fn summarize_skill_binding_env(env: &HashMap<String, String>) -> Value {
     })
 }
 
+async fn ensure_skill_binding_entry_path_exists(
+    store: &crate::modules::mcp::store::McpStore,
+    binding: &LocalSkillToolBindingSnapshot,
+) -> Result<(), String> {
+    let entry_path = std::path::Path::new(&binding.entry_path);
+    if entry_path.exists() {
+        return Ok(());
+    }
+    let _ = store.delete_local_skill_install(&binding.skill_id).await;
+    Err(format!(
+        "skill binding '{}' points to a missing entry path: {}. Stale local skill state was removed; refresh the local skill index if you want to rescan current bundles.",
+        binding.callable_name,
+        entry_path.display()
+    ))
+}
+
 fn summarize_tool_arguments(arguments: &Value) -> Value {
     match arguments {
         Value::Object(map) => {
@@ -504,10 +520,7 @@ enum OfficialSkillHostToolRoute {
     Unsupported,
 }
 
-fn resolve_official_skill_host_tool_route(
-    binding: &LocalSkillToolBindingSnapshot,
-    tool_name: &str,
-) -> OfficialSkillHostToolRoute {
+fn resolve_official_skill_host_tool_route(tool_name: &str) -> OfficialSkillHostToolRoute {
     let normalized_tool_name = tool_name.trim();
     if normalized_tool_name.is_empty() {
         return OfficialSkillHostToolRoute::Unsupported;
@@ -554,11 +567,11 @@ async fn dispatch_official_skill_search_sdk(
 
 async fn dispatch_internal_skill_host_tool(
     store: &crate::modules::mcp::store::McpStore,
-    binding: &LocalSkillToolBindingSnapshot,
+    _binding: &LocalSkillToolBindingSnapshot,
     tool_name: &str,
     arguments: &Value,
 ) -> Result<Option<Value>, String> {
-    match resolve_official_skill_host_tool_route(binding, tool_name) {
+    match resolve_official_skill_host_tool_route(tool_name) {
         OfficialSkillHostToolRoute::DesktopCapability => {
             crate::modules::mcp::desktop_capabilities::dispatch_official_skill_capability(
                 tool_name, arguments,
@@ -586,6 +599,12 @@ async fn execute_deeting_tool_binding(
             "arguments": summarize_tool_arguments(arguments),
         }),
     );
+    ensure_skill_binding_entry_path_exists(store, binding)
+        .await
+        .map_err(|err| {
+            log_skill_binding_preflight_failure(binding, "entry_path_missing", &err);
+            err
+        })?;
     let timeout_secs = binding.timeout_seconds.max(1);
     let mut tool_results: Vec<serde_json::Value> = Vec::new();
     for attempt in 0..=MAX_MARKER_REEXEC {
@@ -826,6 +845,12 @@ async fn execute_skill_binding(
         .await
         .map_err(|err| {
             log_skill_binding_preflight_failure(binding, "resolve_env", &err);
+            err
+        })?;
+    ensure_skill_binding_entry_path_exists(store, binding)
+        .await
+        .map_err(|err| {
+            log_skill_binding_preflight_failure(binding, "entry_path_missing", &err);
             err
         })?;
     let config_json = resolve_skill_binding_config_json(store, binding).await?;
@@ -1458,24 +1483,6 @@ pub(crate) async fn reject_mcp_tool_inner(
 #[cfg(test)]
 mod tests {
     use super::{resolve_official_skill_host_tool_route, OfficialSkillHostToolRoute};
-    use crate::modules::mcp::store::LocalSkillToolBindingSnapshot;
-
-    fn sample_binding(skill_id: &str) -> LocalSkillToolBindingSnapshot {
-        LocalSkillToolBindingSnapshot {
-            binding_id: "binding-demo".to_string(),
-            binding_kind: "deeting_tool".to_string(),
-            skill_id: skill_id.to_string(),
-            callable_name: "demo.callable".to_string(),
-            tool_name: "demo_tool".to_string(),
-            description: "demo".to_string(),
-            input_schema: None,
-            output_schema: None,
-            entry_path: "packages/official-skills/demo/main.py".to_string(),
-            runtime: "python".to_string(),
-            timeout_seconds: 30,
-            updated_at: "2026-03-16T00:00:00Z".to_string(),
-        }
-    }
 
     #[test]
     fn capability_bridge_registry_exposes_desktop_official_skill_capabilities() {
@@ -1531,27 +1538,24 @@ mod tests {
 
     #[test]
     fn official_skill_host_tool_route_allows_search_sdk_for_official_skills() {
-        let binding = sample_binding("official.skills.expert_network");
         assert_eq!(
-            resolve_official_skill_host_tool_route(&binding, "search_sdk"),
+            resolve_official_skill_host_tool_route("search_sdk"),
             OfficialSkillHostToolRoute::SearchSdk
         );
     }
 
     #[test]
     fn official_skill_host_tool_route_rejects_shell_execute() {
-        let binding = sample_binding("official.skills.expert_network");
         assert_eq!(
-            resolve_official_skill_host_tool_route(&binding, "shell_execute"),
+            resolve_official_skill_host_tool_route("shell_execute"),
             OfficialSkillHostToolRoute::Unsupported
         );
     }
 
     #[test]
     fn official_skill_host_tool_route_preserves_desktop_capability_dispatch() {
-        let binding = sample_binding("official.skills.monitor");
         assert_eq!(
-            resolve_official_skill_host_tool_route(&binding, "monitor.list"),
+            resolve_official_skill_host_tool_route("monitor.list"),
             OfficialSkillHostToolRoute::DesktopCapability
         );
     }

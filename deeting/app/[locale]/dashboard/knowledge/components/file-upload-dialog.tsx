@@ -25,7 +25,13 @@ import { GlassButton } from "@/components/ui/glass-button"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
-import { uploadFile } from "@/lib/api/knowledge"
+import {
+  getKnowledgeUploadAccept,
+  getKnowledgeUploadFileTypes,
+  getKnowledgeUploadMaxBytes,
+  splitKnowledgeUploadFiles,
+  uploadFile,
+} from "@/lib/api/knowledge"
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B"
@@ -34,8 +40,6 @@ function formatBytes(bytes: number): string {
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`
 }
-
-const SUPPORTED_TYPES = ["PDF", "TXT", "DOCX", "MD", "CSV", "XLSX", "HTML", "JSON"]
 
 function getFileIcon(name: string) {
   const ext = name.split(".").pop()?.toLowerCase()
@@ -77,8 +81,31 @@ export function FileUploadDialog({
   const [uploadStatus, setUploadStatus] = useState<
     Record<string, "pending" | "uploading" | "success" | "error">
   >({})
+  const supportedTypes = getKnowledgeUploadFileTypes()
+  const supportedTypeLabels = supportedTypes.map((type) => type.toUpperCase())
+  const supportedTypesText = supportedTypeLabels.join(" / ")
+  const accept = getKnowledgeUploadAccept()
+  const maxSizeLabel = `${Math.floor(getKnowledgeUploadMaxBytes() / 1024 / 1024)}MB`
 
   const isUploading = Object.values(uploadStatus).some((s) => s === "uploading")
+
+  const appendFiles = useCallback(
+    (incomingFiles: File[]) => {
+      const { accepted, rejected } = splitKnowledgeUploadFiles(incomingFiles)
+      if (rejected.length > 0) {
+        toast.error(
+          t("toast.unsupportedTypes", {
+            count: rejected.length,
+            types: supportedTypesText,
+          })
+        )
+      }
+      if (accepted.length > 0) {
+        setFiles((prev) => [...prev, ...accepted])
+      }
+    },
+    [supportedTypesText, t]
+  )
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -93,16 +120,15 @@ export function FileUploadDialog({
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setIsDragging(false)
-    const droppedFiles = Array.from(e.dataTransfer.files)
-    setFiles((prev) => [...prev, ...droppedFiles])
-  }, [])
+    appendFiles(Array.from(e.dataTransfer.files))
+  }, [appendFiles])
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      const selected = Array.from(e.target.files)
-      setFiles((prev) => [...prev, ...selected])
+      appendFiles(Array.from(e.target.files))
+      e.target.value = ""
     }
-  }, [])
+  }, [appendFiles])
 
   const removeFile = useCallback((name: string) => {
     setFiles((prev) => prev.filter((f) => f.name !== name))
@@ -212,7 +238,7 @@ export function FileUploadDialog({
             multiple
             className="hidden"
             onChange={handleFileSelect}
-            accept=".pdf,.txt,.docx,.md,.csv,.xlsx,.html,.json"
+            accept={accept}
           />
           <Upload
             className={cn(
@@ -228,13 +254,13 @@ export function FileUploadDialog({
         {/* Supported types */}
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-[var(--muted)]">{t("uploadDialog.supportedTypes")}:</span>
-          {SUPPORTED_TYPES.map((type) => (
+          {supportedTypeLabels.map((type) => (
             <Badge key={type} variant="secondary" className="text-[10px]">
               {type}
             </Badge>
           ))}
           <span className="text-xs text-[var(--muted)] ml-2">
-            {t("uploadDialog.maxSize")} 50MB
+            {t("uploadDialog.maxSize")} {maxSizeLabel}
           </span>
         </div>
 

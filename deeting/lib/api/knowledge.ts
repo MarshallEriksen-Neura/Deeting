@@ -1,7 +1,9 @@
 import { request, apiClient } from "@/lib/http"
 import { prepareDesktopObjectStorageUpload } from "@/lib/api/desktop-object-storage"
 import { handleModelConfigRequiredError } from "@/lib/model-config-required"
+import { extractDocxTextFromFile } from "@/lib/utils/docx"
 import type {
+  FileType,
   KnowledgeFile,
   KnowledgeFolder,
   KnowledgeStats,
@@ -11,8 +13,20 @@ import type {
 } from "@/types/knowledge"
 
 const BASE = "/api/v1/documents"
-const LOCAL_TEXT_FILE_TYPES = new Set(["txt", "md", "csv", "html", "json"])
-const LOCAL_TEXT_MAX_BYTES = 2 * 1024 * 1024
+const REMOTE_UPLOAD_FILE_TYPES: FileType[] = [
+  "pdf",
+  "txt",
+  "docx",
+  "md",
+  "csv",
+  "xlsx",
+  "html",
+  "json",
+]
+const LOCAL_UPLOAD_FILE_TYPES: FileType[] = ["txt", "docx", "md", "csv", "html", "json"]
+const LOCAL_PARSEABLE_FILE_TYPES = new Set<string>(LOCAL_UPLOAD_FILE_TYPES)
+const LOCAL_PARSE_MAX_BYTES = 2 * 1024 * 1024
+const REMOTE_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
 const isTauriRuntime = () =>
   process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
   typeof window !== "undefined" &&
@@ -227,16 +241,56 @@ function normalizeFileStatus(value: string): KnowledgeFile["status"] {
 function inferFileTypeFromFilename(filename: string): string {
   const ext = filename.split(".").pop()?.trim().toLowerCase() ?? ""
   if (!ext) return "txt"
-  const knownTypes = new Set(["pdf", "txt", "docx", "md", "csv", "xlsx", "html", "json"])
+  const knownTypes = new Set(REMOTE_UPLOAD_FILE_TYPES)
   if (knownTypes.has(ext)) return ext
   return ext
 }
 
 function buildLocalUnsupportedFileError(fileType: string): string {
-  return `本地离线暂不支持 ${fileType.toUpperCase()} 解析，请转换为 TXT/MD/CSV/HTML/JSON 后重试`
+  return `本地离线暂不支持 ${fileType.toUpperCase()} 解析，请转换为 TXT/DOCX/MD/CSV/HTML/JSON 后重试`
 }
 
-async function readLocalFileText(file: File): Promise<string> {
+export function getKnowledgeUploadFileTypes(): FileType[] {
+  return isTauriRuntime() ? [...LOCAL_UPLOAD_FILE_TYPES] : [...REMOTE_UPLOAD_FILE_TYPES]
+}
+
+export function getKnowledgeUploadAccept(): string {
+  return getKnowledgeUploadFileTypes()
+    .map((fileType) => `.${fileType}`)
+    .join(",")
+}
+
+export function getKnowledgeUploadMaxBytes(): number {
+  return isTauriRuntime() ? LOCAL_PARSE_MAX_BYTES : REMOTE_UPLOAD_MAX_BYTES
+}
+
+export function splitKnowledgeUploadFiles<T extends { name: string }>(files: T[]): {
+  accepted: T[]
+  rejected: T[]
+  supportedTypes: FileType[]
+} {
+  const supportedTypes = getKnowledgeUploadFileTypes()
+  const allowedTypes = new Set<string>(supportedTypes)
+  const accepted: T[] = []
+  const rejected: T[] = []
+
+  for (const file of files) {
+    const fileType = inferFileTypeFromFilename(file.name)
+    if (allowedTypes.has(fileType)) {
+      accepted.push(file)
+    } else {
+      rejected.push(file)
+    }
+  }
+
+  return { accepted, rejected, supportedTypes }
+}
+
+async function readLocalFileText(file: File, fileType: string): Promise<string> {
+  if (fileType === "docx") {
+    return extractDocxTextFromFile(file)
+  }
+
   const maybeText = (file as File & { text?: () => Promise<string> }).text
   if (typeof maybeText === "function") {
     return maybeText.call(file)
@@ -514,7 +568,7 @@ export async function uploadFile(
       source: "desktop-local-upload",
       ...(uploadedObject?.metaInfo ?? {}),
     }
-    if (!LOCAL_TEXT_FILE_TYPES.has(fileType)) {
+    if (!LOCAL_PARSEABLE_FILE_TYPES.has(fileType)) {
       await createLocalUserDocument({
         filename: file.name,
         folderId,
@@ -525,9 +579,9 @@ export async function uploadFile(
       })
       throw new Error(buildLocalUnsupportedFileError(fileType))
     }
-    if (file.size > LOCAL_TEXT_MAX_BYTES) {
-      const errorMessage = `本地离线文本解析大小上限为 ${Math.floor(
-        LOCAL_TEXT_MAX_BYTES / 1024 / 1024
+    if (file.size > LOCAL_PARSE_MAX_BYTES) {
+      const errorMessage = `本地离线文档解析大小上限为 ${Math.floor(
+        LOCAL_PARSE_MAX_BYTES / 1024 / 1024
       )}MB`
       await createLocalUserDocument({
         filename: file.name,
@@ -541,7 +595,21 @@ export async function uploadFile(
     }
 
     onProgress?.(20)
-    const rawText = await readLocalFileText(file)
+    let rawText: string
+    try {
+      rawText = await readLocalFileText(file, fileType)
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "本地离线文档解析失败"
+      await createLocalUserDocument({
+        filename: file.name,
+        folderId,
+        mediaAssetId: uploadedObject?.mediaAssetId ?? null,
+        status: "failed",
+        errorMessage,
+        metaInfo: baseMeta,
+      })
+      throw new Error(errorMessage)
+    }
     onProgress?.(80)
     const created = await createLocalUserDocument({
       filename: file.name,
@@ -580,7 +648,7 @@ export async function uploadFile(
 export async function getFile(fileId: string): Promise<KnowledgeFile> {
   if (isTauriRuntime()) {
     const file = await invokeTauri<LocalKnowledgeFile>("get_local_user_document", {
-      file_id: fileId,
+      fileId,
     })
     return mapLocalFile(file)
   }
@@ -595,7 +663,7 @@ export async function updateFile(
 ): Promise<KnowledgeFile> {
   if (isTauriRuntime()) {
     const file = await invokeTauri<LocalKnowledgeFile>("update_local_user_document", {
-      file_id: fileId,
+      fileId,
       payload: {
         name: params.name ?? null,
         folder_id: params.folderId ?? null,
@@ -620,7 +688,7 @@ export async function updateFile(
 export async function deleteFile(fileId: string): Promise<void> {
   if (isTauriRuntime()) {
     await invokeTauri<void>("delete_local_user_document", {
-      file_id: fileId,
+      fileId,
     })
     return
   }
@@ -648,7 +716,7 @@ export async function copyFile(
 export async function retryFile(fileId: string): Promise<KnowledgeFile> {
   if (isTauriRuntime()) {
     const file = await invokeTauri<LocalKnowledgeFile>("retry_local_user_document", {
-      file_id: fileId,
+      fileId,
     })
     return mapLocalFile(file)
   }
@@ -672,7 +740,7 @@ export async function fetchFileChunks(
     const data = await invokeTauri<LocalKnowledgeChunkListResponse>(
       "list_local_user_document_chunks",
       {
-        file_id: fileId,
+        fileId,
         query: {
           offset: params?.offset ?? 0,
           limit: params?.limit ?? 20,
@@ -710,7 +778,7 @@ export async function fetchFileChunks(
 export async function getFileDownloadUrl(fileId: string): Promise<string> {
   if (isTauriRuntime()) {
     return invokeTauri<string>("get_local_user_document_download_url", {
-      file_id: fileId,
+      fileId,
     })
   }
   const data = await request<{ download_url: string }>({

@@ -134,6 +134,20 @@ pub(crate) async fn build_capability_registry(
     }
 }
 
+fn local_capability_registry_entry_is_usable(
+    entry: &crate::modules::mcp::store::LocalCapabilityRegistrySnapshot,
+) -> bool {
+    if entry.asset_kind != "skill_tool" {
+        return true;
+    }
+    entry.entry_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(std::path::Path::new)
+        .map_or(true, |path| path.exists())
+}
+
 pub(crate) fn build_capability_assets_for_read_mode(
     mut memory_assets: Vec<Value>,
     registry_entries: &[crate::modules::mcp::store::LocalCapabilityRegistrySnapshot],
@@ -151,6 +165,7 @@ pub(crate) fn build_capability_assets_for_read_mode(
     memory_assets.extend(
         registry_entries
             .iter()
+            .filter(|entry| local_capability_registry_entry_is_usable(entry))
             .map(local_capability_registry_entry_to_asset),
     );
     memory_assets
@@ -1100,6 +1115,45 @@ mod tests {
         assert_eq!(asset["asset_type"], json!("skill_tool"));
         assert_eq!(asset["metadata"]["skill_id"], json!("skill.alpha"));
         assert_eq!(asset["metadata"]["tool_name"], json!("install"));
+    }
+
+    #[test]
+    fn build_capability_assets_for_read_mode_skips_missing_skill_tool_entry_paths() {
+        let missing_entry = crate::modules::mcp::store::LocalCapabilityRegistrySnapshot {
+            capability_id: "skill_tool::skill.deleted::install".to_string(),
+            source_kind: "builtin".to_string(),
+            asset_kind: "skill_tool".to_string(),
+            package_id: "skill.deleted".to_string(),
+            package_version: Some("1.0.0".to_string()),
+            title: "Deleted Skill / install".to_string(),
+            description: "Install deleted skill".to_string(),
+            tool_name: Some("install".to_string()),
+            callable_name: Some("skill.official.skills.deleted.install".to_string()),
+            binding_kind: Some("script_runner".to_string()),
+            execution_surface: "script_runner".to_string(),
+            runtime: Some("python".to_string()),
+            entry_path: Some("C:/definitely-missing/deleted-skill/main.py".to_string()),
+            is_direct_callable: true,
+            activation_state: "enabled".to_string(),
+            runtime_state: "registered".to_string(),
+            search_index_state: "ready".to_string(),
+            generation: 9,
+            descriptor_json: json!({
+                "binding_id": "skill_binding::skill.deleted::install",
+                "tool_name": "install",
+                "callable_name": "skill.official.skills.deleted.install",
+                "timeout_seconds": 60
+            }),
+            updated_at: "2026-03-17T00:00:00Z".to_string(),
+        };
+
+        assert!(!local_capability_registry_entry_is_usable(&missing_entry));
+        let assets = build_capability_assets_for_read_mode(
+            Vec::new(),
+            &[missing_entry],
+            CapabilityRegistryReadMode::RegistryFirst,
+        );
+        assert!(assets.is_empty());
     }
 
     #[test]

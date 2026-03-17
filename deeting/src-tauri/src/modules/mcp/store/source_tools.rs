@@ -390,7 +390,16 @@ impl McpStore {
             .map_err(|err| McpError::Storage(err.to_string()))?
         };
 
-        row.map(local_skill_tool_binding_from_row).transpose()
+        let binding = row.map(local_skill_tool_binding_from_row).transpose()?;
+        if let Some(binding) = binding {
+            let entry_path = std::path::Path::new(&binding.entry_path);
+            if entry_path.exists() {
+                return Ok(Some(binding));
+            }
+            let _ = self.delete_local_skill_install(&binding.skill_id).await;
+            return Ok(None);
+        }
+        Ok(None)
     }
 
     pub async fn get_enabled_local_skill_manifest_json(

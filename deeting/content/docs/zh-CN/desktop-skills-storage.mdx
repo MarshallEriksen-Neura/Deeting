@@ -1,6 +1,6 @@
 ---
 title: 桌面端技能存储路径
-description: 桌面端官方技能与用户技能的本地存储目录结构说明。
+description: 桌面端官方技能、共享代理技能目录与直接刷新入口的当前存储边界说明。
 ---
 
 ## 概览
@@ -8,6 +8,8 @@ description: 桌面端官方技能与用户技能的本地存储目录结构说�
 桌面端（Tauri）在启动时会扫描多个目录来注册本地技能：**官方技能**、**Deeting 受管用户技能**，以及 **共享代理技能目录**。
 
 扫描逻辑由 `resolve_local_skill_scan_targets()` 统一管理，返回扫描目标后逐目录遍历、解析 `deeting.json`，并写入本地 SQLite。
+
+外部安装完成后，不需要再通过 `skill_manager` 做镜像或链接。只要 skill 落进扫描目录，AI 或桌面端都可以直接调用 `refresh_skill_index` / `register_local_skills` 触发重新入库。
 
 ## 官方技能（Official Skills）
 
@@ -20,7 +22,7 @@ description: 桌面端官方技能与用户技能的本地存储目录结构说�
 
 - 打包配置：`tauri.conf.json` 中 `"packages/official-skills/": "official-skills/"`
 - 数据库标记：`system_plugin`
-- 当前包含：`memory`、`crawler`、`ingestor`、`expert_network`、`monitor`、`provider_registry`、`skill_manager`、`weather-plugin`
+- 当前包含：`memory`、`crawler`、`ingestor`、`expert_network`、`monitor`、`provider_registry`、`skill_manager`（指导型 bundle）、`weather-plugin`
 
 ## Deeting 受管用户技能（Managed User Skills）
 
@@ -52,6 +54,7 @@ description: 桌面端官方技能与用户技能的本地存储目录结构说�
 - 这些技能会被当作本地用户技能注册和调用，但目录本身不由 Deeting 管理
 - Deeting 不会把 skill 再复制到 `app_data_dir/skills/`
 - 卸载这类技能需要回到外部生态自己移除，例如 `npx skills remove ...`
+- 如果外部安装后桌面端尚未看到新 skill，可直接调用 `refresh_skill_index`
 
 ## 技能运行时（Runtime）
 
@@ -91,6 +94,62 @@ description: 桌面端官方技能与用户技能的本地存储目录结构说�
     ├── skill_manager/
     └── ...
 ```
+
+## 扫描审查页面（Scan Reviews）
+
+前端当前有一个桌面端专用的扫描审查页面，用来把这条本地扫描链路可视化展示出来。它不是新的安装入口，也不是独立的 skill 系统，而是对现有 `scan_file` / `scan_directory` / `run_scan_review_action(s)` 能力的界面封装。
+
+这个页面主要解决三类问题：
+
+- 让用户按文件、目录或“全部技能目录”触发一次本地扫描
+- 把扫描结果拆成“文档 / 技能包”和“风险发现”两张表来查看
+- 对少数可自动修复的注册漂移问题直接执行补救动作
+
+### 页面能做什么
+
+- 扫描单个文件：适合快速检查某个脚本、`deeting.json` 或单独文档
+- 扫描单个目录：适合检查一个 skill bundle 是否能被正确识别
+- 扫描全部默认目录：会走 `resolve_local_skill_scan_targets()`，覆盖官方技能目录、受管用户技能目录和共享代理技能目录
+- 过滤结果：当前前端支持按严重级别、边界类型、操作类型过滤 findings
+- 批量修复：页面会收集当前可执行的 action，并调用批量修复接口统一执行
+
+### 页面在看什么
+
+扫描模块本身是静态检查，不会执行 skill 代码。当前关注的是几类“本地可发现、可归因”的问题：
+
+- 注册与索引一致性：bundle 在磁盘上存在，但本地安装记录缺失，或本地 asset index 缺失
+- 失效安装记录：数据库里有 install 记录，但路径已经不存在，或者磁盘内容已无法识别为有效 bundle
+- 清单与文档完整性：`deeting.json` 无法解析、缺少身份字段、缺少 runtime 声明、缺少 `SKILL.md`
+- 执行面风险信号：bundle 内是否包含 shell 脚本、批处理、PowerShell、Python、Node.js 等可执行文件
+
+### 安全信号怎么理解
+
+页面里的“安全检查”目前是执行面风险提示，不是漏洞扫描器，也不是恶意代码审计器。
+
+- Shell / bat / PowerShell 这类宿主脚本会被标成高风险，通常对应 `process_exec` + `hard_boundary`
+- Python / JavaScript / TypeScript 这类运行时代码会被标成中风险，通常对应 `soft_boundary`
+- 没有检测到明显执行面时，会显示为低风险或无边界提示
+
+这些标签的目的，是帮助用户快速区分“文档型 bundle”“运行时代码型 bundle”“需要宿主执行权限的 bundle”，而不是给出最终安全结论。
+
+### 页面能自动修什么
+
+当前前端只暴露三类自动动作：
+
+- `register_bundle`：为磁盘上的 bundle 补建本地 install 记录
+- `reindex_bundle`：重建本地 asset index / 搜索索引
+- `cleanup_missing_install`：清理已经失效的本地 install 记录
+
+这几个动作修复的是“注册状态”和“索引状态”，不会替你修改 skill 代码，也不会自动补齐缺失的 `SKILL.md`、`deeting.json` 字段或 runtime 依赖。
+
+### 页面不负责什么
+
+- 不负责安装 skill 运行时依赖
+- 不负责执行 skill 本身来做动态检查
+- 不负责第三方依赖漏洞扫描
+- 不负责替代 `SKILL.md` / `llm-tool.yaml` / `deeting.json` 的设计与编写
+
+如果扫描页提示的是结构性缺失，仍然应该回到对应 skill bundle 内修正文档、manifest 或工具声明，再重新扫描。
 
 ## 扫描与注册流程
 
