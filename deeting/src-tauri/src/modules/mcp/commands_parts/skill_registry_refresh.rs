@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::state::AppState;
 
@@ -47,13 +47,14 @@ fn discover_visible_skill_paths(
             if !skill_path.is_dir() {
                 continue;
             }
-            let resolved = crate::modules::mcp::commands::skill_registry_impl::resolve_local_skill_definition(
-                &skill_path,
-                source_prefix,
-                None,
-                None,
-            )
-            .map_err(|err| err.to_string())?;
+            let resolved =
+                crate::modules::mcp::commands::skill_registry_impl::resolve_local_skill_definition(
+                    &skill_path,
+                    source_prefix,
+                    None,
+                    None,
+                )
+                .map_err(|err| err.to_string())?;
             if resolved.is_some() {
                 visible.insert(normalize_install_path_for_compare(&skill_path));
             }
@@ -118,11 +119,10 @@ pub(crate) async fn register_local_skills_inner(
     app: AppHandle,
     app_state: &AppState,
 ) -> Result<usize, String> {
-    let purged =
-        crate::modules::mcp::commands::skill_registry_impl::purge_legacy_skill_tool_state(
-            app_state,
-        )
-        .await?;
+    let purged = crate::modules::mcp::commands::skill_registry_impl::purge_legacy_skill_tool_state(
+        app_state,
+    )
+    .await?;
     if purged > 0 {
         log::info!(
             "register_local_skills_refresh: purged {} legacy skill-tool state entries before refresh",

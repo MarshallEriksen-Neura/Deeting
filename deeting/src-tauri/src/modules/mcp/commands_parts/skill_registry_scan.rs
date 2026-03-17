@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value as JsonValue};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use crate::modules::skill_runtime::detect_local_skill_runtime;
 
@@ -134,8 +134,8 @@ fn build_local_skill_registry_entries(
     search_index_state: &str,
     generation: i64,
 ) -> Result<Vec<crate::modules::mcp::store::LocalCapabilityRegistryUpsert>, String> {
-    let manifest_value =
-        serde_json::from_str::<JsonValue>(&skill_def.manifest_json).map_err(|err| err.to_string())?;
+    let manifest_value = serde_json::from_str::<JsonValue>(&skill_def.manifest_json)
+        .map_err(|err| err.to_string())?;
     let compatibility = manifest_value.get("compatibility").cloned();
     let bundle_execution_surface = manifest_value
         .pointer("/compatibility/normalized_execution_surface")
@@ -145,11 +145,12 @@ fn build_local_skill_registry_entries(
         } else {
             "desktop_capability"
         });
-    let bundle_entry_path = crate::modules::mcp::commands::skill_registry_impl::resolve_skill_backend_entry_path(
-        skill_path,
-        &skill_def.manifest_json,
-    )?
-    .map(|path| path.to_string_lossy().to_string());
+    let bundle_entry_path =
+        crate::modules::mcp::commands::skill_registry_impl::resolve_skill_backend_entry_path(
+            skill_path,
+            &skill_def.manifest_json,
+        )?
+        .map(|path| path.to_string_lossy().to_string());
     let bundle_runtime =
         (!skill_def.runtime_values.is_empty()).then(|| skill_def.runtime_values.join(","));
 
@@ -430,7 +431,11 @@ pub(crate) fn resolve_local_skill_scan_targets(
         .map(|p| p.join("official-skills"));
     let official_skills_dir =
         select_official_skills_scan_dir(workspace_official_skills_dir, bundled_official_skills_dir);
-    let user_skills_dir = app.path().app_data_dir().map_err(|err| err.to_string())?.join("skills");
+    let user_skills_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| err.to_string())?
+        .join("skills");
     if !user_skills_dir.exists() {
         let _ = std::fs::create_dir_all(&user_skills_dir);
     }
@@ -442,9 +447,7 @@ pub(crate) fn resolve_local_skill_scan_targets(
 
     if let Some(shared_agent_skills_dir) = resolve_shared_agent_skills_dir()
         .filter(|path| path.exists())
-        .filter(|path| {
-            !local_skill_install_paths_match(path, &scan_targets[1].0)
-        })
+        .filter(|path| !local_skill_install_paths_match(path, &scan_targets[1].0))
     {
         scan_targets.push((shared_agent_skills_dir, "user_skill"));
     }
@@ -457,7 +460,10 @@ async fn cleanup_hidden_local_skill_installs(
     store: &crate::modules::mcp::store::McpStore,
     memory_state: &crate::modules::memory::MemoryState,
 ) -> Result<(), String> {
-    let installs = store.list_local_skill_installs().await.map_err(|err| err.to_string())?;
+    let installs = store
+        .list_local_skill_installs()
+        .await
+        .map_err(|err| err.to_string())?;
     for install in installs {
         let install_path = Path::new(&install.install_path);
         if !scan_targets
@@ -494,7 +500,8 @@ pub(crate) async fn register_local_skills_from_scan_targets_inner(
     wait_for_vector_index: bool,
 ) -> Result<usize, String> {
     let mut total_indexed = 0;
-    cleanup_hidden_local_skill_installs(scan_targets, store.as_ref(), memory_state.as_ref()).await?;
+    cleanup_hidden_local_skill_installs(scan_targets, store.as_ref(), memory_state.as_ref())
+        .await?;
     let registry_generation = store
         .next_local_capability_registry_generation()
         .await
@@ -506,7 +513,8 @@ pub(crate) async fn register_local_skills_from_scan_targets_inner(
         }
         for entry in std::fs::read_dir(dir_path).map_err(|err| err.to_string())? {
             let entry = entry.map_err(|err| err.to_string())?;
-            let Some(name) = entry.file_name().to_str() else {
+            let file_name = entry.file_name();
+            let Some(name) = file_name.to_str() else {
                 continue;
             };
             if name.starts_with('.') {
@@ -612,35 +620,33 @@ pub(crate) async fn register_local_skills_from_scan_targets_inner(
             let _ = memory_state.service.delete_assets_by_package(id).await;
 
             if wait_for_vector_index {
-                if let Err(err) =
-                    index_local_skill_bundle_asset(
-                        provider_state.clone(),
-                        memory_state.clone(),
-                        id,
-                        &skill_def.display_name,
-                        &skill_def.description,
-                        skill_def.doc_excerpt.as_deref(),
-                        &skill_def.manifest_json,
-                        &final_source_type,
-                    )
-                    .await
+                if let Err(err) = index_local_skill_bundle_asset(
+                    provider_state.clone(),
+                    memory_state.clone(),
+                    id,
+                    &skill_def.display_name,
+                    &skill_def.description,
+                    skill_def.doc_excerpt.as_deref(),
+                    &skill_def.manifest_json,
+                    &final_source_type,
+                )
+                .await
                 {
                     let _ = store
                         .update_local_capability_registry_states(id, None, None, Some("failed"))
                         .await;
                     return Err(err);
                 }
-                if let Err(err) =
-                    index_local_skill_tool_binding_assets(
-                        provider_state.clone(),
-                        memory_state.clone(),
-                        id,
-                        &skill_def.display_name,
-                        &bindings,
-                        &skill_def.manifest_json,
-                        &final_source_type,
-                    )
-                    .await
+                if let Err(err) = index_local_skill_tool_binding_assets(
+                    provider_state.clone(),
+                    memory_state.clone(),
+                    id,
+                    &skill_def.display_name,
+                    &bindings,
+                    &skill_def.manifest_json,
+                    &final_source_type,
+                )
+                .await
                 {
                     let _ = store
                         .update_local_capability_registry_states(id, None, None, Some("failed"))

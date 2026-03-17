@@ -2359,18 +2359,6 @@ async fn index_local_skill_tool_binding_assets(
     Ok(())
 }
 
-#[tauri::command]
-pub async fn register_local_skills(
-    app: AppHandle,
-    app_state: State<'_, AppState>,
-) -> Result<usize, String> {
-    crate::modules::mcp::commands::skill_registry_refresh_impl::register_local_skills(
-        app,
-        app_state,
-    )
-    .await
-}
-
 /// Automatically install runtimes for official skills that need it.
 /// Called once after `register_local_skills_inner` during app startup.
 /// Each install runs in a background task so it never blocks the launch.
@@ -2874,8 +2862,7 @@ pub(crate) async fn register_local_skills_inner(
     app_state: &AppState,
 ) -> Result<usize, String> {
     crate::modules::mcp::commands::skill_registry_refresh_impl::register_local_skills_inner(
-        app,
-        app_state,
+        app, app_state,
     )
     .await
 }
