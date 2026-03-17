@@ -445,6 +445,7 @@ async fn continue_local_chat_complete_with_auto_code_mode(
                 );
                 app_state
                     .mcp
+                    .approvals
                     .suspended_local_chat_executions
                     .write()
                     .await
@@ -1182,7 +1183,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
                         Some(&risk),
                         Some(&app_state.mcp),
                         app_state.mcp.store.as_ref(),
-                        app_state.mcp.pending_tool_calls.as_ref(),
+                        app_state.mcp.approvals.pending_tool_calls.as_ref(),
                         Some(tool.id.clone()),
                         Some(tool.name.clone()),
                         call.arguments.clone(),
@@ -1268,7 +1269,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
                             Some(&risk),
                             Some(&app_state.mcp),
                             app_state.mcp.store.as_ref(),
-                            app_state.mcp.pending_tool_calls.as_ref(),
+                            app_state.mcp.approvals.pending_tool_calls.as_ref(),
                             Some(binding.binding_id.clone()),
                             Some(binding.callable_name.clone()),
                             call.arguments.clone(),
@@ -1431,6 +1432,7 @@ pub(crate) async fn resume_suspended_local_chat_after_approval(
 ) -> Result<Option<serde_json::Value>, String> {
     let mut suspended = app_state
         .mcp
+        .approvals
         .suspended_local_chat_executions
         .write()
         .await

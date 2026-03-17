@@ -27,7 +27,7 @@ pub(crate) async fn sync_source_inner(
         | McpSourceType::Modelscope
         | McpSourceType::Github
         | McpSourceType::Url => {
-            let mut request = state.client.get(&source.path_or_url);
+            let mut request = state.transport.client.get(&source.path_or_url);
             if let Some(token) = auth_token {
                 request = request.header("Authorization", format!("Bearer {}", token));
             }

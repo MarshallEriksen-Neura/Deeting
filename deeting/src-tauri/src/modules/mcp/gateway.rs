@@ -12,7 +12,6 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::AppHandle;
 use tokio::net::TcpListener;
@@ -30,41 +29,11 @@ use crate::modules::mcp::types::{
 use crate::modules::memory::service::MemoryService;
 use crate::modules::memory::types::{LocalMemoryItem, LocalMemoryListQuery};
 use crate::state::AppState;
-
-#[derive(Deserialize, Debug, Clone)]
-pub struct LocalChatCompletionRequest {
-    pub model: String,
-    pub messages: Vec<Value>,
-    pub stream: Option<bool>,
-    pub status_stream: Option<bool>,
-    pub temperature: Option<f32>,
-    pub max_tokens: Option<u32>,
-    pub request_id: Option<String>,
-    pub provider_model_id: Option<String>,
-    pub assistant_id: Option<String>,
-    pub session_id: Option<String>,
-    pub regenerate: Option<bool>,
-    pub compare_only: Option<bool>,
-    pub metadata: Option<Value>,
-}
-
-#[derive(Serialize)]
-struct GatewayHealthResponse {
-    status: &'static str,
-}
-
-#[derive(Serialize)]
-struct LocalChatCancelResponse {
-    request_id: String,
-    status: String,
-}
-
-#[derive(Serialize)]
-struct LocalCompareFinalizeErrorResponse {
-    code: &'static str,
-    message: String,
-    source: &'static str,
-}
+use mcp_transport::gateway::{
+    build_stream_error_payload, extract_selected_knowledge_file_ids, normalize_optional_string,
+    GatewayHealthResponse, LocalChatCancelResponse, LocalChatCompletionRequest,
+    LocalCompareFinalizeErrorResponse,
+};
 
 pub struct LocalGatewayState {
     pub app_state: AppState,
@@ -251,13 +220,25 @@ async fn stream_chat_completion(
             });
 
             {
-                let mut tasks = run_state.app_state.mcp.local_chat_tasks.write().await;
+                let mut tasks = run_state
+                    .app_state
+                    .mcp
+                    .approvals
+                    .local_chat_tasks
+                    .write()
+                    .await;
                 tasks.insert(request_id_value.clone(), task.abort_handle());
             }
 
             let join_result = task.await;
             {
-                let mut tasks = run_state.app_state.mcp.local_chat_tasks.write().await;
+                let mut tasks = run_state
+                    .app_state
+                    .mcp
+                    .approvals
+                    .local_chat_tasks
+                    .write()
+                    .await;
                 tasks.remove(&request_id_value);
             }
             match join_result {
@@ -328,6 +309,7 @@ async fn cancel_chat_completions_handler(
     let removed = state
         .app_state
         .mcp
+        .approvals
         .local_chat_tasks
         .write()
         .await
@@ -606,74 +588,6 @@ fn map_request_to_orchestrator_input(
         stream,
         status_stream,
         selected_knowledge_file_ids,
-    })
-}
-
-fn normalize_optional_string(value: Option<&str>) -> Option<String> {
-    value
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty())
-}
-
-fn extract_selected_knowledge_file_ids(metadata: Option<&Value>) -> Vec<String> {
-    let mut ids = Vec::new();
-    let Some(metadata) = metadata else {
-        return ids;
-    };
-
-    let from_knowledge = metadata
-        .get("knowledge")
-        .and_then(|value| value.get("doc_ids"))
-        .and_then(|value| value.as_array())
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| item.as_str())
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    for value in from_knowledge {
-        let normalized = value.trim();
-        if normalized.is_empty() || ids.iter().any(|existing| existing == normalized) {
-            continue;
-        }
-        ids.push(normalized.to_string());
-    }
-
-    let fallback = metadata
-        .get("selected_doc_ids")
-        .and_then(|value| value.as_array())
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| item.as_str())
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    for value in fallback {
-        let normalized = value.trim();
-        if normalized.is_empty() || ids.iter().any(|existing| existing == normalized) {
-            continue;
-        }
-        ids.push(normalized.to_string());
-    }
-
-    ids
-}
-
-fn build_stream_error_payload(
-    error_code: &str,
-    message: impl Into<String>,
-    trace_id: &str,
-    request_id: Option<&str>,
-) -> Value {
-    json!({
-        "type": "error",
-        "message": message.into(),
-        "error_code": error_code,
-        "source": "desktop",
-        "trace_id": trace_id,
-        "request_id": normalize_optional_string(request_id),
     })
 }
 

@@ -1,5 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
+use mcp_registry::assets::{
+    build_capability_assets_for_read_mode as build_capability_assets_for_read_mode_inner,
+    local_capability_registry_entry_is_usable, local_capability_registry_entry_to_asset,
+};
+pub(crate) use mcp_registry::assets::{
+    capability_asset_match_key, is_legacy_control_plane_asset, CapabilityRegistryReadMode,
+};
 use serde_json::{json, Value};
 
 use super::core_tool_contracts::build_core_tool_assets;
@@ -8,22 +15,6 @@ use super::{
     build_db_tool_availability_catalog, fallback_local_tool_availability, ToolAvailability,
     ToolAvailabilityCatalog,
 };
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) enum CapabilityRegistryReadMode {
-    #[default]
-    RegistryFirst,
-    LegacyOnly,
-}
-
-impl CapabilityRegistryReadMode {
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::RegistryFirst => "registry_first",
-            Self::LegacyOnly => "legacy_only",
-        }
-    }
-}
 
 #[derive(Clone)]
 pub(crate) struct CapabilityRegistry {
@@ -134,146 +125,17 @@ pub(crate) async fn build_capability_registry(
     }
 }
 
-fn local_capability_registry_entry_is_usable(
-    entry: &crate::modules::mcp::store::LocalCapabilityRegistrySnapshot,
-) -> bool {
-    if entry.asset_kind != "skill_tool" {
-        return true;
-    }
-    entry.entry_path
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(std::path::Path::new)
-        .map_or(true, |path| path.exists())
-}
-
 pub(crate) fn build_capability_assets_for_read_mode(
-    mut memory_assets: Vec<Value>,
+    memory_assets: Vec<Value>,
     registry_entries: &[crate::modules::mcp::store::LocalCapabilityRegistrySnapshot],
     read_path_mode: CapabilityRegistryReadMode,
 ) -> Vec<Value> {
-    if matches!(read_path_mode, CapabilityRegistryReadMode::LegacyOnly) {
-        memory_assets.extend(build_core_tool_assets());
-    }
-    if matches!(read_path_mode, CapabilityRegistryReadMode::LegacyOnly) {
-        return memory_assets;
-    }
-
-    memory_assets.retain(|asset| !is_legacy_control_plane_asset(asset));
-
-    memory_assets.extend(
-        registry_entries
-            .iter()
-            .filter(|entry| local_capability_registry_entry_is_usable(entry))
-            .map(local_capability_registry_entry_to_asset),
-    );
-    memory_assets
-}
-
-pub(crate) fn is_legacy_control_plane_asset(asset: &Value) -> bool {
-    let source_type = asset
-        .get("source_type")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    let asset_type = asset
-        .get("asset_type")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    matches!(
-        (source_type, asset_type),
-        ("builtin" | "user", "skill" | "skill_tool")
-            | ("mcp", "tool")
-            | ("code_mode_core", "tool")
-            | ("local_assistant", "assistant")
+    build_capability_assets_for_read_mode_inner(
+        memory_assets,
+        registry_entries,
+        read_path_mode,
+        build_core_tool_assets(),
     )
-}
-
-pub(crate) fn capability_asset_match_key(asset: &Value) -> Option<String> {
-    let source_type = asset
-        .get("source_type")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .unwrap_or_default();
-    let asset_type = asset
-        .get("asset_type")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .unwrap_or_default();
-    let asset_id = asset
-        .get("id")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    let metadata = asset.get("metadata");
-
-    match (source_type, asset_type) {
-        ("builtin" | "user", "skill") => asset
-            .get("pkg_name")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .or_else(|| {
-                metadata
-                    .and_then(|value| value.get("skill_id"))
-                    .and_then(Value::as_str)
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-            })
-            .or(asset_id)
-            .map(|value| format!("skill_bundle:{value}")),
-        ("builtin" | "user", "skill_tool") => metadata
-            .and_then(|value| value.get("binding_id"))
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
-            .or_else(|| asset_id.map(str::to_string))
-            .or_else(|| {
-                let skill_id = asset
-                    .get("pkg_name")
-                    .and_then(Value::as_str)
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                    .map(str::to_string)
-                    .or_else(|| {
-                        metadata
-                            .and_then(|value| value.get("skill_id"))
-                            .and_then(Value::as_str)
-                            .map(str::trim)
-                            .filter(|value| !value.is_empty())
-                            .map(str::to_string)
-                    })?;
-                let tool_name = metadata
-                    .and_then(|value| value.get("tool_name"))
-                    .and_then(Value::as_str)
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                    .map(str::to_string)
-                    .or_else(|| {
-                        asset
-                            .get("name")
-                            .and_then(Value::as_str)
-                            .map(str::trim)
-                            .filter(|value| !value.is_empty())
-                            .map(str::to_string)
-                    })?;
-                Some(format!("{skill_id}::{tool_name}"))
-            })
-            .map(|value| format!("skill_tool:{value}")),
-        ("mcp", "tool") => asset_id.map(|value| format!("mcp_tool:{value}")),
-        ("code_mode_core", "tool") => asset_id
-            .or_else(|| {
-                asset
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-            })
-            .map(|value| format!("core_tool:{value}")),
-        ("local_assistant", "assistant") => asset_id.map(|value| format!("assistant:{value}")),
-        _ => asset_id.map(|value| format!("generic:{source_type}:{asset_type}:{value}")),
-    }
 }
 
 #[cfg(test)]
@@ -311,176 +173,6 @@ fn replaced_by_local_capability_registry(
     package_id
         .map(|value| registry_package_ids.contains(value))
         .unwrap_or(false)
-}
-
-fn local_capability_registry_entry_to_asset(
-    entry: &crate::modules::mcp::store::LocalCapabilityRegistrySnapshot,
-) -> Value {
-    let descriptor = &entry.descriptor_json;
-    let restricted = descriptor
-        .get("restricted")
-        .and_then(Value::as_bool)
-        .or_else(|| {
-            descriptor
-                .get("manifest")
-                .and_then(|manifest| manifest.get("restricted"))
-                .and_then(Value::as_bool)
-        })
-        .unwrap_or(false);
-    let allowed_roles = descriptor
-        .get("allowed_roles")
-        .and_then(Value::as_array)
-        .cloned()
-        .or_else(|| {
-            descriptor
-                .get("manifest")
-                .and_then(|manifest| manifest.get("allowed_roles"))
-                .and_then(Value::as_array)
-                .cloned()
-        })
-        .unwrap_or_default();
-
-    match entry.asset_kind.as_str() {
-        "assistant" => json!({
-            "id": entry.capability_id,
-            "name": entry.title,
-            "description": entry.description,
-            "asset_type": "assistant",
-            "source_type": "local_assistant",
-            "pkg_name": entry.package_id,
-            "metadata": descriptor,
-        }),
-        "mcp_tool" => json!({
-            "id": entry.capability_id,
-            "name": entry.tool_name.as_deref().unwrap_or(entry.title.as_str()),
-            "description": entry.description,
-            "asset_type": "tool",
-            "source_type": "mcp",
-            "pkg_name": descriptor
-                .get("source_id")
-                .and_then(Value::as_str)
-                .map(|value| format!("mcp.{}", value))
-                .unwrap_or_else(|| "mcp.local".to_string()),
-            "metadata": descriptor,
-        }),
-        "core_tool" => json!({
-            "id": entry.capability_id,
-            "name": entry.tool_name.as_deref().unwrap_or(entry.title.as_str()),
-            "description": entry.description,
-            "asset_type": "tool",
-            "source_type": "code_mode_core",
-            "pkg_name": "code_mode.core",
-            "metadata": descriptor,
-        }),
-        "skill_tool" => {
-            let binding_id = descriptor
-                .get("binding_id")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .unwrap_or(entry.capability_id.as_str());
-            let callable_name = entry
-                .callable_name
-                .as_deref()
-                .filter(|value| !value.trim().is_empty())
-                .or_else(|| descriptor.get("callable_name").and_then(Value::as_str))
-                .unwrap_or(entry.title.as_str());
-            let tool_name = entry
-                .tool_name
-                .as_deref()
-                .filter(|value| !value.trim().is_empty())
-                .or_else(|| descriptor.get("tool_name").and_then(Value::as_str))
-                .unwrap_or(callable_name);
-            json!({
-                "id": binding_id,
-                "name": callable_name,
-                "description": entry.description,
-                "asset_type": "skill_tool",
-                "source_type": entry.source_kind,
-                "pkg_name": entry.package_id,
-                "restricted": restricted,
-                "allowed_roles": allowed_roles,
-                "metadata": {
-                    "asset_namespace": "skill",
-                    "registry_capability_id": entry.capability_id,
-                    "binding_id": binding_id,
-                    "binding_kind": entry.binding_kind,
-                    "skill_id": entry.package_id,
-                    "tool_name": tool_name,
-                    "callable_name": callable_name,
-                    "execution_lane": "skill_runtime",
-                    "execution_surface": entry.execution_surface,
-                    "runtime": entry.runtime,
-                    "entry_path": entry.entry_path,
-                    "input_schema": descriptor.get("input_schema").cloned(),
-                    "output_schema": descriptor.get("output_schema").cloned(),
-                    "timeout_seconds": descriptor.get("timeout_seconds").cloned(),
-                    "compatibility": descriptor.get("compatibility").cloned().or_else(|| {
-                        descriptor
-                            .get("manifest")
-                            .and_then(|manifest| manifest.get("compatibility"))
-                            .cloned()
-                    }),
-                    "restricted": restricted,
-                    "allowed_roles": allowed_roles,
-                    "activation_state": entry.activation_state,
-                    "runtime_state": entry.runtime_state,
-                    "search_index_state": entry.search_index_state,
-                    "generation": entry.generation,
-                }
-            })
-        }
-        _ => {
-            let asset_id = descriptor
-                .get("skill_id")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .unwrap_or(entry.package_id.as_str());
-            let description = descriptor
-                .get("description")
-                .and_then(Value::as_str)
-                .map(str::to_string)
-                .unwrap_or_else(|| entry.description.clone());
-            let mut metadata = descriptor.get("manifest").cloned().unwrap_or_else(|| {
-                json!({
-                    "id": entry.package_id,
-                    "name": entry.title,
-                    "description": entry.description,
-                })
-            });
-            if let Some(object) = metadata.as_object_mut() {
-                object.insert(
-                    "registry_capability_id".to_string(),
-                    json!(entry.capability_id.clone()),
-                );
-                object.insert(
-                    "activation_state".to_string(),
-                    json!(entry.activation_state.clone()),
-                );
-                object.insert(
-                    "runtime_state".to_string(),
-                    json!(entry.runtime_state.clone()),
-                );
-                object.insert(
-                    "search_index_state".to_string(),
-                    json!(entry.search_index_state.clone()),
-                );
-                object.insert("generation".to_string(), json!(entry.generation));
-            }
-            json!({
-                "id": asset_id,
-                "name": entry.title,
-                "description": description,
-                "asset_type": "skill",
-                "source_type": entry.source_kind,
-                "pkg_name": entry.package_id,
-                "restricted": restricted,
-                "allowed_roles": allowed_roles,
-                "metadata": metadata,
-            })
-        }
-    }
 }
 
 #[cfg(test)]

@@ -1,8 +1,6 @@
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
 use std::str::FromStr;
 
-use sha2::{Digest, Sha256};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions, SqliteRow};
 use sqlx::Row;
 use uuid::Uuid;
@@ -68,116 +66,17 @@ pub struct McpStore {
     pub(crate) secret_store: SecretStore,
 }
 
-#[derive(Debug, Clone)]
-pub struct LocalConversationSummaryJob {
-    pub id: String,
-    pub session_id: String,
-    pub attempts: i64,
-    pub max_attempts: i64,
-}
-
-#[derive(Debug, Clone)]
-pub struct LocalPeriodicTask {
-    pub task_name: String,
-    pub interval_seconds: i64,
-}
-
-#[derive(Debug, Clone)]
-pub struct LocalSkillInstallSnapshot {
-    pub skill_id: String,
-    pub installed_version: Option<String>,
-    pub is_enabled: bool,
-    pub runtime: Option<String>,
-    pub install_path: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct LocalSkillInstallDetail {
-    pub skill_id: String,
-    pub installed_version: Option<String>,
-    pub is_enabled: bool,
-    pub runtime: Option<String>,
-    pub install_path: String,
-    pub manifest_json: String,
-    pub user_settings_json: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Clone)]
-pub struct LocalSkillToolBindingSnapshot {
-    pub binding_id: String,
-    pub binding_kind: String,
-    pub skill_id: String,
-    pub callable_name: String,
-    pub tool_name: String,
-    pub description: String,
-    pub input_schema: Option<serde_json::Value>,
-    pub output_schema: Option<serde_json::Value>,
-    pub entry_path: String,
-    pub runtime: String,
-    pub timeout_seconds: u64,
-    pub updated_at: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct LocalSkillToolBindingUpsert {
-    pub binding_id: String,
-    pub binding_kind: String,
-    pub callable_name: String,
-    pub tool_name: String,
-    pub description: String,
-    pub input_schema_json: Option<String>,
-    pub output_schema_json: Option<String>,
-    pub entry_path: String,
-    pub runtime: String,
-    pub timeout_seconds: u64,
-}
-
-#[derive(Debug, Clone)]
-pub struct LocalCapabilityRegistrySnapshot {
-    pub capability_id: String,
-    pub source_kind: String,
-    pub asset_kind: String,
-    pub package_id: String,
-    pub package_version: Option<String>,
-    pub title: String,
-    pub description: String,
-    pub tool_name: Option<String>,
-    pub callable_name: Option<String>,
-    pub binding_kind: Option<String>,
-    pub execution_surface: String,
-    pub runtime: Option<String>,
-    pub entry_path: Option<String>,
-    pub is_direct_callable: bool,
-    pub activation_state: String,
-    pub runtime_state: String,
-    pub search_index_state: String,
-    pub generation: i64,
-    pub descriptor_json: serde_json::Value,
-    pub updated_at: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct LocalCapabilityRegistryUpsert {
-    pub capability_id: String,
-    pub source_kind: String,
-    pub asset_kind: String,
-    pub package_id: String,
-    pub package_version: Option<String>,
-    pub title: String,
-    pub description: String,
-    pub tool_name: Option<String>,
-    pub callable_name: Option<String>,
-    pub binding_kind: Option<String>,
-    pub execution_surface: String,
-    pub runtime: Option<String>,
-    pub entry_path: Option<String>,
-    pub is_direct_callable: bool,
-    pub activation_state: String,
-    pub runtime_state: String,
-    pub search_index_state: String,
-    pub generation: i64,
-    pub descriptor_json: String,
-}
+pub use mcp_registry::types::{LocalCapabilityRegistrySnapshot, LocalCapabilityRegistryUpsert};
+pub use mcp_session::context::{
+    LocalConversationChatContext, LocalConversationRegenerateContext,
+    LocalConversationRuntimeWindow, LocalConversationTitleContext,
+};
+pub use mcp_storage::helpers::expand_path;
+pub use mcp_storage::types::{
+    ExtractedToolFields, LocalConversationSummaryJob, LocalPeriodicTask, LocalSkillInstallDetail,
+    LocalSkillInstallSnapshot, LocalSkillToolBindingSnapshot, LocalSkillToolBindingUpsert,
+    NewSource, ToolUpsert,
+};
 
 mod assistants;
 mod capability_registry;
@@ -1439,85 +1338,4 @@ impl McpStore {
         .map_err(|err| McpError::Storage(err.to_string()))?;
         Ok(())
     }
-}
-
-pub struct NewSource {
-    pub name: String,
-    pub source_type: McpSourceType,
-    pub path_or_url: String,
-    pub trust_level: McpTrustLevel,
-    pub status: McpSourceStatus,
-    pub last_synced_at: Option<String>,
-    pub is_read_only: bool,
-}
-
-#[derive(Clone)]
-pub struct ToolUpsert {
-    pub id: Option<String>,
-    pub source_id: String,
-    pub identifier: Option<String>,
-    pub name: String,
-    pub source_type: McpSourceType,
-    pub status: McpToolStatus,
-    pub ping_ms: Option<i64>,
-    pub capabilities: Vec<String>,
-    pub description: String,
-    pub error: Option<String>,
-    pub command: Option<String>,
-    pub args: Option<Vec<String>>,
-    pub env: Option<HashMap<String, String>>,
-    pub config_json: String,
-    pub config_hash: String,
-    pub pending_config_json: Option<String>,
-    pub pending_config_hash: Option<String>,
-    pub conflict_status: McpConflictStatus,
-    pub is_read_only: bool,
-    pub is_new: bool,
-}
-
-pub struct ExtractedToolFields {
-    pub name: String,
-    pub description: String,
-    pub command: Option<String>,
-    pub args: Option<Vec<String>>,
-    pub env: Option<HashMap<String, String>>,
-    pub capabilities: Vec<String>,
-}
-
-pub struct LocalConversationRegenerateContext {
-    pub session_id: String,
-    pub assistant_id: Option<String>,
-    pub deleted_turn_index: Option<i64>,
-    pub messages: Vec<LocalChatInputMessage>,
-}
-
-#[derive(Clone)]
-pub struct LocalConversationChatContext {
-    pub session_id: String,
-    pub assistant_id: Option<String>,
-    pub messages: Vec<LocalChatInputMessage>,
-}
-
-pub struct LocalConversationRuntimeWindow {
-    pub session_id: String,
-    pub assistant_id: Option<String>,
-    pub messages: Vec<LocalConversationHistoryMessage>,
-    pub meta: Option<serde_json::Value>,
-    pub summary: Option<serde_json::Value>,
-}
-
-pub struct LocalConversationTitleContext {
-    pub session_id: String,
-    pub title: Option<String>,
-    pub message_count: i64,
-    pub first_user_message: Option<String>,
-}
-
-pub fn expand_path(path: &str) -> PathBuf {
-    if let Some(stripped) = path.strip_prefix("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            return PathBuf::from(home).join(stripped);
-        }
-    }
-    PathBuf::from(path)
 }

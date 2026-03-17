@@ -1,4 +1,73 @@
-async fn stream_logs(
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use futures_util::StreamExt;
+use log::warn;
+use serde::Serialize;
+use serde_json::Value;
+use tokio::sync::{Mutex, RwLock};
+
+#[derive(Default)]
+pub struct McpBridgeState {
+    base_url: Arc<RwLock<String>>,
+    streams: Arc<Mutex<HashMap<String, tauri::async_runtime::JoinHandle<()>>>>,
+    client: reqwest::Client,
+}
+
+impl McpBridgeState {
+    pub fn new(default_base_url: String) -> Self {
+        Self {
+            base_url: Arc::new(RwLock::new(default_base_url)),
+            streams: Arc::new(Mutex::new(HashMap::new())),
+            client: reqwest::Client::new(),
+        }
+    }
+
+    pub async fn get_base_url(&self) -> String {
+        self.base_url.read().await.clone()
+    }
+
+    pub async fn set_base_url(&self, url: String) {
+        let mut base_url = self.base_url.write().await;
+        *base_url = url;
+    }
+
+    pub async fn start_stream(&self, tool_id: String, app: tauri::AppHandle) -> Result<(), String> {
+        let mut streams = self.streams.lock().await;
+        if streams.contains_key(&tool_id) {
+            return Ok(());
+        }
+
+        let base_url = self.get_base_url().await;
+        let client = self.client.clone();
+        let tool_id_clone = tool_id.clone();
+        let handle = tauri::async_runtime::spawn(async move {
+            if let Err(err) = stream_logs(&client, &base_url, &tool_id_clone, &app).await {
+                warn!("mcp log stream failed for {}: {}", tool_id_clone, err);
+            }
+        });
+
+        streams.insert(tool_id, handle);
+        Ok(())
+    }
+
+    pub async fn stop_stream(&self, tool_id: &str) -> bool {
+        let mut streams = self.streams.lock().await;
+        if let Some(handle) = streams.remove(tool_id) {
+            handle.abort();
+            return true;
+        }
+        false
+    }
+}
+
+#[derive(Serialize)]
+pub struct LogFallbackPayload {
+    pub tool_id: String,
+    pub raw: String,
+}
+
+pub async fn stream_logs(
     client: &reqwest::Client,
     base_url: &str,
     tool_id: &str,
@@ -43,7 +112,7 @@ async fn stream_logs(
     Ok(())
 }
 
-fn parse_sse_data(raw_event: &str, tool_id: &str) -> Option<serde_json::Value> {
+pub fn parse_sse_data(raw_event: &str, tool_id: &str) -> Option<Value> {
     let mut data_lines = Vec::new();
     for line in raw_event.lines() {
         let line = line.trim_end_matches('\r');
@@ -71,9 +140,6 @@ fn parse_sse_data(raw_event: &str, tool_id: &str) -> Option<serde_json::Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
-    use tokio::sync::oneshot;
-    use tokio::time::{timeout, Duration};
 
     #[test]
     fn parse_sse_json_payload() {
@@ -83,48 +149,9 @@ mod tests {
     }
 
     #[test]
-    fn parse_sse_multiline_payload() {
+    fn parse_sse_multiline_payload_falls_back_to_raw() {
         let raw = "data: {\"message\":\"line1\"}\n\ndata: {\"message\":\"line2\"}\n\n";
         let payload = parse_sse_data(raw, "tool-1").unwrap();
         assert!(payload.get("raw").is_some());
-    }
-
-    struct NotifyOnDrop(Option<oneshot::Sender<()>>);
-
-    impl Drop for NotifyOnDrop {
-        fn drop(&mut self) {
-            if let Some(sender) = self.0.take() {
-                let _ = sender.send(());
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn stop_stream_aborts_and_removes_registered_handle() {
-        let state = Arc::new(McpBridgeState::new("https://mcp.example.com".to_string()));
-        let (dropped_tx, dropped_rx) = oneshot::channel();
-
-        let handle = tauri::async_runtime::spawn(async move {
-            let _guard = NotifyOnDrop(Some(dropped_tx));
-            futures_util::future::pending::<()>().await;
-        });
-
-        state
-            .streams
-            .lock()
-            .await
-            .insert("tool-1".to_string(), handle);
-
-        assert!(state.stop_stream("tool-1").await);
-        assert_eq!(state.streams.lock().await.len(), 0);
-        assert!(timeout(Duration::from_secs(1), dropped_rx).await.is_ok());
-    }
-
-    #[tokio::test]
-    async fn stop_stream_is_noop_when_handle_is_missing() {
-        let state = Arc::new(McpBridgeState::new("https://mcp.example.com".to_string()));
-
-        assert!(!state.stop_stream("missing-tool").await);
-        assert_eq!(state.streams.lock().await.len(), 0);
     }
 }

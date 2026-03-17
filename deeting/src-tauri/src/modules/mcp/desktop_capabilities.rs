@@ -187,7 +187,7 @@ fn parse_provider_preset(arguments: &Value) -> Result<ProviderPreset, String> {
 }
 
 async fn desktop_cloud_base_url(app_state: &crate::state::AppState) -> Result<String, String> {
-    let base_url = app_state.mcp.cloud_base_url.read().await.clone();
+    let base_url = app_state.mcp.transport.cloud_base_url.read().await.clone();
     let normalized = base_url.trim().trim_end_matches('/').to_string();
     if normalized.is_empty() {
         Err("cloud API base URL not configured".to_string())

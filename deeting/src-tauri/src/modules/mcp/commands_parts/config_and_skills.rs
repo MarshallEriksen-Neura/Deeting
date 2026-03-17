@@ -4,13 +4,19 @@ use super::{common_impl::to_string, skill_registry_impl::reindex_local_skill_bun
 #[tauri::command]
 pub async fn sync_official_skills_index(app_state: State<'_, AppState>) -> Result<usize, String> {
     let state = &app_state.mcp;
-    let base_url = state.cloud_base_url.read().await.clone();
+    let base_url = state.transport.cloud_base_url.read().await.clone();
     let url = format!(
         "{}/api/v1/plugin-market/?limit=100",
         base_url.trim_end_matches('/')
     );
 
-    let response = state.client.get(&url).send().await.map_err(to_string)?;
+    let response = state
+        .transport
+        .client
+        .get(&url)
+        .send()
+        .await
+        .map_err(to_string)?;
     if !response.status().is_success() {
         return Err("failed to fetch marketplace index".to_string());
     }
@@ -110,7 +116,7 @@ pub async fn set_cloud_base_url(state: State<'_, AppState>, url: String) -> Resu
     if normalized.is_empty() {
         return Err("cloud base url is required".to_string());
     }
-    *state.mcp.cloud_base_url.write().await = normalized;
+    *state.mcp.transport.cloud_base_url.write().await = normalized;
     Ok(())
 }
 
@@ -156,6 +162,13 @@ pub async fn set_desktop_config(
 
 #[tauri::command]
 pub async fn get_local_gateway_url(state: State<'_, AppState>) -> Result<Option<String>, String> {
-    let url = state.mcp.local_gateway.base_url.read().await.clone();
+    let url = state
+        .mcp
+        .transport
+        .local_gateway
+        .base_url
+        .read()
+        .await
+        .clone();
     Ok(url)
 }

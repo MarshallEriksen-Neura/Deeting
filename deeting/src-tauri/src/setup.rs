@@ -121,7 +121,7 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
             global_pool.clone(),
             &database_url,
             Some(mcp_state.store.clone()),
-            Some(mcp_state.cloud_base_url.clone()),
+            Some(mcp_state.transport.cloud_base_url.clone()),
         )
         .await
         .map_err(|e| McpError::Storage(e.to_string()))?;
@@ -202,6 +202,7 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     tauri::async_runtime::spawn(async move {
         match gateway_state
             .mcp
+            .transport
             .local_gateway
             .start(gateway_state.clone(), gateway_app_handle)
             .await

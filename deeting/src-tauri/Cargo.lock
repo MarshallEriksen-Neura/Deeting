@@ -150,6 +150,13 @@ dependencies = [
  "keyring",
  "lancedb",
  "log",
+ "mcp-core",
+ "mcp-facade",
+ "mcp-registry",
+ "mcp-runtime",
+ "mcp-session",
+ "mcp-storage",
+ "mcp-transport",
  "prost 0.13.5",
  "rand 0.8.5",
  "reqwest 0.12.28",
@@ -5101,6 +5108,83 @@ dependencies = [
  "once_cell",
  "rawpointer",
  "thread-tree",
+]
+
+[[package]]
+name = "mcp-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror 1.0.69",
+ "time",
+]
+
+[[package]]
+name = "mcp-facade"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "mcp-core",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+]
+
+[[package]]
+name = "mcp-registry"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "mcp-runtime"
+version = "0.1.0"
+dependencies = [
+ "mcp-core",
+ "serde",
+ "serde_json",
+ "time",
+]
+
+[[package]]
+name = "mcp-session"
+version = "0.1.0"
+dependencies = [
+ "mcp-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "mcp-storage"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "mcp-core",
+ "serde",
+ "serde_json",
+ "sha2",
+ "time",
+]
+
+[[package]]
+name = "mcp-transport"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "log",
+ "reqwest 0.12.28",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio",
 ]
 
 [[package]]

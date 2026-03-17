@@ -20,10 +20,10 @@ pub(crate) mod conversation_management_impl;
 pub(crate) mod maintenance_impl;
 #[path = "commands_parts/skill_registry_impl.rs"]
 pub(crate) mod skill_registry_impl;
-#[path = "commands_parts/skill_registry_scan.rs"]
-pub(crate) mod skill_registry_scan_impl;
 #[path = "commands_parts/skill_registry_refresh.rs"]
 pub(crate) mod skill_registry_refresh_impl;
+#[path = "commands_parts/skill_registry_scan.rs"]
+pub(crate) mod skill_registry_scan_impl;
 #[path = "commands_parts/source_management.rs"]
 pub(crate) mod source_management_impl;
 #[path = "commands_parts/sources_tools_and_chat.rs"]

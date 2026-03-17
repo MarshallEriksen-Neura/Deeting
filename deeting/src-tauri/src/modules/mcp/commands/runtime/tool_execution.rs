@@ -1225,6 +1225,7 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_tool_ref(
         let approved_by_grant = if require_approval {
             if let (Some(runtime), Some(key)) = (runtime_state, approval_grant_key.as_ref()) {
                 runtime
+                    .approvals
                     .session_approval_grants
                     .read()
                     .await
@@ -1300,6 +1301,7 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_tool_ref(
     let approved_by_grant = if require_approval {
         if let (Some(runtime), Some(key)) = (runtime_state, approval_grant_key.as_ref()) {
             runtime
+                .approvals
                 .session_approval_grants
                 .read()
                 .await
@@ -1422,6 +1424,7 @@ pub(crate) async fn approve_mcp_tool_inner_with_context(
                 crate::modules::mcp::SessionApprovalGrant::from_key(key, now as i128)
             {
                 runtime
+                    .approvals
                     .session_approval_grants
                     .write()
                     .await
@@ -1460,6 +1463,7 @@ pub(crate) async fn approve_mcp_tool_inner_with_context(
     if let (Some(runtime), Some(key)) = (runtime_state, pending.approval_grant_key.as_deref()) {
         if let Some(grant) = crate::modules::mcp::SessionApprovalGrant::from_key(key, now as i128) {
             runtime
+                .approvals
                 .session_approval_grants
                 .write()
                 .await

@@ -1,14 +1,16 @@
+use mcp_registry::diagnostics::{
+    build_control_plane_asset_map, build_parity_item, build_registry_buckets,
+};
 use serde_json::{json, Value};
 use tauri::{AppHandle, State};
 
 use crate::modules::mcp::commands::assistant_management_impl::index_local_assistants;
 use crate::modules::mcp::commands::assistants_knowledge_admin_impl::index_mcp_tools;
 use crate::modules::mcp::commands::common_impl::to_string;
-use crate::modules::mcp::commands::runtime::sync_core_tool_registry_entries;
 use crate::modules::mcp::commands::register_local_skills_inner;
+use crate::modules::mcp::commands::runtime::sync_core_tool_registry_entries;
 use crate::modules::mcp::types::{
-    LocalCapabilityRegistryDiagnosticsBucket, LocalCapabilityRegistryDiagnosticsItem,
-    LocalCapabilityRegistryDiagnosticsResponse, LocalCapabilityRegistryParityItem,
+    LocalCapabilityRegistryDiagnosticsItem, LocalCapabilityRegistryDiagnosticsResponse,
     LocalMaintenanceActionRequest, LocalMaintenanceLogItem, LocalMaintenanceLogListResponse,
     LocalMaintenanceLogQuery,
 };
@@ -333,80 +335,6 @@ async fn persist_action_log(
         .create_local_maintenance_log(kind, status, &message, details.as_ref())
         .await
         .map_err(to_string)
-}
-
-fn build_control_plane_asset_map(assets: Vec<Value>) -> std::collections::BTreeMap<String, Value> {
-    assets
-        .into_iter()
-        .filter(|asset| {
-            crate::modules::mcp::commands::runtime::is_legacy_control_plane_asset(asset)
-        })
-        .filter_map(|asset| {
-            let key = crate::modules::mcp::commands::runtime::capability_asset_match_key(&asset)?;
-            Some((key, asset))
-        })
-        .collect()
-}
-
-fn build_parity_item(key: &str, asset: &Value) -> Option<LocalCapabilityRegistryParityItem> {
-    let source_type = asset.get("source_type").and_then(Value::as_str)?.trim();
-    let asset_type = asset.get("asset_type").and_then(Value::as_str)?.trim();
-    if source_type.is_empty() || asset_type.is_empty() {
-        return None;
-    }
-    let asset_id = asset
-        .get("id")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string);
-    let name = asset
-        .get("name")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string);
-    let package_id = asset
-        .get("pkg_name")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-        .or_else(|| {
-            asset
-                .get("metadata")
-                .and_then(|metadata| metadata.get("skill_id"))
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_string)
-        });
-
-    Some(LocalCapabilityRegistryParityItem {
-        key: key.to_string(),
-        asset_id,
-        name,
-        source_type: source_type.to_string(),
-        asset_type: asset_type.to_string(),
-        package_id,
-    })
-}
-
-fn build_registry_buckets<'a>(
-    values: impl Iterator<Item = &'a str>,
-) -> Vec<LocalCapabilityRegistryDiagnosticsBucket> {
-    let mut counts = std::collections::BTreeMap::<String, i64>::new();
-    for value in values {
-        let normalized = value.trim();
-        if normalized.is_empty() {
-            continue;
-        }
-        *counts.entry(normalized.to_string()).or_insert(0) += 1;
-    }
-    counts
-        .into_iter()
-        .map(|(key, count)| LocalCapabilityRegistryDiagnosticsBucket { key, count })
-        .collect()
 }
 
 #[cfg(test)]

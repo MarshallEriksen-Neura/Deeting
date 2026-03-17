@@ -155,12 +155,13 @@ pub(crate) async fn sync_cloud_subscriptions_inner(
     state: &McpRuntimeState,
     access_token: String,
 ) -> Result<Vec<McpTool>, String> {
-    let base_url = state.cloud_base_url.read().await.clone();
+    let base_url = state.transport.cloud_base_url.read().await.clone();
     let url = format!(
         "{}/api/v1/mcp/subscriptions",
         base_url.trim_end_matches('/')
     );
     let response = state
+        .transport
         .client
         .get(&url)
         .header("Authorization", format!("Bearer {}", access_token))
@@ -247,7 +248,7 @@ pub async fn approve_mcp_tool(
         &approval_context,
         Some(&state.mcp),
         state.mcp.store.as_ref(),
-        state.mcp.pending_tool_calls.as_ref(),
+        state.mcp.approvals.pending_tool_calls.as_ref(),
         &token,
     )
     .await?;
@@ -272,9 +273,10 @@ pub async fn reject_mcp_tool(
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "approval token is required".to_string())?;
-    reject_mcp_tool_inner(state.mcp.pending_tool_calls.as_ref(), &token).await;
+    reject_mcp_tool_inner(state.mcp.approvals.pending_tool_calls.as_ref(), &token).await;
     state
         .mcp
+        .approvals
         .suspended_local_chat_executions
         .write()
         .await

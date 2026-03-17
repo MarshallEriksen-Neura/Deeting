@@ -354,7 +354,14 @@ async fn persist_custom_task_agent_image(
     } else if image.trim_start().starts_with("http://")
         || image.trim_start().starts_with("https://")
     {
-        let response = app_state.mcp.client.get(image).send().await.ok()?;
+        let response = app_state
+            .mcp
+            .transport
+            .client
+            .get(image)
+            .send()
+            .await
+            .ok()?;
         if !response.status().is_success() {
             return None;
         }
