@@ -1,11 +1,10 @@
 mod node;
 mod python;
 
-use crate::modules::mcp::store::{
-    LocalSkillInstallDetail, LocalSkillToolBindingSnapshot, McpStore,
-};
+use crate::modules::mcp::store::McpStore;
 use crate::state::AppState;
 use async_trait::async_trait;
+use mcp_storage::types::{LocalSkillInstallDetail, LocalSkillToolBindingSnapshot};
 use serde_json::{json, Value as JsonValue};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

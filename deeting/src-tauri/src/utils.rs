@@ -1,5 +1,5 @@
 use crate::modules::mcp::error::McpError;
-use crate::modules::mcp::store::expand_path;
+use mcp_storage::helpers::expand_path;
 use std::path::{Path, PathBuf};
 use tauri::Manager;
 

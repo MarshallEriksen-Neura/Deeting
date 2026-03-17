@@ -1,6 +1,7 @@
 use super::helpers::now_rfc3339;
 use super::*;
 use mcp_registry::types::{LocalCapabilityRegistrySnapshot, LocalCapabilityRegistryUpsert};
+use mcp_storage::types::{LocalSkillInstallDetail, LocalSkillToolBindingSnapshot};
 
 impl McpStore {
     pub async fn current_local_capability_registry_generation(&self) -> Result<i64, McpError> {
@@ -490,8 +491,8 @@ fn local_skill_source_kind(install_path: &str) -> &'static str {
 }
 
 fn build_local_skill_registry_entries_from_store(
-    install: &crate::modules::mcp::store::LocalSkillInstallDetail,
-    bindings: &[crate::modules::mcp::store::LocalSkillToolBindingSnapshot],
+    install: &LocalSkillInstallDetail,
+    bindings: &[LocalSkillToolBindingSnapshot],
     generation: i64,
 ) -> Vec<LocalCapabilityRegistryUpsert> {
     let manifest = serde_json::from_str::<serde_json::Value>(&install.manifest_json)

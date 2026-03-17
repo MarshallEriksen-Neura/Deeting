@@ -10,7 +10,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::modules::mcp::risk::classify_scan_runtime_risk;
-use crate::modules::mcp::store::LocalSkillInstallSnapshot;
+use mcp_storage::types::LocalSkillInstallSnapshot;
 
 use super::types::{ScanDocument, ScanFinding, ScanFindingAction, ScanRun, ScanSummary};
 

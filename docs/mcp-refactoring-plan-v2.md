@@ -243,6 +243,11 @@ Latest cleanup progress:
 - Started collapsing external MCP consumers onto the `src/modules/mcp/commands.rs` facade so Tauri command registration, scan flows, and onboarding helpers no longer depend on `*_impl` file names.
 - Moved the remaining system-asset sync payload structs out of `mcp/types.rs` into `mcp-session`, leaving `types.rs` closer to a pure aggregation surface.
 - Started removing non-store type re-exports from `mcp/store/mod.rs` by switching session-context and registry payload consumers to import from `mcp-session` and `mcp-registry` directly.
+- Started switching `expand_path` and external skill install/binding snapshot consumers to import from `mcp-storage` directly instead of routing those types through `mcp/store/mod.rs`.
+- Started pulling assistant business commands out of `modules/mcp/commands_parts/` into a dedicated `modules/assistants/` module, with the old MCP path reduced to a compatibility bridge.
+- Started pulling conversation business commands out of `modules/mcp/commands_parts/` into a dedicated `modules/conversations/` module, with the old MCP path reduced to compatibility exports while the Tauri handler now points at the business module directly.
+- Started pulling admin conversation/log/summary-job commands out of `modules/mcp/commands_parts/` into a dedicated `modules/admin/` module, with the old MCP path reduced to compatibility bridges while the Tauri handler now points at the business module directly.
+- Started splitting the former `config_and_skills` surface into dedicated `modules/skills/` and `modules/desktop_config/` business modules, with the old MCP files reduced to compatibility bridges while startup and Tauri command entrypoints now point at the business modules directly.
 - Removed the restored wrapper files:
   - `commands/admin.rs`
   - `commands/assistants.rs`

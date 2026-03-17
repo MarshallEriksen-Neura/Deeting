@@ -6,11 +6,10 @@ use super::{
     LOCAL_SKILL_RUNTIME_STATE_NEEDS_INSTALL, LOCAL_SKILL_RUNTIME_STATE_NEEDS_REINSTALL,
     LOCAL_SKILL_RUNTIME_STATE_READY, LOCAL_SKILL_RUNTIME_STATE_UNSUPPORTED,
 };
-use crate::modules::mcp::store::{
-    LocalSkillInstallDetail, LocalSkillToolBindingSnapshot, McpStore,
-};
+use crate::modules::mcp::store::McpStore;
 use crate::state::AppState;
 use async_trait::async_trait;
+use mcp_storage::types::{LocalSkillInstallDetail, LocalSkillToolBindingSnapshot};
 use serde_json::Value as JsonValue;
 use sha2::Digest;
 use std::path::{Path, PathBuf};

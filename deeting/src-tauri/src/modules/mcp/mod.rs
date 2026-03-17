@@ -11,6 +11,7 @@ pub mod types;
 
 use std::sync::Arc;
 
+use mcp_storage::types::LocalSkillToolBindingSnapshot;
 use serde_json::Value;
 
 use crate::modules::mcp::bridge::McpBridgeState;
@@ -85,7 +86,7 @@ impl McpRuntimeState {
 
     pub fn assess_skill_binding_risk(
         &self,
-        binding: &crate::modules::mcp::store::LocalSkillToolBindingSnapshot,
+        binding: &LocalSkillToolBindingSnapshot,
         arguments: &Value,
     ) -> ToolRiskAssessment {
         assess_skill_binding_risk(binding, arguments)

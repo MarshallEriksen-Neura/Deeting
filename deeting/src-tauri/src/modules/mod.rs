@@ -1,8 +1,12 @@
+pub mod admin;
 pub mod ai_upstream;
+pub mod assistants;
 pub mod capability_control_plane;
 pub mod chat_assets;
 pub mod code_mode;
+pub mod conversations;
 pub mod custom_task_agents;
+pub mod desktop_config;
 pub mod im;
 pub mod image_generation;
 pub mod knowledge;
@@ -15,3 +19,4 @@ pub mod sandbox;
 pub mod scan;
 pub mod shell_executor;
 pub mod skill_runtime;
+pub mod skills;

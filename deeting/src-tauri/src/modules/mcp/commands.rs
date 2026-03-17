@@ -31,6 +31,12 @@ pub(crate) mod sources_tools_and_chat_impl;
 
 pub mod runtime;
 
+pub use crate::modules::conversations::commands::{
+    archive_local_conversation_session, clear_local_conversation_session,
+    create_local_conversation_session, delete_local_conversation_session,
+    get_local_conversation_window, list_local_conversation_history,
+    list_local_conversation_sessions, rename_local_conversation_session,
+};
 pub use admin_conversations_impl::{
     get_local_admin_conversation, list_local_admin_conversation_messages,
     list_local_admin_conversation_summaries, list_local_admin_conversations,
@@ -82,13 +88,10 @@ pub use source_management_impl::{
     create_mcp_source, list_mcp_sources, list_mcp_tools, sync_cloud_subscriptions, sync_mcp_source,
 };
 pub use sources_tools_and_chat_impl::{
-    apply_pending_config, archive_local_conversation_session, clear_local_conversation_session,
-    clear_mcp_logs, create_local_conversation_session, delete_assistant_message,
-    delete_local_conversation_session, delete_local_mcp_tool, execute_mcp_tool_raw,
-    get_desktop_config_value, get_local_conversation_window, get_mcp_logs, import_mcp_config,
-    list_local_conversation_history, list_local_conversation_sessions,
-    rename_local_conversation_session, resolve_mcp_conflict, set_desktop_config_value,
-    start_mcp_tool, stop_mcp_tool, update_assistant_message, update_mcp_tool_env,
+    apply_pending_config, clear_mcp_logs, delete_assistant_message, delete_local_mcp_tool,
+    execute_mcp_tool_raw, get_desktop_config_value, get_mcp_logs, import_mcp_config,
+    resolve_mcp_conflict, set_desktop_config_value, start_mcp_tool, stop_mcp_tool,
+    update_assistant_message, update_mcp_tool_env,
 };
 
 pub(crate) use assistant_management_impl::index_local_assistants;

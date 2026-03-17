@@ -5,6 +5,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::modules::skill_runtime::detect_local_skill_runtime;
 use mcp_registry::types::LocalCapabilityRegistryUpsert;
+use mcp_storage::types::LocalSkillInstallDetail;
 
 use super::{
     collect_local_skill_tool_bindings, resolve_local_skill_definition,
@@ -236,9 +237,7 @@ fn build_local_skill_registry_entries(
     Ok(entries)
 }
 
-fn registry_activation_state_for_install(
-    install: &crate::modules::mcp::store::LocalSkillInstallDetail,
-) -> &'static str {
+fn registry_activation_state_for_install(install: &LocalSkillInstallDetail) -> &'static str {
     if install.is_enabled {
         "enabled"
     } else {
@@ -246,9 +245,7 @@ fn registry_activation_state_for_install(
     }
 }
 
-fn registry_runtime_state_for_install(
-    install: &crate::modules::mcp::store::LocalSkillInstallDetail,
-) -> String {
+fn registry_runtime_state_for_install(install: &LocalSkillInstallDetail) -> String {
     let runtime = detect_local_skill_runtime(install);
     if runtime.supported {
         runtime.state.to_string()

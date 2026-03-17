@@ -66,7 +66,6 @@ pub struct McpStore {
     pub(crate) secret_store: SecretStore,
 }
 
-pub use mcp_storage::helpers::expand_path;
 pub use mcp_storage::types::{
     ExtractedToolFields, LocalConversationSummaryJob, LocalPeriodicTask, LocalSkillInstallDetail,
     LocalSkillInstallSnapshot, LocalSkillToolBindingSnapshot, LocalSkillToolBindingUpsert,

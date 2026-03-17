@@ -5,6 +5,8 @@ pub(crate) use std::time::Duration;
 
 pub(crate) use log::warn;
 pub(crate) use mcp_session::context::LocalConversationChatContext;
+pub(crate) use mcp_storage::helpers::expand_path;
+pub(crate) use mcp_storage::types::{NewSource, ToolUpsert};
 pub(crate) use serde::{Deserialize, Serialize};
 pub(crate) use serde_json::Value;
 pub(crate) use tauri::{AppHandle, Emitter, Manager, State};
@@ -13,11 +15,9 @@ pub(crate) use uuid::Uuid;
 
 pub(crate) use crate::modules::code_mode::types::ExecuteLocalCodeModeRequest;
 pub(crate) use crate::modules::mcp::error::McpError;
-pub(crate) use crate::modules::mcp::store::expand_path;
 pub(crate) use crate::modules::mcp::types::*;
 pub(crate) use crate::modules::mcp::McpRuntimeState;
 pub(crate) use crate::state::AppState;
-pub(crate) use mcp_storage::types::{NewSource, ToolUpsert};
 
 pub(crate) const DESKTOP_CONFIG_SCOUT_BASE_URL_KEY: &str = "scout.base_url";
 pub(crate) const SCOUT_SERVICE_URL_ENV_KEY: &str = "SCOUT_SERVICE_URL";

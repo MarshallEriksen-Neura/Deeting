@@ -1,10 +1,10 @@
 use super::super::{common_impl::to_string, support::*};
 use super::remote_transport::{call_local_stdio_tool, call_remote_sse_tool};
 use super::tool_resolution::resolve_callable_mcp_tool_by_ref;
-use crate::modules::mcp::store::LocalSkillToolBindingSnapshot;
 use crate::modules::skill_runtime::{
     resolve_runtime_command_for_binding, resolve_runtime_env_for_binding,
 };
+use mcp_storage::types::LocalSkillToolBindingSnapshot;
 
 const TOOL_CALL_MARKER: &str = "__DEETING_TOOL_CALL_REQUEST__";
 const MAX_MARKER_REEXEC: usize = 8;

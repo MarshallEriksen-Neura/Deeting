@@ -296,7 +296,7 @@ fn spawn_background_tasks(handle: AppHandle, sync_state: AppState) {
         if let Ok(assistants) = sync_state.mcp.store.list_local_assistants().await {
             let app_state_clone = sync_state.clone();
             tauri::async_runtime::spawn(async move {
-                crate::modules::mcp::commands::index_local_assistants(
+                crate::modules::assistants::commands::index_local_assistants(
                     &app_state_clone,
                     &assistants,
                 )
@@ -325,7 +325,7 @@ fn spawn_background_tasks(handle: AppHandle, sync_state: AppState) {
         let app_state_for_skills = sync_state.clone();
         let app_handle_for_skills = handle.clone();
         tauri::async_runtime::spawn(async move {
-            let _ = crate::modules::mcp::commands::register_local_skills_inner(
+            let _ = crate::modules::skills::commands::register_local_skills_inner(
                 app_handle_for_skills.clone(),
                 &app_state_for_skills,
             )

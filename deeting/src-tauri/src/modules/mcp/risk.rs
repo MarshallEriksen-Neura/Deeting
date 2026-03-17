@@ -1,12 +1,11 @@
 use std::net::IpAddr;
 use std::str::FromStr;
 
+use crate::modules::mcp::types::{McpSourceType, McpTool};
+use mcp_storage::types::LocalSkillToolBindingSnapshot;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-
-use crate::modules::mcp::store::LocalSkillToolBindingSnapshot;
-use crate::modules::mcp::types::{McpSourceType, McpTool};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -697,7 +696,6 @@ fn parse_boundary_class(value: &str) -> ApprovalBoundaryClass {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modules::mcp::store::LocalSkillToolBindingSnapshot;
     use crate::modules::mcp::types::{McpSourceType, McpTool, McpToolStatus};
 
     fn sample_tool() -> McpTool {
