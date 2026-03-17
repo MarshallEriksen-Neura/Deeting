@@ -1,5 +1,6 @@
 use super::McpStore;
 use crate::modules::mcp::types::LocalGatewayLogQuery;
+use mcp_registry::types::LocalCapabilityRegistryUpsert;
 use serde_json::json;
 use sqlx::Row;
 use uuid::Uuid;
@@ -280,7 +281,7 @@ async fn local_capability_registry_roundtrips_and_cleans_up_with_skill_install()
         .replace_local_capability_registry_entries(
             "skill.alpha",
             &[
-                crate::modules::mcp::store::LocalCapabilityRegistryUpsert {
+                LocalCapabilityRegistryUpsert {
                     capability_id: "skill_bundle::skill.alpha".to_string(),
                     source_kind: "user".to_string(),
                     asset_kind: "skill_bundle".to_string(),
@@ -305,7 +306,7 @@ async fn local_capability_registry_roundtrips_and_cleans_up_with_skill_install()
                     })
                     .to_string(),
                 },
-                crate::modules::mcp::store::LocalCapabilityRegistryUpsert {
+                LocalCapabilityRegistryUpsert {
                     capability_id: "skill_tool::skill.alpha::install".to_string(),
                     source_kind: "user".to_string(),
                     asset_kind: "skill_tool".to_string(),

@@ -44,6 +44,11 @@ impl RuntimeDiscoveryBundle {
     pub fn raw_search_result(&self) -> &Value {
         &self.raw_search_result
     }
+
+    #[allow(dead_code)]
+    pub fn skill_recipes(&self) -> &[Value] {
+        &self.recipes
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -106,6 +111,28 @@ impl LocalExecutionPolicy {
             .filter(|name| name.as_str() != SYS_SUBMIT_ONBOARDING_REQUEST_TOOL_NAME)
             .cloned()
             .collect()
+    }
+
+    pub fn effective_allowed_tool_names(
+        &self,
+        capability_snapshot: Option<&serde_json::Value>,
+    ) -> Vec<String> {
+        let mut allowed = self.allowed_tool_names.clone();
+        if let Some(snapshot) = capability_snapshot {
+            if let Some(items) = snapshot
+                .get("allowed_tool_names")
+                .and_then(|v| v.as_array())
+            {
+                for item in items {
+                    if let Some(text) = item.as_str() {
+                        allowed.push(text.to_string());
+                    }
+                }
+            }
+        }
+        allowed.sort();
+        allowed.dedup();
+        allowed
     }
 }
 

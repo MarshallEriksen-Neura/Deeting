@@ -254,7 +254,7 @@ async fn request_platform_chat_via_proxy(
     trace_id: Option<&str>,
     session_id: Option<&str>,
 ) -> Result<serde_json::Value, String> {
-    let base_url = app_state.mcp.cloud_base_url.read().await.clone();
+    let base_url = app_state.mcp.transport.cloud_base_url.read().await.clone();
     let base_url = base_url.trim().trim_end_matches('/');
     if base_url.is_empty() {
         return Err(

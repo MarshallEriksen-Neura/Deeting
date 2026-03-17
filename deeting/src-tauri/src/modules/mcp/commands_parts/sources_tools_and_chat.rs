@@ -7,6 +7,7 @@ use super::{
     },
     support::*,
 };
+use mcp_session::context::LocalConversationRuntimeWindow;
 
 const FACT_EXTRACTION_NEW_CHAT_TRIGGER_KEY_PREFIX: &str = "fact_extraction.new_chat_triggered";
 const FACT_EXTRACTION_MIN_MESSAGES: usize = 2;
@@ -58,7 +59,7 @@ fn extract_summary_text(summary: Option<&Value>) -> Option<String> {
 }
 
 fn build_fact_extraction_conversation_text(
-    runtime_window: &crate::modules::mcp::store::LocalConversationRuntimeWindow,
+    runtime_window: &LocalConversationRuntimeWindow,
 ) -> Option<String> {
     let mut sections = Vec::new();
     if let Some(summary_text) = extract_summary_text(runtime_window.summary.as_ref()) {

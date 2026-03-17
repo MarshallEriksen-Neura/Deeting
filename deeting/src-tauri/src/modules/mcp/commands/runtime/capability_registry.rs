@@ -7,6 +7,7 @@ use mcp_registry::assets::{
 pub(crate) use mcp_registry::assets::{
     capability_asset_match_key, is_legacy_control_plane_asset, CapabilityRegistryReadMode,
 };
+use mcp_registry::types::LocalCapabilityRegistrySnapshot;
 use serde_json::{json, Value};
 
 use super::core_tool_contracts::build_core_tool_assets;
@@ -127,7 +128,7 @@ pub(crate) async fn build_capability_registry(
 
 pub(crate) fn build_capability_assets_for_read_mode(
     memory_assets: Vec<Value>,
-    registry_entries: &[crate::modules::mcp::store::LocalCapabilityRegistrySnapshot],
+    registry_entries: &[LocalCapabilityRegistrySnapshot],
     read_path_mode: CapabilityRegistryReadMode,
 ) -> Vec<Value> {
     build_capability_assets_for_read_mode_inner(
@@ -770,37 +771,35 @@ mod tests {
 
     #[test]
     fn local_registry_skill_tool_asset_uses_binding_id_and_callable_name() {
-        let asset = local_capability_registry_entry_to_asset(
-            &crate::modules::mcp::store::LocalCapabilityRegistrySnapshot {
-                capability_id: "skill_tool::skill.alpha::install".to_string(),
-                source_kind: "user".to_string(),
-                asset_kind: "skill_tool".to_string(),
-                package_id: "skill.alpha".to_string(),
-                package_version: Some("1.0.0".to_string()),
-                title: "Skill Alpha / install".to_string(),
-                description: "Install alpha".to_string(),
-                tool_name: Some("install".to_string()),
-                callable_name: Some("skill.skill.alpha.install".to_string()),
-                binding_kind: Some("deeting_tool".to_string()),
-                execution_surface: "desktop_capability".to_string(),
-                runtime: Some("python".to_string()),
-                entry_path: Some("C:/skills/skill.alpha/main.py".to_string()),
-                is_direct_callable: true,
-                activation_state: "enabled".to_string(),
-                runtime_state: "registered".to_string(),
-                search_index_state: "pending".to_string(),
-                generation: 3,
-                descriptor_json: json!({
-                    "binding_id": "skill_binding::skill.alpha::install",
-                    "tool_name": "install",
-                    "callable_name": "skill.skill.alpha.install",
-                    "input_schema": {"type":"object","properties":{"package":{"type":"string"}}},
-                    "restricted": false,
-                    "allowed_roles": [],
-                }),
-                updated_at: "2026-03-16T00:00:00Z".to_string(),
-            },
-        );
+        let asset = local_capability_registry_entry_to_asset(&LocalCapabilityRegistrySnapshot {
+            capability_id: "skill_tool::skill.alpha::install".to_string(),
+            source_kind: "user".to_string(),
+            asset_kind: "skill_tool".to_string(),
+            package_id: "skill.alpha".to_string(),
+            package_version: Some("1.0.0".to_string()),
+            title: "Skill Alpha / install".to_string(),
+            description: "Install alpha".to_string(),
+            tool_name: Some("install".to_string()),
+            callable_name: Some("skill.skill.alpha.install".to_string()),
+            binding_kind: Some("deeting_tool".to_string()),
+            execution_surface: "desktop_capability".to_string(),
+            runtime: Some("python".to_string()),
+            entry_path: Some("C:/skills/skill.alpha/main.py".to_string()),
+            is_direct_callable: true,
+            activation_state: "enabled".to_string(),
+            runtime_state: "registered".to_string(),
+            search_index_state: "pending".to_string(),
+            generation: 3,
+            descriptor_json: json!({
+                "binding_id": "skill_binding::skill.alpha::install",
+                "tool_name": "install",
+                "callable_name": "skill.skill.alpha.install",
+                "input_schema": {"type":"object","properties":{"package":{"type":"string"}}},
+                "restricted": false,
+                "allowed_roles": [],
+            }),
+            updated_at: "2026-03-16T00:00:00Z".to_string(),
+        });
 
         assert_eq!(asset["id"], json!("skill_binding::skill.alpha::install"));
         assert_eq!(asset["name"], json!("skill.skill.alpha.install"));
@@ -811,7 +810,7 @@ mod tests {
 
     #[test]
     fn build_capability_assets_for_read_mode_skips_missing_skill_tool_entry_paths() {
-        let missing_entry = crate::modules::mcp::store::LocalCapabilityRegistrySnapshot {
+        let missing_entry = LocalCapabilityRegistrySnapshot {
             capability_id: "skill_tool::skill.deleted::install".to_string(),
             source_kind: "builtin".to_string(),
             asset_kind: "skill_tool".to_string(),
@@ -850,35 +849,33 @@ mod tests {
 
     #[test]
     fn local_registry_skill_bundle_asset_keeps_readiness_metadata() {
-        let asset = local_capability_registry_entry_to_asset(
-            &crate::modules::mcp::store::LocalCapabilityRegistrySnapshot {
-                capability_id: "skill_bundle::skill.alpha".to_string(),
-                source_kind: "user".to_string(),
-                asset_kind: "skill_bundle".to_string(),
-                package_id: "skill.alpha".to_string(),
-                package_version: Some("1.0.0".to_string()),
-                title: "Skill Alpha".to_string(),
-                description: "Bundle".to_string(),
-                tool_name: None,
-                callable_name: None,
-                binding_kind: None,
-                execution_surface: "recipe".to_string(),
-                runtime: Some("local".to_string()),
-                entry_path: None,
-                is_direct_callable: false,
-                activation_state: "disabled".to_string(),
-                runtime_state: "not_required".to_string(),
-                search_index_state: "pending".to_string(),
-                generation: 7,
-                descriptor_json: json!({
-                    "manifest": {
-                        "id": "skill.alpha",
-                        "name": "Skill Alpha"
-                    }
-                }),
-                updated_at: "2026-03-16T00:00:00Z".to_string(),
-            },
-        );
+        let asset = local_capability_registry_entry_to_asset(&LocalCapabilityRegistrySnapshot {
+            capability_id: "skill_bundle::skill.alpha".to_string(),
+            source_kind: "user".to_string(),
+            asset_kind: "skill_bundle".to_string(),
+            package_id: "skill.alpha".to_string(),
+            package_version: Some("1.0.0".to_string()),
+            title: "Skill Alpha".to_string(),
+            description: "Bundle".to_string(),
+            tool_name: None,
+            callable_name: None,
+            binding_kind: None,
+            execution_surface: "recipe".to_string(),
+            runtime: Some("local".to_string()),
+            entry_path: None,
+            is_direct_callable: false,
+            activation_state: "disabled".to_string(),
+            runtime_state: "not_required".to_string(),
+            search_index_state: "pending".to_string(),
+            generation: 7,
+            descriptor_json: json!({
+                "manifest": {
+                    "id": "skill.alpha",
+                    "name": "Skill Alpha"
+                }
+            }),
+            updated_at: "2026-03-16T00:00:00Z".to_string(),
+        });
 
         assert_eq!(asset["asset_type"], json!("skill"));
         assert_eq!(asset["metadata"]["activation_state"], json!("disabled"));
@@ -1033,33 +1030,31 @@ mod tests {
 
     #[test]
     fn assistant_registry_asset_is_emitted_as_local_assistant() {
-        let asset = local_capability_registry_entry_to_asset(
-            &crate::modules::mcp::store::LocalCapabilityRegistrySnapshot {
-                capability_id: "assistant-1".to_string(),
-                source_kind: "assistant".to_string(),
-                asset_kind: "assistant".to_string(),
-                package_id: "assistant-1".to_string(),
-                package_version: None,
-                title: "Research Assistant".to_string(),
-                description: "Helps with research".to_string(),
-                tool_name: None,
-                callable_name: None,
-                binding_kind: None,
-                execution_surface: "assistant".to_string(),
-                runtime: None,
-                entry_path: None,
-                is_direct_callable: false,
-                activation_state: "enabled".to_string(),
-                runtime_state: "not_required".to_string(),
-                search_index_state: "auxiliary".to_string(),
-                generation: 9,
-                descriptor_json: json!({
-                    "assistant_id": "assistant-1",
-                    "name": "Research Assistant"
-                }),
-                updated_at: "2026-03-16T00:00:00Z".to_string(),
-            },
-        );
+        let asset = local_capability_registry_entry_to_asset(&LocalCapabilityRegistrySnapshot {
+            capability_id: "assistant-1".to_string(),
+            source_kind: "assistant".to_string(),
+            asset_kind: "assistant".to_string(),
+            package_id: "assistant-1".to_string(),
+            package_version: None,
+            title: "Research Assistant".to_string(),
+            description: "Helps with research".to_string(),
+            tool_name: None,
+            callable_name: None,
+            binding_kind: None,
+            execution_surface: "assistant".to_string(),
+            runtime: None,
+            entry_path: None,
+            is_direct_callable: false,
+            activation_state: "enabled".to_string(),
+            runtime_state: "not_required".to_string(),
+            search_index_state: "auxiliary".to_string(),
+            generation: 9,
+            descriptor_json: json!({
+                "assistant_id": "assistant-1",
+                "name": "Research Assistant"
+            }),
+            updated_at: "2026-03-16T00:00:00Z".to_string(),
+        });
 
         assert_eq!(asset["asset_type"], json!("assistant"));
         assert_eq!(asset["source_type"], json!("local_assistant"));
@@ -1111,8 +1106,8 @@ mod tests {
 
     #[test]
     fn capability_asset_match_key_aligns_legacy_and_registry_skill_bundles() {
-        let registry_asset = local_capability_registry_entry_to_asset(
-            &crate::modules::mcp::store::LocalCapabilityRegistrySnapshot {
+        let registry_asset =
+            local_capability_registry_entry_to_asset(&LocalCapabilityRegistrySnapshot {
                 capability_id: "skill_bundle::skill.alpha".to_string(),
                 source_kind: "user".to_string(),
                 asset_kind: "skill_bundle".to_string(),
@@ -1138,8 +1133,7 @@ mod tests {
                     }
                 }),
                 updated_at: "2026-03-16T00:00:00Z".to_string(),
-            },
-        );
+            });
         let legacy_asset = json!({
             "id": "skill.alpha",
             "asset_type": "skill",

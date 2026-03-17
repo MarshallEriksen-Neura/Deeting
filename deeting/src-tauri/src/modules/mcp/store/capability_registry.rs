@@ -1,5 +1,6 @@
 use super::helpers::now_rfc3339;
 use super::*;
+use mcp_registry::types::{LocalCapabilityRegistrySnapshot, LocalCapabilityRegistryUpsert};
 
 impl McpStore {
     pub async fn current_local_capability_registry_generation(&self) -> Result<i64, McpError> {

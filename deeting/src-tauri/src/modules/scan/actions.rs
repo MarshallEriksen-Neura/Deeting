@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
-use crate::modules::mcp::commands::skill_registry_impl::{
+use crate::modules::mcp::commands::{
     reindex_local_skill_bundle_asset, resolve_local_skill_definition,
 };
 use crate::state::AppState;

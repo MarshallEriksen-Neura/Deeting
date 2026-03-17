@@ -532,7 +532,7 @@ pub async fn sync_platform_models_impl(state: &AppState) -> Result<Vec<ProviderM
     use crate::modules::providers::store::CHAT_UPSTREAM_PATH;
     use std::collections::HashMap;
 
-    let base_url = state.mcp.cloud_base_url.read().await.clone();
+    let base_url = state.mcp.transport.cloud_base_url.read().await.clone();
     let base_url = base_url.trim().trim_end_matches('/');
     if base_url.is_empty() {
         return Err("cloud API base URL not configured".to_string());

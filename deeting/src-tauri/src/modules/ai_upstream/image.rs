@@ -276,7 +276,7 @@ async fn poll_async_image_result(
 
     let started = std::time::Instant::now();
     loop {
-        let mut request = app_state.mcp.client.request(
+        let mut request = app_state.mcp.transport.client.request(
             reqwest::Method::from_bytes(method.as_bytes()).unwrap_or(reqwest::Method::GET),
             poll_url.as_str(),
         );
@@ -287,14 +287,14 @@ async fn poll_async_image_result(
                 }
             }
         }
-        let response = request.send().await.map_err(to_string)?;
+        let response = request.send().await.map_err(|e| e.to_string())?;
         if !response.status().is_success() {
             return Err(format!(
                 "async image poll failed status={}",
                 response.status()
             ));
         }
-        let text = response.text().await.map_err(to_string)?;
+        let text = response.text().await.map_err(|e| e.to_string())?;
         let payload =
             serde_json::from_str::<Value>(&text).unwrap_or_else(|_| Value::String(text.clone()));
         let status_value = extract_by_path(&payload, status_path)

@@ -8,6 +8,7 @@ use crate::modules::skill_runtime::{
     LOCAL_SKILL_RUNTIME_STATE_NEEDS_INSTALL, LOCAL_SKILL_RUNTIME_STATE_NEEDS_REINSTALL,
     LOCAL_SKILL_RUNTIME_STATE_READY,
 };
+use mcp_registry::types::LocalCapabilityRegistryUpsert;
 use serde_json::{json, Map as JsonMap, Value as JsonValue};
 use std::{
     collections::{BTreeSet, HashMap},
@@ -594,7 +595,7 @@ fn build_local_skill_registry_entries(
     runtime_state: &str,
     search_index_state: &str,
     generation: i64,
-) -> Result<Vec<crate::modules::mcp::store::LocalCapabilityRegistryUpsert>, String> {
+) -> Result<Vec<LocalCapabilityRegistryUpsert>, String> {
     let manifest_value =
         serde_json::from_str::<JsonValue>(&skill_def.manifest_json).map_err(to_string)?;
     let compatibility = manifest_value.get("compatibility").cloned();
@@ -612,7 +613,7 @@ fn build_local_skill_registry_entries(
         (!skill_def.runtime_values.is_empty()).then(|| skill_def.runtime_values.join(","));
 
     let mut entries = Vec::with_capacity(bindings.len() + 1);
-    entries.push(crate::modules::mcp::store::LocalCapabilityRegistryUpsert {
+    entries.push(LocalCapabilityRegistryUpsert {
         capability_id: local_skill_bundle_capability_id(&skill_def.skill_id),
         source_kind: source_kind.to_string(),
         asset_kind: "skill_bundle".to_string(),
@@ -653,7 +654,7 @@ fn build_local_skill_registry_entries(
         } else {
             "desktop_capability"
         };
-        entries.push(crate::modules::mcp::store::LocalCapabilityRegistryUpsert {
+        entries.push(LocalCapabilityRegistryUpsert {
             capability_id: local_skill_tool_capability_id(&skill_def.skill_id, &binding.tool_name),
             source_kind: source_kind.to_string(),
             asset_kind: "skill_tool".to_string(),

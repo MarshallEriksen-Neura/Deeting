@@ -5,6 +5,11 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::state::AppState;
 
+use super::{
+    purge_legacy_skill_tool_state, register_local_skills_from_scan_targets_inner,
+    resolve_local_skill_definition, resolve_local_skill_scan_targets,
+};
+
 fn normalize_install_path_for_compare(path: &Path) -> String {
     if let Ok(canonical) = std::fs::canonicalize(path) {
         return canonical
@@ -47,13 +52,7 @@ fn discover_visible_skill_paths(
             if !skill_path.is_dir() {
                 continue;
             }
-            let resolved =
-                crate::modules::mcp::commands::skill_registry_impl::resolve_local_skill_definition(
-                    &skill_path,
-                    source_prefix,
-                    None,
-                    None,
-                )
+            let resolved = resolve_local_skill_definition(&skill_path, source_prefix, None, None)
                 .map_err(|err| err.to_string())?;
             if resolved.is_some() {
                 visible.insert(normalize_install_path_for_compare(&skill_path));
@@ -119,20 +118,14 @@ pub(crate) async fn register_local_skills_inner(
     app: AppHandle,
     app_state: &AppState,
 ) -> Result<usize, String> {
-    let purged = crate::modules::mcp::commands::skill_registry_impl::purge_legacy_skill_tool_state(
-        app_state,
-    )
-    .await?;
+    let purged = purge_legacy_skill_tool_state(app_state).await?;
     if purged > 0 {
         log::info!(
             "register_local_skills_refresh: purged {} legacy skill-tool state entries before refresh",
             purged
         );
     }
-    let scan_targets =
-        crate::modules::mcp::commands::skill_registry_scan_impl::resolve_local_skill_scan_targets(
-            &app,
-        )?;
+    let scan_targets = resolve_local_skill_scan_targets(&app)?;
     let pruned = prune_stale_local_skill_state(&scan_targets, app_state).await?;
     if pruned > 0 {
         log::info!(
@@ -153,7 +146,7 @@ pub(crate) async fn register_local_skills_inner(
                 .join("deeting-sdk")
         });
     let sdk_pythonpath = sdk_dir.to_string_lossy().to_string();
-    crate::modules::mcp::commands::skill_registry_scan_impl::register_local_skills_from_scan_targets_inner(
+    register_local_skills_from_scan_targets_inner(
         &scan_targets,
         &sdk_pythonpath,
         app_state.mcp.store.clone(),

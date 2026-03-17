@@ -22,13 +22,13 @@ use uuid::Uuid;
 use crate::modules::mcp::local_orchestrator::{
     execute_local_orchestrated_chat, extract_user_text_from_messages, LocalOrchestratorInput,
 };
-use crate::modules::mcp::store::LocalConversationRuntimeWindow;
 use crate::modules::mcp::types::{
     LocalConversationCompareFinalizeRequest, LocalConversationCompareFinalizeResponse,
 };
 use crate::modules::memory::service::MemoryService;
 use crate::modules::memory::types::{LocalMemoryItem, LocalMemoryListQuery};
 use crate::state::AppState;
+use mcp_session::context::LocalConversationRuntimeWindow;
 use mcp_transport::gateway::{
     build_stream_error_payload, extract_selected_knowledge_file_ids, normalize_optional_string,
     GatewayHealthResponse, LocalChatCancelResponse, LocalChatCompletionRequest,
@@ -40,8 +40,9 @@ pub struct LocalGatewayState {
     pub app_handle: AppHandle,
 }
 
+#[derive(Clone)]
 pub struct LocalGatewayServer {
-    pub base_url: RwLock<Option<String>>,
+    pub base_url: Arc<RwLock<Option<String>>>,
 }
 
 const LOCAL_GATEWAY_ALLOWED_ORIGINS: [&str; 5] = [
@@ -55,7 +56,7 @@ const LOCAL_GATEWAY_ALLOWED_ORIGINS: [&str; 5] = [
 impl LocalGatewayServer {
     pub fn new() -> Self {
         Self {
-            base_url: RwLock::new(None),
+            base_url: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -597,7 +598,6 @@ mod tests {
         build_fact_rebuild_conversation_text, build_stream_error_payload,
         clear_session_auto_extraction_memories,
     };
-    use crate::modules::mcp::store::LocalConversationRuntimeWindow;
     use crate::modules::mcp::types::LocalConversationHistoryMessage;
     use crate::modules::memory::types::{CreateLocalMemoryRequest, LocalMemoryListQuery};
     use serde_json::json;

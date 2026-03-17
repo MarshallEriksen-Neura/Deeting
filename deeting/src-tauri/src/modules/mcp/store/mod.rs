@@ -66,11 +66,6 @@ pub struct McpStore {
     pub(crate) secret_store: SecretStore,
 }
 
-pub use mcp_registry::types::{LocalCapabilityRegistrySnapshot, LocalCapabilityRegistryUpsert};
-pub use mcp_session::context::{
-    LocalConversationChatContext, LocalConversationRegenerateContext,
-    LocalConversationRuntimeWindow, LocalConversationTitleContext,
-};
 pub use mcp_storage::helpers::expand_path;
 pub use mcp_storage::types::{
     ExtractedToolFields, LocalConversationSummaryJob, LocalPeriodicTask, LocalSkillInstallDetail,

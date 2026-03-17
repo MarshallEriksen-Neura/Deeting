@@ -1,11 +1,11 @@
-#[cfg(test)]
-use super::skill_registry_impl::{is_hidden_name, resolve_local_skill_definition};
 use super::{
     assistants_knowledge_admin_impl::{index_mcp_tools, sync_cloud_subscriptions_inner},
     common_impl::to_string,
     runtime::{build_desktop_mcp_tool_views, now_rfc3339, sync_source_inner, DesktopMcpToolView},
     support::*,
 };
+#[cfg(test)]
+use super::{is_hidden_name, resolve_local_skill_definition};
 
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct CloudSubscriptionTool {

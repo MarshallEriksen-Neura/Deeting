@@ -1,5 +1,9 @@
 use super::helpers::*;
 use super::*;
+use mcp_session::context::{
+    LocalConversationChatContext, LocalConversationRegenerateContext,
+    LocalConversationRuntimeWindow, LocalConversationTitleContext,
+};
 use serde_json::Value;
 
 fn is_sqlite_busy_error(err: &McpError) -> bool {

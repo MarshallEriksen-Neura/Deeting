@@ -5,9 +5,10 @@ use futures_util::StreamExt;
 use log::warn;
 use serde::Serialize;
 use serde_json::Value;
+use tauri::Emitter;
 use tokio::sync::{Mutex, RwLock};
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct McpBridgeState {
     base_url: Arc<RwLock<String>>,
     streams: Arc<Mutex<HashMap<String, tauri::async_runtime::JoinHandle<()>>>>,

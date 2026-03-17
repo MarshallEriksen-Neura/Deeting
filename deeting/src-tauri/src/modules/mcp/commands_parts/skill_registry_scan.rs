@@ -4,6 +4,12 @@ use serde_json::{json, Value as JsonValue};
 use tauri::{AppHandle, Manager};
 
 use crate::modules::skill_runtime::detect_local_skill_runtime;
+use mcp_registry::types::LocalCapabilityRegistryUpsert;
+
+use super::{
+    collect_local_skill_tool_bindings, resolve_local_skill_definition,
+    resolve_skill_backend_entry_path, LocalSkillDefinition, LocalSkillToolBindingDefinition,
+};
 
 fn normalize_skill_install_path_for_compare(path: &Path) -> String {
     if let Ok(canonical) = std::fs::canonicalize(path) {
@@ -106,16 +112,6 @@ async fn migrate_conflicting_local_skill_installs_for_path(
     Ok(())
 }
 
-fn callable_skill_binding_name(skill_id: &str, tool_name: &str) -> String {
-    let normalized_skill_id = skill_id.trim().trim_matches('.').to_ascii_lowercase();
-    let normalized_tool_name = tool_name.trim().trim_matches('.').to_ascii_lowercase();
-    format!("skill.{normalized_skill_id}.{normalized_tool_name}")
-}
-
-fn skill_tool_binding_id(skill_id: &str, tool_name: &str) -> String {
-    format!("skill_binding::{skill_id}::{tool_name}")
-}
-
 fn local_skill_bundle_capability_id(skill_id: &str) -> String {
     format!("skill_bundle::{skill_id}")
 }
@@ -126,14 +122,14 @@ fn local_skill_tool_capability_id(skill_id: &str, tool_name: &str) -> String {
 
 fn build_local_skill_registry_entries(
     skill_path: &Path,
-    skill_def: &crate::modules::mcp::commands::skill_registry_impl::LocalSkillDefinition,
-    bindings: &[crate::modules::mcp::commands::skill_registry_impl::LocalSkillToolBindingDefinition],
+    skill_def: &LocalSkillDefinition,
+    bindings: &[LocalSkillToolBindingDefinition],
     source_kind: &str,
     activation_state: &str,
     runtime_state: &str,
     search_index_state: &str,
     generation: i64,
-) -> Result<Vec<crate::modules::mcp::store::LocalCapabilityRegistryUpsert>, String> {
+) -> Result<Vec<LocalCapabilityRegistryUpsert>, String> {
     let manifest_value = serde_json::from_str::<JsonValue>(&skill_def.manifest_json)
         .map_err(|err| err.to_string())?;
     let compatibility = manifest_value.get("compatibility").cloned();
@@ -145,17 +141,13 @@ fn build_local_skill_registry_entries(
         } else {
             "desktop_capability"
         });
-    let bundle_entry_path =
-        crate::modules::mcp::commands::skill_registry_impl::resolve_skill_backend_entry_path(
-            skill_path,
-            &skill_def.manifest_json,
-        )?
+    let bundle_entry_path = resolve_skill_backend_entry_path(skill_path, &skill_def.manifest_json)?
         .map(|path| path.to_string_lossy().to_string());
     let bundle_runtime =
         (!skill_def.runtime_values.is_empty()).then(|| skill_def.runtime_values.join(","));
 
     let mut entries = Vec::with_capacity(bindings.len() + 1);
-    entries.push(crate::modules::mcp::store::LocalCapabilityRegistryUpsert {
+    entries.push(LocalCapabilityRegistryUpsert {
         capability_id: local_skill_bundle_capability_id(&skill_def.skill_id),
         source_kind: source_kind.to_string(),
         asset_kind: "skill_bundle".to_string(),
@@ -196,7 +188,7 @@ fn build_local_skill_registry_entries(
         } else {
             "desktop_capability"
         };
-        entries.push(crate::modules::mcp::store::LocalCapabilityRegistryUpsert {
+        entries.push(LocalCapabilityRegistryUpsert {
             capability_id: local_skill_tool_capability_id(&skill_def.skill_id, &binding.tool_name),
             source_kind: source_kind.to_string(),
             asset_kind: "skill_tool".to_string(),
@@ -311,7 +303,7 @@ async fn index_local_skill_tool_binding_assets(
     memory_state: std::sync::Arc<crate::modules::memory::MemoryState>,
     skill_id: &str,
     skill_display_name: &str,
-    bindings: &[crate::modules::mcp::commands::skill_registry_impl::LocalSkillToolBindingDefinition],
+    bindings: &[LocalSkillToolBindingDefinition],
     skill_manifest_json: &str,
     source_type: &str,
 ) -> Result<(), String> {
@@ -525,12 +517,7 @@ pub(crate) async fn register_local_skills_from_scan_targets_inner(
                 continue;
             }
             let Some(skill_def) =
-                crate::modules::mcp::commands::skill_registry_impl::resolve_local_skill_definition(
-                    &skill_path,
-                    source_prefix,
-                    None,
-                    None,
-                )?
+                resolve_local_skill_definition(&skill_path, source_prefix, None, None)?
             else {
                 continue;
             };
@@ -553,11 +540,7 @@ pub(crate) async fn register_local_skills_from_scan_targets_inner(
             migrate_conflicting_local_skill_installs_for_path(store.as_ref(), id, &skill_path)
                 .await?;
 
-            let bindings =
-                crate::modules::mcp::commands::skill_registry_impl::collect_local_skill_tool_bindings(
-                    &skill_path,
-                    &skill_def,
-                )?;
+            let bindings = collect_local_skill_tool_bindings(&skill_path, &skill_def)?;
             store
                 .replace_local_skill_tool_bindings(
                     id,

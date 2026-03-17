@@ -1,3 +1,4 @@
+use mcp_registry::types::LocalCapabilityRegistryUpsert;
 use serde_json::{json, Value};
 
 #[derive(Clone)]
@@ -260,48 +261,46 @@ fn core_tool_risk_runtime_state(tool_name: &str) -> &'static str {
 
 pub(crate) fn build_core_tool_registry_entries(
     generation: i64,
-) -> Vec<crate::modules::mcp::store::LocalCapabilityRegistryUpsert> {
+) -> Vec<LocalCapabilityRegistryUpsert> {
     code_mode_core_tools()
         .into_iter()
-        .map(
-            |tool| crate::modules::mcp::store::LocalCapabilityRegistryUpsert {
-                capability_id: format!("core.{}", tool.name),
-                source_kind: "core".to_string(),
-                asset_kind: "core_tool".to_string(),
-                package_id: "code_mode.core".to_string(),
-                package_version: Some("1".to_string()),
-                title: tool.name.to_string(),
-                description: tool.description.to_string(),
-                tool_name: Some(tool.name.to_string()),
-                callable_name: None,
-                binding_kind: None,
-                execution_surface: core_tool_execution_surface(tool.name).to_string(),
-                runtime: Some(core_tool_execution_surface(tool.name).to_string()),
-                entry_path: None,
-                is_direct_callable: true,
-                activation_state: "enabled".to_string(),
-                runtime_state: core_tool_risk_runtime_state(tool.name).to_string(),
-                search_index_state: "not_required".to_string(),
-                generation,
-                descriptor_json: json!({
-                    "capability_id": format!("core.{}", tool.name),
-                    "tool_name": tool.name,
-                    "description": tool.description,
-                    "input_schema": tool.input_schema,
-                    "output_schema": tool.output_schema,
-                    "permission_scope": tool.permission_scope,
-                    "read_only": tool.read_only,
-                    "mutating": tool.mutating,
-                    "risk_level": tool.risk_level,
-                    "example_arguments": tool.example_arguments,
-                    "activation_state": "enabled",
-                    "runtime_state": core_tool_risk_runtime_state(tool.name),
-                    "search_index_state": "not_required",
-                    "execution_surface": core_tool_execution_surface(tool.name),
-                })
-                .to_string(),
-            },
-        )
+        .map(|tool| LocalCapabilityRegistryUpsert {
+            capability_id: format!("core.{}", tool.name),
+            source_kind: "core".to_string(),
+            asset_kind: "core_tool".to_string(),
+            package_id: "code_mode.core".to_string(),
+            package_version: Some("1".to_string()),
+            title: tool.name.to_string(),
+            description: tool.description.to_string(),
+            tool_name: Some(tool.name.to_string()),
+            callable_name: None,
+            binding_kind: None,
+            execution_surface: core_tool_execution_surface(tool.name).to_string(),
+            runtime: Some(core_tool_execution_surface(tool.name).to_string()),
+            entry_path: None,
+            is_direct_callable: true,
+            activation_state: "enabled".to_string(),
+            runtime_state: core_tool_risk_runtime_state(tool.name).to_string(),
+            search_index_state: "not_required".to_string(),
+            generation,
+            descriptor_json: json!({
+                "capability_id": format!("core.{}", tool.name),
+                "tool_name": tool.name,
+                "description": tool.description,
+                "input_schema": tool.input_schema,
+                "output_schema": tool.output_schema,
+                "permission_scope": tool.permission_scope,
+                "read_only": tool.read_only,
+                "mutating": tool.mutating,
+                "risk_level": tool.risk_level,
+                "example_arguments": tool.example_arguments,
+                "activation_state": "enabled",
+                "runtime_state": core_tool_risk_runtime_state(tool.name),
+                "search_index_state": "not_required",
+                "execution_surface": core_tool_execution_surface(tool.name),
+            })
+            .to_string(),
+        })
         .collect()
 }
 

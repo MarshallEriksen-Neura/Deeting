@@ -227,8 +227,41 @@ Completed now:
 - `mcp-session` crate created and Phase 6 completed for assistant, conversation, admin, and session-context extraction.
 - `mcp-facade` crate created and Phase 7 completed for runtime facade/composition-root cleanup.
 
+## Convergence Cleanup
+
+After the main migration phases, the repo may still temporarily drift into a mixed state if old wrappers are restored while the new crates remain in place.
+
+Current convergence goal:
+
+- Keep the crate-based workspace as the source of truth.
+- Prune legacy wrapper files that only proxy to command-part modules or extracted crates.
+- Remove orphaned crate directories that are not wired into the workspace.
+
+Latest cleanup progress:
+
+- Re-collapsed the legacy `src/modules/mcp/commands/*.rs` wrapper layer back into `commands.rs`.
+- Started collapsing external MCP consumers onto the `src/modules/mcp/commands.rs` facade so Tauri command registration, scan flows, and onboarding helpers no longer depend on `*_impl` file names.
+- Moved the remaining system-asset sync payload structs out of `mcp/types.rs` into `mcp-session`, leaving `types.rs` closer to a pure aggregation surface.
+- Started removing non-store type re-exports from `mcp/store/mod.rs` by switching session-context and registry payload consumers to import from `mcp-session` and `mcp-registry` directly.
+- Removed the restored wrapper files:
+  - `commands/admin.rs`
+  - `commands/assistants.rs`
+  - `commands/config.rs`
+  - `commands/conversations.rs`
+  - `commands/skills.rs`
+  - `commands/sources.rs`
+  - `commands/tools.rs`
+- Removed orphaned empty crate directories:
+  - `crates/mcp-orchestrator`
+  - `crates/mcp-risk`
+
+What still remains intentionally:
+
+- `mcp/types.rs` as an app-facing aggregation surface for mixed domain payloads.
+- `mcp/store/mod.rs` as the app-owned `McpStore` composition/root while storage extraction continues.
+
 Next recommended slice:
 
-1. Finish with a full compile and test verification pass once the Windows linker blocker is resolved.
-2. Prune compatibility wrappers opportunistically after successful verification.
-3. Commit the staged migration once the repo is in a clean verified state.
+1. Continue shrinking aggregation layers such as `mcp/types.rs` and `mcp/store/mod.rs` only when the replacement boundary is clear and compile-safe.
+2. Keep the workspace and extracted crates as the canonical structure; do not restore deleted wrapper layers.
+3. Run compile verification after each cleanup batch and commit once the repo is in a clean verified state.
