@@ -1,12 +1,26 @@
 # OAuth 配置指南
 
-本文档说明如何为 Deeting 项目配置 Google 和 GitHub OAuth 登录。
+本文档说明如何为 Deeting 桌面端项目配置 Google 和 GitHub OAuth 登录。
 
 ## 重要说明
 
 ✅ **不需要项目先上线** - 可以在开发阶段就申请 OAuth 应用
 ✅ **完全免费** - GitHub 和 Google OAuth 都是免费的
-✅ **支持本地开发** - 可以使用 `http://localhost:3000` 作为回调地址
+✅ **支持本地开发** - 可以使用 `http://localhost:8000` 作为后端回调地址
+
+## 桌面端 OAuth 流程说明
+
+桌面端 OAuth 与 Web 应用不同，流程如下：
+
+```
+1. 桌面应用 → 后端 API (/oauth/desktop/start) → 获取授权 URL
+2. 桌面应用 → 打开浏览器 → OAuth 提供商授权页面
+3. 用户授权 → OAuth 提供商 → 重定向到后端 Callback API
+4. 后端处理 → 生成临时 grant → 重定向到自定义协议 (deeting://auth/callback)
+5. 桌面应用 → 接收 grant → 调用后端 exchange API → 获取 access_token
+```
+
+**关键点：回调地址是后端 API，不是前端地址！**
 
 ## GitHub OAuth 配置
 
@@ -23,8 +37,10 @@
 ```
 Application name: Deeting Dev
 Homepage URL: http://localhost:3000
-Authorization callback URL: http://localhost:3000/api/v1/auth/oauth/desktop/callback
+Authorization callback URL: http://localhost:8000/api/v1/auth/oauth/github/callback
 ```
+
+**注意：回调地址是后端 API 地址（端口 8000），不是前端地址（端口 3000）**
 
 ### 3. 生产环境配置
 
@@ -33,7 +49,7 @@ Authorization callback URL: http://localhost:3000/api/v1/auth/oauth/desktop/call
 ```
 Application name: Deeting
 Homepage URL: https://yourdomain.com
-Authorization callback URL: https://yourdomain.com/api/v1/auth/oauth/desktop/callback
+Authorization callback URL: https://api.yourdomain.com/api/v1/auth/oauth/github/callback
 ```
 
 ### 4. 获取凭据
@@ -51,8 +67,10 @@ Authorization callback URL: https://yourdomain.com/api/v1/auth/oauth/desktop/cal
 GITHUB_OAUTH_ENABLED=true
 GITHUB_CLIENT_ID=your_github_client_id_here
 GITHUB_CLIENT_SECRET=your_github_client_secret_here
-GITHUB_REDIRECT_URI=http://localhost:3000/api/v1/auth/oauth/desktop/callback
+GITHUB_REDIRECT_URI=http://localhost:8000/api/v1/auth/oauth/github/callback
 ```
+
+**注意：`GITHUB_REDIRECT_URI` 必须与 GitHub OAuth App 中配置的回调地址完全一致**
 
 ## Google OAuth 配置
 
@@ -85,18 +103,22 @@ GITHUB_REDIRECT_URI=http://localhost:3000/api/v1/auth/oauth/desktop/callback
 ```
 Authorized JavaScript origins:
   http://localhost:3000
+  http://localhost:8000
 
 Authorized redirect URIs:
-  http://localhost:3000/api/v1/auth/oauth/desktop/callback
+  http://localhost:8000/api/v1/auth/oauth/google/callback
 ```
+
+**注意：回调地址是后端 API 地址（端口 8000），不是前端地址（端口 3000）**
 
 **生产环境（创建另一个凭据）：**
 ```
 Authorized JavaScript origins:
   https://yourdomain.com
+  https://api.yourdomain.com
 
 Authorized redirect URIs:
-  https://yourdomain.com/api/v1/auth/oauth/desktop/callback
+  https://api.yourdomain.com/api/v1/auth/oauth/google/callback
 ```
 
 ### 4. 获取凭据
@@ -114,8 +136,10 @@ Authorized redirect URIs:
 GOOGLE_OAUTH_ENABLED=true
 GOOGLE_CLIENT_ID=your_google_client_id_here.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your_google_client_secret_here
-GOOGLE_REDIRECT_URI=http://localhost:3000/api/v1/auth/oauth/desktop/callback
+GOOGLE_REDIRECT_URI=http://localhost:8000/api/v1/auth/oauth/google/callback
 ```
+
+**注意：`GOOGLE_REDIRECT_URI` 必须与 Google OAuth 凭据中配置的回调地址完全一致**
 
 ## 环境变量完整示例
 
@@ -126,13 +150,13 @@ GOOGLE_REDIRECT_URI=http://localhost:3000/api/v1/auth/oauth/desktop/callback
 GITHUB_OAUTH_ENABLED=true
 GITHUB_CLIENT_ID=Iv1.abc123def456
 GITHUB_CLIENT_SECRET=1234567890abcdef1234567890abcdef12345678
-GITHUB_REDIRECT_URI=http://localhost:3000/api/v1/auth/oauth/desktop/callback
+GITHUB_REDIRECT_URI=http://localhost:8000/api/v1/auth/oauth/github/callback
 
 # Google OAuth
 GOOGLE_OAUTH_ENABLED=true
 GOOGLE_CLIENT_ID=123456789-abcdefg.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=GOCSPX-abcdefghijklmnopqrstuvwxyz
-GOOGLE_REDIRECT_URI=http://localhost:3000/api/v1/auth/oauth/desktop/callback
+GOOGLE_REDIRECT_URI=http://localhost:8000/api/v1/auth/oauth/google/callback
 
 # Desktop OAuth 配置
 DESKTOP_OAUTH_CALLBACK_SCHEME=deeting
@@ -147,13 +171,13 @@ DESKTOP_OAUTH_GRANT_TTL_SECONDS=120
 GITHUB_OAUTH_ENABLED=true
 GITHUB_CLIENT_ID=Iv1.xyz789uvw012
 GITHUB_CLIENT_SECRET=abcdef1234567890abcdef1234567890abcdef12
-GITHUB_REDIRECT_URI=https://yourdomain.com/api/v1/auth/oauth/desktop/callback
+GITHUB_REDIRECT_URI=https://api.yourdomain.com/api/v1/auth/oauth/github/callback
 
 # Google OAuth
 GOOGLE_OAUTH_ENABLED=true
 GOOGLE_CLIENT_ID=987654321-xyzabc.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=GOCSPX-zyxwvutsrqponmlkjihgfedcba
-GOOGLE_REDIRECT_URI=https://yourdomain.com/api/v1/auth/oauth/desktop/callback
+GOOGLE_REDIRECT_URI=https://api.yourdomain.com/api/v1/auth/oauth/google/callback
 ```
 
 ## 测试 OAuth 登录
