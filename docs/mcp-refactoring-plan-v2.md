@@ -112,7 +112,7 @@ Outcome:
 
 Scope:
 
-- `store/capability_registry.rs`
+- `store/tool_registry.rs`
 - runtime capability-registry helpers
 - maintenance diagnostics helpers
 

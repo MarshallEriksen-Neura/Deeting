@@ -8,7 +8,7 @@ use tokio::task::JoinSet;
 use crate::state::AppState;
 
 use super::feishu::{FeishuClient, FeishuConfig};
-use super::handlers::{build_card_action_response, generate_local_chat_reply};
+use super::handlers::{build_direct_card_action_outcome, generate_local_chat_reply_content};
 use super::{
     build_settings_snapshot, resolve_transport, ImClient, ImConnectionProfile, ImEvent, ImPlatform,
     ImTransportKind, ImTransportPreference, LocalImSettingsSnapshot, MessageContent,
@@ -162,7 +162,7 @@ async fn run_feishu_direct_profile_worker(
                         profile.id, chat_id, e
                     );
                 }
-                let reply_text = match generate_local_chat_reply(
+                let reply_content = match generate_local_chat_reply_content(
                     &app_state,
                     &app_handle,
                     text.as_str(),
@@ -170,7 +170,7 @@ async fn run_feishu_direct_profile_worker(
                 )
                 .await
                 {
-                    Ok(Some(t)) => t,
+                    Ok(Some(content)) => content,
                     Ok(None) => continue,
                     Err(e) => {
                         warn!(
@@ -195,17 +195,23 @@ async fn run_feishu_direct_profile_worker(
                 } else {
                     quoted.to_string()
                 };
-                let display_reply = format!(
-                    "| 回复 {}: {}\n\n{}",
-                    user_ref,
-                    quoted_preview,
-                    reply_text.trim()
-                );
+                let display_reply = match &reply_content {
+                    MessageContent::Text { text } => Some(format!(
+                        "| 回复 {}: {}\n\n{}",
+                        user_ref,
+                        quoted_preview,
+                        text.trim()
+                    )),
+                    _ => None,
+                };
                 if let Err(e) = client
                     .send_message(SendMessageRequest {
                         chat_id: chat_id.clone(),
-                        content: MessageContent::Text {
-                            text: display_reply,
+                        content: match (display_reply, reply_content) {
+                            (Some(display_text), MessageContent::Text { .. }) => {
+                                MessageContent::Text { text: display_text }
+                            }
+                            (_, content) => content,
                         },
                         reply_to,
                     })
@@ -218,11 +224,14 @@ async fn run_feishu_direct_profile_worker(
                 }
             }
             ImEvent::CardAction {
+                chat_id,
+                message_id,
                 callback_token,
                 action,
                 ..
             } => {
-                let response = match build_card_action_response(
+                let outcome = match build_direct_card_action_outcome(
+                    &app_handle,
                     &app_state,
                     action.event.as_str(),
                     &action.value,
@@ -239,13 +248,29 @@ async fn run_feishu_direct_profile_worker(
                     }
                 };
                 if let Err(e) = client
-                    .reply_card_action(callback_token.as_str(), response)
+                    .reply_card_action(callback_token.as_str(), outcome.callback_response)
                     .await
                 {
                     warn!(
                         "im_direct_profile reply_card_action_failed profile={} err={}",
                         profile.id, e
                     );
+                    continue;
+                }
+                for message in outcome.follow_up_messages {
+                    if let Err(e) = client
+                        .send_message(SendMessageRequest {
+                            chat_id: chat_id.clone(),
+                            content: message,
+                            reply_to: Some(message_id.clone()),
+                        })
+                        .await
+                    {
+                        warn!(
+                            "im_direct_profile follow_up_send_failed profile={} chat_id={} err={}",
+                            profile.id, chat_id, e
+                        );
+                    }
                 }
             }
             ImEvent::ConnectionStatus { status, .. } => {

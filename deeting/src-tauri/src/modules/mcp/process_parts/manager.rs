@@ -10,7 +10,7 @@ use tokio::sync::{Mutex, RwLock};
 
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::store::McpStore;
-use crate::modules::mcp::types::{McpLogEntry, McpLogStream, McpTool, McpToolStatus};
+use mcp_core::types::{McpLogEntry, McpLogStream, McpTool, McpToolStatus};
 
 const DEFAULT_LOG_BUFFER_SIZE: usize = 1000;
 const CRASH_WINDOW: Duration = Duration::from_secs(5);
@@ -412,4 +412,3 @@ impl ProcessManager {
         });
     }
 }
-

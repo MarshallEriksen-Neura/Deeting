@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 import type { Dispatch, SetStateAction } from "react"
+import { DESKTOP_MCP_COMMANDS } from "@/lib/api/mcp-desktop"
 import { mapMcpSourceRecordToSource } from "@/lib/mcp/registry-mappers"
 import type { McpServerToolRecord } from "@/lib/swr/use-mcp-tools"
 import type { MCPLogEntry, MCPSource, MCPTool, McpSourceRecord, McpToolRecord } from "@/types/mcp"
@@ -76,8 +77,8 @@ export const useMcpRegistryRefreshAll = ({
 
     try {
       const [sourceRecords, toolRecords] = await Promise.all([
-        invoke<McpSourceRecord[]>("list_mcp_sources"),
-        invoke<McpToolRecord[]>("list_mcp_tools"),
+        invoke<McpSourceRecord[]>(DESKTOP_MCP_COMMANDS.listSources),
+        invoke<McpToolRecord[]>(DESKTOP_MCP_COMMANDS.listTools),
       ])
       setSources(sourceRecords.map(mapMcpSourceRecordToSource))
       setTools(toolRecords.map(mapTool))
@@ -145,7 +146,7 @@ export const useMcpRegistryClearLogsAction = ({
 }) => {
   return useCallback(async (tool: Pick<MCPTool, "id">) => {
     if (!isTauri) return
-    await invoke("clear_mcp_logs", { toolId: tool.id })
+    await invoke(DESKTOP_MCP_COMMANDS.clearLogs, { toolId: tool.id })
     setLogsByTool((prev) => clearMcpRegistryToolLogs(prev, tool.id))
   }, [isTauri, setLogsByTool])
 }
@@ -187,7 +188,9 @@ export const useMcpRegistryToolLogs = ({
 
     const setup = async () => {
       try {
-        const entries = await invoke<MCPLogEntry[]>("get_mcp_logs", { toolId: selectedToolId })
+        const entries = await invoke<MCPLogEntry[]>(DESKTOP_MCP_COMMANDS.getLogs, {
+          toolId: selectedToolId,
+        })
         if (active) {
           setLogsByTool((prev) => ({ ...prev, [selectedToolId]: entries }))
         }

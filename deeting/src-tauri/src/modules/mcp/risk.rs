@@ -1,7 +1,7 @@
 use std::net::IpAddr;
 use std::str::FromStr;
 
-use crate::modules::mcp::types::{McpSourceType, McpTool};
+use mcp_core::types::{McpSourceType, McpTool};
 use mcp_storage::types::LocalSkillToolBindingSnapshot;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
@@ -696,7 +696,7 @@ fn parse_boundary_class(value: &str) -> ApprovalBoundaryClass {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modules::mcp::types::{McpSourceType, McpTool, McpToolStatus};
+    use mcp_core::types::{McpSourceType, McpTool, McpToolStatus};
 
     fn sample_tool() -> McpTool {
         McpTool {
@@ -717,7 +717,7 @@ mod tests {
             config_json: r#"{"transport":"sse","url":"https://example.com/sse"}"#.to_string(),
             config_hash: "hash".to_string(),
             pending_config_hash: None,
-            conflict_status: crate::modules::mcp::types::McpConflictStatus::None,
+            conflict_status: mcp_core::types::McpConflictStatus::None,
             is_read_only: true,
             is_new: false,
             created_at: "2026-03-13T00:00:00Z".to_string(),

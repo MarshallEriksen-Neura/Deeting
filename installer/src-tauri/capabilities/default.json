@@ -1,0 +1,10 @@
+{
+  "identifier": "default",
+  "description": "Capability for the installer window",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:allow-open",
+    "shell:allow-execute"
+  ]
+}

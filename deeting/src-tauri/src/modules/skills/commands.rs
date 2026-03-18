@@ -3,6 +3,9 @@ use std::path::{Path, PathBuf};
 
 use tauri::{AppHandle, Manager, State};
 
+use crate::modules::skills::registry_impl::{
+    LocalSkillRuntimeStatus, SkillInstallResult, UpdateLocalSkillRuntimeSettingsRequest,
+};
 use crate::state::AppState;
 
 fn to_string(error: impl std::fmt::Display) -> String {
@@ -287,7 +290,7 @@ pub async fn disable_local_skill(
 #[tauri::command]
 pub async fn list_local_skill_runtime_statuses(
     app_state: State<'_, AppState>,
-) -> Result<Vec<crate::modules::mcp::types::LocalSkillRuntimeStatus>, String> {
+) -> Result<Vec<LocalSkillRuntimeStatus>, String> {
     crate::modules::skills::registry_impl::list_local_skill_runtime_statuses(app_state).await
 }
 
@@ -295,8 +298,8 @@ pub async fn list_local_skill_runtime_statuses(
 pub async fn update_local_skill_runtime_settings(
     app_state: State<'_, AppState>,
     skill_id: String,
-    payload: crate::modules::mcp::types::UpdateLocalSkillRuntimeSettingsRequest,
-) -> Result<crate::modules::mcp::types::LocalSkillRuntimeStatus, String> {
+    payload: UpdateLocalSkillRuntimeSettingsRequest,
+) -> Result<LocalSkillRuntimeStatus, String> {
     crate::modules::skills::registry_impl::update_local_skill_runtime_settings(
         app_state, skill_id, payload,
     )
@@ -308,7 +311,7 @@ pub async fn install_local_skill_runtime(
     app: AppHandle,
     app_state: State<'_, AppState>,
     skill_id: String,
-) -> Result<crate::modules::mcp::types::LocalSkillRuntimeStatus, String> {
+) -> Result<LocalSkillRuntimeStatus, String> {
     crate::modules::skills::registry_impl::install_local_skill_runtime(app, app_state, skill_id)
         .await
 }
@@ -322,7 +325,7 @@ pub async fn install_skill_from_repo(
     alias: Option<String>,
     expected_skill_id: Option<String>,
     #[allow(non_snake_case)] expectedSkillId: Option<String>,
-) -> Result<crate::modules::mcp::types::SkillInstallResult, String> {
+) -> Result<SkillInstallResult, String> {
     crate::modules::skills::registry_impl::install_skill_from_repo(
         app,
         app_state,

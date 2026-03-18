@@ -2,8 +2,9 @@ use super::summary_format::{
     build_local_summary_prompt_input, LOCAL_CONVERSATION_SUMMARY_MAX_CHARS,
 };
 use super::text_utils::{extract_text_from_chat_completion_response, truncate_text_chars};
-use crate::modules::mcp::commands::runtime::chat_completion::request_provider_chat_completion;
-use crate::modules::mcp::types::{LocalChatInputMessage, LocalConversationHistoryMessage};
+use crate::modules::desktop_runtime::runtime::chat_completion::request_provider_chat_completion;
+use mcp_core::types::LocalChatInputMessage;
+use mcp_session::conversation::LocalConversationHistoryMessage;
 use crate::state::AppState;
 
 pub(crate) const LOCAL_CONVERSATION_SUMMARY_MAX_TOKENS: u32 = 768;

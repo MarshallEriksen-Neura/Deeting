@@ -1,6 +1,7 @@
 pub mod bridge;
 pub mod commands;
 pub mod contract;
+pub(crate) mod core_tool_contracts;
 pub mod error;
 pub mod prompt;
 pub mod protocol;

@@ -4,6 +4,7 @@ import { ChatMessageList } from "../messages"
 import { ToolApprovalDialog } from "@/components/bridge/tool-approval-dialog"
 import { useChatStore, type ChatAssistant } from "@/store/chat-store"
 import { useChatMessagingService } from "@/hooks/chat/use-chat-messaging-service"
+import { useHydratePendingToolApproval } from "@/hooks/chat/use-hydrate-pending-tool-approval"
 
 /**
  * ChatContent - 聊天内容组件（重构版）
@@ -18,6 +19,7 @@ interface ChatContentProps {
 export function ChatContent({ agent }: ChatContentProps) {
   // 直接从 store 读取状态（使用选择器优化重渲染）
   const messages = useChatStore((state) => state.messages)
+  const sessionId = useChatStore((state) => state.sessionId)
   // isLoading = history loading, NOT typing. Only treat as typing when streaming.
   const isTyping = useChatStore((state) => state.statusStage !== null)
   const streamEnabled = useChatStore((state) => state.streamEnabled)
@@ -26,6 +28,7 @@ export function ChatContent({ agent }: ChatContentProps) {
   const statusMeta = useChatStore((state) => state.statusMeta)
   const sendFeedback = useChatStore((state) => state.sendFeedback)
   const { regenerateMessage, compareWithModel, finalizeCompareWinner } = useChatMessagingService()
+  useHydratePendingToolApproval(sessionId, messages)
 
   return (
     <>

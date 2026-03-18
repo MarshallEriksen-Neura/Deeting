@@ -503,4 +503,83 @@ describe("ToolApprovalDialog", () => {
       ])
     )
   })
+
+  it("writes approved local-chat tool results back by call_id when restored approval has no message_id", async () => {
+    mockInvoke.mockResolvedValueOnce({
+      status: "LOCAL_CHAT_RESUMED",
+      approved_tool_result: { crawled_pages: 7 },
+      continuation_blocks: [{ id: "resume-text-restore-1", type: "text", content: "Resumed after refresh." }],
+    } as unknown)
+
+    act(() => {
+      useChatStore.setState({
+        sessionId: "session-refresh-1",
+        messages: [
+          {
+            id: "assistant-refresh-1",
+            role: "assistant",
+            content: "",
+            createdAt: 1,
+            fromHistory: true,
+            blocks: [
+              {
+                id: "call-refresh-1",
+                type: "tool_call",
+                callId: "call-refresh-1",
+                toolName: "skill.official.skills.crawler.crawl_website",
+                status: "running",
+              } as MessageBlock,
+              {
+                id: "result-refresh-1",
+                type: "tool_result",
+                callId: "call-refresh-1",
+                toolName: "skill.official.skills.crawler.crawl_website",
+                status: "success",
+                result: {
+                  status: "REQUIRES_APPROVAL",
+                  approval_token: "approval-refresh-1",
+                },
+              } as MessageBlock,
+            ],
+          },
+        ],
+      })
+      useBridgeApprovalStore.getState().setPending(
+        createBridgeToolApproval({
+          approval_token: "approval-refresh-1",
+          tool_name: "skill.official.skills.crawler.crawl_website",
+          arguments: { url: "https://example.com/refresh" },
+          meta: {
+            call_id: "call-refresh-1",
+          },
+        })
+      )
+    })
+
+    render(<ToolApprovalDialog />)
+    fireEvent.click(screen.getByRole("button", { name: "批准执行" }))
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("approve_mcp_tool", {
+        approvalToken: "approval-refresh-1",
+        callId: "call-refresh-1",
+        executionToken: undefined,
+      })
+    })
+
+    expect(useChatStore.getState().messages[0]?.blocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "tool_result",
+          callId: "call-refresh-1",
+          status: "success",
+          result: { crawled_pages: 7 },
+        }),
+        expect.objectContaining({
+          type: "text",
+          content: "Resumed after refresh.",
+        }),
+      ])
+    )
+  })
 })

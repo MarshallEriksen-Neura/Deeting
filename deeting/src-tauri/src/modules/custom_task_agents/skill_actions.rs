@@ -9,7 +9,7 @@ use tokio::io::AsyncWriteExt;
 use crate::modules::custom_task_agents::types::{
     CustomTaskAgentBindableSkillAction, CustomTaskAgentSkillActionRef,
 };
-use crate::modules::mcp::commands::{
+use crate::modules::mcp::commands::support::{
     resolve_effective_desktop_scout_base_url, SCOUT_SERVICE_URL_ENV_KEY,
 };
 use crate::state::AppState;

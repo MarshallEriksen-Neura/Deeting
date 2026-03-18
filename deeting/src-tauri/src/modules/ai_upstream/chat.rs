@@ -6,7 +6,7 @@ use crate::modules::ai_upstream::gateway_log_recorder::{
     record_gateway_log, GatewayLogEntry,
 };
 use crate::modules::ai_upstream::types::LocalModelConnection;
-use crate::modules::mcp::types::LocalChatInputMessage;
+use mcp_core::types::LocalChatInputMessage;
 use crate::modules::providers::protocols::infer_protocol_family;
 use crate::state::AppState;
 use uuid::Uuid;

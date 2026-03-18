@@ -1,13 +1,55 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::modules::mcp::commands::runtime::{
-        execute_or_queue_mcp_tool_call_with_context,
+    use super::support::*;
+    use crate::modules::admin::system_assets_sync::{
+        local_skill_registration_self_heal_needed, reset_local_asset_catalog_then_sync_inner,
+        sync_local_system_assets_inner,
     };
+    use crate::modules::conversations::summary_workers::process_next_local_conversation_summary_job_with_store;
+    use crate::modules::desktop_runtime::runtime::{
+        build_auto_code_mode_tool_feedback, build_local_code_mode_entry_tools,
+        build_local_consult_expert_network_result_with_runtime,
+        build_local_sdk_search_result_with_runtime, build_local_tool_call_install_gate_error_meta,
+        build_local_tool_trace_blocks, extract_chat_tool_calls,
+        normalize_chat_completion_response, LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
+    };
+    use crate::modules::mcp::commands::runtime::{
+        config::{apply_config_payload_to_store, hash_config, read_local_mcp_config},
+        remote_transport::list_local_stdio_tools,
+        tool_execution::{
+            approve_mcp_tool_inner, execute_or_queue_mcp_tool_call,
+            execute_or_queue_mcp_tool_call_with_context, reject_mcp_tool_inner,
+        },
+        tool_resolution::{
+            build_desktop_mcp_tool_view, build_desktop_mcp_tool_views,
+            DesktopMcpToolIndexStatus, ToolAvailabilityClass,
+        },
+    };
+    use crate::modules::skill_runtime::resolve_local_tool_env;
+    use crate::modules::mcp::commands::tool_management_impl::{
+        build_remote_transport_log_entries, start_remote_transport_tool, stop_remote_transport_tool,
+    };
+    use crate::modules::mcp::commands::tool_approval_impl::list_pending_mcp_approvals_inner;
+    use crate::modules::skills::onboarding::{
+        derive_skill_name_from_repo_url, parse_skill_onboarding_payload,
+    };
+    use crate::modules::skills::registry_impl::normalize_skill_dir_name;
+    use crate::modules::skills::registry_scan::register_local_skills_from_scan_targets_inner;
     use axum::{
         extract::State as AxumState,
         routing::{get, post},
         Json, Router,
+    };
+    use mcp_session::admin::LocalConversationSummaryJobQuery;
+    use mcp_session::assistant::{
+        CloudSystemAssistantSnapshot, CloudSystemAssistantVersionSnapshot,
+        CreateAssistantMessageRequest, CreateLocalAssistantRequest,
+        LocalAssistantInstallCreateRequest, UpdateLocalAssistantRequest,
+    };
+    use mcp_session::conversation::{
+        CreateConversationMessageRequest, LocalConversationCreateRequest,
+        LocalConversationHistoryQuery, LocalConversationSessionsQuery,
+        LocalConversationStatus,
     };
     use serde::Deserialize;
     use std::collections::{HashMap, HashSet};
@@ -40,7 +82,7 @@ mod tests {
             .ensure_local_source()
             .await
             .expect("ensure local source");
-        crate::modules::mcp::commands::runtime::sync_core_tool_registry_entries(&store)
+        crate::modules::code_mode::core_tool_contracts::sync_core_tool_registry_entries(&store)
             .await
             .expect("sync core tool registry");
         store
@@ -1765,22 +1807,19 @@ for raw_line in sys.stdin:
         let tool = upsert_test_tool(&store, "healthy_demo", "cat").await;
         let indexed_tool_ids = HashSet::from([tool.id.clone()]);
 
-        let view = crate::modules::mcp::commands::runtime::build_desktop_mcp_tool_view(
-            tool,
-            Some(&indexed_tool_ids),
-        );
+        let view = build_desktop_mcp_tool_view(tool, Some(&indexed_tool_ids));
 
         assert!(view.desired_enabled);
         assert!(view.runtime_ready);
         assert_eq!(view.runtime_status_reason, "ready_in_local_runtime");
         assert_eq!(
             view.availability_class,
-            crate::modules::mcp::commands::runtime::ToolAvailabilityClass::CallableDirect
+            ToolAvailabilityClass::CallableDirect
         );
         assert_eq!(view.recommended_action, "execute");
         assert_eq!(
             view.index_status,
-            crate::modules::mcp::commands::runtime::DesktopMcpToolIndexStatus::Indexed
+            DesktopMcpToolIndexStatus::Indexed
         );
         assert_eq!(view.index_status_reason, "indexed_in_local_memory");
     }
@@ -1799,23 +1838,20 @@ for raw_line in sys.stdin:
             .expect("load stopped tool")
             .expect("stopped tool exists");
 
-        let view = crate::modules::mcp::commands::runtime::build_desktop_mcp_tool_view(
-            stopped_tool,
-            Some(&HashSet::new()),
-        );
+        let view = build_desktop_mcp_tool_view(stopped_tool, Some(&HashSet::new()));
 
         assert!(view.desired_enabled);
         assert!(!view.runtime_ready);
         assert_eq!(view.runtime_status_reason, "tool_installed_but_stopped");
         assert_eq!(
             view.availability_class,
-            crate::modules::mcp::commands::runtime::ToolAvailabilityClass::NeedsSetup
+            ToolAvailabilityClass::NeedsSetup
         );
         assert_eq!(view.recommended_action, "start_tool");
         assert!(view.activation_required);
         assert_eq!(
             view.index_status,
-            crate::modules::mcp::commands::runtime::DesktopMcpToolIndexStatus::Missing
+            DesktopMcpToolIndexStatus::Missing
         );
     }
 
@@ -1842,10 +1878,7 @@ for raw_line in sys.stdin:
         )
         .await;
 
-        let views = crate::modules::mcp::commands::runtime::build_desktop_mcp_tool_views(
-            &store,
-            Some(&HashSet::from([tool.id.clone()])),
-        )
+        let views = build_desktop_mcp_tool_views(&store, Some(&HashSet::from([tool.id.clone()])))
         .await
         .expect("build tool views");
         let view = views
@@ -1858,13 +1891,13 @@ for raw_line in sys.stdin:
         assert_eq!(view.runtime_status_reason, "ready_in_local_runtime");
         assert_eq!(
             view.availability_class,
-            crate::modules::mcp::commands::runtime::ToolAvailabilityClass::CallableDirect
+            ToolAvailabilityClass::CallableDirect
         );
         assert_eq!(view.recommended_action, "execute");
         assert!(!view.activation_required);
         assert_eq!(
             view.index_status,
-            crate::modules::mcp::commands::runtime::DesktopMcpToolIndexStatus::Indexed
+            DesktopMcpToolIndexStatus::Indexed
         );
     }
 
@@ -1918,7 +1951,7 @@ for raw_line in sys.stdin:
             .await
             .expect("upsert skill-backed tool");
 
-        let views = crate::modules::mcp::commands::runtime::build_desktop_mcp_tool_views(
+        let views = build_desktop_mcp_tool_views(
             &store,
             Some(&HashSet::from([
                 visible_tool.id.clone(),
@@ -1937,17 +1970,14 @@ for raw_line in sys.stdin:
         let store = create_test_store("desktop-tool-view-remote-sse").await;
         let tool = upsert_test_remote_sse_tool(&store, "tavily-mcp", "search_web").await;
 
-        let view = crate::modules::mcp::commands::runtime::build_desktop_mcp_tool_view(
-            tool.clone(),
-            Some(&HashSet::from([tool.id.clone()])),
-        );
+        let view = build_desktop_mcp_tool_view(tool.clone(), Some(&HashSet::from([tool.id.clone()])));
 
         assert!(view.desired_enabled);
         assert!(view.runtime_ready);
         assert_eq!(view.runtime_status_reason, "ready_via_remote_mcp");
         assert_eq!(
             view.availability_class,
-            crate::modules::mcp::commands::runtime::ToolAvailabilityClass::CallableDirect
+            ToolAvailabilityClass::CallableDirect
         );
         assert_eq!(view.recommended_action, "execute");
         assert_eq!(tool.remote_tool_name().as_deref(), Some("search_web"));
@@ -1972,10 +2002,7 @@ for raw_line in sys.stdin:
             .expect("load stopped remote tool")
             .expect("stopped remote tool exists");
 
-        let view = crate::modules::mcp::commands::runtime::build_desktop_mcp_tool_view(
-            stopped_tool,
-            Some(&HashSet::new()),
-        );
+        let view = build_desktop_mcp_tool_view(stopped_tool, Some(&HashSet::new()));
 
         assert!(!view.runtime_ready);
         assert_eq!(view.runtime_status_reason, "remote_server_sync_required");
@@ -2060,17 +2087,14 @@ for raw_line in sys.stdin:
             updated_at: "2025-01-01T00:00:00Z".to_string(),
         };
 
-        let view = crate::modules::mcp::commands::runtime::build_desktop_mcp_tool_view(
-            tool,
-            Some(&HashSet::new()),
-        );
+        let view = build_desktop_mcp_tool_view(tool, Some(&HashSet::new()));
 
         assert!(!view.runtime_ready);
         assert_eq!(view.runtime_status_reason, "tool_transport_unresolved");
         assert_eq!(view.recommended_action, "review");
         assert_eq!(
             view.availability_class,
-            crate::modules::mcp::commands::runtime::ToolAvailabilityClass::Unavailable
+            ToolAvailabilityClass::Unavailable
         );
     }
 
@@ -2509,7 +2533,7 @@ for raw_line in sys.stdin:
 
     #[test]
     fn deeting_manifest_deserialization_applies_runtime_and_timeout_defaults() {
-        let manifest: skill_registry_impl::DeetingManifest = serde_json::from_str(
+        let manifest: crate::modules::skills::registry_impl::DeetingManifest = serde_json::from_str(
             r#"{
                 "id": "skill.demo",
                 "name": "Demo Skill"
@@ -2995,7 +3019,7 @@ for raw_line in sys.stdin:
 
         let response = store
             .finalize_local_compare_winner(
-                crate::modules::mcp::types::LocalConversationCompareFinalizeRequest {
+                mcp_session::conversation::LocalConversationCompareFinalizeRequest {
                     session_id: session.session_id.clone(),
                     model_id: "compare-model".to_string(),
                     provider_model_id: Some("provider-compare".to_string()),
@@ -3085,7 +3109,7 @@ for raw_line in sys.stdin:
 
         let error = store
             .finalize_local_compare_winner(
-                crate::modules::mcp::types::LocalConversationCompareFinalizeRequest {
+                mcp_session::conversation::LocalConversationCompareFinalizeRequest {
                     session_id: session.session_id.clone(),
                     model_id: "compare-model".to_string(),
                     provider_model_id: None,
@@ -3394,6 +3418,108 @@ for raw_line in sys.stdin:
             Some(3)
         );
         assert!(pending_tool_calls.read().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn list_pending_approvals_filters_by_session_and_returns_runtime_snapshot_fields() {
+        let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+        let pending_tool_calls =
+            RwLock::new(HashMap::<String, crate::modules::mcp::PendingToolCall>::from([
+                (
+                    "approval-session-1".to_string(),
+                    crate::modules::mcp::PendingToolCall {
+                        tool_id: Some("tool-1".to_string()),
+                        tool_name: "skill.demo.fetch".to_string(),
+                        arguments: serde_json::json!({ "url": "https://example.com" }),
+                        call_id: Some("call-session-1".to_string()),
+                        execution_token: Some("exec-session-1".to_string()),
+                        session_id: Some("session-1".to_string()),
+                        description: Some("Fetch demo content".to_string()),
+                        risk_level: Some("MEDIUM".to_string()),
+                        risk_reasons: vec!["Requires network access".to_string()],
+                        tool_fingerprint: "fingerprint-1".to_string(),
+                        approval_grant_key: None,
+                        created_at_unix_ms: now - 1_000,
+                        expires_at_unix_ms: now + 60_000,
+                    },
+                ),
+                (
+                    "approval-session-2".to_string(),
+                    crate::modules::mcp::PendingToolCall {
+                        tool_id: Some("tool-2".to_string()),
+                        tool_name: "skill.demo.write".to_string(),
+                        arguments: serde_json::json!({ "path": "/tmp/demo.txt" }),
+                        call_id: Some("call-session-2".to_string()),
+                        execution_token: None,
+                        session_id: Some("session-2".to_string()),
+                        description: Some("Write demo content".to_string()),
+                        risk_level: Some("HIGH".to_string()),
+                        risk_reasons: vec!["Writes local files".to_string()],
+                        tool_fingerprint: "fingerprint-2".to_string(),
+                        approval_grant_key: None,
+                        created_at_unix_ms: now - 500,
+                        expires_at_unix_ms: now + 60_000,
+                    },
+                ),
+            ]));
+
+        let snapshots =
+            list_pending_mcp_approvals_inner(&pending_tool_calls, Some("session-1")).await;
+
+        assert_eq!(snapshots.len(), 1);
+        let snapshot = &snapshots[0];
+        assert_eq!(
+            snapshot.get("approval_token").and_then(|value| value.as_str()),
+            Some("approval-session-1")
+        );
+        assert_eq!(
+            snapshot.get("status").and_then(|value| value.as_str()),
+            Some("REQUIRES_APPROVAL")
+        );
+        assert_eq!(
+            snapshot.get("session_id").and_then(|value| value.as_str()),
+            Some("session-1")
+        );
+        assert_eq!(
+            snapshot.get("call_id").and_then(|value| value.as_str()),
+            Some("call-session-1")
+        );
+        assert_eq!(
+            snapshot
+                .get("execution_token")
+                .and_then(|value| value.as_str()),
+            Some("exec-session-1")
+        );
+        assert_eq!(
+            snapshot.get("description").and_then(|value| value.as_str()),
+            Some("Fetch demo content")
+        );
+        assert_eq!(
+            snapshot.get("risk_level").and_then(|value| value.as_str()),
+            Some("MEDIUM")
+        );
+        assert_eq!(
+            snapshot
+                .get("risk_reasons")
+                .and_then(|value| value.as_array())
+                .and_then(|items| items.first())
+                .and_then(|value| value.as_str()),
+            Some("Requires network access")
+        );
+        assert_eq!(
+            snapshot
+                .get("arguments")
+                .and_then(|value| value.get("url"))
+                .and_then(|value| value.as_str()),
+            Some("https://example.com")
+        );
+        assert!(
+            snapshot
+                .get("expires_in_ms")
+                .and_then(|value| value.as_i64())
+                .unwrap_or_default()
+                > 0
+        );
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -4734,7 +4860,7 @@ for raw_line in sys.stdin:
             .expect("set desktop scout base url");
 
         let tool = upsert_test_tool(&store, "fetch_web_content", "python3").await;
-        let env = resolve_skill_env(&store, &tool)
+        let env = resolve_local_tool_env(&store, &tool)
             .await
             .expect("resolve skill env")
             .expect("crawler env should exist");
@@ -4794,7 +4920,7 @@ for raw_line in sys.stdin:
             .expect("set desktop scout base url");
 
         let tool = upsert_test_tool(&store, "not_crawler_tool", "python3").await;
-        let env = resolve_skill_env(&store, &tool)
+        let env = resolve_local_tool_env(&store, &tool)
             .await
             .expect("resolve skill env");
 

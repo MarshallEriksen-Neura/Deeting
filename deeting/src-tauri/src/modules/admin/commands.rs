@@ -4,12 +4,14 @@ use mcp_registry::diagnostics::{
 use serde_json::{json, Value};
 use tauri::{AppHandle, State};
 
-use crate::modules::mcp::types::{
+use mcp_registry::types::{
+    LocalCapabilityRegistryDiagnosticsItem, LocalCapabilityRegistryDiagnosticsResponse,
+};
+use mcp_session::admin::{
     LocalAdminConversationItem, LocalAdminConversationListResponse,
     LocalAdminConversationMessageItem, LocalAdminConversationMessageListResponse,
     LocalAdminConversationMessageQuery, LocalAdminConversationQuery,
     LocalAdminConversationSummaryItem, LocalAdminConversationSummaryListResponse,
-    LocalCapabilityRegistryDiagnosticsItem, LocalCapabilityRegistryDiagnosticsResponse,
     LocalConversationSummaryBatchRetryRequest, LocalConversationSummaryBatchRetryResponse,
     LocalConversationSummaryEnqueueResponse, LocalConversationSummaryIdleTaskItem,
     LocalConversationSummaryIdleTaskListResponse, LocalConversationSummaryIdleTaskQuery,
@@ -356,7 +358,7 @@ pub(crate) async fn build_local_capability_registry_diagnostics(
         .len();
     let mcp_tool_count = state.mcp.store.list_tools().await.map_err(to_string)?.len();
     let core_tool_count =
-        crate::modules::mcp::commands::runtime::build_core_tool_registry_entries(0).len();
+        crate::modules::code_mode::core_tool_contracts::build_core_tool_registry_entries(0).len();
     let assistant_count = state
         .mcp
         .store
@@ -476,7 +478,7 @@ async fn execute_repair_action(
         .map_err(to_string)?;
 
     let core_registry_count =
-        crate::modules::mcp::commands::runtime::sync_core_tool_registry_entries(
+        crate::modules::code_mode::core_tool_contracts::sync_core_tool_registry_entries(
             state.mcp.store.as_ref(),
         )
         .await? as i64;
@@ -497,7 +499,8 @@ async fn execute_repair_action(
             as i64;
     let tools = state.mcp.store.list_tools().await.map_err(to_string)?;
     let mcp_tool_reindexed_count = tools.len() as i64;
-    crate::modules::mcp::commands::index_mcp_tools(state, &tools).await;
+    crate::modules::knowledge::tool_index::index_mcp_tools(state, &tools)
+        .await;
 
     let assistants = state
         .mcp
@@ -517,7 +520,8 @@ async fn execute_repair_action(
         .count() as i64;
     crate::modules::assistants::commands::index_local_assistants(state, &assistants).await;
     let knowledge_reindexed_count =
-        crate::modules::mcp::commands::rebuild_local_knowledge_vector_index(state).await? as i64;
+        crate::modules::knowledge::asset_indexing::rebuild_local_knowledge_vector_index(state)
+            .await? as i64;
 
     Ok(build_repair_log_payload(
         vector_dimension as i64,

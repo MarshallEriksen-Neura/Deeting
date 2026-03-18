@@ -1,5 +1,5 @@
 use super::McpStore;
-use crate::modules::mcp::types::LocalGatewayLogQuery;
+use mcp_session::admin::LocalGatewayLogQuery;
 use mcp_registry::types::LocalCapabilityRegistryUpsert;
 use serde_json::json;
 use sqlx::Row;

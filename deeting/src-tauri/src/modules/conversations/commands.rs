@@ -2,7 +2,7 @@ use mcp_session::context::LocalConversationRuntimeWindow;
 use serde_json::Value;
 use tauri::State;
 
-use crate::modules::mcp::types::{
+use mcp_session::conversation::{
     CreateConversationMessageRequest, LocalConversationArchiveResponse,
     LocalConversationClearResponse, LocalConversationCreateRequest,
     LocalConversationCreateResponse, LocalConversationDeleteResponse,

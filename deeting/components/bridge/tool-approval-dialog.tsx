@@ -19,12 +19,14 @@ import {
 } from "@/lib/chat/bridge-approval-store"
 import { invoke } from "@tauri-apps/api/core"
 import { bridgeCallTool } from "@/lib/api/bridge"
+import { DESKTOP_MCP_COMMANDS } from "@/lib/api/mcp-desktop"
 import { toast } from "sonner"
 import { Loader2, ShieldAlert } from "lucide-react"
 import { useChatStore } from "@/store/chat-store"
 import {
   createOptimisticApprovalExecutionBlocks,
   createApprovedToolResultBlock,
+  findMessageIdForToolCall,
   createLocalChatResumeErrorBlock,
   createRejectedToolResultBlock,
   extractLocalChatApprovalResume,
@@ -45,49 +47,58 @@ export function ToolApprovalDialog() {
 
   if (!pending) return null
 
+  const resolveApprovalMessageId = (approval: typeof pending) => {
+    if (approval.meta.message_id) {
+      return approval.meta.message_id
+    }
+    return findMessageIdForToolCall(useChatStore.getState().messages, approval.meta.call_id)
+  }
+
   const rejectedErrorMessage = t("result.userRejected")
   const formattedArguments = JSON.stringify(pending.arguments, null, 2)
 
   const applyOptimisticExecutionState = (approval: typeof pending) => {
-    if (!approval.meta.message_id) return
+    const messageId = resolveApprovalMessageId(approval)
+    if (!messageId) return
 
     const message = useChatStore
       .getState()
-      .messages.find((candidate) => candidate.id === approval.meta.message_id)
+      .messages.find((candidate) => candidate.id === messageId)
     if (!message?.blocks?.length) return
 
     const nextBlocks = createOptimisticApprovalExecutionBlocks(approval, message.blocks)
     if (nextBlocks !== message.blocks) {
-      setMessageBlocks(approval.meta.message_id, nextBlocks)
+      setMessageBlocks(messageId, nextBlocks)
     }
   }
 
   const executeApprovedTool = async (approval: typeof pending) => {
     try {
-      const result = await invoke("approve_mcp_tool", {
+      const result = await invoke(DESKTOP_MCP_COMMANDS.approveTool, {
         approvalToken: approval.approval_token,
         callId: approval.meta.call_id,
         executionToken: approval.meta.execution_token,
       })
 
-      if (approval.meta.message_id) {
+      const messageId = resolveApprovalMessageId(approval)
+      if (messageId) {
         const resumePayload = extractLocalChatApprovalResume(result)
         const approvedToolResult = resumePayload?.approved_tool_result ?? result
         const successBlock = createApprovedToolResultBlock(approval, approvedToolResult)
         if (successBlock) {
-          upsertMessageToolResult(approval.meta.message_id, successBlock)
+          upsertMessageToolResult(messageId, successBlock)
         }
         if (resumePayload?.continuation_blocks?.length) {
-          appendMessageBlocks(approval.meta.message_id, resumePayload.continuation_blocks)
+          appendMessageBlocks(messageId, resumePayload.continuation_blocks)
         }
         if (resumePayload?.error) {
-          appendMessageBlocks(approval.meta.message_id, [
+          appendMessageBlocks(messageId, [
             createLocalChatResumeErrorBlock(approval, resumePayload.error),
           ])
         }
       }
 
-      if (!approval.meta.message_id) {
+      if (!messageId) {
         toast.success(t("toast.approved", { toolName: approval.tool_name }))
       }
 
@@ -114,10 +125,11 @@ export function ToolApprovalDialog() {
       toast.error(t("toast.executionFailed", { message: errorMessage }))
 
       if (isBridgeToolApproval(approval)) {
-        if (approval.meta.message_id) {
+        const messageId = resolveApprovalMessageId(approval)
+        if (messageId) {
           const errorBlock = createRejectedToolResultBlock(approval, errorMessage)
           if (errorBlock) {
-            upsertMessageToolResult(approval.meta.message_id, errorBlock)
+            upsertMessageToolResult(messageId, errorBlock)
           }
         }
         if (approval.meta.execution_token) {
@@ -142,7 +154,7 @@ export function ToolApprovalDialog() {
     setLoading(true)
     applyOptimisticExecutionState(approval)
     announceBridgeApprovalExecution(approval)
-    if (approval.meta.message_id) {
+    if (resolveApprovalMessageId(approval)) {
       toast.success(t("toast.approvedPending", { toolName: approval.tool_name }))
     }
     clear()
@@ -154,14 +166,15 @@ export function ToolApprovalDialog() {
     if (!approval) return
 
     try {
-      await invoke("reject_mcp_tool", {
+      await invoke(DESKTOP_MCP_COMMANDS.rejectTool, {
         approvalToken: approval.approval_token,
       })
 
-      if (approval.meta.message_id) {
+      const messageId = resolveApprovalMessageId(approval)
+      if (messageId) {
         const rejectedBlock = createRejectedToolResultBlock(approval, rejectedErrorMessage)
         if (rejectedBlock) {
-          upsertMessageToolResult(approval.meta.message_id, rejectedBlock)
+          upsertMessageToolResult(messageId, rejectedBlock)
         }
       }
 

@@ -118,7 +118,9 @@ export const MessageItem = React.memo<MessageItemProps>(
       if (message.role !== "assistant") return []
       return message.blocks ?? []
     }, [message.blocks, message.role])
-    useMessageToolApproval(message.role === "assistant" ? message.id : null, assistantParts)
+    useMessageToolApproval(message.role === "assistant" ? message.id : null, assistantParts, {
+      fromHistory: Boolean(message.fromHistory),
+    })
     const activeCompareCandidate = compareState?.candidates[compareState.activeModelKey] ?? null
     const runtimeMetricsSummary = React.useMemo(() => {
       if (message.role !== "assistant") return null

@@ -7,13 +7,20 @@ import {
   findLatestMessageToolApproval,
 } from "@/lib/chat/tool-approval"
 
-export function useMessageToolApproval(messageId: string | null | undefined, blocks: MessageBlock[]) {
+export function useMessageToolApproval(
+  messageId: string | null | undefined,
+  blocks: MessageBlock[],
+  options?: {
+    fromHistory?: boolean
+  }
+) {
   const lastQueuedTokenRef = useRef<string | null>(null)
+  const fromHistory = options?.fromHistory === true
 
   const approval = useMemo(() => {
-    if (!messageId) return null
+    if (!messageId || fromHistory) return null
     return findLatestMessageToolApproval(blocks, { messageId })
-  }, [blocks, messageId])
+  }, [blocks, fromHistory, messageId])
 
   useEffect(() => {
     if (!approval) return

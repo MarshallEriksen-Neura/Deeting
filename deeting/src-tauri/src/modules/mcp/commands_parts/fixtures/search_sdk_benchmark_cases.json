@@ -1,0 +1,11 @@
+[
+  {
+    "query": "帮我抓取网页并提取标题",
+    "embedding": [1.0, 0.0, 0.0, 0.0, 0.0],
+    "expected_name": "search_web",
+    "expected_group": "capabilities",
+    "expected_intent": "web_fetch",
+    "expected_domain": "web",
+    "forbidden_groups": []
+  }
+]

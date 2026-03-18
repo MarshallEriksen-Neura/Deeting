@@ -15,6 +15,10 @@ pub struct PendingToolCall {
     pub arguments: Value,
     pub call_id: Option<String>,
     pub execution_token: Option<String>,
+    pub session_id: Option<String>,
+    pub description: Option<String>,
+    pub risk_level: Option<String>,
+    pub risk_reasons: Vec<String>,
     pub tool_fingerprint: String,
     pub approval_grant_key: Option<String>,
     pub created_at_unix_ms: i128,
@@ -25,6 +29,7 @@ pub struct PendingToolCall {
 pub struct ToolApprovalContext {
     pub call_id: Option<String>,
     pub execution_token: Option<String>,
+    pub session_id: Option<String>,
 }
 
 pub const PENDING_TOOL_CALL_TTL_MS: i128 = 5 * 60 * 1000;
@@ -120,10 +125,12 @@ pub fn tool_fingerprint(tool: &McpTool) -> String {
 pub fn build_approval_context(
     call_id: Option<&str>,
     execution_token: Option<&str>,
+    session_id: Option<&str>,
 ) -> ToolApprovalContext {
     ToolApprovalContext {
         call_id: normalize_optional(call_id),
         execution_token: normalize_optional(execution_token),
+        session_id: normalize_optional(session_id),
     }
 }
 
@@ -131,6 +138,9 @@ pub fn build_pending_tool_call(
     tool_id: Option<String>,
     tool_name: String,
     arguments: Value,
+    description: Option<String>,
+    risk_level: Option<String>,
+    risk_reasons: Vec<String>,
     tool_fingerprint: String,
     approval_grant_key: Option<String>,
     approval_context: ToolApprovalContext,
@@ -142,6 +152,10 @@ pub fn build_pending_tool_call(
         arguments,
         call_id: approval_context.call_id,
         execution_token: approval_context.execution_token,
+        session_id: approval_context.session_id,
+        description,
+        risk_level,
+        risk_reasons,
         tool_fingerprint,
         approval_grant_key,
         created_at_unix_ms: created_at,

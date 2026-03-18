@@ -1,0 +1,46 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Deeting Setup",
+  "version": "0.1.0",
+  "identifier": "com.deeting.installer",
+  "build": {
+    "frontendDist": "../out",
+    "devUrl": "http://localhost:3001",
+    "beforeDevCommand": "bun run dev -- --port 3001",
+    "beforeBuildCommand": "bun run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Deeting Setup",
+        "width": 680,
+        "height": 480,
+        "resizable": false,
+        "fullscreen": false,
+        "center": true,
+        "decorations": false,
+        "transparent": true,
+        "shadow": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": [
+      "../deeting/src-tauri/icons/32x32.png",
+      "../deeting/src-tauri/icons/128x128.png",
+      "../deeting/src-tauri/icons/icon.ico",
+      "../deeting/src-tauri/icons/icon.icns"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "both",
+        "installerIcon": "../deeting/src-tauri/icons/icon.ico"
+      }
+    }
+  }
+}

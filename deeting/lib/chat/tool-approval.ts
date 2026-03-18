@@ -1,6 +1,7 @@
 "use client"
 
 import type { MessageBlock, ToolResultBlock } from "@/lib/chat/message-protocol"
+import type { Message } from "@/lib/chat/message-types"
 import {
   createBridgeToolApproval,
   type BridgeToolPendingApproval,
@@ -16,6 +17,21 @@ type ToolApprovalPayload = {
   risk_level?: string
   risk_reasons?: string[]
   expires_in_ms?: number
+}
+
+export type PendingToolApprovalSnapshot = {
+  status?: string
+  approval_token?: string
+  tool_id?: string
+  tool_name?: string
+  arguments?: Record<string, unknown>
+  description?: string
+  risk_level?: string
+  risk_reasons?: string[]
+  expires_in_ms?: number
+  call_id?: string
+  execution_token?: string
+  session_id?: string
 }
 
 type ToolApprovalContext = BridgeToolPendingApproval["meta"]
@@ -128,6 +144,60 @@ export function enqueueBridgeToolApproval(approval: BridgeToolPendingApproval): 
   }
   useBridgeApprovalStore.getState().setPending(approval)
   return true
+}
+
+export function findMessageIdForToolCall(
+  messages: Message[],
+  callId: string | null | undefined
+): string | undefined {
+  const normalizedCallId = typeof callId === "string" ? callId.trim() : ""
+  if (!normalizedCallId) return undefined
+
+  for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+    const message = messages[messageIndex]
+    if (message.role !== "assistant" || !Array.isArray(message.blocks)) continue
+    const hasMatchingCall = message.blocks.some((block) => {
+      if ((block.type !== "tool_call" && block.type !== "tool_result") || !block.callId) {
+        return false
+      }
+      return block.callId === normalizedCallId
+    })
+    if (hasMatchingCall) {
+      return message.id
+    }
+  }
+
+  return undefined
+}
+
+export function buildBridgeToolApprovalFromPendingSnapshot(
+  snapshot: PendingToolApprovalSnapshot,
+  fallback?: {
+    messageId?: string
+  }
+): BridgeToolPendingApproval | null {
+  const payload = extractToolApprovalPayload(snapshot)
+  if (!payload) return null
+
+  const callId = asTrimmedString(snapshot.call_id)
+  const toolName = payload.tool_name
+  if (!callId || !toolName) return null
+
+  return createBridgeToolApproval({
+    approval_token: payload.approval_token,
+    tool_id: payload.tool_id,
+    tool_name: toolName,
+    arguments: payload.arguments ?? {},
+    description: payload.description,
+    risk_level: payload.risk_level,
+    risk_reasons: payload.risk_reasons,
+    expires_in_ms: payload.expires_in_ms,
+    meta: {
+      call_id: callId,
+      execution_token: asTrimmedString(snapshot.execution_token) ?? undefined,
+      message_id: fallback?.messageId,
+    },
+  })
 }
 
 export function createOptimisticApprovalExecutionBlocks(

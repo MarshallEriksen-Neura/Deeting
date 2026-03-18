@@ -135,10 +135,7 @@ pub async fn create_local_user_document(
         .await
         .map_err(to_string)?;
 
-    crate::modules::mcp::commands::assistants_knowledge_admin_impl::spawn_embed_knowledge_chunks(
-        state.inner(),
-        &file,
-    );
+    spawn_embed_knowledge_chunks(state.inner(), &file);
     Ok(file)
 }
 
@@ -258,11 +255,103 @@ pub async fn retry_local_user_document(
         .retry_local_user_document(&file_id)
         .await
         .map_err(to_string)?;
-    crate::modules::mcp::commands::assistants_knowledge_admin_impl::spawn_embed_knowledge_chunks(
-        state.inner(),
-        &file,
-    );
+    spawn_embed_knowledge_chunks(state.inner(), &file);
     Ok(file)
+}
+
+/// Fire-and-forget: embed all chunks of a successfully indexed document into LanceDB.
+///
+/// Reads chunks from SQLite, embeds each via the embedding service, and upserts
+/// into `user_knowledge_chunks` with `pkg_name = {document_id}`.
+fn spawn_embed_knowledge_chunks(app_state: &AppState, file: &LocalKnowledgeFile) {
+    let status = file.status.trim().to_ascii_lowercase();
+    if status != "indexed" && status != "active" {
+        return;
+    }
+    let document_id = file.id.clone();
+    let document_name = file.name.clone();
+    let store = app_state.knowledge.store.clone();
+    let providers = app_state.providers.clone();
+    let memory_service = app_state.memory.service.clone();
+
+    tokio::spawn(async move {
+        let chunks_result = store
+            .list_local_user_document_chunks(
+                &document_id,
+                LocalUserDocumentChunkListQuery {
+                    offset: None,
+                    limit: Some(500),
+                },
+            )
+            .await;
+
+        let chunks = match chunks_result {
+            Ok(response) => response.items,
+            Err(e) => {
+                log::warn!(
+                    "embed_knowledge_chunks: failed to list chunks for {}: {}",
+                    document_id,
+                    e
+                );
+                return;
+            }
+        };
+
+        // Delete old embeddings for this document before re-inserting.
+        let _ = memory_service
+            .delete_knowledge_chunk_assets_by_document_id(&document_id)
+            .await;
+
+        for chunk in &chunks {
+            let embed_result = providers.embedding.embed_text(&chunk.content).await;
+            let vector = match embed_result {
+                Ok(v) => v,
+                Err(e) => {
+                    log::warn!(
+                        "embed_knowledge_chunks: failed to embed chunk {} of {}: {}",
+                        chunk.id,
+                        document_id,
+                        e
+                    );
+                    continue;
+                }
+            };
+
+            let metadata = serde_json::json!({
+                "chunk_index": chunk.index,
+                "document_name": document_name,
+                "document_id": document_id,
+                "token_count": chunk.token_count,
+            });
+
+            if let Err(e) = memory_service
+                .upsert_knowledge_chunk_asset(
+                    chunk.id.clone(),
+                    document_id.clone(),
+                    document_name.clone(),
+                    chunk.content.clone(),
+                    chunk.index,
+                    chunk.token_count,
+                    vector,
+                    Some(metadata),
+                )
+                .await
+            {
+                log::warn!(
+                    "embed_knowledge_chunks: failed to upsert chunk {} of {}: {}",
+                    chunk.id,
+                    document_id,
+                    e
+                );
+            }
+        }
+
+        log::info!(
+            "embed_knowledge_chunks: indexed {} chunks for document {}",
+            chunks.len(),
+            document_id
+        );
+    });
 }
 
 #[tauri::command]

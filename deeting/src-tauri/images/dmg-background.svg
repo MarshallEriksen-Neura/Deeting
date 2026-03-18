@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="660" height="400" viewBox="0 0 660 400">
+  <defs>
+    <!-- 主背景渐变 -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a0b14"/>
+      <stop offset="50%" stop-color="#0f1020"/>
+      <stop offset="100%" stop-color="#0a0b14"/>
+    </linearGradient>
+
+    <!-- 品牌光晕 -->
+    <radialGradient id="glowPurple" cx="20%" cy="30%" r="50%">
+      <stop offset="0%" stop-color="#6d5cff" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#6d5cff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowTeal" cx="80%" cy="70%" r="45%">
+      <stop offset="0%" stop-color="#21c9c3" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#21c9c3" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowCenter" cx="50%" cy="50%" r="40%">
+      <stop offset="0%" stop-color="#a6b0ff" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#a6b0ff" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- 箭头渐变 -->
+    <linearGradient id="arrowGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#8b7bff"/>
+      <stop offset="50%" stop-color="#5ec8ff"/>
+      <stop offset="100%" stop-color="#a6e1ff"/>
+    </linearGradient>
+
+    <!-- 文字阴影 -->
+    <filter id="textGlow">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- 背景 -->
+  <rect width="660" height="400" fill="url(#bgGrad)"/>
+
+  <!-- 光晕层 -->
+  <rect width="660" height="400" fill="url(#glowPurple)"/>
+  <rect width="660" height="400" fill="url(#glowTeal)"/>
+  <rect width="660" height="400" fill="url(#glowCenter)"/>
+
+  <!-- 神经网络装饰线 (淡) -->
+  <g opacity="0.06" stroke="#8b7bff" stroke-width="0.5" fill="none">
+    <line x1="80" y1="60" x2="200" y2="120"/>
+    <line x1="200" y1="120" x2="160" y2="220"/>
+    <line x1="160" y1="220" x2="60" y2="280"/>
+    <line x1="500" y1="50" x2="580" y2="140"/>
+    <line x1="580" y1="140" x2="620" y2="260"/>
+    <line x1="620" y1="260" x2="540" y2="340"/>
+    <line x1="540" y1="340" x2="440" y2="310"/>
+    <circle cx="80" cy="60" r="2" fill="#8b7bff"/>
+    <circle cx="200" cy="120" r="2.5" fill="#5ec8ff"/>
+    <circle cx="160" cy="220" r="2" fill="#8b7bff"/>
+    <circle cx="60" cy="280" r="1.5" fill="#21c9c3"/>
+    <circle cx="500" cy="50" r="2" fill="#5ec8ff"/>
+    <circle cx="580" cy="140" r="2.5" fill="#8b7bff"/>
+    <circle cx="620" cy="260" r="2" fill="#21c9c3"/>
+    <circle cx="540" cy="340" r="1.5" fill="#8b7bff"/>
+    <circle cx="440" cy="310" r="2" fill="#5ec8ff"/>
+  </g>
+
+  <!-- 额外装饰节点 -->
+  <g opacity="0.04" fill="#a6b0ff">
+    <circle cx="300" cy="80" r="1.5"/>
+    <circle cx="350" cy="350" r="1.5"/>
+    <circle cx="100" cy="180" r="1"/>
+    <circle cx="560" cy="200" r="1"/>
+  </g>
+
+  <!-- 底部品牌文字 -->
+  <text x="330" y="370" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="11" fill="#8b8fa8" opacity="0.6">
+    Your AI Agent Workspace
+  </text>
+
+  <!-- 拖拽引导箭头 -->
+  <g transform="translate(330, 195)">
+    <!-- 箭头线 -->
+    <line x1="-60" y1="0" x2="40" y2="0" stroke="url(#arrowGrad)" stroke-width="2.5" stroke-linecap="round" opacity="0.7"/>
+    <!-- 箭头头部 -->
+    <polyline points="28,-8 42,0 28,8" stroke="url(#arrowGrad)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.7"/>
+
+    <!-- 箭头光晕 -->
+    <line x1="-60" y1="0" x2="40" y2="0" stroke="#5ec8ff" stroke-width="6" stroke-linecap="round" opacity="0.08"/>
+  </g>
+
+  <!-- App 位置指示文字 (左侧) -->
+  <text x="220" y="225" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="10" fill="#a6b0ff" opacity="0.35">
+    Deeting.app
+  </text>
+
+  <!-- Applications 位置指示文字 (右侧) -->
+  <text x="440" y="225" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="10" fill="#a6b0ff" opacity="0.35">
+    Applications
+  </text>
+</svg>

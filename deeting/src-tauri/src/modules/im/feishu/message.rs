@@ -216,6 +216,9 @@ pub fn build_message_content(content: &MessageContent) -> Result<String, ImError
             }))
             .map_err(|e| ImError::ParseError(e.to_string()))?
         }
+        MessageContent::Card { card } => {
+            serde_json::to_string(card).map_err(|e| ImError::ParseError(e.to_string()))?
+        }
         MessageContent::Mixed { parts } => {
             // 简化处理，只取文本部分
             let text = parts
@@ -231,6 +234,13 @@ pub fn build_message_content(content: &MessageContent) -> Result<String, ImError
         }
     };
     Ok(json)
+}
+
+pub fn message_type_for_content(content: &MessageContent) -> &'static str {
+    match content {
+        MessageContent::Card { .. } => "interactive",
+        _ => "text",
+    }
 }
 
 /// 构建卡片动作响应
@@ -257,4 +267,59 @@ pub fn build_card_response(response: &CardActionResponse) -> Value {
     }
 
     Value::Object(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn message_type_for_card_content_is_interactive() {
+        let msg_type = message_type_for_content(&MessageContent::Card {
+            card: serde_json::json!({
+                "header": {
+                    "title": {
+                        "tag": "plain_text",
+                        "content": "审批确认"
+                    },
+                    "template": "orange"
+                },
+                "elements": []
+            }),
+        });
+
+        assert_eq!(msg_type, "interactive");
+    }
+
+    #[test]
+    fn build_message_content_serializes_card_payload() {
+        let content = build_message_content(&MessageContent::Card {
+            card: serde_json::json!({
+                "header": {
+                    "title": {
+                        "tag": "plain_text",
+                        "content": "审批确认"
+                    }
+                },
+                "elements": [
+                    {
+                        "tag": "markdown",
+                        "content": "需要确认"
+                    }
+                ]
+            }),
+        })
+        .expect("card content should serialize");
+
+        let payload: Value =
+            serde_json::from_str(&content).expect("serialized card should be json");
+        assert_eq!(
+            payload
+                .get("header")
+                .and_then(|value| value.get("title"))
+                .and_then(|value| value.get("content"))
+                .and_then(Value::as_str),
+            Some("审批确认")
+        );
+    }
 }

@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react"
 import { useAuthStore } from "@/store/auth-store"
 import { subscribeBridgeEvents, bridgeCallTool } from "@/lib/api/bridge"
 import { invoke } from "@tauri-apps/api/core"
+import { DESKTOP_MCP_COMMANDS } from "@/lib/api/mcp-desktop"
 import {
   buildBridgeToolApprovalFromResult,
   enqueueBridgeToolApproval,
@@ -71,13 +72,16 @@ export function useBridgeMonitor() {
                 }))
               } else {
                 // 1. Initial attempt to execute
-                const executionResult = await invoke<Record<string, unknown>>("execute_mcp_tool_raw", {
-                  toolId: tool_id,
-                  toolName: tool_name,
-                  arguments: toolArgs,
-                  callId: call_id,
-                  executionToken: execution_token,
-                })
+                const executionResult = await invoke<Record<string, unknown>>(
+                  DESKTOP_MCP_COMMANDS.executeToolRaw,
+                  {
+                    toolId: tool_id,
+                    toolName: tool_name,
+                    arguments: toolArgs,
+                    callId: call_id,
+                    executionToken: execution_token,
+                  }
+                )
 
                 // 2. SECURITY INTERCEPT: If high-risk, wait for user
                 const pendingApproval = buildBridgeToolApprovalFromResult(executionResult, {

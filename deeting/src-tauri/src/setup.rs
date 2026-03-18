@@ -3,7 +3,7 @@ use crate::modules::im::runtime::spawn_im_runtime_worker;
 use crate::modules::knowledge::KnowledgeState;
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::process::ProcessManager;
-use crate::modules::mcp::types::McpSourceStatus;
+use mcp_core::types::McpSourceStatus;
 use crate::modules::mcp::McpRuntimeState;
 use crate::modules::memory::MemoryState;
 use crate::modules::monitor::MonitorState;
@@ -99,7 +99,9 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         store.init().await?;
         store.ensure_local_source().await?;
         store.ensure_cloud_source(&cloud_base_url).await?;
-        crate::modules::mcp::commands::runtime::sync_core_tool_registry_entries(store.as_ref())
+        crate::modules::code_mode::core_tool_contracts::sync_core_tool_registry_entries(
+            store.as_ref(),
+        )
             .await
             .map_err(McpError::Storage)?;
         store
@@ -268,7 +270,13 @@ fn spawn_background_tasks(handle: AppHandle, sync_state: AppState) {
             .store
             .update_source_status(&source.id, McpSourceStatus::Syncing, None)
             .await;
-        match crate::modules::mcp::commands::sync_source_inner(mcp, source.clone(), None).await {
+        match crate::modules::mcp::commands::runtime::source_sync::sync_source_inner(
+            mcp,
+            source.clone(),
+            None,
+        )
+        .await
+        {
             Ok(tools) => {
                 let _ = mcp
                     .store
@@ -279,7 +287,7 @@ fn spawn_background_tasks(handle: AppHandle, sync_state: AppState) {
                 let app_state_clone = sync_state.clone();
                 let tools_clone = tools.clone();
                 tauri::async_runtime::spawn(async move {
-                    let _ = crate::modules::mcp::commands::index_mcp_tools(
+                    let _ = crate::modules::knowledge::tool_index::index_mcp_tools(
                         &app_state_clone,
                         &tools_clone,
                     )
@@ -334,7 +342,7 @@ fn spawn_background_tasks(handle: AppHandle, sync_state: AppState) {
             )
             .await;
 
-            crate::modules::mcp::commands::auto_install_official_skill_runtimes(
+            crate::modules::skills::registry_impl::auto_install_official_skill_runtimes(
                 &app_handle_for_skills,
                 &app_state_for_skills,
             )
@@ -343,7 +351,7 @@ fn spawn_background_tasks(handle: AppHandle, sync_state: AppState) {
 
         let app_state_for_knowledge_index = sync_state.clone();
         tauri::async_runtime::spawn(async move {
-            if let Err(err) = crate::modules::mcp::commands::rebuild_local_knowledge_vector_index(
+            if let Err(err) = crate::modules::knowledge::asset_indexing::rebuild_local_knowledge_vector_index(
                 &app_state_for_knowledge_index,
             )
             .await

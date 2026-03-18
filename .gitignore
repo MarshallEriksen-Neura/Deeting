@@ -73,8 +73,13 @@ backend/.python-version
 # Node.js (Frontend)
 # ============================================
 
-# Dependencies
-frontend/node_modules/
+# Dependencies (所有项目的 node_modules)
+node_modules/
+**/node_modules/
+installer/node_modules/
+deeting/node_modules/
+packages/*/node_modules/
+
 frontend/.pnp/
 frontend/.pnp.*
 frontend/.yarn/
@@ -87,22 +92,43 @@ frontend/.yarn/
 frontend/.next/
 frontend/out/
 frontend/build/
+deeting/.next/
+deeting/out/
+deeting/build/
+installer/.next/
+installer/out/
 
 # Frontend environment
 frontend/.env.local
 frontend/.env.*.local
+deeting/.env.local
+deeting/.env.*.local
+installer/.env.local
+installer/.env.*.local
 
 # Misc
 frontend/.DS_Store
 frontend/*.pem
 frontend/*.tsbuildinfo
 frontend/next-env.d.ts
+deeting/.DS_Store
+deeting/*.pem
+deeting/*.tsbuildinfo
+deeting/next-env.d.ts
 
 # Debug logs
 frontend/npm-debug.log*
 frontend/yarn-debug.log*
 frontend/yarn-error.log*
 frontend/.pnpm-debug.log*
+deeting/npm-debug.log*
+deeting/yarn-debug.log*
+deeting/yarn-error.log*
+deeting/.pnpm-debug.log*
+installer/npm-debug.log*
+installer/yarn-debug.log*
+installer/yarn-error.log*
+installer/.pnpm-debug.log*
 
 t/
 
@@ -138,7 +164,7 @@ media/
 # ============================================
 ai_higress/
 ai_higress_front/
-.worktrees
+
 
 # ============================================
 # Local-only installers / temp files (root)
@@ -149,3 +175,11 @@ ai_higress_front/
 /desktop-dev-no-proxy.cmd
 
 
+
+.worktrees
+
+installer/.next
+
+installer/node_modules
+
+installer/out

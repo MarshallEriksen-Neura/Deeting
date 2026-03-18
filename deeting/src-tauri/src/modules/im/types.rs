@@ -85,16 +85,17 @@ pub enum SenderType {
 }
 
 /// 消息内容
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum MessageContent {
     Text { text: String },
     Image { url: String },
     File { name: String, url: String },
+    Card { card: serde_json::Value },
     Mixed { parts: Vec<MessagePart> },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum MessagePart {
     Text { text: String },

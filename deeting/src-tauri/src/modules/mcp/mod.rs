@@ -1,9 +1,7 @@
 pub mod bridge;
 pub mod commands;
-pub mod desktop_capabilities;
+pub(crate) mod compat;
 pub mod error;
-pub mod gateway;
-pub mod local_orchestrator;
 pub mod process;
 pub mod risk;
 pub mod store;
@@ -21,7 +19,7 @@ pub use crate::modules::mcp::risk::{
     RiskOperationClass, RiskTargetClass, SessionApprovalGrant, ToolRiskAssessment,
 };
 use crate::modules::mcp::store::McpStore;
-use crate::modules::mcp::types::McpTool;
+use mcp_core::types::McpTool;
 pub use mcp_facade::runtime::{
     build_approval_context as facade_build_approval_context,
     build_pending_tool_call as facade_build_pending_tool_call,
@@ -43,10 +41,13 @@ pub struct McpRuntimeState {
     pub store: Arc<McpStore>,
     pub process_manager: ProcessManager,
     pub transport:
-        McpTransportFacade<McpBridgeState, crate::modules::mcp::gateway::LocalGatewayServer>,
+        McpTransportFacade<
+            McpBridgeState,
+            crate::modules::desktop_runtime::local_gateway::LocalGatewayServer,
+        >,
     pub approvals: McpApprovalFacade<
         SessionApprovalGrant,
-        crate::modules::mcp::commands::runtime::SuspendedLocalChatExecution,
+        crate::modules::desktop_runtime::runtime::SuspendedLocalChatExecution,
     >,
 }
 
@@ -62,7 +63,7 @@ impl McpRuntimeState {
             transport: McpTransportFacade::new(
                 cloud_base_url.clone(),
                 McpBridgeState::new(cloud_base_url),
-                crate::modules::mcp::gateway::LocalGatewayServer::new(),
+                crate::modules::desktop_runtime::local_gateway::LocalGatewayServer::new(),
             ),
             approvals: McpApprovalFacade::default(),
         }
@@ -96,8 +97,9 @@ impl McpRuntimeState {
         &self,
         call_id: Option<&str>,
         execution_token: Option<&str>,
+        session_id: Option<&str>,
     ) -> ToolApprovalContext {
-        facade_build_approval_context(call_id, execution_token)
+        facade_build_approval_context(call_id, execution_token, session_id)
     }
 
     pub fn build_pending_tool_call(
@@ -105,6 +107,9 @@ impl McpRuntimeState {
         tool_id: Option<String>,
         tool_name: String,
         arguments: Value,
+        description: Option<String>,
+        risk_level: Option<String>,
+        risk_reasons: Vec<String>,
         tool_fingerprint: String,
         approval_grant_key: Option<String>,
         approval_context: ToolApprovalContext,
@@ -113,6 +118,9 @@ impl McpRuntimeState {
             tool_id,
             tool_name,
             arguments,
+            description,
+            risk_level,
+            risk_reasons,
             tool_fingerprint,
             approval_grant_key,
             approval_context,

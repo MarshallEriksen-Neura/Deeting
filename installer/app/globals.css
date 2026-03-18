@@ -1,0 +1,193 @@
+@import "tailwindcss";
+
+/* ============================================
+   Deeting Installer - Brand Tokens
+   ============================================ */
+:root {
+  --primary: #6d5cff;
+  --primary-soft: #a6b0ff;
+  --teal: #21c9c3;
+  --gradient: linear-gradient(135deg, #8b7bff 0%, #5ec8ff 55%, #a6e1ff 100%);
+  --bg-dark: #0a0b14;
+  --surface: #12131f;
+  --surface-2: #1a1b2e;
+  --border: rgba(255, 255, 255, 0.06);
+  --text: #e8ebff;
+  --text-muted: #8b8fa8;
+}
+
+@font-face {
+  font-family: "AlibabaPuHuiTi";
+  src: local("AlibabaPuHuiTi");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+/* ============================================
+   Base
+   ============================================ */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  font-family: "AlibabaPuHuiTi", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: var(--text);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Titlebar drag region */
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+[data-tauri-drag-region] button {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* ============================================
+   Neural Particle Canvas
+   ============================================ */
+.particle-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* ============================================
+   Glass Surface
+   ============================================ */
+.glass {
+  background: rgba(18, 19, 31, 0.85);
+  backdrop-filter: blur(24px) saturate(1.2);
+  -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+}
+
+/* ============================================
+   Progress Bar
+   ============================================ */
+.progress-track {
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--gradient);
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+
+.progress-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.3) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* ============================================
+   Brand Button
+   ============================================ */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 48px;
+  border-radius: 12px;
+  border: none;
+  background: var(--gradient);
+  color: white;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 20px -4px rgba(109, 92, 255, 0.4);
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 28px -4px rgba(109, 92, 255, 0.5);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 12px -4px rgba(109, 92, 255, 0.3);
+}
+
+/* ============================================
+   Animations
+   ============================================ */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes logo-glow {
+  0%, 100% { filter: drop-shadow(0 0 20px rgba(109, 92, 255, 0.3)); }
+  50% { filter: drop-shadow(0 0 40px rgba(109, 92, 255, 0.6)); }
+}
+
+@keyframes check-draw {
+  0% { stroke-dashoffset: 48; }
+  100% { stroke-dashoffset: 0; }
+}
+
+@keyframes ring-expand {
+  0% { transform: scale(0.8); opacity: 0; }
+  50% { opacity: 1; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.5s ease-out forwards;
+}
+
+.animate-logo-glow {
+  animation: logo-glow 3s ease-in-out infinite;
+}
+
+/* ============================================
+   Feature Carousel
+   ============================================ */
+.carousel-item {
+  opacity: 0;
+  transform: translateX(20px);
+  transition: all 0.5s ease;
+}
+
+.carousel-item.active {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* ============================================
+   Scrollbar hide
+   ============================================ */
+::-webkit-scrollbar { display: none; }
+* { scrollbar-width: none; }

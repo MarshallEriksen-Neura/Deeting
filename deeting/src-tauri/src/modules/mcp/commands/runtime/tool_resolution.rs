@@ -4,7 +4,7 @@ use std::fmt;
 use serde::Serialize;
 
 use crate::modules::mcp::store::McpStore;
-use crate::modules::mcp::types::{McpTool, McpToolStatus, McpTransportKind};
+use mcp_core::types::{McpTool, McpToolStatus, McpTransportKind};
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]

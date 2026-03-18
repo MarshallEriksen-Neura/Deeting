@@ -1,6 +1,7 @@
 import { useCallback } from "react"
 import { invoke } from "@tauri-apps/api/core"
 
+import { DESKTOP_MCP_COMMANDS } from "@/lib/api/mcp-desktop"
 import type { McpServer, McpServerCreateRequest } from "@/lib/api/mcp"
 
 import {
@@ -168,7 +169,7 @@ export function useMcpRegistryImportAction({
     }
 
     try {
-      await invoke("import_mcp_config", { payload })
+      await invoke(DESKTOP_MCP_COMMANDS.importConfig, { payload })
       await refreshAll()
     } catch (err) {
       addNotification(getMcpRegistryErrorNotification(t, "save", err))

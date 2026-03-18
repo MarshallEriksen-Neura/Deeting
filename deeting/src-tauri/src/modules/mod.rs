@@ -7,6 +7,7 @@ pub mod code_mode;
 pub mod conversations;
 pub mod custom_task_agents;
 pub mod desktop_config;
+pub mod desktop_runtime;
 pub mod im;
 pub mod image_generation;
 pub mod knowledge;

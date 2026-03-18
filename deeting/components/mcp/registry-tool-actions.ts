@@ -1,6 +1,7 @@
 import { useCallback, type Dispatch, type SetStateAction } from "react"
 import { invoke } from "@tauri-apps/api/core"
 
+import { DESKTOP_MCP_COMMANDS } from "@/lib/api/mcp-desktop"
 import type { McpServerTool } from "@/lib/api/mcp"
 import { patchMcpRemoteToolToggle, patchMcpToolStatus, upsertMcpTool } from "@/lib/mcp/registry-patches"
 import type { McpServerToolRecord } from "@/lib/swr/use-mcp-tools"
@@ -110,7 +111,7 @@ export function useMcpRegistryToolActions({
     }
 
     try {
-      await invoke("delete_local_mcp_tool", { toolId: tool.id })
+      await invoke(DESKTOP_MCP_COMMANDS.deleteLocalTool, { toolId: tool.id })
       await refreshAll()
       addNotification(getMcpRegistryNotification(t, "delete_success"))
     } catch (err) {
@@ -131,7 +132,10 @@ export function useMcpRegistryToolActions({
     }
 
     try {
-      const updated = await invoke<McpToolRecord>("resolve_mcp_conflict", getMcpRegistryConflictResolutionPayload(conflictTool.id, action))
+      const updated = await invoke<McpToolRecord>(
+        DESKTOP_MCP_COMMANDS.resolveConflict,
+        getMcpRegistryConflictResolutionPayload(conflictTool.id, action)
+      )
       updateToolList((prev) => upsertMcpTool(prev, mapTool(updated)))
       handleConflictOpenChange(false)
     } catch (err) {
@@ -163,7 +167,7 @@ export function useMcpRegistryToolActions({
       case "stop_tool":
         updateToolList((prev) => patchMcpToolStatus(prev, tool.id, "stopped", false))
         try {
-          await invoke("stop_mcp_tool", { toolId: tool.id })
+          await invoke(DESKTOP_MCP_COMMANDS.stopTool, { toolId: tool.id })
           await refreshAll()
         } catch (err) {
           addNotification(getMcpRegistryErrorNotification(t, "stop", err))
@@ -197,7 +201,7 @@ export function useMcpRegistryToolActions({
       case "start_tool":
         updateToolList((prev) => patchMcpToolStatus(prev, tool.id, "starting"))
         try {
-          await invoke("start_mcp_tool", { toolId: tool.id })
+          await invoke(DESKTOP_MCP_COMMANDS.startTool, { toolId: tool.id })
           await refreshAll()
         } catch (err) {
           addNotification(getMcpRegistryErrorNotification(t, "start", err))

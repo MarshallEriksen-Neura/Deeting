@@ -1373,7 +1373,7 @@ async fn build_local_skill_runtime_status(
 
 fn local_skill_visible_to_current_user(
     manifest: &JsonValue,
-    current_user: Option<&crate::modules::mcp::desktop_capabilities::DesktopCurrentUserInfo>,
+    current_user: Option<&crate::modules::capability_control_plane::DesktopCurrentUserInfo>,
 ) -> bool {
     let restricted = manifest
         .get("restricted")
@@ -1391,7 +1391,7 @@ fn local_skill_visible_to_current_user(
         })
         .unwrap_or_default();
     let id_hint = manifest.get("id").and_then(JsonValue::as_str);
-    crate::modules::mcp::desktop_capabilities::desktop_user_can_access_restricted_asset(
+    crate::modules::capability_control_plane::current_user_can_access_restricted_asset(
         current_user,
         restricted,
         &allowed_roles,
@@ -2530,12 +2530,11 @@ pub(crate) async fn auto_install_official_skill_runtimes(app: &AppHandle, app_st
     }
 }
 
-#[tauri::command]
 pub async fn list_local_skill_runtime_statuses(
     app_state: State<'_, AppState>,
 ) -> Result<Vec<LocalSkillRuntimeStatus>, String> {
     let current_user =
-        crate::modules::mcp::desktop_capabilities::desktop_current_user_info_optional().await;
+        crate::modules::capability_control_plane::current_desktop_user_info_optional().await;
     let installs = app_state
         .mcp
         .store
@@ -2555,7 +2554,6 @@ pub async fn list_local_skill_runtime_statuses(
     Ok(statuses)
 }
 
-#[tauri::command]
 pub async fn update_local_skill_runtime_settings(
     app_state: State<'_, AppState>,
     skill_id: String,
@@ -2618,7 +2616,6 @@ pub async fn update_local_skill_runtime_settings(
     build_local_skill_runtime_status(app_state.mcp.store.as_ref(), &updated).await
 }
 
-#[tauri::command]
 pub async fn install_local_skill_runtime(
     app: AppHandle,
     app_state: State<'_, AppState>,
@@ -2807,7 +2804,6 @@ pub async fn install_local_skill_runtime(
     build_local_skill_runtime_status(app_state.mcp.store.as_ref(), &updated).await
 }
 
-#[tauri::command]
 pub async fn install_skill_from_repo(
     app: AppHandle,
     app_state: State<'_, AppState>,
@@ -2832,7 +2828,6 @@ pub async fn install_skill_from_repo(
     .await
 }
 
-#[tauri::command]
 pub async fn uninstall_skill(
     app: AppHandle,
     app_state: State<'_, AppState>,
@@ -2841,7 +2836,6 @@ pub async fn uninstall_skill(
     uninstall_local_skill(&app, app_state.inner(), &skill_id).await
 }
 
-#[tauri::command]
 pub async fn list_local_installed_skill_ids(
     app_state: State<'_, AppState>,
 ) -> Result<Vec<String>, String> {
@@ -2862,10 +2856,7 @@ pub(crate) async fn register_local_skills_inner(
     app: AppHandle,
     app_state: &AppState,
 ) -> Result<usize, String> {
-    crate::modules::mcp::commands::skill_registry_refresh_impl::register_local_skills_inner(
-        app, app_state,
-    )
-    .await
+    crate::modules::skills::commands::register_local_skills_inner(app, app_state).await
 }
 
 #[cfg(test)]

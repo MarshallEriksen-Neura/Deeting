@@ -1,6 +1,7 @@
 import { useCallback, type Dispatch, type SetStateAction } from "react"
 import { invoke } from "@tauri-apps/api/core"
 
+import { DESKTOP_MCP_COMMANDS } from "@/lib/api/mcp-desktop"
 import type { McpSourceCreateRequest, McpSourceSyncRequest } from "@/lib/api/mcp"
 import { mapMcpSourceRecordToSource } from "@/lib/mcp/registry-mappers"
 import { patchMcpSourceStatus, upsertMcpSource } from "@/lib/mcp/registry-patches"
@@ -89,9 +90,9 @@ export function useMcpRegistrySourceActions({
         if (!accessToken) {
           throw new Error(t("toast.missingToken"))
         }
-        await invoke("sync_cloud_subscriptions", { accessToken })
+        await invoke(DESKTOP_MCP_COMMANDS.syncCloudSubscriptions, { accessToken })
       } else {
-        await invoke("sync_mcp_source", {
+        await invoke(DESKTOP_MCP_COMMANDS.syncSource, {
           sourceId: source.id,
           payload: getMcpRegistrySourceSyncPayload(sourceTokens[source.id]),
         })
@@ -119,14 +120,14 @@ export function useMcpRegistrySourceActions({
     }
 
     try {
-      const created = await invoke<McpSourceRecord>("create_mcp_source", {
+      const created = await invoke<McpSourceRecord>(DESKTOP_MCP_COMMANDS.createSource, {
         payload: getDesktopMcpRegistrySourceCreatePayload(payload),
       })
       updateSourceList((prev) => upsertMcpSource(prev, mapMcpSourceRecordToSource(created)))
 
       if (shouldSyncCreatedMcpSource(payload)) {
         setSourceTokens((prev) => ({ ...prev, [created.id]: payload.authToken || "" }))
-        await invoke("sync_mcp_source", {
+        await invoke(DESKTOP_MCP_COMMANDS.syncSource, {
           sourceId: created.id,
           payload: getMcpRegistrySourceSyncPayload(payload.authToken),
         })

@@ -58,6 +58,10 @@ async fn queue_for_approval(
         arguments: arguments.clone(),
         call_id: None,
         execution_token: None,
+        session_id: None,
+        description: None,
+        risk_level: Some(risk.risk_level.to_string()),
+        risk_reasons: risk.reasons.clone(),
         tool_fingerprint: format!("shell_execute:{}", 
             arguments.get("command").and_then(|v| v.as_str()).unwrap_or("")
         ),
@@ -95,7 +99,7 @@ pub async fn execute_approved_shell_command(
 
 /// 示例: 在 Core Tool 系统中注册
 pub fn register_shell_execute_tool() {
-    use crate::modules::mcp::commands::runtime::CoreToolContract;
+    use crate::modules::code_mode::core_tool_contracts::CoreToolContract;
     
     let tool = CoreToolContract {
         name: "shell_execute",

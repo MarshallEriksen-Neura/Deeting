@@ -16,7 +16,7 @@ use uuid::Uuid;
 use crate::modules::code_mode::contract::BRIDGE_EXECUTION_TOKEN_HEADER;
 use crate::modules::code_mode::error::CodeModeError;
 use crate::modules::mcp::commands::runtime::{
-    execute_local_mcp_tool, resolve_callable_mcp_tool_by_name, ToolResolutionError,
+    resolve_callable_mcp_tool_by_name, ToolResolutionError,
 };
 use crate::modules::mcp::McpRuntimeState;
 use crate::modules::memory::types::{
@@ -24,6 +24,7 @@ use crate::modules::memory::types::{
 };
 use crate::modules::memory::MemoryState;
 use crate::modules::providers::ProviderState;
+use crate::modules::skill_runtime::execute_local_mcp_tool;
 
 const DEFAULT_TOKEN_TTL_SECONDS: i64 = 600;
 

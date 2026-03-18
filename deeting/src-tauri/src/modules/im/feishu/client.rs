@@ -803,10 +803,11 @@ impl ImClient for FeishuClient {
         &self,
         request: SendMessageRequest,
     ) -> Result<SendMessageResponse, ImError> {
+        let msg_type = message_type_for_content(&request.content);
         let content = build_message_content(&request.content)?;
         let root_id = request.reply_to.as_deref();
         let message_id = self
-            .send_message_api(&request.chat_id, &content, "text", root_id)
+            .send_message_api(&request.chat_id, &content, msg_type, root_id)
             .await?;
 
         Ok(SendMessageResponse {
