@@ -1191,7 +1191,9 @@ fn sha256_for_file(path: &Path) -> Option<String> {
 }
 
 fn normalize_bundle_id(raw: &str) -> String {
-    crate::modules::skills::registry_impl::normalize_skill_dir_name(&raw.trim().to_ascii_lowercase())
+    crate::modules::skills::registry_impl::normalize_skill_dir_name(
+        &raw.trim().to_ascii_lowercase(),
+    )
 }
 
 fn slug_to_title(raw: &str) -> String {

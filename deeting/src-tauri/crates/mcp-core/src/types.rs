@@ -239,6 +239,12 @@ fn normalized_transport_kind(value: Option<&str>) -> Option<McpTransportKind> {
     match value.map(str::trim).filter(|value| !value.is_empty()) {
         Some(raw) if raw.eq_ignore_ascii_case("stdio") => Some(McpTransportKind::Stdio),
         Some(raw) if raw.eq_ignore_ascii_case("sse") => Some(McpTransportKind::Sse),
+        Some(raw)
+            if raw.eq_ignore_ascii_case("streamable-http")
+                || raw.eq_ignore_ascii_case("streamable_http") =>
+        {
+            Some(McpTransportKind::Sse)
+        }
         Some(_) => Some(McpTransportKind::Unknown),
         None => None,
     }
@@ -523,5 +529,30 @@ mod tests {
         };
 
         assert_eq!(payload.transport_kind(), McpTransportKind::Stdio);
+    }
+
+    #[test]
+    fn tool_transport_kind_accepts_streamable_http_aliases() {
+        let payload = McpToolConfigPayload {
+            command: None,
+            args: None,
+            env: None,
+            description: None,
+            capabilities: None,
+            transport_type: Some("streamable_http".to_string()),
+            url: Some("https://example.com/mcp".to_string()),
+            sse_url: None,
+            extra: HashMap::new(),
+        };
+
+        assert_eq!(payload.transport_kind(), McpTransportKind::Sse);
+
+        let payload = McpToolConfigPayload {
+            transport_type: Some("streamable-http".to_string()),
+            ..payload
+        };
+
+        assert_eq!(payload.transport_kind(), McpTransportKind::Sse);
+        assert_eq!(payload.remote_sse_url(), Some("https://example.com/mcp"));
     }
 }

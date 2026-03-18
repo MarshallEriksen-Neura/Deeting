@@ -2110,6 +2110,45 @@ for raw_line in sys.stdin:
         assert_eq!(payload.remote_sse_url(), Some("https://example.com/sse"));
     }
 
+    #[test]
+    fn streamable_http_transport_is_treated_as_remote_runtime_ready() {
+        let tool = McpTool {
+            id: "tool-streamable-http".to_string(),
+            identifier: Some("local/exa".to_string()),
+            name: "exa".to_string(),
+            source_type: McpSourceType::Local,
+            source_id: Some("local-source".to_string()),
+            status: McpToolStatus::Healthy,
+            ping_ms: None,
+            capabilities: vec![],
+            description: "remote MCP tool".to_string(),
+            error: None,
+            command: None,
+            args: None,
+            env: None,
+            config_json: serde_json::json!({
+                "type": "streamable_http",
+                "url": "https://example.com/mcp"
+            })
+            .to_string(),
+            pending_config_json: None,
+            config_hash: "hash".to_string(),
+            pending_config_hash: None,
+            conflict_status: McpConflictStatus::None,
+            is_read_only: false,
+            is_new: false,
+            created_at: "2025-01-01T00:00:00Z".to_string(),
+            updated_at: "2025-01-01T00:00:00Z".to_string(),
+        };
+
+        let view = build_desktop_mcp_tool_view(tool, Some(&HashSet::new()));
+
+        assert!(view.runtime_ready);
+        assert_eq!(view.runtime_status_reason, "ready_via_remote_mcp");
+        assert_eq!(view.recommended_action, "execute");
+        assert_eq!(view.availability_class, ToolAvailabilityClass::CallableDirect);
+    }
+
     #[tokio::test]
     async fn enable_local_skills_by_ids_reenables_disabled_skill_rows() {
         let store = create_test_store("enable-local-skill-row").await;
