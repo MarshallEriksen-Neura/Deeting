@@ -3,7 +3,6 @@
 import { useTranslations } from "next-intl"
 import { HardDrive, Database, FileText, FolderOpen } from "lucide-react"
 import { GlassCard } from "@/components/ui/glass-card"
-import { Progress } from "@/components/ui/progress"
 import type { KnowledgeStats } from "@/types/knowledge"
 
 function formatBytes(bytes: number): string {
@@ -20,7 +19,7 @@ interface KnowledgeStatsBarProps {
 
 export function KnowledgeStatsBar({ stats }: KnowledgeStatsBarProps) {
   const t = useTranslations("knowledge")
-  const usagePercent = Math.round((stats.usedBytes / stats.totalBytes) * 100)
+  const hasManagedTotal = typeof stats.totalBytes === "number" && stats.totalBytes > 0
 
   return (
     <GlassCard padding="sm" hover="none">
@@ -32,10 +31,10 @@ export function KnowledgeStatsBar({ stats }: KnowledgeStatsBarProps) {
             <div className="flex items-center justify-between text-xs">
               <span className="text-[var(--muted)]">{t("stats.usedSpace")}</span>
               <span className="text-[var(--foreground)] font-medium">
-                {formatBytes(stats.usedBytes)} / {formatBytes(stats.totalBytes)}
+                {formatBytes(stats.usedBytes)}
+                {hasManagedTotal ? ` / ${formatBytes(stats.totalBytes!)}` : ""}
               </span>
             </div>
-            <Progress value={usagePercent} className="h-1.5" />
           </div>
         </div>
 

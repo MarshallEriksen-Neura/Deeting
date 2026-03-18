@@ -463,21 +463,6 @@ async fn execute_local_chat_response(
     Ok(Some(response))
 }
 
-pub(crate) async fn generate_local_chat_reply(
-    app_state: &AppState,
-    app_handle: &tauri::AppHandle,
-    text: &str,
-    session_id: &str,
-) -> Result<Option<String>, String> {
-    let Some(response) =
-        execute_local_chat_response(app_state, app_handle, text, session_id).await?
-    else {
-        return Ok(None);
-    };
-
-    Ok(extract_local_chat_reply_text(&response))
-}
-
 pub(crate) async fn generate_local_chat_reply_content(
     app_state: &AppState,
     app_handle: &AppHandle,

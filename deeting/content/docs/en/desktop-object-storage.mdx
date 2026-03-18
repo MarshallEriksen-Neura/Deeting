@@ -1,0 +1,181 @@
+---
+title: Desktop Object Storage Configuration
+description: Configure desktop OSS (Cloudflare R2 / Aliyun OSS) for chat attachments, video inputs, and other file storage scenarios.
+---
+
+## Overview
+
+Desktop Object Storage is used for file storage in the following scenarios:
+
+- **Chat Attachments**: Persistent storage for images, files, and other chat attachments
+- **Video Input Processing**: Image, audio, and video inputs for Spec Agent video generation
+- **Large File Support**: Bypass browser base64 storage limits for larger file uploads
+- **Local Knowledge Base**: External storage backup for knowledge files
+
+Data flow: Frontend → Rust backend generates presigned URL → Frontend uploads directly to OSS → Returns access URL
+
+## Supported Storage Providers
+
+| Provider | Features | Best For |
+|----------|----------|----------|
+| **Cloudflare R2** | S3-compatible, no egress fees, global CDN | International users, high-traffic scenarios |
+| **Aliyun OSS** | Fast domestic access, complete ecosystem | Users in China, existing Aliyun infrastructure |
+
+## Configuration Steps
+
+### 1. Open Settings
+
+Open the desktop app, click your avatar in the bottom-left corner → **Settings** → **Storage**
+
+### 2. Enable Object Storage
+
+Toggle "Enable Object Storage" and select your provider type.
+
+### 3. Fill in Configuration
+
+#### Cloudflare R2 Configuration
+
+| Field | Description | Where to Find |
+|-------|-------------|---------------|
+| **Bucket** | R2 bucket name | R2 Console → Buckets |
+| **Region** | Region code | Use `auto` |
+| **Endpoint** | S3 API endpoint | R2 Console → Bucket → S3 API endpoint |
+| **Public Base URL** | Public access domain | Bucket → Public Access → Custom or default domain |
+| **Access Key ID** | Access key ID | R2 Tokens → Create API Token |
+| **Secret Access Key** | Access key secret | Shown once when creating token |
+| **Path Style** | Path-style access | Usually off (use virtual-hosted style) |
+
+#### Aliyun OSS Configuration
+
+| Field | Description | Where to Find |
+|-------|-------------|---------------|
+| **Bucket** | OSS bucket name | OSS Console → Buckets |
+| **Region** | Region endpoint | Bucket Overview → Region, e.g., `cn-hangzhou` |
+| **Endpoint** | Access endpoint | Bucket Overview → Internet Endpoint |
+| **Public Base URL** | Custom CDN domain | Optional, uses default domain if empty |
+| **Access Key ID** | AccessKey ID | RAM Console → User → Create AccessKey |
+| **Secret Access Key** | AccessKey Secret | Shown once when creating |
+| **Path Style** | Path-style access | Usually on (uses `endpoint/bucket/object` format) |
+
+### 4. Test Connection
+
+After configuration, the system automatically validates the connection. Try uploading a chat attachment to verify.
+
+## Required: CORS Configuration
+
+Since the desktop app runs in a WebView environment, you must configure CORS rules for uploads to work.
+
+### Cloudflare R2 CORS Configuration
+
+Go to Bucket Settings → CORS Policy, add the following:
+
+```json
+{
+  "cors_rules": [
+    {
+      "allowed_origins": ["tauri://localhost", "http://localhost:3000"],
+      "allowed_methods": ["PUT", "GET", "DELETE"],
+      "allowed_headers": ["*"],
+      "max_age_seconds": 300
+    }
+  ]
+}
+```
+
+### Aliyun OSS CORS Configuration
+
+Go to Bucket → Permissions → CORS, add a rule:
+
+| Setting | Value |
+|---------|-------|
+| Origin | `tauri://localhost` |
+| Origin | `http://localhost:3000` |
+| Allowed Methods | PUT, GET, DELETE, HEAD |
+| Allowed Headers | `*` |
+| Expose Headers | ETag, x-oss-request-id |
+| Cache Time | 300 |
+
+> **Note**: `tauri://localhost` is the production Origin, `http://localhost:3000` is for development. Both need to be configured.
+
+## Bucket Permission Settings
+
+### Recommended: Private Bucket
+
+- **Read Permission**: Private (access via presigned URLs with temporary authorization)
+- **Write Permission**: Requires AccessKey authorization
+
+This is the most secure method. All access goes through signed temporary URLs.
+
+### Optional: Public Read Bucket
+
+If you configure `Public Base URL` to point to a CDN and want to simplify access, you can set the bucket to public read. However, keep write permissions private at minimum.
+
+## About Anti-Hotlinking
+
+**No additional anti-hotlinking configuration is needed.**
+
+Desktop Object Storage uses **Presigned URLs**:
+
+1. **Temporary**: URLs expire (default 15 minutes, configurable 1-60 minutes)
+2. **Signed**: URLs contain signature parameters that cannot be forged
+3. **Auto-refresh**: The system automatically generates new presigned URLs when expired
+
+This mechanism inherently prevents hotlinking. No Referer-based anti-hotlinking is needed in the OSS console.
+
+## FAQ
+
+### Q: "CORS error" or "blocked by CORS policy" when uploading
+
+**Cause**: OSS CORS rules not configured or incorrect.
+
+**Solution**:
+1. Check if OSS CORS includes `tauri://localhost`
+2. Ensure Allowed Methods includes `PUT`
+3. Wait for CORS to take effect (usually seconds to minutes)
+
+### Q: "InvalidAccessKeyId" or signature errors
+
+**Cause**: AccessKey misconfigured or insufficient permissions.
+
+**Solution**:
+1. Check Access Key ID and Secret Access Key are copied correctly
+2. Ensure the key has read/write permissions for the bucket
+3. For Aliyun, verify OSS service is activated
+
+### Q: Upload succeeds but cannot access files
+
+**Cause**: Public Base URL misconfigured, or bucket is private without proper read permissions.
+
+**Solution**:
+1. Check if Public Base URL is accessible
+2. If using custom CDN domain, ensure CDN correctly sources from OSS
+3. Verify the full URL (Public Base URL + object key) is accessible
+
+### Q: How to set Path Style?
+
+| Provider | Recommended | Explanation |
+|----------|-------------|-------------|
+| Cloudflare R2 | **Off** | Uses `bucket.endpoint` virtual-hosted style |
+| Aliyun OSS | **On** | Uses `endpoint/bucket/object` path style |
+
+### Q: Upload still fails after configuration, how to troubleshoot?
+
+Check in order:
+
+1. Check desktop logs (Settings → Logs)
+2. Check OSS console for access records
+3. Use browser DevTools → Network to see specific errors
+4. Confirm CORS is saved and active
+5. Try regenerating AccessKey and updating configuration
+
+## Security Recommendations
+
+1. **Key Management**: AccessKeys are stored in local SQLite, encrypted with system keychain
+2. **Least Privilege**: Create a dedicated sub-account/RAM user for Deeting with only specific bucket permissions
+3. **Regular Rotation**: Rotate AccessKeys every 3-6 months
+4. **Monitor Usage**: Regularly check OSS console for usage and costs
+
+## Related Reading
+
+- [Desktop Features](./desktop-features) - Learn about other desktop capabilities
+- [Integration](./integration) - Understand Deeting's integration architecture

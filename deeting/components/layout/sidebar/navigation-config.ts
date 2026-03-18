@@ -16,6 +16,8 @@ export interface NavItem {
   badge?: number
   /** Whether this item is disabled */
   disabled?: boolean
+  /** Hide this item in the desktop build */
+  desktopHidden?: boolean
   /** Sub-items for nested navigation */
   children?: NavItem[]
 }
@@ -79,6 +81,7 @@ export const userNavigation: NavGroup[] = [
         label: "nav.credits",
         href: "/dashboard/credits",
         icon: "coins",
+        desktopHidden: true,
       },
       {
         id: "monitors",
@@ -332,4 +335,19 @@ export const adminNavigation: NavGroup[] = [
  */
 export function getNavigationByRole(role: "admin" | "user"): NavGroup[] {
   return role === "admin" ? adminNavigation : userNavigation
+}
+
+export function getUserDashboardNavigation(options?: {
+  isDesktopRuntime?: boolean
+}): NavGroup[] {
+  if (!options?.isDesktopRuntime) {
+    return userNavigation
+  }
+
+  return userNavigation
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => !item.desktopHidden),
+    }))
+    .filter((group) => group.items.length > 0)
 }

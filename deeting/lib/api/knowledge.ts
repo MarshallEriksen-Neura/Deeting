@@ -99,7 +99,7 @@ interface ApiChunk {
 
 interface ApiStats {
   used_bytes: number
-  total_bytes: number
+  total_bytes?: number | null
   total_vectors: number
   total_files: number
   total_folders: number
@@ -131,7 +131,7 @@ interface ApiChunkListResponse {
 
 interface LocalKnowledgeStatsResponse {
   used_bytes: number
-  total_bytes: number
+  total_bytes?: number | null
   total_vectors: number
   total_files: number
   total_folders: number
@@ -203,7 +203,7 @@ function mapChunk(c: ApiChunk): KnowledgeChunk {
 function mapStats(s: ApiStats): KnowledgeStats {
   return {
     usedBytes: s.used_bytes,
-    totalBytes: s.total_bytes,
+    totalBytes: s.total_bytes ?? null,
     totalVectors: s.total_vectors,
     totalFiles: s.total_files,
     totalFolders: s.total_folders,

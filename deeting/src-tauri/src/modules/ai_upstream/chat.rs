@@ -21,6 +21,65 @@ fn now_rfc3339() -> String {
         .unwrap_or_default()
 }
 
+fn is_structured_chat_content(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Array(items) => {
+            !items.is_empty()
+                && items.iter().all(|item| {
+                    item.as_object()
+                        .and_then(|object| object.get("type").and_then(|entry| entry.as_str()))
+                        .is_some()
+                })
+        }
+        serde_json::Value::Object(object) => object
+            .get("type")
+            .and_then(|entry| entry.as_str())
+            .is_some(),
+        _ => false,
+    }
+}
+
+fn parse_structured_message_content(raw: &str) -> Option<serde_json::Value> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if !(trimmed.starts_with('[') || trimmed.starts_with('{')) {
+        return None;
+    }
+    let parsed = serde_json::from_str::<serde_json::Value>(trimmed).ok()?;
+    if is_structured_chat_content(&parsed) {
+        Some(parsed)
+    } else {
+        None
+    }
+}
+
+fn serialize_local_chat_messages(messages: Vec<LocalChatInputMessage>) -> serde_json::Value {
+    serde_json::Value::Array(
+        messages
+            .into_iter()
+            .map(|message| {
+                let mut value = serde_json::to_value(&message).unwrap_or_else(|_| {
+                    serde_json::json!({
+                        "role": message.role,
+                        "content": message.content,
+                        "tool_calls": message.tool_calls,
+                        "tool_call_id": message.tool_call_id,
+                        "name": message.name,
+                    })
+                });
+                if let Some(content) = parse_structured_message_content(&message.content) {
+                    if let Some(object) = value.as_object_mut() {
+                        object.insert("content".to_string(), content);
+                    }
+                }
+                value
+            })
+            .collect(),
+    )
+}
+
 fn inject_runtime_metrics(
     response: &mut serde_json::Value,
     upstream_latency_ms: i64,
@@ -262,8 +321,12 @@ async fn request_platform_chat_via_proxy(
         );
     }
     let url = format!("{}/api/v1/credits/chat/completions", base_url);
-    let mut body =
-        serde_json::json!({ "model": model_id.trim(), "messages": messages, "stream": false });
+    let serialized_messages = serialize_local_chat_messages(messages);
+    let mut body = serde_json::json!({
+        "model": model_id.trim(),
+        "messages": serialized_messages,
+        "stream": false
+    });
     if let Some(t) = temperature {
         body["temperature"] = serde_json::json!(t);
     }
@@ -395,8 +458,12 @@ pub(crate) async fn request_provider_chat_completion(
         .get_preset(&instance.preset_slug)
         .await
         .map_err(to_string)?;
-    let mut body =
-        serde_json::json!({ "model": effective_model, "messages": messages, "stream": false });
+    let serialized_messages = serialize_local_chat_messages(messages);
+    let mut body = serde_json::json!({
+        "model": effective_model,
+        "messages": serialized_messages,
+        "stream": false
+    });
     if let Some(t) = temperature {
         body["temperature"] = serde_json::json!(t);
     }
@@ -653,4 +720,30 @@ pub(crate) fn truncate_upstream_body(text: &str, max_len: usize) -> String {
         return trimmed.to_string();
     }
     format!("{}...", trimmed.chars().take(max_len).collect::<String>())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::serialize_local_chat_messages;
+    use mcp_core::types::LocalChatInputMessage;
+    use serde_json::json;
+
+    #[test]
+    fn serialize_local_chat_messages_preserves_structured_content_blocks() {
+        let messages = vec![LocalChatInputMessage {
+            role: "user".to_string(),
+            content:
+                "[{\"type\":\"text\",\"text\":\"describe this\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"https://example.com/a.png\"}}]"
+                    .to_string(),
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
+        }];
+
+        let serialized = serialize_local_chat_messages(messages);
+
+        assert!(serialized[0]["content"].is_array());
+        assert_eq!(serialized[0]["content"][0]["type"], json!("text"));
+        assert_eq!(serialized[0]["content"][1]["type"], json!("image_url"));
+    }
 }

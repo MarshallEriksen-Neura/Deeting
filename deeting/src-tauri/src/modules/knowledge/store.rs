@@ -16,7 +16,6 @@ use crate::modules::knowledge::types::{
 use crate::utils::now_rfc3339;
 
 const LOCAL_DESKTOP_USER_ID: &str = "00000000-0000-0000-0000-000000000000";
-const LOCAL_KNOWLEDGE_TOTAL_BYTES: i64 = 10 * 1024 * 1024 * 1024;
 const LOCAL_KNOWLEDGE_CHUNK_MAX_CHARS: usize = 1200;
 const LOCAL_KNOWLEDGE_CHUNK_OVERLAP_CHARS: usize = 120;
 
@@ -412,11 +411,9 @@ impl KnowledgeStore {
             .try_get::<i64, _>("total_folders")
             .unwrap_or(0)
             .max(0);
-        let total_bytes = used_bytes.max(LOCAL_KNOWLEDGE_TOTAL_BYTES);
-
         Ok(LocalKnowledgeStatsResponse {
             used_bytes,
-            total_bytes,
+            total_bytes: None,
             total_vectors,
             total_files,
             total_folders,

@@ -13,6 +13,10 @@ const isTauri = process.env.NEXT_PUBLIC_IS_TAURI === "true";
 const isDesktopUserCloudSyncEnabled =
   process.env.NEXT_PUBLIC_DESKTOP_ALLOW_USER_CLOUD_SYNC === "true";
 const desktopTitleBarHeight = isTauri ? "2.25rem" : "0px";
+const appHeaderOffset = "5rem";
+const appViewportHeight = isTauri
+  ? "calc(100dvh - var(--desktop-title-bar-height))"
+  : "100dvh";
 
 export default function RootLayout({
   children,
@@ -26,6 +30,8 @@ export default function RootLayout({
         style={
           {
             "--desktop-title-bar-height": desktopTitleBarHeight,
+            "--app-header-offset": appHeaderOffset,
+            "--app-viewport-height": appViewportHeight,
           } as CSSProperties
         }
       >

@@ -96,4 +96,17 @@ describe("docx utils", () => {
 
     await expect(extractDocxTextFromBuffer(archive)).resolves.toBe("Offline DOCX")
   })
+
+  it("ignores table of contents field instructions and page refs", () => {
+    const xml =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      "<w:body>" +
+      '<w:p><w:r><w:instrText xml:space="preserve"> HYPERLINK \\\\l &quot;_Toc31973&quot; </w:instrText></w:r><w:r><w:t>17.1 公共服务补贴申请</w:t></w:r><w:r><w:instrText xml:space="preserve"> PAGEREF _Toc31973 \\\\h </w:instrText></w:r><w:r><w:t>219</w:t></w:r></w:p>' +
+      "<w:p><w:r><w:t>这是文档正文中的真实段落。</w:t></w:r></w:p>" +
+      "</w:body>" +
+      "</w:document>"
+
+    expect(extractDocxTextFromXml(xml)).toBe("这是文档正文中的真实段落。")
+  })
 })

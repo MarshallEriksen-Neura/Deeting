@@ -605,7 +605,7 @@ fn apply_request_builder(config: &Value, rendered_body: Value, context: &Value) 
         }
         "ark_content_array" => ark_content_array_builder(&input, config),
         "responses_input_from_messages_or_items" => {
-            responses_input_from_messages_or_items_builder(rendered_body, &input)
+            responses_input_from_messages_or_items_builder(rendered_body, &input, context)
         }
         _ => rendered_body,
     }
@@ -956,6 +956,7 @@ fn parse_gemini_tool_response_payload(content: Option<&Value>) -> Value {
 fn responses_input_from_messages_or_items_builder(
     rendered_body: Value,
     request_data: &Map<String, Value>,
+    context: &Value,
 ) -> Value {
     let mut body = rendered_body.as_object().cloned().unwrap_or_default();
 
@@ -997,6 +998,28 @@ fn responses_input_from_messages_or_items_builder(
         }
     }
 
+    if let Some(items) = context
+        .get("canonical_request")
+        .and_then(|value| value.get("input_items"))
+        .and_then(|value| value.as_array())
+    {
+        let collected: Vec<Value> = items
+            .iter()
+            .filter_map(canonical_input_item_to_responses_input_value)
+            .collect();
+        if !collected.is_empty() {
+            body.insert(
+                "input".to_string(),
+                if collected.len() == 1 {
+                    collected[0].clone()
+                } else {
+                    Value::Array(collected)
+                },
+            );
+            return Value::Object(body);
+        }
+    }
+
     if let Some(messages) = request_data
         .get("messages")
         .and_then(|value| value.as_array())
@@ -1024,6 +1047,65 @@ fn responses_input_from_messages_or_items_builder(
     }
 
     Value::Object(body)
+}
+
+fn canonical_input_item_to_responses_input_value(item: &Value) -> Option<Value> {
+    let item_type = item
+        .get("type")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default();
+    match item_type {
+        "input_text" | "text" => item
+            .get("text")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| json!({ "type": "input_text", "text": value })),
+        "input_image" | "image_url" => item
+            .get("url")
+            .and_then(|value| value.as_str())
+            .or_else(|| {
+                item.get("data")
+                    .and_then(|value| value.get("image_url"))
+                    .and_then(|value| value.as_str())
+            })
+            .or_else(|| {
+                item.get("data")
+                    .and_then(|value| value.get("url"))
+                    .and_then(|value| value.as_str())
+            })
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| json!({ "type": "input_image", "image_url": value })),
+        "input_file" => item
+            .get("data")
+            .and_then(|value| value.get("file_id"))
+            .and_then(|value| value.as_str())
+            .or_else(|| item.get("file_id").and_then(|value| value.as_str()))
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| {
+                let filename = item
+                    .get("data")
+                    .and_then(|entry| entry.get("filename"))
+                    .and_then(|entry| entry.as_str())
+                    .or_else(|| item.get("filename").and_then(|entry| entry.as_str()))
+                    .map(str::trim)
+                    .filter(|entry| !entry.is_empty());
+                json!({
+                    "type": "input_file",
+                    "file_id": value,
+                    "filename": filename,
+                })
+            }),
+        _ => item.get("data").cloned().or_else(|| {
+            if item.is_object() {
+                Some(item.clone())
+            } else {
+                None
+            }
+        }),
+    }
 }
 
 fn ark_content_array_builder(request_data: &Map<String, Value>, config: &Value) -> Value {
@@ -1547,9 +1629,10 @@ mod tests {
     use super::{
         apply_request_builder, build_effective_config, build_upstream_url_with_params,
         deep_merge_json, prepare_provider_request, resolve_auth_for_protocol,
+        responses_input_from_messages_or_items_builder,
     };
     use crate::modules::providers::types::{ProviderInstance, ProviderModel, ProviderPreset};
-    use serde_json::{json, Value};
+    use serde_json::{json, Map, Value};
     use uuid::Uuid;
 
     fn mock_instance(meta: Value) -> ProviderInstance {
@@ -2333,6 +2416,32 @@ mod tests {
         assert_eq!(
             result["content"][1]["image_url"]["url"],
             json!("https://example.com/input.png")
+        );
+    }
+
+    #[test]
+    fn responses_input_builder_uses_canonical_multimodal_items() {
+        let result = responses_input_from_messages_or_items_builder(
+            json!({}),
+            &Map::new(),
+            &json!({
+                "canonical_request": {
+                    "input_items": [
+                        { "type": "input_text", "text": "describe this image" },
+                        { "type": "input_image", "url": "https://example.com/input.png" },
+                        { "type": "input_file", "data": { "file_id": "file-1", "filename": "note.txt" } }
+                    ]
+                }
+            }),
+        );
+
+        assert_eq!(
+            result["input"],
+            json!([
+                { "type": "input_text", "text": "describe this image" },
+                { "type": "input_image", "image_url": "https://example.com/input.png" },
+                { "type": "input_file", "file_id": "file-1", "filename": "note.txt" }
+            ])
         );
     }
 }

@@ -189,7 +189,6 @@ describe("knowledge api", () => {
     windowWithTauri.__TAURI__ = {}
     mockInvoke.mockResolvedValue({
       used_bytes: 1024,
-      total_bytes: 1024 * 1024,
       total_vectors: 8,
       total_files: 2,
       total_folders: 1,
@@ -198,6 +197,7 @@ describe("knowledge api", () => {
     const stats = await fetchKnowledgeStats()
 
     expect(stats.usedBytes).toBe(1024)
+    expect(stats.totalBytes).toBeNull()
     expect(stats.totalFiles).toBe(2)
     expect(mockInvoke).toHaveBeenCalledWith("get_local_knowledge_stats", undefined)
     expect(mockRequest).not.toHaveBeenCalled()

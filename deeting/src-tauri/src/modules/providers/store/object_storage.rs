@@ -6,19 +6,24 @@ use crate::modules::providers::types::{
     DesktopObjectStorageProvider, DesktopObjectStorageReadRequest, DesktopObjectStorageReadTicket,
     DesktopObjectStorageUploadRequest, DesktopObjectStorageUploadTicket,
 };
-use base64::Engine;
 use hmac::{Hmac, Mac};
 use reqwest::Url;
-use sha1::Sha1;
 use sha2::{Digest, Sha256};
 use sqlx::Row;
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
-type HmacSha1 = Hmac<Sha1>;
 type HmacSha256 = Hmac<Sha256>;
 
 const DEFAULT_UPLOAD_EXPIRES_SECONDS: u32 = 900;
+const ALIYUN_V4_SIGNATURE_VERSION: &str = "OSS4-HMAC-SHA256";
+const ALIYUN_V4_REQUEST: &str = "aliyun_v4_request";
+const ALIYUN_OSS_SERVICE: &str = "oss";
+
+struct PresignedRequest {
+    url: String,
+    headers: BTreeMap<String, String>,
+}
 
 fn format_expires_at(
     expires_seconds: u32,
@@ -118,13 +123,6 @@ fn hmac_sha256(key: &[u8], data: &str) -> Result<Vec<u8>, ProviderError> {
     Ok(mac.finalize().into_bytes().to_vec())
 }
 
-fn hmac_sha1_base64(key: &[u8], data: &str) -> Result<String, ProviderError> {
-    let mut mac = HmacSha1::new_from_slice(key)
-        .map_err(|err| ProviderError::Validation(format!("invalid hmac key: {err}")))?;
-    mac.update(data.as_bytes());
-    Ok(base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes()))
-}
-
 fn canonicalize_query(query: &BTreeMap<String, String>) -> String {
     query
         .iter()
@@ -137,6 +135,13 @@ fn canonicalize_query(query: &BTreeMap<String, String>) -> String {
         })
         .collect::<Vec<_>>()
         .join("&")
+}
+
+fn canonicalize_headers(headers: &BTreeMap<String, String>) -> String {
+    headers
+        .iter()
+        .map(|(key, value)| format!("{}:{}\n", key.to_ascii_lowercase(), value.trim()))
+        .collect::<String>()
 }
 
 fn resolve_upload_target(
@@ -191,14 +196,15 @@ fn resolve_upload_target(
     ))
 }
 
-fn build_r2_presigned_url(
+fn build_r2_presigned_request(
     config: &DesktopObjectStorageConfig,
     secret_access_key: &str,
     method: &str,
     object_key: &str,
     expires_seconds: u32,
     timestamp: time::OffsetDateTime,
-) -> Result<String, ProviderError> {
+    content_type: Option<&str>,
+) -> Result<PresignedRequest, ProviderError> {
     let (scheme, host, canonical_uri) = resolve_upload_target(config, object_key)?;
     let date = timestamp
         .format(&time::macros::format_description!("[year][month][day]"))
@@ -210,6 +216,7 @@ fn build_r2_presigned_url(
         .map_err(|err| ProviderError::Database(err.to_string()))?;
     let region = config.region.as_deref().unwrap_or("auto");
     let scope = format!("{date}/{region}/s3/aws4_request");
+    let content_type = normalize_optional_str(content_type);
 
     let mut query = BTreeMap::new();
     query.insert(
@@ -226,12 +233,22 @@ fn build_r2_presigned_url(
     );
     query.insert("X-Amz-Date".to_string(), amz_date.clone());
     query.insert("X-Amz-Expires".to_string(), expires_seconds.to_string());
-    query.insert("X-Amz-SignedHeaders".to_string(), "host".to_string());
+    let mut canonical_headers = BTreeMap::new();
+    canonical_headers.insert("host".to_string(), host.clone());
+    if let Some(content_type) = content_type.clone() {
+        canonical_headers.insert("content-type".to_string(), content_type);
+    }
+    let signed_headers = canonical_headers
+        .keys()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(";");
+    query.insert("X-Amz-SignedHeaders".to_string(), signed_headers.clone());
 
     let canonical_query = canonicalize_query(&query);
     let canonical_request = format!(
-        "{}\n{}\n{}\nhost:{}\n\nhost\nUNSIGNED-PAYLOAD",
-        method, canonical_uri, canonical_query, host
+        "{method}\n{canonical_uri}\n{canonical_query}\n{}\n{signed_headers}\nUNSIGNED-PAYLOAD",
+        canonicalize_headers(&canonical_headers)
     );
     let string_to_sign = format!(
         "AWS4-HMAC-SHA256\n{}\n{}\n{}",
@@ -245,34 +262,136 @@ fn build_r2_presigned_url(
     let k_signing = hmac_sha256(&k_service, "aws4_request")?;
     let signature = hex::encode(hmac_sha256(&k_signing, &string_to_sign)?);
 
-    Ok(format!(
-        "{scheme}://{host}{canonical_uri}?{canonical_query}&X-Amz-Signature={signature}"
-    ))
+    Ok(PresignedRequest {
+        url: format!(
+            "{scheme}://{host}{canonical_uri}?{canonical_query}&X-Amz-Signature={signature}"
+        ),
+        headers: content_type
+            .map(|value| BTreeMap::from([(String::from("Content-Type"), value)]))
+            .unwrap_or_default(),
+    })
 }
 
-fn build_aliyun_presigned_url(
+fn normalize_optional_str(value: Option<&str>) -> Option<String> {
+    value.and_then(|item| {
+        let trimmed = item.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
+}
+
+fn resolve_aliyun_region(config: &DesktopObjectStorageConfig) -> Result<String, ProviderError> {
+    if let Some(region) = normalize_optional(config.region.clone()) {
+        return Ok(region);
+    }
+
+    let endpoint = Url::parse(&config.endpoint)
+        .map_err(|err| ProviderError::Validation(format!("invalid endpoint: {err}")))?;
+    let host = endpoint
+        .host_str()
+        .ok_or_else(|| ProviderError::Validation("endpoint host is required".to_string()))?;
+    let inferred = host
+        .split('.')
+        .find_map(|segment| segment.strip_prefix("oss-"))
+        .map(str::to_string);
+
+    inferred.ok_or_else(|| {
+        ProviderError::Validation("region is required for aliyun_oss v4 signing".to_string())
+    })
+}
+
+fn build_aliyun_canonical_uri(config: &DesktopObjectStorageConfig, object_key: &str) -> String {
+    let normalized_key = object_key.trim_start_matches('/');
+    if normalized_key.is_empty() {
+        format!("/{}", encode_uri_component(&config.bucket, true))
+    } else {
+        format!(
+            "/{}/{}",
+            encode_uri_component(&config.bucket, true),
+            encode_uri_component(normalized_key, true)
+        )
+    }
+}
+
+fn build_aliyun_presigned_request(
     config: &DesktopObjectStorageConfig,
     secret_access_key: &str,
     method: &str,
     object_key: &str,
     expires_seconds: u32,
     timestamp: time::OffsetDateTime,
-) -> Result<String, ProviderError> {
-    let (scheme, host, canonical_uri) = resolve_upload_target(config, object_key)?;
-    let expires_at = timestamp.unix_timestamp() + i64::from(expires_seconds);
-    let canonical_resource = if config.is_path_style {
-        format!("/{}/{}", config.bucket, object_key.trim_start_matches('/'))
-    } else {
-        format!("/{}", object_key.trim_start_matches('/'))
-    };
-    let string_to_sign = format!("{method}\n\n\n{expires_at}\n{canonical_resource}");
-    let signature = hmac_sha1_base64(secret_access_key.as_bytes(), &string_to_sign)?;
-    let signature = encode_uri_component(&signature, false);
+    content_type: Option<&str>,
+) -> Result<PresignedRequest, ProviderError> {
+    let (scheme, host, request_uri) = resolve_upload_target(config, object_key)?;
+    let canonical_uri = build_aliyun_canonical_uri(config, object_key);
+    let region = resolve_aliyun_region(config)?;
+    let date = timestamp
+        .format(&time::macros::format_description!("[year][month][day]"))
+        .map_err(|err| ProviderError::Database(err.to_string()))?;
+    let oss_date = timestamp
+        .format(&time::macros::format_description!(
+            "[year][month][day]T[hour][minute][second]Z"
+        ))
+        .map_err(|err| ProviderError::Database(err.to_string()))?;
+    let scope = format!("{date}/{region}/{ALIYUN_OSS_SERVICE}/{ALIYUN_V4_REQUEST}");
+    let content_type = normalize_optional_str(content_type);
 
-    Ok(format!(
-        "{scheme}://{host}{canonical_uri}?OSSAccessKeyId={}&Expires={expires_at}&Signature={signature}",
-        encode_uri_component(&config.access_key_id, false),
-    ))
+    let mut query = BTreeMap::new();
+    query.insert(
+        "x-oss-credential".to_string(),
+        format!("{}/{}", config.access_key_id, scope),
+    );
+    query.insert("x-oss-date".to_string(), oss_date.clone());
+    query.insert("x-oss-expires".to_string(), expires_seconds.to_string());
+    query.insert(
+        "x-oss-signature-version".to_string(),
+        ALIYUN_V4_SIGNATURE_VERSION.to_string(),
+    );
+
+    let mut canonical_headers = BTreeMap::new();
+    canonical_headers.insert("host".to_string(), host.clone());
+    if let Some(content_type) = content_type.clone() {
+        canonical_headers.insert("content-type".to_string(), content_type);
+    }
+    let signed_headers = canonical_headers
+        .keys()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(";");
+    query.insert(
+        "x-oss-additional-headers".to_string(),
+        signed_headers.clone(),
+    );
+    let canonical_query = canonicalize_query(&query);
+    let canonical_request = format!(
+        "{method}\n{canonical_uri}\n{canonical_query}\n{}\n{signed_headers}\nUNSIGNED-PAYLOAD",
+        canonicalize_headers(&canonical_headers)
+    );
+    let string_to_sign = format!(
+        "{ALIYUN_V4_SIGNATURE_VERSION}\n{oss_date}\n{scope}\n{}",
+        sha256_hex(&canonical_request)
+    );
+    let k_date = hmac_sha256(format!("aliyun_v4{secret_access_key}").as_bytes(), &date)?;
+    let k_region = hmac_sha256(&k_date, &region)?;
+    let k_service = hmac_sha256(&k_region, ALIYUN_OSS_SERVICE)?;
+    let k_signing = hmac_sha256(&k_service, ALIYUN_V4_REQUEST)?;
+    let signature = hex::encode(hmac_sha256(&k_signing, &string_to_sign)?);
+
+    let mut final_query = query;
+    final_query.insert("x-oss-signature".to_string(), signature);
+
+    Ok(PresignedRequest {
+        url: format!(
+            "{scheme}://{host}{request_uri}?{}",
+            canonicalize_query(&final_query)
+        ),
+        headers: content_type
+            .map(|value| BTreeMap::from([(String::from("Content-Type"), value)]))
+            .unwrap_or_default(),
+    })
 }
 
 fn validate_provider_endpoint(
@@ -539,31 +658,33 @@ impl ProviderStore {
             .unwrap_or(DEFAULT_UPLOAD_EXPIRES_SECONDS)
             .clamp(60, 3600);
         let (timestamp, expires_at) = format_expires_at(expires_seconds)?;
-        let upload_url = match config.provider {
-            DesktopObjectStorageProvider::CloudflareR2S3 => build_r2_presigned_url(
+        let presigned = match config.provider {
+            DesktopObjectStorageProvider::CloudflareR2S3 => build_r2_presigned_request(
                 &config,
                 &secret,
                 "PUT",
                 &object_key,
                 expires_seconds,
                 timestamp,
+                payload.content_type.as_deref(),
             )?,
-            DesktopObjectStorageProvider::AliyunOss => build_aliyun_presigned_url(
+            DesktopObjectStorageProvider::AliyunOss => build_aliyun_presigned_request(
                 &config,
                 &secret,
                 "PUT",
                 &object_key,
                 expires_seconds,
                 timestamp,
+                payload.content_type.as_deref(),
             )?,
         };
 
         Ok(DesktopObjectStorageUploadTicket {
             provider: config.provider,
             object_key,
-            upload_url,
+            upload_url: presigned.url,
             method: "PUT".to_string(),
-            headers: BTreeMap::new(),
+            headers: presigned.headers,
             asset_url: config.build_public_url(payload.object_key.trim()),
             expires_at,
         })
@@ -601,22 +722,30 @@ impl ProviderStore {
             .clamp(60, 3600);
         let (timestamp, expires_at) = format_expires_at(expires_seconds)?;
         let asset_url = match config.provider {
-            DesktopObjectStorageProvider::CloudflareR2S3 => build_r2_presigned_url(
-                &config,
-                &secret,
-                "GET",
-                &object_key,
-                expires_seconds,
-                timestamp,
-            )?,
-            DesktopObjectStorageProvider::AliyunOss => build_aliyun_presigned_url(
-                &config,
-                &secret,
-                "GET",
-                &object_key,
-                expires_seconds,
-                timestamp,
-            )?,
+            DesktopObjectStorageProvider::CloudflareR2S3 => {
+                build_r2_presigned_request(
+                    &config,
+                    &secret,
+                    "GET",
+                    &object_key,
+                    expires_seconds,
+                    timestamp,
+                    None,
+                )?
+                .url
+            }
+            DesktopObjectStorageProvider::AliyunOss => {
+                build_aliyun_presigned_request(
+                    &config,
+                    &secret,
+                    "GET",
+                    &object_key,
+                    expires_seconds,
+                    timestamp,
+                    None,
+                )?
+                .url
+            }
         };
 
         Ok(DesktopObjectStorageReadTicket {
@@ -644,29 +773,43 @@ impl ProviderStore {
         let normalized_key = config.build_object_key(object_key);
         let expires_seconds = DEFAULT_UPLOAD_EXPIRES_SECONDS;
         let timestamp = time::OffsetDateTime::now_utc();
-        let upload_url = match config.provider {
-            DesktopObjectStorageProvider::CloudflareR2S3 => build_r2_presigned_url(
+        let presigned = match config.provider {
+            DesktopObjectStorageProvider::CloudflareR2S3 => build_r2_presigned_request(
                 &config,
                 &secret,
                 "PUT",
                 &normalized_key,
                 expires_seconds,
                 timestamp,
+                Some(content_type),
             )?,
-            DesktopObjectStorageProvider::AliyunOss => build_aliyun_presigned_url(
+            DesktopObjectStorageProvider::AliyunOss => build_aliyun_presigned_request(
                 &config,
                 &secret,
                 "PUT",
                 &normalized_key,
                 expires_seconds,
                 timestamp,
+                Some(content_type),
             )?,
         };
 
         let client = reqwest::Client::new();
-        let response = client
-            .put(upload_url)
-            .header("content-type", content_type)
+        let mut request = client.put(presigned.url);
+        let has_content_type_header = presigned
+            .headers
+            .keys()
+            .any(|key| key.eq_ignore_ascii_case("content-type"));
+        for (key, value) in presigned.headers {
+            request = request.header(&key, &value);
+        }
+        if !has_content_type_header {
+            let normalized_content_type = content_type.trim();
+            if !normalized_content_type.is_empty() {
+                request = request.header("content-type", normalized_content_type);
+            }
+        }
+        let response = request
             .body(bytes.to_vec())
             .send()
             .await
@@ -696,22 +839,30 @@ impl ProviderStore {
         let expires_seconds = DEFAULT_UPLOAD_EXPIRES_SECONDS;
         let timestamp = time::OffsetDateTime::now_utc();
         let download_url = match config.provider {
-            DesktopObjectStorageProvider::CloudflareR2S3 => build_r2_presigned_url(
-                &config,
-                &secret,
-                "GET",
-                &normalized_key,
-                expires_seconds,
-                timestamp,
-            )?,
-            DesktopObjectStorageProvider::AliyunOss => build_aliyun_presigned_url(
-                &config,
-                &secret,
-                "GET",
-                &normalized_key,
-                expires_seconds,
-                timestamp,
-            )?,
+            DesktopObjectStorageProvider::CloudflareR2S3 => {
+                build_r2_presigned_request(
+                    &config,
+                    &secret,
+                    "GET",
+                    &normalized_key,
+                    expires_seconds,
+                    timestamp,
+                    None,
+                )?
+                .url
+            }
+            DesktopObjectStorageProvider::AliyunOss => {
+                build_aliyun_presigned_request(
+                    &config,
+                    &secret,
+                    "GET",
+                    &normalized_key,
+                    expires_seconds,
+                    timestamp,
+                    None,
+                )?
+                .url
+            }
         };
 
         let client = reqwest::Client::new();
@@ -749,22 +900,30 @@ impl ProviderStore {
         let expires_seconds = DEFAULT_UPLOAD_EXPIRES_SECONDS;
         let timestamp = time::OffsetDateTime::now_utc();
         let delete_url = match config.provider {
-            DesktopObjectStorageProvider::CloudflareR2S3 => build_r2_presigned_url(
-                &config,
-                &secret,
-                "DELETE",
-                &normalized_key,
-                expires_seconds,
-                timestamp,
-            )?,
-            DesktopObjectStorageProvider::AliyunOss => build_aliyun_presigned_url(
-                &config,
-                &secret,
-                "DELETE",
-                &normalized_key,
-                expires_seconds,
-                timestamp,
-            )?,
+            DesktopObjectStorageProvider::CloudflareR2S3 => {
+                build_r2_presigned_request(
+                    &config,
+                    &secret,
+                    "DELETE",
+                    &normalized_key,
+                    expires_seconds,
+                    timestamp,
+                    None,
+                )?
+                .url
+            }
+            DesktopObjectStorageProvider::AliyunOss => {
+                build_aliyun_presigned_request(
+                    &config,
+                    &secret,
+                    "DELETE",
+                    &normalized_key,
+                    expires_seconds,
+                    timestamp,
+                    None,
+                )?
+                .url
+            }
         };
         let client = reqwest::Client::new();
         let response = client
@@ -923,7 +1082,14 @@ mod tests {
         assert!(ticket
             .upload_url
             .contains("X-Amz-Algorithm=AWS4-HMAC-SHA256"));
+        assert!(ticket
+            .upload_url
+            .contains("X-Amz-SignedHeaders=content-type%3Bhost"));
         assert!(ticket.upload_url.contains("X-Amz-Signature="));
+        assert_eq!(
+            ticket.headers.get("Content-Type").map(String::as_str),
+            Some("image/png")
+        );
         assert_eq!(
             ticket.asset_url.as_deref(),
             Some("https://cdn.example.com/assets/desktop/uploads/chat/demo.png")
@@ -954,11 +1120,12 @@ mod tests {
         assert!(ticket
             .asset_url
             .contains("X-Amz-Algorithm=AWS4-HMAC-SHA256"));
+        assert!(ticket.asset_url.contains("X-Amz-SignedHeaders=host"));
         assert!(ticket.asset_url.contains("X-Amz-Signature="));
     }
 
     #[tokio::test]
-    async fn prepare_upload_ticket_for_aliyun_contains_oss_query_signature() {
+    async fn prepare_upload_ticket_for_aliyun_contains_oss_v4_query_signature() {
         let store = init_store().await;
         store
             .update_local_desktop_object_storage_config(DesktopObjectStorageConfigUpdateRequest {
@@ -986,11 +1153,158 @@ mod tests {
             .expect("prepare upload");
 
         assert_eq!(ticket.provider, DesktopObjectStorageProvider::AliyunOss);
-        assert!(ticket.upload_url.contains("OSSAccessKeyId=ALIYUN-ID"));
-        assert!(ticket.upload_url.contains("Signature="));
+        assert!(ticket
+            .upload_url
+            .contains("x-oss-signature-version=OSS4-HMAC-SHA256"));
+        assert!(ticket.upload_url.contains("x-oss-credential=ALIYUN-ID%2F"));
+        assert!(ticket
+            .upload_url
+            .contains("%2Fcn-hangzhou%2Foss%2Faliyun_v4_request"));
+        assert!(ticket.upload_url.contains("x-oss-date="));
+        assert!(ticket.upload_url.contains("x-oss-expires=300"));
+        assert!(ticket
+            .upload_url
+            .contains("x-oss-additional-headers=content-type%3Bhost"));
+        assert!(ticket.upload_url.contains("x-oss-signature="));
+        assert_eq!(
+            ticket.headers.get("Content-Type").map(String::as_str),
+            Some("image/png")
+        );
         assert_eq!(
             ticket.asset_url.as_deref(),
             Some("https://assets.example.com/chat/demo.png")
+        );
+    }
+
+    #[tokio::test]
+    async fn prepare_read_ticket_for_aliyun_contains_oss_v4_query_signature() {
+        let store = init_store().await;
+        store
+            .update_local_desktop_object_storage_config(DesktopObjectStorageConfigUpdateRequest {
+                provider: DesktopObjectStorageProvider::AliyunOss,
+                bucket: "demo-bucket".to_string(),
+                region: Some("cn-hangzhou".to_string()),
+                endpoint: "https://oss-cn-hangzhou.aliyuncs.com".to_string(),
+                public_base_url: None,
+                path_prefix: Some("chat".to_string()),
+                is_path_style: Some(false),
+                access_key_id: "ALIYUN-ID".to_string(),
+                secret_access_key: Some("ALIYUN-SECRET".to_string()),
+                is_enabled: Some(true),
+            })
+            .await
+            .expect("seed aliyun config");
+
+        let ticket = store
+            .prepare_local_desktop_object_storage_read(DesktopObjectStorageReadRequest {
+                object_key: "demo.png".to_string(),
+                expires_seconds: Some(300),
+            })
+            .await
+            .expect("prepare read");
+
+        assert_eq!(ticket.provider, DesktopObjectStorageProvider::AliyunOss);
+        assert!(ticket
+            .asset_url
+            .contains("x-oss-signature-version=OSS4-HMAC-SHA256"));
+        assert!(ticket.asset_url.contains("x-oss-signature="));
+        assert!(ticket.asset_url.contains("x-oss-additional-headers=host"));
+    }
+
+    #[test]
+    fn build_aliyun_presigned_request_signs_content_type_for_put() {
+        let timestamp = time::OffsetDateTime::from_unix_timestamp(1_763_185_208)
+            .expect("timestamp should be valid");
+        let config = DesktopObjectStorageConfig {
+            id: Uuid::new_v4().to_string(),
+            user_id: LOCAL_DESKTOP_USER_ID.to_string(),
+            provider: DesktopObjectStorageProvider::AliyunOss,
+            bucket: "deeting".to_string(),
+            region: Some("cn-beijing".to_string()),
+            endpoint: "https://oss-cn-beijing.aliyuncs.com".to_string(),
+            public_base_url: None,
+            path_prefix: Some("desktop/uploads".to_string()),
+            is_path_style: false,
+            access_key_id: "ALIYUN-ID".to_string(),
+            has_secret: true,
+            is_enabled: true,
+            created_at: "2026-03-10T00:00:00Z".to_string(),
+            updated_at: "2026-03-10T00:00:00Z".to_string(),
+        };
+
+        let presigned = build_aliyun_presigned_request(
+            &config,
+            "ALIYUN-SECRET",
+            "PUT",
+            "desktop/uploads/knowledge/demo.txt",
+            300,
+            timestamp,
+            Some("text/plain"),
+        )
+        .expect("presign should succeed");
+
+        assert!(presigned.url.starts_with(
+            "https://deeting.oss-cn-beijing.aliyuncs.com/desktop/uploads/knowledge/demo.txt?"
+        ));
+        assert!(presigned
+            .url
+            .contains("x-oss-signature-version=OSS4-HMAC-SHA256"));
+        assert!(presigned.url.contains(
+            "x-oss-credential=ALIYUN-ID%2F20251118%2Fcn-beijing%2Foss%2Faliyun_v4_request"
+        ));
+        assert!(presigned.url.contains("x-oss-date=20251118T121328Z"));
+        assert!(presigned
+            .url
+            .contains("x-oss-additional-headers=content-type%3Bhost"));
+        assert_eq!(
+            presigned.headers.get("Content-Type").map(String::as_str),
+            Some("text/plain")
+        );
+    }
+
+    #[test]
+    fn build_r2_presigned_request_signs_content_type_for_put() {
+        let timestamp = time::OffsetDateTime::from_unix_timestamp(1_763_185_208)
+            .expect("timestamp should be valid");
+        let config = DesktopObjectStorageConfig {
+            id: Uuid::new_v4().to_string(),
+            user_id: LOCAL_DESKTOP_USER_ID.to_string(),
+            provider: DesktopObjectStorageProvider::CloudflareR2S3,
+            bucket: "demo-bucket".to_string(),
+            region: Some("auto".to_string()),
+            endpoint: "https://example.r2.cloudflarestorage.com".to_string(),
+            public_base_url: None,
+            path_prefix: Some("desktop/uploads".to_string()),
+            is_path_style: false,
+            access_key_id: "AKIA-DEMO".to_string(),
+            has_secret: true,
+            is_enabled: true,
+            created_at: "2026-03-10T00:00:00Z".to_string(),
+            updated_at: "2026-03-10T00:00:00Z".to_string(),
+        };
+
+        let presigned = build_r2_presigned_request(
+            &config,
+            "super-secret",
+            "PUT",
+            "desktop/uploads/chat/demo.png",
+            300,
+            timestamp,
+            Some("image/png"),
+        )
+        .expect("presign should succeed");
+
+        assert!(presigned.url.starts_with(
+            "https://demo-bucket.example.r2.cloudflarestorage.com/desktop/uploads/chat/demo.png?"
+        ));
+        assert!(presigned.url.contains("X-Amz-Algorithm=AWS4-HMAC-SHA256"));
+        assert!(presigned
+            .url
+            .contains("X-Amz-SignedHeaders=content-type%3Bhost"));
+        assert!(presigned.url.contains("X-Amz-Signature="));
+        assert_eq!(
+            presigned.headers.get("Content-Type").map(String::as_str),
+            Some("image/png")
         );
     }
 

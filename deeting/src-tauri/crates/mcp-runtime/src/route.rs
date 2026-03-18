@@ -116,13 +116,13 @@ pub fn select_local_route_with_evidence(
 pub fn render_local_route_prompt(decision: &LocalRouteDecision) -> String {
     let route_guidance = match decision.route {
         LocalRouteKind::Direct => {
-            "Prefer direct answer or one direct callable capability. If capability choice is the blocker, use search_sdk once to discover the best direct capability before answering or refusing. Do not escalate into execute_code_plan unless the user clearly needs programmatic orchestration."
+            "Prefer direct answer or the lightest direct callable capability that can finish the job. If capability choice is the blocker, you must use search_sdk to discover the best direct capability and exhaust reasonable low-cost refinements before answering or refusing. Escalate into execute_code_plan when the user wants a concrete deliverable that needs multi-step coordination."
         }
         LocalRouteKind::Worker => {
-            "Treat this as analysis/planning/decomposition work. Prefer reasoning and structured recommendations over programmatic execution. If the analysis depends on unknown runtime capabilities or installed tools, use search_sdk once before concluding what is or is not possible."
+            "Treat this as analysis, planning, or decomposition work, but keep moving toward completion. If the task depends on unknown runtime capabilities or installed tools, you must use search_sdk and exhaust reasonable low-cost discovery before concluding what is or is not possible. If verified sources and available capabilities are enough to produce the requested deliverable, do that instead of stopping at recommendations."
         }
         LocalRouteKind::CodeMode => {
-            "Treat this as programmatic orchestration work. Prefer search_sdk plus execute_code_plan when execution is required."
+            "Treat this as programmatic orchestration work. Prefer search_sdk plus execute_code_plan when execution is required, exhaust reasonable capability discovery before claiming a tooling blocker, and carry the task through to a real deliverable instead of stopping after the first capability lookup."
         }
     };
     let reasons = if decision.reasons.is_empty() {

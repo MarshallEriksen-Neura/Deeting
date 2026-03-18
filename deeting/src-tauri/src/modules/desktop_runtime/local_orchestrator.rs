@@ -35,7 +35,9 @@ use crate::modules::desktop_runtime::runtime::{
     LocalControlPlaneResult, LocalExecutionPolicy, LocalExecutionRequest, LocalRouteDecision,
     RuntimeDiscoveryBundle,
 };
-use crate::modules::memory::types::{LocalMemoryItem, LocalMemoryListQuery, LocalMemorySearchItem};
+use crate::modules::memory::types::{
+    LocalMemoryItem, LocalMemoryListQuery, LocalMemorySearchItem, LocalMemorySearchQuery,
+};
 use crate::modules::providers::model_guard::ensure_required_local_models_configured;
 use crate::state::AppState;
 use mcp_core::types::LocalChatInputMessage;
@@ -585,6 +587,10 @@ struct InjectedMemory {
     is_boot: bool,
 }
 
+const CORE_MEMORY_LIST_LIMIT: i64 = 20;
+const FALLBACK_MEMORY_LIST_LIMIT: i64 = 5;
+const SEMANTIC_MEMORY_SEARCH_LIMIT: usize = 5;
+
 fn memory_meta_string(meta_info: &Option<Value>, key: &str) -> Option<String> {
     meta_info
         .as_ref()
@@ -618,6 +624,40 @@ fn matches_recall_when(query: &str, recall_when: Option<&str>) -> bool {
         .split_whitespace()
         .filter(|token| token.len() > 1)
         .any(|token| query_text.contains(token))
+}
+
+fn build_global_semantic_memory_search_query(query: &str) -> LocalMemorySearchQuery {
+    LocalMemorySearchQuery {
+        query: query.to_string(),
+        limit: Some(SEMANTIC_MEMORY_SEARCH_LIMIT),
+        session_id: None,
+        capability_id: None,
+        category: None,
+        source: None,
+        tags: None,
+    }
+}
+
+fn build_global_memory_list_query(limit: i64) -> LocalMemoryListQuery {
+    LocalMemoryListQuery {
+        cursor: None,
+        limit: Some(limit),
+        session_id: None,
+        capability_id: None,
+    }
+}
+
+fn build_scoped_memory_list_query(
+    session_id: &str,
+    capability_id: Option<&str>,
+    limit: i64,
+) -> LocalMemoryListQuery {
+    LocalMemoryListQuery {
+        cursor: None,
+        limit: Some(limit),
+        session_id: Some(session_id.to_string()),
+        capability_id: capability_id.map(str::to_string),
+    }
 }
 
 impl InjectedMemory {
@@ -676,15 +716,7 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SemanticMemoryInjectionStep {
             let core_memories = self.load_core_memories(ctx, &query_text).await?;
             let semantic_memories: Vec<InjectedMemory> = if !query_text.is_empty() {
                 // Attempt semantic search
-                let search_query = crate::modules::memory::types::LocalMemorySearchQuery {
-                    query: query_text.clone(),
-                    limit: Some(5),
-                    session_id: Some(ctx.session_id.clone()),
-                    capability_id: ctx.capability_id.clone(),
-                    category: None,
-                    source: None,
-                    tags: None,
-                };
+                let search_query = build_global_semantic_memory_search_query(&query_text);
                 match ctx.app_state.memory.service.search(search_query).await {
                     Ok(result) if !result.items.is_empty() => result
                         .items
@@ -766,12 +798,7 @@ impl SemanticMemoryInjectionStep {
         ctx: &LocalWorkflowContext,
         query_text: &str,
     ) -> Result<Vec<InjectedMemory>, String> {
-        let query = LocalMemoryListQuery {
-            cursor: None,
-            limit: Some(20),
-            session_id: Some(ctx.session_id.clone()),
-            capability_id: ctx.capability_id.clone(),
-        };
+        let query = build_global_memory_list_query(CORE_MEMORY_LIST_LIMIT);
         let memories = ctx
             .app_state
             .memory
@@ -810,20 +837,36 @@ impl SemanticMemoryInjectionStep {
         &self,
         ctx: &LocalWorkflowContext,
     ) -> Result<Vec<InjectedMemory>, String> {
-        let query = LocalMemoryListQuery {
-            cursor: None,
-            limit: Some(5),
-            session_id: Some(ctx.session_id.clone()),
-            capability_id: ctx.capability_id.clone(),
-        };
-        let memories = ctx
+        let scoped_query = build_scoped_memory_list_query(
+            &ctx.session_id,
+            ctx.capability_id.as_deref(),
+            FALLBACK_MEMORY_LIST_LIMIT,
+        );
+        let scoped_memories = ctx
             .app_state
             .memory
             .service
-            .list(query)
+            .list(scoped_query)
             .await
             .map_err(|e| e.to_string())?;
-        Ok(memories
+        let scoped_items = scoped_memories
+            .items
+            .into_iter()
+            .map(InjectedMemory::from_item)
+            .collect::<Vec<_>>();
+        if !scoped_items.is_empty() {
+            return Ok(scoped_items);
+        }
+
+        let global_query = build_global_memory_list_query(FALLBACK_MEMORY_LIST_LIMIT);
+        let global_memories = ctx
+            .app_state
+            .memory
+            .service
+            .list(global_query)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(global_memories
             .items
             .into_iter()
             .map(InjectedMemory::from_item)
@@ -832,6 +875,14 @@ impl SemanticMemoryInjectionStep {
 }
 
 struct SelectedKnowledgeInjectionStep;
+
+#[derive(Debug, Clone)]
+struct SelectedKnowledgeDocumentContext {
+    file_id: String,
+    file_name: String,
+    overview: Option<String>,
+    leading_chunks: Vec<crate::modules::knowledge::types::LocalKnowledgeChunk>,
+}
 
 impl LocalWorkflowStep<LocalWorkflowContext> for SelectedKnowledgeInjectionStep {
     fn name(&self) -> &'static str {
@@ -875,57 +926,81 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SelectedKnowledgeInjectionStep 
                 })),
             );
 
-            let lexical_hits = match ctx
-                .app_state
-                .knowledge
-                .store
-                .search_local_knowledge_chunks(&query, Some(40))
-                .await
-            {
-                Ok(value) => value,
-                Err(err) => {
-                    log::warn!(
-                        "selected_knowledge_injection: lexical search failed session={} err={}",
-                        ctx.session_id,
-                        err
-                    );
-                    ctx.emit_status(
-                        "remember",
-                        Some("selected_knowledge_injection"),
-                        "success",
-                        "knowledge.context.loaded",
-                        Some(json!({
-                            "selected_files": ctx.selected_knowledge_file_ids.len(),
-                            "count": 0,
-                            "search_error": true,
-                        })),
-                    );
-                    return Ok(());
+            let mut selected_ids = Vec::new();
+            let mut selected_id_set = HashSet::new();
+            for value in &ctx.selected_knowledge_file_ids {
+                let normalized = value.trim().to_string();
+                if normalized.is_empty() || !selected_id_set.insert(normalized.clone()) {
+                    continue;
                 }
-            };
-
-            let selected_ids: HashSet<String> = ctx
-                .selected_knowledge_file_ids
-                .iter()
-                .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty())
-                .collect();
+                selected_ids.push(normalized);
+            }
             if selected_ids.is_empty() {
                 return Ok(());
             }
 
+            let document_contexts =
+                load_selected_knowledge_document_contexts(ctx, &selected_ids, 3).await;
+
+            let mut lexical_search_failed = false;
             let mut selected_hits = Vec::new();
-            for hit in lexical_hits {
-                if !selected_ids.contains(hit.file_id.as_str()) {
-                    continue;
-                }
-                selected_hits.push(hit);
-                if selected_hits.len() >= 4 {
-                    break;
+            if !query.is_empty() {
+                let lexical_hits = match ctx
+                    .app_state
+                    .knowledge
+                    .store
+                    .search_local_knowledge_chunks(&query, Some(40))
+                    .await
+                {
+                    Ok(value) => value,
+                    Err(err) => {
+                        lexical_search_failed = true;
+                        log::warn!(
+                            "selected_knowledge_injection: lexical search failed session={} err={}",
+                            ctx.session_id,
+                            err
+                        );
+                        Vec::new()
+                    }
+                };
+                for hit in lexical_hits {
+                    if !selected_id_set.contains(hit.file_id.as_str()) {
+                        continue;
+                    }
+                    if looks_like_docx_field_artifact(&hit.content) {
+                        continue;
+                    }
+                    selected_hits.push(hit);
+                    if selected_hits.len() >= 4 {
+                        break;
+                    }
                 }
             }
 
+            let mut fallback_used = false;
             if selected_hits.is_empty() {
+                fallback_used = true;
+                selected_hits = build_selected_knowledge_fallback_hits(&document_contexts, 4);
+            }
+
+            let overview_lines = document_contexts
+                .iter()
+                .filter_map(|context| {
+                    context
+                        .overview
+                        .as_ref()
+                        .map(|overview| format!("- [{}] {}", context.file_name, overview))
+                })
+                .collect::<Vec<_>>();
+            let excerpt_lines = selected_hits
+                .iter()
+                .map(|hit| {
+                    let snippet = compact_knowledge_snippet(&hit.content, 260);
+                    format!("- [{} #{}] {}", hit.file_name, hit.index + 1, snippet)
+                })
+                .collect::<Vec<_>>();
+
+            if overview_lines.is_empty() && excerpt_lines.is_empty() {
                 ctx.emit_status(
                     "remember",
                     Some("selected_knowledge_injection"),
@@ -934,22 +1009,28 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SelectedKnowledgeInjectionStep 
                     Some(json!({
                         "selected_files": selected_ids.len(),
                         "count": 0,
+                        "overview_count": 0,
+                        "fallback_used": fallback_used,
+                        "search_error": lexical_search_failed,
                     })),
                 );
                 return Ok(());
             }
 
-            let lines = selected_hits
-                .iter()
-                .map(|hit| {
-                    let snippet = compact_knowledge_snippet(&hit.content, 260);
-                    format!("- [{} #{}] {}", hit.file_name, hit.index + 1, snippet)
-                })
-                .collect::<Vec<_>>();
-            ctx.push_system_message(format!(
-                "## Selected Knowledge Context\nUse the following excerpts from user-selected local knowledge files when they are relevant:\n{}",
-                lines.join("\n")
-            ));
+            let mut sections = Vec::new();
+            if !overview_lines.is_empty() {
+                sections.push(format!(
+                    "## Selected Document Overviews\nThese are the user-selected local documents for this turn:\n{}",
+                    overview_lines.join("\n")
+                ));
+            }
+            if !excerpt_lines.is_empty() {
+                sections.push(format!(
+                    "## Selected Document Excerpts\nUse the following excerpts from the user-selected local documents when they are relevant:\n{}",
+                    excerpt_lines.join("\n")
+                ));
+            }
+            ctx.push_system_message(sections.join("\n\n"));
 
             ctx.emit_status(
                 "remember",
@@ -958,12 +1039,146 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SelectedKnowledgeInjectionStep 
                 "knowledge.context.loaded",
                 Some(json!({
                     "selected_files": selected_ids.len(),
-                    "count": lines.len(),
+                    "count": excerpt_lines.len(),
+                    "overview_count": overview_lines.len(),
+                    "fallback_used": fallback_used,
+                    "search_error": lexical_search_failed,
                 })),
             );
             Ok(())
         })
     }
+}
+
+async fn load_selected_knowledge_document_contexts(
+    ctx: &LocalWorkflowContext,
+    selected_ids: &[String],
+    leading_chunk_limit: usize,
+) -> Vec<SelectedKnowledgeDocumentContext> {
+    let mut contexts = Vec::new();
+    for file_id in selected_ids {
+        let document = match ctx
+            .app_state
+            .knowledge
+            .store
+            .get_local_user_document(file_id)
+            .await
+        {
+            Ok(value) => value,
+            Err(err) => {
+                log::warn!(
+                    "selected_knowledge_injection: failed to load document session={} file_id={} err={}",
+                    ctx.session_id,
+                    file_id,
+                    err
+                );
+                continue;
+            }
+        };
+        let chunk_list = match ctx
+            .app_state
+            .knowledge
+            .store
+            .list_local_user_document_chunks(
+                file_id,
+                crate::modules::knowledge::types::LocalUserDocumentChunkListQuery {
+                    offset: Some(0),
+                    limit: Some(leading_chunk_limit as i64),
+                },
+            )
+            .await
+        {
+            Ok(value) => value,
+            Err(err) => {
+                log::warn!(
+                    "selected_knowledge_injection: chunk fallback failed session={} file_id={} err={}",
+                    ctx.session_id,
+                    file_id,
+                    err
+                );
+                continue;
+            }
+        };
+        let leading_chunks = chunk_list
+            .items
+            .into_iter()
+            .filter(|chunk| !looks_like_docx_field_artifact(&chunk.content))
+            .collect::<Vec<_>>();
+        contexts.push(SelectedKnowledgeDocumentContext {
+            file_id: document.id,
+            file_name: document.name,
+            overview: build_selected_document_overview(&leading_chunks),
+            leading_chunks,
+        });
+    }
+    contexts
+}
+
+fn build_selected_knowledge_fallback_hits(
+    document_contexts: &[SelectedKnowledgeDocumentContext],
+    limit: usize,
+) -> Vec<crate::modules::knowledge::types::LocalKnowledgeSearchHit> {
+    let mut hits = Vec::new();
+    for context in document_contexts {
+        for chunk in &context.leading_chunks {
+            hits.push(crate::modules::knowledge::types::LocalKnowledgeSearchHit {
+                chunk_id: chunk.id.clone(),
+                file_id: context.file_id.clone(),
+                file_name: context.file_name.clone(),
+                index: chunk.index,
+                content: chunk.content.clone(),
+                token_count: chunk.token_count,
+                score: 0.0,
+            });
+            if hits.len() >= limit {
+                return hits;
+            }
+        }
+    }
+    hits
+}
+
+fn build_selected_document_overview(
+    chunks: &[crate::modules::knowledge::types::LocalKnowledgeChunk],
+) -> Option<String> {
+    let preview = chunks
+        .iter()
+        .take(2)
+        .map(|chunk| chunk.content.trim())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let normalized = compact_knowledge_snippet(&preview, 220);
+    if normalized.is_empty() {
+        None
+    } else {
+        Some(normalized)
+    }
+}
+
+fn looks_like_docx_field_artifact(content: &str) -> bool {
+    let normalized = content.replace('\r', "").replace('\n', " ");
+    let compact = normalized.split_whitespace().collect::<Vec<_>>().join(" ");
+    let trimmed = compact.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+    if trimmed.eq_ignore_ascii_case("\\h") {
+        return true;
+    }
+    if trimmed.starts_with("\\h ") {
+        return true;
+    }
+    if trimmed.starts_with("HYPERLINK \\l ") {
+        return true;
+    }
+    if trimmed.contains("PAGEREF _Toc") {
+        return true;
+    }
+    if trimmed.starts_with("TOC \\") {
+        return true;
+    }
+    false
 }
 
 fn normalize_knowledge_search_query(raw: &str) -> Option<String> {
@@ -2184,6 +2399,7 @@ mod tests {
         assert!(prompt.contains("## Core Routing Rules"));
         assert!(prompt.contains("Default response language: Simplified Chinese (zh-CN)."));
         assert!(prompt.contains("If the user explicitly requests another language"));
+        assert!(prompt.contains("When a retrieved semantic memory contains a direct user fact"));
         assert!(prompt.contains("Do not fabricate facts, tool results, files, system state"));
     }
 
@@ -2444,6 +2660,34 @@ mod tests {
     }
 
     #[test]
+    fn semantic_memory_search_query_is_global() {
+        let query = build_global_semantic_memory_search_query("你知道我住在哪里吗");
+
+        assert_eq!(query.query, "你知道我住在哪里吗");
+        assert_eq!(query.limit, Some(SEMANTIC_MEMORY_SEARCH_LIMIT));
+        assert_eq!(query.session_id, None);
+        assert_eq!(query.capability_id, None);
+    }
+
+    #[test]
+    fn core_memory_list_query_is_global() {
+        let query = build_global_memory_list_query(CORE_MEMORY_LIST_LIMIT);
+
+        assert_eq!(query.limit, Some(CORE_MEMORY_LIST_LIMIT));
+        assert_eq!(query.session_id, None);
+        assert_eq!(query.capability_id, None);
+    }
+
+    #[test]
+    fn scoped_memory_list_query_preserves_session_and_capability() {
+        let query = build_scoped_memory_list_query("session-1", Some("assistant-1"), 5);
+
+        assert_eq!(query.limit, Some(5));
+        assert_eq!(query.session_id.as_deref(), Some("session-1"));
+        assert_eq!(query.capability_id.as_deref(), Some("assistant-1"));
+    }
+
+    #[test]
     fn latest_tool_error_summary_formats_latest_error_for_chinese() {
         let blocks = vec![
             json!({
@@ -2481,6 +2725,62 @@ mod tests {
         })];
 
         assert!(latest_tool_error_summary(&blocks, false).is_none());
+    }
+
+    #[test]
+    fn build_selected_document_overview_uses_leading_chunks() {
+        let chunks = vec![
+            crate::modules::knowledge::types::LocalKnowledgeChunk {
+                id: "chunk-1".to_string(),
+                file_id: "file-1".to_string(),
+                index: 0,
+                content: "This document describes the desktop knowledge flow and how selected files should be injected into chat.".to_string(),
+                token_count: 16,
+            },
+            crate::modules::knowledge::types::LocalKnowledgeChunk {
+                id: "chunk-2".to_string(),
+                file_id: "file-1".to_string(),
+                index: 1,
+                content: "It also explains fallback behavior for generic prompts like summary requests.".to_string(),
+                token_count: 12,
+            },
+        ];
+
+        let overview = build_selected_document_overview(&chunks).expect("overview should exist");
+
+        assert!(overview.contains("desktop knowledge flow"));
+        assert!(overview.contains("fallback behavior"));
+    }
+
+    #[test]
+    fn build_selected_knowledge_fallback_hits_uses_document_leading_chunks() {
+        let contexts = vec![SelectedKnowledgeDocumentContext {
+            file_id: "file-1".to_string(),
+            file_name: "guide.docx".to_string(),
+            overview: Some("guide overview".to_string()),
+            leading_chunks: vec![
+                crate::modules::knowledge::types::LocalKnowledgeChunk {
+                    id: "chunk-1".to_string(),
+                    file_id: "file-1".to_string(),
+                    index: 0,
+                    content: "first chunk".to_string(),
+                    token_count: 2,
+                },
+                crate::modules::knowledge::types::LocalKnowledgeChunk {
+                    id: "chunk-2".to_string(),
+                    file_id: "file-1".to_string(),
+                    index: 1,
+                    content: "second chunk".to_string(),
+                    token_count: 2,
+                },
+            ],
+        }];
+
+        let hits = build_selected_knowledge_fallback_hits(&contexts, 1);
+
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].file_name, "guide.docx");
+        assert_eq!(hits[0].content, "first chunk");
     }
 
     #[test]

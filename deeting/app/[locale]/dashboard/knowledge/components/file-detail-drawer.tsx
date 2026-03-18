@@ -83,14 +83,17 @@ export function FileDetailDrawer({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full max-w-[640px] gap-0 p-0 sm:max-w-xl">
+      <SheetContent
+        side="right"
+        className="h-full max-h-screen w-full max-w-[640px] gap-0 overflow-hidden p-0 sm:max-w-xl"
+      >
         <SheetHeader className="border-b border-[var(--border)]/60 bg-[var(--surface)]/20 px-6 py-5 text-left">
           <div className="space-y-4 pr-10">
             <div className="space-y-2">
               <SheetTitle className="line-clamp-2 text-xl leading-tight text-[var(--foreground)]">
                 {file.name}
               </SheetTitle>
-              <SheetDescription className="text-left">
+              <SheetDescription asChild className="text-left">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="secondary" className="uppercase tracking-[0.14em] text-[11px]">
                     {file.type}
@@ -171,7 +174,7 @@ export function FileDetailDrawer({
           </div>
         </SheetHeader>
 
-        <ScrollArea className="flex-1">
+        <ScrollArea className="min-h-0 flex-1">
           <div className="space-y-6 px-6 py-6">
             <section className="rounded-2xl border border-[var(--border)]/60 bg-[var(--surface)]/25 p-4">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

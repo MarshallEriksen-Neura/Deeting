@@ -92,7 +92,22 @@ const parseInputFileFromBlock = (
   return null
 }
 
-const buildContentUrl = (attachment: ChatAttachment): string | null => {
+type BuildContentOptions = {
+  preferResolvedUrls?: boolean
+}
+
+const buildContentUrl = (
+  attachment: ChatAttachment,
+  options: BuildContentOptions = {}
+): string | null => {
+  if (
+    options.preferResolvedUrls &&
+    attachment.url &&
+    !attachment.url.startsWith("local-asset://") &&
+    !attachment.url.startsWith("asset://")
+  ) {
+    return attachment.url
+  }
   if (attachment.source === "local" && attachment.sha256) {
     return `local-asset://${attachment.sha256}`
   }
@@ -110,7 +125,8 @@ const isFileAttachment = (attachment: ChatAttachment) => {
 
 export function buildContentBlocks(
   text: string,
-  attachments: ChatAttachment[]
+  attachments: ChatAttachment[],
+  options: BuildContentOptions = {}
 ): ChatContentBlock[] {
   const blocks: ChatContentBlock[] = []
   if (text.trim()) {
@@ -128,7 +144,7 @@ export function buildContentBlocks(
       })
       return
     }
-    const url = buildContentUrl(attachment)
+    const url = buildContentUrl(attachment, options)
     if (!url) return
     blocks.push({
       type: "image_url",
@@ -140,12 +156,13 @@ export function buildContentBlocks(
 
 export function buildMessageContent(
   text: string,
-  attachments: ChatAttachment[]
+  attachments: ChatAttachment[],
+  options: BuildContentOptions = {}
 ): ChatMessageContent {
   if (!attachments.length) {
     return text
   }
-  return buildContentBlocks(text, attachments)
+  return buildContentBlocks(text, attachments, options)
 }
 
 function parseBlocks(blocks: ChatContentBlock[]) {

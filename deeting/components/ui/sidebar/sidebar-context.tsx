@@ -118,7 +118,7 @@ const SidebarProvider = React.forwardRef<
             } as React.CSSProperties
           }
           className={cn(
-            "group/sidebar-wrapper flex min-h-svh w-full text-[var(--foreground)] has-[[data-variant=inset]]:bg-[var(--background)]",
+            "group/sidebar-wrapper flex w-full text-[var(--foreground)] has-[[data-variant=inset]]:bg-[var(--background)]",
             className
           )}
           ref={ref}
@@ -136,7 +136,6 @@ const SidebarInset = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<"main">
 >(({ className, ...props }, ref) => {
-  const { state, isMobile } = useSidebar()
   // With non-fixed sidebar, main area no longer needs margin compensation
   const marginLeft = "0px"
 
@@ -144,7 +143,7 @@ const SidebarInset = React.forwardRef<
     <main
       ref={ref}
       className={cn(
-        "relative flex min-h-svh flex-1 flex-col transition-[margin] duration-300 ease-linear",
+        "relative flex flex-1 flex-col transition-[margin] duration-300 ease-linear",
         "ml-0 md:peer-data-[variant=floating]:ml-0", // If we were using floating variant
         "md:peer-data-[variant=inset]:ml-0",
         "max-md:ml-0",

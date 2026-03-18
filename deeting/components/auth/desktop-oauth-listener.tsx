@@ -23,6 +23,18 @@ function serializePayload(payload: DesktopOAuthCallbackPayload) {
   return `${payload.intent}:${payload.provider}:${payload.session_id}:${payload.state}:${payload.grant}`
 }
 
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message
+  }
+
+  if (typeof error === "string" && error.trim()) {
+    return error
+  }
+
+  return fallback
+}
+
 export function DesktopOAuthListener() {
   const { completeDesktopOAuth } = useAuthService()
   const handledRef = useRef(new Set<string>())
@@ -57,7 +69,7 @@ export function DesktopOAuthListener() {
           }
         } catch (error) {
           handledRef.current.delete(key)
-          const message = error instanceof Error ? error.message : "桌面 OAuth 操作失败"
+          const message = getErrorMessage(error, "桌面 OAuth 操作失败")
           toast.error(message)
         }
       }
@@ -82,7 +94,7 @@ export function DesktopOAuthListener() {
         await handleUrls(currentUrls)
       }
     })().catch((error) => {
-      const message = error instanceof Error ? error.message : "桌面 OAuth 监听初始化失败"
+      const message = getErrorMessage(error, "桌面 OAuth 监听初始化失败")
       toast.error(message)
     })
 

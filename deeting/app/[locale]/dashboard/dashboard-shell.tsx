@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react"
 
-import { userNavigation } from "@/components/layout/sidebar/navigation-config"
+import { getUserDashboardNavigation } from "@/components/layout/sidebar/navigation-config"
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar/sidebar-context"
 import {
   Sidebar,
@@ -12,13 +12,22 @@ import {
 } from "@/components/ui/sidebar/sidebar"
 import { AppSidebarNav } from "@/components/ui/sidebar/app-sidebar-nav"
 
+const isTauri = process.env.NEXT_PUBLIC_IS_TAURI === "true"
+const dashboardNavigation = getUserDashboardNavigation({ isDesktopRuntime: isTauri })
+
 export function DashboardShell({ children }: { children: ReactNode }) {
   return (
     <SidebarProvider defaultOpen={true}>
-      <div className="grid min-h-screen w-full grid-cols-1 bg-[var(--background)] md:grid-cols-[auto_1fr]">
-        <Sidebar collapsible="icon" className="md:h-[calc(100vh-56px)]">
+      <div
+        className="grid w-full grid-cols-1 bg-[var(--background)] md:grid-cols-[auto_1fr]"
+        style={{
+          minHeight:
+            "calc(var(--app-viewport-height, 100dvh) - var(--app-header-offset, 5rem))",
+        }}
+      >
+        <Sidebar collapsible="icon">
           <SidebarContent className="p-4">
-            <AppSidebarNav groups={userNavigation} />
+            <AppSidebarNav groups={dashboardNavigation} />
           </SidebarContent>
 
           <SidebarFooter>

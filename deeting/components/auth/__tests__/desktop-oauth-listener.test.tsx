@@ -3,6 +3,8 @@ import { mutate } from "swr"
 
 import { DesktopOAuthListener } from "../desktop-oauth-listener"
 
+const mockToastSuccess = jest.fn()
+const mockToastError = jest.fn()
 const mockCompleteDesktopOAuth = jest.fn()
 const mockConfirmDesktopOAuthBindingGrant = jest.fn()
 const mockGetCurrentDesktopDeepLinks = jest.fn()
@@ -31,8 +33,8 @@ jest.mock("@/lib/api/desktop-deep-link", () => ({
 
 jest.mock("sonner", () => ({
   toast: {
-    success: jest.fn(),
-    error: jest.fn(),
+    success: (...args: unknown[]) => mockToastSuccess(...args),
+    error: (...args: unknown[]) => mockToastError(...args),
   },
 }))
 
@@ -42,6 +44,8 @@ jest.mock("swr", () => ({
 
 describe("DesktopOAuthListener", () => {
   beforeEach(() => {
+    mockToastSuccess.mockReset()
+    mockToastError.mockReset()
     mockCompleteDesktopOAuth.mockReset()
     mockConfirmDesktopOAuthBindingGrant.mockReset()
     mockGetCurrentDesktopDeepLinks.mockReset()
@@ -116,5 +120,19 @@ describe("DesktopOAuthListener", () => {
     })
 
     expect(mutate).toHaveBeenCalledWith("/api/v1/users/me/bindings")
+  })
+
+  it("surfaces string-based initialization errors from tauri", async () => {
+    mockGetCurrentDesktopDeepLinks.mockRejectedValueOnce(
+      "Command plugin:deep-link|get_current not allowed by scope"
+    )
+
+    render(<DesktopOAuthListener />)
+
+    await waitFor(() => {
+      expect(mockToastError).toHaveBeenCalledWith(
+        "Command plugin:deep-link|get_current not allowed by scope"
+      )
+    })
   })
 })

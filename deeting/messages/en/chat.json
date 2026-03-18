@@ -53,6 +53,11 @@
       "detail": {
         "contextLoaded": "Loaded {count} context items",
         "contextLoadedWithSummary": "Loaded {count} context items · summary included",
+        "knowledgeContextLoading": "Reading {selectedFiles} selected document(s)",
+        "knowledgeContextLoaded": "Read {selectedFiles} selected document(s) · extracted {count} excerpt(s)",
+        "knowledgeContextLoadedFallback": "Read {selectedFiles} selected document(s) · using {count} fallback excerpt(s)",
+        "knowledgeOverviewLoaded": "Read {selectedFiles} selected document(s) · prepared {overviewCount} overview(s)",
+        "knowledgeContextEmpty": "Read {selectedFiles} selected document(s) · no usable excerpts found",
         "routingSelected": "{candidates} candidates · selected {provider}",
         "templateRendered": "Template engine {engine}",
         "upstreamRequestStream": "Upstream request · stream",

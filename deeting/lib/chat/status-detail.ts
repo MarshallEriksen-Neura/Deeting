@@ -17,6 +17,37 @@ export function resolveStatusDetail(
         ? t("status.detail.contextLoadedWithSummary", { count })
         : t("status.detail.contextLoaded", { count })
     }
+    case "knowledge.context.loading": {
+      const selectedFiles = Number(meta?.selected_files ?? 0)
+      return t("status.detail.knowledgeContextLoading", { selectedFiles })
+    }
+    case "knowledge.context.loaded": {
+      const selectedFiles = Number(meta?.selected_files ?? 0)
+      const count = Number(meta?.count ?? 0)
+      const overviewCount = Number(meta?.overview_count ?? 0)
+      const fallbackUsed = Boolean(meta?.fallback_used)
+      if (count > 0 && fallbackUsed) {
+        return t("status.detail.knowledgeContextLoadedFallback", {
+          selectedFiles,
+          count,
+          overviewCount,
+        })
+      }
+      if (count > 0) {
+        return t("status.detail.knowledgeContextLoaded", {
+          selectedFiles,
+          count,
+          overviewCount,
+        })
+      }
+      if (overviewCount > 0) {
+        return t("status.detail.knowledgeOverviewLoaded", {
+          selectedFiles,
+          overviewCount,
+        })
+      }
+      return t("status.detail.knowledgeContextEmpty", { selectedFiles })
+    }
     case "routing.selected": {
       const candidates = Number(meta?.candidates ?? 0)
       const provider = String(meta?.provider ?? "")

@@ -58,7 +58,7 @@ pub struct LocalKnowledgeTreeResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalKnowledgeStatsResponse {
     pub used_bytes: i64,
-    pub total_bytes: i64,
+    pub total_bytes: Option<i64>,
     pub total_vectors: i64,
     pub total_files: i64,
     pub total_folders: i64,

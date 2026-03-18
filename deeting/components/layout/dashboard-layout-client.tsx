@@ -14,7 +14,13 @@ export function DashboardLayoutClient({
   children,
 }: DashboardLayoutClientProps) {
   return (
-    <div className="min-h-screen bg-[var(--background)]">
+    <div
+      className="bg-[var(--background)]"
+      style={{
+        minHeight:
+          "calc(var(--app-viewport-height, 100dvh) - var(--app-header-offset, 5rem))",
+      }}
+    >
       {/* Secondary Navigation - Sidebar/Horizontal Nav */}
       <GlassSidebarProvider role={role}>
         {children}

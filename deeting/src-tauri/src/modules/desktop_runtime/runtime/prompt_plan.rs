@@ -1,12 +1,12 @@
 use super::control_plane::LocalExecutionPolicy;
 use super::prompt_assets::PromptAssets;
 use crate::modules::code_mode::prompt::render_code_mode_capability_prompt;
+#[cfg(test)]
 use mcp_core::types::LocalChatInputMessage;
 
-use mcp_runtime::prompt::{
-    build_local_prelude_messages as build_local_prelude_messages_inner,
-    build_local_prompt_plan as build_local_prompt_plan_inner,
-};
+#[cfg(test)]
+use mcp_runtime::prompt::build_local_prelude_messages as build_local_prelude_messages_inner;
+use mcp_runtime::prompt::build_local_prompt_plan as build_local_prompt_plan_inner;
 pub(crate) use mcp_runtime::prompt::{
     parse_router_prompt_local_context, render_local_base_system_prompt,
     render_local_router_base_prompt, router_prompt_default_local_context,
@@ -75,6 +75,7 @@ pub(crate) fn build_local_prompt_plan(
     )
 }
 
+#[cfg(test)]
 pub(crate) fn build_local_prelude_messages(
     prompt_assets: &PromptAssets,
     execution_policy: Option<&LocalExecutionPolicy>,

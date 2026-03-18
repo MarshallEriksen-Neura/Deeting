@@ -211,7 +211,7 @@ export async function fetchMonitorStats(): Promise<MonitorStats> {
 
 export async function fetchMonitorTask(taskId: string): Promise<MonitorTask> {
   if (isTauriRuntime()) {
-    return invokeTauri<MonitorTask>("get_local_monitor_task", { task_id: taskId })
+    return invokeTauri<MonitorTask>("get_local_monitor_task", { taskId })
   }
   return request<MonitorTask>({
     url: `${MONITORS_BASE}/${taskId}`,
@@ -238,7 +238,7 @@ export async function updateMonitorTask(
 ): Promise<MonitorTask> {
   if (isTauriRuntime()) {
     return invokeTauri<MonitorTask>("update_local_monitor_task", {
-      task_id: taskId,
+      taskId,
       payload: data,
     })
   }

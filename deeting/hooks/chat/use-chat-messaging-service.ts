@@ -80,7 +80,8 @@ function buildChatMessages(history: Message[], systemPrompt?: string): ChatMessa
   const mapped = history.map((msg) => {
     const content = buildMessageContent(
       msg.content,
-      msg.role === "user" ? msg.attachments ?? [] : []
+      msg.role === "user" ? msg.attachments ?? [] : [],
+      { preferResolvedUrls: true }
     )
     return {
       role: msg.role,
@@ -804,6 +805,17 @@ export function useChatMessagingService() {
       attachments: attachments.length ? attachments : undefined,
       createdAt: Date.now(),
     }
+    let outgoingUserMessage = userMessage
+    if (attachments.length) {
+      try {
+        const [resolvedUserMessage] = await resolveMessageAttachments([userMessage], isTauriRuntime)
+        if (resolvedUserMessage) {
+          outgoingUserMessage = resolvedUserMessage
+        }
+      } catch (error) {
+        console.warn("resolve_current_message_attachments_failed", error)
+      }
+    }
     const assistantMessageId = createMessageId()
     const assistantMessage: Message = {
       id: assistantMessageId,
@@ -816,7 +828,7 @@ export function useChatMessagingService() {
     clearAllCompareStates()
 
     // 更新 UI 状态
-    setMessages([...messages, userMessage, assistantMessage])
+    setMessages([...messages, outgoingUserMessage, assistantMessage])
     setInput("")
     clearAttachments()
     setIsLoading(true)
@@ -830,7 +842,7 @@ export function useChatMessagingService() {
 
       // Local route: Rust orchestrator injects assistant persona; skip frontend prepend to avoid duplication.
       const requestMessages = buildChatMessages(
-        [...messages, userMessage],
+        [...messages, outgoingUserMessage],
         preferLocalRoute ? undefined : selectedAssistantForRequest?.systemPrompt,
       )
       const payload = {

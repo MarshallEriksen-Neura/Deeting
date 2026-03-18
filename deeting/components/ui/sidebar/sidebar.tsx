@@ -8,6 +8,7 @@ import { PanelLeft, PanelLeftClose } from "lucide-react"
 
 // Constants
 const HEADER_HEIGHT = 56
+const HEADER_STACK_OFFSET = "var(--app-header-offset, 5rem)"
 
 interface SidebarProps extends React.ComponentProps<"div"> {
   side?: "left" | "right"
@@ -53,7 +54,7 @@ const Sidebar = React.forwardRef<HTMLDivElement, SidebarProps>(
             className
           )}
           style={{
-            top: HEADER_HEIGHT,
+            top: `calc(var(--desktop-title-bar-height, 0px) + ${HEADER_HEIGHT}px)`,
           }}
           ref={ref}
           {...props}
@@ -69,7 +70,7 @@ const Sidebar = React.forwardRef<HTMLDivElement, SidebarProps>(
         ref={ref}
         className={cn(
           "group peer hidden md:block text-[var(--foreground)]",
-          "relative md:sticky md:top-[88px]", // iOS floating header: top-4 (16px) + h-16 (64px) + gap-2 (8px) = 88px
+          "relative md:sticky",
           // iOS-style glassmorphism
           "bg-white/70 dark:bg-slate-900/70 backdrop-blur-2xl",
           // iOS-style border and shadow
@@ -85,7 +86,8 @@ const Sidebar = React.forwardRef<HTMLDivElement, SidebarProps>(
         data-variant={variant}
         data-side={side}
         style={{
-            height: `calc(100vh - 88px)`, // Match top offset
+          top: `calc(var(--desktop-title-bar-height, 0px) + ${HEADER_STACK_OFFSET})`,
+          height: `calc(var(--app-viewport-height, 100dvh) - ${HEADER_STACK_OFFSET})`, // Match HeaderShell content offset
         }}
       >
         <div className="flex h-full w-full flex-col">

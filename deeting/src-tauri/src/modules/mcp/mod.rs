@@ -44,7 +44,7 @@ pub struct McpRuntimeState {
         McpBridgeState,
         crate::modules::desktop_runtime::local_gateway::LocalGatewayServer,
     >,
-    pub approvals: McpApprovalFacade<
+    pub(crate) approvals: McpApprovalFacade<
         SessionApprovalGrant,
         crate::modules::desktop_runtime::runtime::SuspendedLocalChatExecution,
     >,

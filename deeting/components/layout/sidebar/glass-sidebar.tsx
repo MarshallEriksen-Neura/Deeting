@@ -35,6 +35,7 @@ import { navIconMap, defaultNavIcon } from "./icon-map"
 
 // Header height constant (h-14 = 56px)
 const HEADER_HEIGHT = 56
+const HEADER_STACK_OFFSET = "var(--app-header-offset, 5rem)"
 
 // ============================================================================
 // Sidebar Context
@@ -261,8 +262,8 @@ function DesktopSidebar({ navigation }: DesktopSidebarProps) {
         isCollapsed ? "w-[72px]" : "w-[260px]"
       )}
       style={{
-        top: HEADER_HEIGHT,
-        height: `calc(100vh - ${HEADER_HEIGHT}px)`,
+        top: `calc(var(--desktop-title-bar-height, 0px) + ${HEADER_STACK_OFFSET})`,
+        height: `calc(var(--app-viewport-height, 100dvh) - ${HEADER_STACK_OFFSET})`,
       }}
     >
       {/* Inner border glow */}
@@ -330,7 +331,7 @@ function MobileSecondaryNav({ navigation }: MobileSecondaryNavProps) {
         "bg-[var(--surface)]/80 backdrop-blur-xl",
         "border-b border-[var(--border)]/50",
       )}
-      style={{ top: HEADER_HEIGHT }}
+      style={{ top: `calc(var(--desktop-title-bar-height, 0px) + ${HEADER_HEIGHT}px)` }}
     >
       <div className="overflow-x-auto scrollbar-hide">
         <div className="flex items-center gap-1 px-4 py-2">

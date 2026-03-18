@@ -33,11 +33,63 @@ function getTagLocalName(tagName: string): string {
 
 function normalizeExtractedDocxText(text: string): string {
   return text
-    .replace(/\u00a0/g, " ")
-    .replace(/\r\n?/g, "\n")
+    .replace(/\r/g, "")
+    .split(/\n/)
+    .map((line) => line.trim())
+    .filter((line) => {
+      if (!line) return false
+      const normalized = line.replace(/\s+/g, " ").trim()
+      if (!normalized) return false
+      return !/^(?:HYPERLINK|PAGEREF|TOC)\b/i.test(normalized)
+    })
+    .join("\n")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim()
+}
+
+function normalizeDocxInstructionText(text: string | null | undefined): string {
+  return (text ?? "").replace(/\s+/g, " ").trim()
+}
+
+function isDocxFieldInstruction(text: string | null | undefined): boolean {
+  const normalized = normalizeDocxInstructionText(text)
+  if (!normalized) return false
+  return /\b(?:TOC|PAGEREF|HYPERLINK|REF|SEQ)\b/i.test(normalized)
+}
+
+function getDocxElementAttribute(element: Element, localName: string): string | null {
+  return (
+    element.getAttribute(localName) ??
+    element.getAttribute(`w:${localName}`) ??
+    element.getAttributeNS?.(
+      "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      localName
+    ) ??
+    null
+  )
+}
+
+function collectDocxFieldInstructions(element: Element): string[] {
+  const localName = getTagLocalName(element.tagName)
+  if (localName === "instrText") {
+    const instruction = normalizeDocxInstructionText(element.textContent)
+    return instruction ? [instruction] : []
+  }
+  if (localName === "fldSimple") {
+    const instruction = normalizeDocxInstructionText(
+      getDocxElementAttribute(element, "instr")
+    )
+    return instruction ? [instruction] : []
+  }
+  return Array.from(element.children).flatMap((child) =>
+    collectDocxFieldInstructions(child)
+  )
+}
+
+function shouldSkipDocxParagraph(element: Element): boolean {
+  const instructions = collectDocxFieldInstructions(element)
+  return instructions.some((instruction) => /\b(?:TOC|PAGEREF)\b/i.test(instruction))
 }
 
 function findZipEndOfCentralDirectory(bytes: Uint8Array): number {
@@ -125,6 +177,12 @@ async function readZipEntry(bytes: Uint8Array, entryName: string): Promise<Uint8
 
 function extractNodeText(node: Node): string {
   if (node.nodeType === Node.TEXT_NODE) {
+    const parentLocalName = node.parentElement
+      ? getTagLocalName(node.parentElement.tagName)
+      : ""
+    if (parentLocalName === "instrText") {
+      return ""
+    }
     return node.textContent ?? ""
   }
   if (node.nodeType !== Node.ELEMENT_NODE) {
@@ -134,8 +192,12 @@ function extractNodeText(node: Node): string {
   const element = node as Element
   const localName = getTagLocalName(element.tagName)
 
+  if (localName === "instrText" || localName === "fldChar" || localName === "fldSimple") {
+    return ""
+  }
   if (localName === "t") {
-    return element.textContent ?? ""
+    const text = element.textContent ?? ""
+    return isDocxFieldInstruction(text) ? "" : text
   }
   if (localName === "tab") {
     return "\t"
@@ -144,8 +206,12 @@ function extractNodeText(node: Node): string {
     return "\n"
   }
   if (localName === "p") {
+    if (shouldSkipDocxParagraph(element)) {
+      return ""
+    }
     const paragraphText = Array.from(element.childNodes).map(extractNodeText).join("")
-    return paragraphText ? `${paragraphText}\n\n` : ""
+    const normalized = normalizeExtractedDocxText(paragraphText)
+    return normalized ? `${normalized}\n\n` : ""
   }
   if (localName === "tbl") {
     const rowTexts = Array.from(element.children)
@@ -153,7 +219,11 @@ function extractNodeText(node: Node): string {
       .map((row) => {
         const cellTexts = Array.from(row.children)
           .filter((child) => getTagLocalName(child.tagName) === "tc")
-          .map((cell) => normalizeExtractedDocxText(Array.from(cell.childNodes).map(extractNodeText).join("")))
+          .map((cell) =>
+            normalizeExtractedDocxText(
+              Array.from(cell.childNodes).map(extractNodeText).join("")
+            )
+          )
           .filter(Boolean)
         return cellTexts.join("\t")
       })
@@ -179,7 +249,9 @@ export function extractDocxTextFromXml(xml: string): string {
   return normalizeExtractedDocxText(text)
 }
 
-export async function extractDocxTextFromBuffer(buffer: ArrayBuffer | Uint8Array): Promise<string> {
+export async function extractDocxTextFromBuffer(
+  buffer: ArrayBuffer | Uint8Array
+): Promise<string> {
   const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer)
   const documentXmlBytes = await readZipEntry(bytes, "word/document.xml")
   const xml = new TextDecoder("utf-8").decode(documentXmlBytes)

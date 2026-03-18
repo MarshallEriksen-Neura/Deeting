@@ -18,7 +18,13 @@ export function HeaderShell({ children, ...headerProps }: HeaderShellProps) {
   return (
     <>
       {!hideHeader && <Header {...headerProps} />}
-      <div className={hideHeader ? undefined : "pt-24"}>
+      <div
+        style={
+          hideHeader
+            ? undefined
+            : { paddingTop: "var(--app-header-offset, 5rem)" }
+        }
+      >
         {children}
       </div>
     </>

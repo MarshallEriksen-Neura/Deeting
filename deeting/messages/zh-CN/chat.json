@@ -53,6 +53,11 @@
       "detail": {
         "contextLoaded": "已载入 {count} 条上下文",
         "contextLoadedWithSummary": "已载入 {count} 条上下文 · 含摘要",
+        "knowledgeContextLoading": "正在读取 {selectedFiles} 份已选文档",
+        "knowledgeContextLoaded": "已读取 {selectedFiles} 份已选文档 · 提取 {count} 个相关片段",
+        "knowledgeContextLoadedFallback": "已读取 {selectedFiles} 份已选文档 · 改用 {count} 个文档开头片段",
+        "knowledgeOverviewLoaded": "已读取 {selectedFiles} 份已选文档 · 生成 {overviewCount} 份概览",
+        "knowledgeContextEmpty": "已读取 {selectedFiles} 份已选文档 · 暂未找到可用片段",
         "routingSelected": "候选 {candidates} · 已选 {provider}",
         "templateRendered": "模板引擎 {engine}",
         "upstreamRequestStream": "上游请求 · 流式",

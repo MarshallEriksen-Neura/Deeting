@@ -165,6 +165,50 @@ fn deep_merge_json(base: &Value, override_value: &Value) -> Value {
     override_value.clone()
 }
 
+fn is_structured_chat_content(value: &Value) -> bool {
+    match value {
+        Value::Array(items) => {
+            !items.is_empty()
+                && items.iter().all(|item| {
+                    item.as_object()
+                        .and_then(|object| object.get("type").and_then(|entry| entry.as_str()))
+                        .is_some()
+                })
+        }
+        Value::Object(object) => object
+            .get("type")
+            .and_then(|entry| entry.as_str())
+            .is_some(),
+        _ => false,
+    }
+}
+
+fn parse_structured_message_content(raw: &str) -> Option<Value> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if !(trimmed.starts_with('[') || trimmed.starts_with('{')) {
+        return None;
+    }
+    let parsed = serde_json::from_str::<Value>(trimmed).ok()?;
+    if is_structured_chat_content(&parsed) {
+        Some(parsed)
+    } else {
+        None
+    }
+}
+
+fn normalize_message_content_value(value: Option<&Value>) -> Value {
+    match value {
+        Some(Value::String(text)) => {
+            parse_structured_message_content(text).unwrap_or_else(|| Value::String(text.clone()))
+        }
+        Some(other) => other.clone(),
+        None => Value::Null,
+    }
+}
+
 pub fn build_canonical_request_from_value(
     request_data: &Value,
     capability: &str,
@@ -197,7 +241,7 @@ pub fn build_canonical_request_from_value(
                     let role = item.get("role").and_then(|value| value.as_str())?;
                     Some(CanonicalMessage {
                         role: role.to_string(),
-                        content: item.get("content").cloned().unwrap_or(Value::Null),
+                        content: normalize_message_content_value(item.get("content")),
                         tool_calls: canonical_tool_calls_from_message(item),
                         tool_call_id: item
                             .get("tool_call_id")
@@ -305,28 +349,168 @@ fn canonical_input_items_from_value(value: &Value) -> Vec<CanonicalInputItem> {
 }
 
 fn canonical_input_items_from_messages(messages: &[CanonicalMessage]) -> Vec<CanonicalInputItem> {
-    let mut parts = vec![];
+    let mut items = vec![];
     for message in messages {
         if message.role == "system" {
             continue;
         }
-        if let Some(text) = message.content.as_str() {
-            if !text.trim().is_empty() {
-                parts.push(text.to_string());
+        items.extend(canonical_input_items_from_content(
+            message.role.as_str(),
+            &message.content,
+        ));
+    }
+    items
+}
+
+fn canonical_input_items_from_content(role: &str, content: &Value) -> Vec<CanonicalInputItem> {
+    match content {
+        Value::Null => vec![],
+        Value::String(text) => {
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                vec![]
+            } else {
+                vec![CanonicalInputItem {
+                    r#type: "input_text".to_string(),
+                    role: Some(role.to_string()),
+                    text: Some(text.clone()),
+                    mime_type: None,
+                    url: None,
+                    data: json!({ "type": "input_text", "text": text }),
+                }]
             }
         }
+        Value::Array(items) => items
+            .iter()
+            .flat_map(|item| canonical_input_items_from_content_block(role, item))
+            .collect(),
+        Value::Object(object) => {
+            if object
+                .get("type")
+                .and_then(|value| value.as_str())
+                .is_some()
+            {
+                canonical_input_items_from_content_block(role, content)
+            } else {
+                let text = object
+                    .get("text")
+                    .and_then(|value| value.as_str())
+                    .or_else(|| object.get("content").and_then(|value| value.as_str()))
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty());
+                match text {
+                    Some(value) => vec![CanonicalInputItem {
+                        r#type: "input_text".to_string(),
+                        role: Some(role.to_string()),
+                        text: Some(value.to_string()),
+                        mime_type: None,
+                        url: None,
+                        data: json!({ "type": "input_text", "text": value }),
+                    }],
+                    None => vec![],
+                }
+            }
+        }
+        _ => vec![],
     }
-    if parts.is_empty() {
+}
+
+fn canonical_input_items_from_content_block(role: &str, item: &Value) -> Vec<CanonicalInputItem> {
+    let Some(object) = item.as_object() else {
         return vec![];
+    };
+    let Some(block_type) = object.get("type").and_then(|value| value.as_str()) else {
+        return vec![];
+    };
+    match block_type {
+        "text" => {
+            let text = object
+                .get("text")
+                .and_then(|value| value.as_str())
+                .or_else(|| object.get("content").and_then(|value| value.as_str()))
+                .map(str::trim)
+                .filter(|value| !value.is_empty());
+            match text {
+                Some(value) => vec![CanonicalInputItem {
+                    r#type: "input_text".to_string(),
+                    role: Some(role.to_string()),
+                    text: Some(value.to_string()),
+                    mime_type: None,
+                    url: None,
+                    data: json!({ "type": "input_text", "text": value }),
+                }],
+                None => vec![],
+            }
+        }
+        "image_url" => {
+            let url = object
+                .get("image_url")
+                .and_then(|value| {
+                    value.as_str().map(|raw| raw.to_string()).or_else(|| {
+                        value
+                            .get("url")
+                            .and_then(|entry| entry.as_str())
+                            .map(str::to_string)
+                    })
+                })
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty());
+            match url {
+                Some(value) => vec![CanonicalInputItem {
+                    r#type: "input_image".to_string(),
+                    role: Some(role.to_string()),
+                    text: None,
+                    mime_type: None,
+                    url: Some(value.clone()),
+                    data: json!({ "type": "input_image", "image_url": value }),
+                }],
+                None => vec![],
+            }
+        }
+        "input_file" => {
+            let nested = object.get("input_file");
+            let file_id = nested
+                .and_then(|value| value.as_str())
+                .map(str::to_string)
+                .or_else(|| {
+                    nested.and_then(|value| {
+                        value
+                            .get("file_id")
+                            .and_then(|entry| entry.as_str())
+                            .map(str::to_string)
+                    })
+                })
+                .or_else(|| {
+                    object
+                        .get("file_id")
+                        .and_then(|value| value.as_str())
+                        .map(str::to_string)
+                })
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty());
+            let filename = nested
+                .and_then(|value| value.get("filename").and_then(|entry| entry.as_str()))
+                .or_else(|| object.get("filename").and_then(|value| value.as_str()))
+                .map(str::trim)
+                .filter(|value| !value.is_empty());
+            match file_id {
+                Some(value) => vec![CanonicalInputItem {
+                    r#type: "input_file".to_string(),
+                    role: Some(role.to_string()),
+                    text: None,
+                    mime_type: None,
+                    url: None,
+                    data: json!({
+                        "type": "input_file",
+                        "file_id": value,
+                        "filename": filename,
+                    }),
+                }],
+                None => vec![],
+            }
+        }
+        _ => vec![],
     }
-    vec![CanonicalInputItem {
-        r#type: "text".to_string(),
-        role: Some("user".to_string()),
-        text: Some(parts.join("\n\n")),
-        mime_type: None,
-        url: None,
-        data: json!({}),
-    }]
 }
 
 fn builtin_template_engine(protocol_family: &str) -> &'static str {
@@ -613,6 +797,34 @@ mod tests {
 
         assert_eq!(request.input_items.len(), 1);
         assert_eq!(request.input_items[0].text.as_deref(), Some("hello rust"));
+    }
+
+    #[test]
+    fn build_canonical_request_parses_structured_message_content_strings() {
+        let request = build_canonical_request_from_value(
+            &json!({
+                "model": "gpt-5.3-codex",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "[{\"type\":\"text\",\"text\":\"describe this\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"https://example.com/image.png\"}},{\"type\":\"input_file\",\"input_file\":{\"file_id\":\"file-1\",\"filename\":\"note.txt\"}}]"
+                    }
+                ]
+            }),
+            "chat",
+            "openai_responses",
+        );
+
+        assert!(request.messages[0].content.is_array());
+        assert_eq!(request.input_items.len(), 3);
+        assert_eq!(request.input_items[0].r#type, "input_text");
+        assert_eq!(request.input_items[1].r#type, "input_image");
+        assert_eq!(
+            request.input_items[1].url.as_deref(),
+            Some("https://example.com/image.png")
+        );
+        assert_eq!(request.input_items[2].r#type, "input_file");
+        assert_eq!(request.input_items[2].data["file_id"], json!("file-1"));
     }
 
     #[test]

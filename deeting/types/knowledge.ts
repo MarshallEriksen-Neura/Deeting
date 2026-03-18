@@ -46,7 +46,7 @@ export interface KnowledgeFolder {
 /** Storage and vector usage statistics */
 export interface KnowledgeStats {
   usedBytes: number
-  totalBytes: number
+  totalBytes?: number | null
   totalVectors: number
   totalFiles: number
   totalFolders: number

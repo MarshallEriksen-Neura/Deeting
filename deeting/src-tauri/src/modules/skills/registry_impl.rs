@@ -242,82 +242,6 @@ async fn migrate_conflicting_local_skill_installs_for_path(
     Ok(())
 }
 
-fn resolve_shared_agent_skills_dir() -> Option<PathBuf> {
-    crate::modules::skills::registry_scan::resolve_shared_agent_skills_dir()
-}
-
-fn resolve_workspace_official_skills_dir() -> PathBuf {
-    crate::modules::skills::registry_scan::resolve_workspace_official_skills_dir()
-}
-
-fn select_official_skills_scan_dir(
-    workspace_official_skills_dir: PathBuf,
-    bundled_official_skills_dir: Option<PathBuf>,
-) -> PathBuf {
-    crate::modules::skills::registry_scan::select_official_skills_scan_dir(
-        workspace_official_skills_dir,
-        bundled_official_skills_dir,
-    )
-}
-
-pub(crate) fn resolve_local_skill_scan_targets(
-    app: &AppHandle,
-) -> Result<Vec<(std::path::PathBuf, &'static str)>, String> {
-    crate::modules::skills::registry_scan::resolve_local_skill_scan_targets(app)
-}
-
-pub(crate) async fn register_local_skills_from_scan_targets_inner(
-    scan_targets: &[(std::path::PathBuf, &'static str)],
-    sdk_pythonpath: &str,
-    store: std::sync::Arc<crate::modules::mcp::store::McpStore>,
-    provider_state: std::sync::Arc<crate::modules::providers::ProviderState>,
-    memory_state: std::sync::Arc<crate::modules::memory::MemoryState>,
-    wait_for_vector_index: bool,
-) -> Result<usize, String> {
-    crate::modules::skills::registry_scan::register_local_skills_from_scan_targets_inner(
-        scan_targets,
-        sdk_pythonpath,
-        store,
-        provider_state,
-        memory_state,
-        wait_for_vector_index,
-    )
-    .await
-}
-
-async fn cleanup_hidden_local_skill_installs(
-    scan_targets: &[(std::path::PathBuf, &'static str)],
-    store: &crate::modules::mcp::store::McpStore,
-    memory_state: &crate::modules::memory::MemoryState,
-) -> Result<(), String> {
-    let installs = store.list_local_skill_installs().await.map_err(to_string)?;
-    for install in installs {
-        let install_path = Path::new(&install.install_path);
-        if !scan_targets
-            .iter()
-            .any(|(root, _)| install_path.starts_with(root))
-        {
-            continue;
-        }
-        let Some(name) = install_path.file_name() else {
-            continue;
-        };
-        if !is_hidden_name(name) {
-            continue;
-        }
-
-        store
-            .delete_local_skill_install(&install.skill_id)
-            .await
-            .map_err(to_string)?;
-        let _ = memory_state
-            .service
-            .delete_assets_by_package(&install.skill_id)
-            .await;
-    }
-    Ok(())
-}
-
 fn is_allowed_skill_repo_url(repo_url: &str) -> bool {
     let normalized = repo_url.trim().to_ascii_lowercase();
     normalized.starts_with("https://github.com/") || normalized.starts_with("git@github.com:")
@@ -2890,8 +2814,10 @@ mod tests {
         let workspace_dir = temp_skill_dir("workspace-official-skills");
         let bundled_dir = temp_skill_dir("bundled-official-skills");
 
-        let selected =
-            select_official_skills_scan_dir(workspace_dir.clone(), Some(bundled_dir.clone()));
+        let selected = crate::modules::skills::registry_scan::select_official_skills_scan_dir(
+            workspace_dir.clone(),
+            Some(bundled_dir.clone()),
+        );
 
         assert_eq!(selected, workspace_dir);
 
@@ -2907,8 +2833,10 @@ mod tests {
         ));
         let bundled_dir = temp_skill_dir("bundled-official-skills-fallback");
 
-        let selected =
-            select_official_skills_scan_dir(workspace_dir.clone(), Some(bundled_dir.clone()));
+        let selected = crate::modules::skills::registry_scan::select_official_skills_scan_dir(
+            workspace_dir.clone(),
+            Some(bundled_dir.clone()),
+        );
 
         assert_eq!(selected, bundled_dir);
 
