@@ -12,9 +12,9 @@ pub(crate) use uuid::Uuid;
 
 pub(crate) use crate::modules::code_mode::types::ExecuteLocalCodeModeRequest;
 pub(crate) use crate::modules::mcp::error::McpError;
-pub(crate) use mcp_core::types::*;
 pub(crate) use crate::modules::mcp::McpRuntimeState;
 pub(crate) use crate::state::AppState;
+pub(crate) use mcp_core::types::*;
 
 pub(crate) const DESKTOP_CONFIG_SCOUT_BASE_URL_KEY: &str = "scout.base_url";
 pub(crate) const SCOUT_SERVICE_URL_ENV_KEY: &str = "SCOUT_SERVICE_URL";

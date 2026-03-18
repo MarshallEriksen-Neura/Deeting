@@ -7,12 +7,26 @@ use tauri::AppHandle;
 use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
 
+use crate::modules::conversations::summary_generation::generate_local_conversation_title_with_model;
 #[cfg(test)]
 use crate::modules::custom_task_agents::types::{
     CustomTaskAgentInvocationKind, CustomTaskAgentProfile,
 };
 #[cfg(test)]
-use crate::modules::desktop_runtime::runtime::select_local_route;
+use crate::modules::desktop_runtime::runtime::control_plane::select_custom_task_agent_candidate;
+#[cfg(test)]
+use crate::modules::desktop_runtime::runtime::prompt_assets::PromptAssets;
+#[cfg(test)]
+use crate::modules::desktop_runtime::runtime::prompt_plan::{
+    build_local_prelude_messages, parse_router_prompt_local_context,
+    render_local_base_system_prompt, render_local_router_base_prompt,
+    router_prompt_default_local_context, router_prompt_response_language_for_locale_pref,
+};
+use crate::modules::desktop_runtime::runtime::resolve_local_model_connection;
+#[cfg(test)]
+use crate::modules::desktop_runtime::runtime::route_selector::{
+    select_local_route, LocalRouteKind,
+};
 use crate::modules::desktop_runtime::runtime::{
     build_default_local_execution_policy, build_local_control_plane_result,
     build_local_control_plane_status_meta, build_local_execution_policy,
@@ -21,20 +35,11 @@ use crate::modules::desktop_runtime::runtime::{
     LocalControlPlaneResult, LocalExecutionPolicy, LocalExecutionRequest, LocalRouteDecision,
     RuntimeDiscoveryBundle,
 };
-#[cfg(test)]
-use crate::modules::desktop_runtime::runtime::{
-    build_local_prelude_messages, parse_router_prompt_local_context,
-    render_local_base_system_prompt, render_local_router_base_prompt,
-    router_prompt_default_local_context, router_prompt_response_language_for_locale_pref,
-    select_custom_task_agent_candidate, LocalRouteKind, PromptAssets,
-};
-use crate::modules::conversations::summary_generation::generate_local_conversation_title_with_model;
-use crate::modules::desktop_runtime::runtime::resolve_local_model_connection;
-use mcp_core::types::LocalChatInputMessage;
-use mcp_session::conversation::CreateConversationMessageRequest;
 use crate::modules::memory::types::{LocalMemoryItem, LocalMemoryListQuery, LocalMemorySearchItem};
 use crate::modules::providers::model_guard::ensure_required_local_models_configured;
 use crate::state::AppState;
+use mcp_core::types::LocalChatInputMessage;
+use mcp_session::conversation::CreateConversationMessageRequest;
 #[cfg(test)]
 use std::collections::HashMap;
 
@@ -2384,17 +2389,15 @@ mod tests {
 
     #[test]
     fn build_compare_only_messages_requires_latest_assistant_answer() {
-        let messages = vec![
-            mcp_session::conversation::LocalConversationHistoryMessage {
-                role: "user".to_string(),
-                content: Some(json!("question only")),
-                turn_index: Some(1),
-                created_at: None,
-                is_truncated: Some(false),
-                name: None,
-                meta_info: None,
-            },
-        ];
+        let messages = vec![mcp_session::conversation::LocalConversationHistoryMessage {
+            role: "user".to_string(),
+            content: Some(json!("question only")),
+            turn_index: Some(1),
+            created_at: None,
+            is_truncated: Some(false),
+            name: None,
+            meta_info: None,
+        }];
 
         let error = build_compare_only_messages(messages).expect_err("missing baseline answer");
         assert!(error.contains("latest assistant answer"));

@@ -1,5 +1,5 @@
-use crate::modules::mcp::commands::support::*;
 use super::search_ranking::lexical_rank_asset_hits;
+use crate::modules::mcp::commands::support::*;
 
 pub(crate) const LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION: &str = "capability_activation.v1";
 

@@ -4,24 +4,22 @@ use mcp_registry::diagnostics::{
 use serde_json::{json, Value};
 use tauri::{AppHandle, State};
 
+use crate::state::AppState;
 use mcp_registry::types::{
     LocalCapabilityRegistryDiagnosticsItem, LocalCapabilityRegistryDiagnosticsResponse,
 };
 use mcp_session::admin::{
     LocalAdminConversationItem, LocalAdminConversationListResponse,
-    LocalAdminConversationMessageItem, LocalAdminConversationMessageListResponse,
-    LocalAdminConversationMessageQuery, LocalAdminConversationQuery,
-    LocalAdminConversationSummaryItem, LocalAdminConversationSummaryListResponse,
+    LocalAdminConversationMessageListResponse, LocalAdminConversationMessageQuery,
+    LocalAdminConversationQuery, LocalAdminConversationSummaryListResponse,
     LocalConversationSummaryBatchRetryRequest, LocalConversationSummaryBatchRetryResponse,
-    LocalConversationSummaryEnqueueResponse, LocalConversationSummaryIdleTaskItem,
-    LocalConversationSummaryIdleTaskListResponse, LocalConversationSummaryIdleTaskQuery,
-    LocalConversationSummaryJobItem, LocalConversationSummaryJobListResponse,
+    LocalConversationSummaryEnqueueResponse, LocalConversationSummaryIdleTaskListResponse,
+    LocalConversationSummaryIdleTaskQuery, LocalConversationSummaryJobListResponse,
     LocalConversationSummaryJobQuery, LocalConversationSummaryQueueStats, LocalGatewayLogItem,
     LocalGatewayLogListResponse, LocalGatewayLogQuery, LocalGatewayLogStatsResponse,
     LocalMaintenanceActionRequest, LocalMaintenanceLogItem, LocalMaintenanceLogListResponse,
     LocalMaintenanceLogQuery, LocalTraceFeedback, LocalTraceFeedbackRequest,
 };
-use crate::state::AppState;
 
 fn to_string(error: impl std::fmt::Display) -> String {
     error.to_string()
@@ -499,8 +497,7 @@ async fn execute_repair_action(
             as i64;
     let tools = state.mcp.store.list_tools().await.map_err(to_string)?;
     let mcp_tool_reindexed_count = tools.len() as i64;
-    crate::modules::knowledge::tool_index::index_mcp_tools(state, &tools)
-        .await;
+    crate::modules::knowledge::tool_index::index_mcp_tools(state, &tools).await;
 
     let assistants = state
         .mcp

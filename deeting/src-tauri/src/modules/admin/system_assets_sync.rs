@@ -3,9 +3,7 @@
 use std::collections::HashSet;
 use std::path::Path;
 
-use mcp_session::assistant::{
-    CloudSystemAssistantSnapshot, CloudSystemAssistantVersionSnapshot,
-};
+use mcp_session::assistant::{CloudSystemAssistantSnapshot, CloudSystemAssistantVersionSnapshot};
 use mcp_session::system_assets::{
     CloudSystemAssetSyncItem, CloudSystemAssetSyncResponse, LocalSystemAssetSyncResponse,
 };

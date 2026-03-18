@@ -2,6 +2,7 @@ use mcp_session::context::LocalConversationRuntimeWindow;
 use serde_json::Value;
 use tauri::State;
 
+use crate::state::AppState;
 use mcp_session::conversation::{
     CreateConversationMessageRequest, LocalConversationArchiveResponse,
     LocalConversationClearResponse, LocalConversationCreateRequest,
@@ -11,7 +12,6 @@ use mcp_session::conversation::{
     LocalConversationRenameResponse, LocalConversationSessionPage, LocalConversationSessionsQuery,
     LocalConversationStatus, LocalConversationWindowResponse,
 };
-use crate::state::AppState;
 
 const FACT_EXTRACTION_NEW_CHAT_TRIGGER_KEY_PREFIX: &str = "fact_extraction.new_chat_triggered";
 const FACT_EXTRACTION_MIN_MESSAGES: usize = 2;

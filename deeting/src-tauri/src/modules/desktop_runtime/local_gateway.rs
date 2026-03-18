@@ -22,10 +22,10 @@ use uuid::Uuid;
 use crate::modules::desktop_runtime::local_orchestrator::{
     execute_local_orchestrated_chat, extract_user_text_from_messages, LocalOrchestratorInput,
 };
+use crate::state::AppState;
 use mcp_session::conversation::{
     LocalConversationCompareFinalizeRequest, LocalConversationCompareFinalizeResponse,
 };
-use crate::state::AppState;
 use mcp_transport::gateway::{
     build_stream_error_payload, extract_selected_knowledge_file_ids, normalize_optional_string,
     GatewayHealthResponse, LocalChatCancelResponse, LocalChatCompletionRequest,

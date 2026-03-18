@@ -4,6 +4,7 @@ use tauri::State;
 use crate::modules::desktop_runtime::runtime::{
     request_provider_chat_completion, resolve_local_model_connection,
 };
+use crate::state::AppState;
 use mcp_core::types::LocalChatInputMessage;
 use mcp_session::assistant::{
     CreateAssistantMessageRequest, CreateLocalAssistantRequest, LocalAssistant,
@@ -15,7 +16,6 @@ use mcp_session::assistant::{
     LocalAssistantRoutingState, LocalAssistantTag, LocalAssistantVersion,
     UpdateLocalAssistantRequest,
 };
-use crate::state::AppState;
 
 fn to_string(error: impl std::fmt::Display) -> String {
     error.to_string()

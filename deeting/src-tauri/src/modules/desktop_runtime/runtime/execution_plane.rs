@@ -5,8 +5,8 @@ mod worker_handler;
 use super::control_plane::LocalExecutionPlane;
 use super::{run_local_chat_complete_with_auto_code_mode, LocalExecutionPolicy};
 use crate::modules::ai_upstream::types::LocalModelConnection;
-use mcp_core::types::LocalChatInputMessage;
 use crate::state::AppState;
+use mcp_core::types::LocalChatInputMessage;
 use mcp_session::context::LocalConversationChatContext;
 use serde_json::{json, Value};
 use tauri::AppHandle;
@@ -146,8 +146,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::modules::desktop_runtime::runtime::route_selector::select_local_route;
     use crate::modules::desktop_runtime::runtime::{
-        build_default_local_execution_policy, build_local_execution_policy, select_local_route,
+        build_default_local_execution_policy, build_local_execution_policy,
     };
     use serde_json::json;
 

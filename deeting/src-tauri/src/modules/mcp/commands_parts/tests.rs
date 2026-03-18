@@ -6,9 +6,9 @@ mod tests {
         sync_local_system_assets_inner,
     };
     use crate::modules::conversations::summary_workers::process_next_local_conversation_summary_job_with_store;
+    use crate::modules::desktop_runtime::runtime::consult::build_local_consult_expert_network_result_with_runtime;
     use crate::modules::desktop_runtime::runtime::{
         build_auto_code_mode_tool_feedback, build_local_code_mode_entry_tools,
-        build_local_consult_expert_network_result_with_runtime,
         build_local_sdk_search_result_with_runtime, build_local_tool_call_install_gate_error_meta,
         build_local_tool_trace_blocks, extract_chat_tool_calls,
         normalize_chat_completion_response, LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,

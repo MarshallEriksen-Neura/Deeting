@@ -8,8 +8,8 @@ use crate::modules::ai_upstream::{
 use crate::modules::image_generation::commands::run_local_image_generation_task_inline;
 use crate::modules::image_generation::types::LocalImageGenerationTaskCreateRequest;
 use crate::modules::mcp::commands::runtime::{execute_mcp_tool, resolve_callable_mcp_tool_by_ref};
-use mcp_core::types::{LocalChatInputMessage, McpTool};
 use crate::state::AppState;
+use mcp_core::types::{LocalChatInputMessage, McpTool};
 use tauri::AppHandle;
 
 use super::skill_actions::{

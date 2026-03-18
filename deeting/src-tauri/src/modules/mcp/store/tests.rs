@@ -1,6 +1,6 @@
 use super::McpStore;
-use mcp_session::admin::LocalGatewayLogQuery;
 use mcp_registry::types::LocalCapabilityRegistryUpsert;
+use mcp_session::admin::LocalGatewayLogQuery;
 use serde_json::json;
 use sqlx::Row;
 use uuid::Uuid;

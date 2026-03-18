@@ -2,8 +2,8 @@ use std::collections::HashSet;
 
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::store::McpStore;
-use mcp_registry::types::LocalCapabilityRegistryUpsert;
 use mcp_registry::assets::CapabilityRegistryReadMode;
+use mcp_registry::types::LocalCapabilityRegistryUpsert;
 use mcp_session::assistant::LocalAssistant;
 use serde_json::Value;
 

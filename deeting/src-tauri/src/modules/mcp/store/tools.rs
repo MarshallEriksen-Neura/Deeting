@@ -534,5 +534,4 @@ impl McpStore {
         }
         Ok(result.rows_affected() as i64)
     }
-
 }

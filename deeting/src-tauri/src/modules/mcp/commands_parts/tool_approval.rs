@@ -9,9 +9,7 @@ pub(crate) async fn list_pending_mcp_approvals_inner(
     session_id: Option<&str>,
 ) -> Vec<Value> {
     let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
-    let session_id = session_id
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
+    let session_id = session_id.map(str::trim).filter(|value| !value.is_empty());
 
     let pending = pending_tool_calls.read().await;
     let mut approvals = pending
@@ -67,13 +65,11 @@ pub async fn list_pending_mcp_approvals(
     session_id: Option<String>,
     #[allow(non_snake_case)] sessionId: Option<String>,
 ) -> Result<Vec<Value>, String> {
-    Ok(
-        list_pending_mcp_approvals_inner(
-            state.mcp.approvals.pending_tool_calls.as_ref(),
-            session_id.or(sessionId).as_deref(),
-        )
-        .await,
+    Ok(list_pending_mcp_approvals_inner(
+        state.mcp.approvals.pending_tool_calls.as_ref(),
+        session_id.or(sessionId).as_deref(),
     )
+    .await)
 }
 
 #[tauri::command]

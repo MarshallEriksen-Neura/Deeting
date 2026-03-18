@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 
-#[cfg(test)]
-use mcp_runtime::policy::full_code_mode_tool_names;
 use crate::modules::code_mode::core_tool_contracts::build_core_tool_function_entries;
 use crate::modules::custom_task_agents::skill_actions::sanitize_callable_name;
+#[cfg(test)]
+use mcp_runtime::policy::full_code_mode_tool_names;
 
 const DYNAMIC_CAPABILITY_ALIAS_PREFIX: &str = "cap_";
 

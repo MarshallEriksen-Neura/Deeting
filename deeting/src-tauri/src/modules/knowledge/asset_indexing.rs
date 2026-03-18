@@ -196,7 +196,10 @@ pub async fn rebuild_local_embedding_assets(
                 Some(vector)
             }
             Err(error) => {
-                warn!("memory rebuild embedding failed for {}: {}", memory.id, error);
+                warn!(
+                    "memory rebuild embedding failed for {}: {}",
+                    memory.id, error
+                );
                 failed += 1;
                 memory_failed += 1;
                 None

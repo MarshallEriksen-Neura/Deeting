@@ -40,11 +40,10 @@ pub struct SuspendedLocalChatExecutionEnvelope {
 pub struct McpRuntimeState {
     pub store: Arc<McpStore>,
     pub process_manager: ProcessManager,
-    pub transport:
-        McpTransportFacade<
-            McpBridgeState,
-            crate::modules::desktop_runtime::local_gateway::LocalGatewayServer,
-        >,
+    pub transport: McpTransportFacade<
+        McpBridgeState,
+        crate::modules::desktop_runtime::local_gateway::LocalGatewayServer,
+    >,
     pub approvals: McpApprovalFacade<
         SessionApprovalGrant,
         crate::modules::desktop_runtime::runtime::SuspendedLocalChatExecution,

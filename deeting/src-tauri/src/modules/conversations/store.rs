@@ -5,11 +5,11 @@ use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::store::McpStore;
 use mcp_core::types::LocalChatInputMessage;
 use mcp_session::admin::*;
-use mcp_session::conversation::*;
 use mcp_session::context::{
     LocalConversationChatContext, LocalConversationRegenerateContext,
     LocalConversationRuntimeWindow, LocalConversationTitleContext,
 };
+use mcp_session::conversation::*;
 use mcp_storage::helpers::{
     estimate_token_count, now_rfc3339, now_unix_epoch, parse_rfc3339_to_unix_epoch,
 };
@@ -3731,5 +3731,4 @@ impl McpStore {
             summary,
         })
     }
-
 }

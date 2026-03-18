@@ -203,9 +203,7 @@ fn normalize_optional_string(value: Option<&str>) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        build_fact_rebuild_conversation_text, clear_session_auto_extraction_memories,
-    };
+    use super::{build_fact_rebuild_conversation_text, clear_session_auto_extraction_memories};
     use crate::modules::memory::types::{CreateLocalMemoryRequest, LocalMemoryListQuery};
     use mcp_session::context::LocalConversationRuntimeWindow;
     use mcp_session::conversation::LocalConversationHistoryMessage;

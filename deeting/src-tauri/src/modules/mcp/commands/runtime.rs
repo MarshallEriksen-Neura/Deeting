@@ -5,7 +5,9 @@ pub(crate) mod source_sync;
 pub(crate) mod tool_execution;
 pub(crate) mod tool_resolution;
 
-pub(crate) use capability_catalog::{build_capability_assets_for_read_mode, CapabilityRegistryReadMode};
+pub(crate) use capability_catalog::{
+    build_capability_assets_for_read_mode, CapabilityRegistryReadMode,
+};
 pub(crate) use config::{apply_config_payload, now_rfc3339};
 pub(crate) use tool_execution::{
     approve_mcp_tool_inner_with_context, execute_mcp_tool,

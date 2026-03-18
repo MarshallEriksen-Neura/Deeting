@@ -1,5 +1,3 @@
-use crate::modules::mcp::commands::common_impl::to_string;
-use crate::modules::mcp::commands::support::*;
 use super::{
     append_streamable_local_tool_result_blocks, build_auto_code_mode_tool_feedback,
     build_local_code_mode_entry_tools_with_allowlist, build_local_consult_expert_network_result,
@@ -11,7 +9,9 @@ use super::{
     resolve_skill_binding_by_ref, LocalCapabilityActivationState, LocalExecutionPolicy,
     LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION, LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
 };
+use crate::modules::mcp::commands::common_impl::to_string;
 use crate::modules::mcp::commands::common_impl::LocalModelConnection;
+use crate::modules::mcp::commands::support::*;
 
 #[derive(Debug, Clone)]
 struct CapabilityExecutionContract {
@@ -1135,8 +1135,11 @@ async fn maybe_handle_local_code_mode_tool_calls(
             }
         } else if tool_name == "refresh_skill_index" {
             realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call.id,"toolName":tool_name,"status":"running"})]);
-            match crate::modules::skills::commands::register_local_skills_inner(app.clone(), app_state)
-                .await
+            match crate::modules::skills::commands::register_local_skills_inner(
+                app.clone(),
+                app_state,
+            )
+            .await
             {
                 Ok(registered) => {
                     synthesized = true;
@@ -1176,13 +1179,11 @@ async fn maybe_handle_local_code_mode_tool_calls(
             {
                 Ok(tool) => {
                     let risk = app_state.mcp.assess_tool_risk(&tool, &call.arguments);
-                    let approval_context = app_state
-                        .mcp
-                        .build_approval_context(
-                            call.id.as_deref(),
-                            None,
-                            Some(chat_ctx.session_id.as_str()),
-                        );
+                    let approval_context = app_state.mcp.build_approval_context(
+                        call.id.as_deref(),
+                        None,
+                        Some(chat_ctx.session_id.as_str()),
+                    );
                     match execute_or_queue_mcp_tool_call_with_tool_ref(
                         &approval_context,
                         Some(&risk),
@@ -1266,13 +1267,11 @@ async fn maybe_handle_local_code_mode_tool_calls(
                         let risk = app_state
                             .mcp
                             .assess_skill_binding_risk(&binding, &call.arguments);
-                        let approval_context = app_state
-                            .mcp
-                            .build_approval_context(
-                                call.id.as_deref(),
-                                None,
-                                Some(chat_ctx.session_id.as_str()),
-                            );
+                        let approval_context = app_state.mcp.build_approval_context(
+                            call.id.as_deref(),
+                            None,
+                            Some(chat_ctx.session_id.as_str()),
+                        );
                         match execute_or_queue_mcp_tool_call_with_tool_ref(
                             &approval_context,
                             Some(&risk),
@@ -1518,7 +1517,7 @@ fn build_execution_contract_from_search_result(
 mod tests {
     use super::*;
     use crate::modules::desktop_runtime::runtime::build_local_tool_call_install_gate_error_meta;
-    use crate::modules::desktop_runtime::runtime::dynamic_capability_alias;
+    use crate::modules::desktop_runtime::runtime::code_mode_catalog::dynamic_capability_alias;
     use crate::modules::desktop_runtime::runtime::LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE;
 
     #[test]

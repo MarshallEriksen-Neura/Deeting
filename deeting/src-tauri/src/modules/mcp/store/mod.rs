@@ -32,9 +32,9 @@ pub use mcp_storage::types::{
     NewSource, ToolUpsert,
 };
 
-mod tool_registry;
 mod helpers;
 mod sources;
+mod tool_registry;
 mod tools;
 
 #[cfg(test)]
@@ -315,5 +315,4 @@ impl McpStore {
         self.purge_legacy_skill_mcp_rows().await?;
         Ok(())
     }
-
 }

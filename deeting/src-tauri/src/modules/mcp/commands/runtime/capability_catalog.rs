@@ -5,31 +5,27 @@ use crate::modules::assistants::capability_registry::assistant_capability_availa
 use crate::modules::assistants::capability_registry::{
     assistant_registry_availability_override, replaced_by_assistant_registry,
 };
+#[cfg(test)]
+use mcp_core::types::{McpConflictStatus, McpSourceType, McpTool, McpToolStatus};
 use mcp_registry::assets::build_capability_assets_for_read_mode as build_capability_assets_for_read_mode_inner;
+#[cfg(test)]
+pub(crate) use mcp_registry::assets::capability_asset_match_key;
+pub(crate) use mcp_registry::assets::CapabilityRegistryReadMode;
 #[cfg(test)]
 use mcp_registry::assets::{
     local_capability_registry_entry_is_usable, local_capability_registry_entry_to_asset,
 };
-pub(crate) use mcp_registry::assets::{
-    CapabilityRegistryReadMode,
-};
-#[cfg(test)]
-pub(crate) use mcp_registry::assets::{
-    capability_asset_match_key,
-};
 use mcp_registry::types::LocalCapabilityRegistrySnapshot;
-#[cfg(test)]
-use mcp_core::types::{McpConflictStatus, McpSourceType, McpTool, McpToolStatus};
 #[cfg(test)]
 use serde_json::json;
 use serde_json::Value;
 
-use crate::modules::code_mode::core_tool_contracts::build_core_tool_assets;
 use super::tool_resolution::ToolAvailabilityClass;
 use super::{
     build_db_tool_availability_catalog, fallback_local_tool_availability, ToolAvailability,
     ToolAvailabilityCatalog,
 };
+use crate::modules::code_mode::core_tool_contracts::build_core_tool_assets;
 
 #[derive(Clone)]
 pub(crate) struct CapabilityRegistry {

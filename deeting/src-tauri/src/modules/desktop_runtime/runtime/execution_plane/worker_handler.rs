@@ -12,9 +12,9 @@ use crate::modules::desktop_runtime::runtime::control_plane::LocalExecutionPlane
 use crate::modules::desktop_runtime::runtime::{
     build_local_tool_trace_blocks, select_worker_custom_task_agent,
 };
-use mcp_core::types::LocalChatInputMessage;
 use crate::state::AppState;
 use base64::Engine;
+use mcp_core::types::LocalChatInputMessage;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};

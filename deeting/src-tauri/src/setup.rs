@@ -3,7 +3,6 @@ use crate::modules::im::runtime::spawn_im_runtime_worker;
 use crate::modules::knowledge::KnowledgeState;
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::process::ProcessManager;
-use mcp_core::types::McpSourceStatus;
 use crate::modules::mcp::McpRuntimeState;
 use crate::modules::memory::MemoryState;
 use crate::modules::monitor::MonitorState;
@@ -12,6 +11,7 @@ use crate::modules::sandbox::SandboxState;
 use crate::state::AppState;
 use crate::utils::*;
 use log::warn;
+use mcp_core::types::McpSourceStatus;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -102,8 +102,8 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         crate::modules::code_mode::core_tool_contracts::sync_core_tool_registry_entries(
             store.as_ref(),
         )
-            .await
-            .map_err(McpError::Storage)?;
+        .await
+        .map_err(McpError::Storage)?;
         store
             .sync_all_mcp_tool_registry_entries()
             .await
@@ -351,10 +351,11 @@ fn spawn_background_tasks(handle: AppHandle, sync_state: AppState) {
 
         let app_state_for_knowledge_index = sync_state.clone();
         tauri::async_runtime::spawn(async move {
-            if let Err(err) = crate::modules::knowledge::asset_indexing::rebuild_local_knowledge_vector_index(
-                &app_state_for_knowledge_index,
-            )
-            .await
+            if let Err(err) =
+                crate::modules::knowledge::asset_indexing::rebuild_local_knowledge_vector_index(
+                    &app_state_for_knowledge_index,
+                )
+                .await
             {
                 warn!("local knowledge vector index bootstrap failed: {}", err);
             }

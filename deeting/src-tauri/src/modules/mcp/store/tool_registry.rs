@@ -3,10 +3,7 @@ use mcp_core::types::{McpTool, McpToolStatus};
 use mcp_registry::types::LocalCapabilityRegistryUpsert;
 
 impl McpStore {
-    pub async fn sync_mcp_tool_registry_entry(
-        &self,
-        tool: &McpTool,
-    ) -> Result<i64, McpError> {
+    pub async fn sync_mcp_tool_registry_entry(&self, tool: &McpTool) -> Result<i64, McpError> {
         let generation = self.next_local_capability_registry_generation().await?;
         let entry = build_mcp_tool_registry_entry(tool, generation);
         self.replace_local_capability_registry_entries(&tool.id, &[entry])
@@ -38,11 +35,9 @@ impl McpStore {
         }
         Ok(count)
     }
-
 }
 
 fn mcp_tool_runtime_state(tool: &McpTool) -> &'static str {
-
     match tool.status {
         McpToolStatus::Healthy | McpToolStatus::Degraded => "ready",
         McpToolStatus::Stopped => "stopped",
@@ -51,10 +46,7 @@ fn mcp_tool_runtime_state(tool: &McpTool) -> &'static str {
     }
 }
 
-fn build_mcp_tool_registry_entry(
-    tool: &McpTool,
-    generation: i64,
-) -> LocalCapabilityRegistryUpsert {
+fn build_mcp_tool_registry_entry(tool: &McpTool, generation: i64) -> LocalCapabilityRegistryUpsert {
     let runtime_state = mcp_tool_runtime_state(tool);
     LocalCapabilityRegistryUpsert {
         capability_id: tool.id.clone(),

@@ -581,9 +581,7 @@ async fn dispatch_internal_skill_host_tool(
     arguments: &JsonValue,
 ) -> Result<Option<JsonValue>, String> {
     crate::modules::capability_control_plane::dispatch_internal_skill_host_tool(
-        store,
-        tool_name,
-        arguments,
+        store, tool_name, arguments,
     )
     .await
 }
@@ -646,7 +644,9 @@ async fn execute_deeting_tool_binding(
         )
         .await
         {
-            Ok(result) => result.map_err(|err| format!("skill binding execution error: {}", err))?,
+            Ok(result) => {
+                result.map_err(|err| format!("skill binding execution error: {}", err))?
+            }
             Err(_) => {
                 return Err(format!(
                     "skill binding '{}' timed out after {}s",
@@ -716,7 +716,8 @@ pub(crate) async fn execute_skill_binding(
     if binding.binding_kind == "deeting_tool" && binding.runtime == "python" {
         return execute_deeting_tool_binding(store, binding, arguments).await;
     }
-    let (command, args) = build_command_for_skill_binding_with_store(store, binding, arguments).await?;
+    let (command, args) =
+        build_command_for_skill_binding_with_store(store, binding, arguments).await?;
     let env = resolve_skill_binding_env(store, binding).await?;
     ensure_skill_binding_entry_path_exists(store, binding).await?;
     let config_json = resolve_skill_binding_config_json(store, binding).await?;
@@ -974,7 +975,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolve_skill_binding_by_ref_reads_enabled_binding_and_fingerprint_from_skill_runtime() {
+    async fn resolve_skill_binding_by_ref_reads_enabled_binding_and_fingerprint_from_skill_runtime()
+    {
         let store = create_test_store("resolve-skill-binding-by-ref").await;
         let skill_id = "official.skills.weather";
         let skill_root = std::env::temp_dir().join(format!(
@@ -1029,7 +1031,10 @@ mod tests {
         .expect("resolve binding")
         .expect("binding should exist");
 
-        assert_eq!(binding.binding_id, "skill_binding::official.skills.weather::get_weather");
+        assert_eq!(
+            binding.binding_id,
+            "skill_binding::official.skills.weather::get_weather"
+        );
         assert_eq!(
             skill_binding_fingerprint(&binding),
             format!("{}:{}", binding.binding_id, binding.updated_at)
@@ -1218,9 +1223,10 @@ mod tests {
             updated_at: "2026-03-18T00:00:00Z".to_string(),
         };
 
-        let result = execute_skill_binding(&store, &binding, &serde_json::json!({ "city": "Paris" }))
-            .await
-            .expect("execute skill binding");
+        let result =
+            execute_skill_binding(&store, &binding, &serde_json::json!({ "city": "Paris" }))
+                .await
+                .expect("execute skill binding");
 
         assert_eq!(result["tool"], serde_json::json!("get_weather"));
         assert_eq!(result["city"], serde_json::json!("Paris"));

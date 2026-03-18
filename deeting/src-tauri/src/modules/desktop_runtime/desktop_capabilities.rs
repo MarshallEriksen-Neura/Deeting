@@ -2,10 +2,10 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
-use mcp_session::assistant::CreateLocalAssistantRequest;
 use crate::modules::memory::types::{CreateLocalMemoryRequest, LocalMemorySearchQuery};
 use crate::modules::monitor::types::{LocalMonitorListQuery, LocalMonitorTaskCreateRequest};
 use crate::modules::providers::types::{ProviderPreset, ProviderVerifyRequest};
+use mcp_session::assistant::CreateLocalAssistantRequest;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DesktopCapabilityKind {
@@ -308,7 +308,7 @@ async fn dispatch_skill_registry_diagnostics() -> Result<Value, String> {
     let app_state = global_app_state_required()?;
     serde_json::to_value(
         crate::modules::admin::commands::build_local_capability_registry_diagnostics(&app_state)
-        .await?,
+            .await?,
     )
     .map_err(|err| err.to_string())
 }

@@ -6,9 +6,9 @@ use crate::modules::ai_upstream::gateway_log_recorder::{
     record_gateway_log, GatewayLogEntry,
 };
 use crate::modules::ai_upstream::types::LocalModelConnection;
-use mcp_core::types::LocalChatInputMessage;
 use crate::modules::providers::protocols::infer_protocol_family;
 use crate::state::AppState;
+use mcp_core::types::LocalChatInputMessage;
 use uuid::Uuid;
 
 fn to_string<T: std::fmt::Display>(err: T) -> String {

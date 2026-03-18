@@ -3,14 +3,12 @@ use super::{
     runtime::{
         apply_config_payload, build_desktop_mcp_tool_views,
         execute_or_queue_mcp_tool_call_with_tool_ref, now_rfc3339,
-        resolve_callable_mcp_tool_by_ref,
-        DesktopMcpToolView,
+        resolve_callable_mcp_tool_by_ref, DesktopMcpToolView,
     },
     support::*,
 };
 use crate::modules::knowledge::tool_index::{
-    delete_mcp_tool_assets, index_mcp_tools, list_indexed_mcp_tool_ids,
-    reindex_desktop_tool_asset,
+    delete_mcp_tool_assets, index_mcp_tools, list_indexed_mcp_tool_ids, reindex_desktop_tool_asset,
 };
 use crate::modules::skill_runtime::resolve_skill_binding_by_ref;
 
@@ -277,8 +275,13 @@ pub async fn delete_local_mcp_tool(
         }
     }
 
-    delete_mcp_tool_assets(state.inner(), &tool.id, source_id.as_deref(), sibling_count <= 1)
-        .await?;
+    delete_mcp_tool_assets(
+        state.inner(),
+        &tool.id,
+        source_id.as_deref(),
+        sibling_count <= 1,
+    )
+    .await?;
 
     Ok(())
 }
@@ -409,5 +412,3 @@ pub async fn get_mcp_logs(
 pub async fn clear_mcp_logs(state: State<'_, AppState>, tool_id: String) -> Result<(), String> {
     clear_mcp_logs_inner(&state.mcp, &tool_id).await
 }
-
- 

@@ -743,10 +743,7 @@ impl McpStore {
         Ok(result.rows_affected() as i64)
     }
 
-    pub async fn disable_local_skills_by_ids(
-        &self,
-        skill_ids: &[String],
-    ) -> Result<i64, McpError> {
+    pub async fn disable_local_skills_by_ids(&self, skill_ids: &[String]) -> Result<i64, McpError> {
         let normalized_skill_ids: Vec<String> = skill_ids
             .iter()
             .map(|raw| raw.trim().to_string())
@@ -777,10 +774,7 @@ impl McpStore {
         Ok(result.rows_affected() as i64)
     }
 
-    pub async fn enable_local_skills_by_ids(
-        &self,
-        skill_ids: &[String],
-    ) -> Result<i64, McpError> {
+    pub async fn enable_local_skills_by_ids(&self, skill_ids: &[String]) -> Result<i64, McpError> {
         let normalized_skill_ids: Vec<String> = skill_ids
             .iter()
             .map(|raw| raw.trim().to_string())

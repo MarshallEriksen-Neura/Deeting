@@ -10,14 +10,14 @@ use mcp_session::admin::{
 };
 use mcp_session::assistant::{
     CloudSystemAssistantSnapshot, CreateAssistantMessageRequest, CreateLocalAssistantRequest,
-    LocalAssistant, LocalAssistantEntity,
-    LocalAssistantInstallCreateRequest, LocalAssistantInstallItem, LocalAssistantInstallPage,
-    LocalAssistantInstallQuery, LocalAssistantInstallUpdateRequest, LocalAssistantMessage,
-    LocalAssistantRatingRequest, LocalAssistantRatingResponse,
-    LocalAssistantRoutingFeedbackRequest, LocalAssistantRoutingReportItem,
-    LocalAssistantRoutingReportQuery, LocalAssistantRoutingReportResponse,
-    LocalAssistantRoutingReportSummary, LocalAssistantRoutingState, LocalAssistantSummary,
-    LocalAssistantSummaryVersion, LocalAssistantTag, LocalAssistantVersion, UpdateLocalAssistantRequest,
+    LocalAssistant, LocalAssistantEntity, LocalAssistantInstallCreateRequest,
+    LocalAssistantInstallItem, LocalAssistantInstallPage, LocalAssistantInstallQuery,
+    LocalAssistantInstallUpdateRequest, LocalAssistantMessage, LocalAssistantRatingRequest,
+    LocalAssistantRatingResponse, LocalAssistantRoutingFeedbackRequest,
+    LocalAssistantRoutingReportItem, LocalAssistantRoutingReportQuery,
+    LocalAssistantRoutingReportResponse, LocalAssistantRoutingReportSummary,
+    LocalAssistantRoutingState, LocalAssistantSummary, LocalAssistantSummaryVersion,
+    LocalAssistantTag, LocalAssistantVersion, UpdateLocalAssistantRequest,
 };
 use mcp_storage::helpers::{
     deserialize_json, normalize_assistant_tag_names, normalize_feedback_tags, now_rfc3339,
@@ -505,9 +505,7 @@ pub(crate) fn row_to_assistant_entity(row: &SqliteRow) -> Result<LocalAssistantE
     })
 }
 
-pub(crate) fn row_to_assistant_version(
-    row: &SqliteRow,
-) -> Result<LocalAssistantVersion, McpError> {
+pub(crate) fn row_to_assistant_version(row: &SqliteRow) -> Result<LocalAssistantVersion, McpError> {
     let model_config: Option<serde_json::Value> = deserialize_json(row.try_get("model_config")?)?;
     let tags: Option<Vec<String>> = deserialize_json(row.try_get("tags")?)?;
     Ok(LocalAssistantVersion {
@@ -606,9 +604,7 @@ pub(crate) fn row_to_assistant_install_item(
     })
 }
 
-pub(crate) fn row_to_assistant_message(
-    row: &SqliteRow,
-) -> Result<LocalAssistantMessage, McpError> {
+pub(crate) fn row_to_assistant_message(row: &SqliteRow) -> Result<LocalAssistantMessage, McpError> {
     Ok(LocalAssistantMessage {
         id: row.try_get("id")?,
         assistant_id: row.try_get("assistant_id")?,

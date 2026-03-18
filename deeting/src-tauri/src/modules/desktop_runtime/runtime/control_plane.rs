@@ -6,10 +6,10 @@ use crate::modules::custom_task_agents::types::{
     CustomTaskAgentInvocationKind, CustomTaskAgentProfile,
 };
 use crate::modules::mcp::store::McpStore;
-use mcp_core::types::LocalChatInputMessage;
 use crate::modules::memory::service::MemoryService;
 use crate::modules::providers::embedding::EmbeddingService;
 use crate::state::AppState;
+use mcp_core::types::LocalChatInputMessage;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 

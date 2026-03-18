@@ -2,10 +2,10 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use serde_json::{json, Value};
 
+use super::search_ranking::lexical_asset_match_score;
 use crate::modules::mcp::commands::runtime::capability_catalog::{
     build_capability_registry, CapabilityRegistryEntry, RegistryAvailability, ToolContractSource,
 };
-use super::search_ranking::lexical_asset_match_score;
 
 const MAX_LIMIT: usize = 20;
 const SEMANTIC_SCORE_FLOOR: f64 = 0.30;
