@@ -1,9 +1,9 @@
 "use client"
 
 import { motion } from "framer-motion"
+import { useTranslations } from "next-intl"
 import {
   ShieldCheck,
-  Zap,
   Terminal,
   Command,
   Plane,
@@ -16,57 +16,49 @@ import {
 import { cn } from "@/lib/utils"
 
 /* ------------------------------------------------------------------ */
-/*  Core features                                                      */
-/* ------------------------------------------------------------------ */
-
-const features = [
-  {
-    title: "AI Agent",
-    titleEn: "Intelligent Agent",
-    desc: "Not just chat. Deeting's Agent can search, compare, book, analyze — completing real tasks end to end.",
-    icon: BrainCircuit,
-    color: "from-blue-500/20 to-cyan-500/20",
-    border: "border-blue-500/20",
-    iconColor: "text-blue-400",
-  },
-  {
-    title: "Privacy Vault",
-    titleEn: "Data Stays Local",
-    desc: "Chat history in local SQLite. API keys in system keychain. Your server knows nothing.",
-    icon: ShieldCheck,
-    color: "from-emerald-500/20 to-teal-500/20",
-    border: "border-emerald-500/20",
-    iconColor: "text-emerald-400",
-  },
-  {
-    title: "OS Integration",
-    titleEn: "System-Level Assistant",
-    desc: "Global shortcut (Cmd+K) activation, system tray resident. AI that lives in your OS, not a browser tab.",
-    icon: Command,
-    color: "from-purple-500/20 to-pink-500/20",
-    border: "border-purple-500/20",
-    iconColor: "text-purple-400",
-  },
-]
-
-/* ------------------------------------------------------------------ */
-/*  Scenario pills                                                     */
-/* ------------------------------------------------------------------ */
-
-const scenarios = [
-  { icon: Plane, label: "Book Flights", color: "text-blue-400 bg-blue-500/10 border-blue-500/20" },
-  { icon: BarChart3, label: "Analyze Data", color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" },
-  { icon: Code2, label: "Write Code", color: "text-violet-400 bg-violet-500/10 border-violet-500/20" },
-  { icon: Languages, label: "Translate Docs", color: "text-amber-400 bg-amber-500/10 border-amber-500/20" },
-  { icon: Terminal, label: "Dev Ops", color: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20" },
-  { icon: Sparkles, label: "Creative Writing", color: "text-pink-400 bg-pink-500/10 border-pink-500/20" },
-]
-
-/* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
 export function FeatureBento() {
+  const t = useTranslations("home.features")
+  const features = [
+    {
+      title: t("cards.agent.title"),
+      titleEn: t("cards.agent.eyebrow"),
+      desc: t("cards.agent.desc"),
+      icon: BrainCircuit,
+      color: "from-blue-500/20 to-cyan-500/20",
+      border: "border-blue-500/20",
+      iconColor: "text-blue-400",
+    },
+    {
+      title: t("cards.privacy.title"),
+      titleEn: t("cards.privacy.eyebrow"),
+      desc: t("cards.privacy.desc"),
+      icon: ShieldCheck,
+      color: "from-emerald-500/20 to-teal-500/20",
+      border: "border-emerald-500/20",
+      iconColor: "text-emerald-400",
+    },
+    {
+      title: t("cards.system.title"),
+      titleEn: t("cards.system.eyebrow"),
+      desc: t("cards.system.desc"),
+      icon: Command,
+      color: "from-purple-500/20 to-pink-500/20",
+      border: "border-purple-500/20",
+      iconColor: "text-purple-400",
+    },
+  ]
+  const scenarios = [
+    { icon: Plane, label: t("scenarios.bookFlights"), color: "text-blue-400 bg-blue-500/10 border-blue-500/20" },
+    { icon: BarChart3, label: t("scenarios.analyzeData"), color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" },
+    { icon: Code2, label: t("scenarios.writeCode"), color: "text-violet-400 bg-violet-500/10 border-violet-500/20" },
+    { icon: Languages, label: t("scenarios.translateDocs"), color: "text-amber-400 bg-amber-500/10 border-amber-500/20" },
+    { icon: Terminal, label: t("scenarios.devOps"), color: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20" },
+    { icon: Sparkles, label: t("scenarios.creativeWriting"), color: "text-pink-400 bg-pink-500/10 border-pink-500/20" },
+  ]
+
   return (
     <div id="features" className="container mx-auto px-6 py-24">
       {/* Section header */}
@@ -77,7 +69,7 @@ export function FeatureBento() {
           viewport={{ once: true }}
           className="text-3xl md:text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/60"
         >
-          One Agent, Infinite Possibilities
+          {t("title")}
         </motion.h2>
         <motion.p
           initial={{ opacity: 0, y: 16 }}
@@ -86,8 +78,7 @@ export function FeatureBento() {
           transition={{ delay: 0.1 }}
           className="text-muted-foreground max-w-2xl mx-auto"
         >
-          From booking flights to writing production code — Deeting handles it all with
-          privacy-first, zero-latency local intelligence.
+          {t("description")}
         </motion.p>
       </div>
 

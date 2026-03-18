@@ -2,11 +2,14 @@
 
 import { motion } from "framer-motion"
 import { ArrowRight, Sparkles } from "lucide-react"
-import Link from "next/link"
+import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
+import { Link } from "@/i18n/routing"
 import { HeroDemo } from "./hero-demo"
 
 export function LandingHero() {
+  const t = useTranslations("home.hero")
+
   return (
     <div className="relative min-h-[90vh] flex flex-col justify-center overflow-hidden">
 
@@ -36,7 +39,7 @@ export function LandingHero() {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
               </span>
-              AI Agent Ready
+              {t("badge")}
             </motion.div>
 
             <motion.h1
@@ -50,7 +53,7 @@ export function LandingHero() {
               </span>
               <br />
               <span className="text-foreground drop-shadow-2xl text-4xl lg:text-5xl">
-                Your AI, Your Rules
+                {t("title")}
               </span>
             </motion.h1>
 
@@ -60,9 +63,9 @@ export function LandingHero() {
               transition={{ duration: 0.5, delay: 0.2 }}
               className="text-lg text-muted-foreground max-w-xl mx-auto lg:mx-0 leading-relaxed font-light"
             >
-              Tell Deeting what you need — book flights, analyze data, write code.
+              {t("descriptionLine1")}
               <br className="hidden lg:block" />
-              One AI agent that actually gets things done.
+              {t("descriptionLine2")}
             </motion.p>
 
             <motion.div
@@ -76,17 +79,17 @@ export function LandingHero() {
                 <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl blur opacity-30 group-hover:opacity-75 transition duration-200"></div>
                 <Button className="relative w-full sm:w-auto px-8 py-4 h-auto rounded-xl font-bold text-base shadow-xl">
                   <Sparkles className="w-5 h-5" />
-                  Start Chatting
+                  {t("primaryCta")}
                   <ArrowRight className="w-4 h-4 ml-1 group-hover:translate-x-0.5 transition-transform" />
                 </Button>
               </Link>
 
               {/* Secondary CTA */}
-              <Link href="#features">
+              <a href="#features">
                 <Button variant="outline" className="w-full sm:w-auto px-8 py-4 h-auto rounded-xl font-medium backdrop-blur-sm">
-                  Learn More
+                  {t("secondaryCta")}
                 </Button>
-              </Link>
+              </a>
             </motion.div>
 
             {/* Trust badges */}
@@ -98,15 +101,15 @@ export function LandingHero() {
             >
               <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-accent/30 border border-border/50">
                 <div className="size-1.5 rounded-full bg-emerald-500" />
-                Privacy First
+                {t("trust.privacyFirst")}
               </div>
               <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-accent/30 border border-border/50">
                 <div className="size-1.5 rounded-full bg-blue-500" />
-                Local Models
+                {t("trust.localModels")}
               </div>
               <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-accent/30 border border-border/50">
                 <div className="size-1.5 rounded-full bg-amber-500" />
-                Zero Latency
+                {t("trust.zeroLatency")}
               </div>
             </motion.div>
           </div>

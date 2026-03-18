@@ -241,6 +241,40 @@ describe("Dashboard scan reviews page", () => {
         },
       ])
     })
+
+    await waitFor(() => {
+      expect(mockScanFileReview).toHaveBeenLastCalledWith("/tmp/skills/skill.find-skills/SKILL.md")
+    })
+
+    expect(
+      screen.getByText('feedback.batchApplied:{"applied":1,"failed":0,"skipped":0}')
+    ).toBeInTheDocument()
+  })
+
+  it("rescans the original scan-all scope after batch fix", async () => {
+    mockRunScanReviewActions.mockResolvedValue({ total: 1, applied: 1, failed: 0, skipped: 0, results: [] })
+    mockScanDirectoryReview.mockResolvedValue(mockRun)
+
+    render(<PageContent />)
+
+    const input = screen.getByPlaceholderText("scanInput.placeholder")
+    fireEvent.change(input, { target: { value: "/tmp/skills/leftover-path" } })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /scanInput.scanAll/ }))
+    })
+
+    await waitFor(() => {
+      expect(mockScanDirectoryReview).toHaveBeenNthCalledWith(1)
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "actions.fixAll" }))
+    })
+
+    await waitFor(() => {
+      expect(mockScanDirectoryReview).toHaveBeenNthCalledWith(2)
+    })
   })
 
   it("does not expose global maintenance buttons here anymore", async () => {
@@ -320,6 +354,49 @@ describe("Dashboard scan reviews page", () => {
 
     expect(screen.getByText("Runtime script")).toBeInTheDocument()
     expect(screen.queryByText("Index missing")).not.toBeInTheDocument()
+  })
+
+  it("runs batch fix only for actionable findings in the current filtered view", async () => {
+    mockRunScanReviewActions.mockResolvedValue({ total: 1, applied: 1, failed: 0, skipped: 0, results: [] })
+
+    const runWithMultipleFindings = {
+      ...mockRun,
+      findings: [
+        mockRun.findings[0],
+        {
+          ...mockRun.findings[0],
+          id: "finding-4",
+          code: "asset_index_missing_alt",
+          message: "Alt index missing",
+          bundle_id: "skill.alt",
+          metadata: {
+            risk_level: "medium",
+            operation_class: "process_exec",
+            target_class: "host",
+            boundary_class: "hard_boundary",
+          },
+          action: { kind: "reindex_bundle", bundle_id: "skill.alt", path: "/tmp/skills/skill.alt" },
+        },
+      ],
+    }
+
+    await triggerScanWithResults("/tmp/skills/skill.find-skills/SKILL.md", runWithMultipleFindings)
+
+    fireEvent.click(screen.getByRole("button", { name: "boundary.hard_boundary" }))
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "actions.fixAll" }))
+    })
+
+    await waitFor(() => {
+      expect(mockRunScanReviewActions).toHaveBeenCalledWith([
+        {
+          kind: "reindex_bundle",
+          bundle_id: "skill.alt",
+          path: "/tmp/skills/skill.alt",
+        },
+      ])
+    })
   })
 
   it("filters findings by operation class", async () => {

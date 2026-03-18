@@ -23,6 +23,11 @@ import {
   type LocalScanRun,
 } from "@/lib/api/local-scan"
 
+type ScanRequest =
+  | { kind: "file"; path: string }
+  | { kind: "directory"; path: string }
+  | { kind: "all" }
+
 /* -------------------------------------------------------------------------- */
 /*  Helpers                                                                    */
 /* -------------------------------------------------------------------------- */
@@ -103,7 +108,7 @@ export function PageContent() {
   const [data, setData] = useState<LocalScanRun | null>(null)
   const [isScanning, setIsScanning] = useState(false)
   const [scanError, setScanError] = useState<string | null>(null)
-  const [lastScanType, setLastScanType] = useState<"file" | "directory" | null>(null)
+  const [lastScanRequest, setLastScanRequest] = useState<ScanRequest | null>(null)
 
   // ── Filters ──────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState("")
@@ -118,6 +123,16 @@ export function PageContent() {
 
   // ── Scan handlers ────────────────────────────────────────
 
+  const executeScanRequest = async (request: ScanRequest) => {
+    if (request.kind === "file") {
+      return scanFileReview(request.path)
+    }
+    if (request.kind === "directory") {
+      return scanDirectoryReview({ path: request.path })
+    }
+    return scanDirectoryReview()
+  }
+
   const handleScan = async () => {
     const normalized = targetPath.trim()
     if (!normalized) return
@@ -125,14 +140,16 @@ export function PageContent() {
     setScanError(null)
     setFeedback(null)
     try {
-      const result = await scanFileReview(normalized)
+      const fileRequest: ScanRequest = { kind: "file", path: normalized }
+      const result = await executeScanRequest(fileRequest)
       setData(result)
-      setLastScanType("file")
+      setLastScanRequest(fileRequest)
     } catch {
       try {
-        const result = await scanDirectoryReview({ path: normalized })
+        const directoryRequest: ScanRequest = { kind: "directory", path: normalized }
+        const result = await executeScanRequest(directoryRequest)
         setData(result)
-        setLastScanType("directory")
+        setLastScanRequest(directoryRequest)
       } catch (err) {
         setScanError(err instanceof Error ? err.message : t("empty.failed"))
       }
@@ -146,9 +163,10 @@ export function PageContent() {
     setScanError(null)
     setFeedback(null)
     try {
-      const result = await scanDirectoryReview()
+      const request: ScanRequest = { kind: "all" }
+      const result = await executeScanRequest(request)
       setData(result)
-      setLastScanType("directory")
+      setLastScanRequest(request)
     } catch (err) {
       setScanError(err instanceof Error ? err.message : t("empty.failed"))
     } finally {
@@ -156,22 +174,20 @@ export function PageContent() {
     }
   }
 
-  const handleRescan = async () => {
-    setFeedback(null)
+  const handleRescan = async (options?: { preserveFeedback?: boolean }) => {
+    const request = lastScanRequest
+    if (!request) return
+    if (!options?.preserveFeedback) {
+      setFeedback(null)
+    }
     setScanError(null)
     setIsScanning(true)
     try {
-      const path = targetPath.trim()
-      let result: LocalScanRun | null = null
-      if (lastScanType === "file" && path) {
-        result = await scanFileReview(path)
-      } else if (lastScanType === "directory" && path) {
-        result = await scanDirectoryReview({ path })
-      } else {
-        result = await scanDirectoryReview()
-      }
+      const result = await executeScanRequest(request)
       setData(result)
-      setFeedback(t("feedback.refreshed"))
+      if (!options?.preserveFeedback) {
+        setFeedback(t("feedback.refreshed"))
+      }
     } catch (err) {
       setScanError(err instanceof Error ? err.message : t("empty.failed"))
     } finally {
@@ -214,8 +230,8 @@ export function PageContent() {
 
   const hasFindingActions = findings.some((row) => row.action)
   const actionableFindings = useMemo(
-    () => (data?.findings ?? []).flatMap((row) => (row.action ? [row.action] : [])),
-    [data?.findings]
+    () => findings.flatMap((row) => (row.action ? [row.action] : [])),
+    [findings]
   )
 
   // ── Action handlers ──────────────────────────────────────
@@ -228,7 +244,7 @@ export function PageContent() {
     try {
       const result = await runScanReviewAction(action)
       setFeedback(result?.message ?? t("feedback.actionApplied"))
-      await handleRescan()
+      await handleRescan({ preserveFeedback: true })
     } catch (actionError) {
       setFeedback(actionError instanceof Error ? actionError.message : t("feedback.actionFailed"))
     } finally {
@@ -251,7 +267,7 @@ export function PageContent() {
             })
           : t("feedback.actionApplied")
       )
-      await handleRescan()
+      await handleRescan({ preserveFeedback: true })
     } catch (actionError) {
       setFeedback(actionError instanceof Error ? actionError.message : t("feedback.actionFailed"))
     } finally {

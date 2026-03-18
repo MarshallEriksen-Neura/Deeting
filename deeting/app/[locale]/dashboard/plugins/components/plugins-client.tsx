@@ -19,11 +19,11 @@ import {
   isDesktopRuntime,
   installLocalSkillRuntime,
   installPlugin,
-  isUserVisiblePlugin,
   submitPluginRepo,
   uninstallPlugin,
   updateLocalSkillRuntimeSettings,
 } from "@/lib/api/plugin-market"
+import { buildPluginRuntimeViewModel } from "@/lib/plugins/plugin-runtime-view"
 import { useDebounce } from "@/hooks/use-debounce"
 import type { PluginMarketSkillItem } from "@/lib/api/plugin-market"
 
@@ -79,7 +79,7 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
         setIsInstalling(false)
       }
     },
-    [mutate, refreshRuntimeStatuses, selectedPlugin, selectedPlugin?.name, t]
+    [mutate, refreshRuntimeStatuses, selectedPlugin, t]
   )
 
   const handleUninstall = React.useCallback(
@@ -174,13 +174,9 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
     void mutate()
   }, [hasInstallingRuntime, mutate])
 
-  const userVisiblePlugins = React.useMemo(
-    () => plugins.filter(isUserVisiblePlugin),
-    [plugins],
-  )
-  const installedPlugins = React.useMemo(
-    () => userVisiblePlugins.filter((plugin) => plugin.installed),
-    [userVisiblePlugins],
+  const { userVisiblePlugins, installedPlugins, runtimeStatusByPluginId } = React.useMemo(
+    () => buildPluginRuntimeViewModel(plugins, runtimeStatuses),
+    [plugins, runtimeStatuses],
   )
 
   const normalizedQuery = debouncedQuery.trim().toLowerCase()
@@ -305,7 +301,7 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
               <PluginCard
                 key={plugin.id}
                 plugin={plugin}
-                runtimeStatus={runtimeStatuses[plugin.id] ?? null}
+                runtimeStatus={runtimeStatusByPluginId[plugin.id] ?? null}
                 onInstall={canManageLocalInstalls ? handleInstallClick : undefined}
                 onUninstall={canManageLocalInstalls ? handleUninstall : undefined}
                 onConfigure={canManageLocalInstalls ? handleConfigure : undefined}
@@ -327,7 +323,7 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
         onOpenChange={setConfigSheetOpen}
         plugin={selectedRuntimePlugin}
         runtimeStatus={
-          selectedRuntimePlugin ? runtimeStatuses[selectedRuntimePlugin.id] ?? null : null
+          selectedRuntimePlugin ? runtimeStatusByPluginId[selectedRuntimePlugin.id] ?? null : null
         }
         isSaving={isSavingRuntimeConfig}
         isInstallingRuntime={isInstallingRuntime}

@@ -2,18 +2,16 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { motion, AnimatePresence } from "framer-motion"
+import { useTranslations } from "next-intl"
 import {
   Plane,
   Search,
   BarChart3,
   CheckCircle2,
   FileText,
-  Code2,
   Brain,
   Zap,
   TrendingUp,
-  ShoppingCart,
-  ArrowRight,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -36,6 +34,8 @@ interface Scenario {
 /* ---------- result cards ---------- */
 
 function TicketCard() {
+  const t = useTranslations("home.demo.cards.ticket")
+
   return (
     <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-blue-950/80 to-indigo-950/80 backdrop-blur-xl p-5 shadow-2xl">
       {/* airline header */}
@@ -44,48 +44,48 @@ function TicketCard() {
           <div className="size-8 rounded-lg bg-blue-500/20 border border-blue-400/30 flex items-center justify-center">
             <Plane className="size-4 text-blue-400 -rotate-45" />
           </div>
-          <span className="text-sm font-semibold text-white">Icelandair</span>
+          <span className="text-sm font-semibold text-white">{t("airline")}</span>
         </div>
         <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-400 font-medium">
-          Direct
+          {t("badge")}
         </span>
       </div>
 
       {/* route */}
       <div className="flex items-center gap-4 mb-4">
         <div className="text-center">
-          <div className="text-2xl font-bold text-white tracking-wide">PEK</div>
-          <div className="text-[10px] text-gray-400 mt-0.5">Beijing</div>
-          <div className="text-xs text-gray-300 font-medium mt-1">08:30</div>
+          <div className="text-2xl font-bold text-white tracking-wide">{t("origin.code")}</div>
+          <div className="text-[10px] text-gray-400 mt-0.5">{t("origin.city")}</div>
+          <div className="text-xs text-gray-300 font-medium mt-1">{t("origin.time")}</div>
         </div>
 
         <div className="flex-1 flex flex-col items-center gap-1">
-          <div className="text-[10px] text-gray-500">10h 15m</div>
+          <div className="text-[10px] text-gray-500">{t("duration")}</div>
           <div className="w-full flex items-center gap-1">
             <div className="h-px flex-1 bg-gradient-to-r from-transparent to-blue-400/50" />
             <Plane className="size-3 text-blue-400 -rotate-0" />
             <div className="h-px flex-1 bg-gradient-to-r from-blue-400/50 to-transparent" />
           </div>
-          <div className="text-[10px] text-gray-500">FI861</div>
+          <div className="text-[10px] text-gray-500">{t("flightNo")}</div>
         </div>
 
         <div className="text-center">
-          <div className="text-2xl font-bold text-white tracking-wide">KEF</div>
-          <div className="text-[10px] text-gray-400 mt-0.5">Reykjavik</div>
-          <div className="text-xs text-gray-300 font-medium mt-1">12:45</div>
+          <div className="text-2xl font-bold text-white tracking-wide">{t("destination.code")}</div>
+          <div className="text-[10px] text-gray-400 mt-0.5">{t("destination.city")}</div>
+          <div className="text-xs text-gray-300 font-medium mt-1">{t("destination.time")}</div>
         </div>
       </div>
 
       {/* bottom row */}
       <div className="flex items-end justify-between pt-3 border-t border-white/5">
         <div>
-          <div className="text-[10px] text-gray-500 uppercase tracking-wider">Date</div>
-          <div className="text-xs text-gray-300 font-medium">Mar 15, 2026</div>
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider">{t("dateLabel")}</div>
+          <div className="text-xs text-gray-300 font-medium">{t("date")}</div>
         </div>
         <div className="text-right">
-          <div className="text-[10px] text-gray-500 uppercase tracking-wider">Economy</div>
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider">{t("classLabel")}</div>
           <div className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">
-            ¥4,280
+            {t("price")}
           </div>
         </div>
       </div>
@@ -94,21 +94,23 @@ function TicketCard() {
 }
 
 function AnalyticsCard() {
+  const t = useTranslations("home.demo.cards.analytics")
+
   return (
     <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-emerald-950/80 to-teal-950/80 backdrop-blur-xl p-5 shadow-2xl">
       <div className="flex items-center gap-2 mb-4">
         <div className="size-8 rounded-lg bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center">
           <BarChart3 className="size-4 text-emerald-400" />
         </div>
-        <span className="text-sm font-semibold text-white">Q4 Sales Report</span>
+        <span className="text-sm font-semibold text-white">{t("title")}</span>
       </div>
 
       {/* metrics grid */}
       <div className="grid grid-cols-2 gap-3 mb-4">
-        <MetricItem label="Revenue" value="¥2.4M" change="+12%" positive />
-        <MetricItem label="Orders" value="8,432" change="+8%" positive />
-        <MetricItem label="AOV" value="¥285" change="+3%" positive />
-        <MetricItem label="Refund" value="1.2%" change="-0.3%" positive />
+        <MetricItem label={t("metrics.revenue")} value="¥2.4M" change="+12%" positive />
+        <MetricItem label={t("metrics.orders")} value="8,432" change="+8%" positive />
+        <MetricItem label={t("metrics.aov")} value="¥285" change="+3%" positive />
+        <MetricItem label={t("metrics.refund")} value="1.2%" change="-0.3%" positive />
       </div>
 
       {/* mini chart */}
@@ -154,6 +156,7 @@ function MetricItem({
 }
 
 function CodeCard() {
+  const t = useTranslations("home.demo.cards.code")
   const lines = [
     { indent: 0, tokens: [{ text: "export function", cls: "text-purple-400" }, { text: " LoginForm", cls: "text-blue-300" }, { text: "() {", cls: "text-gray-400" }] },
     { indent: 1, tokens: [{ text: "const", cls: "text-purple-400" }, { text: " [email, setEmail] = ", cls: "text-gray-300" }, { text: "useState", cls: "text-yellow-300" }, { text: "('')", cls: "text-emerald-400" }] },
@@ -178,7 +181,7 @@ function CodeCard() {
           <div className="size-2.5 rounded-full bg-yellow-500/70" />
           <div className="size-2.5 rounded-full bg-green-500/70" />
         </div>
-        <span className="text-[10px] text-gray-500 font-mono ml-2">LoginForm.tsx</span>
+        <span className="text-[10px] text-gray-500 font-mono ml-2">{t("windowTitle")}</span>
       </div>
 
       {/* code body */}
@@ -196,43 +199,6 @@ function CodeCard() {
     </div>
   )
 }
-
-/* ------------------------------------------------------------------ */
-/*  Scenarios                                                          */
-/* ------------------------------------------------------------------ */
-
-const scenarios: Scenario[] = [
-  {
-    id: "flight",
-    userInput: "给我订一张冰岛的机票",
-    steps: [
-      { icon: <Search className="size-3.5" />, text: "正在搜索冰岛航班..." },
-      { icon: <BarChart3 className="size-3.5" />, text: "对比 3 个航班方案..." },
-      { icon: <CheckCircle2 className="size-3.5" />, text: "已找到最优航班" },
-    ],
-    result: <TicketCard />,
-  },
-  {
-    id: "analytics",
-    userInput: "分析一下上季度的销售数据",
-    steps: [
-      { icon: <FileText className="size-3.5" />, text: "正在读取销售数据..." },
-      { icon: <BarChart3 className="size-3.5" />, text: "正在生成统计报告..." },
-      { icon: <CheckCircle2 className="size-3.5" />, text: "分析完成" },
-    ],
-    result: <AnalyticsCard />,
-  },
-  {
-    id: "code",
-    userInput: "用 React 写一个登录表单",
-    steps: [
-      { icon: <Brain className="size-3.5" />, text: "正在分析需求..." },
-      { icon: <Zap className="size-3.5" />, text: "正在生成代码..." },
-      { icon: <CheckCircle2 className="size-3.5" />, text: "代码已生成" },
-    ],
-    result: <CodeCard />,
-  },
-]
 
 /* ------------------------------------------------------------------ */
 /*  Typewriter hook                                                    */
@@ -269,10 +235,43 @@ const STEP_INTERVAL = 800
 const RESULT_DELAY = 600
 
 export function HeroDemo() {
+  const t = useTranslations("home.demo")
   const [activeIdx, setActiveIdx] = useState(0)
   const [phase, setPhase] = useState<"typing" | "steps" | "result">("typing")
   const [visibleSteps, setVisibleSteps] = useState(0)
   const [cycleKey, setCycleKey] = useState(0)
+  const scenarios: Scenario[] = [
+    {
+      id: "flight",
+      userInput: t("scenarios.flight.userInput"),
+      steps: [
+        { icon: <Search className="size-3.5" />, text: t("scenarios.flight.steps.search") },
+        { icon: <BarChart3 className="size-3.5" />, text: t("scenarios.flight.steps.compare") },
+        { icon: <CheckCircle2 className="size-3.5" />, text: t("scenarios.flight.steps.done") },
+      ],
+      result: <TicketCard />,
+    },
+    {
+      id: "analytics",
+      userInput: t("scenarios.analytics.userInput"),
+      steps: [
+        { icon: <FileText className="size-3.5" />, text: t("scenarios.analytics.steps.read") },
+        { icon: <BarChart3 className="size-3.5" />, text: t("scenarios.analytics.steps.report") },
+        { icon: <CheckCircle2 className="size-3.5" />, text: t("scenarios.analytics.steps.done") },
+      ],
+      result: <AnalyticsCard />,
+    },
+    {
+      id: "code",
+      userInput: t("scenarios.code.userInput"),
+      steps: [
+        { icon: <Brain className="size-3.5" />, text: t("scenarios.code.steps.analyze") },
+        { icon: <Zap className="size-3.5" />, text: t("scenarios.code.steps.generate") },
+        { icon: <CheckCircle2 className="size-3.5" />, text: t("scenarios.code.steps.done") },
+      ],
+      result: <CodeCard />,
+    },
+  ]
 
   const scenario = scenarios[activeIdx]
   const typed = useTypewriter(scenario.userInput, 60, phase === "typing" || phase === "steps" || phase === "result")
@@ -309,7 +308,7 @@ export function HeroDemo() {
       clearTimeout(t3)
       stepTimers.forEach(clearTimeout)
     }
-  }, [activeIdx])
+  }, [activeIdx, scenario.steps.length, scenario.userInput])
 
   const handleDotClick = useCallback((idx: number) => {
     setActiveIdx(idx)
@@ -326,7 +325,7 @@ export function HeroDemo() {
             <div className="size-2.5 rounded-full bg-yellow-500/70" />
             <div className="size-2.5 rounded-full bg-green-500/70" />
           </div>
-          <span className="text-[10px] text-gray-500 font-mono">Deeting Agent</span>
+          <span className="text-[10px] text-gray-500 font-mono">{t("windowTitle")}</span>
           <div className="w-12" />
         </div>
 
@@ -420,7 +419,7 @@ export function HeroDemo() {
                   ? "w-6 h-2 bg-blue-500"
                   : "size-2 bg-gray-600 hover:bg-gray-500"
               )}
-              aria-label={`Scene ${i + 1}`}
+              aria-label={t("sceneAriaLabel", { index: i + 1 })}
             />
           ))}
         </div>

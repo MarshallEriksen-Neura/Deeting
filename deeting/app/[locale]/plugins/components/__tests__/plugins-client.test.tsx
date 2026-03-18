@@ -1,8 +1,8 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { render, screen } from "@testing-library/react"
 
 import { PluginsClient as DashboardPluginsClient } from "@/app/[locale]/dashboard/plugins/components/plugins-client"
 import { PluginsClient as PublicPluginsClient } from "@/app/[locale]/plugins/components/plugins-client"
-import { isDesktopRuntime } from "@/lib/api/plugin-market"
+import { isDesktopRuntime, type LocalSkillRuntimeStatus } from "@/lib/api/plugin-market"
 import { useLocalSkillRuntimeStatuses } from "@/hooks/use-local-skill-runtime-statuses"
 import { usePluginMarket } from "@/lib/swr/use-plugin-market"
 
@@ -48,8 +48,14 @@ jest.mock("@/lib/api/plugin-market", () => ({
 }))
 
 jest.mock("@/components/ui/button", () => ({
-  Button: ({ children, asChild, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { asChild?: boolean }) =>
-    <button {...props}>{children}</button>,
+  Button: ({
+    children,
+    asChild: _asChild,
+    ...props
+  }: React.ButtonHTMLAttributes<HTMLButtonElement> & { asChild?: boolean }) => {
+    void _asChild
+    return <button {...props}>{children}</button>
+  },
 }))
 
 jest.mock("@/components/ui/alert-dialog", () => ({
@@ -95,6 +101,41 @@ const mockIsDesktopRuntime = isDesktopRuntime as jest.MockedFunction<typeof isDe
 const mockUseLocalSkillRuntimeStatuses =
   useLocalSkillRuntimeStatuses as jest.MockedFunction<typeof useLocalSkillRuntimeStatuses>
 
+function createRuntimeStatus(
+  overrides: Partial<LocalSkillRuntimeStatus> & Pick<LocalSkillRuntimeStatus, "skill_id" | "display_name">,
+): LocalSkillRuntimeStatus {
+  return {
+    skill_id: overrides.skill_id,
+    display_name: overrides.display_name,
+    installed_version: overrides.installed_version ?? "1.0.0",
+    is_enabled: overrides.is_enabled ?? true,
+    execution_mode: overrides.execution_mode ?? "deeting_binding",
+    ecosystem: overrides.ecosystem ?? "agentskills_compatible",
+    adapter_kind: overrides.adapter_kind ?? "deeting_tool_binding",
+    normalized_execution_surface: overrides.normalized_execution_surface ?? "desktop_capability",
+    runnable_now: overrides.runnable_now ?? true,
+    required_bins: overrides.required_bins ?? [],
+    missing_bins: overrides.missing_bins ?? [],
+    required_env: overrides.required_env ?? [],
+    missing_env: overrides.missing_env ?? [],
+    required_config: overrides.required_config ?? [],
+    missing_config: overrides.missing_config ?? [],
+    blocking_reason: overrides.blocking_reason ?? null,
+    install_hints: overrides.install_hints ?? [],
+    runtime_install_supported: overrides.runtime_install_supported ?? false,
+    runtime_kind: overrides.runtime_kind ?? null,
+    runtime_install_state: overrides.runtime_install_state ?? "unsupported",
+    runtime_install_manager: overrides.runtime_install_manager ?? null,
+    runtime_manager_available: overrides.runtime_manager_available ?? false,
+    runtime_install_error: overrides.runtime_install_error ?? null,
+    runtime_dependency_manifest_path: overrides.runtime_dependency_manifest_path ?? null,
+    runtime_command_path: overrides.runtime_command_path ?? null,
+    compatibility: overrides.compatibility ?? {},
+    current_env: overrides.current_env ?? {},
+    current_config: overrides.current_config ?? {},
+  }
+}
+
 describe("PluginsClient store-only actions", () => {
   const mockMutate = jest.fn()
 
@@ -103,6 +144,7 @@ describe("PluginsClient store-only actions", () => {
     mockIsDesktopRuntime.mockReturnValue(true)
     mockUseLocalSkillRuntimeStatuses.mockReturnValue({
       runtimeStatuses: {},
+      hasInstallingRuntime: false,
       refreshRuntimeStatuses: jest.fn(),
     })
     mockUsePluginMarket.mockReturnValue({
@@ -132,8 +174,8 @@ describe("PluginsClient store-only actions", () => {
   })
 
   it.each([
-    ["public plugins page", <PublicPluginsClient mode="market" />],
-    ["dashboard plugins page", <DashboardPluginsClient mode="market" />],
+    ["public plugins page", <PublicPluginsClient key="public-plugins-page" mode="market" />],
+    ["dashboard plugins page", <DashboardPluginsClient key="dashboard-plugins-page" mode="market" />],
   ])("does not expose local maintenance actions from %s", (_label, view) => {
     render(view)
 
@@ -143,12 +185,53 @@ describe("PluginsClient store-only actions", () => {
   })
 
   it.each([
-    ["public market page", <PublicPluginsClient mode="market" />],
-    ["dashboard installed page", <DashboardPluginsClient mode="installed" />],
+    ["public market page", <PublicPluginsClient key="public-market-page" mode="market" />],
+    ["dashboard installed page", <DashboardPluginsClient key="dashboard-installed-page" mode="installed" />],
   ])("hides official skills in %s", (_label, view) => {
     render(view)
 
     expect(screen.queryByText("Memory")).toBeNull()
     expect(screen.getByText("Find Skills")).toBeTruthy()
+  })
+
+  it.each([
+    ["public installed page", <PublicPluginsClient key="public-installed-page" mode="installed" />],
+    ["dashboard installed page", <DashboardPluginsClient key="dashboard-installed-view" mode="installed" />],
+  ])("shows runtime-only local community skills in %s", (_label, view) => {
+    mockUsePluginMarket.mockReturnValue({
+      plugins: [
+        {
+          id: "official.skills.memory",
+          name: "Memory",
+          description: "Built-in memory skill",
+          status: "active",
+          installed: true,
+          source_kind: "official",
+        },
+      ],
+      isLoading: false,
+      isValidating: false,
+      error: undefined,
+      mutate: mockMutate,
+    })
+    mockUseLocalSkillRuntimeStatuses.mockReturnValue({
+      runtimeStatuses: {
+        "tmp.path-probe": createRuntimeStatus({
+          skill_id: "tmp.path-probe",
+          display_name: "Path Probe",
+        }),
+        "official.skills.memory": createRuntimeStatus({
+          skill_id: "official.skills.memory",
+          display_name: "Memory",
+        }),
+      },
+      hasInstallingRuntime: false,
+      refreshRuntimeStatuses: jest.fn(),
+    })
+
+    render(view)
+
+    expect(screen.getByText("Path Probe")).toBeTruthy()
+    expect(screen.queryByText("Memory")).toBeNull()
   })
 })

@@ -1,72 +1,114 @@
 {
-  "stats": {
-    "title": "仪表盘统计",
-    "totalRoutes": "路由总数",
-    "activeServices": "活跃服务",
-    "securityRules": "安全规则",
-    "activePlugins": "活跃插件"
+  "hero": {
+    "badge": "AI 智能体已就绪",
+    "title": "你的 AI，由你定义",
+    "descriptionLine1": "告诉 Deeting 你的需求，无论是订机票、分析数据，还是写代码。",
+    "descriptionLine2": "一个真正能把事情做完的 AI Agent。",
+    "primaryCta": "开始对话",
+    "secondaryCta": "了解更多",
+    "trust": {
+      "privacyFirst": "隐私优先",
+      "localModels": "本地模型",
+      "zeroLatency": "低延迟响应"
+    }
   },
-  "cards": {
-    "ios": "iOS 风格玻璃卡片",
-    "defaultTitle": "默认玻璃卡片",
-    "defaultDesc": "细腻动画的磨砂玻璃效果",
-    "defaultBody": "卡片采用 iOS 风格的玻璃拟态，包含毛玻璃、内边框和顶部高光。",
-    "primaryTitle": "主色主题",
-    "primaryDesc": "紫色玻璃，匹配品牌主色调",
-    "primaryBody": "使用主题变体让品牌主色统一呈现，建立清晰的视觉层级。",
-    "tealTitle": "青绿色高亮",
-    "tealDesc": "悬停时的辉光效果",
-    "tealBody": "使用青绿色强调色，悬停时带有辉光效果，区别于默认抬升。",
-    "action": "操作",
-    "cancel": "取消",
-    "confirm": "确认",
-    "tealButton": "青绿按钮"
+  "features": {
+    "title": "一个 Agent，无限可能",
+    "description": "从订机票到编写生产代码，Deeting 以隐私优先、低延迟的本地智能完成整条链路。",
+    "scenarios": {
+      "bookFlights": "订机票",
+      "analyzeData": "分析数据",
+      "writeCode": "编写代码",
+      "translateDocs": "翻译文档",
+      "devOps": "运维自动化",
+      "creativeWriting": "创意写作"
+    },
+    "cards": {
+      "agent": {
+        "title": "AI Agent",
+        "eyebrow": "INTELLIGENT AGENT",
+        "desc": "不只是聊天。Deeting 的 Agent 可以搜索、对比、预订、分析，把真实任务从头到尾完成。"
+      },
+      "privacy": {
+        "title": "隐私保险箱",
+        "eyebrow": "DATA STAYS LOCAL",
+        "desc": "聊天记录保存在本地 SQLite，API Key 存入系统钥匙串。你的服务器并不知道你的秘密。"
+      },
+      "system": {
+        "title": "系统级集成",
+        "eyebrow": "SYSTEM-LEVEL ASSISTANT",
+        "desc": "支持全局快捷键唤起、常驻系统托盘。AI 住进你的操作系统，而不是困在浏览器标签页里。"
+      }
+    }
   },
-  "buttons": {
-    "variants": "按钮变体",
-    "primary": "主按钮",
-    "secondary": "次按钮",
-    "outline": "描边",
-    "ghost": "幽灵",
-    "destructive": "删除",
-    "success": "成功"
+  "demo": {
+    "windowTitle": "Deeting Agent",
+    "sceneAriaLabel": "场景 {index}",
+    "cards": {
+      "ticket": {
+        "airline": "Icelandair",
+        "badge": "直飞",
+        "origin": {
+          "code": "PEK",
+          "city": "北京",
+          "time": "08:30"
+        },
+        "destination": {
+          "code": "KEF",
+          "city": "雷克雅未克",
+          "time": "12:45"
+        },
+        "duration": "10小时15分",
+        "flightNo": "FI861",
+        "dateLabel": "日期",
+        "date": "2026年3月15日",
+        "classLabel": "经济舱",
+        "price": "¥4,280"
+      },
+      "analytics": {
+        "title": "Q4 销售报告",
+        "metrics": {
+          "revenue": "营收",
+          "orders": "订单",
+          "aov": "客单价",
+          "refund": "退款率"
+        }
+      },
+      "code": {
+        "windowTitle": "LoginForm.tsx"
+      }
+    },
+    "scenarios": {
+      "flight": {
+        "userInput": "给我订一张去冰岛的机票",
+        "steps": {
+          "search": "正在搜索飞往冰岛的航班...",
+          "compare": "正在对比 3 个航班方案...",
+          "done": "已找到最佳航班"
+        }
+      },
+      "analytics": {
+        "userInput": "分析一下上季度的销售数据",
+        "steps": {
+          "read": "正在读取销售数据...",
+          "report": "正在生成统计报告...",
+          "done": "分析完成"
+        }
+      },
+      "code": {
+        "userInput": "用 React 写一个登录表单",
+        "steps": {
+          "analyze": "正在分析需求...",
+          "generate": "正在生成代码...",
+          "done": "代码已生成"
+        }
+      }
+    }
   },
-  "dashboard": {
-    "title": "仪表盘",
-    "description": "监控和管理您的 API 网关",
-    "recentActivity": "最近活动",
-    "recentActivityDesc": "最新的更改和事件",
-    "quickActions": "快捷操作",
-    "quickActionsDesc": "常用任务和快捷方式",
-    "viewAll": "查看全部",
-    "createRoute": "创建路由",
-    "addService": "添加服务",
-    "configureRules": "配置规则",
-    "managePlugins": "管理插件"
-  },
-  "nav": {
-    "main": "主菜单",
-    "configuration": "配置",
-    "account": "账户",
-    "analytics": "分析",
-    "system": "系统",
-    "dashboard": "概览",
-    "routes": "路由",
-    "services": "服务",
-    "plugins": "插件",
-    "providers": "模型服务",
-    "apiKeys": "API 密钥",
-    "credits": "积分流水",
-    "monitoring": "监控",
-    "logs": "日志",
-    "profile": "个人资料",
-    "notifications": "通知",
-    "statistics": "统计",
-    "performance": "性能",
-    "users": "用户",
-    "roles": "角色",
-    "security": "安全",
-    "database": "数据库",
-    "settings": "设置"
+  "footer": {
+    "tagline": "© 2026 Deeting Inc. 隐私优先的 AI。",
+    "github": "GitHub",
+    "twitter": "Twitter",
+    "docs": "文档"
   }
 }

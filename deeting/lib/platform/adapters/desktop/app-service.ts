@@ -20,9 +20,10 @@ export const desktopAppService: IAppService = {
   minimize: async () => {
     try {
       const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      // The desktop close flow uses "minimize" to mean "hide to tray".
       await getCurrentWindow().hide();
     } catch (err) {
-      console.error("Desktop: minimize failed", err);
+      console.error("Desktop: hide-to-tray failed", err);
     }
   },
   notify: async (title: string, body: string) => {

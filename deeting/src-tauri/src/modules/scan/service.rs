@@ -1191,20 +1191,7 @@ fn sha256_for_file(path: &Path) -> Option<String> {
 }
 
 fn normalize_bundle_id(raw: &str) -> String {
-    raw.trim()
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() {
-                ch.to_ascii_lowercase()
-            } else {
-                '-'
-            }
-        })
-        .collect::<String>()
-        .split('-')
-        .filter(|segment| !segment.is_empty())
-        .collect::<Vec<_>>()
-        .join("-")
+    crate::modules::skills::registry_impl::normalize_skill_dir_name(&raw.trim().to_ascii_lowercase())
 }
 
 fn slug_to_title(raw: &str) -> String {
@@ -1460,13 +1447,27 @@ mod tests {
             .documents
             .iter()
             .all(|item| item.path != normalize_path(&root)));
-        assert!(run.documents.iter().any(|item| {
-            item.bundle_id.as_deref() == Some("official-skills-crawler")
-                || item.bundle_id.as_deref() == Some("official.skills.crawler")
-        }));
-        assert!(run.documents.iter().any(|item| {
-            item.bundle_id.as_deref() == Some("official-skills-code-interpreter")
-                || item.bundle_id.as_deref() == Some("official.skills.code_interpreter")
+        assert!(run
+            .documents
+            .iter()
+            .any(|item| item.bundle_id.as_deref() == Some("official.skills.crawler")));
+        assert!(run
+            .documents
+            .iter()
+            .any(|item| item.bundle_id.as_deref() == Some("official.skills.code_interpreter")));
+
+        let crawler_findings = run
+            .findings
+            .iter()
+            .filter(|item| item.bundle_id.as_deref() == Some("official.skills.crawler"))
+            .collect::<Vec<_>>();
+        assert!(!crawler_findings.is_empty());
+        assert!(crawler_findings.iter().all(|item| {
+            item.action
+                .as_ref()
+                .and_then(|action| action.bundle_id.as_deref())
+                .unwrap_or("official.skills.crawler")
+                == "official.skills.crawler"
         }));
 
         let _ = std::fs::remove_dir_all(root);
