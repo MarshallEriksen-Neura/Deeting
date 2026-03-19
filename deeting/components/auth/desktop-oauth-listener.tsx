@@ -36,7 +36,7 @@ function getErrorMessage(error: unknown, fallback: string) {
 }
 
 export function DesktopOAuthListener() {
-  const { completeDesktopOAuth } = useAuthService()
+  const { exchangeDesktopBrowserLoginGrant } = useAuthService()
   const handledRef = useRef(new Set<string>())
 
   useEffect(() => {
@@ -53,19 +53,27 @@ export function DesktopOAuthListener() {
         if (handledRef.current.has(key)) continue
         handledRef.current.add(key)
         try {
-          const requestPayload = {
-            provider: payload.provider,
-            session_id: payload.session_id,
-            state: payload.state,
-            grant: payload.grant,
-          }
           if (payload.intent === "bind") {
+            if (!payload.state) {
+              throw new Error("Desktop OAuth bind callback is missing state")
+            }
+            const requestPayload = {
+              provider: payload.provider,
+              session_id: payload.session_id,
+              state: payload.state,
+              grant: payload.grant,
+            }
             const result = await confirmDesktopOAuthBindingGrant(requestPayload)
             await mutate(ACCOUNT_BINDINGS_KEY)
             toast.success(`${result.provider} 绑定成功`)
-          } else {
-            await completeDesktopOAuth(requestPayload)
+          } else if (payload.provider === "browser") {
+            await exchangeDesktopBrowserLoginGrant({
+              session_id: payload.session_id,
+              grant: payload.grant,
+            })
             toast.success("登录成功")
+          } else {
+            throw new Error("Desktop OAuth login entry has been removed")
           }
         } catch (error) {
           handledRef.current.delete(key)
@@ -102,7 +110,7 @@ export function DesktopOAuthListener() {
       disposed = true
       cleanup?.()
     }
-  }, [completeDesktopOAuth])
+  }, [exchangeDesktopBrowserLoginGrant])
 
   return null
 }

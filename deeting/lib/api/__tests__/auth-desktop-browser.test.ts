@@ -1,6 +1,7 @@
 import {
   buildDesktopBrowserLoginUrl,
   completeDesktopBrowserLoginSession,
+  exchangeDesktopBrowserLoginGrant,
   openDesktopBrowserLoginUrl,
   startDesktopBrowserLoginSession,
 } from "../auth-desktop-browser"
@@ -36,6 +37,8 @@ describe("auth-desktop-browser api", () => {
         return_scheme: "deeting",
         platform: "desktop",
       },
+      anonymous: true,
+      skipAuthRefresh: true,
     })
     expect(result.session_id).toBe("sess-1")
   })
@@ -57,6 +60,34 @@ describe("auth-desktop-browser api", () => {
       },
     })
     expect(result.deep_link_url).toContain("provider=browser")
+  })
+
+  it("exchanges desktop browser login grant", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      access_token: "access-1",
+      refresh_token: "refresh-1",
+      token_type: "bearer",
+      user: {
+        id: "user-1",
+        email: "user@example.com",
+        name: "User",
+      },
+    })
+
+    const result = await exchangeDesktopBrowserLoginGrant({
+      session_id: "sess-1",
+      grant: "grant-1",
+    })
+
+    expect(request).toHaveBeenCalledWith({
+      url: "/api/v1/auth/desktop/browser/exchange",
+      method: "POST",
+      data: {
+        session_id: "sess-1",
+        grant: "grant-1",
+      },
+    })
+    expect(result.user.email).toBe("user@example.com")
   })
 
   it("builds browser login url with desktop session", () => {

@@ -1,5 +1,3 @@
-import { request } from "@/lib/http"
-
 export type DesktopOAuthProvider = "google" | "github"
 export type DesktopAuthGrantProvider = DesktopOAuthProvider | "browser"
 export type DesktopOAuthIntent = "login" | "bind"
@@ -23,8 +21,12 @@ export interface DesktopOAuthExchangeRequest {
   grant: string
 }
 
-export interface DesktopOAuthCallbackPayload extends DesktopOAuthExchangeRequest {
+export interface DesktopOAuthCallbackPayload {
   intent: DesktopOAuthIntent
+  provider: DesktopAuthGrantProvider
+  session_id: string
+  state?: string
+  grant: string
 }
 
 export interface DesktopOAuthExchangeResponse {
@@ -38,32 +40,7 @@ export interface DesktopOAuthExchangeResponse {
   }
 }
 
-const AUTH_OAUTH_BASE = "/api/v1/auth/oauth"
 const DESKTOP_SCHEME = "deeting:"
-
-export async function startDesktopOAuthSession(
-  payload: DesktopOAuthStartRequest
-): Promise<DesktopOAuthStartResponse> {
-  return request<DesktopOAuthStartResponse>({
-    url: `${AUTH_OAUTH_BASE}/desktop/start`,
-    method: "POST",
-    data: {
-      provider: payload.provider,
-      return_scheme: payload.return_scheme ?? "deeting",
-      platform: payload.platform ?? "desktop",
-    },
-  })
-}
-
-export async function exchangeDesktopOAuthGrant(
-  payload: DesktopOAuthExchangeRequest
-): Promise<DesktopOAuthExchangeResponse> {
-  return request<DesktopOAuthExchangeResponse>({
-    url: `${AUTH_OAUTH_BASE}/desktop/exchange`,
-    method: "POST",
-    data: payload,
-  })
-}
 
 export async function openDesktopOAuthAuthorizeUrl(url: string): Promise<void> {
   const { openUrl } = await import("@tauri-apps/plugin-opener")
@@ -87,7 +64,11 @@ export function parseDesktopOAuthCallbackUrl(url: string): DesktopOAuthCallbackP
       return null
     }
 
-    if (!sessionId || !state || !grant) {
+    if (!sessionId || !grant) {
+      return null
+    }
+
+    if (provider !== "browser" && !state) {
       return null
     }
 
@@ -99,7 +80,7 @@ export function parseDesktopOAuthCallbackUrl(url: string): DesktopOAuthCallbackP
       intent,
       provider,
       session_id: sessionId,
-      state,
+      state: state ?? undefined,
       grant,
     }
   } catch {

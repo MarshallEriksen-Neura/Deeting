@@ -13,18 +13,12 @@ import { authService } from "@/lib/api/auth.service"
 import {
   buildDesktopBrowserLoginUrl,
   completeDesktopBrowserLoginSession,
+  exchangeDesktopBrowserLoginGrant,
   openDesktopBrowserLoginUrl,
   startDesktopBrowserLoginSession,
   type DesktopBrowserLoginCompleteRequest,
+  type DesktopBrowserLoginExchangeRequest,
 } from "@/lib/api/auth-desktop-browser"
-import {
-  exchangeDesktopOAuthGrant,
-  openDesktopOAuthAuthorizeUrl,
-  startDesktopOAuthSession,
-  type DesktopOAuthStartResponse,
-  type DesktopOAuthExchangeRequest,
-  type DesktopOAuthProvider,
-} from "@/lib/api/auth-oauth-desktop"
 import {
   clearAuthTokenForDesktop,
   persistAuthTokenForDesktop,
@@ -102,32 +96,8 @@ export function useAuthService() {
     return session
   }, [])
 
-  const startDesktopOAuth = useCallback(async (provider: DesktopOAuthProvider) => {
-    if (!isTauriRuntime()) {
-      throw new ApiError("Desktop OAuth is only available in the desktop app", {
-        status: 400,
-        code: "DESKTOP_OAUTH_DESKTOP_ONLY",
-      })
-    }
-    const session = await startDesktopOAuthSession({
-      provider,
-      return_scheme: "deeting",
-      platform: "desktop",
-    })
-    await openDesktopOAuthAuthorizeUrl(session.authorize_url)
-    return session
-  }, [])
-
-  const prepareDesktopOAuth = useCallback(async (provider: DesktopOAuthProvider): Promise<DesktopOAuthStartResponse> => {
-    return startDesktopOAuthSession({
-      provider,
-      return_scheme: "deeting",
-      platform: "desktop",
-    })
-  }, [])
-
-  const completeDesktopOAuth = useCallback(async (payload: DesktopOAuthExchangeRequest) => {
-    const response = await exchangeDesktopOAuthGrant(payload)
+  const exchangeDesktopBrowserLoginGrantMutation = useCallback(async (payload: DesktopBrowserLoginExchangeRequest) => {
+    const response = await exchangeDesktopBrowserLoginGrant(payload)
     applySession(response)
     return response
   }, [applySession])
@@ -149,9 +119,7 @@ export function useAuthService() {
     refreshMutation,
     lastTokenPair,
     startDesktopBrowserLogin,
-    startDesktopOAuth,
-    prepareDesktopOAuth,
-    completeDesktopOAuth,
+    exchangeDesktopBrowserLoginGrant: exchangeDesktopBrowserLoginGrantMutation,
     completeDesktopBrowserLogin,
     logout,
   }

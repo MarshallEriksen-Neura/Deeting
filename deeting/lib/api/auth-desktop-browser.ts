@@ -1,5 +1,6 @@
 import { request } from "@/lib/http"
 import { openDesktopOAuthAuthorizeUrl } from "@/lib/api/auth-oauth-desktop"
+import type { DesktopOAuthExchangeResponse } from "@/lib/api/auth-oauth-desktop"
 
 export interface DesktopBrowserLoginStartRequest {
   return_scheme?: string
@@ -17,6 +18,11 @@ export interface DesktopBrowserLoginCompleteRequest {
 
 export interface DesktopBrowserLoginCompleteResponse {
   deep_link_url: string
+}
+
+export interface DesktopBrowserLoginExchangeRequest {
+  session_id: string
+  grant: string
 }
 
 const DESKTOP_BROWSER_LOGIN_BASE = "/api/v1/auth/desktop/browser"
@@ -41,6 +47,16 @@ export async function completeDesktopBrowserLoginSession(
 ): Promise<DesktopBrowserLoginCompleteResponse> {
   return request<DesktopBrowserLoginCompleteResponse>({
     url: `${DESKTOP_BROWSER_LOGIN_BASE}/complete`,
+    method: "POST",
+    data: payload,
+  })
+}
+
+export async function exchangeDesktopBrowserLoginGrant(
+  payload: DesktopBrowserLoginExchangeRequest
+): Promise<DesktopOAuthExchangeResponse> {
+  return request<DesktopOAuthExchangeResponse>({
+    url: `${DESKTOP_BROWSER_LOGIN_BASE}/exchange`,
     method: "POST",
     data: payload,
   })
