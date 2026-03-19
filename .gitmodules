@@ -4,8 +4,8 @@
 [submodule "scout"]
 	path = scout
 	url = https://github.com/MarshallEriksen-Neura/scout.git
-[submodule "backend"]
-	path = backend
+[submodule "deeting_core"]
+	path = deeting_core
 	url = https://github.com/MarshallEriksen-Neura/deeting_core.git
 	branch = main
 

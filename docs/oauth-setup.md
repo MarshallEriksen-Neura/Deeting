@@ -257,4 +257,4 @@ A:
 
 - [GitHub OAuth Apps 文档](https://docs.github.com/en/developers/apps/building-oauth-apps)
 - [Google OAuth 2.0 文档](https://developers.google.com/identity/protocols/oauth2)
-- [项目认证实现](../backend/app/services/users/desktop_oauth_service.py)
+- [项目认证实现](../deeting_core/app/services/users/desktop_oauth_service.py)

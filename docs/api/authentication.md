@@ -70,12 +70,12 @@
 
 
 ### 环境文件约定
-- 后端只保留：`backend/.env` 与 `backend/.env.example`
+- 后端只保留：`deeting_core/.env` 与 `deeting_core/.env.example`
 - 前端 / Tauri 本地开发可使用：`deeting/.env.local`
 
 推荐用法：
 - 本地后端：直接维护 `backend/.env`
-- 后端示例：查看 `backend/.env.example`
+- 后端示例：查看 `deeting_core/.env.example`
 - 前端 / Tauri：维护 `deeting/.env.local`
 
 ### 总体原则
@@ -145,7 +145,7 @@ DESKTOP_OAUTH_GRANT_TTL_SECONDS=120
 - `DESKTOP_OAUTH_CALLBACK_SCHEME` 必须与 Tauri `deep-link` 插件里注册的 scheme 一致。
 - 当前仓库默认使用 `deeting://auth/callback?...`。
 - 如果修改 scheme，需要同步更新：
-  - `backend/.env.example`
+  - `deeting_core/.env.example`
   - `deeting/src-tauri/tauri.conf.json`
   - 前端 `startDesktopOAuthSession()` 默认 `return_scheme`
 

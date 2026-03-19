@@ -269,11 +269,11 @@ A: 生产环境需要：
 
 ## 相关文件
 
-- 后端服务：`backend/app/services/users/desktop_oauth_service.py`
-- API 路由：`backend/app/api/v1/auth_route.py`
+- 后端服务：`deeting_core/app/services/users/desktop_oauth_service.py`
+- API 路由：`deeting_core/app/api/v1/auth_route.py`
 - 前端 Hook：`deeting/hooks/use-auth.ts`
 - OAuth API：`deeting/lib/api/auth-oauth-desktop.ts`
-- 配置文件：`backend/app/core/config.py`
+- 配置文件：`deeting_core/app/core/config.py`
 
 ## 调试技巧
 

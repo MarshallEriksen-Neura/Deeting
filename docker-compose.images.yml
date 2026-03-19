@@ -113,8 +113,8 @@ services:
       retries: 3
       start_period: 10s
     volumes:
-      - ./backend/logs:/app/logs
-      - ./backend/media:/app/backend/media
+      - ./deeting_core/logs:/app/logs
+      - ./deeting_core/media:/app/backend/media
       - ./security:/app/security:ro
     command: sh -c "python -m app.scripts.env_check && uvicorn main:app --host 0.0.0.0 --port 8000"
 
@@ -130,8 +130,8 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./backend/logs:/app/logs
-      - ./backend/media:/app/backend/media
+      - ./deeting_core/logs:/app/logs
+      - ./deeting_core/media:/app/backend/media
       - ./security:/app/security:ro
     command: sh -c "python -m app.scripts.env_check && celery -A app.celery_app.celery_app worker -l info"
 
@@ -145,8 +145,8 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./backend/logs:/app/logs
-      - ./backend/media:/app/backend/media
+      - ./deeting_core/logs:/app/logs
+      - ./deeting_core/media:/app/backend/media
       - ./security:/app/security:ro
     command: sh -c "python -m app.scripts.env_check && celery -A app.celery_app.celery_app beat -l info"
 

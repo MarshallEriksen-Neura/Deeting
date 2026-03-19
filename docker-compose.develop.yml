@@ -84,7 +84,7 @@ services:
 
   api:
     build:
-      context: ./backend
+      context: ./deeting_core
       dockerfile: Dockerfile
     image: apiproxy-api:dev
     container_name: apiproxy-api
@@ -96,11 +96,11 @@ services:
       - IMAGE_LOCAL_DIR=/app/media/images
     volumes:
       - ./security:/app/security:ro
-      - ./backend/logs:/app/logs
-      - ./backend/media:/app/media
+      - ./deeting_core/logs:/app/logs
+      - ./deeting_core/media:/app/media
       # 开发模式: 挂载源代码实现热重载（可选）
-      - ./backend/app:/app/app:ro
-      - ./backend/main.py:/app/main.py:ro
+      - ./deeting_core/app:/app/app:ro
+      - ./deeting_core/main.py:/app/main.py:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -122,7 +122,7 @@ services:
 
   celery_worker:
     build:
-      context: ./backend
+      context: ./deeting_core
       dockerfile: Dockerfile
     image: apiproxy-api:dev
     container_name: apiproxy-celery-worker
@@ -134,10 +134,10 @@ services:
       - IMAGE_LOCAL_DIR=/app/media/images
     volumes:
       - ./security:/app/security:ro
-      - ./backend/logs:/app/logs
-      - ./backend/media:/app/media
-      - ./backend/app:/app/app:ro
-      - ./backend/main.py:/app/main.py:ro
+      - ./deeting_core/logs:/app/logs
+      - ./deeting_core/media:/app/media
+      - ./deeting_core/app:/app/app:ro
+      - ./deeting_core/main.py:/app/main.py:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -150,7 +150,7 @@ services:
 
   celery_beat:
     build:
-      context: ./backend
+      context: ./deeting_core
       dockerfile: Dockerfile
     image: apiproxy-api:dev
     container_name: apiproxy-celery-beat
@@ -162,10 +162,10 @@ services:
       - IMAGE_LOCAL_DIR=/app/media/images
     volumes:
       - ./security:/app/security:ro
-      - ./backend/logs:/app/logs
-      - ./backend/media:/app/media
-      - ./backend/app:/app/app:ro
-      - ./backend/main.py:/app/main.py:ro
+      - ./deeting_core/logs:/app/logs
+      - ./deeting_core/media:/app/media
+      - ./deeting_core/app:/app/app:ro
+      - ./deeting_core/main.py:/app/main.py:ro
     depends_on:
       redis:
         condition: service_healthy
