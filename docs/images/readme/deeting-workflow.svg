@@ -1,0 +1,56 @@
+<svg width="1200" height="520" viewBox="0 0 1200 520" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="workflowBg" x1="72" y1="52" x2="1105" y2="468" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B1324"/>
+      <stop offset="1" stop-color="#131F37"/>
+    </linearGradient>
+    <linearGradient id="flowLine" x1="190" y1="258" x2="1012" y2="258" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#38BDF8"/>
+      <stop offset="0.5" stop-color="#8B5CF6"/>
+      <stop offset="1" stop-color="#F59E0B"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="520" rx="28" fill="url(#workflowBg)"/>
+  <text x="76" y="92" fill="#F8FAFC" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="800">从一句话，到一条不断线的执行闭环</text>
+  <text x="76" y="126" fill="#CBD5E1" font-family="Segoe UI, Arial, sans-serif" font-size="18">自然语言指令不应该止步于“回答你”，还应该继续流向执行、记忆、知识与通知。</text>
+
+  <path d="M188 258H1012" stroke="url(#flowLine)" stroke-width="8" stroke-linecap="round"/>
+
+  <g>
+    <rect x="84" y="184" width="196" height="148" rx="24" fill="#111827" fill-opacity="0.88" stroke="#FFFFFF" stroke-opacity="0.12"/>
+    <text x="112" y="228" fill="#F8FAFC" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="800">1. 指令入口</text>
+    <text x="112" y="264" fill="#CBD5E1" font-family="Segoe UI, Arial, sans-serif" font-size="17">聊天、快捷触发</text>
+    <text x="112" y="292" fill="#CBD5E1" font-family="Segoe UI, Arial, sans-serif" font-size="17">IM 协同、定时任务</text>
+    <circle cx="252" cy="258" r="28" fill="#0EA5E9" fill-opacity="0.24"/>
+    <path d="M239 254H265M239 268H257" stroke="#E0F2FE" stroke-width="5" stroke-linecap="round"/>
+  </g>
+
+  <g>
+    <rect x="326" y="152" width="236" height="212" rx="24" fill="#111827" fill-opacity="0.88" stroke="#FFFFFF" stroke-opacity="0.12"/>
+    <text x="354" y="198" fill="#F8FAFC" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="800">2. 本地 Agent 层</text>
+    <text x="354" y="236" fill="#CBD5E1" font-family="Segoe UI, Arial, sans-serif" font-size="17">语义路由</text>
+    <text x="354" y="264" fill="#CBD5E1" font-family="Segoe UI, Arial, sans-serif" font-size="17">Assistant / Skills</text>
+    <text x="354" y="292" fill="#CBD5E1" font-family="Segoe UI, Arial, sans-serif" font-size="17">桌面执行与工具调用</text>
+    <circle cx="518" cy="258" r="42" fill="#8B5CF6" fill-opacity="0.24"/>
+    <circle cx="518" cy="258" r="21" stroke="#EDE9FE" stroke-width="6"/>
+    <path d="M518 217V182M553 258H588M483 258H448M518 299V334" stroke="#DDD6FE" stroke-width="5" stroke-linecap="round"/>
+  </g>
+
+  <g>
+    <rect x="608" y="184" width="224" height="148" rx="24" fill="#111827" fill-opacity="0.88" stroke="#FFFFFF" stroke-opacity="0.12"/>
+    <text x="636" y="228" fill="#F8FAFC" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="800">3. 上下文沉淀</text>
+    <text x="636" y="264" fill="#CBD5E1" font-family="Segoe UI, Arial, sans-serif" font-size="17">知识文档</text>
+    <text x="636" y="292" fill="#CBD5E1" font-family="Segoe UI, Arial, sans-serif" font-size="17">记忆事实 / 检索</text>
+    <rect x="758" y="224" width="42" height="62" rx="10" fill="#F59E0B" fill-opacity="0.28"/>
+    <rect x="706" y="208" width="42" height="78" rx="10" fill="#FDE68A" fill-opacity="0.22"/>
+  </g>
+
+  <g>
+    <rect x="878" y="184" width="236" height="148" rx="24" fill="#111827" fill-opacity="0.88" stroke="#FFFFFF" stroke-opacity="0.12"/>
+    <text x="906" y="228" fill="#F8FAFC" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="800">4. 回流与推送</text>
+    <text x="906" y="264" fill="#CBD5E1" font-family="Segoe UI, Arial, sans-serif" font-size="17">通知、IM、后续动作</text>
+    <text x="906" y="292" fill="#CBD5E1" font-family="Segoe UI, Arial, sans-serif" font-size="17">让结果继续前进</text>
+    <path d="M1058 224L1086 252L1058 280" stroke="#FDE68A" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

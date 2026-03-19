@@ -1,4 +1,5 @@
 import { defaultNavItems } from "@/components/layout/header/constants"
+import { getRuntimeHeaderNavItems } from "@/components/layout/header/nav-runtime"
 
 describe("defaultNavItems", () => {
   it("contains dashboard link for regular header navigation", () => {
@@ -24,5 +25,24 @@ describe("defaultNavItems", () => {
   it("temporarily hides images from header navigation", () => {
     const hrefs = defaultNavItems.map((item) => item.href)
     expect(hrefs).not.toContain("/gallery")
+  })
+})
+
+describe("getRuntimeHeaderNavItems", () => {
+  it("keeps only home, docs, and download on web", () => {
+    const hrefs = getRuntimeHeaderNavItems(defaultNavItems, false).map((item) => item.href)
+
+    expect(hrefs).toEqual(["/", "/docs", "/download"])
+  })
+
+  it("keeps desktop product navigation while hiding docs and download", () => {
+    const hrefs = getRuntimeHeaderNavItems(defaultNavItems, true).map((item) => item.href)
+
+    expect(hrefs).toContain("/chat")
+    expect(hrefs).toContain("/assistants")
+    expect(hrefs).toContain("/mcp")
+    expect(hrefs).toContain("/dashboard")
+    expect(hrefs).not.toContain("/docs")
+    expect(hrefs).not.toContain("/download")
   })
 })

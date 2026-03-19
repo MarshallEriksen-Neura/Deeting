@@ -199,16 +199,30 @@ pub async fn run_install(
 /// 查找嵌入的安装包
 fn find_embedded_installer() -> Option<PathBuf> {
     // 在生产构建中，安装包会嵌入到 resources 目录
-    // tauri::api::path::resolve_path 可获取资源路径
+    // Tauri 会将资源提取到应用资源目录
     let candidates = [
+        // 生产环境：Tauri 资源目录
         "resources/deeting-setup.exe",
+        // 相对路径查找
         "../resources/deeting-setup.exe",
+        // Windows 安装后路径
+        "./resources/deeting-setup.exe",
     ];
 
     for path in &candidates {
         let p = PathBuf::from(path);
         if p.exists() {
             return Some(p);
+        }
+    }
+
+    // 尝试从应用资源目录查找（Tauri 2.x）
+    if let Ok(exe_dir) = std::env::current_exe() {
+        if let Some(exe_parent) = exe_dir.parent() {
+            let resource_path = exe_parent.join("resources").join("deeting-setup.exe");
+            if resource_path.exists() {
+                return Some(resource_path);
+            }
         }
     }
 

@@ -1,0 +1,43 @@
+<svg width="1200" height="400" viewBox="0 0 1200 400" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="banditBg" x1="64" y1="48" x2="1121" y2="352" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B1324"/>
+      <stop offset="1" stop-color="#13203B"/>
+    </linearGradient>
+    <linearGradient id="banditFlow" x1="174" y1="208" x2="1017" y2="208" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#38BDF8"/>
+      <stop offset="0.5" stop-color="#8B5CF6"/>
+      <stop offset="1" stop-color="#F59E0B"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="400" rx="28" fill="url(#banditBg)"/>
+  <text x="72" y="80" fill="#F8FAFC" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="800">Bandit feedback loop</text>
+  <text x="72" y="112" fill="#CBD5E1" font-family="Segoe UI, Arial, sans-serif" font-size="18">让路由不是一次性猜测，而是随着反馈逐步变得更贴近用户真实偏好。</text>
+
+  <path d="M184 208H1018" stroke="url(#banditFlow)" stroke-width="8" stroke-linecap="round"/>
+
+  <rect x="80" y="156" width="180" height="104" rx="22" fill="#111827" fill-opacity="0.86" stroke="#FFFFFF" stroke-opacity="0.1"/>
+  <text x="110" y="198" fill="#F8FAFC" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="800">用户请求</text>
+  <text x="110" y="230" fill="#CBD5E1" font-family="Segoe UI, Arial, sans-serif" font-size="16">自然语言意图</text>
+
+  <rect x="316" y="132" width="236" height="152" rx="22" fill="#111827" fill-opacity="0.86" stroke="#FFFFFF" stroke-opacity="0.1"/>
+  <text x="346" y="176" fill="#F8FAFC" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="800">候选 Assistant</text>
+  <text x="346" y="208" fill="#CBD5E1" font-family="Segoe UI, Arial, sans-serif" font-size="16">语义召回 top-K</text>
+  <text x="346" y="236" fill="#CBD5E1" font-family="Segoe UI, Arial, sans-serif" font-size="16">vector_score + bandit_score</text>
+  <text x="346" y="264" fill="#CBD5E1" font-family="Segoe UI, Arial, sans-serif" font-size="16">explore / exploit 平衡</text>
+
+  <rect x="608" y="132" width="214" height="152" rx="22" fill="#111827" fill-opacity="0.86" stroke="#FFFFFF" stroke-opacity="0.1"/>
+  <text x="638" y="176" fill="#F8FAFC" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="800">执行结果</text>
+  <text x="638" y="208" fill="#CBD5E1" font-family="Segoe UI, Arial, sans-serif" font-size="16">激活 top-1</text>
+  <text x="638" y="236" fill="#CBD5E1" font-family="Segoe UI, Arial, sans-serif" font-size="16">完成路由或推送</text>
+
+  <rect x="878" y="132" width="236" height="152" rx="22" fill="#111827" fill-opacity="0.86" stroke="#FFFFFF" stroke-opacity="0.1"/>
+  <text x="908" y="176" fill="#F8FAFC" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="800">反馈回写</text>
+  <text x="908" y="208" fill="#CBD5E1" font-family="Segoe UI, Arial, sans-serif" font-size="16">显式反馈</text>
+  <text x="908" y="236" fill="#CBD5E1" font-family="Segoe UI, Arial, sans-serif" font-size="16">隐式点击 / 满意度</text>
+  <text x="908" y="264" fill="#CBD5E1" font-family="Segoe UI, Arial, sans-serif" font-size="16">更新下一轮 arm 选择</text>
+
+  <path d="M1004 294C1004 336 942 360 832 360H446C350 360 300 338 300 300" stroke="#A855F7" stroke-width="5" stroke-linecap="round"/>
+  <path d="M296 300L304 292" stroke="#A855F7" stroke-width="5" stroke-linecap="round"/>
+  <path d="M296 300L304 308" stroke="#A855F7" stroke-width="5" stroke-linecap="round"/>
+</svg>

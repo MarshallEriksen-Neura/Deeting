@@ -18,7 +18,21 @@ https://developers.cloudflare.com/agents/api-reference/codemode/
 
 从 [GitHub Releases](https://github.com/MarshallEriksen-Neura/Deeting/releases) 下载最新版本。
 
-> **macOS 用户注意**：由于本项目为开源项目，暂未购买 Apple 开发者账号，macOS 版本未经签名。首次打开需要右键 → 打开，详见 [macOS 安装说明](./docs/macos-installation.md)
+### Windows 用户
+
+下载 `Deeting Setup_x.x.x_x64-bootstrapper.exe` 文件，运行后：
+
+1. 选择安装路径
+2. 配置安装选项（桌面快捷方式、开机自启）
+3. 点击"极速安装"完成安装
+
+### macOS 用户
+
+> **注意**：由于本项目为开源项目，暂未购买 Apple 开发者账号，macOS 版本未经签名。首次打开需要右键 → 打开，详见 [macOS 安装说明](./docs/macos-installation.md)
+
+### Linux 用户
+
+下载 `.deb` 或 `.AppImage` 文件，按照常规方式安装。
 
 ## 运行必要条件
 

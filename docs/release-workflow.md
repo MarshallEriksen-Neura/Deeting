@@ -29,6 +29,7 @@ git push origin v0.2.0
 
 GitHub Actions 会自动：
 
+#### 阶段 1: 构建主应用
 - ✅ 构建 Windows 安装包（NSIS）
 - ✅ 构建 macOS 安装包（DMG，未签名）
 - ✅ 构建 Linux 安装包（deb、AppImage）
@@ -36,6 +37,26 @@ GitHub Actions 会自动：
 - ✅ 创建 GitHub Release
 - ✅ 上传所有安装包
 - ✅ 生成 `latest.json`（用于自动更新）
+
+#### 阶段 2: 构建 Windows Installer（仅 Windows）
+- ✅ 将主应用 NSIS 安装包嵌入 installer
+- ✅ 构建图形化安装引导程序
+- ✅ 上传 bootstrapper 安装包
+
+#### 阶段 3: 发布最终产物
+- ✅ 将 bootstrapper 上传到 Release
+- ✅ 用户可选择标准安装包或引导式安装
+
+### 发布产物说明
+
+| 文件名 | 说明 | 适用平台 |
+|--------|------|---------|
+| `Deeting Setup_x.x.x_x64-setup.exe` | 标准 NSIS 安装包 | Windows |
+| `Deeting Setup_x.x.x_x64-bootstrapper.exe` | 图形化引导安装程序（推荐） | Windows |
+| `Deeting_x.x.x_aarch64.dmg` | macOS ARM64 安装包 | macOS |
+| `Deeting_x.x.x_x64.dmg` | macOS Intel 安装包 | macOS |
+| `deeting_x.x.x_amd64.deb` | Debian/Ubuntu 安装包 | Linux |
+| `deeting_x.x.x_x86_64.AppImage` | 通用 Linux 安装包 | Linux |
 
 ## 签名配置
 

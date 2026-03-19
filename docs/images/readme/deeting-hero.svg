@@ -1,0 +1,61 @@
+<svg width="1200" height="640" viewBox="0 0 1200 640" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="80" y1="64" x2="1076" y2="576" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B1220"/>
+      <stop offset="0.55" stop-color="#13203C"/>
+      <stop offset="1" stop-color="#0F172A"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="337" y1="147" x2="541" y2="389" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#A855F7"/>
+      <stop offset="1" stop-color="#4338CA"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="402" y1="174" x2="536" y2="377" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FDE68A"/>
+      <stop offset="1" stop-color="#F59E0B"/>
+    </linearGradient>
+    <linearGradient id="card" x1="636" y1="164" x2="1015" y2="474" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.06"/>
+    </linearGradient>
+    <filter id="blur" x="0" y="0" width="1200" height="640" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="32"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="640" rx="32" fill="url(#bg)"/>
+  <g filter="url(#blur)" opacity="0.55">
+    <circle cx="172" cy="120" r="96" fill="#2563EB"/>
+    <circle cx="987" cy="120" r="108" fill="#9333EA"/>
+    <circle cx="1048" cy="523" r="132" fill="#0891B2"/>
+  </g>
+
+  <rect x="72" y="76" width="516" height="488" rx="28" fill="#0F172A" fill-opacity="0.52" stroke="#FFFFFF" stroke-opacity="0.16"/>
+  <circle cx="430" cy="318" r="150" stroke="url(#ring)" stroke-width="18"/>
+  <circle cx="430" cy="318" r="116" stroke="#8B5CF6" stroke-opacity="0.28" stroke-width="6"/>
+  <path d="M447 184C527 196 586 261 586 338C586 401 551 454 497 483" stroke="url(#ring)" stroke-width="18" stroke-linecap="round"/>
+  <path d="M360 242C335 271 335 318 353 350C377 394 429 408 470 432C497 448 520 473 522 507" stroke="url(#gold)" stroke-width="20" stroke-linecap="round"/>
+  <path d="M430 220V478" stroke="url(#gold)" stroke-width="16" stroke-linecap="round"/>
+  <path d="M430 220L514 125L447 212" fill="#FBBF24"/>
+  <circle cx="392" cy="279" r="12" fill="#22D3EE"/>
+  <circle cx="286" cy="220" r="6" fill="#FFFFFF" fill-opacity="0.58"/>
+  <circle cx="540" cy="418" r="8" fill="#FFFFFF" fill-opacity="0.42"/>
+  <path d="M286 220L353 255" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="2"/>
+  <path d="M540 418L497 392" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="2"/>
+
+  <rect x="636" y="132" width="492" height="376" rx="30" fill="url(#card)" stroke="#FFFFFF" stroke-opacity="0.16"/>
+  <rect x="666" y="168" width="156" height="34" rx="17" fill="#111827" fill-opacity="0.82" stroke="#FFFFFF" stroke-opacity="0.08"/>
+  <text x="744" y="190" text-anchor="middle" fill="#E5E7EB" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="700">Local-First</text>
+
+  <text x="666" y="252" fill="#F8FAFC" font-family="Segoe UI, Arial, sans-serif" font-size="42" font-weight="800">Deeting OS</text>
+  <text x="666" y="292" fill="#CBD5E1" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="600">你的专属 AI 网关与智能上下文枢纽</text>
+  <text x="666" y="346" fill="#E2E8F0" font-family="Segoe UI, Arial, sans-serif" font-size="18">把对话、技能、知识库、记忆与自动化任务</text>
+  <text x="666" y="376" fill="#E2E8F0" font-family="Segoe UI, Arial, sans-serif" font-size="18">收拢到同一个桌面入口。</text>
+  <text x="666" y="426" fill="#93C5FD" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="700">Privacy-first · Context-aware · Extensible</text>
+
+  <rect x="666" y="456" width="132" height="20" rx="10" fill="#7C3AED" fill-opacity="0.32"/>
+  <rect x="812" y="456" width="112" height="20" rx="10" fill="#F59E0B" fill-opacity="0.32"/>
+  <rect x="938" y="456" width="134" height="20" rx="10" fill="#06B6D4" fill-opacity="0.32"/>
+  <text x="732" y="470" text-anchor="middle" fill="#DDD6FE" font-family="Segoe UI, Arial, sans-serif" font-size="12" font-weight="700">Desktop Agent</text>
+  <text x="868" y="470" text-anchor="middle" fill="#FEF3C7" font-family="Segoe UI, Arial, sans-serif" font-size="12" font-weight="700">Knowledge</text>
+  <text x="1005" y="470" text-anchor="middle" fill="#CFFAFE" font-family="Segoe UI, Arial, sans-serif" font-size="12" font-weight="700">Memory Loop</text>
+</svg>

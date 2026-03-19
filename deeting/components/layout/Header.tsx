@@ -19,6 +19,7 @@ const isTauri = process.env.NEXT_PUBLIC_IS_TAURI === "true"
 import { ActionButtons } from "./header/ActionButtons"
 import { LanguageSwitcher } from "./header/LanguageSwitcher"
 import { NavLinks } from "./header/NavLinks"
+import { getRuntimeHeaderNavItems } from "./header/nav-runtime"
 import { UserMenu } from "./header/UserMenu"
 import { DEFAULT_LOGO, defaultNavItems } from "./header/constants"
 import { HeaderProps } from "./header/types"
@@ -57,11 +58,9 @@ export function Header({
     return null
   }
 
-  const visibleNavItems = navItems.filter((item) => {
-    // Hide download link on Tauri desktop
-    if (isTauri && item.href === "/download") {
-      return false
-    }
+  const runtimeNavItems = getRuntimeHeaderNavItems(navItems, isTauri)
+
+  const visibleNavItems = runtimeNavItems.filter((item) => {
     if (!item.href.startsWith("/admin")) {
       return true
     }
