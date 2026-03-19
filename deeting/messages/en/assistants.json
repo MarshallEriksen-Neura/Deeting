@@ -14,6 +14,33 @@
         "placeholder": "Search assistant skills (e.g. Python, writing...)"
       }
     },
+    "state": {
+      "loading": {
+        "badge": "assistant source",
+        "title": "Connecting to your assistant library",
+        "description": "We are reading assistant data from the current runtime and arranging the available roles into a browsable card view."
+      },
+      "error": {
+        "badge": "request interrupted",
+        "title": "The assistant list did not come through",
+        "description": "This state only appears when the request fails and there are still no assistants to render. Try a reload first, then inspect the details below if it still fails.",
+        "detailsTitle": "Error details"
+      },
+      "empty": {
+        "badge": "library is empty",
+        "title": "There are no assistants to show yet",
+        "description": "The current runtime did not return any assistant rows. Create a new assistant first, or verify that the local assistant endpoint is returning a list.",
+        "filteredBadge": "no matches",
+        "filteredTitle": "No assistants matched this filter",
+        "filteredDescription": "Try a different keyword, or clear the selected tags to browse the full assistant library again.",
+        "filteredHint": "Tip: search matches both assistant names and tags."
+      },
+      "actions": {
+        "retry": "Reload",
+        "clearFilters": "Clear filters",
+        "create": "Create assistant"
+      }
+    },
     "author": {
       "me": "Me",
       "community": "Community",

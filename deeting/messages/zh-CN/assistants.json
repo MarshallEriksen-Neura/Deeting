@@ -14,6 +14,33 @@
         "placeholder": "搜索智能体能力（例如：Python、写作）"
       }
     },
+    "state": {
+      "loading": {
+        "badge": "连接助手库",
+        "title": "正在接入你的助手列表",
+        "description": "我们正在从当前运行时读取助手数据，并准备把可用角色整理成可浏览的卡片视图。"
+      },
+      "error": {
+        "badge": "读取中断",
+        "title": "助手列表暂时没接上",
+        "description": "页面当前只会在“请求失败且还没有任何可展示助手”时进入这个状态。可以先重试一次；如果仍然失败，再看下面的错误详情。",
+        "detailsTitle": "错误详情"
+      },
+      "empty": {
+        "badge": "助手库为空",
+        "title": "这里还没有可展示的助手",
+        "description": "当前运行时没有返回任何助手数据。你可以先创建一个新的智能体，或者确认本地助手接口是否已经返回列表。",
+        "filteredBadge": "没有匹配结果",
+        "filteredTitle": "这次筛选没有找到合适的助手",
+        "filteredDescription": "换个关键词，或者先清空标签筛选，再看看完整助手库里有哪些角色可用。",
+        "filteredHint": "提示：搜索会同时匹配名称和标签。"
+      },
+      "actions": {
+        "retry": "重新加载",
+        "clearFilters": "清空筛选",
+        "create": "创建智能体"
+      }
+    },
     "author": {
       "me": "我",
       "community": "社区",

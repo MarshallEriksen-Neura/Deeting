@@ -37,6 +37,7 @@ import {
   type CustomTaskAgentProfile,
   type UpsertCustomTaskAgentPayload,
 } from "@/lib/api/custom-task-agents"
+import { useChatService } from "@/hooks/use-chat-service"
 import { cn } from "@/lib/utils"
 import { PageHeader } from "@/components/ui/page-header/page-header"
 import { Button } from "@/components/ui/button"
@@ -46,7 +47,9 @@ import { Label } from "@/components/ui/label"
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
@@ -86,6 +89,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 
 const NEW_AGENT_ID = "__new_custom_task_agent__"
+const DEFAULT_TASK_AGENT_MODEL_VALUE = "__task_agent_model_default__"
 
 type TaskAgentDraft = {
   name: string
@@ -108,6 +112,12 @@ type PreviewDraft = {
   temperature: string
   max_tokens: string
   max_rounds: string
+}
+
+type TaskAgentModelOption = {
+  value: string
+  modelId: string
+  providerModelId: string
 }
 
 const defaultPreviewDraft: PreviewDraft = {
@@ -227,6 +237,10 @@ function bindingStatusRank(status: string): number {
 
 function compareBindingText(left: string, right: string): number {
   return left.localeCompare(right, undefined, { sensitivity: "base" })
+}
+
+function buildTaskAgentModelOptionValue(instanceId: string, modelValue: string): string {
+  return `${instanceId}::${modelValue}`
 }
 
 const AgentListItem = React.memo(function AgentListItem({
@@ -434,6 +448,16 @@ export function TaskAgentsClient() {
     },
   )
 
+  const {
+    modelGroups,
+    isLoadingModels,
+  } = useChatService({
+    enabled: isDesktop,
+    fetchAssistants: false,
+    modelCapability:
+      draft.invocation_kind === "image_generation" ? "image_generation" : "chat",
+  })
+
   React.useEffect(() => {
     if (!isDesktop) return
     if (!selectedAgentId) {
@@ -613,6 +637,57 @@ export function TaskAgentsClient() {
     draft.guidance_skill_ids,
     showSelectedSkillsOnly,
   ])
+
+  const taskAgentModelOptions = React.useMemo<TaskAgentModelOption[]>(
+    () =>
+      modelGroups.flatMap((group) =>
+        group.models.map((model) => ({
+          value: buildTaskAgentModelOptionValue(
+            group.instance_id,
+            model.provider_model_id ?? model.id,
+          ),
+          modelId: model.id,
+          providerModelId: model.provider_model_id ?? "",
+        })),
+      ),
+    [modelGroups],
+  )
+
+  const selectedTaskAgentModelOption = React.useMemo(() => {
+    const trimmedProviderModelId = draft.provider_model_id.trim()
+    if (trimmedProviderModelId) {
+      const matchedByProviderModelId = taskAgentModelOptions.find(
+        (option) => option.providerModelId === trimmedProviderModelId,
+      )
+      if (matchedByProviderModelId) {
+        return matchedByProviderModelId
+      }
+    }
+
+    const trimmedModel = draft.model.trim()
+    if (!trimmedModel) {
+      return null
+    }
+
+    return (
+      taskAgentModelOptions.find((option) => option.modelId === trimmedModel) ?? null
+    )
+  }, [draft.model, draft.provider_model_id, taskAgentModelOptions])
+
+  const unknownTaskAgentModelLabel = React.useMemo(() => {
+    const values = [draft.model.trim(), draft.provider_model_id.trim()].filter(Boolean)
+    return values.join(" / ")
+  }, [draft.model, draft.provider_model_id])
+
+  const unknownTaskAgentModelValue =
+    selectedTaskAgentModelOption || !unknownTaskAgentModelLabel
+      ? null
+      : `__task_agent_model_custom__:${unknownTaskAgentModelLabel}`
+
+  const taskAgentModelSelectValue =
+    selectedTaskAgentModelOption?.value ??
+    unknownTaskAgentModelValue ??
+    DEFAULT_TASK_AGENT_MODEL_VALUE
 
   const stats = React.useMemo(
     () => [
@@ -799,6 +874,29 @@ export function TaskAgentsClient() {
       setDraft((current) => ({ ...current, [key]: value }))
     },
     [],
+  )
+
+  const handleTaskAgentModelChange = React.useCallback(
+    (value: string) => {
+      if (value === DEFAULT_TASK_AGENT_MODEL_VALUE) {
+        setDraft((current) => ({
+          ...current,
+          model: "",
+          provider_model_id: "",
+        }))
+        return
+      }
+
+      const nextOption = taskAgentModelOptions.find((option) => option.value === value)
+      if (!nextOption) return
+
+      setDraft((current) => ({
+        ...current,
+        model: nextOption.modelId,
+        provider_model_id: nextOption.providerModelId,
+      }))
+    },
+    [taskAgentModelOptions],
   )
 
   const toggleBinding = React.useCallback(
@@ -1290,14 +1388,58 @@ export function TaskAgentsClient() {
                     <Label htmlFor="task-agent-model">
                       {t("editor.fields.model")}
                     </Label>
-                    <Input
-                      id="task-agent-model"
-                      value={draft.model}
-                      onChange={(event) =>
-                        updateDraft("model", event.target.value)
-                      }
-                      placeholder={t("editor.placeholders.model")}
-                    />
+                    <Select
+                      value={taskAgentModelSelectValue}
+                      onValueChange={handleTaskAgentModelChange}
+                      disabled={isLoadingModels}
+                    >
+                      <SelectTrigger id="task-agent-model">
+                        <SelectValue placeholder={t("editor.placeholders.model")}>
+                          {selectedTaskAgentModelOption ? (
+                            <span className="truncate">
+                              {selectedTaskAgentModelOption.modelId}
+                            </span>
+                          ) : unknownTaskAgentModelLabel ? (
+                            <span className="truncate">{unknownTaskAgentModelLabel}</span>
+                          ) : undefined}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={DEFAULT_TASK_AGENT_MODEL_VALUE}>
+                          {t("editor.placeholders.model")}
+                        </SelectItem>
+                        {unknownTaskAgentModelValue ? (
+                          <SelectItem value={unknownTaskAgentModelValue}>
+                            {unknownTaskAgentModelLabel}
+                          </SelectItem>
+                        ) : null}
+                        {modelGroups.map((group) => (
+                          <SelectGroup key={group.instance_id}>
+                            <SelectLabel className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                              {group.instance_name}
+                            </SelectLabel>
+                            {group.models.map((model) => {
+                              const optionValue = buildTaskAgentModelOptionValue(
+                                group.instance_id,
+                                model.provider_model_id ?? model.id,
+                              )
+                              return (
+                                <SelectItem key={optionValue} value={optionValue}>
+                                  <div className="flex flex-col">
+                                    <span className="text-xs font-medium text-foreground">
+                                      {model.id}
+                                    </span>
+                                    <span className="text-[10px] text-muted-foreground">
+                                      {group.provider || model.owned_by || "provider"}
+                                    </span>
+                                  </div>
+                                </SelectItem>
+                              )
+                            })}
+                          </SelectGroup>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="task-agent-provider-model-id">
@@ -1325,7 +1467,7 @@ export function TaskAgentsClient() {
                       updateDraft("model_config_json", event.target.value)
                     }
                     rows={8}
-                    placeholder={t("editor.placeholders.modelConfigJson")}
+                    placeholder={t.raw("editor.placeholders.modelConfigJson")}
                     className="font-mono text-xs"
                   />
                   <p className="text-xs text-[var(--muted)]">

@@ -287,8 +287,7 @@ pub async fn list_local_assistant_installations(
         .map_err(to_string)
 }
 
-#[tauri::command]
-pub async fn create_local_assistant_installation(
+async fn create_local_assistant_installation(
     state: State<'_, AppState>,
     assistant_id: String,
     payload: LocalAssistantInstallCreateRequest,
@@ -342,37 +341,12 @@ pub async fn list_local_assistant_versions(
 }
 
 #[tauri::command]
-pub async fn list_local_assistant_installs(
-    state: State<'_, AppState>,
-    query: LocalAssistantInstallQuery,
-) -> Result<LocalAssistantInstallPage, String> {
-    list_local_assistant_installations(state, query).await
-}
-
-#[tauri::command]
 pub async fn install_local_assistant(
     state: State<'_, AppState>,
     assistant_id: String,
     payload: LocalAssistantInstallCreateRequest,
 ) -> Result<LocalAssistantInstallItem, String> {
     create_local_assistant_installation(state, assistant_id, payload).await
-}
-
-#[tauri::command]
-pub async fn update_local_assistant_install(
-    state: State<'_, AppState>,
-    assistant_id: String,
-    payload: LocalAssistantInstallUpdateRequest,
-) -> Result<LocalAssistantInstallItem, String> {
-    update_local_assistant_installation(state, assistant_id, payload).await
-}
-
-#[tauri::command]
-pub async fn uninstall_local_assistant(
-    state: State<'_, AppState>,
-    assistant_id: String,
-) -> Result<(), String> {
-    delete_local_assistant_installation(state, assistant_id).await
 }
 
 #[tauri::command]

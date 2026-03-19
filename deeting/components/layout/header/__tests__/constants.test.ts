@@ -15,4 +15,14 @@ describe("defaultNavItems", () => {
     const hrefs = defaultNavItems.map((item) => item.href)
     expect(hrefs).not.toContain("/admin")
   })
+
+  it("temporarily hides plugin market from header navigation", () => {
+    const hrefs = defaultNavItems.map((item) => item.href)
+    expect(hrefs).not.toContain("/plugins/market")
+  })
+
+  it("temporarily hides images from header navigation", () => {
+    const hrefs = defaultNavItems.map((item) => item.href)
+    expect(hrefs).not.toContain("/gallery")
+  })
 })

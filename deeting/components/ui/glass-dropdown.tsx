@@ -193,32 +193,49 @@ interface GlassDropdownMenuItemProps
 const GlassDropdownMenuItem = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Item>,
   GlassDropdownMenuItemProps
->(({ className, variant, inset, icon, shortcut, selected, children, ...props }, ref) => (
-  <DropdownMenuPrimitive.Item
-    ref={ref}
-    className={cn(
-      glassDropdownItemVariants({ variant }),
-      inset && "pl-8",
-      className
-    )}
-    {...props}
-  >
-    {icon && (
-      <span className="flex size-5 shrink-0 items-center justify-center text-[var(--muted)]">
-        {icon}
-      </span>
-    )}
-    <span className="flex flex-1 items-center gap-2">{children}</span>
-    {selected && (
-      <Check className="size-4 text-[var(--primary)]" />
-    )}
-    {shortcut && (
-      <span className="ml-auto text-xs tracking-widest text-[var(--muted)]">
-        {shortcut}
-      </span>
-    )}
-  </DropdownMenuPrimitive.Item>
-))
+>(({ className, variant, inset, icon, shortcut, selected, children, asChild, ...props }, ref) => {
+  const itemClassName = cn(
+    glassDropdownItemVariants({ variant }),
+    inset && "pl-8",
+    className
+  )
+
+  if (asChild) {
+    return (
+      <DropdownMenuPrimitive.Item
+        ref={ref}
+        asChild
+        className={itemClassName}
+        {...props}
+      >
+        {React.Children.only(children) as React.ReactElement}
+      </DropdownMenuPrimitive.Item>
+    )
+  }
+
+  return (
+    <DropdownMenuPrimitive.Item
+      ref={ref}
+      className={itemClassName}
+      {...props}
+    >
+      {icon ? (
+        <span className="flex size-5 shrink-0 items-center justify-center text-[var(--muted)]">
+          {icon}
+        </span>
+      ) : null}
+      <span className="flex flex-1 items-center gap-2">{children}</span>
+      {selected ? (
+        <Check className="size-4 text-[var(--primary)]" />
+      ) : null}
+      {shortcut ? (
+        <span className="ml-auto text-xs tracking-widest text-[var(--muted)]">
+          {shortcut}
+        </span>
+      ) : null}
+    </DropdownMenuPrimitive.Item>
+  )
+})
 GlassDropdownMenuItem.displayName = "GlassDropdownMenuItem"
 
 // ============================================================================

@@ -134,6 +134,33 @@ async fn connect_local_stdio_client(
     args: &[String],
     env: Option<&HashMap<String, String>>,
 ) -> Result<RunningService<RoleClient, ClientInfo>, String> {
+    let mut last_error: Option<String> = None;
+    for (candidate_command, candidate_args) in local_stdio_command_candidates(command, args) {
+        match spawn_local_stdio_client(&candidate_command, &candidate_args, env).await {
+            Ok(client) => return Ok(client),
+            Err(err) => {
+                last_error = Some(format!(
+                    "{}: {}",
+                    format_command_label(&candidate_command, &candidate_args),
+                    err
+                ));
+            }
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| {
+        format!(
+            "no stdio command candidates for {}",
+            format_command_label(command, args)
+        )
+    }))
+}
+
+async fn spawn_local_stdio_client(
+    command: &str,
+    args: &[String],
+    env: Option<&HashMap<String, String>>,
+) -> Result<RunningService<RoleClient, ClientInfo>, String> {
     let mut child_command = tokio::process::Command::new(command);
     child_command.args(args);
     if let Some(env) = env {
@@ -144,11 +171,7 @@ async fn connect_local_stdio_client(
         .spawn()
         .map_err(|err| err.to_string())?;
     if let Some(stderr) = stderr_handle {
-        let command_label = if args.is_empty() {
-            command.to_string()
-        } else {
-            format!("{} {}", command, args.join(" "))
-        };
+        let command_label = format_command_label(command, args);
         tokio::spawn(async move {
             let mut lines = tokio::io::BufReader::new(stderr).lines();
             let mut line_count = 0usize;
@@ -171,6 +194,14 @@ async fn connect_local_stdio_client(
         .serve(transport)
         .await
         .map_err(|err| err.to_string())
+}
+
+fn format_command_label(command: &str, args: &[String]) -> String {
+    if args.is_empty() {
+        command.to_string()
+    } else {
+        format!("{} {}", command, args.join(" "))
+    }
 }
 
 fn client_info() -> ClientInfo {
@@ -334,6 +365,56 @@ fn push_unique_command_candidate(
     }) {
         candidates.push((command, args));
     }
+}
+
+fn local_stdio_command_candidates(command: &str, args: &[String]) -> Vec<(String, Vec<String>)> {
+    let discovered_paths = if Path::new(command).components().count() > 1 {
+        Vec::new()
+    } else {
+        discover_binary_paths(command)
+    };
+    local_stdio_command_candidates_with_discovered_paths(command, args, &discovered_paths)
+}
+
+fn local_stdio_command_candidates_with_discovered_paths(
+    command: &str,
+    args: &[String],
+    discovered_paths: &[String],
+) -> Vec<(String, Vec<String>)> {
+    let mut candidates = Vec::new();
+
+    for discovered in discovered_paths {
+        if is_windows_cmd_script(discovered) {
+            push_unique_command_candidate(&mut candidates, "cmd".to_string(), {
+                let mut shell_args = vec!["/C".to_string(), "call".to_string(), discovered.clone()];
+                shell_args.extend(args.iter().cloned());
+                shell_args
+            });
+        } else {
+            push_unique_command_candidate(&mut candidates, discovered.clone(), args.to_vec());
+        }
+    }
+
+    if is_windows_cmd_script(command) {
+        push_unique_command_candidate(&mut candidates, "cmd".to_string(), {
+            let mut shell_args = vec!["/C".to_string(), "call".to_string(), command.to_string()];
+            shell_args.extend(args.iter().cloned());
+            shell_args
+        });
+    }
+
+    push_unique_command_candidate(&mut candidates, command.to_string(), args.to_vec());
+
+    if cfg!(target_os = "windows")
+        && !is_windows_cmd_script(command)
+        && Path::new(command).components().count() == 1
+    {
+        let mut shell_args = vec!["/C".to_string(), command.to_string()];
+        shell_args.extend(args.iter().cloned());
+        push_unique_command_candidate(&mut candidates, "cmd".to_string(), shell_args);
+    }
+
+    candidates
 }
 
 fn legacy_sse_proxy_command_candidates(sse_url: &str) -> Vec<(String, Vec<String>)> {
@@ -622,7 +703,8 @@ mod tests {
     use super::{
         build_url_with_same_origin, extract_legacy_sse_endpoint_path,
         heuristic_streamable_http_fallback_urls, is_http_405_method_not_allowed_error,
-        legacy_sse_proxy_command_candidates, looks_like_legacy_sse_endpoint_url,
+        legacy_sse_proxy_command_candidates, local_stdio_command_candidates_with_discovered_paths,
+        looks_like_legacy_sse_endpoint_url,
     };
 
     #[test]
@@ -692,5 +774,27 @@ mod tests {
                     "--transport".to_string(),
                     "sse-only".to_string()
                 ]));
+    }
+
+    #[test]
+    fn builds_local_stdio_candidates_for_windows_script_discovery() {
+        let args = vec!["-y".to_string(), "tavily-mcp@0.1.2".to_string()];
+        let candidates = local_stdio_command_candidates_with_discovered_paths(
+            "npx",
+            &args,
+            &[r"C:\Program Files\nodejs\npx.cmd".to_string()],
+        );
+
+        assert!(candidates.iter().any(|item| item.0 == "cmd"
+            && item.1
+                == vec![
+                    "/C".to_string(),
+                    "call".to_string(),
+                    r"C:\Program Files\nodejs\npx.cmd".to_string(),
+                    "-y".to_string(),
+                    "tavily-mcp@0.1.2".to_string()
+                ]));
+        assert!(candidates.iter().any(|item| item.0 == "npx"
+            && item.1 == vec!["-y".to_string(), "tavily-mcp@0.1.2".to_string()]));
     }
 }

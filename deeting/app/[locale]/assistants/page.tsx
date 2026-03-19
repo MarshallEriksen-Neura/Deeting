@@ -5,17 +5,17 @@ import { Search } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Skeleton } from "@/components/ui/skeleton"
 import { Button } from "@/components/ui/button"
 import { AgentCard } from "@/components/assistants/agent-card"
+import { AssistantsStatePanel } from "@/components/assistants/assistants-state-panel"
 import { CreateAgentModal } from "@/components/assistants/create-agent-modal"
 import { InfiniteList } from "@/components/ui/infinite-list"
-import { installAssistant, installLocalAssistant } from "@/lib/api"
-import { useLocalAssistantLibrary } from "@/lib/swr/use-local-assistant-library"
-import { useLocalAssistantTags } from "@/lib/swr/use-local-assistant-tags"
+import { deleteAssistant, deleteLocalAssistant, installAssistant } from "@/lib/api"
+import { useLocalAssistants } from "@/lib/swr/use-local-assistants"
 import { useAssistantMarket } from "@/lib/swr/use-assistant-market"
 import { useAssistantTags } from "@/lib/swr/use-assistant-tags"
 import { useAssistantOwned } from "@/lib/swr/use-assistant-owned"
+import { isTauriRuntime as resolveTauriRuntime } from "@/lib/runtime/tauri"
 import type { AssistantCardData } from "@/components/assistants/types"
 
 const PAGE_SIZE = 8
@@ -63,10 +63,7 @@ const matchesQuery = (agent: AssistantCardData, query: string) => {
 
 export default function AssistantsPage() {
   const t = useTranslations("assistants")
-  const isTauriRuntime =
-    process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
-    typeof window !== "undefined" &&
-    ("__TAURI__" in window || "__TAURI_INTERNALS__" in window)
+  const isTauriRuntime = resolveTauriRuntime()
   const [searchQuery, setSearchQuery] = React.useState("")
   const [selectedTags, setSelectedTags] = React.useState<string[]>([])
 
@@ -92,15 +89,25 @@ export default function AssistantsPage() {
   } = useAssistantOwned(20, { enabled: !isTauriRuntime })
   const { tags: cloudTags } = useAssistantTags(!isTauriRuntime)
   const {
-    items: localLibraryItems,
-    isLoading: localLibraryLoading,
-    error: localLibraryError,
-    mutate: mutateLocalLibrary,
-  } = useLocalAssistantLibrary(isTauriRuntime)
-  const {
-    tags: localTags,
-    mutate: mutateLocalTags,
-  } = useLocalAssistantTags(isTauriRuntime)
+    items: localAssistantItems,
+    isLoading: localAssistantsLoading,
+    error: localAssistantsError,
+    mutate: mutateLocalAssistants,
+  } = useLocalAssistants(isTauriRuntime)
+  const localTags = React.useMemo(() => {
+    const tagMap = new Map<string, { id: string; name: string }>()
+    localAssistantItems.forEach((assistant) => {
+      normalizeTags(assistant.tags).forEach((tag) => {
+        const key = tag.toLowerCase()
+        if (!tagMap.has(key)) {
+          tagMap.set(key, { id: `local-tag:${key}`, name: tag })
+        }
+      })
+    })
+    return Array.from(tagMap.values()).sort((left, right) =>
+      left.name.localeCompare(right.name)
+    )
+  }, [localAssistantItems])
   const marketTags = isTauriRuntime ? localTags : cloudTags
 
   React.useEffect(() => {
@@ -133,24 +140,20 @@ export default function AssistantsPage() {
 
   const localEditableMap = React.useMemo(() => {
     const map: Record<string, EditableAssistant> = {}
-    localLibraryItems.forEach((item) => {
-      map[item.assistant.id] = {
-        id: item.assistant.id,
-        name: item.version?.name || item.assistant.name,
-        desc:
-          item.entity?.summary ||
-          item.version?.description ||
-          item.assistant.description ||
-          "",
-        systemPrompt: item.version?.system_prompt || item.assistant.system_prompt,
-        tags: normalizeTags(item.version?.tags.length ? item.version.tags : item.assistant.tags),
-        iconId: item.assistant.avatar || item.entity?.icon_id || "lucide:bot",
-        color: pickColor(item.assistant.id),
-        visibility: item.assistant.visibility,
+    localAssistantItems.forEach((assistant) => {
+      map[assistant.id] = {
+        id: assistant.id,
+        name: assistant.name,
+        desc: assistant.description || "",
+        systemPrompt: assistant.system_prompt,
+        tags: normalizeTags(assistant.tags),
+        iconId: assistant.avatar || "lucide:bot",
+        color: pickColor(assistant.id),
+        visibility: assistant.visibility,
       }
     })
     return map
-  }, [localLibraryItems])
+  }, [localAssistantItems])
 
   const handleCreate = React.useCallback(() => {
     setEditing(undefined)
@@ -196,25 +199,22 @@ export default function AssistantsPage() {
   }, [ownedItems, t])
 
   const localCards = React.useMemo<AssistantCardData[]>(() => {
-    return localLibraryItems.map((item) => ({
-      id: item.assistant.id,
-      name: item.version?.name || item.assistant.name,
-      description:
-        item.entity?.summary ||
-        item.version?.description ||
-        item.assistant.description ||
-        "",
-      tags: normalizeTags(item.version?.tags.length ? item.version.tags : item.assistant.tags),
-      installCount: item.entity?.install_count || 0,
-      ratingAvg: item.entity?.rating_avg || 0,
-      installed: item.installed,
-      isOwned: true,
-      iconId: item.assistant.avatar || item.entity?.icon_id,
-      summary: item.entity?.summary || item.assistant.description,
-      author: t("author.me"),
-      color: pickColor(item.assistant.id),
+    return localAssistantItems.map((assistant) => ({
+      id: assistant.id,
+      name: assistant.name,
+      description: assistant.description || "",
+      tags: normalizeTags(assistant.tags),
+      installCount: 0,
+      ratingAvg: 0,
+      installed: true,
+      isOwned: assistant.visibility !== "public",
+      iconId: assistant.avatar,
+      summary: assistant.description,
+      author: assistant.visibility === "public" ? t("author.system") : t("author.me"),
+      color: pickColor(assistant.id),
+      visibility: assistant.visibility as AssistantCardData["visibility"],
     }))
-  }, [localLibraryItems, t])
+  }, [localAssistantItems, t])
 
   const marketCards = React.useMemo<AssistantCardData[]>(() => {
     return marketItems.map((item) => ({
@@ -269,31 +269,61 @@ export default function AssistantsPage() {
   }, [filteredLocal, filteredOwned, isTauriRuntime, marketCards, ownedIds])
 
   const isInitialLoading = isTauriRuntime
-    ? localLibraryLoading && mergedAgents.length === 0
+    ? localAssistantsLoading && mergedAgents.length === 0
     : (isLoading || ownedLoading) && mergedAgents.length === 0
   const shouldShowBlockingLoadError = isTauriRuntime
-    ? !!localLibraryError && mergedAgents.length === 0
+    ? !!localAssistantsError && mergedAgents.length === 0
     : !!error && mergedAgents.length === 0
+  const blockingErrorMessage = React.useMemo(() => {
+    const target = isTauriRuntime ? localAssistantsError : error
+    if (!target) return null
+    if (target instanceof Error && target.message.trim()) return target.message
+    return null
+  }, [error, isTauriRuntime, localAssistantsError])
+  const isFilteredView = searchQuery.trim().length > 0 || selectedTags.length > 0
+  const stateKind = isInitialLoading
+    ? "loading"
+    : shouldShowBlockingLoadError
+      ? "error"
+      : mergedAgents.length === 0
+        ? "empty"
+        : null
 
   const handleInstall = React.useCallback(
     async (assistantId: string, options?: { followLatest?: boolean }) => {
-      if (isTauriRuntime) {
-        await installLocalAssistant(
-          assistantId,
-          options ? { follow_latest: options.followLatest } : undefined
-        )
-        await mutateLocalLibrary()
-        return
-      }
-
       await installAssistant(
         assistantId,
         options ? { follow_latest: options.followLatest } : undefined
       )
       await mutateMarket()
     },
-    [isTauriRuntime, mutateLocalLibrary, mutateMarket]
+    [mutateMarket]
   )
+  const handleDelete = React.useCallback(
+    async (assistantId: string) => {
+      if (isTauriRuntime) {
+        await deleteLocalAssistant(assistantId)
+        await mutateLocalAssistants()
+        return
+      }
+
+      await deleteAssistant(assistantId)
+      await Promise.all([mutateOwned(), mutateMarket()])
+    },
+    [isTauriRuntime, mutateLocalAssistants, mutateMarket, mutateOwned]
+  )
+  const handleRetry = React.useCallback(() => {
+    if (isTauriRuntime) {
+      void mutateLocalAssistants()
+      return
+    }
+    void mutateOwned()
+    void mutateMarket()
+  }, [isTauriRuntime, mutateLocalAssistants, mutateMarket, mutateOwned])
+  const handleClearFilters = React.useCallback(() => {
+    setSearchQuery("")
+    setSelectedTags([])
+  }, [])
 
   return (
     <div className="min-h-screen bg-muted/20 p-8 space-y-8 animate-in fade-in duration-700">
@@ -305,8 +335,7 @@ export default function AssistantsPage() {
         assistant={editing}
         onCreated={() => {
           if (isTauriRuntime) {
-            mutateLocalLibrary()
-            mutateLocalTags()
+            mutateLocalAssistants()
             return
           }
           mutateOwned()
@@ -314,8 +343,7 @@ export default function AssistantsPage() {
         }}
         onUpdated={() => {
           if (isTauriRuntime) {
-            mutateLocalLibrary()
-            mutateLocalTags()
+            mutateLocalAssistants()
             return
           }
           mutateOwned()
@@ -323,8 +351,7 @@ export default function AssistantsPage() {
         }}
         onDeleted={() => {
           if (isTauriRuntime) {
-            mutateLocalLibrary()
-            mutateLocalTags()
+            mutateLocalAssistants()
             return
           }
           mutateOwned()
@@ -392,43 +419,39 @@ export default function AssistantsPage() {
         </div>
       </div>
 
-      {/* 3. 助手网格 (使用 InfiniteList) */}
-      <InfiniteList
-        isLoading={isTauriRuntime ? false : isLoadingMore}
-        isError={shouldShowBlockingLoadError}
-        hasMore={isTauriRuntime ? false : hasMore}
-        onLoadMore={isTauriRuntime ? undefined : loadMore}
-        useScrollArea={false} // 使用 Body 滚动
-        className="pb-20"
-      >
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {/* 初始 Loading 骨架屏 */}
-          {isInitialLoading ? (
-            Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="rounded-xl border border-border bg-card p-4 space-y-4">
-                <div className="h-24 bg-muted rounded-lg animate-pulse" />
-                <div className="space-y-2">
-                  <Skeleton className="h-5 w-2/3" />
-                  <Skeleton className="h-4 w-1/2" />
-                </div>
-                <div className="space-y-2 pt-4">
-                  <Skeleton className="h-3 w-full" />
-                  <Skeleton className="h-3 w-4/5" />
-                </div>
-              </div>
-            ))
-          ) : (
-            mergedAgents.map((agent) => (
+      {/* 3. 助手内容区 */}
+      {stateKind ? (
+        <AssistantsStatePanel
+          kind={stateKind}
+          isFiltered={stateKind === "empty" ? isFilteredView : false}
+          errorMessage={blockingErrorMessage}
+          onRetry={stateKind === "error" ? handleRetry : undefined}
+          onClearFilters={stateKind === "empty" && isFilteredView ? handleClearFilters : undefined}
+          onCreate={stateKind === "empty" && !isFilteredView ? handleCreate : undefined}
+          className="pb-4"
+        />
+      ) : (
+        <InfiniteList
+          isLoading={isTauriRuntime ? false : isLoadingMore}
+          isError={false}
+          hasMore={isTauriRuntime ? false : hasMore}
+          onLoadMore={isTauriRuntime ? undefined : loadMore}
+          useScrollArea={false}
+          className="pb-20"
+        >
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {mergedAgents.map((agent) => (
               <AgentCard
                 key={agent.id}
                 agent={agent}
-                onInstall={handleInstall}
+                onInstall={isTauriRuntime ? undefined : handleInstall}
                 onEdit={handleEdit}
+                onDelete={agent.isOwned ? handleDelete : undefined}
               />
-            ))
-          )}
-        </div>
-      </InfiniteList>
+            ))}
+          </div>
+        </InfiniteList>
+      )}
     </div>
   )
 }

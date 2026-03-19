@@ -35,7 +35,7 @@ describe("local assistant api", () => {
   it("lists local assistants via tauri command", async () => {
     mockInvoke.mockResolvedValue([
       {
-        id: "ca8c65e1-ffdd-45aa-8f58-b7709ed318de",
+        id: "00000000-0000-0000-0000-000000000001",
         name: "assistant-v1",
         description: "summary",
         avatar: "lucide:bot",
@@ -54,7 +54,19 @@ describe("local assistant api", () => {
     const result = await listLocalAssistants()
 
     expect(result).toHaveLength(1)
+    expect(result[0].id).toBe("00000000-0000-0000-0000-000000000001")
     expect(result[0].source).toBe("local")
+    expect(mockInvoke).toHaveBeenCalledWith("list_local_assistants", undefined)
+  })
+
+  it("treats desktop env flag as tauri runtime even before window markers are available", async () => {
+    delete windowWithTauri.__TAURI__
+    delete windowWithTauri.__TAURI_INTERNALS__
+    mockInvoke.mockResolvedValue([] as unknown)
+
+    const result = await listLocalAssistants()
+
+    expect(result).toEqual([])
     expect(mockInvoke).toHaveBeenCalledWith("list_local_assistants", undefined)
   })
 

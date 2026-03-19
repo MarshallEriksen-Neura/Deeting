@@ -7,8 +7,6 @@ export const defaultNavItems: NavItem[] = [
   { label: "chat", href: "/chat" },
   { label: "assistants", href: "/assistants" },
   { label: "docs", href: "/docs" },
-  { label: "pluginMarket", href: "/plugins/market" },
-  { label: "images", href: "/gallery" },
   { label: "mcp", href: "/mcp" },
   { label: "dashboard", href: "/dashboard" },
   { label: "download", href: "/download" },

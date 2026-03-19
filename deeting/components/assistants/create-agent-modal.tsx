@@ -131,8 +131,12 @@ export function CreateAgentModal({
   const isEditMode = Boolean(assistant)
   const [isDeleting, setIsDeleting] = React.useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
-  const { tags: cloudAssistantTags } = useAssistantTags(effectiveMode === "cloud")
-  const { tags: localAssistantTags } = useLocalAssistantTags(effectiveMode === "local")
+  const { tags: cloudAssistantTags } = useAssistantTags(
+    effectiveMode === "cloud" && currentOpen
+  )
+  const { tags: localAssistantTags } = useLocalAssistantTags(
+    effectiveMode === "local" && currentOpen
+  )
   const assistantTags = effectiveMode === "local" ? localAssistantTags : cloudAssistantTags
   const stripTagPrefix = React.useCallback((value: string) => value.replace(/^#+/, ""), [])
   const tagOptions = React.useMemo(() => {

@@ -1,17 +1,37 @@
 import { z } from "zod"
 
 import { request } from "@/lib/http"
+import { isTauriRuntime } from "@/lib/runtime/tauri"
 
 const ASSISTANTS_BASE = "/api/v1/assistants"
-
-const isTauriRuntime = () =>
-  process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
-  typeof window !== "undefined" &&
-  ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
+const UUID_LIKE_PATTERN =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
 
 async function invokeTauri<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke } = await import("@tauri-apps/api/core")
   return invoke<T>(command, args)
+}
+
+const UuidLikeSchema = z.string().regex(UUID_LIKE_PATTERN, "Invalid assistant id format")
+
+function summarizeSchemaError(error: z.ZodError) {
+  const firstIssue = error.issues[0]
+  if (!firstIssue) return "response shape mismatch"
+  const path = firstIssue.path.length > 0 ? firstIssue.path.join(".") : "root"
+  return `${path}: ${firstIssue.message}`
+}
+
+function parseWithFriendlyError<T>(
+  schema: z.ZodType<T>,
+  data: unknown,
+  label: string
+): T {
+  const parsed = schema.safeParse(data)
+  if (parsed.success) {
+    return parsed.data
+  }
+
+  throw new Error(`${label}: ${summarizeSchemaError(parsed.error)}`)
 }
 
 export const AssistantSummaryVersionSchema = z.object({
@@ -123,7 +143,7 @@ export const AssistantListResponseSchema = z.object({
 export type AssistantDTO = z.infer<typeof AssistantDTOSchema>
 
 export const AssistantTagSchema = z.object({
-  id: z.string().uuid(),
+  id: UuidLikeSchema,
   name: z.string(),
   created_at: z.string().optional(),
   updated_at: z.string().optional(),
@@ -132,7 +152,7 @@ export const AssistantTagSchema = z.object({
 export type AssistantTag = z.infer<typeof AssistantTagSchema>
 
 export const LocalAssistantSchema = z.object({
-  id: z.string().uuid(),
+  id: UuidLikeSchema,
   name: z.string(),
   description: z.string().nullable().optional(),
   avatar: z.string().nullable().optional(),
@@ -148,8 +168,8 @@ export const LocalAssistantSchema = z.object({
 })
 
 export const LocalAssistantEntitySchema = z.object({
-  id: z.string().uuid(),
-  owner_user_id: z.string().uuid().nullable().optional(),
+  id: UuidLikeSchema,
+  owner_user_id: UuidLikeSchema.nullable().optional(),
   visibility: z.string(),
   status: z.string(),
   share_slug: z.string().nullable().optional(),
@@ -158,15 +178,15 @@ export const LocalAssistantEntitySchema = z.object({
   install_count: z.number().default(0),
   rating_avg: z.number().default(0),
   rating_count: z.number().default(0),
-  current_version_id: z.string().uuid().nullable().optional(),
+  current_version_id: UuidLikeSchema.nullable().optional(),
   published_at: z.string().nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),
 })
 
 export const LocalAssistantVersionSchema = z.object({
-  id: z.string().uuid(),
-  assistant_id: z.string().uuid(),
+  id: UuidLikeSchema,
+  assistant_id: UuidLikeSchema,
   version: z.string(),
   name: z.string(),
   description: z.string().nullable().optional(),
@@ -231,7 +251,11 @@ export async function listLocalAssistants() {
   }
 
   const data = await invokeTauri<unknown>("list_local_assistants")
-  return z.array(LocalAssistantSchema).parse(data)
+  return parseWithFriendlyError(
+    z.array(LocalAssistantSchema),
+    data,
+    "local assistants response mismatch"
+  )
 }
 
 export async function listLocalAssistantEntities() {
@@ -240,7 +264,11 @@ export async function listLocalAssistantEntities() {
   }
 
   const data = await invokeTauri<unknown>("list_local_assistant_entities")
-  return z.array(LocalAssistantEntitySchema).parse(data)
+  return parseWithFriendlyError(
+    z.array(LocalAssistantEntitySchema),
+    data,
+    "local assistant entities response mismatch"
+  )
 }
 
 export async function listLocalAssistantVersions(assistantId?: string) {
@@ -253,7 +281,11 @@ export async function listLocalAssistantVersions(assistantId?: string) {
         assistant_id: assistantId,
       })
     : await invokeTauri<unknown>("list_local_assistant_versions")
-  return z.array(LocalAssistantVersionSchema).parse(data)
+  return parseWithFriendlyError(
+    z.array(LocalAssistantVersionSchema),
+    data,
+    "local assistant versions response mismatch"
+  )
 }
 
 export async function listLocalAssistantTags() {
@@ -262,7 +294,11 @@ export async function listLocalAssistantTags() {
   }
 
   const data = await invokeTauri<unknown>("list_local_assistant_tags")
-  return z.array(AssistantTagSchema).parse(data)
+  return parseWithFriendlyError(
+    z.array(AssistantTagSchema),
+    data,
+    "local assistant tags response mismatch"
+  )
 }
 
 export async function listLocalAssistantInstallations(params?: {

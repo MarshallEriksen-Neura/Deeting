@@ -1,10 +1,20 @@
 "use client"
 
 import * as React from "react"
-import { Download, Star, Plus, Play, Sparkles, Pencil } from "lucide-react"
+import { Download, Star, Plus, Play, Sparkles, Pencil, Trash2 } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { CardContent, CardFooter, CardHeader } from "@/components/ui/card"
 import { Dialog, DialogTrigger } from "@/components/ui/dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -23,6 +33,7 @@ interface AgentCardProps {
   onInstall?: (assistantId: string, options?: { followLatest?: boolean }) => Promise<void>
   onPreview?: (assistantId: string, message: string) => Promise<string>
   onEdit?: (assistantId: string) => void
+  onDelete?: (assistantId: string) => Promise<void>
 }
 
 const formatCount = (count: number) => {
@@ -32,12 +43,15 @@ const formatCount = (count: number) => {
   return `${count}`
 }
 
-export function AgentCard({ agent, onInstall, onPreview, onEdit }: AgentCardProps) {
+export function AgentCard({ agent, onInstall, onPreview, onEdit, onDelete }: AgentCardProps) {
   const t = useTranslations("assistants")
   const isInstalled = agent.installed
   const [isInstalling, setIsInstalling] = React.useState(false)
+  const [isDeleting, setIsDeleting] = React.useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [followLatest, setFollowLatest] = React.useState(true)
   const [openPopover, setOpenPopover] = React.useState(false)
+  const canManage = Boolean(agent.isOwned && (onEdit || onDelete))
   const statusKey =
     agent.isOwned && agent.visibility && agent.status
       ? getAssistantStatusLabel(agent.visibility, agent.status)
@@ -66,6 +80,26 @@ export function AgentCard({ agent, onInstall, onPreview, onEdit }: AgentCardProp
       })
     } finally {
       setIsInstalling(false)
+    }
+  }
+
+  const handleDelete = async (event?: React.MouseEvent) => {
+    event?.stopPropagation()
+    if (!onDelete || isDeleting) return
+
+    setIsDeleting(true)
+    try {
+      await onDelete(agent.id)
+      toast.success(t("toast.assistantDeletedTitle"), {
+        description: t("toast.assistantDeletedDesc", { name: agent.name }),
+      })
+      setDeleteDialogOpen(false)
+    } catch {
+      toast.error(t("toast.deleteFailedTitle"), {
+        description: t("toast.deleteFailedDesc"),
+      })
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -99,19 +133,6 @@ export function AgentCard({ agent, onInstall, onPreview, onEdit }: AgentCardProp
                 ) : null}
               </div>
               <div className="flex items-center gap-2">
-                {agent.isOwned && onEdit ? (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="text-muted-foreground hover:text-primary transition-colors"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      onEdit(agent.id)
-                    }}
-                  >
-                    <Pencil size={16} />
-                  </Button>
-                ) : null}
                 {/* 这里的 DialogTrigger 触发详情预览 */}
                 <DialogTrigger asChild>
                    <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary transition-colors">
@@ -139,16 +160,61 @@ export function AgentCard({ agent, onInstall, onPreview, onEdit }: AgentCardProp
               <span className="flex items-center gap-1"><Star size={12} className="text-yellow-500 fill-yellow-500"/> {agent.ratingAvg.toFixed(1)}</span>
            </div>
            
-           {/* 安装按钮 */}
-           {isInstalled ? (
-             <Button 
-               size="sm" 
-               disabled
-               className="rounded-full px-4 h-8 text-xs font-bold bg-green-600 text-white"
-             >
-                {t("card.installed")}
-             </Button>
-           ) : (
+           {canManage ? (
+             <div className="flex items-center gap-2">
+               {onEdit ? (
+                 <Button
+                   size="sm"
+                   variant="outline"
+                   className="h-8 rounded-full px-3 text-xs font-medium"
+                   onClick={(event) => {
+                     event.stopPropagation()
+                     onEdit(agent.id)
+                   }}
+                 >
+                   <Pencil size={14} />
+                   {t("actions.edit")}
+                 </Button>
+               ) : null}
+               {onDelete ? (
+                 <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+                   <Button
+                     size="sm"
+                     variant="ghost"
+                     className="h-8 rounded-full px-3 text-xs font-medium text-destructive hover:bg-destructive/10 hover:text-destructive"
+                     onClick={(event) => {
+                       event.stopPropagation()
+                       setDeleteDialogOpen(true)
+                     }}
+                   >
+                     <Trash2 size={14} />
+                     {t("edit.delete")}
+                   </Button>
+                   <AlertDialogContent>
+                     <AlertDialogHeader>
+                       <AlertDialogTitle>{t("edit.deleteConfirmTitle")}</AlertDialogTitle>
+                       <AlertDialogDescription>
+                         {t("edit.deleteConfirmDesc", { name: agent.name })}
+                       </AlertDialogDescription>
+                     </AlertDialogHeader>
+                     <AlertDialogFooter>
+                       <AlertDialogCancel>{t("edit.deleteConfirmCancel")}</AlertDialogCancel>
+                       <AlertDialogAction asChild>
+                         <Button
+                           type="button"
+                           variant="destructive"
+                           onClick={handleDelete}
+                           disabled={isDeleting}
+                         >
+                           {isDeleting ? t("edit.deleting") : t("edit.deleteConfirmAction")}
+                         </Button>
+                       </AlertDialogAction>
+                     </AlertDialogFooter>
+                   </AlertDialogContent>
+                 </AlertDialog>
+               ) : null}
+             </div>
+           ) : !isInstalled ? (
              <Popover open={openPopover} onOpenChange={setOpenPopover}>
                <PopoverTrigger asChild>
                   <Button 
@@ -160,7 +226,7 @@ export function AgentCard({ agent, onInstall, onPreview, onEdit }: AgentCardProp
                      {isInstalling ? t("card.adding") : (
                        <><Plus size={14} className="mr-1" /> {t("card.install")}</>
                      )}
-                  </Button>
+                   </Button>
                </PopoverTrigger>
                <PopoverContent className="w-72 p-4" align="end" onClick={(e) => e.stopPropagation()}>
                   <div className="space-y-4">
@@ -185,7 +251,7 @@ export function AgentCard({ agent, onInstall, onPreview, onEdit }: AgentCardProp
                   </div>
                </PopoverContent>
              </Popover>
-           )}
+           ) : null}
         </CardFooter>
 
       </div>
