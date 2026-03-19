@@ -1,0 +1,86 @@
+name: deeting-core
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-deeting}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-deeting_core}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: deeting_core/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ${DEETING_CORE_ENV_FILE:-.env}
+    environment:
+      PORT: 8000
+      WAIT_FOR_DEPENDENCIES: "1"
+      RUN_MIGRATIONS: "1"
+    command: ["api"]
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - security_data:/app/backend/security
+      - backend_logs:/app/backend/logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/v1/openapi.json >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  worker:
+    build:
+      context: ..
+      dockerfile: deeting_core/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ${DEETING_CORE_ENV_FILE:-.env}
+    environment:
+      WAIT_FOR_DEPENDENCIES: "1"
+      RUN_MIGRATIONS: "0"
+    command: ["worker"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    volumes:
+      - security_data:/app/backend/security
+      - backend_logs:/app/backend/logs
+
+volumes:
+  postgres_data:
+  redis_data:
+  security_data:
+  backend_logs:
