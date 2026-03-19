@@ -1,6 +1,7 @@
 import { request } from "@/lib/http"
 
 export type DesktopOAuthProvider = "google" | "github"
+export type DesktopAuthGrantProvider = DesktopOAuthProvider | "browser"
 export type DesktopOAuthIntent = "login" | "bind"
 
 export interface DesktopOAuthStartRequest {
@@ -16,7 +17,7 @@ export interface DesktopOAuthStartResponse {
 }
 
 export interface DesktopOAuthExchangeRequest {
-  provider: DesktopOAuthProvider
+  provider: DesktopAuthGrantProvider
   session_id: string
   state: string
   grant: string
@@ -82,10 +83,7 @@ export function parseDesktopOAuthCallbackUrl(url: string): DesktopOAuthCallbackP
     const state = parsed.searchParams.get("state")?.trim()
     const grant = parsed.searchParams.get("grant")?.trim()
 
-    if (
-      provider !== "google" &&
-      provider !== "github"
-    ) {
+    if (provider !== "google" && provider !== "github" && provider !== "browser") {
       return null
     }
 

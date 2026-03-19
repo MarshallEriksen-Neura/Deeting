@@ -16,7 +16,7 @@ export type CodeFormValues = { code: string }
 export type LoginStep = "email" | "code"
 
 export interface UseLoginFormOptions {
-  onSuccess?: () => void
+  onSuccess?: () => void | Promise<void>
   onError?: (error: AuthError) => void
 }
 
@@ -118,7 +118,7 @@ export function useLoginForm({ onSuccess, onError }: UseLoginFormOptions = {}) {
       })
       await refreshProfile()
       toast.success(t("toast.loginSuccess"))
-      onSuccess?.()
+      await onSuccess?.()
     } catch (error) {
       const err = error as AuthError
       toast.error(err.message || t("toast.error"))

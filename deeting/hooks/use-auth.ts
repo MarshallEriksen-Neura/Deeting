@@ -11,9 +11,17 @@ import {
 } from "@/lib/api/auth"
 import { authService } from "@/lib/api/auth.service"
 import {
+  buildDesktopBrowserLoginUrl,
+  completeDesktopBrowserLoginSession,
+  openDesktopBrowserLoginUrl,
+  startDesktopBrowserLoginSession,
+  type DesktopBrowserLoginCompleteRequest,
+} from "@/lib/api/auth-desktop-browser"
+import {
   exchangeDesktopOAuthGrant,
   openDesktopOAuthAuthorizeUrl,
   startDesktopOAuthSession,
+  type DesktopOAuthStartResponse,
   type DesktopOAuthExchangeRequest,
   type DesktopOAuthProvider,
 } from "@/lib/api/auth-oauth-desktop"
@@ -78,6 +86,22 @@ export function useAuthService() {
     return tokens
   })
 
+  const startDesktopBrowserLogin = useCallback(async (loginUrl: string) => {
+    if (!isTauriRuntime()) {
+      throw new ApiError("Desktop browser login is only available in the desktop app", {
+        status: 400,
+        code: "DESKTOP_BROWSER_LOGIN_DESKTOP_ONLY",
+      })
+    }
+    const session = await startDesktopBrowserLoginSession({
+      return_scheme: "deeting",
+      platform: "desktop",
+    })
+    const resolvedLoginUrl = buildDesktopBrowserLoginUrl(loginUrl, session.session_id)
+    await openDesktopBrowserLoginUrl(resolvedLoginUrl)
+    return session
+  }, [])
+
   const startDesktopOAuth = useCallback(async (provider: DesktopOAuthProvider) => {
     if (!isTauriRuntime()) {
       throw new ApiError("Desktop OAuth is only available in the desktop app", {
@@ -94,11 +118,23 @@ export function useAuthService() {
     return session
   }, [])
 
+  const prepareDesktopOAuth = useCallback(async (provider: DesktopOAuthProvider): Promise<DesktopOAuthStartResponse> => {
+    return startDesktopOAuthSession({
+      provider,
+      return_scheme: "deeting",
+      platform: "desktop",
+    })
+  }, [])
+
   const completeDesktopOAuth = useCallback(async (payload: DesktopOAuthExchangeRequest) => {
     const response = await exchangeDesktopOAuthGrant(payload)
     applySession(response)
     return response
   }, [applySession])
+
+  const completeDesktopBrowserLogin = useCallback(async (payload: DesktopBrowserLoginCompleteRequest) => {
+    return completeDesktopBrowserLoginSession(payload)
+  }, [])
 
   const logout = useCallback(async () => {
     clearSession()
@@ -112,8 +148,11 @@ export function useAuthService() {
     verifyCodeMutation,
     refreshMutation,
     lastTokenPair,
+    startDesktopBrowserLogin,
     startDesktopOAuth,
+    prepareDesktopOAuth,
     completeDesktopOAuth,
+    completeDesktopBrowserLogin,
     logout,
   }
 }
