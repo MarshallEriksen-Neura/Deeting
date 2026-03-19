@@ -96,6 +96,14 @@ function PlatformModelCard({
 }) {
   const t = useTranslations("providers.market")
   const pricing = model.pricing as Record<string, unknown> | undefined
+  const inputPrice =
+    typeof pricing?.input_per_1k === "number" || typeof pricing?.input_per_1k === "string"
+      ? String(pricing.input_per_1k)
+      : null
+  const outputPrice =
+    typeof pricing?.output_per_1k === "number" || typeof pricing?.output_per_1k === "string"
+      ? String(pricing.output_per_1k)
+      : null
 
   return (
     <motion.div
@@ -107,7 +115,7 @@ function PlatformModelCard({
     >
       <GlassCard
         className="group relative flex flex-col gap-3 transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 backdrop-blur-md bg-white/40 dark:bg-black/40 border-white/20"
-        padding="md"
+        padding="default"
       >
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
@@ -127,13 +135,13 @@ function PlatformModelCard({
           )}
         </div>
 
-        {pricing && (pricing.input_per_1k || pricing.output_per_1k) && (
+        {(inputPrice || outputPrice) && (
           <div className="flex items-center gap-1.5 text-xs text-[var(--muted)]">
             <Coins className="h-3 w-3 text-amber-500" />
             <span>
-              {pricing.input_per_1k ? `${t("platform.inputPrice", { price: String(pricing.input_per_1k) })}` : ""}
-              {pricing.input_per_1k && pricing.output_per_1k ? " · " : ""}
-              {pricing.output_per_1k ? `${t("platform.outputPrice", { price: String(pricing.output_per_1k) })}` : ""}
+              {inputPrice ? `${t("platform.inputPrice", { price: inputPrice })}` : ""}
+              {inputPrice && outputPrice ? " · " : ""}
+              {outputPrice ? `${t("platform.outputPrice", { price: outputPrice })}` : ""}
             </span>
           </div>
         )}

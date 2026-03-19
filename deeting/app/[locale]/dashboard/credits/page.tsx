@@ -1,3 +1,4 @@
+import { Suspense } from "react"
 import { useTranslations } from "next-intl"
 import { setRequestLocale } from "next-intl/server"
 
@@ -53,7 +54,9 @@ function CreditsContent() {
       {/* Bento Grid - Top Section (3 columns) */}
       <div className="mb-6 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {/* Balance Reactor - Main focal point */}
-        <BalanceReactorCard />
+        <Suspense fallback={null}>
+          <BalanceReactorCard />
+        </Suspense>
 
         {/* Membership Plan */}
         <MembershipPlanCard />

@@ -28,7 +28,15 @@ export const MemoryCard = memo(function MemoryCard({
   onHistory,
 }: MemoryCardProps) {
   const t = useTranslations("memory")
-  const source = item.source || item.payload?.source || item.payload?.plugin_id || item.payload?.type || "extracted_fact"
+  const source =
+    item.source ??
+    (typeof item.payload?.source === "string"
+      ? item.payload.source
+      : typeof item.payload?.plugin_id === "string"
+        ? item.payload.plugin_id
+        : typeof item.payload?.type === "string"
+          ? item.payload.type
+          : "extracted_fact")
   const isExtracted = source === "extracted_fact" || source === "auto_extraction"
   const sourceLabel = isExtracted
     ? t("source.autoExtracted")
@@ -52,6 +60,14 @@ export const MemoryCard = memo(function MemoryCard({
         event: t("filter.event"),
         relation: t("filter.relation"),
       }[category] ?? category
+    : null
+  const memoryTierLabel = memoryTier
+    ? {
+        boot: t("tier.boot"),
+        core: t("tier.core"),
+        standard: t("tier.standard"),
+        episodic: t("tier.episodic"),
+      }[memoryTier] ?? memoryTier
     : null
 
   return (
@@ -86,7 +102,7 @@ export const MemoryCard = memo(function MemoryCard({
             )}
             {memoryTier && memoryTier !== "core" && (
               <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full border bg-white/10 text-gray-300 border-white/10">
-                {t(`tier.${memoryTier}` as never, { default: memoryTier })}
+                {memoryTierLabel}
               </span>
             )}
           </div>

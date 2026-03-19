@@ -81,7 +81,7 @@ export const NodeDetailContent = memo(function NodeDetailContent({
       return target.rules?.[0]?.desc ?? target.id
     }
     if (target.type === 'replan_trigger') return target.reason
-    return target.id
+    return null
   }
 
   const normalizeDuration = (durationMs?: number | null) => {

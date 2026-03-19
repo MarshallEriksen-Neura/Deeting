@@ -18,7 +18,7 @@ export const SpecActionNodeSchema = SpecNodeBaseSchema.extend({
   instruction: z.string(),
   required_tools: z.array(z.string()).default([]),
   worker: z.string().optional().default("generic"),
-  args: z.record(z.any()).optional().default({}),
+  args: z.record(z.string(), z.any()).optional().default({}),
   output_as: z.string().nullable().optional(),
   check_in: z.boolean().optional().default(false),
   model_override: z.string().nullable().optional(),
@@ -54,12 +54,12 @@ export const SpecManifestSchema = z.object({
   spec_v: z.string(),
   project_name: z.string(),
   nodes: z.array(SpecNodeSchema),
-  context: z.record(z.any()).optional().default({}),
+  context: z.record(z.string(), z.any()).optional().default({}),
 })
 
 export const SpecDraftRequestSchema = z.object({
   query: z.string().min(1),
-  context: z.record(z.any()).optional().nullable(),
+  context: z.record(z.string(), z.any()).optional().nullable(),
   model: z.string().nullable().optional(),
 })
 
@@ -114,7 +114,7 @@ export const SpecNodeStatusSchema = z.object({
 export const SpecPlanStatusSchema = z.object({
   execution: SpecExecutionStatusSchema,
   nodes: z.array(SpecNodeStatusSchema),
-  checkpoint: z.record(z.any()).nullable().optional(),
+  checkpoint: z.record(z.string(), z.any()).nullable().optional(),
 })
 
 export const SpecPlanStartResponseSchema = z.object({
@@ -153,11 +153,11 @@ export const SpecNodeExecutionDetailSchema = z.object({
   started_at: z.string().nullable().optional(),
   completed_at: z.string().nullable().optional(),
   duration_ms: z.number().int().nullable().optional(),
-  input_snapshot: z.record(z.any()).nullable().optional(),
-  output_data: z.record(z.any()).nullable().optional(),
+  input_snapshot: z.record(z.string(), z.any()).nullable().optional(),
+  output_data: z.record(z.string(), z.any()).nullable().optional(),
   raw_response: z.any().nullable().optional(),
   error_message: z.string().nullable().optional(),
-  worker_snapshot: z.record(z.any()).nullable().optional(),
+  worker_snapshot: z.record(z.string(), z.any()).nullable().optional(),
   logs: z.array(z.string()).default([]),
 })
 
@@ -267,7 +267,7 @@ export function streamSpecDraft(
     onMessage: (message) => {
       const event = message.event as SpecDraftSseEvent["event"] | undefined
       if (!event) return
-      handlers.onEvent?.({ event, data: message.data as SpecDraftSseEvent["data"] })
+      handlers.onEvent?.({ event, data: message.data } as SpecDraftSseEvent)
       if (event === "plan_error") {
         settled = true
       }

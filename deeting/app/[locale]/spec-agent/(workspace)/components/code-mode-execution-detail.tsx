@@ -140,6 +140,10 @@ export const CodeModeExecutionDetailDrawer = memo(
       executionId,
       { enabled: open && !!executionId }
     )
+    const codePreview =
+      typeof detail?.runtime_context?.code === 'string'
+        ? detail.runtime_context.code
+        : '—'
 
     const toolTraces = useMemo(() => {
       if (!detail) return []
@@ -230,7 +234,7 @@ export const CodeModeExecutionDetailDrawer = memo(
                   </CollapsibleTrigger>
                   <CollapsibleContent>
                     <pre className="mt-2 text-xs bg-muted/40 rounded-lg p-3 overflow-x-auto max-h-60 font-mono text-foreground/80 whitespace-pre-wrap">
-                      {detail.runtime_context?.code || '—'}
+                      {codePreview}
                     </pre>
                   </CollapsibleContent>
                 </Collapsible>

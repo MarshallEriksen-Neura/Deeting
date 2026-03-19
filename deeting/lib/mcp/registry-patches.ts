@@ -30,7 +30,7 @@ export const patchMcpRemoteToolToggle = (tools: MCPTool[], toolId: string, enabl
   patchItemById(tools, toolId, (tool) => ({
     ...tool,
     desiredEnabled: enabled,
-    status: "updating",
+    status: "updating" as const,
     runtimeReady: enabled ? tool.runtimeReady : false,
     recommendedAction: undefined,
   }))

@@ -25,7 +25,7 @@ type CodeModeExecutionsState = {
   error?: ApiError
   loadMore: () => void
   reset: () => void
-  mutate: SWRResult<CursorPage<CodeModeExecutionItem>>["mutate"]
+  mutate: (...args: any[]) => Promise<unknown>
 }
 
 export function useCodeModeExecutions(

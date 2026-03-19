@@ -2,10 +2,9 @@ import * as React from "react"
 import useSWRInfinite from "swr/infinite"
 
 import type { ApiError } from "@/lib/http"
-import type { SWRResult } from "@/lib/swr/fetcher"
+import { swrFetcher } from "@/lib/swr/fetcher"
 import type { CursorPage } from "@/types/pagination"
 import {
-  fetchAssistantMarket,
   type AssistantMarketItem,
   type AssistantMarketQuery,
 } from "@/lib/api/assistants"
@@ -18,7 +17,7 @@ type AssistantMarketState = {
   error?: ApiError
   loadMore: () => void
   reset: () => void
-  mutate: SWRResult<CursorPage<AssistantMarketItem>>["mutate"]
+  mutate: (...args: any[]) => Promise<unknown>
 }
 
 export function useAssistantMarket(
@@ -38,12 +37,17 @@ export function useAssistantMarket(
         return null
       }
       const cursor = pageIndex === 0 ? null : previousPageData?.next_page
-      return {
-        cursor,
-        size: pageSize,
-        q: query.q || undefined,
-        tags: query.tags || undefined,
-      }
+      return [
+        "/api/v1/assistants/market",
+        {
+          params: {
+            cursor,
+            size: pageSize,
+            q: query.q || undefined,
+            tags: query.tags || undefined,
+          },
+        },
+      ] as const
     },
     [enabled, pageSize, query.q, tagsKey]
   )
@@ -57,7 +61,7 @@ export function useAssistantMarket(
     mutate,
   } = useSWRInfinite<CursorPage<AssistantMarketItem>, ApiError>(
     getKey,
-    fetchAssistantMarket,
+    swrFetcher,
     {
       revalidateOnFocus: false,
     }

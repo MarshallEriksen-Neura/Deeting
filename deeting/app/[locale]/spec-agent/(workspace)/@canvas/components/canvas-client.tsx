@@ -77,7 +77,10 @@ function CanvasClient() {
     setSelectedNodeId(candidate.id)
     setFocusNodeId(candidate.id)
     setHighlightNodeId(candidate.id)
-    router.push(`/spec-agent/node/${candidate.id}`)
+    router.push({
+      pathname: '/spec-agent/node/[id]',
+      params: { id: candidate.id },
+    })
     if (planId) {
       void sendNodeEvent(candidate.id, 'rerun_prompt', 'auto_fail')
     }
@@ -188,7 +191,10 @@ function CanvasClient() {
   const handleNodeClick = useCallback(
     (nodeId: string) => {
       setSelectedNodeId(nodeId)
-      router.push(`/spec-agent/node/${nodeId}`)
+      router.push({
+        pathname: '/spec-agent/node/[id]',
+        params: { id: nodeId },
+      })
     },
     [router, setSelectedNodeId]
   )

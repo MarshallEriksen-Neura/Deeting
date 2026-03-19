@@ -45,9 +45,27 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     set((state) => {
       const existing = state.views.find((item) => item.id === view.id)
       if (existing) {
-        const nextViews = state.views.map((item) =>
-          item.id === view.id ? { ...item, ...view, lastActiveAt: now } : item
-        )
+        const nextViews = state.views.map((item) => {
+          if (item.id !== view.id) return item
+          if (view.type === "plugin-iframe") {
+            const iframeView = view as Omit<PluginIframeView, "lastActiveAt">
+            return {
+              ...item,
+              ...iframeView,
+              type: "plugin-iframe" as const,
+              content: iframeView.content,
+              lastActiveAt: now,
+            }
+          }
+          const canvasView = view as Omit<NativeCanvasView, "lastActiveAt">
+          return {
+            ...item,
+            ...canvasView,
+            type: "native-canvas" as const,
+            content: canvasView.content,
+            lastActiveAt: now,
+          }
+        }) as WorkspaceView[]
         return { views: nextViews, activeViewId: view.id }
       }
 
@@ -59,11 +77,22 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
         nextViews = nextViews.filter((item) => item.id !== oldest.id)
       }
 
-      const nextView: WorkspaceView = {
-        ...view,
-        keepAlive: view.keepAlive ?? true,
-        lastActiveAt: now,
-      } as WorkspaceView
+      const nextView: WorkspaceView =
+        view.type === "plugin-iframe"
+          ? {
+              ...(view as Omit<PluginIframeView, "lastActiveAt">),
+              type: "plugin-iframe",
+              content: (view as Omit<PluginIframeView, "lastActiveAt">).content,
+              keepAlive: view.keepAlive ?? true,
+              lastActiveAt: now,
+            }
+          : {
+              ...(view as Omit<NativeCanvasView, "lastActiveAt">),
+              type: "native-canvas",
+              content: (view as Omit<NativeCanvasView, "lastActiveAt">).content,
+              keepAlive: view.keepAlive ?? true,
+              lastActiveAt: now,
+            }
 
       return { views: [...nextViews, nextView], activeViewId: view.id }
     })

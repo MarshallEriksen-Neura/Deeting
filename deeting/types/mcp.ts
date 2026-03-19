@@ -131,6 +131,7 @@ export interface MCPTool {
   recommendedAction?: string
   activationRequired?: boolean
   installRequired?: boolean
+  backingSkillId?: string
   indexStatus?: MCPToolIndexStatus
   indexStatusReason?: string
   envConfig?: MCPEnvConfigItem[]

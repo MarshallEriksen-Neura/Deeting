@@ -145,7 +145,7 @@ export async function serverFetchAdminAssistants(params?: {
     })
     return {
       items: result.items,
-      total: result.total,
+      total: result.items.length,
       next_cursor: result.next_cursor ?? null,
       size: result.size,
     }

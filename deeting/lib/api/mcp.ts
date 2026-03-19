@@ -34,7 +34,7 @@ export type McpServer = z.infer<typeof McpServerSchema>
 export const McpServerToolSchema = z.object({
   name: z.string(),
   description: z.string().nullable().optional(),
-  input_schema: z.record(z.any()).default({}),
+  input_schema: z.record(z.string(), z.any()).default({}),
   enabled: z.boolean(),
   desired_enabled: z.boolean().optional(),
   runtime_ready: z.boolean().optional(),

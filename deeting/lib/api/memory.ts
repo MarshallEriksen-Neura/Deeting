@@ -126,7 +126,7 @@ function toMemorySnapshotItem(
     old_metadata: item.old_metadata ?? null,
     new_metadata: item.new_metadata ?? null,
     created_at: item.created_at,
-    ...(item.updated_at ? { updated_at: item.updated_at } : {}),
+    ...("updated_at" in item && item.updated_at ? { updated_at: item.updated_at } : {}),
   }
 }
 

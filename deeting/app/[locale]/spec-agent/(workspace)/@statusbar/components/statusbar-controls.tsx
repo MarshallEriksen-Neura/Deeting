@@ -38,7 +38,7 @@ export const StatusControls = memo(function StatusControls({
   isLoadingModels: boolean
   modelGroups: ModelGroup[]
   plannerModel: string | null
-  selectedModel: { model: { id: string }; group?: ModelGroup } | null
+  selectedModel: { model: { id: string; owned_by?: string }; group?: ModelGroup } | null
   modelVisual: ModelVisual
   onModelChange: (modelId: string) => void
   showLaunch: boolean

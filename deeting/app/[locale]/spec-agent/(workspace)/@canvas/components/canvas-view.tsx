@@ -12,7 +12,7 @@ import type { CanvasViewport } from '../hooks/use-canvas-viewport'
 
 type CanvasViewProps = {
   t: (key: string, params?: Record<string, string | number>) => string
-  scrollRef: RefObject<HTMLDivElement>
+  scrollRef: RefObject<HTMLDivElement | null>
   viewport: CanvasViewport
   canvasWidth: number
   canvasHeight: number

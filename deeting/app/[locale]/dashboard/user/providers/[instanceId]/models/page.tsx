@@ -14,6 +14,10 @@ interface PageProps {
   }>
 }
 
+export function generateStaticParams() {
+  return [{ instanceId: "default" }]
+}
+
 export default async function ModelsPage({ params }: PageProps) {
   const { locale, instanceId } = await params
   setRequestLocale(locale)

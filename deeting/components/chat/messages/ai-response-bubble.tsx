@@ -9,7 +9,12 @@ import { resolveStatusDetail } from "@/lib/chat/status-detail";
 import { isToolApprovalResultBlock } from "@/lib/chat/assistant-activity";
 import { useBridgeApprovalStore } from "@/lib/chat/bridge-approval-store";
 import { useI18n } from "@/hooks/use-i18n";
-import type { MessageBlock, UIBlock as MessageUIBlock } from "@/lib/chat/message-protocol";
+import type {
+  MessageBlock,
+  UIBlock as MessageUIBlock,
+  ToolCallBlock as MessageToolCallBlock,
+  ToolResultBlock as MessageToolResultBlock,
+} from "@/lib/chat/message-protocol";
 import { MarkdownViewer } from "@/components/chat/markdown-viewer";
 import { motion } from "framer-motion";
 import {
@@ -59,6 +64,87 @@ function toRecord(value: unknown): Record<string, unknown> | null {
 
 function toNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function isToolCallMessageBlock(
+  block: MessageBlock | null | undefined
+): block is MessageToolCallBlock {
+  return !!block && block.type === "tool_call";
+}
+
+function isToolResultMessageBlock(
+  block: MessageBlock | null | undefined
+): block is MessageToolResultBlock {
+  return !!block && block.type === "tool_result";
+}
+
+function getRenderableBlockContent(block: MessageBlock): string | null {
+  if ("content" in block && typeof block.content === "string") {
+    return block.content;
+  }
+  return null;
+}
+
+function serializeComparableBlock(block: MessageBlock) {
+  switch (block.type) {
+    case "text":
+    case "thought":
+      return {
+        type: block.type,
+        content: block.content,
+        cost: "cost" in block ? block.cost : undefined,
+      };
+    case "capability_transition":
+      return {
+        type: block.type,
+        action: block.action,
+        capabilityId: block.capabilityId,
+        capabilityName: block.capabilityName,
+        reason: block.reason,
+      };
+    case "tool_call":
+      return {
+        type: block.type,
+        toolName: block.toolName,
+        toolArgs: block.toolArgs,
+        callId: block.callId,
+        status: block.status,
+      };
+    case "tool_result":
+      return {
+        type: block.type,
+        toolName: block.toolName,
+        callId: block.callId,
+        status: block.status,
+        result: block.result,
+        debug: block.debug,
+      };
+    case "console_log":
+      return {
+        type: block.type,
+        content: block.content,
+        stream: block.stream,
+      };
+    case "execution_section":
+      return { type: block.type, title: block.title };
+    case "flight_offer":
+    case "file_preview":
+      return { type: block.type, data: block.data };
+    case "error":
+      return { type: block.type, message: block.message };
+    case "ui":
+      return {
+        type: block.type,
+        toolName: block.toolName,
+        callId: block.callId,
+        title: block.title,
+        viewType: block.viewType,
+        payload: block.payload,
+        metadata: block.metadata,
+      };
+    default:
+      return null;
+  }
 }
 
 function extractRuntimeToolTrace(debug?: Record<string, unknown>): RuntimeToolTraceItem[] {
@@ -268,7 +354,7 @@ function summarizeUnknownValue(value: unknown): string | null {
   }
 }
 
-function resolveToolVisualState(status?: string, resultBlock?: MessageBlock): ToolVisualState {
+function resolveToolVisualState(status?: string, resultBlock?: MessageToolResultBlock): ToolVisualState {
   const normalized = (status ?? "").trim().toLowerCase();
   if (normalized === "error" || normalized === "failed") return "error";
   if (normalized === "requires_approval") return "pending";
@@ -285,7 +371,7 @@ function resolveToolVisualState(status?: string, resultBlock?: MessageBlock): To
 
 function resolveToolPreview(
   args?: string,
-  resultBlock?: MessageBlock,
+  resultBlock?: MessageToolResultBlock,
   uiBlocks: MessageUIBlock[] = []
 ): string | null {
   for (const uiBlock of uiBlocks) {
@@ -652,7 +738,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
 
     // 将 tool_result 与对应的 tool_call 配对（通过 callId）
     const { resultMap, pairedResultIndices } = useMemo(() => {
-      const map = new Map<string, MessageBlock>();
+      const map = new Map<string, MessageToolResultBlock>();
       const paired = new Set<number>();
       parts.forEach((part, index) => {
         if (part.type === 'tool_result' && part.callId) {
@@ -694,7 +780,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
 
     // 当非活跃消息的工具调用数量超过阈值时，将它们分组折叠展示
     const { shouldGroupTools, toolCallEntries, firstToolCallIndex } = useMemo(() => {
-      const entries: Array<{ part: MessageBlock; index: number }> = [];
+      const entries: Array<{ part: MessageToolCallBlock; index: number }> = [];
       parts.forEach((part, idx) => {
         if (part.type === 'tool_call') {
           entries.push({ part, index: idx });
@@ -946,7 +1032,8 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                   }
 
                   // --- D. 普通文本 ---
-                  if (!part.content) return null;
+                  const partContent = getRenderableBlockContent(part);
+                  if (!partContent) return null;
 
                   return (
                     <motion.div
@@ -956,7 +1043,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                       transition={{ type: "spring", stiffness: 120, damping: 18 }}
                     >
                       <TypingTextBlock
-                        content={part.content}
+                        content={partContent}
                         typingEnabled={typingEnabled}
                       />
                     </motion.div>
@@ -988,22 +1075,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
     // 这里进行浅比较，检查每个 part 的关键属性
     const partsChanged = prevProps.parts.some((prevPart, index) => {
       const nextPart = nextProps.parts[index];
-      return (
-        prevPart.type !== nextPart.type ||
-        prevPart.content !== nextPart.content ||
-        prevPart.toolName !== nextPart.toolName ||
-        prevPart.toolArgs !== nextPart.toolArgs ||
-        prevPart.callId !== nextPart.callId ||
-        prevPart.result !== nextPart.result ||
-        JSON.stringify((prevPart as any).debug) !== JSON.stringify((nextPart as any).debug) ||
-        prevPart.message !== nextPart.message ||
-        prevPart.status !== nextPart.status ||
-        prevPart.cost !== nextPart.cost ||
-        (prevPart as any).title !== (nextPart as any).title ||
-        (prevPart as any).viewType !== (nextPart as any).viewType ||
-        (prevPart as any).payload !== (nextPart as any).payload ||
-        JSON.stringify((prevPart as any).metadata) !== JSON.stringify((nextPart as any).metadata)
-      );
+      return JSON.stringify(serializeComparableBlock(prevPart)) !== JSON.stringify(serializeComparableBlock(nextPart));
     });
     
     if (partsChanged) {
@@ -1111,7 +1183,7 @@ const ToolCallBlock = memo<{
   name?: string;
   args?: string;
   status?: string;
-  resultBlock?: MessageBlock;
+  resultBlock?: MessageToolResultBlock;
   uiBlocks?: MessageUIBlock[];
 }>(
   function ToolCallBlock({ callId, name, args, status, resultBlock, uiBlocks = [] }) {
@@ -1319,8 +1391,8 @@ const ToolCallBlock = memo<{
 
 // === 组件：多工具调用分组折叠（历史消息优化） ===
 const ToolCallGroup = memo<{
-  toolCalls: Array<{ part: MessageBlock; index: number }>;
-  resultMap: Map<string, MessageBlock>;
+  toolCalls: Array<{ part: MessageToolCallBlock; index: number }>;
+  resultMap: Map<string, MessageToolResultBlock>;
   uiBlocksByCallId: Map<string, MessageUIBlock[]>;
   isActive: boolean;
 }>(
@@ -1643,15 +1715,14 @@ const ExecutionConsole = memo<{
                   return null;
                 }
                 if (block.type === 'console_log') {
-                  const b = block as ConsoleLogBlock;
-                  const isError = b.stream === 'stderr';
+                  const isError = block.stream === 'stderr';
                   return (
                     <div key={i} className={cn(
                       "whitespace-pre-wrap break-all",
                       isError ? "text-red-500" : "text-zinc-600 dark:text-zinc-400"
                     )}>
                       <span className="opacity-30 mr-2 select-none">|</span>
-                      {b.content}
+                      {block.content}
                     </div>
                   );
                 }

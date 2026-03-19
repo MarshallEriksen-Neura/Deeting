@@ -873,7 +873,7 @@ function ChannelConfigForm({
         label="显示名称"
         placeholder={`我的${CHANNEL_META[channelType].label}`}
         value={displayName}
-        onChange={setDisplayName}
+        onChange={(nextValue) => setDisplayName(typeof nextValue === "string" ? nextValue : String(nextValue))}
       />
 
       {/* Channel-specific fields */}

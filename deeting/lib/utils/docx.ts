@@ -144,9 +144,13 @@ async function inflateZipBytes(bytes: Uint8Array): Promise<Uint8Array> {
   if (typeof DecompressionStream !== "function") {
     throw new Error("当前运行环境缺少 DOCX 解压能力，请升级桌面运行时后重试")
   }
-  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"))
-  const buffer = await new Response(stream).arrayBuffer()
-  return new Uint8Array(buffer)
+  const buffer = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength
+  ) as ArrayBuffer
+  const stream = new Blob([buffer]).stream().pipeThrough(new DecompressionStream("deflate-raw"))
+  const inflatedBuffer = await new Response(stream).arrayBuffer()
+  return new Uint8Array(inflatedBuffer)
 }
 
 async function readZipEntry(bytes: Uint8Array, entryName: string): Promise<Uint8Array> {

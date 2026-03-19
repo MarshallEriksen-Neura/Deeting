@@ -1,4 +1,4 @@
-import type { MessageBlock } from "@/lib/chat/message-protocol"
+import type { MessageBlock, ToolResultBlock } from "@/lib/chat/message-protocol"
 
 export type AssistantActivityState = {
   isActive: boolean
@@ -35,7 +35,9 @@ export function isToolApprovalResultBlock(
   return isRequiresApprovalPayload(block.result)
 }
 
-function isTerminalToolResultBlock(block: MessageBlock) {
+function isTerminalToolResultBlock(
+  block: MessageBlock
+): block is ToolResultBlock {
   return block.type === "tool_result" && !isToolApprovalResultBlock(block)
 }
 

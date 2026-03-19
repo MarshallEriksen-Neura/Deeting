@@ -69,7 +69,13 @@ if (!protocPath) {
 
 const tauriResult = spawnSync(resolveTauriCommand(), args, {
   cwd: projectRoot,
-  env: buildTauriEnv(process.env, protocPath),
+  env: buildTauriEnv(
+    {
+      ...process.env,
+      ...(args[0] === "build" ? { DEETING_DESKTOP_EXPORT: "true" } : {}),
+    },
+    protocPath
+  ),
   shell: false,
   stdio: "inherit",
 });

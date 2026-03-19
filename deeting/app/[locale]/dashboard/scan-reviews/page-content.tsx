@@ -87,7 +87,7 @@ function readExecutionMetadata(metadata: unknown) {
   }
 }
 
-function formatRiskTuple(parts: Array<string | null>) {
+function formatRiskTuple(parts: Array<string | null | undefined>) {
   const compact = parts.filter((part): part is string => Boolean(part))
   return compact.length > 0 ? compact.join(" · ") : null
 }

@@ -36,7 +36,7 @@ function normalizePreviewKind(value: string | undefined): PreviewKind {
   return "none"
 }
 
-const GeneratedFileView = memo<NativeViewProps>(function GeneratedFileView({ data, viewType: rawViewType }) {
+const GeneratedFileView = memo<NativeViewProps>(function GeneratedFileView({ data }) {
   const t = useI18n("chat")
   const payload = toPayload(data)
   const setActiveArtifact = useArtifactStore(state => state.setActiveArtifact)

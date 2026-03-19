@@ -1,16 +1,15 @@
 # Agent Selection Components
 
-助手选择组件目录，包含助手选择和创建相关的组件。
+助手选择组件目录，包含助手选择相关的组件。
 
 ## 组件列表
 
 ### SelectAgentContainer (select-agent-container.tsx)
 
-助手选择容器组件，显示可用的助手列表并允许用户选择或创建助手。
+助手选择容器组件，显示可用的助手列表并允许用户选择现有助手。
 
 **功能：**
 - 显示已安装的助手（Tauri 模式）或云端助手（Web 模式）
-- 支持创建新助手
 - 支持编辑已有助手（如果用户是所有者）
 - 全屏模态框显示
 - 背景模糊效果
@@ -31,29 +30,13 @@ export default function SelectAgentPage() {
 }
 ```
 
-### CreateAssistantSlot (create-assistant-slot.tsx)
+### Removed Flows
 
-创建助手槽位组件，用于在路由 `/chat/create/assistant` 时显示创建助手的模态框。
+以下旧路由已下线，不再使用：
 
-**功能：**
-- 自动打开创建助手模态框
-- 创建成功后跳转到新助手的聊天页面
-- 关闭模态框后返回聊天首页
-- 支持 Tauri 和 Web 模式
-
-**性能优化：**
-- 使用 `useCallback` 缓存事件处理函数
-
-**使用示例：**
-
-```tsx
-import { CreateAssistantSlot } from '@/components/common/agent-selection'
-
-// 在路由 /chat/create/assistant 中使用
-export default function CreateAssistantPage() {
-  return <CreateAssistantSlot />
-}
-```
+- `/chat/(.)select-agent`
+- `/chat/create/assistant`
+- `/chat/@assistant/create/assistant`
 
 ## 子组件
 

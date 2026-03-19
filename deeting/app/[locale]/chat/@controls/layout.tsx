@@ -22,7 +22,10 @@ export default function ControlsLayout({ children }: { children: ReactNode }) {
   // Dark Mode: "bg-black/40 backdrop-blur-2xl border-white/10" (Preserved)
   // Light Mode: "bg-white/70 backdrop-blur-2xl border-white/50 shadow-xl" (New Crystal Look)
   let containerClasses = "bg-white/70 dark:bg-black/40 backdrop-blur-2xl rounded-[32px] border border-white/50 dark:border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.12)] dark:shadow-none"; 
-  let animateProps = { height: 'auto', borderRadius: '32px' };
+  let animateProps: { height: number | 'auto'; borderRadius: string } = {
+    height: 'auto',
+    borderRadius: '32px',
+  };
   let overflowClass = "overflow-visible"; // Allow popups in default mode
 
   if (isCoder) {

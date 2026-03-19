@@ -197,11 +197,11 @@ export const useConsoleState = (t: (key: string, params?: Record<string, string>
         .then((payload) => {
           if (!isMountedRef.current) return
           if (hydrationRequestRef.current !== requestId) return
-          const normalized = payload.messages.map((message, index) => {
+          const normalized: ConsoleMessage[] = payload.messages.map((message, index) => {
             const metaInfo = message.meta_info ?? {}
             const timestamp =
               normalizeTimestamp(metaInfo.created_at) || formatTime(new Date())
-            const type =
+            const type: ConsoleMessage['type'] =
               message.role === 'user'
                 ? 'user'
                 : message.role === 'assistant'

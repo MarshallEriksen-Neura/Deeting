@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog"
 import { useI18n } from "@/hooks/use-i18n"
 import type { ModelInfo } from "@/lib/api/models"
-import { resolveModelVisual } from "@/components/models/model-picker"
+import { resolveModelVisual, type ModelPickerModel } from "@/components/models/model-picker"
 
 interface CompareModelDialogProps {
   open: boolean
@@ -75,7 +75,10 @@ export function CompareModelDialog({
           {filteredModels.length ? (
             filteredModels.map((model) => {
               const modelValue = model.provider_model_id ?? model.id
-              const visual = resolveModelVisual(model)
+              const visual = resolveModelVisual({
+                ...(model as ModelPickerModel),
+                provider_model_id: model.provider_model_id ?? undefined,
+              })
               const Icon = visual.icon
               return (
                 <Button

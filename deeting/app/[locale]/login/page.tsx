@@ -1,12 +1,32 @@
+import { Suspense } from "react"
 import { getTranslations } from "next-intl/server"
 import { LoginForm } from "@/components/auth"
+import { loadStaticLocaleMessages } from "@/i18n/static-messages"
+
+const isDesktopExport = process.env.DEETING_DESKTOP_EXPORT === "true"
 
 /**
  * 独立的登录页面
  * Digital Ink 设计风格 - 新中式数字水墨
  */
-export default async function LoginPage() {
-  const t = await getTranslations("auth.login.page")
+export default async function LoginPage({
+  params,
+}: {
+  params: Promise<{ locale: string }>
+}) {
+  const { locale } = await params
+  const messages = isDesktopExport
+    ? await loadStaticLocaleMessages(locale)
+    : null
+  const t = isDesktopExport
+    ? ((key: string) => {
+        const authMessages = messages?.auth as Record<string, unknown> | undefined
+        const loginMessages = authMessages?.login as Record<string, unknown> | undefined
+        const pageMessages = loginMessages?.page as Record<string, unknown> | undefined
+        const value = pageMessages?.[key]
+        return typeof value === "string" ? value : key
+      })
+    : await getTranslations("auth.login.page")
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#F7F9FB]">
       {/* 背景环境光效果 - 水墨晕染 */}
@@ -67,7 +87,9 @@ export default async function LoginPage() {
           </div>
 
           {/* 登录表单 */}
-          <LoginForm />
+          <Suspense fallback={null}>
+            <LoginForm />
+          </Suspense>
         </div>
       </div>
 

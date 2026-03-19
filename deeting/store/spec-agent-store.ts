@@ -128,7 +128,7 @@ const buildNodeTitle = (node: SpecNode) => {
   if (node.type === "action") return node.instruction
   if (node.type === "logic_gate") return node.rules?.[0]?.desc ?? "Logic Gate"
   if (node.type === "replan_trigger") return node.reason
-  return node.id
+  return "Node"
 }
 
 const SEARCH_TOOL_PREFIX = "mcp.search."
@@ -381,12 +381,16 @@ export const useSpecAgentStore = create<SpecAgentState>()(
       applyNodeAdded: (node) =>
         set((state) => {
           const exists = state.manifest?.nodes?.some((item) => item.id === node.id)
-          const nextNodes = exists
+          const nextNodes: SpecNode[] = exists
             ? state.manifest?.nodes?.map((item) => (item.id === node.id ? node : item)) ?? [node]
             : [...(state.manifest?.nodes ?? []), node]
-          const manifest = state.manifest
-            ? { ...state.manifest, nodes: nextNodes }
-            : { spec_v: "1.2", project_name: state.projectName ?? "", nodes: nextNodes }
+          const manifest: SpecManifest = state.manifest
+            ? {
+                ...state.manifest,
+                context: state.manifest.context ?? {},
+                nodes: nextNodes,
+              }
+            : { spec_v: "1.2", project_name: state.projectName ?? "", nodes: nextNodes, context: {} }
           return {
             manifest,
             nodes: layoutNodes(nextNodes, state.nodes),

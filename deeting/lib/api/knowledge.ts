@@ -23,6 +23,10 @@ const REMOTE_UPLOAD_FILE_TYPES: FileType[] = [
   "html",
   "json",
 ]
+
+function isRemoteUploadFileType(value: string): value is FileType {
+  return REMOTE_UPLOAD_FILE_TYPES.includes(value as FileType)
+}
 const LOCAL_UPLOAD_FILE_TYPES: FileType[] = ["txt", "docx", "md", "csv", "html", "json"]
 const LOCAL_PARSEABLE_FILE_TYPES = new Set<string>(LOCAL_UPLOAD_FILE_TYPES)
 const LOCAL_PARSE_MAX_BYTES = 2 * 1024 * 1024
@@ -241,8 +245,7 @@ function normalizeFileStatus(value: string): KnowledgeFile["status"] {
 function inferFileTypeFromFilename(filename: string): string {
   const ext = filename.split(".").pop()?.trim().toLowerCase() ?? ""
   if (!ext) return "txt"
-  const knownTypes = new Set(REMOTE_UPLOAD_FILE_TYPES)
-  if (knownTypes.has(ext)) return ext
+  if (isRemoteUploadFileType(ext)) return ext
   return ext
 }
 

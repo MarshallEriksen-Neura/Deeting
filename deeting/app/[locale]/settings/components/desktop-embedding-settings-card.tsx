@@ -20,7 +20,12 @@ import {
   FormItem,
   FormLabel,
 } from "@/components/ui/form"
-import { ModelPicker, resolveModelVisual } from "@/components/models/model-picker"
+import {
+  ModelPicker,
+  resolveModelVisual,
+  type ModelPickerGroup,
+  type ModelPickerModel,
+} from "@/components/models/model-picker"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useI18n } from "@/hooks/use-i18n"
 import { type SettingsFormValues, type ModelGroup } from "../types"
@@ -64,6 +69,15 @@ export function DesktopEmbeddingSettingsCard({
 }: DesktopEmbeddingSettingsCardProps) {
   const t = useI18n("settings")
   const [isPickerOpen, setIsPickerOpen] = useState(false)
+  const pickerModelGroups: ModelPickerGroup[] = modelGroups.map((group) => ({
+    ...group,
+    models: group.models.map(
+      (model): ModelPickerModel => ({
+        ...model,
+        provider_model_id: model.provider_model_id ?? undefined,
+      })
+    ),
+  }))
 
   return (
     <GlassCard
@@ -124,7 +138,14 @@ export function DesktopEmbeddingSettingsCard({
               const ownerText =
                 selectedModel?.model.owned_by || selectedModel?.group?.provider
               const isDisabled = !canEditDesktop || !hasAvailableModels
-              const visual = resolveModelVisual(selectedModel?.model)
+              const visual = resolveModelVisual(
+                selectedModel
+                  ? {
+                      ...selectedModel.model,
+                      provider_model_id: selectedModel.model.provider_model_id ?? undefined,
+                    }
+                  : undefined
+              )
               const Icon = visual.icon
 
               return (
@@ -184,7 +205,7 @@ export function DesktopEmbeddingSettingsCard({
                           field.onChange(value)
                           setIsPickerOpen(false)
                         }}
-                        modelGroups={modelGroups}
+                        modelGroups={pickerModelGroups}
                         valueField="provider_model_id"
                         title={t("desktop.modelLabel")}
                         subtitle={t("desktop.modelPlaceholder")}

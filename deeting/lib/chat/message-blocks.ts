@@ -1,4 +1,4 @@
-import type { MessageBlock, ToolResultBlock } from "@/lib/chat/message-protocol"
+import type { MessageBlock, ToolCallBlock, ToolResultBlock } from "@/lib/chat/message-protocol"
 import { isToolApprovalResultBlock } from "@/lib/chat/assistant-activity"
 
 export function extractAssistantTextFromBlocks(blocks?: MessageBlock[]): string {
@@ -31,11 +31,24 @@ function upsertToolBlock(next: MessageBlock[], block: MessageBlock): boolean {
   if (existingIndex < 0) return false
 
   const existing = next[existingIndex]
-  next[existingIndex] = {
-    ...existing,
-    ...block,
-    id: existing.id || block.id,
+  if (block.type === "tool_call" && existing.type === "tool_call") {
+    next[existingIndex] = {
+      ...existing,
+      ...block,
+      id: existing.id || block.id,
+    }
+    return true
   }
+
+  if (block.type === "tool_result" && existing.type === "tool_result") {
+    next[existingIndex] = {
+      ...existing,
+      ...block,
+      id: existing.id || block.id,
+    }
+    return true
+  }
+
   return true
 }
 
@@ -49,7 +62,11 @@ function applyToolResultStatuses(blocks: MessageBlock[]): MessageBlock[] {
       (candidate) => candidate.type === "tool_call" && (candidate as { callId?: unknown }).callId === callId
     )
     if (toolCallIndex < 0) continue
-    const toolCall = normalized[toolCallIndex] as MessageBlock & { status?: string }
+    const toolCall: ToolCallBlock | undefined =
+      normalized[toolCallIndex]?.type === "tool_call"
+        ? normalized[toolCallIndex]
+        : undefined
+    if (!toolCall || toolCall.type !== "tool_call") continue
     normalized[toolCallIndex] = {
       ...toolCall,
       status: block.status === "error" ? "error" : isToolApprovalResultBlock(block) ? "requires_approval" : "success",
@@ -64,9 +81,9 @@ function normalizeIncomingBlocks(messageId: string, blocks: MessageBlock[], star
     .filter((block) => !isEmptyTextLikeBlock(block))
     .map((block, index) => ({
       ...block,
-      id: (block as { id?: string }).id || `${messageId}-block-${startIndex + index}`,
-      streamState: (block as { streamState?: string }).streamState || "completed",
-      displayMode: (block as { displayMode?: string }).displayMode || "bubble",
+      id: block.id || `${messageId}-block-${startIndex + index}`,
+      streamState: block.streamState || "completed",
+      displayMode: block.displayMode || "bubble",
     }))
 }
 
@@ -126,15 +143,18 @@ export function upsertToolResultBlock(
   }
 
   const callId = normalized.callId
-  if (typeof callId === "string" && callId.trim().length > 0) {
-    const existingIndex = next.findIndex(
-      (block) => block.type === "tool_result" && block.callId === callId
-    )
-    if (existingIndex >= 0) {
-      const existing = next[existingIndex]
-      next[existingIndex] = {
-        ...existing,
-        ...normalized,
+    if (typeof callId === "string" && callId.trim().length > 0) {
+      const existingIndex = next.findIndex(
+        (block) => block.type === "tool_result" && block.callId === callId
+      )
+      if (existingIndex >= 0) {
+        const existing = next[existingIndex]
+        if (!existing || existing.type !== "tool_result") {
+          return applyToolResultStatuses(next)
+        }
+        next[existingIndex] = {
+          ...existing,
+          ...normalized,
         id: existing.id || normalized.id,
       }
       return applyToolResultStatuses(next)

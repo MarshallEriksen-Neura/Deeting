@@ -2,7 +2,7 @@ import { useCallback } from "react"
 import useSWR from "swr"
 import useSWRMutation, { type SWRMutationResponse } from "swr/mutation"
 
-import type { ApiError } from "@/lib/api/request"
+import type { ApiError } from "@/lib/http"
 import { type SWRResult } from "@/lib/swr/fetcher"
 import {
   createMcpSource,

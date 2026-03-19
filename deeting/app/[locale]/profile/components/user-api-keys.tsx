@@ -80,7 +80,7 @@ export function UserApiKeys({ apiKeys }: UserApiKeysProps) {
          </div>
       </GlassCardContent>
       <CardFooter className="p-4 bg-muted/10 flex justify-center border-t border-border/50">
-         <GlassButton variant="link" size="sm" className="text-muted-foreground hover:text-primary">
+         <GlassButton variant="ghost" size="sm" className="text-muted-foreground hover:text-primary">
            {t("apiVault.manageAll")}
            <ChevronRight size={14} className="ml-1" />
          </GlassButton>

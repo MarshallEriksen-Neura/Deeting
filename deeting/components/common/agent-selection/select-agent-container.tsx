@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { X, MessageSquare, Plus, Pencil } from 'lucide-react';
+import { X, MessageSquare, Pencil } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { CreateAgentModal } from '@/components/assistants/create-agent-modal';
 import { GlassButton } from '@/components/ui/glass-button';
@@ -13,11 +13,10 @@ import { useUserProfile } from '@/hooks/use-user';
 /**
  * SelectAgentContainer Component
  * 
- * 助手选择容器组件，显示可用的助手列表并允许用户选择或创建助手。
+ * 助手选择容器组件，显示可用的助手列表并允许用户选择现有助手。
  * 
  * 功能：
  * - 显示已安装的助手（Tauri 模式）或云端助手（Web 模式）
- * - 支持创建新助手
  * - 支持编辑已有助手（如果用户是所有者）
  * 
  * 性能优化：
@@ -64,10 +63,6 @@ export function SelectAgentContainer() {
     router.replace("/chat");
   }, [router]);
 
-  const handleCreateAgent = React.useCallback(() => {
-    router.replace('/chat/create/assistant');
-  }, [router]);
-
   return (
     <div 
       className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center animate-in fade-in duration-200"
@@ -96,12 +91,6 @@ export function SelectAgentContainer() {
         <p className="text-white/40 mb-8 font-light">{t('select.subtitle')}</p>
 
         <div className="grid grid-cols-2 gap-4">
-          <AgentCard
-            icon={<Plus className="w-6 h-6 text-emerald-400" />}
-            name={t('select.create.name')}
-            desc={t('select.create.desc')}
-            onClick={handleCreateAgent}
-          />
           {displayAgents.map((agent) => {
             const canEdit =
               Boolean(agent.ownerUserId && profile?.id && agent.ownerUserId === profile.id);

@@ -76,7 +76,6 @@ const extractAssistantTextFromBlocks = (blocks: MessageBlock[]): string =>
 const normalizeBlocks = (blocks: MessageBlock[], messageId: string): MessageBlock[] => {
   return blocks.map((block, index) => {
     const normalizedBase = {
-      ...block,
       id: block.id || `${messageId}-block-${index}`,
       streamState: block.streamState || "completed",
       displayMode: block.displayMode || "bubble",
@@ -84,6 +83,7 @@ const normalizeBlocks = (blocks: MessageBlock[], messageId: string): MessageBloc
 
     if (block.type === "text") {
       return {
+        ...block,
         ...normalizedBase,
         content: normalizeTextValue(
           typeof block.content === "string" ? block.content : String(block.content ?? "")
@@ -93,6 +93,7 @@ const normalizeBlocks = (blocks: MessageBlock[], messageId: string): MessageBloc
 
     if (block.type === "thought") {
       return {
+        ...block,
         ...normalizedBase,
         content: normalizeTextValue(
           typeof block.content === "string" ? block.content : String(block.content ?? "")
@@ -102,6 +103,7 @@ const normalizeBlocks = (blocks: MessageBlock[], messageId: string): MessageBloc
 
     if (block.type === "capability_transition") {
       return {
+        ...block,
         ...normalizedBase,
         action:
           block.action === "activated" || block.action === "deactivated"
@@ -120,6 +122,7 @@ const normalizeBlocks = (blocks: MessageBlock[], messageId: string): MessageBloc
 
     if (block.type === "tool_call") {
       return {
+        type: "tool_call" as const,
         ...normalizedBase,
         callId: typeof block.callId === "string" ? block.callId : undefined,
         toolName: typeof block.toolName === "string" ? block.toolName : undefined,
@@ -143,6 +146,7 @@ const normalizeBlocks = (blocks: MessageBlock[], messageId: string): MessageBloc
           ? (block.debug as Record<string, unknown>)
           : undefined
       return {
+        type: "tool_result" as const,
         ...normalizedBase,
         callId: typeof block.callId === "string" ? block.callId : undefined,
         toolName: typeof block.toolName === "string" ? block.toolName : undefined,
@@ -163,6 +167,7 @@ const normalizeBlocks = (blocks: MessageBlock[], messageId: string): MessageBloc
 
     if (block.type === "error") {
       return {
+        ...block,
         ...normalizedBase,
         message: normalizeTextValue(
           typeof block.message === "string" ? block.message : String(block.message ?? "")
@@ -170,7 +175,10 @@ const normalizeBlocks = (blocks: MessageBlock[], messageId: string): MessageBloc
       }
     }
 
-    return normalizedBase
+    return {
+      ...block,
+      ...normalizedBase,
+    }
   })
 }
 

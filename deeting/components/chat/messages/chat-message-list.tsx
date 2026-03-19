@@ -29,7 +29,7 @@ interface ChatMessageListProps {
 // ============== Virtuoso 自定义组件（必须在组件外部定义）==============
 
 interface VirtuosoListProps extends React.HTMLAttributes<HTMLDivElement> {
-  children: React.ReactNode
+  children?: React.ReactNode
 }
 
 const VirtuosoList = React.forwardRef<HTMLDivElement, VirtuosoListProps>(

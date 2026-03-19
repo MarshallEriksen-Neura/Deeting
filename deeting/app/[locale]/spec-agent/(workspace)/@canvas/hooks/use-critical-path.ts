@@ -64,7 +64,7 @@ export const useCriticalPath = (
     let cursor: string | null = endNode
     while (cursor) {
       pathNodes.add(cursor)
-      const parent = prev.get(cursor) ?? null
+      const parent: string | null = prev.get(cursor) ?? null
       if (parent) pathEdges.add(`${parent}=>${cursor}`)
       cursor = parent
     }

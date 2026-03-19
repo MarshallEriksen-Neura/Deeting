@@ -127,7 +127,7 @@ export function KPIMetricsRow() {
                     card.value
                   )}
                 </span>
-                {card.trend !== undefined && (
+                {card.trend != null && (
                   <TrendIndicator
                     value={card.trend}
                     inverse={card.trendInverse}

@@ -157,7 +157,9 @@ export function NotificationSystem({
     }
   }, [isAuthenticated, openModelConfigGuard])
 
-  const targetElement = ambientTargetId ? document.getElementById(ambientTargetId) : undefined
+  const targetElement: HTMLElement | undefined = ambientTargetId
+    ? document.getElementById(ambientTargetId) || undefined
+    : undefined
 
   return (
     <>

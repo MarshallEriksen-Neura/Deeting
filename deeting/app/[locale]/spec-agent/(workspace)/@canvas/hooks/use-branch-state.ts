@@ -218,7 +218,16 @@ export const useBranchState = ({
           collapsed: collapsedBranches.has(branch.rootId),
         }
       })
-      .filter(Boolean)
+      .filter(
+        (
+          toggle
+        ): toggle is {
+          id: string
+          position: { x: number; y: number }
+          hiddenCount: number
+          collapsed: boolean
+        } => toggle !== null
+      )
   }, [branchData, collapsedBranches, visibleNodeMap])
 
   const branchBadges = useMemo(() => {

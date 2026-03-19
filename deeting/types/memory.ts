@@ -4,6 +4,7 @@ export interface MemoryItem {
   payload?: Record<string, unknown>
   session_id?: string | null
   assistant_id?: string | null
+  capability_id?: string | null
   category?: string | null
   source?: string | null
   tags?: string[] | null
@@ -28,6 +29,7 @@ export interface MemorySearchParams {
   limit?: number
   session_id?: string | null
   assistant_id?: string | null
+  capability_id?: string | null
   category?: string | null
   source?: string | null
   tags?: string[] | null

@@ -54,7 +54,12 @@ export function EditServerSheet({
   const [name, setName] = useState(() => server?.name || "")
   const [description, setDescription] = useState(() => server?.description || "")
   const [sseUrl, setSseUrl] = useState(() => server?.sse_url || "")
-  const [authType, setAuthType] = useState<McpServerUpdateRequest["auth_type"]>(() => server?.auth_type || "bearer")
+  const [authType, setAuthType] = useState<McpServerUpdateRequest["auth_type"]>(() => {
+    const nextAuthType = server?.auth_type
+    return nextAuthType === "none" || nextAuthType === "api_key" || nextAuthType === "bearer"
+      ? nextAuthType
+      : "bearer"
+  })
   const [secretValue, setSecretValue] = useState("")
   const [isEnabled, setIsEnabled] = useState(() => Boolean(server?.is_enabled))
 
@@ -227,7 +232,7 @@ export function EditServerSheet({
                               {t(indexLabelKey)}
                             </Badge>
                           )}
-                          {showSuggestedAction && (
+                          {showSuggestedAction && primaryActionLabelKey && (
                             <Badge variant="outline" className="h-5 border-amber-200 bg-amber-50 px-1.5 text-[10px] text-amber-700">
                               {t(primaryActionLabelKey)}
                             </Badge>
@@ -243,7 +248,7 @@ export function EditServerSheet({
                             <span className="font-medium text-gray-700">{t("tool.labels.index")}:</span>{" "}
                             {t(indexLabelKey)}
                           </span>
-                          {showSuggestedAction && (
+                          {showSuggestedAction && primaryActionLabelKey && (
                             <span>
                               <span className="font-medium text-gray-700">{t("server.edit.tools.suggestedAction")}:</span>{" "}
                               {t(primaryActionLabelKey)}

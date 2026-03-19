@@ -9,6 +9,7 @@ const withMDX = createMDX({
 });
 
 const nextConfig: NextConfig = {
+  output: process.env.DEETING_DESKTOP_EXPORT === "true" ? "export" : undefined,
   images: {
     unoptimized: true,
   },

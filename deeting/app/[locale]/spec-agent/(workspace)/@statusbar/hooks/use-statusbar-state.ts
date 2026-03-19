@@ -3,7 +3,11 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useChatService } from '@/hooks/use-chat-service'
 import { useSpecAgentStore } from '@/store/spec-agent-store'
 import { useSpecPlanActions, useSpecPlanDetail, useSpecPlanStatus } from '@/lib/swr/use-spec-agent'
-import { resolveModelVisual } from '@/components/models/model-picker'
+import {
+  resolveModelVisual,
+  type ModelPickerGroup,
+  type ModelPickerModel,
+} from '@/components/models/model-picker'
 
 export const useStatusbarState = () => {
   const planId = useSpecAgentStore((state) => state.planId)
@@ -90,14 +94,28 @@ export const useStatusbarState = () => {
     [setPlannerModel]
   )
 
+  const pickerModelGroups: ModelPickerGroup[] = useMemo(
+    () =>
+      modelGroups.map((group) => ({
+        ...group,
+        models: group.models.map(
+          (model): ModelPickerModel => ({
+            ...model,
+            provider_model_id: model.provider_model_id ?? undefined,
+          })
+        ),
+      })),
+    [modelGroups]
+  )
+
   const selectedModel = useMemo(() => {
     if (!plannerModel) return null
-    for (const group of modelGroups) {
+    for (const group of pickerModelGroups) {
       const model = group.models.find((item) => item.id === plannerModel)
       if (model) return { model, group }
     }
     return null
-  }, [modelGroups, plannerModel])
+  }, [pickerModelGroups, plannerModel])
 
   const modelVisual = resolveModelVisual(selectedModel?.model)
 
@@ -113,7 +131,7 @@ export const useStatusbarState = () => {
   }, [execution?.progress, nodes])
 
   const showLaunch =
-    planId &&
+    Boolean(planId) &&
     drafting.status === 'ready' &&
     (!execution || execution.status === 'drafting')
 
@@ -147,7 +165,7 @@ export const useStatusbarState = () => {
     pickerOpen,
     setPickerOpen,
     isLoadingModels,
-    modelGroups,
+    modelGroups: pickerModelGroups,
     plannerModel,
     selectedModel,
     modelVisual,

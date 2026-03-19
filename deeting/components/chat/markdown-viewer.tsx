@@ -87,12 +87,16 @@ export function MarkdownViewer({
           pre: ({ children }) => {
             const child = Array.isArray(children) ? children[0] : children
             if (isValidElement(child) && child.type === "code") {
-              const codeClassName = (child.props as { className?: string }).className
+              const codeProps = child.props as {
+                className?: string
+                children?: React.ReactNode
+              }
+              const codeClassName = codeProps.className
               const languageMatch = codeClassName?.match(/language-([\w-]+)/)
               const language = languageMatch?.[1]
               return (
                 <CodeBlock className={codeClassName} language={language}>
-                  {child.props.children}
+                  {codeProps.children}
                 </CodeBlock>
               )
             }
@@ -122,7 +126,11 @@ export function MarkdownViewer({
           ),
           img: ({ src, alt }) => (
             <div className="my-2 max-w-sm">
-              <ImageLightbox src={src || ""} alt={alt || ""} className="max-w-full max-h-80 rounded-lg border border-border/50" />
+              <ImageLightbox
+                src={typeof src === "string" ? src : ""}
+                alt={alt || ""}
+                className="max-w-full max-h-80 rounded-lg border border-border/50"
+              />
             </div>
           ),
         }}

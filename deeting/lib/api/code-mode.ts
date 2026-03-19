@@ -44,15 +44,15 @@ export const CodeModeExecutionDetailSchema = z.object({
   status: z.string(),
   format_version: z.string().nullable().optional(),
   runtime_protocol_version: z.string().nullable().optional(),
-  runtime_context: z.record(z.any()).default({}),
-  tool_plan_results: z.record(z.any()).default({}),
-  runtime_tool_calls: z.record(z.any()).default({}),
-  render_blocks: z.union([z.record(z.any()), z.array(z.any())]).default({}),
+  runtime_context: z.record(z.string(), z.any()).default({}),
+  tool_plan_results: z.record(z.string(), z.any()).default({}),
+  runtime_tool_calls: z.record(z.string(), z.any()).default({}),
+  render_blocks: z.union([z.record(z.string(), z.any()), z.array(z.any())]).default({}),
   error: z.string().nullable().optional(),
   error_code: z.string().nullable().optional(),
   runtime_mode: SandboxRuntimeModeSchema.nullish(),
   duration_ms: z.number(),
-  request_meta: z.record(z.any()).default({}),
+  request_meta: z.record(z.string(), z.any()).default({}),
   created_at: z.string().nullable(),
 })
 
@@ -61,7 +61,7 @@ export type CodeModeExecutionDetail = z.infer<typeof CodeModeExecutionDetailSche
 // ── Schema: runtime tool trace entry ────────────────────────
 export const RuntimeToolTraceSchema = z.object({
   tool_name: z.string(),
-  arguments: z.record(z.any()).optional(),
+  arguments: z.record(z.string(), z.any()).optional(),
   result: z.any().optional(),
   error: z.string().nullable().optional(),
   duration_ms: z.number().optional(),
@@ -73,7 +73,7 @@ export type RuntimeToolTrace = z.infer<typeof RuntimeToolTraceSchema>
 const LocalRuntimeToolCallSchema = z.object({
   index: z.number().optional(),
   tool_name: z.string().nullable().optional(),
-  arguments: z.record(z.any()).optional(),
+  arguments: z.record(z.string(), z.any()).optional(),
 })
 
 // ── Query params ────────────────────────────────────────────

@@ -33,6 +33,17 @@ const normalizePreviewContent = (content: unknown) => {
   return JSON.stringify(content)
 }
 
+const readPreviewResponseContent = (response: unknown) => {
+  if (!response || typeof response !== "object") return undefined
+  const choices = (response as { choices?: unknown }).choices
+  if (!Array.isArray(choices) || choices.length === 0) return undefined
+  const firstChoice = choices[0]
+  if (!firstChoice || typeof firstChoice !== "object") return undefined
+  const message = (firstChoice as { message?: unknown }).message
+  if (!message || typeof message !== "object") return undefined
+  return (message as { content?: unknown }).content
+}
+
 export function AgentModalContent({ agent, onInstall, onPreview }: AgentModalContentProps) {
   const t = useTranslations("assistants")
   const isInstalled = agent.installed
@@ -72,7 +83,7 @@ export function AgentModalContent({ agent, onInstall, onPreview }: AgentModalCon
         setMessages(prev => [...prev, { role: 'assistant', content: reply || t("preview.emptyReply") }])
       } else {
         const response = await previewAssistant(agent.id, { message: currentInput })
-        const content = normalizePreviewContent(response?.choices?.[0]?.message?.content)
+        const content = normalizePreviewContent(readPreviewResponseContent(response))
         setMessages(prev => [...prev, { role: 'assistant', content: content || t("preview.emptyReply") }])
       }
     } catch (error) {

@@ -19,7 +19,7 @@ type HubInstanceLike = {
   name?: string
   icon?: string | null
   latency_ms?: number
-  health_status?: string
+  health_status?: string | null
   is_enabled?: boolean
   is_public?: boolean
   sparkline?: number[]

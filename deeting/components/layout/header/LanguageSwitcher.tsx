@@ -59,12 +59,17 @@ function LanguageSwitcherContent({ className }: LanguageSwitcherProps) {
   const syncLocale = useCallback(
     (targetLocale: AppLocale) => {
       const hasQuery = Object.keys(query).length > 0
+      const href = (
+        hasQuery
+          ? {
+              pathname,
+              query,
+            }
+          : pathname
+      ) as Parameters<typeof router.replace>[0]
 
       router.replace(
-        {
-          pathname,
-          query: hasQuery ? query : undefined,
-        },
+        href,
         { locale: targetLocale }
       )
     },

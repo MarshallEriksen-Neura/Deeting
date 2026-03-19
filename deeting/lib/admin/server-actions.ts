@@ -247,18 +247,26 @@ export async function createProviderInstanceAction(formData: FormData) {
   try {
     const name = formData.get("name") as string
     const provider_type = formData.get("provider_type") as string
+    const base_url = formData.get("base_url") as string
+    const description = formData.get("description") as string | null
+    const api_key = formData.get("api_key") as string | null
+    const is_public = formData.get("is_public") === "true"
 
     // 提取其他动态字段
     const extraFields: Record<string, unknown> = {}
     formData.forEach((value, key) => {
-      if (!["name", "provider_type"].includes(key) && typeof value === "string") {
+      if (!["name", "provider_type", "base_url", "description", "api_key", "is_public"].includes(key) && typeof value === "string") {
         extraFields[key] = value
       }
     })
 
     const result = await createAdminProviderInstance({
+      preset_slug: provider_type,
       name,
-      provider_type,
+      base_url,
+      description: description || undefined,
+      api_key: api_key || undefined,
+      is_public,
       ...extraFields,
     })
 
@@ -287,19 +295,12 @@ export async function createProviderCredentialAction(
   formData: FormData
 ) {
   try {
-    const credential_type = formData.get("credential_type") as string
-
-    // 提取其他动态字段
-    const credentials: Record<string, unknown> = {}
-    formData.forEach((value, key) => {
-      if (key !== "credential_type" && typeof value === "string") {
-        credentials[key] = value
-      }
-    })
+    const alias = formData.get("alias") as string
+    const api_key = formData.get("api_key") as string
 
     const result = await createAdminProviderCredential(instanceId, {
-      credential_type,
-      credentials,
+      alias,
+      api_key,
     })
 
     revalidatePath("/admin/provider-credentials")
@@ -324,14 +325,16 @@ export async function createProviderCredentialAction(
 
 export async function createRegistrationWindowAction(formData: FormData) {
   try {
-    const name = formData.get("name") as string
-    const max_invites = formData.get("max_invites") as string
-    const expires_at = formData.get("expires_at") as string | null
+    const start_time = formData.get("start_time") as string
+    const end_time = formData.get("end_time") as string
+    const max_registrations = formData.get("max_registrations") as string
+    const auto_activate = formData.get("auto_activate") === "true"
 
     const result = await createAdminRegistrationWindow({
-      name,
-      max_invites: parseInt(max_invites, 10),
-      expires_at: expires_at || undefined,
+      start_time,
+      end_time,
+      max_registrations: parseInt(max_registrations, 10),
+      auto_activate,
     })
 
     revalidatePath("/admin/registration")

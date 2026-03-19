@@ -2,7 +2,7 @@ import * as React from "react"
 import useSWRInfinite from "swr/infinite"
 
 import type { ApiError } from "@/lib/http"
-import { swrFetcher, type SWRResult } from "@/lib/swr/fetcher"
+import { swrFetcher } from "@/lib/swr/fetcher"
 import type { CursorPage } from "@/types/pagination"
 import type {
   VideoGenerationTaskListItem,
@@ -24,7 +24,7 @@ type VideoGenerationTasksState = {
   error?: ApiError
   loadMore: () => void
   reset: () => void
-  mutate: SWRResult<CursorPage<VideoGenerationTaskListItem>>["mutate"]
+  mutate: (...args: any[]) => Promise<unknown>
 }
 
 export function useVideoGenerationTasks(

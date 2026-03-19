@@ -121,7 +121,6 @@ const AssistantMessageBubble = memo<{
             statusStage={isActive ? statusStage : null}
             statusCode={isActive ? statusCode : null}
             statusMeta={isActive ? statusMeta : null}
-            reveal={reveal}
           />
         </Suspense>
         {attachments?.length ? (

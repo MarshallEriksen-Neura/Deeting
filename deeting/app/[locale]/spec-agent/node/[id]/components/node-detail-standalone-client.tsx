@@ -104,7 +104,9 @@ function NodeDetailStandaloneClient({ params }: NodeDetailStandaloneProps) {
     rawNode?.type === 'action' && nextInstruction !== currentInstruction
   const isDirty = nextOverride !== currentOverride || instructionDirty
   const instructionNote =
-    instructionMode === 'shadow' && rawNode?.pending_instruction
+    instructionMode === 'shadow' &&
+    rawNode?.type === 'action' &&
+    rawNode.pending_instruction
       ? t('node.modal.instructionShadowSaved')
       : null
   const pendingInstruction =

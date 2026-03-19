@@ -3,6 +3,8 @@ import { getLocale, getTranslations } from "next-intl/server"
 import { Compass, Sparkles, ArrowLeft } from "lucide-react"
 
 import { Container } from "@/components/ui/container"
+import { routing } from "@/i18n/routing"
+import { loadStaticLocaleMessages } from "@/i18n/static-messages"
 import { GlassButton } from "@/components/ui/glass-button"
 import {
   GlassCard,
@@ -11,9 +13,24 @@ import {
   GlassCardTitle,
 } from "@/components/ui/glass-card"
 
+const isDesktopExport = process.env.DEETING_DESKTOP_EXPORT === "true"
+
 export default async function NotFound() {
-  const t = await getTranslations("common")
-  const locale = await getLocale()
+  const locale = isDesktopExport ? routing.defaultLocale : await getLocale()
+  const messages = isDesktopExport
+    ? await loadStaticLocaleMessages(locale)
+    : null
+  const t = isDesktopExport
+    ? ((key: string) => {
+        const commonMessages = messages?.common as Record<string, unknown> | undefined
+        const notFoundMessages = commonMessages?.notFound as Record<string, unknown> | undefined
+        const value =
+          key.startsWith("notFound.")
+            ? notFoundMessages?.[key.replace("notFound.", "")]
+            : commonMessages?.[key]
+        return typeof value === "string" ? value : key
+      })
+    : await getTranslations("common")
 
   return (
     <div className="relative isolate min-h-[calc(100vh-120px)] overflow-hidden bg-[var(--background)] py-14">

@@ -38,11 +38,6 @@ export function GlassPillToaster() {
             "rounded-full px-3 py-1 text-xs font-medium",
             "transition-colors duration-200"
           ),
-          close: cn(
-            "text-slate-500 hover:text-slate-900 transition-colors",
-            "dark:text-white/50 dark:hover:text-white",
-            "p-1 rounded-full hover:bg-black/10 dark:hover:bg-white/10"
-          ),
         },
       }}
       // 自定义关闭按钮

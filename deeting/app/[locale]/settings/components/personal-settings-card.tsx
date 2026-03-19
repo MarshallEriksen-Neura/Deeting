@@ -20,7 +20,12 @@ import {
   FormItem,
   FormLabel,
 } from "@/components/ui/form"
-import { ModelPicker, resolveModelVisual } from "@/components/models/model-picker"
+import {
+  ModelPicker,
+  resolveModelVisual,
+  type ModelPickerGroup,
+  type ModelPickerModel,
+} from "@/components/models/model-picker"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useI18n } from "@/hooks/use-i18n"
 import { type SettingsFormValues, type ModelGroup } from "../types"
@@ -62,6 +67,15 @@ export function PersonalSettingsCard({
 }: PersonalSettingsCardProps) {
   const t = useI18n("settings")
   const [isPickerOpen, setIsPickerOpen] = useState(false)
+  const pickerModelGroups: ModelPickerGroup[] = modelGroups.map((group) => ({
+    ...group,
+    models: group.models.map(
+      (model): ModelPickerModel => ({
+        ...model,
+        provider_model_id: model.provider_model_id ?? undefined,
+      })
+    ),
+  }))
 
   return (
     <GlassCard
@@ -134,7 +148,14 @@ export function PersonalSettingsCard({
                 ? selectedModel?.model.owned_by || selectedModel?.group?.provider
                 : null
             const isDisabled = !canEditPersonal || !hasAvailableModels
-            const visual = resolveModelVisual(selectedModel?.model)
+            const visual = resolveModelVisual(
+              selectedModel
+                ? {
+                    ...selectedModel.model,
+                    provider_model_id: selectedModel.model.provider_model_id ?? undefined,
+                  }
+                : undefined
+            )
             const Icon = visual.icon
 
             return (
@@ -235,7 +256,7 @@ export function PersonalSettingsCard({
                         field.onChange(value)
                         setIsPickerOpen(false)
                       }}
-                      modelGroups={modelGroups}
+                      modelGroups={pickerModelGroups}
                       valueField="id"
                       title={t("personal.secretaryLabel")}
                       subtitle={t("personal.secretaryPlaceholder")}
