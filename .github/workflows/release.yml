@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: "Release tag (e.g. v0.1.0)"
+        description: "Release tag (e.g. v0.1.0-2)"
         required: true
         type: string
   push:
@@ -51,6 +51,30 @@ jobs:
             echo "tag_name must start with v and follow semver style, got: ${RELEASE_TAG}"
             exit 1
           fi
+
+      - name: Validate release tag matches bundled versions
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          release_tag = "${{ env.RELEASE_TAG }}"
+          main_version = json.loads(Path("deeting/src-tauri/tauri.conf.json").read_text(encoding="utf-8"))["version"]
+          installer_version = json.loads(Path("installer/src-tauri/tauri.conf.json").read_text(encoding="utf-8"))["version"]
+
+          expected_tag = f"v{main_version}"
+          if release_tag != expected_tag:
+              raise SystemExit(
+                  f"release tag {release_tag!r} does not match bundled app version {expected_tag!r}"
+              )
+
+          if installer_version != main_version:
+              raise SystemExit(
+                  "installer version does not match main app version: "
+                  f"{installer_version!r} != {main_version!r}"
+              )
+          PY
 
       - name: Install Ubuntu system dependencies
         if: startsWith(matrix.platform, 'ubuntu')
@@ -126,7 +150,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: deeting
-          includeRelease: false
+          includeRelease: true
           args: ${{ matrix.args }}
 
       - name: Prepare main artifact list
@@ -140,7 +164,13 @@ jobs:
           import json
           import os
 
-          artifact_paths = json.loads(os.environ["ARTIFACT_PATHS_JSON"])
+          raw_artifact_paths = os.environ.get("ARTIFACT_PATHS_JSON", "").strip()
+          if not raw_artifact_paths:
+              raise SystemExit(
+                  "tauri-action did not return artifactPaths; check whether release artifacts were built"
+              )
+
+          artifact_paths = json.loads(raw_artifact_paths)
           if not artifact_paths:
               raise SystemExit("tauri-action did not return any artifact paths")
 
@@ -220,7 +250,7 @@ jobs:
           NEXT_PUBLIC_IS_TAURI: "true"
         with:
           projectPath: installer
-          includeRelease: false
+          includeRelease: true
           args: ""
 
       # Rename installer to indicate it's the bootstrapper
@@ -247,7 +277,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    if: always()
+    if: ${{ needs.build-main.result == 'success' && needs.build-windows-installer.result == 'success' }}
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
 
