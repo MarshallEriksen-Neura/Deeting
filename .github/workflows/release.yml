@@ -96,7 +96,8 @@ jobs:
         run: bun install --frozen-lockfile
         working-directory: deeting
 
-      - name: Build main application
+      - name: Build and publish Windows main application
+        if: matrix.platform == 'windows-latest'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -112,6 +113,20 @@ jobs:
           generateReleaseNotes: false
           uploadUpdaterJson: true
           updaterJsonPreferNsis: true
+          args: ${{ matrix.args }}
+
+      - name: Build main application artifacts
+        if: matrix.platform != 'windows-latest'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: deeting
+          uploadWorkflowArtifacts: true
+          workflowArtifactNamePattern: "main-[platform]-[arch]-[bundle]"
+          uploadUpdaterSignatures: true
           args: ${{ matrix.args }}
 
       # Upload Windows NSIS installer for later use
@@ -175,13 +190,6 @@ jobs:
           NEXT_PUBLIC_IS_TAURI: "true"
         with:
           projectPath: installer
-          tagName: ${{ env.RELEASE_TAG }}
-          releaseName: "Deeting ${{ env.RELEASE_TAG }}"
-          releaseBody: "See the assets below to download and install this version."
-          releaseDraft: false
-          prerelease: false
-          generateReleaseNotes: false
-          uploadUpdaterJson: false
           args: ""
 
       # Rename installer to indicate it's the bootstrapper
@@ -215,11 +223,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Download main application artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: main-*
+          merge-multiple: true
+          path: ./release-assets
+
       - name: Download bootstrapper installer
         uses: actions/download-artifact@v4
         with:
           name: windows-bootstrapper-installer
           path: ./release-assets
+
+      - name: Inspect release asset staging
+        shell: bash
+        run: find ./release-assets -maxdepth 2 -type f | sort
 
       - name: Upload final release assets
         uses: softprops/action-gh-release@v1
@@ -227,6 +246,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          files: release-assets/*.exe
+          files: |
+            release-assets/**/*
           draft: false
           prerelease: false
