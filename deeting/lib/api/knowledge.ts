@@ -2,6 +2,7 @@ import { request, apiClient } from "@/lib/http"
 import { prepareDesktopObjectStorageUpload } from "@/lib/api/desktop-object-storage"
 import { handleModelConfigRequiredError } from "@/lib/model-config-required"
 import { extractDocxTextFromFile } from "@/lib/utils/docx"
+import { extractPdfTextFromFile } from "@/lib/utils/pdf"
 import type {
   FileType,
   KnowledgeFile,
@@ -27,7 +28,7 @@ const REMOTE_UPLOAD_FILE_TYPES: FileType[] = [
 function isRemoteUploadFileType(value: string): value is FileType {
   return REMOTE_UPLOAD_FILE_TYPES.includes(value as FileType)
 }
-const LOCAL_UPLOAD_FILE_TYPES: FileType[] = ["txt", "docx", "md", "csv", "html", "json"]
+const LOCAL_UPLOAD_FILE_TYPES: FileType[] = ["pdf", "txt", "docx", "md", "csv", "html", "json"]
 const LOCAL_PARSEABLE_FILE_TYPES = new Set<string>(LOCAL_UPLOAD_FILE_TYPES)
 const LOCAL_PARSE_MAX_BYTES = 2 * 1024 * 1024
 const REMOTE_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
@@ -290,6 +291,10 @@ export function splitKnowledgeUploadFiles<T extends { name: string }>(files: T[]
 }
 
 async function readLocalFileText(file: File, fileType: string): Promise<string> {
+  if (fileType === "pdf") {
+    return extractPdfTextFromFile(file)
+  }
+
   if (fileType === "docx") {
     return extractDocxTextFromFile(file)
   }

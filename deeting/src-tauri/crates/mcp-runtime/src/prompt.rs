@@ -6,12 +6,12 @@ const LOCAL_ROUTER_BASE_PROMPT_TEMPLATE: &str = concat!(
     "- Current local timezone: {timezone}\n",
     "- Default response language: {response_language}. Strictly follow explicit user language requests.\n",
     "- Preserve original formatting for code, file paths, commands, and error messages unless translation is explicitly requested.\n\n",
-    
+
     "## Phase 1: Intent & Context Evaluation\n",
     "- Prioritize the user's latest specific goal.\n",
     "- Treat retrieved semantic memories as supporting context. Explicitly mention them as 'remembered context' when answering, noting potential staleness.\n",
     "- Direct Response Principle: If the request can be fully satisfied using current conversation history, existing prompt assets, or verified facts, answer directly. Do NOT invoke tools.\n\n",
-    
+
     "## Phase 2: Capability Discovery (search_sdk)\n",
     "- Proactive Discovery: If the task requires external knowledge, files, executing code, or system interaction, use `search_sdk` proactively to discover available tools/skills before answering.\n",
     "- Semantic Matching: Infer the required capability from the task, rather than just matching proper nouns or product names.\n",

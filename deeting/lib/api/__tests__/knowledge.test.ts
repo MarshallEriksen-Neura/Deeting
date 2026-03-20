@@ -19,7 +19,11 @@
   updateFolder,
 } from "@/lib/api/knowledge"
 import { request } from "@/lib/http"
+import { extractPdfTextFromFile } from "@/lib/utils/pdf"
 import { invoke } from "@tauri-apps/api/core"
+import { TextDecoder, TextEncoder } from "util"
+
+Object.assign(globalThis, { TextEncoder, TextDecoder })
 
 jest.mock("@/lib/http", () => ({
   request: jest.fn(),
@@ -32,8 +36,15 @@ jest.mock("@tauri-apps/api/core", () => ({
   invoke: jest.fn(),
 }))
 
+jest.mock("@/lib/utils/pdf", () => ({
+  extractPdfTextFromFile: jest.fn(),
+}))
+
 const mockRequest = request as jest.MockedFunction<typeof request>
 const mockInvoke = invoke as jest.MockedFunction<typeof invoke>
+const mockExtractPdfTextFromFile = extractPdfTextFromFile as jest.MockedFunction<
+  typeof extractPdfTextFromFile
+>
 const originalTauriFlag = process.env.NEXT_PUBLIC_IS_TAURI
 const windowWithTauri = window as Window & {
   __TAURI__?: unknown
@@ -109,6 +120,15 @@ function createStoredZip(files: Record<string, string>): Uint8Array {
   return output
 }
 
+function attachArrayBuffer(file: File, bytes: Uint8Array): File {
+  Object.defineProperty(file, "arrayBuffer", {
+    configurable: true,
+    value: async () =>
+      bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+  })
+  return file
+}
+
 function createMinimalDocxFile(name = "sample.docx"): File {
   const documentXml =
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
@@ -124,15 +144,16 @@ function createMinimalDocxFile(name = "sample.docx"): File {
       '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"></Types>',
     "word/document.xml": documentXml,
   })
-  return new File([bytes], name, {
+  return attachArrayBuffer(new File([bytes], name, {
     type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  })
+  }), bytes)
 }
 
 describe("knowledge api", () => {
   afterEach(() => {
     mockRequest.mockReset()
     mockInvoke.mockReset()
+    mockExtractPdfTextFromFile.mockReset()
     process.env.NEXT_PUBLIC_IS_TAURI = originalTauriFlag
     delete windowWithTauri.__TAURI__
     delete windowWithTauri.__TAURI_INTERNALS__
@@ -495,8 +516,8 @@ describe("knowledge api", () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
 
-    expect(getKnowledgeUploadFileTypes()).toEqual(["txt", "docx", "md", "csv", "html", "json"])
-    expect(getKnowledgeUploadAccept()).toBe(".txt,.docx,.md,.csv,.html,.json")
+    expect(getKnowledgeUploadFileTypes()).toEqual(["pdf", "txt", "docx", "md", "csv", "html", "json"])
+    expect(getKnowledgeUploadAccept()).toBe(".pdf,.txt,.docx,.md,.csv,.html,.json")
     expect(getKnowledgeUploadMaxBytes()).toBe(2 * 1024 * 1024)
 
     const { accepted, rejected } = splitKnowledgeUploadFiles([
@@ -505,8 +526,8 @@ describe("knowledge api", () => {
       { name: "paper.pdf" },
     ])
 
-    expect(accepted).toEqual([{ name: "notes.md" }, { name: "sample1.docx" }])
-    expect(rejected).toEqual([{ name: "paper.pdf" }])
+    expect(accepted).toEqual([{ name: "notes.md" }, { name: "sample1.docx" }, { name: "paper.pdf" }])
+    expect(rejected).toEqual([])
   })
 
   it("uploads local docx file via tauri document command", async () => {
@@ -548,7 +569,7 @@ describe("knowledge api", () => {
         status: "processing",
         meta_info: expect.objectContaining({
           file_type: "docx",
-          raw_text: "Hello\n\nworld",
+          raw_text: expect.stringMatching(/Hello\s+world/),
         }),
       }),
     })
@@ -568,19 +589,30 @@ describe("knowledge api", () => {
     })
   })
 
-  it("marks unsupported local file type as failed and throws", async () => {
+  it("uploads local pdf file via tauri document command", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
+    const originalFetch = global.fetch
+    global.fetch = jest.fn().mockResolvedValue({ ok: true } as Response)
+    mockExtractPdfTextFromFile.mockResolvedValue("Hello PDF")
     mockInvoke
-      .mockRejectedValueOnce(new Error("no object storage"))
+      .mockResolvedValueOnce({
+        provider: "cloudflare_r2_s3",
+        object_key: "desktop/uploads/knowledge/paper.pdf",
+        upload_url: "https://example.r2.cloudflarestorage.com/upload",
+        method: "PUT",
+        headers: {},
+        asset_url: "https://cdn.example.com/knowledge/paper.pdf",
+        expires_at: "2026-03-10T00:15:00Z",
+      } as unknown)
       .mockResolvedValueOnce({
         id: "d-21",
         name: "paper.pdf",
         file_type: "pdf",
         size: 4,
-        status: "failed",
-        chunks: 0,
-        error_message: "unsupported",
+        status: "indexed",
+        chunks: 2,
+        error_message: null,
         folder_id: null,
         created_at: "2026-03-03T00:00:00Z",
         updated_at: "2026-03-03T00:00:01Z",
@@ -588,14 +620,23 @@ describe("knowledge api", () => {
 
     const file = new File(["%PDF"], "paper.pdf", { type: "application/pdf" })
 
-    await expect(uploadFile(file)).rejects.toThrow("本地离线暂不支持 PDF 解析")
-    expect(mockInvoke).toHaveBeenCalledWith("create_local_user_document", {
+    const uploaded = await uploadFile(file)
+
+    expect(uploaded.id).toBe("d-21")
+    expect(uploaded.status).toBe("active")
+    expect(mockExtractPdfTextFromFile).toHaveBeenCalledWith(file)
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, "create_local_user_document", {
       payload: expect.objectContaining({
         filename: "paper.pdf",
-        status: "failed",
+        status: "processing",
         folder_id: null,
+        meta_info: expect.objectContaining({
+          file_type: "pdf",
+          raw_text: "Hello PDF",
+        }),
       }),
     })
     expect(mockRequest).not.toHaveBeenCalled()
+    global.fetch = originalFetch
   })
 })

@@ -36,6 +36,7 @@ pub struct RouteEvidence {
     pub any_mutating_capability: bool,
     pub any_high_risk_capability: bool,
     pub direct_capability_names: Vec<String>,
+    pub callable_direct_capability_names: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -379,6 +380,16 @@ impl RouteEvidence {
             .take(3)
             .map(|value| value.to_string())
             .collect::<Vec<_>>();
+        let callable_direct_capability_names = capabilities
+            .iter()
+            .filter(|item| {
+                item.pointer("/status/callable")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+            })
+            .filter_map(|item| item.get("name").and_then(Value::as_str))
+            .map(|value| value.to_string())
+            .collect::<Vec<_>>();
         let has_code_mode_executor = search_result
             .get("orchestration_primitives")
             .and_then(Value::as_array)
@@ -398,6 +409,7 @@ impl RouteEvidence {
             any_mutating_capability,
             any_high_risk_capability,
             direct_capability_names,
+            callable_direct_capability_names,
         }
     }
 }

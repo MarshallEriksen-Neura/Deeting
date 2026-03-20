@@ -214,7 +214,7 @@ pub fn enrich_execution_policy_with_runtime_discovery(
         allowed.extend(
             discovery
                 .route_evidence
-                .direct_capability_names
+                .callable_direct_capability_names
                 .iter()
                 .cloned(),
         );
@@ -260,4 +260,48 @@ where
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn enrich_execution_policy_with_runtime_discovery_allows_all_callable_direct_capabilities() {
+        let discovery = RuntimeDiscoveryBundle::from_search_result(json!({
+            "capabilities": [
+                {"name": "exa", "status": {"callable": true}},
+                {"name": "tavily-search", "status": {"callable": true}},
+                {"name": "tavily-extract", "status": {"callable": true}},
+                {"name": "fetch_page", "status": {"callable": true}},
+                {"name": "disabled_tool", "status": {"callable": false}}
+            ]
+        }));
+
+        assert_eq!(
+            discovery.route_evidence.direct_capability_names,
+            vec![
+                "exa".to_string(),
+                "tavily-search".to_string(),
+                "tavily-extract".to_string(),
+            ]
+        );
+
+        let policy = enrich_execution_policy_with_runtime_discovery(
+            build_default_local_execution_policy(),
+            Some(&discovery),
+        );
+
+        assert_eq!(
+            policy.allowed_tool_names,
+            vec![
+                "exa".to_string(),
+                "fetch_page".to_string(),
+                "search_sdk".to_string(),
+                "tavily-extract".to_string(),
+                "tavily-search".to_string(),
+            ]
+        );
+    }
 }
