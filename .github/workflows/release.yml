@@ -11,6 +11,9 @@ on:
     tags:
       - "v*"
 
+env:
+  PROTOC_VERSION: "33.4"
+
 jobs:
   build-main:
     permissions:
@@ -41,7 +44,7 @@ jobs:
       NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ secrets.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Validate release tag matches bundled versions
         shell: bash
@@ -96,10 +99,10 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
-      - name: Setup protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install protoc
+        env:
+          MATRIX_TARGET: ${{ matrix.target }}
+        run: python .github/scripts/install_protoc.py
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -182,7 +185,6 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-      # Upload Windows NSIS installer for later use
       - name: Upload Windows installer artifact
         if: matrix.platform == 'windows-latest'
         uses: actions/upload-artifact@v4
@@ -201,7 +203,7 @@ jobs:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: oven-sh/setup-bun@v2
 
@@ -211,14 +213,12 @@ jobs:
         with:
           workspaces: "installer/src-tauri -> target"
 
-      # Download the main app's NSIS installer
       - name: Download Windows installer artifact
         uses: actions/download-artifact@v4
         with:
           name: windows-nsis-installer
           path: ./main-installer
 
-      # Prepare resources directory for installer
       - name: Prepare installer resources
         shell: bash
         run: |
@@ -246,7 +246,6 @@ jobs:
           includeRelease: true
           args: ""
 
-      # Rename installer to indicate it's the bootstrapper
       - name: Rename installer
         shell: bash
         run: |
@@ -275,7 +274,7 @@ jobs:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Download main application artifacts
         uses: actions/download-artifact@v4
