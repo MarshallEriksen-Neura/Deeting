@@ -15,6 +15,7 @@ fn should_register_runtime_deep_links(is_linux: bool, is_windows: bool, is_debug
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .enable_devtools()
         .plugin(
             tauri_plugin_single_instance::Builder::new()
                 .callback(|app, _argv, _cwd| {
