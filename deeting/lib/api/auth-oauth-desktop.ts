@@ -1,4 +1,6 @@
-export type DesktopOAuthProvider = "google" | "github"
+import { request } from "@/lib/http"
+
+export type DesktopOAuthProvider = "google" | "github" | "linuxdo"
 export type DesktopAuthGrantProvider = DesktopOAuthProvider | "browser"
 export type DesktopOAuthIntent = "login" | "bind"
 
@@ -42,6 +44,34 @@ export interface DesktopOAuthExchangeResponse {
 
 const DESKTOP_SCHEME = "deeting:"
 
+export async function startDesktopOAuthLoginSession(
+  provider: DesktopOAuthProvider
+): Promise<DesktopOAuthStartResponse> {
+  return request<DesktopOAuthStartResponse>({
+    url: "/api/v1/auth/oauth/desktop/start",
+    method: "POST",
+    data: {
+      provider,
+      return_scheme: "deeting",
+      platform: "desktop",
+    },
+    anonymous: true,
+    skipAuthRefresh: true,
+  })
+}
+
+export async function exchangeDesktopOAuthLoginGrant(
+  payload: DesktopOAuthExchangeRequest
+): Promise<DesktopOAuthExchangeResponse> {
+  return request<DesktopOAuthExchangeResponse>({
+    url: "/api/v1/auth/oauth/desktop/exchange",
+    method: "POST",
+    data: payload,
+    anonymous: true,
+    skipAuthRefresh: true,
+  })
+}
+
 export async function openDesktopOAuthAuthorizeUrl(url: string): Promise<void> {
   const { openUrl } = await import("@tauri-apps/plugin-opener")
   await openUrl(url)
@@ -60,7 +90,12 @@ export function parseDesktopOAuthCallbackUrl(url: string): DesktopOAuthCallbackP
     const state = parsed.searchParams.get("state")?.trim()
     const grant = parsed.searchParams.get("grant")?.trim()
 
-    if (provider !== "google" && provider !== "github" && provider !== "browser") {
+    if (
+      provider !== "google" &&
+      provider !== "github" &&
+      provider !== "linuxdo" &&
+      provider !== "browser"
+    ) {
       return null
     }
 

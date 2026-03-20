@@ -11,6 +11,13 @@ export function ChatAuthGuard({ children }: { children: React.ReactNode }) {
   const searchParams = useSearchParams()
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
   const redirectedRef = React.useRef(false)
+  const isDesktopRuntime = React.useMemo(
+    () =>
+      process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
+      typeof window !== "undefined" &&
+      ("__TAURI_INTERNALS__" in window || "__TAURI__" in window),
+    []
+  )
 
   const [isHydrated, setIsHydrated] = React.useState(() =>
     useAuthStore.persist.hasHydrated()
@@ -37,6 +44,11 @@ export function ChatAuthGuard({ children }: { children: React.ReactNode }) {
     return query ? `${currentPath}?${query}` : currentPath
   }, [pathname, searchParams])
 
+  const loginTarget = React.useMemo(
+    () => `/login?callbackUrl=${encodeURIComponent(callbackUrl)}`,
+    [callbackUrl]
+  )
+
   React.useEffect(() => {
     if (!isHydrated || isAuthenticated) {
       redirectedRef.current = false
@@ -46,12 +58,40 @@ export function ChatAuthGuard({ children }: { children: React.ReactNode }) {
     if (redirectedRef.current) return
     redirectedRef.current = true
 
-    const target = `/login?callbackUrl=${encodeURIComponent(callbackUrl)}`
-    router.replace(target)
-  }, [callbackUrl, isAuthenticated, isHydrated, router])
+    router.replace(loginTarget)
+  }, [isAuthenticated, isHydrated, loginTarget, router])
 
   if (!isHydrated || !isAuthenticated) {
-    return null
+    if (!isHydrated) {
+      return null
+    }
+
+    if (!isDesktopRuntime) {
+      return null
+    }
+
+    return (
+      <div className="flex min-h-screen w-full items-center justify-center bg-background px-6">
+        <div className="w-full max-w-md rounded-3xl border border-slate-200/80 bg-white/90 p-8 text-center shadow-[0_20px_60px_-20px_rgba(15,23,42,0.25)] backdrop-blur-xl">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-xl font-semibold text-slate-700">
+            D
+          </div>
+          <h2 className="mt-5 text-xl font-semibold text-slate-900">
+            Sign in to continue
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            The desktop app opens your browser for authentication. If you closed it, you can start the login flow again here.
+          </p>
+          <button
+            type="button"
+            className="mt-6 inline-flex h-11 items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-medium text-white transition-colors hover:bg-slate-800"
+            onClick={() => router.replace(loginTarget)}
+          >
+            Continue login
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return <>{children}</>

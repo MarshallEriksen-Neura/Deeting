@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useSearchParams } from "next/navigation"
 import { motion, AnimatePresence } from "framer-motion"
-import { Loader2, Mail, ArrowRight, Ticket, Info, ExternalLink } from "lucide-react"
+import { Loader2, Mail, ArrowRight, Ticket, Info, ExternalLink, Chrome, Github } from "lucide-react"
 
 import { GlassButton } from "@/components/ui/glass-button"
 import { Input } from "@/components/ui/input"
@@ -93,6 +93,7 @@ export function LoginForm({ onSuccess, onError, className }: LoginFormProps) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
   const {
     startDesktopBrowserLogin,
+    startDesktopOAuthLogin,
     refreshMutation,
     completeDesktopBrowserLogin,
   } = useAuthService()
@@ -221,6 +222,20 @@ export function LoginForm({ onSuccess, onError, className }: LoginFormProps) {
     }
   }
 
+  async function handleDesktopOAuthLogin(provider: "google" | "github" | "linuxdo") {
+    try {
+      setBrowserLoginLoading(true)
+      const session = await startDesktopOAuthLogin(provider)
+      window.location.assign(session.authorize_url)
+    } catch (error) {
+      const err = error as Error
+      toast.error(err.message || t("toast.error"))
+      onError?.(err)
+    } finally {
+      setBrowserLoginLoading(false)
+    }
+  }
+
   return (
     <div className={cn("grid gap-6", className)}>
       {hasDesktopBrowserSession && (
@@ -271,6 +286,49 @@ export function LoginForm({ onSuccess, onError, className }: LoginFormProps) {
         </div>
       ) : (
         <>
+          {hasDesktopBrowserSession && (
+            <div className="space-y-3">
+              <GlassButton
+                type="button"
+                variant="outline"
+                className="h-12 w-full rounded-xl border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                disabled={isBusy}
+                onClick={() => void handleDesktopOAuthLogin("google")}
+              >
+                <Chrome className="mr-2 h-4 w-4" />
+                {t("oauthGoogle")}
+              </GlassButton>
+
+              <GlassButton
+                type="button"
+                variant="outline"
+                className="h-12 w-full rounded-xl border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                disabled={isBusy}
+                onClick={() => void handleDesktopOAuthLogin("github")}
+              >
+                <Github className="mr-2 h-4 w-4" />
+                {t("oauthGithub")}
+              </GlassButton>
+
+              <GlassButton
+                type="button"
+                variant="outline"
+                className="h-12 w-full rounded-xl border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                disabled={isBusy}
+                onClick={() => void handleDesktopOAuthLogin("linuxdo")}
+              >
+                <ExternalLink className="mr-2 h-4 w-4" />
+                {t("oauthLinuxdo")}
+              </GlassButton>
+
+              <div className="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-slate-400">
+                <div className="h-px flex-1 bg-slate-200" />
+                <span>or</span>
+                <div className="h-px flex-1 bg-slate-200" />
+              </div>
+            </div>
+          )}
+
           {step === "email" ? (
             // 第一步：输入邮箱
             <Form {...emailForm}>

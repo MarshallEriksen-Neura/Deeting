@@ -11,6 +11,8 @@ import {
 } from "@/lib/api/auth"
 import { authService } from "@/lib/api/auth.service"
 import {
+  exchangeDesktopOAuthLoginGrant,
+  startDesktopOAuthLoginSession,
   buildDesktopBrowserLoginUrl,
   completeDesktopBrowserLoginSession,
   exchangeDesktopBrowserLoginGrant,
@@ -96,8 +98,23 @@ export function useAuthService() {
     return session
   }, [])
 
+  const startDesktopOAuthLogin = useCallback(async (provider: "google" | "github" | "linuxdo") => {
+    return startDesktopOAuthLoginSession(provider)
+  }, [])
+
   const exchangeDesktopBrowserLoginGrantMutation = useCallback(async (payload: DesktopBrowserLoginExchangeRequest) => {
     const response = await exchangeDesktopBrowserLoginGrant(payload)
+    applySession(response)
+    return response
+  }, [applySession])
+
+  const exchangeDesktopOAuthLoginGrantMutation = useCallback(async (payload: {
+    provider: "google" | "github" | "linuxdo"
+    session_id: string
+    state: string
+    grant: string
+  }) => {
+    const response = await exchangeDesktopOAuthLoginGrant(payload)
     applySession(response)
     return response
   }, [applySession])
@@ -119,7 +136,9 @@ export function useAuthService() {
     refreshMutation,
     lastTokenPair,
     startDesktopBrowserLogin,
+    startDesktopOAuthLogin,
     exchangeDesktopBrowserLoginGrant: exchangeDesktopBrowserLoginGrantMutation,
+    exchangeDesktopOAuthLoginGrant: exchangeDesktopOAuthLoginGrantMutation,
     completeDesktopBrowserLogin,
     logout,
   }

@@ -7,6 +7,14 @@ pub mod utils;
 
 use tauri::{Emitter, Manager};
 
+fn should_register_runtime_deep_links(
+    is_linux: bool,
+    is_windows: bool,
+    is_debug: bool,
+) -> bool {
+    is_linux || (is_windows && is_debug)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -33,6 +41,19 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            #[cfg(any(target_os = "linux", windows))]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+
+                if should_register_runtime_deep_links(
+                    cfg!(target_os = "linux"),
+                    cfg!(windows),
+                    cfg!(debug_assertions),
+                ) {
+                    app.deep_link().register_all()?;
+                }
+            }
+
             setup::setup_app(app)?;
             Ok(())
         })
@@ -46,4 +67,24 @@ pub fn run() {
         .invoke_handler(commands::generate_handler())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_register_runtime_deep_links;
+
+    #[test]
+    fn runtime_registration_is_enabled_for_linux() {
+        assert!(should_register_runtime_deep_links(true, false, false));
+    }
+
+    #[test]
+    fn runtime_registration_is_enabled_for_windows_debug() {
+        assert!(should_register_runtime_deep_links(false, true, true));
+    }
+
+    #[test]
+    fn runtime_registration_is_disabled_for_windows_release() {
+        assert!(!should_register_runtime_deep_links(false, true, false));
+    }
 }

@@ -36,7 +36,7 @@ function getErrorMessage(error: unknown, fallback: string) {
 }
 
 export function DesktopOAuthListener() {
-  const { exchangeDesktopBrowserLoginGrant } = useAuthService()
+  const { exchangeDesktopBrowserLoginGrant, exchangeDesktopOAuthLoginGrant } = useAuthService()
   const handledRef = useRef(new Set<string>())
 
   useEffect(() => {
@@ -73,7 +73,16 @@ export function DesktopOAuthListener() {
             })
             toast.success("登录成功")
           } else {
-            throw new Error("Desktop OAuth login entry has been removed")
+            if (!payload.state) {
+              throw new Error("Desktop OAuth login callback is missing state")
+            }
+            await exchangeDesktopOAuthLoginGrant({
+              provider: payload.provider,
+              session_id: payload.session_id,
+              state: payload.state,
+              grant: payload.grant,
+            })
+            toast.success("登录成功")
           }
         } catch (error) {
           handledRef.current.delete(key)
@@ -110,7 +119,7 @@ export function DesktopOAuthListener() {
       disposed = true
       cleanup?.()
     }
-  }, [exchangeDesktopBrowserLoginGrant])
+  }, [exchangeDesktopBrowserLoginGrant, exchangeDesktopOAuthLoginGrant])
 
   return null
 }

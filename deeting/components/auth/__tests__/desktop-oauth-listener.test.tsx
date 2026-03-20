@@ -6,6 +6,7 @@ import { DesktopOAuthListener } from "../desktop-oauth-listener"
 const mockToastSuccess = jest.fn()
 const mockToastError = jest.fn()
 const mockExchangeDesktopBrowserLoginGrant = jest.fn()
+const mockExchangeDesktopOAuthLoginGrant = jest.fn()
 const mockConfirmDesktopOAuthBindingGrant = jest.fn()
 const mockGetCurrentDesktopDeepLinks = jest.fn()
 const mockListenForDesktopDeepLinks = jest.fn()
@@ -13,6 +14,7 @@ const mockListenForDesktopDeepLinks = jest.fn()
 jest.mock("@/hooks/use-auth", () => ({
   useAuthService: () => ({
     exchangeDesktopBrowserLoginGrant: mockExchangeDesktopBrowserLoginGrant,
+    exchangeDesktopOAuthLoginGrant: mockExchangeDesktopOAuthLoginGrant,
   }),
 }))
 
@@ -47,6 +49,7 @@ describe("DesktopOAuthListener", () => {
     mockToastSuccess.mockReset()
     mockToastError.mockReset()
     mockExchangeDesktopBrowserLoginGrant.mockReset()
+    mockExchangeDesktopOAuthLoginGrant.mockReset()
     mockConfirmDesktopOAuthBindingGrant.mockReset()
     mockGetCurrentDesktopDeepLinks.mockReset()
     mockListenForDesktopDeepLinks.mockReset()
@@ -85,6 +88,27 @@ describe("DesktopOAuthListener", () => {
       expect(mockExchangeDesktopBrowserLoginGrant).toHaveBeenCalledWith({
         session_id: "sess-2",
         grant: "grant-2",
+      })
+    })
+  })
+
+  it("exchanges provider login grants for supported oauth callbacks", async () => {
+    mockExchangeDesktopOAuthLoginGrant.mockResolvedValueOnce(undefined)
+    mockListenForDesktopDeepLinks.mockImplementationOnce(async (handler: (urls: string[]) => Promise<void>) => {
+      await handler([
+        "deeting://auth/callback?provider=linuxdo&session_id=sess-oauth&state=state-oauth&grant=grant-oauth",
+      ])
+      return jest.fn()
+    })
+
+    render(<DesktopOAuthListener />)
+
+    await waitFor(() => {
+      expect(mockExchangeDesktopOAuthLoginGrant).toHaveBeenCalledWith({
+        provider: "linuxdo",
+        session_id: "sess-oauth",
+        state: "state-oauth",
+        grant: "grant-oauth",
       })
     })
   })
