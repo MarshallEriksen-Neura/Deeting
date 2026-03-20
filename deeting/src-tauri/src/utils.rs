@@ -121,7 +121,7 @@ pub fn path_to_sqlite_url(path: &Path) -> String {
 
 pub fn resolve_cloud_base_url() -> String {
     std::env::var("NEXT_PUBLIC_API_BASE_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:8000".to_string())
+        .unwrap_or_else(|_| "https://api.ethereals.space".to_string())
 }
 
 pub fn now_rfc3339() -> String {

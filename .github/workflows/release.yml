@@ -98,36 +98,66 @@ jobs:
 
       - name: Build and publish Windows main application
         if: matrix.platform == 'windows-latest'
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@action-v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: deeting
+          includeRelease: true
           tagName: ${{ env.RELEASE_TAG }}
           releaseName: "Deeting ${{ env.RELEASE_TAG }}"
           releaseBody: "See the assets below to download and install this version."
           releaseDraft: false
           prerelease: false
           generateReleaseNotes: false
-          uploadUpdaterJson: true
+          includeUpdaterJson: true
           updaterJsonPreferNsis: true
           args: ${{ matrix.args }}
 
       - name: Build main application artifacts
         if: matrix.platform != 'windows-latest'
-        uses: tauri-apps/tauri-action@v0
+        id: build_main_artifacts
+        uses: tauri-apps/tauri-action@action-v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: deeting
-          uploadWorkflowArtifacts: true
-          workflowArtifactNamePattern: "main-[platform]-[arch]-[bundle]"
-          uploadUpdaterSignatures: true
+          includeRelease: false
           args: ${{ matrix.args }}
+
+      - name: Prepare main artifact list
+        if: matrix.platform != 'windows-latest'
+        id: main_artifact_list
+        shell: bash
+        env:
+          ARTIFACT_PATHS_JSON: ${{ steps.build_main_artifacts.outputs.artifactPaths }}
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+
+          artifact_paths = json.loads(os.environ["ARTIFACT_PATHS_JSON"])
+          if not artifact_paths:
+              raise SystemExit("tauri-action did not return any artifact paths")
+
+          print("paths<<EOF")
+          for path in artifact_paths:
+              print(path)
+          print("EOF")
+          PY
+
+      - name: Upload main application artifacts
+        if: matrix.platform != 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-${{ matrix.target }}
+          path: ${{ steps.main_artifact_list.outputs.paths }}
+          if-no-files-found: error
+          retention-days: 1
 
       # Upload Windows NSIS installer for later use
       - name: Upload Windows installer artifact
@@ -182,7 +212,7 @@ jobs:
         working-directory: installer
 
       - name: Build installer
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@action-v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -190,6 +220,7 @@ jobs:
           NEXT_PUBLIC_IS_TAURI: "true"
         with:
           projectPath: installer
+          includeRelease: false
           args: ""
 
       # Rename installer to indicate it's the bootstrapper
@@ -227,7 +258,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: main-*
-          merge-multiple: true
           path: ./release-assets
 
       - name: Download bootstrapper installer
@@ -238,7 +268,7 @@ jobs:
 
       - name: Inspect release asset staging
         shell: bash
-        run: find ./release-assets -maxdepth 2 -type f | sort
+        run: find ./release-assets -type f | sort
 
       - name: Upload final release assets
         uses: softprops/action-gh-release@v1
