@@ -11,8 +11,6 @@ import {
 } from "@/lib/api/auth"
 import { authService } from "@/lib/api/auth.service"
 import {
-  exchangeDesktopOAuthLoginGrant,
-  startDesktopOAuthLoginSession,
   buildDesktopBrowserLoginUrl,
   completeDesktopBrowserLoginSession,
   exchangeDesktopBrowserLoginGrant,
@@ -21,6 +19,12 @@ import {
   type DesktopBrowserLoginCompleteRequest,
   type DesktopBrowserLoginExchangeRequest,
 } from "@/lib/api/auth-desktop-browser"
+import {
+  exchangeDesktopOAuthLoginGrant,
+  startDesktopOAuthLoginSession,
+  type DesktopOAuthExchangeRequest,
+  type DesktopOAuthProvider,
+} from "@/lib/api/auth-oauth-desktop"
 import {
   clearAuthTokenForDesktop,
   persistAuthTokenForDesktop,
@@ -98,7 +102,7 @@ export function useAuthService() {
     return session
   }, [])
 
-  const startDesktopOAuthLogin = useCallback(async (provider: "google" | "github" | "linuxdo") => {
+  const startDesktopOAuthLogin = useCallback(async (provider: DesktopOAuthProvider) => {
     return startDesktopOAuthLoginSession(provider)
   }, [])
 
@@ -108,12 +112,7 @@ export function useAuthService() {
     return response
   }, [applySession])
 
-  const exchangeDesktopOAuthLoginGrantMutation = useCallback(async (payload: {
-    provider: "google" | "github" | "linuxdo"
-    session_id: string
-    state: string
-    grant: string
-  }) => {
+  const exchangeDesktopOAuthLoginGrantMutation = useCallback(async (payload: DesktopOAuthExchangeRequest) => {
     const response = await exchangeDesktopOAuthLoginGrant(payload)
     applySession(response)
     return response
