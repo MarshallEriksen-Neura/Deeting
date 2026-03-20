@@ -7,6 +7,7 @@ pub mod utils;
 
 use tauri::{Emitter, Manager};
 
+#[cfg(any(test, target_os = "linux", windows))]
 fn should_register_runtime_deep_links(is_linux: bool, is_windows: bool, is_debug: bool) -> bool {
     is_linux || (is_windows && is_debug)
 }
