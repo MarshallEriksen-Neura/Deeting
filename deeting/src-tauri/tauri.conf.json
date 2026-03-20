@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "deeting",
-  "version": "0.1.0",
+  "version": "0.1.0-beta.1",
   "identifier": "com.deeting.app",
   "build": {
     "frontendDist": "../out",
@@ -83,7 +83,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU0QjZBRjM1RUQ3RDlERjYKUldUMm5YM3ROYSsyVkVtd0twSUFsWDRiYmpCSElqNXAwZFoybkM1S0RRQ1dJQ1VwbWhXLytnelMK",
       "endpoints": [
         "https://github.com/MarshallEriksen-Neura/Deeting/releases/latest/download/latest.json"
       ]
