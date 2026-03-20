@@ -9,7 +9,7 @@ on:
         type: string
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 jobs:
   build-main:
@@ -20,20 +20,25 @@ jobs:
       matrix:
         include:
           - platform: macos-latest
-            args: '--target aarch64-apple-darwin'
+            args: "--target aarch64-apple-darwin --bundles app"
             target: aarch64-apple-darwin
           - platform: macos-15-intel
-            args: '--target x86_64-apple-darwin'
+            args: "--target x86_64-apple-darwin --bundles app"
             target: x86_64-apple-darwin
           - platform: ubuntu-22.04
-            args: ''
+            args: "--bundles deb,rpm"
             target: x86_64-unknown-linux-gnu
           - platform: windows-latest
-            args: ''
+            args: "--bundles nsis,msi"
             target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.platform }}
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+      SCOUT_SERVICE_URL: ${{ vars.SCOUT_SERVICE_URL }}
+      NEXT_PUBLIC_API_BASE_URL: ${{ vars.NEXT_PUBLIC_API_BASE_URL }}
+      NEXT_PUBLIC_DESKTOP_EXTERNAL_LOGIN_URL: ${{ vars.NEXT_PUBLIC_DESKTOP_EXTERNAL_LOGIN_URL }}
+      NEXT_PUBLIC_IS_TAURI: ${{ vars.NEXT_PUBLIC_IS_TAURI }}
+      NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ secrets.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}
 
     steps:
       - uses: actions/checkout@v4
@@ -85,7 +90,7 @@ jobs:
 
       - uses: swatinem/rust-cache@v2
         with:
-          workspaces: 'deeting/src-tauri -> target'
+          workspaces: "deeting/src-tauri -> target"
 
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
@@ -97,15 +102,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          NEXT_PUBLIC_IS_TAURI: 'true'
         with:
           projectPath: deeting
           tagName: ${{ env.RELEASE_TAG }}
-          releaseName: 'Deeting ${{ env.RELEASE_TAG }}'
-          releaseBody: 'See the assets below to download and install this version.'
+          releaseName: "Deeting ${{ env.RELEASE_TAG }}"
+          releaseBody: "See the assets below to download and install this version."
           releaseDraft: false
           prerelease: false
-          generateReleaseNotes: true
+          generateReleaseNotes: false
           uploadUpdaterJson: true
           updaterJsonPreferNsis: true
           args: ${{ matrix.args }}
@@ -137,7 +141,7 @@ jobs:
 
       - uses: swatinem/rust-cache@v2
         with:
-          workspaces: 'installer/src-tauri -> target'
+          workspaces: "installer/src-tauri -> target"
 
       # Download the main app's NSIS installer
       - name: Download Windows installer artifact
@@ -168,17 +172,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          NEXT_PUBLIC_IS_TAURI: 'true'
+          NEXT_PUBLIC_IS_TAURI: "true"
         with:
           projectPath: installer
           tagName: ${{ env.RELEASE_TAG }}
-          releaseName: 'Deeting ${{ env.RELEASE_TAG }}'
-          releaseBody: 'See the assets below to download and install this version.'
+          releaseName: "Deeting ${{ env.RELEASE_TAG }}"
+          releaseBody: "See the assets below to download and install this version."
           releaseDraft: false
           prerelease: false
           generateReleaseNotes: false
           uploadUpdaterJson: false
-          args: ''
+          args: ""
 
       # Rename installer to indicate it's the bootstrapper
       - name: Rename installer
