@@ -32,7 +32,15 @@ Deeting OS 是一个本地优先的桌面 AI 平台。它不是单纯的聊天�
 
 如果你除了想知道“它是什么”，还想知道“它是不是一个活着的开源项目”，这里直接给你最重要的那张图：
 
-[![Star History Chart](https://api.star-history.com/svg?repos=MarshallEriksen-Neura/Deeting&type=Date)](https://www.star-history.com/#MarshallEriksen-Neura/Deeting&Date)
+## Star History
+
+<a href="https://www.star-history.com/?repos=MarshallEriksen-Neura%2FDeeting&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=MarshallEriksen-Neura/Deeting&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=MarshallEriksen-Neura/Deeting&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=MarshallEriksen-Neura/Deeting&type=date&legend=top-left" />
+ </picture>
+</a>
 
 ## 硬能力，不是空话
 
