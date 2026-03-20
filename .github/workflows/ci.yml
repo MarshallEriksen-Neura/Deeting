@@ -42,7 +42,7 @@ jobs:
 
       - uses: swatinem/rust-cache@v2
         with:
-          workspaces: 'deeting/src-tauri -> target'
+          workspaces: "deeting/src-tauri -> target"
 
       - run: cargo check
 
@@ -55,8 +55,8 @@ jobs:
   search-sdk-benchmark:
     runs-on: ubuntu-22.04
     env:
-      SEARCH_SDK_BENCHMARK_SUMMARY_PATH: ${{ runner.temp }}/search-sdk-benchmark-summary.json
-      SEARCH_SDK_BENCHMARK_DIFF_REPORT_PATH: ${{ runner.temp }}/search-sdk-benchmark-diff-report.json
+      SEARCH_SDK_BENCHMARK_SUMMARY_PATH: ${{ github.workspace }}/search-sdk-benchmark-summary.json
+      SEARCH_SDK_BENCHMARK_DIFF_REPORT_PATH: ${{ github.workspace }}/search-sdk-benchmark-diff-report.json
     defaults:
       run:
         working-directory: deeting/src-tauri
@@ -72,7 +72,7 @@ jobs:
 
       - uses: swatinem/rust-cache@v2
         with:
-          workspaces: 'deeting/src-tauri -> target'
+          workspaces: "deeting/src-tauri -> target"
 
       - name: Run search_sdk benchmark replay suite
         env:
