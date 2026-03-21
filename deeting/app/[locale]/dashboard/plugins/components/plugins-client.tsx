@@ -36,12 +36,20 @@ interface PluginsClientProps {
 export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
   const t = useTranslations("plugins")
   const isMarketMode = mode === "market"
+  const shouldLoadMarket = isMarketMode
   const canManageLocalInstalls = isDesktopRuntime()
   const [searchQuery, setSearchQuery] = React.useState("")
   const debouncedQuery = useDebounce(searchQuery, 300)
 
-  const { plugins, isLoading, error, mutate } = usePluginMarket()
-  const { runtimeStatuses, hasInstallingRuntime, refreshRuntimeStatuses } = useLocalSkillRuntimeStatuses()
+  const { plugins, isLoading, error, mutate } = usePluginMarket(undefined, {
+    enabled: shouldLoadMarket,
+  })
+  const {
+    runtimeStatuses,
+    isLoadingRuntimeStatuses,
+    hasInstallingRuntime,
+    refreshRuntimeStatuses,
+  } = useLocalSkillRuntimeStatuses()
 
   // Permission dialog state
   const [dialogOpen, setDialogOpen] = React.useState(false)
@@ -51,6 +59,13 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
   const [configSheetOpen, setConfigSheetOpen] = React.useState(false)
   const [isSavingRuntimeConfig, setIsSavingRuntimeConfig] = React.useState(false)
   const [isInstallingRuntime, setIsInstallingRuntime] = React.useState(false)
+
+  const refreshPluginData = React.useCallback(async () => {
+    if (shouldLoadMarket) {
+      await mutate()
+    }
+    await refreshRuntimeStatuses()
+  }, [mutate, refreshRuntimeStatuses, shouldLoadMarket])
 
   const handleInstallClick = React.useCallback((plugin: PluginMarketSkillItem) => {
     setSelectedPlugin(plugin)
@@ -69,8 +84,7 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
           { description: t("toast.installedDesc") }
         )
         setDialogOpen(false)
-        await mutate()
-        await refreshRuntimeStatuses()
+        await refreshPluginData()
       } catch {
         toast.error(t("toast.installFailedTitle"), {
           description: t("toast.installFailedDesc"),
@@ -79,7 +93,7 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
         setIsInstalling(false)
       }
     },
-    [mutate, refreshRuntimeStatuses, selectedPlugin, t]
+    [refreshPluginData, selectedPlugin, t]
   )
 
   const handleUninstall = React.useCallback(
@@ -89,15 +103,14 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
         toast.success(t("toast.uninstalledTitle"), {
           description: t("toast.uninstalledDesc"),
         })
-        await mutate()
-        await refreshRuntimeStatuses()
+        await refreshPluginData()
       } catch {
         toast.error(t("toast.uninstallFailedTitle"), {
           description: t("toast.uninstallFailedDesc"),
         })
       }
     },
-    [mutate, refreshRuntimeStatuses, t]
+    [refreshPluginData, t]
   )
 
   const handleImportRepo = React.useCallback(
@@ -106,17 +119,15 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
       toast.success(t("importRepo.successTitle"), {
         description: t("importRepo.successDesc"),
       })
-      await mutate()
-      await refreshRuntimeStatuses()
+      await refreshPluginData()
       void (async () => {
         for (let index = 0; index < 6; index += 1) {
           await new Promise((resolve) => window.setTimeout(resolve, 5000))
-          await mutate()
-          await refreshRuntimeStatuses()
+          await refreshPluginData()
         }
       })()
     },
-    [mutate, refreshRuntimeStatuses, t],
+    [refreshPluginData, t],
   )
 
   const handleConfigure = React.useCallback((plugin: PluginMarketSkillItem) => {
@@ -171,8 +182,8 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
 
   React.useEffect(() => {
     if (!hasInstallingRuntime) return
-    void mutate()
-  }, [hasInstallingRuntime, mutate])
+    void refreshPluginData()
+  }, [hasInstallingRuntime, refreshPluginData])
 
   const { userVisiblePlugins, installedPlugins, runtimeStatusByPluginId } = React.useMemo(
     () => buildPluginRuntimeViewModel(plugins, runtimeStatuses),
@@ -206,7 +217,9 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
   )
   const visiblePlugins = isMarketMode ? filteredMarketPlugins : filteredInstalledPlugins
 
-  const isInitialLoading = isLoading && plugins.length === 0
+  const isInitialLoading = shouldLoadMarket
+    ? isLoading && plugins.length === 0
+    : isLoadingRuntimeStatuses && installedPlugins.length === 0
   const pageTitle = isMarketMode ? t("page.market.title") : t("page.installed.title")
   const pageSubtitle = isMarketMode
     ? t("page.market.description")

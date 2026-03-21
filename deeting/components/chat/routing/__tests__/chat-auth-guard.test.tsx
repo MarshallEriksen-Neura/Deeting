@@ -134,4 +134,24 @@ describe("ChatAuthGuard", () => {
     expect(screen.getByText("Restoring session")).toBeInTheDocument()
     expect(mockLocationReplace).not.toHaveBeenCalled()
   })
+
+  it("does not block when an authenticated desktop session already exists even if persist hydration is still false", async () => {
+    const { ChatAuthGuard } = await import("../chat-auth-guard")
+    mockHasHydrated.mockReturnValue(false)
+    mockUseAuthStore.mockImplementation((selector) =>
+      selector({ isAuthenticated: true })
+    )
+    mockUseDesktopAuthBootstrapStore.mockImplementation((selector) =>
+      selector({ isReady: true })
+    )
+
+    render(
+      <ChatAuthGuard>
+        <div>chat</div>
+      </ChatAuthGuard>
+    )
+
+    expect(screen.getByText("chat")).toBeInTheDocument()
+    expect(mockLocationReplace).not.toHaveBeenCalled()
+  })
 })

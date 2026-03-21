@@ -64,6 +64,27 @@ export const useAuthStore = create<AuthStore>()(
       name: "deeting-auth-store",
       storage: createJSONStorage(() => sessionStorage),
       version: 1,
+      merge: (persistedState, currentState) => {
+        const persisted = (persistedState ?? {}) as Partial<AuthState>
+
+        // Desktop bootstrap may restore a token before persist hydration completes.
+        // Preserve any already-restored in-memory session so late empty storage state
+        // cannot overwrite it and strand guarded routes in a restoring state.
+        if (currentState.accessToken?.trim()) {
+          return {
+            ...currentState,
+            ...persisted,
+            accessToken: currentState.accessToken,
+            tokenType: currentState.tokenType,
+            isAuthenticated: currentState.isAuthenticated,
+          }
+        }
+
+        return {
+          ...currentState,
+          ...persisted,
+        }
+      },
       partialize: (state) => ({
         accessToken: state.accessToken,
         tokenType: state.tokenType,

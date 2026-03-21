@@ -61,6 +61,30 @@ fn reveal_main_window(app: &AppHandle, source: &str, is_revealed: &AtomicBool) {
     }
 }
 
+fn register_startup_window_reveal(app: &App) {
+    let startup_window_revealed = Arc::new(AtomicBool::new(false));
+    let startup_window_revealed_for_event = startup_window_revealed.clone();
+    let app_handle_for_ready_event = app.handle().clone();
+    app.listen(DESKTOP_UI_READY_EVENT, move |_event| {
+        reveal_main_window(
+            &app_handle_for_ready_event,
+            "frontend_ready",
+            startup_window_revealed_for_event.as_ref(),
+        );
+    });
+
+    let startup_window_revealed_for_fallback = startup_window_revealed.clone();
+    let app_handle_for_startup_fallback = app.handle().clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(12)).await;
+        reveal_main_window(
+            &app_handle_for_startup_fallback,
+            "startup_fallback",
+            startup_window_revealed_for_fallback.as_ref(),
+        );
+    });
+}
+
 pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let setup_started_at = Instant::now();
     ensure_rustls_crypto_provider();
@@ -78,6 +102,8 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
                 .build(),
         )?;
     }
+
+    register_startup_window_reveal(app);
 
     let handle = app.handle().clone();
     let cloud_base_url = resolve_cloud_base_url();
@@ -155,18 +181,6 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         .map_err(McpError::Storage)?;
         log_startup_phase("sync_core_tool_registry_entries", phase_started_at);
         let phase_started_at = Instant::now();
-        store
-            .sync_all_mcp_tool_registry_entries()
-            .await
-            .map_err(|err| McpError::Storage(err.to_string()))?;
-        log_startup_phase("sync_all_mcp_tool_registry_entries", phase_started_at);
-        let phase_started_at = Instant::now();
-        store
-            .sync_all_assistant_registry_entries()
-            .await
-            .map_err(|err| McpError::Storage(err.to_string()))?;
-        log_startup_phase("sync_all_assistant_registry_entries", phase_started_at);
-        let phase_started_at = Instant::now();
         let process_manager = ProcessManager::new(store.clone(), handle);
         let mcp_state = McpRuntimeState::new(store, process_manager, cloud_base_url);
         log_startup_phase("build_mcp_runtime_state", phase_started_at);
@@ -238,28 +252,7 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     app.manage(state);
     crate::state::set_global_app_state(sync_state.clone());
     crate::state::set_global_app_handle(app.handle().clone());
-
-    let startup_window_revealed = Arc::new(AtomicBool::new(false));
-    let startup_window_revealed_for_event = startup_window_revealed.clone();
-    let app_handle_for_ready_event = app.handle().clone();
-    app.listen(DESKTOP_UI_READY_EVENT, move |_event| {
-        reveal_main_window(
-            &app_handle_for_ready_event,
-            "frontend_ready",
-            startup_window_revealed_for_event.as_ref(),
-        );
-    });
-
-    let startup_window_revealed_for_fallback = startup_window_revealed.clone();
-    let app_handle_for_startup_fallback = app.handle().clone();
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(Duration::from_secs(12)).await;
-        reveal_main_window(
-            &app_handle_for_startup_fallback,
-            "startup_fallback",
-            startup_window_revealed_for_fallback.as_ref(),
-        );
-    });
+    spawn_capability_registry_bootstrap(sync_state.clone());
 
     let sync_state_for_mcp = sync_state.clone();
     let app_handle_for_mcp_tasks = app.handle().clone();
@@ -327,6 +320,30 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     log_startup_phase("setup_app_total", setup_started_at);
 
     Ok(())
+}
+
+fn spawn_capability_registry_bootstrap(sync_state: AppState) {
+    tauri::async_runtime::spawn(async move {
+        let mcp_store = sync_state.mcp.store.clone();
+
+        let phase_started_at = Instant::now();
+        match mcp_store.sync_all_mcp_tool_registry_entries().await {
+            Ok(_) => log_startup_phase(
+                "background_sync_all_mcp_tool_registry_entries",
+                phase_started_at,
+            ),
+            Err(err) => warn!("background mcp tool registry sync failed: {}", err),
+        }
+
+        let phase_started_at = Instant::now();
+        match mcp_store.sync_all_assistant_registry_entries().await {
+            Ok(_) => log_startup_phase(
+                "background_sync_all_assistant_registry_entries",
+                phase_started_at,
+            ),
+            Err(err) => warn!("background assistant registry sync failed: {}", err),
+        }
+    });
 }
 
 fn spawn_background_tasks(handle: AppHandle, sync_state: AppState) {

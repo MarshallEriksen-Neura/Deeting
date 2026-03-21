@@ -34,7 +34,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "createUpdaterArtifacts": false,
+    "createUpdaterArtifacts": true,
     "resources": {
       "../../packages/official-skills/": "official-skills/",
       "../../packages/deeting-sdk/": "deeting-sdk/"

@@ -16,6 +16,40 @@ import {
 } from "@/components/layout/sidebar/navigation-config"
 import { navIconMap, defaultNavIcon } from "@/components/layout/sidebar/icon-map"
 
+const isTauri = process.env.NEXT_PUBLIC_IS_TAURI === "true"
+const sidebarLinkPrefetch = !isTauri
+
+function DesktopAwareNavLink({
+  href,
+  className,
+  children,
+  ariaCurrent,
+}: {
+  href: string
+  className: string
+  children: React.ReactNode
+  ariaCurrent?: "page"
+}) {
+  if (isTauri) {
+    return (
+      <a href={href} className={className} aria-current={ariaCurrent}>
+        {children}
+      </a>
+    )
+  }
+
+  return (
+    <Link
+      href={href}
+      prefetch={sidebarLinkPrefetch}
+      className={className}
+      aria-current={ariaCurrent}
+    >
+      {children}
+    </Link>
+  )
+}
+
 // ============================================================================
 // Variants
 // ============================================================================
@@ -207,10 +241,10 @@ function SidebarItem({ item, isCollapsed = false, translate, isMobile = false }:
 
   if (isMobile) {
     return (
-      <Link
+      <DesktopAwareNavLink
         href={item.href}
         className={cn(mobileNavItemVariants({ active: isActive }))}
-        aria-current={isActive ? "page" : undefined}
+        ariaCurrent={isActive ? "page" : undefined}
       >
         <Icon className="size-4 shrink-0" />
         <span>{label}</span>
@@ -219,15 +253,15 @@ function SidebarItem({ item, isCollapsed = false, translate, isMobile = false }:
             {item.badge > 99 ? "99+" : item.badge}
           </span>
         )}
-      </Link>
+      </DesktopAwareNavLink>
     )
   }
 
   const content = (
-    <Link
+    <DesktopAwareNavLink
       href={item.href}
       className={cn(sidebarItemVariants({ active: isActive, collapsed: isCollapsed }))}
-      aria-current={isActive ? "page" : undefined}
+      ariaCurrent={isActive ? "page" : undefined}
     >
       {/* Active indicator */}
       {isActive && (
@@ -256,7 +290,7 @@ function SidebarItem({ item, isCollapsed = false, translate, isMobile = false }:
           )}
         </>
       )}
-    </Link>
+    </DesktopAwareNavLink>
   )
 
   if (isCollapsed) {

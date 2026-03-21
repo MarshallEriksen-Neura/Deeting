@@ -13,6 +13,8 @@ type AuthPersistApi = {
   onFinishHydration: (listener: () => void) => () => void
 }
 
+const CHAT_AUTH_DIAGNOSTIC_TIMEOUT_MS = 4000
+
 export function buildChatLoginTarget(pathname?: string, search?: string) {
   const safePathname = pathname?.trim() || "/chat"
   const normalizedSearch =
@@ -52,6 +54,13 @@ export function ChatAuthGuard({ children }: { children: React.ReactNode }) {
   const isDesktopRuntime = detectTauriRuntime()
   const [isHydrated, setIsHydrated] = React.useState(false)
   const isRestoringDesktopSession = isDesktopRuntime && !isDesktopAuthBootstrapReady
+  const hasUsableSession = isAuthenticated
+  const isAuthStateReady = isHydrated || hasUsableSession
+  const pendingReason = !isAuthStateReady
+    ? "auth_store_hydration"
+    : isRestoringDesktopSession
+      ? "desktop_auth_bootstrap"
+      : null
 
   React.useEffect(() => {
     const persistApi = getAuthPersistApi()
@@ -77,7 +86,33 @@ export function ChatAuthGuard({ children }: { children: React.ReactNode }) {
   const loginTarget = getCurrentChatLoginTarget()
 
   React.useEffect(() => {
-    if (!isHydrated || isRestoringDesktopSession || isAuthenticated) {
+    if (!pendingReason) {
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      console.warn("chat auth guard still blocked", {
+        pendingReason,
+        isHydrated,
+        isDesktopAuthBootstrapReady,
+        isAuthenticated,
+        isDesktopRuntime,
+      })
+    }, CHAT_AUTH_DIAGNOSTIC_TIMEOUT_MS)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [
+    isAuthenticated,
+    isDesktopAuthBootstrapReady,
+    isDesktopRuntime,
+    isHydrated,
+    pendingReason,
+  ])
+
+  React.useEffect(() => {
+    if (!isAuthStateReady || isRestoringDesktopSession || isAuthenticated) {
       redirectedRef.current = false
       return
     }
@@ -86,14 +121,24 @@ export function ChatAuthGuard({ children }: { children: React.ReactNode }) {
     redirectedRef.current = true
 
     window.location.replace(loginTarget)
-  }, [isAuthenticated, isHydrated, isRestoringDesktopSession, loginTarget])
+  }, [isAuthenticated, isAuthStateReady, isRestoringDesktopSession, loginTarget])
 
-  if (!isHydrated || !isAuthenticated) {
-    if (!isHydrated || isRestoringDesktopSession) {
+  if (!isAuthStateReady || !isAuthenticated) {
+    if (!isAuthStateReady || isRestoringDesktopSession) {
+      const fallbackBadge =
+        pendingReason === "auth_store_hydration"
+          ? "Auth Store"
+          : "Desktop Bootstrap"
+      const fallbackDetail =
+        pendingReason === "auth_store_hydration"
+          ? "Waiting for the persisted auth store to finish hydration before restoring the chat session"
+          : "Waiting for desktop authentication bootstrap to complete before entering the chat workspace"
+
       return (
         <ChatRouteFallback
           label="Restoring session"
-          detail="Checking desktop authentication and conversation context"
+          detail={fallbackDetail}
+          badge={fallbackBadge}
         />
       )
     }

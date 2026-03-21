@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { Home, LayoutDashboard, ShoppingBag, Settings, Sun, Moon, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Link } from '@/i18n/routing';
+import { isTauriRuntime as detectTauriRuntime } from '@/lib/runtime/tauri';
 
 interface HudSystemMenuPanelProps {
   homeLabel: string;
@@ -63,17 +64,35 @@ export function HudSystemMenuPanel({
 }
 
 function MenuLink({ href, icon, label }: { href: string; icon: ReactNode; label: string }) {
-  return (
-    <Link
-      href={href as any}
-      className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl bg-white/70 dark:bg-white/5 hover:bg-white/90 dark:hover:bg-white/10 transition-all group shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
-    >
+  const isTauriRuntime = detectTauriRuntime()
+  const className =
+    "flex flex-col items-center justify-center gap-2 p-4 rounded-2xl bg-white/70 dark:bg-white/5 hover:bg-white/90 dark:hover:bg-white/10 transition-all group shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
+
+  const content = (
+    <>
       <div className="text-slate-500/90 dark:text-white/45 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
         {icon}
       </div>
       <span className="text-[9px] font-semibold text-slate-500/90 dark:text-white/40 uppercase tracking-[0.08em] group-hover:text-slate-700 dark:group-hover:text-white/80">
         {label}
       </span>
+    </>
+  )
+
+  if (isTauriRuntime) {
+    return (
+      <a href={href} className={className}>
+        {content}
+      </a>
+    )
+  }
+
+  return (
+    <Link
+      href={href as any}
+      className={className}
+    >
+      {content}
     </Link>
   );
 }

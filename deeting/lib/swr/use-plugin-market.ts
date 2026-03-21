@@ -4,10 +4,17 @@ import useSWR from "swr"
 import type { ApiError } from "@/lib/http"
 import { fetchPluginMarket, type PluginMarketSkillItem } from "@/lib/api/plugin-market"
 
-export function usePluginMarket(query?: { q?: string; limit?: number }) {
+export function usePluginMarket(
+  query?: { q?: string; limit?: number },
+  options?: { enabled?: boolean }
+) {
+  const enabled = options?.enabled ?? true
   const key = React.useMemo(() => {
+    if (!enabled) {
+      return null
+    }
     return ["plugin-market", query?.q ?? "", query?.limit ?? 0]
-  }, [query?.q, query?.limit])
+  }, [enabled, query?.q, query?.limit])
 
   const { data, error, isLoading, isValidating, mutate } = useSWR<
     PluginMarketSkillItem[],

@@ -1,7 +1,6 @@
 import { getTranslations, setRequestLocale } from "next-intl/server"
 
 import { Container } from "@/components/ui/container"
-
 import { LogsClient } from "./components/logs-client"
 
 export default async function DashboardLogsPage({
