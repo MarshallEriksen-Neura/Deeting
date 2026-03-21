@@ -1,6 +1,7 @@
 import { NavItem } from "./types"
 
 export const DEFAULT_LOGO = "/images/logo.svg"
+export const DEFAULT_DESKTOP_LOGO = "/images/app-icon.svg"
 
 export const defaultNavItems: NavItem[] = [
   { label: "home", href: "/" },

@@ -23,6 +23,9 @@ const disabledDesktopEntries = [
   "app/[locale]/spec-agent",
   "app/[locale]/video",
   "app/[locale]/videos",
+  "public/docs",
+  "public/images/logo.svg",
+  "public/images/deeting.jpeg",
 ];
 
 const hiddenRoot = path.join(projectRoot, ".tmp", "desktop-export-disabled-routes");

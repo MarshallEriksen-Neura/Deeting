@@ -9,7 +9,6 @@ import { useI18n } from "@/hooks/use-i18n"
 
 export function AppLoadingOverlay() {
   const tCommon = useI18n("common")
-  const tChat = useI18n("chat")
   const { isTransitioning } = useThemeStore(
     useShallow((state) => ({
       isTransitioning: state.isTransitioning,
@@ -23,9 +22,9 @@ export function AppLoadingOverlay() {
   const isActive = isTransitioning || globalLoading
   const label = useMemo(() => {
     if (isTransitioning) return tCommon("loading.theme")
-    if (globalLoading) return tChat("loading.global")
+    if (globalLoading) return tCommon("loading.workspace")
     return ""
-  }, [isTransitioning, globalLoading, tCommon, tChat])
+  }, [isTransitioning, globalLoading, tCommon])
   const [isVisible, setIsVisible] = useState(false)
   const [isAnimating, setIsAnimating] = useState(false)
 
@@ -66,7 +65,7 @@ export function AppLoadingOverlay() {
       >
         <StartupShell
           tone="overlay"
-          badge={isTransitioning ? tCommon("loading.theme") : tChat("loading.global")}
+          badge={label}
           label={label}
           detail={isTransitioning ? "Applying a fresh interface skin" : "Synchronizing the active workspace"}
           steps={[

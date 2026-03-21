@@ -1,11 +1,19 @@
 "use client"
 
+import dynamic from "next/dynamic"
 import { Container } from "@/components/ui/container"
+import { Skeleton } from "@/components/ui/skeleton"
 import { useI18n } from "@/hooks/use-i18n"
 import { useUserProfile } from "@/hooks/use-user"
 import { SettingsHeader } from "./settings-header"
 import { SettingsAlerts } from "./settings-alerts"
-import { SettingsForm } from "./settings-form"
+
+const SettingsForm = dynamic(
+  () => import("./settings-form").then((mod) => mod.SettingsForm),
+  {
+    loading: () => <SettingsFormSkeleton />,
+  }
+)
 
 export function SettingsClient() {
   const t = useI18n("settings")
@@ -40,5 +48,27 @@ export function SettingsClient() {
         isTauriRuntime={isTauri}
       />
     </Container>
+  )
+}
+
+function SettingsFormSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="rounded-3xl border border-border/60 bg-card/80 p-6">
+        <div className="space-y-4">
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-28 w-full" />
+        </div>
+      </div>
+      <div className="rounded-3xl border border-border/60 bg-card/80 p-6">
+        <div className="space-y-4">
+          <Skeleton className="h-5 w-36" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </div>
+      </div>
+    </div>
   )
 }

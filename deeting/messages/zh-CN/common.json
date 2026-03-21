@@ -20,7 +20,8 @@
       "hint": "提示：导航或搜索可以帮助你重新找到需要的内容。"
     },
     "loading": {
-      "theme": "切换主题中..."
+      "theme": "切换主题中...",
+      "workspace": "同步工作区中..."
     },
     "desktopClose": {
       "title": "关闭窗口",

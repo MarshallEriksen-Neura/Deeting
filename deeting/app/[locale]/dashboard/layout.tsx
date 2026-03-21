@@ -2,6 +2,7 @@ import type { ReactNode } from "react"
 import { setRequestLocale } from "next-intl/server"
 
 import { DashboardShell } from "./dashboard-shell"
+import { DashboardMessagesProvider } from "./dashboard-messages-provider"
 
 export default async function DashboardLayout({
   children,
@@ -13,5 +14,9 @@ export default async function DashboardLayout({
   const { locale } = await params
   setRequestLocale(locale)
 
-  return <DashboardShell>{children}</DashboardShell>
+  return (
+    <DashboardMessagesProvider locale={locale}>
+      <DashboardShell>{children}</DashboardShell>
+    </DashboardMessagesProvider>
+  )
 }

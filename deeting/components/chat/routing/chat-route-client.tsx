@@ -3,6 +3,7 @@
 import * as React from "react"
 import { useParams, useSearchParams, useRouter } from "next/navigation"
 import { ChatContainer } from "@/components/chat/core"
+import { isTauriRuntime as detectTauriRuntime } from "@/lib/runtime/tauri"
 
 /**
  * ChatRouteClient - 聊天路由客户端组件
@@ -20,13 +21,7 @@ function ChatRouteClient() {
   const router = useRouter()
   const params = useParams<{ agentId?: string | string[] }>()
   const searchParams = useSearchParams()
-  const isTauriRuntime = React.useMemo(
-    () =>
-      process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
-      typeof window !== "undefined" &&
-      ("__TAURI_INTERNALS__" in window || "__TAURI__" in window),
-    []
-  )
+  const isTauriRuntime = detectTauriRuntime()
   // 缓存路径中的 agentId
   const pathAgentId = React.useMemo(() => {
     const value = params?.agentId

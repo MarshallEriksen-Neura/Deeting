@@ -16,7 +16,10 @@ export default async function LoginPage({
 }) {
   const { locale } = await params
   const messages = isDesktopExport
-    ? await loadStaticLocaleMessages(locale)
+    ? await loadStaticLocaleMessages(locale, {
+        desktopExport: true,
+        namespaces: ["common", "auth"],
+      })
     : null
   const t = isDesktopExport
     ? ((key: string) => {

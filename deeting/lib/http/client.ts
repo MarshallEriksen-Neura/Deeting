@@ -1,9 +1,11 @@
 import axios, {
+  type AxiosAdapter,
   type AxiosError,
   type AxiosInstance,
   type AxiosRequestConfig,
   type AxiosResponse,
 } from "axios"
+import { isTauriRuntime } from "@/lib/runtime/tauri"
 
 export interface ApiErrorOptions {
   status?: number
@@ -112,9 +114,6 @@ export function getAuthToken() {
  * - 开发环境且前端跑在 3000 端口时，自动指向本机 8000 端口后端
  * - 其他场景回落到相对路径 /api（使用 Next 反向代理）
  */
-// 仅通过环境变量控制后端地址；未配置时走 Next 反向代理 `/api`
-const isTauri = process.env.NEXT_PUBLIC_IS_TAURI === 'true'
-
 // In Tauri dev, we point to localhost:8000 (Python).
 // In Tauri prod, this should point to your real production API.
 // For now, we assume localhost:8000 for desktop dev.
@@ -125,10 +124,15 @@ const desktopBaseURL = envApiUrl || "http://localhost:8000"
 // which will work with Next.js rewrites if configured, or just hit the current domain.
 // Previous value "/api" caused double prefix (/api/api/v1/...) because our API definitions include /api.
 const webBaseURL = envApiUrl || ""
+const fallbackAdapter = axios.getAdapter(axios.defaults.adapter)
+let tauriAdapterPromise: Promise<AxiosAdapter | null> | null = null
 
-const apiBaseURL = isTauri ? desktopBaseURL : webBaseURL
+function shouldUseDesktopTransport() {
+  return isTauriRuntime()
+}
 
 export function resolveApiBaseUrl() {
+  const apiBaseURL = shouldUseDesktopTransport() ? desktopBaseURL : webBaseURL
   if (apiBaseURL) return apiBaseURL
   if (typeof window !== "undefined") return window.location.origin
   return ""
@@ -151,33 +155,45 @@ export function buildApiWsUrl(
 }
 
 const apiClient: AxiosInstance = axios.create({
-  baseURL: apiBaseURL,
+  baseURL: webBaseURL,
   timeout: 15000,
   withCredentials: true,
   headers: {
     Accept: "application/json",
     "Content-Type": "application/json",
   },
+  adapter: async (config) => {
+    const adapter = await resolveRequestAdapter()
+    return adapter(config)
+  },
 })
 
-// Initialize Tauri Adapter if needed
-if (isTauri && typeof window !== 'undefined') {
-  // We use an IIFE to async inject the adapter
-  (async () => {
-    try {
-       const { createTauriAdapter } = await import('./tauri-adapter');
-       const adapter = await createTauriAdapter();
-       apiClient.defaults.adapter = adapter;
-       console.log('✅ Tauri HTTP Adapter attached');
-    } catch (e) {
-       console.error('Failed to load Tauri adapter', e);
-    }
-  })();
+async function resolveRequestAdapter(): Promise<AxiosAdapter> {
+  if (!shouldUseDesktopTransport()) {
+    return fallbackAdapter
+  }
+
+  if (!tauriAdapterPromise) {
+    tauriAdapterPromise = import("./tauri-adapter")
+      .then(({ createTauriAdapter }) => createTauriAdapter())
+      .catch((error) => {
+        console.error("Failed to load Tauri adapter", error)
+        tauriAdapterPromise = null
+        return null
+      })
+  }
+
+  const adapter = await tauriAdapterPromise
+  return adapter ?? fallbackAdapter
 }
 
 apiClient.interceptors.request.use((config) => {
   const headers = config.headers
   const requestConfig = config as RequestConfig
+
+  if (shouldUseDesktopTransport() && !config.baseURL) {
+    config.baseURL = desktopBaseURL
+  }
 
   if (requestConfig.anonymous) {
     if (headers && typeof (headers as { delete?: unknown }).delete === "function") {

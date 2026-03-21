@@ -51,13 +51,8 @@ export const ChatLayout = React.memo<ChatLayoutProps>(function ChatLayout({
     router.push("/chat")
   }, [router])
 
-  // 允许无助手模式（如自动路由）时，始终渲染聊天内容
-  if (!agent && allowMissingAgent) {
-    return <>{children}</>
-  }
-
   // 加载状态
-  if (!agent && isLoadingAssistants) {
+  if (isLoadingAssistants) {
     return (
       <div className="flex flex-col items-center justify-center w-full h-full min-h-0 space-y-4">
         <div className="bg-muted p-4 rounded-full">
@@ -66,6 +61,11 @@ export const ChatLayout = React.memo<ChatLayoutProps>(function ChatLayout({
         <p className="text-muted-foreground">{t("empty.loading")}</p>
       </div>
     )
+  }
+
+  // 允许无助手模式（如自动路由）时，始终渲染聊天内容
+  if (!agent && allowMissingAgent) {
+    return <>{children}</>
   }
 
   // 代理不存在

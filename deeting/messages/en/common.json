@@ -20,7 +20,8 @@
       "hint": "Tip: Navigation or search can guide you to the right place."
     },
     "loading": {
-      "theme": "Switching theme..."
+      "theme": "Switching theme...",
+      "workspace": "Synchronizing workspace..."
     },
     "desktopClose": {
       "title": "Close Window",

@@ -1,0 +1,145 @@
+.markdown {
+  --md-link-color: var(--primary);
+  --md-fg: var(--foreground);
+  --md-fg-muted: color-mix(in oklch, var(--foreground) 68%, transparent);
+  --md-bg-muted: color-mix(in oklch, var(--foreground) 6%, transparent);
+  --md-border: color-mix(in oklch, var(--foreground) 14%, transparent);
+  --md-token-comment: color-mix(in oklch, var(--foreground) 58%, transparent);
+  --md-token-constant: color-mix(in oklch, var(--foreground) 85%, transparent);
+  --md-token-entity: var(--primary);
+  --md-token-keyword: color-mix(in oklch, var(--primary) 82%, transparent);
+  --md-token-string: color-mix(in oklch, var(--foreground) 80%, transparent);
+  --md-token-variable: color-mix(in oklch, var(--foreground) 75%, transparent);
+  color: var(--md-fg);
+  font-size: 0.9375rem;
+  line-height: 1.65;
+  background-color: transparent;
+}
+
+.assistant {
+  --md-link-color: var(--primary);
+}
+
+.user {
+  --md-link-color: color-mix(in oklch, var(--primary) 56%, #725c48 44%);
+  --md-fg: var(--chat-user-bubble-fg);
+  --md-fg-muted: var(--chat-user-bubble-muted-fg);
+  --md-bg-muted: color-mix(in oklch, var(--chat-user-bubble-fg) 8%, transparent);
+  --md-border: color-mix(in oklch, var(--chat-user-bubble-fg) 16%, transparent);
+  --md-token-comment: color-mix(in oklch, var(--chat-user-bubble-fg) 62%, transparent);
+  --md-token-constant: var(--chat-user-bubble-fg);
+  --md-token-entity: color-mix(in oklch, var(--md-link-color) 82%, var(--chat-user-bubble-fg) 18%);
+  --md-token-keyword: color-mix(in oklch, var(--md-link-color) 64%, var(--chat-user-bubble-fg) 36%);
+  --md-token-string: color-mix(in oklch, var(--chat-user-bubble-fg) 88%, var(--md-link-color) 12%);
+  --md-token-variable: color-mix(in oklch, var(--chat-user-bubble-fg) 82%, var(--md-link-color) 18%);
+}
+
+.markdown :where(a) {
+  color: var(--md-link-color);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-thickness: from-font;
+  transition: opacity 0.2s ease;
+}
+
+.markdown :where(a:hover) {
+  opacity: 0.85;
+}
+
+.markdown :where(p, ul, ol, blockquote, pre, table) {
+  margin-top: 0.6rem;
+  margin-bottom: 0.6rem;
+}
+
+.markdown :where(li + li) {
+  margin-top: 0.4rem;
+}
+
+.markdown :where(ul, ol) {
+  padding-left: 1.25rem;
+}
+
+.markdown :where(blockquote) {
+  color: var(--md-fg-muted);
+}
+
+.markdown :where(table) {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.markdown :where(th, td) {
+  border: 1px solid var(--md-border);
+}
+
+.markdown :where(th) {
+  background: var(--md-bg-muted);
+}
+
+.markdown :where(tr) {
+  background-color: transparent;
+}
+
+.markdown :where(tr:nth-child(2n)) {
+  background-color: color-mix(in oklch, var(--md-fg) 4%, transparent);
+}
+
+.markdown :global(.token.comment),
+.markdown :global(.token.prolog),
+.markdown :global(.token.doctype),
+.markdown :global(.token.cdata) {
+  color: var(--md-token-comment);
+}
+
+.markdown :global(.token.punctuation) {
+  color: var(--md-fg-muted);
+}
+
+.markdown :global(.token.property),
+.markdown :global(.token.tag),
+.markdown :global(.token.boolean),
+.markdown :global(.token.number),
+.markdown :global(.token.constant),
+.markdown :global(.token.symbol),
+.markdown :global(.token.deleted) {
+  color: var(--md-token-constant);
+}
+
+.markdown :global(.token.selector),
+.markdown :global(.token.attr-name),
+.markdown :global(.token.string),
+.markdown :global(.token.char),
+.markdown :global(.token.builtin),
+.markdown :global(.token.inserted) {
+  color: var(--md-token-string);
+}
+
+.markdown :global(.token.operator),
+.markdown :global(.token.entity),
+.markdown :global(.token.url),
+.markdown :global(.language-css .token.string),
+.markdown :global(.style .token.string),
+.markdown :global(.token.function),
+.markdown :global(.token.class-name) {
+  color: var(--md-token-entity);
+}
+
+.markdown :global(.token.atrule),
+.markdown :global(.token.attr-value),
+.markdown :global(.token.keyword) {
+  color: var(--md-token-keyword);
+}
+
+.markdown :global(.token.regex),
+.markdown :global(.token.important),
+.markdown :global(.token.variable) {
+  color: var(--md-token-variable);
+}
+
+.markdown :global(.token.bold) {
+  font-weight: 600;
+}
+
+.markdown :global(.token.italic) {
+  font-style: italic;
+}

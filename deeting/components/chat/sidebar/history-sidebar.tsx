@@ -37,6 +37,7 @@ import { useChatStore } from '@/store/chat-store';
 import { useChatMessagingService } from '@/hooks/chat/use-chat-messaging-service';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/lib/utils';
+import { isTauriRuntime as detectTauriRuntime } from '@/lib/runtime/tauri';
 import type { ConversationSessionItem } from '@/lib/api/conversations';
 
 interface HistorySidebarProps {
@@ -48,10 +49,7 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
   const t = useI18n('chat');
   const router = useRouter();
   const searchParams = useSearchParams();
-  const isTauriRuntime =
-    process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
-    typeof window !== "undefined" &&
-    ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
+  const isTauriRuntime = detectTauriRuntime();
   const [search, setSearch] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const [actionSessionId, setActionSessionId] = useState<string | null>(null);

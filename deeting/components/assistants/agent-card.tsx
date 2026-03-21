@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import dynamic from "next/dynamic"
 import { Download, Star, Plus, Play, Sparkles, Pencil, Trash2 } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { Badge } from "@/components/ui/badge"
@@ -24,9 +25,13 @@ import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { getIconComponent } from "@/lib/constants/provider-icons"
-import { AgentModalContent } from "./agent-modal-content"
 import { getAssistantStatusLabel } from "./assistant-status"
 import type { AssistantCardData } from "./types"
+
+const AgentModalContent = dynamic(
+  () => import("./agent-modal-content").then((mod) => mod.AgentModalContent),
+  { ssr: false }
+)
 
 interface AgentCardProps {
   agent: AssistantCardData
@@ -48,6 +53,7 @@ export function AgentCard({ agent, onInstall, onPreview, onEdit, onDelete }: Age
   const isInstalled = agent.installed
   const [isInstalling, setIsInstalling] = React.useState(false)
   const [isDeleting, setIsDeleting] = React.useState(false)
+  const [detailsOpen, setDetailsOpen] = React.useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [followLatest, setFollowLatest] = React.useState(true)
   const [openPopover, setOpenPopover] = React.useState(false)
@@ -104,7 +110,7 @@ export function AgentCard({ agent, onInstall, onPreview, onEdit, onDelete }: Age
   }
 
   return (
-    <Dialog>
+    <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
       <div className="group relative transition-all duration-300 hover:-translate-y-1 hover:shadow-xl rounded-xl bg-white dark:bg-zinc-900 border border-border overflow-hidden flex flex-col h-full">
         
         {/* 卡片顶部渐变装饰 */}
@@ -257,7 +263,9 @@ export function AgentCard({ agent, onInstall, onPreview, onEdit, onDelete }: Age
       </div>
 
       {/* 详情弹窗内容 */}
-      <AgentModalContent agent={agent} onInstall={onInstall} onPreview={onPreview} />
+      {detailsOpen ? (
+        <AgentModalContent agent={agent} onInstall={onInstall} onPreview={onPreview} />
+      ) : null}
     </Dialog>
   )
 }

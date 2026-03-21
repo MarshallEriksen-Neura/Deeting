@@ -1,8 +1,5 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "fumadocs-ui/css/neutral.css";
-@import "fumadocs-ui/css/preset.css";
-@import "github-markdown-css/github-markdown.css";
 
 /* ============================================
    Tailwind v4 dark mode variant
@@ -179,68 +176,6 @@ body {
   transition: background-color 0.3s ease-out, color 0.3s ease-out;
 }
 
-/* ============================================
-   GitHub Markdown (Chat)
-   ============================================ */
-.markdown-body {
-  background-color: transparent;
-  padding: 0;
-}
-
-.chat-markdown {
-  --chat-link-color: var(--primary);
-  font-size: 0.9375rem;
-  line-height: 1.65;
-}
-
-.chat-markdown a {
-  color: var(--chat-link-color);
-  text-decoration: underline;
-  text-underline-offset: 4px;
-  text-decoration-thickness: from-font;
-  transition: opacity 0.2s ease;
-}
-
-.chat-markdown a:hover {
-  opacity: 0.85;
-}
-
-.chat-markdown p,
-.chat-markdown ul,
-.chat-markdown ol,
-.chat-markdown blockquote,
-.chat-markdown pre,
-.chat-markdown table {
-  margin-top: 0.6rem;
-  margin-bottom: 0.6rem;
-}
-
-.chat-markdown li + li {
-  margin-top: 0.4rem;
-}
-
-.chat-markdown > pre {
-  background-color: color-mix(in oklch, var(--bgColor-muted) 85%, transparent);
-  border: 1px solid var(--borderColor-default);
-  border-radius: 0.6rem;
-  padding: 0.75rem 0.9rem;
-}
-
-.chat-markdown-user {
-  --chat-link-color: #7dd3fc;
-  --fgColor-default: var(--primary-foreground);
-  --fgColor-muted: color-mix(in oklch, var(--primary-foreground) 75%, transparent);
-  --fgColor-accent: var(--chat-link-color);
-  --bgColor-muted: color-mix(in oklch, var(--primary-foreground) 12%, transparent);
-  --borderColor-default: color-mix(in oklch, var(--primary-foreground) 24%, transparent);
-  --color-prettylights-syntax-comment: color-mix(in oklch, var(--primary-foreground) 70%, transparent);
-  --color-prettylights-syntax-constant: var(--primary-foreground);
-  --color-prettylights-syntax-entity: var(--primary-foreground);
-  --color-prettylights-syntax-keyword: var(--primary-foreground);
-  --color-prettylights-syntax-string: var(--primary-foreground);
-  --color-prettylights-syntax-variable: var(--primary-foreground);
-}
-
 .chat-user-bubble {
   background: var(--chat-user-bubble-bg);
   border-color: var(--chat-user-bubble-border);
@@ -276,104 +211,6 @@ body {
   background: var(--chat-user-bubble-attachment-bg);
   border-color: var(--chat-user-bubble-border);
   color: var(--chat-user-bubble-fg);
-}
-
-.chat-markdown-assistant {
-  --chat-link-color: var(--primary);
-  --fgColor-default: var(--foreground);
-  --fgColor-muted: color-mix(in oklch, var(--foreground) 68%, transparent);
-  --fgColor-accent: var(--chat-link-color);
-  --bgColor-muted: color-mix(in oklch, var(--foreground) 6%, transparent);
-  --borderColor-default: color-mix(in oklch, var(--foreground) 14%, transparent);
-  --color-prettylights-syntax-comment: color-mix(in oklch, var(--foreground) 58%, transparent);
-  --color-prettylights-syntax-constant: color-mix(in oklch, var(--foreground) 85%, transparent);
-  --color-prettylights-syntax-entity: var(--primary);
-  --color-prettylights-syntax-keyword: color-mix(in oklch, var(--primary) 82%, transparent);
-  --color-prettylights-syntax-string: color-mix(in oklch, var(--foreground) 80%, transparent);
-  --color-prettylights-syntax-variable: color-mix(in oklch, var(--foreground) 75%, transparent);
-}
-
-.chat-markdown-assistant :where(p, ul, ol, li, blockquote, table) {
-  font-weight: 500;
-}
-
-/* Override github-markdown-css table row backgrounds to prevent
-   text being hidden by opaque row colors inside chat bubbles.
-   Use high-specificity selectors to beat .markdown-body[data-theme] rules. */
-.markdown-body.chat-markdown table tr,
-.markdown-body.chat-markdown[data-theme="light"] table tr,
-.markdown-body.chat-markdown[data-theme="dark"] table tr {
-  background-color: transparent;
-}
-
-.markdown-body.chat-markdown table tr:nth-child(2n),
-.markdown-body.chat-markdown[data-theme="light"] table tr:nth-child(2n),
-.markdown-body.chat-markdown[data-theme="dark"] table tr:nth-child(2n) {
-  background-color: color-mix(in oklch, var(--fgColor-default, currentColor) 4%, transparent);
-}
-
-/* Prism token mapping to GitHub variables */
-.markdown-body .token.comment,
-.markdown-body .token.prolog,
-.markdown-body .token.doctype,
-.markdown-body .token.cdata {
-  color: var(--color-prettylights-syntax-comment);
-}
-
-.markdown-body .token.punctuation {
-  color: var(--fgColor-muted);
-}
-
-.markdown-body .token.property,
-.markdown-body .token.tag,
-.markdown-body .token.boolean,
-.markdown-body .token.number,
-.markdown-body .token.constant,
-.markdown-body .token.symbol,
-.markdown-body .token.deleted {
-  color: var(--color-prettylights-syntax-constant);
-}
-
-.markdown-body .token.selector,
-.markdown-body .token.attr-name,
-.markdown-body .token.string,
-.markdown-body .token.char,
-.markdown-body .token.builtin,
-.markdown-body .token.inserted {
-  color: var(--color-prettylights-syntax-string);
-}
-
-.markdown-body .token.operator,
-.markdown-body .token.entity,
-.markdown-body .token.url,
-.markdown-body .language-css .token.string,
-.markdown-body .style .token.string {
-  color: var(--color-prettylights-syntax-entity);
-}
-
-.markdown-body .token.atrule,
-.markdown-body .token.attr-value,
-.markdown-body .token.keyword {
-  color: var(--color-prettylights-syntax-keyword);
-}
-
-.markdown-body .token.function,
-.markdown-body .token.class-name {
-  color: var(--color-prettylights-syntax-entity);
-}
-
-.markdown-body .token.regex,
-.markdown-body .token.important,
-.markdown-body .token.variable {
-  color: var(--color-prettylights-syntax-variable);
-}
-
-.markdown-body .token.bold {
-  font-weight: var(--base-text-weight-semibold);
-}
-
-.markdown-body .token.italic {
-  font-style: italic;
 }
 
 /* Light mode frosted glass veil */

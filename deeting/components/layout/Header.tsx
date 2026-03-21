@@ -21,12 +21,12 @@ import { LanguageSwitcher } from "./header/LanguageSwitcher"
 import { NavLinks } from "./header/NavLinks"
 import { getRuntimeHeaderNavItems } from "./header/nav-runtime"
 import { UserMenu } from "./header/UserMenu"
-import { DEFAULT_LOGO, defaultNavItems } from "./header/constants"
+import { DEFAULT_DESKTOP_LOGO, DEFAULT_LOGO, defaultNavItems } from "./header/constants"
 import { HeaderProps } from "./header/types"
 import { shouldHideGlobalHeader } from "./header/visibility"
 
 export function Header({
-  logoSrc = DEFAULT_LOGO,
+  logoSrc = DEFAULT_DESKTOP_LOGO,
   logoText = "AI Higress",
   navItems = defaultNavItems,
   userName,
@@ -44,6 +44,8 @@ export function Header({
   const { logout } = useAuthService()
   const [mounted, setMounted] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const resolvedLogoSrc = logoSrc || DEFAULT_DESKTOP_LOGO
+  const showWordmark = resolvedLogoSrc === DEFAULT_DESKTOP_LOGO || resolvedLogoSrc === DEFAULT_LOGO
 
   useEffect(() => {
     setMounted(true)
@@ -83,6 +85,8 @@ export function Header({
 
     return { ...item, label, isActive }
   })
+
+  const resolvedUserAvatarSrc = profile?.avatar_url ?? userAvatarSrc
 
   return (
     <header
@@ -126,16 +130,21 @@ export function Header({
           {/* Logo */}
           <Link
             href="/"
-            className="flex items-center shrink-0 transition-all duration-200 ease-out hover:opacity-75 active:scale-95"
+            className="flex items-center gap-2.5 shrink-0 transition-all duration-200 ease-out hover:opacity-75 active:scale-95"
           >
             <Image
-              src={logoSrc}
+              src={resolvedLogoSrc}
               alt={logoText}
-              width={200}
-              height={40}
-              className="h-7 w-auto object-contain sm:h-8 lg:h-9"
+              width={36}
+              height={36}
+              className="h-8 w-8 object-contain sm:h-9 sm:w-9"
               priority
             />
+            {showWordmark ? (
+              <span className="text-base font-semibold tracking-tight text-slate-800 dark:text-slate-100 sm:text-lg">
+                {logoText}
+              </span>
+            ) : null}
           </Link>
 
           {/* Desktop nav links */}
@@ -157,7 +166,7 @@ export function Header({
               userName={profile?.username ?? profile?.email ?? userName ?? tHeader("guest")}
               userEmail={profile?.email ?? userEmail ?? ""}
               isAdmin={Boolean(profile?.is_superuser)}
-              userAvatarSrc={userAvatarSrc}
+              userAvatarSrc={resolvedUserAvatarSrc}
               onLogout={logout}
             />
           ) : (

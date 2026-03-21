@@ -101,6 +101,7 @@ export function setTaskProgressCallback(callback: (task: any) => void) {
 export function useNotificationRealtime(options: RealtimeOptions = {}) {
   const { enabled = true } = options
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
+  const isDesktopRuntime = process.env.NEXT_PUBLIC_IS_TAURI === "true"
   const {
     setList,
     upsert,
@@ -224,18 +225,19 @@ export function useNotificationRealtime(options: RealtimeOptions = {}) {
       return
     }
 
-    if (process.env.NEXT_PUBLIC_IS_TAURI === "true") {
+    if (isDesktopRuntime) {
       startLocalMonitorWorker({ accessToken: token }).catch((error) => {
         console.warn("[monitor-worker] start failed", error)
       })
     }
 
-    // 在生产环境中不将token放在URL中，而是依赖cookies进行认证
-    // 只在开发环境中保留URL参数方式以方便调试
-    const isProd = process.env.NODE_ENV === 'production';
-    const wsUrl = isProd 
-      ? buildApiWsUrl("/api/v1/notifications/ws") 
-      : buildApiWsUrl("/api/v1/notifications/ws", { token });
+    // The current notification websocket backend only authenticates via bearer/query token.
+    // Desktop packaged builds cannot rely on browser cookies here, so keep the explicit token.
+    const wsParams =
+      token && (isDesktopRuntime || process.env.NODE_ENV !== "production")
+        ? { token }
+        : undefined
+    const wsUrl = buildApiWsUrl("/api/v1/notifications/ws", wsParams)
       
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
@@ -301,7 +303,7 @@ export function useNotificationRealtime(options: RealtimeOptions = {}) {
     ws.onerror = () => {
       ws.close()
     }
-  }, [enabled, isAuthenticated, scheduleReconnect, setList, setUnreadCount, startPing, stopPing, upsert])
+  }, [enabled, isAuthenticated, isDesktopRuntime, scheduleReconnect, setList, setUnreadCount, startPing, stopPing, upsert])
 
   useEffect(() => {
     if (process.env.NEXT_PUBLIC_IS_TAURI !== "true") {

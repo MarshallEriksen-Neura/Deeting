@@ -13,6 +13,7 @@ import { useChatStore, type ChatAssistant } from '@/store/chat-store';
 import { useShallow } from 'zustand/react/shallow';
 import { useChatService } from '@/hooks/use-chat-service';
 import { useI18n } from '@/hooks/use-i18n';
+import { isTauriRuntime as detectTauriRuntime } from '@/lib/runtime/tauri';
 import { ModelPicker, resolveModelVisual } from '@/components/models/model-picker';
 import { resolveStatusDetail } from '@/lib/chat/status-detail';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -107,13 +108,7 @@ export default function HUD() {
   });
   const { selectedModelId, setSelectedModelId } = useImageGenerationStore();
 
-  const isTauriRuntime = useMemo(
-    () =>
-      process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
-      typeof window !== "undefined" &&
-      ("__TAURI_INTERNALS__" in window || "__TAURI__" in window),
-    []
-  );
+  const isTauriRuntime = detectTauriRuntime();
 
   useEffect(() => {
     if (isImage) return;

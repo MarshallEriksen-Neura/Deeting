@@ -7,12 +7,24 @@ const withMDX = createMDX({
   configPath: "./source.config.ts",
   outDir: ".source",
 });
+const isDesktopExport = process.env.DEETING_DESKTOP_EXPORT === "true"
 
 const nextConfig: NextConfig = {
-  output: process.env.DEETING_DESKTOP_EXPORT === "true" ? "export" : undefined,
+  output: isDesktopExport ? "export" : undefined,
   images: {
     unoptimized: true,
   },
+  experimental: {
+    optimizePackageImports: [
+      "lucide-react",
+      "recharts",
+      "react-icons",
+      "@iconify/react",
+      "date-fns",
+    ],
+  },
 };
 
-export default withMDX(withNextIntl(nextConfig));
+const withProjectPlugins = isDesktopExport ? withNextIntl : (config: NextConfig) => withMDX(withNextIntl(config))
+
+export default withProjectPlugins(nextConfig);

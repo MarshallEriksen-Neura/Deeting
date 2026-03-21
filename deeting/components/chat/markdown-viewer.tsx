@@ -1,6 +1,5 @@
 "use client"
 
-import { useTheme } from "next-themes"
 import { isValidElement } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -8,9 +7,11 @@ import remarkBreaks from "remark-breaks"
 import { cn } from "@/lib/utils"
 import { CodeBlock } from "@/components/chat/code-block"
 import { ImageLightbox } from "@/components/ui/image-lightbox"
+import styles from "./markdown-viewer.module.css"
 
 const INLINE_FENCE_REGEX = /```([a-zA-Z0-9_-]+)?\s+([^\n`]+?)```/g
 const FENCE_DELIMITER_REGEX = /```/g
+const MARKDOWN_MARKER_CLASS_REGEX = /\bchat-markdown(?:-(?:assistant|user))?\b/g
 
 function normalizeInlineFences(raw: string) {
   return raw.replace(INLINE_FENCE_REGEX, (_match, lang, code) => {
@@ -44,15 +45,21 @@ export function MarkdownViewer({
   content: string
   className?: string
 }) {
-  const { resolvedTheme } = useTheme()
-  const dataTheme = resolvedTheme === "dark" ? "dark" : "light"
-
   const normalizedContent = normalizeMarkdownContent(content)
+  const isUser = className?.includes("chat-markdown-user") ?? false
+  const isAssistant = className?.includes("chat-markdown-assistant") ?? false
+  const normalizedClassName =
+    className?.replace(MARKDOWN_MARKER_CLASS_REGEX, " ").trim() || undefined
 
   return (
     <div
-      data-theme={dataTheme}
-      className={cn("markdown-body chat-markdown break-words", className)}
+      className={cn(
+        styles.markdown,
+        isUser ? styles.user : undefined,
+        !isUser && isAssistant ? styles.assistant : undefined,
+        "break-words",
+        normalizedClassName
+      )}
     >
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkBreaks]}

@@ -9,6 +9,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { useChatStore } from '@/store/chat-store';
 import { useI18n } from '@/hooks/use-i18n';
 import { useChatService } from '@/hooks/use-chat-service';
+import { isTauriRuntime as detectTauriRuntime } from '@/lib/runtime/tauri';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Image from 'next/image';
@@ -95,13 +96,7 @@ function ControlsContainer() {
     }))
   );
 
-  const isTauriRuntime = useMemo(
-    () =>
-      process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
-      typeof window !== "undefined" &&
-      ("__TAURI_INTERNALS__" in window || "__TAURI__" in window),
-    []
-  );
+  const isTauriRuntime = detectTauriRuntime();
 
   const { assistants: serviceAssistants } = useChatService({ enabled: !isTauriRuntime });
 

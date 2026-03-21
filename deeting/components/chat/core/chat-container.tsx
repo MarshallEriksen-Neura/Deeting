@@ -3,6 +3,7 @@
 import * as React from "react"
 import { useSearchParams } from "next/navigation"
 import { useChatStore } from "@/store/chat-store"
+import { isTauriRuntime as detectTauriRuntime } from "@/lib/runtime/tauri"
 import { ChatLayout } from "./chat-layout"
 import { ChatContent } from "./chat-content"
 import { ChatErrorBoundary } from "./chat-error-boundary"
@@ -33,13 +34,7 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
   const initialized = useChatStore((state) => state.initialized)
 
   // 环境检测
-  const isTauriRuntime = React.useMemo(
-    () =>
-      process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
-      typeof window !== "undefined" &&
-      ("__TAURI_INTERNALS__" in window || "__TAURI__" in window),
-    []
-  )
+  const isTauriRuntime = detectTauriRuntime()
 
   // 获取 sessionId（稳定计算，不依赖 state）
   const sessionId = React.useMemo(() => {

@@ -2,9 +2,7 @@ import type { CSSProperties } from "react";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthSync } from "@/components/auth/auth-sync";
 import { DesktopOAuthListener } from "@/components/auth/desktop-oauth-listener";
-import { DownloadAppModal } from "@/components/ui/modal/download-app-modal";
-import { DesktopUpdateGuard } from "@/components/common/desktop-update-guard";
-import { BridgeMonitor } from "@/components/bridge/bridge-monitor";
+import { DeferredRootEnhancements } from "@/components/common/deferred-root-enhancements";
 import { PlatformProvider } from "@/lib/platform/provider";
 import { TitleBar } from "@/components/common/title-bar";
 import { DesktopStartupReady } from "@/components/common/desktop-startup-ready";
@@ -48,9 +46,10 @@ export default function RootLayout({
             <AuthSync />
             {isTauri && <DesktopOAuthListener />}
             {children}
-            <DownloadAppModal />
-            {isTauri && <DesktopUpdateGuard />}
-            {isTauri && isDesktopUserCloudSyncEnabled && <BridgeMonitor />}
+            <DeferredRootEnhancements
+              isTauri={isTauri}
+              enableBridgeMonitor={isDesktopUserCloudSyncEnabled}
+            />
           </ThemeProvider>
         </PlatformProvider>
       </body>

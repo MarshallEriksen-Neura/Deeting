@@ -1,10 +1,18 @@
+import dynamic from "next/dynamic"
 import { setRequestLocale } from "next-intl/server"
 import { useTranslations } from "next-intl"
 import { Metadata } from "next"
-import { Globe } from "lucide-react"
+import { Skeleton } from "@/components/ui/skeleton"
 
 import { Container } from "@/components/ui/container"
-import { PublicMarketClient } from "./client"
+import { DesktopRouteMessagesProvider } from "@/components/common/desktop-route-messages-provider"
+
+const PublicMarketClient = dynamic(
+  () => import("./client").then((mod) => mod.PublicMarketClient),
+  {
+    loading: () => <MarketClientSkeleton />,
+  }
+)
 
 export const metadata: Metadata = {
   title: 'AI Model Marketplace - Connect OpenAI, Claude, Ollama',
@@ -40,7 +48,14 @@ export default async function PublicMarketPage({
      console.error("Failed to fetch market data server-side:", e)
   }
 
-  return <PublicMarketPageContent initialData={initialData} />
+  return (
+    <DesktopRouteMessagesProvider
+      locale={locale}
+      namespaces={["common", "providers"]}
+    >
+      <PublicMarketPageContent initialData={initialData} />
+    </DesktopRouteMessagesProvider>
+  )
 }
 
 function PublicMarketPageContent({ initialData }: { initialData: any }) {
@@ -59,5 +74,22 @@ function PublicMarketPageContent({ initialData }: { initialData: any }) {
       
       <PublicMarketClient initialData={initialData} />
     </Container>
+  )
+}
+
+function MarketClientSkeleton() {
+  return (
+    <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+      {Array.from({ length: 6 }).map((_, index) => (
+        <div key={index} className="rounded-3xl border border-border/60 bg-card/80 p-6">
+          <div className="space-y-4">
+            <Skeleton className="h-6 w-32" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-4/5" />
+            <Skeleton className="h-28 w-full" />
+          </div>
+        </div>
+      ))}
+    </div>
   )
 }
