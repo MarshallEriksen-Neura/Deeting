@@ -64,6 +64,9 @@ def main() -> int:
     if not protoc_path.exists():
         raise SystemExit(f"Expected protoc binary was not found at {protoc_path}")
 
+    if os.name != "nt":
+        protoc_path.chmod(protoc_path.stat().st_mode | 0o111)
+
     append_env_file(os.environ.get("GITHUB_PATH"), str(protoc_path.parent))
     append_env_file(os.environ.get("GITHUB_ENV"), f"PROTOC={protoc_path}")
 
