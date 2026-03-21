@@ -1,17 +1,10 @@
 import React from "react"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 
-const mockReplace = jest.fn()
 const mockUseAuthStore = jest.fn()
 const mockHasHydrated = jest.fn()
 const mockOnHydrate = jest.fn(() => jest.fn())
 const mockOnFinishHydration = jest.fn(() => jest.fn())
-
-jest.mock("next/navigation", () => ({
-  usePathname: () => "/chat",
-  useSearchParams: () => new URLSearchParams("agentId=agent-1"),
-  useRouter: () => ({ replace: mockReplace }),
-}))
 
 jest.mock("@/store/auth-store", () => {
   const store = ((selector: (state: { isAuthenticated: boolean }) => unknown) =>
@@ -25,9 +18,11 @@ jest.mock("@/store/auth-store", () => {
 })
 
 describe("ChatAuthGuard", () => {
+  const originalLocation = window.location
+  let mockLocationReplace: jest.Mock
+
   beforeEach(() => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
-    mockReplace.mockReset()
     mockHasHydrated.mockReset()
     mockOnHydrate.mockReset()
     mockOnFinishHydration.mockReset()
@@ -39,6 +34,32 @@ describe("ChatAuthGuard", () => {
       selector({ isAuthenticated: false })
     )
     ;(global as typeof globalThis & { __TAURI_INTERNALS__?: Record<string, unknown> }).__TAURI_INTERNALS__ = {}
+    mockLocationReplace = jest.fn()
+    delete (window as typeof window & { location?: Location }).location
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: {
+        ...originalLocation,
+        pathname: "/chat",
+        search: "?agentId=agent-1",
+        replace: mockLocationReplace,
+      },
+    })
+  })
+
+  afterEach(() => {
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: originalLocation,
+    })
+  })
+
+  it("builds the login callback from the current browser location", async () => {
+    const { buildChatLoginTarget } = await import("../chat-auth-guard")
+
+    expect(buildChatLoginTarget("/chat", "?agentId=agent-1")).toBe(
+      "/login?callbackUrl=%2Fchat%3FagentId%3Dagent-1"
+    )
   })
 
   it("shows a clickable desktop auth fallback after auto-opening login", async () => {
@@ -51,12 +72,12 @@ describe("ChatAuthGuard", () => {
     )
 
     await waitFor(() => {
-      expect(mockReplace).toHaveBeenCalledWith("/login?callbackUrl=%2Fchat%3FagentId%3Dagent-1")
+      expect(mockLocationReplace).toHaveBeenCalledWith("/login?callbackUrl=%2Fchat%3FagentId%3Dagent-1")
     })
 
     expect(screen.getByText("Sign in to continue")).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Continue login" }))
-    expect(mockReplace).toHaveBeenCalledTimes(2)
+    expect(mockLocationReplace).toHaveBeenCalledTimes(2)
   })
 })

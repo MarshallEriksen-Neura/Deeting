@@ -3,9 +3,9 @@
 import * as React from "react"
 import Image from "next/image"
 import { FileText } from "lucide-react"
+import dynamic from "next/dynamic"
 import { cn } from "@/lib/utils"
 import { AIResponseBubble } from "./ai-response-bubble"
-import { CompareModelDialog } from "./compare-model-dialog"
 import { CompareResponseShell } from "./compare-response-shell"
 import { MessageActions } from "./message-actions"
 import { MarkdownViewer } from "@/components/chat/markdown-viewer"
@@ -16,6 +16,11 @@ import { ImageLightbox } from "@/components/ui/image-lightbox"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
 import { formatFileSize } from "@/lib/utils/file"
 import { useMessageToolApproval } from "@/hooks/chat/use-message-tool-approval"
+
+const CompareModelDialog = dynamic(
+  () => import("./compare-model-dialog").then((module) => module.CompareModelDialog),
+  { ssr: false }
+)
 
 interface MessageItemProps {
   message: Message
@@ -237,7 +242,7 @@ export const MessageItem = React.memo<MessageItemProps>(
                 </span>
               </div>
             </div>
-            {onCompareWithModel ? (
+            {onCompareWithModel && compareDialogOpen ? (
               <CompareModelDialog
                 open={compareDialogOpen}
                 onOpenChange={setCompareDialogOpen}

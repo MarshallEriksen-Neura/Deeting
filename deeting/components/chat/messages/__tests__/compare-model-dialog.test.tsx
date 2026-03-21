@@ -7,7 +7,7 @@ jest.mock("@/hooks/use-i18n", () => ({
   useI18n: () => (key: string) => key,
 }))
 
-jest.mock("@/components/models/model-picker", () => ({
+jest.mock("@/components/models/model-visual", () => ({
   resolveModelVisual: () => ({
     icon: ({ className }: { className?: string }) => <svg data-testid="model-icon" className={className} />,
     color: "text-foreground",

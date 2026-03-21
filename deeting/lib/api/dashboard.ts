@@ -71,12 +71,21 @@ export const RecentErrorSchema = z.object({
   errorCode: z.string().nullish().transform((value) => value ?? undefined),
 })
 
+export const DashboardOverviewSchema = z.object({
+  stats: DashboardStatsSchema,
+  tokenThroughput: TokenThroughputSchema,
+  smartRouterStats: SmartRouterStatsSchema,
+  providerHealth: z.array(ProviderHealthSchema),
+  recentErrors: z.array(RecentErrorSchema),
+})
+
 // Types
 export type DashboardStats = z.infer<typeof DashboardStatsSchema>
 export type TokenThroughput = z.infer<typeof TokenThroughputSchema>
 export type SmartRouterStats = z.infer<typeof SmartRouterStatsSchema>
 export type ProviderHealth = z.infer<typeof ProviderHealthSchema>
 export type RecentError = z.infer<typeof RecentErrorSchema>
+export type DashboardOverview = z.infer<typeof DashboardOverviewSchema>
 
 // =====================
 // API Functions
@@ -86,6 +95,7 @@ const DASHBOARD_BASE = "/api/v1/dashboard"
 const HOUR_MS = 60 * 60 * 1000
 const DAY_MS = 24 * HOUR_MS
 const LOCAL_LOG_PAGE_SIZE = 500
+const LOCAL_DASHBOARD_CACHE_TTL_MS = 5_000
 export type DashboardDataSource = "auto" | "local" | "cloud"
 
 const isTauriRuntime = () =>
@@ -110,6 +120,23 @@ type LocalProviderModel = {
   is_active?: boolean
   extra_meta?: Record<string, unknown> | null
 }
+
+type LocalGatewayLogStats = Awaited<ReturnType<typeof fetchAdminGatewayLogStats>>
+type LocalGatewayLogCacheEntry = {
+  maxItems: number
+  items: GatewayLogItem[]
+  fetchedAt: number
+}
+
+type LocalGatewayStatsCacheEntry = {
+  value: LocalGatewayLogStats
+  fetchedAt: number
+}
+
+let localGatewayLogCache: LocalGatewayLogCacheEntry | null = null
+let localGatewayLogInflight: { maxItems: number; promise: Promise<GatewayLogItem[]> } | null = null
+let localGatewayStatsCache: LocalGatewayStatsCacheEntry | null = null
+let localGatewayStatsInflight: Promise<LocalGatewayLogStats> | null = null
 
 function toTimestamp(value?: string | null): number | null {
   if (!value) return null
@@ -151,24 +178,279 @@ function getPreferredLatency(log: GatewayLogItem): number {
   return duration > 0 ? duration : 0
 }
 
+function isLocalDashboardCacheFresh(fetchedAt: number): boolean {
+  return Date.now() - fetchedAt < LOCAL_DASHBOARD_CACHE_TTL_MS
+}
+
 async function loadLocalGatewayLogs(maxItems: number): Promise<GatewayLogItem[]> {
   const safeMax = Math.max(1, Math.floor(maxItems))
+
+  if (
+    localGatewayLogCache &&
+    localGatewayLogCache.maxItems >= safeMax &&
+    isLocalDashboardCacheFresh(localGatewayLogCache.fetchedAt)
+  ) {
+    return localGatewayLogCache.items.slice(0, safeMax)
+  }
+
+  if (localGatewayLogInflight && localGatewayLogInflight.maxItems >= safeMax) {
+    const items = await localGatewayLogInflight.promise
+    return items.slice(0, safeMax)
+  }
+
   const items: GatewayLogItem[] = []
   let skip = 0
+  const promise = (async () => {
+    while (skip < safeMax) {
+      const limit = Math.min(LOCAL_LOG_PAGE_SIZE, safeMax - skip)
+      const page = await fetchAdminGatewayLogs({ skip, limit })
+      const pageItems = Array.isArray(page.items) ? page.items : []
+      if (pageItems.length === 0) break
+      items.push(...pageItems)
+      skip += pageItems.length
+      if (skip >= page.total || pageItems.length < limit) {
+        break
+      }
+    }
 
-  while (skip < safeMax) {
-    const limit = Math.min(LOCAL_LOG_PAGE_SIZE, safeMax - skip)
-    const page = await fetchAdminGatewayLogs({ skip, limit })
-    const pageItems = Array.isArray(page.items) ? page.items : []
-    if (pageItems.length === 0) break
-    items.push(...pageItems)
-    skip += pageItems.length
-    if (skip >= page.total || pageItems.length < limit) {
-      break
+    localGatewayLogCache = {
+      maxItems: safeMax,
+      items,
+      fetchedAt: Date.now(),
+    }
+
+    return items
+  })()
+
+  localGatewayLogInflight = {
+    maxItems: safeMax,
+    promise,
+  }
+
+  try {
+    const resolved = await promise
+    return resolved.slice(0, safeMax)
+  } finally {
+    if (localGatewayLogInflight?.promise === promise) {
+      localGatewayLogInflight = null
+    }
+  }
+}
+
+async function loadLocalGatewayStats(): Promise<LocalGatewayLogStats> {
+  if (localGatewayStatsCache && isLocalDashboardCacheFresh(localGatewayStatsCache.fetchedAt)) {
+    return localGatewayStatsCache.value
+  }
+
+  if (localGatewayStatsInflight) {
+    return localGatewayStatsInflight
+  }
+
+  const promise = (async () => {
+    const value = await fetchAdminGatewayLogStats()
+    localGatewayStatsCache = {
+      value,
+      fetchedAt: Date.now(),
+    }
+    return value
+  })()
+
+  localGatewayStatsInflight = promise
+
+  try {
+    return await promise
+  } finally {
+    if (localGatewayStatsInflight === promise) {
+      localGatewayStatsInflight = null
+    }
+  }
+}
+
+async function loadLocalProviderHealth(): Promise<ProviderHealth[]> {
+  const data = await invokeTauri<unknown[]>("list_local_provider_health")
+  return z.array(ProviderHealthSchema).parse(data)
+}
+
+function computeDashboardStatsFromLocal(
+  localStats: LocalGatewayLogStats,
+  logs: GatewayLogItem[],
+  nowTs: number
+): DashboardStats {
+  const dayStart = startOfDayTs(nowTs)
+  const yesterdayStart = dayStart - DAY_MS
+  const nowDate = new Date(nowTs)
+  const monthStart = new Date(nowDate.getFullYear(), nowDate.getMonth(), 1).getTime()
+  const nextDayStart = dayStart + DAY_MS
+
+  const todayLogs = logs.filter((item) => {
+    const ts = toTimestamp(item.created_at)
+    return ts != null && ts >= dayStart && ts < nextDayStart
+  })
+  const yesterdayLogs = logs.filter((item) => {
+    const ts = toTimestamp(item.created_at)
+    return ts != null && ts >= yesterdayStart && ts < dayStart
+  })
+  const last24Logs = logs.filter((item) => {
+    const ts = toTimestamp(item.created_at)
+    return ts != null && ts >= nowTs - DAY_MS && ts <= nowTs
+  })
+  const previous24Logs = logs.filter((item) => {
+    const ts = toTimestamp(item.created_at)
+    return ts != null && ts >= nowTs - 2 * DAY_MS && ts < nowTs - DAY_MS
+  })
+  const currentMonthLogs = logs.filter((item) => {
+    const ts = toTimestamp(item.created_at)
+    return ts != null && ts >= monthStart && ts <= nowTs
+  })
+
+  const hourlyTrend = Array.from({ length: 24 }, () => 0)
+  for (const log of todayLogs) {
+    const ts = toTimestamp(log.created_at)
+    if (ts == null) continue
+    const hourIdx = Math.floor((ts - dayStart) / HOUR_MS)
+    if (hourIdx >= 0 && hourIdx < 24) {
+      hourlyTrend[hourIdx] += 1
     }
   }
 
-  return items
+  const last24CountableLogs = last24Logs.filter((item) => toFiniteNumber(item.status_code, 0) > 0)
+  const successful24h = last24CountableLogs.filter((item) =>
+    isSuccessStatus(toFiniteNumber(item.status_code, 0))
+  ).length
+  const total24h = last24CountableLogs.length
+  const recentHealthRate =
+    total24h > 0 ? (successful24h / total24h) * 100 : toFiniteNumber(localStats.success_rate, 0)
+  const avgTtftCurrent = average(last24Logs.map(getPreferredLatency).filter((value) => value > 0))
+  const avgTtftPrevious = average(
+    previous24Logs.map(getPreferredLatency).filter((value) => value > 0)
+  )
+
+  const monthlySpent = currentMonthLogs.reduce(
+    (sum, item) => sum + Math.max(0, toFiniteNumber(item.cost_user, 0)),
+    0
+  )
+  const daysInMonth = new Date(nowDate.getFullYear(), nowDate.getMonth() + 1, 0).getDate()
+  const passedDays = Math.max(1, nowDate.getDate())
+  const estimatedMonthEnd = passedDays > 0 ? (monthlySpent / passedDays) * daysInMonth : null
+
+  return DashboardStatsSchema.parse({
+    financial: {
+      monthlySpent,
+      balance: 0,
+      quotaUsedPercent: 0,
+      estimatedMonthEnd,
+    },
+    traffic: {
+      todayRequests: todayLogs.length,
+      hourlyTrend,
+      trendPercent: percentChange(todayLogs.length, yesterdayLogs.length),
+    },
+    speed: {
+      avgTTFT: avgTtftCurrent,
+      trendPercent: percentChange(avgTtftCurrent, avgTtftPrevious),
+    },
+    health: {
+      successRate: recentHealthRate,
+      totalRequests: total24h,
+      successfulRequests: successful24h,
+    },
+  })
+}
+
+function computeTokenThroughputFromLocal(
+  logs: GatewayLogItem[],
+  period: "24h" | "7d" | "30d",
+  nowTs: number
+): TokenThroughput {
+  const timeline = buildTokenBuckets(logs, period, nowTs)
+  const totalInput = timeline.reduce((sum, item) => sum + item.inputTokens, 0)
+  const totalOutput = timeline.reduce((sum, item) => sum + item.outputTokens, 0)
+
+  return TokenThroughputSchema.parse({
+    timeline,
+    totalInput,
+    totalOutput,
+    ratio: totalInput > 0 ? totalOutput / totalInput : 0,
+  })
+}
+
+function computeSmartRouterStatsFromLocal(
+  stats: LocalGatewayLogStats,
+  logs: GatewayLogItem[]
+): SmartRouterStats {
+  const cachedDurations = logs
+    .filter((item) => item.is_cached)
+    .map((item) => toFiniteNumber(item.duration_ms, 0))
+    .filter((value) => value > 0)
+  const uncachedDurations = logs
+    .filter((item) => !item.is_cached)
+    .map((item) => toFiniteNumber(item.duration_ms, 0))
+    .filter((value) => value > 0)
+  const avgCached = average(cachedDurations)
+  const avgUncached = average(uncachedDurations)
+  const speedup = avgCached > 0 && avgUncached > 0 ? avgUncached / avgCached : 0
+  const blocked = logs.filter((item) => {
+    const code = toFiniteNumber(item.status_code, 0)
+    return code === 403 || code === 429
+  }).length
+  const directSavings = logs.reduce((sum, item) => {
+    const upstreamCost = Math.max(0, toFiniteNumber(item.cost_upstream, 0))
+    const userCost = Math.max(0, toFiniteNumber(item.cost_user, 0))
+    return sum + Math.max(0, upstreamCost - userCost)
+  }, 0)
+  const cachedCosts = logs
+    .filter((item) => item.is_cached)
+    .map((item) => Math.max(0, toFiniteNumber(item.cost_user, 0)))
+  const uncachedCosts = logs
+    .filter((item) => !item.is_cached)
+    .map((item) => Math.max(0, toFiniteNumber(item.cost_user, 0)))
+    .filter((value) => value > 0)
+  const avgUncachedCost = average(uncachedCosts)
+  const fallbackSavings =
+    avgUncachedCost > 0
+      ? Math.max(
+          0,
+          avgUncachedCost * cachedCosts.length -
+            cachedCosts.reduce((sum, value) => sum + value, 0)
+        )
+      : 0
+  const costSavings = Number((directSavings > 0 ? directSavings : fallbackSavings).toFixed(6))
+
+  return SmartRouterStatsSchema.parse({
+    cacheHitRate: toFiniteNumber(stats.cache_hit_rate, 0),
+    costSavings,
+    requestsBlocked: blocked,
+    avgSpeedup: Number(speedup.toFixed(2)),
+  })
+}
+
+function computeRecentErrorsFromLocal(logs: GatewayLogItem[], limit: number): RecentError[] {
+  const safeLimit = Math.max(1, Math.floor(limit))
+  const errors = logs
+    .filter((item) => {
+      const code = toFiniteNumber(item.status_code, 0)
+      return code >= 400 || Boolean(item.error_code)
+    })
+    .sort((a, b) => {
+      const aTs = toTimestamp(a.created_at) ?? 0
+      const bTs = toTimestamp(b.created_at) ?? 0
+      return bTs - aTs
+    })
+    .slice(0, safeLimit)
+    .map((item) => {
+      const statusCode = toFiniteNumber(item.status_code, 0)
+      const errorCode = item.error_code?.trim() || undefined
+      return {
+        id: item.id,
+        timestamp: item.created_at,
+        statusCode,
+        model: item.model,
+        errorMessage: errorCode || `HTTP ${statusCode}`,
+        errorCode,
+      }
+    })
+
+  return z.array(RecentErrorSchema).parse(errors)
 }
 
 function buildTokenBuckets(
@@ -236,6 +518,53 @@ function shouldUseLocal(source: DashboardDataSource = "auto"): boolean {
   return isTauriRuntime()
 }
 
+export async function fetchDashboardOverview(options?: {
+  source?: DashboardDataSource
+  period?: "24h" | "7d" | "30d"
+  recentErrorLimit?: number
+}): Promise<DashboardOverview> {
+  const period = options?.period ?? "24h"
+  const recentErrorLimit = Math.max(1, Math.floor(options?.recentErrorLimit ?? 10))
+
+  if (shouldUseLocal(options?.source)) {
+    const maxItems = Math.max(
+      5000,
+      period === "30d" ? 10000 : 5000,
+      Math.max(500, recentErrorLimit * 40)
+    )
+    const [localStats, logs, providerHealth] = await Promise.all([
+      loadLocalGatewayStats(),
+      loadLocalGatewayLogs(maxItems),
+      loadLocalProviderHealth(),
+    ])
+    const nowTs = Date.now()
+
+    return DashboardOverviewSchema.parse({
+      stats: computeDashboardStatsFromLocal(localStats, logs, nowTs),
+      tokenThroughput: computeTokenThroughputFromLocal(logs, period, nowTs),
+      smartRouterStats: computeSmartRouterStatsFromLocal(localStats, logs),
+      providerHealth,
+      recentErrors: computeRecentErrorsFromLocal(logs, recentErrorLimit),
+    })
+  }
+
+  const [stats, tokenThroughput, smartRouterStats, providerHealth, recentErrors] = await Promise.all([
+    fetchDashboardStats({ source: options?.source }),
+    fetchTokenThroughput({ period, source: options?.source }),
+    fetchSmartRouterStats({ source: options?.source }),
+    fetchProviderHealth({ source: options?.source }),
+    fetchRecentErrors({ limit: recentErrorLimit, source: options?.source }),
+  ])
+
+  return DashboardOverviewSchema.parse({
+    stats,
+    tokenThroughput,
+    smartRouterStats,
+    providerHealth,
+    recentErrors,
+  })
+}
+
 /**
  * Fetch overall dashboard statistics
  */
@@ -244,91 +573,10 @@ export async function fetchDashboardStats(options?: {
 }): Promise<DashboardStats> {
   if (shouldUseLocal(options?.source)) {
     const [localStats, logs] = await Promise.all([
-      fetchAdminGatewayLogStats(),
+      loadLocalGatewayStats(),
       loadLocalGatewayLogs(5000),
     ])
-    const nowTs = Date.now()
-    const dayStart = startOfDayTs(nowTs)
-    const yesterdayStart = dayStart - DAY_MS
-    const nowDate = new Date(nowTs)
-    const monthStart = new Date(nowDate.getFullYear(), nowDate.getMonth(), 1).getTime()
-    const nextDayStart = dayStart + DAY_MS
-
-    const todayLogs = logs.filter((item) => {
-      const ts = toTimestamp(item.created_at)
-      return ts != null && ts >= dayStart && ts < nextDayStart
-    })
-    const yesterdayLogs = logs.filter((item) => {
-      const ts = toTimestamp(item.created_at)
-      return ts != null && ts >= yesterdayStart && ts < dayStart
-    })
-    const last24Logs = logs.filter((item) => {
-      const ts = toTimestamp(item.created_at)
-      return ts != null && ts >= nowTs - DAY_MS && ts <= nowTs
-    })
-    const previous24Logs = logs.filter((item) => {
-      const ts = toTimestamp(item.created_at)
-      return ts != null && ts >= nowTs - 2 * DAY_MS && ts < nowTs - DAY_MS
-    })
-    const currentMonthLogs = logs.filter((item) => {
-      const ts = toTimestamp(item.created_at)
-      return ts != null && ts >= monthStart && ts <= nowTs
-    })
-
-    const hourlyTrend = Array.from({ length: 24 }, () => 0)
-    for (const log of todayLogs) {
-      const ts = toTimestamp(log.created_at)
-      if (ts == null) continue
-      const hourIdx = Math.floor((ts - dayStart) / HOUR_MS)
-      if (hourIdx >= 0 && hourIdx < 24) {
-        hourlyTrend[hourIdx] += 1
-      }
-    }
-
-    const last24CountableLogs = last24Logs.filter((item) => toFiniteNumber(item.status_code, 0) > 0)
-    const successful24h = last24CountableLogs.filter((item) =>
-      isSuccessStatus(toFiniteNumber(item.status_code, 0))
-    ).length
-    const total24h = last24CountableLogs.length
-    const recentHealthRate =
-      total24h > 0 ? (successful24h / total24h) * 100 : toFiniteNumber(localStats.success_rate, 0)
-    const avgTtftCurrent = average(
-      last24Logs.map(getPreferredLatency).filter((value) => value > 0)
-    )
-    const avgTtftPrevious = average(
-      previous24Logs.map(getPreferredLatency).filter((value) => value > 0)
-    )
-
-    const monthlySpent = currentMonthLogs.reduce(
-      (sum, item) => sum + Math.max(0, toFiniteNumber(item.cost_user, 0)),
-      0
-    )
-    const daysInMonth = new Date(nowDate.getFullYear(), nowDate.getMonth() + 1, 0).getDate()
-    const passedDays = Math.max(1, nowDate.getDate())
-    const estimatedMonthEnd = passedDays > 0 ? (monthlySpent / passedDays) * daysInMonth : null
-
-    return DashboardStatsSchema.parse({
-      financial: {
-        monthlySpent,
-        balance: 0,
-        quotaUsedPercent: 0,
-        estimatedMonthEnd,
-      },
-      traffic: {
-        todayRequests: todayLogs.length,
-        hourlyTrend,
-        trendPercent: percentChange(todayLogs.length, yesterdayLogs.length),
-      },
-      speed: {
-        avgTTFT: avgTtftCurrent,
-        trendPercent: percentChange(avgTtftCurrent, avgTtftPrevious),
-      },
-      health: {
-        successRate: recentHealthRate,
-        totalRequests: total24h,
-        successfulRequests: successful24h,
-      },
-    })
+    return computeDashboardStatsFromLocal(localStats, logs, Date.now())
   }
 
   const data = await request<DashboardStats>({
@@ -351,17 +599,7 @@ export async function fetchTokenThroughput(
     const period = params?.period ?? "24h"
     const maxItems = period === "30d" ? 10000 : 5000
     const logs = await loadLocalGatewayLogs(maxItems)
-    const nowTs = Date.now()
-    const timeline = buildTokenBuckets(logs, period, nowTs)
-    const totalInput = timeline.reduce((sum, item) => sum + item.inputTokens, 0)
-    const totalOutput = timeline.reduce((sum, item) => sum + item.outputTokens, 0)
-
-    return TokenThroughputSchema.parse({
-      timeline,
-      totalInput,
-      totalOutput,
-      ratio: totalInput > 0 ? totalOutput / totalInput : 0,
-    })
+    return computeTokenThroughputFromLocal(logs, period, Date.now())
   }
 
   const data = await request<TokenThroughput>({
@@ -382,53 +620,10 @@ export async function fetchSmartRouterStats(options?: {
 }): Promise<SmartRouterStats> {
   if (shouldUseLocal(options?.source)) {
     const [stats, logs] = await Promise.all([
-      fetchAdminGatewayLogStats(),
+      loadLocalGatewayStats(),
       loadLocalGatewayLogs(3000),
     ])
-    const cachedDurations = logs
-      .filter((item) => item.is_cached)
-      .map((item) => toFiniteNumber(item.duration_ms, 0))
-      .filter((value) => value > 0)
-    const uncachedDurations = logs
-      .filter((item) => !item.is_cached)
-      .map((item) => toFiniteNumber(item.duration_ms, 0))
-      .filter((value) => value > 0)
-    const avgCached = average(cachedDurations)
-    const avgUncached = average(uncachedDurations)
-    const speedup = avgCached > 0 && avgUncached > 0 ? avgUncached / avgCached : 0
-    const blocked = logs.filter((item) => {
-      const code = toFiniteNumber(item.status_code, 0)
-      return code === 403 || code === 429
-    }).length
-    const directSavings = logs.reduce((sum, item) => {
-      const upstreamCost = Math.max(0, toFiniteNumber(item.cost_upstream, 0))
-      const userCost = Math.max(0, toFiniteNumber(item.cost_user, 0))
-      return sum + Math.max(0, upstreamCost - userCost)
-    }, 0)
-    const cachedCosts = logs
-      .filter((item) => item.is_cached)
-      .map((item) => Math.max(0, toFiniteNumber(item.cost_user, 0)))
-    const uncachedCosts = logs
-      .filter((item) => !item.is_cached)
-      .map((item) => Math.max(0, toFiniteNumber(item.cost_user, 0)))
-      .filter((value) => value > 0)
-    const avgUncachedCost = average(uncachedCosts)
-    const fallbackSavings =
-      avgUncachedCost > 0
-        ? Math.max(
-            0,
-            avgUncachedCost * cachedCosts.length -
-              cachedCosts.reduce((sum, value) => sum + value, 0)
-          )
-        : 0
-    const costSavings = Number((directSavings > 0 ? directSavings : fallbackSavings).toFixed(6))
-
-    return SmartRouterStatsSchema.parse({
-      cacheHitRate: toFiniteNumber(stats.cache_hit_rate, 0),
-      costSavings,
-      requestsBlocked: blocked,
-      avgSpeedup: Number(speedup.toFixed(2)),
-    })
+    return computeSmartRouterStatsFromLocal(stats, logs)
   }
 
   const data = await request<SmartRouterStats>({
@@ -445,42 +640,7 @@ export async function fetchProviderHealth(options?: {
   source?: DashboardDataSource
 }): Promise<ProviderHealth[]> {
   if (shouldUseLocal(options?.source)) {
-    const instances = await invokeTauri<LocalProviderInstance[]>("list_local_provider_instances")
-    const normalized = await Promise.all(
-      (instances ?? []).map(async (instance, index) => {
-        if (instance.is_enabled === false) {
-          return {
-            id: instance.id,
-            name: instance.name || "Local Provider",
-            status: "down" as const,
-            priority: toFiniteNumber(instance.priority, index + 1),
-            latency: 0,
-            sparkline: [],
-          }
-        }
-
-        const models = await invokeTauri<LocalProviderModel[]>("list_local_provider_models", {
-          instanceId: instance.id,
-        })
-        const activeModels = (models ?? []).filter((item) => item.is_active !== false)
-        const latencies = activeModels.map(toProviderLatency).filter((value) => value > 0)
-        const avgLatency = average(latencies)
-        const status: ProviderHealth["status"] =
-          activeModels.length === 0 ? "unknown" : avgLatency >= 5000 ? "degraded" : "active"
-
-        return {
-          id: instance.id,
-          name: instance.name || "Local Provider",
-          status,
-          priority: toFiniteNumber(instance.priority, index + 1),
-          latency: Math.round(avgLatency),
-          sparkline: latencies.slice(-8),
-        }
-      })
-    )
-
-    normalized.sort((a, b) => a.priority - b.priority)
-    return z.array(ProviderHealthSchema).parse(normalized)
+    return loadLocalProviderHealth()
   }
 
   const data = await request<ProviderHealth[]>({
@@ -502,31 +662,7 @@ export async function fetchRecentErrors(
   if (shouldUseLocal(params?.source)) {
     const limit = Math.max(1, Math.floor(params?.limit ?? 10))
     const logs = await loadLocalGatewayLogs(Math.max(500, limit * 40))
-    const errors = logs
-      .filter((item) => {
-        const code = toFiniteNumber(item.status_code, 0)
-        return code >= 400 || Boolean(item.error_code)
-      })
-      .sort((a, b) => {
-        const aTs = toTimestamp(a.created_at) ?? 0
-        const bTs = toTimestamp(b.created_at) ?? 0
-        return bTs - aTs
-      })
-      .slice(0, limit)
-      .map((item) => {
-        const statusCode = toFiniteNumber(item.status_code, 0)
-        const errorCode = item.error_code?.trim() || undefined
-        return {
-          id: item.id,
-          timestamp: item.created_at,
-          statusCode,
-          model: item.model,
-          errorMessage: errorCode || `HTTP ${statusCode}`,
-          errorCode,
-        }
-      })
-
-    return z.array(RecentErrorSchema).parse(errors)
+    return computeRecentErrorsFromLocal(logs, limit)
   }
 
   const data = await request<RecentError[]>({

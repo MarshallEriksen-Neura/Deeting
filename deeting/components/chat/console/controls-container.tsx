@@ -8,7 +8,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useShallow } from 'zustand/react/shallow';
 import { useChatStore } from '@/store/chat-store';
 import { useI18n } from '@/hooks/use-i18n';
-import { useChatService } from '@/hooks/use-chat-service';
 import { isTauriRuntime as detectTauriRuntime } from '@/lib/runtime/tauri';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -98,20 +97,15 @@ function ControlsContainer() {
 
   const isTauriRuntime = detectTauriRuntime();
 
-  const { assistants: serviceAssistants } = useChatService({ enabled: !isTauriRuntime });
-
-  const activeAssistant = useMemo(
-    () => (isTauriRuntime ? null : serviceAssistants.find((assistant) => assistant.id === selectedAssistant?.id)),
-    [selectedAssistant?.id, isTauriRuntime, serviceAssistants]
-  );
-
   const {
     handleSendMessage,
     cancelActiveRequest,
     hasInterruptedGeneration,
     continueInterruptedGeneration,
   } = useChatMessaging({
-    agent: activeAssistant ? { id: activeAssistant.id, name: activeAssistant.name } : undefined,
+    agent: !isTauriRuntime && selectedAssistant
+      ? { id: selectedAssistant.id, name: selectedAssistant.name }
+      : undefined,
     isTauriRuntime,
   });
 
@@ -585,15 +579,15 @@ function ControlsContainer() {
 
           {isTauriRuntime ? null : (
             <div className="min-h-[44px] h-11 rounded-full px-3 gap-2 bg-slate-100/80 dark:bg-white/5 flex items-center">
-              <span className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white shadow-sm bg-gradient-to-br ${activeAssistant?.color ?? "from-slate-400 to-slate-600"}`}>
-                {(activeAssistant?.name?.trim().slice(0, 1).toUpperCase() ?? "A")}
+              <span className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white shadow-sm bg-gradient-to-br ${selectedAssistant?.color ?? "from-slate-400 to-slate-600"}`}>
+                {(selectedAssistant?.name?.trim().slice(0, 1).toUpperCase() ?? "A")}
               </span>
               <div className="flex flex-col items-start leading-tight">
                 <span className="text-[10px] uppercase tracking-[0.12em] text-slate-500 dark:text-white/40">
                   {t("routing.locked")}
                 </span>
                 <span className="text-[13px] font-semibold text-slate-700 dark:text-white/80 max-w-[120px] truncate">
-                  {activeAssistant?.name ?? t("routing.locked")}
+                  {selectedAssistant?.name ?? t("routing.locked")}
                 </span>
               </div>
             </div>

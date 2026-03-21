@@ -1,10 +1,8 @@
 "use client"
 
 import dynamic from "next/dynamic"
-import { useTranslations } from "next-intl"
-
-import { Container } from "@/components/ui/container"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useDashboardOverview } from "@/lib/swr/use-dashboard-overview"
 
 const KPIMetricsRow = dynamic(
   () => import("./components/kpi-metrics-row").then((mod) => mod.KPIMetricsRow),
@@ -28,39 +26,31 @@ const RecentErrorsList = dynamic(
 )
 
 export function DashboardClient() {
-  const t = useTranslations("dashboard")
+  const { data, isLoading } = useDashboardOverview({
+    source: "auto",
+    period: "24h",
+    recentErrorLimit: 10,
+  })
 
   return (
-    <Container
-      as="main"
-      gutter="md"
-      size="full"
-      className="py-6 md:py-8 !mx-0 !max-w-none"
-    >
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-[var(--foreground)] md:text-3xl">
-          {t("title")}
-        </h1>
-        <p className="mt-1 text-[var(--muted)]">{t("description")}</p>
-      </div>
-
-      <KPIMetricsRow />
+    <>
+      <KPIMetricsRow stats={data?.stats} isLoading={isLoading} />
 
       <div className="mb-6 grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <TokenThroughputChart />
+          <TokenThroughputChart data={data?.tokenThroughput} isLoading={isLoading} />
         </div>
 
         <div className="lg:col-span-1">
-          <SmartRouterValueCard />
+          <SmartRouterValueCard stats={data?.smartRouterStats} isLoading={isLoading} />
         </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <ProviderHealthStatus />
-        <RecentErrorsList />
+        <ProviderHealthStatus providers={data?.providerHealth} isLoading={isLoading} />
+        <RecentErrorsList errors={data?.recentErrors} isLoading={isLoading} />
       </div>
-    </Container>
+    </>
   )
 }
 

@@ -10,7 +10,7 @@ import {
   GlassCardTitle,
 } from "@/components/ui/glass-card"
 import { cn } from "@/lib/utils"
-import { useProviderHealth } from "@/lib/swr/use-provider-health"
+import type { ProviderHealth } from "@/lib/api/dashboard"
 
 /**
  * Provider Health Status Component
@@ -20,9 +20,14 @@ import { useProviderHealth } from "@/lib/swr/use-provider-health"
  * - Current routing priority/weight
  * - Latency sparkline
  */
-export function ProviderHealthStatus() {
+export function ProviderHealthStatus({
+  providers,
+  isLoading = false,
+}: {
+  providers?: ProviderHealth[]
+  isLoading?: boolean
+}) {
   const t = useTranslations("dashboard.providerHealth")
-  const { data: providers, isLoading } = useProviderHealth()
 
   return (
     <GlassCard className="h-full">
@@ -61,16 +66,7 @@ export function ProviderHealthStatus() {
   )
 }
 
-interface Provider {
-  id: string
-  name: string
-  status: "active" | "down" | "degraded" | "unknown"
-  priority: number
-  latency: number
-  sparkline?: number[]
-}
-
-function ProviderRow({ provider }: { provider: Provider }) {
+function ProviderRow({ provider }: { provider: ProviderHealth }) {
   const t = useTranslations("dashboard.providerHealth")
 
   return (
@@ -113,7 +109,7 @@ function ProviderRow({ provider }: { provider: Provider }) {
   )
 }
 
-function StatusBadge({ status }: { status: Provider["status"] }) {
+function StatusBadge({ status }: { status: ProviderHealth["status"] }) {
   const statusConfig = {
     active: {
       icon: "🟢",
@@ -160,7 +156,7 @@ function MiniSparkline({
   status,
 }: {
   data: number[]
-  status: Provider["status"]
+  status: ProviderHealth["status"]
 }) {
   if (data.length === 0) return null
 

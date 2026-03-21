@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog"
 import { useI18n } from "@/hooks/use-i18n"
 import type { ModelInfo } from "@/lib/api/models"
-import { resolveModelVisual, type ModelPickerModel } from "@/components/models/model-picker"
+import { resolveModelVisual, type ModelPickerModel } from "@/components/models/model-visual"
 
 interface CompareModelDialogProps {
   open: boolean

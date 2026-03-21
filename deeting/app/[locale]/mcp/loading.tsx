@@ -1,36 +1,6 @@
-import dynamic from "next/dynamic"
-import { setRequestLocale } from "next-intl/server"
 import { Skeleton } from "@/components/ui/skeleton"
-import { DesktopRouteMessagesProvider } from "@/components/common/desktop-route-messages-provider"
 
-const MCPRegistryClient = dynamic(
-  () => import("@/components/mcp/mcp-registry-client").then((mod) => mod.MCPRegistryClient),
-  {
-    loading: () => <McpRegistrySkeleton />,
-  }
-)
-export default async function MCPRegistryPage({
-  params,
-}: {
-  params: Promise<{ locale: string }>
-}) {
-  const { locale } = await params
-  setRequestLocale(locale)
-
-  return (
-    <DesktopRouteMessagesProvider
-      locale={locale}
-      namespaces={["common", "mcp"]}
-    >
-      <MCPRegistryClient
-        initialTools={[]}
-        initialSources={[]}
-      />
-    </DesktopRouteMessagesProvider>
-  )
-}
-
-function McpRegistrySkeleton() {
+export default function McpLoading() {
   return (
     <div className="relative min-h-screen bg-[var(--background)] px-6 py-12 lg:px-8">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">

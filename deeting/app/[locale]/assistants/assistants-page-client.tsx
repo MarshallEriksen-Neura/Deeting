@@ -8,9 +8,7 @@ import { useTranslations } from "next-intl"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { AgentCard } from "@/components/assistants/agent-card"
-import { AssistantsStatePanel } from "@/components/assistants/assistants-state-panel"
-import { InfiniteList } from "@/components/ui/infinite-list"
+import { Skeleton } from "@/components/ui/skeleton"
 import { deleteAssistant, deleteLocalAssistant, installAssistant } from "@/lib/api"
 import { useLocalAssistants } from "@/lib/swr/use-local-assistants"
 import { useAssistantMarket } from "@/lib/swr/use-assistant-market"
@@ -22,6 +20,21 @@ import type { AssistantCardData } from "@/components/assistants/types"
 const CreateAgentModal = dynamic(
   () => import("@/components/assistants/create-agent-modal").then((mod) => mod.CreateAgentModal),
   { ssr: false }
+)
+const AgentCard = dynamic(
+  () => import("@/components/assistants/agent-card").then((mod) => mod.AgentCard),
+  { loading: () => <AssistantCardSkeleton /> }
+)
+const AssistantsStatePanel = dynamic(
+  () =>
+    import("@/components/assistants/assistants-state-panel").then(
+      (mod) => mod.AssistantsStatePanel
+    ),
+  { loading: () => <AssistantsStateSkeleton /> }
+)
+const InfiniteList = dynamic(
+  () => import("@/components/ui/infinite-list").then((mod) => mod.InfiniteList),
+  { loading: () => <AssistantsGridSkeleton count={8} /> }
 )
 
 const PAGE_SIZE = 8
@@ -338,7 +351,7 @@ export function AssistantsPageClient() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-muted/20 p-8 space-y-8 animate-in fade-in duration-700">
+    <div className="space-y-8 animate-in fade-in duration-700 pb-20">
       {modalOpen ? (
         <CreateAgentModal
           mode={isTauriRuntime ? "local" : "cloud"}
@@ -373,20 +386,8 @@ export function AssistantsPageClient() {
         />
       ) : null}
 
-      <div className="text-center space-y-4 max-w-2xl mx-auto py-10 relative">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] h-[150%] bg-gradient-to-r from-primary/20 via-purple-500/20 to-pink-500/20 blur-3xl -z-10 opacity-50 rounded-full pointer-events-none" />
-
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">
-          {t("page.hero.titlePrefix")}{" "}
-          <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-blue-600">
-            {t("page.hero.titleHighlight")}
-          </span>
-        </h1>
-        <p className="text-muted-foreground text-lg">
-          {t("page.hero.subtitle")}
-        </p>
-
-        <div className="flex justify-center pt-2">
+      <div className="max-w-2xl mx-auto space-y-6">
+        <div className="flex justify-center">
           <Button
             onClick={handleCreate}
             className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-lg border-0"
@@ -395,7 +396,7 @@ export function AssistantsPageClient() {
           </Button>
         </div>
 
-        <div className="relative group max-w-lg mx-auto mt-8">
+        <div className="relative group max-w-lg mx-auto">
           <div className="absolute -inset-0.5 bg-gradient-to-r from-pink-600 to-purple-600 rounded-xl blur opacity-30 group-hover:opacity-60 transition duration-1000"></div>
           <div className="relative flex items-center bg-background rounded-xl shadow-xl border border-border/50">
             <Search className="ml-4 text-muted-foreground" />
@@ -449,7 +450,7 @@ export function AssistantsPageClient() {
           hasMore={isTauriRuntime ? false : hasMore}
           onLoadMore={isTauriRuntime ? undefined : loadMore}
           useScrollArea={false}
-          className="pb-20"
+          className="pb-4"
         >
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {mergedAgents.map((agent) => (
@@ -464,6 +465,59 @@ export function AssistantsPageClient() {
           </div>
         </InfiniteList>
       )}
+    </div>
+  )
+}
+
+function AssistantsStateSkeleton() {
+  return (
+    <div className="rounded-[28px] border border-border/60 bg-background/90 px-8 py-12 shadow-sm">
+      <div className="mx-auto flex max-w-xl flex-col items-center text-center">
+        <Skeleton className="h-24 w-24 rounded-full" />
+        <Skeleton className="mt-6 h-6 w-24 rounded-full" />
+        <Skeleton className="mt-4 h-8 w-64" />
+        <Skeleton className="mt-3 h-5 w-full max-w-md" />
+        <div className="mt-8 grid w-full gap-3 sm:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div
+              key={index}
+              className="rounded-2xl border border-border/60 bg-background/70 p-4"
+            >
+              <Skeleton className="h-2 w-12 rounded-full" />
+              <Skeleton className="mt-4 h-3 w-3/4 rounded-full" />
+              <Skeleton className="mt-2 h-3 w-1/2 rounded-full" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AssistantCardSkeleton() {
+  return (
+    <div className="flex h-full flex-col overflow-hidden rounded-xl border border-border bg-white dark:bg-zinc-900">
+      <div className="h-24 bg-muted/50" />
+      <div className="space-y-4 p-6">
+        <Skeleton className="h-12 w-12 rounded-2xl" />
+        <Skeleton className="h-6 w-2/3" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-5/6" />
+        <div className="flex gap-2 pt-2">
+          <Skeleton className="h-6 w-16 rounded-full" />
+          <Skeleton className="h-6 w-20 rounded-full" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AssistantsGridSkeleton({ count }: { count: number }) {
+  return (
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {Array.from({ length: count }).map((_, index) => (
+        <AssistantCardSkeleton key={index} />
+      ))}
     </div>
   )
 }

@@ -1,14 +1,6 @@
 "use client"
 
 import { Cloud, Monitor, ShieldCheck, User } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
-import {
-  GlassCard,
-  GlassCardContent,
-  GlassCardDescription,
-  GlassCardHeader,
-  GlassCardTitle,
-} from "@/components/ui/glass-card"
 import { useI18n } from "@/hooks/use-i18n"
 
 interface SettingsHeaderProps {
@@ -22,52 +14,32 @@ export function SettingsHeader({ isTauri, isAdmin, roleLabel, isLoading }: Setti
   const t = useI18n("settings")
 
   return (
-    <GlassCard
-      blur="sm"
-      theme="surface"
-      hover="none"
-      padding="lg"
-      className="mb-6 border border-white/10 bg-[var(--surface)]/70 shadow-[0_12px_32px_-16px_rgba(0,0,0,0.4)]"
-    >
-      <GlassCardHeader className="gap-2">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <GlassCardTitle className="text-2xl font-semibold text-foreground">
-              {t("title")}
-            </GlassCardTitle>
-            <GlassCardDescription className="text-sm text-muted-foreground">
-              {t("subtitle")}
-            </GlassCardDescription>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">{t("env.currentLabel")}</span>
-            <Badge
-              variant="secondary"
-              className="gap-1"
-            >
-              {isTauri ? <Monitor className="h-3 w-3" /> : <Cloud className="h-3 w-3" />}
-              {isTauri ? t("env.desktop") : t("env.web")}
-            </Badge>
-          </div>
+    <div className="mb-8">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+            {t("title")}
+          </h1>
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            {t("subtitle")}
+          </p>
         </div>
-      </GlassCardHeader>
-      <GlassCardContent className="mt-4">
-        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-          <span>{t("role.currentLabel")}</span>
-          <Badge
-            variant="secondary"
-            className="gap-1"
-          >
+        <div className="flex items-center gap-2.5 pb-0.5">
+          <div className="flex items-center gap-1.5 rounded-full border border-border/40 bg-muted/30 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50">
+            {isTauri ? <Monitor className="h-3.5 w-3.5" /> : <Cloud className="h-3.5 w-3.5" />}
+            <span>{isTauri ? t("env.desktop") : t("env.web")}</span>
+          </div>
+          <div className="flex items-center gap-1.5 rounded-full border border-border/40 bg-muted/30 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50">
             {isAdmin ? (
-              <ShieldCheck className="h-3 w-3" />
+              <ShieldCheck className="h-3.5 w-3.5 text-primary" />
             ) : (
-              <User className="h-3 w-3" />
+              <User className="h-3.5 w-3.5" />
             )}
-            {roleLabel}
-          </Badge>
-          {isLoading && <span>{t("role.loading")}</span>}
+            <span>{isLoading ? t("role.loading") : roleLabel}</span>
+          </div>
         </div>
-      </GlassCardContent>
-    </GlassCard>
+      </div>
+      <div className="mt-5 h-px bg-gradient-to-r from-primary/30 via-primary/8 to-transparent" />
+    </div>
   )
 }

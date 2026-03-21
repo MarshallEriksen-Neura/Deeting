@@ -104,6 +104,17 @@ pub struct ProviderModel {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct LocalProviderHealth {
+    pub id: String,
+    pub name: String,
+    pub status: String,
+    pub priority: i64,
+    pub latency: i64,
+    #[serde(default)]
+    pub sparkline: Vec<i64>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UserSecretary {
     pub id: String,
     pub user_id: String,

@@ -1,7 +1,6 @@
 "use client"
 
-import { Lock } from "lucide-react"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Lock, ShieldAlert } from "lucide-react"
 import { useI18n } from "@/hooks/use-i18n"
 
 interface SettingsAlertsProps {
@@ -14,14 +13,18 @@ export function SettingsAlerts({ isAuthenticated }: SettingsAlertsProps) {
   if (isAuthenticated) return null
 
   return (
-    <Alert className="mb-6 border border-white/10 bg-[var(--surface)]/70">
-      <Lock className="h-4 w-4 text-muted-foreground" />
-      <AlertTitle className="text-foreground">
-        {t("auth.requiredTitle")}
-      </AlertTitle>
-      <AlertDescription className="text-muted-foreground">
-        <p>{t("auth.requiredDesc")}</p>
-      </AlertDescription>
-    </Alert>
+    <div className="mb-6 flex items-start gap-3 rounded-xl border border-amber-500/20 bg-amber-500/[0.04] px-4 py-3.5 dark:border-amber-400/15 dark:bg-amber-400/[0.06]">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 dark:bg-amber-400/10">
+        <Lock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+      </div>
+      <div>
+        <p className="text-sm font-semibold text-foreground">
+          {t("auth.requiredTitle")}
+        </p>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {t("auth.requiredDesc")}
+        </p>
+      </div>
+    </div>
   )
 }

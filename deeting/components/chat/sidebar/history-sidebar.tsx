@@ -58,6 +58,9 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
   const [renameValue, setRenameValue] = useState('');
   const [renameError, setRenameError] = useState<string | null>(null);
   const [renameSaving, setRenameSaving] = useState(false);
+  const [isDocumentVisible, setIsDocumentVisible] = useState(() =>
+    typeof document === 'undefined' ? true : document.visibilityState === 'visible'
+  );
   
   const { selectedAssistantId, setMessages, clearAttachments, sessionId, resetSession, setSessionId, setGlobalLoading } = useChatStore(
     useShallow((state) => ({
@@ -281,15 +284,33 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
   }, [isOpen]);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (typeof document === 'undefined') return;
+
+    const handleVisibilityChange = () => {
+      const visible = document.visibilityState === 'visible';
+      setIsDocumentVisible(visible);
+      if (visible && isOpen) {
+        void mutate();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isOpen, mutate]);
+
+  useEffect(() => {
+    if (!isOpen || !isDocumentVisible) return;
     void mutate();
     const timer = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
       void mutate();
     }, 3000);
     return () => {
       window.clearInterval(timer);
     };
-  }, [isOpen, mutate]);
+  }, [isDocumentVisible, isOpen, mutate]);
 
   const handleToggleArchived = useCallback(() => {
     setShowArchived((prev) => !prev);

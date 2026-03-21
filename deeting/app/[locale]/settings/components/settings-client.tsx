@@ -1,7 +1,6 @@
 "use client"
 
 import dynamic from "next/dynamic"
-import { Container } from "@/components/ui/container"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useI18n } from "@/hooks/use-i18n"
 import { useUserProfile } from "@/hooks/use-user"
@@ -28,12 +27,7 @@ export function SettingsClient() {
     : t("role.user")
 
   return (
-    <Container
-      as="main"
-      gutter="md"
-      size="full"
-      className="py-6 md:py-8 !mx-0 !max-w-none"
-    >
+    <main className="mx-auto w-full max-w-5xl px-4 py-6 md:px-8 md:py-10">
       <SettingsHeader
         isTauri={isTauri}
         isAdmin={isAdmin}
@@ -47,26 +41,51 @@ export function SettingsClient() {
         isAuthenticated={isAuthenticated}
         isTauriRuntime={isTauri}
       />
-    </Container>
+    </main>
   )
 }
 
 function SettingsFormSkeleton() {
   return (
-    <div className="space-y-6">
-      <div className="rounded-3xl border border-border/60 bg-card/80 p-6">
-        <div className="space-y-4">
-          <Skeleton className="h-5 w-40" />
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-28 w-full" />
-        </div>
+    <div className="flex flex-col gap-0 md:flex-row md:gap-8">
+      {/* Nav skeleton */}
+      <div className="hidden md:flex md:w-56 md:shrink-0 md:flex-col md:gap-1">
+        {[1, 2].map((i) => (
+          <div key={i} className="flex items-center gap-3 rounded-xl px-3 py-3">
+            <Skeleton className="h-8 w-8 rounded-lg" />
+            <div className="flex flex-col gap-1.5">
+              <Skeleton className="h-3.5 w-16" />
+              <Skeleton className="h-2.5 w-24" />
+            </div>
+          </div>
+        ))}
       </div>
-      <div className="rounded-3xl border border-border/60 bg-card/80 p-6">
-        <div className="space-y-4">
-          <Skeleton className="h-5 w-36" />
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-10 w-full" />
+      {/* Content skeleton */}
+      <div className="min-w-0 flex-1 space-y-5">
+        <div className="rounded-2xl border border-border/40 bg-card/50 p-6">
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-9 w-9 rounded-xl" />
+              <div className="space-y-1.5">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-3 w-56" />
+              </div>
+            </div>
+            <Skeleton className="h-12 w-full rounded-xl" />
+          </div>
+        </div>
+        <div className="rounded-2xl border border-border/40 bg-card/50 p-6">
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-9 w-9 rounded-xl" />
+              <div className="space-y-1.5">
+                <Skeleton className="h-4 w-36" />
+                <Skeleton className="h-3 w-48" />
+              </div>
+            </div>
+            <Skeleton className="h-12 w-full rounded-xl" />
+            <Skeleton className="h-28 w-full rounded-xl" />
+          </div>
         </div>
       </div>
     </div>

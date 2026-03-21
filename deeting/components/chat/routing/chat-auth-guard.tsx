@@ -1,16 +1,28 @@
 "use client"
 
 import * as React from "react"
-import { usePathname, useRouter, useSearchParams } from "next/navigation"
 
 import { isTauriRuntime as detectTauriRuntime } from "@/lib/runtime/tauri"
 import { useAuthStore } from "@/store/auth-store"
 import { ChatRouteFallback } from "./chat-route-fallback"
 
+export function buildChatLoginTarget(pathname?: string, search?: string) {
+  const safePathname = pathname?.trim() || "/chat"
+  const normalizedSearch =
+    typeof search === "string" && search.trim() && search !== "?"
+      ? search
+      : ""
+  return `/login?callbackUrl=${encodeURIComponent(`${safePathname}${normalizedSearch}`)}`
+}
+
+function getCurrentChatLoginTarget() {
+  if (typeof window === "undefined") {
+    return buildChatLoginTarget("/chat")
+  }
+  return buildChatLoginTarget(window.location.pathname, window.location.search)
+}
+
 export function ChatAuthGuard({ children }: { children: React.ReactNode }) {
-  const router = useRouter()
-  const pathname = usePathname()
-  const searchParams = useSearchParams()
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
   const redirectedRef = React.useRef(false)
   const isDesktopRuntime = detectTauriRuntime()
@@ -34,16 +46,7 @@ export function ChatAuthGuard({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  const callbackUrl = React.useMemo(() => {
-    const currentPath = pathname || "/chat"
-    const query = searchParams?.toString()
-    return query ? `${currentPath}?${query}` : currentPath
-  }, [pathname, searchParams])
-
-  const loginTarget = React.useMemo(
-    () => `/login?callbackUrl=${encodeURIComponent(callbackUrl)}`,
-    [callbackUrl]
-  )
+  const loginTarget = getCurrentChatLoginTarget()
 
   React.useEffect(() => {
     if (!isHydrated || isAuthenticated) {
@@ -54,8 +57,8 @@ export function ChatAuthGuard({ children }: { children: React.ReactNode }) {
     if (redirectedRef.current) return
     redirectedRef.current = true
 
-    router.replace(loginTarget)
-  }, [isAuthenticated, isHydrated, loginTarget, router])
+    window.location.replace(loginTarget)
+  }, [isAuthenticated, isHydrated, loginTarget])
 
   if (!isHydrated || !isAuthenticated) {
     if (!isHydrated) {
@@ -91,7 +94,7 @@ export function ChatAuthGuard({ children }: { children: React.ReactNode }) {
           <button
             type="button"
             className="mt-6 inline-flex h-11 items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-medium text-white transition-colors hover:bg-slate-800"
-            onClick={() => router.replace(loginTarget)}
+            onClick={() => window.location.replace(loginTarget)}
           >
             Continue login
           </button>

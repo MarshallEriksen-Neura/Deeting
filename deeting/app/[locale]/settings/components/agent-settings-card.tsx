@@ -2,15 +2,6 @@
 
 import * as React from "react"
 import { Bot, ShieldCheck } from "lucide-react"
-import {
-  GlassCard,
-  GlassCardContent,
-  GlassCardDescription,
-  GlassCardHeader,
-  GlassCardTitle,
-  GlassCardFooter,
-} from "@/components/ui/glass-card"
-import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
@@ -92,36 +83,32 @@ export function AgentSettingsCard({ isTauriRuntime }: AgentSettingsCardProps) {
   }
 
   return (
-    <GlassCard
-      blur="default"
-      theme="surface"
-      hover="lift"
-      padding="lg"
-      className="border-0"
-    >
-      <GlassCardHeader className="space-y-3">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <GlassCardTitle className="text-lg text-foreground">
-              {t("agent.title")}
-            </GlassCardTitle>
-            <GlassCardDescription className="text-muted-foreground">
-              {t("agent.description")}
-            </GlassCardDescription>
+    <div className="rounded-2xl border border-border/40 bg-card/50 transition-colors hover:bg-card/70 dark:bg-card/30 dark:hover:bg-card/40">
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/30 px-6 py-5">
+        <div className="flex items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-rose-500/10 text-rose-600 dark:bg-rose-400/10 dark:text-rose-400">
+            <Bot className="h-4.5 w-4.5" />
           </div>
-          <Badge variant="secondary" className="gap-1">
-            <Bot className="h-3 w-3" />
-            {t("agent.badge")}
-          </Badge>
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">
+              {t("agent.title")}
+            </h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {t("agent.description")}
+            </p>
+          </div>
         </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <ShieldCheck className="h-3.5 w-3.5 text-primary" />
           <span>{t("agent.hint")}</span>
         </div>
-      </GlassCardHeader>
-      <GlassCardContent className="space-y-4">
+      </div>
+
+      {/* Content */}
+      <div className="space-y-5 px-6 py-5">
         <div className="space-y-2">
-          <Label htmlFor="max-agentic-rounds" className="text-sm font-medium">
+          <Label htmlFor="max-agentic-rounds" className="text-xs font-medium">
             {t("agent.maxRoundsLabel")}
           </Label>
           <div className="flex items-center gap-3">
@@ -143,8 +130,9 @@ export function AgentSettingsCard({ isTauriRuntime }: AgentSettingsCardProps) {
             {t("agent.maxRoundsHelp")}
           </p>
         </div>
+
         <div className="space-y-2">
-          <Label htmlFor="desktop-persona-prompt" className="text-sm font-medium">
+          <Label htmlFor="desktop-persona-prompt" className="text-xs font-medium">
             {t("agent.personaPromptLabel")}
           </Label>
           <Textarea
@@ -153,12 +141,13 @@ export function AgentSettingsCard({ isTauriRuntime }: AgentSettingsCardProps) {
             onChange={(event) => setPersonaPrompt(event.target.value)}
             disabled={isLoading || isSaving}
             placeholder={t("agent.personaPromptPlaceholder")}
-            className="min-h-32 rounded-2xl"
+            className="min-h-32 rounded-xl"
           />
           <p className="text-xs text-muted-foreground">
             {t("agent.personaPromptHelp")}
           </p>
         </div>
+
         {hasChanges && (
           <GlassButton
             type="button"
@@ -169,12 +158,12 @@ export function AgentSettingsCard({ isTauriRuntime }: AgentSettingsCardProps) {
             {isSaving ? t("agent.saving") : t("agent.save")}
           </GlassButton>
         )}
-      </GlassCardContent>
-      <GlassCardFooter className="justify-end">
-        <Badge variant="outline" className="text-xs">
-          {t("agent.scopeBadge")}
-        </Badge>
-      </GlassCardFooter>
-    </GlassCard>
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center justify-end border-t border-border/30 px-6 py-3">
+        <span className="text-[11px] text-muted-foreground/60">{t("agent.scopeBadge")}</span>
+      </div>
+    </div>
   )
 }

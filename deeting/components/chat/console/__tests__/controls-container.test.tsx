@@ -17,6 +17,7 @@ jest.mock("next/navigation", () => ({
 jest.mock("@/i18n/routing", () => ({
   Link: ({
     children,
+    scroll: _scroll,
     ...props
   }: React.PropsWithChildren<Record<string, unknown>>) => (
     <a {...props}>{children}</a>
@@ -50,11 +51,15 @@ const buildMessagingMock = (
 
 describe("ControlsContainer (web)", () => {
   beforeEach(() => {
+    mockUseChatMessaging.mockReset()
+    delete (window as typeof window & { __TAURI__?: unknown }).__TAURI__
+    delete (window as typeof window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
     useChatStore.setState({
       input: "",
       attachments: [],
       isLoading: false,
       models: [{ id: "model-1", provider_model_id: "model-1" }],
+      selectedAssistant: null,
     })
 
     mockUseChatMessaging.mockReturnValue(buildMessagingMock())
@@ -103,5 +108,26 @@ describe("ControlsContainer (web)", () => {
     fireEvent.click(continueButton)
 
     expect(continueInterruptedGeneration).toHaveBeenCalledTimes(1)
+  })
+
+  it("passes the selected assistant directly into chat messaging on web", () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "false"
+    useChatStore.setState({
+      selectedAssistant: {
+        id: "assistant-1",
+        name: "Assistant One",
+        desc: "",
+        color: "from-sky-500 to-cyan-500",
+      },
+    })
+
+    render(<ControlsContainer />)
+
+    expect(mockUseChatMessaging.mock.calls).toContainEqual([
+      expect.objectContaining({
+        agent: { id: "assistant-1", name: "Assistant One" },
+        isTauriRuntime: false,
+      }),
+    ])
   })
 })

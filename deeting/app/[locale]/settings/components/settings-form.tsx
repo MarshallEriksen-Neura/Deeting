@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { useForm } from "react-hook-form";
+import { useForm, type UseFormReturn } from "react-hook-form";
 import { toast } from "sonner";
+import { AlertTriangle, Wrench } from "lucide-react";
 import { Form } from "@/components/ui/form";
 import { Progress } from "@/components/ui/progress";
 import { GlassButton } from "@/components/ui/glass-button";
@@ -35,14 +36,16 @@ import {
   useUserSecretary,
 } from "@/lib/swr/use-embedding-settings";
 import { DesktopEmbeddingSettingsCard } from "./desktop-embedding-settings-card";
-import { DesktopObjectStorageSettingsCard } from "./desktop-object-storage-settings-card";
-import { DesktopScoutSettingsCard } from "./desktop-scout-settings-card";
-import { DesktopSandboxSettingsCard } from "./desktop-sandbox-settings-card";
-import { AgentSettingsCard } from "./agent-settings-card";
 import { PersonalSettingsCard } from "./personal-settings-card";
 import { SettingsFormActions } from "./settings-form-actions";
 import { SettingsNav, type SettingsSection } from "./settings-nav";
 import { type ModelGroup, type SettingsFormValues } from "../types";
+import {
+  DeferredAgentSettingsCard,
+  DeferredDesktopObjectStorageSettingsCard,
+  DeferredDesktopSandboxSettingsCard,
+  DeferredDesktopScoutSettingsCard,
+} from "./settings-lazy";
 
 function findSelectedSecretaryModel(
   value: string | undefined,
@@ -62,6 +65,21 @@ function findSelectedSecretaryModel(
 interface SettingsFormProps {
   isAuthenticated: boolean;
   isTauriRuntime: boolean;
+}
+
+function applyFormValues(
+  form: UseFormReturn<SettingsFormValues>,
+  values: Partial<SettingsFormValues>
+) {
+  for (const [key, value] of Object.entries(values) as Array<
+    [keyof SettingsFormValues, SettingsFormValues[keyof SettingsFormValues]]
+  >) {
+    form.setValue(key, value, {
+      shouldDirty: false,
+      shouldTouch: false,
+      shouldValidate: false,
+    });
+  }
 }
 
 export function SettingsForm({
@@ -106,6 +124,10 @@ export function SettingsForm({
     React.useState<LocalEmbeddingRebuildResponse | null>(null);
   const [isRepairingIndexes, setIsRepairingIndexes] = React.useState(false);
   const [repairMessage, setRepairMessage] = React.useState<string | null>(null);
+  const [hasLoadedDesktopScoutSettings, setHasLoadedDesktopScoutSettings] =
+    React.useState(false);
+  const [hasLoadedDesktopStorageSettings, setHasLoadedDesktopStorageSettings] =
+    React.useState(false);
 
   const form = useForm<SettingsFormValues>({
     defaultValues: {
@@ -135,83 +157,14 @@ export function SettingsForm({
     if (!isAuthenticated) return;
     if (isLoadingSecretary) return;
     if (isTauriRuntime && isLoadingUserEmbeddingConfig) return;
-    let cancelled = false;
-
-    const syncSettings = async () => {
-      let scoutBaseUrl = "";
-      let objectStorageProvider: SettingsFormValues["objectStorageProvider"] =
-        "cloudflare_r2_s3";
-      let objectStorageBucket = "";
-      let objectStorageRegion = "";
-      let objectStorageEndpoint = "";
-      let objectStoragePublicBaseUrl = "";
-      let objectStoragePathPrefix = "";
-      let objectStorageAccessKeyId = "";
-      let objectStorageSecretAccessKey = "";
-      let objectStorageIsPathStyle = false;
-      let objectStorageEnabled = false;
-
-      if (isTauriRuntime) {
-        try {
-          const { getDesktopScoutBaseUrl } =
-            await import("@/lib/api/desktop-config");
-          const { fetchDesktopObjectStorageConfig } = await import(
-            "@/lib/api/desktop-object-storage"
-          );
-          const objectStorageConfig = await fetchDesktopObjectStorageConfig();
-          if (!cancelled) {
-            scoutBaseUrl = await getDesktopScoutBaseUrl();
-            objectStorageProvider =
-              objectStorageConfig?.provider ?? "cloudflare_r2_s3";
-            objectStorageBucket = objectStorageConfig?.bucket ?? "";
-            objectStorageRegion = objectStorageConfig?.region ?? "";
-            objectStorageEndpoint = objectStorageConfig?.endpoint ?? "";
-            objectStoragePublicBaseUrl =
-              objectStorageConfig?.public_base_url ?? "";
-            objectStoragePathPrefix = objectStorageConfig?.path_prefix ?? "";
-            objectStorageAccessKeyId =
-              objectStorageConfig?.access_key_id ?? "";
-            objectStorageSecretAccessKey = "";
-            objectStorageIsPathStyle =
-              objectStorageConfig?.is_path_style ?? false;
-            objectStorageEnabled = objectStorageConfig?.is_enabled ?? false;
-          }
-        } catch (error) {
-          console.warn(
-            "[desktop-settings] load scout/object-storage settings failed",
-            error,
-          );
-        }
-      }
-
-      if (cancelled) return;
-
-      form.reset({
+    applyFormValues(form, {
         secretaryModel: isTauriRuntime
           ? (secretarySetting?.provider_model_id ?? secretarySetting?.model_name ?? "")
           : (secretarySetting?.model_name ?? ""),
         desktopEmbeddingProviderModelId: isTauriRuntime
           ? (userEmbeddingConfig?.provider_model_id ?? "")
           : "",
-        scoutBaseUrl,
-        objectStorageProvider,
-        objectStorageBucket,
-        objectStorageRegion,
-        objectStorageEndpoint,
-        objectStoragePublicBaseUrl,
-        objectStoragePathPrefix,
-        objectStorageAccessKeyId,
-        objectStorageSecretAccessKey,
-        objectStorageIsPathStyle,
-        objectStorageEnabled,
       });
-    };
-
-    void syncSettings();
-
-    return () => {
-      cancelled = true;
-    };
   }, [
     form,
     isAuthenticated,
@@ -221,6 +174,75 @@ export function SettingsForm({
     secretarySetting?.provider_model_id,
     secretarySetting?.model_name,
     userEmbeddingConfig?.provider_model_id,
+  ]);
+
+  React.useEffect(() => {
+    if (!isAuthenticated || !isTauriRuntime) return;
+    if (activeSection !== "relay" || hasLoadedDesktopScoutSettings) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const { getDesktopScoutBaseUrl } = await import("@/lib/api/desktop-config");
+        const scoutBaseUrl = await getDesktopScoutBaseUrl();
+        if (cancelled) return;
+        applyFormValues(form, { scoutBaseUrl });
+        setHasLoadedDesktopScoutSettings(true);
+      } catch (error) {
+        console.warn("[desktop-settings] load scout settings failed", error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeSection,
+    form,
+    hasLoadedDesktopScoutSettings,
+    isAuthenticated,
+    isTauriRuntime,
+  ]);
+
+  React.useEffect(() => {
+    if (!isAuthenticated || !isTauriRuntime) return;
+    if (activeSection !== "storage" || hasLoadedDesktopStorageSettings) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const { fetchDesktopObjectStorageConfig } = await import(
+          "@/lib/api/desktop-object-storage"
+        );
+        const objectStorageConfig = await fetchDesktopObjectStorageConfig();
+        if (cancelled) return;
+        applyFormValues(form, {
+          objectStorageProvider: objectStorageConfig?.provider ?? "cloudflare_r2_s3",
+          objectStorageBucket: objectStorageConfig?.bucket ?? "",
+          objectStorageRegion: objectStorageConfig?.region ?? "",
+          objectStorageEndpoint: objectStorageConfig?.endpoint ?? "",
+          objectStoragePublicBaseUrl: objectStorageConfig?.public_base_url ?? "",
+          objectStoragePathPrefix: objectStorageConfig?.path_prefix ?? "",
+          objectStorageAccessKeyId: objectStorageConfig?.access_key_id ?? "",
+          objectStorageSecretAccessKey: "",
+          objectStorageIsPathStyle: objectStorageConfig?.is_path_style ?? false,
+          objectStorageEnabled: objectStorageConfig?.is_enabled ?? false,
+        });
+        setHasLoadedDesktopStorageSettings(true);
+      } catch (error) {
+        console.warn("[desktop-settings] load object storage settings failed", error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeSection,
+    form,
+    hasLoadedDesktopStorageSettings,
+    isAuthenticated,
+    isTauriRuntime,
   ]);
 
   const handleStartRebuild = React.useCallback(async () => {
@@ -351,9 +373,25 @@ export function SettingsForm({
         }
 
         // Desktop-local settings are only meaningful in Tauri runtime.
-        if (isTauriRuntime) {
+        if (isTauriRuntime && hasLoadedDesktopScoutSettings) {
           const { getDesktopScoutBaseUrl, setDesktopScoutBaseUrl } =
             await import("@/lib/api/desktop-config");
+          try {
+            const currentScoutBaseUrl = (await getDesktopScoutBaseUrl()).trim();
+            const nextScoutBaseUrl = values.scoutBaseUrl.trim();
+            if (nextScoutBaseUrl !== currentScoutBaseUrl) {
+              await setDesktopScoutBaseUrl(nextScoutBaseUrl);
+              scoutSettingsChanged = true;
+            }
+          } catch (error) {
+            console.warn(
+              "[desktop-settings] update scout settings failed",
+              error,
+            );
+          }
+        }
+
+        if (isTauriRuntime && hasLoadedDesktopStorageSettings) {
           const {
             fetchDesktopObjectStorageConfig,
             updateDesktopObjectStorageConfig,
@@ -361,12 +399,6 @@ export function SettingsForm({
           try {
             const currentObjectStorage =
               await fetchDesktopObjectStorageConfig();
-            const currentScoutBaseUrl = (await getDesktopScoutBaseUrl()).trim();
-            const nextScoutBaseUrl = values.scoutBaseUrl.trim();
-            if (nextScoutBaseUrl !== currentScoutBaseUrl) {
-              await setDesktopScoutBaseUrl(nextScoutBaseUrl);
-              scoutSettingsChanged = true;
-            }
 
             const nextObjectStorageProvider = values.objectStorageProvider;
             const nextObjectStorageBucket = values.objectStorageBucket.trim();
@@ -427,7 +459,7 @@ export function SettingsForm({
             }
           } catch (error) {
             console.warn(
-              "[desktop-settings] update scout/object-storage settings failed",
+              "[desktop-settings] update object storage settings failed",
               error,
             );
           }
@@ -474,7 +506,7 @@ export function SettingsForm({
 
   return (
     <Form {...form}>
-      <div className="flex flex-col gap-0 md:flex-row md:gap-6">
+      <div className="flex flex-col gap-0 md:flex-row md:gap-8">
         <SettingsNav
           activeSection={activeSection}
           onSectionChange={setActiveSection}
@@ -483,11 +515,11 @@ export function SettingsForm({
 
         <form
           onSubmit={form.handleSubmit(onSubmit)}
-          className="min-w-0 flex-1 space-y-6"
+          className="min-w-0 flex-1 space-y-5"
         >
           {/* Models section */}
           {activeSection === "models" && (
-            <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-5">
               <DesktopEmbeddingSettingsCard
                 control={form.control}
                 isTauriRuntime={isTauriRuntime}
@@ -503,95 +535,113 @@ export function SettingsForm({
                 modelGroups={chatModelGroups}
                 isLoadingModels={isLoadingChatModels}
               />
+
+              {/* Rebuild banner */}
               {showRebuildBanner && (
-                <div className="rounded-2xl border border-amber-200/60 bg-amber-50/60 p-4 dark:border-amber-500/20 dark:bg-amber-500/10">
-                  <p className="text-sm font-semibold text-foreground">
-                    {t("desktop.rebuildTitle")}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {t("desktop.rebuildDescription")}
-                  </p>
-
-                  {isRebuilding && (
-                    <div className="mt-4 space-y-2">
-                      <Progress
-                        value={rebuildProgress?.progress ?? 0}
-                        className="h-2"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        {t(
-                          `desktop.rebuildStage.${rebuildProgress?.phase ?? "prepare"}`,
-                        )}{" "}
-                        · {rebuildProgress?.processed ?? 0}/
-                        {rebuildProgress?.total ?? 0}
-                      </p>
+                <div className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.04] px-5 py-4 dark:border-amber-400/15 dark:bg-amber-400/[0.06]">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 dark:bg-amber-400/10">
+                      <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
                     </div>
-                  )}
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-foreground">
+                        {t("desktop.rebuildTitle")}
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {t("desktop.rebuildDescription")}
+                      </p>
 
-                  {!isRebuilding && hasPendingRebuild && (
-                    <div className="mt-3">
-                      <GlassButton size="sm" onClick={handleStartRebuild}>
-                        {t("desktop.rebuildAction")}
-                      </GlassButton>
-                    </div>
-                  )}
+                      {isRebuilding && (
+                        <div className="mt-3 space-y-1.5">
+                          <Progress
+                            value={rebuildProgress?.progress ?? 0}
+                            className="h-1.5"
+                          />
+                          <p className="text-[11px] text-muted-foreground">
+                            {t(
+                              `desktop.rebuildStage.${rebuildProgress?.phase ?? "prepare"}`,
+                            )}{" "}
+                            · {rebuildProgress?.processed ?? 0}/
+                            {rebuildProgress?.total ?? 0}
+                          </p>
+                        </div>
+                      )}
 
-                  {!isRebuilding && rebuildSummary && (
-                    <div className="mt-3 space-y-1 text-xs text-muted-foreground">
-                      <p>
-                        {t("desktop.rebuildCompleted", {
-                          memoryIndexed: rebuildSummary.memory_indexed,
-                          memoryFailed: rebuildSummary.memory_failed,
-                          assetIndexed: rebuildSummary.asset_indexed,
-                          assetFailed: rebuildSummary.asset_failed,
-                        })}
-                      </p>
-                      <p>
-                        {t("desktop.rebuildMemorySummary", {
-                          total: rebuildSummary.memory_total,
-                          indexed: rebuildSummary.memory_indexed,
-                          failed: rebuildSummary.memory_failed,
-                        })}
-                      </p>
-                      <p>
-                        {t("desktop.rebuildAssetSummary", {
-                          total: rebuildSummary.asset_total,
-                          indexed: rebuildSummary.asset_indexed,
-                          failed: rebuildSummary.asset_failed,
-                        })}
-                      </p>
-                      <p>
-                        {t("desktop.rebuildVectorDimension", {
-                          dimension: rebuildSummary.vector_dimension,
-                        })}
-                      </p>
+                      {!isRebuilding && hasPendingRebuild && (
+                        <div className="mt-3">
+                          <GlassButton size="sm" onClick={handleStartRebuild}>
+                            {t("desktop.rebuildAction")}
+                          </GlassButton>
+                        </div>
+                      )}
+
+                      {!isRebuilding && rebuildSummary && (
+                        <div className="mt-3 space-y-0.5 text-[11px] text-muted-foreground">
+                          <p>
+                            {t("desktop.rebuildCompleted", {
+                              memoryIndexed: rebuildSummary.memory_indexed,
+                              memoryFailed: rebuildSummary.memory_failed,
+                              assetIndexed: rebuildSummary.asset_indexed,
+                              assetFailed: rebuildSummary.asset_failed,
+                            })}
+                          </p>
+                          <p>
+                            {t("desktop.rebuildMemorySummary", {
+                              total: rebuildSummary.memory_total,
+                              indexed: rebuildSummary.memory_indexed,
+                              failed: rebuildSummary.memory_failed,
+                            })}
+                          </p>
+                          <p>
+                            {t("desktop.rebuildAssetSummary", {
+                              total: rebuildSummary.asset_total,
+                              indexed: rebuildSummary.asset_indexed,
+                              failed: rebuildSummary.asset_failed,
+                            })}
+                          </p>
+                          <p>
+                            {t("desktop.rebuildVectorDimension", {
+                              dimension: rebuildSummary.vector_dimension,
+                            })}
+                          </p>
+                        </div>
+                      )}
                     </div>
-                  )}
+                  </div>
                 </div>
               )}
+
+              {/* Repair section */}
               {canEditDesktop && (
-                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 dark:border-slate-500/20 dark:bg-slate-500/10">
-                  <p className="text-sm font-semibold text-foreground">
-                    {t("desktop.repairTitle")}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {t("desktop.repairDescription")}
-                  </p>
-                  <div className="mt-3">
-                    <GlassButton
-                      size="sm"
-                      variant="secondary"
-                      onClick={handleRepairIndexes}
-                      loading={isRepairingIndexes}
-                    >
-                      {t("desktop.repairAction")}
-                    </GlassButton>
+                <div className="rounded-2xl border border-border/40 bg-muted/15 px-5 py-4 dark:bg-muted/10">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted/30 dark:bg-muted/20">
+                      <Wrench className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-foreground">
+                        {t("desktop.repairTitle")}
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {t("desktop.repairDescription")}
+                      </p>
+                      <div className="mt-3">
+                        <GlassButton
+                          size="sm"
+                          variant="secondary"
+                          onClick={handleRepairIndexes}
+                          loading={isRepairingIndexes}
+                        >
+                          {t("desktop.repairAction")}
+                        </GlassButton>
+                      </div>
+                      {repairMessage ? (
+                        <p className="mt-2 text-[11px] text-muted-foreground">
+                          {repairMessage}
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
-                  {repairMessage ? (
-                    <p className="mt-3 text-xs text-muted-foreground">
-                      {repairMessage}
-                    </p>
-                  ) : null}
                 </div>
               )}
             </div>
@@ -599,16 +649,16 @@ export function SettingsForm({
 
           {/* Agent section */}
           {activeSection === "agent" && (
-            <div className="flex flex-col gap-6">
-              <AgentSettingsCard isTauriRuntime={isTauriRuntime} />
-              <DesktopSandboxSettingsCard isTauriRuntime={isTauriRuntime} />
+            <div className="flex flex-col gap-5">
+              <DeferredAgentSettingsCard isTauriRuntime={isTauriRuntime} />
+              <DeferredDesktopSandboxSettingsCard isTauriRuntime={isTauriRuntime} />
             </div>
           )}
 
           {/* Storage section */}
           {activeSection === "storage" && (
-            <div className="flex flex-col gap-6">
-              <DesktopObjectStorageSettingsCard
+            <div className="flex flex-col gap-5">
+              <DeferredDesktopObjectStorageSettingsCard
                 control={form.control}
                 isTauriRuntime={isTauriRuntime}
                 canEditDesktop={canEditDesktop}
@@ -616,10 +666,10 @@ export function SettingsForm({
             </div>
           )}
 
-          {/* IM section */}
+          {/* Relay section */}
           {activeSection === "relay" && (
-            <div className="flex flex-col gap-6">
-              <DesktopScoutSettingsCard
+            <div className="flex flex-col gap-5">
+              <DeferredDesktopScoutSettingsCard
                 control={form.control}
                 isTauriRuntime={isTauriRuntime}
                 canEditDesktop={canEditDesktop}

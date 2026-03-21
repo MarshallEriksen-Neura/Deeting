@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/glass-card"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { useRecentErrors } from "@/lib/swr/use-recent-errors"
+import type { RecentError } from "@/lib/api/dashboard"
 
 /**
  * Recent Errors List Component
@@ -23,9 +23,14 @@ import { useRecentErrors } from "@/lib/swr/use-recent-errors"
  * - Model name
  * - Error message snippet
  */
-export function RecentErrorsList() {
+export function RecentErrorsList({
+  errors,
+  isLoading = false,
+}: {
+  errors?: RecentError[]
+  isLoading?: boolean
+}) {
   const t = useTranslations("dashboard.recentErrors")
-  const { data: errors, isLoading } = useRecentErrors()
 
   return (
     <GlassCard className="h-full">
@@ -81,16 +86,7 @@ export function RecentErrorsList() {
   )
 }
 
-interface ErrorLog {
-  id: string
-  timestamp: string
-  statusCode: number
-  model: string
-  errorMessage: string
-  errorCode?: string
-}
-
-function ErrorRow({ error }: { error: ErrorLog }) {
+function ErrorRow({ error }: { error: RecentError }) {
   return (
     <div
       className={cn(

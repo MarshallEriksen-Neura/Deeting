@@ -1,0 +1,114 @@
+import React from "react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { SettingsForm } from "../settings-form"
+
+const mockGetDesktopScoutBaseUrl = jest.fn(async () => "http://scout:8001")
+const mockFetchDesktopObjectStorageConfig = jest.fn(async () => ({
+  provider: "cloudflare_r2_s3",
+  bucket: "bucket",
+  region: "auto",
+  endpoint: "https://example.com",
+  public_base_url: "https://cdn.example.com",
+  path_prefix: "assets",
+  access_key_id: "key-id",
+  is_path_style: false,
+  is_enabled: true,
+}))
+
+jest.mock("@/hooks/use-i18n", () => ({
+  useI18n: () => (key: string) => key,
+}))
+
+jest.mock("@/hooks/use-chat-service", () => ({
+  useChatService: () => ({ modelGroups: [], isLoadingModels: false }),
+}))
+
+jest.mock("@/lib/swr/use-embedding-settings", () => ({
+  useUserSecretary: () => ({ data: null, isLoading: false, mutate: jest.fn() }),
+  useUserEmbeddingConfig: () => ({ data: null, isLoading: false, mutate: jest.fn() }),
+}))
+
+jest.mock("@/lib/api/desktop-config", () => ({
+  getDesktopScoutBaseUrl: (...args: unknown[]) => mockGetDesktopScoutBaseUrl(...args),
+  setDesktopScoutBaseUrl: jest.fn(),
+}))
+
+jest.mock("@/lib/api/desktop-object-storage", () => ({
+  fetchDesktopObjectStorageConfig: (...args: unknown[]) =>
+    mockFetchDesktopObjectStorageConfig(...args),
+  updateDesktopObjectStorageConfig: jest.fn(),
+}))
+
+jest.mock("@/components/ui/form", () => {
+  const actual = jest.requireActual("@/components/ui/form")
+  return {
+    ...actual,
+    Form: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+  }
+})
+
+jest.mock("../desktop-embedding-settings-card", () => ({
+  DesktopEmbeddingSettingsCard: () => null,
+}))
+
+jest.mock("../personal-settings-card", () => ({
+  PersonalSettingsCard: () => null,
+}))
+
+jest.mock("../settings-form-actions", () => ({
+  SettingsFormActions: () => null,
+}))
+
+jest.mock("../settings-lazy", () => ({
+  DeferredAgentSettingsCard: () => null,
+  DeferredDesktopSandboxSettingsCard: () => null,
+  DeferredDesktopObjectStorageSettingsCard: () => null,
+  DeferredDesktopScoutSettingsCard: () => null,
+}))
+
+jest.mock("../settings-nav", () => ({
+  SettingsNav: ({
+    onSectionChange,
+  }: {
+    onSectionChange: (section: "models" | "storage" | "agent" | "relay") => void
+  }) => (
+    <div>
+      <button type="button" onClick={() => onSectionChange("models")}>
+        models
+      </button>
+      <button type="button" onClick={() => onSectionChange("storage")}>
+        storage
+      </button>
+      <button type="button" onClick={() => onSectionChange("relay")}>
+        relay
+      </button>
+    </div>
+  ),
+}))
+
+describe("SettingsForm desktop config loading", () => {
+  beforeEach(() => {
+    mockGetDesktopScoutBaseUrl.mockClear()
+    mockFetchDesktopObjectStorageConfig.mockClear()
+  })
+
+  it("loads desktop scout and storage settings only after their sections are opened", async () => {
+    render(<SettingsForm isAuthenticated isTauriRuntime />)
+
+    expect(mockGetDesktopScoutBaseUrl).not.toHaveBeenCalled()
+    expect(mockFetchDesktopObjectStorageConfig).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole("button", { name: "relay" }))
+
+    await waitFor(() => {
+      expect(mockGetDesktopScoutBaseUrl).toHaveBeenCalledTimes(1)
+    })
+    expect(mockFetchDesktopObjectStorageConfig).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole("button", { name: "storage" }))
+
+    await waitFor(() => {
+      expect(mockFetchDesktopObjectStorageConfig).toHaveBeenCalledTimes(1)
+    })
+  })
+})

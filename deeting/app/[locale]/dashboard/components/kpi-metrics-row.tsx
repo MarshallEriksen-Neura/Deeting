@@ -4,7 +4,7 @@ import { DollarSign, Activity, Zap, CheckCircle2 } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { GlassCard } from "@/components/ui/glass-card"
 import { cn } from "@/lib/utils"
-import { useDashboardStats } from "@/lib/swr/use-dashboard-stats"
+import type { DashboardStats } from "@/lib/api/dashboard"
 
 /**
  * KPI Metrics Row - The Vitals
@@ -15,9 +15,14 @@ import { useDashboardStats } from "@/lib/swr/use-dashboard-stats"
  * 3. Response Speed (TTFT)
  * 4. System Health
  */
-export function KPIMetricsRow() {
+export function KPIMetricsRow({
+  stats,
+  isLoading = false,
+}: {
+  stats?: DashboardStats
+  isLoading?: boolean
+}) {
   const t = useTranslations("dashboard.kpi")
-  const { data: stats, isLoading } = useDashboardStats()
 
   const kpiCards = [
     {

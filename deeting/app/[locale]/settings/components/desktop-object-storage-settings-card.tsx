@@ -2,9 +2,8 @@
 
 import { useState } from "react"
 import { useWatch, type Control } from "react-hook-form"
-import { Database, Eye, EyeOff, HardDriveDownload, KeyRound, Link2 } from "lucide-react"
+import { Database, Eye, EyeOff, KeyRound, Link2 } from "lucide-react"
 
-import { Badge } from "@/components/ui/badge"
 import {
   FormControl,
   FormDescription,
@@ -12,14 +11,6 @@ import {
   FormItem,
   FormLabel,
 } from "@/components/ui/form"
-import {
-  GlassCard,
-  GlassCardContent,
-  GlassCardDescription,
-  GlassCardFooter,
-  GlassCardHeader,
-  GlassCardTitle,
-} from "@/components/ui/glass-card"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -55,38 +46,40 @@ export function DesktopObjectStorageSettingsCard({
   const isDisabled = !canEditDesktop
 
   return (
-    <GlassCard blur="default" theme="surface" hover="lift" padding="lg" className="border-0">
-      <GlassCardHeader className="space-y-3">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <GlassCardTitle className="text-lg text-foreground">
-              {t("storage.title")}
-            </GlassCardTitle>
-            <GlassCardDescription className="text-muted-foreground">
-              {t("storage.description")}
-            </GlassCardDescription>
+    <div className="rounded-2xl border border-border/40 bg-card/50 transition-colors hover:bg-card/70 dark:bg-card/30 dark:hover:bg-card/40">
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/30 px-6 py-5">
+        <div className="flex items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 dark:bg-amber-400/10 dark:text-amber-400">
+            <Database className="h-4.5 w-4.5" />
           </div>
-          <Badge variant="secondary" className="gap-1">
-            <HardDriveDownload className="h-3 w-3" />
-            {t("storage.scopeBadge")}
-          </Badge>
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">
+              {t("storage.title")}
+            </h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {t("storage.description")}
+            </p>
+          </div>
         </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Database className="h-3.5 w-3.5" />
           <span>{t("storage.securityHint")}</span>
         </div>
-      </GlassCardHeader>
+      </div>
 
-      <GlassCardContent className="space-y-5">
+      {/* Content */}
+      <div className="space-y-5 px-6 py-5">
+        {/* Enable toggle */}
         <FormField
           control={control}
           name="objectStorageEnabled"
           render={({ field }) => (
-            <FormItem className="rounded-2xl border border-white/10 bg-[var(--surface)]/50 px-4 py-3">
+            <FormItem className="rounded-xl border border-border/30 bg-muted/15 px-4 py-3 dark:bg-muted/10">
               <div className="flex items-center justify-between gap-3">
-                <div className="space-y-1">
-                  <FormLabel>{t("storage.enabledLabel")}</FormLabel>
-                  <FormDescription>{t("storage.enabledHelp")}</FormDescription>
+                <div className="space-y-0.5">
+                  <FormLabel className="text-sm">{t("storage.enabledLabel")}</FormLabel>
+                  <FormDescription className="text-xs">{t("storage.enabledHelp")}</FormDescription>
                 </div>
                 <FormControl>
                   <Switch
@@ -100,20 +93,21 @@ export function DesktopObjectStorageSettingsCard({
           )}
         />
 
+        {/* Provider & Bucket row */}
         <div className="grid gap-4 md:grid-cols-2">
           <FormField
             control={control}
             name="objectStorageProvider"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t("storage.providerLabel")}</FormLabel>
+                <FormLabel className="text-xs font-medium">{t("storage.providerLabel")}</FormLabel>
                 <Select
                   value={field.value}
                   onValueChange={field.onChange}
                   disabled={isDisabled}
                 >
                   <FormControl>
-                    <SelectTrigger>
+                    <SelectTrigger className="rounded-xl">
                       <SelectValue placeholder={t("storage.providerPlaceholder")} />
                     </SelectTrigger>
                   </FormControl>
@@ -126,7 +120,7 @@ export function DesktopObjectStorageSettingsCard({
                     </SelectItem>
                   </SelectContent>
                 </Select>
-                <FormDescription>{t("storage.providerHelp")}</FormDescription>
+                <FormDescription className="text-xs">{t("storage.providerHelp")}</FormDescription>
               </FormItem>
             )}
           />
@@ -136,7 +130,7 @@ export function DesktopObjectStorageSettingsCard({
             name="objectStorageBucket"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t("storage.bucketLabel")}</FormLabel>
+                <FormLabel className="text-xs font-medium">{t("storage.bucketLabel")}</FormLabel>
                 <FormControl>
                   <Input
                     {...field}
@@ -145,22 +139,26 @@ export function DesktopObjectStorageSettingsCard({
                         ? "storage.bucketPlaceholderAliyun"
                         : "storage.bucketPlaceholder",
                     )}
+                    className="rounded-xl"
                     disabled={isDisabled}
                   />
                 </FormControl>
-                <FormDescription>
+                <FormDescription className="text-xs">
                   {t(isAliyunOss ? "storage.bucketHelpAliyun" : "storage.bucketHelp")}
                 </FormDescription>
               </FormItem>
             )}
           />
+        </div>
 
+        {/* Region & Path-style row */}
+        <div className="grid gap-4 md:grid-cols-2">
           <FormField
             control={control}
             name="objectStorageRegion"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t("storage.regionLabel")}</FormLabel>
+                <FormLabel className="text-xs font-medium">{t("storage.regionLabel")}</FormLabel>
                 <FormControl>
                   <Input
                     {...field}
@@ -169,10 +167,11 @@ export function DesktopObjectStorageSettingsCard({
                         ? "storage.regionPlaceholderAliyun"
                         : "storage.regionPlaceholder",
                     )}
+                    className="rounded-xl"
                     disabled={isDisabled}
                   />
                 </FormControl>
-                <FormDescription>
+                <FormDescription className="text-xs">
                   {t(isAliyunOss ? "storage.regionHelpAliyun" : "storage.regionHelp")}
                 </FormDescription>
               </FormItem>
@@ -183,11 +182,11 @@ export function DesktopObjectStorageSettingsCard({
             control={control}
             name="objectStorageIsPathStyle"
             render={({ field }) => (
-              <FormItem className="rounded-2xl border border-white/10 bg-[var(--surface)]/50 px-4 py-3">
+              <FormItem className="rounded-xl border border-border/30 bg-muted/15 px-4 py-3 dark:bg-muted/10">
                 <div className="flex items-center justify-between gap-3">
-                  <div className="space-y-1">
-                    <FormLabel>{t("storage.pathStyleLabel")}</FormLabel>
-                    <FormDescription>
+                  <div className="space-y-0.5">
+                    <FormLabel className="text-xs font-medium">{t("storage.pathStyleLabel")}</FormLabel>
+                    <FormDescription className="text-xs">
                       {t(isAliyunOss ? "storage.pathStyleHelpAliyun" : "storage.pathStyleHelp")}
                     </FormDescription>
                   </div>
@@ -204,16 +203,17 @@ export function DesktopObjectStorageSettingsCard({
           />
         </div>
 
+        {/* Endpoint */}
         <FormField
           control={control}
           name="objectStorageEndpoint"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>{t("storage.endpointLabel")}</FormLabel>
+              <FormLabel className="text-xs font-medium">{t("storage.endpointLabel")}</FormLabel>
               <FormControl>
                 <div className="relative">
-                  <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-xs text-muted-foreground">
-                    <Link2 className="mr-1 h-3 w-3" />
+                  <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted-foreground">
+                    <Link2 className="h-3.5 w-3.5" />
                   </span>
                   <Input
                     {...field}
@@ -223,25 +223,26 @@ export function DesktopObjectStorageSettingsCard({
                         ? "storage.endpointPlaceholderAliyun"
                         : "storage.endpointPlaceholder",
                     )}
-                    className="pl-8"
+                    className="rounded-xl pl-9"
                     disabled={isDisabled}
                   />
                 </div>
               </FormControl>
-              <FormDescription>
+              <FormDescription className="text-xs">
                 {t(isAliyunOss ? "storage.endpointHelpAliyun" : "storage.endpointHelp")}
               </FormDescription>
             </FormItem>
           )}
         />
 
+        {/* Public URL & Path prefix row */}
         <div className="grid gap-4 md:grid-cols-2">
           <FormField
             control={control}
             name="objectStoragePublicBaseUrl"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t("storage.publicBaseUrlLabel")}</FormLabel>
+                <FormLabel className="text-xs font-medium">{t("storage.publicBaseUrlLabel")}</FormLabel>
                 <FormControl>
                   <Input
                     {...field}
@@ -251,10 +252,11 @@ export function DesktopObjectStorageSettingsCard({
                         ? "storage.publicBaseUrlPlaceholderAliyun"
                         : "storage.publicBaseUrlPlaceholder",
                     )}
+                    className="rounded-xl"
                     disabled={isDisabled}
                   />
                 </FormControl>
-                <FormDescription>
+                <FormDescription className="text-xs">
                   {t(
                     isAliyunOss
                       ? "storage.publicBaseUrlHelpAliyun"
@@ -270,41 +272,43 @@ export function DesktopObjectStorageSettingsCard({
             name="objectStoragePathPrefix"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t("storage.pathPrefixLabel")}</FormLabel>
+                <FormLabel className="text-xs font-medium">{t("storage.pathPrefixLabel")}</FormLabel>
                 <FormControl>
                   <Input
                     {...field}
                     placeholder="desktop/uploads"
+                    className="rounded-xl"
                     disabled={isDisabled}
                   />
                 </FormControl>
-                <FormDescription>{t("storage.pathPrefixHelp")}</FormDescription>
+                <FormDescription className="text-xs">{t("storage.pathPrefixHelp")}</FormDescription>
               </FormItem>
             )}
           />
         </div>
 
+        {/* Credentials row */}
         <div className="grid gap-4 md:grid-cols-2">
           <FormField
             control={control}
             name="objectStorageAccessKeyId"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t("storage.accessKeyIdLabel")}</FormLabel>
+                <FormLabel className="text-xs font-medium">{t("storage.accessKeyIdLabel")}</FormLabel>
                 <FormControl>
                   <div className="relative">
-                    <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-xs text-muted-foreground">
-                      <KeyRound className="mr-1 h-3 w-3" />
+                    <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted-foreground">
+                      <KeyRound className="h-3.5 w-3.5" />
                     </span>
                     <Input
                       {...field}
                       placeholder="AKIA..."
-                      className="pl-8"
+                      className="rounded-xl pl-9"
                       disabled={isDisabled}
                     />
                   </div>
                 </FormControl>
-                <FormDescription>{t("storage.accessKeyIdHelp")}</FormDescription>
+                <FormDescription className="text-xs">{t("storage.accessKeyIdHelp")}</FormDescription>
               </FormItem>
             )}
           />
@@ -314,19 +318,20 @@ export function DesktopObjectStorageSettingsCard({
             name="objectStorageSecretAccessKey"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t("storage.secretAccessKeyLabel")}</FormLabel>
+                <FormLabel className="text-xs font-medium">{t("storage.secretAccessKeyLabel")}</FormLabel>
                 <FormControl>
                   <div className="flex items-center gap-2">
                     <Input
                       {...field}
                       type={showSecret ? "text" : "password"}
                       placeholder="********"
+                      className="rounded-xl"
                       disabled={isDisabled}
                     />
                     <button
                       type="button"
                       onClick={() => setShowSecret((value) => !value)}
-                      className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
+                      className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
                     >
                       {showSecret ? (
                         <>
@@ -342,18 +347,19 @@ export function DesktopObjectStorageSettingsCard({
                     </button>
                   </div>
                 </FormControl>
-                <FormDescription>{t("storage.secretAccessKeyHelp")}</FormDescription>
+                <FormDescription className="text-xs">{t("storage.secretAccessKeyHelp")}</FormDescription>
               </FormItem>
             )}
           />
         </div>
-      </GlassCardContent>
+      </div>
 
-      <GlassCardFooter className="justify-end">
-        <Badge variant="outline" className="text-xs">
+      {/* Footer */}
+      <div className="flex items-center justify-end border-t border-border/30 px-6 py-3">
+        <span className="text-[11px] text-muted-foreground/60">
           {t("storage.footerHint")}
-        </Badge>
-      </GlassCardFooter>
-    </GlassCard>
+        </span>
+      </div>
+    </div>
   )
 }

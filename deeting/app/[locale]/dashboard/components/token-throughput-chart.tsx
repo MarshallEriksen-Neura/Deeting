@@ -17,7 +17,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart"
-import { useTokenThroughput } from "@/lib/swr/use-token-throughput"
+import type { TokenThroughput } from "@/lib/api/dashboard"
 
 /**
  * Token Throughput Trend Chart
@@ -26,9 +26,14 @@ import { useTokenThroughput } from "@/lib/swr/use-token-throughput"
  * - Bottom layer: Input Tokens (deep purple)
  * - Top layer: Output Tokens (bright cyan)
  */
-export function TokenThroughputChart() {
+export function TokenThroughputChart({
+  data,
+  isLoading = false,
+}: {
+  data?: TokenThroughput
+  isLoading?: boolean
+}) {
   const t = useTranslations("dashboard.tokenThroughput")
-  const { data, isLoading } = useTokenThroughput()
 
   const chartConfig = {
     inputTokens: {

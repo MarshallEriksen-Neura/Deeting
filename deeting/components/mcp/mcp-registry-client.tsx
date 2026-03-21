@@ -29,8 +29,7 @@ import {
 } from "./registry-effects"
 import { useMcpRegistryViewModel } from "@/components/mcp/registry-view-model"
 import { RegistryHeader } from "./registry-header"
-import { SupplyChainSection } from "./supply-chain-section"
-import { RuntimeGridSection } from "./runtime-grid-section"
+import { Skeleton } from "@/components/ui/skeleton"
 import { MCPLogEntry, MCPSource, MCPTool, McpToolRecord } from "@/types/mcp"
 import { useMcpServers } from "@/lib/swr/use-mcp-servers"
 import { useMcpSources } from "@/lib/swr/use-mcp-sources"
@@ -43,6 +42,21 @@ import { useNotifications } from "@/components/contexts/notification-context"
 const ServerLogsSheet = dynamic(() => import("./server-logs-sheet").then(mod => mod.ServerLogsSheet), { ssr: false })
 const ConflictResolutionDialog = dynamic(() => import("./conflict-resolution-dialog").then(mod => mod.ConflictResolutionDialog), { ssr: false })
 const EditServerSheet = dynamic(() => import("./edit-server-sheet").then(mod => mod.EditServerSheet), { ssr: false })
+const SupplyChainSection = dynamic(
+  () => import("./supply-chain-section").then((mod) => mod.SupplyChainSection),
+  { loading: () => <McpSectionSkeleton cardCount={3} columnsClassName="md:grid-cols-3" /> }
+)
+const RuntimeGridSection = dynamic(
+  () => import("./runtime-grid-section").then((mod) => mod.RuntimeGridSection),
+  {
+    loading: () => (
+      <McpSectionSkeleton
+        cardCount={6}
+        columnsClassName="lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+      />
+    ),
+  }
+)
 
 interface MCPRegistryClientProps {
   initialTools: MCPTool[]
@@ -298,5 +312,34 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
         toggleLoading={toolToggleMutation.isMutating}
       />
     </div>
+  )
+}
+
+function McpSectionSkeleton({
+  cardCount,
+  columnsClassName,
+}: {
+  cardCount: number
+  columnsClassName: string
+}) {
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center gap-2">
+        <Skeleton className="h-4 w-32" />
+        <div className="h-px flex-1 bg-gray-100" />
+      </div>
+
+      <div className={`grid grid-cols-1 gap-4 ${columnsClassName}`}>
+        {Array.from({ length: cardCount }).map((_, index) => (
+          <div key={index} className="rounded-3xl border border-border/60 bg-card/80 p-6">
+            <div className="space-y-4">
+              <Skeleton className="h-6 w-32" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-28 w-full" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   )
 }

@@ -58,7 +58,7 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
   }, [agentId, sessionId, isTauriRuntime, initSession])
 
   // 显示加载状态
-  const showLoading = !initialized || (isLoading && !selectedAssistant)
+  const showLoading = !initialized
 
   return (
     <ChatErrorBoundary>

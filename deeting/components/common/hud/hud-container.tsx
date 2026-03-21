@@ -7,18 +7,23 @@ import { useEffect, useState, useMemo, useCallback, type ReactNode } from 'react
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from 'next-themes';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { HistorySidebar } from '@/components/chat/sidebar/history-sidebar';
-import { ImageHistorySidebar } from '@/components/image/history/image-history-sidebar';
 import { useChatStore, type ChatAssistant } from '@/store/chat-store';
 import { useShallow } from 'zustand/react/shallow';
 import { useChatService } from '@/hooks/use-chat-service';
 import { useI18n } from '@/hooks/use-i18n';
 import { isTauriRuntime as detectTauriRuntime } from '@/lib/runtime/tauri';
-import { ModelPicker, resolveModelVisual } from '@/components/models/model-picker';
+import { resolveModelVisual } from '@/components/models/model-visual';
 import { resolveStatusDetail } from '@/lib/chat/status-detail';
 import { StatusPill } from '@/components/ui/status-pill';
 import { useImageGenerationStore } from '@/store/image-generation-store';
 import { createConversation } from '@/lib/api/conversations';
+import {
+  DeferredHistorySidebar,
+  DeferredHudControlCenterPanel,
+  DeferredHudSystemMenuPanel,
+  DeferredImageHistorySidebar,
+  preloadHudDeferredSurfaces,
+} from './hud-lazy';
 
 /**
  * HUD Container Component
@@ -109,6 +114,30 @@ export default function HUD() {
   const { selectedModelId, setSelectedModelId } = useImageGenerationStore();
 
   const isTauriRuntime = detectTauriRuntime();
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const warm = () => {
+      preloadHudDeferredSurfaces();
+    };
+
+    const browserWindow = window as Window &
+      typeof globalThis & {
+        requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number
+        cancelIdleCallback?: (handle: number) => void
+      }
+
+    if (typeof browserWindow.requestIdleCallback === 'function') {
+      const id = browserWindow.requestIdleCallback(warm, { timeout: 1500 });
+      return () => browserWindow.cancelIdleCallback?.(id);
+    }
+
+    const timeoutId = globalThis.setTimeout(warm, 1200);
+    return () => {
+      globalThis.clearTimeout(timeoutId);
+    };
+  }, []);
 
   useEffect(() => {
     if (isImage) return;
@@ -310,10 +339,10 @@ export default function HUD() {
                 transition={{ type: 'spring', damping: 20, stiffness: 300 }}
                 className="absolute top-full mt-3 w-80 bg-[#F7F9FB]/85 dark:bg-[#0b0c0e]/88 backdrop-blur-2xl border border-white/70 dark:border-white/10 rounded-[2rem] shadow-[0_18px_40px_-18px_rgba(15,23,42,0.35)] ring-1 ring-white/40 dark:ring-white/5 overflow-hidden p-4 flex flex-col gap-4 z-50"
             >
-                <ModelPicker
+                <DeferredHudControlCenterPanel
                   value={activeModelId ?? ""}
                   onChange={handleModelChange}
-                  modelGroups={(isImage ? imageModelGroups : serviceModelGroups) as any}
+                  modelGroups={isImage ? imageModelGroups : serviceModelGroups}
                   title={t("model.label")}
                   subtitle={t("model.placeholder")}
                   searchPlaceholder={t("model.searchPlaceholder")}
@@ -321,10 +350,6 @@ export default function HUD() {
                   noResultsText={t("model.noResults")}
                   disabled={isImage ? isLoadingImageModels : false}
                 />
-
-                <div className="flex items-center justify-center pb-1">
-                    <div className="w-12 h-1 rounded-full bg-slate-200/70 dark:bg-white/10" />
-                </div>
             </motion.div>
         )}
       </AnimatePresence>
@@ -338,31 +363,17 @@ export default function HUD() {
                 exit={{ opacity: 0, y: -10, scale: 0.95 }}
                 className="absolute top-full mt-3 w-64 bg-white/82 dark:bg-[#121212]/88 backdrop-blur-2xl border border-white/70 dark:border-white/10 rounded-[1.75rem] shadow-[0_18px_40px_-20px_rgba(15,23,42,0.35)] ring-1 ring-white/40 dark:ring-white/5 overflow-hidden p-3 flex flex-col gap-2 z-50"
             >
-                <div className="grid grid-cols-2 gap-2">
-                    <MenuLink href="/" icon={<Home className="w-4 h-4" />} label={t("hud.menu.home")} />
-                    <MenuLink href="/dashboard" icon={<LayoutDashboard className="w-4 h-4" />} label={t("hud.menu.dashboard")} />
-                    <MenuLink href="/market" icon={<ShoppingBag className="w-4 h-4" />} label={t("hud.menu.registry")} />
-                    <MenuLink href="/settings" icon={<Settings className="w-4 h-4" />} label={t("hud.menu.preferences")} />
-                </div>
-
-                <div className="flex flex-col gap-1 mt-1">
-                     <Button
-                        variant="ghost"
-                        onClick={handleThemeToggle}
-                        className="flex items-center justify-between p-3 rounded-2xl bg-white/70 dark:bg-white/5 hover:bg-white/90 dark:hover:bg-white/10 transition-colors text-[11px] font-semibold shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
-                     >
-                        <div className="flex items-center gap-3">
-                            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-                            <span>{t("hud.menu.interfaceMode")}</span>
-                        </div>
-                        <span className="text-[9px] opacity-40 uppercase">{theme}</span>
-                     </Button>
-                     
-                     <a href={`/login?callbackUrl=${encodeURIComponent(pathname || "/")}`} className="flex items-center gap-3 p-3 rounded-2xl bg-white/60 dark:bg-white/5 hover:bg-red-500/10 hover:text-red-500 transition-colors text-[11px] font-semibold shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]">
-                        <LogOut className="w-4 h-4" />
-                        <span>{t("hud.menu.terminateSession")}</span>
-                     </a>
-                </div>
+                <DeferredHudSystemMenuPanel
+                  homeLabel={t("hud.menu.home")}
+                  dashboardLabel={t("hud.menu.dashboard")}
+                  registryLabel={t("hud.menu.registry")}
+                  preferencesLabel={t("hud.menu.preferences")}
+                  interfaceModeLabel={t("hud.menu.interfaceMode")}
+                  terminateSessionLabel={t("hud.menu.terminateSession")}
+                  theme={theme}
+                  onThemeToggle={handleThemeToggle}
+                  logoutHref={`/login?callbackUrl=${encodeURIComponent(pathname || "/")}`}
+                />
             </motion.div>
         )}
       </AnimatePresence>
@@ -370,21 +381,10 @@ export default function HUD() {
     </nav>
     
     {isImage ? (
-      <ImageHistorySidebar isOpen={isHistoryOpen} onClose={handleCloseHistory} />
+      <DeferredImageHistorySidebar isOpen={isHistoryOpen} onClose={handleCloseHistory} />
     ) : (
-      <HistorySidebar isOpen={isHistoryOpen} onClose={handleCloseHistory} />
+      <DeferredHistorySidebar isOpen={isHistoryOpen} onClose={handleCloseHistory} />
     )}
     </>
   );
-}
-
-function MenuLink({ href, icon, label }: { href: string; icon: ReactNode; label: string }) {
-    return (
-        <Link href={href as any} className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl bg-white/70 dark:bg-white/5 hover:bg-white/90 dark:hover:bg-white/10 transition-all group shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]">
-            <div className="text-slate-500/90 dark:text-white/45 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
-                {icon}
-            </div>
-            <span className="text-[9px] font-semibold text-slate-500/90 dark:text-white/40 uppercase tracking-[0.08em] group-hover:text-slate-700 dark:group-hover:text-white/80">{label}</span>
-        </Link>
-    )
 }

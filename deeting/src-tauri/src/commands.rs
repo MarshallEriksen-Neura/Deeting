@@ -135,6 +135,7 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::providers::commands::update_local_provider_instance,
         crate::modules::providers::commands::delete_local_provider_instance,
         crate::modules::providers::commands::list_local_provider_models,
+        crate::modules::providers::commands::list_local_provider_health,
         crate::modules::providers::commands::verify_local_provider,
         crate::modules::providers::commands::sync_local_provider_models,
         crate::modules::providers::commands::quick_add_local_provider_models,
