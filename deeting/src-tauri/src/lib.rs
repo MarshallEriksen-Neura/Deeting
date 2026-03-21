@@ -9,7 +9,8 @@ use tauri::{Emitter, Manager};
 
 #[cfg(any(test, target_os = "linux", windows))]
 fn should_register_runtime_deep_links(is_linux: bool, is_windows: bool, is_debug: bool) -> bool {
-    is_linux || (is_windows && is_debug)
+    let _ = is_debug;
+    is_linux || is_windows
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -81,7 +82,7 @@ mod tests {
     }
 
     #[test]
-    fn runtime_registration_is_disabled_for_windows_release() {
-        assert!(!should_register_runtime_deep_links(false, true, false));
+    fn runtime_registration_is_enabled_for_windows_release() {
+        assert!(should_register_runtime_deep_links(false, true, false));
     }
 }

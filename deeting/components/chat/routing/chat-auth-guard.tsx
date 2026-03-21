@@ -6,6 +6,12 @@ import { isTauriRuntime as detectTauriRuntime } from "@/lib/runtime/tauri"
 import { useAuthStore } from "@/store/auth-store"
 import { ChatRouteFallback } from "./chat-route-fallback"
 
+type AuthPersistApi = {
+  hasHydrated: () => boolean
+  onHydrate: (listener: () => void) => () => void
+  onFinishHydration: (listener: () => void) => () => void
+}
+
 export function buildChatLoginTarget(pathname?: string, search?: string) {
   const safePathname = pathname?.trim() || "/chat"
   const normalizedSearch =
@@ -22,23 +28,42 @@ function getCurrentChatLoginTarget() {
   return buildChatLoginTarget(window.location.pathname, window.location.search)
 }
 
+function getAuthPersistApi(): AuthPersistApi | null {
+  const persistApi = (useAuthStore as typeof useAuthStore & { persist?: AuthPersistApi })
+    .persist
+
+  if (
+    persistApi &&
+    typeof persistApi.hasHydrated === "function" &&
+    typeof persistApi.onHydrate === "function" &&
+    typeof persistApi.onFinishHydration === "function"
+  ) {
+    return persistApi
+  }
+
+  return null
+}
+
 export function ChatAuthGuard({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
   const redirectedRef = React.useRef(false)
   const isDesktopRuntime = detectTauriRuntime()
-
-  const [isHydrated, setIsHydrated] = React.useState(() =>
-    useAuthStore.persist.hasHydrated()
-  )
+  const [isHydrated, setIsHydrated] = React.useState(false)
 
   React.useEffect(() => {
+    const persistApi = getAuthPersistApi()
+    if (!persistApi) {
+      setIsHydrated(true)
+      return
+    }
+
     const onHydrate = () => setIsHydrated(false)
     const onFinishHydration = () => setIsHydrated(true)
 
-    const unsubscribeHydrate = useAuthStore.persist.onHydrate(onHydrate)
-    const unsubscribeFinish = useAuthStore.persist.onFinishHydration(onFinishHydration)
+    const unsubscribeHydrate = persistApi.onHydrate(onHydrate)
+    const unsubscribeFinish = persistApi.onFinishHydration(onFinishHydration)
 
-    setIsHydrated(useAuthStore.persist.hasHydrated())
+    setIsHydrated(persistApi.hasHydrated())
 
     return () => {
       unsubscribeHydrate()

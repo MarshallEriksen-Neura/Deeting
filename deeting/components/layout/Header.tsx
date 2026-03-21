@@ -27,7 +27,7 @@ import { shouldHideGlobalHeader } from "./header/visibility"
 
 export function Header({
   logoSrc = DEFAULT_DESKTOP_LOGO,
-  logoText = "AI Higress",
+  logoText = "Deeting",
   navItems = defaultNavItems,
   userName,
   userEmail,

@@ -5,15 +5,21 @@ const mockUseAuthStore = jest.fn()
 const mockHasHydrated = jest.fn()
 const mockOnHydrate = jest.fn(() => jest.fn())
 const mockOnFinishHydration = jest.fn(() => jest.fn())
+let mockPersistApi:
+  | {
+      hasHydrated: () => boolean
+      onHydrate: (...args: unknown[]) => unknown
+      onFinishHydration: (...args: unknown[]) => unknown
+    }
+  | undefined
 
 jest.mock("@/store/auth-store", () => {
   const store = ((selector: (state: { isAuthenticated: boolean }) => unknown) =>
     mockUseAuthStore(selector)) as unknown as typeof import("@/store/auth-store").useAuthStore
-  ;(store as typeof store & { persist: unknown }).persist = {
-    hasHydrated: () => mockHasHydrated(),
-    onHydrate: (...args: unknown[]) => mockOnHydrate(...args),
-    onFinishHydration: (...args: unknown[]) => mockOnFinishHydration(...args),
-  }
+  Object.defineProperty(store, "persist", {
+    configurable: true,
+    get: () => mockPersistApi,
+  })
   return { useAuthStore: store }
 })
 
@@ -30,6 +36,11 @@ describe("ChatAuthGuard", () => {
     mockHasHydrated.mockReturnValue(true)
     mockOnHydrate.mockReturnValue(jest.fn())
     mockOnFinishHydration.mockReturnValue(jest.fn())
+    mockPersistApi = {
+      hasHydrated: () => mockHasHydrated(),
+      onHydrate: (...args: unknown[]) => mockOnHydrate(...args),
+      onFinishHydration: (...args: unknown[]) => mockOnFinishHydration(...args),
+    }
     mockUseAuthStore.mockImplementation((selector) =>
       selector({ isAuthenticated: false })
     )
@@ -79,5 +90,22 @@ describe("ChatAuthGuard", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Continue login" }))
     expect(mockLocationReplace).toHaveBeenCalledTimes(2)
+  })
+
+  it("handles missing persist api without crashing", async () => {
+    const { ChatAuthGuard } = await import("../chat-auth-guard")
+    mockPersistApi = undefined
+
+    render(
+      <ChatAuthGuard>
+        <div>chat</div>
+      </ChatAuthGuard>
+    )
+
+    await waitFor(() => {
+      expect(mockLocationReplace).toHaveBeenCalledWith("/login?callbackUrl=%2Fchat%3FagentId%3Dagent-1")
+    })
+
+    expect(screen.getByText("Sign in to continue")).toBeInTheDocument()
   })
 })
