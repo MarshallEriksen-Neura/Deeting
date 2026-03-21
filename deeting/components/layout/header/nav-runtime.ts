@@ -10,3 +10,7 @@ export function getRuntimeHeaderNavItems(navItems: NavItem[], isTauri: boolean):
 
   return navItems.filter((item) => WEB_ONLY_HEADER_HREFS.has(item.href))
 }
+
+export function shouldPrefetchHeaderNavLinks(isTauri: boolean) {
+  return !isTauri
+}

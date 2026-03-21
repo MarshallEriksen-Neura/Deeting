@@ -13,6 +13,7 @@ use crate::modules::sandbox::error::SandboxError;
 use crate::modules::sandbox::installer::{
     bridge_script_host_path, load_installation_record, BoxLiteInstallationRecord,
 };
+use crate::utils::configure_background_tokio_command;
 
 const BOXLITE_DEFAULT_PORT: u16 = 9090;
 const HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(2);
@@ -109,7 +110,9 @@ impl BoxLiteProvisioner {
         }
 
         let launch_script = build_bridge_launch_command(&record, self.config.port);
-        let child = tokio::process::Command::new("wsl.exe")
+        let mut command = tokio::process::Command::new("wsl.exe");
+        configure_background_tokio_command(&mut command);
+        let child = command
             .args(["--", "bash", "-lc", launch_script.as_str()])
             .stdin(Stdio::null())
             .stdout(Stdio::piped())

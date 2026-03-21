@@ -1,5 +1,8 @@
 import { defaultNavItems } from "@/components/layout/header/constants"
-import { getRuntimeHeaderNavItems } from "@/components/layout/header/nav-runtime"
+import {
+  getRuntimeHeaderNavItems,
+  shouldPrefetchHeaderNavLinks,
+} from "@/components/layout/header/nav-runtime"
 
 describe("defaultNavItems", () => {
   it("contains dashboard link for regular header navigation", () => {
@@ -44,5 +47,15 @@ describe("getRuntimeHeaderNavItems", () => {
     expect(hrefs).toContain("/dashboard")
     expect(hrefs).not.toContain("/docs")
     expect(hrefs).not.toContain("/download")
+  })
+})
+
+describe("shouldPrefetchHeaderNavLinks", () => {
+  it("keeps prefetch enabled on web", () => {
+    expect(shouldPrefetchHeaderNavLinks(false)).toBe(true)
+  })
+
+  it("disables prefetch for desktop header links", () => {
+    expect(shouldPrefetchHeaderNavLinks(true)).toBe(false)
   })
 })

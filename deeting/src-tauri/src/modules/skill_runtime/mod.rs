@@ -6,6 +6,7 @@ use crate::modules::mcp::commands::support::{
 };
 use crate::modules::mcp::store::McpStore;
 use crate::state::AppState;
+use crate::utils::configure_background_tokio_command;
 use async_trait::async_trait;
 use mcp_core::types::McpTool;
 use mcp_storage::types::{LocalSkillInstallDetail, LocalSkillToolBindingSnapshot};
@@ -614,6 +615,7 @@ async fn execute_deeting_tool_binding(
         );
 
         let mut cmd = tokio::process::Command::new(&command);
+        configure_background_tokio_command(&mut cmd);
         cmd.args(&args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -728,6 +730,7 @@ pub(crate) async fn execute_skill_binding(
         .map(|p| p.to_path_buf());
 
     let mut cmd = tokio::process::Command::new(&command);
+    configure_background_tokio_command(&mut cmd);
     cmd.args(&args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -841,6 +844,7 @@ async fn spawn_local_tool_subprocess(
         .clone()
         .ok_or_else(|| format!("tool {} has no executable command", tool.name))?;
     let mut cmd = tokio::process::Command::new(command);
+    configure_background_tokio_command(&mut cmd);
     if let Some(args) = &tool.args {
         cmd.args(args);
     }

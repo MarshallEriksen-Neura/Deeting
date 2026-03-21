@@ -8,6 +8,7 @@ use crate::modules::skill_runtime::{
     LOCAL_SKILL_RUNTIME_STATE_NEEDS_INSTALL, LOCAL_SKILL_RUNTIME_STATE_NEEDS_REINSTALL,
     LOCAL_SKILL_RUNTIME_STATE_READY,
 };
+use crate::utils::configure_background_tokio_command;
 use mcp_registry::types::LocalCapabilityRegistryUpsert;
 use serde_json::{json, Map as JsonMap, Value as JsonValue};
 use std::{
@@ -1742,6 +1743,7 @@ pub(crate) async fn materialize_skill_repo_to_dir(
     let temp_name = format!("_installing_{}", uuid::Uuid::new_v4());
     let temp_dir = skills_dir.join(&temp_name);
     let mut cmd = tokio::process::Command::new("git");
+    configure_background_tokio_command(&mut cmd);
     cmd.arg("clone").arg("--depth").arg("1");
     if let Some(rev) = revision.map(|r| r.trim()).filter(|r| !r.is_empty()) {
         cmd.arg("--branch").arg(rev);

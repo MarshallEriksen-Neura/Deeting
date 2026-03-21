@@ -10,6 +10,7 @@ use tokio::sync::{Mutex, RwLock};
 
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::store::McpStore;
+use crate::utils::configure_background_tokio_command;
 use mcp_core::types::{McpLogEntry, McpLogStream, McpTool, McpToolStatus};
 
 const DEFAULT_LOG_BUFFER_SIZE: usize = 1000;
@@ -66,6 +67,7 @@ impl ProcessManager {
 
         let args = tool.args.clone().unwrap_or_default();
         let mut cmd = tokio::process::Command::new(command);
+        configure_background_tokio_command(&mut cmd);
         cmd.args(args);
         if let Some(env) = &tool.env {
             cmd.envs(env);

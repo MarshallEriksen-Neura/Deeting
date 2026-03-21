@@ -8,6 +8,7 @@ use super::{
 };
 use crate::modules::mcp::store::McpStore;
 use crate::state::AppState;
+use crate::utils::configure_background_tokio_command;
 use async_trait::async_trait;
 use mcp_storage::types::{LocalSkillInstallDetail, LocalSkillToolBindingSnapshot};
 use serde_json::Value as JsonValue;
@@ -234,7 +235,9 @@ impl LocalSkillRuntimeProvider for NodeRuntimeProvider {
 }
 
 async fn run_command_capture(program: &str, args: &[String], workdir: &Path) -> Result<(), String> {
-    let output = tokio::process::Command::new(program)
+    let mut command = tokio::process::Command::new(program);
+    configure_background_tokio_command(&mut command);
+    let output = command
         .args(args)
         .current_dir(workdir)
         .output()

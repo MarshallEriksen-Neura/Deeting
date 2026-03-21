@@ -1,6 +1,7 @@
 use super::control_plane::LocalExecutionPolicy;
 use super::prompt_assets::PromptAssets;
 use crate::modules::code_mode::prompt::render_code_mode_capability_prompt;
+use crate::utils::configure_background_std_command;
 #[cfg(test)]
 use mcp_core::types::LocalChatInputMessage;
 
@@ -15,14 +16,18 @@ pub(crate) use mcp_runtime::prompt::{
 
 fn query_router_prompt_local_context_from_system() -> Option<RouterPromptLocalContext> {
     #[cfg(target_os = "windows")]
-    let output = std::process::Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-Command",
-            "(Get-Date).ToString('yyyy-MM-dd') + '|' + (Get-TimeZone).Id",
-        ])
-        .output()
-        .ok()?;
+    let output = {
+        let mut command = std::process::Command::new("powershell");
+        configure_background_std_command(&mut command);
+        command
+            .args([
+                "-NoProfile",
+                "-Command",
+                "(Get-Date).ToString('yyyy-MM-dd') + '|' + (Get-TimeZone).Id",
+            ])
+            .output()
+            .ok()?
+    };
 
     #[cfg(not(target_os = "windows"))]
     let output = std::process::Command::new("date")

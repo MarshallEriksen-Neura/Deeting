@@ -2,6 +2,7 @@ import React from "react"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 
 const mockUseAuthStore = jest.fn()
+const mockUseDesktopAuthBootstrapStore = jest.fn()
 const mockHasHydrated = jest.fn()
 const mockOnHydrate = jest.fn(() => jest.fn())
 const mockOnFinishHydration = jest.fn(() => jest.fn())
@@ -23,6 +24,11 @@ jest.mock("@/store/auth-store", () => {
   return { useAuthStore: store }
 })
 
+jest.mock("@/store/desktop-auth-bootstrap-store", () => ({
+  useDesktopAuthBootstrapStore: (selector: (state: { isReady: boolean }) => unknown) =>
+    mockUseDesktopAuthBootstrapStore(selector),
+}))
+
 describe("ChatAuthGuard", () => {
   const originalLocation = window.location
   let mockLocationReplace: jest.Mock
@@ -36,6 +42,7 @@ describe("ChatAuthGuard", () => {
     mockHasHydrated.mockReturnValue(true)
     mockOnHydrate.mockReturnValue(jest.fn())
     mockOnFinishHydration.mockReturnValue(jest.fn())
+    mockUseDesktopAuthBootstrapStore.mockReset()
     mockPersistApi = {
       hasHydrated: () => mockHasHydrated(),
       onHydrate: (...args: unknown[]) => mockOnHydrate(...args),
@@ -43,6 +50,9 @@ describe("ChatAuthGuard", () => {
     }
     mockUseAuthStore.mockImplementation((selector) =>
       selector({ isAuthenticated: false })
+    )
+    mockUseDesktopAuthBootstrapStore.mockImplementation((selector) =>
+      selector({ isReady: true })
     )
     ;(global as typeof globalThis & { __TAURI_INTERNALS__?: Record<string, unknown> }).__TAURI_INTERNALS__ = {}
     mockLocationReplace = jest.fn()
@@ -107,5 +117,21 @@ describe("ChatAuthGuard", () => {
     })
 
     expect(screen.getByText("Sign in to continue")).toBeInTheDocument()
+  })
+
+  it("waits for desktop auth bootstrap before redirecting", async () => {
+    const { ChatAuthGuard } = await import("../chat-auth-guard")
+    mockUseDesktopAuthBootstrapStore.mockImplementation((selector) =>
+      selector({ isReady: false })
+    )
+
+    render(
+      <ChatAuthGuard>
+        <div>chat</div>
+      </ChatAuthGuard>
+    )
+
+    expect(screen.getByText("Restoring session")).toBeInTheDocument()
+    expect(mockLocationReplace).not.toHaveBeenCalled()
   })
 })

@@ -13,6 +13,7 @@ use crate::modules::sandbox::provider::SandboxProvider;
 use crate::modules::sandbox::types::{
     SandboxExecutionOutput, SandboxIdentity, SandboxPythonStatus, SandboxWslStatus,
 };
+use crate::utils::configure_background_std_command;
 
 const BOXRUN_API_PREFIX: &str = "v1";
 
@@ -231,7 +232,9 @@ fn ensure_wsl_available() -> Result<(), SandboxError> {
 }
 
 pub fn diagnose_wsl_availability() -> SandboxWslStatus {
-    match Command::new("wsl.exe").arg("--status").output() {
+    let mut command = Command::new("wsl.exe");
+    configure_background_std_command(&mut command);
+    match command.arg("--status").output() {
         Ok(output) if output.status.success() => SandboxWslStatus {
             installed: true,
             ready: true,
@@ -267,7 +270,9 @@ pub fn diagnose_wsl_availability() -> SandboxWslStatus {
 
 pub fn resolve_wsl_home_dir() -> Result<String, SandboxError> {
     ensure_wsl_available()?;
-    let output = Command::new("wsl.exe")
+    let mut command = Command::new("wsl.exe");
+    configure_background_std_command(&mut command);
+    let output = command
         .args(["--", "sh", "-lc", "printf %s \"$HOME\""])
         .output()
         .map_err(|err| SandboxError::Unavailable(format!("failed to resolve WSL home: {err}")))?;
@@ -292,7 +297,9 @@ pub fn detect_wsl_python_abi(python_bin: &str) -> Result<String, SandboxError> {
         "{} -c 'import sys; print(f\"cp{{sys.version_info.major}}{{sys.version_info.minor}}\")'",
         shell_quote(python_bin)
     );
-    let output = Command::new("wsl.exe")
+    let mut command = Command::new("wsl.exe");
+    configure_background_std_command(&mut command);
+    let output = command
         .args(["--", "sh", "-lc", &script])
         .output()
         .map_err(|err| SandboxError::Unavailable(format!("failed to inspect WSL python: {err}")))?;
@@ -341,7 +348,9 @@ pub fn inspect_wsl_python(python_bin: &str) -> SandboxPythonStatus {
 pub fn windows_path_to_wsl(path: &Path) -> Result<String, SandboxError> {
     ensure_wsl_available()?;
     let raw = normalize_windows_path_for_wsl(&path.display().to_string());
-    let output = Command::new("wsl.exe")
+    let mut command = Command::new("wsl.exe");
+    configure_background_std_command(&mut command);
+    let output = command
         .args(["--", "wslpath", "-a", raw.as_str()])
         .output()
         .map_err(|err| {

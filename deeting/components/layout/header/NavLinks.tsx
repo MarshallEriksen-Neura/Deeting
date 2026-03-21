@@ -7,15 +7,17 @@ import { NavItem } from "./types"
 
 interface NavLinksProps {
   items: NavItem[]
+  prefetch?: boolean
 }
 
-export function NavLinks({ items }: NavLinksProps) {
+export function NavLinks({ items, prefetch }: NavLinksProps) {
   return (
     <nav className="hidden items-center gap-1 md:flex">
       {items.map((item) => (
         <Link
           key={item.href}
           href={item.href}
+          prefetch={prefetch}
           className={cn(
             "relative px-3 py-1.5 text-sm font-medium transition-all duration-200",
             "text-[var(--muted)] hover:text-[var(--foreground)]",

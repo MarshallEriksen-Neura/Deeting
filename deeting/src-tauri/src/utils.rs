@@ -3,8 +3,13 @@ use mcp_storage::helpers::expand_path;
 use serde::Serialize;
 use std::error::Error as StdError;
 use std::path::{Path, PathBuf};
+use std::process::Command as StdCommand;
 use std::time::Duration;
 use tauri::Manager;
+use tokio::process::Command as TokioCommand;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 pub fn resolve_database_url<R: tauri::Runtime>(app: &tauri::App<R>) -> Result<String, McpError> {
     let db_path = non_empty_env("DESKTOP_DB_PATH").unwrap_or_else(|| default_db_path(app));
@@ -26,6 +31,19 @@ pub fn resolve_database_url<R: tauri::Runtime>(app: &tauri::App<R>) -> Result<St
         std::fs::create_dir_all(parent).map_err(|err| McpError::Storage(err.to_string()))?;
     }
     Ok(path_to_sqlite_url(&absolute))
+}
+
+pub fn configure_background_std_command(command: &mut StdCommand) {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+}
+
+pub fn configure_background_tokio_command(command: &mut TokioCommand) {
+    configure_background_std_command(command.as_std_mut());
 }
 
 pub fn default_db_path<R: tauri::Runtime>(app: &tauri::App<R>) -> String {

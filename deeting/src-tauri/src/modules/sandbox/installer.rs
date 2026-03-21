@@ -11,6 +11,7 @@ use crate::modules::sandbox::backend_wsl::{
     detect_wsl_python_abi, resolve_wsl_home_dir, shell_quote, windows_path_to_wsl,
 };
 use crate::modules::sandbox::error::SandboxError;
+use crate::utils::configure_background_std_command;
 
 const BOXLITE_VERSION: &str = "0.6.0";
 const BOXLITE_RELEASE_BASE: &str = "https://github.com/boxlite-ai/boxlite/releases/download/v0.6.0";
@@ -215,7 +216,9 @@ fn install_wheel_into_wsl(
         runtime = shell_quote(wsl_runtime_home),
         state = shell_quote(wsl_state_dir),
     );
-    let output = std::process::Command::new("wsl.exe")
+    let mut command = std::process::Command::new("wsl.exe");
+    configure_background_std_command(&mut command);
+    let output = command
         .args(["--", "bash", "-lc", &script])
         .output()
         .map_err(|err| {

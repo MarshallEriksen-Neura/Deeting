@@ -4,6 +4,7 @@ import * as React from "react"
 
 import { isTauriRuntime as detectTauriRuntime } from "@/lib/runtime/tauri"
 import { useAuthStore } from "@/store/auth-store"
+import { useDesktopAuthBootstrapStore } from "@/store/desktop-auth-bootstrap-store"
 import { ChatRouteFallback } from "./chat-route-fallback"
 
 type AuthPersistApi = {
@@ -46,9 +47,11 @@ function getAuthPersistApi(): AuthPersistApi | null {
 
 export function ChatAuthGuard({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
+  const isDesktopAuthBootstrapReady = useDesktopAuthBootstrapStore((state) => state.isReady)
   const redirectedRef = React.useRef(false)
   const isDesktopRuntime = detectTauriRuntime()
   const [isHydrated, setIsHydrated] = React.useState(false)
+  const isRestoringDesktopSession = isDesktopRuntime && !isDesktopAuthBootstrapReady
 
   React.useEffect(() => {
     const persistApi = getAuthPersistApi()
@@ -74,7 +77,7 @@ export function ChatAuthGuard({ children }: { children: React.ReactNode }) {
   const loginTarget = getCurrentChatLoginTarget()
 
   React.useEffect(() => {
-    if (!isHydrated || isAuthenticated) {
+    if (!isHydrated || isRestoringDesktopSession || isAuthenticated) {
       redirectedRef.current = false
       return
     }
@@ -83,10 +86,10 @@ export function ChatAuthGuard({ children }: { children: React.ReactNode }) {
     redirectedRef.current = true
 
     window.location.replace(loginTarget)
-  }, [isAuthenticated, isHydrated, loginTarget])
+  }, [isAuthenticated, isHydrated, isRestoringDesktopSession, loginTarget])
 
   if (!isHydrated || !isAuthenticated) {
-    if (!isHydrated) {
+    if (!isHydrated || isRestoringDesktopSession) {
       return (
         <ChatRouteFallback
           label="Restoring session"

@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
+import { clearAuthTokenForDesktop } from "@/lib/api/desktop-config"
 import { useAuthStore } from "@/store/auth-store"
 import { AUTH_INVALIDATED_EVENT, setAuthToken } from "@/lib/http"
 
@@ -22,6 +23,7 @@ export function AuthSync() {
 
   useEffect(() => {
     const handleInvalidated = () => {
+      clearAuthTokenForDesktop()
       clearSession()
     }
     window.addEventListener(AUTH_INVALIDATED_EVENT, handleInvalidated)

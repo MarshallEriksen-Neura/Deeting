@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { DesktopAuthBootstrap } from "@/components/auth/desktop-auth-bootstrap";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthSync } from "@/components/auth/auth-sync";
 import { DesktopOAuthListener } from "@/components/auth/desktop-oauth-listener";
@@ -43,6 +44,7 @@ export default function RootLayout({
           >
             {isTauri && <TitleBar />}
             {isTauri && <DesktopStartupReady />}
+            {isTauri && <DesktopAuthBootstrap />}
             <AuthSync />
             {isTauri && <DesktopOAuthListener />}
             {children}

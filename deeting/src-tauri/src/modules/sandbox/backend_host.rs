@@ -8,6 +8,7 @@ use tokio::process::Command;
 use crate::modules::sandbox::error::SandboxError;
 use crate::modules::sandbox::provider::SandboxProvider;
 use crate::modules::sandbox::types::{SandboxExecutionOutput, SandboxIdentity};
+use crate::utils::{configure_background_std_command, configure_background_tokio_command};
 
 #[derive(Debug, Clone)]
 pub struct HostBackendOptions {
@@ -62,6 +63,7 @@ impl SandboxProvider for HostPythonBackend {
         }
 
         let mut command = Command::new(&self.command.program);
+        configure_background_tokio_command(&mut command);
         command.args(&self.command.prefix_args);
         command.arg("-c").arg(code);
         command.stdin(Stdio::null());
@@ -153,6 +155,7 @@ fn candidate_python_commands(preferred: &str) -> Vec<PythonCommand> {
 
 fn is_python_available(command: &PythonCommand) -> bool {
     let mut probe = std::process::Command::new(&command.program);
+    configure_background_std_command(&mut probe);
     probe.args(&command.prefix_args);
     probe.arg("--version");
     probe.stdin(Stdio::null());

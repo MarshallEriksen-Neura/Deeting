@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { Suspense, useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useI18n } from "@/hooks/use-i18n";
 import { useChatService } from "@/hooks/use-chat-service";
@@ -17,6 +17,14 @@ import { createSessionId, normalizeSessionId } from "@/lib/chat/session-id";
 import { resolveImagePreviewUrl } from "@/lib/image/result-helpers";
 
 export default function ImageControlsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ImageControlsPageContent />
+    </Suspense>
+  );
+}
+
+function ImageControlsPageContent() {
   const t = useI18n("chat");
   const router = useRouter();
   const pathname = usePathname();

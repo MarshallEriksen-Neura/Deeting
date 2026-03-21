@@ -13,6 +13,7 @@ use crate::modules::mcp::commands::support::{
     resolve_effective_desktop_scout_base_url, SCOUT_SERVICE_URL_ENV_KEY,
 };
 use crate::state::AppState;
+use crate::utils::configure_background_tokio_command;
 
 const DEFAULT_SKILL_ACTION_TIMEOUT_SECS: u64 = 60;
 
@@ -214,6 +215,7 @@ pub(crate) async fn execute_skill_action(
         .ok_or_else(|| "skill action entry has no parent directory".to_string())?;
     let (command, args) = build_command_for_entry(&action.entry_path, action.runtime.as_str())?;
     let mut cmd = tokio::process::Command::new(command);
+    configure_background_tokio_command(&mut cmd);
     cmd.args(args)
         .current_dir(&install_dir)
         .stdin(Stdio::piped())
