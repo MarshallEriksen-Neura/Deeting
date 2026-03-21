@@ -243,7 +243,7 @@ function toApiError(error: AxiosError) {
 
   const response = error.response as AxiosResponse | undefined
   const message =
-    (response?.data as { message?: string } | undefined)?.message ||
+    extractApiErrorMessage(response?.data) ||
     error.message ||
     "请求失败"
 
@@ -255,6 +255,62 @@ function toApiError(error: AxiosError) {
       (response?.headers?.["x-request-id"] as string | undefined) ||
       (response?.headers?.["x-requestid"] as string | undefined),
   })
+}
+
+function extractApiErrorMessage(data: unknown): string | null {
+  if (typeof data === "string" && data.trim()) {
+    return data.trim()
+  }
+
+  if (!data || typeof data !== "object") {
+    return null
+  }
+
+  const value = data as Record<string, unknown>
+  const direct = [value.message, value.error, value.details]
+  for (const item of direct) {
+    if (typeof item === "string" && item.trim()) {
+      return item.trim()
+    }
+  }
+
+  const detail = value.detail
+  if (typeof detail === "string" && detail.trim()) {
+    return detail.trim()
+  }
+
+  if (Array.isArray(detail)) {
+    const detailMessages = detail
+      .map((item) => {
+        if (typeof item === "string" && item.trim()) {
+          return item.trim()
+        }
+        if (item && typeof item === "object") {
+          const obj = item as Record<string, unknown>
+          if (typeof obj.msg === "string" && obj.msg.trim()) {
+            return obj.msg.trim()
+          }
+          if (typeof obj.message === "string" && obj.message.trim()) {
+            return obj.message.trim()
+          }
+        }
+        return null
+      })
+      .filter((item): item is string => Boolean(item))
+
+    if (detailMessages.length > 0) {
+      return detailMessages.join("; ")
+    }
+  }
+
+  if (value.error && typeof value.error === "object") {
+    const nested = value.error as Record<string, unknown>
+    if (typeof nested.message === "string" && nested.message.trim()) {
+      return nested.message.trim()
+    }
+  }
+
+  return null
 }
 
 export async function refreshAccessToken(): Promise<string | null> {

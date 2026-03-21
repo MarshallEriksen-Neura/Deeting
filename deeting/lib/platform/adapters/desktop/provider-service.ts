@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import type { IProviderService } from "../../core/types";
 import * as providerApi from "@/lib/api/providers";
 import type {
+  ProviderCard,
+  ProviderHubResponse,
   ProviderInstanceCreate,
   ProviderInstanceResponse,
   ProviderInstanceUpdate,
@@ -15,110 +17,80 @@ import type {
   ProviderVerifyResponse,
 } from "@/lib/api/providers";
 
-import { toHubResponse, toInstanceResponse, toModelResponse } from "./mappers";
-import { derivePresetCapabilities } from "./preset-helpers"
+import { toInstanceResponse, toModelResponse } from "./mappers";
 import type {
   LocalProviderInstance,
   LocalProviderModel,
-  LocalProviderPreset,
 } from "./types";
-
-async function syncPresetsFromCloud() {
-  const cloudPresets = await providerApi.fetchProviderPresetConfigs();
-
-  const presets: LocalProviderPreset[] = cloudPresets.map((preset) => ({
-    slug: preset.slug,
-    name: preset.name,
-    provider: preset.provider,
-    base_url: preset.base_url ?? "",
-    icon: preset.icon ?? null,
-    theme_color: preset.theme_color ?? null,
-    category: preset.category ?? null,
-    url_template: preset.url_template ?? null,
-    auth_type: preset.auth_type ?? null,
-    auth_config: (preset.auth_config || {}) as Record<string, unknown>,
-    protocol_schema_version: preset.protocol_schema_version ?? null,
-    protocol_profiles: (preset.protocol_profiles || {}) as Record<string, unknown>,
-    version: preset.version ?? 1,
-    is_active: preset.is_active !== false,
-  }));
-
-  await invoke<number>("replace_local_provider_presets", { presets });
-}
-
-async function listLocalPresets() {
-  return await invoke<LocalProviderPreset[]>("list_local_provider_presets");
-}
 
 async function listLocalInstances() {
   return await invoke<LocalProviderInstance[]>("list_local_provider_instances");
 }
 
+function toLocalInstanceSummary(instance: LocalProviderInstance) {
+  return {
+    id: instance.id,
+    name: instance.name,
+    is_enabled: instance.is_enabled,
+    health_status: "unknown",
+    latency_ms: 0,
+  };
+}
+
+function buildHubStats(providers: ProviderCard[]): ProviderHubResponse["stats"] {
+  return {
+    total: providers.length,
+    connected: providers.filter((provider) => provider.connected).length,
+    by_category: providers.reduce<Record<string, number>>((acc, provider) => {
+      const key = (provider.category || "unknown").trim().toLowerCase();
+      acc[key] = (acc[key] ?? 0) + 1;
+      return acc;
+    }, {}),
+  };
+}
+
+function mergeProviderCardWithLocalInstances(
+  card: ProviderCard,
+  instances: LocalProviderInstance[]
+): ProviderCard {
+  const relatedInstances = instances.filter((instance) => instance.preset_slug === card.slug);
+  return {
+    ...card,
+    connected: relatedInstances.length > 0,
+    instances: relatedInstances.map(toLocalInstanceSummary),
+  };
+}
+
+function mergeHubWithLocalInstances(
+  hub: ProviderHubResponse,
+  instances: LocalProviderInstance[]
+): ProviderHubResponse {
+  const providers = hub.providers.map((provider) =>
+    mergeProviderCardWithLocalInstances(provider, instances)
+  );
+
+  return {
+    providers,
+    stats: buildHubStats(providers),
+  };
+}
+
 export const desktopProviderService: IProviderService = {
   getHub: async (params) => {
-    try {
-      await syncPresetsFromCloud();
-    } catch (error) {
-      console.warn("[desktop-provider] sync presets from cloud failed", error);
-    }
+    const [hub, instances] = await Promise.all([
+      providerApi.fetchProviderHub(params),
+      listLocalInstances(),
+    ]);
 
-    const [presets, instances] = await Promise.all([listLocalPresets(), listLocalInstances()]);
-
-    const hub = toHubResponse(presets, instances);
-    const query = params?.q?.trim().toLowerCase();
-    const normalizedCategory = params?.category?.trim().toLowerCase();
-
-    return {
-      ...hub,
-      providers: hub.providers.filter((provider) => {
-        const providerCategory = provider.category?.trim().toLowerCase() ?? ""
-        const matchesCategory = !normalizedCategory || providerCategory === normalizedCategory
-        if (!matchesCategory) return false
-        if (!query) return true
-        return (
-          provider.name.toLowerCase().includes(query) ||
-          provider.slug.toLowerCase().includes(query) ||
-          provider.provider.toLowerCase().includes(query)
-        )
-      }),
-    }
+    return mergeHubWithLocalInstances(hub, instances);
   },
   getDetail: async (slug) => {
-    let presets = await listLocalPresets();
-    let preset = presets.find((item) => item.slug === slug && item.is_active !== false);
+    const [detail, instances] = await Promise.all([
+      providerApi.fetchProviderDetail(slug),
+      listLocalInstances(),
+    ]);
 
-    if (!preset) {
-      try {
-        await syncPresetsFromCloud();
-        presets = await listLocalPresets();
-        preset = presets.find((item) => item.slug === slug && item.is_active !== false);
-      } catch (error) {
-        console.warn("[desktop-provider] fallback sync preset detail failed", error);
-      }
-    }
-
-    if (preset) {
-      return {
-        slug: preset.slug,
-        name: preset.name,
-        provider: preset.provider,
-        category: preset.category || "cloud",
-        description: null,
-        icon: preset.icon ?? null,
-        theme_color: preset.theme_color ?? null,
-        base_url: preset.base_url || null,
-        url_template: preset.url_template ?? null,
-        tags: [],
-        capabilities: derivePresetCapabilities(preset),
-        is_popular: false,
-        sort_order: 0,
-        connected: false,
-        instances: [],
-      };
-    }
-
-    // Last fallback: direct cloud fetch.
-    return providerApi.fetchProviderDetail(slug);
+    return mergeProviderCardWithLocalInstances(detail, instances);
   },
   verify: async (payload: ProviderVerifyRequest): Promise<ProviderVerifyResponse> => {
     return await invoke<ProviderVerifyResponse>("verify_local_provider", { payload });

@@ -30,7 +30,6 @@ function isRemoteUploadFileType(value: string): value is FileType {
 }
 const LOCAL_UPLOAD_FILE_TYPES: FileType[] = ["pdf", "txt", "docx", "md", "csv", "html", "json"]
 const LOCAL_PARSEABLE_FILE_TYPES = new Set<string>(LOCAL_UPLOAD_FILE_TYPES)
-const LOCAL_PARSE_MAX_BYTES = 2 * 1024 * 1024
 const REMOTE_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
 const isTauriRuntime = () =>
   process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
@@ -264,8 +263,8 @@ export function getKnowledgeUploadAccept(): string {
     .join(",")
 }
 
-export function getKnowledgeUploadMaxBytes(): number {
-  return isTauriRuntime() ? LOCAL_PARSE_MAX_BYTES : REMOTE_UPLOAD_MAX_BYTES
+export function getKnowledgeUploadMaxBytes(): number | null {
+  return isTauriRuntime() ? null : REMOTE_UPLOAD_MAX_BYTES
 }
 
 export function splitKnowledgeUploadFiles<T extends { name: string }>(files: T[]): {
@@ -586,20 +585,6 @@ export async function uploadFile(
         metaInfo: baseMeta,
       })
       throw new Error(buildLocalUnsupportedFileError(fileType))
-    }
-    if (file.size > LOCAL_PARSE_MAX_BYTES) {
-      const errorMessage = `本地离线文档解析大小上限为 ${Math.floor(
-        LOCAL_PARSE_MAX_BYTES / 1024 / 1024
-      )}MB`
-      await createLocalUserDocument({
-        filename: file.name,
-        folderId,
-        mediaAssetId: uploadedObject?.mediaAssetId ?? null,
-        status: "failed",
-        errorMessage,
-        metaInfo: baseMeta,
-      })
-      throw new Error(errorMessage)
     }
 
     onProgress?.(20)

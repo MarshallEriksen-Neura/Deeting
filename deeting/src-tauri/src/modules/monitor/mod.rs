@@ -13,6 +13,7 @@ use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
+use crate::modules::ai_upstream::chat::request_provider_chat_completion;
 use crate::modules::desktop_runtime::local_orchestrator::{
     LocalOrchestrationEngine, LocalWorkflowStep,
 };
@@ -30,8 +31,11 @@ use crate::modules::monitor::types::{
     LocalNotificationChannelTestResponse, LocalNotificationChannelUpdateRequest,
     LocalNotificationChannelUpdateResponse, MonitorWorkerStartRequest, MonitorWorkerStatus,
 };
-use crate::modules::providers::store::{ProviderConnection, ProviderStore, LOCAL_DESKTOP_USER_ID};
+#[cfg(test)]
+use crate::modules::providers::store::LOCAL_DESKTOP_USER_ID;
+use crate::modules::providers::store::{ProviderConnection, ProviderStore};
 use crate::modules::providers::types::{ProviderInstance, ProviderModel};
+use mcp_core::types::LocalChatInputMessage;
 
 const DEFAULT_MONITOR_POLL_INTERVAL_SECONDS: u64 = 20;
 const MIN_MONITOR_POLL_INTERVAL_SECONDS: u64 = 5;
@@ -1073,31 +1077,8 @@ fn make_default_agent_id() -> String {
     format!("desktop-{}", Uuid::new_v4().simple())
 }
 
-fn build_upstream_endpoint(base_url: &str, upstream_path: &str) -> String {
-    let base = base_url.trim().trim_end_matches('/');
-    let mut path = upstream_path.trim().trim_start_matches('/').to_string();
-    if path.is_empty() {
-        if base.ends_with("/v1") {
-            return format!("{base}/chat/completions");
-        }
-        return format!("{base}/v1/chat/completions");
-    }
-
-    if base.ends_with("/v1") {
-        if let Some((head, tail)) = path.split_once('/') {
-            if head.eq_ignore_ascii_case("v1") {
-                path = tail.to_string();
-            }
-        } else if path.eq_ignore_ascii_case("v1") {
-            path.clear();
-        }
-    }
-
-    if path.is_empty() {
-        return base.to_string();
-    }
-
-    format!("{base}/{path}")
+fn global_app_state_required() -> Result<crate::state::AppState, String> {
+    crate::state::global_app_state().ok_or_else(|| "global app state is unavailable".to_string())
 }
 
 fn compare_model_priority(a: &ProviderModel, b: &ProviderModel) -> Ordering {
@@ -1467,6 +1448,7 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorInvokeModelStep {
         ctx: &'a mut MonitorWorkflowContext,
     ) -> BoxFuture<'a, Result<(), String>> {
         Box::pin(async move {
+            let app_state = global_app_state_required()?;
             let connection = ctx
                 .connection
                 .clone()
@@ -1489,90 +1471,47 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorInvokeModelStep {
                 "monitor_invoke_model",
                 "running",
                 "monitor.upstream.request",
-                Some(json!({ "model_id": model.model_id })),
+                Some(json!({
+                    "model_id": model.model_id.clone(),
+                    "instance_id": instance.id.to_string(),
+                    "base_url": connection.base_url.clone(),
+                    "upstream_path": model.upstream_path.clone(),
+                    "has_mcp_store": ctx.state.shared.mcp_store.is_some(),
+                })),
             );
 
-            let endpoint = build_upstream_endpoint(&connection.base_url, &model.upstream_path);
-            let body = json!({
-                "model": model.model_id,
-                "messages": [{ "role": "user", "content": prompt }],
-                "stream": false
-            });
-            let mut request = ctx.state.shared.client.post(&endpoint).json(&body);
-            if let Some(secret_key) = connection.secret_key.as_deref() {
-                if !secret_key.trim().is_empty() {
-                    request = request.bearer_auth(secret_key.trim());
-                }
-            }
-
-            let call_start = std::time::Instant::now();
-            let response = request
-                .send()
-                .await
-                .map_err(|err| format!("调用本地模型失败: {}", err))?;
-            let status = response.status();
-            let response_headers: std::collections::BTreeMap<String, String> = response
-                .headers()
-                .iter()
-                .filter_map(|(key, value)| {
-                    value
-                        .to_str()
-                        .ok()
-                        .map(|text| (key.as_str().to_string(), text.to_string()))
-                })
-                .collect();
-            let duration_ms = call_start.elapsed().as_millis() as i64;
-            let body_json: Value = response
-                .json()
-                .await
-                .unwrap_or_else(|_| json!({ "raw": "failed to parse json response" }));
-            let mut gateway_log_entry = build_monitor_gateway_log_entry(
-                &model,
-                &instance,
-                endpoint.as_str(),
-                status,
-                duration_ms,
-                &response_headers,
-                &body_json,
-            );
-            gateway_log_entry.trace_id = Some(ctx.execution_id.clone());
-            gateway_log_entry.meta = Some(json!({
-                "scope": "monitor",
-                "task_id": ctx.task.id,
-                "execution_id": ctx.execution_id
-            }));
-
-            if !status.is_success() {
-                let detail = extract_error_message(&body_json)
-                    .unwrap_or_else(|| format!("upstream status {}", status.as_u16()));
-                if let Some(ref mcp_store) = ctx.state.shared.mcp_store {
-                    gateway_log_entry.error_code = gateway_log_entry
-                        .error_code
-                        .clone()
-                        .or_else(|| Some(format!("UPSTREAM_{}", status.as_u16())));
-                    crate::modules::ai_upstream::gateway_log_recorder::record_gateway_log(
-                        mcp_store.clone(),
-                        gateway_log_entry,
-                    );
-                }
+            let provider_model_id = model.id.to_string();
+            let body_json = request_provider_chat_completion(
+                &app_state,
+                provider_model_id.as_str(),
+                &model.model_id,
+                vec![LocalChatInputMessage {
+                    role: "user".to_string(),
+                    content: prompt,
+                    tool_calls: vec![],
+                    tool_call_id: None,
+                    name: None,
+                }],
+                None,
+                None,
+                None,
+                Some(ctx.execution_id.as_str()),
+                None,
+            )
+            .await
+            .map_err(|err| {
+                let error_message = err.clone();
                 ctx.emit_status(
                     "evolve",
                     "monitor_invoke_model",
                     "failed",
                     "monitor.upstream.error",
                     Some(json!({
-                        "status": status.as_u16(),
-                        "message": detail,
+                        "message": error_message,
                     })),
                 );
-                return Err(detail);
-            }
-            if let Some(ref mcp_store) = ctx.state.shared.mcp_store {
-                crate::modules::ai_upstream::gateway_log_recorder::record_gateway_log(
-                    mcp_store.clone(),
-                    gateway_log_entry,
-                );
-            }
+                err
+            })?;
 
             let content = extract_model_content(&body_json);
             if content.trim().is_empty() {
@@ -1647,6 +1586,25 @@ fn build_monitor_engine() -> LocalOrchestrationEngine<MonitorWorkflowContext> {
 }
 
 fn extract_model_content(value: &Value) -> String {
+    if let Some(content) = value.get("content") {
+        if let Some(text) = content.as_str() {
+            return text.to_string();
+        }
+        if let Some(parts) = content.as_array() {
+            let mut merged = Vec::new();
+            for part in parts {
+                if let Some(part_text) = part.get("text").and_then(Value::as_str) {
+                    merged.push(part_text.to_string());
+                } else if let Some(part_text) = part.get("content").and_then(Value::as_str) {
+                    merged.push(part_text.to_string());
+                }
+            }
+            if !merged.is_empty() {
+                return merged.join("\n");
+            }
+        }
+    }
+
     if let Some(text) = value
         .get("choices")
         .and_then(Value::as_array)
@@ -1708,22 +1666,7 @@ fn extract_total_tokens(value: &Value) -> i64 {
         .unwrap_or(0)
 }
 
-fn extract_error_message(value: &Value) -> Option<String> {
-    value
-        .get("error")
-        .and_then(|item| item.get("message"))
-        .and_then(Value::as_str)
-        .map(|message| message.trim().to_string())
-        .filter(|message| !message.is_empty())
-        .or_else(|| {
-            value
-                .get("message")
-                .and_then(Value::as_str)
-                .map(|message| message.trim().to_string())
-                .filter(|message| !message.is_empty())
-        })
-}
-
+#[cfg(test)]
 fn build_monitor_gateway_log_entry(
     model: &ProviderModel,
     instance: &ProviderInstance,

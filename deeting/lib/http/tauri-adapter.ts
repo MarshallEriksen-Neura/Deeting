@@ -49,7 +49,19 @@ export const createTauriAdapter = async (): Promise<AxiosAdapter> => {
       body,
     };
 
-    const response = await tauriFetch(fullUrl, requestInit);
+    let response: Response;
+    try {
+      response = await tauriFetch(fullUrl, requestInit);
+    } catch (error) {
+      const diagnostic = buildTransportDiagnostic(error, fullUrl);
+      const axiosResponse = buildSyntheticAxiosResponse(config, diagnostic.payload);
+      console.error("[tauri-http] transport failed", {
+        url: fullUrl,
+        rawError: diagnostic.rawError,
+        likelyCause: diagnostic.likelyCause,
+      });
+      throw buildAxiosStyleError(diagnostic.message, diagnostic.code, config, axiosResponse);
+    }
 
     // 5. Parse response
     const responseData = await response.text();
@@ -100,6 +112,120 @@ export const createTauriAdapter = async (): Promise<AxiosAdapter> => {
     return axiosResponse;
   };
 };
+
+type TauriTransportDiagnostic = {
+  code: string;
+  message: string;
+  rawError: string;
+  likelyCause: string;
+  payload: Record<string, unknown>;
+};
+
+function buildTransportDiagnostic(error: unknown, url: string): TauriTransportDiagnostic {
+  const rawError = extractErrorMessage(error);
+  const normalized = rawError.toLowerCase();
+
+  const diagnostic = normalized.includes("proxy") || normalized.includes("tunnel") || normalized.includes("407")
+    ? {
+        code: "ERR_TAURI_HTTP_PROXY",
+        likelyCause: "proxy configuration or proxy authentication issue",
+      }
+    : normalized.includes("certificate") ||
+        normalized.includes("tls") ||
+        normalized.includes("ssl") ||
+        normalized.includes("handshake") ||
+        normalized.includes("unknownissuer") ||
+        normalized.includes("invalid peer certificate")
+      ? {
+          code: "ERR_TAURI_HTTP_TLS",
+          likelyCause: "TLS or certificate trust issue",
+        }
+      : normalized.includes("dns") ||
+          normalized.includes("lookup") ||
+          normalized.includes("no such host") ||
+          normalized.includes("name or service not known") ||
+          normalized.includes("getaddrinfo")
+        ? {
+            code: "ERR_TAURI_HTTP_DNS",
+            likelyCause: "DNS resolution issue",
+          }
+        : normalized.includes("timed out") || normalized.includes("timeout")
+          ? {
+              code: "ERR_TAURI_HTTP_TIMEOUT",
+              likelyCause: "network timeout, proxy delay, or firewall delay",
+            }
+          : normalized.includes("connection refused") || normalized.includes("actively refused")
+            ? {
+                code: "ERR_TAURI_HTTP_CONNECTION_REFUSED",
+                likelyCause: "target connection refused",
+              }
+            : normalized.includes("connection reset") ||
+                normalized.includes("unexpected eof") ||
+                normalized.includes("broken pipe") ||
+                normalized.includes("connection closed")
+              ? {
+                  code: "ERR_TAURI_HTTP_CONNECTION_RESET",
+                  likelyCause: "connection reset or closed during transport",
+                }
+              : normalized.includes("error sending request for url")
+                ? {
+                    code: "ERR_TAURI_HTTP_SEND_FAILED",
+                    likelyCause: "request failed before any HTTP response; often proxy, TLS, DNS, or firewall related",
+                  }
+                : {
+                    code: "ERR_TAURI_HTTP_TRANSPORT",
+                    likelyCause: "desktop transport error before receiving an HTTP response",
+                  };
+
+  const message = `${rawError}. Likely cause: ${diagnostic.likelyCause}.`;
+
+  return {
+    code: diagnostic.code,
+    message,
+    rawError,
+    likelyCause: diagnostic.likelyCause,
+    payload: {
+      message,
+      raw_error: rawError,
+      likely_cause: diagnostic.likelyCause,
+      stage: "send",
+      url,
+    },
+  };
+}
+
+function extractErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message.trim();
+  }
+
+  if (typeof error === "string" && error.trim().length > 0) {
+    return error.trim();
+  }
+
+  if (error && typeof error === "object" && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim().length > 0) {
+      return message.trim();
+    }
+  }
+
+  return "desktop HTTP transport failed";
+}
+
+function buildSyntheticAxiosResponse(
+  config: Parameters<AxiosAdapter>[0],
+  data: Record<string, unknown>
+): AxiosResponse {
+  return {
+    data,
+    status: 0,
+    statusText: "",
+    headers: {},
+    config,
+    request: {},
+  };
+}
 
 function resolveTauriErrorMessage(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") return null;

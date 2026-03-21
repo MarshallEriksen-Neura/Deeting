@@ -53,6 +53,50 @@ function getErrorMessage(error: unknown, fallback: string) {
   return fallback
 }
 
+interface DesktopBrowserStartDiagnostic {
+  ok: boolean
+  url: string
+  status?: number | null
+  message: string
+  errorCode?: string | null
+  sourceChain?: string[]
+  isTimeout?: boolean
+  isConnect?: boolean
+  isRequest?: boolean
+}
+
+async function enrichDesktopBrowserLoginErrorMessage(error: Error): Promise<string> {
+  const rawMessage = error.message?.trim()
+  if (!rawMessage) {
+    return "请求失败，请稍后再试"
+  }
+
+  if (!/error sending request for url/i.test(rawMessage)) {
+    return rawMessage
+  }
+
+  try {
+    const { invoke } = await import("@tauri-apps/api/core")
+    const diagnostic = await invoke<DesktopBrowserStartDiagnostic>(
+      "diagnose_auth_desktop_browser_start_request"
+    )
+    console.error("[desktop-browser-login] rust diagnostic", diagnostic)
+
+    if (!diagnostic || diagnostic.ok) {
+      return rawMessage
+    }
+
+    const details = [diagnostic.errorCode, diagnostic.message]
+      .filter((item): item is string => Boolean(item && item.trim()))
+      .join(": ")
+
+    return details || rawMessage
+  } catch (diagnosticError) {
+    console.error("[desktop-browser-login] failed to collect rust diagnostic", diagnosticError)
+    return rawMessage
+  }
+}
+
 // 滑出动画配置
 const slideVariants = {
   hidden: {
@@ -215,7 +259,10 @@ export function LoginForm({ onSuccess, onError, className }: LoginFormProps) {
       toast.success(t("toast.desktopBrowserOpened"))
     } catch (error) {
       const err = error as Error
-      toast.error(err.message || t("toast.error"))
+      const message = tauriRuntime
+        ? await enrichDesktopBrowserLoginErrorMessage(err)
+        : err.message || t("toast.error")
+      toast.error(message || t("toast.error"))
       onError?.(err)
     } finally {
       setBrowserLoginLoading(false)

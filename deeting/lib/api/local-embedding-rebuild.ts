@@ -39,7 +39,11 @@ export interface LocalEmbeddingRebuildResponse {
   asset_failed: number
 }
 
-export async function rebuildLocalEmbeddingAssets(): Promise<LocalEmbeddingRebuildResponse> {
+export type LocalEmbeddingRebuildScope = "all" | "memory" | "assets"
+
+export async function rebuildLocalEmbeddingAssets(
+  scope: LocalEmbeddingRebuildScope = "all"
+): Promise<LocalEmbeddingRebuildResponse> {
   assertDesktopRuntime()
-  return invokeTauri<LocalEmbeddingRebuildResponse>("rebuild_local_embedding_assets")
+  return invokeTauri<LocalEmbeddingRebuildResponse>("rebuild_local_embedding_assets", { scope })
 }

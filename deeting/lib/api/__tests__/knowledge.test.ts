@@ -518,7 +518,7 @@ describe("knowledge api", () => {
 
     expect(getKnowledgeUploadFileTypes()).toEqual(["pdf", "txt", "docx", "md", "csv", "html", "json"])
     expect(getKnowledgeUploadAccept()).toBe(".pdf,.txt,.docx,.md,.csv,.html,.json")
-    expect(getKnowledgeUploadMaxBytes()).toBe(2 * 1024 * 1024)
+    expect(getKnowledgeUploadMaxBytes()).toBeNull()
 
     const { accepted, rejected } = splitKnowledgeUploadFiles([
       { name: "notes.md" },

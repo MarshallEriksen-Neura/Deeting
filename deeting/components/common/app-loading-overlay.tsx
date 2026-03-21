@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { useShallow } from "zustand/react/shallow"
+import { StartupShell } from "@/components/common/startup-shell"
 import { useThemeStore } from "@/store/theme-store"
 import { useChatStore } from "@/store/chat-store"
 import { useI18n } from "@/hooks/use-i18n"
@@ -51,55 +52,42 @@ export function AppLoadingOverlay() {
     <div
       className={`
         fixed inset-0 z-[9999] pointer-events-none
-        flex items-center justify-center
         transition-opacity duration-300 ease-out
         ${isAnimating ? "opacity-100" : "opacity-0"}
       `}
       aria-hidden="true"
     >
+      <div className="absolute inset-0 bg-[var(--background)]/78 backdrop-blur-xl" />
       <div
         className={`
-          absolute inset-0
-          bg-[var(--background)]/80
-          backdrop-blur-md
-          transition-all duration-300 ease-out
-          ${isAnimating ? "backdrop-blur-md" : "backdrop-blur-none"}
-        `}
-      />
-
-      <div
-        className={`
-          relative z-10
-          flex flex-col items-center gap-4
-          transition-all duration-300 ease-out
-          ${isAnimating ? "scale-100 opacity-100" : "scale-95 opacity-0"}
+          relative z-10 h-full w-full transition-all duration-300 ease-out
+          ${isAnimating ? "scale-100 opacity-100" : "scale-[0.985] opacity-0"}
         `}
       >
-        <div className="relative w-12 h-12">
-          <div
-            className="absolute inset-0 rounded-full border-2 border-transparent border-t-[var(--primary)]/60 border-r-[var(--primary)]/30 animate-spin"
-            style={{ animationDuration: "0.8s" }}
-          />
-          <div className="absolute inset-1 rounded-full bg-gradient-to-br from-[var(--primary)]/20 to-transparent animate-pulse" />
-          <div className="absolute inset-0 m-auto w-2 h-2 rounded-full bg-[var(--primary)]/80 shadow-[0_0_12px_rgba(124,109,255,0.6)]" />
-        </div>
-
-        <span className="text-sm font-medium text-[var(--muted)] animate-pulse">
-          {label}
-        </span>
+        <StartupShell
+          tone="overlay"
+          badge={isTransitioning ? tCommon("loading.theme") : tChat("loading.global")}
+          label={label}
+          detail={isTransitioning ? "Applying a fresh interface skin" : "Synchronizing the active workspace"}
+          steps={[
+            {
+              label: "Theme",
+              hint: isTransitioning ? "Refreshing the current visual palette" : "Theme is stable",
+              state: isTransitioning ? "active" : "done",
+            },
+            {
+              label: "Conversation",
+              hint: globalLoading ? "Loading session data and message context" : "Session context is ready",
+              state: globalLoading ? "active" : "done",
+            },
+            {
+              label: "Surface",
+              hint: "Keeping the interface responsive while content settles",
+              state: "pending",
+            },
+          ]}
+        />
       </div>
-
-      <div
-        className={`
-          absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
-          w-64 h-64
-          bg-[radial-gradient(circle,var(--primary)/0.1,transparent)]
-          rounded-full
-          blur-3xl
-          transition-opacity duration-500
-          ${isAnimating ? "opacity-100" : "opacity-0"}
-        `}
-      />
     </div>
   )
 }

@@ -27,6 +27,7 @@ const LOCAL_CONVERSATION_SUMMARY_MIN_INTERVAL_SECONDS: i64 = 120;
 const LOCAL_CONVERSATION_SUMMARY_IDLE_SECONDS: i64 = 600;
 const LOCAL_CONVERSATION_IDLE_CHECK_BATCH_SIZE: i64 = 50;
 const LOCAL_PERIODIC_TASK_MAX_ERROR_CHARS: usize = 2000;
+const SQLITE_BUSY_RETRY_DELAYS_MS: [u64; 3] = [150, 400, 900];
 
 fn is_sqlite_busy_error(err: &McpError) -> bool {
     let text = err.to_string().to_ascii_lowercase();
@@ -2245,8 +2246,6 @@ impl McpStore {
         &self,
         payload: CreateConversationMessageRequest,
     ) -> Result<LocalConversationHistoryMessage, McpError> {
-        const SQLITE_BUSY_RETRY_DELAYS_MS: [u64; 3] = [150, 400, 900];
-
         let mut attempt = 0_usize;
         loop {
             match self
@@ -2516,6 +2515,38 @@ impl McpStore {
     }
 
     pub async fn persist_local_conversation_summary(
+        &self,
+        session_id: &str,
+        summary_text: &str,
+        summarizer_model: Option<&str>,
+    ) -> Result<(), McpError> {
+        let mut attempt = 0_usize;
+        loop {
+            match self
+                .persist_local_conversation_summary_once(session_id, summary_text, summarizer_model)
+                .await
+            {
+                Ok(()) => return Ok(()),
+                Err(err)
+                    if is_sqlite_busy_error(&err)
+                        && attempt < SQLITE_BUSY_RETRY_DELAYS_MS.len() =>
+                {
+                    let delay_ms = SQLITE_BUSY_RETRY_DELAYS_MS[attempt];
+                    attempt += 1;
+                    log::warn!(
+                        "persist_local_conversation_summary busy retry session={} attempt={} delay_ms={}",
+                        session_id,
+                        attempt,
+                        delay_ms
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                }
+                Err(err) => return Err(err),
+            }
+        }
+    }
+
+    async fn persist_local_conversation_summary_once(
         &self,
         session_id: &str,
         summary_text: &str,
@@ -2878,6 +2909,31 @@ impl McpStore {
     pub async fn claim_next_local_conversation_summary_job(
         &self,
     ) -> Result<Option<LocalConversationSummaryJob>, McpError> {
+        let mut attempt = 0_usize;
+        loop {
+            match self.claim_next_local_conversation_summary_job_once().await {
+                Ok(job) => return Ok(job),
+                Err(err)
+                    if is_sqlite_busy_error(&err)
+                        && attempt < SQLITE_BUSY_RETRY_DELAYS_MS.len() =>
+                {
+                    let delay_ms = SQLITE_BUSY_RETRY_DELAYS_MS[attempt];
+                    attempt += 1;
+                    log::warn!(
+                        "claim_next_local_conversation_summary_job busy retry attempt={} delay_ms={}",
+                        attempt,
+                        delay_ms
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                }
+                Err(err) => return Err(err),
+            }
+        }
+    }
+
+    async fn claim_next_local_conversation_summary_job_once(
+        &self,
+    ) -> Result<Option<LocalConversationSummaryJob>, McpError> {
         let now = now_rfc3339()?;
         let now_epoch = now_unix_epoch()?;
         let mut tx = self.begin_write().await?;
@@ -2947,6 +3003,36 @@ impl McpStore {
         &self,
         job_id: &str,
     ) -> Result<(), McpError> {
+        let mut attempt = 0_usize;
+        loop {
+            match self
+                .complete_local_conversation_summary_job_once(job_id)
+                .await
+            {
+                Ok(()) => return Ok(()),
+                Err(err)
+                    if is_sqlite_busy_error(&err)
+                        && attempt < SQLITE_BUSY_RETRY_DELAYS_MS.len() =>
+                {
+                    let delay_ms = SQLITE_BUSY_RETRY_DELAYS_MS[attempt];
+                    attempt += 1;
+                    log::warn!(
+                        "complete_local_conversation_summary_job busy retry job_id={} attempt={} delay_ms={}",
+                        job_id,
+                        attempt,
+                        delay_ms
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                }
+                Err(err) => return Err(err),
+            }
+        }
+    }
+
+    async fn complete_local_conversation_summary_job_once(
+        &self,
+        job_id: &str,
+    ) -> Result<(), McpError> {
         let normalized_job_id = job_id.trim().to_string();
         if normalized_job_id.is_empty() {
             return Err(McpError::validation("job_id is required"));
@@ -3009,6 +3095,38 @@ impl McpStore {
     }
 
     pub async fn fail_local_conversation_summary_job(
+        &self,
+        job: &LocalConversationSummaryJob,
+        error_message: &str,
+        retry_delay_seconds: i64,
+    ) -> Result<(), McpError> {
+        let mut attempt = 0_usize;
+        loop {
+            match self
+                .fail_local_conversation_summary_job_once(job, error_message, retry_delay_seconds)
+                .await
+            {
+                Ok(()) => return Ok(()),
+                Err(err)
+                    if is_sqlite_busy_error(&err)
+                        && attempt < SQLITE_BUSY_RETRY_DELAYS_MS.len() =>
+                {
+                    let delay_ms = SQLITE_BUSY_RETRY_DELAYS_MS[attempt];
+                    attempt += 1;
+                    log::warn!(
+                        "fail_local_conversation_summary_job busy retry job_id={} attempt={} delay_ms={}",
+                        job.id,
+                        attempt,
+                        delay_ms
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                }
+                Err(err) => return Err(err),
+            }
+        }
+    }
+
+    async fn fail_local_conversation_summary_job_once(
         &self,
         job: &LocalConversationSummaryJob,
         error_message: &str,

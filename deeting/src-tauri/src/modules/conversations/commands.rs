@@ -1,5 +1,3 @@
-use mcp_session::context::LocalConversationRuntimeWindow;
-use serde_json::Value;
 use tauri::State;
 
 use crate::state::AppState;
@@ -14,7 +12,6 @@ use mcp_session::conversation::{
 };
 
 const FACT_EXTRACTION_NEW_CHAT_TRIGGER_KEY_PREFIX: &str = "fact_extraction.new_chat_triggered";
-const FACT_EXTRACTION_MIN_MESSAGES: usize = 2;
 
 fn to_string(error: impl std::fmt::Display) -> String {
     error.to_string()
@@ -25,74 +22,6 @@ fn build_fact_extraction_new_chat_marker_key(session_id: &str) -> String {
         "{}.{}",
         FACT_EXTRACTION_NEW_CHAT_TRIGGER_KEY_PREFIX, session_id
     )
-}
-
-fn normalize_optional_string(value: Option<&str>) -> Option<String> {
-    value
-        .map(|item| item.trim().to_string())
-        .filter(|item| !item.is_empty())
-}
-
-fn extract_last_model_pair(meta: Option<&Value>) -> Option<(String, String)> {
-    let provider_model_id = normalize_optional_string(
-        meta.and_then(|value| value.get("last_provider_model_id"))
-            .and_then(|value| value.as_str()),
-    )?;
-    let model_id = normalize_optional_string(
-        meta.and_then(|value| value.get("last_model_id"))
-            .and_then(|value| value.as_str()),
-    )?;
-    Some((provider_model_id, model_id))
-}
-
-fn history_message_text(content: Option<&Value>) -> Option<String> {
-    content
-        .and_then(|value| {
-            if let Some(text) = value.as_str() {
-                Some(text.to_string())
-            } else {
-                serde_json::to_string(value).ok()
-            }
-        })
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-}
-
-fn extract_summary_text(summary: Option<&Value>) -> Option<String> {
-    summary
-        .and_then(|value| value.get("summary_text"))
-        .and_then(|value| value.as_str())
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-}
-
-fn build_fact_extraction_conversation_text(
-    runtime_window: &LocalConversationRuntimeWindow,
-) -> Option<String> {
-    let mut sections = Vec::new();
-    if let Some(summary_text) = extract_summary_text(runtime_window.summary.as_ref()) {
-        sections.push(format!("Summary: {}", summary_text));
-    }
-
-    for message in &runtime_window.messages {
-        let Some(content) = history_message_text(message.content.as_ref()) else {
-            continue;
-        };
-        let role = match message.role.trim().to_ascii_lowercase().as_str() {
-            "user" => "User",
-            "assistant" => "Assistant",
-            "system" => "System",
-            _ => "Message",
-        };
-        sections.push(format!("{}: {}", role, content));
-    }
-
-    let conversation = sections.join("\n").trim().to_string();
-    if conversation.is_empty() {
-        None
-    } else {
-        Some(conversation)
-    }
 }
 
 async fn trigger_fact_extraction_once_on_new_chat(app_state: AppState, session_id: String) {
@@ -115,34 +44,27 @@ async fn trigger_fact_extraction_once_on_new_chat(app_state: AppState, session_i
         }
     }
 
-    let runtime_window = match app_state
-        .mcp
-        .store
-        .load_local_conversation_runtime_window(&normalized_session_id)
+    let outcome =
+        match crate::modules::conversations::fact_sync::refresh_session_auto_extracted_facts(
+            app_state.clone(),
+            &normalized_session_id,
+        )
         .await
-    {
-        Ok(value) => value,
-        Err(err) => {
-            log::warn!(
-                "fact extraction new-chat load runtime window failed session={} err={}",
-                normalized_session_id,
-                err
-            );
-            return;
-        }
-    };
+        {
+            Ok(outcome) => outcome,
+            Err(err) => {
+                log::warn!(
+                    "fact extraction new-chat refresh failed session={} err={}",
+                    normalized_session_id,
+                    err
+                );
+                return;
+            }
+        };
 
-    if runtime_window.messages.len() < FACT_EXTRACTION_MIN_MESSAGES {
+    if !outcome.should_mark_processed() {
         return;
     }
-
-    let Some((provider_model_id, model_id)) = extract_last_model_pair(runtime_window.meta.as_ref())
-    else {
-        return;
-    };
-    let Some(conversation_text) = build_fact_extraction_conversation_text(&runtime_window) else {
-        return;
-    };
 
     if let Err(err) = app_state
         .mcp
@@ -155,19 +77,7 @@ async fn trigger_fact_extraction_once_on_new_chat(app_state: AppState, session_i
             normalized_session_id,
             err
         );
-        return;
     }
-
-    crate::modules::memory::fact_extractor::extract_and_store_facts(
-        &app_state,
-        app_state.memory.service.clone(),
-        &provider_model_id,
-        &model_id,
-        &conversation_text,
-        &normalized_session_id,
-        runtime_window.assistant_id.as_deref(),
-    )
-    .await;
 }
 
 #[tauri::command]

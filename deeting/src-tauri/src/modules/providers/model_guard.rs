@@ -1,3 +1,4 @@
+use crate::modules::ai_upstream::{resolve_local_model_connection, LocalModelConnection};
 use crate::modules::providers::store::utils::has_embedding_capability;
 use crate::modules::providers::types::{ProviderModel, UserSecretary};
 use crate::state::AppState;
@@ -74,6 +75,52 @@ async fn collect_missing_required_local_models(
     }
 
     Ok(missing)
+}
+
+pub(crate) fn build_local_secretary_model_resolution_request(
+    secretary: &UserSecretary,
+) -> Result<(String, Option<String>), String> {
+    let normalized_model_name = secretary
+        .model_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let normalized_provider_model_id = secretary
+        .provider_model_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+
+    if normalized_model_name.is_none() && normalized_provider_model_id.is_none() {
+        return Err("secretary model is not configured".to_string());
+    }
+
+    Ok((
+        normalized_model_name.unwrap_or_default(),
+        normalized_provider_model_id,
+    ))
+}
+
+pub(crate) async fn resolve_local_secretary_model_connection(
+    app_state: &AppState,
+) -> Result<LocalModelConnection, String> {
+    let secretary = app_state
+        .providers
+        .store
+        .get_or_create_user_secretary()
+        .await
+        .map_err(|err| err.to_string())?;
+    let (requested_model, requested_provider_model_id) =
+        build_local_secretary_model_resolution_request(&secretary)?;
+
+    resolve_local_model_connection(
+        app_state,
+        &requested_model,
+        requested_provider_model_id.as_deref(),
+    )
+    .await
 }
 
 fn matches_active_secretary_model(models: &[ProviderModel], secretary: &UserSecretary) -> bool {
@@ -183,5 +230,45 @@ mod tests {
         let secretary = build_secretary(Some("gpt-4o-mini"), Some(" ".to_string()));
 
         assert!(matches_active_secretary_model(&[model], &secretary));
+    }
+
+    #[test]
+    fn secretary_model_resolution_request_prefers_provider_model_id_when_present() {
+        let secretary = build_secretary(
+            Some("gpt-4o-mini"),
+            Some(" 11111111-1111-4111-8111-111111111111 ".to_string()),
+        );
+
+        let (model_name, provider_model_id) =
+            build_local_secretary_model_resolution_request(&secretary)
+                .expect("secretary model request");
+
+        assert_eq!(model_name, "gpt-4o-mini");
+        assert_eq!(
+            provider_model_id.as_deref(),
+            Some("11111111-1111-4111-8111-111111111111")
+        );
+    }
+
+    #[test]
+    fn secretary_model_resolution_request_falls_back_to_legacy_model_name() {
+        let secretary = build_secretary(Some(" gpt-4o-mini "), Some(" ".to_string()));
+
+        let (model_name, provider_model_id) =
+            build_local_secretary_model_resolution_request(&secretary)
+                .expect("legacy secretary model request");
+
+        assert_eq!(model_name, "gpt-4o-mini");
+        assert_eq!(provider_model_id, None);
+    }
+
+    #[test]
+    fn secretary_model_resolution_request_requires_configured_secretary_model() {
+        let secretary = build_secretary(Some(" "), Some(" ".to_string()));
+
+        let error = build_local_secretary_model_resolution_request(&secretary)
+            .expect_err("missing secretary model should fail");
+
+        assert!(error.contains("secretary model"));
     }
 }

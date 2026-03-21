@@ -3,6 +3,7 @@ use super::summary_format::{
 };
 use super::text_utils::{extract_text_from_chat_completion_response, truncate_text_chars};
 use crate::modules::desktop_runtime::runtime::chat_completion::request_provider_chat_completion;
+use crate::modules::providers::model_guard::resolve_local_secretary_model_connection;
 use crate::state::AppState;
 use mcp_core::types::LocalChatInputMessage;
 use mcp_session::conversation::LocalConversationHistoryMessage;
@@ -101,6 +102,23 @@ pub(crate) async fn generate_local_conversation_title_with_model(
     Ok(generated.and_then(|value| sanitize_generated_title(&value, normalized_first_message)))
 }
 
+pub(crate) async fn generate_local_conversation_title_with_secretary_model(
+    app_state: &AppState,
+    first_message: &str,
+    session_id: Option<&str>,
+) -> Result<Option<String>, String> {
+    let model_connection = resolve_local_secretary_model_connection(app_state).await?;
+
+    generate_local_conversation_title_with_model(
+        app_state,
+        &model_connection.provider_model_id,
+        &model_connection.model_id,
+        first_message,
+        session_id,
+    )
+    .await
+}
+
 pub(crate) async fn generate_local_conversation_summary_with_model(
     app_state: &AppState,
     provider_model_id: &str,
@@ -127,4 +145,23 @@ pub(crate) async fn generate_local_conversation_summary_with_model(
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .map(|value| truncate_text_chars(&value, LOCAL_CONVERSATION_SUMMARY_MAX_CHARS)))
+}
+
+pub(crate) async fn generate_local_conversation_summary_with_secretary_model(
+    app_state: &AppState,
+    messages: &[LocalConversationHistoryMessage],
+    session_id: Option<&str>,
+) -> Result<Option<(String, String)>, String> {
+    let model_connection = resolve_local_secretary_model_connection(app_state).await?;
+    let model_id = model_connection.model_id.clone();
+    let summary = generate_local_conversation_summary_with_model(
+        app_state,
+        &model_connection.provider_model_id,
+        &model_id,
+        messages,
+        session_id,
+    )
+    .await?;
+
+    Ok(summary.map(|value| (value, model_id)))
 }

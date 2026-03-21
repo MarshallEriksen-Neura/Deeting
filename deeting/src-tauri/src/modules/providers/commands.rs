@@ -748,12 +748,25 @@ async fn fetch_model_ids_from_upstream(
                 if !status.is_success() {
                     let body_text = response.text().await.unwrap_or_default();
                     let parsed_body = serde_json::from_str::<Value>(&body_text).ok();
+                    let response_preview = parsed_body
+                        .as_ref()
+                        .and_then(|value| serde_json::to_string(value).ok())
+                        .and_then(|value| compact_text_preview(&value, 240))
+                        .or_else(|| compact_text_preview(&body_text, 240));
                     let upstream_error = parsed_body
                         .as_ref()
                         .and_then(extract_error_message)
                         .map(|message| format!("sync failed: {message} ({endpoint})"));
-                    last_error = upstream_error
-                        .or_else(|| Some(format!("sync failed: {status} ({endpoint})")));
+                    last_error = upstream_error.or_else(|| {
+                        response_preview.map_or_else(
+                            || Some(format!("sync failed: {status} ({endpoint})")),
+                            |preview| {
+                                Some(format!(
+                                    "sync failed: {status} ({endpoint}) body: {preview}"
+                                ))
+                            },
+                        )
+                    });
 
                     // Auth failures on the primary compatible endpoint are definitive;
                     // falling back to /models often returns HTML and obscures the real cause.
@@ -806,18 +819,34 @@ struct UpstreamModelsFetchResult {
     endpoint: String,
 }
 
+fn compact_text_preview(input: &str, max_chars: usize) -> Option<String> {
+    let compact = input.split_whitespace().collect::<Vec<_>>().join(" ");
+    if compact.is_empty() {
+        return None;
+    }
+
+    let mut preview = compact.chars().take(max_chars).collect::<String>();
+    if compact.chars().count() > max_chars {
+        preview.push_str("...");
+    }
+    Some(preview)
+}
+
 fn decode_model_ids_from_body(
     endpoint: &str,
     body_text: &str,
     content_type: Option<&str>,
 ) -> Result<Vec<String>, String> {
     let body: Value = serde_json::from_str(body_text).map_err(|err| {
+        let preview_suffix = compact_text_preview(body_text, 240)
+            .map(|preview| format!("; body preview: {preview}"))
+            .unwrap_or_default();
         if let Some(content_type) = content_type {
             format!(
-                "failed to parse model list from {endpoint} (content-type: {content_type}): {err}"
+                "failed to parse model list from {endpoint} (content-type: {content_type}): {err}{preview_suffix}"
             )
         } else {
-            format!("failed to parse model list from {endpoint}: {err}")
+            format!("failed to parse model list from {endpoint}: {err}{preview_suffix}")
         }
     })?;
 
@@ -990,6 +1019,7 @@ mod tests {
         .expect_err("should fail for non-json body");
         assert!(err.contains("failed to parse model list from https://example.com/models"));
         assert!(err.contains("content-type: text/html"));
+        assert!(err.contains("body preview: <html>not-json</html>"));
     }
 
     #[test]

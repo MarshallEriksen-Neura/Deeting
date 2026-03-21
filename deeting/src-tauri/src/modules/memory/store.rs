@@ -290,6 +290,20 @@ impl MemoryStore {
     }
 
     pub async fn recreate_local_asset_table(&self, vector_dim: i32) -> Result<(), MemoryError> {
+        self.recreate_asset_table(LOCAL_ASSET_TABLE, vector_dim)
+            .await
+    }
+
+    pub async fn recreate_knowledge_chunk_table(&self, vector_dim: i32) -> Result<(), MemoryError> {
+        self.recreate_asset_table(USER_KNOWLEDGE_CHUNK_TABLE, vector_dim)
+            .await
+    }
+
+    async fn recreate_asset_table(
+        &self,
+        table_name: &str,
+        vector_dim: i32,
+    ) -> Result<(), MemoryError> {
         if vector_dim <= 0 {
             return Err(MemoryError::validation(
                 "vector dimension must be greater than zero",
@@ -297,12 +311,12 @@ impl MemoryStore {
         }
 
         let table_names = self.conn.table_names().execute().await?;
-        if table_names.iter().any(|name| name == LOCAL_ASSET_TABLE) {
-            self.conn.drop_table(LOCAL_ASSET_TABLE, &[]).await?;
+        if table_names.iter().any(|name| name == table_name) {
+            self.conn.drop_table(table_name, &[]).await?;
         }
 
         self.conn
-            .create_empty_table(LOCAL_ASSET_TABLE, local_asset_schema(vector_dim))
+            .create_empty_table(table_name, local_asset_schema(vector_dim))
             .execute()
             .await?;
         Ok(())

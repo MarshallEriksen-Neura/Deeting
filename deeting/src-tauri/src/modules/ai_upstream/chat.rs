@@ -590,6 +590,7 @@ pub(crate) fn normalize_chat_completion_response(raw: serde_json::Value) -> serd
     if raw.get("content").is_some() && raw.get("tool_calls").is_some() {
         return raw;
     }
+    let usage = raw.get("usage").cloned();
     let mut content = raw
         .get("content")
         .and_then(|value| value.as_str())
@@ -670,6 +671,9 @@ pub(crate) fn normalize_chat_completion_response(raw: serde_json::Value) -> serd
     if !reasoning_content.is_empty() {
         result["reasoning_content"] = serde_json::json!(reasoning_content);
     }
+    if let Some(usage) = usage {
+        result["usage"] = usage;
+    }
     result
 }
 
@@ -745,5 +749,24 @@ mod tests {
         assert!(serialized[0]["content"].is_array());
         assert_eq!(serialized[0]["content"][0]["type"], json!("text"));
         assert_eq!(serialized[0]["content"][1]["type"], json!("image_url"));
+    }
+
+    #[test]
+    fn normalize_chat_completion_response_preserves_usage_when_flattening_choices() {
+        let normalized = super::normalize_chat_completion_response(json!({
+            "choices": [{
+                "message": {
+                    "content": "hello"
+                }
+            }],
+            "usage": {
+                "prompt_tokens": 11,
+                "completion_tokens": 7,
+                "total_tokens": 18
+            }
+        }));
+
+        assert_eq!(normalized["content"], json!("hello"));
+        assert_eq!(normalized["usage"]["total_tokens"], json!(18));
     }
 }

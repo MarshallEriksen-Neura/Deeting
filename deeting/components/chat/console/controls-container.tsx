@@ -22,6 +22,9 @@ import { useChatMessaging } from '@/hooks/chat/use-chat-messaging';
 import { listLocalUserDocuments } from '@/lib/api/knowledge';
 import type { KnowledgeFile } from '@/types/knowledge';
 
+// Temporary product choice: hide the coder jump from the main chat composer menu.
+const SHOW_CHAT_CODER_SHORTCUT = false;
+
 /**
  * ControlsContainer - 聊天控制面板组件
  * 
@@ -556,16 +559,18 @@ function ControlsContainer() {
                       </span>
                     </div>
                   </Link>
-                  <Link href="/chat/coder" scroll={false}>
-                    <div className="flex items-center gap-3 p-3 min-h-[44px] hover:bg-slate-100/80 dark:hover:bg-white/10 rounded-xl cursor-pointer group transition-colors">
-                      <div className="w-9 h-9 rounded-lg bg-green-500/10 dark:bg-green-500/20 flex items-center justify-center text-green-600 dark:text-green-400 group-hover:scale-110 transition-all">
-                        <span className="font-mono text-sm font-bold">{`</>`}</span>
+                  {SHOW_CHAT_CODER_SHORTCUT ? (
+                    <Link href="/chat/coder" scroll={false}>
+                      <div className="flex items-center gap-3 p-3 min-h-[44px] hover:bg-slate-100/80 dark:hover:bg-white/10 rounded-xl cursor-pointer group transition-colors">
+                        <div className="w-9 h-9 rounded-lg bg-green-500/10 dark:bg-green-500/20 flex items-center justify-center text-green-600 dark:text-green-400 group-hover:scale-110 transition-all">
+                          <span className="font-mono text-sm font-bold">{`</>`}</span>
+                        </div>
+                        <span className="text-sm font-medium text-slate-700 dark:text-white/80 group-hover:text-slate-900 dark:group-hover:text-white">
+                          {t("controls.code")}
+                        </span>
                       </div>
-                      <span className="text-sm font-medium text-slate-700 dark:text-white/80 group-hover:text-slate-900 dark:group-hover:text-white">
-                        {t("controls.code")}
-                      </span>
-                    </div>
-                  </Link>
+                    </Link>
+                  ) : null}
                 </motion.div>
               )}
             </AnimatePresence>

@@ -585,6 +585,10 @@ impl MemoryService {
         self.store.recreate_local_asset_table(vector_dim).await
     }
 
+    pub async fn recreate_knowledge_chunk_table(&self, vector_dim: i32) -> Result<(), MemoryError> {
+        self.store.recreate_knowledge_chunk_table(vector_dim).await
+    }
+
     pub async fn get_asset_by_id(
         &self,
         id: &str,

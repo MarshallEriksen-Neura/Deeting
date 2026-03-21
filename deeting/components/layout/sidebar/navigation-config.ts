@@ -71,12 +71,6 @@ export const userNavigation: NavGroup[] = [
         icon: "bot",
       },
       {
-        id: "api-keys",
-        label: "nav.apiKeys",
-        href: "/dashboard/user/api-keys",
-        icon: "key",
-      },
-      {
         id: "credits",
         label: "nav.credits",
         href: "/dashboard/credits",

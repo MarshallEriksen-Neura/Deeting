@@ -4,71 +4,78 @@ use mcp_session::conversation::{
 };
 use serde_json::Value;
 
+use crate::modules::memory::fact_extractor::FactExtractionOutcome;
 use crate::modules::memory::service::MemoryService;
 use crate::modules::memory::types::{LocalMemoryItem, LocalMemoryListQuery};
 use crate::state::AppState;
 
 pub(crate) async fn sync_compare_finalize_memories(
     app_state: AppState,
-    payload: &LocalConversationCompareFinalizeRequest,
+    _payload: &LocalConversationCompareFinalizeRequest,
     response: &LocalConversationCompareFinalizeResponse,
 ) -> Result<(), String> {
-    let deleted = clear_session_auto_extraction_memories(
-        app_state.memory.service.as_ref(),
-        &response.session_id,
-    )
-    .await?;
+    let fact_app_state = app_state.clone();
+    let fact_session_id = response.session_id.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(err) =
+            refresh_session_auto_extracted_facts(fact_app_state, &fact_session_id).await
+        {
+            log::warn!(
+                "compare finalize fact rebuild failed for session {}: {}",
+                fact_session_id,
+                err
+            );
+        }
+    });
+
+    Ok(())
+}
+
+pub(crate) async fn refresh_session_auto_extracted_facts(
+    app_state: AppState,
+    session_id: &str,
+) -> Result<FactExtractionOutcome, String> {
+    let normalized_session_id = session_id.trim().to_string();
+    if normalized_session_id.is_empty() {
+        return Ok(FactExtractionOutcome::Skipped);
+    }
 
     let runtime_window = app_state
         .mcp
         .store
-        .load_local_conversation_runtime_window(&response.session_id)
+        .load_local_conversation_runtime_window(&normalized_session_id)
         .await
         .map_err(|err| err.to_string())?;
 
-    let Some(provider_model_id) = resolve_finalize_provider_model_id(payload, response) else {
-        log::warn!(
-            "compare finalize fact rebuild skipped for session {}: provider_model_id missing",
-            response.session_id
-        );
-        return Ok(());
-    };
+    if runtime_window.messages.len() < 2 {
+        return Ok(FactExtractionOutcome::Skipped);
+    }
 
     let Some(conversation_text) = build_fact_rebuild_conversation_text(&runtime_window) else {
-        log::warn!(
-            "compare finalize fact rebuild skipped for session {}: empty canonical conversation",
-            response.session_id
-        );
-        return Ok(());
+        return Ok(FactExtractionOutcome::Skipped);
     };
 
-    log::info!(
-        "compare finalize cleared {} auto-extracted memories for session {} before rebuilding facts",
-        deleted,
-        response.session_id
-    );
+    let deleted = clear_session_auto_extraction_memories(
+        app_state.memory.service.as_ref(),
+        &normalized_session_id,
+    )
+    .await?;
+    if deleted > 0 {
+        log::info!(
+            "fact extraction refresh cleared {} auto-extracted memories for session {}",
+            deleted,
+            normalized_session_id
+        );
+    }
 
-    let fact_app_state = app_state.clone();
-    let fact_memory_service = app_state.memory.service.clone();
-    let fact_session_id = response.session_id.clone();
-    let fact_assistant_id = runtime_window.assistant_id.clone();
-    let fact_provider_model_id = provider_model_id;
-    let fact_model_id = payload.model_id.clone();
-
-    tauri::async_runtime::spawn(async move {
-        crate::modules::memory::fact_extractor::extract_and_store_facts(
-            &fact_app_state,
-            fact_memory_service,
-            &fact_provider_model_id,
-            &fact_model_id,
-            &conversation_text,
-            &fact_session_id,
-            fact_assistant_id.as_deref(),
-        )
-        .await;
-    });
-
-    Ok(())
+    crate::modules::memory::fact_extractor::extract_and_store_facts_with_secretary_model(
+        &app_state,
+        app_state.memory.service.clone(),
+        &conversation_text,
+        &normalized_session_id,
+        runtime_window.assistant_id.as_deref(),
+    )
+    .await
 }
 
 pub(crate) async fn clear_session_auto_extraction_memories(
@@ -129,22 +136,6 @@ fn is_auto_extracted_memory(item: &LocalMemoryItem) -> bool {
             .unwrap_or(false)
 }
 
-fn resolve_finalize_provider_model_id(
-    payload: &LocalConversationCompareFinalizeRequest,
-    response: &LocalConversationCompareFinalizeResponse,
-) -> Option<String> {
-    normalize_optional_string(payload.provider_model_id.as_deref()).or_else(|| {
-        response
-            .message
-            .meta_info
-            .as_ref()
-            .and_then(|value| value.get("provider_model_id"))
-            .and_then(|value| value.as_str())
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-    })
-}
-
 fn build_fact_rebuild_conversation_text(
     runtime_window: &LocalConversationRuntimeWindow,
 ) -> Option<String> {
@@ -193,12 +184,6 @@ fn history_message_text(content: Option<&Value>) -> Option<String> {
         })
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-}
-
-fn normalize_optional_string(value: Option<&str>) -> Option<String> {
-    value
-        .map(|item| item.trim().to_string())
-        .filter(|item| !item.is_empty())
 }
 
 #[cfg(test)]

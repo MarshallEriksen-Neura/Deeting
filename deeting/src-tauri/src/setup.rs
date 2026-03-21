@@ -14,13 +14,15 @@ use log::warn;
 use mcp_core::types::McpSourceStatus;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use std::str::FromStr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
-use tauri::{App, AppHandle, Manager};
+use std::time::{Duration, Instant};
+use tauri::{App, AppHandle, Listener, Manager};
 use tauri_plugin_log::{Target, TargetKind};
 
 const DESKTOP_RUNTIME_DEBUG_LOG_TARGET_PREFIXES: &[&str] =
     &["app_lib::modules::mcp::commands::runtime::tool_execution"];
+const DESKTOP_UI_READY_EVENT: &str = "desktop-ui-ready";
 
 fn should_skip_file_log_for_target(target: &str) -> bool {
     let normalized = target.trim();
@@ -33,7 +35,34 @@ fn ensure_rustls_crypto_provider() {
     let _ = rustls::crypto::ring::default_provider().install_default();
 }
 
+fn log_startup_phase(phase: &str, started_at: Instant) {
+    let elapsed_ms = started_at.elapsed().as_millis();
+    if elapsed_ms >= 500 {
+        log::warn!("desktop_startup phase={} took_ms={}", phase, elapsed_ms);
+    } else {
+        log::info!("desktop_startup phase={} took_ms={}", phase, elapsed_ms);
+    }
+}
+
+fn reveal_main_window(app: &AppHandle, source: &str, is_revealed: &AtomicBool) {
+    if is_revealed.swap(true, Ordering::SeqCst) {
+        return;
+    }
+
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+        log::info!("desktop_startup window_revealed source={}", source);
+    } else {
+        log::warn!(
+            "desktop_startup window_reveal_skipped source={} reason=main_window_missing",
+            source
+        );
+    }
+}
+
 pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
+    let setup_started_at = Instant::now();
     ensure_rustls_crypto_provider();
 
     if cfg!(debug_assertions) {
@@ -55,9 +84,13 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let lancedb_uri = resolve_lancedb_uri(app)?;
     let boxrun_home_dir = resolve_boxrun_home_dir(app)?;
 
+    let sync_state_started_at = Instant::now();
     let state = tauri::async_runtime::block_on(async {
+        let phase_started_at = Instant::now();
         let database_url = resolve_database_url(app)?;
+        log_startup_phase("resolve_database_url", phase_started_at);
 
+        let phase_started_at = Instant::now();
         let read_options = SqliteConnectOptions::from_str(&database_url)
             .map_err(|err| McpError::Storage(err.to_string()))?
             .create_if_missing(true)
@@ -65,30 +98,38 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
             .busy_timeout(Duration::from_secs(10))
             .pragma("synchronous", "NORMAL")
             .pragma("mmap_size", "268435456");
+        log_startup_phase("build_read_sqlite_options", phase_started_at);
 
+        let phase_started_at = Instant::now();
         let write_options = SqliteConnectOptions::from_str(&database_url)
             .map_err(|err| McpError::Storage(err.to_string()))?
             .create_if_missing(true)
             .journal_mode(SqliteJournalMode::Wal)
             .busy_timeout(Duration::from_secs(30))
             .pragma("synchronous", "NORMAL");
+        log_startup_phase("build_write_sqlite_options", phase_started_at);
 
+        let phase_started_at = Instant::now();
         let global_pool = SqlitePoolOptions::new()
             .max_connections(10)
             .connect_with(read_options)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
+        log_startup_phase("connect_read_pool", phase_started_at);
 
         // Single-connection pool: serializes all transactional writes at the
         // application level so concurrent workers never fight for SQLite's
         // single-writer lock. Eliminates "database is locked" errors.
+        let phase_started_at = Instant::now();
         let global_write_pool = SqlitePoolOptions::new()
             .max_connections(1)
             .connect_with(write_options)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
+        log_startup_phase("connect_write_pool", phase_started_at);
 
         // MCP 初始化
+        let phase_started_at = Instant::now();
         let store = Arc::new(
             crate::modules::mcp::store::McpStore::with_pool_and_write_pool(
                 global_pool.clone(),
@@ -96,29 +137,47 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
                 &database_url,
             )?,
         );
+        log_startup_phase("build_mcp_store", phase_started_at);
+        let phase_started_at = Instant::now();
         store.init().await?;
+        log_startup_phase("init_mcp_store", phase_started_at);
+        let phase_started_at = Instant::now();
         store.ensure_local_source().await?;
+        log_startup_phase("ensure_local_source", phase_started_at);
+        let phase_started_at = Instant::now();
         store.ensure_cloud_source(&cloud_base_url).await?;
+        log_startup_phase("ensure_cloud_source", phase_started_at);
+        let phase_started_at = Instant::now();
         crate::modules::code_mode::core_tool_contracts::sync_core_tool_registry_entries(
             store.as_ref(),
         )
         .await
         .map_err(McpError::Storage)?;
+        log_startup_phase("sync_core_tool_registry_entries", phase_started_at);
+        let phase_started_at = Instant::now();
         store
             .sync_all_mcp_tool_registry_entries()
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
+        log_startup_phase("sync_all_mcp_tool_registry_entries", phase_started_at);
+        let phase_started_at = Instant::now();
         store
             .sync_all_assistant_registry_entries()
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
+        log_startup_phase("sync_all_assistant_registry_entries", phase_started_at);
+        let phase_started_at = Instant::now();
         let process_manager = ProcessManager::new(store.clone(), handle);
         let mcp_state = McpRuntimeState::new(store, process_manager, cloud_base_url);
+        log_startup_phase("build_mcp_runtime_state", phase_started_at);
 
         // Knowledge 初始化
+        let phase_started_at = Instant::now();
         let knowledge_state = KnowledgeState::with_pool(global_pool.clone()).await?;
+        log_startup_phase("init_knowledge_state", phase_started_at);
 
         // Providers 初始化
+        let phase_started_at = Instant::now();
         let provider_state = ProviderState::with_pool_and_proxy(
             global_pool.clone(),
             &database_url,
@@ -127,8 +186,10 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         )
         .await
         .map_err(|e| McpError::Storage(e.to_string()))?;
+        log_startup_phase("init_provider_state", phase_started_at);
 
         // Memory 初始化 (with shared embedding capability)
+        let phase_started_at = Instant::now();
         let memory_state = MemoryState::with_options(
             &lancedb_uri,
             None,
@@ -137,12 +198,18 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         )
         .await
         .map_err(|e| McpError::Storage(e.to_string()))?;
+        log_startup_phase("init_memory_state", phase_started_at);
 
+        let phase_started_at = Instant::now();
         let sandbox_state = SandboxState::new(boxrun_home_dir.clone());
+        log_startup_phase("build_sandbox_state", phase_started_at);
+        let phase_started_at = Instant::now();
         let code_mode_state = CodeModeState::with_pool(global_pool.clone())
             .await
             .map_err(|e| McpError::Storage(e.to_string()))?;
+        log_startup_phase("init_code_mode_state", phase_started_at);
 
+        let phase_started_at = Instant::now();
         let monitor_state = MonitorState::with_pool(
             global_pool.clone(),
             provider_state.store.clone(),
@@ -150,7 +217,9 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         )
         .await
         .map_err(|e| McpError::Storage(e.to_string()))?;
+        log_startup_phase("init_monitor_state", phase_started_at);
 
+        let phase_started_at = Instant::now();
         Ok::<_, McpError>(AppState::new(
             mcp_state,
             knowledge_state,
@@ -160,13 +229,38 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
             code_mode_state,
             monitor_state,
         ))
+        .inspect(|_| log_startup_phase("build_app_state", phase_started_at))
     })
     .map_err(|err| Box::<dyn std::error::Error>::from(err))?;
+    log_startup_phase("sync_state_construction_total", sync_state_started_at);
 
     let sync_state = state.clone();
     app.manage(state);
     crate::state::set_global_app_state(sync_state.clone());
     crate::state::set_global_app_handle(app.handle().clone());
+
+    let startup_window_revealed = Arc::new(AtomicBool::new(false));
+    let startup_window_revealed_for_event = startup_window_revealed.clone();
+    let app_handle_for_ready_event = app.handle().clone();
+    app.listen(DESKTOP_UI_READY_EVENT, move |_event| {
+        reveal_main_window(
+            &app_handle_for_ready_event,
+            "frontend_ready",
+            startup_window_revealed_for_event.as_ref(),
+        );
+    });
+
+    let startup_window_revealed_for_fallback = startup_window_revealed.clone();
+    let app_handle_for_startup_fallback = app.handle().clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(12)).await;
+        reveal_main_window(
+            &app_handle_for_startup_fallback,
+            "startup_fallback",
+            startup_window_revealed_for_fallback.as_ref(),
+        );
+    });
+
     let sync_state_for_mcp = sync_state.clone();
     let app_handle_for_mcp_tasks = app.handle().clone();
 
@@ -221,37 +315,16 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let im_app_handle = app.handle().clone();
     spawn_im_runtime_worker(im_state, im_app_handle);
 
-    let platform_sync_state = sync_state.clone();
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-        let has_token = platform_sync_state
-            .mcp
-            .store
-            .get_desktop_config("auth.token")
-            .await
-            .ok()
-            .flatten()
-            .map(|t| !t.trim().is_empty())
-            .unwrap_or(false);
-        if has_token {
-            match crate::modules::providers::commands::sync_platform_models_impl(
-                &platform_sync_state,
-            )
-            .await
-            {
-                Ok(models) => {
-                    log::info!("Platform models startup sync: {} models", models.len())
-                }
-                Err(e) => log::warn!("Platform models startup sync failed: {}", e),
-            }
-        }
-    });
+    // Temporarily disable automatic platform model sync on desktop startup.
+    // The manual sync command remains available if we need to re-run it later.
 
     // Setup Tray
     crate::tray::setup_tray(app)?;
 
     // Setup Global Shortcuts
     setup_shortcuts(app)?;
+
+    log_startup_phase("setup_app_total", setup_started_at);
 
     Ok(())
 }

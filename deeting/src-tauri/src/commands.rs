@@ -82,6 +82,7 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::mcp::commands::tool_management_impl::clear_mcp_logs,
         crate::modules::desktop_config::commands::get_desktop_config_value,
         crate::modules::desktop_config::commands::set_desktop_config_value,
+        crate::utils::diagnose_auth_desktop_browser_start_request,
         crate::modules::mcp::compat::commands::sync_cloud_subscriptions,
         crate::modules::admin::commands::run_local_maintenance_action,
         crate::modules::admin::commands::list_local_maintenance_logs,

@@ -13,7 +13,10 @@
     "tauri": "node ./scripts/tauri-with-protoc.mjs",
     "desktop:icon": "node ./scripts/generate-icons.mjs",
     "desktop:dev": "node ./scripts/tauri-with-protoc.mjs dev",
-    "desktop:build": "node ./scripts/tauri-with-protoc.mjs build"
+    "desktop:build": "node ./scripts/tauri-with-protoc.mjs build",
+    "desktop:build:fast": "node ./scripts/tauri-with-protoc.mjs build --no-bundle",
+    "desktop:build:debugtools": "node ./scripts/tauri-with-protoc.mjs build --config src-tauri/tauri.devtools.conf.json --features release-devtools",
+    "desktop:build:fast:debugtools": "node ./scripts/tauri-with-protoc.mjs build --no-bundle --config src-tauri/tauri.devtools.conf.json --features release-devtools"
   },
   "dependencies": {
     "@floating-ui/core": "^1.7.3",

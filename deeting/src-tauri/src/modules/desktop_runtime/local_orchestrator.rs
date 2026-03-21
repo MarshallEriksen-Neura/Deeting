@@ -7,7 +7,7 @@ use tauri::AppHandle;
 use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
 
-use crate::modules::conversations::summary_generation::generate_local_conversation_title_with_model;
+use crate::modules::conversations::summary_generation::generate_local_conversation_title_with_secretary_model;
 #[cfg(test)]
 use crate::modules::custom_task_agents::types::{
     CustomTaskAgentInvocationKind, CustomTaskAgentProfile,
@@ -1881,8 +1881,6 @@ pub async fn execute_local_orchestrated_chat(
 
         let title_app_state = app_state.clone();
         let title_session_id = session_id.clone();
-        let title_model_id = model_id.clone();
-        let title_provider_model_id = provider_model_id.clone();
         tauri::async_runtime::spawn(async move {
             let title_context = match title_app_state
                 .mcp
@@ -1917,10 +1915,8 @@ pub async fn execute_local_orchestrated_chat(
                 return;
             };
 
-            match generate_local_conversation_title_with_model(
+            match generate_local_conversation_title_with_secretary_model(
                 &title_app_state,
-                &title_provider_model_id,
-                &title_model_id,
                 first_user_message,
                 Some(title_session_id.as_str()),
             )
@@ -1943,7 +1939,7 @@ pub async fn execute_local_orchestrated_chat(
                 Ok(None) => {}
                 Err(err) => {
                     log::warn!(
-                        "generate_local_conversation_title_with_model failed session={} err={}",
+                        "generate_local_conversation_title_with_secretary_model failed session={} err={}",
                         title_session_id,
                         err
                     );

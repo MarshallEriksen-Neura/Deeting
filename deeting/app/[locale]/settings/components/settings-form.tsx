@@ -24,6 +24,7 @@ import {
   type LocalEmbeddingRebuildProgressPayload,
   type LocalEmbeddingRebuildResponse,
 } from "@/lib/api/local-embedding-rebuild";
+import { runLocalMaintenanceAction } from "@/lib/api/desktop-system-assets";
 import {
   updateUserSecretary,
   type UserSecretaryUpdate,
@@ -103,6 +104,8 @@ export function SettingsForm({
     React.useState<LocalEmbeddingRebuildProgressPayload | null>(null);
   const [rebuildSummary, setRebuildSummary] =
     React.useState<LocalEmbeddingRebuildResponse | null>(null);
+  const [isRepairingIndexes, setIsRepairingIndexes] = React.useState(false);
+  const [repairMessage, setRepairMessage] = React.useState<string | null>(null);
 
   const form = useForm<SettingsFormValues>({
     defaultValues: {
@@ -268,6 +271,30 @@ export function SettingsForm({
       setIsRebuilding(false);
     }
   }, [isRebuilding, isTauriRuntime, t]);
+
+  const handleRepairIndexes = React.useCallback(async () => {
+    if (!isTauriRuntime || isRepairingIndexes) return;
+
+    setIsRepairingIndexes(true);
+    try {
+      const result = await runLocalMaintenanceAction({ kind: "repair_local_index" });
+      const nextMessage = result?.message?.trim() || t("toast.repairSuccess");
+      setRepairMessage(nextMessage);
+
+      if (result?.status === "success") {
+        toast.success(nextMessage);
+      } else {
+        toast.error(nextMessage);
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : t("toast.repairFailed");
+      setRepairMessage(message);
+      toast.error(message);
+    } finally {
+      setIsRepairingIndexes(false);
+    }
+  }, [isRepairingIndexes, isTauriRuntime, t]);
 
   async function onSubmit(values: SettingsFormValues) {
     if (!isAuthenticated) {
@@ -540,6 +567,31 @@ export function SettingsForm({
                       </p>
                     </div>
                   )}
+                </div>
+              )}
+              {canEditDesktop && (
+                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 dark:border-slate-500/20 dark:bg-slate-500/10">
+                  <p className="text-sm font-semibold text-foreground">
+                    {t("desktop.repairTitle")}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {t("desktop.repairDescription")}
+                  </p>
+                  <div className="mt-3">
+                    <GlassButton
+                      size="sm"
+                      variant="secondary"
+                      onClick={handleRepairIndexes}
+                      loading={isRepairingIndexes}
+                    >
+                      {t("desktop.repairAction")}
+                    </GlassButton>
+                  </div>
+                  {repairMessage ? (
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      {repairMessage}
+                    </p>
+                  ) : null}
                 </div>
               )}
             </div>

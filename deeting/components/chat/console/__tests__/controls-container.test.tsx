@@ -78,6 +78,16 @@ describe("ControlsContainer (web)", () => {
     expect(screen.queryByText("routing.personaDesc")).not.toBeInTheDocument()
   })
 
+  it("keeps the image shortcut but hides the coder shortcut in the chat menu", () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "false"
+    render(<ControlsContainer />)
+
+    fireEvent.click(screen.getByLabelText("controls.menu"))
+
+    expect(screen.getByText("controls.image")).toBeInTheDocument()
+    expect(screen.queryByText("controls.code")).not.toBeInTheDocument()
+  })
+
   it("shows continue button and triggers continue callback after interruption", () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "false"
     const continueInterruptedGeneration = jest.fn()

@@ -74,4 +74,32 @@ describe("tauri adapter", () => {
     expect(response.data).toEqual({ ok: true });
     expect(response.headers["content-type"]).toBe("application/json");
   });
+
+  test("原生 transport 发送失败时应附带可能原因", async () => {
+    const { createTauriAdapter, mockFetch } = await loadAdapterModule();
+    mockFetch.mockRejectedValue(new Error("error sending request for url (https://api.ethereals.space/api/v1/auth/desktop/browser/start)"));
+
+    const adapter = await createTauriAdapter();
+
+    await expect(
+      adapter({
+        url: "/api/v1/auth/desktop/browser/start",
+        baseURL: "https://api.ethereals.space",
+        method: "post",
+        headers: {},
+        data: { return_scheme: "deeting", platform: "desktop" },
+      } as any)
+    ).rejects.toMatchObject({
+      isAxiosError: true,
+      code: "ERR_TAURI_HTTP_SEND_FAILED",
+      message: expect.stringContaining("Likely cause:"),
+      response: expect.objectContaining({
+        status: 0,
+        data: expect.objectContaining({
+          raw_error: expect.stringContaining("error sending request for url"),
+          likely_cause: expect.stringContaining("proxy"),
+        }),
+      }),
+    });
+  });
 });

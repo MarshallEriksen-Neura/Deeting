@@ -782,6 +782,9 @@ async fn maybe_handle_local_code_mode_tool_calls(
             last_capability_snapshot.as_ref(),
         )
         .unwrap_or(requested_tool_name);
+        let tool_name =
+            canonicalize_tool_name_for_allowed_list(&tool_name, effective_allowed_tool_names)
+                .unwrap_or(tool_name);
         let call_id = call.id.clone().unwrap_or_default();
         if !effective_allowed_tool_names
             .iter()
@@ -1513,6 +1516,32 @@ fn build_execution_contract_from_search_result(
     })
 }
 
+fn canonicalize_tool_name_for_allowed_list(
+    tool_name: &str,
+    allowed_tool_names: &[String],
+) -> Option<String> {
+    let normalized = tool_name.trim().to_lowercase();
+    if normalized.is_empty() {
+        return None;
+    }
+
+    if allowed_tool_names.iter().any(|item| item == &normalized) {
+        return Some(normalized);
+    }
+
+    let hyphenated = normalized.replace('_', "-");
+    if allowed_tool_names.iter().any(|item| item == &hyphenated) {
+        return Some(hyphenated);
+    }
+
+    let underscored = normalized.replace('-', "_");
+    if allowed_tool_names.iter().any(|item| item == &underscored) {
+        return Some(underscored);
+    }
+
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1582,6 +1611,16 @@ mod tests {
             resolved.as_deref(),
             Some("skill.official.skills.weather.get_weather")
         );
+    }
+
+    #[test]
+    fn canonicalize_tool_name_for_allowed_list_accepts_underscore_variant() {
+        let canonical = canonicalize_tool_name_for_allowed_list(
+            "tavily_search",
+            &["search_sdk".to_string(), "tavily-search".to_string()],
+        );
+
+        assert_eq!(canonical.as_deref(), Some("tavily-search"));
     }
 
     #[test]

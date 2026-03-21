@@ -85,7 +85,9 @@ export function FileUploadDialog({
   const supportedTypeLabels = supportedTypes.map((type) => type.toUpperCase())
   const supportedTypesText = supportedTypeLabels.join(" / ")
   const accept = getKnowledgeUploadAccept()
-  const maxSizeLabel = `${Math.floor(getKnowledgeUploadMaxBytes() / 1024 / 1024)}MB`
+  const maxUploadBytes = getKnowledgeUploadMaxBytes()
+  const maxSizeLabel =
+    maxUploadBytes == null ? null : `${Math.floor(maxUploadBytes / 1024 / 1024)}MB`
 
   const isUploading = Object.values(uploadStatus).some((s) => s === "uploading")
 
@@ -259,9 +261,11 @@ export function FileUploadDialog({
               {type}
             </Badge>
           ))}
-          <span className="text-xs text-[var(--muted)] ml-2">
-            {t("uploadDialog.maxSize")} {maxSizeLabel}
-          </span>
+          {maxSizeLabel ? (
+            <span className="text-xs text-[var(--muted)] ml-2">
+              {t("uploadDialog.maxSize")} {maxSizeLabel}
+            </span>
+          ) : null}
         </div>
 
         {/* File list */}

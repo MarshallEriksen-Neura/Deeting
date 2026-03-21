@@ -7,6 +7,7 @@ import { DesktopUpdateGuard } from "@/components/common/desktop-update-guard";
 import { BridgeMonitor } from "@/components/bridge/bridge-monitor";
 import { PlatformProvider } from "@/lib/platform/provider";
 import { TitleBar } from "@/components/common/title-bar";
+import { DesktopStartupReady } from "@/components/common/desktop-startup-ready";
 import "./globals.css";
 
 const isTauri = process.env.NEXT_PUBLIC_IS_TAURI === "true";
@@ -43,6 +44,7 @@ export default function RootLayout({
             disableTransitionOnChange
           >
             {isTauri && <TitleBar />}
+            {isTauri && <DesktopStartupReady />}
             <AuthSync />
             {isTauri && <DesktopOAuthListener />}
             {children}

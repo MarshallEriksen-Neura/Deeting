@@ -88,6 +88,104 @@ export interface ConnectProviderDrawerProps {
   }) => void | Promise<void>
 }
 
+function safeSerializeError(error: unknown): string | null {
+  if (!error || typeof error !== "object") {
+    return null
+  }
+
+  try {
+    const serialized = JSON.stringify(
+      error,
+      (_key, value) => {
+        if (value instanceof Error) {
+          const next: Record<string, unknown> = {
+            name: value.name,
+            message: value.message,
+          }
+          if ("cause" in value && value.cause !== undefined) {
+            next.cause = value.cause
+          }
+          return next
+        }
+        return value
+      },
+      2
+    )
+    return serialized && serialized !== "{}" ? serialized : null
+  } catch {
+    return null
+  }
+}
+
+function buildErrorLogLines(error: unknown, fallback: string): string[] {
+  const lines = new Set<string>()
+
+  const pushText = (value: string) => {
+    value
+      .split(/\r?\n/)
+      .map((line) => line.trimEnd())
+      .filter((line) => line.trim().length > 0)
+      .forEach((line) => lines.add(line))
+  }
+
+  const visit = (value: unknown) => {
+    if (typeof value === "string") {
+      pushText(value)
+      return
+    }
+
+    if (value instanceof Error) {
+      if (value.message.trim()) {
+        pushText(value.message)
+      }
+      if ("cause" in value && value.cause !== undefined) {
+        visit(value.cause)
+      }
+      return
+    }
+
+    if (Array.isArray(value)) {
+      value.forEach(visit)
+      return
+    }
+
+    if (!value || typeof value !== "object") {
+      return
+    }
+
+    const record = value as Record<string, unknown>
+    visit(record.message)
+    visit(record.error)
+    visit(record.detail)
+    visit(record.details)
+    visit(record.cause)
+    visit(record.raw_error)
+
+    const hasStructuredDetails = Object.entries(record).some(([key, item]) => {
+      if (key === "message" || item == null) {
+        return false
+      }
+      if (typeof item === "string") {
+        return item.trim().length > 0
+      }
+      return true
+    })
+
+    const serialized = hasStructuredDetails ? safeSerializeError(record) : null
+    if (serialized) {
+      pushText(serialized)
+    }
+  }
+
+  visit(error)
+
+  if (lines.size === 0) {
+    pushText(fallback)
+  }
+
+  return Array.from(lines, (line) => `> ${line}`)
+}
+
 export function ConnectProviderDrawer({ 
   isOpen, 
   onClose, 
@@ -269,7 +367,7 @@ export function ConnectProviderDrawer({
       }
     } catch (err: any) {
       setConnectionStatus('error')
-      setLogs([`> ${err?.message || 'Verification failed'}`])
+      setLogs(buildErrorLogLines(err, "Verification failed"))
     }
   }
 
@@ -335,7 +433,7 @@ export function ConnectProviderDrawer({
       onSave({ baseUrl, apiKey, protocol, name, description, is_enabled: enabled })
       onClose()
     } catch (err: any) {
-      setLogs([`> ${err?.message || t("drawer.errorSave", { defaultValue: "Save failed" })}`])
+      setLogs(buildErrorLogLines(err, t("drawer.errorSave", { defaultValue: "Save failed" })))
     } finally {
       setSaving(false)
     }
@@ -615,6 +713,7 @@ export function ConnectProviderDrawer({
                     <div className="mt-2 p-3 rounded-lg bg-black/50 border border-white/10 font-mono text-[10px] text-muted-foreground space-y-1">
                       {logs.map((log, i) => (
                         <div key={i} className={cn(
+                          "whitespace-pre-wrap break-all",
                           log.includes("success") ? "text-emerald-400" : 
                           log.toLowerCase().includes("fail") ? "text-red-400" : ""
                         )}>

@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use crate::modules::conversations::summary_format::build_local_summary_from_window;
 use crate::modules::conversations::summary_generation::{
-    generate_local_conversation_summary_with_model,
+    generate_local_conversation_summary_with_secretary_model,
     LOCAL_CONVERSATION_SUMMARY_WORKER_IDLE_INTERVAL_SECS,
 };
 use crate::modules::mcp::error::McpError;
@@ -80,42 +80,25 @@ async fn process_next_local_conversation_summary_job_inner(
                 ))
             })?;
         let model_summary = if let Some(app_state) = app_state {
-            let meta = window.meta.as_ref();
-            let model_id = meta
-                .and_then(|v| v.get("last_model_id"))
-                .and_then(|v| v.as_str())
-                .map(|v| v.trim())
-                .filter(|v| !v.is_empty());
-            let provider_model_id = meta
-                .and_then(|v| v.get("last_provider_model_id"))
-                .and_then(|v| v.as_str())
-                .map(|v| v.trim())
-                .filter(|v| !v.is_empty());
-            if let (Some(model_id), Some(provider_model_id)) = (model_id, provider_model_id) {
-                match generate_local_conversation_summary_with_model(
-                    app_state,
-                    provider_model_id,
-                    model_id,
-                    &window.messages,
-                    Some(job.session_id.as_str()),
-                )
-                .await
-                {
-                    Ok(Some(summary)) if !summary.trim().is_empty() => {
-                        Some((summary, model_id.to_string()))
-                    }
-                    Ok(_) => None,
-                    Err(err) => {
-                        log::warn!(
-                            "local conversation model summary failed {} err={}",
-                            job_context,
-                            err
-                        );
-                        None
-                    }
+            match generate_local_conversation_summary_with_secretary_model(
+                app_state,
+                &window.messages,
+                Some(job.session_id.as_str()),
+            )
+            .await
+            {
+                Ok(Some((summary, summarizer_model))) if !summary.trim().is_empty() => {
+                    Some((summary, summarizer_model))
                 }
-            } else {
-                None
+                Ok(_) => None,
+                Err(err) => {
+                    log::warn!(
+                        "local conversation secretary summary failed {} err={}",
+                        job_context,
+                        err
+                    );
+                    None
+                }
             }
         } else {
             None

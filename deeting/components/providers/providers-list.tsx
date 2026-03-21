@@ -3,6 +3,7 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { useTranslations } from "next-intl"
+import { isTauriRuntime } from "@/lib/api/desktop-config"
 
 import { useProviderHub, useProviderInstances, useUpdateProviderInstance, useDeleteProviderInstance } from "@/hooks/use-providers"
 import { ProviderHubResponse, ProviderInstanceResponse } from "@/lib/api/providers"
@@ -126,6 +127,10 @@ export function ProvidersList() {
   }
 
   const handleViewModels = (id: string) => {
+    if (isTauriRuntime()) {
+      router.push(`/dashboard/user/providers/models?instanceId=${encodeURIComponent(id)}`)
+      return
+    }
     router.push(`/dashboard/user/providers/${id}/models`)
   }
 

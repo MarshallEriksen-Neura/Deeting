@@ -1300,6 +1300,8 @@ impl KnowledgeStore {
         }
 
         let now = now_rfc3339();
+        let sanitized_meta_info = strip_local_document_raw_text(meta_info);
+        let sanitized_meta_info_text = serde_json::to_string(&sanitized_meta_info)?;
         let mut tx = self.pool.begin().await?;
 
         sqlx::query(
@@ -1343,11 +1345,13 @@ impl KnowledgeStore {
             SET status = 'indexed',
                 error_message = NULL,
                 chunk_count = ?,
+                meta_info = ?,
                 updated_at = ?
             WHERE id = ? AND user_id = ?;
             "#,
         )
         .bind(chunks.len() as i64)
+        .bind(sanitized_meta_info_text)
         .bind(&now)
         .bind(file_id)
         .bind(LOCAL_DESKTOP_USER_ID)
@@ -1558,6 +1562,14 @@ fn extract_local_document_text(meta_info: &serde_json::Value) -> Option<String> 
     }
 }
 
+fn strip_local_document_raw_text(meta_info: &serde_json::Value) -> serde_json::Value {
+    let mut sanitized = meta_info.clone();
+    if let Some(object) = sanitized.as_object_mut() {
+        object.remove("raw_text");
+    }
+    sanitized
+}
+
 fn extract_local_document_download_url(meta_info: &serde_json::Value) -> Option<String> {
     if let Some(url) = meta_info
         .get("object_storage")
@@ -1748,5 +1760,38 @@ fn reverse_ordering(value: Ordering) -> Ordering {
         Ordering::Less => Ordering::Greater,
         Ordering::Greater => Ordering::Less,
         Ordering::Equal => Ordering::Equal,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strip_local_document_raw_text_removes_only_processing_payload() {
+        let meta_info = serde_json::json!({
+            "file_type": "pdf",
+            "size": 42,
+            "raw_text": "hello world",
+            "object_storage": {
+                "object_key": "knowledge/demo.pdf"
+            }
+        });
+
+        let sanitized = strip_local_document_raw_text(&meta_info);
+
+        assert_eq!(sanitized.get("raw_text"), None);
+        assert_eq!(
+            sanitized
+                .get("file_type")
+                .and_then(serde_json::Value::as_str),
+            Some("pdf")
+        );
+        assert_eq!(
+            sanitized
+                .pointer("/object_storage/object_key")
+                .and_then(serde_json::Value::as_str),
+            Some("knowledge/demo.pdf")
+        );
     }
 }

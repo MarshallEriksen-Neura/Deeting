@@ -304,6 +304,29 @@ fn display_tool_ref(tool_id: Option<&str>, tool_name: Option<&str>) -> String {
         .unwrap_or_else(|| "<unknown>".to_string())
 }
 
+fn equivalent_tool_name_candidates(tool_name: &str) -> Vec<String> {
+    let normalized = tool_name.trim();
+    if normalized.is_empty() {
+        return Vec::new();
+    }
+
+    let mut candidates = Vec::with_capacity(3);
+    let exact = normalized.to_string();
+    candidates.push(exact.clone());
+
+    let hyphenated = exact.replace('_', "-");
+    if hyphenated != exact {
+        candidates.push(hyphenated);
+    }
+
+    let underscored = exact.replace('-', "_");
+    if underscored != exact && !candidates.iter().any(|item| item == &underscored) {
+        candidates.push(underscored);
+    }
+
+    candidates
+}
+
 pub(crate) async fn resolve_tool_by_ref(
     store: &McpStore,
     tool_id: Option<&str>,
@@ -325,15 +348,20 @@ pub(crate) async fn resolve_tool_by_ref(
         return Err(ToolResolutionError::InvalidToolReference);
     };
 
-    store
-        .get_tool_by_name(&normalized_tool_name)
-        .await
-        .map_err(|_| ToolResolutionError::ToolNotFound {
-            tool_ref: normalized_tool_name.clone(),
-        })?
-        .ok_or(ToolResolutionError::ToolNotFound {
-            tool_ref: normalized_tool_name,
-        })
+    for candidate in equivalent_tool_name_candidates(&normalized_tool_name) {
+        let tool = store.get_tool_by_name(&candidate).await.map_err(|_| {
+            ToolResolutionError::ToolNotFound {
+                tool_ref: normalized_tool_name.clone(),
+            }
+        })?;
+        if let Some(tool) = tool {
+            return Ok(tool);
+        }
+    }
+
+    Err(ToolResolutionError::ToolNotFound {
+        tool_ref: normalized_tool_name,
+    })
 }
 
 pub(crate) async fn resolve_callable_mcp_tool_by_name(
@@ -358,5 +386,26 @@ pub(crate) async fn resolve_callable_mcp_tool_by_ref(
             tool_ref,
             availability,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::equivalent_tool_name_candidates;
+
+    #[test]
+    fn equivalent_tool_name_candidates_include_dash_variant_for_underscore_name() {
+        assert_eq!(
+            equivalent_tool_name_candidates("tavily_search"),
+            vec!["tavily_search".to_string(), "tavily-search".to_string()]
+        );
+    }
+
+    #[test]
+    fn equivalent_tool_name_candidates_include_underscore_variant_for_dash_name() {
+        assert_eq!(
+            equivalent_tool_name_candidates("tavily-search"),
+            vec!["tavily-search".to_string(), "tavily_search".to_string()]
+        );
     }
 }

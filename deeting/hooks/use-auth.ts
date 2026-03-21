@@ -28,7 +28,6 @@ import {
 import {
   clearAuthTokenForDesktop,
   persistAuthTokenForDesktop,
-  syncPlatformModelsForDesktop,
   isTauriRuntime,
 } from "@/lib/api/desktop-config"
 import { ApiError, clearAuthToken } from "@/lib/http"
@@ -61,7 +60,6 @@ export function useAuthService() {
       setTokenPair(tokens)
       setSession({ accessToken: tokens.access_token, tokenType: tokens.token_type })
       persistAuthTokenForDesktop(tokens.access_token)
-      syncPlatformModelsForDesktop()
     },
     [setSession, setTokenPair]
   )

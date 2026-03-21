@@ -17,11 +17,13 @@
         "height": 800,
         "minWidth": 960,
         "minHeight": 600,
+        "visible": false,
         "resizable": true,
         "fullscreen": false,
         "center": true,
         "decorations": false,
         "transparent": true,
+        "backgroundColor": "#F4F7FB",
         "shadow": true
       }
     ],

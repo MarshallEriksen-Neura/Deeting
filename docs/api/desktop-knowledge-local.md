@@ -1,6 +1,6 @@
 # Desktop Knowledge Local Schema (P1+)
 
-更新时间：2026-03-17
+更新时间：2026-03-21
 
 ## 范围
 - 本文档描述桌面端 SQLite 的离线知识库基础能力：`knowledge_folder`、`user_document`、`knowledge_chunk`。
@@ -121,11 +121,11 @@
 
 ## 本地上传与分块（Tauri）
 - `uploadFile` 在桌面端会走本地分支，不再调用云端 `/api/v1/documents/files` 上传接口。
-- 支持本地离线解析的类型：`txt`、`docx`、`md`、`csv`、`html`、`json`。
-- 以上类型会将提取后的正文文本写入 `meta_info.raw_text`，由桌面端自动切块并写入 `knowledge_chunk`，随后将文档状态置为 `indexed`。
-- 其中 `docx` 会在本地先解压并提取 `word/document.xml` 正文文本，再复用现有分块/索引流程。
-- 非支持类型（如 `pdf`、`xlsx`）当前会在本地创建 `failed` 文档记录，并返回错误提示（便于用户在列表中看到失败状态）。
-- 本地离线文档解析大小上限为 `2MB`（超限将直接标记失败）。
+- 支持本地离线解析的类型：`pdf`、`txt`、`docx`、`md`、`csv`、`html`、`json`。
+- 以上类型会先在桌面端提取正文文本，再自动切块并写入 `knowledge_chunk`，随后将文档状态置为 `indexed`。
+- 其中 `docx` 会在本地先解压并提取 `word/document.xml` 正文文本；`pdf` 会使用本地 `pdfjs` 提取页面文本，再复用现有分块/索引流程。
+- 非支持类型（如 `xlsx`）当前会在本地创建 `failed` 文档记录，并返回错误提示（便于用户在列表中看到失败状态）。
+- 桌面端不再按源文件字节数强制限制本地解析；切块成功后会清理临时 `meta_info.raw_text`，避免长期保留整篇正文副本。
 
 ## 本地召回（聊天注入）
 - `send_local_conversation_message` / `regenerate_local_conversation_reply` 会根据最后一条用户消息执行本地混合召回（仅 `indexed` 文档）：
