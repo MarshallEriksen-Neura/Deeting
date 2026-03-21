@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/glass-card"
 import { cn } from "@/lib/utils"
 import type { SmartRouterStats } from "@/lib/api/dashboard"
+import { useDashboardOverview } from "@/lib/swr/use-dashboard-overview"
 
 /**
  * Smart Router Value Card
@@ -21,13 +22,20 @@ import type { SmartRouterStats } from "@/lib/api/dashboard"
  * - Background shield/lightning icon for visual impact
  */
 export function SmartRouterValueCard({
-  stats,
-  isLoading = false,
+  stats: providedStats,
+  isLoading: providedLoading,
 }: {
   stats?: SmartRouterStats
   isLoading?: boolean
 }) {
   const t = useTranslations("dashboard.smartRouter")
+  const { data, isLoading: overviewLoading } = useDashboardOverview({
+    source: "auto",
+    period: "24h",
+    recentErrorLimit: 10,
+  })
+  const stats = providedStats ?? data?.smartRouterStats
+  const isLoading = providedLoading ?? overviewLoading
 
   const cacheHitRate = stats?.cacheHitRate || 0
   const costSavings = stats?.costSavings || 0

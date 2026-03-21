@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl"
 import { GlassCard } from "@/components/ui/glass-card"
 import { cn } from "@/lib/utils"
 import type { DashboardStats } from "@/lib/api/dashboard"
+import { useDashboardOverview } from "@/lib/swr/use-dashboard-overview"
 
 /**
  * KPI Metrics Row - The Vitals
@@ -16,13 +17,20 @@ import type { DashboardStats } from "@/lib/api/dashboard"
  * 4. System Health
  */
 export function KPIMetricsRow({
-  stats,
-  isLoading = false,
+  stats: providedStats,
+  isLoading: providedLoading,
 }: {
   stats?: DashboardStats
   isLoading?: boolean
 }) {
   const t = useTranslations("dashboard.kpi")
+  const { data, isLoading: overviewLoading } = useDashboardOverview({
+    source: "auto",
+    period: "24h",
+    recentErrorLimit: 10,
+  })
+  const stats = providedStats ?? data?.stats
+  const isLoading = providedLoading ?? overviewLoading
 
   const kpiCards = [
     {

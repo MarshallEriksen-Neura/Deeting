@@ -4,9 +4,25 @@ import { getTranslations, setRequestLocale } from "next-intl/server"
 import { Container } from "@/components/ui/container"
 import { Skeleton } from "@/components/ui/skeleton"
 
-const DashboardContent = dynamic(
-  () => import("./dashboard-client").then((mod) => mod.DashboardClient),
-  { loading: () => <DashboardContentSkeleton /> }
+const KPIMetricsRow = dynamic(
+  () => import("./components/kpi-metrics-row").then((mod) => mod.KPIMetricsRow),
+  { loading: () => <DashboardMetricsSkeleton /> }
+)
+const TokenThroughputChart = dynamic(
+  () => import("./components/token-throughput-chart").then((mod) => mod.TokenThroughputChart),
+  { loading: () => <DashboardPanelSkeleton className="h-[360px]" /> }
+)
+const SmartRouterValueCard = dynamic(
+  () => import("./components/smart-router-value-card").then((mod) => mod.SmartRouterValueCard),
+  { loading: () => <DashboardPanelSkeleton className="h-[360px]" /> }
+)
+const ProviderHealthStatus = dynamic(
+  () => import("./components/provider-health-status").then((mod) => mod.ProviderHealthStatus),
+  { loading: () => <DashboardPanelSkeleton className="h-[320px]" /> }
+)
+const RecentErrorsList = dynamic(
+  () => import("./components/recent-errors-list").then((mod) => mod.RecentErrorsList),
+  { loading: () => <DashboardPanelSkeleton className="h-[320px]" /> }
 )
 
 export default async function DashboardPage({
@@ -32,35 +48,33 @@ export default async function DashboardPage({
         <p className="mt-1 text-[var(--muted)]">{t("description")}</p>
       </div>
 
-      <DashboardContent />
-    </Container>
-  )
-}
-
-function DashboardContentSkeleton() {
-  return (
-    <>
-      <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, index) => (
-          <DashboardPanelSkeleton key={index} className="h-[132px]" />
-        ))}
-      </div>
+      <KPIMetricsRow />
 
       <div className="mb-6 grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <DashboardPanelSkeleton className="h-[360px]" />
+          <TokenThroughputChart />
         </div>
 
         <div className="lg:col-span-1">
-          <DashboardPanelSkeleton className="h-[360px]" />
+          <SmartRouterValueCard />
         </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <DashboardPanelSkeleton className="h-[320px]" />
-        <DashboardPanelSkeleton className="h-[320px]" />
+        <ProviderHealthStatus />
+        <RecentErrorsList />
       </div>
-    </>
+    </Container>
+  )
+}
+
+function DashboardMetricsSkeleton() {
+  return (
+    <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      {Array.from({ length: 4 }).map((_, index) => (
+        <DashboardPanelSkeleton key={index} className="h-[132px]" />
+      ))}
+    </div>
   )
 }
 

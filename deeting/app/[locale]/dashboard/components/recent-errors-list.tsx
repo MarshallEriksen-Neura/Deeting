@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import type { RecentError } from "@/lib/api/dashboard"
+import { useDashboardOverview } from "@/lib/swr/use-dashboard-overview"
 
 /**
  * Recent Errors List Component
@@ -24,13 +25,20 @@ import type { RecentError } from "@/lib/api/dashboard"
  * - Error message snippet
  */
 export function RecentErrorsList({
-  errors,
-  isLoading = false,
+  errors: providedErrors,
+  isLoading: providedLoading,
 }: {
   errors?: RecentError[]
   isLoading?: boolean
 }) {
   const t = useTranslations("dashboard.recentErrors")
+  const { data, isLoading: overviewLoading } = useDashboardOverview({
+    source: "auto",
+    period: "24h",
+    recentErrorLimit: 10,
+  })
+  const errors = providedErrors ?? data?.recentErrors
+  const isLoading = providedLoading ?? overviewLoading
 
   return (
     <GlassCard className="h-full">

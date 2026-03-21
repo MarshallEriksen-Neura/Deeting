@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/glass-card"
 import { cn } from "@/lib/utils"
 import type { ProviderHealth } from "@/lib/api/dashboard"
+import { useDashboardOverview } from "@/lib/swr/use-dashboard-overview"
 
 /**
  * Provider Health Status Component
@@ -21,13 +22,20 @@ import type { ProviderHealth } from "@/lib/api/dashboard"
  * - Latency sparkline
  */
 export function ProviderHealthStatus({
-  providers,
-  isLoading = false,
+  providers: providedProviders,
+  isLoading: providedLoading,
 }: {
   providers?: ProviderHealth[]
   isLoading?: boolean
 }) {
   const t = useTranslations("dashboard.providerHealth")
+  const { data, isLoading: overviewLoading } = useDashboardOverview({
+    source: "auto",
+    period: "24h",
+    recentErrorLimit: 10,
+  })
+  const providers = providedProviders ?? data?.providerHealth
+  const isLoading = providedLoading ?? overviewLoading
 
   return (
     <GlassCard className="h-full">
