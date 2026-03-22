@@ -102,16 +102,18 @@ exit /b 1
 
 :read_json_version
 set "%~2="
-set "LINE="
-for /f "usebackq delims=" %%L in (`findstr /r /c:"^[ ]*\"version\": \"" "%~1"`) do (
-  if not defined LINE set "LINE=%%L"
+set "VALUE="
+for /f "usebackq tokens=2 delims=:" %%L in (`findstr /r /c:"version" "%~1"`) do (
+  if not defined VALUE set "VALUE=%%L"
 )
-if not defined LINE (
+if not defined VALUE (
   echo [release-tag] Failed to read version from %~1
   exit /b 1
 )
-set "VALUE=!LINE:*\"version\": \"=!"
-for /f "delims=\" %%V in ("!VALUE!") do set "%~2=%%V"
+for /f "tokens=* delims= " %%V in ("!VALUE!") do set "VALUE=%%V"
+set "VALUE=!VALUE:,=!"
+set "VALUE=!VALUE:"=!"
+set "%~2=!VALUE!"
 if not defined %~2 (
   echo [release-tag] Parsed version is empty for %~1
   exit /b 1
@@ -120,16 +122,17 @@ exit /b 0
 
 :read_toml_version
 set "%~2="
-set "LINE="
-for /f "usebackq delims=" %%L in (`findstr /r /c:"^version *= *\"" "%~1"`) do (
-  if not defined LINE set "LINE=%%L"
+set "VALUE="
+for /f "usebackq tokens=2 delims==" %%L in (`findstr /b /c:"version = " "%~1"`) do (
+  if not defined VALUE set "VALUE=%%L"
 )
-if not defined LINE (
+if not defined VALUE (
   echo [release-tag] Failed to read version from %~1
   exit /b 1
 )
-set "VALUE=!LINE:*version = \"=!"
-for /f "delims=\" %%V in ("!VALUE!") do set "%~2=%%V"
+for /f "tokens=* delims= " %%V in ("!VALUE!") do set "VALUE=%%V"
+set "VALUE=!VALUE:"=!"
+set "%~2=!VALUE!"
 if not defined %~2 (
   echo [release-tag] Parsed version is empty for %~1
   exit /b 1
