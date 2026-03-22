@@ -27,16 +27,6 @@ async function listLocalInstances() {
   return await invoke<LocalProviderInstance[]>("list_local_provider_instances");
 }
 
-function toLocalInstanceSummary(instance: LocalProviderInstance) {
-  return {
-    id: instance.id,
-    name: instance.name,
-    is_enabled: instance.is_enabled,
-    health_status: "unknown",
-    latency_ms: 0,
-  };
-}
-
 function buildHubStats(providers: ProviderCard[]): ProviderHubResponse["stats"] {
   return {
     total: providers.length,
@@ -49,15 +39,26 @@ function buildHubStats(providers: ProviderCard[]): ProviderHubResponse["stats"] 
   };
 }
 
+function toLocalInstanceSummary(instance: LocalProviderInstance) {
+  return {
+    id: instance.id,
+    name: instance.name,
+    is_enabled: instance.is_enabled,
+    health_status: "unknown",
+    latency_ms: 0,
+  };
+}
+
 function mergeProviderCardWithLocalInstances(
   card: ProviderCard,
   instances: LocalProviderInstance[]
 ): ProviderCard {
-  const relatedInstances = instances.filter((instance) => instance.preset_slug === card.slug);
   return {
     ...card,
-    connected: relatedInstances.length > 0,
-    instances: relatedInstances.map(toLocalInstanceSummary),
+    connected: instances.some((instance) => instance.preset_slug === card.slug),
+    instances: instances
+      .filter((instance) => instance.preset_slug === card.slug)
+      .map(toLocalInstanceSummary),
   };
 }
 

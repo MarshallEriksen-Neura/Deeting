@@ -37,11 +37,11 @@ jobs:
     runs-on: ${{ matrix.platform }}
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
-      SCOUT_SERVICE_URL: ${{ vars.SCOUT_SERVICE_URL }}
-      NEXT_PUBLIC_API_BASE_URL: ${{ vars.NEXT_PUBLIC_API_BASE_URL }}
-      NEXT_PUBLIC_DESKTOP_EXTERNAL_LOGIN_URL: ${{ vars.NEXT_PUBLIC_DESKTOP_EXTERNAL_LOGIN_URL }}
-      NEXT_PUBLIC_IS_TAURI: ${{ vars.NEXT_PUBLIC_IS_TAURI }}
-      NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ secrets.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}
+      SCOUT_SERVICE_URL: ${{ vars.SCOUT_SERVICE_URL || secrets.SCOUT_SERVICE_URL }}
+      NEXT_PUBLIC_API_BASE_URL: ${{ vars.NEXT_PUBLIC_API_BASE_URL || secrets.NEXT_PUBLIC_API_BASE_URL }}
+      NEXT_PUBLIC_DESKTOP_EXTERNAL_LOGIN_URL: ${{ vars.NEXT_PUBLIC_DESKTOP_EXTERNAL_LOGIN_URL || secrets.NEXT_PUBLIC_DESKTOP_EXTERNAL_LOGIN_URL }}
+      NEXT_PUBLIC_IS_TAURI: ${{ vars.NEXT_PUBLIC_IS_TAURI || secrets.NEXT_PUBLIC_IS_TAURI }}
+      NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ vars.NEXT_PUBLIC_TURNSTILE_SITE_KEY || secrets.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}
 
     steps:
       - uses: actions/checkout@v6
@@ -98,6 +98,22 @@ jobs:
             -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
 
       - uses: oven-sh/setup-bun@v2
+
+      - name: Validate desktop public build env
+        shell: bash
+        run: |
+          missing=()
+          for key in NEXT_PUBLIC_API_BASE_URL NEXT_PUBLIC_DESKTOP_EXTERNAL_LOGIN_URL NEXT_PUBLIC_IS_TAURI; do
+            if [ -z "${!key}" ]; then
+              missing+=("$key")
+            fi
+          done
+
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "Missing required desktop build env: ${missing[*]}"
+            echo "Configure them in GitHub Actions Variables or Secrets."
+            exit 1
+          fi
 
       - name: Install protoc
         env:
@@ -159,6 +175,8 @@ jobs:
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import json
           import os
+          import sys
+          from pathlib import Path
 
           raw_artifact_paths = os.environ.get("ARTIFACT_PATHS_JSON", "").strip()
           if not raw_artifact_paths:
@@ -170,8 +188,30 @@ jobs:
           if not artifact_paths:
               raise SystemExit("tauri-action did not return any artifact paths")
 
+          file_artifact_paths = []
+          skipped_directory_paths = []
+          for artifact_path in artifact_paths:
+              path = Path(artifact_path)
+              if not path.exists():
+                  raise SystemExit(f"tauri-action returned missing artifact path: {artifact_path}")
+              if path.is_dir():
+                  skipped_directory_paths.append(artifact_path)
+                  continue
+              file_artifact_paths.append(artifact_path)
+
+          if not file_artifact_paths:
+              raise SystemExit("tauri-action did not return any file artifact paths")
+
+          if skipped_directory_paths:
+              print(
+                  "Skipping directory artifact paths so release uploads only include final files:",
+                  file=sys.stderr,
+              )
+              for artifact_path in skipped_directory_paths:
+                  print(f"- {artifact_path}", file=sys.stderr)
+
           print("paths<<EOF")
-          for path in artifact_paths:
+          for path in file_artifact_paths:
               print(path)
           print("EOF")
           PY
@@ -203,9 +243,142 @@ jobs:
           pattern: main-*
           path: ./release-assets
 
-      - name: Inspect release asset staging
+      - name: Inspect downloaded release assets
         shell: bash
         run: find ./release-assets -type f | sort
+
+      - name: Prepare final release upload directory
+        id: final_release_assets
+        shell: bash
+        run: |
+          mkdir -p ./release-upload
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import shutil
+          import sys
+          from pathlib import Path
+
+          release_assets_dir = Path("release-assets")
+          release_upload_dir = Path("release-upload")
+
+          def is_release_asset(path: Path) -> bool:
+              name = path.name
+              lower = name.lower()
+              if lower == "latest.json":
+                  return True
+              allowed_suffixes = (
+                  ".app.tar.gz",
+                  ".app.tar.gz.sig",
+                  ".dmg",
+                  ".dmg.sig",
+                  ".deb",
+                  ".deb.sig",
+                  ".rpm",
+                  ".rpm.sig",
+                  ".msi",
+                  ".msi.sig",
+                  ".exe",
+                  ".exe.sig",
+                  ".appimage",
+                  ".appimage.sig",
+              )
+              return any(lower.endswith(suffix) for suffix in allowed_suffixes)
+
+          selected_paths = []
+          skipped_paths = []
+          for path in sorted(release_assets_dir.rglob("*")):
+              if not path.is_file():
+                  continue
+              if is_release_asset(path):
+                  destination = release_upload_dir / path.name
+                  if destination.exists():
+                      raise SystemExit(
+                          f"duplicate release asset name detected while staging uploads: {path.name}"
+                      )
+                  shutil.copy2(path, destination)
+                  selected_paths.append(destination)
+              else:
+                  skipped_paths.append(path)
+
+          if not selected_paths:
+              raise SystemExit("no final release assets matched the upload allowlist")
+
+          print("Selected final release assets:", file=sys.stderr)
+          for path in selected_paths:
+              print(f"- {path.as_posix()}", file=sys.stderr)
+
+          if skipped_paths:
+              print("Skipped non-release files from downloaded artifacts:", file=sys.stderr)
+              for path in skipped_paths:
+                  print(f"- {path.as_posix()}", file=sys.stderr)
+
+          print("paths<<EOF")
+          for path in selected_paths:
+              print(path.as_posix())
+          print("EOF")
+          PY
+
+      - name: Inspect final release upload staging
+        shell: bash
+        run: find ./release-upload -maxdepth 1 -type f | sort
+
+      - name: Remove leaked non-release assets from existing release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+
+          release_tag = os.environ["RELEASE_TAG"]
+
+          def is_release_asset(name: str) -> bool:
+              lower = name.lower()
+              if lower == "latest.json":
+                  return True
+              allowed_suffixes = (
+                  ".app.tar.gz",
+                  ".app.tar.gz.sig",
+                  ".dmg",
+                  ".dmg.sig",
+                  ".deb",
+                  ".deb.sig",
+                  ".rpm",
+                  ".rpm.sig",
+                  ".msi",
+                  ".msi.sig",
+                  ".exe",
+                  ".exe.sig",
+                  ".appimage",
+                  ".appimage.sig",
+              )
+              return any(lower.endswith(suffix) for suffix in allowed_suffixes)
+
+          raw = subprocess.check_output(
+              ["gh", "release", "view", release_tag, "--json", "assets"],
+              text=True,
+          )
+          assets = json.loads(raw)["assets"]
+          leaked_assets = [
+              asset["name"]
+              for asset in assets
+              if not is_release_asset(asset["name"])
+          ]
+
+          if not leaked_assets:
+              print("No leaked non-release assets found on the existing release.", file=sys.stderr)
+              raise SystemExit(0)
+
+          print("Deleting leaked non-release assets from the existing release:", file=sys.stderr)
+          for asset_name in leaked_assets:
+              print(f"- {asset_name}", file=sys.stderr)
+              subprocess.run(
+                  ["gh", "release", "delete-asset", release_tag, asset_name, "--yes"],
+                  check=True,
+              )
+          PY
 
       - name: Upload final release assets
         uses: softprops/action-gh-release@v1
@@ -214,7 +387,7 @@ jobs:
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           files: |
-            release-assets/**/*
+            ${{ steps.final_release_assets.outputs.paths }}
           draft: false
           prerelease: false
 

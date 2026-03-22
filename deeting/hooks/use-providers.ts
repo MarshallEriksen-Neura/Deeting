@@ -15,21 +15,39 @@ import {
   type ProviderModelTestResponse,
   type ProviderModelPurchaseStatus
 } from "@/lib/api/providers"
+import { toHubResponse } from "@/lib/platform/adapters/desktop/mappers"
+import type {
+  LocalProviderInstance,
+  LocalProviderPreset,
+} from "@/lib/platform/adapters/desktop/types"
 
 const EMPTY_ARRAY: never[] = []
 
 export const PROVIDERS_HUB_KEY = "providers/hub"
+export const LOCAL_PROVIDERS_HUB_KEY = "providers/local-hub"
 export const PROVIDER_DETAIL_KEY = "providers/detail"
 export const PROVIDER_INSTANCES_KEY = "providers/instances"
 export const PROVIDER_MODELS_KEY = "providers/models"
+
+async function fetchLocalProviderHub(): Promise<ProviderHubResponse> {
+  const { invoke } = await import("@tauri-apps/api/core")
+  const [presets, instances] = await Promise.all([
+    invoke<LocalProviderPreset[]>("list_local_provider_presets"),
+    invoke<LocalProviderInstance[]>("list_local_provider_instances"),
+  ])
+
+  return toHubResponse(presets, instances)
+}
 
 export function useProviderHub(params?: {
   category?: string
   q?: string
   include_public?: boolean
+}, options?: {
+  enabled?: boolean
 }) {
   const { provider } = usePlatform()
-  const queryKey = [PROVIDERS_HUB_KEY, params]
+  const queryKey = options?.enabled === false ? null : [PROVIDERS_HUB_KEY, params]
   
   const { data, error, isLoading, isValidating, mutate } = useSWR<ProviderHubResponse, ApiError>(
     queryKey,
@@ -37,6 +55,30 @@ export function useProviderHub(params?: {
     {
       revalidateOnFocus: false,
       dedupingInterval: 60000, // 1 minute
+    }
+  )
+
+  return {
+    data,
+    providers: data?.providers || EMPTY_ARRAY,
+    stats: data?.stats,
+    isLoading,
+    isError: !!error,
+    error,
+    isValidating,
+    mutate,
+  }
+}
+
+export function useLocalProviderHub(enabled = true) {
+  const queryKey = enabled ? LOCAL_PROVIDERS_HUB_KEY : null
+
+  const { data, error, isLoading, isValidating, mutate } = useSWR<ProviderHubResponse, Error>(
+    queryKey,
+    fetchLocalProviderHub,
+    {
+      revalidateOnFocus: false,
+      dedupingInterval: 60000,
     }
   )
 

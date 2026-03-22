@@ -5,7 +5,13 @@ import { useRouter } from "next/navigation"
 import { useTranslations } from "next-intl"
 import { isTauriRuntime } from "@/lib/api/desktop-config"
 
-import { useProviderHub, useProviderInstances, useUpdateProviderInstance, useDeleteProviderInstance } from "@/hooks/use-providers"
+import {
+  useLocalProviderHub,
+  useProviderHub,
+  useProviderInstances,
+  useUpdateProviderInstance,
+  useDeleteProviderInstance,
+} from "@/hooks/use-providers"
 import { ProviderHubResponse, ProviderInstanceResponse } from "@/lib/api/providers"
 import ProviderInstanceRow from "./provider-instance-row"
 import ConnectProviderDrawer from "./connect-provider-drawer"
@@ -90,10 +96,28 @@ function buildItems(hub?: ProviderHubResponse, instances: ProviderInstanceRespon
 export function ProvidersList() {
   const router = useRouter()
   const t = useTranslations("providers.manager")
+  const tauriRuntime = isTauriRuntime()
   
   // Data Fetching
-  const { data, isLoading, isError, error, mutate } = useProviderHub({ include_public: true })
-  const { instances, mutate: mutateInstances } = useProviderInstances({ include_public: true })
+  const remoteHub = useProviderHub(
+    { include_public: true },
+    { enabled: !tauriRuntime }
+  )
+  const localHub = useLocalProviderHub(tauriRuntime)
+  const {
+    instances,
+    isLoading: instancesLoading,
+    isError: instancesIsError,
+    error: instancesError,
+    mutate: mutateInstances,
+  } = useProviderInstances({ include_public: true })
+
+  const activeHub = tauriRuntime ? localHub : remoteHub
+  const data = activeHub.data
+  const isLoading = activeHub.isLoading || instancesLoading
+  const isError = activeHub.isError || instancesIsError
+  const error = activeHub.error ?? instancesError
+  const mutate = activeHub.mutate
   
   // Mutations
   const { update } = useUpdateProviderInstance()
@@ -127,7 +151,7 @@ export function ProvidersList() {
   }
 
   const handleViewModels = (id: string) => {
-    if (isTauriRuntime()) {
+    if (tauriRuntime) {
       router.push(`/dashboard/user/providers/models?instanceId=${encodeURIComponent(id)}`)
       return
     }
