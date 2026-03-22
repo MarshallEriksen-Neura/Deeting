@@ -456,5 +456,6 @@ jobs:
       - name: Trigger bootstrapper installer workflow
         run: |
           gh workflow run release-installer.yml \
+            --repo "${{ github.repository }}" \
             -f release_tag="${RELEASE_TAG}" \
             -f source_ref="${SOURCE_REF}"
