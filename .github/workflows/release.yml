@@ -253,6 +253,7 @@ jobs:
         run: |
           mkdir -p ./release-upload
           python - <<'PY' >> "$GITHUB_OUTPUT"
+          import re
           import shutil
           import sys
           from pathlib import Path
@@ -260,59 +261,107 @@ jobs:
           release_assets_dir = Path("release-assets")
           release_upload_dir = Path("release-upload")
 
+          # Compound suffixes recognised as release assets (order matters: longest first).
+          ALLOWED_SUFFIXES = (
+              ".app.tar.gz.sig",
+              ".app.tar.gz",
+              ".appimage.sig",
+              ".appimage",
+              ".dmg.sig",
+              ".dmg",
+              ".deb.sig",
+              ".deb",
+              ".rpm.sig",
+              ".rpm",
+              ".msi.sig",
+              ".msi",
+              ".exe.sig",
+              ".exe",
+          )
+
           def is_release_asset(path: Path) -> bool:
-              name = path.name
-              lower = name.lower()
+              lower = path.name.lower()
               if lower == "latest.json":
                   return True
-              allowed_suffixes = (
-                  ".app.tar.gz",
-                  ".app.tar.gz.sig",
-                  ".dmg",
-                  ".dmg.sig",
-                  ".deb",
-                  ".deb.sig",
-                  ".rpm",
-                  ".rpm.sig",
-                  ".msi",
-                  ".msi.sig",
-                  ".exe",
-                  ".exe.sig",
-                  ".appimage",
-                  ".appimage.sig",
-              )
-              return any(lower.endswith(suffix) for suffix in allowed_suffixes)
+              return any(lower.endswith(s) for s in ALLOWED_SUFFIXES)
 
-          selected_paths = []
-          skipped_paths = []
+          def split_compound_ext(name: str) -> tuple[str, str]:
+              """Split a filename into (stem, compound_extension).
+
+              Example: 'deeting.app.tar.gz' -> ('deeting', '.app.tar.gz')
+              """
+              lower = name.lower()
+              for suffix in ALLOWED_SUFFIXES:
+                  if lower.endswith(suffix):
+                      stem = name[: len(name) - len(suffix)]
+                      ext = name[len(stem):]
+                      return stem, ext
+              return name, ""
+
+          def arch_label_from_dir(dir_name: str) -> str:
+              """Extract a short architecture label from an artifact directory name.
+
+              'main-aarch64-apple-darwin' -> '_aarch64'
+              'main-x86_64-apple-darwin'  -> '_x86_64'
+              'main-x86_64-unknown-linux-gnu' -> '_x86_64'
+              """
+              target = dir_name.removeprefix("main-")
+              m = re.match(r"(aarch64|x86_64|i686|arm\w*)", target)
+              return f"_{m.group(1)}" if m else f"_{target}"
+
+          # Phase 1 — collect all release-worthy files, grouped by base filename.
+          # Key: original basename, Value: list of source Paths.
+          candidates: dict[str, list[Path]] = {}
+          skipped_paths: list[Path] = []
+
           for path in sorted(release_assets_dir.rglob("*")):
               if not path.is_file():
                   continue
               if is_release_asset(path):
-                  destination = release_upload_dir / path.name
-                  if destination.exists():
-                      raise SystemExit(
-                          f"duplicate release asset name detected while staging uploads: {path.name}"
-                      )
-                  shutil.copy2(path, destination)
-                  selected_paths.append(destination)
+                  candidates.setdefault(path.name, []).append(path)
               else:
                   skipped_paths.append(path)
+
+          # Phase 2 — copy to release-upload, renaming when there are collisions.
+          selected_paths: list[Path] = []
+
+          for basename, sources in candidates.items():
+              if len(sources) == 1:
+                  # Unique filename — copy as-is.
+                  dest = release_upload_dir / basename
+                  shutil.copy2(sources[0], dest)
+                  selected_paths.append(dest)
+              else:
+                  # Collision — add architecture suffix to every colliding file.
+                  stem, ext = split_compound_ext(basename)
+                  for src in sources:
+                      # The artifact directory is named "main-{target}" (set by upload-artifact).
+                      artifact_dir = src.relative_to(release_assets_dir).parts[0]
+                      label = arch_label_from_dir(artifact_dir)
+                      new_name = f"{stem}{label}{ext}"
+                      dest = release_upload_dir / new_name
+                      if dest.exists():
+                          raise SystemExit(
+                              f"duplicate release asset name even after arch rename: {new_name}"
+                          )
+                      shutil.copy2(src, dest)
+                      selected_paths.append(dest)
+                      print(f"Renamed {basename} -> {new_name} (from {artifact_dir})", file=sys.stderr)
 
           if not selected_paths:
               raise SystemExit("no final release assets matched the upload allowlist")
 
           print("Selected final release assets:", file=sys.stderr)
-          for path in selected_paths:
-              print(f"- {path.as_posix()}", file=sys.stderr)
+          for path in sorted(selected_paths):
+              print(f"  {path.name}", file=sys.stderr)
 
           if skipped_paths:
               print("Skipped non-release files from downloaded artifacts:", file=sys.stderr)
               for path in skipped_paths:
-                  print(f"- {path.as_posix()}", file=sys.stderr)
+                  print(f"  {path.as_posix()}", file=sys.stderr)
 
           print("paths<<EOF")
-          for path in selected_paths:
+          for path in sorted(selected_paths):
               print(path.as_posix())
           print("EOF")
           PY
