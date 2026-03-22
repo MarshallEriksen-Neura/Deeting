@@ -1,4 +1,4 @@
-name: Release
+name: Release Main
 
 on:
   workflow_dispatch:
@@ -185,91 +185,12 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-      - name: Upload Windows installer artifact
-        if: matrix.platform == 'windows-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-nsis-installer
-          path: |
-            deeting/src-tauri/target/release/bundle/nsis/*.exe
-          retention-days: 1
-
-  build-windows-installer:
+  publish-main-release:
     needs: build-main
-    runs-on: windows-latest
-    permissions:
-      contents: write
-    env:
-      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: oven-sh/setup-bun@v2
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: "installer/src-tauri -> target"
-
-      - name: Download Windows installer artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-nsis-installer
-          path: ./main-installer
-
-      - name: Prepare installer resources
-        shell: bash
-        run: |
-          mkdir -p installer/src-tauri/resources
-          cp main-installer/*.exe installer/src-tauri/resources/deeting-setup.exe
-          ls -la installer/src-tauri/resources/
-
-      - name: Install installer frontend dependencies
-        run: bun install --frozen-lockfile
-        working-directory: installer
-
-      - name: Build installer frontend
-        run: bun run build
-        working-directory: installer
-
-      - name: Build installer
-        uses: tauri-apps/tauri-action@action-v0.6.2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          NEXT_PUBLIC_IS_TAURI: "true"
-        with:
-          projectPath: installer
-          includeRelease: true
-          args: ""
-
-      - name: Rename installer
-        shell: bash
-        run: |
-          cd installer/src-tauri/target/release/bundle/nsis
-          for file in *.exe; do
-            if [[ "$file" != *"bootstrapper"* ]]; then
-              mv "$file" "${file%.exe}-bootstrapper.exe"
-            fi
-          done
-          ls -la
-
-      - name: Upload bootstrapper installer
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-bootstrapper-installer
-          path: installer/src-tauri/target/release/bundle/nsis/*.exe
-          retention-days: 1
-
-  publish-final-release:
-    needs: [build-main, build-windows-installer]
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    if: ${{ needs.build-main.result == 'success' && needs.build-windows-installer.result == 'success' }}
+    if: ${{ needs.build-main.result == 'success' }}
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
 
@@ -280,12 +201,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: main-*
-          path: ./release-assets
-
-      - name: Download bootstrapper installer
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-bootstrapper-installer
           path: ./release-assets
 
       - name: Inspect release asset staging
@@ -302,3 +217,22 @@ jobs:
             release-assets/**/*
           draft: false
           prerelease: false
+
+  dispatch-installer-release:
+    needs: [build-main, publish-main-release]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    if: ${{ needs.build-main.result == 'success' && needs.publish-main-release.result == 'success' }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+      SOURCE_REF: ${{ github.sha }}
+
+    steps:
+      - name: Trigger bootstrapper installer workflow
+        run: |
+          gh workflow run release-installer.yml \
+            -f release_tag="${RELEASE_TAG}" \
+            -f source_ref="${SOURCE_REF}"

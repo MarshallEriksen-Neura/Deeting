@@ -1,0 +1,162 @@
+name: Release Installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag to attach the bootstrapper to (e.g. v0.1.0-3)"
+        required: true
+        type: string
+      source_ref:
+        description: "Git ref to build the installer from. Defaults to the release tag."
+        required: false
+        type: string
+
+concurrency:
+  group: release-installer-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  build-windows-installer:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      SOURCE_REF: ${{ inputs.source_ref }}
+
+    steps:
+      - name: Resolve source ref
+        id: resolve_source_ref
+        shell: bash
+        run: |
+          if [ -n "${SOURCE_REF}" ]; then
+            echo "ref=${SOURCE_REF}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=refs/tags/${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.resolve_source_ref.outputs.ref }}
+
+      - name: Validate release tag matches bundled versions
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          release_tag = "${{ env.RELEASE_TAG }}"
+          main_version = json.loads(Path("deeting/src-tauri/tauri.conf.json").read_text(encoding="utf-8"))["version"]
+          installer_version = json.loads(Path("installer/src-tauri/tauri.conf.json").read_text(encoding="utf-8"))["version"]
+
+          expected_tag = f"v{main_version}"
+          if release_tag != expected_tag:
+              raise SystemExit(
+                  f"release tag {release_tag!r} does not match bundled app version {expected_tag!r}"
+              )
+
+          if installer_version != main_version:
+              raise SystemExit(
+                  "installer version does not match main app version: "
+                  f"{installer_version!r} != {main_version!r}"
+              )
+          PY
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "installer/src-tauri -> target"
+
+      - name: Download Windows installer asset from release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          asset_name="$(
+            python - <<'PY'
+            import json
+            import os
+            import subprocess
+
+            release_tag = os.environ["RELEASE_TAG"]
+            raw = subprocess.check_output(
+                ["gh", "release", "view", release_tag, "--json", "assets"],
+                text=True,
+            )
+            assets = json.loads(raw)["assets"]
+            candidates = [
+                asset["name"]
+                for asset in assets
+                if asset["name"].lower().endswith(".exe")
+                and "bootstrapper" not in asset["name"].lower()
+            ]
+
+            if len(candidates) != 1:
+                raise SystemExit(
+                    f"expected exactly one non-bootstrapper .exe asset for {release_tag}, found {candidates!r}"
+                )
+
+            print(candidates[0], end="")
+            PY
+          )"
+
+          mkdir -p main-installer
+          gh release download "${RELEASE_TAG}" --pattern "${asset_name}" --dir ./main-installer
+          ls -la ./main-installer
+
+      - name: Prepare installer resources
+        shell: bash
+        run: |
+          mkdir -p installer/src-tauri/resources
+          cp main-installer/*.exe installer/src-tauri/resources/deeting-setup.exe
+          ls -la installer/src-tauri/resources/
+
+      - name: Install installer frontend dependencies
+        run: bun install --frozen-lockfile
+        working-directory: installer
+
+      - name: Build installer frontend
+        run: bun run build
+        working-directory: installer
+
+      - name: Build installer
+        uses: tauri-apps/tauri-action@action-v0.6.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          NEXT_PUBLIC_IS_TAURI: "true"
+        with:
+          projectPath: installer
+          includeRelease: false
+          args: ""
+
+      - name: Rename installer
+        shell: bash
+        run: |
+          cd installer/src-tauri/target/release/bundle/nsis
+          for file in *.exe; do
+            if [[ "$file" != *"bootstrapper"* ]]; then
+              mv "$file" "${file%.exe}-bootstrapper.exe"
+            fi
+          done
+          ls -la
+
+      - name: Upload bootstrapper installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-bootstrapper-installer
+          path: installer/src-tauri/target/release/bundle/nsis/*.exe
+          retention-days: 1
+
+      - name: Upload bootstrapper installer to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${RELEASE_TAG}" installer/src-tauri/target/release/bundle/nsis/*.exe --clobber
