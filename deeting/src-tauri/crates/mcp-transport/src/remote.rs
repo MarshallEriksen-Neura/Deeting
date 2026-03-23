@@ -18,6 +18,9 @@ use std::{
 };
 use tokio::io::AsyncBufReadExt;
 
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemoteDiscoveredTool {
     pub name: String,
@@ -162,6 +165,7 @@ async fn spawn_local_stdio_client(
     env: Option<&HashMap<String, String>>,
 ) -> Result<RunningService<RoleClient, ClientInfo>, String> {
     let mut child_command = tokio::process::Command::new(command);
+    configure_background_tokio_command(&mut child_command);
     child_command.args(args);
     if let Some(env) = env {
         child_command.envs(env);
@@ -194,6 +198,15 @@ async fn spawn_local_stdio_client(
         .serve(transport)
         .await
         .map_err(|err| err.to_string())
+}
+
+fn configure_background_tokio_command(command: &mut tokio::process::Command) {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
 }
 
 fn format_command_label(command: &str, args: &[String]) -> String {

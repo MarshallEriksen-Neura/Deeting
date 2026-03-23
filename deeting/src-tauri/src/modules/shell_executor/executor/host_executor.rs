@@ -8,6 +8,7 @@ use crate::modules::mcp::{
 use crate::modules::shell_executor::{
     AuditLogger, CommandPolicyChecker, PathGuard, ShellExecutorConfig,
 };
+use crate::utils::configure_background_tokio_command;
 use async_trait::async_trait;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -192,6 +193,7 @@ impl HostShellExecutor {
         let (program, args) = CommandBuilder::build(&request.command, &request.args);
 
         let mut cmd = Command::new(program);
+        configure_background_tokio_command(&mut cmd);
         cmd.args(&args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
