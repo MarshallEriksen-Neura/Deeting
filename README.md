@@ -100,6 +100,40 @@ Deeting OS 是一个本地优先的桌面 AI 平台。它不是单纯的聊天�
 - **它把上下文当成基础设施来做**：Assistant、Knowledge、Memory、Skills 不是散落在不同页面上的功能点，而是同一张桌面工作台的一部分。
 - **它尽量让差异留在系统内部**：通过模板映射、语义路由和本地优先架构，把模型差异、工具差异和工作流复杂度更多地吸收在底层。
 
+## Deeting 里的 Subagent，不是黑盒分身
+
+很多 AI 产品提到 subagent，本质上还是“主模型在内部再叫几个分身”，用户通常只能看到最后一句总结。
+
+Deeting 想做的不是这种黑盒。
+
+在桌面端里，subagent 更接近一套受控的本地执行模型：
+
+- `Primary Assistant`：负责理解你的意图，决定是直接回答、交给单个 worker，还是进入 workflow。
+- `Worker Template`：可被选择的执行模板。来源可以是你自己配置的 `WorkerProfile`，也可以是系统内置模板。
+- `Worker Instance`：某个 phase 执行时临时实例化出来的执行单元。它是一次性的，不会偷偷变成新的永久 agent。
+- `Workflow Run`：真正被持久化的对象。计划提案、阶段状态、上下文文档、结果产物、审批点都留在本地，可恢复、可重跑、可检查。
+
+换句话说，Deeting 的 subagent 不是“AI 自己无限创造新 agent”，而是“主助手从受控模板池里，按当前任务临时拉起一个执行实例”。
+
+| 常见黑盒式 subagent | Deeting 的 subagent 模型 |
+| --- | --- |
+| AI 在系统内部临时编几个角色 | 从受控 `Worker Template` 池里解析和实例化 |
+| plan 藏在内部数据结构里 | 先生成粗粒度 proposal，用户可以直接改 |
+| 下游拿到什么上下文不可见 | phase 的 context packet 可检查、可追踪 |
+| 执行完就消失，只剩一句结果 | `Workflow Run`、phase、artifact、event 都能落在本地 |
+| 出问题只能猜是 prompt 还是 agent 坏了 | 可以看 proposal、context、result、trace 到底哪一层出了偏差 |
+
+这也意味着 Deeting 的 subagent 更像桌面端 workflow runtime 的受控 worker，而不是另一套脱离主助手的神秘编排系统。
+
+一个请求在 Deeting 里通常会这样流动：
+
+1. `Primary Assistant` 先判断这件事该直接回答，还是应该进入 worker / workflow。
+2. 如果需要 workflow，会先生成一份粗粒度 proposal；这不是隐藏 plan，而是用户可以直接改的提案。
+3. runtime 把 proposal 编译成可执行 snapshot，并为每个 phase 生成可检查的 context packet。
+4. 某个 phase 开始时，再从受控模板池里实例化一个 `Worker Instance` 执行，并把结果、事件、产物回写到本地 workflow run。
+
+短期内，Deeting 仍会同时保留 `Direct`、单 worker delegation、`Workflow` 三种运行方式；长期目标是收敛成 `Direct + Workflow`，让“一次单 worker 调用”也只是最小的一步工作流，而不是永久并列的第二套模型。
+
 ## 再用两张图看懂 Deeting 的运行方式
 
 ### 1. 本地优先 AI 网关
@@ -158,12 +192,13 @@ Deeting OS 是一个本地优先的桌面 AI 平台。它不是单纯的聊天�
 - 想把 AI、知识库和自动化任务收拢到同一个桌面入口的人
 - 需要更强本地控制感，而不是只把上下文交给云端聊天页面的人
 - 想把 Skills、文档检索、记忆和 IM 协同串起来的重度 AI 用户
+- 希望让主助手和受控 subagent 协作，但又不想把计划和执行过程完全交给黑盒的人
 - 希望在 Tauri 桌面架构上继续扩展工具链的开发者
 
 ## 路线图
 
 - `[x]` Phase 1: 本地优先桌面底座、知识与记忆能力、基础协同与技能扩展形态
-- `[ ]` Phase 2: 更成熟的多 Agent 工作流、更多外部协同入口、更完整的本地执行闭环
+- `[ ]` Phase 2: 更成熟的桌面 Workflow Runtime、可检查的 subagent 协作、更多外部协同入口、更完整的本地执行闭环
 - `[ ]` Phase 3: 更强的模型兼容层、推荐与反馈回路、可持续进化的个人 AI OS
 
 <details>
