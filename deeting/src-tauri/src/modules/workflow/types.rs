@@ -1,8 +1,11 @@
 use std::fmt;
 use std::str::FromStr;
+use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+use crate::modules::custom_task_agents::types::CustomTaskAgentProfile;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
@@ -326,4 +329,275 @@ pub struct CreateWorkflowArtifactRequest {
     pub artifact_ref: Option<String>,
     pub content: Option<String>,
     pub metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProposalPhase {
+    pub phase_id: String,
+    pub title: String,
+    pub worker_ref: Option<String>,
+    pub goal: Option<String>,
+    pub expected_output: Option<String>,
+    #[serde(default)]
+    pub depends_on: Vec<String>,
+    pub user_notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct ParsedProposal {
+    pub title: Option<String>,
+    pub goal: Option<String>,
+    #[serde(default)]
+    pub global_constraints: Vec<String>,
+    #[serde(default)]
+    pub phases: Vec<ProposalPhase>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ExpectedOutput {
+    pub result_kind: String,
+    pub result_schema_hint: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CompiledPhase {
+    pub phase_id: String,
+    pub title: String,
+    pub worker_ref: String,
+    #[serde(default)]
+    pub depends_on: Vec<String>,
+    pub goal: String,
+    pub expected_output: Option<ExpectedOutput>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SnapshotPolicy {
+    pub allow_auto_suffix_replan: bool,
+    pub default_timeout_ms: u64,
+}
+
+impl Default for SnapshotPolicy {
+    fn default() -> Self {
+        Self {
+            allow_auto_suffix_replan: false,
+            default_timeout_ms: 600_000,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ExecutionSnapshot {
+    pub run_id: String,
+    pub proposal_version: i64,
+    pub snapshot_version: i64,
+    pub compiled_at: String,
+    pub goal: String,
+    pub phases: Vec<CompiledPhase>,
+    pub policy: SnapshotPolicy,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CompilerError {
+    pub phase_id: Option<String>,
+    pub field: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct CompileResult {
+    pub snapshot: Option<ExecutionSnapshot>,
+    #[serde(default)]
+    pub errors: Vec<CompilerError>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenerateProposalRequest {
+    pub goal: String,
+    pub hints: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateProposalRequest {
+    pub run_id: String,
+    pub proposal_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegenerateProposalRequest {
+    pub run_id: String,
+    pub feedback: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ContextPacket {
+    pub run_id: String,
+    pub phase_id: String,
+    pub phase_title: String,
+    pub context_md: String,
+    pub context_json: ContextJson,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ContextJson {
+    pub run_id: String,
+    pub phase_id: String,
+    pub phase_title: String,
+    pub proposal_version: i64,
+    pub snapshot_version: i64,
+    pub worker_ref: String,
+    pub goal: String,
+    pub constraints: ContextConstraints,
+    pub inputs: ContextInputs,
+    pub expected_output: Option<ExpectedOutput>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ContextConstraints {
+    pub timeout_ms: u64,
+    #[serde(default)]
+    pub allowed_tools: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct ContextInputs {
+    #[serde(default)]
+    pub artifact_refs: Vec<String>,
+    #[serde(default)]
+    pub upstream_phase_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WorkerExecutionInput {
+    pub run_id: String,
+    pub phase_id: String,
+    pub worker_ref: String,
+    pub context_packet: ContextPacket,
+    pub temperature: Option<f32>,
+    pub max_tokens: Option<u32>,
+    pub max_rounds: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WorkerExecutionResult {
+    pub status: String,
+    pub content: String,
+    pub model_id: String,
+    pub provider_model_id: String,
+    #[serde(default)]
+    pub tool_trace: Vec<Value>,
+    #[serde(default)]
+    pub images: Vec<String>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ResolvedWorker {
+    UserWorkerProfile {
+        profile: CustomTaskAgentProfile,
+    },
+    DirectLlm {
+        profile_slug: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ResultPacket {
+    pub run_id: String,
+    pub phase_id: String,
+    pub worker_ref: String,
+    pub status: String,
+    pub summary: String,
+    pub result_json: ResultJson,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ResultJson {
+    pub run_id: String,
+    pub phase_id: String,
+    pub worker_ref: String,
+    pub status: String,
+    pub summary: String,
+    pub outputs: ResultOutputs,
+    pub followup_hints: FollowupHints,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct ResultOutputs {
+    pub primary_artifact_ref: Option<String>,
+    #[serde(default)]
+    pub named_outputs: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FollowupHints {
+    pub recommended_next_action: String,
+    #[serde(default)]
+    pub invalidates_future_phases: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RevalidationDecision {
+    Continue,
+    PauseForEdit,
+    MarkObsolete,
+    MarkInvalidated,
+    SuffixReplan,
+}
+
+#[derive(Debug, Clone)]
+pub struct PhaseOutcome {
+    pub phase_id: String,
+    pub step_run_id: String,
+    pub status: WorkflowStepStatus,
+    pub result_packet: Option<ResultPacket>,
+    pub revalidation: RevalidationDecision,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WorkflowProgress {
+    pub run_id: String,
+    pub phase_id: String,
+    pub phase_title: String,
+    pub phase_index: i64,
+    pub total_phases: i64,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StartWorkflowRunRequest {
+    pub run_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalAction {
+    Approve,
+    Reject,
+    Modify,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApproveWorkflowRequest {
+    pub run_id: String,
+    pub action: ApprovalAction,
+    pub updated_proposal: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RerunPhaseRequest {
+    pub run_id: String,
+    pub phase_id: String,
+    pub updated_goal: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EditRemainingPhasesRequest {
+    pub run_id: String,
+    pub updated_proposal: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResumeWorkflowRequest {
+    pub run_id: String,
 }

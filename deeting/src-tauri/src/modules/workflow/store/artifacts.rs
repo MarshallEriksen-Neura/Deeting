@@ -11,7 +11,6 @@ use super::helpers::{
 };
 use super::schema::{ensure_schema, WORKFLOW_ARTIFACT_TABLE};
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) async fn create_workflow_artifact(
     store: &McpStore,
     req: CreateWorkflowArtifactRequest,

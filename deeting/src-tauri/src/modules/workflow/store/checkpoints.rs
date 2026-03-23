@@ -11,7 +11,6 @@ use super::helpers::{
 };
 use super::schema::{ensure_schema, WORKFLOW_CHECKPOINT_TABLE};
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) async fn create_workflow_checkpoint(
     store: &McpStore,
     req: CreateWorkflowCheckpointRequest,
@@ -70,7 +69,6 @@ pub(crate) async fn create_workflow_checkpoint(
     })
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) async fn get_active_checkpoint_for_run(
     store: &McpStore,
     run_id: &str,
@@ -86,7 +84,6 @@ pub(crate) async fn get_active_checkpoint_for_run(
     row.as_ref().map(row_to_workflow_checkpoint).transpose()
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) async fn resolve_checkpoint(
     store: &McpStore,
     id: &str,

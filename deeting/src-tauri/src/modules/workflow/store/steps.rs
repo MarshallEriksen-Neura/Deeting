@@ -13,7 +13,6 @@ use super::helpers::{
 };
 use super::schema::{ensure_schema, WORKFLOW_STEP_RUN_TABLE};
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) async fn create_workflow_step_run(
     store: &McpStore,
     req: CreateWorkflowStepRunRequest,
@@ -126,7 +125,6 @@ pub(crate) async fn list_workflow_step_runs_by_run(
     rows.iter().map(row_to_workflow_step_run).collect()
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) async fn update_workflow_step_status(
     store: &McpStore,
     id: &str,
@@ -150,7 +148,6 @@ pub(crate) async fn update_workflow_step_status(
     Ok(())
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) async fn update_workflow_step_result(
     store: &McpStore,
     id: &str,

@@ -22,10 +22,13 @@ pub(crate) async fn create_workflow_run(
     if goal.is_empty() {
         return Err(McpError::validation("workflow run goal is required"));
     }
-    let proposal_text = req
-        .proposal_text
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
+    let proposal_text = req.proposal_text.and_then(|value| {
+        if value.trim().is_empty() {
+            None
+        } else {
+            Some(value)
+        }
+    });
 
     let id = Uuid::new_v4().to_string();
     let now = now_rfc3339()?;
@@ -88,7 +91,6 @@ pub(crate) async fn list_workflow_runs(store: &McpStore) -> Result<Vec<WorkflowR
     rows.iter().map(row_to_workflow_run).collect()
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) async fn update_workflow_run_status(
     store: &McpStore,
     id: &str,
@@ -112,7 +114,6 @@ pub(crate) async fn update_workflow_run_status(
     Ok(())
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) async fn update_workflow_run_proposal(
     store: &McpStore,
     id: &str,
@@ -121,11 +122,14 @@ pub(crate) async fn update_workflow_run_proposal(
 ) -> Result<(), McpError> {
     ensure_schema(store).await?;
     let now = now_rfc3339()?;
-    let normalized = proposal_text.trim();
+    let normalized = proposal_text;
+    if normalized.trim().is_empty() {
+        return Err(McpError::validation("workflow proposal text is required"));
+    }
     let result = sqlx::query(&format!(
         "UPDATE {WORKFLOW_RUN_TABLE} SET proposal_text = ?, proposal_version = ?, updated_at = ? WHERE id = ?"
     ))
-    .bind(if normalized.is_empty() { None } else { Some(normalized) })
+    .bind(normalized)
     .bind(proposal_version)
     .bind(&now)
     .bind(id.trim())
@@ -139,7 +143,6 @@ pub(crate) async fn update_workflow_run_proposal(
     Ok(())
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) async fn update_workflow_run_snapshot(
     store: &McpStore,
     id: &str,
@@ -167,7 +170,63 @@ pub(crate) async fn update_workflow_run_snapshot(
     Ok(())
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) async fn update_workflow_run_run_dir(
+    store: &McpStore,
+    id: &str,
+    run_dir: &str,
+) -> Result<(), McpError> {
+    ensure_schema(store).await?;
+    let now = now_rfc3339()?;
+    let normalized = run_dir.trim();
+    if normalized.is_empty() {
+        return Err(McpError::validation("workflow run_dir is required"));
+    }
+    let result = sqlx::query(&format!(
+        "UPDATE {WORKFLOW_RUN_TABLE} SET run_dir = ?, updated_at = ? WHERE id = ?"
+    ))
+    .bind(normalized)
+    .bind(&now)
+    .bind(id.trim())
+    .execute(&store.pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+
+    if result.rows_affected() == 0 {
+        return Err(McpError::NotFound("workflow run not found".to_string()));
+    }
+    Ok(())
+}
+
+pub(crate) async fn invalidate_workflow_run_compiled_state(
+    store: &McpStore,
+    id: &str,
+    status: WorkflowRunStatus,
+) -> Result<(), McpError> {
+    ensure_schema(store).await?;
+    let now = now_rfc3339()?;
+    let result = sqlx::query(&format!(
+        r#"
+        UPDATE {WORKFLOW_RUN_TABLE}
+        SET snapshot_json = NULL,
+            status = ?,
+            error = NULL,
+            updated_at = ?
+        WHERE id = ?
+        "#
+    ))
+    .bind(status.as_str())
+    .bind(&now)
+    .bind(id.trim())
+    .execute(&store.pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+
+    if result.rows_affected() == 0 {
+        return Err(McpError::NotFound("workflow run not found".to_string()));
+    }
+    Ok(())
+}
+
 pub(crate) async fn delete_workflow_run(store: &McpStore, id: &str) -> Result<(), McpError> {
     ensure_schema(store).await?;
     let result = sqlx::query(&format!("DELETE FROM {WORKFLOW_RUN_TABLE} WHERE id = ?"))
@@ -180,6 +239,27 @@ pub(crate) async fn delete_workflow_run(store: &McpStore, id: &str) -> Result<()
         return Err(McpError::NotFound("workflow run not found".to_string()));
     }
     Ok(())
+}
+
+pub(crate) async fn transition_workflow_run_status_if_current(
+    store: &McpStore,
+    id: &str,
+    from: WorkflowRunStatus,
+    to: WorkflowRunStatus,
+) -> Result<bool, McpError> {
+    ensure_schema(store).await?;
+    let now = now_rfc3339()?;
+    let result = sqlx::query(&format!(
+        "UPDATE {WORKFLOW_RUN_TABLE} SET status = ?, updated_at = ? WHERE id = ? AND status = ?"
+    ))
+    .bind(to.as_str())
+    .bind(&now)
+    .bind(id.trim())
+    .bind(from.as_str())
+    .execute(&store.pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+    Ok(result.rows_affected() > 0)
 }
 
 fn row_to_workflow_run(row: &SqliteRow) -> Result<WorkflowRun, McpError> {

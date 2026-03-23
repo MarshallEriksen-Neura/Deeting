@@ -11,7 +11,6 @@ use super::helpers::{
 };
 use super::schema::{ensure_schema, WORKFLOW_EVENT_TABLE};
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) async fn create_workflow_event(
     store: &McpStore,
     req: CreateWorkflowEventRequest,
