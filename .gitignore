@@ -155,6 +155,7 @@ CODEBUDDY.md
 dist/
 specs/
 .specs/
+impl-specs/
 plans/
 media/
 .kiro/

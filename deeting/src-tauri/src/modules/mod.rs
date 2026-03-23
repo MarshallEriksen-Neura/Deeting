@@ -21,3 +21,4 @@ pub mod scan;
 pub mod shell_executor;
 pub mod skill_runtime;
 pub mod skills;
+pub mod workflow;

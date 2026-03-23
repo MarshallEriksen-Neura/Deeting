@@ -198,6 +198,11 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::monitor::commands::stop_local_monitor_worker,
         crate::modules::monitor::commands::get_local_monitor_worker_status,
         crate::modules::monitor::commands::run_local_monitor_worker_once,
+        // Workflow Commands
+        crate::modules::workflow::commands::list_workflow_runs,
+        crate::modules::workflow::commands::get_workflow_run,
+        crate::modules::workflow::commands::create_workflow_run,
+        crate::modules::workflow::commands::get_workflow_run_detail,
         // Chat Asset Commands
         crate::modules::chat_assets::commands::save_local_chat_asset,
         crate::modules::chat_assets::commands::read_local_chat_asset,
