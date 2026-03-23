@@ -25,6 +25,7 @@ const namespaces = [
   "memory",
   "plugins",
   "task-agents",
+  "workflow",
 ] as const
 
 export default getRequestConfig(async ({ requestLocale }) => {

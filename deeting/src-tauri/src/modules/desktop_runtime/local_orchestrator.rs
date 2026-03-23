@@ -28,12 +28,12 @@ use crate::modules::desktop_runtime::runtime::route_selector::{
     select_local_route, LocalRouteKind,
 };
 use crate::modules::desktop_runtime::runtime::{
-    build_default_local_execution_policy, build_local_control_plane_result,
-    build_local_control_plane_status_meta, build_local_execution_policy,
-    build_runtime_discovery_bundle_with_runtime, maybe_override_route_with_custom_task_agent,
-    render_local_route_prompt, run_local_execution_plane, select_local_route_with_evidence,
-    LocalControlPlaneResult, LocalExecutionPolicy, LocalExecutionRequest, LocalRouteDecision,
-    RuntimeDiscoveryBundle,
+    apply_desktop_execution_policy_overrides, build_default_local_execution_policy,
+    build_local_control_plane_result, build_local_control_plane_status_meta,
+    build_local_execution_policy, build_runtime_discovery_bundle_with_runtime,
+    maybe_override_route_with_custom_task_agent, render_local_route_prompt,
+    run_local_execution_plane, select_local_route_with_evidence, LocalControlPlaneResult,
+    LocalExecutionPolicy, LocalExecutionRequest, LocalRouteDecision, RuntimeDiscoveryBundle,
 };
 use crate::modules::memory::types::{
     LocalMemoryItem, LocalMemoryListQuery, LocalMemorySearchItem, LocalMemorySearchQuery,
@@ -1454,7 +1454,11 @@ impl LocalWorkflowStep<LocalWorkflowContext> for RouteSelectionStep {
                 select_local_route_with_evidence(&query, discovery_bundle.route_evidence.clone()),
             )
             .await?;
-            let execution_policy = build_local_execution_policy(&decision);
+            let execution_policy = apply_desktop_execution_policy_overrides(
+                ctx.app_state.mcp.store.as_ref(),
+                build_local_execution_policy(&decision),
+            )
+            .await;
 
             ctx.push_system_message(render_local_route_prompt(&decision));
             ctx.runtime_discovery = Some(discovery_bundle);

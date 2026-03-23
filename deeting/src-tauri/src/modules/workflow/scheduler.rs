@@ -92,14 +92,6 @@ pub(crate) async fn run_workflow(
 
         if outcome.status == WorkflowStepStatus::Failed {
             final_status = WorkflowRunStatus::Failed;
-            emit_event(
-                store_ref,
-                run_id,
-                None,
-                "run.failed",
-                None,
-            )
-            .await;
             break;
         }
 

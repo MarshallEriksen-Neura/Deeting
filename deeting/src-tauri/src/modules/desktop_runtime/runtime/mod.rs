@@ -41,11 +41,11 @@ pub(crate) use consult::{
     build_local_consult_expert_network_result, LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
 };
 pub(crate) use control_plane::{
-    build_default_local_execution_policy, build_local_control_plane_result,
-    build_local_control_plane_status_meta, build_local_execution_policy,
-    build_runtime_discovery_bundle_with_runtime, maybe_override_route_with_custom_task_agent,
-    select_worker_custom_task_agent, LocalControlPlaneResult, LocalExecutionPolicy,
-    RuntimeDiscoveryBundle,
+    apply_desktop_execution_policy_overrides, build_default_local_execution_policy,
+    build_local_control_plane_result, build_local_control_plane_status_meta,
+    build_local_execution_policy, build_runtime_discovery_bundle_with_runtime,
+    maybe_override_route_with_custom_task_agent, select_worker_custom_task_agent,
+    LocalControlPlaneResult, LocalExecutionPolicy, RuntimeDiscoveryBundle,
 };
 pub(crate) use execution_plane::{run_local_execution_plane, LocalExecutionRequest};
 pub(crate) use route_selector::{

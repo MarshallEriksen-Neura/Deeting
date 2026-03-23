@@ -20,6 +20,9 @@ pub(crate) use mcp_runtime::policy::{
     LocalExecutionPolicy, RuntimeDiscoveryBundle,
 };
 
+pub(crate) const WORKFLOW_ROUTE_WORKER_THROUGH_WORKFLOW_KEY: &str =
+    "workflow.route_worker_through_workflow";
+
 #[derive(Debug, Clone)]
 pub(crate) struct WorkerTargetSelection {
     pub(crate) profile: CustomTaskAgentProfile,
@@ -74,6 +77,37 @@ pub(crate) fn build_local_control_plane_result(
         prompt_plan,
         status_meta,
     }
+}
+
+pub(crate) async fn apply_desktop_execution_policy_overrides(
+    store: &McpStore,
+    mut policy: LocalExecutionPolicy,
+) -> LocalExecutionPolicy {
+    if !policy.allow_worker_delegation {
+        policy.prefer_workflow_runtime = false;
+        return policy;
+    }
+
+    let config_value = store
+        .get_desktop_config(WORKFLOW_ROUTE_WORKER_THROUGH_WORKFLOW_KEY)
+        .await
+        .ok()
+        .flatten();
+    policy.prefer_workflow_runtime = parse_desktop_config_bool(config_value.as_deref());
+    policy
+}
+
+fn parse_desktop_config_bool(raw: Option<&str>) -> bool {
+    matches!(
+        raw.map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_ascii_lowercase()),
+        Some(value)
+            if matches!(
+                value.as_str(),
+                "1" | "true" | "yes" | "on" | "enabled"
+            )
+    )
 }
 
 pub(crate) async fn maybe_override_route_with_custom_task_agent(
@@ -271,6 +305,28 @@ pub(crate) fn select_custom_task_agent_candidate(
     }
 
     best
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_desktop_config_bool;
+
+    #[test]
+    fn parse_desktop_config_bool_accepts_common_truthy_values() {
+        assert!(parse_desktop_config_bool(Some("true")));
+        assert!(parse_desktop_config_bool(Some(" YES ")));
+        assert!(parse_desktop_config_bool(Some("1")));
+        assert!(parse_desktop_config_bool(Some("enabled")));
+    }
+
+    #[test]
+    fn parse_desktop_config_bool_rejects_missing_and_falsey_values() {
+        assert!(!parse_desktop_config_bool(None));
+        assert!(!parse_desktop_config_bool(Some("")));
+        assert!(!parse_desktop_config_bool(Some("false")));
+        assert!(!parse_desktop_config_bool(Some("0")));
+        assert!(!parse_desktop_config_bool(Some("disabled")));
+    }
 }
 
 fn split_match_terms(input: &str) -> HashSet<String> {

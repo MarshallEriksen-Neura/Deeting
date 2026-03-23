@@ -208,6 +208,7 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::workflow::commands::compile_workflow_proposal,
         crate::modules::workflow::commands::regenerate_workflow_proposal,
         crate::modules::workflow::commands::start_workflow_run,
+        crate::modules::workflow::commands::quick_workflow_run,
         crate::modules::workflow::commands::get_workflow_run_status,
         crate::modules::workflow::commands::approve_workflow,
         crate::modules::workflow::commands::edit_remaining_phases,

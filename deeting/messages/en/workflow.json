@@ -1,0 +1,92 @@
+{
+  "landing": {
+    "title": "Create Workflow",
+    "description": "Describe your goal and Deeting will generate a structured execution plan.",
+    "goalPlaceholder": "e.g. Analyze competitor pricing across three markets and produce a report",
+    "hintsLabel": "Hints (optional)",
+    "hintsPlaceholder": "e.g. Focus on SaaS B2B sector",
+    "createButton": "Create Workflow",
+    "creating": "Generating plan..."
+  },
+  "plan": {
+    "title": "Execution Plan",
+    "regenerate": "Regenerate",
+    "regenerating": "Regenerating...",
+    "addPhase": "Add Phase",
+    "compileAndStart": "Compile & Start",
+    "compile": "Compile",
+    "compiling": "Compiling...",
+    "phaseTitle": "Phase title",
+    "phaseGoal": "Phase goal",
+    "worker": "Worker",
+    "dependsOn": "Depends on",
+    "userNotes": "Notes",
+    "noWorker": "Not assigned",
+    "noDependency": "None",
+    "deletePhase": "Delete phase",
+    "compilerErrors": "Compiler Errors",
+    "goalLabel": "Goal"
+  },
+  "execution": {
+    "title": "Execution",
+    "cancel": "Cancel",
+    "progress": "Progress",
+    "phaseOf": "Phase {current}/{total}",
+    "elapsed": "Elapsed",
+    "running": "Running",
+    "completed": "Completed",
+    "failed": "Failed",
+    "cancelled": "Cancelled",
+    "waitingApproval": "Waiting for approval",
+    "awaitingEdit": "Awaiting edit",
+    "pending": "Pending",
+    "rerunPhase": "Rerun",
+    "viewContext": "View context",
+    "showResults": "Show results",
+    "hideResults": "Hide results"
+  },
+  "approval": {
+    "title": "Approval Required",
+    "revalidationTitle": "Confirmation Required",
+    "reason": "Reason",
+    "approve": "Approve",
+    "reject": "Reject",
+    "modify": "Modify",
+    "approving": "Approving...",
+    "rejecting": "Rejecting...",
+    "rejectConfirm": "Are you sure? This will cancel the entire workflow.",
+    "rejectConfirmTitle": "Confirm Rejection",
+    "modifyHint": "You can edit the remaining phases",
+    "saveAndContinue": "Save & Continue",
+    "cancelEdit": "Cancel"
+  },
+  "result": {
+    "summary": "Summary",
+    "artifacts": "Artifacts",
+    "trace": "Trace",
+    "viewFullContext": "View full context",
+    "noResults": "No results yet"
+  },
+  "context": {
+    "title": "Phase Context",
+    "tabMarkdown": "Context Document",
+    "tabJson": "Structured Data",
+    "copy": "Copy",
+    "copied": "Copied"
+  },
+  "status": {
+    "draft": "Draft",
+    "ready": "Ready",
+    "running": "Running",
+    "waiting_approval": "Waiting for approval",
+    "awaiting_plan_edit": "Awaiting edit",
+    "completed": "Completed",
+    "failed": "Failed",
+    "cancelled": "Cancelled",
+    "pending": "Pending",
+    "succeeded": "Succeeded",
+    "skipped": "Skipped",
+    "obsolete": "Obsolete",
+    "invalidated": "Invalidated"
+  }
+}

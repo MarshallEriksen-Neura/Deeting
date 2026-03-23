@@ -12,6 +12,8 @@ use crate::modules::desktop_runtime::runtime::control_plane::LocalExecutionPlane
 use crate::modules::desktop_runtime::runtime::{
     build_local_tool_trace_blocks, select_worker_custom_task_agent,
 };
+use crate::modules::workflow::service as workflow_service;
+use crate::modules::workflow::types::QuickWorkflowRequest;
 use crate::state::AppState;
 use base64::Engine;
 use mcp_core::types::LocalChatInputMessage;
@@ -68,6 +70,82 @@ where
             "selection_reason": selection.reason,
         })),
     );
+
+    let should_route_through_workflow = request.execution_policy.prefer_workflow_runtime
+        && selection.profile.invocation_kind == CustomTaskAgentInvocationKind::Chat;
+    if should_route_through_workflow {
+        let execution = match workflow_service::quick_workflow_run(
+            &request.app_handle,
+            &request.app_state,
+            QuickWorkflowRequest {
+                goal: query.clone(),
+                worker_ref: Some(format!("user_worker_profile:{}", selection.profile.id)),
+                inject_into_chat: true,
+            },
+        )
+        .await
+        {
+            Ok(result) => {
+                let workflow_run_id = result.run.id.clone();
+                let workflow_status = result.run.status.as_str().to_string();
+                let step_count = result.steps.len();
+                let status = if result.succeeded { "success" } else { "error" };
+                emit_status(
+                    "evolve",
+                    Some("worker_delegation"),
+                    status,
+                    if result.succeeded {
+                        "worker.task.completed"
+                    } else {
+                        "worker.task.failed"
+                    },
+                    Some(json!({
+                        "agent_id": selection.profile.id,
+                        "agent_name": selection.profile.name,
+                        "execution_path": "workflow_runtime",
+                        "workflow_run_id": workflow_run_id,
+                        "workflow_status": workflow_status,
+                        "step_count": step_count,
+                    })),
+                );
+                build_workflow_delegated_worker_execution(&selection.profile, Ok(result))
+            }
+            Err(err) => {
+                emit_status(
+                    "evolve",
+                    Some("worker_delegation"),
+                    "error",
+                    "worker.task.failed",
+                    Some(json!({
+                        "agent_id": selection.profile.id,
+                        "agent_name": selection.profile.name,
+                        "execution_path": "workflow_runtime",
+                        "error": err,
+                    })),
+                );
+                build_workflow_delegated_worker_execution(&selection.profile, Err(err))
+            }
+        };
+
+        return Ok(Some(execution));
+    }
+
+    if request.execution_policy.prefer_workflow_runtime
+        && selection.profile.invocation_kind != CustomTaskAgentInvocationKind::Chat
+    {
+        emit_status(
+            "evolve",
+            Some("worker_delegation"),
+            "success",
+            "worker.workflow_route.skipped",
+            Some(json!({
+                "agent_id": selection.profile.id,
+                "agent_name": selection.profile.name,
+                "reason": "non_chat_invocation_kind",
+                "invocation_kind": selection.profile.invocation_kind.as_str(),
+            })),
+        );
+    }
 
     let execution = match preview_custom_task_agent(
         &request.app_handle,
@@ -216,6 +294,121 @@ fn build_delegated_worker_execution(
             let user_message = LocalChatInputMessage {
                 role: "user".to_string(),
                 content: format!("## Delegated Agent Failure\n{}", pretty_payload),
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
+            };
+            DelegatedWorkerExecution {
+                feedback_messages: vec![system_message, user_message],
+                trace_blocks: tool_trace_blocks,
+            }
+        }
+    }
+}
+
+fn build_workflow_delegated_worker_execution(
+    profile: &CustomTaskAgentProfile,
+    result: Result<crate::modules::workflow::types::QuickWorkflowResult, String>,
+) -> DelegatedWorkerExecution {
+    match result {
+        Ok(result) => {
+            let workflow_run_id = result.run.id.clone();
+            let workflow_status = result.run.status.as_str().to_string();
+            let primary_content = result.content.clone();
+            let step_statuses = result
+                .steps
+                .iter()
+                .map(|step| {
+                    json!({
+                        "phase_id": step.phase_id,
+                        "title": step.title,
+                        "status": step.status.as_str(),
+                    })
+                })
+                .collect::<Vec<_>>();
+            let status = if result.succeeded { "completed" } else { "failed" };
+            let payload = json!({
+                "status": status,
+                "agent_id": profile.id,
+                "agent_name": profile.name,
+                "workflow_run_id": workflow_run_id.clone(),
+                "workflow_status": workflow_status,
+                "content": primary_content,
+                "steps": step_statuses,
+            });
+            let pretty_payload =
+                serde_json::to_string_pretty(&payload).unwrap_or_else(|_| "{}".to_string());
+            let tool_trace_blocks = build_local_tool_trace_blocks(&[json!({
+                "id": format!("delegated-workflow-{}", workflow_run_id),
+                "name": format!("workflow/{}", profile.name),
+                "status": if result.succeeded { "success" } else { "error" },
+                "result": payload.clone(),
+            })]);
+            let system_message = LocalChatInputMessage {
+                role: "system".to_string(),
+                content: if result.succeeded {
+                    format!(
+                        "[Delegated Workflow Completed: {}]\nUse the persisted workflow result as authoritative for the delegated subtask. Do not re-run the delegated task unless the user asks or the result is blocked.",
+                        profile.name
+                    )
+                } else {
+                    format!(
+                        "[Delegated Workflow Failed: {}]\nThe delegated workflow failed. You may continue with your own reasoning and explain the fallback clearly.",
+                        profile.name
+                    )
+                },
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
+            };
+            let user_message = LocalChatInputMessage {
+                role: "user".to_string(),
+                content: if result.succeeded {
+                    format!(
+                        "## Delegated Workflow Result\n{}\n\nUse this delegated workflow result to answer the user's original request. Do not re-run the delegated task.",
+                        pretty_payload
+                    )
+                } else {
+                    format!("## Delegated Workflow Failure\n{}", pretty_payload)
+                },
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
+            };
+            DelegatedWorkerExecution {
+                feedback_messages: vec![system_message, user_message],
+                trace_blocks: tool_trace_blocks,
+            }
+        }
+        Err(error) => {
+            let payload = json!({
+                "status": "failed",
+                "agent_id": profile.id,
+                "agent_name": profile.name,
+                "execution_path": "workflow_runtime",
+                "error": error,
+            });
+            let pretty_payload =
+                serde_json::to_string_pretty(&payload).unwrap_or_else(|_| "{}".to_string());
+            let tool_trace_blocks = build_local_tool_trace_blocks(&[json!({
+                "id": format!("delegated-workflow-error-{}", profile.id),
+                "name": format!("workflow/{}", profile.name),
+                "status": "error",
+                "error": payload.get("error").cloned().unwrap_or(Value::Null),
+            })]);
+            let system_message = LocalChatInputMessage {
+                role: "system".to_string(),
+                content: format!(
+                    "[Delegated Workflow Failed: {}]\nThe delegated workflow failed. You may continue with your own reasoning and explain the fallback clearly.",
+                    profile.name
+                ),
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
+            };
+            let user_message = LocalChatInputMessage {
+                role: "user".to_string(),
+                content: format!("## Delegated Workflow Failure\n{}", pretty_payload),
                 tool_calls: vec![],
                 tool_call_id: None,
                 name: None,

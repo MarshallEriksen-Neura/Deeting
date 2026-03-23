@@ -1,0 +1,92 @@
+{
+  "landing": {
+    "title": "创建工作流",
+    "description": "描述你的目标，Deeting 会生成一个结构化的执行计划。",
+    "goalPlaceholder": "例如：分析三个市场的竞品定价策略并生成报告",
+    "hintsLabel": "补充说明（可选）",
+    "hintsPlaceholder": "例如：重点关注 SaaS B2B 领域",
+    "createButton": "创建工作流",
+    "creating": "正在生成计划..."
+  },
+  "plan": {
+    "title": "执行计划",
+    "regenerate": "重新生成",
+    "regenerating": "重新生成中...",
+    "addPhase": "添加阶段",
+    "compileAndStart": "编译并启动",
+    "compile": "编译",
+    "compiling": "编译中...",
+    "phaseTitle": "阶段标题",
+    "phaseGoal": "阶段目标",
+    "worker": "执行者",
+    "dependsOn": "依赖",
+    "userNotes": "备注",
+    "noWorker": "未指定",
+    "noDependency": "无",
+    "deletePhase": "删除阶段",
+    "compilerErrors": "编译错误",
+    "goalLabel": "目标"
+  },
+  "execution": {
+    "title": "执行中",
+    "cancel": "取消",
+    "progress": "进度",
+    "phaseOf": "阶段 {current}/{total}",
+    "elapsed": "已用时",
+    "running": "运行中",
+    "completed": "已完成",
+    "failed": "失败",
+    "cancelled": "已取消",
+    "waitingApproval": "等待审批",
+    "awaitingEdit": "等待编辑",
+    "pending": "待执行",
+    "rerunPhase": "重新执行",
+    "viewContext": "查看上下文",
+    "showResults": "展开结果",
+    "hideResults": "收起结果"
+  },
+  "approval": {
+    "title": "需要审批",
+    "revalidationTitle": "需要确认",
+    "reason": "原因",
+    "approve": "通过",
+    "reject": "拒绝",
+    "modify": "修改",
+    "approving": "通过中...",
+    "rejecting": "拒绝中...",
+    "rejectConfirm": "确定要拒绝吗？这将取消整个工作流。",
+    "rejectConfirmTitle": "确认拒绝",
+    "modifyHint": "你可以编辑剩余的阶段计划",
+    "saveAndContinue": "保存并继续",
+    "cancelEdit": "取消编辑"
+  },
+  "result": {
+    "summary": "摘要",
+    "artifacts": "产出",
+    "trace": "执行轨迹",
+    "viewFullContext": "查看完整上下文",
+    "noResults": "暂无结果"
+  },
+  "context": {
+    "title": "阶段上下文",
+    "tabMarkdown": "上下文文档",
+    "tabJson": "结构化数据",
+    "copy": "复制",
+    "copied": "已复制"
+  },
+  "status": {
+    "draft": "草稿",
+    "ready": "就绪",
+    "running": "运行中",
+    "waiting_approval": "等待审批",
+    "awaiting_plan_edit": "等待编辑",
+    "completed": "已完成",
+    "failed": "失败",
+    "cancelled": "已取消",
+    "pending": "待执行",
+    "succeeded": "成功",
+    "skipped": "已跳过",
+    "obsolete": "已废弃",
+    "invalidated": "已失效"
+  }
+}

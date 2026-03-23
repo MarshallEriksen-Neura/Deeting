@@ -601,3 +601,18 @@ pub struct EditRemainingPhasesRequest {
 pub struct ResumeWorkflowRequest {
     pub run_id: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuickWorkflowRequest {
+    pub goal: String,
+    pub worker_ref: Option<String>,
+    pub inject_into_chat: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuickWorkflowResult {
+    pub run: WorkflowRun,
+    pub steps: Vec<WorkflowStepRun>,
+    pub content: Option<String>,
+    pub succeeded: bool,
+}

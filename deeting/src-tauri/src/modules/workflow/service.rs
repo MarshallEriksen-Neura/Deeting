@@ -9,9 +9,11 @@ use crate::modules::workflow::store;
 use crate::modules::workflow::types::{
     ApprovalAction, ApproveWorkflowRequest, CompileResult, CreateWorkflowEventRequest,
     CreateWorkflowRunRequest, EditRemainingPhasesRequest, ExecutionSnapshot,
-    GenerateProposalRequest, RegenerateProposalRequest, RerunPhaseRequest, UpdateProposalRequest,
-    WorkflowRun, WorkflowRunStatus, WorkflowStepStatus,
+    GenerateProposalRequest, QuickWorkflowRequest, QuickWorkflowResult, RegenerateProposalRequest,
+    RerunPhaseRequest, UpdateProposalRequest, WorkflowRun, WorkflowRunDetail, WorkflowRunStatus,
+    WorkflowStepStatus,
 };
+use tauri::Manager;
 
 pub(crate) async fn persist_generated_proposal(
     store: &McpStore,
@@ -371,6 +373,112 @@ pub(crate) async fn update_proposal_workflow(
     payload: UpdateProposalRequest,
 ) -> Result<WorkflowRun, String> {
     update_existing_proposal(store, &payload.run_id, app_data_dir, payload.proposal_text).await
+}
+
+fn build_quick_workflow_proposal_text(goal: &str, worker_ref: &str, inject_into_chat: bool) -> String {
+    let goal = goal.trim();
+    let worker_ref = worker_ref.trim();
+    format!(
+        "# Workflow Proposal\n\nTitle: Quick Worker Run\nGoal: {goal}\n\n## Global Constraints\n- Mode: quick_workflow_compatibility\n- Inject into chat: {inject_into_chat}\n\n## Phase 1: Execute\n- Worker: {worker_ref}\n- Goal: {goal}\n- Expected output: delegated_result\n- User Notes:\n",
+        inject_into_chat = if inject_into_chat { "true" } else { "false" },
+    )
+}
+
+fn format_compiler_errors(
+    errors: &[crate::modules::workflow::types::CompilerError],
+) -> String {
+    errors
+        .iter()
+        .map(|error| match error.phase_id.as_deref() {
+            Some(phase_id) => format!("{phase_id}.{}: {}", error.field, error.message),
+            None => format!("{}: {}", error.field, error.message),
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+fn extract_primary_content(detail: &WorkflowRunDetail) -> Option<String> {
+    let step = detail
+        .steps
+        .iter()
+        .filter(|step| step.status == WorkflowStepStatus::Succeeded)
+        .max_by_key(|step| {
+            (
+                step.phase_index,
+                step.completed_at.as_deref().unwrap_or(""),
+                step.created_at.as_str(),
+            )
+        })?;
+
+    if let Some(run_dir_path) = detail.run.run_dir.as_deref().map(PathBuf::from) {
+        let phase_dir = run_dir_path.join("phases").join(&step.phase_id);
+        if let Ok(Some(content)) = run_dir::read_result_md(&phase_dir) {
+            let trimmed = content.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+
+    step.worker_trace_summary
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+pub(crate) async fn quick_workflow_run(
+    app_handle: &tauri::AppHandle,
+    app_state: &AppState,
+    req: QuickWorkflowRequest,
+) -> Result<QuickWorkflowResult, String> {
+    let goal = req.goal.trim();
+    if goal.is_empty() {
+        return Err("quick workflow goal is required".to_string());
+    }
+
+    let worker_ref = req
+        .worker_ref
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("direct_llm:default");
+    let title = goal.chars().take(80).collect::<String>();
+    let proposal_text = build_quick_workflow_proposal_text(goal, worker_ref, req.inject_into_chat);
+    let app_data_dir = app_handle.path().app_data_dir().ok();
+    let run = persist_generated_proposal(
+        app_state.mcp.store.as_ref(),
+        app_data_dir.clone(),
+        title,
+        goal.to_string(),
+        proposal_text,
+        false,
+    )
+    .await?;
+
+    let compile_result =
+        compile_current_proposal(app_state.mcp.store.as_ref(), app_data_dir, &run.id).await?;
+    if !compile_result.errors.is_empty() {
+        return Err(format!(
+            "Quick workflow compile failed: {}",
+            format_compiler_errors(&compile_result.errors)
+        ));
+    }
+    if compile_result.snapshot.is_none() {
+        return Err("Quick workflow compile produced no executable snapshot".to_string());
+    }
+
+    let run = start_workflow_run(app_handle, app_state, &run.id).await?;
+    let detail = get_workflow_run_status(app_state, &run.id).await?;
+    let content = extract_primary_content(&detail);
+    let succeeded = detail.run.status == WorkflowRunStatus::Completed;
+
+    Ok(QuickWorkflowResult {
+        run: detail.run,
+        steps: detail.steps,
+        content,
+        succeeded,
+    })
 }
 
 pub(crate) async fn start_workflow_run(
@@ -868,7 +976,7 @@ mod tests {
     use crate::modules::mcp::store::McpStore;
     use crate::modules::workflow::store;
     use crate::modules::workflow::types::{
-        CreateWorkflowRunRequest, WorkflowRunStatus,
+        CreateWorkflowRunRequest, WorkflowRunStatus, WorkflowStepType,
     };
     use uuid::Uuid;
 
@@ -915,6 +1023,113 @@ Goal: Produce a useful output
 - Depends on: Phase 1
 - User Notes:
 "#;
+
+    #[test]
+    fn build_quick_workflow_proposal_text_creates_single_phase_worker_plan() {
+        let proposal = build_quick_workflow_proposal_text(
+            "Summarize the repo structure",
+            "user_worker_profile:research-pro",
+            true,
+        );
+
+        assert!(proposal.contains("# Workflow Proposal"));
+        assert!(proposal.contains("Title: Quick Worker Run"));
+        assert!(proposal.contains("Goal: Summarize the repo structure"));
+        assert!(proposal.contains("## Global Constraints"));
+        assert!(proposal.contains("- Mode: quick_workflow_compatibility"));
+        assert!(proposal.contains("- Inject into chat: true"));
+        assert!(proposal.contains("## Phase 1: Execute"));
+        assert!(proposal.contains("- Worker: user_worker_profile:research-pro"));
+        assert!(proposal.contains("- Goal: Summarize the repo structure"));
+        assert!(proposal.contains("- Expected output: delegated_result"));
+    }
+
+    #[test]
+    fn extract_primary_content_reads_latest_succeeded_phase_result() {
+        let run_dir = std::env::temp_dir().join(format!(
+            "deeting-workflow-quick-result-{}",
+            Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(run_dir.join("phases").join("phase-1"))
+            .expect("create phase-1 dir");
+        std::fs::create_dir_all(run_dir.join("phases").join("phase-2"))
+            .expect("create phase-2 dir");
+        std::fs::write(
+            run_dir.join("phases").join("phase-1").join("result.md"),
+            "phase 1 result",
+        )
+        .expect("write phase-1 result");
+        std::fs::write(
+            run_dir.join("phases").join("phase-2").join("result.md"),
+            "phase 2 result",
+        )
+        .expect("write phase-2 result");
+
+        let detail = WorkflowRunDetail {
+            run: WorkflowRun {
+                id: "run-1".to_string(),
+                title: "Quick Run".to_string(),
+                goal: "Goal".to_string(),
+                status: WorkflowRunStatus::Completed,
+                proposal_text: None,
+                snapshot_json: None,
+                proposal_version: 1,
+                snapshot_version: 1,
+                run_dir: Some(run_dir.to_string_lossy().to_string()),
+                error: None,
+                created_at: "2026-03-23T00:00:00Z".to_string(),
+                updated_at: "2026-03-23T00:00:00Z".to_string(),
+            },
+            steps: vec![
+                crate::modules::workflow::types::WorkflowStepRun {
+                    id: "step-1".to_string(),
+                    run_id: "run-1".to_string(),
+                    phase_id: "phase-1".to_string(),
+                    phase_index: 0,
+                    step_type: crate::modules::workflow::types::WorkflowStepType::WorkerCall,
+                    title: "Phase 1".to_string(),
+                    status: WorkflowStepStatus::Succeeded,
+                    worker_ref: Some("direct_llm:default".to_string()),
+                    goal: Some("First".to_string()),
+                    input_snapshot: None,
+                    output_artifact_refs: vec![],
+                    worker_trace_summary: Some("fallback one".to_string()),
+                    retry_count: 0,
+                    error: None,
+                    started_at: None,
+                    completed_at: Some("2026-03-23T00:00:01Z".to_string()),
+                    created_at: "2026-03-23T00:00:00Z".to_string(),
+                    updated_at: "2026-03-23T00:00:01Z".to_string(),
+                },
+                crate::modules::workflow::types::WorkflowStepRun {
+                    id: "step-2".to_string(),
+                    run_id: "run-1".to_string(),
+                    phase_id: "phase-2".to_string(),
+                    phase_index: 1,
+                    step_type: crate::modules::workflow::types::WorkflowStepType::WorkerCall,
+                    title: "Phase 2".to_string(),
+                    status: WorkflowStepStatus::Succeeded,
+                    worker_ref: Some("direct_llm:default".to_string()),
+                    goal: Some("Second".to_string()),
+                    input_snapshot: None,
+                    output_artifact_refs: vec![],
+                    worker_trace_summary: Some("fallback two".to_string()),
+                    retry_count: 0,
+                    error: None,
+                    started_at: None,
+                    completed_at: Some("2026-03-23T00:00:02Z".to_string()),
+                    created_at: "2026-03-23T00:00:01Z".to_string(),
+                    updated_at: "2026-03-23T00:00:02Z".to_string(),
+                },
+            ],
+            events: vec![],
+        };
+
+        let content = extract_primary_content(&detail);
+        assert_eq!(content.as_deref(), Some("phase 2 result"));
+
+        std::fs::remove_dir_all(run_dir).ok();
+    }
 
     #[tokio::test]
     async fn persist_generated_proposal_creates_run_dir_and_versions() {

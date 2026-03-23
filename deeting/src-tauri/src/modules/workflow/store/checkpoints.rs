@@ -115,7 +115,6 @@ pub(crate) async fn resolve_checkpoint(
     Ok(())
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 fn row_to_workflow_checkpoint(row: &SqliteRow) -> Result<WorkflowCheckpoint, McpError> {
     Ok(WorkflowCheckpoint {
         id: row

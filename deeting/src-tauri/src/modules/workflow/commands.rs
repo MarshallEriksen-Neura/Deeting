@@ -6,8 +6,9 @@ use super::service;
 use super::store;
 use super::types::{
     ApproveWorkflowRequest, CompileResult, CreateWorkflowRunRequest,
-    EditRemainingPhasesRequest, GenerateProposalRequest, RegenerateProposalRequest,
-    RerunPhaseRequest, UpdateProposalRequest, WorkflowRun, WorkflowRunDetail,
+    EditRemainingPhasesRequest, GenerateProposalRequest, QuickWorkflowRequest,
+    QuickWorkflowResult, RegenerateProposalRequest, RerunPhaseRequest, UpdateProposalRequest,
+    WorkflowRun, WorkflowRunDetail,
 };
 
 #[tauri::command]
@@ -122,6 +123,15 @@ pub async fn start_workflow_run(
     run_id: String,
 ) -> Result<WorkflowRun, String> {
     service::start_workflow_run(&app, state.inner(), &run_id).await
+}
+
+#[tauri::command]
+pub async fn quick_workflow_run(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    req: QuickWorkflowRequest,
+) -> Result<QuickWorkflowResult, String> {
+    service::quick_workflow_run(&app, state.inner(), req).await
 }
 
 #[tauri::command]

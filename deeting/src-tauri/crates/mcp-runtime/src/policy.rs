@@ -75,6 +75,7 @@ pub struct LocalExecutionPolicy {
     pub allowed_tool_names: Vec<String>,
     pub inject_code_mode_protocol: bool,
     pub allow_worker_delegation: bool,
+    pub prefer_workflow_runtime: bool,
     pub capability_snapshot: Option<Value>,
 }
 
@@ -143,6 +144,7 @@ pub fn build_default_local_execution_policy() -> LocalExecutionPolicy {
         allowed_tool_names: Vec::new(),
         inject_code_mode_protocol: false,
         allow_worker_delegation: false,
+        prefer_workflow_runtime: false,
         capability_snapshot: None,
     }
 }
@@ -155,6 +157,7 @@ pub fn build_local_execution_policy(decision: &LocalRouteDecision) -> LocalExecu
             allowed_tool_names: vec![SEARCH_SDK_TOOL_NAME.to_string()],
             inject_code_mode_protocol: false,
             allow_worker_delegation: false,
+            prefer_workflow_runtime: false,
             capability_snapshot: None,
         },
         LocalRouteKind::Worker => LocalExecutionPolicy {
@@ -163,6 +166,7 @@ pub fn build_local_execution_policy(decision: &LocalRouteDecision) -> LocalExecu
             allowed_tool_names: vec![SEARCH_SDK_TOOL_NAME.to_string()],
             inject_code_mode_protocol: false,
             allow_worker_delegation: true,
+            prefer_workflow_runtime: false,
             capability_snapshot: None,
         },
         LocalRouteKind::CodeMode => LocalExecutionPolicy {
@@ -171,6 +175,7 @@ pub fn build_local_execution_policy(decision: &LocalRouteDecision) -> LocalExecu
             allowed_tool_names: full_code_mode_tool_names(),
             inject_code_mode_protocol: true,
             allow_worker_delegation: false,
+            prefer_workflow_runtime: false,
             capability_snapshot: None,
         },
     }
@@ -183,6 +188,7 @@ pub fn build_local_execution_policy_status_meta(policy: &LocalExecutionPolicy) -
         "allowed_tool_names": policy.allowed_tool_names,
         "inject_code_mode_protocol": policy.inject_code_mode_protocol,
         "allow_worker_delegation": policy.allow_worker_delegation,
+        "prefer_workflow_runtime": policy.prefer_workflow_runtime,
         "has_capability_snapshot": policy.capability_snapshot.is_some(),
     })
 }
@@ -265,7 +271,51 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::route::TaskProfile;
     use serde_json::json;
+
+    #[test]
+    fn worker_execution_policy_defaults_to_legacy_worker_path() {
+        let decision = LocalRouteDecision {
+            route: LocalRouteKind::Worker,
+            reasons: vec!["analysis_request".to_string()],
+            profile: TaskProfile {
+                explicit_route: None,
+                has_batch_scope: false,
+                wants_programmatic_logic: false,
+                wants_analysis: true,
+                wants_single_action: false,
+                destructive_intent: false,
+                approval_sensitive: false,
+            },
+            evidence: RouteEvidence {
+                direct_callable_capability_count: 0,
+                has_code_mode_executor: false,
+                any_mutating_capability: false,
+                any_high_risk_capability: false,
+                direct_capability_names: Vec::new(),
+                callable_direct_capability_names: Vec::new(),
+            },
+        };
+
+        let policy = build_local_execution_policy(&decision);
+
+        assert!(policy.allow_worker_delegation);
+        assert!(!policy.prefer_workflow_runtime);
+    }
+
+    #[test]
+    fn status_meta_includes_prefer_workflow_runtime_flag() {
+        let mut policy = build_default_local_execution_policy();
+        policy.prefer_workflow_runtime = true;
+
+        let meta = build_local_execution_policy_status_meta(&policy);
+
+        assert_eq!(
+            meta.get("prefer_workflow_runtime").and_then(Value::as_bool),
+            Some(true)
+        );
+    }
 
     #[test]
     fn enrich_execution_policy_with_runtime_discovery_allows_all_callable_direct_capabilities() {
@@ -293,6 +343,7 @@ mod tests {
             Some(&discovery),
         );
 
+        assert!(!policy.prefer_workflow_runtime);
         assert_eq!(
             policy.allowed_tool_names,
             vec![

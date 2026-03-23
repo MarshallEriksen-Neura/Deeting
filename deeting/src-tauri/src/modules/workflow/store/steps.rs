@@ -93,7 +93,6 @@ pub(crate) async fn create_workflow_step_run(
     })
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) async fn get_workflow_step_run(
     store: &McpStore,
     id: &str,

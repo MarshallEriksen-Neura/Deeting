@@ -38,12 +38,10 @@ pub(super) fn parse_string_list(raw: Option<String>, label: &str) -> Result<Vec<
         .map_err(|err| McpError::Storage(format!("invalid {label} json list: {err}")))
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn serialize_json<T: Serialize + ?Sized>(value: &T) -> Result<String, McpError> {
     serde_json::to_string(value).map_err(|err| McpError::Storage(err.to_string()))
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn serialize_json_opt<T: Serialize>(value: Option<&T>) -> Result<Option<String>, McpError> {
     value.map(serialize_json).transpose()
 }
@@ -72,7 +70,6 @@ pub(super) fn parse_step_type(row: &SqliteRow, column: &str) -> Result<WorkflowS
     WorkflowStepType::from_str(&value).map_err(McpError::Storage)
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn parse_artifact_kind(
     row: &SqliteRow,
     column: &str,

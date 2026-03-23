@@ -82,7 +82,6 @@ pub(crate) async fn create_workflow_artifact(
     })
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) async fn list_workflow_artifacts_by_run(
     store: &McpStore,
     run_id: &str,
@@ -99,7 +98,6 @@ pub(crate) async fn list_workflow_artifacts_by_run(
     rows.iter().map(row_to_workflow_artifact).collect()
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) async fn list_workflow_artifacts_by_step(
     store: &McpStore,
     step_id: &str,
@@ -116,7 +114,6 @@ pub(crate) async fn list_workflow_artifacts_by_step(
     rows.iter().map(row_to_workflow_artifact).collect()
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 fn row_to_workflow_artifact(row: &SqliteRow) -> Result<WorkflowArtifact, McpError> {
     Ok(WorkflowArtifact {
         id: row
