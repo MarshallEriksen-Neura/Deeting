@@ -97,9 +97,6 @@ export function Header({
       className={cn(
         // iOS-style floating header
         "fixed left-4 right-4 z-50",
-        isTauri
-          ? "top-[calc(var(--desktop-title-bar-height,0px)+1rem)]"
-          : "top-4",
         // Glassmorphism effect
         "bg-white/70 dark:bg-slate-900/70 backdrop-blur-2xl",
         // iOS-style border and shadow
@@ -111,6 +108,11 @@ export function Header({
         "transition-all duration-300 ease-out",
         className
       )}
+      style={{
+        top: isTauri
+          ? "calc(var(--desktop-title-bar-height, 0px) + var(--app-header-top-inset, 1rem))"
+          : "var(--app-header-top-inset, 1rem)",
+      }}
     >
       {/* Main header bar */}
       <Container className="flex h-16 items-center justify-between px-4 sm:px-6">

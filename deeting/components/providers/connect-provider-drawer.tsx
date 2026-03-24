@@ -441,11 +441,16 @@ export function ConnectProviderDrawer({
 
   // Visual Styles based on mode
   const themeColor = brandColor || preset?.brand_color || "#3b82f6"
+  const sectionLabelClass = "text-[11px] font-semibold uppercase tracking-[0.18em] text-white/58"
+  const inputClass =
+    "border-white/12 bg-white/[0.06] text-white placeholder:text-white/28 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] focus-visible:border-white/18 focus-visible:ring-white/12"
+  const hintTextClass = "text-[10px] leading-5 text-white/42"
+  const mutedTextClass = "text-sm text-white/64"
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <SheetContent 
-        className="w-full sm:max-w-md p-0 border-l border-white/10 bg-black/40 backdrop-blur-2xl text-[var(--foreground)]"
+        className="w-full sm:max-w-md p-0 border-l border-white/10 bg-[#101216]/95 text-white/88 shadow-2xl backdrop-blur-2xl"
       >
         <VisuallyHidden>
           <SheetTitle>
@@ -512,7 +517,7 @@ export function ConnectProviderDrawer({
               </motion.div>
 
               <div>
-                <h2 className="text-2xl font-bold tracking-tight">
+                <h2 className="text-2xl font-semibold tracking-tight text-white">
                 {mode === "edit" ? name : (isSystem ? t("drawer.titleSystem", { name: preset?.name ?? t("drawer.titleCustom") }) : t("drawer.titleCustom"))}
                 </h2>
                 <div className="flex items-center justify-center gap-2 mt-2">
@@ -528,7 +533,7 @@ export function ConnectProviderDrawer({
                     {isSystem ? t("drawer.badgeOfficial") : t("drawer.badgeSelfHosted")}
                   </Badge>
                   {isSystem && (
-                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    <span className="flex items-center gap-1 text-xs text-white/58">
                       <Lock className="size-3" /> {t("drawer.secureProtocol")}
                     </span>
                   )}
@@ -541,42 +546,46 @@ export function ConnectProviderDrawer({
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-8 relative z-10">
             {/* Basic Info */}
             <div className="space-y-3">
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              <Label className={sectionLabelClass}>
                 {t("drawer.name")}
               </Label>
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder={t("drawer.name")}
-                  className="bg-white/5 border-white/10 h-10 text-sm"
+                className={cn("h-10 text-sm", inputClass)}
               />
               <Input
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder={t("drawer.description")}
-                  className="bg-white/5 border-white/10 h-10 text-sm"
+                className={cn("h-10 text-sm", inputClass)}
               />
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <div className={cn("flex items-center gap-2", mutedTextClass)}>
                 <Switch checked={enabled} onCheckedChange={setEnabled} />
                 <span>{enabled ? t("drawer.enabled") : t("drawer.disabled")}</span>
               </div>
               <div className="space-y-2">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                <Label className={sectionLabelClass}>
                   {t("drawer.iconLabel")}
                 </Label>
-                <ProviderIconPicker value={icon} onChange={setIcon} />
+                <ProviderIconPicker
+                  value={icon}
+                  onChange={setIcon}
+                  className="h-14 rounded-2xl border-white/12 bg-white/[0.06] text-white/86 hover:bg-white/[0.08] hover:text-white [&_svg]:text-white/62"
+                />
                 <Input
                   value={customIconUrl}
                   onChange={(e) => setCustomIconUrl(e.target.value)}
                   placeholder="https://example.com/icon.png"
-                  className="bg-white/5 border-white/10 h-9 text-xs"
+                  className={cn("h-9 text-xs", inputClass)}
                 />
-                <p className="text-[10px] text-muted-foreground/60">
+                <p className={hintTextClass}>
                   {t("drawer.iconHint")}
                 </p>
               </div>
               <div className="space-y-2">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                <Label className={sectionLabelClass}>
                   {t("drawer.brandColor")}
                 </Label>
                 <div className="flex items-center gap-3">
@@ -584,15 +593,15 @@ export function ConnectProviderDrawer({
                     type="color"
                     value={brandColor}
                     onChange={(e) => setBrandColor(e.target.value)}
-                    className="h-10 w-20 p-1 bg-white/5 border-white/10"
+                    className="h-10 w-20 border-white/12 bg-white/[0.06] p-1"
                   />
                   <Input
                     value={brandColor}
                     onChange={(e) => setBrandColor(e.target.value)}
-                    className="bg-white/5 border-white/10 h-10 text-xs font-mono"
+                    className={cn("h-10 text-xs font-mono", inputClass)}
                   />
                 </div>
-                <p className="text-[10px] text-muted-foreground/60">
+                <p className={hintTextClass}>
                   {t("drawer.colorHint")}
                 </p>
               </div>
@@ -601,7 +610,7 @@ export function ConnectProviderDrawer({
             {/* Custom Mode: Protocol Switcher */}
             {!isSystem && (
               <div className="space-y-3">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                <Label className={sectionLabelClass}>
                   {t("drawer.protocolLabel")}
                 </Label>
                 <Tabs 
@@ -609,9 +618,9 @@ export function ConnectProviderDrawer({
                   onValueChange={(v) => setProtocol(v as any)}
                   className="w-full"
                 >
-                  <TabsList className="w-full grid grid-cols-2 bg-white/5 border border-white/10 p-1">
-                    <TabsTrigger value="openai" className="data-[state=active]:bg-white/10">OpenAI</TabsTrigger>
-                    <TabsTrigger value="anthropic" className="data-[state=active]:bg-white/10">Anthropic</TabsTrigger>
+                  <TabsList className="grid w-full grid-cols-2 border border-white/10 bg-white/[0.04] p-1">
+                    <TabsTrigger value="openai" className="text-white/58 data-[state=active]:border-white/10 data-[state=active]:bg-white/10 data-[state=active]:text-white">OpenAI</TabsTrigger>
+                    <TabsTrigger value="anthropic" className="text-white/58 data-[state=active]:border-white/10 data-[state=active]:bg-white/10 data-[state=active]:text-white">Anthropic</TabsTrigger>
                   </TabsList>
                 </Tabs>
               </div>
@@ -620,7 +629,7 @@ export function ConnectProviderDrawer({
             {/* Zone B: Connection Pipe */}
             <div className="space-y-3 group">
               <div className="flex items-center justify-between">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                <Label className={sectionLabelClass}>
                   {t("drawer.endpointLabel")}
                 </Label>
                 {!isSystem && (
@@ -628,7 +637,7 @@ export function ConnectProviderDrawer({
                     variant="link"
                     size="sm"
                     onClick={handleTestConnection}
-                    className="text-[10px] text-blue-400 hover:text-blue-300 p-0 h-auto"
+                    className="h-auto p-0 text-[10px] text-blue-300 hover:text-blue-200"
                   >
                     <Zap className="size-3" /> {t("drawer.pingCheck")}
                   </Button>
@@ -637,18 +646,19 @@ export function ConnectProviderDrawer({
               
               <div className="space-y-2">
                 <div className="relative">
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">
-                    {isSystem ? <Lock className="size-4 opacity-50" /> : <Terminal className="size-4 text-blue-400" />}
+                  <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/35">
+                    {isSystem ? <Lock className="size-4 opacity-70" /> : <Terminal className="size-4 text-blue-300" />}
                   </div>
                   <Input
                     value={baseUrl}
                     onChange={(e) => !isSystem && setBaseUrl(e.target.value)}
                     readOnly={isSystem}
                     className={cn(
-                      "pl-9 bg-white/5 border-white/10 transition-all duration-300 font-mono text-sm",
+                      "pl-9 font-mono text-sm transition-all duration-300",
+                      inputClass,
                       isSystem 
-                        ? "text-muted-foreground cursor-default focus-visible:ring-0" 
-                        : "focus:border-blue-500/50 focus:bg-blue-900/10 text-blue-100"
+                        ? "cursor-default text-white/62 focus-visible:ring-0" 
+                        : "border-blue-500/20 text-blue-100 focus:border-blue-400/45 focus:bg-blue-500/10 focus-visible:ring-blue-500/10"
                     )}
                     placeholder="http://localhost:11434"
                   />
@@ -672,25 +682,25 @@ export function ConnectProviderDrawer({
                 </div>
 
                 {normalizedBaseUrl && (
-                  <div className="text-[11px] text-muted-foreground">
-                    <span className="text-foreground/80">{t("drawer.endpointPreviewLabel")}</span>
+                  <div className="text-[11px] text-white/62">
+                    <span className="text-white/78">{t("drawer.endpointPreviewLabel")}</span>
                     {isOpenAIProtocol ? (
                       <div className="mt-2 space-y-1.5">
                         {openAIEndpointPreviews.map((preview) => (
                           <div key={preview.key} className="flex flex-col gap-0.5 md:flex-row md:items-center md:gap-2">
-                            <span className="text-[10px] uppercase tracking-wide text-muted-foreground/80">
+                            <span className="text-[10px] uppercase tracking-wide text-white/44">
                               {preview.label}
                             </span>
-                            <span className="font-mono break-all text-foreground/90">
+                            <span className="font-mono break-all text-white/90">
                               {preview.value}
                             </span>
                           </div>
                         ))}
                       </div>
                     ) : (
-                      <span className="ml-2 font-mono break-all">{endpointPreview}</span>
+                      <span className="ml-2 font-mono break-all text-white/90">{endpointPreview}</span>
                     )}
-                    <div className="mt-1 text-[10px] text-muted-foreground/80">
+                    <div className="mt-1 text-[10px] text-white/44">
                       {isOpenAIProtocol
                         ? autoAppendV1
                           ? t("drawer.endpointPreviewHintOpenAI")
@@ -710,7 +720,7 @@ export function ConnectProviderDrawer({
                     exit={{ height: 0, opacity: 0 }}
                     className="overflow-hidden"
                   >
-                    <div className="mt-2 p-3 rounded-lg bg-black/50 border border-white/10 font-mono text-[10px] text-muted-foreground space-y-1">
+                    <div className="mt-2 space-y-1 rounded-lg border border-white/10 bg-black/45 p-3 font-mono text-[10px] text-white/68">
                       {logs.map((log, i) => (
                         <div key={i} className={cn(
                           "whitespace-pre-wrap break-all",
@@ -728,14 +738,14 @@ export function ConnectProviderDrawer({
 
             {/* Zone C: Credentials */}
             <div className="space-y-3">
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              <Label className={sectionLabelClass}>
                 {t("drawer.secretKey")}
                 {mode === "edit" ? (
-                  <span className="ml-2 text-[10px] normal-case opacity-60">
+                  <span className="ml-2 text-[10px] normal-case text-white/40">
                     {hasCredentials ? t("drawer.authConfigured") : t("drawer.authMissing")}
                   </span>
                 ) : (
-                  <span className="ml-2 text-[10px] normal-case opacity-60">
+                  <span className="ml-2 text-[10px] normal-case text-white/40">
                     {t("drawer.authRequired")}
                   </span>
                 )}
@@ -762,8 +772,8 @@ export function ConnectProviderDrawer({
                   required={mode === "create"}
                   aria-required={mode === "create"}
                   className={cn(
-                    "pl-9 bg-white/5 border-white/10 h-12 text-base transition-all duration-300",
-                    "placeholder:text-muted-foreground/30",
+                    "h-12 pl-9 text-base transition-all duration-300",
+                    inputClass,
                     apiKey && isSystem && "border-emerald-500/30 shadow-[0_0_15px_-5px_rgba(16,185,129,0.2)] focus:border-emerald-500/50",
                     apiKey && !isSystem && "border-blue-500/30 shadow-[0_0_15px_-5px_rgba(59,130,246,0.2)] focus:border-blue-500/50"
                   )}
@@ -774,19 +784,19 @@ export function ConnectProviderDrawer({
             {/* Advanced Settings (Accordion) */}
             <Collapsible className="group">
               <CollapsibleTrigger asChild>
-                <Button variant="ghost" size="sm" className="text-xs text-muted-foreground hover:text-white w-full justify-start p-0 h-auto">
+                <Button variant="ghost" size="sm" className="h-auto w-full justify-start p-0 text-xs text-white/58 hover:bg-transparent hover:text-white">
                   <ChevronDown className="size-3 group-data-[state=open]:rotate-180 transition-transform" />
                   {t("drawer.advanced")}
                 </Button>
               </CollapsibleTrigger>
               <CollapsibleContent className="space-y-4 pt-4">
                 {isOpenAIProtocol && (
-                  <div className="flex items-start justify-between gap-3 rounded-md border border-white/10 bg-white/5 p-3">
+                  <div className="flex items-start justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.04] p-3">
                     <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground">
+                      <Label className="text-xs text-white/72">
                         {t("drawer.autoAppendV1Label")}
                       </Label>
-                      <p className="text-[10px] text-muted-foreground/60">
+                      <p className={hintTextClass}>
                         {t("drawer.autoAppendV1Hint")}
                       </p>
                     </div>
@@ -794,61 +804,61 @@ export function ConnectProviderDrawer({
                   </div>
                 )}
                 <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">{t("drawer.modelPrefixLabel")}</Label>
+                  <Label className="text-xs text-white/72">{t("drawer.modelPrefixLabel")}</Label>
                   <Input 
                     placeholder="e.g. azure-deployment-" 
-                    className="bg-white/5 border-white/10 h-8 text-xs" 
+                    className={cn("h-8 text-xs text-white/35", inputClass)}
                     disabled
                   />
-                  <p className="text-[10px] text-muted-foreground/50">
+                  <p className={hintTextClass}>
                     {t("drawer.modelsHint")}
                   </p>
                 </div>
 
                 {normalizedSlug.includes("azure") && (
                   <div className="space-y-3">
-                    <Label className="text-xs text-muted-foreground">{t("drawer.azureResource")}</Label>
+                    <Label className="text-xs text-white/72">{t("drawer.azureResource")}</Label>
                     <Input
                       value={resourceName}
                       onChange={(e) => setResourceName(e.target.value)}
                       placeholder="your-resource"
-                      className="bg-white/5 border-white/10 h-9 text-sm"
+                      className={cn("h-9 text-sm", inputClass)}
                     />
-                    <Label className="text-xs text-muted-foreground">{t("drawer.azureDeployment")}</Label>
+                    <Label className="text-xs text-white/72">{t("drawer.azureDeployment")}</Label>
                     <Input
                       value={deploymentName}
                       onChange={(e) => setDeploymentName(e.target.value)}
                       placeholder="gpt-4o"
-                      className="bg-white/5 border-white/10 h-9 text-sm"
+                      className={cn("h-9 text-sm", inputClass)}
                     />
-                    <Label className="text-xs text-muted-foreground">{t("drawer.azureApiVersion")}</Label>
+                    <Label className="text-xs text-white/72">{t("drawer.azureApiVersion")}</Label>
                     <Input
                       value={apiVersion}
                       onChange={(e) => setApiVersion(e.target.value)}
                       placeholder="2023-05-15"
-                      className="bg-white/5 border-white/10 h-9 text-sm"
+                      className={cn("h-9 text-sm", inputClass)}
                     />
-                    <p className="text-[10px] text-muted-foreground/50">{t("drawer.azureHint")}</p>
+                    <p className={hintTextClass}>{t("drawer.azureHint")}</p>
                   </div>
                 )}
 
                 {normalizedSlug.includes("vertex") && (
                   <div className="space-y-3">
-                    <Label className="text-xs text-muted-foreground">{t("drawer.vertexProject")}</Label>
+                    <Label className="text-xs text-white/72">{t("drawer.vertexProject")}</Label>
                     <Input
                       value={projectId}
                       onChange={(e) => setProjectId(e.target.value)}
                       placeholder="my-gcp-project"
-                      className="bg-white/5 border-white/10 h-9 text-sm"
+                      className={cn("h-9 text-sm", inputClass)}
                     />
-                    <Label className="text-xs text-muted-foreground">{t("drawer.vertexRegion")}</Label>
+                    <Label className="text-xs text-white/72">{t("drawer.vertexRegion")}</Label>
                     <Input
                       value={region}
                       onChange={(e) => setRegion(e.target.value)}
                       placeholder="us-central1"
-                      className="bg-white/5 border-white/10 h-9 text-sm"
+                      className={cn("h-9 text-sm", inputClass)}
                     />
-                    <p className="text-[10px] text-muted-foreground/50">{t("drawer.vertexHint")}</p>
+                    <p className={hintTextClass}>{t("drawer.vertexHint")}</p>
                   </div>
                 )}
               </CollapsibleContent>
@@ -857,15 +867,15 @@ export function ConnectProviderDrawer({
           </div>
 
           {/* Zone D: Action Bar */}
-          <div className="flex-none p-6 border-t border-white/10 bg-black/20 backdrop-blur-md relative z-20">
+          <div className="relative z-20 flex-none border-t border-white/10 bg-black/30 p-6 backdrop-blur-md">
             <div className="flex gap-3">
               <GlassButton 
                 variant="ghost" 
-                  className="flex-1 text-muted-foreground hover:text-white hover:bg-white/5" 
-                  onClick={onClose}
-                >
+                className="flex-1 border border-white/10 bg-white/[0.03] text-white/68 hover:bg-white/[0.06] hover:text-white"
+                onClick={onClose}
+              >
                 {t("drawer.cancel")}
-                </GlassButton>
+              </GlassButton>
               
               {isSystem ? (
                 // Official Mode: Direct Save
