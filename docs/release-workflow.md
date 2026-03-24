@@ -31,12 +31,12 @@ GitHub Actions 会自动：
 
 #### 阶段 1: 构建主应用
 - ✅ 构建 Windows 安装包（NSIS）
-- ✅ 构建 macOS 安装包（DMG，未签名）
-- ✅ 构建 Linux 安装包（deb、AppImage）
+- ✅ 构建 macOS 应用包与更新包（`.app` / `.app.tar.gz`）
+- ✅ 构建 Linux 安装包与更新包（`deb`、`rpm`、`AppImage`）
 - ✅ 生成签名文件（`.sig`）
-- ✅ 创建 GitHub Release
-- ✅ 上传所有安装包
-- ✅ 生成 `latest.json`（用于自动更新）
+- ✅ 由 Windows 任务创建 GitHub Release 并上传 Windows 安装包
+- ✅ 所有平台产物汇总后统一上传
+- ✅ 统一生成全平台 `latest.json`（用于自动更新）
 
 #### 阶段 2: 构建 Windows Installer（仅 Windows）
 - ✅ 将主应用 NSIS 安装包嵌入 installer
@@ -53,10 +53,12 @@ GitHub Actions 会自动：
 |--------|------|---------|
 | `Deeting Setup_x.x.x_x64-setup.exe` | 标准 NSIS 安装包 | Windows |
 | `Deeting Setup_x.x.x_x64-bootstrapper.exe` | 图形化引导安装程序（推荐） | Windows |
-| `Deeting_x.x.x_aarch64.dmg` | macOS ARM64 安装包 | macOS |
-| `Deeting_x.x.x_x64.dmg` | macOS Intel 安装包 | macOS |
+| `deeting_aarch64.app.tar.gz` | macOS ARM64 自动更新包 | macOS |
+| `deeting_x86_64.app.tar.gz` | macOS Intel 自动更新包 | macOS |
 | `deeting_x.x.x_amd64.deb` | Debian/Ubuntu 安装包 | Linux |
+| `deeting-x.x.x-1.x86_64.rpm` | Red Hat/Fedora 安装包 | Linux |
 | `deeting_x.x.x_x86_64.AppImage` | 通用 Linux 安装包 | Linux |
+| `latest.json` | 全平台自动更新清单 | 全平台 |
 
 ## 签名配置
 
@@ -106,6 +108,13 @@ Password: [你输入的密码] (保存到 GitHub Secrets)
 }
 ```
 
+#### `latest.json` 的生成方式
+
+- 不再由单个平台单独生成最终清单
+- Windows 任务先创建 Release 并上传 Windows 安装包
+- `publish-main-release` 阶段在 macOS / Linux / Windows 产物都到齐后，统一生成一个全平台 `latest.json`
+- 该清单会同时写入 Windows、macOS、Linux 的 updater target，例如 `windows-x86_64-nsis`、`darwin-aarch64`、`linux-x86_64-appimage`
+
 ### macOS 代码签名（可选）
 
 由于本项目为开源项目，暂未购买 Apple 开发者账号（$99/年），macOS 版本未经签名。
@@ -131,7 +140,7 @@ Password: [你输入的密码] (保存到 GitHub Secrets)
 
 1. 应用启动时自动检查更新
 2. 发现新版本时弹出更新对话框
-3. 用户点击更新 → 下载安装包
+3. 用户点击更新 → 下载当前平台对应更新包
 4. 验证签名 → 安装并重启
 
 ### 开发端

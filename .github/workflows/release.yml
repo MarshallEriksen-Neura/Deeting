@@ -29,7 +29,7 @@ jobs:
             args: "--target x86_64-apple-darwin --bundles app"
             target: x86_64-apple-darwin
           - platform: ubuntu-22.04
-            args: "--bundles deb,rpm"
+            args: "--bundles appimage,deb,rpm"
             target: x86_64-unknown-linux-gnu
           - platform: windows-latest
             args: "--bundles nsis,msi"
@@ -140,6 +140,7 @@ jobs:
 
       - name: Build and publish Windows main application
         if: matrix.platform == 'windows-latest'
+        id: build_windows_release
         uses: tauri-apps/tauri-action@action-v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -155,8 +156,6 @@ jobs:
           releaseDraft: false
           prerelease: false
           generateReleaseNotes: false
-          includeUpdaterJson: true
-          updaterJsonPreferNsis: true
           args: ${{ matrix.args }}
 
       - name: Build main application artifacts
@@ -174,11 +173,10 @@ jobs:
           args: ${{ matrix.args }}
 
       - name: Prepare main artifact list
-        if: matrix.platform != 'windows-latest'
         id: main_artifact_list
         shell: bash
         env:
-          ARTIFACT_PATHS_JSON: ${{ steps.build_main_artifacts.outputs.artifactPaths }}
+          ARTIFACT_PATHS_JSON: ${{ matrix.platform == 'windows-latest' && steps.build_windows_release.outputs.artifactPaths || steps.build_main_artifacts.outputs.artifactPaths }}
         run: |
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import json
@@ -225,7 +223,6 @@ jobs:
           PY
 
       - name: Upload main application artifacts
-        if: matrix.platform != 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
           name: main-${{ matrix.target }}
@@ -293,6 +290,10 @@ jobs:
                   return True
               return any(lower.endswith(s) for s in ALLOWED_SUFFIXES)
 
+          def should_upload_asset(path: Path) -> bool:
+              artifact_dir = path.relative_to(release_assets_dir).parts[0]
+              return artifact_dir != "main-x86_64-pc-windows-msvc"
+
           def split_compound_ext(name: str) -> tuple[str, str]:
               """Split a filename into (stem, compound_extension).
 
@@ -325,7 +326,7 @@ jobs:
           for path in sorted(release_assets_dir.rglob("*")):
               if not path.is_file():
                   continue
-              if is_release_asset(path):
+              if is_release_asset(path) and should_upload_asset(path):
                   candidates.setdefault(path.name, []).append(path)
               else:
                   skipped_paths.append(path)
@@ -447,6 +448,30 @@ jobs:
             ${{ steps.final_release_assets.outputs.paths }}
           draft: false
           prerelease: false
+
+      - name: Read release metadata for updater manifest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "$RELEASE_TAG" --json body,publishedAt > ./release-metadata.json
+
+      - name: Generate unified updater manifest
+        shell: bash
+        run: |
+          python .github/scripts/generate_updater_manifest.py \
+            --assets-dir ./release-assets \
+            --repo "${{ github.repository }}" \
+            --release-tag "$RELEASE_TAG" \
+            --metadata-json ./release-metadata.json \
+            --output ./release-upload/latest.json
+
+      - name: Upload unified updater manifest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$RELEASE_TAG" ./release-upload/latest.json --clobber
 
   dispatch-installer-release:
     needs: [build-main, publish-main-release]
