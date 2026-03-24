@@ -1179,7 +1179,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
                 None,
                 Some(chat_ctx.session_id.as_str()),
             );
-            if let Some(core_tool_result) = execute_or_queue_core_tool_call_with_tool_ref(
+            match execute_or_queue_core_tool_call_with_tool_ref(
                 &approval_context,
                 Some(&app_state.mcp),
                 app_state.mcp.approvals.pending_tool_calls.as_ref(),
@@ -1188,47 +1188,65 @@ async fn maybe_handle_local_code_mode_tool_calls(
                 call.arguments.clone(),
                 true,
             )
-            .await?
+            .await
             {
-                let requires_approval = core_tool_result
-                    .get("status")
-                    .and_then(serde_json::Value::as_str)
-                    .map(|status| status == "REQUIRES_APPROVAL")
-                    .unwrap_or(false);
-                let meta = serde_json::json!({
-                    "id": call.id,
-                    "name": tool_name,
-                    "status": if requires_approval { "requires_approval" } else { "success" },
-                    "result": core_tool_result,
-                });
-                let mut streamed_blocks = Vec::new();
-                append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
-                realtime_emitter.emit_blocks(streamed_blocks);
-                tool_call_meta.push(meta);
-                if requires_approval {
-                    results.push(format!(
-                        "Tool call '{}' requires approval before execution.",
-                        tool_name
-                    ));
-                    if let Some(approval_token) = core_tool_result
-                        .get("approval_token")
+                Ok(Some(core_tool_result)) => {
+                    let requires_approval = core_tool_result
+                        .get("status")
                         .and_then(serde_json::Value::as_str)
-                        .map(str::trim)
-                        .filter(|value| !value.is_empty())
-                    {
-                        return LocalToolCallProcessingOutcome::Interrupted {
-                            approval_token: approval_token.to_string(),
-                            tool_call_meta,
-                            results,
-                            capability_update,
-                            call_id: call.id.clone().unwrap_or_default(),
-                            tool_name,
-                        };
+                        .map(|status| status == "REQUIRES_APPROVAL")
+                        .unwrap_or(false);
+                    let meta = serde_json::json!({
+                        "id": call.id,
+                        "name": tool_name,
+                        "status": if requires_approval { "requires_approval" } else { "success" },
+                        "result": core_tool_result,
+                    });
+                    let mut streamed_blocks = Vec::new();
+                    append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+                    realtime_emitter.emit_blocks(streamed_blocks);
+                    tool_call_meta.push(meta);
+                    if requires_approval {
+                        results.push(format!(
+                            "Tool call '{}' requires approval before execution.",
+                            tool_name
+                        ));
+                        if let Some(approval_token) = core_tool_result
+                            .get("approval_token")
+                            .and_then(serde_json::Value::as_str)
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                        {
+                            return LocalToolCallProcessingOutcome::Interrupted {
+                                approval_token: approval_token.to_string(),
+                                tool_call_meta,
+                                results,
+                                capability_update,
+                                call_id: call.id.clone().unwrap_or_default(),
+                                tool_name,
+                            };
+                        }
+                    } else {
+                        results.push(format!("Tool call '{}' executed successfully.", tool_name));
                     }
-                } else {
-                    results.push(format!("Tool call '{}' executed successfully.", tool_name));
+                    continue;
                 }
-                continue;
+                Ok(None) => {}
+                Err(err) => {
+                    let meta = serde_json::json!({
+                        "id": call.id,
+                        "name": tool_name,
+                        "status": "error",
+                        "error_code": "LOCAL_TOOL_EXECUTION_FAILED",
+                        "error": err,
+                    });
+                    let mut streamed_blocks = Vec::new();
+                    append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+                    realtime_emitter.emit_blocks(streamed_blocks);
+                    tool_call_meta.push(meta);
+                    results.push(format!("Tool call '{}' failed: {}", tool_name, err));
+                    continue;
+                }
             }
             match resolve_callable_mcp_tool_by_ref(
                 app_state.mcp.store.as_ref(),

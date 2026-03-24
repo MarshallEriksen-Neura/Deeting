@@ -11,7 +11,8 @@ pub(crate) use capability_catalog::{
 pub(crate) use config::{apply_config_payload, now_rfc3339};
 pub(crate) use tool_execution::{
     approve_mcp_tool_inner_with_context, execute_mcp_tool,
-    execute_or_queue_mcp_tool_call_with_tool_ref, reject_mcp_tool_inner,
+    execute_or_queue_core_tool_call_with_tool_ref, execute_or_queue_mcp_tool_call_with_tool_ref,
+    reject_mcp_tool_inner,
 };
 pub(crate) use tool_resolution::{
     build_db_tool_availability_catalog, build_desktop_mcp_tool_views,

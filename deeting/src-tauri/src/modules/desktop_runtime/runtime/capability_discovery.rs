@@ -1523,7 +1523,7 @@ fn matches_domain(domain: &str, text: &str) -> bool {
     }
 }
 
-fn matches_intent(intent: &str, text: &str, asset_type: &str, source_type: &str) -> bool {
+fn matches_intent(intent: &str, text: &str, asset_type: &str, _source_type: &str) -> bool {
     match intent {
         "local_inspection" => {
             (asset_type == "tool" || asset_type == "skill_tool")

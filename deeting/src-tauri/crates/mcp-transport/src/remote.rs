@@ -203,8 +203,6 @@ async fn spawn_local_stdio_client(
 fn configure_background_tokio_command(command: &mut tokio::process::Command) {
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
-
         command.creation_flags(CREATE_NO_WINDOW);
     }
 }
