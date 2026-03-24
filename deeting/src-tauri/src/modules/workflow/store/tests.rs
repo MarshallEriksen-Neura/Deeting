@@ -21,7 +21,8 @@ use crate::modules::workflow::types::{
 use uuid::Uuid;
 
 async fn create_test_store(name: &str) -> McpStore {
-    let db_path = std::env::temp_dir().join(format!("deeting-workflow-{name}-{}.db", Uuid::new_v4()));
+    let db_path =
+        std::env::temp_dir().join(format!("deeting-workflow-{name}-{}.db", Uuid::new_v4()));
     let database_url = format!("sqlite:{}", db_path.to_string_lossy().replace('\\', "/"));
     let store = McpStore::new(&database_url)
         .await
@@ -233,8 +234,8 @@ async fn active_checkpoint_can_be_resolved() {
         &checkpoint.id,
         Some(&serde_json::json!({ "action": "approve" })),
     )
-        .await
-        .expect("resolve checkpoint");
+    .await
+    .expect("resolve checkpoint");
 
     let active_after = get_active_checkpoint_for_run(&store, &run.id)
         .await
@@ -268,7 +269,9 @@ async fn restart_preserves_workflow_run_rows() {
         .await
         .expect("recreate workflow test store");
     restarted.init().await.expect("reinit workflow test store");
-    ensure_schema(&restarted).await.expect("ensure workflow schema");
+    ensure_schema(&restarted)
+        .await
+        .expect("ensure workflow schema");
 
     let fetched = get_workflow_run(&restarted, &run.id)
         .await
@@ -312,7 +315,10 @@ async fn artifacts_create_and_list_by_run() {
         .await
         .expect("list workflow artifacts");
     assert_eq!(artifacts.len(), 1);
-    assert_eq!(artifacts[0].artifact_ref.as_deref(), Some("phase-1/result.json"));
+    assert_eq!(
+        artifacts[0].artifact_ref.as_deref(),
+        Some("phase-1/result.json")
+    );
 }
 
 #[tokio::test]

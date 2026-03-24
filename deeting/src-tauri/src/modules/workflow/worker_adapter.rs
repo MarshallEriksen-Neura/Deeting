@@ -1,4 +1,6 @@
-use crate::modules::ai_upstream::{request_provider_chat_completion, resolve_local_model_connection};
+use crate::modules::ai_upstream::{
+    request_provider_chat_completion, resolve_local_model_connection,
+};
 use crate::modules::custom_task_agents::runtime::preview_custom_task_agent;
 use crate::modules::custom_task_agents::types::{
     CustomTaskAgentPreviewRequest, CustomTaskAgentProfile,
@@ -171,7 +173,9 @@ mod tests {
     fn resolve_direct_llm_default_prefix() {
         let worker_ref = "direct_llm:default";
         assert!(worker_ref.starts_with("direct_llm:"));
-        let slug = worker_ref.strip_prefix("direct_llm:").expect("direct llm prefix");
+        let slug = worker_ref
+            .strip_prefix("direct_llm:")
+            .expect("direct llm prefix");
         assert_eq!(slug, "default");
     }
 

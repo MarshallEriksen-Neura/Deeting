@@ -25,10 +25,21 @@ pub fn infer_protocol_family(protocol: &str, upstream_path: &str) -> &'static st
     "openai_chat"
 }
 
-pub fn template_matches_family(template: &Value, protocol_family: &str) -> bool {
+pub fn template_matches_family(template: &Value, capability: &str, protocol_family: &str) -> bool {
     let Some(object) = template.as_object() else {
         return true;
     };
+    match capability {
+        "embedding" => return object.contains_key("input"),
+        "image_generation" | "video_generation" => return object.contains_key("prompt"),
+        "text_to_speech" => return object.contains_key("input"),
+        "speech_to_text" => {
+            return object.contains_key("audio_data")
+                || object.contains_key("audio")
+                || object.contains_key("file");
+        }
+        _ => {}
+    }
     match protocol_family {
         "openai_responses" => object.contains_key("input"),
         "google_gemini" => object.contains_key("contents"),
@@ -74,7 +85,7 @@ pub fn build_protocol_profile(
         .or_else(|| effective_config.get("body_template").cloned());
     let request_template = template_candidate
         .clone()
-        .filter(|template| template_matches_family(template, family.as_str()))
+        .filter(|template| template_matches_family(template, capability, family.as_str()))
         .unwrap_or_else(|| builtin_request_template(capability, family.as_str()));
     let template_engine = effective_config
         .get("template_engine")
@@ -82,7 +93,7 @@ pub fn build_protocol_profile(
         .filter(|_| {
             template_candidate
                 .as_ref()
-                .map(|template| template_matches_family(template, family.as_str()))
+                .map(|template| template_matches_family(template, capability, family.as_str()))
                 .unwrap_or(true)
         })
         .unwrap_or_else(|| builtin_template_engine(family.as_str()))
@@ -522,19 +533,38 @@ fn builtin_template_engine(protocol_family: &str) -> &'static str {
 }
 
 fn builtin_request_template(capability: &str, protocol_family: &str) -> Value {
-    match (capability, protocol_family) {
-        ("chat", "openai_responses") => json!({
+    match capability {
+        "chat" if protocol_family == "openai_responses" => json!({
             "model": Value::Null,
             "input": Value::Null,
             "stream": Value::Null,
             "temperature": Value::Null,
             "max_output_tokens": Value::Null,
         }),
-        ("chat", "google_gemini") => json!({
+        "chat" if protocol_family == "google_gemini" => json!({
             "model": Value::Null,
             "contents": Value::Null,
         }),
-        ("embedding", _) => json!({ "model": Value::Null, "input": Value::Null }),
+        "embedding" => json!({ "model": Value::Null, "input": Value::Null }),
+        "image_generation" => json!({
+            "model": Value::Null,
+            "prompt": Value::Null,
+            "n": Value::Null,
+        }),
+        "video_generation" => json!({
+            "model": Value::Null,
+            "prompt": Value::Null,
+        }),
+        "text_to_speech" => json!({
+            "model": Value::Null,
+            "input": Value::Null,
+            "voice": Value::Null,
+        }),
+        "speech_to_text" => json!({
+            "model": Value::Null,
+            "audio_data": Value::Null,
+            "response_format": Value::Null,
+        }),
         _ => json!({
             "model": Value::Null,
             "messages": Value::Null,
@@ -745,12 +775,52 @@ mod tests {
     fn template_matches_family_rejects_chat_template_for_responses() {
         assert!(!template_matches_family(
             &json!({"messages": null}),
+            "chat",
             "openai_responses"
         ));
         assert!(template_matches_family(
             &json!({"input": null}),
+            "chat",
             "openai_responses"
         ));
+    }
+
+    #[test]
+    fn template_matches_family_accepts_image_generation_prompt_templates() {
+        assert!(template_matches_family(
+            &json!({"model": null, "prompt": null, "n": 1}),
+            "image_generation",
+            "openai_chat"
+        ));
+    }
+
+    #[test]
+    fn build_protocol_profile_keeps_image_generation_prompt_template() {
+        let mut model = mock_model("v1/images/generations");
+        model.capabilities = vec!["image_generation".to_string()];
+        model.model_id = "LongCat-Image".to_string();
+
+        let profile = build_protocol_profile(
+            Some(&mock_preset()),
+            &model,
+            "image_generation",
+            "openai",
+            &json!({
+                "template_engine": "simple_replace",
+                "request_template": {
+                    "model": null,
+                    "prompt": null,
+                    "n": null
+                }
+            }),
+            &json!({}),
+            &json!({}),
+        );
+
+        assert_eq!(profile.protocol_family, "openai_chat");
+        assert_eq!(profile.request.template_engine, "simple_replace");
+        assert_eq!(profile.request.request_template["prompt"], Value::Null);
+        assert!(profile.request.request_template.get("messages").is_none());
     }
 
     #[test]

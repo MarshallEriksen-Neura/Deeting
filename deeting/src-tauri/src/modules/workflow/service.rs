@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use crate::modules::mcp::store::McpStore;
-use crate::state::AppState;
 use crate::modules::workflow::compiler;
 use crate::modules::workflow::proposal;
 use crate::modules::workflow::run_dir;
@@ -13,6 +12,7 @@ use crate::modules::workflow::types::{
     RerunPhaseRequest, UpdateProposalRequest, WorkflowRun, WorkflowRunDetail, WorkflowRunStatus,
     WorkflowStepStatus,
 };
+use crate::state::AppState;
 use tauri::Manager;
 
 pub(crate) async fn persist_generated_proposal(
@@ -102,7 +102,7 @@ pub(crate) async fn update_existing_proposal(
             .await
             .map_err(|err| err.to_string())?;
         ensured
-        };
+    };
 
     let previous_proposal = run.proposal_text.clone();
     run_dir::write_proposal_file(&run_dir_path, &proposal_text)?;
@@ -170,7 +170,7 @@ pub(crate) async fn regenerate_existing_proposal(
             .await
             .map_err(|err| err.to_string())?;
         ensured
-        };
+    };
 
     let previous_proposal = run.proposal_text.clone();
     run_dir::write_proposal_file(&run_dir_path, &proposal_text)?;
@@ -317,10 +317,11 @@ pub(crate) async fn compile_current_proposal(
     {
         match previous_snapshot_file.as_deref() {
             Some(previous) => {
-                std::fs::write(run_dir_path.join("snapshot.json"), previous)
-                    .map_err(|restore_err| {
+                std::fs::write(run_dir_path.join("snapshot.json"), previous).map_err(
+                    |restore_err| {
                         format!("{error}; failed to restore snapshot.json: {restore_err}")
-                    })?;
+                    },
+                )?;
             }
             None => {
                 let _ = std::fs::remove_file(run_dir_path.join("snapshot.json"));
@@ -375,7 +376,11 @@ pub(crate) async fn update_proposal_workflow(
     update_existing_proposal(store, &payload.run_id, app_data_dir, payload.proposal_text).await
 }
 
-fn build_quick_workflow_proposal_text(goal: &str, worker_ref: &str, inject_into_chat: bool) -> String {
+fn build_quick_workflow_proposal_text(
+    goal: &str,
+    worker_ref: &str,
+    inject_into_chat: bool,
+) -> String {
     let goal = goal.trim();
     let worker_ref = worker_ref.trim();
     format!(
@@ -384,9 +389,7 @@ fn build_quick_workflow_proposal_text(goal: &str, worker_ref: &str, inject_into_
     )
 }
 
-fn format_compiler_errors(
-    errors: &[crate::modules::workflow::types::CompilerError],
-) -> String {
+fn format_compiler_errors(errors: &[crate::modules::workflow::types::CompilerError]) -> String {
     errors
         .iter()
         .map(|error| match error.phase_id.as_deref() {
@@ -489,8 +492,8 @@ pub(crate) async fn start_workflow_run(
     let store_ref = app_state.mcp.store.as_ref();
     claim_run_for_start(store_ref, run_id).await?;
 
-    let _final_status = crate::modules::workflow::scheduler::run_workflow(app_handle, app_state, run_id)
-        .await?;
+    let _final_status =
+        crate::modules::workflow::scheduler::run_workflow(app_handle, app_state, run_id).await?;
 
     store::get_workflow_run(store_ref, run_id)
         .await
@@ -596,8 +599,7 @@ async fn rerun_phase_with_store(
     let phase_id = req.phase_id.trim();
     let run = load_run(store_ref, run_id).await?;
 
-    if run.status != WorkflowRunStatus::Failed
-        && run.status != WorkflowRunStatus::AwaitingPlanEdit
+    if run.status != WorkflowRunStatus::Failed && run.status != WorkflowRunStatus::AwaitingPlanEdit
     {
         return Err(format!(
             "Run must be in 'failed' or 'awaiting_plan_edit' status, currently: {}",
@@ -834,7 +836,10 @@ fn update_phase_goal_in_proposal_text(
     phase_id: &str,
     new_goal: &str,
 ) -> Result<String, String> {
-    let mut lines = proposal_text.lines().map(str::to_string).collect::<Vec<_>>();
+    let mut lines = proposal_text
+        .lines()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
     let phase_number = phase_id
         .strip_prefix("phase-")
         .ok_or_else(|| format!("Invalid phase id: {phase_id}"))?;
@@ -967,7 +972,6 @@ async fn apply_approval_action(
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -1046,10 +1050,8 @@ Goal: Produce a useful output
 
     #[test]
     fn extract_primary_content_reads_latest_succeeded_phase_result() {
-        let run_dir = std::env::temp_dir().join(format!(
-            "deeting-workflow-quick-result-{}",
-            Uuid::new_v4()
-        ));
+        let run_dir =
+            std::env::temp_dir().join(format!("deeting-workflow-quick-result-{}", Uuid::new_v4()));
         std::fs::create_dir_all(run_dir.join("phases").join("phase-1"))
             .expect("create phase-1 dir");
         std::fs::create_dir_all(run_dir.join("phases").join("phase-2"))
@@ -1149,7 +1151,8 @@ Goal: Produce a useful output
         assert_eq!(run.proposal_version, 1);
         assert_eq!(run.status, WorkflowRunStatus::Draft);
         assert!(run.run_dir.is_some());
-        let proposal_path = PathBuf::from(run.run_dir.as_ref().expect("run_dir")).join("proposal.md");
+        let proposal_path =
+            PathBuf::from(run.run_dir.as_ref().expect("run_dir")).join("proposal.md");
         assert!(proposal_path.exists());
         assert_eq!(
             std::fs::read_to_string(proposal_path).expect("read proposal file"),
@@ -1185,8 +1188,12 @@ Goal: Produce a useful output
         .expect("update proposal");
 
         assert_eq!(updated.proposal_version, 2);
-        assert_eq!(updated.proposal_text.as_deref(), Some(updated_text.as_str()));
-        let proposal_path = PathBuf::from(updated.run_dir.as_ref().expect("run_dir")).join("proposal.md");
+        assert_eq!(
+            updated.proposal_text.as_deref(),
+            Some(updated_text.as_str())
+        );
+        let proposal_path =
+            PathBuf::from(updated.run_dir.as_ref().expect("run_dir")).join("proposal.md");
         assert_eq!(
             std::fs::read_to_string(proposal_path).expect("read updated proposal"),
             updated_text
@@ -1224,7 +1231,8 @@ Goal: Produce a useful output
         assert_eq!(updated.status, WorkflowRunStatus::Ready);
         assert_eq!(updated.snapshot_version, 1);
         assert!(updated.snapshot_json.is_some());
-        let snapshot_path = PathBuf::from(updated.run_dir.as_ref().expect("run_dir")).join("snapshot.json");
+        let snapshot_path =
+            PathBuf::from(updated.run_dir.as_ref().expect("run_dir")).join("snapshot.json");
         assert!(snapshot_path.exists());
 
         std::fs::remove_dir_all(app_data_dir).ok();
@@ -1358,7 +1366,10 @@ Goal: Produce a useful output
         .expect("regenerate proposal");
 
         assert_eq!(updated.proposal_version, 2);
-        assert_eq!(updated.proposal_text.as_deref(), Some(regenerated_text.as_str()));
+        assert_eq!(
+            updated.proposal_text.as_deref(),
+            Some(regenerated_text.as_str())
+        );
 
         let events = store::list_workflow_events_by_run(&store, &run.id)
             .await
@@ -1725,15 +1736,10 @@ Goal: Produce a useful output
     async fn approval_action_helper_approve_marks_ready() {
         let (store, app_data_dir, run, checkpoint) =
             create_waiting_approval_run("approve-ready").await;
-        let status = apply_approval_action(
-            &store,
-            &run,
-            &checkpoint,
-            &ApprovalAction::Approve,
-            None,
-        )
-        .await
-        .expect("approve action");
+        let status =
+            apply_approval_action(&store, &run, &checkpoint, &ApprovalAction::Approve, None)
+                .await
+                .expect("approve action");
         assert_eq!(status, WorkflowRunStatus::Ready);
 
         let reloaded = store::get_workflow_run(&store, &run.id)
@@ -1749,15 +1755,10 @@ Goal: Produce a useful output
     async fn approval_action_reject_cancels_run() {
         let (store, app_data_dir, run, checkpoint) =
             create_waiting_approval_run("approve-reject").await;
-        let status = apply_approval_action(
-            &store,
-            &run,
-            &checkpoint,
-            &ApprovalAction::Reject,
-            None,
-        )
-        .await
-        .expect("reject action");
+        let status =
+            apply_approval_action(&store, &run, &checkpoint, &ApprovalAction::Reject, None)
+                .await
+                .expect("reject action");
         assert_eq!(status, WorkflowRunStatus::Cancelled);
 
         let reloaded = store::get_workflow_run(&store, &run.id)

@@ -5,10 +5,9 @@ use crate::state::AppState;
 use super::service;
 use super::store;
 use super::types::{
-    ApproveWorkflowRequest, CompileResult, CreateWorkflowRunRequest,
-    EditRemainingPhasesRequest, GenerateProposalRequest, QuickWorkflowRequest,
-    QuickWorkflowResult, RegenerateProposalRequest, RerunPhaseRequest, UpdateProposalRequest,
-    WorkflowRun, WorkflowRunDetail,
+    ApproveWorkflowRequest, CompileResult, CreateWorkflowRunRequest, EditRemainingPhasesRequest,
+    GenerateProposalRequest, QuickWorkflowRequest, QuickWorkflowResult, RegenerateProposalRequest,
+    RerunPhaseRequest, UpdateProposalRequest, WorkflowRun, WorkflowRunDetail,
 };
 
 #[tauri::command]

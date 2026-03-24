@@ -71,11 +71,13 @@ pub(crate) async fn get_workflow_run(
     id: &str,
 ) -> Result<Option<WorkflowRun>, McpError> {
     ensure_schema(store).await?;
-    let row = sqlx::query(&format!("SELECT * FROM {WORKFLOW_RUN_TABLE} WHERE id = ? LIMIT 1"))
-        .bind(id.trim())
-        .fetch_optional(&store.pool)
-        .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
+    let row = sqlx::query(&format!(
+        "SELECT * FROM {WORKFLOW_RUN_TABLE} WHERE id = ? LIMIT 1"
+    ))
+    .bind(id.trim())
+    .fetch_optional(&store.pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
     row.as_ref().map(row_to_workflow_run).transpose()
 }
 

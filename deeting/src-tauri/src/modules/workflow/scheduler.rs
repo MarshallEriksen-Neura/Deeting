@@ -1,6 +1,5 @@
 use tauri::{AppHandle, Emitter};
 
-use crate::state::AppState;
 use crate::modules::workflow::context;
 use crate::modules::workflow::result_packet;
 use crate::modules::workflow::run_dir;
@@ -8,10 +7,11 @@ use crate::modules::workflow::store;
 use crate::modules::workflow::types::{
     CompiledPhase, CreateWorkflowArtifactRequest, CreateWorkflowCheckpointRequest,
     CreateWorkflowEventRequest, CreateWorkflowStepRunRequest, ExecutionSnapshot, PhaseOutcome,
-    RevalidationDecision, ResultPacket, WorkflowArtifactKind, WorkflowProgress, WorkflowRun,
-    WorkflowRunStatus, WorkflowStepStatus, WorkflowStepType, WorkerExecutionInput,
+    ResultPacket, RevalidationDecision, WorkerExecutionInput, WorkflowArtifactKind,
+    WorkflowProgress, WorkflowRun, WorkflowRunStatus, WorkflowStepStatus, WorkflowStepType,
 };
 use crate::modules::workflow::worker_adapter;
+use crate::state::AppState;
 
 pub(crate) async fn run_workflow(
     app_handle: &AppHandle,
@@ -24,9 +24,7 @@ pub(crate) async fn run_workflow(
         .map_err(|err| err.to_string())?
         .ok_or_else(|| format!("Workflow run not found: {run_id}"))?;
 
-    if run.status != WorkflowRunStatus::Ready
-        && run.status != WorkflowRunStatus::Running
-    {
+    if run.status != WorkflowRunStatus::Ready && run.status != WorkflowRunStatus::Running {
         return Err(format!("Cannot start run in status: {}", run.status));
     }
 
@@ -34,8 +32,8 @@ pub(crate) async fn run_workflow(
         .snapshot_json
         .clone()
         .ok_or_else(|| "Run has no compiled snapshot".to_string())?;
-    let snapshot: ExecutionSnapshot = serde_json::from_value(snapshot_value)
-        .map_err(|err| format!("Invalid snapshot: {err}"))?;
+    let snapshot: ExecutionSnapshot =
+        serde_json::from_value(snapshot_value).map_err(|err| format!("Invalid snapshot: {err}"))?;
 
     let run_dir_path = run
         .run_dir
@@ -364,9 +362,10 @@ async fn handle_revalidation(
     decision: &RevalidationDecision,
 ) -> Result<WorkflowRunStatus, String> {
     let (status, event) = match decision {
-        RevalidationDecision::PauseForEdit => {
-            (WorkflowRunStatus::AwaitingPlanEdit, "run.awaiting_plan_edit")
-        }
+        RevalidationDecision::PauseForEdit => (
+            WorkflowRunStatus::AwaitingPlanEdit,
+            "run.awaiting_plan_edit",
+        ),
         RevalidationDecision::MarkInvalidated
         | RevalidationDecision::MarkObsolete
         | RevalidationDecision::SuffixReplan => {

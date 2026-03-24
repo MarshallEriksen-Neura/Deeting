@@ -2,8 +2,8 @@ use std::collections::HashSet;
 
 use crate::modules::mcp::store::McpStore;
 use crate::modules::workflow::types::{
-    CompileResult, CompiledPhase, CompilerError, ExecutionSnapshot, ExpectedOutput,
-    ParsedProposal, ProposalPhase, SnapshotPolicy,
+    CompileResult, CompiledPhase, CompilerError, ExecutionSnapshot, ExpectedOutput, ParsedProposal,
+    ProposalPhase, SnapshotPolicy,
 };
 
 fn push_error(
@@ -75,13 +75,23 @@ pub fn parse_proposal(text: &str) -> Result<ParsedProposal, Vec<CompilerError>> 
             capture_user_notes = false;
 
             let Some((number_part, title_part)) = rest.split_once(':') else {
-                push_error(&mut errors, None, "phase", format!("Malformed phase header: {trimmed}"));
+                push_error(
+                    &mut errors,
+                    None,
+                    "phase",
+                    format!("Malformed phase header: {trimmed}"),
+                );
                 continue;
             };
             let phase_number = number_part.trim();
             let title = title_part.trim();
             if phase_number.is_empty() || title.is_empty() {
-                push_error(&mut errors, None, "phase", format!("Malformed phase header: {trimmed}"));
+                push_error(
+                    &mut errors,
+                    None,
+                    "phase",
+                    format!("Malformed phase header: {trimmed}"),
+                );
                 continue;
             }
             current_phase = Some(ProposalPhase {
@@ -218,7 +228,11 @@ pub fn compile_proposal(
         }
 
         for dependency in &phase.depends_on {
-            if !parsed.phases.iter().any(|candidate| candidate.phase_id == *dependency) {
+            if !parsed
+                .phases
+                .iter()
+                .any(|candidate| candidate.phase_id == *dependency)
+            {
                 push_error(
                     &mut errors,
                     Some(phase.phase_id.clone()),
@@ -388,7 +402,9 @@ Goal: Do something useful
         let result = compile_proposal("run-1", &parsed, 1, 1, &[]);
         assert!(result.snapshot.is_none());
         assert_eq!(result.errors.len(), 1);
-        assert!(result.errors[0].message.contains("Unknown worker reference"));
+        assert!(result.errors[0]
+            .message
+            .contains("Unknown worker reference"));
     }
 
     #[test]

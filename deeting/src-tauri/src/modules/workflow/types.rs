@@ -1,6 +1,6 @@
+use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
-use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -492,12 +492,8 @@ pub struct WorkerExecutionResult {
 
 #[derive(Debug, Clone)]
 pub enum ResolvedWorker {
-    UserWorkerProfile {
-        profile: CustomTaskAgentProfile,
-    },
-    DirectLlm {
-        profile_slug: String,
-    },
+    UserWorkerProfile { profile: CustomTaskAgentProfile },
+    DirectLlm { profile_slug: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

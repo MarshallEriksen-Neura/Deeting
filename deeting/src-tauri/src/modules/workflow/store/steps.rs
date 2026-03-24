@@ -8,8 +8,8 @@ use crate::modules::workflow::types::{
 };
 
 use super::helpers::{
-    ensure_run_exists, now_rfc3339, parse_optional_json, parse_step_status, parse_step_type, parse_string_list,
-    serialize_json,
+    ensure_run_exists, now_rfc3339, parse_optional_json, parse_step_status, parse_step_type,
+    parse_string_list, serialize_json,
 };
 use super::schema::{ensure_schema, WORKFLOW_STEP_RUN_TABLE};
 
@@ -29,7 +29,9 @@ pub(crate) async fn create_workflow_step_run(
         return Err(McpError::validation("workflow step phase_id is required"));
     }
     if req.phase_index < 0 {
-        return Err(McpError::validation("workflow step phase_index must be >= 0"));
+        return Err(McpError::validation(
+            "workflow step phase_index must be >= 0",
+        ));
     }
     let title = req.title.trim().to_string();
     if title.is_empty() {
@@ -142,7 +144,9 @@ pub(crate) async fn update_workflow_step_status(
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
     if result.rows_affected() == 0 {
-        return Err(McpError::NotFound("workflow step run not found".to_string()));
+        return Err(McpError::NotFound(
+            "workflow step run not found".to_string(),
+        ));
     }
     Ok(())
 }
@@ -178,7 +182,9 @@ pub(crate) async fn update_workflow_step_result(
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
     if result.rows_affected() == 0 {
-        return Err(McpError::NotFound("workflow step run not found".to_string()));
+        return Err(McpError::NotFound(
+            "workflow step run not found".to_string(),
+        ));
     }
     Ok(())
 }

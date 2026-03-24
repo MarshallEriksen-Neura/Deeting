@@ -10,9 +10,8 @@ use crate::modules::providers::types::{
     DesktopObjectStorageReadTicket, DesktopObjectStorageUploadRequest,
     DesktopObjectStorageUploadTicket, LocalProviderHealth, ProviderInstance, ProviderModel,
     ProviderModelTestRequest, ProviderModelTestResponse, ProviderModelUpdateRequest,
-    ProviderModelsQuickAddRequest, ProviderPreset, ProviderVerifyRequest,
-    ProviderVerifyResponse, UpdateInstanceRequest, UserEmbeddingConfig,
-    UserEmbeddingConfigUpdateRequest, UserSecretary,
+    ProviderModelsQuickAddRequest, ProviderPreset, ProviderVerifyRequest, ProviderVerifyResponse,
+    UpdateInstanceRequest, UserEmbeddingConfig, UserEmbeddingConfigUpdateRequest, UserSecretary,
     UserSecretaryUpdateRequest,
 };
 use crate::state::AppState;
@@ -23,7 +22,10 @@ fn provider_latency_from_meta(meta: &Value) -> i64 {
     };
 
     for key in ["latency_ms", "avg_latency_ms", "ttft_ms"] {
-        let value = object.get(key).and_then(|item| item.as_f64()).unwrap_or(0.0);
+        let value = object
+            .get(key)
+            .and_then(|item| item.as_f64())
+            .unwrap_or(0.0);
         if value.is_finite() && value > 0.0 {
             return value.round() as i64;
         }
@@ -313,7 +315,14 @@ pub async fn list_local_provider_health(
             status: status.to_string(),
             priority: instance.priority,
             latency: avg_latency.max(0),
-            sparkline: latencies.into_iter().rev().take(8).collect::<Vec<_>>().into_iter().rev().collect(),
+            sparkline: latencies
+                .into_iter()
+                .rev()
+                .take(8)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect(),
         });
     }
 

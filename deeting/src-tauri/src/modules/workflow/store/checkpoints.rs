@@ -19,12 +19,16 @@ pub(crate) async fn create_workflow_checkpoint(
 
     let run_id = req.run_id.trim().to_string();
     if run_id.is_empty() {
-        return Err(McpError::validation("workflow checkpoint run_id is required"));
+        return Err(McpError::validation(
+            "workflow checkpoint run_id is required",
+        ));
     }
     ensure_run_exists(store, &run_id).await?;
     let reason = req.reason.trim().to_string();
     if reason.is_empty() {
-        return Err(McpError::validation("workflow checkpoint reason is required"));
+        return Err(McpError::validation(
+            "workflow checkpoint reason is required",
+        ));
     }
     if let Some(blocked_step_id) = req
         .blocked_step_id

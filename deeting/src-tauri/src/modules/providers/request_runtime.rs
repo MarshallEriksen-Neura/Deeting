@@ -1840,6 +1840,37 @@ mod tests {
     }
 
     #[test]
+    fn prepare_provider_request_preserves_prompt_for_image_generation_custom_provider() {
+        let preset = mock_preset();
+        let instance = mock_instance(json!({ "protocol": "openai", "auto_append_v1": true }));
+        let mut model = mock_model(&["image_generation"]);
+        model.model_id = "LongCat-Image".to_string();
+        model.upstream_path = "v1/images/generations".to_string();
+
+        let prepared = prepare_provider_request(
+            Some(&preset),
+            &instance,
+            &model,
+            Some("sk-test"),
+            "image_generation",
+            json!({
+                "model": "LongCat-Image",
+                "prompt": "draw a red cat",
+                "n": 1,
+            }),
+            None,
+            None,
+        )
+        .expect("prepare image-generation request");
+
+        assert_eq!(prepared.url, "https://api.openai.com/v1/images/generations");
+        assert_eq!(prepared.body["model"], json!("LongCat-Image"));
+        assert_eq!(prepared.body["prompt"], json!("draw a red cat"));
+        assert_eq!(prepared.body["n"], json!(1));
+        assert!(prepared.body.get("messages").is_none());
+    }
+
+    #[test]
     fn prepare_provider_request_injects_wrapped_tools_payload() {
         let preset = mock_preset();
         let instance = mock_instance(json!({ "protocol": "openai", "auto_append_v1": true }));

@@ -139,16 +139,14 @@ pub fn read_result_json(phase_dir: &Path) -> Result<Option<ResultJson>, String> 
 mod tests {
     use super::*;
     use crate::modules::workflow::types::{
-        CompiledPhase, ExecutionSnapshot, ExpectedOutput, FollowupHints, ResultJson,
-        ResultOutputs, SnapshotPolicy,
+        CompiledPhase, ExecutionSnapshot, ExpectedOutput, FollowupHints, ResultJson, ResultOutputs,
+        SnapshotPolicy,
     };
 
     #[test]
     fn ensure_run_dir_creates_directory() {
-        let temp_root = std::env::temp_dir().join(format!(
-            "deeting-workflow-run-dir-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let temp_root =
+            std::env::temp_dir().join(format!("deeting-workflow-run-dir-{}", uuid::Uuid::new_v4()));
         let dir = ensure_run_dir(Some(temp_root.clone()), "test-run-1").expect("ensure run dir");
         assert!(dir.exists());
         assert!(dir.is_dir());

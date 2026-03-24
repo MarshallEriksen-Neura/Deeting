@@ -5,12 +5,12 @@ use serde_json::Value;
 use sqlx::sqlite::SqliteRow;
 use sqlx::Row;
 
+use super::schema::{WORKFLOW_RUN_TABLE, WORKFLOW_STEP_RUN_TABLE};
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::store::McpStore;
 use crate::modules::workflow::types::{
     WorkflowArtifactKind, WorkflowRunStatus, WorkflowStepStatus, WorkflowStepType,
 };
-use super::schema::{WORKFLOW_RUN_TABLE, WORKFLOW_STEP_RUN_TABLE};
 
 pub(super) fn now_rfc3339() -> Result<String, McpError> {
     Ok(time::OffsetDateTime::now_utc()
@@ -27,7 +27,8 @@ pub(super) fn parse_optional_json(
     raw: Option<String>,
     label: &str,
 ) -> Result<Option<Value>, McpError> {
-    raw.map(|value| parse_required_json(&value, label)).transpose()
+    raw.map(|value| parse_required_json(&value, label))
+        .transpose()
 }
 
 pub(super) fn parse_string_list(raw: Option<String>, label: &str) -> Result<Vec<String>, McpError> {
@@ -42,11 +43,16 @@ pub(super) fn serialize_json<T: Serialize + ?Sized>(value: &T) -> Result<String,
     serde_json::to_string(value).map_err(|err| McpError::Storage(err.to_string()))
 }
 
-pub(super) fn serialize_json_opt<T: Serialize>(value: Option<&T>) -> Result<Option<String>, McpError> {
+pub(super) fn serialize_json_opt<T: Serialize>(
+    value: Option<&T>,
+) -> Result<Option<String>, McpError> {
     value.map(serialize_json).transpose()
 }
 
-pub(super) fn parse_run_status(row: &SqliteRow, column: &str) -> Result<WorkflowRunStatus, McpError> {
+pub(super) fn parse_run_status(
+    row: &SqliteRow,
+    column: &str,
+) -> Result<WorkflowRunStatus, McpError> {
     let value: String = row
         .try_get(column)
         .map_err(|err| McpError::Storage(err.to_string()))?;

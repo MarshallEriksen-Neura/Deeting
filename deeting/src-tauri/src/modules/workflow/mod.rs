@@ -1,6 +1,6 @@
-pub mod context;
-pub mod compiler;
 pub mod commands;
+pub mod compiler;
+pub mod context;
 pub mod proposal;
 pub mod result_packet;
 pub mod run_dir;

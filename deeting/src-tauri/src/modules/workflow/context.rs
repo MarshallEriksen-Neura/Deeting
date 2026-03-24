@@ -196,7 +196,8 @@ mod tests {
     #[test]
     fn build_context_packet_reads_upstream_phase_files() {
         let temp_root = std::env::temp_dir().join(format!("ctx-test-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(temp_root.join("phases").join("phase-1")).expect("create phase dir");
+        std::fs::create_dir_all(temp_root.join("phases").join("phase-1"))
+            .expect("create phase dir");
         std::fs::write(
             temp_root.join("phases").join("phase-1").join("result.md"),
             "Phase 1 found useful results",
@@ -211,7 +212,10 @@ mod tests {
 
         assert_eq!(packet.phase_id, "phase-2");
         assert!(packet.context_md.contains("Phase 1 found useful results"));
-        assert_eq!(packet.context_json.worker_ref, "user_worker_profile:analyst");
+        assert_eq!(
+            packet.context_json.worker_ref,
+            "user_worker_profile:analyst"
+        );
         assert!(packet
             .context_json
             .inputs
