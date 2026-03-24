@@ -1117,11 +1117,53 @@ impl QueryProfile {
     fn from_query(query: &str) -> Self {
         let normalized = query.trim().to_lowercase();
         let tokens = tokenize(&normalized);
+        let wants_local_inspection =
+            contains_any(
+                &normalized,
+                &[
+                    "本机",
+                    "本地",
+                    "机器",
+                    "系统",
+                    "已安装",
+                    "安装状态",
+                    "软件列表",
+                    "应用程序",
+                    "程序和功能",
+                    "注册表",
+                    "终端",
+                    "命令",
+                    "命令行",
+                    "powershell",
+                    "shell",
+                    "cmd",
+                    "path",
+                    "版本",
+                    "version",
+                    "环境变量",
+                    "文件系统",
+                    "目录",
+                    "working dir",
+                ],
+            ) || (contains_any(
+                &normalized,
+                &[
+                    "是否安装",
+                    "安装了",
+                    "有没有安装",
+                    "是否已安装",
+                    "命令能不能用",
+                    "能不能用",
+                    "版本号",
+                ],
+            ) && !contains_any(&normalized, &["skill", "assistant", "插件", "能力", "仓库"]));
         let wants_recipes = contains_any(
             &normalized,
             &["安装", "install", "skill", "assistant", "启用", "开通"],
-        );
-        let domain = if contains_any(&normalized, &["天气", "weather", "降雨", "forecast"]) {
+        ) && !wants_local_inspection;
+        let domain = if wants_local_inspection {
+            "system"
+        } else if contains_any(&normalized, &["天气", "weather", "降雨", "forecast"]) {
             "weather"
         } else if contains_any(
             &normalized,
@@ -1135,7 +1177,9 @@ impl QueryProfile {
         } else {
             "general"
         };
-        let intent = if wants_recipes {
+        let intent = if wants_local_inspection {
+            "local_inspection"
+        } else if wants_recipes {
             "install_or_enable"
         } else if domain == "web" {
             "web_fetch"
@@ -1195,6 +1239,26 @@ fn contains_any(haystack: &str, needles: &[&str]) -> bool {
 
 fn matches_domain(domain: &str, text: &str) -> bool {
     match domain {
+        "system" => contains_any(
+            text,
+            &[
+                "machine",
+                "local machine",
+                "shell",
+                "terminal",
+                "command",
+                "powershell",
+                "cmd",
+                "filesystem",
+                "working directory",
+                "directory",
+                "installed software",
+                "registry",
+                "system",
+                "host_access",
+                "shell_execution",
+            ],
+        ),
         "weather" => contains_any(text, &["天气", "weather", "forecast", "降雨", "预报"]),
         "web" => contains_any(
             text,
@@ -1208,6 +1272,28 @@ fn matches_domain(domain: &str, text: &str) -> bool {
 
 fn matches_intent(intent: &str, text: &str, asset_type: &str, source_type: &str) -> bool {
     match intent {
+        "local_inspection" => {
+            (asset_type == "tool" || asset_type == "skill_tool")
+                && contains_any(
+                    text,
+                    &[
+                        "machine",
+                        "local machine",
+                        "shell",
+                        "terminal",
+                        "command",
+                        "powershell",
+                        "cmd",
+                        "filesystem",
+                        "file system",
+                        "directory",
+                        "working directory",
+                        "installed software",
+                        "registry",
+                        "system",
+                    ],
+                )
+        }
         "install_or_enable" => {
             source_type == "cloud_mirror" || asset_type == "assistant" || asset_type == "tool"
         }
@@ -1320,5 +1406,33 @@ mod tests {
         assert_eq!(contract["mutating"], json!(false));
         assert_eq!(contract["risk_level"], json!("MEDIUM"));
         assert_eq!(contract["output_schema"]["type"], json!("object"));
+    }
+
+    #[test]
+    fn query_profile_prefers_local_inspection_over_install_recipe_for_machine_queries() {
+        let profile = QueryProfile::from_query(
+            "检查当前机器是否安装某个软件，读取本机已安装程序、注册表和终端信息",
+        );
+
+        assert_eq!(profile.domain, "system");
+        assert_eq!(profile.intent, "local_inspection");
+        assert!(!profile.wants_recipes);
+        assert!(!profile.requires_network);
+    }
+
+    #[test]
+    fn matches_local_inspection_rewards_host_tools_not_web_tools() {
+        let shell_text =
+            "execute shell commands on the user's machine with security checks and user approval";
+        let web_text = "a powerful web search tool that provides comprehensive real-time results";
+
+        assert!(matches_domain("system", shell_text));
+        assert!(matches_intent(
+            "local_inspection",
+            shell_text,
+            "tool",
+            "code_mode_core"
+        ));
+        assert!(!matches_intent("local_inspection", web_text, "tool", "mcp"));
     }
 }

@@ -363,7 +363,10 @@ mod tests {
 
         assert_eq!(
             policy.prompt_tool_names(),
-            vec![SEARCH_SDK_TOOL_NAME.to_string(), "shell_execute".to_string()]
+            vec![
+                SEARCH_SDK_TOOL_NAME.to_string(),
+                "shell_execute".to_string()
+            ]
         );
     }
 }

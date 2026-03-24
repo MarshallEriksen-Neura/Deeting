@@ -98,17 +98,24 @@ mod tests {
     fn render_code_mode_prompt_includes_code_orchestration_guidance() {
         let prompt = render_code_mode_capability_prompt(&["search_sdk".to_string()]);
 
-        assert!(prompt.contains("Use code orchestration only when the task requires multi-step coordination"));
+        assert!(prompt.contains(
+            "Use code orchestration only when the task requires multi-step coordination"
+        ));
         assert!(prompt.contains("call `consult_expert_network` to inspect candidates"));
         assert!(prompt.contains(
             "Explicitly call `attach_capability` before attaching request-scoped expert capability"
         ));
-        assert!(prompt.contains("Summarize what changed, the key result, and any blocker or next step"));
+        assert!(
+            prompt.contains("Summarize what changed, the key result, and any blocker or next step")
+        );
     }
 
     #[test]
     fn render_runtime_prompt_uses_discovery_as_truth_source() {
-        let prompt = render_runtime_capability_prompt(&["search_sdk".to_string(), "shell_execute".to_string()]);
+        let prompt = render_runtime_capability_prompt(&[
+            "search_sdk".to_string(),
+            "shell_execute".to_string(),
+        ]);
 
         assert!(prompt.contains("`search_sdk` is the discovery source of truth"));
         assert!(prompt.contains("`recipes` are guidance entries only"));

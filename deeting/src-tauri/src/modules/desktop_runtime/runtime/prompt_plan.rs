@@ -12,8 +12,9 @@ use mcp_core::types::LocalChatInputMessage;
 use mcp_runtime::prompt::build_local_prelude_messages as build_local_prelude_messages_inner;
 use mcp_runtime::prompt::build_local_prompt_plan as build_local_prompt_plan_inner;
 pub(crate) use mcp_runtime::prompt::{
-    parse_router_prompt_local_context, render_local_router_base_prompt, router_prompt_default_local_context,
-    router_prompt_response_language_for_locale_pref, PromptPlan, RouterPromptLocalContext,
+    parse_router_prompt_local_context, render_local_router_base_prompt,
+    router_prompt_default_local_context, router_prompt_response_language_for_locale_pref,
+    PromptPlan, RouterPromptLocalContext,
 };
 
 fn query_router_prompt_local_context_from_system() -> Option<RouterPromptLocalContext> {
