@@ -10,8 +10,8 @@ mod tests {
     use crate::modules::desktop_runtime::runtime::{
         build_auto_code_mode_tool_feedback, build_local_code_mode_entry_tools,
         build_local_sdk_search_result_with_runtime, build_local_tool_call_install_gate_error_meta,
-        build_local_tool_trace_blocks, extract_chat_tool_calls,
-        normalize_chat_completion_response, LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
+        build_local_tool_trace_blocks, extract_chat_tool_calls, normalize_chat_completion_response,
+        LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
     };
     use crate::modules::mcp::commands::runtime::{
         config::{apply_config_payload_to_store, hash_config, read_local_mcp_config},
@@ -21,15 +21,15 @@ mod tests {
             execute_or_queue_mcp_tool_call_with_context, reject_mcp_tool_inner,
         },
         tool_resolution::{
-            build_desktop_mcp_tool_view, build_desktop_mcp_tool_views,
-            DesktopMcpToolIndexStatus, ToolAvailabilityClass,
+            build_desktop_mcp_tool_view, build_desktop_mcp_tool_views, DesktopMcpToolIndexStatus,
+            ToolAvailabilityClass,
         },
     };
-    use crate::modules::skill_runtime::resolve_local_tool_env;
+    use crate::modules::mcp::commands::tool_approval_impl::list_pending_mcp_approvals_inner;
     use crate::modules::mcp::commands::tool_management_impl::{
         build_remote_transport_log_entries, start_remote_transport_tool, stop_remote_transport_tool,
     };
-    use crate::modules::mcp::commands::tool_approval_impl::list_pending_mcp_approvals_inner;
+    use crate::modules::skill_runtime::resolve_local_tool_env;
     use crate::modules::skills::onboarding::{
         derive_skill_name_from_repo_url, parse_skill_onboarding_payload,
     };
@@ -48,8 +48,7 @@ mod tests {
     };
     use mcp_session::conversation::{
         CreateConversationMessageRequest, LocalConversationCreateRequest,
-        LocalConversationHistoryQuery, LocalConversationSessionsQuery,
-        LocalConversationStatus,
+        LocalConversationHistoryQuery, LocalConversationSessionsQuery, LocalConversationStatus,
     };
     use serde::Deserialize;
     use std::collections::{HashMap, HashSet};
@@ -571,7 +570,8 @@ for raw_line in sys.stdin:
             .cloned()
             .unwrap_or_default();
         let filtered_items = if path.ends_with("/assistants") {
-            items.into_iter()
+            items
+                .into_iter()
                 .filter(|item| {
                     item.get("asset_id")
                         .and_then(|value| value.as_str())
@@ -580,7 +580,8 @@ for raw_line in sys.stdin:
                 })
                 .collect::<Vec<_>>()
         } else if path.ends_with("/skills") {
-            items.into_iter()
+            items
+                .into_iter()
                 .filter(|item| {
                     item.get("asset_id")
                         .and_then(|value| value.as_str())
@@ -604,8 +605,14 @@ for raw_line in sys.stdin:
             .local_addr()
             .expect("read mock system assets listener addr");
         let app = Router::new()
-            .route("/api/v1/system-assets/assistants", get(mock_system_assets_handler))
-            .route("/api/v1/system-assets/skills", get(mock_system_assets_handler))
+            .route(
+                "/api/v1/system-assets/assistants",
+                get(mock_system_assets_handler),
+            )
+            .route(
+                "/api/v1/system-assets/skills",
+                get(mock_system_assets_handler),
+            )
             .with_state(MockSystemAssetsServerState { payload });
         let server = tokio::spawn(async move {
             let _ = axum::serve(listener, app).await;
@@ -1074,7 +1081,9 @@ for raw_line in sys.stdin:
         )
         .await;
 
-        let capabilities = result["capabilities"].as_array().expect("capabilities array");
+        let capabilities = result["capabilities"]
+            .as_array()
+            .expect("capabilities array");
         let matched = capabilities
             .iter()
             .find(|item| item["name"] == serde_json::json!("search_web"))
@@ -1123,7 +1132,10 @@ for raw_line in sys.stdin:
             normalized_query.get("requires_network"),
             Some(&serde_json::json!(true))
         );
-        assert_eq!(matched["description"], serde_json::json!("抓取网页内容并提取标题"));
+        assert_eq!(
+            matched["description"],
+            serde_json::json!("抓取网页内容并提取标题")
+        );
         assert!(matched.get("required_parameters").is_some());
         assert!(matched.get("python_stub").is_some());
 
@@ -1135,7 +1147,8 @@ for raw_line in sys.stdin:
     async fn register_local_skills_materializes_skill_tool_bindings_and_assets() {
         let test_name = "skill-binding-materialization";
         let (base_url, server_handle) = start_mock_embedding_server(HashMap::new()).await;
-        let provider_state = std::sync::Arc::new(create_test_provider_state(test_name, &base_url).await);
+        let provider_state =
+            std::sync::Arc::new(create_test_provider_state(test_name, &base_url).await);
         let memory_state = std::sync::Arc::new(create_test_memory_state(test_name, 3).await);
         let store = std::sync::Arc::new(create_test_store(test_name).await);
         let root = create_temp_skill_root(test_name);
@@ -1201,10 +1214,14 @@ for raw_line in sys.stdin:
             .expect("list assets");
         let binding_asset = assets
             .iter()
-            .find(|asset| asset.get("asset_type").and_then(serde_json::Value::as_str) == Some("skill_tool"))
+            .find(|asset| {
+                asset.get("asset_type").and_then(serde_json::Value::as_str) == Some("skill_tool")
+            })
             .expect("skill tool asset");
         assert_eq!(
-            binding_asset.get("name").and_then(serde_json::Value::as_str),
+            binding_asset
+                .get("name")
+                .and_then(serde_json::Value::as_str),
             Some("skill.official.skills.weather.get_weather")
         );
         assert_eq!(
@@ -1560,14 +1577,17 @@ for raw_line in sys.stdin:
             matched["missing_env"][0],
             serde_json::json!("OPENWEATHER_API_KEY")
         );
-        assert_eq!(matched["blocking_reason"], serde_json::json!("script_runner"));
+        assert_eq!(
+            matched["blocking_reason"],
+            serde_json::json!("script_runner")
+        );
 
         let _ = std::fs::remove_dir_all(root);
         server_handle.abort();
     }
 
     #[tokio::test]
-    async fn search_sdk_smoke_surfaces_cloud_skill_as_install_hint() {
+    async fn search_sdk_no_longer_surfaces_cloud_skill_install_hints() {
         let query = "帮我找个天气 skill";
         let (base_url, server_handle) = start_mock_embedding_server(HashMap::from([(
             query.to_lowercase(),
@@ -1603,18 +1623,9 @@ for raw_line in sys.stdin:
         .await;
 
         let recipes = result["recipes"].as_array().expect("recipes array");
-        let hint = recipes
+        assert!(recipes
             .iter()
-            .find(|item| item["name"] == serde_json::json!("Weather Skill"))
-            .expect("weather skill hint");
-        assert_eq!(hint["status"]["install_required"], serde_json::json!(true));
-        assert_eq!(hint["status"]["callable"], serde_json::json!(false));
-        assert_eq!(hint["asset_type"], serde_json::json!("skill"));
-        assert_eq!(
-            hint["status"]["recommended_action"],
-            serde_json::json!("install_skill")
-        );
-        assert_eq!(hint["semantic_kind"], serde_json::json!("recipe"));
+            .all(|item| item["name"] != serde_json::json!("Weather Skill")));
 
         server_handle.abort();
     }
@@ -1725,7 +1736,10 @@ for raw_line in sys.stdin:
             .find(|item| item["name"] == serde_json::json!("stock_quotes"))
             .expect("disabled stock skill surfaced as recipe");
         assert_eq!(disabled["status"]["callable"], serde_json::json!(false));
-        assert_eq!(disabled["status"]["activation_required"], serde_json::json!(true));
+        assert_eq!(
+            disabled["status"]["activation_required"],
+            serde_json::json!(true)
+        );
         assert_eq!(
             disabled["status"]["recommended_action"],
             serde_json::json!("enable_skill")
@@ -1788,7 +1802,10 @@ for raw_line in sys.stdin:
             .find(|item| item["name"] == serde_json::json!("demo_tool"))
             .expect("stopped tool surfaced as non-callable capability");
         assert_eq!(stopped["status"]["callable"], serde_json::json!(false));
-        assert_eq!(stopped["status"]["activation_required"], serde_json::json!(true));
+        assert_eq!(
+            stopped["status"]["activation_required"],
+            serde_json::json!(true)
+        );
         assert_eq!(
             stopped["status"]["recommended_action"],
             serde_json::json!("start_tool")
@@ -1817,10 +1834,7 @@ for raw_line in sys.stdin:
             ToolAvailabilityClass::CallableDirect
         );
         assert_eq!(view.recommended_action, "execute");
-        assert_eq!(
-            view.index_status,
-            DesktopMcpToolIndexStatus::Indexed
-        );
+        assert_eq!(view.index_status, DesktopMcpToolIndexStatus::Indexed);
         assert_eq!(view.index_status_reason, "indexed_in_local_memory");
     }
 
@@ -1843,16 +1857,10 @@ for raw_line in sys.stdin:
         assert!(view.desired_enabled);
         assert!(!view.runtime_ready);
         assert_eq!(view.runtime_status_reason, "tool_installed_but_stopped");
-        assert_eq!(
-            view.availability_class,
-            ToolAvailabilityClass::NeedsSetup
-        );
+        assert_eq!(view.availability_class, ToolAvailabilityClass::NeedsSetup);
         assert_eq!(view.recommended_action, "start_tool");
         assert!(view.activation_required);
-        assert_eq!(
-            view.index_status,
-            DesktopMcpToolIndexStatus::Missing
-        );
+        assert_eq!(view.index_status, DesktopMcpToolIndexStatus::Missing);
     }
 
     #[tokio::test]
@@ -1879,8 +1887,8 @@ for raw_line in sys.stdin:
         .await;
 
         let views = build_desktop_mcp_tool_views(&store, Some(&HashSet::from([tool.id.clone()])))
-        .await
-        .expect("build tool views");
+            .await
+            .expect("build tool views");
         let view = views
             .into_iter()
             .find(|item| item.tool.id == tool.id)
@@ -1895,10 +1903,7 @@ for raw_line in sys.stdin:
         );
         assert_eq!(view.recommended_action, "execute");
         assert!(!view.activation_required);
-        assert_eq!(
-            view.index_status,
-            DesktopMcpToolIndexStatus::Indexed
-        );
+        assert_eq!(view.index_status, DesktopMcpToolIndexStatus::Indexed);
     }
 
     #[tokio::test]
@@ -1962,7 +1967,9 @@ for raw_line in sys.stdin:
         .expect("build tool views");
 
         assert!(views.iter().any(|item| item.tool.id == visible_tool.id));
-        assert!(views.iter().any(|item| item.tool.id == hidden_skill_tool.id));
+        assert!(views
+            .iter()
+            .any(|item| item.tool.id == hidden_skill_tool.id));
     }
 
     #[tokio::test]
@@ -1970,7 +1977,8 @@ for raw_line in sys.stdin:
         let store = create_test_store("desktop-tool-view-remote-sse").await;
         let tool = upsert_test_remote_sse_tool(&store, "tavily-mcp", "search_web").await;
 
-        let view = build_desktop_mcp_tool_view(tool.clone(), Some(&HashSet::from([tool.id.clone()])));
+        let view =
+            build_desktop_mcp_tool_view(tool.clone(), Some(&HashSet::from([tool.id.clone()])));
 
         assert!(view.desired_enabled);
         assert!(view.runtime_ready);
@@ -2092,10 +2100,7 @@ for raw_line in sys.stdin:
         assert!(!view.runtime_ready);
         assert_eq!(view.runtime_status_reason, "tool_transport_unresolved");
         assert_eq!(view.recommended_action, "review");
-        assert_eq!(
-            view.availability_class,
-            ToolAvailabilityClass::Unavailable
-        );
+        assert_eq!(view.availability_class, ToolAvailabilityClass::Unavailable);
     }
 
     #[test]
@@ -2146,7 +2151,10 @@ for raw_line in sys.stdin:
         assert!(view.runtime_ready);
         assert_eq!(view.runtime_status_reason, "ready_via_remote_mcp");
         assert_eq!(view.recommended_action, "execute");
-        assert_eq!(view.availability_class, ToolAvailabilityClass::CallableDirect);
+        assert_eq!(
+            view.availability_class,
+            ToolAvailabilityClass::CallableDirect
+        );
     }
 
     #[tokio::test]
@@ -2299,10 +2307,7 @@ for raw_line in sys.stdin:
             .as_array()
             .expect("weather recipe array")
             .iter()
-            .any(|item| {
-                item["name"] == serde_json::json!("Weather Skill")
-                    && item["status"]["recommended_action"] == serde_json::json!("install_skill")
-            }));
+            .all(|item| item["name"] != serde_json::json!("Weather Skill")));
 
         let stock_result = build_local_sdk_search_result_with_runtime(
             &store,
@@ -2345,7 +2350,7 @@ for raw_line in sys.stdin:
             .as_array()
             .expect("realtime weather recipe array")
             .iter()
-            .any(|item| item["name"] == serde_json::json!("Weather Skill")));
+            .all(|item| item["name"] != serde_json::json!("Weather Skill")));
 
         server_handle.abort();
     }
@@ -2442,7 +2447,9 @@ for raw_line in sys.stdin:
         )
         .await;
 
-        let callable = result["capabilities"].as_array().expect("capabilities array");
+        let callable = result["capabilities"]
+            .as_array()
+            .expect("capabilities array");
         let onboarding = callable
             .iter()
             .find(|item| item["name"] == serde_json::json!("sys_submit_onboarding_request"))
@@ -2464,7 +2471,10 @@ for raw_line in sys.stdin:
         assert_eq!(onboarding["risk_level"], serde_json::json!("HIGH"));
         assert_eq!(onboarding["mutating"], serde_json::json!(true));
         assert_eq!(monitor_create["asset_namespace"], serde_json::json!("core"));
-        assert_eq!(monitor_create["invocation_mode"], serde_json::json!("direct"));
+        assert_eq!(
+            monitor_create["invocation_mode"],
+            serde_json::json!("direct")
+        );
         assert_eq!(monitor_create["risk_level"], serde_json::json!("HIGH"));
         assert_eq!(monitor_list["asset_namespace"], serde_json::json!("core"));
         assert_eq!(monitor_list["invocation_mode"], serde_json::json!("direct"));
@@ -2572,13 +2582,14 @@ for raw_line in sys.stdin:
 
     #[test]
     fn deeting_manifest_deserialization_applies_runtime_and_timeout_defaults() {
-        let manifest: crate::modules::skills::registry_impl::DeetingManifest = serde_json::from_str(
-            r#"{
+        let manifest: crate::modules::skills::registry_impl::DeetingManifest =
+            serde_json::from_str(
+                r#"{
                 "id": "skill.demo",
                 "name": "Demo Skill"
             }"#,
-        )
-        .expect("deserialize deeting manifest");
+            )
+            .expect("deserialize deeting manifest");
 
         assert_eq!(manifest.id, "skill.demo");
         assert_eq!(manifest.name, "Demo Skill");
@@ -3462,8 +3473,8 @@ for raw_line in sys.stdin:
     #[tokio::test]
     async fn list_pending_approvals_filters_by_session_and_returns_runtime_snapshot_fields() {
         let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
-        let pending_tool_calls =
-            RwLock::new(HashMap::<String, crate::modules::mcp::PendingToolCall>::from([
+        let pending_tool_calls = RwLock::new(
+            HashMap::<String, crate::modules::mcp::PendingToolCall>::from([
                 (
                     "approval-session-1".to_string(),
                     crate::modules::mcp::PendingToolCall {
@@ -3500,7 +3511,8 @@ for raw_line in sys.stdin:
                         expires_at_unix_ms: now + 60_000,
                     },
                 ),
-            ]));
+            ]),
+        );
 
         let snapshots =
             list_pending_mcp_approvals_inner(&pending_tool_calls, Some("session-1")).await;
@@ -3508,7 +3520,9 @@ for raw_line in sys.stdin:
         assert_eq!(snapshots.len(), 1);
         let snapshot = &snapshots[0];
         assert_eq!(
-            snapshot.get("approval_token").and_then(|value| value.as_str()),
+            snapshot
+                .get("approval_token")
+                .and_then(|value| value.as_str()),
             Some("approval-session-1")
         );
         assert_eq!(
@@ -4670,18 +4684,19 @@ for raw_line in sys.stdin:
         let skill_root = create_temp_skill_root("system-assets-hidden-runtime");
         let hidden_runtime_dir = skill_root.join(".runtime");
         std::fs::create_dir_all(&hidden_runtime_dir).expect("create hidden runtime dir");
-        std::fs::write(hidden_runtime_dir.join("README.txt"), "managed runtime files")
-            .expect("write hidden runtime marker");
+        std::fs::write(
+            hidden_runtime_dir.join("README.txt"),
+            "managed runtime files",
+        )
+        .expect("write hidden runtime marker");
 
-        assert!(
-            !local_skill_registration_self_heal_needed(
-                &store,
-                Some(&memory_state.service),
-                std::slice::from_ref(&skill_root),
-            )
-            .await
-            .expect("hidden runtime dir should be ignored")
-        );
+        assert!(!local_skill_registration_self_heal_needed(
+            &store,
+            Some(&memory_state.service),
+            std::slice::from_ref(&skill_root),
+        )
+        .await
+        .expect("hidden runtime dir should be ignored"));
 
         let _ = std::fs::remove_dir_all(&skill_root);
     }
@@ -4736,7 +4751,10 @@ for raw_line in sys.stdin:
             .get_local_skill_install_path("skill.restore")
             .await
             .expect("get initial install path");
-        assert_eq!(install_path.as_deref(), Some(skill_dir.to_string_lossy().as_ref()));
+        assert_eq!(
+            install_path.as_deref(),
+            Some(skill_dir.to_string_lossy().as_ref())
+        );
         assert!(memory_state
             .service
             .get_asset_by_id("skill.restore")
@@ -4778,7 +4796,10 @@ for raw_line in sys.stdin:
             .get_local_skill_install_path("skill.restore")
             .await
             .expect("get restored install path");
-        assert_eq!(restored_path.as_deref(), Some(skill_dir.to_string_lossy().as_ref()));
+        assert_eq!(
+            restored_path.as_deref(),
+            Some(skill_dir.to_string_lossy().as_ref())
+        );
         assert!(memory_state
             .service
             .get_asset_by_id("skill.restore")
@@ -4826,8 +4847,11 @@ for raw_line in sys.stdin:
 
         let hidden_runtime_dir = skill_root.join(".runtime");
         std::fs::create_dir_all(&hidden_runtime_dir).expect("create hidden runtime dir");
-        std::fs::write(hidden_runtime_dir.join("README.txt"), "managed runtime files")
-            .expect("write hidden runtime marker");
+        std::fs::write(
+            hidden_runtime_dir.join("README.txt"),
+            "managed runtime files",
+        )
+        .expect("write hidden runtime marker");
         store
             .upsert_local_skill_install(
                 ".runtime",
@@ -4860,13 +4884,11 @@ for raw_line in sys.stdin:
                 .as_deref(),
             Some(visible_skill_dir.to_string_lossy().as_ref())
         );
-        assert!(
-            store
-                .get_local_skill_install_path(".runtime")
-                .await
-                .expect("lookup hidden runtime pseudo skill")
-                .is_none()
-        );
+        assert!(store
+            .get_local_skill_install_path(".runtime")
+            .await
+            .expect("lookup hidden runtime pseudo skill")
+            .is_none());
 
         server_handle.abort();
         let _ = std::fs::remove_dir_all(&skill_root);

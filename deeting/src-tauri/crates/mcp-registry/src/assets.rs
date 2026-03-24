@@ -42,17 +42,22 @@ pub fn build_capability_assets_for_read_mode(
         return memory_assets;
     }
 
-    memory_assets.retain(|asset| !is_legacy_control_plane_asset(asset));
-    memory_assets.extend(
-        registry_entries
-            .iter()
-            .filter(|entry| local_capability_registry_entry_is_usable(entry))
-            .map(local_capability_registry_entry_to_asset),
-    );
-    let registry_keys = memory_assets
+    let registry_assets = registry_entries
+        .iter()
+        .filter(|entry| local_capability_registry_entry_is_usable(entry))
+        .map(local_capability_registry_entry_to_asset)
+        .collect::<Vec<_>>();
+    let registry_keys = registry_assets
         .iter()
         .filter_map(capability_asset_match_key)
         .collect::<std::collections::HashSet<_>>();
+    memory_assets.retain(|asset| {
+        !is_legacy_control_plane_asset(asset)
+            && capability_asset_match_key(asset)
+                .map(|key| !registry_keys.contains(&key))
+                .unwrap_or(true)
+    });
+    memory_assets.extend(registry_assets);
     memory_assets.extend(legacy_core_assets.into_iter().filter(|asset| {
         capability_asset_match_key(asset)
             .map(|key| !registry_keys.contains(&key))
@@ -347,7 +352,7 @@ mod tests {
     }
 
     #[test]
-    fn registry_first_mode_filters_legacy_local_assets_but_keeps_cloud_mirror_assets() {
+    fn registry_first_mode_filters_legacy_local_assets_but_keeps_non_legacy_assets() {
         let assets = build_capability_assets_for_read_mode(
             vec![
                 json!({

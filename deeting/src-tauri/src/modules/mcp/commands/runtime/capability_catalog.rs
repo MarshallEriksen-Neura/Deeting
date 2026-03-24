@@ -61,7 +61,6 @@ pub(crate) struct RegistryAvailability {
 
 pub(crate) async fn build_capability_registry(
     mcp_store: &crate::modules::mcp::store::McpStore,
-    memory_store: &crate::modules::memory::service::MemoryService,
 ) -> CapabilityRegistry {
     let read_path_mode = CapabilityRegistryReadMode::RegistryFirst;
     let enabled_assistant_ids = mcp_store
@@ -76,19 +75,19 @@ pub(crate) async fn build_capability_registry(
         .await
         .unwrap_or_default();
     let tool_contracts = load_tool_contract_sources(mcp_store).await;
-    let memory_assets = memory_store.list_assets_catalog().await.unwrap_or_default();
     let registry_entries = mcp_store
         .list_local_capability_registry_entries()
         .await
         .unwrap_or_default();
     let assets =
-        build_capability_assets_for_read_mode(memory_assets, &registry_entries, read_path_mode);
+        build_capability_assets_for_read_mode(Vec::new(), &registry_entries, read_path_mode);
     let current_user =
         crate::modules::capability_control_plane::current_desktop_user_info_optional().await;
 
     let entries = assets
         .into_iter()
         .filter(|asset| asset_visible_to_desktop_user(asset, current_user.as_ref()))
+        .filter(|asset| asset.get("asset_type").and_then(Value::as_str) != Some("assistant"))
         .map(|asset| {
             let asset_type = asset
                 .get("asset_type")
@@ -352,21 +351,6 @@ impl RegistryAvailability {
         enabled_skill_ids: &HashSet<String>,
         tool_availability_catalog: &ToolAvailabilityCatalog,
     ) -> Self {
-        if source_type == "cloud_mirror" {
-            let recommended_action = if asset_type == "assistant" {
-                "install_assistant"
-            } else {
-                "install_skill"
-            };
-            return Self {
-                class: ToolAvailabilityClass::NeedsSetup,
-                install_required: true,
-                activation_required: false,
-                recommended_action,
-                status_reason: "not_installed_locally",
-            };
-        }
-
         match asset_type {
             "skill_tool" => {
                 if let Some(availability) =
@@ -1027,7 +1011,7 @@ mod tests {
     }
 
     #[test]
-    fn registry_first_mode_filters_legacy_local_assets_but_keeps_cloud_mirror_assets() {
+    fn registry_first_mode_filters_legacy_local_assets_and_cloud_mirror_assets() {
         let assets = build_capability_assets_for_read_mode(
             vec![
                 json!({
@@ -1045,8 +1029,7 @@ mod tests {
             CapabilityRegistryReadMode::RegistryFirst,
         );
 
-        assert_eq!(assets.len(), 1);
-        assert_eq!(assets[0]["id"], json!("cloud.skill.alpha"));
+        assert!(assets.is_empty());
     }
 
     #[test]

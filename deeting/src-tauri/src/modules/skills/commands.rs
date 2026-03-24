@@ -176,55 +176,14 @@ pub async fn register_local_skills(
 
 #[tauri::command]
 pub async fn sync_official_skills_index(app_state: State<'_, AppState>) -> Result<usize, String> {
-    let state = &app_state.mcp;
-    let base_url = state.transport.cloud_base_url.read().await.clone();
-    let url = format!(
-        "{}/api/v1/plugin-market/?limit=100",
-        base_url.trim_end_matches('/')
-    );
+    sync_official_skills_index_inner(app_state.inner()).await
+}
 
-    let response = state
-        .transport
-        .client
-        .get(&url)
-        .send()
-        .await
-        .map_err(to_string)?;
-    if !response.status().is_success() {
-        return Err("failed to fetch marketplace index".to_string());
-    }
-
-    let skills: Vec<serde_json::Value> = response.json().await.map_err(to_string)?;
-    let count = skills.len();
-
-    for skill in skills {
-        let id = skill["id"].as_str().unwrap_or("").to_string();
-        let name = skill["name"].as_str().unwrap_or("").to_string();
-        let desc = skill["description"].as_str().unwrap_or("").to_string();
-
-        let app_state_clone = app_state.inner().clone();
-        tauri::async_runtime::spawn(async move {
-            let text = format!("name: {}\ndescription: {}", name, desc);
-            if let Ok(vector) = app_state_clone.providers.embedding.embed_text(&text).await {
-                let _ = app_state_clone
-                    .memory
-                    .service
-                    .upsert_asset(
-                        id,
-                        name,
-                        desc,
-                        "skill".to_string(),
-                        "cloud_mirror".to_string(),
-                        None,
-                        vector,
-                        Some(skill),
-                    )
-                    .await;
-            }
-        });
-    }
-
-    Ok(count)
+pub(crate) async fn sync_official_skills_index_inner(
+    app_state: &AppState,
+) -> Result<usize, String> {
+    let _ = app_state;
+    Ok(0)
 }
 
 #[tauri::command]

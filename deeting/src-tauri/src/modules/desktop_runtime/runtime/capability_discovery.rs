@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashSet};
 
 use serde_json::{json, Value};
 
@@ -48,19 +48,18 @@ struct ParameterDoc {
 
 pub(crate) async fn build_capability_search_result(
     mcp_store: &crate::modules::mcp::store::McpStore,
-    embedding_service: &crate::modules::providers::embedding::EmbeddingService,
-    memory_store: &crate::modules::memory::service::MemoryService,
+    _embedding_service: &crate::modules::providers::embedding::EmbeddingService,
+    _memory_store: &crate::modules::memory::service::MemoryService,
     query: &str,
     limit: usize,
 ) -> Value {
-    let registry = build_capability_registry(mcp_store, memory_store).await;
+    let registry = build_capability_registry(mcp_store).await;
     let profile = QueryProfile::from_query(query);
     let limit = limit.clamp(1, MAX_LIMIT);
-    let semantic_scores = collect_semantic_scores(memory_store, embedding_service, &profile).await;
     let mut ranked = registry
         .entries
         .into_iter()
-        .filter_map(|entry| rank_registry_entry(entry, &profile, &semantic_scores))
+        .filter_map(|entry| rank_registry_entry(entry, &profile))
         .collect::<Vec<_>>();
     ranked.sort_by(|left, right| {
         right
@@ -173,39 +172,15 @@ fn capability_dedupe_key(value: &Value) -> Option<String> {
         .map(|item| item.to_lowercase())
 }
 
-async fn collect_semantic_scores(
-    memory_store: &crate::modules::memory::service::MemoryService,
-    embedding_service: &crate::modules::providers::embedding::EmbeddingService,
-    profile: &QueryProfile,
-) -> HashMap<String, f64> {
-    if profile.normalized.is_empty() {
-        return HashMap::new();
-    }
-    let Ok(vector) = embedding_service.embed_text(&profile.normalized).await else {
-        return HashMap::new();
-    };
-    let Ok(hits) = memory_store.search_assets(vector, MAX_LIMIT, None).await else {
-        return HashMap::new();
-    };
-    hits.into_iter()
-        .filter_map(|hit| {
-            let id = hit
-                .get("id")
-                .and_then(|value| value.as_str())?
-                .trim()
-                .to_string();
-            let score = hit.get("_distance").and_then(|value| value.as_f64())?;
-            Some((id, score))
-        })
-        .collect()
-}
-
 fn rank_registry_entry(
     entry: CapabilityRegistryEntry,
     profile: &QueryProfile,
-    semantic_scores: &HashMap<String, f64>,
 ) -> Option<RankedCapability> {
-    let asset = entry.asset;
+    let CapabilityRegistryEntry {
+        asset,
+        availability,
+        tool_contract_source,
+    } = entry;
     let id = asset.get("id")?.as_str()?.trim().to_string();
     let name = asset
         .get("name")
@@ -233,24 +208,42 @@ fn rank_registry_entry(
     } else {
         None
     };
-    let semantic_score = semantic_scores.get(&id).copied();
     let lexical_score = lexical_asset_match_score(&profile.normalized, &asset);
-    let availability = entry.availability;
+    let structured_score = capability_structured_match_score(
+        profile,
+        name,
+        description,
+        asset_type,
+        source_type,
+        asset_metadata.as_ref(),
+        tool_contract_source.as_ref(),
+    );
     let combined_text = format!("{}\n{}", name.to_lowercase(), description.to_lowercase());
     let domain_hit = matches_domain(profile.domain, &combined_text);
     let intent_hit = matches_intent(profile.intent, &combined_text, asset_type, source_type);
-    let has_signal =
-        lexical_score.is_some() || semantic_score.is_some() || domain_hit || intent_hit;
+    let (feature_score, feature_reasons) = capability_profile_feature_score(
+        profile,
+        asset_type,
+        source_type,
+        &availability,
+        asset_metadata.as_ref(),
+        tool_contract_source.as_ref(),
+    );
+    let has_signal = lexical_score.is_some()
+        || structured_score.is_some()
+        || domain_hit
+        || intent_hit
+        || feature_score != 0.0;
     if !has_signal {
         return None;
     }
 
     let mut rank_score = 0.0;
     let mut match_reason = Vec::new();
-    if let Some(score) = semantic_score {
+    if let Some(score) = structured_score {
         if score >= SEMANTIC_SCORE_FLOOR {
             rank_score += score * 25.0;
-            match_reason.push(format!("semantic_match:{score:.2}"));
+            match_reason.push(format!("structured_match:{score:.2}"));
         }
     }
     if let Some(score) = lexical_score {
@@ -266,6 +259,8 @@ fn rank_registry_entry(
         rank_score += 10.0;
         match_reason.push(format!("intent:{}", profile.intent));
     }
+    rank_score += feature_score;
+    match_reason.extend(feature_reasons);
     if availability.is_direct_callable() {
         rank_score += 12.0;
         match_reason.push("direct_callable".to_string());
@@ -294,7 +289,7 @@ fn rank_registry_entry(
         asset_metadata.as_ref(),
         &availability,
         match_reason,
-        semantic_score,
+        structured_score,
         lexical_score,
         rank_score,
     );
@@ -304,7 +299,7 @@ fn rank_registry_entry(
             description,
             source_type,
             asset_metadata.as_ref(),
-            entry.tool_contract_source.as_ref(),
+            tool_contract_source.as_ref(),
         ) {
             merge_object(&mut value, contract);
         }
@@ -314,6 +309,265 @@ fn rank_registry_entry(
         score: rank_score,
         value,
     })
+}
+
+fn capability_structured_match_score(
+    profile: &QueryProfile,
+    name: &str,
+    description: &str,
+    asset_type: &str,
+    source_type: &str,
+    asset_metadata: Option<&Value>,
+    tool_source: Option<&ToolContractSource>,
+) -> Option<f64> {
+    let mut text = vec![
+        name.to_lowercase(),
+        description.to_lowercase(),
+        asset_type.to_lowercase(),
+        source_type.to_lowercase(),
+    ];
+
+    if let Some(metadata) = asset_metadata {
+        for field in [
+            "binding_kind",
+            "callable_name",
+            "tool_name",
+            "execution_lane",
+            "execution_surface",
+            "runtime_state",
+            "adapter_kind",
+        ] {
+            if let Some(value) = metadata.get(field).and_then(Value::as_str) {
+                let normalized = value.trim().to_lowercase();
+                if !normalized.is_empty() {
+                    text.push(normalized);
+                }
+            }
+        }
+        if let Some(compatibility) = metadata.get("compatibility") {
+            for field in [
+                "normalized_execution_surface",
+                "execution_mode",
+                "adapter_kind",
+            ] {
+                if let Some(value) = compatibility.get(field).and_then(Value::as_str) {
+                    let normalized = value.trim().to_lowercase();
+                    if !normalized.is_empty() {
+                        text.push(normalized);
+                    }
+                }
+            }
+        }
+        if let Some(schema) = metadata.get("input_schema") {
+            append_schema_terms(&mut text, schema);
+        }
+        if let Some(scope) = metadata.get("permission_scope") {
+            append_value_terms(&mut text, scope);
+        }
+    }
+
+    if let Some(source) = tool_source {
+        text.extend(
+            source
+                .capabilities
+                .iter()
+                .map(|value| value.trim().to_lowercase()),
+        );
+        if let Some(command) = source.command.as_ref() {
+            let normalized = command.trim().to_lowercase();
+            if !normalized.is_empty() {
+                text.push(normalized);
+            }
+        }
+        append_schema_terms(&mut text, &source.config);
+    }
+
+    let haystack = text
+        .into_iter()
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    lexical_text_match_score(&profile.normalized, &haystack)
+}
+
+fn capability_profile_feature_score(
+    profile: &QueryProfile,
+    asset_type: &str,
+    source_type: &str,
+    availability: &RegistryAvailability,
+    asset_metadata: Option<&Value>,
+    tool_source: Option<&ToolContractSource>,
+) -> (f64, Vec<String>) {
+    let mut score = 0.0;
+    let mut reasons = Vec::new();
+    let signals = capability_signals(asset_type, source_type, asset_metadata, tool_source);
+
+    match profile.intent {
+        "local_inspection" => {
+            if signals.shell_like {
+                score += 36.0;
+                reasons.push("feature:host_shell".to_string());
+            }
+            if signals.filesystem_like {
+                score += 12.0;
+                reasons.push("feature:filesystem".to_string());
+            }
+            if signals.memory_like {
+                score -= 18.0;
+                reasons.push("penalty:memory_domain".to_string());
+            }
+            if signals.web_like {
+                score -= 18.0;
+                reasons.push("penalty:web_domain".to_string());
+            }
+            if signals.monitor_like {
+                score -= 18.0;
+                reasons.push("penalty:monitor_domain".to_string());
+            }
+            if !availability.is_direct_callable() {
+                score -= 10.0;
+                reasons.push("penalty:not_direct_callable".to_string());
+            }
+        }
+        "web_fetch" => {
+            if signals.web_like {
+                score += 28.0;
+                reasons.push("feature:web_fetch".to_string());
+            }
+            if signals.shell_like {
+                score -= 8.0;
+                reasons.push("penalty:not_web_shell".to_string());
+            }
+        }
+        "memory_lookup" => {
+            if signals.memory_like {
+                score += 24.0;
+                reasons.push("feature:memory_lookup".to_string());
+            }
+        }
+        _ => {}
+    }
+
+    (score, reasons)
+}
+
+#[derive(Default)]
+struct CapabilitySignals {
+    shell_like: bool,
+    filesystem_like: bool,
+    web_like: bool,
+    memory_like: bool,
+    monitor_like: bool,
+}
+
+fn capability_signals(
+    asset_type: &str,
+    source_type: &str,
+    asset_metadata: Option<&Value>,
+    tool_source: Option<&ToolContractSource>,
+) -> CapabilitySignals {
+    let mut text = String::new();
+    text.push_str(asset_type);
+    text.push('\n');
+    text.push_str(source_type);
+    if let Some(metadata) = asset_metadata {
+        text.push('\n');
+        text.push_str(&metadata.to_string().to_lowercase());
+    }
+    if let Some(source) = tool_source {
+        text.push('\n');
+        text.push_str(&source.config.to_string().to_lowercase());
+        text.push('\n');
+        text.push_str(&source.capabilities.join(" ").to_lowercase());
+        if let Some(command) = source.command.as_ref() {
+            text.push('\n');
+            text.push_str(&command.to_lowercase());
+        }
+    }
+
+    CapabilitySignals {
+        shell_like: contains_any(
+            &text,
+            &[
+                "shell",
+                "terminal",
+                "command",
+                "powershell",
+                "cmd",
+                "host_access",
+                "shell_execution",
+                "local_command",
+                "working_dir",
+                "working directory",
+            ],
+        ),
+        filesystem_like: contains_any(
+            &text,
+            &["filesystem", "file", "directory", "path", "entry_path"],
+        ),
+        web_like: contains_any(
+            &text,
+            &[
+                "web",
+                "url",
+                "html",
+                "crawl",
+                "fetch",
+                "http",
+                "network_read",
+            ],
+        ),
+        memory_like: contains_any(
+            &text,
+            &["memory", "knowledge", "remember", "memo", "knowledge base"],
+        ),
+        monitor_like: contains_any(&text, &["monitor", "cron", "watch", "alert"]),
+    }
+}
+
+fn lexical_text_match_score(normalized_query: &str, haystack: &str) -> Option<f64> {
+    if normalized_query.trim().is_empty() || haystack.trim().is_empty() {
+        return None;
+    }
+    if haystack.contains(normalized_query) {
+        return Some(1.0);
+    }
+    let overlap = tokenize(normalized_query)
+        .into_iter()
+        .filter(|token| !token.is_empty() && haystack.contains(token))
+        .count();
+    if overlap == 0 {
+        return None;
+    }
+    let denom = tokenize(normalized_query).len().max(1) as f64;
+    Some((overlap as f64 / denom).min(1.0))
+}
+
+fn append_value_terms(target: &mut Vec<String>, value: &Value) {
+    match value {
+        Value::String(text) => {
+            let normalized = text.trim().to_lowercase();
+            if !normalized.is_empty() {
+                target.push(normalized);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                append_value_terms(target, item);
+            }
+        }
+        Value::Object(map) => {
+            for (key, item) in map {
+                target.push(key.trim().to_lowercase());
+                append_value_terms(target, item);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn append_schema_terms(target: &mut Vec<String>, schema: &Value) {
+    append_value_terms(target, schema);
 }
 
 fn materialize_ranked_entry(
@@ -1293,7 +1547,7 @@ fn matches_intent(intent: &str, text: &str, asset_type: &str, source_type: &str)
                 )
         }
         "install_or_enable" => {
-            source_type == "cloud_mirror" || asset_type == "assistant" || asset_type == "tool"
+            matches!(asset_type, "skill" | "skill_tool" | "tool")
         }
         "web_fetch" => contains_any(text, &["网页", "web", "html", "抓取", "url", "标题"]),
         "realtime_lookup" => {
@@ -1330,6 +1584,7 @@ fn lexical_reason(score: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::modules::mcp::commands::runtime::tool_resolution::ToolAvailabilityClass;
 
     #[test]
     fn dedupe_ranked_capabilities_keeps_highest_ranked_entry_per_name() {
@@ -1432,5 +1687,300 @@ mod tests {
             "code_mode_core"
         ));
         assert!(!matches_intent("local_inspection", web_text, "tool", "mcp"));
+    }
+
+    #[test]
+    fn rank_registry_entry_prefers_shell_execute_for_local_cli_checks() {
+        let profile = QueryProfile::from_query("检查本机是否安装某个 CLI 命令 行工具");
+
+        let shell_entry = CapabilityRegistryEntry {
+            asset: json!({
+                "id": "core.shell_execute",
+                "name": "shell_execute",
+                "description": "Execute shell commands on the user's machine with security checks and user approval.",
+                "asset_type": "tool",
+                "source_type": "code_mode_core",
+                "metadata": {
+                    "permission_scope": ["shell_execution", "host_access"],
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "command": {"type": "string", "description": "The command to execute"},
+                            "working_dir": {"type": "string", "description": "Working directory"}
+                        }
+                    }
+                }
+            }),
+            availability: RegistryAvailability {
+                class: ToolAvailabilityClass::CallableDirect,
+                install_required: false,
+                activation_required: false,
+                recommended_action: "execute",
+                status_reason: "core_code_mode_tool",
+            },
+            tool_contract_source: None,
+        };
+
+        let memory_entry = CapabilityRegistryEntry {
+            asset: json!({
+                "id": "skill_tool::official.skills.memory::search_knowledge",
+                "name": "skill.official.skills.memory.search_knowledge",
+                "description": "Search personal and system knowledge base.",
+                "asset_type": "skill_tool",
+                "source_type": "builtin",
+                "metadata": {
+                    "skill_id": "official.skills.memory",
+                    "tool_name": "search_knowledge",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "Search query"}
+                        }
+                    }
+                }
+            }),
+            availability: RegistryAvailability {
+                class: ToolAvailabilityClass::CallableDirect,
+                install_required: false,
+                activation_required: false,
+                recommended_action: "execute",
+                status_reason: "ready_in_local_runtime",
+            },
+            tool_contract_source: None,
+        };
+
+        let web_entry = CapabilityRegistryEntry {
+            asset: json!({
+                "id": "tool.tavily_extract",
+                "name": "tavily-extract",
+                "description": "A powerful web content extraction tool that retrieves and processes raw content from specified URLs.",
+                "asset_type": "tool",
+                "source_type": "mcp",
+                "metadata": {
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "urls": {"type": "array", "description": "List of URLs to extract content from"}
+                        }
+                    }
+                }
+            }),
+            availability: RegistryAvailability {
+                class: ToolAvailabilityClass::CallableDirect,
+                install_required: false,
+                activation_required: false,
+                recommended_action: "execute",
+                status_reason: "ready_via_registry_runtime",
+            },
+            tool_contract_source: None,
+        };
+
+        let shell_rank = rank_registry_entry(shell_entry, &profile).expect("shell rank")
+            ["rank_score"]
+            .as_f64()
+            .expect("shell score");
+        let memory_rank = rank_registry_entry(memory_entry, &profile).expect("memory rank")
+            ["rank_score"]
+            .as_f64()
+            .expect("memory score");
+        let web_rank = rank_registry_entry(web_entry, &profile).expect("web rank")["rank_score"]
+            .as_f64()
+            .expect("web score");
+
+        assert!(
+            shell_rank > memory_rank,
+            "shell={shell_rank}, memory={memory_rank}"
+        );
+        assert!(shell_rank > web_rank, "shell={shell_rank}, web={web_rank}");
+    }
+
+    #[test]
+    fn rank_registry_entry_prefers_web_tools_for_web_fetch_queries() {
+        let profile = QueryProfile::from_query("帮我抓取网页并提取标题");
+
+        let web_entry = CapabilityRegistryEntry {
+            asset: json!({
+                "id": "tool.fetch_page",
+                "name": "fetch_page",
+                "description": "Fetch one web page and extract readable content from a URL.",
+                "asset_type": "tool",
+                "source_type": "mcp",
+                "metadata": {
+                    "permission_scope": ["network_read"],
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "url": {"type": "string", "description": "Page URL"}
+                        }
+                    }
+                }
+            }),
+            availability: RegistryAvailability {
+                class: ToolAvailabilityClass::CallableDirect,
+                install_required: false,
+                activation_required: false,
+                recommended_action: "execute",
+                status_reason: "ready_via_registry_runtime",
+            },
+            tool_contract_source: None,
+        };
+
+        let shell_entry = CapabilityRegistryEntry {
+            asset: json!({
+                "id": "core.shell_execute",
+                "name": "shell_execute",
+                "description": "Execute shell commands on the user's machine with security checks and user approval.",
+                "asset_type": "tool",
+                "source_type": "code_mode_core",
+                "metadata": {
+                    "permission_scope": ["shell_execution", "host_access"]
+                }
+            }),
+            availability: RegistryAvailability {
+                class: ToolAvailabilityClass::CallableDirect,
+                install_required: false,
+                activation_required: false,
+                recommended_action: "execute",
+                status_reason: "core_code_mode_tool",
+            },
+            tool_contract_source: None,
+        };
+
+        let memory_entry = CapabilityRegistryEntry {
+            asset: json!({
+                "id": "skill_tool::official.skills.memory::search_knowledge",
+                "name": "skill.official.skills.memory.search_knowledge",
+                "description": "Search personal and system knowledge base.",
+                "asset_type": "skill_tool",
+                "source_type": "builtin",
+                "metadata": {
+                    "skill_id": "official.skills.memory",
+                    "tool_name": "search_knowledge"
+                }
+            }),
+            availability: RegistryAvailability {
+                class: ToolAvailabilityClass::CallableDirect,
+                install_required: false,
+                activation_required: false,
+                recommended_action: "execute",
+                status_reason: "ready_in_local_runtime",
+            },
+            tool_contract_source: None,
+        };
+
+        let web_rank = rank_registry_entry(web_entry, &profile).expect("web rank")["rank_score"]
+            .as_f64()
+            .expect("web score");
+        let shell_rank = rank_registry_entry(shell_entry, &profile).expect("shell rank")
+            ["rank_score"]
+            .as_f64()
+            .expect("shell score");
+        let memory_rank = rank_registry_entry(memory_entry, &profile).expect("memory rank")
+            ["rank_score"]
+            .as_f64()
+            .expect("memory score");
+
+        assert!(web_rank > shell_rank, "web={web_rank}, shell={shell_rank}");
+        assert!(
+            web_rank > memory_rank,
+            "web={web_rank}, memory={memory_rank}"
+        );
+    }
+
+    #[test]
+    fn rank_registry_entry_prefers_memory_tools_for_memory_queries() {
+        let profile = QueryProfile::from_query("帮我查一下我之前记住的内容");
+
+        let memory_entry = CapabilityRegistryEntry {
+            asset: json!({
+                "id": "skill_tool::official.skills.memory::search_knowledge",
+                "name": "skill.official.skills.memory.search_knowledge",
+                "description": "Search personal and system knowledge base.",
+                "asset_type": "skill_tool",
+                "source_type": "builtin",
+                "metadata": {
+                    "skill_id": "official.skills.memory",
+                    "tool_name": "search_knowledge",
+                    "permission_scope": ["memory_read"],
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "Search query"}
+                        }
+                    }
+                }
+            }),
+            availability: RegistryAvailability {
+                class: ToolAvailabilityClass::CallableDirect,
+                install_required: false,
+                activation_required: false,
+                recommended_action: "execute",
+                status_reason: "ready_in_local_runtime",
+            },
+            tool_contract_source: None,
+        };
+
+        let shell_entry = CapabilityRegistryEntry {
+            asset: json!({
+                "id": "core.shell_execute",
+                "name": "shell_execute",
+                "description": "Execute shell commands on the user's machine with security checks and user approval.",
+                "asset_type": "tool",
+                "source_type": "code_mode_core",
+                "metadata": {
+                    "permission_scope": ["shell_execution", "host_access"]
+                }
+            }),
+            availability: RegistryAvailability {
+                class: ToolAvailabilityClass::CallableDirect,
+                install_required: false,
+                activation_required: false,
+                recommended_action: "execute",
+                status_reason: "core_code_mode_tool",
+            },
+            tool_contract_source: None,
+        };
+
+        let web_entry = CapabilityRegistryEntry {
+            asset: json!({
+                "id": "tool.fetch_page",
+                "name": "fetch_page",
+                "description": "Fetch one web page and extract readable content from a URL.",
+                "asset_type": "tool",
+                "source_type": "mcp",
+                "metadata": {
+                    "permission_scope": ["network_read"]
+                }
+            }),
+            availability: RegistryAvailability {
+                class: ToolAvailabilityClass::CallableDirect,
+                install_required: false,
+                activation_required: false,
+                recommended_action: "execute",
+                status_reason: "ready_via_registry_runtime",
+            },
+            tool_contract_source: None,
+        };
+
+        let memory_rank = rank_registry_entry(memory_entry, &profile).expect("memory rank")
+            ["rank_score"]
+            .as_f64()
+            .expect("memory score");
+        let shell_rank = rank_registry_entry(shell_entry, &profile).expect("shell rank")
+            ["rank_score"]
+            .as_f64()
+            .expect("shell score");
+        let web_rank = rank_registry_entry(web_entry, &profile).expect("web rank")["rank_score"]
+            .as_f64()
+            .expect("web score");
+
+        assert!(
+            memory_rank > shell_rank,
+            "memory={memory_rank}, shell={shell_rank}"
+        );
+        assert!(
+            memory_rank > web_rank,
+            "memory={memory_rank}, web={web_rank}"
+        );
     }
 }
