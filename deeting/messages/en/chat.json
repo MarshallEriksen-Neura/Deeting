@@ -30,7 +30,8 @@
       "thinking": "{name} is thinking...",
       "header": {
         "processing": "Working",
-        "answering": "Responding"
+        "answering": "Responding",
+        "completed": "Completed"
       },
       "flow": {
         "stream": "Live output",

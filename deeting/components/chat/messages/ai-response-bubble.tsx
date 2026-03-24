@@ -727,18 +727,6 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
       });
     }, [hasContent, isActive, statusStage, stableActiveStep, steps]);
 
-    const statusRailCompleted = !isActive && (hasContent || hasToolActivity);
-    const liveStatusLabel = useMemo(() => {
-      if (statusRailCompleted) {
-        return t("status.header.completed");
-      }
-      return t(streamEnabled ? "status.header.answering" : "status.header.processing");
-    }, [hasToolActivity, hasContent, isActive, statusRailCompleted, streamEnabled, t]);
-    const terminalPlaceholder = useMemo(
-      () => t("status.placeholder.waiting"),
-      [t]
-    );
-
     // 将 tool_result 与对应的 tool_call 配对（通过 callId）
     const { resultMap, pairedResultIndices } = useMemo(() => {
       const map = new Map<string, MessageToolResultBlock>();
@@ -808,6 +796,17 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
     const hasToolActivity = useMemo(
       () => toolCallEntries.length > 0 || pairedResultIndices.size > 0 || hasCallLinkedUi,
       [hasCallLinkedUi, pairedResultIndices.size, toolCallEntries.length]
+    );
+    const statusRailCompleted = !isActive && (hasContent || hasToolActivity);
+    const liveStatusLabel = useMemo(() => {
+      if (statusRailCompleted) {
+        return t("status.header.completed");
+      }
+      return t(streamEnabled ? "status.header.answering" : "status.header.processing");
+    }, [statusRailCompleted, streamEnabled, t]);
+    const terminalPlaceholder = useMemo(
+      () => t("status.placeholder.waiting"),
+      [t]
     );
     const shouldShowStatusRail = isActive || hasContent || hasToolActivity || Boolean(statusStage);
     const displayedStepIndex = statusRailCompleted ? steps.length - 1 : stableActiveStep;
