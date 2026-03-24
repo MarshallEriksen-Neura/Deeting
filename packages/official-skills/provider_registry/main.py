@@ -18,6 +18,11 @@ async def verify_provider_template(**kwargs) -> Dict[str, Any]:
         return deeting.call_tool("verify_provider_template", **kwargs)
     return {"status": "error", "message": "SDK not found"}
 
+async def save_provider_to_marketplace(**kwargs) -> Dict[str, Any]:
+    if deeting:
+        return deeting.call_tool("save_provider_to_marketplace", **kwargs)
+    return {"status": "error", "message": "SDK not found"}
+
 async def handle_input():
     try:
         raw_input = sys.stdin.read()
@@ -30,6 +35,8 @@ async def handle_input():
             result = await get_unified_schema(**args)
         elif method == "verify_provider_template":
             result = await verify_provider_template(**args)
+        elif method == "save_provider_to_marketplace":
+            result = await save_provider_to_marketplace(**args)
         else:
             result = {"error": f"Unknown method: {method}"}
         print(json.dumps(result, ensure_ascii=False))

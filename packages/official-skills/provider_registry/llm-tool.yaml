@@ -28,3 +28,24 @@ tools:
         default_params: { type: object }
         test_payload: { type: object }
       required: ["base_url", "test_api_key", "request_template"]
+
+  - name: save_provider_to_marketplace
+    description: "Create or update a cloud provider preset so it appears in the model service marketplace."
+    parameters:
+      type: object
+      properties:
+        slug: { type: string }
+        name: { type: string }
+        provider: { type: string }
+        base_url: { type: string }
+        category: { type: string }
+        url_template: { type: string }
+        theme_color: { type: string }
+        icon: { type: string }
+        auth_type: { type: string }
+        auth_config: { type: object }
+        protocol_schema_version: { type: string }
+        protocol_profiles: { type: object }
+        version: { type: integer }
+        is_active: { type: boolean }
+      required: ["slug", "name", "provider", "base_url"]
