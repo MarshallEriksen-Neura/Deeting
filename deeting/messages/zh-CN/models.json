@@ -107,21 +107,12 @@
         "maxInputImages": "最大输入图片数"
       },
       "advanced": {
-        "imageAsync": {
-          "title": "异步图片轮询",
-          "desc": "用于那些先返回任务，再通过轮询获取最终图片结果的上游模型。",
-          "enabled": "轮询模式",
-          "enabledOn": "已开启异步轮询",
-          "enabledOff": "仅直返响应",
-          "taskIdPath": "任务 ID 路径",
-          "pollUrlTemplate": "轮询 URL 模板",
-          "statusPath": "状态路径",
-          "successValues": "成功状态值",
-          "failValues": "失败状态值",
-          "pendingValues": "进行中状态值",
-          "pollInterval": "轮询间隔",
-          "timeout": "超时时间",
-          "resultPath": "结果路径"
+        "imageProtocol": {
+          "title": "图片协议",
+          "desc": "当前 Custom 图片模型默认遵循 OpenAI 兼容的直返结果协议。",
+          "modeLabel": "Custom 模式",
+          "modeValue": "OpenAI 兼容",
+          "hint": "像 Gitee 这类特殊异步供应商，应该走单独的预设模板，而不是 Custom。"
         }
       },
       "tokenizer": {

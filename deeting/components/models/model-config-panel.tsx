@@ -19,19 +19,6 @@ const RESPONSES_PATH = "responses"
 
 type RequestMode = "chat_completions" | "responses" | "custom"
 
-type ImageAsyncConfigDraft = {
-  enabled: boolean
-  taskIdPath: string
-  pollUrlTemplate: string
-  statusPath: string
-  successValues: string
-  failValues: string
-  pendingValues: string
-  pollInterval: string
-  timeout: string
-  resultPath: string
-}
-
 function normalizeUpstreamPath(value?: string | null) {
   return String(value || "").trim().replace(/^\/+/, "")
 }
@@ -59,43 +46,6 @@ function inferRequestBase(requestUrl?: string | null, upstreamPath?: string | nu
   return url
 }
 
-function splitCsvValues(value: string) {
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean)
-}
-
-function buildImageAsyncDraft(model: ProviderModel): ImageAsyncConfigDraft {
-  const config = (model.config_override?.async_config || {}) as Record<string, unknown>
-  const taskIdExtraction = (config.task_id_extraction || {}) as Record<string, unknown>
-  const poll = (config.poll || {}) as Record<string, unknown>
-  const statusCheck = (poll.status_check || {}) as Record<string, unknown>
-  const resultExtraction = (config.result_extraction || {}) as Record<string, unknown>
-  const readString = (value: unknown) => (typeof value === "string" ? value : "")
-  const readNumberString = (value: unknown) =>
-    typeof value === "number" && Number.isFinite(value) ? String(value) : ""
-  const readCsv = (value: unknown) =>
-    Array.isArray(value)
-      ? value
-          .map((item) => (typeof item === "string" ? item.trim() : ""))
-          .filter(Boolean)
-          .join(", ")
-      : ""
-
-  return {
-    enabled: Boolean(config.enabled),
-    taskIdPath: readString(taskIdExtraction.key_path ?? taskIdExtraction.path),
-    pollUrlTemplate: readString(poll.url_template),
-    statusPath: readString(statusCheck.location),
-    successValues: readCsv(statusCheck.success_values),
-    failValues: readCsv(statusCheck.fail_values),
-    pendingValues: readCsv(statusCheck.pending_values),
-    pollInterval: readNumberString(poll.interval),
-    timeout: readNumberString(poll.timeout),
-    resultPath: readString(resultExtraction.key_path ?? resultExtraction.path),
-  }
-}
 
 interface NumberInputProps {
   label: string
@@ -195,9 +145,6 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
   const [maxInputImages, setMaxInputImages] = React.useState(
     model.max_input_images?.toString() || ""
   )
-  const [imageAsync, setImageAsync] = React.useState<ImageAsyncConfigDraft>(
-    buildImageAsyncDraft(model)
-  )
   const [contextWindow, setContextWindow] = React.useState(
     model.context_window ? model.context_window.toString() : ""
   )
@@ -227,7 +174,6 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
       rpm: (rpm || "").trim(),
       tpm: (tpm || "").trim(),
       maxInputImages: (maxInputImages || "").trim(),
-      imageAsync,
       contextWindow: (contextWindow || "").trim(),
       capabilities: [...capabilities].sort(),
     }
@@ -238,7 +184,6 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
     inputPrice,
     maxOutputTokens,
     maxInputImages,
-    imageAsync,
     outputPrice,
     priority,
     rpm,
@@ -323,60 +268,9 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
     ) {
       routing.max_input_images = maxInputImagesNum
     }
-    const hasAsyncOverride =
-      imageAsync.enabled ||
-      imageAsync.taskIdPath.trim() ||
-      imageAsync.pollUrlTemplate.trim() ||
-      imageAsync.statusPath.trim() ||
-      imageAsync.successValues.trim() ||
-      imageAsync.failValues.trim() ||
-      imageAsync.pendingValues.trim() ||
-      imageAsync.pollInterval.trim() ||
-      imageAsync.timeout.trim() ||
-      imageAsync.resultPath.trim()
-    if (capabilities.includes("image_generation") && hasAsyncOverride) {
-      routing.allow_template_override = true
-    }
     const alias = (unifiedModelId || "").trim()
     if (alias && alias !== model.id) routing.unified_model_alias = alias
     if (Object.keys(routing).length) payload.routing_config = routing
-
-    if (capabilities.includes("image_generation") && hasAsyncOverride) {
-      const asyncConfig: Record<string, unknown> = {
-        enabled: imageAsync.enabled,
-      }
-      if (imageAsync.taskIdPath.trim()) {
-        asyncConfig.task_id_extraction = { key_path: imageAsync.taskIdPath.trim() }
-      }
-      const poll: Record<string, unknown> = {}
-      if (imageAsync.pollUrlTemplate.trim()) {
-        poll.url_template = imageAsync.pollUrlTemplate.trim()
-      }
-      const statusCheck: Record<string, unknown> = {}
-      if (imageAsync.statusPath.trim()) {
-        statusCheck.location = imageAsync.statusPath.trim()
-      }
-      const successValues = splitCsvValues(imageAsync.successValues)
-      const failValues = splitCsvValues(imageAsync.failValues)
-      const pendingValues = splitCsvValues(imageAsync.pendingValues)
-      if (successValues.length) statusCheck.success_values = successValues
-      if (failValues.length) statusCheck.fail_values = failValues
-      if (pendingValues.length) statusCheck.pending_values = pendingValues
-      if (Object.keys(statusCheck).length) {
-        poll.status_check = statusCheck
-      }
-      const pollIntervalNum = normalizeNumber(imageAsync.pollInterval)
-      if (pollIntervalNum !== undefined) poll.interval = pollIntervalNum
-      const timeoutNum = normalizeNumber(imageAsync.timeout)
-      if (timeoutNum !== undefined) poll.timeout = timeoutNum
-      if (Object.keys(poll).length) {
-        asyncConfig.poll = poll
-      }
-      if (imageAsync.resultPath.trim()) {
-        asyncConfig.result_extraction = { key_path: imageAsync.resultPath.trim() }
-      }
-      payload.config_override = { async_config: asyncConfig }
-    }
 
     return payload
   }, [
@@ -392,7 +286,6 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
     rpm,
     tpm,
     maxInputImages,
-    imageAsync,
     unifiedModelId,
     upstreamPath,
     weight,
@@ -427,7 +320,6 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
     setRpm((snap.rpm as string) || "")
     setTpm((snap.tpm as string) || "")
     setMaxInputImages((snap.maxInputImages as string) || "")
-    setImageAsync((snap.imageAsync as ImageAsyncConfigDraft) || buildImageAsyncDraft(model))
     setContextWindow((snap.contextWindow as string) || "")
     setCapabilities(((snap.capabilities as ModelCapability[]) || ["chat"]) as ModelCapability[])
     setError(null)
@@ -446,7 +338,6 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
       rpm: model.rpm?.toString() || "",
       tpm: model.tpm?.toString() || "",
       maxInputImages: model.max_input_images?.toString() || "",
-      imageAsync: buildImageAsyncDraft(model),
       contextWindow: model.context_window ? model.context_window.toString() : "",
       capabilities: model.capabilities?.length ? model.capabilities : ["chat"],
     }
@@ -462,7 +353,6 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
     setRpm(initial.rpm)
     setTpm(initial.tpm)
     setMaxInputImages(initial.maxInputImages)
-    setImageAsync(initial.imageAsync)
     setContextWindow(initial.contextWindow)
     setCapabilities(initial.capabilities as ModelCapability[])
     setError(null)
@@ -650,109 +540,18 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
           <>
             <Separator className="border-white/5" />
             <Section
-              title={t("advanced.imageAsync.title")}
-              description={t("advanced.imageAsync.desc")}
+              title={t("advanced.imageProtocol.title")}
+              description={t("advanced.imageProtocol.desc")}
             >
               <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-[var(--muted)]">
-                    {t("advanced.imageAsync.enabled")}
-                  </Label>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setImageAsync((current) => ({
-                        ...current,
-                        enabled: !current.enabled,
-                      }))
-                    }
-                    className={cn(
-                      "h-9 rounded-md border px-3 text-xs transition-colors",
-                      imageAsync.enabled
-                        ? "border-[var(--primary)] bg-[var(--primary)]/15 text-[var(--foreground)]"
-                        : "border-white/10 bg-white/5 text-[var(--muted)] hover:bg-white/10"
-                    )}
-                  >
-                    {imageAsync.enabled
-                      ? t("advanced.imageAsync.enabledOn")
-                      : t("advanced.imageAsync.enabledOff")}
-                  </button>
-                </div>
-                <TextInput
-                  label={t("advanced.imageAsync.taskIdPath")}
-                  value={imageAsync.taskIdPath}
-                  onChange={(value) =>
-                    setImageAsync((current) => ({ ...current, taskIdPath: value }))
-                  }
-                  placeholder="data.task_id"
-                />
-                <TextInput
-                  label={t("advanced.imageAsync.pollUrlTemplate")}
-                  value={imageAsync.pollUrlTemplate}
-                  onChange={(value) =>
-                    setImageAsync((current) => ({ ...current, pollUrlTemplate: value }))
-                  }
-                  placeholder="{{base_url}}tasks/{{task_id}}"
-                />
-                <TextInput
-                  label={t("advanced.imageAsync.statusPath")}
-                  value={imageAsync.statusPath}
-                  onChange={(value) =>
-                    setImageAsync((current) => ({ ...current, statusPath: value }))
-                  }
-                  placeholder="data.status"
-                />
-                <TextInput
-                  label={t("advanced.imageAsync.successValues")}
-                  value={imageAsync.successValues}
-                  onChange={(value) =>
-                    setImageAsync((current) => ({ ...current, successValues: value }))
-                  }
-                  placeholder="completed"
-                />
-                <TextInput
-                  label={t("advanced.imageAsync.failValues")}
-                  value={imageAsync.failValues}
-                  onChange={(value) =>
-                    setImageAsync((current) => ({ ...current, failValues: value }))
-                  }
-                  placeholder="failed, error"
-                />
-                <TextInput
-                  label={t("advanced.imageAsync.pendingValues")}
-                  value={imageAsync.pendingValues}
-                  onChange={(value) =>
-                    setImageAsync((current) => ({ ...current, pendingValues: value }))
-                  }
-                  placeholder="queued, running"
-                />
-                <NumberInput
-                  label={t("advanced.imageAsync.pollInterval")}
-                  value={imageAsync.pollInterval}
-                  onChange={(value) =>
-                    setImageAsync((current) => ({ ...current, pollInterval: value }))
-                  }
-                  placeholder="5"
-                  suffix="sec"
-                />
-                <NumberInput
-                  label={t("advanced.imageAsync.timeout")}
-                  value={imageAsync.timeout}
-                  onChange={(value) =>
-                    setImageAsync((current) => ({ ...current, timeout: value }))
-                  }
-                  placeholder="300"
-                  suffix="sec"
-                />
-                <TextInput
-                  label={t("advanced.imageAsync.resultPath")}
-                  value={imageAsync.resultPath}
-                  onChange={(value) =>
-                    setImageAsync((current) => ({ ...current, resultPath: value }))
-                  }
-                  placeholder="data.result"
+                <ReadonlyInput
+                  label={t("advanced.imageProtocol.modeLabel")}
+                  value={t("advanced.imageProtocol.modeValue")}
                 />
               </div>
+              <p className="text-xs text-[var(--muted)]">
+                {t("advanced.imageProtocol.hint")}
+              </p>
             </Section>
           </>
         ) : null}

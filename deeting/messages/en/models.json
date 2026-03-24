@@ -107,21 +107,12 @@
         "maxInputImages": "Max input images"
       },
       "advanced": {
-        "imageAsync": {
-          "title": "Async Image Polling",
-          "desc": "Configure models that return an image task first and require polling before the final image is ready.",
-          "enabled": "Polling mode",
-          "enabledOn": "Async polling enabled",
-          "enabledOff": "Direct response only",
-          "taskIdPath": "Task ID path",
-          "pollUrlTemplate": "Poll URL template",
-          "statusPath": "Status path",
-          "successValues": "Success values",
-          "failValues": "Fail values",
-          "pendingValues": "Pending values",
-          "pollInterval": "Poll interval",
-          "timeout": "Poll timeout",
-          "resultPath": "Result path"
+        "imageProtocol": {
+          "title": "Image Protocol",
+          "desc": "Custom image models currently follow the OpenAI-compatible direct response shape.",
+          "modeLabel": "Custom mode",
+          "modeValue": "OpenAI-compatible",
+          "hint": "Special async providers should use dedicated preset templates instead of Custom."
         }
       },
       "tokenizer": {

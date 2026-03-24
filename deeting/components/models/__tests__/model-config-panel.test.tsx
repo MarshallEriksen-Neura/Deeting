@@ -70,43 +70,20 @@ const imageModel: ProviderModel = {
     capabilities: ["image_generation"],
     max_input_images: 2,
   } as Record<string, unknown>,
-  config_override: {
-    async_config: {
-      enabled: true,
-      task_id_extraction: { key_path: "data.task_id" },
-      poll: {
-        url_template: "{{base_url}}tasks/{{task_id}}",
-        status_check: {
-          location: "data.status",
-          success_values: ["completed"],
-          fail_values: ["failed"],
-          pending_values: ["queued", "running"],
-        },
-        interval: 3,
-        timeout: 120,
-      },
-      result_extraction: { key_path: "data.result" },
-    },
-  } as Record<string, unknown>,
   max_input_images: 2,
 }
 
 describe("ModelConfigPanel", () => {
-  it("renders image polling config and saves it into config_override", async () => {
+  it("shows custom image mode as OpenAI-compatible and saves image input limits", async () => {
     const onSave = jest.fn().mockResolvedValue(undefined)
 
     render(<ModelConfigPanel model={imageModel} onSave={onSave} />)
 
     expect((screen.getByDisplayValue("2") as HTMLInputElement).value).toBe("2")
-    expect(
-      screen.getByRole("button", { name: "advanced.imageAsync.enabledOn" })
-    ).not.toBeNull()
+    expect(screen.getByDisplayValue("advanced.imageProtocol.modeValue")).not.toBeNull()
 
-    fireEvent.change(screen.getByDisplayValue("3"), {
-      target: { value: "5" },
-    })
-    fireEvent.change(screen.getByDisplayValue("120"), {
-      target: { value: "180" },
+    fireEvent.change(screen.getByDisplayValue("2"), {
+      target: { value: "3" },
     })
 
     fireEvent.click(screen.getByRole("button", { name: "actions.save" }))
@@ -116,26 +93,8 @@ describe("ModelConfigPanel", () => {
     const [, payload] = onSave.mock.calls[0]
     expect(payload.routing_config).toEqual({
       capabilities: ["image_generation"],
-      max_input_images: 2,
-      allow_template_override: true,
+      max_input_images: 3,
     })
-    expect(payload.config_override).toEqual({
-      async_config: {
-        enabled: true,
-        task_id_extraction: { key_path: "data.task_id" },
-        poll: {
-          url_template: "{{base_url}}tasks/{{task_id}}",
-          status_check: {
-            location: "data.status",
-            success_values: ["completed"],
-            fail_values: ["failed"],
-            pending_values: ["queued", "running"],
-          },
-          interval: 5,
-          timeout: 180,
-        },
-        result_extraction: { key_path: "data.result" },
-      },
-    })
+    expect(payload.config_override).toBeUndefined()
   })
 })
