@@ -34,7 +34,8 @@
       "updatedAt": "Updated {value}",
       "sections": {
         "chat": "Chat Task Agents",
-        "image": "Image Agents"
+        "image": "Image Agents",
+        "voice": "Voice Agents"
       }
     },
     "starter": {
@@ -67,6 +68,20 @@
           "invoke": "Tune the prompt, style, and output defaults for a reusable image role.",
           "preview": "Keep the experience visual-first without exposing generic tool bindings."
         }
+      },
+      "voice": {
+        "title": "Voice Agent",
+        "description": "A focused audio role for turning text into speech inside chat.",
+        "cta": "Create Voice Agent",
+        "tags": {
+          "voice": "Voice",
+          "output": "Audio Output",
+          "preview": "Preview"
+        },
+        "features": {
+          "invoke": "Define reusable voice defaults and let chat trigger speech generation on demand.",
+          "preview": "Return audio output as a chat block instead of creating a separate voice workflow."
+        }
       }
     },
     "filters": {
@@ -76,6 +91,7 @@
     "badges": {
       "chat": "Chat",
       "imageGeneration": "Image",
+      "textToSpeech": "Voice",
       "imagePreferred": "Image Preferred",
       "enabled": "Enabled",
       "disabled": "Disabled",
@@ -98,6 +114,10 @@
       "imageWorkspace": {
         "title": "Create Image Agent",
         "description": "Configure a focused image agent for style control, output defaults, and visual preview."
+      },
+      "voiceWorkspace": {
+        "title": "Create Voice Agent",
+        "description": "Configure a focused voice agent for speech defaults and audio preview."
       },
       "draft": "Draft",
       "updatedAt": "Last updated {value}",
@@ -144,6 +164,8 @@
         "invalidExtraParamsJson": "Image extra params JSON must be a valid object.",
         "fields": {
           "negativePrompt": "Negative Prompt",
+          "maxInputImages": "Max Input Images",
+          "allowTextOnly": "Allow Text-Only",
           "imageUrl": "Reference Image URL",
           "aspectRatio": "Aspect Ratio",
           "numOutputs": "Outputs",
@@ -160,6 +182,7 @@
         },
         "placeholders": {
           "negativePrompt": "Things the agent should avoid generating by default.",
+          "maxInputImages": "1",
           "imageUrl": "https://example.com/reference.png",
           "aspectRatio": "1:1",
           "numOutputs": "1",
@@ -173,6 +196,27 @@
           "height": "1024",
           "samplerName": "euler",
           "extraParamsJson": "{\n  \"prompt_optimizer\": true\n}"
+        },
+        "helpers": {
+          "allowTextOnly": "Allow this image agent to run even when the user does not upload any reference image."
+        }
+      },
+      "voiceConfig": {
+        "title": "Voice Defaults",
+        "description": "Set the default speech parameters this task agent should reuse for every run.",
+        "helper": "These structured fields are written into model_config.text_to_speech and override overlapping keys inside the advanced JSON when you save.",
+        "invalidExtraParamsJson": "Voice extra params JSON must be a valid object.",
+        "fields": {
+          "voice": "Voice",
+          "responseFormat": "Response Format",
+          "speed": "Speed",
+          "extraParamsJson": "Extra Params JSON"
+        },
+        "placeholders": {
+          "voice": "alloy",
+          "responseFormat": "mp3",
+          "speed": "1.0",
+          "extraParamsJson": "{\n  \"style\": \"warm\"\n}"
         }
       },
       "toggles": {
@@ -221,6 +265,7 @@
       "emptyTitle": "No preview yet",
       "emptyDescription": "Run a preview to inspect the answer, reasoning, tool calls, and raw payload.",
       "images": "Generated Images",
+      "audio": "Generated Audio",
       "imageAlt": "Generated preview image {index}",
       "response": "Assistant Response",
       "reasoning": "Reasoning",

@@ -338,6 +338,7 @@ fn row_to_profile(row: &SqliteRow) -> Result<CustomTaskAgentProfile, McpError> {
         .as_str()
     {
         "image_generation" => CustomTaskAgentInvocationKind::ImageGeneration,
+        "text_to_speech" => CustomTaskAgentInvocationKind::TextToSpeech,
         _ => CustomTaskAgentInvocationKind::Chat,
     };
     let model_config = row

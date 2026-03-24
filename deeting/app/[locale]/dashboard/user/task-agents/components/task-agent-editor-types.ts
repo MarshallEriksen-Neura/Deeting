@@ -5,6 +5,7 @@ import type {
   UpsertCustomTaskAgentPayload,
 } from "@/lib/api/custom-task-agents"
 import type { TaskAgentImageConfigDraft } from "./task-agent-image-config"
+import type { TaskAgentVoiceConfigDraft } from "./task-agent-voice-config"
 
 export type TaskAgentDraft = {
   name: string
@@ -15,6 +16,7 @@ export type TaskAgentDraft = {
   model: string
   provider_model_id: string
   image_config: TaskAgentImageConfigDraft
+  voice_config: TaskAgentVoiceConfigDraft
   model_config_json: string
   callable_mcp_tool_ids: string[]
   guidance_skill_ids: string[]

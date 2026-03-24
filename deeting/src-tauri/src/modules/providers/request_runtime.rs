@@ -30,6 +30,15 @@ pub struct PreparedJsonResponse {
     pub json: Option<Value>,
 }
 
+#[derive(Debug, Clone)]
+pub struct PreparedRawResponse {
+    pub status: reqwest::StatusCode,
+    pub headers: BTreeMap<String, String>,
+    pub bytes: Vec<u8>,
+    pub text: Option<String>,
+    pub json: Option<Value>,
+}
+
 pub fn prepare_provider_request(
     preset: Option<&ProviderPreset>,
     instance: &ProviderInstance,
@@ -203,6 +212,46 @@ pub async fn send_prepared_json_request(
     Ok(PreparedJsonResponse {
         status,
         headers,
+        text,
+        json,
+    })
+}
+
+pub async fn send_prepared_request_raw(
+    client: &Client,
+    prepared: &PreparedProviderRequest,
+) -> Result<PreparedRawResponse, String> {
+    let method = Method::from_bytes(prepared.method.as_bytes()).unwrap_or(Method::POST);
+    let mut request = client.request(method, prepared.url.as_str());
+    if !prepared.query_params.is_empty() {
+        request = request.query(&prepared.query_params);
+    }
+    for (key, value) in &prepared.headers {
+        request = request.header(key, value);
+    }
+    let response = request
+        .json(&prepared.body)
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+    let status = response.status();
+    let headers: BTreeMap<String, String> = response
+        .headers()
+        .iter()
+        .filter_map(|(key, value)| {
+            value
+                .to_str()
+                .ok()
+                .map(|text| (key.as_str().to_string(), text.to_string()))
+        })
+        .collect();
+    let bytes = response.bytes().await.map_err(|err| err.to_string())?.to_vec();
+    let text = String::from_utf8(bytes.clone()).ok();
+    let json = serde_json::from_slice::<Value>(&bytes).ok();
+    Ok(PreparedRawResponse {
+        status,
+        headers,
+        bytes,
         text,
         json,
     })

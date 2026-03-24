@@ -54,7 +54,10 @@ type ImageTaskAgentEditorProps = {
     key: K,
     value: TaskAgentDraft[K],
   ) => void
-  updateImageDraft: (key: keyof TaskAgentDraft["image_config"], value: string) => void
+  updateImageDraft: <K extends keyof TaskAgentDraft["image_config"]>(
+    key: K,
+    value: TaskAgentDraft["image_config"][K],
+  ) => void
   handleTaskAgentModelChange: (value: string) => void
 }
 
@@ -227,6 +230,40 @@ export function ImageTaskAgentEditor({
               rows={3}
               placeholder={t("editor.imageConfig.placeholders.negativePrompt")}
             />
+          </div>
+        </div>
+
+        <div className="grid gap-5 lg:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="task-agent-max-input-images">
+              {t("editor.imageConfig.fields.maxInputImages")}
+            </Label>
+            <Input
+              id="task-agent-max-input-images"
+              value={draft.image_config.max_input_images}
+              onChange={(event) =>
+                updateImageDraft("max_input_images", event.target.value)
+              }
+              placeholder={t("editor.imageConfig.placeholders.maxInputImages")}
+            />
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-[var(--foreground)]">
+                  {t("editor.imageConfig.fields.allowTextOnly")}
+                </p>
+                <p className="text-xs text-[var(--muted)]">
+                  {t("editor.imageConfig.helpers.allowTextOnly")}
+                </p>
+              </div>
+              <Switch
+                checked={draft.image_config.allow_text_only}
+                onCheckedChange={(checked) =>
+                  updateImageDraft("allow_text_only", checked)
+                }
+              />
+            </div>
           </div>
         </div>
 

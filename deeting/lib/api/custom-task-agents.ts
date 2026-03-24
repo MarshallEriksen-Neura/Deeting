@@ -13,6 +13,7 @@ async function invokeTauri<T>(
 export const CustomTaskAgentInvocationKindSchema = z.enum([
   "chat",
   "image_generation",
+  "text_to_speech",
 ])
 
 export const CustomTaskAgentModelConfigSchema = z
@@ -95,6 +96,7 @@ export const CustomTaskAgentPreviewResponseSchema = z.object({
     )
     .default([]),
   images: z.array(z.string()).default([]),
+  audios: z.array(z.string()).default([]),
   raw: z.unknown().nullish(),
 })
 
@@ -140,6 +142,7 @@ export interface UpsertCustomTaskAgentPayload {
 
 export interface CustomTaskAgentPreviewPayload {
   message: string
+  image_urls?: string[]
   temperature?: number | null
   max_tokens?: number | null
   max_rounds?: number | null
@@ -216,6 +219,7 @@ export async function previewCustomTaskAgent(
     agent_id: agentId,
     payload: {
       message: payload.message,
+      image_urls: payload.image_urls ?? [],
       temperature: payload.temperature ?? null,
       max_tokens: payload.max_tokens ?? null,
       max_rounds: payload.max_rounds ?? null,

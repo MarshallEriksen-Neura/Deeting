@@ -73,9 +73,12 @@ async fn execute_via_worker_profile(
         temperature: input.temperature,
         max_tokens: input.max_tokens,
         max_rounds: input.max_rounds,
+        image_urls: Vec::new(),
     };
 
-    let response = preview_custom_task_agent(app_handle, app_state, profile, request).await?;
+    let response = preview_custom_task_agent(app_handle, app_state, profile, request)
+        .await
+        .map_err(|err| err.to_string())?;
     let status = normalize_execution_status(&response.status);
 
     Ok(WorkerExecutionResult {

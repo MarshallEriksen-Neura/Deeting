@@ -74,6 +74,8 @@ export interface ProviderModel {
   rpm?: number
   /** Tokens per minute limit */
   tpm?: number
+  /** Maximum number of input images supported per request */
+  max_input_images?: number
   /** Whether model supports function calling */
   supports_functions?: boolean
   /** Whether model supports JSON mode */

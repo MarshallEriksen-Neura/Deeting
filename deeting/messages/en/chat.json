@@ -201,7 +201,11 @@
       "retry": "Retry",
       "refresh": "Refresh page",
       "requestFailed": "Request failed. Please try again.",
-      "modelUnavailable": "No available models. Please configure a provider."
+      "modelUnavailable": "No available models. Please configure a provider.",
+      "imageAgentInputRequired": "This image agent requires at least one uploaded image.",
+      "imageAgentInputLimitExceeded": "You uploaded more images than this image agent allows in a single request.",
+      "imageAgentUpstreamInputLimitExceeded": "The selected image model cannot accept that many input images.",
+      "imageAgentInputResolutionFailed": "We could not prepare one or more uploaded images for this request."
     },
     "routing": {
     "auto": "Auto routing",

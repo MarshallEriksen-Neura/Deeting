@@ -12,6 +12,7 @@ import {
 import { buildMessageContent, resolveLocalAssetUrlsInContent } from "@/lib/chat/message-content"
 import { normalizeConversationMessages } from "@/lib/chat/conversation-adapter"
 import { createRequestId } from "@/lib/chat/request-id"
+import { useI18n } from "@/hooks/use-i18n"
 
 const WEB_SESSION_STORAGE_KEY = "deeting-chat-session:router"
 
@@ -279,6 +280,25 @@ function createErrorBlock(messageId: string, message: string): MessageBlock {
   } as MessageBlock
 }
 
+function formatChatRuntimeErrorMessage(
+  t: (key: string) => string,
+  message: string,
+  errorCode?: string | null
+) {
+  switch ((errorCode || "").trim()) {
+    case "IMAGE_AGENT_INPUT_REQUIRED":
+      return t("error.imageAgentInputRequired")
+    case "IMAGE_AGENT_INPUT_LIMIT_EXCEEDED":
+      return t("error.imageAgentInputLimitExceeded")
+    case "IMAGE_AGENT_UPSTREAM_INPUT_LIMIT_EXCEEDED":
+      return t("error.imageAgentUpstreamInputLimitExceeded")
+    case "IMAGE_AGENT_INPUT_RESOLUTION_FAILED":
+      return t("error.imageAgentInputResolutionFailed")
+    default:
+      return message
+  }
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object") return null
   return value as Record<string, unknown>
@@ -449,6 +469,7 @@ export const resolveMessageAttachments = async (messages: Message[], isTauri = f
 }
 
 export function useChatMessagingService() {
+  const t = useI18n("chat")
   const cancelRef = useRef<(() => void) | null>(null)
   const requestIdRef = useRef<string | null>(null)
   const activeRequestRouteRef = useRef<"local_gateway" | "cloud" | null>(null)
@@ -746,8 +767,13 @@ export function useChatMessagingService() {
             }
             if (streamMessage.type === "error") {
               const message = streamMessage.message || "Request failed"
-              onBlocks([createErrorBlock(errorBlockIdBase, message)])
-              onRequestError(message, streamMessage.error_code ?? null)
+              const localizedMessage = formatChatRuntimeErrorMessage(
+                t,
+                message,
+                streamMessage.error_code ?? null
+              )
+              onBlocks([createErrorBlock(errorBlockIdBase, localizedMessage)])
+              onRequestError(localizedMessage, streamMessage.error_code ?? null)
               return
             }
             if (streamMessage.type === "blocks") {
@@ -962,7 +988,7 @@ export function useChatMessagingService() {
           return Array.isArray(latest?.blocks) ? (latest.blocks as MessageBlock[]) : []
         },
         onRequestError: (message, errorCode) => {
-          setErrorMessage(errorCode ? `${errorCode}: ${message}` : message)
+          setErrorMessage(formatChatRuntimeErrorMessage(t, message, errorCode))
         },
       })
     } catch (error) {
@@ -1287,6 +1313,7 @@ export function useChatMessagingService() {
           return candidate?.blocks ?? []
         },
         onRequestError: (message, errorCode) => {
+          const localizedMessage = formatChatRuntimeErrorMessage(t, message, errorCode)
           const currentCandidate = useChatStore.getState().compareByMessageId[targetMessageId]?.candidates[compareModelKey]
           upsertCompareCandidate(targetMessageId, {
             modelKey: compareModelKey,
@@ -1296,7 +1323,7 @@ export function useChatMessagingService() {
             blocks: currentCandidate?.blocks ?? [],
             loading: false,
             traceId: currentCandidate?.traceId,
-            errorMessage: errorCode ? `${errorCode}: ${message}` : message,
+            errorMessage: localizedMessage,
             statusStage: currentCandidate?.statusStage ?? null,
             statusCode: currentCandidate?.statusCode ?? null,
             statusMeta: currentCandidate?.statusMeta ?? null,

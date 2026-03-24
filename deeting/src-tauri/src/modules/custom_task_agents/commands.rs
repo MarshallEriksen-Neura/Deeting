@@ -136,7 +136,9 @@ pub async fn preview_custom_task_agent(
         .await
         .map_err(|err| err.to_string())?
         .ok_or_else(|| "custom task agent not found".to_string())?;
-    execute_preview_custom_task_agent(&app, state.inner(), &profile, payload).await
+    execute_preview_custom_task_agent(&app, state.inner(), &profile, payload)
+        .await
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]

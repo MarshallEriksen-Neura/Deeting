@@ -34,7 +34,8 @@
       "updatedAt": "更新于 {value}",
       "sections": {
         "chat": "聊天任务智能体",
-        "image": "图片智能体"
+        "image": "图片智能体",
+        "voice": "语音智能体"
       }
     },
     "starter": {
@@ -67,6 +68,20 @@
           "invoke": "把提示词角色、风格和出图默认值收敛成可复用的图片角色。",
           "preview": "保持图片优先的创作体验，不展示 skills 和 MCP tools 这类无关配置。"
         }
+      },
+      "voice": {
+        "title": "语音智能体",
+        "description": "适合在 chat 中把文本直接转成语音输出，专注声音风格和音频预览。",
+        "cta": "创建语音智能体",
+        "tags": {
+          "voice": "声音设定",
+          "output": "音频输出",
+          "preview": "语音预览"
+        },
+        "features": {
+          "invoke": "把默认 voice、格式和语音参数收敛成可复用的语音角色。",
+          "preview": "直接把音频输出回到 chat block，而不是走独立语音流程。"
+        }
       }
     },
     "filters": {
@@ -76,6 +91,7 @@
     "badges": {
       "chat": "对话",
       "imageGeneration": "图片",
+      "textToSpeech": "语音",
       "imagePreferred": "图片优先",
       "enabled": "已启用",
       "disabled": "已停用",
@@ -98,6 +114,10 @@
       "imageWorkspace": {
         "title": "创建图片智能体",
         "description": "配置图片智能体的风格、输出默认值和可视化预览。"
+      },
+      "voiceWorkspace": {
+        "title": "创建语音智能体",
+        "description": "配置语音智能体的声音默认值和音频预览。"
       },
       "draft": "草稿",
       "updatedAt": "最近更新 {value}",
@@ -144,6 +164,8 @@
         "invalidExtraParamsJson": "图片额外参数 JSON 必须是合法对象。",
         "fields": {
           "negativePrompt": "反向提示词",
+          "maxInputImages": "最大输入图片数",
+          "allowTextOnly": "允许纯文本出图",
           "imageUrl": "参考图 URL",
           "aspectRatio": "宽高比",
           "numOutputs": "输出数量",
@@ -160,6 +182,7 @@
         },
         "placeholders": {
           "negativePrompt": "默认希望避免出现的内容。",
+          "maxInputImages": "1",
           "imageUrl": "https://example.com/reference.png",
           "aspectRatio": "1:1",
           "numOutputs": "1",
@@ -173,6 +196,27 @@
           "height": "1024",
           "samplerName": "euler",
           "extraParamsJson": "{\n  \"prompt_optimizer\": true\n}"
+        },
+        "helpers": {
+          "allowTextOnly": "开启后，即使用户本次没有上传参考图，这个图片智能体也可以仅凭文本请求出图。"
+        }
+      },
+      "voiceConfig": {
+        "title": "语音默认参数",
+        "description": "为这个任务智能体设置每次语音输出都会复用的默认参数。",
+        "helper": "这些结构化字段会写入 model_config.text_to_speech，并在保存时覆盖高级 JSON 中同名的配置项。",
+        "invalidExtraParamsJson": "语音额外参数 JSON 必须是合法对象。",
+        "fields": {
+          "voice": "声音",
+          "responseFormat": "返回格式",
+          "speed": "语速",
+          "extraParamsJson": "额外参数 JSON"
+        },
+        "placeholders": {
+          "voice": "alloy",
+          "responseFormat": "mp3",
+          "speed": "1.0",
+          "extraParamsJson": "{\n  \"style\": \"warm\"\n}"
         }
       },
       "toggles": {
@@ -221,6 +265,7 @@
       "emptyTitle": "还没有预览结果",
       "emptyDescription": "运行一次预览后，这里会显示回答、推理、工具调用和原始载荷。",
       "images": "生成图片",
+      "audio": "生成音频",
       "imageAlt": "预览生成图片 {index}",
       "response": "智能体响应",
       "reasoning": "推理内容",

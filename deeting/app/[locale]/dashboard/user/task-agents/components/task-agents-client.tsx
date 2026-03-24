@@ -39,9 +39,17 @@ import {
   parseTaskAgentImageExtraParamsJson,
   type TaskAgentImageConfigDraft,
 } from "./task-agent-image-config"
+import {
+  applyTaskAgentVoiceConfigToModelConfig,
+  buildTaskAgentVoiceConfigDraft,
+  createEmptyTaskAgentVoiceConfigDraft,
+  parseTaskAgentVoiceExtraParamsJson,
+  type TaskAgentVoiceConfigDraft,
+} from "./task-agent-voice-config"
 import { ChatTaskAgentEditor } from "./chat-task-agent-editor"
 import { ImageTaskAgentEditor } from "./image-task-agent-editor"
 import { TaskAgentPreviewPanel } from "./task-agent-preview-panel"
+import { VoiceTaskAgentEditor } from "./voice-task-agent-editor"
 import type {
   PreviewDraft,
   TaskAgentDraft,
@@ -90,6 +98,8 @@ const NEW_AGENT_ID = "__new_custom_task_agent__"
 const DEFAULT_TASK_AGENT_MODEL_VALUE = "__task_agent_model_default__"
 const INTERNAL_IMAGE_AGENT_TASK_PROMPT =
   "Generate images from the user's current chat request and attachments."
+const INTERNAL_TTS_AGENT_TASK_PROMPT =
+  "Generate speech audio from the user's current chat request."
 
 
 const defaultPreviewDraft: PreviewDraft = {
@@ -109,6 +119,7 @@ function createEmptyDraft(): TaskAgentDraft {
     model: "",
     provider_model_id: "",
     image_config: createEmptyTaskAgentImageConfigDraft(),
+    voice_config: createEmptyTaskAgentVoiceConfigDraft(),
     model_config_json: "",
     callable_mcp_tool_ids: [],
     guidance_skill_ids: [],
@@ -134,6 +145,7 @@ function extractProviderModelId(
 function buildDraftFromProfile(profile: CustomTaskAgentProfile): TaskAgentDraft {
   const isImageAgent = profile.invocation_kind === "image_generation"
   const imageConfig = buildTaskAgentImageConfigDraft(profile.model_config ?? undefined)
+  const voiceConfig = buildTaskAgentVoiceConfigDraft(profile.model_config ?? undefined)
   return {
     name: profile.name,
     description: profile.description ?? "",
@@ -148,6 +160,7 @@ function buildDraftFromProfile(profile: CustomTaskAgentProfile): TaskAgentDraft 
           image_url: "",
         }
       : imageConfig,
+    voice_config: voiceConfig,
     model_config_json: profile.model_config
       ? JSON.stringify(
           isImageAgent
@@ -419,7 +432,11 @@ export function TaskAgentsClient() {
     enabled: isDesktop,
     fetchAssistants: false,
     modelCapability:
-      draft.invocation_kind === "image_generation" ? "image_generation" : "chat",
+      draft.invocation_kind === "image_generation"
+        ? "image_generation"
+        : draft.invocation_kind === "text_to_speech"
+          ? "text_to_speech"
+          : "chat",
   })
 
   React.useEffect(() => {
@@ -479,8 +496,12 @@ export function TaskAgentsClient() {
     !isStarterState &&
     (selectedAgent?.invocation_kind ?? draft.invocation_kind) ===
       "image_generation"
+  const isVoiceWorkspace =
+    !isStarterState &&
+    (selectedAgent?.invocation_kind ?? draft.invocation_kind) ===
+      "text_to_speech"
 
-  const showBindingsWorkspace = !isStarterState && !isImageWorkspace
+  const showBindingsWorkspace = !isStarterState && !isImageWorkspace && !isVoiceWorkspace
 
   const dateFormatter = React.useMemo(
     () =>
@@ -529,6 +550,9 @@ export function TaskAgentsClient() {
       chat: filteredAgents.filter((agent) => agent.invocation_kind === "chat"),
       image: filteredAgents.filter(
         (agent) => agent.invocation_kind === "image_generation",
+      ),
+      voice: filteredAgents.filter(
+        (agent) => agent.invocation_kind === "text_to_speech",
       ),
     }),
     [filteredAgents],
@@ -748,11 +772,24 @@ export function TaskAgentsClient() {
     }
   }, [draft.image_config.extra_params_json, t])
 
+  const parsedVoiceExtraParams = React.useMemo(() => {
+    const parsed = parseTaskAgentVoiceExtraParamsJson(
+      draft.voice_config.extra_params_json,
+    )
+    return {
+      value: parsed.value,
+      error: parsed.error
+        ? t("editor.voiceConfig.invalidExtraParamsJson")
+        : null,
+    }
+  }, [draft.voice_config.extra_params_json, t])
+
   const draftPayload = React.useMemo<UpsertCustomTaskAgentPayload>(() => {
     let modelConfig = { ...parsedModelConfig.value }
     const trimmedModel = draft.model.trim()
     const trimmedProviderModelId = draft.provider_model_id.trim()
     const isImageAgent = draft.invocation_kind === "image_generation"
+    const isVoiceAgent = draft.invocation_kind === "text_to_speech"
 
     if (trimmedModel) {
       modelConfig.model = trimmedModel
@@ -775,8 +812,17 @@ export function TaskAgentsClient() {
         parsedImageExtraParams.value,
       )
       modelConfig = stripPersistedImageAgentRuntimeFields(modelConfig) ?? {}
+      delete modelConfig.text_to_speech
+    } else if (isVoiceAgent) {
+      modelConfig = applyTaskAgentVoiceConfigToModelConfig(
+        modelConfig,
+        draft.voice_config,
+        parsedVoiceExtraParams.value,
+      )
+      delete modelConfig.image_generation
     } else {
       delete modelConfig.image_generation
+      delete modelConfig.text_to_speech
     }
 
     const normalizedDescription = draft.description.trim()
@@ -787,6 +833,8 @@ export function TaskAgentsClient() {
       description: normalizedDescription || null,
       task_prompt: isImageAgent
         ? INTERNAL_IMAGE_AGENT_TASK_PROMPT
+        : isVoiceAgent
+          ? INTERNAL_TTS_AGENT_TASK_PROMPT
         : draft.task_prompt.trim(),
       invocation_kind: draft.invocation_kind,
       preferred_for_image_generation: draft.preferred_for_image_generation,
@@ -797,7 +845,12 @@ export function TaskAgentsClient() {
       discoverable: draft.discoverable,
       is_enabled: draft.is_enabled,
     }
-  }, [draft, parsedImageExtraParams.value, parsedModelConfig.value])
+  }, [
+    draft,
+    parsedImageExtraParams.value,
+    parsedModelConfig.value,
+    parsedVoiceExtraParams.value,
+  ])
 
   const hasImageConfigValues = React.useMemo(
     () =>
@@ -808,20 +861,34 @@ export function TaskAgentsClient() {
     [draft.image_config],
   )
 
+  const hasVoiceConfigValues = React.useMemo(
+    () =>
+      Object.values(draft.voice_config).some(
+        (value) => typeof value === "string" && value.trim().length > 0,
+      ),
+    [draft.voice_config],
+  )
+
   const comparableSelectedPayload = React.useMemo(() => {
     if (!selectedAgent) return null
     const isImageAgent = selectedAgent.invocation_kind === "image_generation"
+    const isVoiceAgent = selectedAgent.invocation_kind === "text_to_speech"
     return {
       name: selectedAgent.name.trim(),
       description: selectedAgent.description?.trim() || null,
       task_prompt: isImageAgent
         ? INTERNAL_IMAGE_AGENT_TASK_PROMPT
+        : isVoiceAgent
+          ? INTERNAL_TTS_AGENT_TASK_PROMPT
         : selectedAgent.task_prompt.trim(),
       invocation_kind: selectedAgent.invocation_kind,
       preferred_for_image_generation: selectedAgent.preferred_for_image_generation,
-      model_config: isImageAgent
-        ? stripPersistedImageAgentRuntimeFields(selectedAgent.model_config ?? null)
-        : (selectedAgent.model_config ?? null),
+      model_config:
+        isImageAgent
+          ? stripPersistedImageAgentRuntimeFields(selectedAgent.model_config ?? null)
+          : isVoiceAgent
+            ? selectedAgent.model_config ?? null
+            : (selectedAgent.model_config ?? null),
       callable_mcp_tool_ids: selectedAgent.callable_mcp_tool_ids,
       guidance_skill_ids: selectedAgent.guidance_skill_ids,
       tags: selectedAgent.tags,
@@ -835,13 +902,15 @@ export function TaskAgentsClient() {
 
     if (selectedAgentId === NEW_AGENT_ID) {
       const isImageAgent = draft.invocation_kind === "image_generation"
+      const isVoiceAgent = draft.invocation_kind === "text_to_speech"
       return Boolean(
         draft.name.trim() ||
           draft.description.trim() ||
-          (!isImageAgent && draft.task_prompt.trim()) ||
+          (!isImageAgent && !isVoiceAgent && draft.task_prompt.trim()) ||
           draft.model.trim() ||
           draft.provider_model_id.trim() ||
           hasImageConfigValues ||
+          hasVoiceConfigValues ||
           draft.model_config_json.trim() ||
           draft.callable_mcp_tool_ids.length ||
           draft.guidance_skill_ids.length ||
@@ -862,6 +931,7 @@ export function TaskAgentsClient() {
     draft,
     draftPayload,
     hasImageConfigValues,
+    hasVoiceConfigValues,
     isStarterState,
     selectedAgentId,
   ])
@@ -870,8 +940,10 @@ export function TaskAgentsClient() {
     isSaving ||
     Boolean(parsedModelConfig.error) ||
     Boolean(parsedImageExtraParams.error) ||
+    Boolean(parsedVoiceExtraParams.error) ||
     !draftPayload.name ||
-    !draftPayload.task_prompt ||
+    !(draft.invocation_kind === "image_generation" || draft.invocation_kind === "text_to_speech") &&
+      !draftPayload.task_prompt ||
     !hasUnsavedChanges
 
   React.useEffect(() => {
@@ -939,6 +1011,22 @@ export function TaskAgentsClient() {
         ...current,
         image_config: {
           ...current.image_config,
+          [key]: value,
+        },
+      }))
+    },
+    [],
+  )
+
+  const updateVoiceDraft = React.useCallback(
+    <K extends keyof TaskAgentDraft["voice_config"]>(
+      key: K,
+      value: TaskAgentDraft["voice_config"][K],
+    ) => {
+      setDraft((current) => ({
+        ...current,
+        voice_config: {
+          ...current.voice_config,
           [key]: value,
         },
       }))
@@ -1182,6 +1270,9 @@ export function TaskAgentsClient() {
                   <SelectItem value="image_generation">
                     {t("badges.imageGeneration")}
                   </SelectItem>
+                  <SelectItem value="text_to_speech">
+                    {t("badges.textToSpeech")}
+                  </SelectItem>
                 </SelectContent>
               </Select>
 
@@ -1296,6 +1387,31 @@ export function TaskAgentsClient() {
                         ))}
                       </div>
                     ) : null}
+
+                    {groupedAgents.voice.length > 0 ? (
+                      <div className="space-y-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+                          {t("library.sections.voice")}
+                        </p>
+                        {groupedAgents.voice.map((agent) => (
+                          <AgentListItem
+                            key={agent.id}
+                            agent={agent}
+                            isSelected={selectedAgentId === agent.id}
+                            updatedLabel={t("library.updatedAt", {
+                              value: dateFormatter.format(new Date(agent.updated_at)),
+                            })}
+                            invocationLabel={t("badges.textToSpeech")}
+                            preferredImageLabel={t("badges.imagePreferred")}
+                            enabledLabel={t("badges.enabled")}
+                            disabledLabel={t("badges.disabled")}
+                            discoverableLabel={t("badges.discoverable")}
+                            hiddenLabel={t("badges.hidden")}
+                            onSelect={handleSelectAgent}
+                          />
+                        ))}
+                      </div>
+                    ) : null}
                   </>
                 )}
               </div>
@@ -1315,6 +1431,8 @@ export function TaskAgentsClient() {
                         ? t("starter.title")
                         : isImageWorkspace
                           ? t("editor.imageWorkspace.title")
+                          : isVoiceWorkspace
+                            ? t("editor.voiceWorkspace.title")
                           : t("editor.chatWorkspace.title")}
                   </GlassCardTitle>
                   {selectedAgent ? (
@@ -1322,7 +1440,9 @@ export function TaskAgentsClient() {
                       <Badge variant="secondary">
                         {selectedAgent.invocation_kind === "chat"
                           ? t("badges.chat")
-                          : t("badges.imageGeneration")}
+                          : selectedAgent.invocation_kind === "image_generation"
+                            ? t("badges.imageGeneration")
+                            : t("badges.textToSpeech")}
                       </Badge>
                       <Badge
                         className={cn(
@@ -1353,6 +1473,8 @@ export function TaskAgentsClient() {
                       ? t("starter.description")
                       : isImageWorkspace
                         ? t("editor.imageWorkspace.description")
+                        : isVoiceWorkspace
+                          ? t("editor.voiceWorkspace.description")
                         : t("editor.chatWorkspace.description")}
                 </GlassCardDescription>
               </div>
@@ -1420,6 +1542,22 @@ export function TaskAgentsClient() {
                   modelGroups={modelGroups}
                   updateDraft={updateDraft}
                   updateImageDraft={updateImageDraft}
+                  handleTaskAgentModelChange={handleTaskAgentModelChange}
+                />
+              ) : isVoiceWorkspace ? (
+                <VoiceTaskAgentEditor
+                  t={t}
+                  draft={draft}
+                  parsedModelConfigError={parsedModelConfig.error}
+                  parsedVoiceExtraParamsError={parsedVoiceExtraParams.error}
+                  taskAgentModelSelectValue={taskAgentModelSelectValue}
+                  selectedTaskAgentModelOption={selectedTaskAgentModelOption}
+                  unknownTaskAgentModelLabel={unknownTaskAgentModelLabel}
+                  unknownTaskAgentModelValue={unknownTaskAgentModelValue}
+                  isLoadingModels={isLoadingModels}
+                  modelGroups={modelGroups}
+                  updateDraft={updateDraft}
+                  updateVoiceDraft={updateVoiceDraft}
                   handleTaskAgentModelChange={handleTaskAgentModelChange}
                 />
               ) : (

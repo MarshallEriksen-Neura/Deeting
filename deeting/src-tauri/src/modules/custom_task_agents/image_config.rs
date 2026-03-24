@@ -3,6 +3,8 @@ use serde_json::Value;
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct CustomTaskAgentImageConfig {
     pub(crate) negative_prompt: Option<String>,
+    pub(crate) max_input_images: Option<i64>,
+    pub(crate) allow_text_only: Option<bool>,
     pub(crate) width: Option<i64>,
     pub(crate) height: Option<i64>,
     pub(crate) aspect_ratio: Option<String>,
@@ -43,9 +45,16 @@ pub(crate) fn resolve_custom_task_agent_image_config(
             .and_then(|map| map.get(key))
             .and_then(Value::as_f64)
     };
+    let read_bool = |key: &str| {
+        image_config
+            .and_then(|map| map.get(key))
+            .and_then(Value::as_bool)
+    };
 
     CustomTaskAgentImageConfig {
         negative_prompt: read_string("negative_prompt"),
+        max_input_images: read_i64("max_input_images"),
+        allow_text_only: read_bool("allow_text_only"),
         width: read_i64("width"),
         height: read_i64("height"),
         aspect_ratio: read_string("aspect_ratio"),
@@ -75,6 +84,8 @@ mod tests {
             "model": "Qwen-Image",
             "image_generation": {
                 "negative_prompt": "blurry",
+                "max_input_images": 3,
+                "allow_text_only": false,
                 "width": 1024,
                 "height": 768,
                 "aspect_ratio": "4:3",
@@ -97,6 +108,8 @@ mod tests {
             result,
             CustomTaskAgentImageConfig {
                 negative_prompt: Some("blurry".to_string()),
+                max_input_images: Some(3),
+                allow_text_only: Some(false),
                 width: Some(1024),
                 height: Some(768),
                 aspect_ratio: Some("4:3".to_string()),

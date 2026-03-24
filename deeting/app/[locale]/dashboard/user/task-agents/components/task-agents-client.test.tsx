@@ -433,6 +433,7 @@ describe("TaskAgentsClient", () => {
     expect((await screen.findAllByText("starter.title")).length).toBeGreaterThan(0)
     expect(screen.getByText("starter.chat.title")).not.toBeNull()
     expect(screen.getByText("starter.image.title")).not.toBeNull()
+    expect(screen.getByText("starter.voice.title")).not.toBeNull()
   })
 
   it("hides bindings when creating an image agent from the starter", async () => {
@@ -501,7 +502,9 @@ describe("TaskAgentsClient", () => {
     expect(payload.model_config).toEqual({
       model: "Qwen-Image",
       image_generation: {
+        allow_text_only: true,
         aspect_ratio: "1:1",
+        max_input_images: 1,
       },
     })
   })

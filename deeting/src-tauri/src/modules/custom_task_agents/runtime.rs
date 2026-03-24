@@ -1,17 +1,21 @@
 use std::collections::HashMap;
 
+use base64::Engine;
 use serde_json::{json, Value};
+use uuid::Uuid;
 
 use crate::modules::ai_upstream::{
     request_provider_chat_completion, resolve_local_model_connection,
 };
+use crate::modules::custom_task_agents::voice_config::resolve_custom_task_agent_tts_config;
+use crate::modules::chat_assets::resolve_chat_assets_dir;
 use crate::modules::custom_task_agents::image_config::resolve_custom_task_agent_image_config;
 use crate::modules::image_generation::commands::run_local_image_generation_task_inline;
 use crate::modules::image_generation::types::LocalImageGenerationTaskCreateRequest;
 use crate::modules::mcp::commands::runtime::{execute_mcp_tool, resolve_callable_mcp_tool_by_ref};
 use crate::state::AppState;
 use mcp_core::types::{LocalChatInputMessage, McpTool};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use super::skill_actions::{
     execute_skill_action, load_callable_skill_actions, ResolvedSkillAction,
@@ -20,9 +24,52 @@ use super::types::{
     CustomTaskAgentInvocationKind, CustomTaskAgentPreviewRequest, CustomTaskAgentPreviewResponse,
     CustomTaskAgentProfile,
 };
+use crate::modules::voice_capabilities::tts::request_provider_text_to_speech;
+use crate::modules::voice_capabilities::types::TtsRequest;
 
 const MAX_CUSTOM_TASK_AGENT_TOOL_ROUNDS: usize = 4;
 const MAX_GUIDANCE_SKILL_DOCS: usize = 3;
+pub(crate) const IMAGE_AGENT_INPUT_REQUIRED_CODE: &str = "IMAGE_AGENT_INPUT_REQUIRED";
+pub(crate) const IMAGE_AGENT_INPUT_LIMIT_EXCEEDED_CODE: &str =
+    "IMAGE_AGENT_INPUT_LIMIT_EXCEEDED";
+pub(crate) const IMAGE_AGENT_UPSTREAM_INPUT_LIMIT_EXCEEDED_CODE: &str =
+    "IMAGE_AGENT_UPSTREAM_INPUT_LIMIT_EXCEEDED";
+pub(crate) const IMAGE_AGENT_INPUT_RESOLUTION_FAILED_CODE: &str =
+    "IMAGE_AGENT_INPUT_RESOLUTION_FAILED";
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub(crate) struct CustomTaskAgentRuntimeError {
+    pub(crate) code: Option<String>,
+    pub(crate) message: String,
+}
+
+impl CustomTaskAgentRuntimeError {
+    pub(crate) fn new(message: impl Into<String>) -> Self {
+        Self {
+            code: None,
+            message: message.into(),
+        }
+    }
+
+    pub(crate) fn with_code(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            code: Some(code.into()),
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for CustomTaskAgentRuntimeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.message.as_str())
+    }
+}
+
+impl From<String> for CustomTaskAgentRuntimeError {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
 
 #[derive(Debug, Clone)]
 struct BoundCallable {
@@ -63,29 +110,91 @@ pub(crate) async fn preview_custom_task_agent(
     app_state: &AppState,
     profile: &CustomTaskAgentProfile,
     request: CustomTaskAgentPreviewRequest,
-) -> Result<CustomTaskAgentPreviewResponse, String> {
+) -> Result<CustomTaskAgentPreviewResponse, CustomTaskAgentRuntimeError> {
     if !profile.is_enabled {
-        return Err("custom task agent is disabled".to_string());
+        return Err(CustomTaskAgentRuntimeError::new(
+            "custom task agent is disabled",
+        ));
     }
 
     let message = request.message.trim();
     if message.is_empty() {
-        return Err("preview message is required".to_string());
+        return Err(CustomTaskAgentRuntimeError::new(
+            "preview message is required",
+        ));
     }
 
     let (model, provider_model_id) =
         resolve_custom_task_agent_model_selection(profile.model_config.as_ref());
-    let model_connection =
-        resolve_local_model_connection(app_state, &model, provider_model_id.as_deref()).await?;
+    let model_connection = resolve_local_model_connection(
+        app_state,
+        &model,
+        provider_model_id.as_deref(),
+    )
+    .await
+    .map_err(CustomTaskAgentRuntimeError::from)?;
 
     if profile.invocation_kind == CustomTaskAgentInvocationKind::ImageGeneration {
         let image_config = resolve_custom_task_agent_image_config(profile.model_config.as_ref());
+        let allow_text_only = image_config.allow_text_only.unwrap_or(true);
+        let configured_max_input_images = image_config.max_input_images.unwrap_or(1).max(0) as usize;
+        let upstream_max_input_images = resolve_upstream_max_input_images(
+            app_state,
+            &model_connection.provider_model_id,
+        )
+        .await
+        .unwrap_or(1);
+        let input_image_count = request.image_urls.len();
+
+        if input_image_count == 0 && !allow_text_only {
+            return Err(CustomTaskAgentRuntimeError::with_code(
+                IMAGE_AGENT_INPUT_REQUIRED_CODE,
+                "this image agent requires at least one uploaded image",
+            ));
+        }
+        if input_image_count > configured_max_input_images {
+            return Err(CustomTaskAgentRuntimeError::with_code(
+                IMAGE_AGENT_INPUT_LIMIT_EXCEEDED_CODE,
+                format!(
+                    "this image agent accepts at most {} input image(s), but you uploaded {}",
+                    configured_max_input_images, input_image_count
+                ),
+            ));
+        }
+        if input_image_count > upstream_max_input_images {
+            return Err(CustomTaskAgentRuntimeError::with_code(
+                IMAGE_AGENT_UPSTREAM_INPUT_LIMIT_EXCEEDED_CODE,
+                format!(
+                    "the selected upstream model accepts at most {} input image(s), but you uploaded {}",
+                    upstream_max_input_images, input_image_count
+                ),
+            ));
+        }
+
+        let image_urls = resolve_request_image_urls(
+            app_handle,
+            app_state,
+            request
+                .image_urls
+                .into_iter()
+                .take(configured_max_input_images.min(upstream_max_input_images))
+                .collect::<Vec<_>>()
+                .as_slice(),
+        )
+        .await
+        .map_err(|err| {
+            CustomTaskAgentRuntimeError::with_code(
+                IMAGE_AGENT_INPUT_RESOLUTION_FAILED_CODE,
+                err,
+            )
+        })?;
         let detail = run_local_image_generation_task_inline(
             app_handle,
             app_state,
             LocalImageGenerationTaskCreateRequest {
                 model: model_connection.model_id.clone(),
                 prompt: message.to_string(),
+                image_urls: image_urls.clone(),
                 negative_prompt: image_config.negative_prompt,
                 width: image_config.width,
                 height: image_config.height,
@@ -103,10 +212,11 @@ pub(crate) async fn preview_custom_task_agent(
                 session_id: None,
                 request_id: None,
                 encrypt_prompt: Some(false),
-                image_url: image_config.image_url,
+                image_url: image_urls.first().cloned(),
             },
         )
-        .await?;
+        .await
+        .map_err(CustomTaskAgentRuntimeError::from)?;
         return Ok(CustomTaskAgentPreviewResponse {
             status: "completed".to_string(),
             content: String::new(),
@@ -124,14 +234,55 @@ pub(crate) async fn preview_custom_task_agent(
                 .iter()
                 .filter_map(|item| item.asset_url.clone().or_else(|| item.source_url.clone()))
                 .collect(),
+            audios: Vec::new(),
             raw: serde_json::to_value(detail).ok(),
         });
     }
 
-    let mcp_tools = load_callable_mcp_tools(app_state, &profile.callable_mcp_tool_ids).await?;
-    let guidance_skills = load_guidance_skill_docs(app_state, &profile.guidance_skill_ids).await?;
-    let skill_actions =
-        load_callable_skill_actions(app_state, &profile.callable_skill_action_refs).await?;
+    if profile.invocation_kind == CustomTaskAgentInvocationKind::TextToSpeech {
+        let tts_config = resolve_custom_task_agent_tts_config(profile.model_config.as_ref());
+        let payload = request_provider_text_to_speech(
+            app_handle,
+            app_state,
+            &TtsRequest {
+                model: model_connection.model_id.clone(),
+                provider_model_id: model_connection.provider_model_id.clone(),
+                text: message.to_string(),
+                voice: tts_config.voice.clone(),
+                response_format: tts_config.response_format.clone(),
+                extra_params: merge_tts_extra_params(tts_config.speed, tts_config.extra_params),
+            },
+            None,
+        )
+        .await?;
+
+        return Ok(CustomTaskAgentPreviewResponse {
+            status: "completed".to_string(),
+            content: String::new(),
+            model_id: model_connection.model_id,
+            provider_model_id: model_connection.provider_model_id,
+            invocation_kind: profile.invocation_kind.clone(),
+            reasoning_content: None,
+            tool_calls: Vec::new(),
+            tool_trace: Vec::new(),
+            callable_mcp_tool_ids: profile.callable_mcp_tool_ids.clone(),
+            guidance_skill_ids: profile.guidance_skill_ids.clone(),
+            callable_skill_action_refs: profile.callable_skill_action_refs.clone(),
+            images: Vec::new(),
+            audios: vec![payload.asset.url.clone()],
+            raw: serde_json::to_value(payload).ok(),
+        });
+    }
+
+    let mcp_tools = load_callable_mcp_tools(app_state, &profile.callable_mcp_tool_ids)
+        .await
+        .map_err(CustomTaskAgentRuntimeError::from)?;
+    let guidance_skills = load_guidance_skill_docs(app_state, &profile.guidance_skill_ids)
+        .await
+        .map_err(CustomTaskAgentRuntimeError::from)?;
+    let skill_actions = load_callable_skill_actions(app_state, &profile.callable_skill_action_refs)
+        .await
+        .map_err(CustomTaskAgentRuntimeError::from)?;
     let tool_payload = build_callable_payload(&mcp_tools, &skill_actions);
     let mut messages = build_initial_messages(profile, message, &guidance_skills);
     let mut tool_trace = Vec::<Value>::new();
@@ -152,7 +303,8 @@ pub(crate) async fn preview_custom_task_agent(
             None,
             None,
         )
-        .await?;
+        .await
+        .map_err(CustomTaskAgentRuntimeError::from)?;
         let callables = extract_bound_callables(&response);
         if callables.is_empty() {
             return Ok(CustomTaskAgentPreviewResponse {
@@ -179,6 +331,7 @@ pub(crate) async fn preview_custom_task_agent(
                 guidance_skill_ids: profile.guidance_skill_ids.clone(),
                 callable_skill_action_refs: profile.callable_skill_action_refs.clone(),
                 images: Vec::new(),
+                audios: Vec::new(),
                 raw: Some(response),
             });
         }
@@ -265,7 +418,8 @@ pub(crate) async fn preview_custom_task_agent(
             return Err(format!(
                 "callable '{}' is neither a bound MCP tool nor a bound skill action",
                 callable.name
-            ));
+            )
+            .into());
         }
 
         messages.push(LocalChatInputMessage {
@@ -280,7 +434,155 @@ pub(crate) async fn preview_custom_task_agent(
     Err(format!(
         "custom task agent exceeded {} callable rounds",
         max_rounds
-    ))
+    )
+    .into())
+}
+
+async fn resolve_request_image_urls(
+    app_handle: &AppHandle,
+    app_state: &AppState,
+    image_urls: &[String],
+) -> Result<Vec<String>, String> {
+    let mut resolved = Vec::new();
+    for image_url in image_urls {
+        let trimmed = image_url.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Some(object_key) = trimmed.strip_prefix("asset://") {
+            let object_key = object_key.trim_start_matches('/');
+            if object_key.is_empty() {
+                continue;
+            }
+            if let Some(public_url) = app_state
+                .providers
+                .store
+                .get_local_desktop_object_storage_config()
+                .await
+                .map_err(|err| err.to_string())?
+                .and_then(|config| config.build_public_url(object_key))
+            {
+                resolved.push(public_url);
+                continue;
+            }
+            let read_ticket = app_state
+                .providers
+                .store
+                .prepare_local_desktop_object_storage_read(
+                    crate::modules::providers::types::DesktopObjectStorageReadRequest {
+                        object_key: object_key.to_string(),
+                        expires_seconds: Some(900),
+                    },
+                )
+                .await
+                .map_err(|err| err.to_string())?;
+            resolved.push(read_ticket.asset_url);
+            continue;
+        }
+        if let Some(sha256) = trimmed.strip_prefix("local-asset://") {
+            let data_url = read_local_chat_asset_as_data_url(app_handle, sha256.trim()).await?;
+            resolved.push(data_url);
+            continue;
+        }
+        resolved.push(trimmed.to_string());
+    }
+    Ok(resolved)
+}
+
+async fn read_local_chat_asset_as_data_url(
+    app_handle: &AppHandle,
+    sha256: &str,
+) -> Result<String, String> {
+    let app_data_dir = app_handle.path().app_data_dir().ok();
+    let dir = resolve_chat_assets_dir(app_data_dir);
+    let exts = [
+        ("png", "image/png"),
+        ("jpg", "image/jpeg"),
+        ("jpeg", "image/jpeg"),
+        ("gif", "image/gif"),
+        ("webp", "image/webp"),
+        ("svg", "image/svg+xml"),
+        ("bmp", "image/bmp"),
+        ("tiff", "image/tiff"),
+        ("bin", "application/octet-stream"),
+    ];
+    for (ext, content_type) in exts {
+        let path = dir.join(format!("{sha256}.{ext}"));
+        if !path.exists() {
+            continue;
+        }
+        let bytes = std::fs::read(&path)
+            .map_err(|err| format!("failed to read local chat asset {}: {}", sha256, err))?;
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        return Ok(format!("data:{};base64,{}", content_type, encoded));
+    }
+    Err(format!("local chat asset {} not found", sha256))
+}
+
+async fn resolve_upstream_max_input_images(
+    app_state: &AppState,
+    provider_model_id: &str,
+) -> Result<usize, String> {
+    let provider_model_uuid = Uuid::parse_str(provider_model_id).map_err(|err| err.to_string())?;
+    let model = app_state
+        .providers
+        .store
+        .get_model(&provider_model_uuid)
+        .await
+        .map_err(|err| err.to_string())?
+        .ok_or_else(|| "provider model not found".to_string())?;
+
+    let explicit_limit = model
+        .routing_config
+        .get("max_input_images")
+        .and_then(Value::as_u64)
+        .or_else(|| {
+            model
+                .config_override
+                .get("max_input_images")
+                .and_then(Value::as_u64)
+        })
+        .map(|value| value as usize);
+    if let Some(limit) = explicit_limit {
+        return Ok(limit);
+    }
+
+    let supports_singular = model
+        .config_override
+        .get("request_template")
+        .and_then(Value::as_object)
+        .map(|template| template.contains_key("image_url"))
+        .unwrap_or(false)
+        || model
+            .routing_config
+            .get("request_template")
+            .and_then(Value::as_object)
+            .map(|template| template.contains_key("image_url"))
+            .unwrap_or(false);
+    let supports_multiple = model
+        .config_override
+        .get("request_template")
+        .and_then(Value::as_object)
+        .map(|template| {
+            template.contains_key("input_images") || template.contains_key("image_urls")
+        })
+        .unwrap_or(false)
+        || model
+            .routing_config
+            .get("request_template")
+            .and_then(Value::as_object)
+            .map(|template| {
+                template.contains_key("input_images") || template.contains_key("image_urls")
+            })
+            .unwrap_or(false);
+
+    if supports_multiple {
+        return Ok(1);
+    }
+    if supports_singular {
+        return Ok(1);
+    }
+    Ok(0)
 }
 
 async fn load_callable_mcp_tools(
@@ -492,4 +794,18 @@ fn extract_bound_callables(response: &Value) -> Vec<BoundCallable> {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default()
+}
+
+fn merge_tts_extra_params(speed: Option<f64>, extra_params: Option<Value>) -> Option<Value> {
+    let mut object = extra_params
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    if let Some(speed) = speed {
+        object.insert("speed".to_string(), json!(speed));
+    }
+    if object.is_empty() {
+        None
+    } else {
+        Some(Value::Object(object))
+    }
 }

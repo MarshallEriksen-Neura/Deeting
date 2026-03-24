@@ -201,6 +201,10 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
         max_output_tokens: typeof limitConfig.max_output_tokens === 'number' ? limitConfig.max_output_tokens : undefined,
         rpm: typeof limitConfig.rpm === 'number' ? limitConfig.rpm : undefined,
         tpm: typeof limitConfig.tpm === 'number' ? limitConfig.tpm : undefined,
+        max_input_images:
+          typeof routingConfig.max_input_images === 'number'
+            ? routingConfig.max_input_images
+            : undefined,
         supports_functions: !!rawMeta.supports_functions,
         supports_json_mode: !!rawMeta.supports_json_mode,
         deprecated_at: typeof rawMeta.deprecated_at === 'string' ? rawMeta.deprecated_at : undefined,

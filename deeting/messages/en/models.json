@@ -103,7 +103,8 @@
         "desc": "Rate and length constraints.",
         "maxOutput": "Max output tokens",
         "rpm": "Requests per minute (RPM)",
-        "tpm": "Tokens per minute (TPM)"
+        "tpm": "Tokens per minute (TPM)",
+        "maxInputImages": "Max input images"
       },
       "tokenizer": {
         "title": "Tokenizer",

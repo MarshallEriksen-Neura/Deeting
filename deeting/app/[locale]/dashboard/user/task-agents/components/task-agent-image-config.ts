@@ -1,5 +1,7 @@
 export type TaskAgentImageConfigDraft = {
   negative_prompt: string
+  max_input_images: string
+  allow_text_only: boolean
   width: string
   height: string
   aspect_ratio: string
@@ -17,6 +19,8 @@ export type TaskAgentImageConfigDraft = {
 
 const EMPTY_DRAFT: TaskAgentImageConfigDraft = {
   negative_prompt: "",
+  max_input_images: "1",
+  allow_text_only: true,
   width: "",
   height: "",
   aspect_ratio: "",
@@ -48,6 +52,10 @@ function asNumberString(value: unknown): string {
   return ""
 }
 
+function asBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback
+}
+
 export function createEmptyTaskAgentImageConfigDraft(): TaskAgentImageConfigDraft {
   return { ...EMPTY_DRAFT }
 }
@@ -60,6 +68,8 @@ export function buildTaskAgentImageConfigDraft(
 
   return {
     negative_prompt: asString(imageConfig.negative_prompt),
+    max_input_images: asNumberString(imageConfig.max_input_images) || "1",
+    allow_text_only: asBoolean(imageConfig.allow_text_only, true),
     width: asNumberString(imageConfig.width),
     height: asNumberString(imageConfig.height),
     aspect_ratio: asString(imageConfig.aspect_ratio),
@@ -146,6 +156,8 @@ export function applyTaskAgentImageConfigToModelConfig(
   const imageGeneration: Record<string, unknown> = {}
 
   assignIfPresent(imageGeneration, "negative_prompt", draft.negative_prompt)
+  assignIfPresent(imageGeneration, "max_input_images", draft.max_input_images, parseInteger)
+  imageGeneration.allow_text_only = draft.allow_text_only
   assignIfPresent(imageGeneration, "width", draft.width, parseInteger)
   assignIfPresent(imageGeneration, "height", draft.height, parseInteger)
   assignIfPresent(imageGeneration, "aspect_ratio", draft.aspect_ratio)

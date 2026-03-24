@@ -17,6 +17,7 @@ const NativeRegistry: Record<string, NativeViewComponent> = {
   "plugin.iframe": dynamic(() => import("./plugin-iframe-view"), { ssr: false }) as unknown as NativeViewComponent,
   "generated.file": dynamic(() => import("./generated-file-view"), { ssr: false }) as unknown as NativeViewComponent,
   "image.result": dynamic(() => import("./image-result-view"), { ssr: false }) as unknown as NativeViewComponent,
+  "audio.result": dynamic(() => import("./audio-result-view"), { ssr: false }) as unknown as NativeViewComponent,
 }
 
 export function resolveNativeView(viewType: string): NativeViewComponent | null {

@@ -1,6 +1,6 @@
 "use client"
 
-import { ArrowRight, Bot, ImageIcon, Sparkles, Wrench } from "lucide-react"
+import { ArrowRight, Bot, ImageIcon, Sparkles, Volume2, Wrench } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -14,7 +14,7 @@ import {
 
 type TaskAgentTypeStarterProps = {
   t: (key: string) => string
-  onSelect: (kind: "chat" | "image_generation") => void
+  onSelect: (kind: "chat" | "image_generation" | "text_to_speech") => void
 }
 
 export function TaskAgentTypeStarter({
@@ -116,6 +116,50 @@ export function TaskAgentTypeStarter({
 
             <Button className="w-full" onClick={() => onSelect("image_generation")}>
               {t("starter.image.cta")}
+              <ArrowRight className="ml-2 size-4" />
+            </Button>
+          </GlassCardContent>
+        </GlassCard>
+
+        <GlassCard className="overflow-hidden border-emerald-500/20 bg-emerald-500/[0.06]">
+          <GlassCardHeader className="space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-3 text-emerald-200">
+                <Volume2 className="size-5" />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Badge className="border-emerald-400/20 bg-emerald-400/10 text-emerald-100">
+                  {t("starter.voice.tags.voice")}
+                </Badge>
+                <Badge className="border-emerald-400/20 bg-emerald-400/10 text-emerald-100">
+                  {t("starter.voice.tags.output")}
+                </Badge>
+                <Badge className="border-emerald-400/20 bg-emerald-400/10 text-emerald-100">
+                  {t("starter.voice.tags.preview")}
+                </Badge>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <GlassCardTitle>{t("starter.voice.title")}</GlassCardTitle>
+              <GlassCardDescription>
+                {t("starter.voice.description")}
+              </GlassCardDescription>
+            </div>
+          </GlassCardHeader>
+          <GlassCardContent className="space-y-4">
+            <div className="grid gap-3 text-sm text-[var(--muted)]">
+              <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/10 px-4 py-3">
+                <Sparkles className="size-4 text-emerald-200" />
+                <span>{t("starter.voice.features.invoke")}</span>
+              </div>
+              <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/10 px-4 py-3">
+                <Volume2 className="size-4 text-emerald-200" />
+                <span>{t("starter.voice.features.preview")}</span>
+              </div>
+            </div>
+
+            <Button className="w-full" onClick={() => onSelect("text_to_speech")}>
+              {t("starter.voice.cta")}
               <ArrowRight className="ml-2 size-4" />
             </Button>
           </GlassCardContent>

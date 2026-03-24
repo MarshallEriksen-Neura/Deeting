@@ -201,7 +201,11 @@
       "retry": "重试",
       "refresh": "刷新页面",
       "requestFailed": "请求失败，请稍后重试。",
-      "modelUnavailable": "暂无可用模型，请先配置提供商。"
+      "modelUnavailable": "暂无可用模型，请先配置提供商。",
+      "imageAgentInputRequired": "这个图片智能体要求你至少上传一张参考图。",
+      "imageAgentInputLimitExceeded": "你本次上传的图片数量超过了这个图片智能体允许的上限。",
+      "imageAgentUpstreamInputLimitExceeded": "当前选中的图片模型不支持这么多输入图片。",
+      "imageAgentInputResolutionFailed": "本次请求中的一张或多张图片暂时无法处理。"
     },
     "routing": {
     "auto": "自动路由",

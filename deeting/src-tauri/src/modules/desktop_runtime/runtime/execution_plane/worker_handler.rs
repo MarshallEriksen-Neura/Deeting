@@ -2,8 +2,11 @@ use super::{
     run_policy_scoped_chat_completion, DelegatedWorkerExecution, LocalExecutionOutcome,
     LocalExecutionRequest,
 };
+use crate::modules::audio::result_blocks::build_audio_result_block;
 use crate::modules::chat_assets::resolve_chat_assets_dir;
-use crate::modules::custom_task_agents::runtime::preview_custom_task_agent;
+use crate::modules::custom_task_agents::runtime::{
+    preview_custom_task_agent, CustomTaskAgentRuntimeError,
+};
 use crate::modules::custom_task_agents::types::{
     CustomTaskAgentInvocationKind, CustomTaskAgentPreviewRequest, CustomTaskAgentPreviewResponse,
     CustomTaskAgentProfile,
@@ -20,6 +23,13 @@ use mcp_core::types::LocalChatInputMessage;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct LatestUserImageInput {
+    prompt: String,
+    image_urls: Vec<String>,
+    raw_text: String,
+}
 
 pub(super) async fn run_worker_execution_handler<F>(
     request: LocalExecutionRequest,
@@ -48,7 +58,14 @@ where
         return Ok(None);
     }
 
-    let query = latest_user_message(&request.messages).unwrap_or_default();
+    let latest_input = latest_user_image_input(&request.messages);
+    let query = if !latest_input.prompt.trim().is_empty() {
+        latest_input.prompt.clone()
+    } else if !latest_input.image_urls.is_empty() {
+        "image".to_string()
+    } else {
+        latest_input.raw_text.clone()
+    };
     if query.trim().is_empty() {
         return Ok(None);
     }
@@ -156,7 +173,8 @@ where
         &request.app_state,
         &selection.profile,
         CustomTaskAgentPreviewRequest {
-            message: query.clone(),
+            message: latest_input.prompt.clone(),
+            image_urls: latest_input.image_urls.clone(),
             temperature: request.temperature,
             max_tokens: request.max_tokens,
             max_rounds: Some(4),
@@ -183,12 +201,14 @@ where
                     "agent_name": selection.profile.name,
                     "invocation_kind": result.invocation_kind.as_str(),
                     "images": result.images.len(),
+                    "audios": result.audios.len(),
                     "tool_trace_count": result.tool_trace.len(),
                 })),
             );
             build_delegated_worker_execution(&selection.profile, Ok(result), render_blocks)
         }
         Err(err) => {
+            let err_text = err.to_string();
             emit_status(
                 "evolve",
                 Some("worker_delegation"),
@@ -197,10 +217,14 @@ where
                 Some(json!({
                     "agent_id": selection.profile.id,
                     "agent_name": selection.profile.name,
-                    "error": err,
+                    "error": err_text,
                 })),
             );
-            build_delegated_worker_execution(&selection.profile, Err(err), Vec::new())
+            build_delegated_worker_execution(
+                &selection.profile,
+                Err(err),
+                Vec::new(),
+            )
         }
     };
 
@@ -215,9 +239,94 @@ pub(super) fn latest_user_message(messages: &[LocalChatInputMessage]) -> Option<
         .map(|message| message.content.clone())
 }
 
+fn latest_user_image_input(messages: &[LocalChatInputMessage]) -> LatestUserImageInput {
+    let Some(message) = messages
+        .iter()
+        .rev()
+        .find(|message| message.role.eq_ignore_ascii_case("user"))
+    else {
+        return LatestUserImageInput::default();
+    };
+
+    let raw_text = message.content.trim().to_string();
+    if raw_text.is_empty() {
+        return LatestUserImageInput::default();
+    }
+
+    let trimmed = raw_text.trim();
+    if !(trimmed.starts_with('[') || trimmed.starts_with('{')) {
+        return LatestUserImageInput {
+            prompt: raw_text.clone(),
+            image_urls: Vec::new(),
+            raw_text,
+        };
+    }
+
+    let parsed = match serde_json::from_str::<Value>(trimmed) {
+        Ok(value) => value,
+        Err(_) => {
+            return LatestUserImageInput {
+                prompt: raw_text.clone(),
+                image_urls: Vec::new(),
+                raw_text,
+            }
+        }
+    };
+    let items = parsed.as_array().cloned().unwrap_or_else(|| vec![parsed]);
+    let mut text_parts = Vec::new();
+    let mut image_urls = Vec::new();
+
+    for item in items {
+        let Some(object) = item.as_object() else {
+            continue;
+        };
+        let block_type = object.get("type").and_then(|value| value.as_str()).unwrap_or_default();
+        match block_type {
+            "text" => {
+                if let Some(text) = object
+                    .get("text")
+                    .and_then(|value| value.as_str())
+                    .or_else(|| object.get("content").and_then(|value| value.as_str()))
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                {
+                    text_parts.push(text.to_string());
+                }
+            }
+            "image_url" => {
+                if let Some(url) = object
+                    .get("image_url")
+                    .and_then(|value| {
+                        value
+                            .as_str()
+                            .map(str::to_string)
+                            .or_else(|| {
+                                value
+                                    .get("url")
+                                    .and_then(|entry| entry.as_str())
+                                    .map(str::to_string)
+                            })
+                    })
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty())
+                {
+                    image_urls.push(url);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    LatestUserImageInput {
+        prompt: text_parts.join("\n"),
+        image_urls,
+        raw_text,
+    }
+}
+
 fn build_delegated_worker_execution(
     profile: &CustomTaskAgentProfile,
-    result: Result<CustomTaskAgentPreviewResponse, String>,
+    result: Result<CustomTaskAgentPreviewResponse, CustomTaskAgentRuntimeError>,
     render_blocks: Vec<Value>,
 ) -> DelegatedWorkerExecution {
     match result {
@@ -230,6 +339,7 @@ fn build_delegated_worker_execution(
                 "content": result.content,
                 "reasoning_content": result.reasoning_content,
                 "images": result.images,
+                "audios": result.audios,
                 "tool_trace": result.tool_trace,
                 "callable_mcp_tool_ids": result.callable_mcp_tool_ids,
                 "guidance_skill_ids": result.guidance_skill_ids,
@@ -270,11 +380,12 @@ fn build_delegated_worker_execution(
             }
         }
         Err(error) => {
-            let error_text = error.clone();
+            let error_text = error.message.clone();
             let payload = json!({
                 "status": "failed",
                 "agent_id": profile.id,
                 "agent_name": profile.name,
+                "error_code": error.code.clone(),
                 "error": error_text,
             });
             let pretty_payload =
@@ -283,7 +394,8 @@ fn build_delegated_worker_execution(
                 "id": format!("delegated-agent-{}", profile.id),
                 "name": format!("custom_task_agent/{}", profile.name),
                 "status": "error",
-                "error": error,
+                "error_code": error.code,
+                "error": error.message,
             })]);
             let system_message = LocalChatInputMessage {
                 role: "system".to_string(),
@@ -442,32 +554,100 @@ fn build_custom_task_agent_render_blocks(
     let app_state = app_state.clone();
     let app_handle = app_handle.clone();
     Box::pin(async move {
-        if result.invocation_kind != CustomTaskAgentInvocationKind::ImageGeneration {
-            return Vec::new();
-        }
-        let outputs =
-            persist_custom_task_agent_image_outputs(&app_handle, &app_state, &result).await;
-        if outputs.is_empty() {
-            return Vec::new();
-        }
-        let preview = outputs.first().cloned().unwrap_or_else(|| json!({}));
-        vec![json!({
-            "view_type": "image.result",
-            "title": format!("{} Image Result", profile.name),
-            "payload": {
-                "preview": preview,
-                "outputs": outputs,
-                "prompt": prompt.unwrap_or_default(),
-                "model": result.model_id,
-            },
-            "metadata": {
-                "agentId": profile.id,
-                "agentName": profile.name,
-                "invocationKind": result.invocation_kind.as_str(),
-                "providerModelId": result.provider_model_id,
+        if result.invocation_kind == CustomTaskAgentInvocationKind::ImageGeneration {
+            let outputs =
+                persist_custom_task_agent_image_outputs(&app_handle, &app_state, &result).await;
+            if outputs.is_empty() {
+                return Vec::new();
             }
-        })]
+            let preview = outputs.first().cloned().unwrap_or_else(|| json!({}));
+            return vec![json!({
+                "view_type": "image.result",
+                "title": format!("{} Image Result", profile.name),
+                "payload": {
+                    "preview": preview,
+                    "outputs": outputs,
+                    "prompt": prompt.unwrap_or_default(),
+                    "model": result.model_id,
+                },
+                "metadata": {
+                    "agentId": profile.id,
+                    "agentName": profile.name,
+                    "invocationKind": result.invocation_kind.as_str(),
+                    "providerModelId": result.provider_model_id,
+                }
+            })];
+        }
+
+        if result.invocation_kind == CustomTaskAgentInvocationKind::TextToSpeech {
+            let Some(payload) = result.raw.as_ref() else {
+                return Vec::new();
+            };
+            let Some(audio_payload) = serde_json::from_value(payload.clone()).ok() else {
+                return Vec::new();
+            };
+            let title = format!("{} Audio Result", profile.name);
+            return vec![build_audio_result_block(
+                profile.id.as_str(),
+                Some(title.as_str()),
+                &audio_payload,
+                Some(json!({
+                    "agentId": profile.id,
+                    "agentName": profile.name,
+                    "invocationKind": result.invocation_kind.as_str(),
+                    "providerModelId": result.provider_model_id,
+                })),
+            )];
+        }
+
+        Vec::new()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{latest_user_image_input, LatestUserImageInput};
+    use mcp_core::types::LocalChatInputMessage;
+
+    #[test]
+    fn latest_user_image_input_reads_structured_text_and_images() {
+        let input = latest_user_image_input(&[LocalChatInputMessage {
+            role: "user".to_string(),
+            content: r#"[{"type":"text","text":"draw a cat"},{"type":"image_url","image_url":{"url":"asset://chat-assets/demo.png"}},{"type":"image_url","image_url":{"url":"local-asset://abc123"}}]"#.to_string(),
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
+        }]);
+
+        assert_eq!(input.prompt, "draw a cat");
+        assert_eq!(
+            input.image_urls,
+            vec![
+                "asset://chat-assets/demo.png".to_string(),
+                "local-asset://abc123".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn latest_user_image_input_keeps_plain_text_messages() {
+        let input = latest_user_image_input(&[LocalChatInputMessage {
+            role: "user".to_string(),
+            content: "@image-agent draw a cat".to_string(),
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
+        }]);
+
+        assert_eq!(
+            input,
+            LatestUserImageInput {
+                prompt: "@image-agent draw a cat".to_string(),
+                image_urls: vec![],
+                raw_text: "@image-agent draw a cat".to_string(),
+            }
+        );
+    }
 }
 
 async fn persist_custom_task_agent_image_outputs(

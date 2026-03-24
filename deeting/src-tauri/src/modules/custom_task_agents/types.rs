@@ -6,6 +6,7 @@ use serde_json::Value;
 pub enum CustomTaskAgentInvocationKind {
     Chat,
     ImageGeneration,
+    TextToSpeech,
 }
 
 impl Default for CustomTaskAgentInvocationKind {
@@ -19,6 +20,7 @@ impl CustomTaskAgentInvocationKind {
         match self {
             Self::Chat => "chat",
             Self::ImageGeneration => "image_generation",
+            Self::TextToSpeech => "text_to_speech",
         }
     }
 }
@@ -89,6 +91,8 @@ pub struct UpdateCustomTaskAgentRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomTaskAgentPreviewRequest {
     pub message: String,
+    #[serde(default)]
+    pub image_urls: Vec<String>,
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
     pub max_rounds: Option<u32>,
@@ -115,6 +119,8 @@ pub struct CustomTaskAgentPreviewResponse {
     pub callable_skill_action_refs: Vec<CustomTaskAgentSkillActionRef>,
     #[serde(default)]
     pub images: Vec<String>,
+    #[serde(default)]
+    pub audios: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw: Option<Value>,
 }

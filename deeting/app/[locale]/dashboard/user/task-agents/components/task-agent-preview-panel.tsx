@@ -5,6 +5,7 @@ import {
   Bot,
   BrainCircuit,
   ImageIcon,
+  Volume2,
   Play,
   Sparkles,
   Wrench,
@@ -19,6 +20,7 @@ import { TabsContent } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import type { CustomTaskAgentPreviewResponse } from "@/lib/api/custom-task-agents"
+import AudioResultPanel from "@/components/audio/audio-result-panel"
 import type { PreviewDraft } from "./task-agent-editor-types"
 import { TaskAgentSectionHeader } from "./task-agent-section-header"
 
@@ -204,6 +206,18 @@ export function TaskAgentPreviewPanel({
                   </div>
                 ))}
               </div>
+            </div>
+          ) : previewResult.invocation_kind === "text_to_speech" ? (
+            <div className="space-y-4">
+              <TaskAgentSectionHeader title={t("preview.audio")} />
+              <AudioResultPanel
+                payload={
+                  (previewResult.raw as Record<string, unknown> | null | undefined) ?? {
+                    source_url: previewResult.audios[0] ?? null,
+                    prompt_text: previewDraft.message,
+                  }
+                }
+              />
             </div>
           ) : (
             <div className="space-y-4">

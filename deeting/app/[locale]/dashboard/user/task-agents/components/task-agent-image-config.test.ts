@@ -53,11 +53,12 @@ describe("task-agent-image-config", () => {
     expect(next.model).toBe("Qwen-Image")
     expect(next.provider_model_id).toBe("provider-1")
     expect(next.image_generation).toEqual({
+      allow_text_only: true,
       aspect_ratio: "1:1",
+      max_input_images: 1,
       num_outputs: 3,
       steps: 28,
       cfg_scale: 6.5,
-      image_url: "https://example.com/reference.png",
       extra_params: {
         prompt_optimizer: true,
       },
@@ -78,6 +79,10 @@ describe("task-agent-image-config", () => {
 
     expect(next).toEqual({
       model: "Qwen-Image",
+      image_generation: {
+        allow_text_only: true,
+        max_input_images: 1,
+      },
     })
   })
 

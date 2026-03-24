@@ -141,6 +141,9 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
   )
   const [rpm, setRpm] = React.useState(model.rpm?.toString() || "")
   const [tpm, setTpm] = React.useState(model.tpm?.toString() || "")
+  const [maxInputImages, setMaxInputImages] = React.useState(
+    model.max_input_images?.toString() || ""
+  )
   const [contextWindow, setContextWindow] = React.useState(
     model.context_window ? model.context_window.toString() : ""
   )
@@ -169,6 +172,7 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
       maxOutputTokens: (maxOutputTokens || "").trim(),
       rpm: (rpm || "").trim(),
       tpm: (tpm || "").trim(),
+      maxInputImages: (maxInputImages || "").trim(),
       contextWindow: (contextWindow || "").trim(),
       capabilities: [...capabilities].sort(),
     }
@@ -178,6 +182,7 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
     displayName,
     inputPrice,
     maxOutputTokens,
+    maxInputImages,
     outputPrice,
     priority,
     rpm,
@@ -255,6 +260,13 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
 
     const routing: Record<string, unknown> = {}
     if (capabilities.length) routing.capabilities = capabilities
+    const maxInputImagesNum = normalizeNumber(maxInputImages)
+    if (
+      capabilities.includes("image_generation") &&
+      maxInputImagesNum !== undefined
+    ) {
+      routing.max_input_images = maxInputImagesNum
+    }
     const alias = (unifiedModelId || "").trim()
     if (alias && alias !== model.id) routing.unified_model_alias = alias
     if (Object.keys(routing).length) payload.routing_config = routing
@@ -272,6 +284,7 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
     priority,
     rpm,
     tpm,
+    maxInputImages,
     unifiedModelId,
     upstreamPath,
     weight,
@@ -305,6 +318,7 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
     setMaxOutputTokens((snap.maxOutputTokens as string) || "")
     setRpm((snap.rpm as string) || "")
     setTpm((snap.tpm as string) || "")
+    setMaxInputImages((snap.maxInputImages as string) || "")
     setContextWindow((snap.contextWindow as string) || "")
     setCapabilities(((snap.capabilities as ModelCapability[]) || ["chat"]) as ModelCapability[])
     setError(null)
@@ -322,6 +336,7 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
       maxOutputTokens: model.max_output_tokens?.toString() || "",
       rpm: model.rpm?.toString() || "",
       tpm: model.tpm?.toString() || "",
+      maxInputImages: model.max_input_images?.toString() || "",
       contextWindow: model.context_window ? model.context_window.toString() : "",
       capabilities: model.capabilities?.length ? model.capabilities : ["chat"],
     }
@@ -336,6 +351,7 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
     setMaxOutputTokens(initial.maxOutputTokens)
     setRpm(initial.rpm)
     setTpm(initial.tpm)
+    setMaxInputImages(initial.maxInputImages)
     setContextWindow(initial.contextWindow)
     setCapabilities(initial.capabilities as ModelCapability[])
     setError(null)
@@ -507,6 +523,15 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
               placeholder="90000"
               suffix="tokens/min"
             />
+            {capabilities.includes("image_generation") ? (
+              <NumberInput
+                label={t("limits.maxInputImages")}
+                value={maxInputImages}
+                onChange={setMaxInputImages}
+                placeholder="1"
+                suffix="images"
+              />
+            ) : null}
           </div>
         </Section>
 

@@ -26,6 +26,7 @@ pub(crate) async fn run_local_image_generation_task_inline(
         provider_model_id: payload.provider_model_id.clone(),
         prompt: payload.prompt.clone(),
         prompt_encrypted: payload.encrypt_prompt.unwrap_or(false),
+        image_urls: payload.image_urls.clone(),
         negative_prompt: payload.negative_prompt.clone(),
         width: payload.width,
         height: payload.height,

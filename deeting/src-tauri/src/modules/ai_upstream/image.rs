@@ -291,6 +291,20 @@ fn build_image_request_data(
             Value::String(value.trim().to_string()),
         );
     }
+    if !task.image_urls.is_empty() {
+        request_data.insert(
+            "input_images".to_string(),
+            Value::Array(
+                task.image_urls
+                    .iter()
+                    .filter_map(|value| {
+                        let trimmed = value.trim();
+                        (!trimmed.is_empty()).then(|| Value::String(trimmed.to_string()))
+                    })
+                    .collect(),
+            ),
+        );
+    }
     if let Some(extra_params) = task.extra_params.as_ref() {
         if !extra_params.is_null() {
             request_data.insert("extra_params".to_string(), extra_params.clone());
@@ -561,6 +575,10 @@ mod tests {
             provider_model_id: "provider-1".to_string(),
             prompt: "draw a cat".to_string(),
             prompt_encrypted: false,
+            image_urls: vec![
+                "https://example.com/reference.png".to_string(),
+                "https://example.com/reference-2.png".to_string(),
+            ],
             negative_prompt: Some("blurry".to_string()),
             width: Some(1024),
             height: Some(768),
@@ -592,6 +610,13 @@ mod tests {
         assert_eq!(
             payload["image_url"],
             json!("https://example.com/reference.png")
+        );
+        assert_eq!(
+            payload["input_images"],
+            json!([
+                "https://example.com/reference.png",
+                "https://example.com/reference-2.png"
+            ])
         );
         assert_eq!(payload["extra_params"], json!({ "prompt_optimizer": true }));
     }

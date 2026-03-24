@@ -5,6 +5,8 @@ use serde_json::Value;
 pub struct LocalImageGenerationTaskCreateRequest {
     pub model: String,
     pub prompt: String,
+    #[serde(default)]
+    pub image_urls: Vec<String>,
     pub negative_prompt: Option<String>,
     pub width: Option<i64>,
     pub height: Option<i64>,
@@ -34,6 +36,8 @@ pub struct LocalImageGenerationTaskRecord {
     pub provider_model_id: String,
     pub prompt: String,
     pub prompt_encrypted: bool,
+    #[serde(default)]
+    pub image_urls: Vec<String>,
     pub negative_prompt: Option<String>,
     pub width: Option<i64>,
     pub height: Option<i64>,

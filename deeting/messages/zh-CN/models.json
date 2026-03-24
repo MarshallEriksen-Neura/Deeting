@@ -103,7 +103,8 @@
         "desc": "配置请求/令牌速率与最大片段长度。",
         "maxOutput": "最大输出 tokens",
         "rpm": "请求速率 (RPM)",
-        "tpm": "令牌速率 (TPM)"
+        "tpm": "令牌速率 (TPM)",
+        "maxInputImages": "最大输入图片数"
       },
       "tokenizer": {
         "title": "Tokenizer",
