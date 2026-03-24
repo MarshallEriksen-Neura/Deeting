@@ -199,6 +199,20 @@ describe("AIResponseBubble debug panel", () => {
     expect(latestProps?.showPlaceholder).toBe(true);
   });
 
+  it("switches the status pill label to completed after the response finishes", () => {
+    const parts: MessageBlock[] = [{ id: "text-1", type: "text", content: "done" }];
+
+    render(<AIResponseBubble parts={parts} />);
+
+    const latestCall = terminalStreamMock.mock.calls[terminalStreamMock.mock.calls.length - 1];
+    const latestProps = latestCall?.[0] as
+      | { completed?: boolean; statusLabel?: string }
+      | undefined;
+
+    expect(latestProps?.completed).toBe(true);
+    expect(latestProps?.statusLabel).toBe("status.header.completed");
+  });
+
   it("does not show sandbox label for search_sdk console", () => {
     const parts: MessageBlock[] = [
       { id: "call-1", type: "tool_call", toolName: "search_sdk", status: "success" },

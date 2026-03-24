@@ -812,20 +812,6 @@ for raw_line in sys.stdin:
         memory_state
             .store
             .upsert_asset(
-                "skill.weather".to_string(),
-                "Weather Skill".to_string(),
-                "查询天气预报与降雨提醒".to_string(),
-                "skill".to_string(),
-                "cloud_mirror".to_string(),
-                None,
-                vec![0.0, 1.0, 0.0, 0.0, 0.0],
-                Some(serde_json::json!({"id": "skill.weather"})),
-            )
-            .await
-            .expect("insert weather cloud skill asset");
-        memory_state
-            .store
-            .upsert_asset(
                 "tool.stock_quotes".to_string(),
                 "stock_quotes".to_string(),
                 "查询股票实时行情".to_string(),
@@ -837,6 +823,62 @@ for raw_line in sys.stdin:
             )
             .await
             .expect("insert disabled stock tool asset");
+
+        crate::modules::code_mode::core_tool_contracts::sync_core_tool_registry_entries(store)
+            .await
+            .expect("sync core tool registry");
+
+        store
+            .replace_local_capability_registry_entries(
+                "official.skills.memory",
+                &[mcp_registry::types::LocalCapabilityRegistryUpsert {
+                    capability_id: "skill_tool::official.skills.memory::search_knowledge"
+                        .to_string(),
+                    source_kind: "builtin".to_string(),
+                    asset_kind: "skill_tool".to_string(),
+                    package_id: "official.skills.memory".to_string(),
+                    package_version: Some("1.0.0".to_string()),
+                    title: "Memory Skill / search_knowledge".to_string(),
+                    description: "Search personal and system knowledge base.".to_string(),
+                    tool_name: Some("search_knowledge".to_string()),
+                    callable_name: Some(
+                        "skill.official.skills.memory.search_knowledge".to_string(),
+                    ),
+                    binding_kind: Some("deeting_tool".to_string()),
+                    execution_surface: "desktop_capability".to_string(),
+                    runtime: Some("python".to_string()),
+                    entry_path: Some("/tmp/official.skills.memory/main.py".to_string()),
+                    is_direct_callable: true,
+                    activation_state: "enabled".to_string(),
+                    runtime_state: "ready".to_string(),
+                    search_index_state: "ready".to_string(),
+                    generation: 1,
+                    descriptor_json: serde_json::json!({
+                        "skill_id": "official.skills.memory",
+                        "binding_id": "skill_binding::official.skills.memory::search_knowledge",
+                        "binding_kind": "deeting_tool",
+                        "callable_name": "skill.official.skills.memory.search_knowledge",
+                        "tool_name": "search_knowledge",
+                        "description": "Search personal and system knowledge base.",
+                        "execution_surface": "desktop_capability",
+                        "runtime": "python",
+                        "entry_path": "/tmp/official.skills.memory/main.py",
+                        "input_schema": {
+                            "type": "object",
+                            "properties": {
+                                "query": {"type": "string", "description": "Search query"}
+                            },
+                            "required": ["query"]
+                        },
+                        "activation_state": "enabled",
+                        "runtime_state": "ready",
+                        "search_index_state": "ready",
+                    })
+                    .to_string(),
+                }],
+            )
+            .await
+            .expect("seed memory skill registry");
     }
 
     fn result_group_contains_name(result: &serde_json::Value, group: &str, name: &str) -> bool {

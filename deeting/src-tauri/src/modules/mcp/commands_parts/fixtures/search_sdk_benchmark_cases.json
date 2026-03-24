@@ -7,5 +7,23 @@
     "expected_intent": "web_fetch",
     "expected_domain": "web",
     "forbidden_groups": []
+  },
+  {
+    "query": "检查本机是否安装某个 CLI 命令 行工具，查看可执行文件或运行版本命令",
+    "embedding": [0.0, 1.0, 0.0, 0.0, 0.0],
+    "expected_name": "shell_execute",
+    "expected_group": "capabilities",
+    "expected_intent": "local_inspection",
+    "expected_domain": "system",
+    "forbidden_groups": []
+  },
+  {
+    "query": "帮我查一下之前记住的内容",
+    "embedding": [0.0, 0.0, 1.0, 0.0, 0.0],
+    "expected_name": "skill.official.skills.memory.search_knowledge",
+    "expected_group": "capabilities",
+    "expected_intent": "general_lookup",
+    "expected_domain": "memory",
+    "forbidden_groups": []
   }
 ]
