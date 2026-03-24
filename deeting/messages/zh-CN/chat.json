@@ -30,7 +30,8 @@
       "thinking": "{name} 正在思考...",
       "header": {
         "processing": "正在处理",
-        "answering": "正在回答"
+        "answering": "正在回答",
+        "completed": "已完成"
       },
       "flow": {
         "stream": "实时输出",

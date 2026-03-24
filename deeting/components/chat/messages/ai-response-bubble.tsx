@@ -727,10 +727,13 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
       });
     }, [hasContent, isActive, statusStage, stableActiveStep, steps]);
 
-    const liveStatusLabel = useMemo(
-      () => t(streamEnabled ? "status.header.answering" : "status.header.processing"),
-      [streamEnabled, t]
-    );
+    const statusRailCompleted = !isActive && (hasContent || hasToolActivity);
+    const liveStatusLabel = useMemo(() => {
+      if (statusRailCompleted) {
+        return t("status.header.completed");
+      }
+      return t(streamEnabled ? "status.header.answering" : "status.header.processing");
+    }, [hasToolActivity, hasContent, isActive, statusRailCompleted, streamEnabled, t]);
     const terminalPlaceholder = useMemo(
       () => t("status.placeholder.waiting"),
       [t]
@@ -807,7 +810,6 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
       [hasCallLinkedUi, pairedResultIndices.size, toolCallEntries.length]
     );
     const shouldShowStatusRail = isActive || hasContent || hasToolActivity || Boolean(statusStage);
-    const statusRailCompleted = !isActive && (hasContent || hasToolActivity);
     const displayedStepIndex = statusRailCompleted ? steps.length - 1 : stableActiveStep;
     const terminalDetail = isActive ? stableDetail ?? statusDetail : null;
 
