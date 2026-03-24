@@ -15,7 +15,8 @@ pub mod tool_result_blocks;
 pub mod tool_trace;
 
 pub(crate) use crate::modules::mcp::commands::runtime::{
-    execute_or_queue_mcp_tool_call_with_tool_ref, resolve_callable_mcp_tool_by_ref,
+    execute_or_queue_core_tool_call_with_tool_ref, execute_or_queue_mcp_tool_call_with_tool_ref,
+    resolve_callable_mcp_tool_by_ref,
 };
 pub(crate) use crate::modules::skill_runtime::resolve_skill_binding_by_ref;
 pub(crate) use crate::modules::skills::onboarding::install_local_skill_from_onboarding_request;

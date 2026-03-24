@@ -1,6 +1,7 @@
 use super::super::support::*;
 use super::remote_transport::{call_local_stdio_tool, call_remote_sse_tool};
 use super::tool_resolution::resolve_callable_mcp_tool_by_ref;
+use crate::modules::shell_executor::core_tool::ShellExecuteCoreTool;
 use crate::modules::skill_runtime::{
     execute_local_mcp_tool, execute_skill_binding, resolve_local_tool_env,
     resolve_skill_binding_by_ref, skill_binding_fingerprint,
@@ -83,6 +84,119 @@ fn log_skill_binding_lookup_failure(tool_id: Option<&str>, tool_name: Option<&st
             "error": error,
         })
     );
+}
+
+fn resolve_core_tool_name(tool_id: Option<&str>, tool_name: Option<&str>) -> Option<&'static str> {
+    let normalized_tool_name = tool_name.map(str::trim).unwrap_or_default();
+    let normalized_tool_id = tool_id.map(str::trim).unwrap_or_default();
+    match (normalized_tool_name, normalized_tool_id) {
+        ("shell_execute", _) | (_, "core.shell_execute") => Some("shell_execute"),
+        _ => None,
+    }
+}
+
+pub(crate) async fn execute_or_queue_core_tool_call_with_tool_ref(
+    approval_context: &crate::modules::mcp::ToolApprovalContext,
+    runtime_state: Option<&crate::modules::mcp::McpRuntimeState>,
+    pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
+    tool_id: Option<&str>,
+    tool_name: Option<&str>,
+    arguments: Value,
+    require_approval: bool,
+) -> Result<Option<Value>, String> {
+    let Some(core_tool_name) = resolve_core_tool_name(tool_id, tool_name) else {
+        return Ok(None);
+    };
+
+    match core_tool_name {
+        "shell_execute" => {
+            let home_dir =
+                dirs::home_dir().ok_or_else(|| "home directory is unavailable".to_string())?;
+            let shell_tool = ShellExecuteCoreTool::new(home_dir);
+            let command = arguments
+                .get("command")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| "shell_execute requires a non-empty command".to_string())?;
+            let risk = shell_tool.assess_risk(command, &arguments);
+            let tool_fingerprint = format!("core.shell_execute:{}", command);
+            let approval_grant_key = risk.session_grant_key(&tool_fingerprint);
+            let approved_by_grant = if require_approval && risk.requires_approval {
+                if let (Some(runtime), Some(key)) = (runtime_state, approval_grant_key.as_ref()) {
+                    runtime
+                        .approvals
+                        .session_approval_grants
+                        .read()
+                        .await
+                        .contains_key(key)
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
+            if require_approval && risk.requires_approval && !approved_by_grant {
+                let approval_token = uuid::Uuid::new_v4().to_string();
+                let pending = if let Some(runtime) = runtime_state {
+                    runtime.build_pending_tool_call(
+                        Some("core.shell_execute".to_string()),
+                        "shell_execute".to_string(),
+                        arguments.clone(),
+                        Some("Execute shell commands on the user's machine.".to_string()),
+                        Some(risk.risk_level.to_string()),
+                        risk.reasons.clone(),
+                        tool_fingerprint,
+                        approval_grant_key,
+                        approval_context.clone(),
+                    )
+                } else {
+                    let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+                    crate::modules::mcp::PendingToolCall {
+                        tool_id: Some("core.shell_execute".to_string()),
+                        tool_name: "shell_execute".to_string(),
+                        arguments: arguments.clone(),
+                        call_id: approval_context.call_id.clone(),
+                        execution_token: approval_context.execution_token.clone(),
+                        session_id: approval_context.session_id.clone(),
+                        description: Some(
+                            "Execute shell commands on the user's machine.".to_string(),
+                        ),
+                        risk_level: Some(risk.risk_level.to_string()),
+                        risk_reasons: risk.reasons.clone(),
+                        tool_fingerprint,
+                        approval_grant_key,
+                        created_at_unix_ms: now as i128,
+                        expires_at_unix_ms: now as i128 + 5 * 60 * 1000,
+                    }
+                };
+                let expires_in_ms = runtime_state
+                    .map(|runtime| runtime.pending_tool_call_ttl_ms())
+                    .unwrap_or(5 * 60 * 1000);
+                pending_tool_calls
+                    .write()
+                    .await
+                    .insert(approval_token.clone(), pending);
+                return Ok(Some(serde_json::json!({
+                    "status": "REQUIRES_APPROVAL",
+                    "approval_token": approval_token,
+                    "tool_id": "core.shell_execute",
+                    "tool_name": "shell_execute",
+                    "arguments": arguments,
+                    "description": "Execute shell commands on the user's machine.",
+                    "risk_level": risk.risk_level,
+                    "risk_reasons": risk.reasons,
+                    "risk_profile": risk.metadata_json(),
+                    "expires_in_ms": expires_in_ms,
+                })));
+            }
+
+            let result = shell_tool.execute(arguments).await?;
+            Ok(Some(result))
+        }
+        _ => Ok(None),
+    }
 }
 
 fn log_skill_binding_stage(binding: &LocalSkillToolBindingSnapshot, stage: &str, details: Value) {
@@ -280,6 +394,20 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_tool_ref(
     }
     log_skill_binding_lookup_miss(tool_id.as_deref(), tool_name.as_deref());
 
+    if let Some(result) = execute_or_queue_core_tool_call_with_tool_ref(
+        approval_context,
+        runtime_state,
+        pending_tool_calls,
+        tool_id.as_deref(),
+        tool_name.as_deref(),
+        arguments.clone(),
+        require_approval,
+    )
+    .await?
+    {
+        return Ok(result);
+    }
+
     let tool = resolve_callable_mcp_tool_by_ref(store, tool_id.as_deref(), tool_name.as_deref())
         .await
         .map_err(|err| err.to_string())?;
@@ -439,6 +567,28 @@ pub(crate) async fn approve_mcp_tool_inner_with_context(
                     .await
                     .insert(grant.key.clone(), grant);
             }
+        }
+        return Ok(result);
+    }
+
+    if let Some(result) = execute_or_queue_core_tool_call_with_tool_ref(
+        approval_context,
+        runtime_state,
+        pending_tool_calls,
+        pending.tool_id.as_deref(),
+        Some(pending.tool_name.as_str()),
+        pending.arguments.clone(),
+        false,
+    )
+    .await?
+    {
+        if pending_tool_calls
+            .write()
+            .await
+            .remove(approval_token)
+            .is_none()
+        {
+            return Err("pending tool call already consumed".to_string());
         }
         return Ok(result);
     }
