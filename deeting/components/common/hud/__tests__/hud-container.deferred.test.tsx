@@ -5,7 +5,6 @@ describe("HUD deferred surfaces", () => {
 
   it("does not eagerly import history and model picker surfaces on initial HUD load", () => {
     let historySidebarLoads = 0
-    let imageHistorySidebarLoads = 0
     let modelPickerLoads = 0
     let controlCenterPanelLoads = 0
     let systemMenuPanelLoads = 0
@@ -69,12 +68,6 @@ describe("HUD deferred surfaces", () => {
           setGlobalLoading: jest.fn(),
         }),
       }))
-      jest.doMock("@/store/image-generation-store", () => ({
-        useImageGenerationStore: () => ({
-          selectedModelId: "",
-          setSelectedModelId: jest.fn(),
-        }),
-      }))
       jest.doMock("@/lib/runtime/tauri", () => ({
         isTauriRuntime: () => false,
       }))
@@ -87,10 +80,6 @@ describe("HUD deferred surfaces", () => {
       jest.doMock("@/components/chat/sidebar/history-sidebar", () => {
         historySidebarLoads += 1
         return { HistorySidebar: () => null }
-      })
-      jest.doMock("@/components/image/history/image-history-sidebar", () => {
-        imageHistorySidebarLoads += 1
-        return { ImageHistorySidebar: () => null }
       })
       jest.doMock("@/components/models/model-picker", () => {
         modelPickerLoads += 1
@@ -116,7 +105,6 @@ describe("HUD deferred surfaces", () => {
     })
 
     expect(historySidebarLoads).toBe(0)
-    expect(imageHistorySidebarLoads).toBe(0)
     expect(modelPickerLoads).toBe(0)
     expect(controlCenterPanelLoads).toBe(0)
     expect(systemMenuPanelLoads).toBe(0)

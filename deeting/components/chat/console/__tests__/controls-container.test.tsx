@@ -83,14 +83,12 @@ describe("ControlsContainer (web)", () => {
     expect(screen.queryByText("routing.personaDesc")).not.toBeInTheDocument()
   })
 
-  it("keeps the image shortcut but hides the coder shortcut in the chat menu", () => {
+  it("hides the old standalone image shortcut from the chat controls", () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "false"
     render(<ControlsContainer />)
 
-    fireEvent.click(screen.getByLabelText("controls.menu"))
-
-    expect(screen.getByText("controls.image")).toBeInTheDocument()
-    expect(screen.queryByText("controls.code")).not.toBeInTheDocument()
+    expect(screen.queryByLabelText("controls.menu")).not.toBeInTheDocument()
+    expect(screen.queryByText("controls.image")).not.toBeInTheDocument()
   })
 
   it("shows continue button and triggers continue callback after interruption", () => {

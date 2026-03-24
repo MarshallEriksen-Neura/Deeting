@@ -17,6 +17,7 @@ export function NativeCanvasRenderer({
     return (
       <WorkflowRuntime
         initialGoal={view.content.goal as string | undefined}
+        initialRunId={view.content.runId as string | undefined}
       />
     )
   }

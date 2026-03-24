@@ -31,7 +31,43 @@
       "draftDescription": "You are editing a new task agent that has not been saved yet.",
       "emptyTitle": "No task agents yet",
       "emptyDescription": "Create your first task agent to start building repeatable local workflows.",
-      "updatedAt": "Updated {value}"
+      "updatedAt": "Updated {value}",
+      "sections": {
+        "chat": "Chat Task Agents",
+        "image": "Image Agents"
+      }
+    },
+    "starter": {
+      "title": "Choose what you want to create",
+      "description": "Start with the agent type, then move into a dedicated creation workspace designed for that role.",
+      "chat": {
+        "title": "Chat Task Agent",
+        "description": "A collaborative agent for chat work, task execution, and capability orchestration.",
+        "cta": "Create Chat Task Agent",
+        "tags": {
+          "chat": "Chat",
+          "skills": "Skill Bindings",
+          "tools": "Tool Calls"
+        },
+        "features": {
+          "chat": "Shape how the agent behaves in chat and what work it should own.",
+          "skills": "Bind local skills and MCP tools only when this agent truly needs them."
+        }
+      },
+      "image": {
+        "title": "Image Agent",
+        "description": "A focused visual role for chat `@` invocation, style tuning, and image preview.",
+        "cta": "Create Image Agent",
+        "tags": {
+          "style": "Style",
+          "params": "Image Params",
+          "preview": "Preview"
+        },
+        "features": {
+          "invoke": "Tune the prompt, style, and output defaults for a reusable image role.",
+          "preview": "Keep the experience visual-first without exposing generic tool bindings."
+        }
+      }
     },
     "filters": {
       "allKinds": "All kinds",
@@ -55,6 +91,14 @@
     "editor": {
       "newTitle": "New Task Agent",
       "newDescription": "Define the task, bind the right tools and skills, then save before previewing.",
+      "chatWorkspace": {
+        "title": "Create Chat Task Agent",
+        "description": "Configure a collaborative chat agent with the right identity, prompt, and capability bindings."
+      },
+      "imageWorkspace": {
+        "title": "Create Image Agent",
+        "description": "Configure a focused image agent for style control, output defaults, and visual preview."
+      },
       "draft": "Draft",
       "updatedAt": "Last updated {value}",
       "basic": {
@@ -137,6 +181,7 @@
         "preferredForImageGeneration": "When enabled on an image agent, the worker branch will prefer this agent for image requests."
       },
       "values": {
+        "typeLocked": "Type locked",
         "preferredForImageGenerationOn": "Preferred",
         "preferredForImageGenerationOff": "Standard"
       }

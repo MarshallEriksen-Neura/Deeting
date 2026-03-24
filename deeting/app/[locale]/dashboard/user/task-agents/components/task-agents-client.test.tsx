@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { TaskAgentsClient } from "./task-agents-client"
 import {
   supportsLocalCustomTaskAgents,
+  updateCustomTaskAgent,
   type CustomTaskAgentProfile,
 } from "@/lib/api/custom-task-agents"
 
@@ -206,6 +207,8 @@ const mockSupportsLocalCustomTaskAgents =
   supportsLocalCustomTaskAgents as jest.MockedFunction<
     typeof supportsLocalCustomTaskAgents
   >
+const mockUpdateCustomTaskAgent =
+  updateCustomTaskAgent as jest.MockedFunction<typeof updateCustomTaskAgent>
 
 const agents: CustomTaskAgentProfile[] = [
   {
@@ -255,6 +258,7 @@ describe("TaskAgentsClient", () => {
   beforeEach(() => {
     jest.clearAllMocks()
     mockSupportsLocalCustomTaskAgents.mockReturnValue(true)
+    mockUpdateCustomTaskAgent.mockResolvedValue(agents[0])
     mockUseChatService.mockReturnValue({
       modelGroups: [
         {
@@ -421,13 +425,84 @@ describe("TaskAgentsClient", () => {
     expect(screen.queryByText("skill.beta")).toBeNull()
   })
 
-  it("shows structured image config fields for image-generation agents", async () => {
+  it("opens the type starter before creating a new agent", async () => {
+    render(<TaskAgentsClient />)
+
+    fireEvent.click(screen.getByRole("button", { name: "actions.new" }))
+
+    expect((await screen.findAllByText("starter.title")).length).toBeGreaterThan(0)
+    expect(screen.getByText("starter.chat.title")).not.toBeNull()
+    expect(screen.getByText("starter.image.title")).not.toBeNull()
+  })
+
+  it("hides bindings when creating an image agent from the starter", async () => {
+    render(<TaskAgentsClient />)
+
+    fireEvent.click(screen.getByRole("button", { name: "actions.new" }))
+    fireEvent.click(await screen.findByRole("button", { name: "starter.image.cta" }))
+
+    expect(await screen.findByText("editor.imageWorkspace.title")).not.toBeNull()
+    expect(screen.queryByText("bindings.title")).toBeNull()
+    expect(screen.getByText("editor.imageConfig.title")).not.toBeNull()
+  })
+
+  it("keeps bindings visible for chat task agents", () => {
+    render(<TaskAgentsClient />)
+
+    expect(screen.getByText("bindings.title")).not.toBeNull()
+  })
+
+  it("shows structured image config fields for image-generation agents without chat bindings", async () => {
     render(<TaskAgentsClient />)
 
     fireEvent.click(screen.getByRole("button", { name: /Agent Two/i }))
 
     expect(await screen.findByText("editor.imageConfig.title")).not.toBeNull()
+    expect(screen.queryByText("bindings.title")).toBeNull()
+    expect(screen.queryByText("debug.cards.bindings")).toBeNull()
+    expect(screen.queryByLabelText("editor.fields.taskPrompt")).toBeNull()
+    expect(screen.queryByLabelText("editor.imageConfig.fields.imageUrl")).toBeNull()
     expect(screen.getByLabelText("editor.imageConfig.fields.aspectRatio")).toBeTruthy()
     expect(screen.getByDisplayValue("1:1")).toBeTruthy()
+  })
+
+  it("saves image agents without persisting a static image_url and uses the internal prompt", async () => {
+    mockUpdateCustomTaskAgent.mockResolvedValueOnce({
+      ...agents[1],
+      description: "Updated image agent",
+      task_prompt: "Generate images from the user's current chat request and attachments.",
+      model_config: {
+        model: "Qwen-Image",
+        image_generation: {
+          aspect_ratio: "1:1",
+        },
+      },
+      updated_at: "2026-03-13T00:00:00Z",
+    })
+
+    render(<TaskAgentsClient />)
+
+    fireEvent.click(screen.getByRole("button", { name: /Agent Two/i }))
+
+    fireEvent.change(screen.getByLabelText("editor.fields.description"), {
+      target: { value: "Updated image agent" },
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "actions.save" }))
+
+    await waitFor(() => {
+      expect(mockUpdateCustomTaskAgent).toHaveBeenCalled()
+    })
+
+    const [, payload] = mockUpdateCustomTaskAgent.mock.calls[0]
+    expect(payload.task_prompt).toBe(
+      "Generate images from the user's current chat request and attachments.",
+    )
+    expect(payload.model_config).toEqual({
+      model: "Qwen-Image",
+      image_generation: {
+        aspect_ratio: "1:1",
+      },
+    })
   })
 })

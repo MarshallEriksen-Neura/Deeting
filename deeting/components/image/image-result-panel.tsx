@@ -6,12 +6,22 @@ import { Image as ImageIcon } from "lucide-react"
 import { useLazyImage } from "@/hooks/use-lazy-image"
 import { useI18n } from "@/hooks/use-i18n"
 import { prepareDesktopObjectStorageRead } from "@/lib/api/desktop-object-storage"
-import type { ImageGenerationOutputItem } from "@/lib/api/image-generation"
 import { cn } from "@/lib/utils"
 
+export interface ImageResultOutputItem {
+  output_index: number
+  asset_url?: string | null
+  source_url?: string | null
+  seed?: number | null
+  content_type?: string | null
+  size_bytes?: number | null
+  width?: number | null
+  height?: number | null
+}
+
 export interface ImageResultPanelPayload {
-  preview?: ImageGenerationOutputItem | null
-  outputs?: ImageGenerationOutputItem[]
+  preview?: ImageResultOutputItem | null
+  outputs?: ImageResultOutputItem[]
   prompt?: string | null
   model?: string | null
 }
@@ -120,7 +130,7 @@ const LazyImage = memo<{
 
 LazyImage.displayName = "LazyImage"
 
-function normalizeOutputs(payload: ImageResultPanelPayload): ImageGenerationOutputItem[] {
+function normalizeOutputs(payload: ImageResultPanelPayload): ImageResultOutputItem[] {
   const outputs = Array.isArray(payload.outputs) ? payload.outputs.filter(Boolean) : []
   if (outputs.length > 0) {
     return outputs

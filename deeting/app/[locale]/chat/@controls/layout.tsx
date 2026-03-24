@@ -6,16 +6,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 export default function ControlsLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const isCoder = pathname?.includes('/coder');
-  const isImage = pathname?.includes('/create/image');
-
-  // 图片页面：使用沉浸式布局，FloatingConsole 占满宽度
-  if (isImage) {
-    return (
-      <div className="w-full">
-        {children}
-      </div>
-    );
-  }
 
   // Morphing Styles
   // Default: Capsule
@@ -34,19 +24,13 @@ export default function ControlsLayout({ children }: { children: ReactNode }) {
     containerClasses = "bg-white/80 dark:bg-[#1e1e1e]/95 backdrop-blur-xl border border-green-600/20 dark:border-green-500/20 shadow-xl dark:shadow-green-900/10";
     animateProps = { height: 200, borderRadius: '12px' }; 
     overflowClass = "overflow-hidden";
-  } else if (isImage) {
-    // Dashboard: Large, Soft Rect
-    // Light: White glassy, Dark: Zinc-900
-    containerClasses = "bg-white/80 dark:bg-zinc-900/95 backdrop-blur-xl border border-purple-600/20 dark:border-purple-500/20 shadow-xl dark:shadow-purple-900/10";
-    animateProps = { height: 240, borderRadius: '24px' }; 
-    overflowClass = "overflow-hidden";
   }
 
   return (
     <div className="w-full flex justify-center perspective-[1000px]">
       <AnimatePresence mode="wait">
         <motion.div
-          key={isCoder ? 'coder' : isImage ? 'image' : 'default'}
+          key={isCoder ? 'coder' : 'default'}
           layoutId="controls-container"
           initial={{ opacity: 0, y: 20, scale: 0.9, ...animateProps }}
           animate={{

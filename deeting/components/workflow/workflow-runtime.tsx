@@ -23,11 +23,40 @@ import { PhaseContextViewer } from "./phase-context-viewer"
 
 interface WorkflowRuntimeProps {
   initialGoal?: string
+  initialRunId?: string
   onClose?: () => void
 }
 
-export function WorkflowRuntime({ initialGoal, onClose }: WorkflowRuntimeProps) {
+export function WorkflowRuntime({ initialGoal, initialRunId, onClose }: WorkflowRuntimeProps) {
   const store = useWorkflowStore()
+
+  useEffect(() => {
+    if (!initialRunId) return
+    const runId = initialRunId.trim()
+    if (!runId || store.runId === runId) return
+
+    let cancelled = false
+
+    async function hydrateRun() {
+      try {
+        const detail = await getWorkflowRunStatus(runId)
+        if (!cancelled) {
+          store.setRunDetail(detail)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          const msg = err instanceof Error ? err.message : String(err)
+          store.setError(msg)
+        }
+      }
+    }
+
+    void hydrateRun()
+
+    return () => {
+      cancelled = true
+    }
+  }, [initialRunId, store.runId, store.setError, store.setRunDetail])
 
   // --- Tauri event listener for progress updates ---
   useEffect(() => {

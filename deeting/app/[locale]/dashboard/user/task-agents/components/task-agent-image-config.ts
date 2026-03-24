@@ -157,8 +157,6 @@ export function applyTaskAgentImageConfigToModelConfig(
   assignIfPresent(imageGeneration, "quality", draft.quality)
   assignIfPresent(imageGeneration, "style", draft.style)
   assignIfPresent(imageGeneration, "response_format", draft.response_format)
-  assignIfPresent(imageGeneration, "image_url", draft.image_url)
-
   if (extraParams && Object.keys(extraParams).length > 0) {
     imageGeneration.extra_params = extraParams
   }

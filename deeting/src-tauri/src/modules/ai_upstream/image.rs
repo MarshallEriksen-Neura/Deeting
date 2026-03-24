@@ -8,7 +8,7 @@ use crate::modules::ai_upstream::gateway_log_recorder::{
     extract_error_code_from_response, extract_ttft_ms_from_response, record_gateway_log,
     GatewayLogEntry,
 };
-use crate::modules::image_generation::store::LocalImageGenerationTaskRecord;
+use crate::modules::image_generation::types::LocalImageGenerationTaskRecord;
 use crate::modules::mcp::commands::common_impl::to_string;
 use crate::state::AppState;
 
@@ -548,7 +548,7 @@ fn to_string_set(value: Option<&Value>) -> std::collections::HashSet<String> {
 #[cfg(test)]
 mod tests {
     use super::build_image_request_data;
-    use crate::modules::image_generation::store::LocalImageGenerationTaskRecord;
+    use crate::modules::image_generation::types::LocalImageGenerationTaskRecord;
     use serde_json::json;
 
     #[test]

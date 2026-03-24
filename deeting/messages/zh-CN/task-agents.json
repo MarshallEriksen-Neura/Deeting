@@ -31,7 +31,43 @@
       "draftDescription": "你正在编辑一个尚未保存的新任务智能体。",
       "emptyTitle": "还没有任务智能体",
       "emptyDescription": "创建你的第一个任务智能体，开始构建可复用的本地工作流。",
-      "updatedAt": "更新于 {value}"
+      "updatedAt": "更新于 {value}",
+      "sections": {
+        "chat": "聊天任务智能体",
+        "image": "图片智能体"
+      }
+    },
+    "starter": {
+      "title": "先选择要创建的智能体类型",
+      "description": "从类型开始，再进入对应的专用创建工作台。聊天任务智能体和图片智能体会走完全不同的配置路径。",
+      "chat": {
+        "title": "聊天任务智能体",
+        "description": "适合在 chat 中协作办事、承接任务，并按需绑定本地 skills 与 MCP tools。",
+        "cta": "创建聊天任务智能体",
+        "tags": {
+          "chat": "对话",
+          "skills": "技能绑定",
+          "tools": "工具调用"
+        },
+        "features": {
+          "chat": "定义这个智能体在 chat 中的身份、职责和任务提示词。",
+          "skills": "只在确实需要时绑定本地技能与 MCP 工具，避免无关能力混入。"
+        }
+      },
+      "image": {
+        "title": "图片智能体",
+        "description": "适合在 chat 中通过 @ 触发出图，专注风格、参数和图片预览，不暴露通用绑定配置。",
+        "cta": "创建图片智能体",
+        "tags": {
+          "style": "风格设定",
+          "params": "出图参数",
+          "preview": "图片预览"
+        },
+        "features": {
+          "invoke": "把提示词角色、风格和出图默认值收敛成可复用的图片角色。",
+          "preview": "保持图片优先的创作体验，不展示 skills 和 MCP tools 这类无关配置。"
+        }
+      }
     },
     "filters": {
       "allKinds": "全部类型",
@@ -55,6 +91,14 @@
     "editor": {
       "newTitle": "新建任务智能体",
       "newDescription": "先定义任务、绑定工具和技能，保存后再运行预览。",
+      "chatWorkspace": {
+        "title": "创建聊天任务智能体",
+        "description": "配置协作型聊天智能体的身份、提示词和能力绑定。"
+      },
+      "imageWorkspace": {
+        "title": "创建图片智能体",
+        "description": "配置图片智能体的风格、输出默认值和可视化预览。"
+      },
       "draft": "草稿",
       "updatedAt": "最近更新 {value}",
       "basic": {
@@ -137,6 +181,7 @@
         "preferredForImageGeneration": "仅对图片类型智能体生效。开启后，worker 分支会优先把图片请求分发给该智能体。"
       },
       "values": {
+        "typeLocked": "类型已锁定",
         "preferredForImageGenerationOn": "优先",
         "preferredForImageGenerationOff": "普通"
       }

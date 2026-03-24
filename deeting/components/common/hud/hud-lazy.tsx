@@ -5,11 +5,6 @@ import dynamic from "next/dynamic"
 const loadHistorySidebar = () =>
   import("@/components/chat/sidebar/history-sidebar").then((module) => module.HistorySidebar)
 
-const loadImageHistorySidebar = () =>
-  import("@/components/image/history/image-history-sidebar").then(
-    (module) => module.ImageHistorySidebar
-  )
-
 const loadModelPicker = () =>
   import("@/components/models/model-picker").then((module) => module.ModelPicker)
 
@@ -20,10 +15,6 @@ const loadHudSystemMenuPanel = () =>
   import("./hud-system-menu-panel").then((module) => module.HudSystemMenuPanel)
 
 export const DeferredHistorySidebar = dynamic(loadHistorySidebar, {
-  ssr: false,
-})
-
-export const DeferredImageHistorySidebar = dynamic(loadImageHistorySidebar, {
   ssr: false,
 })
 
@@ -41,7 +32,6 @@ export const DeferredHudSystemMenuPanel = dynamic(loadHudSystemMenuPanel, {
 
 export function preloadHudDeferredSurfaces() {
   void loadHistorySidebar()
-  void loadImageHistorySidebar()
   void loadModelPicker()
   void loadHudControlCenterPanel()
   void loadHudSystemMenuPanel()

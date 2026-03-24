@@ -51,10 +51,6 @@ export const routing = defineRouting({
       "zh-CN": "/chat/voice",
       en: "/chat/voice",
     },
-    "/chat/create/image": {
-      "zh-CN": "/chat/create/image",
-      en: "/chat/create/image",
-    },
   },
 })
 

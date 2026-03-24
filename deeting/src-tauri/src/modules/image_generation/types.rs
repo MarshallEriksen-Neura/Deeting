@@ -26,6 +26,32 @@ pub struct LocalImageGenerationTaskCreateRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalImageGenerationTaskRecord {
+    pub task_id: String,
+    pub session_id: Option<String>,
+    pub request_id: Option<String>,
+    pub model: String,
+    pub provider_model_id: String,
+    pub prompt: String,
+    pub prompt_encrypted: bool,
+    pub negative_prompt: Option<String>,
+    pub width: Option<i64>,
+    pub height: Option<i64>,
+    pub aspect_ratio: Option<String>,
+    pub num_outputs: Option<i64>,
+    pub steps: Option<i64>,
+    pub cfg_scale: Option<f64>,
+    pub seed: Option<i64>,
+    pub sampler_name: Option<String>,
+    pub quality: Option<String>,
+    pub style: Option<String>,
+    pub response_format: Option<String>,
+    pub image_url: Option<String>,
+    pub extra_params: Option<Value>,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalImageGenerationTaskCreateResponse {
     pub task_id: String,
     pub status: String,

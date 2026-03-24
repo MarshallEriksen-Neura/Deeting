@@ -5,20 +5,13 @@ import useSWR from "swr"
 import { useLocale, useTranslations } from "next-intl"
 import {
   Bot,
-  BrainCircuit,
   CheckCircle2,
-  ChevronDown,
-  ImageIcon,
-  Play,
   Plus,
   RefreshCw,
   Save,
   Search,
   Sparkles,
   Trash2,
-  Wrench,
-  XCircle,
-  Zap,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -46,11 +39,17 @@ import {
   parseTaskAgentImageExtraParamsJson,
   type TaskAgentImageConfigDraft,
 } from "./task-agent-image-config"
+import { ChatTaskAgentEditor } from "./chat-task-agent-editor"
+import { ImageTaskAgentEditor } from "./image-task-agent-editor"
+import { TaskAgentPreviewPanel } from "./task-agent-preview-panel"
+import type {
+  PreviewDraft,
+  TaskAgentDraft,
+  TaskAgentModelOption,
+} from "./task-agent-editor-types"
 import { PageHeader } from "@/components/ui/page-header/page-header"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { Label } from "@/components/ui/label"
 import {
   Select,
   SelectContent,
@@ -62,20 +61,11 @@ import {
 } from "@/components/ui/select"
 import {
   Tabs,
-  TabsContent,
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
-import { Switch } from "@/components/ui/switch"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Separator } from "@/components/ui/separator"
-import { Checkbox } from "@/components/ui/checkbox"
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -94,39 +84,13 @@ import {
   GlassCardTitle,
 } from "@/components/ui/glass-card"
 import { Skeleton } from "@/components/ui/skeleton"
+import { TaskAgentTypeStarter } from "./task-agent-type-starter"
 
 const NEW_AGENT_ID = "__new_custom_task_agent__"
 const DEFAULT_TASK_AGENT_MODEL_VALUE = "__task_agent_model_default__"
+const INTERNAL_IMAGE_AGENT_TASK_PROMPT =
+  "Generate images from the user's current chat request and attachments."
 
-type TaskAgentDraft = {
-  name: string
-  description: string
-  task_prompt: string
-  invocation_kind: CustomTaskAgentInvocationKind
-  preferred_for_image_generation: boolean
-  model: string
-  provider_model_id: string
-  image_config: TaskAgentImageConfigDraft
-  model_config_json: string
-  callable_mcp_tool_ids: string[]
-  guidance_skill_ids: string[]
-  tags_input: string
-  discoverable: boolean
-  is_enabled: boolean
-}
-
-type PreviewDraft = {
-  message: string
-  temperature: string
-  max_tokens: string
-  max_rounds: string
-}
-
-type TaskAgentModelOption = {
-  value: string
-  modelId: string
-  providerModelId: string
-}
 
 const defaultPreviewDraft: PreviewDraft = {
   message: "",
@@ -168,17 +132,30 @@ function extractProviderModelId(
 }
 
 function buildDraftFromProfile(profile: CustomTaskAgentProfile): TaskAgentDraft {
+  const isImageAgent = profile.invocation_kind === "image_generation"
+  const imageConfig = buildTaskAgentImageConfigDraft(profile.model_config ?? undefined)
   return {
     name: profile.name,
     description: profile.description ?? "",
-    task_prompt: profile.task_prompt,
+    task_prompt: isImageAgent ? "" : profile.task_prompt,
     invocation_kind: profile.invocation_kind,
     preferred_for_image_generation: profile.preferred_for_image_generation,
     model: extractModelValue(profile.model_config ?? undefined),
     provider_model_id: extractProviderModelId(profile.model_config ?? undefined),
-    image_config: buildTaskAgentImageConfigDraft(profile.model_config ?? undefined),
+    image_config: isImageAgent
+      ? {
+          ...imageConfig,
+          image_url: "",
+        }
+      : imageConfig,
     model_config_json: profile.model_config
-      ? JSON.stringify(profile.model_config, null, 2)
+      ? JSON.stringify(
+          isImageAgent
+            ? stripPersistedImageAgentRuntimeFields(profile.model_config)
+            : profile.model_config,
+          null,
+          2,
+        )
       : "",
     callable_mcp_tool_ids: [...profile.callable_mcp_tool_ids],
     guidance_skill_ids: [...profile.guidance_skill_ids],
@@ -193,6 +170,33 @@ function parseTagsInput(value: string): string[] {
     .split(/[\n,]/)
     .map((item) => item.trim())
     .filter(Boolean)
+}
+
+function stripPersistedImageAgentRuntimeFields(
+  modelConfig?: Record<string, unknown> | null,
+): Record<string, unknown> | null {
+  if (!modelConfig) return null
+  const next = { ...modelConfig }
+  const imageGeneration =
+    next.image_generation &&
+    typeof next.image_generation === "object" &&
+    !Array.isArray(next.image_generation)
+      ? { ...(next.image_generation as Record<string, unknown>) }
+      : null
+
+  if (!imageGeneration) {
+    return next
+  }
+
+  delete imageGeneration.image_url
+
+  if (Object.keys(imageGeneration).length > 0) {
+    next.image_generation = imageGeneration
+  } else {
+    delete next.image_generation
+  }
+
+  return next
 }
 
 function statusToneClass(status: string): string {
@@ -347,59 +351,6 @@ const AgentListItem = React.memo(function AgentListItem({
   )
 })
 
-function SectionHeader({
-  title,
-  description,
-  action,
-}: {
-  title: string
-  description?: string
-  action?: React.ReactNode
-}) {
-  return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="space-y-1">
-        <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-          {title}
-        </h3>
-        {description ? (
-          <p className="text-sm text-[var(--muted)]">{description}</p>
-        ) : null}
-      </div>
-      {action}
-    </div>
-  )
-}
-
-function PreviewDisclosure({
-  title,
-  defaultOpen = false,
-  children,
-}: {
-  title: string
-  defaultOpen?: boolean
-  children: React.ReactNode
-}) {
-  return (
-    <Collapsible defaultOpen={defaultOpen} className="rounded-2xl border border-white/10 bg-white/[0.03]">
-      <CollapsibleTrigger asChild>
-        <button
-          type="button"
-          className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
-        >
-          <span className="text-sm font-medium text-[var(--foreground)]">
-            {title}
-          </span>
-          <ChevronDown className="size-4 text-[var(--muted)] transition-transform data-[state=open]:rotate-180" />
-        </button>
-      </CollapsibleTrigger>
-      <CollapsibleContent className="px-4 pb-4">
-        {children}
-      </CollapsibleContent>
-    </Collapsible>
-  )
-}
-
 export function TaskAgentsClient() {
   const t = useTranslations("task-agents")
   const locale = useLocale()
@@ -416,6 +367,9 @@ export function TaskAgentsClient() {
   const [kindFilter, setKindFilter] = React.useState("all")
   const [statusFilter, setStatusFilter] = React.useState("all")
   const [selectedAgentId, setSelectedAgentId] = React.useState<string | null>(null)
+  const [createFlowStep, setCreateFlowStep] = React.useState<"starter" | "editor">(
+    "editor",
+  )
   const [draft, setDraft] = React.useState<TaskAgentDraft>(createEmptyDraft)
   const [previewDraft, setPreviewDraft] =
     React.useState<PreviewDraft>(defaultPreviewDraft)
@@ -472,6 +426,7 @@ export function TaskAgentsClient() {
     if (!isDesktop) return
     if (!selectedAgentId) {
       setSelectedAgentId(agents[0]?.id ?? NEW_AGENT_ID)
+      setCreateFlowStep(agents[0] ? "editor" : "starter")
       return
     }
     if (
@@ -479,6 +434,7 @@ export function TaskAgentsClient() {
       !agents.some((agent) => agent.id === selectedAgentId)
     ) {
       setSelectedAgentId(agents[0]?.id ?? NEW_AGENT_ID)
+      setCreateFlowStep(agents[0] ? "editor" : "starter")
     }
   }, [agents, isDesktop, selectedAgentId])
 
@@ -515,6 +471,16 @@ export function TaskAgentsClient() {
         : null,
     [agents, selectedAgentId],
   )
+
+  const isStarterState =
+    selectedAgentId === NEW_AGENT_ID && createFlowStep === "starter"
+
+  const isImageWorkspace =
+    !isStarterState &&
+    (selectedAgent?.invocation_kind ?? draft.invocation_kind) ===
+      "image_generation"
+
+  const showBindingsWorkspace = !isStarterState && !isImageWorkspace
 
   const dateFormatter = React.useMemo(
     () =>
@@ -557,6 +523,16 @@ export function TaskAgentsClient() {
       return haystack.includes(normalizedQuery)
     })
   }, [agents, kindFilter, normalizedQuery, statusFilter])
+
+  const groupedAgents = React.useMemo(
+    () => ({
+      chat: filteredAgents.filter((agent) => agent.invocation_kind === "chat"),
+      image: filteredAgents.filter(
+        (agent) => agent.invocation_kind === "image_generation",
+      ),
+    }),
+    [filteredAgents],
+  )
 
   const filteredBindingTools = React.useMemo(() => {
     const normalizedToolQuery = deferredToolQuery.trim().toLowerCase()
@@ -776,6 +752,7 @@ export function TaskAgentsClient() {
     let modelConfig = { ...parsedModelConfig.value }
     const trimmedModel = draft.model.trim()
     const trimmedProviderModelId = draft.provider_model_id.trim()
+    const isImageAgent = draft.invocation_kind === "image_generation"
 
     if (trimmedModel) {
       modelConfig.model = trimmedModel
@@ -791,12 +768,13 @@ export function TaskAgentsClient() {
       delete modelConfig.provider_model_id
     }
 
-    if (draft.invocation_kind === "image_generation") {
+    if (isImageAgent) {
       modelConfig = applyTaskAgentImageConfigToModelConfig(
         modelConfig,
         draft.image_config,
         parsedImageExtraParams.value,
       )
+      modelConfig = stripPersistedImageAgentRuntimeFields(modelConfig) ?? {}
     } else {
       delete modelConfig.image_generation
     }
@@ -807,7 +785,9 @@ export function TaskAgentsClient() {
     return {
       name: draft.name.trim(),
       description: normalizedDescription || null,
-      task_prompt: draft.task_prompt.trim(),
+      task_prompt: isImageAgent
+        ? INTERNAL_IMAGE_AGENT_TASK_PROMPT
+        : draft.task_prompt.trim(),
       invocation_kind: draft.invocation_kind,
       preferred_for_image_generation: draft.preferred_for_image_generation,
       model_config: Object.keys(modelConfig).length > 0 ? modelConfig : null,
@@ -821,21 +801,27 @@ export function TaskAgentsClient() {
 
   const hasImageConfigValues = React.useMemo(
     () =>
-      Object.values(draft.image_config).some(
-        (value) => typeof value === "string" && value.trim().length > 0,
-      ),
+      Object.entries(draft.image_config).some(([key, value]) => {
+        if (key === "image_url") return false
+        return typeof value === "string" && value.trim().length > 0
+      }),
     [draft.image_config],
   )
 
   const comparableSelectedPayload = React.useMemo(() => {
     if (!selectedAgent) return null
+    const isImageAgent = selectedAgent.invocation_kind === "image_generation"
     return {
       name: selectedAgent.name.trim(),
       description: selectedAgent.description?.trim() || null,
-      task_prompt: selectedAgent.task_prompt.trim(),
+      task_prompt: isImageAgent
+        ? INTERNAL_IMAGE_AGENT_TASK_PROMPT
+        : selectedAgent.task_prompt.trim(),
       invocation_kind: selectedAgent.invocation_kind,
       preferred_for_image_generation: selectedAgent.preferred_for_image_generation,
-      model_config: selectedAgent.model_config ?? null,
+      model_config: isImageAgent
+        ? stripPersistedImageAgentRuntimeFields(selectedAgent.model_config ?? null)
+        : (selectedAgent.model_config ?? null),
       callable_mcp_tool_ids: selectedAgent.callable_mcp_tool_ids,
       guidance_skill_ids: selectedAgent.guidance_skill_ids,
       tags: selectedAgent.tags,
@@ -845,11 +831,14 @@ export function TaskAgentsClient() {
   }, [selectedAgent])
 
   const hasUnsavedChanges = React.useMemo(() => {
+    if (isStarterState) return false
+
     if (selectedAgentId === NEW_AGENT_ID) {
+      const isImageAgent = draft.invocation_kind === "image_generation"
       return Boolean(
         draft.name.trim() ||
           draft.description.trim() ||
-          draft.task_prompt.trim() ||
+          (!isImageAgent && draft.task_prompt.trim()) ||
           draft.model.trim() ||
           draft.provider_model_id.trim() ||
           hasImageConfigValues ||
@@ -873,6 +862,7 @@ export function TaskAgentsClient() {
     draft,
     draftPayload,
     hasImageConfigValues,
+    isStarterState,
     selectedAgentId,
   ])
 
@@ -907,6 +897,7 @@ export function TaskAgentsClient() {
       if (agentId === selectedAgentId) return
       if (!confirmDiscardChanges()) return
       setSelectedAgentId(agentId)
+      setCreateFlowStep("editor")
     },
     [confirmDiscardChanges, selectedAgentId],
   )
@@ -915,7 +906,22 @@ export function TaskAgentsClient() {
     if (selectedAgentId === NEW_AGENT_ID) return
     if (!confirmDiscardChanges()) return
     setSelectedAgentId(NEW_AGENT_ID)
+    setCreateFlowStep("starter")
   }, [confirmDiscardChanges, selectedAgentId])
+
+  const handleSelectNewAgentType = React.useCallback(
+    (kind: CustomTaskAgentInvocationKind) => {
+      setCreateFlowStep("editor")
+      setDraft({
+        ...createEmptyDraft(),
+        invocation_kind: kind,
+      })
+      setPreviewDraft(defaultPreviewDraft)
+      setPreviewResult(null)
+      setPreviewError(null)
+    },
+    [],
+  )
 
   const updateDraft = React.useCallback(
     <K extends keyof TaskAgentDraft,>(key: K, value: TaskAgentDraft[K]) => {
@@ -1204,10 +1210,14 @@ export function TaskAgentsClient() {
                 {selectedAgentId === NEW_AGENT_ID ? (
                   <div className="rounded-2xl border border-dashed border-[var(--primary)]/30 bg-[var(--primary)]/10 p-4">
                     <p className="font-medium text-[var(--foreground)]">
-                      {t("library.draftTitle")}
+                      {isStarterState
+                        ? t("starter.title")
+                        : t("library.draftTitle")}
                     </p>
                     <p className="mt-1 text-sm text-[var(--muted)]">
-                      {t("library.draftDescription")}
+                      {isStarterState
+                        ? t("starter.description")
+                        : t("library.draftDescription")}
                     </p>
                   </div>
                 ) : null}
@@ -1236,27 +1246,57 @@ export function TaskAgentsClient() {
                     </p>
                   </div>
                 ) : (
-                  filteredAgents.map((agent) => (
-                    <AgentListItem
-                      key={agent.id}
-                      agent={agent}
-                      isSelected={selectedAgentId === agent.id}
-                      updatedLabel={t("library.updatedAt", {
-                        value: dateFormatter.format(new Date(agent.updated_at)),
-                      })}
-                      invocationLabel={
-                        agent.invocation_kind === "chat"
-                          ? t("badges.chat")
-                          : t("badges.imageGeneration")
-                      }
-                      preferredImageLabel={t("badges.imagePreferred")}
-                      enabledLabel={t("badges.enabled")}
-                      disabledLabel={t("badges.disabled")}
-                      discoverableLabel={t("badges.discoverable")}
-                      hiddenLabel={t("badges.hidden")}
-                      onSelect={handleSelectAgent}
-                    />
-                  ))
+                  <>
+                    {groupedAgents.chat.length > 0 ? (
+                      <div className="space-y-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+                          {t("library.sections.chat")}
+                        </p>
+                        {groupedAgents.chat.map((agent) => (
+                          <AgentListItem
+                            key={agent.id}
+                            agent={agent}
+                            isSelected={selectedAgentId === agent.id}
+                            updatedLabel={t("library.updatedAt", {
+                              value: dateFormatter.format(new Date(agent.updated_at)),
+                            })}
+                            invocationLabel={t("badges.chat")}
+                            preferredImageLabel={t("badges.imagePreferred")}
+                            enabledLabel={t("badges.enabled")}
+                            disabledLabel={t("badges.disabled")}
+                            discoverableLabel={t("badges.discoverable")}
+                            hiddenLabel={t("badges.hidden")}
+                            onSelect={handleSelectAgent}
+                          />
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {groupedAgents.image.length > 0 ? (
+                      <div className="space-y-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+                          {t("library.sections.image")}
+                        </p>
+                        {groupedAgents.image.map((agent) => (
+                          <AgentListItem
+                            key={agent.id}
+                            agent={agent}
+                            isSelected={selectedAgentId === agent.id}
+                            updatedLabel={t("library.updatedAt", {
+                              value: dateFormatter.format(new Date(agent.updated_at)),
+                            })}
+                            invocationLabel={t("badges.imageGeneration")}
+                            preferredImageLabel={t("badges.imagePreferred")}
+                            enabledLabel={t("badges.enabled")}
+                            disabledLabel={t("badges.disabled")}
+                            discoverableLabel={t("badges.discoverable")}
+                            hiddenLabel={t("badges.hidden")}
+                            onSelect={handleSelectAgent}
+                          />
+                        ))}
+                      </div>
+                    ) : null}
+                  </>
                 )}
               </div>
             </ScrollArea>
@@ -1271,7 +1311,11 @@ export function TaskAgentsClient() {
                   <GlassCardTitle>
                     {selectedAgent
                       ? selectedAgent.name
-                      : t("editor.newTitle")}
+                      : isStarterState
+                        ? t("starter.title")
+                        : isImageWorkspace
+                          ? t("editor.imageWorkspace.title")
+                          : t("editor.chatWorkspace.title")}
                   </GlassCardTitle>
                   {selectedAgent ? (
                     <>
@@ -1305,7 +1349,11 @@ export function TaskAgentsClient() {
                           new Date(selectedAgent.updated_at),
                         ),
                       })
-                    : t("editor.newDescription")}
+                    : isStarterState
+                      ? t("starter.description")
+                      : isImageWorkspace
+                        ? t("editor.imageWorkspace.description")
+                        : t("editor.chatWorkspace.description")}
                 </GlassCardDescription>
               </div>
 
@@ -1321,1088 +1369,103 @@ export function TaskAgentsClient() {
                     {t("actions.delete")}
                   </Button>
                 ) : null}
-                <Button onClick={handleSave} disabled={saveDisabled}>
-                  <Save className="mr-2 size-4" />
-                  {isSaving
-                    ? t("actions.saving")
-                    : selectedAgent
-                      ? t("actions.save")
-                      : t("actions.create")}
-                </Button>
+                {!isStarterState ? (
+                  <Button onClick={handleSave} disabled={saveDisabled}>
+                    <Save className="mr-2 size-4" />
+                    {isSaving
+                      ? t("actions.saving")
+                      : selectedAgent
+                        ? t("actions.save")
+                        : t("actions.create")}
+                  </Button>
+                ) : null}
               </div>
             </div>
           </GlassCardHeader>
 
           <GlassCardContent className="space-y-6">
+            {isStarterState ? (
+              <TaskAgentTypeStarter t={t} onSelect={handleSelectNewAgentType} />
+            ) : (
             <Tabs defaultValue="config" className="space-y-6">
-              <TabsList className="grid w-full grid-cols-4">
+              <TabsList
+                className={cn(
+                  "grid w-full",
+                  showBindingsWorkspace ? "grid-cols-4" : "grid-cols-3",
+                )}
+              >
                 <TabsTrigger value="config">{t("tabs.config")}</TabsTrigger>
-                <TabsTrigger value="bindings">
-                  {t("tabs.bindings")}
-                </TabsTrigger>
+                {showBindingsWorkspace ? (
+                  <TabsTrigger value="bindings">
+                    {t("tabs.bindings")}
+                  </TabsTrigger>
+                ) : null}
                 <TabsTrigger value="preview">{t("tabs.preview")}</TabsTrigger>
                 <TabsTrigger value="debug">{t("tabs.debug")}</TabsTrigger>
               </TabsList>
 
-              <TabsContent value="config" className="space-y-6">
-                <SectionHeader
-                  title={t("editor.basic.title")}
-                  description={t("editor.basic.description")}
+              {isImageWorkspace ? (
+                <ImageTaskAgentEditor
+                  t={t}
+                  draft={draft}
+                  previewDraft={previewDraft}
+                  draftPayload={draftPayload}
+                  parsedModelConfigError={parsedModelConfig.error}
+                  parsedImageExtraParamsError={parsedImageExtraParams.error}
+                  taskAgentModelSelectValue={taskAgentModelSelectValue}
+                  selectedTaskAgentModelOption={selectedTaskAgentModelOption}
+                  unknownTaskAgentModelLabel={unknownTaskAgentModelLabel}
+                  unknownTaskAgentModelValue={unknownTaskAgentModelValue}
+                  isLoadingModels={isLoadingModels}
+                  modelGroups={modelGroups}
+                  updateDraft={updateDraft}
+                  updateImageDraft={updateImageDraft}
+                  handleTaskAgentModelChange={handleTaskAgentModelChange}
                 />
-
-                <div className="grid gap-5 lg:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="task-agent-name">
-                      {t("editor.fields.name")}
-                    </Label>
-                    <Input
-                      id="task-agent-name"
-                      value={draft.name}
-                      onChange={(event) =>
-                        updateDraft("name", event.target.value)
-                      }
-                      placeholder={t("editor.placeholders.name")}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="task-agent-kind">
-                      {t("editor.fields.invocationKind")}
-                    </Label>
-                    <Select
-                      value={draft.invocation_kind}
-                      onValueChange={(value) =>
-                        updateDraft(
-                          "invocation_kind",
-                          value as CustomTaskAgentInvocationKind,
-                        )
-                      }
-                    >
-                      <SelectTrigger id="task-agent-kind">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="chat">{t("badges.chat")}</SelectItem>
-                        <SelectItem value="image_generation">
-                          {t("badges.imageGeneration")}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium text-[var(--foreground)]">
-                        {t("editor.fields.preferredForImageGeneration")}
-                      </p>
-                      <p className="text-xs text-[var(--muted)]">
-                        {t("editor.toggles.preferredForImageGeneration")}
-                      </p>
-                    </div>
-                    <Switch
-                      checked={draft.preferred_for_image_generation}
-                      onCheckedChange={(checked) =>
-                        updateDraft("preferred_for_image_generation", checked)
-                      }
-                      disabled={draft.invocation_kind !== "image_generation"}
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="task-agent-description">
-                    {t("editor.fields.description")}
-                  </Label>
-                  <Textarea
-                    id="task-agent-description"
-                    value={draft.description}
-                    onChange={(event) =>
-                      updateDraft("description", event.target.value)
-                    }
-                    rows={3}
-                    placeholder={t("editor.placeholders.description")}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="task-agent-prompt">
-                    {t("editor.fields.taskPrompt")}
-                  </Label>
-                  <Textarea
-                    id="task-agent-prompt"
-                    value={draft.task_prompt}
-                    onChange={(event) =>
-                      updateDraft("task_prompt", event.target.value)
-                    }
-                    rows={8}
-                    placeholder={t("editor.placeholders.taskPrompt")}
-                  />
-                </div>
-
-                <Separator />
-
-                <SectionHeader
-                  title={t("editor.model.title")}
-                  description={t("editor.model.description")}
+              ) : (
+                <ChatTaskAgentEditor
+                  t={t}
+                  draft={draft}
+                  previewDraft={previewDraft}
+                  draftPayload={draftPayload}
+                  parsedModelConfigError={parsedModelConfig.error}
+                  taskAgentModelSelectValue={taskAgentModelSelectValue}
+                  selectedTaskAgentModelOption={selectedTaskAgentModelOption}
+                  unknownTaskAgentModelLabel={unknownTaskAgentModelLabel}
+                  unknownTaskAgentModelValue={unknownTaskAgentModelValue}
+                  isLoadingModels={isLoadingModels}
+                  modelGroups={modelGroups}
+                  bindingCatalog={bindingCatalog}
+                  bindingsLoading={bindingsLoading}
+                  filteredBindingTools={filteredBindingTools}
+                  filteredBindingSkills={filteredBindingSkills}
+                  toolQuery={toolQuery}
+                  skillQuery={skillQuery}
+                  showSelectedToolsOnly={showSelectedToolsOnly}
+                  showSelectedSkillsOnly={showSelectedSkillsOnly}
+                  updateDraft={updateDraft}
+                  handleTaskAgentModelChange={handleTaskAgentModelChange}
+                  setToolQuery={setToolQuery}
+                  setSkillQuery={setSkillQuery}
+                  setShowSelectedToolsOnly={setShowSelectedToolsOnly}
+                  setShowSelectedSkillsOnly={setShowSelectedSkillsOnly}
+                  toggleBinding={toggleBinding}
                 />
+              )}
 
-                <div className="grid gap-5 lg:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="task-agent-model">
-                      {t("editor.fields.model")}
-                    </Label>
-                    <Select
-                      value={taskAgentModelSelectValue}
-                      onValueChange={handleTaskAgentModelChange}
-                      disabled={isLoadingModels}
-                    >
-                      <SelectTrigger id="task-agent-model">
-                        <SelectValue placeholder={t("editor.placeholders.model")}>
-                          {selectedTaskAgentModelOption ? (
-                            <span className="truncate">
-                              {selectedTaskAgentModelOption.modelId}
-                            </span>
-                          ) : unknownTaskAgentModelLabel ? (
-                            <span className="truncate">{unknownTaskAgentModelLabel}</span>
-                          ) : undefined}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={DEFAULT_TASK_AGENT_MODEL_VALUE}>
-                          {t("editor.placeholders.model")}
-                        </SelectItem>
-                        {unknownTaskAgentModelValue ? (
-                          <SelectItem value={unknownTaskAgentModelValue}>
-                            {unknownTaskAgentModelLabel}
-                          </SelectItem>
-                        ) : null}
-                        {modelGroups.map((group) => (
-                          <SelectGroup key={group.instance_id}>
-                            <SelectLabel className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                              {group.instance_name}
-                            </SelectLabel>
-                            {group.models.map((model) => {
-                              const optionValue = buildTaskAgentModelOptionValue(
-                                group.instance_id,
-                                model.provider_model_id ?? model.id,
-                              )
-                              return (
-                                <SelectItem key={optionValue} value={optionValue}>
-                                  <div className="flex flex-col">
-                                    <span className="text-xs font-medium text-foreground">
-                                      {model.id}
-                                    </span>
-                                    <span className="text-[10px] text-muted-foreground">
-                                      {group.provider || model.owned_by || "provider"}
-                                    </span>
-                                  </div>
-                                </SelectItem>
-                              )
-                            })}
-                          </SelectGroup>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="task-agent-provider-model-id">
-                      {t("editor.fields.providerModelId")}
-                    </Label>
-                    <Input
-                      id="task-agent-provider-model-id"
-                      value={draft.provider_model_id}
-                      onChange={(event) =>
-                        updateDraft("provider_model_id", event.target.value)
-                      }
-                      placeholder={t("editor.placeholders.providerModelId")}
-                    />
-                  </div>
-                </div>
+              <TaskAgentPreviewPanel
+                t={t}
+                selectedAgent={selectedAgent}
+                previewDraft={previewDraft}
+                previewResult={previewResult}
+                previewError={previewError}
+                isPreviewing={isPreviewing}
+                setPreviewDraft={setPreviewDraft}
+                handleRunPreview={handleRunPreview}
+              />
 
-                {draft.invocation_kind === "image_generation" ? (
-                  <>
-                    <Separator />
-
-                    <SectionHeader
-                      title={t("editor.imageConfig.title")}
-                      description={t("editor.imageConfig.description")}
-                    />
-
-                    <div className="grid gap-5 lg:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label htmlFor="task-agent-image-negative-prompt">
-                          {t("editor.imageConfig.fields.negativePrompt")}
-                        </Label>
-                        <Textarea
-                          id="task-agent-image-negative-prompt"
-                          value={draft.image_config.negative_prompt}
-                          onChange={(event) =>
-                            updateImageDraft("negative_prompt", event.target.value)
-                          }
-                          rows={3}
-                          placeholder={t("editor.imageConfig.placeholders.negativePrompt")}
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="task-agent-image-url">
-                          {t("editor.imageConfig.fields.imageUrl")}
-                        </Label>
-                        <Input
-                          id="task-agent-image-url"
-                          value={draft.image_config.image_url}
-                          onChange={(event) =>
-                            updateImageDraft("image_url", event.target.value)
-                          }
-                          placeholder={t("editor.imageConfig.placeholders.imageUrl")}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid gap-5 lg:grid-cols-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="task-agent-image-aspect-ratio">
-                          {t("editor.imageConfig.fields.aspectRatio")}
-                        </Label>
-                        <Input
-                          id="task-agent-image-aspect-ratio"
-                          value={draft.image_config.aspect_ratio}
-                          onChange={(event) =>
-                            updateImageDraft("aspect_ratio", event.target.value)
-                          }
-                          placeholder={t("editor.imageConfig.placeholders.aspectRatio")}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="task-agent-image-num-outputs">
-                          {t("editor.imageConfig.fields.numOutputs")}
-                        </Label>
-                        <Input
-                          id="task-agent-image-num-outputs"
-                          value={draft.image_config.num_outputs}
-                          onChange={(event) =>
-                            updateImageDraft("num_outputs", event.target.value)
-                          }
-                          placeholder={t("editor.imageConfig.placeholders.numOutputs")}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="task-agent-image-steps">
-                          {t("editor.imageConfig.fields.steps")}
-                        </Label>
-                        <Input
-                          id="task-agent-image-steps"
-                          value={draft.image_config.steps}
-                          onChange={(event) =>
-                            updateImageDraft("steps", event.target.value)
-                          }
-                          placeholder={t("editor.imageConfig.placeholders.steps")}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="task-agent-image-cfg-scale">
-                          {t("editor.imageConfig.fields.cfgScale")}
-                        </Label>
-                        <Input
-                          id="task-agent-image-cfg-scale"
-                          value={draft.image_config.cfg_scale}
-                          onChange={(event) =>
-                            updateImageDraft("cfg_scale", event.target.value)
-                          }
-                          placeholder={t("editor.imageConfig.placeholders.cfgScale")}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid gap-5 lg:grid-cols-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="task-agent-image-seed">
-                          {t("editor.imageConfig.fields.seed")}
-                        </Label>
-                        <Input
-                          id="task-agent-image-seed"
-                          value={draft.image_config.seed}
-                          onChange={(event) =>
-                            updateImageDraft("seed", event.target.value)
-                          }
-                          placeholder={t("editor.imageConfig.placeholders.seed")}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="task-agent-image-response-format">
-                          {t("editor.imageConfig.fields.responseFormat")}
-                        </Label>
-                        <Input
-                          id="task-agent-image-response-format"
-                          value={draft.image_config.response_format}
-                          onChange={(event) =>
-                            updateImageDraft("response_format", event.target.value)
-                          }
-                          placeholder={t("editor.imageConfig.placeholders.responseFormat")}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="task-agent-image-quality">
-                          {t("editor.imageConfig.fields.quality")}
-                        </Label>
-                        <Input
-                          id="task-agent-image-quality"
-                          value={draft.image_config.quality}
-                          onChange={(event) =>
-                            updateImageDraft("quality", event.target.value)
-                          }
-                          placeholder={t("editor.imageConfig.placeholders.quality")}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="task-agent-image-style">
-                          {t("editor.imageConfig.fields.style")}
-                        </Label>
-                        <Input
-                          id="task-agent-image-style"
-                          value={draft.image_config.style}
-                          onChange={(event) =>
-                            updateImageDraft("style", event.target.value)
-                          }
-                          placeholder={t("editor.imageConfig.placeholders.style")}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid gap-5 lg:grid-cols-3">
-                      <div className="space-y-2">
-                        <Label htmlFor="task-agent-image-width">
-                          {t("editor.imageConfig.fields.width")}
-                        </Label>
-                        <Input
-                          id="task-agent-image-width"
-                          value={draft.image_config.width}
-                          onChange={(event) =>
-                            updateImageDraft("width", event.target.value)
-                          }
-                          placeholder={t("editor.imageConfig.placeholders.width")}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="task-agent-image-height">
-                          {t("editor.imageConfig.fields.height")}
-                        </Label>
-                        <Input
-                          id="task-agent-image-height"
-                          value={draft.image_config.height}
-                          onChange={(event) =>
-                            updateImageDraft("height", event.target.value)
-                          }
-                          placeholder={t("editor.imageConfig.placeholders.height")}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="task-agent-image-sampler-name">
-                          {t("editor.imageConfig.fields.samplerName")}
-                        </Label>
-                        <Input
-                          id="task-agent-image-sampler-name"
-                          value={draft.image_config.sampler_name}
-                          onChange={(event) =>
-                            updateImageDraft("sampler_name", event.target.value)
-                          }
-                          placeholder={t("editor.imageConfig.placeholders.samplerName")}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="task-agent-image-extra-params">
-                        {t("editor.imageConfig.fields.extraParamsJson")}
-                      </Label>
-                      <Textarea
-                        id="task-agent-image-extra-params"
-                        value={draft.image_config.extra_params_json}
-                        onChange={(event) =>
-                          updateImageDraft("extra_params_json", event.target.value)
-                        }
-                        rows={6}
-                        placeholder={t.raw("editor.imageConfig.placeholders.extraParamsJson")}
-                        className="font-mono text-xs"
-                      />
-                      <p className="text-xs text-[var(--muted)]">
-                        {t("editor.imageConfig.helper")}
-                      </p>
-                      {parsedImageExtraParams.error ? (
-                        <p className="text-xs text-red-300">
-                          {parsedImageExtraParams.error}
-                        </p>
-                      ) : null}
-                    </div>
-                  </>
-                ) : null}
-
-                <div className="space-y-2">
-                  <Label htmlFor="task-agent-model-config">
-                    {t("editor.fields.modelConfigJson")}
-                  </Label>
-                  <Textarea
-                    id="task-agent-model-config"
-                    value={draft.model_config_json}
-                    onChange={(event) =>
-                      updateDraft("model_config_json", event.target.value)
-                    }
-                    rows={8}
-                    placeholder={t.raw("editor.placeholders.modelConfigJson")}
-                    className="font-mono text-xs"
-                  />
-                  <p className="text-xs text-[var(--muted)]">
-                    {t("editor.modelConfig.helper")}
-                  </p>
-                  {parsedModelConfig.error ? (
-                    <p className="text-xs text-red-300">
-                      {parsedModelConfig.error}
-                    </p>
-                  ) : null}
-                </div>
-
-                <Separator />
-
-                <div className="grid gap-5 lg:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="task-agent-tags">
-                      {t("editor.fields.tags")}
-                    </Label>
-                    <Input
-                      id="task-agent-tags"
-                      value={draft.tags_input}
-                      onChange={(event) =>
-                        updateDraft("tags_input", event.target.value)
-                      }
-                      placeholder={t("editor.placeholders.tags")}
-                    />
-                  </div>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="space-y-1">
-                          <p className="text-sm font-medium text-[var(--foreground)]">
-                            {t("editor.fields.discoverable")}
-                          </p>
-                          <p className="text-xs text-[var(--muted)]">
-                            {t("editor.toggles.discoverable")}
-                          </p>
-                        </div>
-                        <Switch
-                          checked={draft.discoverable}
-                          onCheckedChange={(checked) =>
-                            updateDraft("discoverable", checked)
-                          }
-                        />
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="space-y-1">
-                          <p className="text-sm font-medium text-[var(--foreground)]">
-                            {t("editor.fields.isEnabled")}
-                          </p>
-                          <p className="text-xs text-[var(--muted)]">
-                            {t("editor.toggles.enabled")}
-                          </p>
-                        </div>
-                        <Switch
-                          checked={draft.is_enabled}
-                          onCheckedChange={(checked) =>
-                            updateDraft("is_enabled", checked)
-                          }
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="bindings" className="space-y-6">
-                <SectionHeader
-                  title={t("bindings.title")}
-                  description={t("bindings.description")}
-                />
-
-                <div className="grid gap-5 xl:grid-cols-2">
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                    <div className="mb-4 flex items-center justify-between gap-3">
-                      <div className="space-y-1">
-                        <p className="font-medium text-[var(--foreground)]">
-                          {t("bindings.toolsTitle")}
-                        </p>
-                        <p className="text-sm text-[var(--muted)]">
-                          {t("bindings.toolsDescription")}
-                        </p>
-                      </div>
-                      <Badge variant="secondary">
-                        {draft.callable_mcp_tool_ids.length}
-                      </Badge>
-                    </div>
-
-                    <div className="mb-4 flex flex-col gap-3 sm:flex-row">
-                      <div className="relative flex-1">
-                        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--muted)]" />
-                        <Input
-                          value={toolQuery}
-                          onChange={(event) => setToolQuery(event.target.value)}
-                          placeholder={t("bindings.searchToolsPlaceholder")}
-                          className="pl-9"
-                        />
-                      </div>
-                      <Button
-                        type="button"
-                        variant={showSelectedToolsOnly ? "default" : "outline"}
-                        onClick={() =>
-                          setShowSelectedToolsOnly((current) => !current)
-                        }
-                      >
-                        {t("bindings.selectedOnly")}
-                      </Button>
-                    </div>
-
-                    <ScrollArea className="h-[320px] pr-4">
-                      <div className="space-y-3">
-                        {bindingsLoading ? (
-                          Array.from({ length: 4 }).map((_, index) => (
-                            <div
-                              key={`tool-skeleton-${index}`}
-                              className="space-y-2 rounded-xl border border-white/10 p-3"
-                            >
-                              <Skeleton className="h-4 w-2/3" />
-                              <Skeleton className="h-3 w-full" />
-                            </div>
-                          ))
-                        ) : bindingCatalog.mcp_tools.length === 0 ? (
-                          <p className="text-sm text-[var(--muted)]">
-                            {t("bindings.noTools")}
-                          </p>
-                        ) : filteredBindingTools.length === 0 ? (
-                          <p className="text-sm text-[var(--muted)]">
-                            {t("bindings.noFilteredTools")}
-                          </p>
-                        ) : (
-                          filteredBindingTools.map((tool) => (
-                            <label
-                              key={tool.id}
-                              className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 p-3 transition-colors hover:bg-white/[0.03]"
-                            >
-                              <Checkbox
-                                checked={draft.callable_mcp_tool_ids.includes(tool.id)}
-                                onCheckedChange={(checked) =>
-                                  toggleBinding("tool", tool.id, checked === true)
-                                }
-                                className="mt-0.5"
-                              />
-                              <div className="min-w-0 space-y-2">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span className="text-sm font-medium text-[var(--foreground)]">
-                                    {tool.name}
-                                  </span>
-                                  <span
-                                    className={cn(
-                                      "rounded-full border px-2 py-0.5 text-[11px]",
-                                      statusToneClass(tool.status),
-                                    )}
-                                  >
-                                    {tool.status}
-                                  </span>
-                                </div>
-                                <p className="text-sm text-[var(--muted)]">
-                                  {tool.description || "—"}
-                                </p>
-                              </div>
-                            </label>
-                          ))
-                        )}
-                      </div>
-                    </ScrollArea>
-                  </div>
-
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                    <div className="mb-4 flex items-center justify-between gap-3">
-                      <div className="space-y-1">
-                        <p className="font-medium text-[var(--foreground)]">
-                          {t("bindings.skillsTitle")}
-                        </p>
-                        <p className="text-sm text-[var(--muted)]">
-                          {t("bindings.skillsDescription")}
-                        </p>
-                      </div>
-                      <Badge variant="secondary">
-                        {draft.guidance_skill_ids.length}
-                      </Badge>
-                    </div>
-
-                    <div className="mb-4 flex flex-col gap-3 sm:flex-row">
-                      <div className="relative flex-1">
-                        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--muted)]" />
-                        <Input
-                          value={skillQuery}
-                          onChange={(event) => setSkillQuery(event.target.value)}
-                          placeholder={t("bindings.searchSkillsPlaceholder")}
-                          className="pl-9"
-                        />
-                      </div>
-                      <Button
-                        type="button"
-                        variant={showSelectedSkillsOnly ? "default" : "outline"}
-                        onClick={() =>
-                          setShowSelectedSkillsOnly((current) => !current)
-                        }
-                      >
-                        {t("bindings.selectedOnly")}
-                      </Button>
-                    </div>
-
-                    <ScrollArea className="h-[320px] pr-4">
-                      <div className="space-y-3">
-                        {bindingsLoading ? (
-                          Array.from({ length: 4 }).map((_, index) => (
-                            <div
-                              key={`skill-skeleton-${index}`}
-                              className="space-y-2 rounded-xl border border-white/10 p-3"
-                            >
-                              <Skeleton className="h-4 w-1/2" />
-                              <Skeleton className="h-3 w-5/6" />
-                            </div>
-                          ))
-                        ) : bindingCatalog.guidance_skills.length === 0 ? (
-                          <p className="text-sm text-[var(--muted)]">
-                            {t("bindings.noSkills")}
-                          </p>
-                        ) : filteredBindingSkills.length === 0 ? (
-                          <p className="text-sm text-[var(--muted)]">
-                            {t("bindings.noFilteredSkills")}
-                          </p>
-                        ) : (
-                          filteredBindingSkills.map((skill) => (
-                            <label
-                              key={skill.skill_id}
-                              className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 p-3 transition-colors hover:bg-white/[0.03]"
-                            >
-                              <Checkbox
-                                checked={draft.guidance_skill_ids.includes(
-                                  skill.skill_id,
-                                )}
-                                onCheckedChange={(checked) =>
-                                  toggleBinding(
-                                    "skill",
-                                    skill.skill_id,
-                                    checked === true,
-                                  )
-                                }
-                                className="mt-0.5"
-                              />
-                              <div className="min-w-0 space-y-2">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span className="text-sm font-medium text-[var(--foreground)]">
-                                    {skill.skill_id}
-                                  </span>
-                                  <span
-                                    className={cn(
-                                      "rounded-full border px-2 py-0.5 text-[11px]",
-                                      skill.is_enabled
-                                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-                                        : "border-white/10 bg-white/5 text-[var(--muted)]",
-                                    )}
-                                  >
-                                    {skill.is_enabled
-                                      ? t("badges.enabled")
-                                      : t("badges.disabled")}
-                                  </span>
-                                </div>
-                                <p className="text-xs text-[var(--muted)]">
-                                  {t("bindings.skillMeta", {
-                                    version:
-                                      skill.installed_version ??
-                                      t("bindings.unknownVersion"),
-                                    runtime:
-                                      skill.runtime ?? t("bindings.unknownRuntime"),
-                                  })}
-                                </p>
-                              </div>
-                            </label>
-                          ))
-                        )}
-                      </div>
-                    </ScrollArea>
-                  </div>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="preview" className="space-y-6">
-                <SectionHeader
-                  title={t("preview.title")}
-                  description={t("preview.description")}
-                />
-
-                <div className="grid gap-5 xl:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
-                  <div className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="preview-message">
-                        {t("preview.fields.message")}
-                      </Label>
-                      <Textarea
-                        id="preview-message"
-                        value={previewDraft.message}
-                        onChange={(event) =>
-                          setPreviewDraft((current) => ({
-                            ...current,
-                            message: event.target.value,
-                          }))
-                        }
-                        rows={8}
-                        placeholder={t("preview.placeholders.message")}
-                        disabled={!selectedAgent}
-                      />
-                    </div>
-
-                    <div className="grid gap-4 sm:grid-cols-3">
-                      <div className="space-y-2">
-                        <Label htmlFor="preview-temperature">
-                          {t("preview.fields.temperature")}
-                        </Label>
-                        <Input
-                          id="preview-temperature"
-                          value={previewDraft.temperature}
-                          onChange={(event) =>
-                            setPreviewDraft((current) => ({
-                              ...current,
-                              temperature: event.target.value,
-                            }))
-                          }
-                          placeholder="0.2"
-                          disabled={!selectedAgent}
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="preview-max-tokens">
-                          {t("preview.fields.maxTokens")}
-                        </Label>
-                        <Input
-                          id="preview-max-tokens"
-                          value={previewDraft.max_tokens}
-                          onChange={(event) =>
-                            setPreviewDraft((current) => ({
-                              ...current,
-                              max_tokens: event.target.value,
-                            }))
-                          }
-                          placeholder="512"
-                          disabled={!selectedAgent}
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="preview-max-rounds">
-                          {t("preview.fields.maxRounds")}
-                        </Label>
-                        <Input
-                          id="preview-max-rounds"
-                          value={previewDraft.max_rounds}
-                          onChange={(event) =>
-                            setPreviewDraft((current) => ({
-                              ...current,
-                              max_rounds: event.target.value,
-                            }))
-                          }
-                          placeholder="4"
-                          disabled={!selectedAgent}
-                        />
-                      </div>
-                    </div>
-
-                    <Button
-                      onClick={handleRunPreview}
-                      disabled={
-                        isPreviewing || !selectedAgent || !previewDraft.message.trim()
-                      }
-                      className="w-full"
-                    >
-                      <Play
-                        className={cn("mr-2 size-4", isPreviewing && "animate-pulse")}
-                      />
-                      {isPreviewing
-                        ? t("actions.runningPreview")
-                        : t("actions.runPreview")}
-                    </Button>
-
-                    {!selectedAgent ? (
-                      <div className="rounded-2xl border border-dashed border-white/10 p-4 text-sm text-[var(--muted)]">
-                        {t("preview.unsavedDescription")}
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <div className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                    {previewError ? (
-                      <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4">
-                        <div className="flex items-center gap-2 text-red-200">
-                          <XCircle className="size-4" />
-                          <span className="font-medium">
-                            {t("preview.errorTitle")}
-                          </span>
-                        </div>
-                        <p className="mt-2 text-sm text-red-100/90">
-                          {previewError}
-                        </p>
-                      </div>
-                    ) : null}
-
-                    {!previewResult ? (
-                      <div className="flex min-h-[320px] flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 p-8 text-center">
-                        <Sparkles className="size-10 text-[var(--muted)]" />
-                        <p className="mt-4 font-medium text-[var(--foreground)]">
-                          {t("preview.emptyTitle")}
-                        </p>
-                        <p className="mt-2 max-w-md text-sm text-[var(--muted)]">
-                          {t("preview.emptyDescription")}
-                        </p>
-                      </div>
-                    ) : previewResult.invocation_kind === "image_generation" ? (
-                      <div className="space-y-4">
-                        <SectionHeader title={t("preview.images")} />
-                        <div className="grid gap-4 md:grid-cols-2">
-                          {previewResult.images.map((image, index) => (
-                            <div
-                              key={`${image}-${index}`}
-                              className="overflow-hidden rounded-2xl border border-white/10 bg-black/20"
-                            >
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={image}
-                                alt={t("preview.imageAlt", { index: index + 1 })}
-                                className="h-full w-full object-cover"
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                          <div className="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--foreground)]">
-                            <Bot className="size-4" />
-                            {t("preview.response")}
-                          </div>
-                          <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--foreground)]">
-                            {previewResult.content || "—"}
-                          </p>
-                        </div>
-
-                        {previewResult.reasoning_content ? (
-                          <PreviewDisclosure
-                            title={t("preview.reasoning")}
-                            defaultOpen={true}
-                          >
-                            <div className="flex items-center gap-2 pb-3 text-sm font-medium text-[var(--foreground)]">
-                              <BrainCircuit className="size-4" />
-                              {t("preview.reasoning")}
-                            </div>
-                            <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--muted)]">
-                              {previewResult.reasoning_content}
-                            </p>
-                          </PreviewDisclosure>
-                        ) : null}
-                      </div>
-                    )}
-
-                    {previewResult ? (
-                      <>
-                        <div className="space-y-4">
-                          <PreviewDisclosure
-                            title={t("preview.toolCalls")}
-                            defaultOpen={previewResult.tool_calls.length > 0}
-                          >
-                            <div className="flex items-center gap-2 pb-3 text-sm font-medium text-[var(--foreground)]">
-                              <Wrench className="size-4" />
-                              {t("preview.toolCalls")}
-                            </div>
-                            <pre className="overflow-x-auto whitespace-pre-wrap text-xs text-[var(--muted)]">
-                              {JSON.stringify(previewResult.tool_calls, null, 2)}
-                            </pre>
-                          </PreviewDisclosure>
-
-                          <PreviewDisclosure
-                            title={t("preview.toolTrace")}
-                            defaultOpen={previewResult.tool_trace.length > 0}
-                          >
-                            <div className="flex items-center gap-2 pb-3 text-sm font-medium text-[var(--foreground)]">
-                              <Zap className="size-4" />
-                              {t("preview.toolTrace")}
-                            </div>
-                            <pre className="overflow-x-auto whitespace-pre-wrap text-xs text-[var(--muted)]">
-                              {JSON.stringify(previewResult.tool_trace, null, 2)}
-                            </pre>
-                          </PreviewDisclosure>
-
-                          <PreviewDisclosure title={t("preview.raw")}>
-                            <div className="flex items-center gap-2 pb-3 text-sm font-medium text-[var(--foreground)]">
-                              <ImageIcon className="size-4" />
-                              {t("preview.raw")}
-                            </div>
-                            <pre className="overflow-x-auto whitespace-pre-wrap text-xs text-[var(--muted)]">
-                              {JSON.stringify(previewResult.raw ?? {}, null, 2)}
-                            </pre>
-                          </PreviewDisclosure>
-                        </div>
-                      </>
-                    ) : null}
-                  </div>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="debug" className="space-y-6">
-                <SectionHeader
-                  title={t("debug.title")}
-                  description={t("debug.description")}
-                />
-
-                <div className="grid gap-4 lg:grid-cols-3">
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">
-                      {t("debug.cards.identity")}
-                    </p>
-                    <dl className="mt-3 space-y-2 text-sm">
-                      <div className="flex items-start justify-between gap-3">
-                        <dt className="text-[var(--muted)]">
-                          {t("editor.fields.model")}
-                        </dt>
-                        <dd className="text-right text-[var(--foreground)]">
-                          {draft.model.trim() || "default"}
-                        </dd>
-                      </div>
-                      <div className="flex items-start justify-between gap-3">
-                        <dt className="text-[var(--muted)]">
-                          {t("editor.fields.providerModelId")}
-                        </dt>
-                        <dd className="text-right text-[var(--foreground)]">
-                          {draft.provider_model_id.trim() || "—"}
-                        </dd>
-                      </div>
-                      <div className="flex items-start justify-between gap-3">
-                        <dt className="text-[var(--muted)]">
-                          {t("editor.fields.invocationKind")}
-                        </dt>
-                        <dd className="text-right text-[var(--foreground)]">
-                          {draft.invocation_kind === "chat"
-                            ? t("badges.chat")
-                            : t("badges.imageGeneration")}
-                        </dd>
-                      </div>
-                    </dl>
-                  </div>
-
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">
-                      {t("debug.cards.bindings")}
-                    </p>
-                    <dl className="mt-3 space-y-2 text-sm">
-                      <div className="flex items-start justify-between gap-3">
-                        <dt className="text-[var(--muted)]">
-                          {t("editor.fields.boundTools")}
-                        </dt>
-                        <dd className="text-right text-[var(--foreground)]">
-                          {draft.callable_mcp_tool_ids.length}
-                        </dd>
-                      </div>
-                      <div className="flex items-start justify-between gap-3">
-                        <dt className="text-[var(--muted)]">
-                          {t("editor.fields.boundSkills")}
-                        </dt>
-                        <dd className="text-right text-[var(--foreground)]">
-                          {draft.guidance_skill_ids.length}
-                        </dd>
-                      </div>
-                      <div className="flex items-start justify-between gap-3">
-                        <dt className="text-[var(--muted)]">
-                          {t("editor.fields.preferredForImageGeneration")}
-                        </dt>
-                        <dd className="text-right text-[var(--foreground)]">
-                          {draft.preferred_for_image_generation
-                            ? t("editor.values.preferredForImageGenerationOn")
-                            : t("editor.values.preferredForImageGenerationOff")}
-                        </dd>
-                      </div>
-                      <div className="flex items-start justify-between gap-3">
-                        <dt className="text-[var(--muted)]">
-                          {t("editor.fields.discoverable")}
-                        </dt>
-                        <dd className="text-right text-[var(--foreground)]">
-                          {draft.discoverable
-                            ? t("badges.discoverable")
-                            : t("badges.hidden")}
-                        </dd>
-                      </div>
-                      <div className="flex items-start justify-between gap-3">
-                        <dt className="text-[var(--muted)]">
-                          {t("editor.fields.isEnabled")}
-                        </dt>
-                        <dd className="text-right text-[var(--foreground)]">
-                          {draft.is_enabled
-                            ? t("badges.enabled")
-                            : t("badges.disabled")}
-                        </dd>
-                      </div>
-                    </dl>
-                  </div>
-
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">
-                      {t("debug.cards.preview")}
-                    </p>
-                    <dl className="mt-3 space-y-2 text-sm">
-                      <div className="flex items-start justify-between gap-3">
-                        <dt className="text-[var(--muted)]">
-                          {t("preview.fields.maxRounds")}
-                        </dt>
-                        <dd className="text-right text-[var(--foreground)]">
-                          {previewDraft.max_rounds.trim() || "default"}
-                        </dd>
-                      </div>
-                      <div className="flex items-start justify-between gap-3">
-                        <dt className="text-[var(--muted)]">
-                          {t("preview.fields.maxTokens")}
-                        </dt>
-                        <dd className="text-right text-[var(--foreground)]">
-                          {previewDraft.max_tokens.trim() || "default"}
-                        </dd>
-                      </div>
-                      <div className="flex items-start justify-between gap-3">
-                        <dt className="text-[var(--muted)]">
-                          {t("preview.fields.temperature")}
-                        </dt>
-                        <dd className="text-right text-[var(--foreground)]">
-                          {previewDraft.temperature.trim() || "default"}
-                        </dd>
-                      </div>
-                    </dl>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                  <div className="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--foreground)]">
-                    <BrainCircuit className="size-4" />
-                    {t("debug.rawProfile")}
-                  </div>
-                  <pre className="overflow-x-auto whitespace-pre-wrap text-xs text-[var(--muted)]">
-                    {JSON.stringify(
-                      {
-                        id: selectedAgent?.id ?? null,
-                        payload: draftPayload,
-                      },
-                      null,
-                      2,
-                    )}
-                  </pre>
-                </div>
-              </TabsContent>
             </Tabs>
+            )}
           </GlassCardContent>
         </GlassCard>
       </div>

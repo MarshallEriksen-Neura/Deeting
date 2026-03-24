@@ -1,10 +1,8 @@
 'use client';
 
-import { ArrowUp, Sparkles, Plus, Sliders, MessageSquarePlus, Paperclip, X, Square, FileText, Play, Check, Loader2 } from 'lucide-react';
-import { Link } from '@/i18n/routing';
+import { ArrowUp, Sliders, MessageSquarePlus, Paperclip, X, Square, FileText, Play, Check, Loader2 } from 'lucide-react';
 import { useMemo, useRef, useState, useCallback, useEffect, memo } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { motion, AnimatePresence } from 'framer-motion';
 import { useShallow } from 'zustand/react/shallow';
 import { useChatStore } from '@/store/chat-store';
 import { useI18n } from '@/hooks/use-i18n';
@@ -23,9 +21,6 @@ import { listLocalUserDocuments } from '@/lib/api/knowledge';
 import type { KnowledgeFile } from '@/types/knowledge';
 import { listCustomTaskAgents, type CustomTaskAgentProfile } from '@/lib/api/custom-task-agents';
 import { resolveLeadingTaskAgentMention } from '@/hooks/chat/task-agent-mention';
-
-// Temporary product choice: hide the coder jump from the main chat composer menu.
-const SHOW_CHAT_CODER_SHORTCUT = false;
 
 /**
  * ControlsContainer - 聊天控制面板组件
@@ -46,7 +41,6 @@ const SHOW_CHAT_CODER_SHORTCUT = false;
 function ControlsContainer() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [showMenu, setShowMenu] = useState(false);
   const [isParamsOpen, setIsParamsOpen] = useState(false);
   const [isKnowledgePickerOpen, setIsKnowledgePickerOpen] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
@@ -299,12 +293,7 @@ function ControlsContainer() {
     setConfig({ topP: Number(value[0].toFixed(2)) });
   }, [setConfig]);
 
-  const handleToggleMenu = useCallback(() => {
-    setShowMenu(prev => !prev);
-  }, []);
-
   const handleInputFocus = useCallback(() => {
-    setShowMenu(false);
   }, []);
 
   const handleFileInputClick = useCallback(() => {
@@ -547,58 +536,6 @@ function ControlsContainer() {
       {/* 2. Action Row */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          {/* Mode Trigger (The "Magic" Button) */}
-          <div className="relative">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label={t("controls.menu")}
-              onClick={handleToggleMenu}
-              className={`
-                min-h-[44px] min-w-[44px] size-11 rounded-full transition-all duration-300 cursor-pointer
-                ${showMenu ? 'bg-slate-900 text-white dark:bg-white dark:text-black rotate-45' : 'bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-white hover:bg-slate-200/70 dark:hover:bg-white/20 hover:scale-105'}
-              `}
-            >
-              <Plus className="w-5 h-5" />
-            </Button>
-
-            {/* Local Popover Menu for Capability Selection */}
-            <AnimatePresence>
-              {showMenu && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10, scale: 0.9 }}
-                  animate={{ opacity: 1, y: -10, scale: 1 }}
-                  exit={{ opacity: 0, y: 10, scale: 0.9 }}
-                  className="absolute bottom-full left-0 mb-2 bg-white/95 dark:bg-[#1a1a1a] border border-slate-200/70 dark:border-white/10 rounded-2xl p-2 shadow-xl backdrop-blur-xl flex flex-col gap-1 w-44 z-50 origin-bottom-left"
-                >
-                  <Link href="/chat/create/image" scroll={false}>
-                    <div className="flex items-center gap-3 p-3 min-h-[44px] hover:bg-slate-100/80 dark:hover:bg-white/10 rounded-xl cursor-pointer group transition-colors">
-                      <div className="w-9 h-9 rounded-lg bg-purple-500/10 dark:bg-purple-500/20 flex items-center justify-center text-purple-600 dark:text-purple-400 group-hover:scale-110 transition-all">
-                        <Sparkles className="w-5 h-5" />
-                      </div>
-                      <span className="text-sm font-medium text-slate-700 dark:text-white/80 group-hover:text-slate-900 dark:group-hover:text-white">
-                        {t("controls.image")}
-                      </span>
-                    </div>
-                  </Link>
-                  {SHOW_CHAT_CODER_SHORTCUT ? (
-                    <Link href="/chat/coder" scroll={false}>
-                      <div className="flex items-center gap-3 p-3 min-h-[44px] hover:bg-slate-100/80 dark:hover:bg-white/10 rounded-xl cursor-pointer group transition-colors">
-                        <div className="w-9 h-9 rounded-lg bg-green-500/10 dark:bg-green-500/20 flex items-center justify-center text-green-600 dark:text-green-400 group-hover:scale-110 transition-all">
-                          <span className="font-mono text-sm font-bold">{`</>`}</span>
-                        </div>
-                        <span className="text-sm font-medium text-slate-700 dark:text-white/80 group-hover:text-slate-900 dark:group-hover:text-white">
-                          {t("controls.code")}
-                        </span>
-                      </div>
-                    </Link>
-                  ) : null}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
           {/* New Chat Button */}
           <Button
              type="button"

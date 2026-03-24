@@ -15,13 +15,11 @@ import { isTauriRuntime as detectTauriRuntime } from '@/lib/runtime/tauri';
 import { resolveModelVisual } from '@/components/models/model-visual';
 import { resolveStatusDetail } from '@/lib/chat/status-detail';
 import { StatusPill } from '@/components/ui/status-pill';
-import { useImageGenerationStore } from '@/store/image-generation-store';
 import { createConversation } from '@/lib/api/conversations';
 import {
   DeferredHistorySidebar,
   DeferredHudControlCenterPanel,
   DeferredHudSystemMenuPanel,
-  DeferredImageHistorySidebar,
   preloadHudDeferredSurfaces,
 } from './hud-lazy';
 
@@ -46,7 +44,6 @@ export default function HUD() {
   const t = useI18n('chat');
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const isImage = pathname?.includes('/create/image');
   
   const { setTheme, theme } = useTheme();
   
@@ -100,18 +97,9 @@ export default function HUD() {
   const setSelectedTemplateId = setSelectedAssistantId;
 
   const { models: serviceModels, modelGroups: serviceModelGroups } = useChatService({
-    enabled: !isImage,
+    enabled: true,
     fetchAssistants: false,
   });
-  const {
-    models: imageModels,
-    modelGroups: imageModelGroups,
-    isLoadingModels: isLoadingImageModels,
-  } = useChatService({
-    enabled: isImage,
-    modelCapability: "image_generation",
-  });
-  const { selectedModelId, setSelectedModelId } = useImageGenerationStore();
 
   const isTauriRuntime = detectTauriRuntime();
 
@@ -140,9 +128,8 @@ export default function HUD() {
   }, []);
 
   useEffect(() => {
-    if (isImage) return;
     setModels(serviceModels);
-  }, [isImage, serviceModels, setModels]);
+  }, [serviceModels, setModels]);
 
   useEffect(() => {
     if (!isTauriRuntime) return;
@@ -152,25 +139,15 @@ export default function HUD() {
   }, [isTauriRuntime, selectedAssistantId, assistantTemplates, setSelectedTemplateId]);
 
   useEffect(() => {
-    if (isImage || !models.length) return;
+    if (!models.length) return;
     const exists = models.some((model) => model.id === config.model || model.provider_model_id === config.model);
     if (!exists) {
       setConfig({ model: models[0].provider_model_id ?? models[0].id });
     }
-  }, [config.model, isImage, models, setConfig]);
+  }, [config.model, models, setConfig]);
 
-  useEffect(() => {
-    if (!isImage || !imageModels.length) return;
-    const exists = imageModels.some(
-      (model) => model.id === selectedModelId || model.provider_model_id === selectedModelId
-    );
-    if (!exists) {
-      setSelectedModelId(imageModels[0].provider_model_id ?? imageModels[0].id);
-    }
-  }, [imageModels, isImage, selectedModelId, setSelectedModelId]);
-
-  const activeModelSource = isImage ? imageModels : models;
-  const activeModelId = isImage ? selectedModelId : config.model;
+  const activeModelSource = models;
+  const activeModelId = config.model;
   const activeModel =
     activeModelSource.find((model) => model.provider_model_id === activeModelId || model.id === activeModelId) ??
     activeModelSource[0];
@@ -260,12 +237,8 @@ export default function HUD() {
   }, [setTheme, theme]);
 
   const handleModelChange = useCallback((value: string) => {
-    if (isImage) {
-      setSelectedModelId(value);
-      return;
-    }
     setConfig({ model: value });
-  }, [isImage, setSelectedModelId, setConfig]);
+  }, [setConfig]);
 
   return (
     <>
@@ -342,13 +315,13 @@ export default function HUD() {
                 <DeferredHudControlCenterPanel
                   value={activeModelId ?? ""}
                   onChange={handleModelChange}
-                  modelGroups={isImage ? imageModelGroups : serviceModelGroups}
+                  modelGroups={serviceModelGroups}
                   title={t("model.label")}
                   subtitle={t("model.placeholder")}
                   searchPlaceholder={t("model.searchPlaceholder")}
                   emptyText={t("error.modelUnavailable")}
                   noResultsText={t("model.noResults")}
-                  disabled={isImage ? isLoadingImageModels : false}
+                  disabled={false}
                 />
             </motion.div>
         )}
@@ -380,11 +353,7 @@ export default function HUD() {
 
     </nav>
     
-    {isImage ? (
-      <DeferredImageHistorySidebar isOpen={isHistoryOpen} onClose={handleCloseHistory} />
-    ) : (
-      <DeferredHistorySidebar isOpen={isHistoryOpen} onClose={handleCloseHistory} />
-    )}
+    <DeferredHistorySidebar isOpen={isHistoryOpen} onClose={handleCloseHistory} />
     </>
   );
 }

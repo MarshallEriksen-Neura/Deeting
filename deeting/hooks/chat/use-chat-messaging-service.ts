@@ -35,6 +35,7 @@ import type { ConversationMessage } from "@/lib/api/conversations"
 import { prepareDesktopObjectStorageRead } from "@/lib/api/desktop-object-storage"
 import { signAssets } from "@/lib/api/media-assets"
 import { useChatStore, type CompareCandidate, type Message } from "@/store/chat-store"
+import { useWorkspaceStore } from "@/store/workspace-store"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
 import { extractAssistantTextFromBlocks } from "@/lib/chat/message-blocks"
 import { listCustomTaskAgents } from "@/lib/api/custom-task-agents"
@@ -278,6 +279,33 @@ function createErrorBlock(messageId: string, message: string): MessageBlock {
   } as MessageBlock
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object") return null
+  return value as Record<string, unknown>
+}
+
+function asTrimmedString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null
+}
+
+export function extractWorkflowRunIdFromBlocks(blocks: MessageBlock[]): string | null {
+  for (const block of blocks) {
+    if (block.type === "tool_result") {
+      const result = asRecord(block.result)
+      const runId = asTrimmedString(result?.workflow_run_id)
+      if (runId) return runId
+    }
+
+    if (block.type === "ui") {
+      const metadata = asRecord(block.metadata)
+      const runId = asTrimmedString(metadata?.workflow_run_id)
+      if (runId) return runId
+    }
+  }
+
+  return null
+}
+
 function isDesktopLocalModel(model?: { request_route?: string; runtime_source?: string }) {
   if (!model) return false
   return model.request_route === "local_invoke" || model.runtime_source === "desktop_local"
@@ -431,6 +459,7 @@ export function useChatMessagingService() {
     repeatCount: 0,
   })
   const [interruptedAssistantMessageId, setInterruptedAssistantMessageId] = useState<string | null>(null)
+  const openedWorkflowRunIdsRef = useRef<Set<string>>(new Set())
   const {
     input,
     attachments,
@@ -460,6 +489,7 @@ export function useChatMessagingService() {
     setStatus,
     clearStatus,
   } = useChatStore()
+  const openWorkspaceView = useWorkspaceStore((state) => state.openView)
 
   const setHistoryState = useCallback((state: { cursor?: number | null; hasMore?: boolean; loading?: boolean }) => {
     useChatStore.setState({
@@ -476,6 +506,24 @@ export function useChatMessagingService() {
       ("__TAURI_INTERNALS__" in window || "__TAURI__" in window),
     []
   )
+
+  const openWorkflowRun = useCallback((runId: string) => {
+    const normalizedRunId = runId.trim()
+    if (!normalizedRunId) return
+    if (openedWorkflowRunIdsRef.current.has(normalizedRunId)) return
+
+    openedWorkflowRunIdsRef.current.add(normalizedRunId)
+    openWorkspaceView({
+      id: `workflow-${normalizedRunId}`,
+      type: "native-canvas",
+      title: "Workflow",
+      keepAlive: true,
+      content: {
+        viewType: "workflow",
+        runId: normalizedRunId,
+      },
+    })
+  }, [openWorkspaceView])
 
   const loadHistoryBySession = useCallback(async (sessionId: string) => {
     if (!sessionId) return
@@ -896,6 +944,10 @@ export function useChatMessagingService() {
         errorBlockIdBase: assistantMessageId,
         onBlocks: (blocks) => {
           appendMessageBlocks(assistantMessageId, blocks)
+          const workflowRunId = extractWorkflowRunIdFromBlocks(blocks)
+          if (workflowRunId) {
+            openWorkflowRun(workflowRunId)
+          }
         },
         onTraceId: (traceId) => mergeMessageMeta(assistantMessageId, { trace_id: traceId }),
         onSessionResolved: (nextSessionId) => setSessionId(nextSessionId),
@@ -944,6 +996,7 @@ export function useChatMessagingService() {
     setMessages,
     mergeMessageMeta,
     appendMessageBlocks,
+    openWorkflowRun,
     setSessionId,
     setIsLoading,
     setErrorMessage,
@@ -1033,6 +1086,10 @@ export function useChatMessagingService() {
         errorBlockIdBase: assistantMessageId,
         onBlocks: (blocks) => {
           appendMessageBlocks(assistantMessageId, blocks)
+          const workflowRunId = extractWorkflowRunIdFromBlocks(blocks)
+          if (workflowRunId) {
+            openWorkflowRun(workflowRunId)
+          }
         },
         onTraceId: (traceId) => mergeMessageMeta(assistantMessageId, { trace_id: traceId }),
         onSessionResolved: (nextSessionId) => setSessionId(nextSessionId),
@@ -1071,6 +1128,7 @@ export function useChatMessagingService() {
     setMessages,
     mergeMessageMeta,
     appendMessageBlocks,
+    openWorkflowRun,
     setSessionId,
     setIsLoading,
     setErrorMessage,
