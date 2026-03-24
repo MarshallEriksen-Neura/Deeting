@@ -1,7 +1,7 @@
 use super::prompt_assets::PromptAssets;
 use super::prompt_plan::build_local_prompt_plan;
 use super::{build_local_sdk_search_result_with_runtime, LocalRouteDecision, LocalRouteKind};
-use crate::modules::custom_task_agents::store::list_custom_task_agents;
+use crate::modules::custom_task_agents::store::{get_custom_task_agent, list_custom_task_agents};
 use crate::modules::custom_task_agents::types::{
     CustomTaskAgentInvocationKind, CustomTaskAgentProfile,
 };
@@ -112,9 +112,29 @@ fn parse_desktop_config_bool(raw: Option<&str>) -> bool {
 
 pub(crate) async fn maybe_override_route_with_custom_task_agent(
     app_state: &AppState,
+    explicit_task_agent_id: Option<&str>,
     query: &str,
     mut decision: LocalRouteDecision,
 ) -> Result<LocalRouteDecision, String> {
+    if explicit_task_agent_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .is_some()
+    {
+        let Some(selection) =
+            select_worker_custom_task_agent(app_state, explicit_task_agent_id, query).await?
+        else {
+            return Ok(decision);
+        };
+
+        decision.route = LocalRouteKind::Worker;
+        decision.reasons = vec![
+            "explicit_task_agent".to_string(),
+            selection.profile.invocation_kind.as_str().to_string(),
+        ];
+        return Ok(decision);
+    }
+
     if decision.route != LocalRouteKind::Direct {
         return Ok(decision);
     }
@@ -129,25 +149,41 @@ pub(crate) async fn maybe_override_route_with_custom_task_agent(
         return Ok(decision);
     }
 
-    let Some(selection) = select_worker_custom_task_agent(app_state, query).await? else {
+    let Some(selection) = select_worker_custom_task_agent(
+        app_state,
+        explicit_task_agent_id,
+        query,
+    )
+    .await?
+    else {
         return Ok(decision);
     };
-    if selection.profile.invocation_kind != CustomTaskAgentInvocationKind::ImageGeneration {
-        return Ok(decision);
-    }
 
     decision.route = LocalRouteKind::Worker;
-    decision.reasons = vec![
-        "custom_task_agent_override".to_string(),
-        "image_agent".to_string(),
-    ];
+    decision.reasons = if explicit_task_agent_id.is_some() {
+        vec!["explicit_task_agent".to_string()]
+    } else if selection.profile.invocation_kind == CustomTaskAgentInvocationKind::ImageGeneration {
+        vec![
+            "custom_task_agent_override".to_string(),
+            "image_agent".to_string(),
+        ]
+    } else {
+        vec!["custom_task_agent_override".to_string()]
+    };
     Ok(decision)
 }
 
 pub(crate) async fn select_worker_custom_task_agent(
     app_state: &AppState,
+    explicit_task_agent_id: Option<&str>,
     query: &str,
 ) -> Result<Option<WorkerTargetSelection>, String> {
+    if let Some(selection) =
+        select_explicit_worker_custom_task_agent(app_state, explicit_task_agent_id).await?
+    {
+        return Ok(Some(selection));
+    }
+
     let profiles = list_custom_task_agents(app_state.mcp.store.as_ref())
         .await
         .map_err(|err| err.to_string())?;
@@ -181,6 +217,35 @@ pub(crate) async fn select_worker_custom_task_agent(
         &active_profiles,
         &semantic_ranks,
     ))
+}
+
+pub(crate) async fn select_explicit_worker_custom_task_agent(
+    app_state: &AppState,
+    explicit_task_agent_id: Option<&str>,
+) -> Result<Option<WorkerTargetSelection>, String> {
+    let Some(agent_id) = explicit_task_agent_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(None);
+    };
+
+    let Some(profile) = get_custom_task_agent(app_state.mcp.store.as_ref(), agent_id)
+        .await
+        .map_err(|err| err.to_string())?
+    else {
+        return Err(format!("explicit task agent '{}' not found", agent_id));
+    };
+
+    if !profile.is_enabled || profile.is_deleted {
+        return Err(format!("explicit task agent '{}' is unavailable", profile.name));
+    }
+
+    Ok(Some(WorkerTargetSelection {
+        profile,
+        score: 10_000,
+        reason: "explicit_task_agent".to_string(),
+    }))
 }
 
 pub(crate) fn select_custom_task_agent_candidate(

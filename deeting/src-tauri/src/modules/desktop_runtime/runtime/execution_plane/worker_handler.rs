@@ -52,8 +52,12 @@ where
     if query.trim().is_empty() {
         return Ok(None);
     }
-    let Some(selection) =
-        select_worker_custom_task_agent(&request.app_state, query.as_str()).await?
+    let Some(selection) = select_worker_custom_task_agent(
+        &request.app_state,
+        request.explicit_task_agent_id.as_deref(),
+        query.as_str(),
+    )
+    .await?
     else {
         return Ok(None);
     };

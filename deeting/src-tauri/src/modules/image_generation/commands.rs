@@ -94,15 +94,7 @@ async fn process_local_image_generation_task(
     if task.status.eq_ignore_ascii_case("canceled") {
         return Ok(());
     }
-    let raw = match request_provider_image_generation(
-        app_state,
-        &task.provider_model_id,
-        &task.model,
-        &task.prompt,
-        None,
-    )
-    .await
-    {
+    let raw = match request_provider_image_generation(app_state, &task, None).await {
         Ok(raw) => raw,
         Err(err) => {
             mark_task_failed(app_state.mcp.store.as_ref(), task_id, &err)

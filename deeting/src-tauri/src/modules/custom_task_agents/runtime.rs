@@ -5,6 +5,7 @@ use serde_json::{json, Value};
 use crate::modules::ai_upstream::{
     request_provider_chat_completion, resolve_local_model_connection,
 };
+use crate::modules::custom_task_agents::image_config::resolve_custom_task_agent_image_config;
 use crate::modules::image_generation::commands::run_local_image_generation_task_inline;
 use crate::modules::image_generation::types::LocalImageGenerationTaskCreateRequest;
 use crate::modules::mcp::commands::runtime::{execute_mcp_tool, resolve_callable_mcp_tool_by_ref};
@@ -78,30 +79,31 @@ pub(crate) async fn preview_custom_task_agent(
         resolve_local_model_connection(app_state, &model, provider_model_id.as_deref()).await?;
 
     if profile.invocation_kind == CustomTaskAgentInvocationKind::ImageGeneration {
+        let image_config = resolve_custom_task_agent_image_config(profile.model_config.as_ref());
         let detail = run_local_image_generation_task_inline(
             app_handle,
             app_state,
             LocalImageGenerationTaskCreateRequest {
                 model: model_connection.model_id.clone(),
                 prompt: message.to_string(),
-                negative_prompt: None,
-                width: None,
-                height: None,
-                aspect_ratio: None,
-                num_outputs: Some(1),
-                steps: None,
-                cfg_scale: None,
-                seed: None,
-                sampler_name: None,
-                quality: None,
-                style: None,
-                response_format: None,
-                extra_params: None,
+                negative_prompt: image_config.negative_prompt,
+                width: image_config.width,
+                height: image_config.height,
+                aspect_ratio: image_config.aspect_ratio,
+                num_outputs: image_config.num_outputs.or(Some(1)),
+                steps: image_config.steps,
+                cfg_scale: image_config.cfg_scale,
+                seed: image_config.seed,
+                sampler_name: image_config.sampler_name,
+                quality: image_config.quality,
+                style: image_config.style,
+                response_format: image_config.response_format,
+                extra_params: image_config.extra_params,
                 provider_model_id: model_connection.provider_model_id.clone(),
                 session_id: None,
                 request_id: None,
                 encrypt_prompt: Some(false),
-                image_url: None,
+                image_url: image_config.image_url,
             },
         )
         .await?;

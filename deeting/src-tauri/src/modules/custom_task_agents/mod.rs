@@ -1,4 +1,5 @@
 pub mod commands;
+pub mod image_config;
 pub mod indexing;
 pub mod runtime;
 pub mod skill_actions;

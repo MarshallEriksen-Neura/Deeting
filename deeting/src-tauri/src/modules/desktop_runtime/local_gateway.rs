@@ -399,6 +399,9 @@ fn map_request_to_orchestrator_input(
     Ok(LocalOrchestratorInput {
         model: payload.model,
         provider_model_id: normalize_optional_string(payload.provider_model_id.as_deref()),
+        explicit_task_agent_id: normalize_optional_string(
+            payload.explicit_task_agent_id.as_deref(),
+        ),
         session_id,
         capability_id: normalize_optional_string(payload.assistant_id.as_deref()),
         regenerate: payload.regenerate.unwrap_or(false),

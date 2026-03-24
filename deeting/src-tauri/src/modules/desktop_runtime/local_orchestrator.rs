@@ -278,6 +278,7 @@ fn build_desktop_local_chat_engine(
 pub struct LocalOrchestratorInput {
     pub model: String,
     pub provider_model_id: Option<String>,
+    pub explicit_task_agent_id: Option<String>,
     pub session_id: String,
     pub capability_id: Option<String>,
     pub regenerate: bool,
@@ -302,6 +303,7 @@ struct LocalWorkflowContext {
     started_at: Instant,
     event_tx: Option<UnboundedSender<String>>,
     capability_id: Option<String>,
+    explicit_task_agent_id: Option<String>,
     summary_text: Option<String>,
     messages: Vec<LocalChatInputMessage>,
     system_messages: Vec<LocalChatInputMessage>,
@@ -342,6 +344,7 @@ impl LocalWorkflowContext {
             started_at: Instant::now(),
             event_tx,
             capability_id,
+            explicit_task_agent_id: input.explicit_task_agent_id.clone(),
             summary_text,
             messages,
             system_messages: Vec::new(),
@@ -1450,6 +1453,7 @@ impl LocalWorkflowStep<LocalWorkflowContext> for RouteSelectionStep {
             let discovery_bundle = ensure_runtime_discovery_bundle(ctx, &query).await;
             let decision = maybe_override_route_with_custom_task_agent(
                 &ctx.app_state,
+                ctx.explicit_task_agent_id.as_deref(),
                 &query,
                 select_local_route_with_evidence(&query, discovery_bundle.route_evidence.clone()),
             )
@@ -1749,6 +1753,7 @@ pub async fn execute_local_orchestrated_chat(
             model_connection: model_connection.clone(),
             session_id: session_id.clone(),
             capability_id: capability_id.clone(),
+            explicit_task_agent_id: input.explicit_task_agent_id.clone(),
             messages: ctx.messages.clone(),
             execution_policy: execution_policy.clone(),
             temperature: input.temperature,

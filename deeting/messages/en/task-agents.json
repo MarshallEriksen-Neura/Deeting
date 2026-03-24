@@ -93,6 +93,44 @@
         "helper": "Basic model fields above override overlapping keys inside the JSON block when you save.",
         "invalidJson": "Model config JSON must be a valid object."
       },
+      "imageConfig": {
+        "title": "Image Defaults",
+        "description": "Set the default image-generation parameters this task agent should reuse for every run.",
+        "helper": "These structured fields are written into model_config.image_generation and override overlapping keys inside the advanced JSON when you save.",
+        "invalidExtraParamsJson": "Image extra params JSON must be a valid object.",
+        "fields": {
+          "negativePrompt": "Negative Prompt",
+          "imageUrl": "Reference Image URL",
+          "aspectRatio": "Aspect Ratio",
+          "numOutputs": "Outputs",
+          "steps": "Steps",
+          "cfgScale": "CFG Scale",
+          "seed": "Seed",
+          "responseFormat": "Response Format",
+          "quality": "Quality",
+          "style": "Style",
+          "width": "Width",
+          "height": "Height",
+          "samplerName": "Sampler",
+          "extraParamsJson": "Extra Params JSON"
+        },
+        "placeholders": {
+          "negativePrompt": "Things the agent should avoid generating by default.",
+          "imageUrl": "https://example.com/reference.png",
+          "aspectRatio": "1:1",
+          "numOutputs": "1",
+          "steps": "30",
+          "cfgScale": "7.5",
+          "seed": "42",
+          "responseFormat": "url",
+          "quality": "high",
+          "style": "photorealistic",
+          "width": "1024",
+          "height": "1024",
+          "samplerName": "euler",
+          "extraParamsJson": "{\n  \"prompt_optimizer\": true\n}"
+        }
+      },
       "toggles": {
         "discoverable": "Allow this agent to be indexed and surfaced for local discovery.",
         "enabled": "Disable this agent to keep it out of preview and execution.",

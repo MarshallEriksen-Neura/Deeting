@@ -438,6 +438,7 @@ async fn execute_local_chat_response(
     let input = LocalOrchestratorInput {
         model: model_reference,
         provider_model_id,
+        explicit_task_agent_id: None,
         session_id: session_id.trim().to_string(),
         capability_id: None,
         regenerate: false,

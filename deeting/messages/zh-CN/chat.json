@@ -126,7 +126,9 @@
         "errorInvalid": "当前模型不可用，请先选择模型后再上传文件。",
         "errorRead": "读取附件失败，请重试。",
         "errorUpload": "上传附件失败，请检查网络后重试。"
-      }
+      },
+      "taskAgentRouted": "@{name} 将处理这次请求",
+      "taskAgentMissing": "未找到名为 @{name} 的本地任务智能体"
     },
     "history": {
       "title": "历史记录",

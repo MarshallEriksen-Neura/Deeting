@@ -8,22 +8,22 @@ use crate::modules::ai_upstream::gateway_log_recorder::{
     extract_error_code_from_response, extract_ttft_ms_from_response, record_gateway_log,
     GatewayLogEntry,
 };
+use crate::modules::image_generation::store::LocalImageGenerationTaskRecord;
 use crate::modules::mcp::commands::common_impl::to_string;
 use crate::state::AppState;
 
 pub(crate) async fn request_provider_image_generation(
     app_state: &AppState,
-    provider_model_id: &str,
-    model_id: &str,
-    prompt: &str,
+    task: &LocalImageGenerationTaskRecord,
     trace_id: Option<&str>,
 ) -> Result<Value, String> {
-    let prompt = prompt.trim();
+    let prompt = task.prompt.trim();
     if prompt.is_empty() {
         return Err("prompt is required".to_string());
     }
 
-    let provider_model_uuid = Uuid::parse_str(provider_model_id).map_err(to_string)?;
+    let provider_model_uuid =
+        Uuid::parse_str(task.provider_model_id.as_str()).map_err(to_string)?;
     let model = app_state
         .providers
         .store
@@ -57,10 +57,10 @@ pub(crate) async fn request_provider_image_generation(
         );
     }
 
-    let effective_model = if model_id.trim().is_empty() {
+    let effective_model = if task.model.trim().is_empty() {
         model.model_id.clone()
     } else {
-        model_id.to_string()
+        task.model.clone()
     };
     let preset = app_state
         .providers
@@ -68,11 +68,7 @@ pub(crate) async fn request_provider_image_generation(
         .get_preset(&instance.preset_slug)
         .await
         .map_err(to_string)?;
-    let request_data = json!({
-        "model": effective_model,
-        "prompt": prompt,
-        "n": 1
-    });
+    let request_data = build_image_request_data(task, effective_model.as_str(), prompt);
     let prepared = crate::modules::providers::request_runtime::prepare_provider_request(
         preset.as_ref(),
         &instance,
@@ -97,7 +93,7 @@ pub(crate) async fn request_provider_image_generation(
     let success = status.is_success();
     let feedback = crate::modules::providers::types::BanditFeedbackRequest {
         scene: None,
-        arm_id: provider_model_id.to_string(),
+        arm_id: task.provider_model_id.clone(),
         success,
         latency_ms: Some(latency_ms),
         cost: None,
@@ -193,6 +189,114 @@ pub(crate) async fn request_provider_image_generation(
         );
     }
     Ok(payload)
+}
+
+fn build_image_request_data(
+    task: &LocalImageGenerationTaskRecord,
+    effective_model: &str,
+    prompt: &str,
+) -> Value {
+    let mut request_data = Map::new();
+    request_data.insert(
+        "model".to_string(),
+        Value::String(effective_model.to_string()),
+    );
+    request_data.insert("prompt".to_string(), Value::String(prompt.to_string()));
+    request_data.insert(
+        "n".to_string(),
+        Value::from(task.num_outputs.unwrap_or(1).max(1)),
+    );
+    if let Some(value) = task
+        .negative_prompt
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        request_data.insert(
+            "negative_prompt".to_string(),
+            Value::String(value.trim().to_string()),
+        );
+    }
+    if let Some(value) = task.width {
+        request_data.insert("width".to_string(), Value::from(value));
+    }
+    if let Some(value) = task.height {
+        request_data.insert("height".to_string(), Value::from(value));
+    }
+    if let Some(value) = task
+        .aspect_ratio
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        request_data.insert(
+            "aspect_ratio".to_string(),
+            Value::String(value.trim().to_string()),
+        );
+    }
+    if let Some(value) = task.num_outputs {
+        request_data.insert("num_outputs".to_string(), Value::from(value.max(1)));
+    }
+    if let Some(value) = task.steps {
+        request_data.insert("steps".to_string(), Value::from(value));
+    }
+    if let Some(value) = task.cfg_scale {
+        request_data.insert("cfg_scale".to_string(), json!(value));
+    }
+    if let Some(value) = task.seed {
+        request_data.insert("seed".to_string(), Value::from(value));
+    }
+    if let Some(value) = task
+        .sampler_name
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        request_data.insert(
+            "sampler_name".to_string(),
+            Value::String(value.trim().to_string()),
+        );
+    }
+    if let Some(value) = task
+        .quality
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        request_data.insert(
+            "quality".to_string(),
+            Value::String(value.trim().to_string()),
+        );
+    }
+    if let Some(value) = task
+        .style
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        request_data.insert("style".to_string(), Value::String(value.trim().to_string()));
+    }
+    if let Some(value) = task
+        .response_format
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        request_data.insert(
+            "response_format".to_string(),
+            Value::String(value.trim().to_string()),
+        );
+    }
+    if let Some(value) = task
+        .image_url
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        request_data.insert(
+            "image_url".to_string(),
+            Value::String(value.trim().to_string()),
+        );
+    }
+    if let Some(extra_params) = task.extra_params.as_ref() {
+        if !extra_params.is_null() {
+            request_data.insert("extra_params".to_string(), extra_params.clone());
+        }
+    }
+    Value::Object(request_data)
 }
 
 async fn poll_async_image_result(
@@ -439,4 +543,56 @@ fn to_string_set(value: Option<&Value>) -> std::collections::HashSet<String> {
                 .collect::<std::collections::HashSet<_>>()
         })
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_image_request_data;
+    use crate::modules::image_generation::store::LocalImageGenerationTaskRecord;
+    use serde_json::json;
+
+    #[test]
+    fn build_image_request_data_includes_structured_image_fields() {
+        let task = LocalImageGenerationTaskRecord {
+            task_id: "task-1".to_string(),
+            session_id: None,
+            request_id: None,
+            model: "Qwen-Image".to_string(),
+            provider_model_id: "provider-1".to_string(),
+            prompt: "draw a cat".to_string(),
+            prompt_encrypted: false,
+            negative_prompt: Some("blurry".to_string()),
+            width: Some(1024),
+            height: Some(768),
+            aspect_ratio: Some("4:3".to_string()),
+            num_outputs: Some(2),
+            steps: Some(30),
+            cfg_scale: Some(7.5),
+            seed: Some(42),
+            sampler_name: Some("euler".to_string()),
+            quality: Some("high".to_string()),
+            style: Some("photorealistic".to_string()),
+            response_format: Some("url".to_string()),
+            image_url: Some("https://example.com/reference.png".to_string()),
+            extra_params: Some(json!({ "prompt_optimizer": true })),
+            status: "queued".to_string(),
+        };
+
+        let payload = build_image_request_data(&task, "Qwen-Image", "draw a cat");
+
+        assert_eq!(payload["model"], json!("Qwen-Image"));
+        assert_eq!(payload["prompt"], json!("draw a cat"));
+        assert_eq!(payload["n"], json!(2));
+        assert_eq!(payload["negative_prompt"], json!("blurry"));
+        assert_eq!(payload["width"], json!(1024));
+        assert_eq!(payload["height"], json!(768));
+        assert_eq!(payload["aspect_ratio"], json!("4:3"));
+        assert_eq!(payload["steps"], json!(30));
+        assert_eq!(payload["cfg_scale"], json!(7.5));
+        assert_eq!(
+            payload["image_url"],
+            json!("https://example.com/reference.png")
+        );
+        assert_eq!(payload["extra_params"], json!({ "prompt_optimizer": true }));
+    }
 }

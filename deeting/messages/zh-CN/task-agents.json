@@ -93,6 +93,44 @@
         "helper": "保存时，上方基础模型字段会覆盖 JSON 中同名的配置项。",
         "invalidJson": "模型配置 JSON 必须是合法的对象。"
       },
+      "imageConfig": {
+        "title": "图片默认参数",
+        "description": "为这个任务智能体设置每次出图都会复用的默认参数。",
+        "helper": "这些结构化字段会写入 model_config.image_generation，并在保存时覆盖高级 JSON 中同名的配置项。",
+        "invalidExtraParamsJson": "图片额外参数 JSON 必须是合法对象。",
+        "fields": {
+          "negativePrompt": "反向提示词",
+          "imageUrl": "参考图 URL",
+          "aspectRatio": "宽高比",
+          "numOutputs": "输出数量",
+          "steps": "步数",
+          "cfgScale": "CFG Scale",
+          "seed": "随机种子",
+          "responseFormat": "返回格式",
+          "quality": "质量",
+          "style": "风格",
+          "width": "宽度",
+          "height": "高度",
+          "samplerName": "采样器",
+          "extraParamsJson": "额外参数 JSON"
+        },
+        "placeholders": {
+          "negativePrompt": "默认希望避免出现的内容。",
+          "imageUrl": "https://example.com/reference.png",
+          "aspectRatio": "1:1",
+          "numOutputs": "1",
+          "steps": "30",
+          "cfgScale": "7.5",
+          "seed": "42",
+          "responseFormat": "url",
+          "quality": "high",
+          "style": "photorealistic",
+          "width": "1024",
+          "height": "1024",
+          "samplerName": "euler",
+          "extraParamsJson": "{\n  \"prompt_optimizer\": true\n}"
+        }
+      },
       "toggles": {
         "discoverable": "允许该智能体进入本地索引，并被本地发现流程命中。",
         "enabled": "停用后，该智能体不会参与预览或执行。",

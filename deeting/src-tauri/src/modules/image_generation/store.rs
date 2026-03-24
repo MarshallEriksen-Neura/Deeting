@@ -21,10 +21,19 @@ pub struct LocalImageGenerationTaskRecord {
     pub prompt: String,
     pub prompt_encrypted: bool,
     pub negative_prompt: Option<String>,
+    pub width: Option<i64>,
+    pub height: Option<i64>,
     pub aspect_ratio: Option<String>,
+    pub num_outputs: Option<i64>,
     pub steps: Option<i64>,
     pub cfg_scale: Option<f64>,
     pub seed: Option<i64>,
+    pub sampler_name: Option<String>,
+    pub quality: Option<String>,
+    pub style: Option<String>,
+    pub response_format: Option<String>,
+    pub image_url: Option<String>,
+    pub extra_params: Option<serde_json::Value>,
     pub status: String,
 }
 
@@ -41,10 +50,19 @@ pub async fn ensure_schema(store: &McpStore) -> Result<(), McpError> {
           prompt TEXT NOT NULL,
           prompt_encrypted INTEGER NOT NULL DEFAULT 0,
           negative_prompt TEXT,
+          width INTEGER,
+          height INTEGER,
           aspect_ratio TEXT,
+          num_outputs INTEGER,
           steps INTEGER,
           cfg_scale REAL,
           seed INTEGER,
+          sampler_name TEXT,
+          quality TEXT,
+          style TEXT,
+          response_format TEXT,
+          image_url TEXT,
+          extra_params_json TEXT,
           outputs_json TEXT NOT NULL DEFAULT '[]',
           upstream_mode TEXT NOT NULL DEFAULT 'direct',
           error_code TEXT,
@@ -58,6 +76,15 @@ pub async fn ensure_schema(store: &McpStore) -> Result<(), McpError> {
     .execute(&store.pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
+    ensure_column(store, "width", "INTEGER").await?;
+    ensure_column(store, "height", "INTEGER").await?;
+    ensure_column(store, "num_outputs", "INTEGER").await?;
+    ensure_column(store, "sampler_name", "TEXT").await?;
+    ensure_column(store, "quality", "TEXT").await?;
+    ensure_column(store, "style", "TEXT").await?;
+    ensure_column(store, "response_format", "TEXT").await?;
+    ensure_column(store, "image_url", "TEXT").await?;
+    ensure_column(store, "extra_params_json", "TEXT").await?;
     Ok(())
 }
 
@@ -72,9 +99,10 @@ pub async fn create_task(
         r#"
         INSERT INTO {TASK_TABLE}
           (id, session_id, request_id, status, model, provider_model_id, prompt, prompt_encrypted,
-           negative_prompt, aspect_ratio, steps, cfg_scale, seed, outputs_json, upstream_mode,
-           error_code, error_message, created_at, updated_at, completed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', 'unknown', NULL, NULL, ?, ?, NULL);
+           negative_prompt, width, height, aspect_ratio, num_outputs, steps, cfg_scale, seed,
+           sampler_name, quality, style, response_format, image_url, extra_params_json,
+           outputs_json, upstream_mode, error_code, error_message, created_at, updated_at, completed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', 'unknown', NULL, NULL, ?, ?, NULL);
         "#
     ))
     .bind(&id)
@@ -90,10 +118,19 @@ pub async fn create_task(
         0
     })
     .bind(payload.negative_prompt.as_deref())
+    .bind(payload.width)
+    .bind(payload.height)
     .bind(payload.aspect_ratio.as_deref())
+    .bind(payload.num_outputs)
     .bind(payload.steps)
     .bind(payload.cfg_scale)
     .bind(payload.seed)
+    .bind(payload.sampler_name.as_deref())
+    .bind(payload.quality.as_deref())
+    .bind(payload.style.as_deref())
+    .bind(payload.response_format.as_deref())
+    .bind(payload.image_url.as_deref())
+    .bind(serialize_optional_json(payload.extra_params.as_ref())?)
     .bind(&now)
     .bind(&now)
     .execute(&store.pool)
@@ -358,10 +395,21 @@ fn row_to_record(row: &SqliteRow) -> Result<LocalImageGenerationTaskRecord, McpE
             .map_err(storage_err)
             .map(|value| value != 0)?,
         negative_prompt: row.try_get("negative_prompt").map_err(storage_err)?,
+        width: row.try_get("width").map_err(storage_err)?,
+        height: row.try_get("height").map_err(storage_err)?,
         aspect_ratio: row.try_get("aspect_ratio").map_err(storage_err)?,
+        num_outputs: row.try_get("num_outputs").map_err(storage_err)?,
         steps: row.try_get("steps").map_err(storage_err)?,
         cfg_scale: row.try_get("cfg_scale").map_err(storage_err)?,
         seed: row.try_get("seed").map_err(storage_err)?,
+        sampler_name: row.try_get("sampler_name").map_err(storage_err)?,
+        quality: row.try_get("quality").map_err(storage_err)?,
+        style: row.try_get("style").map_err(storage_err)?,
+        response_format: row.try_get("response_format").map_err(storage_err)?,
+        image_url: row.try_get("image_url").map_err(storage_err)?,
+        extra_params: parse_optional_json_value(
+            row.try_get("extra_params_json").map_err(storage_err)?,
+        )?,
         status: row.try_get("status").map_err(storage_err)?,
     })
 }
@@ -379,4 +427,44 @@ fn now_rfc3339() -> Result<String, McpError> {
 
 fn storage_err(err: sqlx::Error) -> McpError {
     McpError::Storage(err.to_string())
+}
+
+async fn ensure_column(
+    store: &McpStore,
+    column_name: &str,
+    column_def: &str,
+) -> Result<(), McpError> {
+    if !table_has_column(store, column_name).await? {
+        sqlx::query(&format!(
+            "ALTER TABLE {TASK_TABLE} ADD COLUMN {column_name} {column_def};"
+        ))
+        .execute(&store.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+    }
+    Ok(())
+}
+
+async fn table_has_column(store: &McpStore, column_name: &str) -> Result<bool, McpError> {
+    let rows = sqlx::query(&format!("PRAGMA table_info({TASK_TABLE});"))
+        .fetch_all(&store.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+    Ok(rows.iter().any(|row| {
+        row.try_get::<String, _>("name")
+            .map(|value| value == column_name)
+            .unwrap_or(false)
+    }))
+}
+
+fn serialize_optional_json(value: Option<&serde_json::Value>) -> Result<Option<String>, McpError> {
+    value
+        .map(|item| serde_json::to_string(item).map_err(|err| McpError::Storage(err.to_string())))
+        .transpose()
+}
+
+fn parse_optional_json_value(raw: Option<String>) -> Result<Option<serde_json::Value>, McpError> {
+    raw.filter(|value| !value.trim().is_empty())
+        .map(|value| serde_json::from_str(&value).map_err(|err| McpError::Storage(err.to_string())))
+        .transpose()
 }

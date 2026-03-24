@@ -39,6 +39,13 @@ import {
 } from "@/lib/api/custom-task-agents"
 import { useChatService } from "@/hooks/use-chat-service"
 import { cn } from "@/lib/utils"
+import {
+  applyTaskAgentImageConfigToModelConfig,
+  buildTaskAgentImageConfigDraft,
+  createEmptyTaskAgentImageConfigDraft,
+  parseTaskAgentImageExtraParamsJson,
+  type TaskAgentImageConfigDraft,
+} from "./task-agent-image-config"
 import { PageHeader } from "@/components/ui/page-header/page-header"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -99,6 +106,7 @@ type TaskAgentDraft = {
   preferred_for_image_generation: boolean
   model: string
   provider_model_id: string
+  image_config: TaskAgentImageConfigDraft
   model_config_json: string
   callable_mcp_tool_ids: string[]
   guidance_skill_ids: string[]
@@ -136,6 +144,7 @@ function createEmptyDraft(): TaskAgentDraft {
     preferred_for_image_generation: false,
     model: "",
     provider_model_id: "",
+    image_config: createEmptyTaskAgentImageConfigDraft(),
     model_config_json: "",
     callable_mcp_tool_ids: [],
     guidance_skill_ids: [],
@@ -167,6 +176,7 @@ function buildDraftFromProfile(profile: CustomTaskAgentProfile): TaskAgentDraft 
     preferred_for_image_generation: profile.preferred_for_image_generation,
     model: extractModelValue(profile.model_config ?? undefined),
     provider_model_id: extractProviderModelId(profile.model_config ?? undefined),
+    image_config: buildTaskAgentImageConfigDraft(profile.model_config ?? undefined),
     model_config_json: profile.model_config
       ? JSON.stringify(profile.model_config, null, 2)
       : "",
@@ -750,8 +760,20 @@ export function TaskAgentsClient() {
     }
   }, [draft.model_config_json, t])
 
+  const parsedImageExtraParams = React.useMemo(() => {
+    const parsed = parseTaskAgentImageExtraParamsJson(
+      draft.image_config.extra_params_json,
+    )
+    return {
+      value: parsed.value,
+      error: parsed.error
+        ? t("editor.imageConfig.invalidExtraParamsJson")
+        : null,
+    }
+  }, [draft.image_config.extra_params_json, t])
+
   const draftPayload = React.useMemo<UpsertCustomTaskAgentPayload>(() => {
-    const modelConfig = { ...parsedModelConfig.value }
+    let modelConfig = { ...parsedModelConfig.value }
     const trimmedModel = draft.model.trim()
     const trimmedProviderModelId = draft.provider_model_id.trim()
 
@@ -767,6 +789,16 @@ export function TaskAgentsClient() {
       modelConfig.provider_model_id = trimmedProviderModelId
     } else {
       delete modelConfig.provider_model_id
+    }
+
+    if (draft.invocation_kind === "image_generation") {
+      modelConfig = applyTaskAgentImageConfigToModelConfig(
+        modelConfig,
+        draft.image_config,
+        parsedImageExtraParams.value,
+      )
+    } else {
+      delete modelConfig.image_generation
     }
 
     const normalizedDescription = draft.description.trim()
@@ -785,7 +817,15 @@ export function TaskAgentsClient() {
       discoverable: draft.discoverable,
       is_enabled: draft.is_enabled,
     }
-  }, [draft, parsedModelConfig.value])
+  }, [draft, parsedImageExtraParams.value, parsedModelConfig.value])
+
+  const hasImageConfigValues = React.useMemo(
+    () =>
+      Object.values(draft.image_config).some(
+        (value) => typeof value === "string" && value.trim().length > 0,
+      ),
+    [draft.image_config],
+  )
 
   const comparableSelectedPayload = React.useMemo(() => {
     if (!selectedAgent) return null
@@ -812,6 +852,7 @@ export function TaskAgentsClient() {
           draft.task_prompt.trim() ||
           draft.model.trim() ||
           draft.provider_model_id.trim() ||
+          hasImageConfigValues ||
           draft.model_config_json.trim() ||
           draft.callable_mcp_tool_ids.length ||
           draft.guidance_skill_ids.length ||
@@ -827,11 +868,18 @@ export function TaskAgentsClient() {
     return (
       JSON.stringify(draftPayload) !== JSON.stringify(comparableSelectedPayload)
     )
-  }, [comparableSelectedPayload, draft, draftPayload, selectedAgentId])
+  }, [
+    comparableSelectedPayload,
+    draft,
+    draftPayload,
+    hasImageConfigValues,
+    selectedAgentId,
+  ])
 
   const saveDisabled =
     isSaving ||
     Boolean(parsedModelConfig.error) ||
+    Boolean(parsedImageExtraParams.error) ||
     !draftPayload.name ||
     !draftPayload.task_prompt ||
     !hasUnsavedChanges
@@ -872,6 +920,22 @@ export function TaskAgentsClient() {
   const updateDraft = React.useCallback(
     <K extends keyof TaskAgentDraft,>(key: K, value: TaskAgentDraft[K]) => {
       setDraft((current) => ({ ...current, [key]: value }))
+    },
+    [],
+  )
+
+  const updateImageDraft = React.useCallback(
+    <K extends keyof TaskAgentImageConfigDraft,>(
+      key: K,
+      value: TaskAgentImageConfigDraft[K],
+    ) => {
+      setDraft((current) => ({
+        ...current,
+        image_config: {
+          ...current.image_config,
+          [key]: value,
+        },
+      }))
     },
     [],
   )
@@ -1455,6 +1519,224 @@ export function TaskAgentsClient() {
                     />
                   </div>
                 </div>
+
+                {draft.invocation_kind === "image_generation" ? (
+                  <>
+                    <Separator />
+
+                    <SectionHeader
+                      title={t("editor.imageConfig.title")}
+                      description={t("editor.imageConfig.description")}
+                    />
+
+                    <div className="grid gap-5 lg:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="task-agent-image-negative-prompt">
+                          {t("editor.imageConfig.fields.negativePrompt")}
+                        </Label>
+                        <Textarea
+                          id="task-agent-image-negative-prompt"
+                          value={draft.image_config.negative_prompt}
+                          onChange={(event) =>
+                            updateImageDraft("negative_prompt", event.target.value)
+                          }
+                          rows={3}
+                          placeholder={t("editor.imageConfig.placeholders.negativePrompt")}
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="task-agent-image-url">
+                          {t("editor.imageConfig.fields.imageUrl")}
+                        </Label>
+                        <Input
+                          id="task-agent-image-url"
+                          value={draft.image_config.image_url}
+                          onChange={(event) =>
+                            updateImageDraft("image_url", event.target.value)
+                          }
+                          placeholder={t("editor.imageConfig.placeholders.imageUrl")}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-5 lg:grid-cols-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="task-agent-image-aspect-ratio">
+                          {t("editor.imageConfig.fields.aspectRatio")}
+                        </Label>
+                        <Input
+                          id="task-agent-image-aspect-ratio"
+                          value={draft.image_config.aspect_ratio}
+                          onChange={(event) =>
+                            updateImageDraft("aspect_ratio", event.target.value)
+                          }
+                          placeholder={t("editor.imageConfig.placeholders.aspectRatio")}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="task-agent-image-num-outputs">
+                          {t("editor.imageConfig.fields.numOutputs")}
+                        </Label>
+                        <Input
+                          id="task-agent-image-num-outputs"
+                          value={draft.image_config.num_outputs}
+                          onChange={(event) =>
+                            updateImageDraft("num_outputs", event.target.value)
+                          }
+                          placeholder={t("editor.imageConfig.placeholders.numOutputs")}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="task-agent-image-steps">
+                          {t("editor.imageConfig.fields.steps")}
+                        </Label>
+                        <Input
+                          id="task-agent-image-steps"
+                          value={draft.image_config.steps}
+                          onChange={(event) =>
+                            updateImageDraft("steps", event.target.value)
+                          }
+                          placeholder={t("editor.imageConfig.placeholders.steps")}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="task-agent-image-cfg-scale">
+                          {t("editor.imageConfig.fields.cfgScale")}
+                        </Label>
+                        <Input
+                          id="task-agent-image-cfg-scale"
+                          value={draft.image_config.cfg_scale}
+                          onChange={(event) =>
+                            updateImageDraft("cfg_scale", event.target.value)
+                          }
+                          placeholder={t("editor.imageConfig.placeholders.cfgScale")}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-5 lg:grid-cols-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="task-agent-image-seed">
+                          {t("editor.imageConfig.fields.seed")}
+                        </Label>
+                        <Input
+                          id="task-agent-image-seed"
+                          value={draft.image_config.seed}
+                          onChange={(event) =>
+                            updateImageDraft("seed", event.target.value)
+                          }
+                          placeholder={t("editor.imageConfig.placeholders.seed")}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="task-agent-image-response-format">
+                          {t("editor.imageConfig.fields.responseFormat")}
+                        </Label>
+                        <Input
+                          id="task-agent-image-response-format"
+                          value={draft.image_config.response_format}
+                          onChange={(event) =>
+                            updateImageDraft("response_format", event.target.value)
+                          }
+                          placeholder={t("editor.imageConfig.placeholders.responseFormat")}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="task-agent-image-quality">
+                          {t("editor.imageConfig.fields.quality")}
+                        </Label>
+                        <Input
+                          id="task-agent-image-quality"
+                          value={draft.image_config.quality}
+                          onChange={(event) =>
+                            updateImageDraft("quality", event.target.value)
+                          }
+                          placeholder={t("editor.imageConfig.placeholders.quality")}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="task-agent-image-style">
+                          {t("editor.imageConfig.fields.style")}
+                        </Label>
+                        <Input
+                          id="task-agent-image-style"
+                          value={draft.image_config.style}
+                          onChange={(event) =>
+                            updateImageDraft("style", event.target.value)
+                          }
+                          placeholder={t("editor.imageConfig.placeholders.style")}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-5 lg:grid-cols-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="task-agent-image-width">
+                          {t("editor.imageConfig.fields.width")}
+                        </Label>
+                        <Input
+                          id="task-agent-image-width"
+                          value={draft.image_config.width}
+                          onChange={(event) =>
+                            updateImageDraft("width", event.target.value)
+                          }
+                          placeholder={t("editor.imageConfig.placeholders.width")}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="task-agent-image-height">
+                          {t("editor.imageConfig.fields.height")}
+                        </Label>
+                        <Input
+                          id="task-agent-image-height"
+                          value={draft.image_config.height}
+                          onChange={(event) =>
+                            updateImageDraft("height", event.target.value)
+                          }
+                          placeholder={t("editor.imageConfig.placeholders.height")}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="task-agent-image-sampler-name">
+                          {t("editor.imageConfig.fields.samplerName")}
+                        </Label>
+                        <Input
+                          id="task-agent-image-sampler-name"
+                          value={draft.image_config.sampler_name}
+                          onChange={(event) =>
+                            updateImageDraft("sampler_name", event.target.value)
+                          }
+                          placeholder={t("editor.imageConfig.placeholders.samplerName")}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="task-agent-image-extra-params">
+                        {t("editor.imageConfig.fields.extraParamsJson")}
+                      </Label>
+                      <Textarea
+                        id="task-agent-image-extra-params"
+                        value={draft.image_config.extra_params_json}
+                        onChange={(event) =>
+                          updateImageDraft("extra_params_json", event.target.value)
+                        }
+                        rows={6}
+                        placeholder={t.raw("editor.imageConfig.placeholders.extraParamsJson")}
+                        className="font-mono text-xs"
+                      />
+                      <p className="text-xs text-[var(--muted)]">
+                        {t("editor.imageConfig.helper")}
+                      </p>
+                      {parsedImageExtraParams.error ? (
+                        <p className="text-xs text-red-300">
+                          {parsedImageExtraParams.error}
+                        </p>
+                      ) : null}
+                    </div>
+                  </>
+                ) : null}
 
                 <div className="space-y-2">
                   <Label htmlFor="task-agent-model-config">

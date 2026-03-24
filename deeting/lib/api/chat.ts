@@ -17,6 +17,7 @@ export type ChatCompletionRequest = {
   max_tokens?: number
   request_id?: string
   provider_model_id?: string
+  explicit_task_agent_id?: string
   assistant_id?: string
   session_id?: string
   regenerate?: boolean

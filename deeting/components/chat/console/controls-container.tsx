@@ -21,6 +21,8 @@ import { createConversation } from '@/lib/api/conversations';
 import { useChatMessaging } from '@/hooks/chat/use-chat-messaging';
 import { listLocalUserDocuments } from '@/lib/api/knowledge';
 import type { KnowledgeFile } from '@/types/knowledge';
+import { listCustomTaskAgents, type CustomTaskAgentProfile } from '@/lib/api/custom-task-agents';
+import { resolveLeadingTaskAgentMention } from '@/hooks/chat/task-agent-mention';
 
 // Temporary product choice: hide the coder jump from the main chat composer menu.
 const SHOW_CHAT_CODER_SHORTCUT = false;
@@ -51,6 +53,7 @@ function ControlsContainer() {
   const [knowledgeFiles, setKnowledgeFiles] = useState<KnowledgeFile[]>([]);
   const [knowledgeLoading, setKnowledgeLoading] = useState(false);
   const [knowledgeLoadError, setKnowledgeLoadError] = useState<string | null>(null);
+  const [taskAgents, setTaskAgents] = useState<CustomTaskAgentProfile[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const t = useI18n('chat');
   const {
@@ -160,6 +163,29 @@ function ControlsContainer() {
     if (!isKnowledgePickerOpen) return;
     void loadIndexedKnowledgeFiles();
   }, [isTauriRuntime, isKnowledgePickerOpen, loadIndexedKnowledgeFiles]);
+
+  useEffect(() => {
+    if (!isTauriRuntime) return;
+    let cancelled = false;
+    void listCustomTaskAgents()
+      .then((items) => {
+        if (!cancelled) setTaskAgents(items);
+      })
+      .catch((error) => {
+        console.warn("load_task_agents_failed", error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isTauriRuntime]);
+
+  const resolvedTaskAgentMention = useMemo(() => {
+    if (!isTauriRuntime) return null;
+    return resolveLeadingTaskAgentMention(
+      input,
+      taskAgents.map((agent) => ({ id: agent.id, name: agent.name })),
+    );
+  }, [input, isTauriRuntime, taskAgents]);
 
   const handleNewChat = useCallback(async () => {
     resetSession();
@@ -508,6 +534,14 @@ function ControlsContainer() {
 
       {attachmentError ? (
         <div className="text-center text-xs font-medium text-red-500/90 dark:text-red-400/90">{attachmentError}</div>
+      ) : null}
+
+      {resolvedTaskAgentMention ? (
+        <div className="text-center text-xs font-medium text-slate-500/90 dark:text-muted-foreground">
+          {resolvedTaskAgentMention.agent
+            ? t("input.taskAgentRouted", { name: resolvedTaskAgentMention.agent.name })
+            : t("input.taskAgentMissing", { name: resolvedTaskAgentMention.mention.agentName })}
+        </div>
       ) : null}
 
       {/* 2. Action Row */}

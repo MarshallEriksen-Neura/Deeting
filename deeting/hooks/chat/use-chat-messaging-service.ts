@@ -37,6 +37,8 @@ import { signAssets } from "@/lib/api/media-assets"
 import { useChatStore, type CompareCandidate, type Message } from "@/store/chat-store"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
 import { extractAssistantTextFromBlocks } from "@/lib/chat/message-blocks"
+import { listCustomTaskAgents } from "@/lib/api/custom-task-agents"
+import { resolveLeadingTaskAgentMention } from "./task-agent-mention"
 
 function createMessageId() {
   const cryptoObj = typeof globalThis !== "undefined" ? globalThis.crypto : undefined
@@ -798,10 +800,34 @@ export function useChatMessagingService() {
       selectedAssistantId,
     })
 
+    let effectiveInput = trimmedInput
+    let explicitTaskAgentId: string | undefined
+    if (isTauriRuntime) {
+      const localAgents = await listCustomTaskAgents()
+      const resolvedMention = resolveLeadingTaskAgentMention(
+        trimmedInput,
+        localAgents.map((agent) => ({ id: agent.id, name: agent.name })),
+      )
+      if (resolvedMention) {
+        if (!resolvedMention.mention.prompt.trim()) {
+          setErrorMessage("Task agent mention requires a prompt")
+          return
+        }
+        if (!resolvedMention.agent) {
+          setErrorMessage(
+            `Task agent '${resolvedMention.mention.agentName}' not found`,
+          )
+          return
+        }
+        explicitTaskAgentId = resolvedMention.agent.id
+        effectiveInput = resolvedMention.mention.prompt.trim()
+      }
+    }
+
     const userMessage: Message = {
       id: createMessageId(),
       role: "user",
-      content: trimmedInput,
+      content: effectiveInput,
       attachments: attachments.length ? attachments : undefined,
       createdAt: Date.now(),
     }
@@ -848,6 +874,7 @@ export function useChatMessagingService() {
       const payload = {
         model: selectedModel.id,
         provider_model_id: selectedModel.provider_model_id ?? undefined,
+        explicit_task_agent_id: explicitTaskAgentId,
         messages: requestMessages,
         temperature: config.temperature,
         max_tokens: config.maxTokens,
@@ -909,6 +936,7 @@ export function useChatMessagingService() {
     messages,
     config,
     models,
+    isTauriRuntime,
     selectedAssistant,
     selectedAssistantId,
     setInput,
@@ -921,7 +949,6 @@ export function useChatMessagingService() {
     setErrorMessage,
     setStatus,
     clearStatus,
-    isTauriRuntime,
     clearAllCompareStates,
     resolveCurrentSessionId,
     runStreamedRequest,

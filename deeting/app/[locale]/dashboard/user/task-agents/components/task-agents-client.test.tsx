@@ -9,10 +9,15 @@ import {
 
 const mockMutate = jest.fn()
 const mockUseSWR = jest.fn()
+const mockUseChatService = jest.fn()
 
 jest.mock("next-intl", () => ({
-  useTranslations: () => (key: string, values?: Record<string, string | number>) =>
-    values ? `${key}:${JSON.stringify(values)}` : key,
+  useTranslations: () => {
+    const t = (key: string, values?: Record<string, string | number>) =>
+      values ? `${key}:${JSON.stringify(values)}` : key
+    t.raw = (key: string) => key
+    return t
+  },
   useLocale: () => "en",
 }))
 
@@ -37,6 +42,10 @@ jest.mock("@/lib/api/custom-task-agents", () => ({
   deleteCustomTaskAgent: jest.fn(),
   previewCustomTaskAgent: jest.fn(),
   reindexCustomTaskAgents: jest.fn(),
+}))
+
+jest.mock("@/hooks/use-chat-service", () => ({
+  useChatService: (...args: unknown[]) => mockUseChatService(...args),
 }))
 
 jest.mock("@/components/ui/page-header/page-header", () => ({
@@ -90,6 +99,8 @@ jest.mock("@/components/ui/label", () => ({
 jest.mock("@/components/ui/select", () => ({
   Select: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   SelectContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  SelectGroup: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  SelectLabel: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   SelectItem: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   SelectTrigger: ({ children }: { children: React.ReactNode }) => <button type="button">{children}</button>,
   SelectValue: () => <span />,
@@ -204,8 +215,10 @@ const agents: CustomTaskAgentProfile[] = [
     task_prompt: "Do task one",
     invocation_kind: "chat",
     model_config: { model: "default" },
-    bound_tool_ids: ["tool.release"],
-    bound_skill_ids: ["skill.alpha"],
+    callable_mcp_tool_ids: ["tool.release"],
+    guidance_skill_ids: ["skill.alpha"],
+    callable_skill_action_refs: [],
+    preferred_for_image_generation: false,
     tags: ["ops"],
     discoverable: true,
     is_enabled: true,
@@ -218,10 +231,17 @@ const agents: CustomTaskAgentProfile[] = [
     name: "Agent Two",
     description: "Second agent",
     task_prompt: "Do task two",
-    invocation_kind: "chat",
-    model_config: { model: "default" },
-    bound_tool_ids: [],
-    bound_skill_ids: [],
+    invocation_kind: "image_generation",
+    model_config: {
+      model: "Qwen-Image",
+      image_generation: {
+        aspect_ratio: "1:1",
+      },
+    },
+    callable_mcp_tool_ids: [],
+    guidance_skill_ids: [],
+    callable_skill_action_refs: [],
+    preferred_for_image_generation: true,
     tags: ["docs"],
     discoverable: true,
     is_enabled: true,
@@ -235,6 +255,28 @@ describe("TaskAgentsClient", () => {
   beforeEach(() => {
     jest.clearAllMocks()
     mockSupportsLocalCustomTaskAgents.mockReturnValue(true)
+    mockUseChatService.mockReturnValue({
+      modelGroups: [
+        {
+          instance_id: "instance-1",
+          instance_name: "Local Provider",
+          provider: "custom",
+          models: [
+            {
+              id: "default",
+              provider_model_id: "provider-default",
+              owned_by: "custom",
+            },
+            {
+              id: "Qwen-Image",
+              provider_model_id: "provider-image",
+              owned_by: "custom",
+            },
+          ],
+        },
+      ],
+      isLoadingModels: false,
+    })
     mockUseSWR.mockImplementation((key: string | null) => {
       if (key === "local-custom-task-agents") {
         return {
@@ -248,7 +290,7 @@ describe("TaskAgentsClient", () => {
       if (key === "local-custom-task-agent-binding-catalog") {
         return {
           data: {
-            tools: [
+            mcp_tools: [
               {
                 id: "tool.release",
                 name: "Release Notes Tool",
@@ -262,7 +304,7 @@ describe("TaskAgentsClient", () => {
                 status: "healthy",
               },
             ],
-            skills: [
+            guidance_skills: [
               {
                 skill_id: "skill.alpha",
                 installed_version: "1.0.0",
@@ -276,6 +318,7 @@ describe("TaskAgentsClient", () => {
                 runtime: "node",
               },
             ],
+            skill_actions: [],
           },
           error: undefined,
           isLoading: false,
@@ -376,5 +419,15 @@ describe("TaskAgentsClient", () => {
 
     expect(screen.getByText("skill.alpha")).not.toBeNull()
     expect(screen.queryByText("skill.beta")).toBeNull()
+  })
+
+  it("shows structured image config fields for image-generation agents", async () => {
+    render(<TaskAgentsClient />)
+
+    fireEvent.click(screen.getByRole("button", { name: /Agent Two/i }))
+
+    expect(await screen.findByText("editor.imageConfig.title")).not.toBeNull()
+    expect(screen.getByLabelText("editor.imageConfig.fields.aspectRatio")).toBeTruthy()
+    expect(screen.getByDisplayValue("1:1")).toBeTruthy()
   })
 })

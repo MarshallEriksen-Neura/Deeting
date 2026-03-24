@@ -11,6 +11,7 @@ pub struct LocalChatCompletionRequest {
     pub max_tokens: Option<u32>,
     pub request_id: Option<String>,
     pub provider_model_id: Option<String>,
+    pub explicit_task_agent_id: Option<String>,
     pub assistant_id: Option<String>,
     pub session_id: Option<String>,
     pub regenerate: Option<bool>,

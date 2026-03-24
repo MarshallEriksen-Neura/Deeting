@@ -24,6 +24,7 @@ pub(crate) struct LocalExecutionRequest {
     pub(crate) model_connection: LocalModelConnection,
     pub(crate) session_id: String,
     pub(crate) capability_id: Option<String>,
+    pub(crate) explicit_task_agent_id: Option<String>,
     pub(crate) messages: Vec<LocalChatInputMessage>,
     pub(crate) execution_policy: LocalExecutionPolicy,
     pub(crate) temperature: Option<f32>,
