@@ -326,7 +326,11 @@ fn build_workflow_delegated_worker_execution(
                     })
                 })
                 .collect::<Vec<_>>();
-            let status = if result.succeeded { "completed" } else { "failed" };
+            let status = if result.succeeded {
+                "completed"
+            } else {
+                "failed"
+            };
             let payload = json!({
                 "status": status,
                 "agent_id": profile.id,

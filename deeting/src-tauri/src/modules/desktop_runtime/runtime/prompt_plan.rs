@@ -58,7 +58,7 @@ pub(crate) fn router_prompt_default_response_language() -> &'static str {
 pub(crate) fn render_local_runtime_system_prompt(
     router_prompt: &str,
     runtime_capability_prompt: Option<&str>,
-    code_mode_prompt: Option<&str>,
+    execution_tool_prompt: Option<&str>,
 ) -> String {
     let mut sections = Vec::new();
     let router_prompt = router_prompt.trim();
@@ -73,11 +73,11 @@ pub(crate) fn render_local_runtime_system_prompt(
         sections.push(format!("## Runtime Capability Contract\n{}", prompt));
     }
 
-    if let Some(prompt) = code_mode_prompt
+    if let Some(prompt) = execution_tool_prompt
         .map(str::trim)
         .filter(|prompt| !prompt.is_empty())
     {
-        sections.push(format!("## Code Orchestration Protocol\n{}", prompt));
+        sections.push(format!("## Execution Tool Protocol\n{}", prompt));
     }
 
     sections.join("\n\n")
@@ -93,9 +93,9 @@ pub(crate) fn build_local_prompt_plan(
             .then(|| render_runtime_capability_prompt(&tool_names))
             .filter(|prompt| !prompt.trim().is_empty())
     });
-    let code_mode_prompt = execution_policy.and_then(|policy| {
+    let execution_tool_prompt = execution_policy.and_then(|policy| {
         let tool_names = policy.prompt_tool_names();
-        (policy.inject_code_mode_protocol && !tool_names.is_empty())
+        (policy.inject_execution_protocol && !tool_names.is_empty())
             .then(|| render_code_mode_capability_prompt(&tool_names))
             .filter(|prompt| !prompt.trim().is_empty())
     });
@@ -109,7 +109,7 @@ pub(crate) fn build_local_prompt_plan(
     let base_system_prompt = render_local_runtime_system_prompt(
         &local_router_prompt,
         runtime_capability_prompt.as_deref(),
-        code_mode_prompt.as_deref(),
+        execution_tool_prompt.as_deref(),
     );
 
     build_local_prompt_plan_inner(
@@ -131,9 +131,9 @@ pub(crate) fn build_local_prelude_messages(
             .then(|| render_runtime_capability_prompt(&tool_names))
             .filter(|prompt| !prompt.trim().is_empty())
     });
-    let code_mode_prompt = execution_policy.and_then(|policy| {
+    let execution_tool_prompt = execution_policy.and_then(|policy| {
         let tool_names = policy.prompt_tool_names();
-        (policy.inject_code_mode_protocol && !tool_names.is_empty())
+        (policy.inject_execution_protocol && !tool_names.is_empty())
             .then(|| render_code_mode_capability_prompt(&tool_names))
             .filter(|prompt| !prompt.trim().is_empty())
     });
@@ -147,7 +147,7 @@ pub(crate) fn build_local_prelude_messages(
     let base_system_prompt = render_local_runtime_system_prompt(
         &local_router_prompt,
         runtime_capability_prompt.as_deref(),
-        code_mode_prompt.as_deref(),
+        execution_tool_prompt.as_deref(),
     );
 
     build_local_prelude_messages_inner(prompt_assets, &base_system_prompt)

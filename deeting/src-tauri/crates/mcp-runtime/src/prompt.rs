@@ -117,9 +117,11 @@ pub fn render_local_base_system_prompt(
         .filter(|prompt| !prompt.is_empty());
 
     match (router_prompt.is_empty(), code_mode_prompt) {
-        (true, Some(code_mode_prompt)) => format!("## Code Mode Protocol\n{}", code_mode_prompt),
+        (true, Some(code_mode_prompt)) => {
+            format!("## Execution Tool Protocol\n{}", code_mode_prompt)
+        }
         (false, Some(code_mode_prompt)) => format!(
-            "{}\n\n## Code Mode Protocol\n{}",
+            "{}\n\n## Execution Tool Protocol\n{}",
             router_prompt, code_mode_prompt
         ),
         (false, None) => router_prompt.to_string(),

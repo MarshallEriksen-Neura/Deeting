@@ -260,7 +260,7 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
         .filter(|v| !v.is_empty())
         .unwrap_or_else(|| Uuid::new_v4().to_string());
     let mut orchestrated_messages = messages;
-    if execution_policy.inject_code_mode_protocol
+    if execution_policy.inject_execution_protocol
         && !orchestrated_messages
             .first()
             .map(|m| m.role == "system")
@@ -269,7 +269,7 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
         orchestrated_messages.insert(0, LocalChatInputMessage {
             role: "system".to_string(),
             content: concat!(
-                "## Desktop Code Mode Runtime\n",
+                "## Desktop Execution Tools\n",
                 "- Environment: Deeting Desktop local runtime\n",
                 "When the user asks to install, create, or manage skills:\n",
                 "- Deeting skills are capability bundles centered on SKILL.md, deeting.json, and callable tool bindings derived from llm-tool.yaml when present.\n",

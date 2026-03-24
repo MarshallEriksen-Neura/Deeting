@@ -2414,7 +2414,7 @@ mod tests {
         assert!(prompt.contains("## Current Context"));
         assert!(prompt.contains("## Runtime Capability Contract"));
         assert!(prompt.contains("search_sdk, shell_execute"));
-        assert!(prompt.contains("## Code Orchestration Protocol"));
+        assert!(prompt.contains("## Execution Tool Protocol"));
         assert!(prompt.contains("execute_code_plan"));
     }
 
@@ -2424,7 +2424,7 @@ mod tests {
 
         assert!(prompt.contains("## Current Context"));
         assert!(!prompt.contains("## Runtime Capability Contract"));
-        assert!(!prompt.contains("## Code Orchestration Protocol"));
+        assert!(!prompt.contains("## Execution Tool Protocol"));
     }
 
     #[test]
@@ -2439,7 +2439,7 @@ mod tests {
 
         assert!(rendered.contains("## Current Context"));
         assert!(!rendered.contains("## Runtime Capability Contract"));
-        assert!(!rendered.contains("## Code Orchestration Protocol"));
+        assert!(!rendered.contains("## Execution Tool Protocol"));
     }
 
     #[test]
@@ -2460,11 +2460,11 @@ mod tests {
 
         assert!(rendered.contains("## Runtime Capability Contract"));
         assert!(rendered.contains("search_sdk"));
-        assert!(!rendered.contains("## Code Orchestration Protocol"));
+        assert!(!rendered.contains("## Execution Tool Protocol"));
     }
 
     #[test]
-    fn build_local_prompt_plan_includes_code_mode_protocol_from_execution_policy() {
+    fn build_local_prompt_plan_includes_code_orchestration_protocol_from_worker_policy() {
         let policy = build_local_execution_policy(&select_local_route(
             "遍历所有 markdown files，抽标题、分类、去重后输出 JSON",
             &json!({
@@ -2473,7 +2473,7 @@ mod tests {
                 "routing_hint": { "programmatic_path": "execute_code_plan" }
             }),
         ));
-        assert_eq!(policy.route, LocalRouteKind::CodeMode);
+        assert_eq!(policy.route, LocalRouteKind::Worker);
         let rendered = build_local_prelude_messages(&PromptAssets::default(), Some(&policy))
             .first()
             .map(|message| message.content.clone())
@@ -2481,7 +2481,7 @@ mod tests {
 
         assert!(rendered.contains("## Current Context"));
         assert!(rendered.contains("## Runtime Capability Contract"));
-        assert!(rendered.contains("## Code Orchestration Protocol"));
+        assert!(rendered.contains("## Execution Tool Protocol"));
         assert!(rendered.contains("search_sdk"));
         assert!(rendered.contains("execute_code_plan"));
     }
@@ -2499,12 +2499,12 @@ mod tests {
         let policy = build_local_execution_policy(&decision);
         let meta = build_local_control_plane_status_meta(&decision, &policy);
 
-        assert_eq!(meta.get("route").and_then(Value::as_str), Some("codemode"));
+        assert_eq!(meta.get("route").and_then(Value::as_str), Some("worker"));
         assert_eq!(
             meta.get("execution_policy")
                 .and_then(|value| value.get("plane"))
                 .and_then(Value::as_str),
-            Some("code_mode_orchestration")
+            Some("worker_reasoning")
         );
     }
 

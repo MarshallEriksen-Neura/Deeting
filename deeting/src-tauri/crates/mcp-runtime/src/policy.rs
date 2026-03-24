@@ -55,7 +55,6 @@ impl RuntimeDiscoveryBundle {
 pub enum LocalExecutionPlane {
     ResponseOnly,
     WorkerReasoning,
-    CodeModeOrchestration,
 }
 
 impl LocalExecutionPlane {
@@ -63,7 +62,6 @@ impl LocalExecutionPlane {
         match self {
             Self::ResponseOnly => "response_only",
             Self::WorkerReasoning => "worker_reasoning",
-            Self::CodeModeOrchestration => "code_mode_orchestration",
         }
     }
 }
@@ -73,7 +71,7 @@ pub struct LocalExecutionPolicy {
     pub route: LocalRouteKind,
     pub plane: LocalExecutionPlane,
     pub allowed_tool_names: Vec<String>,
-    pub inject_code_mode_protocol: bool,
+    pub inject_execution_protocol: bool,
     pub allow_worker_delegation: bool,
     pub prefer_workflow_runtime: bool,
     pub capability_snapshot: Option<Value>,
@@ -138,7 +136,7 @@ pub fn build_default_local_execution_policy() -> LocalExecutionPolicy {
         route: LocalRouteKind::Direct,
         plane: LocalExecutionPlane::ResponseOnly,
         allowed_tool_names: Vec::new(),
-        inject_code_mode_protocol: false,
+        inject_execution_protocol: false,
         allow_worker_delegation: false,
         prefer_workflow_runtime: false,
         capability_snapshot: None,
@@ -151,7 +149,7 @@ pub fn build_local_execution_policy(decision: &LocalRouteDecision) -> LocalExecu
             route: LocalRouteKind::Direct,
             plane: LocalExecutionPlane::ResponseOnly,
             allowed_tool_names: vec![SEARCH_SDK_TOOL_NAME.to_string()],
-            inject_code_mode_protocol: false,
+            inject_execution_protocol: false,
             allow_worker_delegation: false,
             prefer_workflow_runtime: false,
             capability_snapshot: None,
@@ -159,18 +157,9 @@ pub fn build_local_execution_policy(decision: &LocalRouteDecision) -> LocalExecu
         LocalRouteKind::Worker => LocalExecutionPolicy {
             route: LocalRouteKind::Worker,
             plane: LocalExecutionPlane::WorkerReasoning,
-            allowed_tool_names: vec![SEARCH_SDK_TOOL_NAME.to_string()],
-            inject_code_mode_protocol: false,
+            allowed_tool_names: full_execution_tool_names(),
+            inject_execution_protocol: true,
             allow_worker_delegation: true,
-            prefer_workflow_runtime: false,
-            capability_snapshot: None,
-        },
-        LocalRouteKind::CodeMode => LocalExecutionPolicy {
-            route: LocalRouteKind::CodeMode,
-            plane: LocalExecutionPlane::CodeModeOrchestration,
-            allowed_tool_names: full_code_mode_tool_names(),
-            inject_code_mode_protocol: true,
-            allow_worker_delegation: false,
             prefer_workflow_runtime: false,
             capability_snapshot: None,
         },
@@ -182,7 +171,7 @@ pub fn build_local_execution_policy_status_meta(policy: &LocalExecutionPolicy) -
         "route": policy.route.as_str(),
         "plane": policy.plane.as_str(),
         "allowed_tool_names": policy.allowed_tool_names,
-        "inject_code_mode_protocol": policy.inject_code_mode_protocol,
+        "inject_execution_protocol": policy.inject_execution_protocol,
         "allow_worker_delegation": policy.allow_worker_delegation,
         "prefer_workflow_runtime": policy.prefer_workflow_runtime,
         "has_capability_snapshot": policy.capability_snapshot.is_some(),
@@ -228,7 +217,7 @@ pub fn enrich_execution_policy_with_runtime_discovery(
     policy
 }
 
-pub fn full_code_mode_tool_names() -> Vec<String> {
+pub fn full_execution_tool_names() -> Vec<String> {
     [
         SEARCH_SDK_TOOL_NAME,
         EXECUTE_CODE_PLAN_TOOL_NAME,
@@ -274,19 +263,19 @@ mod tests {
     fn worker_execution_policy_defaults_to_legacy_worker_path() {
         let decision = LocalRouteDecision {
             route: LocalRouteKind::Worker,
-            reasons: vec!["analysis_request".to_string()],
+            reasons: vec!["programmatic_logic".to_string()],
             profile: TaskProfile {
                 explicit_route: None,
                 has_batch_scope: false,
-                wants_programmatic_logic: false,
-                wants_analysis: true,
+                wants_programmatic_logic: true,
+                wants_analysis: false,
                 wants_single_action: false,
                 destructive_intent: false,
                 approval_sensitive: false,
             },
             evidence: RouteEvidence {
                 direct_callable_capability_count: 0,
-                has_code_mode_executor: false,
+                has_programmatic_executor: true,
                 any_mutating_capability: false,
                 any_high_risk_capability: false,
                 direct_capability_names: Vec::new(),
@@ -298,6 +287,11 @@ mod tests {
 
         assert!(policy.allow_worker_delegation);
         assert!(!policy.prefer_workflow_runtime);
+        assert!(policy.inject_execution_protocol);
+        assert!(policy
+            .allowed_tool_names
+            .iter()
+            .any(|name| name == EXECUTE_CODE_PLAN_TOOL_NAME));
     }
 
     #[test]

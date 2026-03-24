@@ -5,7 +5,6 @@ use serde_json::{json, Value};
 pub enum LocalRouteKind {
     Direct,
     Worker,
-    CodeMode,
 }
 
 impl LocalRouteKind {
@@ -13,7 +12,6 @@ impl LocalRouteKind {
         match self {
             Self::Direct => "direct",
             Self::Worker => "worker",
-            Self::CodeMode => "codemode",
         }
     }
 }
@@ -32,7 +30,7 @@ pub struct TaskProfile {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct RouteEvidence {
     pub direct_callable_capability_count: usize,
-    pub has_code_mode_executor: bool,
+    pub has_programmatic_executor: bool,
     pub any_mutating_capability: bool,
     pub any_high_risk_capability: bool,
     pub direct_capability_names: Vec<String>,
@@ -80,7 +78,7 @@ pub fn select_local_route_with_evidence(
         }
         (LocalRouteKind::Direct, reasons)
     } else if profile.wants_programmatic_logic
-        && evidence.has_code_mode_executor
+        && evidence.has_programmatic_executor
         && (!profile.wants_analysis || profile.has_batch_scope)
     {
         let mut reasons = Vec::new();
@@ -88,8 +86,8 @@ pub fn select_local_route_with_evidence(
             reasons.push("batch_scope".to_string());
         }
         reasons.push("programmatic_logic".to_string());
-        reasons.push("code_executor_available".to_string());
-        (LocalRouteKind::CodeMode, reasons)
+        reasons.push("programmatic_executor_available".to_string());
+        (LocalRouteKind::Worker, reasons)
     } else if profile.wants_analysis {
         (LocalRouteKind::Worker, vec!["analysis_request".to_string()])
     } else if evidence.direct_callable_capability_count == 1 && profile.wants_single_action {
@@ -120,10 +118,7 @@ pub fn render_local_route_prompt(decision: &LocalRouteDecision) -> String {
             "Prefer direct answer or the lightest direct callable capability that can finish the job. If capability choice is the blocker, you must use search_sdk to discover the best direct capability and exhaust reasonable low-cost refinements before answering or refusing. Escalate into execute_code_plan when the user wants a concrete deliverable that needs multi-step coordination."
         }
         LocalRouteKind::Worker => {
-            "Treat this as analysis, planning, or decomposition work, but keep moving toward completion. If the task depends on unknown runtime capabilities or installed tools, you must use search_sdk and exhaust reasonable low-cost discovery before concluding what is or is not possible. If verified sources and available capabilities are enough to produce the requested deliverable, do that instead of stopping at recommendations."
-        }
-        LocalRouteKind::CodeMode => {
-            "Treat this as programmatic orchestration work. Prefer search_sdk plus execute_code_plan when execution is required, exhaust reasonable capability discovery before claiming a tooling blocker, and carry the task through to a real deliverable instead of stopping after the first capability lookup."
+            "Treat this as analysis, planning, or decomposition work, but keep moving toward completion. If the task depends on unknown runtime capabilities or installed tools, you must use search_sdk and exhaust reasonable low-cost discovery before concluding what is or is not possible. When the task needs multi-step coordination, loops, aggregation, or broad edits, you may use execute_code_plan as a worker execution tool. If verified sources and available capabilities are enough to produce the requested deliverable, do that instead of stopping at recommendations."
         }
     };
     let reasons = if decision.reasons.is_empty() {
@@ -144,7 +139,7 @@ pub fn build_local_route_status_meta(decision: &LocalRouteDecision) -> Value {
         "route": decision.route.as_str(),
         "reasons": decision.reasons,
         "direct_callable_capability_count": decision.evidence.direct_callable_capability_count,
-        "has_code_mode_executor": decision.evidence.has_code_mode_executor,
+        "has_programmatic_executor": decision.evidence.has_programmatic_executor,
         "direct_capability_names": decision.evidence.direct_capability_names,
         "has_batch_scope": decision.profile.has_batch_scope,
         "wants_programmatic_logic": decision.profile.wants_programmatic_logic,
@@ -157,10 +152,7 @@ pub fn build_local_route_status_meta(decision: &LocalRouteDecision) -> Value {
 impl TaskProfile {
     fn from_query(query: &str) -> Self {
         let normalized = query.trim().to_lowercase();
-        let explicit_route = if contains_any(&normalized, &["codemode", "code mode", "代码模式"])
-        {
-            Some(LocalRouteKind::CodeMode)
-        } else if contains_any(
+        let explicit_route = if contains_any(
             &normalized,
             &[
                 "delegated worker",
@@ -175,6 +167,9 @@ impl TaskProfile {
                 "交给子代理",
                 "交给 worker",
                 "用 worker",
+                "codemode",
+                "code mode",
+                "代码模式",
             ],
         ) {
             Some(LocalRouteKind::Worker)
@@ -390,7 +385,7 @@ impl RouteEvidence {
             .filter_map(|item| item.get("name").and_then(Value::as_str))
             .map(|value| value.to_string())
             .collect::<Vec<_>>();
-        let has_code_mode_executor = search_result
+        let has_programmatic_executor = search_result
             .get("orchestration_primitives")
             .and_then(Value::as_array)
             .is_some_and(|items| {
@@ -405,7 +400,7 @@ impl RouteEvidence {
 
         Self {
             direct_callable_capability_count,
-            has_code_mode_executor,
+            has_programmatic_executor,
             any_mutating_capability,
             any_high_risk_capability,
             direct_capability_names,
@@ -418,4 +413,44 @@ fn contains_any(haystack: &str, needles: &[&str]) -> bool {
     needles
         .iter()
         .any(|needle| !needle.is_empty() && haystack.contains(needle))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn programmatic_queries_route_to_worker_when_executor_exists() {
+        let decision = select_local_route(
+            "遍历所有 markdown files，抽标题、分类、去重后输出 JSON",
+            &json!({
+                "orchestration_primitives": [{ "name": "execute_code_plan" }],
+                "capabilities": [],
+                "routing_hint": { "programmatic_path": "execute_code_plan" }
+            }),
+        );
+
+        assert_eq!(decision.route, LocalRouteKind::Worker);
+        assert!(decision
+            .reasons
+            .iter()
+            .any(|reason| reason == "programmatic_logic"));
+        assert!(decision
+            .reasons
+            .iter()
+            .any(|reason| reason == "programmatic_executor_available"));
+    }
+
+    #[test]
+    fn codemode_phrase_is_treated_as_worker_route_hint() {
+        let decision = select_local_route(
+            "请用 code mode 处理这个多步文件整理任务",
+            &json!({
+                "routing_hint": { "programmatic_path": "execute_code_plan" }
+            }),
+        );
+
+        assert_eq!(decision.route, LocalRouteKind::Worker);
+        assert_eq!(decision.reasons, vec!["explicit_route".to_string()]);
+    }
 }

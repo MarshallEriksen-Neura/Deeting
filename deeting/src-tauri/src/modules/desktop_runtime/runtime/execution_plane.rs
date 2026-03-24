@@ -1,4 +1,3 @@
-mod code_mode_handler;
 mod direct_handler;
 mod worker_handler;
 
@@ -44,7 +43,6 @@ pub(crate) struct LocalExecutionOutcome {
 enum LocalExecutionHandlerKind {
     Direct,
     Worker,
-    CodeMode,
 }
 
 impl LocalExecutionHandlerKind {
@@ -52,7 +50,6 @@ impl LocalExecutionHandlerKind {
         match policy.plane {
             LocalExecutionPlane::ResponseOnly => Self::Direct,
             LocalExecutionPlane::WorkerReasoning => Self::Worker,
-            LocalExecutionPlane::CodeModeOrchestration => Self::CodeMode,
         }
     }
 
@@ -60,7 +57,6 @@ impl LocalExecutionHandlerKind {
         match self {
             Self::Direct => "direct_handler",
             Self::Worker => "worker_handler",
-            Self::CodeMode => "code_mode_handler",
         }
     }
 }
@@ -91,9 +87,6 @@ where
         }
         LocalExecutionHandlerKind::Worker => {
             worker_handler::run_worker_execution_handler(request, &mut emit_status).await
-        }
-        LocalExecutionHandlerKind::CodeMode => {
-            code_mode_handler::run_code_mode_execution_handler(request, &mut emit_status).await
         }
     }
 }
@@ -180,7 +173,7 @@ mod tests {
     }
 
     #[test]
-    fn execution_handler_kind_maps_code_mode_policy_to_code_mode_handler() {
+    fn execution_handler_kind_maps_programmatic_worker_policy_to_worker_handler() {
         let decision = select_local_route(
             "遍历所有 markdown files，抽标题、分类、去重后输出 JSON",
             &json!({
@@ -193,7 +186,7 @@ mod tests {
 
         assert_eq!(
             LocalExecutionHandlerKind::from_policy(&policy),
-            LocalExecutionHandlerKind::CodeMode
+            LocalExecutionHandlerKind::Worker
         );
     }
 

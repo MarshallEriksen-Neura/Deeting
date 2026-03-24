@@ -862,7 +862,7 @@ fn derive_windows_readiness(
         return (
             SandboxReadinessStatus::Ready,
             None,
-            vec!["Sandbox is ready for Code Mode execution.".to_string()],
+            vec!["Sandbox is ready for programmatic execution.".to_string()],
         );
     }
 
@@ -923,14 +923,14 @@ fn build_install_guide(report: &SandboxReadinessReport) -> SandboxInstallGuide {
         SandboxReadinessStatus::Ready => SandboxInstallGuide {
             status: report.status,
             title: "Sandbox ready".to_string(),
-            description: "The desktop sandbox is ready for Code Mode execution.".to_string(),
-            steps: vec!["You can start Code Mode safely in sandboxed mode.".to_string()],
+            description: "The desktop sandbox is ready for programmatic execution.".to_string(),
+            steps: vec!["You can start sandboxed execution safely.".to_string()],
             primary_command: None,
         },
         SandboxReadinessStatus::NeedsWsl => SandboxInstallGuide {
             status: report.status,
             title: "Install Windows Subsystem for Linux".to_string(),
-            description: "Code Mode sandboxing on Windows depends on WSL before BoxLite can start."
+            description: "Sandboxed programmatic execution on Windows depends on WSL before BoxLite can start."
                 .to_string(),
             steps: vec![
                 "Run the recommended WSL installation command in an elevated terminal.".to_string(),
@@ -962,7 +962,7 @@ fn build_install_guide(report: &SandboxReadinessReport) -> SandboxInstallGuide {
             status: report.status,
             title: "Install BoxLite into WSL".to_string(),
             description:
-                "BoxLite is required for isolated Code Mode execution and will be installed into your WSL environment."
+                "BoxLite is required for isolated programmatic execution and will be installed into your WSL environment."
                     .to_string(),
             steps: vec![
                 "Click Install BoxLite in Desktop Sandbox settings.".to_string(),

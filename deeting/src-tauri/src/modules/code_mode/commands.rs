@@ -519,7 +519,7 @@ fn build_sandbox_blocked_response(
         runtime_tool_calls: vec![],
         render_blocks: vec![],
         error: Some(report.blocking_reason.clone().unwrap_or_else(|| {
-            "sandbox is not ready; install or repair the desktop sandbox before running Code Mode"
+            "sandbox is not ready; install or repair the desktop sandbox before running programmatic execution"
                 .to_string()
         })),
         error_code: Some(error_code),
