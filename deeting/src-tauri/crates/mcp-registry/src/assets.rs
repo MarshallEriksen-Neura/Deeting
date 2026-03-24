@@ -49,6 +49,15 @@ pub fn build_capability_assets_for_read_mode(
             .filter(|entry| local_capability_registry_entry_is_usable(entry))
             .map(local_capability_registry_entry_to_asset),
     );
+    let registry_keys = memory_assets
+        .iter()
+        .filter_map(capability_asset_match_key)
+        .collect::<std::collections::HashSet<_>>();
+    memory_assets.extend(legacy_core_assets.into_iter().filter(|asset| {
+        capability_asset_match_key(asset)
+            .map(|key| !registry_keys.contains(&key))
+            .unwrap_or(true)
+    }));
     memory_assets
 }
 
@@ -359,6 +368,73 @@ mod tests {
 
         assert_eq!(assets.len(), 1);
         assert_eq!(assets[0]["id"], json!("cloud.skill.alpha"));
+    }
+
+    #[test]
+    fn registry_first_mode_keeps_legacy_core_assets_when_registry_has_none() {
+        let assets = build_capability_assets_for_read_mode(
+            Vec::new(),
+            &[],
+            CapabilityRegistryReadMode::RegistryFirst,
+            vec![json!({
+                "id": "core.shell_execute",
+                "name": "shell_execute",
+                "asset_type": "tool",
+                "source_type": "code_mode_core",
+            })],
+        );
+
+        assert!(assets.iter().any(|asset| {
+            asset.get("source_type").and_then(Value::as_str) == Some("code_mode_core")
+                && asset.get("name").and_then(Value::as_str) == Some("shell_execute")
+        }));
+    }
+
+    #[test]
+    fn registry_first_mode_dedupes_legacy_core_assets_against_registry_entries() {
+        let assets = build_capability_assets_for_read_mode(
+            Vec::new(),
+            &[LocalCapabilityRegistrySnapshot {
+                capability_id: "core.search_sdk".to_string(),
+                source_kind: "core".to_string(),
+                asset_kind: "core_tool".to_string(),
+                package_id: "code_mode.core".to_string(),
+                package_version: Some("1".to_string()),
+                title: "search_sdk".to_string(),
+                description: "Search SDK".to_string(),
+                tool_name: Some("search_sdk".to_string()),
+                callable_name: None,
+                binding_kind: None,
+                execution_surface: "host".to_string(),
+                runtime: Some("host".to_string()),
+                entry_path: None,
+                is_direct_callable: true,
+                activation_state: "enabled".to_string(),
+                runtime_state: "ready".to_string(),
+                search_index_state: "not_required".to_string(),
+                generation: 1,
+                descriptor_json: json!({
+                    "tool_name": "search_sdk",
+                    "activation_state": "enabled",
+                }),
+                updated_at: "2026-03-16T00:00:00Z".to_string(),
+            }],
+            CapabilityRegistryReadMode::RegistryFirst,
+            vec![json!({
+                "id": "core.search_sdk",
+                "name": "search_sdk",
+                "asset_type": "tool",
+                "source_type": "code_mode_core",
+            })],
+        );
+
+        assert_eq!(
+            assets
+                .iter()
+                .filter(|asset| asset.get("name").and_then(Value::as_str) == Some("search_sdk"))
+                .count(),
+            1
+        );
     }
 
     #[test]

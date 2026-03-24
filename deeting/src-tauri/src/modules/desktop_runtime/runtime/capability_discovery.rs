@@ -1254,7 +1254,6 @@ fn matches_domain(domain: &str, text: &str) -> bool {
                 "directory",
                 "installed software",
                 "registry",
-                "system",
                 "host_access",
                 "shell_execution",
             ],
@@ -1290,7 +1289,6 @@ fn matches_intent(intent: &str, text: &str, asset_type: &str, source_type: &str)
                         "working directory",
                         "installed software",
                         "registry",
-                        "system",
                     ],
                 )
         }
