@@ -153,6 +153,7 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
 
       const extraMeta = (m.extra_meta || {}) as Record<string, unknown>
       const routingConfig = (m.routing_config || {}) as Record<string, unknown>
+      const configOverride = (m.config_override || {}) as Record<string, unknown>
       const capabilities = resolveModelCapabilities({
         capabilities: m.capabilities,
         routingConfig,
@@ -196,6 +197,8 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
         priority: toNumber(m.priority, 0),
         updated_at: m.updated_at || m.synced_at || "",
         created_at: m.created_at || undefined,
+        routing_config: routingConfig,
+        config_override: configOverride,
         family: typeof rawMeta.owned_by === 'string' ? rawMeta.owned_by : undefined,
         version: m.unified_model_id || undefined,
         max_output_tokens: typeof limitConfig.max_output_tokens === 'number' ? limitConfig.max_output_tokens : undefined,

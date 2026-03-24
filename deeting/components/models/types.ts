@@ -64,6 +64,10 @@ export interface ProviderModel {
   updated_at: string
   /** Created at timestamp */
   created_at?: string
+  /** Raw routing config for advanced protocol behavior */
+  routing_config?: Record<string, unknown>
+  /** Raw config override for protocol/runtime customization */
+  config_override?: Record<string, unknown>
   /** Model family/series: e.g., "gpt-4", "claude-3" */
   family?: string
   /** Model version identifier */

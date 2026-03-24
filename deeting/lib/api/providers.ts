@@ -166,6 +166,7 @@ export const ProviderModelResponseSchema = z.object({
   limit_config: z.record(z.string(), z.any()),
   tokenizer_config: z.record(z.string(), z.any()),
   routing_config: z.record(z.string(), z.any()),
+  config_override: z.record(z.string(), z.any()).default({}),
   source: z.string(),
   extra_meta: z.record(z.string(), z.any()),
   weight: z.number(),
@@ -193,6 +194,7 @@ export const ProviderModelUpdateSchema = z.object({
   limit_config: z.record(z.string(), z.any()).optional(),
   tokenizer_config: z.record(z.string(), z.any()).optional(),
   routing_config: z.record(z.string(), z.any()).optional(),
+  config_override: z.record(z.string(), z.any()).optional(),
 })
 
 export type ProviderModelUpdate = z.infer<typeof ProviderModelUpdateSchema>

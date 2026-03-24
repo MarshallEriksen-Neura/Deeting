@@ -106,6 +106,24 @@
         "tpm": "令牌速率 (TPM)",
         "maxInputImages": "最大输入图片数"
       },
+      "advanced": {
+        "imageAsync": {
+          "title": "异步图片轮询",
+          "desc": "用于那些先返回任务，再通过轮询获取最终图片结果的上游模型。",
+          "enabled": "轮询模式",
+          "enabledOn": "已开启异步轮询",
+          "enabledOff": "仅直返响应",
+          "taskIdPath": "任务 ID 路径",
+          "pollUrlTemplate": "轮询 URL 模板",
+          "statusPath": "状态路径",
+          "successValues": "成功状态值",
+          "failValues": "失败状态值",
+          "pendingValues": "进行中状态值",
+          "pollInterval": "轮询间隔",
+          "timeout": "超时时间",
+          "resultPath": "结果路径"
+        }
+      },
       "tokenizer": {
         "title": "Tokenizer",
         "desc": "上下文窗口等 tokenizer 相关限制。",
