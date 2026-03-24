@@ -103,10 +103,6 @@ impl LocalExecutionPolicy {
     }
 
     pub fn prompt_tool_names(&self) -> Vec<String> {
-        if !self.inject_code_mode_protocol {
-            return Vec::new();
-        }
-
         self.allowed_tool_names
             .iter()
             .filter(|name| name.as_str() != SYS_SUBMIT_ONBOARDING_REQUEST_TOOL_NAME)
@@ -353,6 +349,21 @@ mod tests {
                 "tavily-extract".to_string(),
                 "tavily-search".to_string(),
             ]
+        );
+    }
+
+    #[test]
+    fn prompt_tool_names_follow_allowed_tools_for_direct_lane() {
+        let mut policy = build_default_local_execution_policy();
+        policy.allowed_tool_names = vec![
+            SEARCH_SDK_TOOL_NAME.to_string(),
+            "shell_execute".to_string(),
+            SYS_SUBMIT_ONBOARDING_REQUEST_TOOL_NAME.to_string(),
+        ];
+
+        assert_eq!(
+            policy.prompt_tool_names(),
+            vec![SEARCH_SDK_TOOL_NAME.to_string(), "shell_execute".to_string()]
         );
     }
 }

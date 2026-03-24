@@ -1,9 +1,10 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-const DEFAULT_CODE_MODE_CAPABILITY_PROMPT: &str = "**Code Mode Capability (MANDATORY)**:\n**In Code Mode, direct tool calls are blocked for most tools. Only these tools may be called directly: {{allowed_direct_tools}}. Direct calls to blocked tools WILL BE BLOCKED and return an error.**\n\n## When to Use Code Mode\nUse Code Mode only when the task requires tool discovery, execution, installation, file or system changes, or expert capability attachment.\n\n## Required Workflow\nRequired workflow:\n1) If expert capability may help, call `consult_expert_network` to inspect candidates.\n2) Explicitly call `attach_capability` before attaching request-scoped expert capability.\n3) Use installed skill documentation or `search_sdk` recipes to understand available skill bundles.\n4) Use `search_sdk` direct capabilities only for real host tools that are explicitly surfaced as callable.\n5) Produce one coherent Python execution plan.\n6) Execute once with `execute_code_plan`.\n7) Summarize what you changed, the key result, and any blocker or next step.\n\n## Behavior Rules\nBehavior rules:\n- Treat skills as docs-first guidance bundles, not as direct tools.\n- Answer directly instead of using Code Mode when no execution or tool interaction is needed.\n- If required inputs, permissions, or tools are missing, stop and report the blocker instead of guessing.\n- Do not keep looping once enough evidence or results have been obtained.\n- Attach expert capability only when a specialist materially improves the task, and use `detach_capability` when returning to the default capability-neutral context.\n\n## Execution Safety\nConventions:\n- Prefer `from deeting_sdk import <tool_name>` only for direct callable host tools.\n- Or call direct tools with `deeting.call_tool(name, **kwargs)`.\n- Do NOT assume a skill bundle name is a callable tool name.\n- Do NOT pass positional dict args like `deeting.call_tool(name, {...})`.\n- Before any destructive or high-risk command, verify the current environment and working directory first.\n- Before modifying or deleting files, print or otherwise confirm the current working directory and the exact target path.\n- Preview the target before destructive changes when possible (for example by listing the directory or inspecting the file first).\n- Never use broad destructive targets like `rm -rf *`; always specify the exact file or directory path you intend to modify or remove.\n\n## Output Contract\n- Always emit final structured output with `deeting.log(json.dumps(result, ensure_ascii=False))`.\n";
+const DEFAULT_RUNTIME_CAPABILITY_PROMPT: &str = "The tools listed for this request are the only model-callable tools in the current round: {{allowed_tools}}.\n\nCapability contract:\n- `search_sdk` is the discovery source of truth for what is available right now.\n- If `search_sdk` returns a capability with `status.callable=true` and `invocation_mode=\"direct\"`, treat it as executable in this request when it also appears in the allowed tools list.\n- `recipes` are guidance entries only. A recipe title or skill bundle name is not callable by itself.\n- Do not claim you cannot inspect the local machine, filesystem, terminal, or installed software when a relevant callable direct capability is already available.\n- If a required capability is absent from the allowlist, explain the real limitation briefly and use the best available fallback.\n\nDirect tool use:\n- Prefer the lightest direct callable tool that can finish the task.\n- When multiple direct tools are available, choose the most specific one for the user's intent.\n- Do not invent tool names from recipe or bundle labels.\n- Do not pass positional dict args like `deeting.call_tool(name, {...})`.\n";
+const DEFAULT_CODE_MODE_CAPABILITY_PROMPT: &str = "Use code orchestration only when the task requires multi-step coordination, loops, conditional logic, broad file or system changes, or result aggregation.\n\nCode orchestration workflow:\n1) If expert capability may help, call `consult_expert_network` to inspect candidates.\n2) Explicitly call `attach_capability` before attaching request-scoped expert capability.\n3) Use `search_sdk` to refresh capability truth when the best execution path is unclear.\n4) Produce one coherent Python execution plan.\n5) Execute once with `execute_code_plan`.\n6) Summarize what changed, the key result, and any blocker or next step.\n\nExecution safety:\n- Prefer `from deeting_sdk import <tool_name>` only for direct callable host tools.\n- Or call direct tools with `deeting.call_tool(name, **kwargs)`.\n- Before any destructive or high-risk command, verify the current environment and working directory first.\n- Before modifying or deleting files, print or otherwise confirm the current working directory and the exact target path.\n- Preview the target before destructive changes when possible (for example by listing the directory or inspecting the file first).\n- Never use broad destructive targets like `rm -rf *`; always specify the exact file or directory path you intend to modify or remove.\n\nOutput contract:\n- Always emit final structured output with `deeting.log(json.dumps(result, ensure_ascii=False))`.\n";
 
-fn prompt_template_path() -> PathBuf {
+fn code_mode_prompt_template_path() -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.push("..");
     path.push("..");
@@ -14,15 +15,9 @@ fn prompt_template_path() -> PathBuf {
     path
 }
 
-pub fn render_code_mode_capability_prompt(allowed_direct_tools: &[String]) -> String {
-    let template = std::fs::read_to_string(prompt_template_path())
-        .ok()
-        .map(|text| text.trim().to_string())
-        .filter(|text| !text.is_empty())
-        .unwrap_or_else(|| DEFAULT_CODE_MODE_CAPABILITY_PROMPT.to_string());
-
+fn normalize_allowed_tools(allowed_tools: &[String]) -> Vec<String> {
     let mut normalized = BTreeSet::new();
-    for name in allowed_direct_tools {
+    for name in allowed_tools {
         let trimmed = name.trim().to_lowercase();
         if !trimmed.is_empty() {
             normalized.insert(trimmed);
@@ -30,23 +25,55 @@ pub fn render_code_mode_capability_prompt(allowed_direct_tools: &[String]) -> St
     }
     if normalized.is_empty() {
         normalized.insert("search_sdk".to_string());
-        normalized.insert("execute_code_plan".to_string());
     }
-    let rendered_tools = normalized
+    normalized.into_iter().collect()
+}
+
+pub fn render_runtime_capability_prompt(allowed_tools: &[String]) -> String {
+    let rendered_tools = normalize_allowed_tools(allowed_tools)
         .into_iter()
         .map(|name| format!("`{name}`"))
         .collect::<Vec<String>>()
         .join(", ");
 
-    template.replace("{{allowed_direct_tools}}", &rendered_tools)
+    DEFAULT_RUNTIME_CAPABILITY_PROMPT.replace("{{allowed_tools}}", &rendered_tools)
+}
+
+pub fn render_code_mode_capability_prompt(allowed_tools: &[String]) -> String {
+    let template = std::fs::read_to_string(code_mode_prompt_template_path())
+        .ok()
+        .map(|text| text.trim().to_string())
+        .filter(|text| !text.is_empty())
+        .unwrap_or_else(|| DEFAULT_CODE_MODE_CAPABILITY_PROMPT.to_string());
+
+    let rendered_tools = normalize_allowed_tools(allowed_tools)
+        .into_iter()
+        .map(|name| format!("`{name}`"))
+        .collect::<Vec<String>>()
+        .join(", ");
+
+    template
+        .replace("{{allowed_direct_tools}}", &rendered_tools)
+        .replace("{{allowed_tools}}", &rendered_tools)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::render_code_mode_capability_prompt;
+    use super::{render_code_mode_capability_prompt, render_runtime_capability_prompt};
 
     #[test]
-    fn render_prompt_replaces_allowlist_placeholder() {
+    fn render_runtime_prompt_replaces_allowlist_placeholder() {
+        let prompt = render_runtime_capability_prompt(&[
+            "search_sdk".to_string(),
+            "shell_execute".to_string(),
+        ]);
+        assert!(prompt.contains("`search_sdk`"));
+        assert!(prompt.contains("`shell_execute`"));
+        assert!(!prompt.contains("{{allowed_tools}}"));
+    }
+
+    #[test]
+    fn render_code_mode_prompt_replaces_allowlist_placeholder() {
         let prompt = render_code_mode_capability_prompt(&[
             "search_sdk".to_string(),
             "execute_code_plan".to_string(),
@@ -57,7 +84,7 @@ mod tests {
     }
 
     #[test]
-    fn render_prompt_includes_destructive_command_safety_guard() {
+    fn render_code_mode_prompt_includes_destructive_command_safety_guard() {
         let prompt = render_code_mode_capability_prompt(&["execute_code_plan".to_string()]);
 
         assert!(prompt.contains("verify the current environment and working directory first"));
@@ -68,24 +95,23 @@ mod tests {
     }
 
     #[test]
-    fn render_prompt_includes_code_mode_usage_and_stop_rules() {
+    fn render_code_mode_prompt_includes_code_orchestration_guidance() {
         let prompt = render_code_mode_capability_prompt(&["search_sdk".to_string()]);
 
-        assert!(prompt.contains("## When to Use Code Mode"));
-        assert!(prompt.contains("## Required Workflow"));
-        assert!(prompt.contains("## Behavior Rules"));
-        assert!(prompt.contains("## Execution Safety"));
-        assert!(prompt.contains("## Output Contract"));
-        assert!(prompt.contains("Use Code Mode only when the task requires tool discovery"));
+        assert!(prompt.contains("Use code orchestration only when the task requires multi-step coordination"));
         assert!(prompt.contains("call `consult_expert_network` to inspect candidates"));
         assert!(prompt.contains(
             "Explicitly call `attach_capability` before attaching request-scoped expert capability"
         ));
-        assert!(prompt
-            .contains("Summarize what you changed, the key result, and any blocker or next step"));
-        assert!(prompt.contains("If required inputs, permissions, or tools are missing, stop and report the blocker instead of guessing"));
-        assert!(prompt
-            .contains("Do not keep looping once enough evidence or results have been obtained"));
-        assert!(prompt.contains("Treat skills as docs-first guidance bundles, not as direct tools"));
+        assert!(prompt.contains("Summarize what changed, the key result, and any blocker or next step"));
+    }
+
+    #[test]
+    fn render_runtime_prompt_uses_discovery_as_truth_source() {
+        let prompt = render_runtime_capability_prompt(&["search_sdk".to_string(), "shell_execute".to_string()]);
+
+        assert!(prompt.contains("`search_sdk` is the discovery source of truth"));
+        assert!(prompt.contains("`recipes` are guidance entries only"));
+        assert!(prompt.contains("Do not claim you cannot inspect the local machine"));
     }
 }

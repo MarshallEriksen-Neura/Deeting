@@ -19,7 +19,7 @@ use crate::modules::desktop_runtime::runtime::prompt_assets::PromptAssets;
 #[cfg(test)]
 use crate::modules::desktop_runtime::runtime::prompt_plan::{
     build_local_prelude_messages, parse_router_prompt_local_context,
-    render_local_base_system_prompt, render_local_router_base_prompt,
+    render_local_router_base_prompt, render_local_runtime_system_prompt,
     router_prompt_default_local_context, router_prompt_response_language_for_locale_pref,
 };
 use crate::modules::desktop_runtime::runtime::resolve_local_model_connection;
@@ -90,8 +90,8 @@ fn render_skill_recipe_prompt(recipes: &[Value]) -> Option<String> {
 
     let mut lines = vec![
         "## Installed Skills".to_string(),
-        "These are installed skill bundles. Treat recipe entries as guidance, and only call a skill directly when search_sdk returns a callable skill binding.".to_string(),
-        "Read the recipe details first. Direct execution is allowed only for explicit callable capabilities surfaced by search_sdk.".to_string(),
+        "These are installed skill bundles. Recipe entries are supporting guidance only; the current request allowlist plus `search_sdk` capability results are the source of truth for what is executable right now.".to_string(),
+        "Read the recipe details when helpful, but if `search_sdk` surfaces a callable direct capability for this request you may call it directly.".to_string(),
     ];
 
     for recipe in recipes {
@@ -2404,21 +2404,27 @@ mod tests {
     }
 
     #[test]
-    fn render_local_base_system_prompt_adds_code_mode_section() {
-        let prompt =
-            render_local_base_system_prompt("## Current Context", Some("**Code Mode Capability**"));
+    fn render_local_runtime_system_prompt_adds_runtime_and_code_sections() {
+        let prompt = render_local_runtime_system_prompt(
+            "## Current Context",
+            Some("search_sdk, shell_execute"),
+            Some("execute_code_plan"),
+        );
 
         assert!(prompt.contains("## Current Context"));
-        assert!(prompt.contains("## Code Mode Protocol"));
-        assert!(prompt.contains("**Code Mode Capability**"));
+        assert!(prompt.contains("## Runtime Capability Contract"));
+        assert!(prompt.contains("search_sdk, shell_execute"));
+        assert!(prompt.contains("## Code Orchestration Protocol"));
+        assert!(prompt.contains("execute_code_plan"));
     }
 
     #[test]
-    fn render_local_base_system_prompt_omits_code_mode_section_when_not_requested() {
-        let prompt = render_local_base_system_prompt("## Current Context", None);
+    fn render_local_runtime_system_prompt_omits_optional_sections_when_not_requested() {
+        let prompt = render_local_runtime_system_prompt("## Current Context", None, None);
 
         assert!(prompt.contains("## Current Context"));
-        assert!(!prompt.contains("## Code Mode Protocol"));
+        assert!(!prompt.contains("## Runtime Capability Contract"));
+        assert!(!prompt.contains("## Code Orchestration Protocol"));
     }
 
     #[test]
@@ -2432,7 +2438,29 @@ mod tests {
         .unwrap_or_default();
 
         assert!(rendered.contains("## Current Context"));
-        assert!(!rendered.contains("## Code Mode Protocol"));
+        assert!(!rendered.contains("## Runtime Capability Contract"));
+        assert!(!rendered.contains("## Code Orchestration Protocol"));
+    }
+
+    #[test]
+    fn build_local_prompt_plan_includes_runtime_capability_contract_for_direct_policy() {
+        let policy = build_local_execution_policy(&select_local_route(
+            "检查当前目录",
+            &json!({
+                "capabilities": [
+                    { "name": "shell_execute", "status": { "callable": true }, "invocation_mode": "direct" }
+                ],
+                "routing_hint": { "direct_callable_capability_count": 1 }
+            }),
+        ));
+        let rendered = build_local_prelude_messages(&PromptAssets::default(), Some(&policy))
+            .first()
+            .map(|message| message.content.clone())
+            .unwrap_or_default();
+
+        assert!(rendered.contains("## Runtime Capability Contract"));
+        assert!(rendered.contains("search_sdk"));
+        assert!(!rendered.contains("## Code Orchestration Protocol"));
     }
 
     #[test]
@@ -2452,8 +2480,10 @@ mod tests {
             .unwrap_or_default();
 
         assert!(rendered.contains("## Current Context"));
-        assert!(rendered.contains("## Code Mode Protocol"));
+        assert!(rendered.contains("## Runtime Capability Contract"));
+        assert!(rendered.contains("## Code Orchestration Protocol"));
         assert!(rendered.contains("search_sdk"));
+        assert!(rendered.contains("execute_code_plan"));
     }
 
     #[test]
@@ -2479,7 +2509,7 @@ mod tests {
     }
 
     #[test]
-    fn render_skill_recipe_prompt_formats_docs_first_guidance() {
+    fn render_skill_recipe_prompt_defers_execution_truth_to_search_sdk() {
         let prompt = render_skill_recipe_prompt(&[json!({
             "name": "Planner",
             "description": "Design execution plans",
@@ -2498,7 +2528,8 @@ mod tests {
 
         assert!(prompt.contains("## Installed Skills"));
         assert!(prompt.contains("Planner"));
-        assert!(prompt.contains("callable skill binding"));
+        assert!(prompt.contains("source of truth"));
+        assert!(prompt.contains("callable direct capability"));
         assert!(prompt.contains("read_skill_docs"));
         assert!(prompt.contains("SKILL.md"));
         assert!(prompt.contains("backend=main.py"));

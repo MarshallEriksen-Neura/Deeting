@@ -1,6 +1,9 @@
 use super::control_plane::LocalExecutionPolicy;
 use super::prompt_assets::PromptAssets;
-use crate::modules::code_mode::prompt::render_code_mode_capability_prompt;
+use crate::modules::code_mode::prompt::{
+    render_code_mode_capability_prompt, render_runtime_capability_prompt,
+};
+#[cfg(target_os = "windows")]
 use crate::utils::configure_background_std_command;
 #[cfg(test)]
 use mcp_core::types::LocalChatInputMessage;
@@ -9,8 +12,7 @@ use mcp_core::types::LocalChatInputMessage;
 use mcp_runtime::prompt::build_local_prelude_messages as build_local_prelude_messages_inner;
 use mcp_runtime::prompt::build_local_prompt_plan as build_local_prompt_plan_inner;
 pub(crate) use mcp_runtime::prompt::{
-    parse_router_prompt_local_context, render_local_base_system_prompt,
-    render_local_router_base_prompt, router_prompt_default_local_context,
+    parse_router_prompt_local_context, render_local_router_base_prompt, router_prompt_default_local_context,
     router_prompt_response_language_for_locale_pref, PromptPlan, RouterPromptLocalContext,
 };
 
@@ -52,13 +54,47 @@ pub(crate) fn router_prompt_default_response_language() -> &'static str {
     router_prompt_response_language_for_locale_pref(crate::tray::desktop_prefers_zh())
 }
 
+pub(crate) fn render_local_runtime_system_prompt(
+    router_prompt: &str,
+    runtime_capability_prompt: Option<&str>,
+    code_mode_prompt: Option<&str>,
+) -> String {
+    let mut sections = Vec::new();
+    let router_prompt = router_prompt.trim();
+    if !router_prompt.is_empty() {
+        sections.push(router_prompt.to_string());
+    }
+
+    if let Some(prompt) = runtime_capability_prompt
+        .map(str::trim)
+        .filter(|prompt| !prompt.is_empty())
+    {
+        sections.push(format!("## Runtime Capability Contract\n{}", prompt));
+    }
+
+    if let Some(prompt) = code_mode_prompt
+        .map(str::trim)
+        .filter(|prompt| !prompt.is_empty())
+    {
+        sections.push(format!("## Code Orchestration Protocol\n{}", prompt));
+    }
+
+    sections.join("\n\n")
+}
+
 pub(crate) fn build_local_prompt_plan(
     prompt_assets: &PromptAssets,
     execution_policy: Option<&LocalExecutionPolicy>,
 ) -> PromptPlan {
-    let code_mode_prompt = execution_policy.and_then(|policy| {
+    let runtime_capability_prompt = execution_policy.and_then(|policy| {
         let tool_names = policy.prompt_tool_names();
         (!tool_names.is_empty())
+            .then(|| render_runtime_capability_prompt(&tool_names))
+            .filter(|prompt| !prompt.trim().is_empty())
+    });
+    let code_mode_prompt = execution_policy.and_then(|policy| {
+        let tool_names = policy.prompt_tool_names();
+        (policy.inject_code_mode_protocol && !tool_names.is_empty())
             .then(|| render_code_mode_capability_prompt(&tool_names))
             .filter(|prompt| !prompt.trim().is_empty())
     });
@@ -69,8 +105,11 @@ pub(crate) fn build_local_prompt_plan(
         &local_context.timezone,
         response_language,
     );
-    let base_system_prompt =
-        render_local_base_system_prompt(&local_router_prompt, code_mode_prompt.as_deref());
+    let base_system_prompt = render_local_runtime_system_prompt(
+        &local_router_prompt,
+        runtime_capability_prompt.as_deref(),
+        code_mode_prompt.as_deref(),
+    );
 
     build_local_prompt_plan_inner(
         prompt_assets,
@@ -85,9 +124,15 @@ pub(crate) fn build_local_prelude_messages(
     prompt_assets: &PromptAssets,
     execution_policy: Option<&LocalExecutionPolicy>,
 ) -> Vec<LocalChatInputMessage> {
-    let code_mode_prompt = execution_policy.and_then(|policy| {
+    let runtime_capability_prompt = execution_policy.and_then(|policy| {
         let tool_names = policy.prompt_tool_names();
         (!tool_names.is_empty())
+            .then(|| render_runtime_capability_prompt(&tool_names))
+            .filter(|prompt| !prompt.trim().is_empty())
+    });
+    let code_mode_prompt = execution_policy.and_then(|policy| {
+        let tool_names = policy.prompt_tool_names();
+        (policy.inject_code_mode_protocol && !tool_names.is_empty())
             .then(|| render_code_mode_capability_prompt(&tool_names))
             .filter(|prompt| !prompt.trim().is_empty())
     });
@@ -98,8 +143,11 @@ pub(crate) fn build_local_prelude_messages(
         &local_context.timezone,
         response_language,
     );
-    let base_system_prompt =
-        render_local_base_system_prompt(&local_router_prompt, code_mode_prompt.as_deref());
+    let base_system_prompt = render_local_runtime_system_prompt(
+        &local_router_prompt,
+        runtime_capability_prompt.as_deref(),
+        code_mode_prompt.as_deref(),
+    );
 
     build_local_prelude_messages_inner(prompt_assets, &base_system_prompt)
 }
