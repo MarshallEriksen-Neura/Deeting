@@ -206,7 +206,7 @@ export async function fetchImageGenerationTask(
 ): Promise<ImageGenerationTaskDetail> {
   if (isTauriRuntime()) {
     const data = await invokeTauri<unknown>("get_local_image_generation_task", {
-      task_id: taskId,
+      taskId,
     })
     return ImageGenerationTaskDetailSchema.parse(data)
   }
