@@ -31,6 +31,18 @@ function inferProtocolHintFromBaseUrl(baseUrl: string, protocolHint: string): st
   }
 
   if (
+    normalized.includes("openspeech.bytedance.com") ||
+    normalized.includes("openspeech")
+  ) {
+    return "volcengine_openspeech_tts"
+  }
+  if (
+    normalized.includes("minimaxi.com") &&
+    normalized.includes("t2a")
+  ) {
+    return "minimax_tts"
+  }
+  if (
     normalized.includes("anthropic") ||
     normalized.includes("claude") ||
     normalized.endsWith("/v1/messages")
@@ -51,6 +63,13 @@ function inferProtocolHintFromBaseUrl(baseUrl: string, protocolHint: string): st
 }
 
 function inferDefaultChatTransportPath(protocolHint: string): string | null {
+  if (
+    protocolHint.includes("openspeech") ||
+    protocolHint.includes("minimax_tts") ||
+    protocolHint.includes("openai_tts")
+  ) {
+    return null
+  }
   if (protocolHint.includes("anthropic") || protocolHint.includes("claude")) {
     return "v1/messages"
   }

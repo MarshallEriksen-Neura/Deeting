@@ -12,6 +12,27 @@ export function derivePresetCapabilities(preset: LocalProviderPreset): string[] 
 }
 
 export function derivePresetProtocol(preset: LocalProviderPreset): string | null {
+  const presetIdentity = [
+    preset.slug,
+    preset.name,
+    preset.provider,
+    preset.base_url,
+    preset.url_template,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" ")
+    .toLowerCase()
+
+  if (presetIdentity.includes("openspeech.bytedance.com") || presetIdentity.includes("openspeech")) {
+    return "volcengine_openspeech_tts"
+  }
+  if (presetIdentity.includes("minimax") && presetIdentity.includes("tts")) {
+    return "minimax_tts"
+  }
+  if (presetIdentity.includes("openai") && presetIdentity.includes("tts")) {
+    return "openai_tts"
+  }
+
   const protocolProfiles = preset.protocol_profiles
   if (!protocolProfiles || typeof protocolProfiles !== "object") {
     return null

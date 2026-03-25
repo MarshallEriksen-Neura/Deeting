@@ -72,6 +72,19 @@ describe("normalizeProviderEndpointInput", () => {
       protocolHint: "anthropic",
     })
   })
+
+  it("infers volcengine openspeech protocol from base url", () => {
+    expect(
+      normalizeProviderEndpointInput({
+        baseUrl: "https://openspeech.bytedance.com",
+      })
+    ).toEqual({
+      baseUrl: "https://openspeech.bytedance.com",
+      chatTransportPath: null,
+      hadExplicitChatPath: false,
+      protocolHint: "volcengine_openspeech_tts",
+    })
+  })
 })
 
 describe("stripRedundantVersionPrefix", () => {

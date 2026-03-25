@@ -42,6 +42,9 @@ import { resolveProviderProtocol } from "@/lib/providers/protocol"
 
 const CHAT_COMPLETIONS_PATH = "chat/completions"
 const RESPONSES_PATH = "responses"
+const OPENAI_TTS_PATH = "audio/speech"
+const MINIMAX_TTS_PATH = "v1/t2a_v2"
+const VOLCENGINE_OPENSPEECH_TTS_PATH = "api/v3/tts/unidirectional"
 
 export interface ProviderPresetConfig {
   slug: string
@@ -215,11 +218,31 @@ export function ConnectProviderDrawer({
   const [apiKey, setApiKey] = React.useState(initialValues?.api_key || "")
   const [protocol, setProtocol] = React.useState(resolvedInitialProtocol)
   const protocolValue = (protocol || "").toLowerCase()
+  const presetIdentity = React.useMemo(
+    () =>
+      [
+        preset?.slug,
+        preset?.name,
+        preset?.provider,
+        preset?.protocol,
+        preset?.default_endpoint,
+        baseUrl,
+      ]
+        .filter((value): value is string => Boolean(value))
+        .join(" ")
+        .toLowerCase(),
+    [baseUrl, preset?.default_endpoint, preset?.name, preset?.protocol, preset?.provider, preset?.slug]
+  )
   const isOpenAIProtocol = protocolValue.includes("openai")
   const isAnthropicProtocol = protocolValue.includes("anthropic")
+  const isOpenAITtsProtocol = protocolValue.includes("openai_tts")
+  const isMiniMaxTtsProtocol = protocolValue.includes("minimax_tts")
   const isVolcengineOpenSpeechProtocol =
     protocolValue.includes("volcengine_openspeech_tts") ||
-    protocolValue.includes("openspeech")
+    protocolValue.includes("openspeech") ||
+    presetIdentity.includes("openspeech.bytedance.com") ||
+    presetIdentity.includes("openspeech")
+  const isChatOpenAIProtocol = isOpenAIProtocol && !isOpenAITtsProtocol
   const [autoAppendV1, setAutoAppendV1] = React.useState(
     initialValues?.auto_append_v1 ?? (isOpenAIProtocol ? true : false)
   )
@@ -231,37 +254,88 @@ export function ConnectProviderDrawer({
       return ""
     }
     const base = raw.replace(/\/+$/, "")
-    if (isOpenAIProtocol && autoAppendV1 && !base.endsWith("/v1")) {
+    if (isChatOpenAIProtocol && autoAppendV1 && !base.endsWith("/v1")) {
       return `${base}/v1`
     }
     return base
-  }, [baseUrl, isOpenAIProtocol, autoAppendV1])
+  }, [baseUrl, isChatOpenAIProtocol, autoAppendV1])
 
-  const endpointPreview = React.useMemo(() => {
+  const endpointPreviews = React.useMemo(() => {
     if (!normalizedBaseUrl) {
-      return ""
+      return [] as Array<{ key: string; label: string; value: string }>
     }
-    const path = isAnthropicProtocol ? "v1/messages" : "chat/completions"
-    return `${normalizedBaseUrl}/${path}`
-  }, [normalizedBaseUrl, isAnthropicProtocol])
 
-  const openAIEndpointPreviews = React.useMemo(() => {
-    if (!normalizedBaseUrl || !isOpenAIProtocol) {
-      return []
+    if (isOpenAITtsProtocol) {
+      return [
+        {
+          key: "tts",
+          label: t("drawer.endpointPreviewTtsLabel"),
+          value: `${normalizedBaseUrl}/${OPENAI_TTS_PATH}`,
+        },
+      ]
     }
+
+    if (isMiniMaxTtsProtocol) {
+      return [
+        {
+          key: "tts",
+          label: t("drawer.endpointPreviewTtsLabel"),
+          value: `${normalizedBaseUrl}/${MINIMAX_TTS_PATH}`,
+        },
+      ]
+    }
+
+    if (isVolcengineOpenSpeechProtocol) {
+      return [
+        {
+          key: "tts",
+          label: t("drawer.endpointPreviewTtsLabel"),
+          value: `${normalizedBaseUrl}/${VOLCENGINE_OPENSPEECH_TTS_PATH}`,
+        },
+      ]
+    }
+
+    if (isChatOpenAIProtocol) {
+      return [
+        {
+          key: "chat",
+          label: t("drawer.endpointPreviewChatLabel"),
+          value: `${normalizedBaseUrl}/${CHAT_COMPLETIONS_PATH}`,
+        },
+        {
+          key: "responses",
+          label: t("drawer.endpointPreviewResponsesLabel"),
+          value: `${normalizedBaseUrl}/${RESPONSES_PATH}`,
+        },
+      ]
+    }
+
+    if (isAnthropicProtocol) {
+      return [
+        {
+          key: "chat",
+          label: t("drawer.endpointPreviewChatLabel"),
+          value: `${normalizedBaseUrl}/v1/messages`,
+        },
+      ]
+    }
+
     return [
       {
-        key: "chat",
+        key: "default",
         label: t("drawer.endpointPreviewChatLabel"),
         value: `${normalizedBaseUrl}/${CHAT_COMPLETIONS_PATH}`,
       },
-      {
-        key: "responses",
-        label: t("drawer.endpointPreviewResponsesLabel"),
-        value: `${normalizedBaseUrl}/${RESPONSES_PATH}`,
-      },
     ]
-  }, [isOpenAIProtocol, normalizedBaseUrl, t])
+  }, [
+    isAnthropicProtocol,
+    isChatOpenAIProtocol,
+    isMiniMaxTtsProtocol,
+    isOpenAITtsProtocol,
+    isVolcengineOpenSpeechProtocol,
+    normalizedBaseUrl,
+    t,
+  ])
   const [icon, setIcon] = React.useState(initialValues?.icon || preset?.icon_key || "lucide:server")
   const [customIconUrl, setCustomIconUrl] = React.useState("")
   const [brandColor, setBrandColor] = React.useState(initialValues?.theme_color || preset?.brand_color || "#3b82f6")
@@ -708,9 +782,9 @@ export function ConnectProviderDrawer({
                 {normalizedBaseUrl && (
                   <div className="text-[11px] text-white/62">
                     <span className="text-white/78">{t("drawer.endpointPreviewLabel")}</span>
-                    {isOpenAIProtocol ? (
+                    {endpointPreviews.length > 0 ? (
                       <div className="mt-2 space-y-1.5">
-                        {openAIEndpointPreviews.map((preview) => (
+                        {endpointPreviews.map((preview) => (
                           <div key={preview.key} className="flex flex-col gap-0.5 md:flex-row md:items-center md:gap-2">
                             <span className="text-[10px] uppercase tracking-wide text-white/44">
                               {preview.label}
@@ -721,11 +795,11 @@ export function ConnectProviderDrawer({
                           </div>
                         ))}
                       </div>
-                    ) : (
-                      <span className="ml-2 font-mono break-all text-white/90">{endpointPreview}</span>
-                    )}
+                    ) : null}
                     <div className="mt-1 text-[10px] text-white/44">
-                      {isOpenAIProtocol
+                      {isOpenAITtsProtocol || isMiniMaxTtsProtocol || isVolcengineOpenSpeechProtocol
+                        ? t("drawer.endpointPreviewHintTTS")
+                        : isChatOpenAIProtocol
                         ? autoAppendV1
                           ? t("drawer.endpointPreviewHintOpenAI")
                           : t("drawer.endpointPreviewHintOpenAIDisabled")
