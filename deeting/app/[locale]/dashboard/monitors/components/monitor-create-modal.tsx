@@ -11,10 +11,8 @@ import {
 import {
   Crosshair,
   Clock,
-  Cpu,
   Sparkles,
   Plus,
-  X,
   Loader2,
   Bell,
   Mail,
@@ -22,10 +20,15 @@ import {
   Globe,
   MessageSquare,
   ExternalLink,
+  Bot,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { MonitorTask, MonitorTaskCreateInput } from "@/lib/api/monitors"
 import { createMonitorTask, updateMonitorTask } from "@/lib/api/monitors"
+import {
+  listCustomTaskAgents,
+  type CustomTaskAgentProfile,
+} from "@/lib/api/custom-task-agents"
 import { useNotificationChannels } from "@/lib/swr/use-notification-channels"
 import type { ChannelType } from "@/lib/api/notification-channels"
 import { CHANNEL_META } from "@/lib/api/notification-channels"
@@ -52,24 +55,25 @@ const CRON_PRESETS = [
   { label: "自定义", desc: "手动输入", value: "custom", icon: "⚙️" },
 ]
 
-const DEFAULT_STRATEGIES = [
+const ANALYSIS_MODE_OPTIONS: Array<{
+  value: "concise" | "deep" | "alert_first"
+  label: string
+  description: string
+}> = [
   {
-    id: "concise",
-    label: "精简研判",
-    template:
-      "请以最简洁的方式对比新旧信息，只输出关键变化，忽略细节噪声。",
+    value: "concise",
+    label: "精简",
+    description: "聚焦关键信号和变化摘要。",
   },
   {
-    id: "deep",
-    label: "深度分析",
-    template:
-      "请对监控目标进行全面分析，关注结构性变化、因果链条和潜在影响。",
+    value: "deep",
+    label: "深度",
+    description: "更重结构变化、因果链条和上下文。",
   },
   {
-    id: "alert",
+    value: "alert_first",
     label: "预警优先",
-    template:
-      "请优先识别风险信号和突发事件，输出应包含紧急程度评估和建议响应。",
+    description: "优先识别风险和突发异常。",
   },
 ]
 
@@ -85,23 +89,54 @@ export function MonitorCreateModal({
   // Form state
   const [title, setTitle] = useState("")
   const [objective, setObjective] = useState("")
+  const [assistantId, setAssistantId] = useState("")
+  const [analysisMode, setAnalysisMode] = useState<"concise" | "deep" | "alert_first">("concise")
   const [cronPreset, setCronPreset] = useState("0 */6 * * *")
   const [customCron, setCustomCron] = useState("")
-  const [strategies, setStrategies] = useState(DEFAULT_STRATEGIES)
-  const [newStrategyLabel, setNewStrategyLabel] = useState("")
-  const [newStrategyTemplate, setNewStrategyTemplate] = useState("")
-  const [showAddStrategy, setShowAddStrategy] = useState(false)
   const [selectedChannelIds, setSelectedChannelIds] = useState<string[]>([])
+  const [taskAgents, setTaskAgents] = useState<CustomTaskAgentProfile[]>([])
+  const [loadingTaskAgents, setLoadingTaskAgents] = useState(false)
 
   // Notification channels
   const { data: channelsData } = useNotificationChannels()
   const activeChannels = (channelsData?.items ?? []).filter((c) => c.is_active)
+  const bindableTaskAgents = taskAgents.filter(
+    (agent) =>
+      agent.invocation_kind === "chat" && agent.is_enabled && !agent.is_deleted
+  )
+
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    setLoadingTaskAgents(true)
+    void listCustomTaskAgents()
+      .then((items) => {
+        if (!cancelled) {
+          setTaskAgents(items)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setTaskAgents([])
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingTaskAgents(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open])
 
   // Populate on edit
   useEffect(() => {
     if (editTask) {
       setTitle(editTask.title)
       setObjective(editTask.objective)
+      setAssistantId(editTask.assistant_id ?? "")
+      setAnalysisMode(editTask.analysis_mode)
       const matchedPreset = CRON_PRESETS.find(
         (p) => p.value === editTask.cron_expr
       )
@@ -111,24 +146,16 @@ export function MonitorCreateModal({
         setCronPreset("custom")
         setCustomCron(editTask.cron_expr)
       }
-      if (editTask.strategy_variants?.prompts?.length) {
-        setStrategies(
-          editTask.strategy_variants.prompts.map((p) => ({
-            id: p.id,
-            label: p.label,
-            template: p.template,
-          }))
-        )
-      }
       // Restore channel selection from notify_config
       const nc = editTask.notify_config as { channel_ids?: string[] } | null
       setSelectedChannelIds(nc?.channel_ids ?? [])
     } else {
       setTitle("")
       setObjective("")
+      setAssistantId("")
+      setAnalysisMode("concise")
       setCronPreset("0 */6 * * *")
       setCustomCron("")
-      setStrategies(DEFAULT_STRATEGIES)
       setSelectedChannelIds([])
     }
   }, [editTask, open])
@@ -136,14 +163,16 @@ export function MonitorCreateModal({
   const cronValue = cronPreset === "custom" ? customCron : cronPreset
 
   const handleSubmit = async () => {
-    if (!title.trim() || !objective.trim()) return
+    if (!title.trim() || !objective.trim() || !assistantId.trim()) return
     setSubmitting(true)
     try {
       if (isEdit) {
         await updateMonitorTask(editTask.id, {
           title: title.trim(),
           objective: objective.trim(),
+          assistant_id: assistantId.trim(),
           cron_expr: cronValue,
+          analysis_mode: analysisMode,
           notify_config: selectedChannelIds.length
             ? { channel_ids: selectedChannelIds }
             : undefined,
@@ -152,7 +181,9 @@ export function MonitorCreateModal({
         const payload: MonitorTaskCreateInput = {
           title: title.trim(),
           objective: objective.trim(),
+          assistant_id: assistantId.trim(),
           cron_expr: cronValue,
+          analysis_mode: analysisMode,
           notify_config: selectedChannelIds.length
             ? { channel_ids: selectedChannelIds }
             : undefined,
@@ -166,25 +197,6 @@ export function MonitorCreateModal({
     }
   }
 
-  const addStrategy = () => {
-    if (!newStrategyLabel.trim() || !newStrategyTemplate.trim()) return
-    setStrategies((prev) => [
-      ...prev,
-      {
-        id: `custom_${Date.now()}`,
-        label: newStrategyLabel.trim(),
-        template: newStrategyTemplate.trim(),
-      },
-    ])
-    setNewStrategyLabel("")
-    setNewStrategyTemplate("")
-    setShowAddStrategy(false)
-  }
-
-  const removeStrategy = (id: string) => {
-    setStrategies((prev) => prev.filter((s) => s.id !== id))
-  }
-
   return (
     <Dialog open={open} onOpenChange={() => onOpenChange(false)}>
       <DialogContent className="max-w-xl border-white/10 bg-[var(--card)]/95 backdrop-blur-2xl">
@@ -196,11 +208,45 @@ export function MonitorCreateModal({
           <DialogDescription className="text-[var(--muted)]">
             {isEdit
               ? "修改任务参数，保存后立即生效"
-              : "创建后将自动孵化专属寻猎者助手"}
+              : "绑定已有聊天任务智能体后立即生效"}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-5 mt-2">
+          <div>
+            <label className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-[var(--foreground)]">
+              <Bot className="h-3.5 w-3.5 text-[var(--primary)]" />
+              绑定任务智能体
+            </label>
+            {bindableTaskAgents.length > 0 ? (
+              <select
+                value={assistantId}
+                onChange={(event) => setAssistantId(event.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-[var(--foreground)]/[0.03] px-3.5 py-2.5 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--primary)]/40 focus:ring-1 focus:ring-[var(--primary)]/20"
+              >
+                <option value="">请选择一个聊天任务智能体</option>
+                {bindableTaskAgents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <a
+                href="/dashboard/user/task-agents"
+                className="flex items-center gap-2 rounded-xl border border-dashed border-white/10 px-3 py-2.5 text-xs text-[var(--muted)] transition-colors hover:border-[var(--primary)]/30 hover:text-[var(--primary)]"
+              >
+                {loadingTaskAgents ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Plus className="h-3 w-3" />
+                )}
+                前往创建或启用聊天任务智能体
+                <ExternalLink className="ml-auto h-3 w-3" />
+              </a>
+            )}
+          </div>
+
           {/* Title */}
           <div>
             <label className="mb-1.5 block text-xs font-medium text-[var(--foreground)]">
@@ -265,78 +311,36 @@ export function MonitorCreateModal({
             )}
           </div>
 
-          {/* Strategy Arms */}
+          {/* Analysis Mode */}
           <div>
             <label className="mb-2 flex items-center gap-1.5 text-xs font-medium text-[var(--foreground)]">
-              <Cpu className="h-3.5 w-3.5 text-teal-400" />
-              研判策略臂
+              <Sparkles className="h-3.5 w-3.5 text-teal-400" />
+              研判模式
               <span className="ml-auto text-[10px] font-normal text-[var(--muted)]">
-                MAB 将自动优化权重
+                系统将在此基础上持续优化
               </span>
             </label>
-            <div className="space-y-2">
-              {strategies.map((s) => (
-                <div
-                  key={s.id}
-                  className="group flex items-start gap-2 rounded-xl border border-white/5 bg-[var(--foreground)]/[0.02] px-3 py-2"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs font-medium text-[var(--foreground)]">
-                      {s.label}
-                    </div>
-                    <div className="mt-0.5 line-clamp-1 text-[11px] text-[var(--muted)]">
-                      {s.template}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => removeStrategy(s.id)}
-                    className="shrink-0 rounded p-0.5 text-[var(--muted)] opacity-0 transition-opacity group-hover:opacity-100 hover:text-red-400"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              ))}
-
-              {showAddStrategy ? (
-                <div className="space-y-2 rounded-xl border border-dashed border-[var(--primary)]/30 bg-[var(--primary)]/5 p-3">
-                  <input
-                    type="text"
-                    value={newStrategyLabel}
-                    onChange={(e) => setNewStrategyLabel(e.target.value)}
-                    placeholder="策略名称"
-                    className="w-full rounded-lg border border-white/10 bg-[var(--foreground)]/[0.03] px-2.5 py-1.5 text-xs text-[var(--foreground)] outline-none focus:border-[var(--primary)]/40"
-                  />
-                  <textarea
-                    value={newStrategyTemplate}
-                    onChange={(e) => setNewStrategyTemplate(e.target.value)}
-                    rows={2}
-                    placeholder="研判提示词模板..."
-                    className="w-full resize-none rounded-lg border border-white/10 bg-[var(--foreground)]/[0.03] px-2.5 py-1.5 text-xs text-[var(--foreground)] outline-none focus:border-[var(--primary)]/40"
-                  />
-                  <div className="flex gap-2">
-                    <button
-                      onClick={addStrategy}
-                      className="rounded-lg bg-[var(--primary)]/15 px-3 py-1 text-xs font-medium text-[var(--primary)] hover:bg-[var(--primary)]/25"
-                    >
-                      添加
-                    </button>
-                    <button
-                      onClick={() => setShowAddStrategy(false)}
-                      className="rounded-lg px-3 py-1 text-xs text-[var(--muted)] hover:bg-[var(--foreground)]/5"
-                    >
-                      取消
-                    </button>
-                  </div>
-                </div>
-              ) : (
+            <div className="grid gap-2 sm:grid-cols-3">
+              {ANALYSIS_MODE_OPTIONS.map((option) => (
                 <button
-                  onClick={() => setShowAddStrategy(true)}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-white/10 py-2 text-xs text-[var(--muted)] transition-colors hover:border-[var(--primary)]/30 hover:text-[var(--primary)]"
+                  key={option.value}
+                  type="button"
+                  onClick={() => setAnalysisMode(option.value)}
+                  className={cn(
+                    "rounded-xl border px-3 py-3 text-left transition-all",
+                    analysisMode === option.value
+                      ? "border-[var(--primary)]/40 bg-[var(--primary)]/10"
+                      : "border-white/5 bg-[var(--foreground)]/[0.02] hover:border-white/10"
+                  )}
                 >
-                  <Plus className="h-3 w-3" />
-                  添加策略臂
+                  <div className="text-xs font-medium text-[var(--foreground)]">
+                    {option.label}
+                  </div>
+                  <div className="mt-1 text-[11px] text-[var(--muted)]">
+                    {option.description}
+                  </div>
                 </button>
-              )}
+              ))}
             </div>
           </div>
 
@@ -418,10 +422,12 @@ export function MonitorCreateModal({
           </button>
           <button
             onClick={handleSubmit}
-            disabled={submitting || !title.trim() || !objective.trim()}
+            disabled={
+              submitting || !title.trim() || !objective.trim() || !assistantId.trim()
+            }
             className={cn(
               "flex items-center gap-2 rounded-xl bg-[var(--primary)] px-5 py-2 text-sm font-medium text-white shadow-lg shadow-[var(--primary)]/20 transition-all hover:shadow-xl hover:shadow-[var(--primary)]/30",
-              (submitting || !title.trim() || !objective.trim()) &&
+              (submitting || !title.trim() || !objective.trim() || !assistantId.trim()) &&
                 "opacity-50 pointer-events-none"
             )}
           >

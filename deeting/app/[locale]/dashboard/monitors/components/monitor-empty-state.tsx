@@ -16,8 +16,8 @@ export function MonitorEmptyState({ onCreate }: MonitorEmptyStateProps) {
         尚无寻猎任务
       </h3>
       <p className="mt-1.5 max-w-sm text-center text-sm text-[var(--muted)]">
-        创建你的第一个主动寻猎任务，系统将自动孵化专属 AI
-        助手，持续监控并通过 MAB 算法自我进化研判策略
+        创建你的第一个主动寻猎任务，绑定一个已有聊天任务智能体，
+        让它持续监控目标并在系统策略层帮助下不断优化研判
       </p>
       <button
         onClick={onCreate}

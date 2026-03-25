@@ -155,7 +155,7 @@ export function MonitorsClient() {
               主动寻猎
             </h1>
             <p className="mt-0.5 text-sm text-[var(--muted)]">
-              自动化监控与智能研判 · MAB 自我进化引擎
+              自动化监控与绑定智能体研判 · 系统策略层持续优化
             </p>
           </div>
         </div>
