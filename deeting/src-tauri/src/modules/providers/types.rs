@@ -240,6 +240,8 @@ pub struct CreateInstanceRequest {
     pub api_version: Option<String>,
     pub project_id: Option<String>,
     pub region: Option<String>,
+    pub app_id: Option<String>,
+    pub resource_id: Option<String>,
     pub is_local: Option<bool>,
     /// "local" or "platform"; default "local".
     pub credential_source: Option<String>,
@@ -263,6 +265,8 @@ pub struct UpdateInstanceRequest {
     pub api_version: Option<String>,
     pub project_id: Option<String>,
     pub region: Option<String>,
+    pub app_id: Option<String>,
+    pub resource_id: Option<String>,
     pub is_enabled: Option<bool>,
     pub secret_key: Option<String>,
 }

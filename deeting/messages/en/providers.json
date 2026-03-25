@@ -93,7 +93,10 @@
       "azureHint": "Provide Azure resource & deployment to call Azure OpenAI endpoints.",
       "vertexProject": "GCP Project ID",
       "vertexRegion": "Region",
-      "vertexHint": "Replace {project} and {region} in the base URL for Vertex AI."
+      "vertexHint": "Replace {project} and {region} in the base URL for Vertex AI.",
+      "volcengineAppId": "Volcengine App ID",
+      "volcengineResourceId": "Volcengine Resource ID",
+      "volcengineHint": "Volcengine OpenSpeech TTS requires instance-scoped App ID and Resource ID, saved together with the provider instance."
     },
     "manager": {
       "title": "Neural Links",

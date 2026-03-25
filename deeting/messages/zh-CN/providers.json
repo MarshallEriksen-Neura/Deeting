@@ -93,7 +93,10 @@
       "azureHint": "填写 Azure 资源与部署信息以调用 Azure OpenAI。",
       "vertexProject": "GCP 项目 ID",
       "vertexRegion": "区域",
-      "vertexHint": "在 Base URL 中替换 {project} 和 {region} 以调用 Vertex AI。"
+      "vertexHint": "在 Base URL 中替换 {project} 和 {region} 以调用 Vertex AI。",
+      "volcengineAppId": "火山 App ID",
+      "volcengineResourceId": "火山 Resource ID",
+      "volcengineHint": "火山 OpenSpeech TTS 需要实例级的 App ID 和 Resource ID，并会随 provider instance 一起保存。"
     },
     "manager": {
       "title": "神经通道",

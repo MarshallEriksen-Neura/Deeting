@@ -12,9 +12,11 @@ import type {
   ProviderModelTestRequest,
   ProviderModelTestResponse,
   ProviderModelUpdate,
+  ProviderPresetSync,
   ProviderVerifyRequest,
   ProviderVerifyResponse,
 } from "@/lib/api/providers";
+import { fetchProviderPresetConfigs } from "@/lib/api/providers";
 
 import { toHubResponse, toInstanceResponse, toModelResponse } from "./mappers";
 import type {
@@ -29,6 +31,32 @@ async function listLocalInstances() {
 
 async function listLocalPresets() {
   return await invoke<LocalProviderPreset[]>("list_local_provider_presets");
+}
+
+function toLocalPreset(preset: ProviderPresetSync): LocalProviderPreset {
+  return {
+    slug: preset.slug,
+    name: preset.name,
+    provider: preset.provider,
+    base_url: preset.base_url ?? "",
+    icon: preset.icon ?? null,
+    theme_color: preset.theme_color ?? null,
+    category: preset.category ?? null,
+    url_template: preset.url_template ?? null,
+    auth_type: preset.auth_type ?? "api_key",
+    auth_config: preset.auth_config ?? {},
+    protocol_schema_version: preset.protocol_schema_version ?? null,
+    protocol_profiles: preset.protocol_profiles ?? {},
+    version: preset.version ?? 1,
+    is_active: preset.is_active ?? true,
+  };
+}
+
+async function syncPresetsFromCloud() {
+  const presets = await fetchProviderPresetConfigs();
+  await invoke<number>("replace_local_provider_presets", {
+    presets: presets.map(toLocalPreset),
+  });
 }
 
 function buildHubStats(providers: ProviderCard[]): ProviderHubResponse["stats"] {
@@ -85,6 +113,12 @@ function filterLocalHub(
 async function buildLocalHub(
   params?: { category?: string; q?: string; include_public?: boolean }
 ): Promise<ProviderHubResponse> {
+  try {
+    await syncPresetsFromCloud();
+  } catch (error) {
+    console.warn("[desktop-provider] sync presets from cloud failed", error);
+  }
+
   const [presets, instances] = await Promise.all([
     listLocalPresets(),
     listLocalInstances(),
@@ -126,6 +160,8 @@ export const desktopProviderService: IProviderService = {
         api_version: payload.api_version ?? undefined,
         project_id: payload.project_id ?? undefined,
         region: payload.region ?? undefined,
+        app_id: payload.app_id ?? undefined,
+        resource_id: payload.resource_id ?? undefined,
         is_local: true,
         secret_key: payload.api_key ?? undefined,
       },
@@ -154,6 +190,8 @@ export const desktopProviderService: IProviderService = {
         api_version: payload.api_version ?? undefined,
         project_id: payload.project_id ?? undefined,
         region: payload.region ?? undefined,
+        app_id: payload.app_id ?? undefined,
+        resource_id: payload.resource_id ?? undefined,
         is_enabled: payload.is_enabled ?? undefined,
         secret_key: payload.api_key ?? undefined,
       },

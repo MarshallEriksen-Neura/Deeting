@@ -22,5 +22,6 @@ pub mod scan;
 pub mod shell_executor;
 pub mod skill_runtime;
 pub mod skills;
+pub mod voice;
 pub mod voice_capabilities;
 pub mod workflow;

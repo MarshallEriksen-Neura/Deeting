@@ -59,6 +59,8 @@ interface ConnectProviderInitialValues {
   description?: string | null
   base_url?: string
   api_key?: string | null
+  app_id?: string | null
+  resource_id?: string | null
   is_enabled?: boolean
   icon?: string | null
   theme_color?: string | null
@@ -215,6 +217,9 @@ export function ConnectProviderDrawer({
   const protocolValue = (protocol || "").toLowerCase()
   const isOpenAIProtocol = protocolValue.includes("openai")
   const isAnthropicProtocol = protocolValue.includes("anthropic")
+  const isVolcengineOpenSpeechProtocol =
+    protocolValue.includes("volcengine_openspeech_tts") ||
+    protocolValue.includes("openspeech")
   const [autoAppendV1, setAutoAppendV1] = React.useState(
     initialValues?.auto_append_v1 ?? (isOpenAIProtocol ? true : false)
   )
@@ -269,6 +274,8 @@ export function ConnectProviderDrawer({
   const [apiVersion, setApiVersion] = React.useState(initialValues?.api_version || "")
   const [projectId, setProjectId] = React.useState(initialValues?.project_id || "")
   const [region, setRegion] = React.useState(initialValues?.region || "")
+  const [appId, setAppId] = React.useState(initialValues?.app_id || "")
+  const [resourceId, setResourceId] = React.useState(initialValues?.resource_id || "")
 
   React.useEffect(() => {
     if (!isOpen) return
@@ -296,6 +303,8 @@ export function ConnectProviderDrawer({
     setApiVersion(initialValues?.api_version || "")
     setProjectId(initialValues?.project_id || "")
     setRegion(initialValues?.region || "")
+    setAppId(initialValues?.app_id || "")
+    setResourceId(initialValues?.resource_id || "")
     setLogs([])
     setConnectionStatus("idle")
   }, [isOpen, preset, initialValues])
@@ -418,6 +427,8 @@ export function ConnectProviderDrawer({
           api_version: apiVersion || null,
           project_id: projectId || null,
           region: region || null,
+          app_id: appId || null,
+          resource_id: resourceId || null,
         })
       } else if (mode === "edit" && instanceId) {
         const payload: Record<string, unknown> = {
@@ -434,6 +445,8 @@ export function ConnectProviderDrawer({
           api_version: apiVersion || null,
           project_id: projectId || null,
           region: region || null,
+          app_id: appId || null,
+          resource_id: resourceId || null,
         }
         if (trimmedApiKey) {
           payload.api_key = trimmedApiKey
@@ -870,6 +883,26 @@ export function ConnectProviderDrawer({
                       className={cn("h-9 text-sm", inputClass)}
                     />
                     <p className={hintTextClass}>{t("drawer.vertexHint")}</p>
+                  </div>
+                )}
+
+                {isVolcengineOpenSpeechProtocol && (
+                  <div className="space-y-3">
+                    <Label className="text-xs text-white/72">{t("drawer.volcengineAppId")}</Label>
+                    <Input
+                      value={appId}
+                      onChange={(e) => setAppId(e.target.value)}
+                      placeholder="123456789"
+                      className={cn("h-9 text-sm", inputClass)}
+                    />
+                    <Label className="text-xs text-white/72">{t("drawer.volcengineResourceId")}</Label>
+                    <Input
+                      value={resourceId}
+                      onChange={(e) => setResourceId(e.target.value)}
+                      placeholder="seed-tts-2.0"
+                      className={cn("h-9 text-sm", inputClass)}
+                    />
+                    <p className={hintTextClass}>{t("drawer.volcengineHint")}</p>
                   </div>
                 )}
               </CollapsibleContent>

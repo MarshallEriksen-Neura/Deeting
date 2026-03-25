@@ -10,7 +10,7 @@ import type {
   LocalProviderModel,
   LocalProviderPreset,
 } from "./types";
-import { derivePresetCapabilities } from "./preset-helpers"
+import { derivePresetCapabilities, derivePresetProtocol } from "./preset-helpers"
 
 function readMetaString(meta: Record<string, unknown> | null | undefined, key: string): string | null {
   const raw = meta?.[key];
@@ -32,6 +32,13 @@ export function toInstanceResponse(instance: LocalProviderInstance): ProviderIns
     base_url: instance.base_url,
     protocol: readMetaString(instance.meta, "protocol"),
     auto_append_v1: readMetaBool(instance.meta, "auto_append_v1"),
+    resource_name: readMetaString(instance.meta, "resource_name"),
+    deployment_name: readMetaString(instance.meta, "deployment_name"),
+    api_version: readMetaString(instance.meta, "api_version"),
+    project_id: readMetaString(instance.meta, "project_id"),
+    region: readMetaString(instance.meta, "region"),
+    app_id: readMetaString(instance.meta, "app_id"),
+    resource_id: readMetaString(instance.meta, "resource_id"),
     icon: instance.icon ?? null,
     theme_color: null,
     priority: instance.priority ?? 0,
@@ -89,6 +96,7 @@ export function toHubResponse(
       slug: preset.slug,
       name: preset.name,
       provider: preset.provider,
+      protocol: derivePresetProtocol(preset),
       category: preset.category ?? "cloud",
       description: null,
       icon: preset.icon ?? null,

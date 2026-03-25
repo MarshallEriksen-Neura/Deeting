@@ -38,6 +38,7 @@ const mapFromHub = (preset: ProviderHubResponse["providers"][number], inst: HubI
   presetName: preset.name,
   presetSlug: preset.slug,
   presetProvider: preset.provider,
+  presetProtocol: preset.protocol,
   category: preset.category,
   icon: inst.icon || preset.icon,
   latency_ms: inst.latency_ms ?? 0,
@@ -54,6 +55,7 @@ const mapFromInstanceOnly = (inst: ProviderInstanceResponse) => ({
   presetName: inst.preset_slug,
   presetSlug: inst.preset_slug,
   presetProvider: inst.preset_slug,
+  presetProtocol: inst.protocol,
   category: "custom",
   icon: inst.icon,
   latency_ms: inst.latency_ms ?? 0,
@@ -218,6 +220,7 @@ export function ProvidersList() {
                 name: editingItem.presetName,
                 type: isSystemPreset ? "system" : "custom",
                 provider: editingItem.presetProvider || editingItem.presetSlug,
+                protocol: editingItem.presetProtocol || undefined,
                 brand_color: editingInstance?.theme_color || "#10a37f",
                 icon_key: editingInstance?.icon || editingItem.icon || "lucide:server",
               }
@@ -236,6 +239,13 @@ export function ProvidersList() {
                 theme_color: editingInstance?.theme_color || null,
                 protocol: editingInstance?.protocol || undefined,
                 auto_append_v1: editingInstance?.auto_append_v1 ?? undefined,
+                resource_name: editingInstance?.resource_name || undefined,
+                deployment_name: editingInstance?.deployment_name || undefined,
+                api_version: editingInstance?.api_version || undefined,
+                project_id: editingInstance?.project_id || undefined,
+                region: editingInstance?.region || undefined,
+                app_id: editingInstance?.app_id || undefined,
+                resource_id: editingInstance?.resource_id || undefined,
                 has_credentials: editingInstance?.has_credentials ?? undefined,
               }
             : undefined
