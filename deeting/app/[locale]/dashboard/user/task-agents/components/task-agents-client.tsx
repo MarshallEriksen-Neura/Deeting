@@ -393,6 +393,8 @@ export function TaskAgentsClient() {
   const [isPreviewing, setIsPreviewing] = React.useState(false)
   const [isReindexing, setIsReindexing] = React.useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
+  const [discardDialogOpen, setDiscardDialogOpen] = React.useState(false)
+  const pendingNavigationRef = React.useRef<(() => void) | null>(null)
   const hydratedSelectionRef = React.useRef<string | null>(null)
 
   const {
@@ -959,27 +961,47 @@ export function TaskAgentsClient() {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload)
   }, [hasUnsavedChanges])
 
-  const confirmDiscardChanges = React.useCallback(() => {
-    if (!hasUnsavedChanges) return true
-    return window.confirm(t("confirm.discardChanges"))
-  }, [hasUnsavedChanges, t])
+  const requestDiscardOrProceed = React.useCallback(
+    (action: () => void) => {
+      if (!hasUnsavedChanges) {
+        action()
+        return
+      }
+      pendingNavigationRef.current = action
+      setDiscardDialogOpen(true)
+    },
+    [hasUnsavedChanges],
+  )
+
+  const handleDiscardConfirm = React.useCallback(() => {
+    setDiscardDialogOpen(false)
+    pendingNavigationRef.current?.()
+    pendingNavigationRef.current = null
+  }, [])
+
+  const handleDiscardCancel = React.useCallback(() => {
+    setDiscardDialogOpen(false)
+    pendingNavigationRef.current = null
+  }, [])
 
   const handleSelectAgent = React.useCallback(
     (agentId: string) => {
       if (agentId === selectedAgentId) return
-      if (!confirmDiscardChanges()) return
-      setSelectedAgentId(agentId)
-      setCreateFlowStep("editor")
+      requestDiscardOrProceed(() => {
+        setSelectedAgentId(agentId)
+        setCreateFlowStep("editor")
+      })
     },
-    [confirmDiscardChanges, selectedAgentId],
+    [requestDiscardOrProceed, selectedAgentId],
   )
 
   const handleCreateNew = React.useCallback(() => {
     if (selectedAgentId === NEW_AGENT_ID) return
-    if (!confirmDiscardChanges()) return
-    setSelectedAgentId(NEW_AGENT_ID)
-    setCreateFlowStep("starter")
-  }, [confirmDiscardChanges, selectedAgentId])
+    requestDiscardOrProceed(() => {
+      setSelectedAgentId(NEW_AGENT_ID)
+      setCreateFlowStep("starter")
+    })
+  }, [requestDiscardOrProceed, selectedAgentId])
 
   const handleSelectNewAgentType = React.useCallback(
     (kind: CustomTaskAgentInvocationKind) => {
@@ -1628,6 +1650,30 @@ export function TaskAgentsClient() {
               className="bg-red-500 text-white hover:bg-red-600"
             >
               {t("deleteDialog.confirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={discardDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) handleDiscardCancel()
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("discardDialog.title")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("discardDialog.description")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleDiscardCancel}>
+              {t("discardDialog.cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={handleDiscardConfirm}>
+              {t("discardDialog.confirm")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

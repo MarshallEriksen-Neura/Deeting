@@ -289,8 +289,11 @@
       "cancel": "取消",
       "confirm": "删除智能体"
     },
-    "confirm": {
-      "discardChanges": "你有未保存的更改。确定要丢弃并继续吗？"
+    "discardDialog": {
+      "title": "丢弃未保存的更改？",
+      "description": "你所做的更改可能未保存。",
+      "cancel": "取消",
+      "confirm": "离开"
     },
     "toast": {
       "created": "任务智能体已创建",
