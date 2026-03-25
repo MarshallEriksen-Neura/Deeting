@@ -32,6 +32,7 @@ pub struct LocalMonitorTask {
     pub last_executed_at: Option<String>,
     pub next_run_at: Option<String>,
     pub current_interval_minutes: Option<i64>,
+    pub display_status: String,
     pub strategy_variants: Option<Value>,
     pub analysis_mode: String,
     pub policy_state: Value,

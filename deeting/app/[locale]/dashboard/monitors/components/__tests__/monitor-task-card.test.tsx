@@ -38,6 +38,7 @@ function makeTask(overrides: Partial<MonitorTask> = {}): MonitorTask {
     last_executed_at: null,
     next_run_at: null,
     current_interval_minutes: 360,
+    display_status: "active",
     analysis_mode: "alert_first",
     policy_state: {},
     binding_state: "ok",
@@ -64,6 +65,7 @@ describe("MonitorTaskCard", () => {
     render(
       <MonitorTaskCard
         task={makeTask({
+          display_status: "binding_invalid",
           binding_state: "binding_invalid",
           binding_error: "绑定的任务智能体已停用",
         })}
@@ -74,9 +76,9 @@ describe("MonitorTaskCard", () => {
       />
     )
 
-    expect(screen.getByText("地缘研究员")).toBeInTheDocument()
-    expect(screen.getByText("绑定失效")).toBeInTheDocument()
-    expect(screen.getByText("绑定的任务智能体已停用")).toBeInTheDocument()
+    expect(screen.getByText("地缘研究员")).toBeTruthy()
+    expect(screen.getByText("绑定失效")).toBeTruthy()
+    expect(screen.getByText("绑定的任务智能体已停用")).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "修复绑定" }))
     expect(onEdit).toHaveBeenCalledTimes(1)
@@ -86,6 +88,7 @@ describe("MonitorTaskCard", () => {
     render(
       <MonitorTaskCard
         task={makeTask({
+          display_status: "binding_required",
           binding_state: "binding_required",
           binding_error: "请先绑定一个聊天任务智能体",
           assistant_id: null,
@@ -99,6 +102,8 @@ describe("MonitorTaskCard", () => {
     )
 
     fireEvent.click(screen.getByRole("button", { name: "更多操作" }))
-    expect(screen.getByRole("button", { name: "立即触发" })).toBeDisabled()
+    expect(
+      (screen.getByRole("button", { name: "立即触发" }) as HTMLButtonElement).disabled
+    ).toBe(true)
   })
 })

@@ -5,6 +5,10 @@ import { request } from "@/lib/http"
 // =====================
 
 export type MonitorStatus = "active" | "paused" | "failed_suspended"
+export type MonitorDisplayStatus =
+  | MonitorStatus
+  | "binding_required"
+  | "binding_invalid"
 export type MonitorExecutionTarget = "cloud" | "desktop"
 
 export interface MonitorTask {
@@ -18,6 +22,7 @@ export interface MonitorTask {
   last_executed_at: string | null
   next_run_at: string | null
   current_interval_minutes: number | null
+  display_status: MonitorDisplayStatus
   analysis_mode: "concise" | "deep" | "alert_first"
   policy_state: Record<string, unknown>
   binding_state: "ok" | "binding_required" | "binding_invalid"

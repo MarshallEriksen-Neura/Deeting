@@ -348,6 +348,8 @@ impl MonitorState {
     async fn decorate_task_binding_state(&self, mut task: LocalMonitorTask) -> LocalMonitorTask {
         let (binding_state, binding_error, assistant_name) =
             self.evaluate_task_binding_state(&task).await;
+        task.display_status =
+            derive_monitor_display_status(task.status.as_str(), binding_state.as_str());
         task.binding_state = binding_state;
         task.binding_error = binding_error;
         task.assistant_name = assistant_name;
@@ -1106,6 +1108,14 @@ fn normalize_poll_interval(value: u64) -> u64 {
 
 fn normalize_pull_limit(value: u32) -> u32 {
     value.max(1).min(MAX_MONITOR_PULL_LIMIT)
+}
+
+fn derive_monitor_display_status(status: &str, binding_state: &str) -> String {
+    match binding_state {
+        "binding_required" => "binding_required".to_string(),
+        "binding_invalid" => "binding_invalid".to_string(),
+        _ => status.to_string(),
+    }
 }
 
 fn make_default_agent_id() -> String {

@@ -55,6 +55,7 @@ function makeEditTask(overrides: Partial<MonitorTask> = {}): MonitorTask {
     last_executed_at: null,
     next_run_at: null,
     current_interval_minutes: 360,
+    display_status: "active",
     analysis_mode: "concise",
     policy_state: {},
     binding_state: "ok",
@@ -161,12 +162,12 @@ describe("MonitorCreateModal", () => {
     })
 
     const submit = screen.getByRole("button", { name: "创建任务" })
-    expect(submit).toBeDisabled()
+    expect((submit as HTMLButtonElement).disabled).toBe(true)
 
     const agentSelect = screen.getByRole("combobox")
-    expect(screen.getByRole("option", { name: "地缘研究员" })).toBeInTheDocument()
-    expect(screen.queryByRole("option", { name: "图片助手" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("option", { name: "已停用助手" })).not.toBeInTheDocument()
+    expect(screen.getByRole("option", { name: "地缘研究员" })).toBeTruthy()
+    expect(screen.queryByRole("option", { name: "图片助手" })).toBeNull()
+    expect(screen.queryByRole("option", { name: "已停用助手" })).toBeNull()
 
     fireEvent.change(
       screen.getByPlaceholderText("如：伊朗局势72H监控"),
@@ -178,7 +179,7 @@ describe("MonitorCreateModal", () => {
     )
     fireEvent.change(agentSelect, { target: { value: "agent-1" } })
 
-    expect(submit).not.toBeDisabled()
+    expect((submit as HTMLButtonElement).disabled).toBe(false)
     fireEvent.click(submit)
 
     await waitFor(() => {
@@ -212,9 +213,9 @@ describe("MonitorCreateModal", () => {
       expect(mockListCustomTaskAgents).toHaveBeenCalled()
     })
 
-    expect(screen.getByDisplayValue("已存在任务")).toBeInTheDocument()
-    expect(screen.getByDisplayValue("已存在目标")).toBeInTheDocument()
-    expect(screen.getByRole("combobox")).toHaveValue("agent-1")
-    expect(screen.getByRole("button", { name: /预警优先/ })).toBeInTheDocument()
+    expect(screen.getByDisplayValue("已存在任务")).toBeTruthy()
+    expect(screen.getByDisplayValue("已存在目标")).toBeTruthy()
+    expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("agent-1")
+    expect(screen.getByRole("button", { name: /预警优先/ })).toBeTruthy()
   })
 })

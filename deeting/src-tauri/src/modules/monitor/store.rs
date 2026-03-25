@@ -1091,6 +1091,7 @@ fn row_to_task(row: &SqliteRow) -> Result<LocalMonitorTask, String> {
         current_interval_minutes: row
             .try_get::<Option<i64>, _>("current_interval_minutes")
             .map_err(|err| err.to_string())?,
+        display_status: row.try_get("status").map_err(|err| err.to_string())?,
         strategy_variants: None,
         analysis_mode: row
             .try_get::<String, _>("analysis_mode")

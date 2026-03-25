@@ -53,6 +53,18 @@ const STATUS_CONFIG = {
     label: "已挂起",
     bg: "bg-red-500/5",
   },
+  binding_required: {
+    dot: "bg-amber-400",
+    ring: "ring-amber-400/20",
+    label: "待绑定",
+    bg: "bg-amber-500/5",
+  },
+  binding_invalid: {
+    dot: "bg-red-400",
+    ring: "ring-red-400/20",
+    label: "绑定失效",
+    bg: "bg-red-500/5",
+  },
 } as const
 
 const ANALYSIS_MODE_LABEL: Record<MonitorTask["analysis_mode"], string> = {
@@ -77,7 +89,7 @@ export function MonitorTaskCard({
 }: MonitorTaskCardProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [acting, setActing] = useState(false)
-  const config = STATUS_CONFIG[task.status]
+  const config = STATUS_CONFIG[task.display_status]
   const bindingReady = task.binding_state === "ok"
   const toggleDisabled =
     acting || isTriggering || (!bindingReady && task.status !== "active")
@@ -267,7 +279,7 @@ export function MonitorTaskCard({
       <div className="mt-3 mb-4">
         <CountdownTimer
           nextRunAt={task.next_run_at}
-          status={task.status}
+          status={task.display_status}
           isTriggering={isTriggering}
         />
       </div>
@@ -279,13 +291,13 @@ export function MonitorTaskCard({
           disabled={toggleDisabled}
           className={cn(
             "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all",
-            task.status === "active"
+            task.display_status === "active"
               ? "bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
               : "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20",
             toggleDisabled && "opacity-50 pointer-events-none"
           )}
         >
-          {task.status === "active" ? (
+          {task.display_status === "active" ? (
             <>
               <Pause className="h-3 w-3" /> 暂停
             </>
@@ -408,7 +420,7 @@ function CountdownTimer({
   isTriggering,
 }: {
   nextRunAt: string | null
-  status: MonitorTask["status"]
+  status: MonitorTask["display_status"]
   isTriggering: boolean
 }) {
   const [nowMs, setNowMs] = useState(() => Date.now())
@@ -442,7 +454,15 @@ function CountdownTimer({
   if (!remaining) {
     return (
       <div className="text-[11px] text-[var(--muted)]">
-        {status === "paused" ? "已暂停调度" : status === "failed_suspended" ? "因连续失败挂起" : "等待调度..."}
+        {status === "paused"
+          ? "已暂停调度"
+          : status === "failed_suspended"
+            ? "因连续失败挂起"
+            : status === "binding_required"
+              ? "等待绑定任务智能体"
+              : status === "binding_invalid"
+                ? "绑定已失效，请先修复"
+                : "等待调度..."}
       </div>
     )
   }
