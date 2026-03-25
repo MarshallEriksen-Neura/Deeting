@@ -354,6 +354,7 @@ mod tests {
                 preset_slug: "openai".to_string(),
                 name: "Platform Embedding".to_string(),
                 base_url: "https://platform".to_string(),
+                chat_transport_path: None,
                 description: None,
                 icon: None,
                 priority: Some(0),

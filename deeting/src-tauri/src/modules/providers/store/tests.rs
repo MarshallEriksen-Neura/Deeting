@@ -91,6 +91,7 @@ async fn create_instance_persists_protocol_meta_fields() {
             preset_slug: "openai".to_string(),
             name: "Anthropic Instance".to_string(),
             base_url: "https://api.anthropic.com".to_string(),
+            chat_transport_path: None,
             description: None,
             icon: None,
             priority: Some(0),
@@ -121,6 +122,7 @@ async fn update_instance_persists_protocol_meta_fields() {
             preset_slug: "openai".to_string(),
             name: "Editable Instance".to_string(),
             base_url: "https://api.example.com".to_string(),
+            chat_transport_path: None,
             description: None,
             icon: None,
             priority: Some(0),
@@ -145,6 +147,7 @@ async fn update_instance_persists_protocol_meta_fields() {
             crate::modules::providers::types::UpdateInstanceRequest {
                 name: None,
                 base_url: None,
+                chat_transport_path: None,
                 credential_source: None,
                 description: None,
                 icon: None,

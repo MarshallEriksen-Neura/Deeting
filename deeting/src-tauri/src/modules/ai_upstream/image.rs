@@ -10,6 +10,9 @@ use crate::modules::ai_upstream::gateway_log_recorder::{
 };
 use crate::modules::image_generation::types::LocalImageGenerationTaskRecord;
 use crate::modules::mcp::commands::common_impl::to_string;
+use crate::modules::providers::request_runtime::{
+    send_prepared_json_request_with_retry, UpstreamRetryPolicy,
+};
 use crate::state::AppState;
 
 pub(crate) async fn request_provider_image_generation(
@@ -80,9 +83,10 @@ pub(crate) async fn request_provider_image_generation(
         trace_id,
     )?;
     let call_start = std::time::Instant::now();
-    let response = crate::modules::providers::request_runtime::send_prepared_json_request(
+    let (response, retry_count) = send_prepared_json_request_with_retry(
         &reqwest::Client::new(),
         &prepared,
+        UpstreamRetryPolicy::default(),
     )
     .await?;
     let status = response.status;
@@ -121,6 +125,7 @@ pub(crate) async fn request_provider_image_generation(
                 model: effective_model.clone(),
                 status_code: status.as_u16() as i64,
                 duration_ms: latency_ms as i64,
+                retry_count,
                 upstream_url: Some(prepared.display_url()),
                 error_code: extract_error_code_from_response(raw_json.as_ref()),
                 ..Default::default()
@@ -151,6 +156,7 @@ pub(crate) async fn request_provider_image_generation(
             status_code: status.as_u16() as i64,
             duration_ms: latency_ms as i64,
             ttft_ms: extract_ttft_ms_from_response(&submit_payload),
+            retry_count,
             upstream_url: Some(prepared.display_url()),
             cost_user: extract_billing_amount_from_response(&submit_payload).unwrap_or(0.0),
             is_cached: extract_cache_hit_from_response(&response_headers, Some(&submit_payload)),

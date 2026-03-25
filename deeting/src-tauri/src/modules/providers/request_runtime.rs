@@ -39,6 +39,127 @@ pub struct PreparedRawResponse {
     pub json: Option<Value>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct UpstreamRetryPolicy {
+    pub max_retries: u32,
+    pub base_delay_ms: u64,
+    pub max_delay_ms: u64,
+}
+
+impl Default for UpstreamRetryPolicy {
+    fn default() -> Self {
+        Self {
+            max_retries: 2,
+            base_delay_ms: 250,
+            max_delay_ms: 2_000,
+        }
+    }
+}
+
+pub fn should_retry_upstream_status(status: reqwest::StatusCode) -> bool {
+    matches!(
+        status,
+        reqwest::StatusCode::TOO_MANY_REQUESTS
+            | reqwest::StatusCode::BAD_GATEWAY
+            | reqwest::StatusCode::SERVICE_UNAVAILABLE
+            | reqwest::StatusCode::GATEWAY_TIMEOUT
+    ) || status.as_u16() == 524
+}
+
+pub(crate) fn should_retry_transport_error(error: &reqwest::Error) -> bool {
+    error.is_timeout() || error.is_connect() || error.is_request() || error.is_body()
+}
+
+pub fn calculate_retry_backoff_ms(attempt: u32, base_delay_ms: u64, max_delay_ms: u64) -> u64 {
+    if base_delay_ms == 0 || max_delay_ms == 0 {
+        return 0;
+    }
+
+    let exponential_factor = 1u64.checked_shl(attempt.min(20)).unwrap_or(u64::MAX);
+    base_delay_ms
+        .saturating_mul(exponential_factor)
+        .min(max_delay_ms)
+}
+
+async fn execute_prepared_json_request(
+    client: &Client,
+    prepared: &PreparedProviderRequest,
+) -> Result<PreparedJsonResponse, reqwest::Error> {
+    let method = Method::from_bytes(prepared.method.as_bytes()).unwrap_or(Method::POST);
+    let mut request = client.request(method, prepared.url.as_str());
+    if !prepared.query_params.is_empty() {
+        request = request.query(&prepared.query_params);
+    }
+    for (key, value) in &prepared.headers {
+        request = request.header(key, value);
+    }
+    let response = request.json(&prepared.body).send().await?;
+    let status = response.status();
+    let headers = response
+        .headers()
+        .iter()
+        .filter_map(|(key, value)| {
+            value
+                .to_str()
+                .ok()
+                .map(|text| (key.as_str().to_string(), text.to_string()))
+        })
+        .collect();
+    let text = response.text().await?;
+    let json = serde_json::from_str::<Value>(&text).ok();
+    Ok(PreparedJsonResponse {
+        status,
+        headers,
+        text,
+        json,
+    })
+}
+
+pub async fn send_prepared_json_request_with_retry(
+    client: &Client,
+    prepared: &PreparedProviderRequest,
+    policy: UpstreamRetryPolicy,
+) -> Result<(PreparedJsonResponse, i64), String> {
+    let mut retry_count = 0i64;
+
+    loop {
+        match execute_prepared_json_request(client, prepared).await {
+            Ok(response) => {
+                if retry_count < policy.max_retries as i64
+                    && should_retry_upstream_status(response.status)
+                {
+                    let delay_ms = calculate_retry_backoff_ms(
+                        retry_count as u32,
+                        policy.base_delay_ms,
+                        policy.max_delay_ms,
+                    );
+                    retry_count += 1;
+                    if delay_ms > 0 {
+                        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                    }
+                    continue;
+                }
+                return Ok((response, retry_count));
+            }
+            Err(err) => {
+                if retry_count < policy.max_retries as i64 && should_retry_transport_error(&err) {
+                    let delay_ms = calculate_retry_backoff_ms(
+                        retry_count as u32,
+                        policy.base_delay_ms,
+                        policy.max_delay_ms,
+                    );
+                    retry_count += 1;
+                    if delay_ms > 0 {
+                        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                    }
+                    continue;
+                }
+                return Err(err.to_string());
+            }
+        }
+    }
+}
+
 pub fn prepare_provider_request(
     preset: Option<&ProviderPreset>,
     instance: &ProviderInstance,
@@ -183,38 +304,9 @@ pub async fn send_prepared_json_request(
     client: &Client,
     prepared: &PreparedProviderRequest,
 ) -> Result<PreparedJsonResponse, String> {
-    let method = Method::from_bytes(prepared.method.as_bytes()).unwrap_or(Method::POST);
-    let mut request = client.request(method, prepared.url.as_str());
-    if !prepared.query_params.is_empty() {
-        request = request.query(&prepared.query_params);
-    }
-    for (key, value) in &prepared.headers {
-        request = request.header(key, value);
-    }
-    let response = request
-        .json(&prepared.body)
-        .send()
+    execute_prepared_json_request(client, prepared)
         .await
-        .map_err(|err| err.to_string())?;
-    let status = response.status();
-    let headers = response
-        .headers()
-        .iter()
-        .filter_map(|(key, value)| {
-            value
-                .to_str()
-                .ok()
-                .map(|text| (key.as_str().to_string(), text.to_string()))
-        })
-        .collect();
-    let text = response.text().await.map_err(|err| err.to_string())?;
-    let json = serde_json::from_str::<Value>(&text).ok();
-    Ok(PreparedJsonResponse {
-        status,
-        headers,
-        text,
-        json,
-    })
+        .map_err(|err| err.to_string())
 }
 
 pub async fn send_prepared_request_raw(
@@ -1973,11 +2065,19 @@ fn is_version_segment(segment: &str) -> bool {
 mod tests {
     use super::{
         apply_request_builder, build_effective_config, build_upstream_url_with_params,
-        deep_merge_json, prepare_provider_request, resolve_auth_for_protocol,
-        responses_input_from_messages_or_items_builder,
+        calculate_retry_backoff_ms, deep_merge_json, prepare_provider_request,
+        resolve_auth_for_protocol, responses_input_from_messages_or_items_builder,
+        send_prepared_json_request_with_retry, should_retry_upstream_status,
+        PreparedProviderRequest, UpstreamRetryPolicy,
     };
     use crate::modules::providers::types::{ProviderInstance, ProviderModel, ProviderPreset};
+    use axum::{extract::State as AxumState, http::StatusCode, routing::post, Json, Router};
     use serde_json::{json, Map, Value};
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    use tokio::net::TcpListener;
     use uuid::Uuid;
 
     fn mock_instance(meta: Value) -> ProviderInstance {
@@ -2085,6 +2185,49 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
+    struct RetryTestState {
+        statuses: Vec<StatusCode>,
+        attempts: Arc<AtomicUsize>,
+    }
+
+    async fn start_retry_test_server(statuses: Vec<StatusCode>) -> (String, Arc<AtomicUsize>) {
+        async fn handler(AxumState(state): AxumState<RetryTestState>) -> (StatusCode, Json<Value>) {
+            let attempt = state.attempts.fetch_add(1, Ordering::SeqCst);
+            let status = state
+                .statuses
+                .get(attempt)
+                .copied()
+                .or_else(|| state.statuses.last().copied())
+                .unwrap_or(StatusCode::OK);
+            (
+                status,
+                Json(json!({
+                    "attempt": attempt + 1,
+                    "ok": status.is_success(),
+                })),
+            )
+        }
+
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind retry test listener");
+        let addr = listener.local_addr().expect("read retry test addr");
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let state = RetryTestState {
+            statuses,
+            attempts: attempts.clone(),
+        };
+        let app = Router::new()
+            .route("/chat", post(handler))
+            .with_state(state);
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        (format!("http://{}", addr), attempts)
+    }
+
     #[test]
     fn deep_merge_json_merges_nested_objects() {
         let merged = deep_merge_json(
@@ -2140,6 +2283,97 @@ mod tests {
             "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
         );
         assert!(params.as_object().is_some_and(|item| item.is_empty()));
+    }
+
+    #[test]
+    fn retry_policy_marks_transient_statuses_as_retryable() {
+        assert!(should_retry_upstream_status(StatusCode::TOO_MANY_REQUESTS));
+        assert!(should_retry_upstream_status(StatusCode::BAD_GATEWAY));
+        assert!(should_retry_upstream_status(
+            StatusCode::SERVICE_UNAVAILABLE
+        ));
+        assert!(should_retry_upstream_status(StatusCode::GATEWAY_TIMEOUT));
+        assert!(should_retry_upstream_status(
+            StatusCode::from_u16(524).expect("construct 524 status")
+        ));
+        assert!(!should_retry_upstream_status(StatusCode::BAD_REQUEST));
+        assert!(!should_retry_upstream_status(StatusCode::UNAUTHORIZED));
+        assert!(!should_retry_upstream_status(StatusCode::FORBIDDEN));
+        assert!(!should_retry_upstream_status(StatusCode::NOT_FOUND));
+    }
+
+    #[test]
+    fn retry_backoff_grows_exponentially_and_caps() {
+        assert_eq!(calculate_retry_backoff_ms(0, 250, 2_000), 250);
+        assert_eq!(calculate_retry_backoff_ms(1, 250, 2_000), 500);
+        assert_eq!(calculate_retry_backoff_ms(2, 250, 2_000), 1_000);
+        assert_eq!(calculate_retry_backoff_ms(3, 250, 2_000), 2_000);
+        assert_eq!(calculate_retry_backoff_ms(5, 250, 2_000), 2_000);
+    }
+
+    #[tokio::test]
+    async fn send_prepared_json_request_with_retry_retries_transient_statuses() {
+        let (base_url, attempts) =
+            start_retry_test_server(vec![StatusCode::from_u16(524).unwrap(), StatusCode::OK]).await;
+        let prepared = PreparedProviderRequest {
+            method: "POST".to_string(),
+            url: format!("{}/chat", base_url),
+            query_params: Default::default(),
+            headers: Default::default(),
+            body: json!({ "hello": "world" }),
+            template_engine: "simple_replace".to_string(),
+            response_decoder: "openai_chat".to_string(),
+            response_transform: json!({}),
+            async_config: json!({}),
+        };
+
+        let (response, retry_count) = send_prepared_json_request_with_retry(
+            &reqwest::Client::new(),
+            &prepared,
+            UpstreamRetryPolicy {
+                max_retries: 2,
+                base_delay_ms: 0,
+                max_delay_ms: 0,
+            },
+        )
+        .await
+        .expect("retry request succeeds");
+
+        assert_eq!(response.status, StatusCode::OK);
+        assert_eq!(retry_count, 1);
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn send_prepared_json_request_with_retry_does_not_retry_non_retryable_statuses() {
+        let (base_url, attempts) = start_retry_test_server(vec![StatusCode::BAD_REQUEST]).await;
+        let prepared = PreparedProviderRequest {
+            method: "POST".to_string(),
+            url: format!("{}/chat", base_url),
+            query_params: Default::default(),
+            headers: Default::default(),
+            body: json!({ "hello": "world" }),
+            template_engine: "simple_replace".to_string(),
+            response_decoder: "openai_chat".to_string(),
+            response_transform: json!({}),
+            async_config: json!({}),
+        };
+
+        let (response, retry_count) = send_prepared_json_request_with_retry(
+            &reqwest::Client::new(),
+            &prepared,
+            UpstreamRetryPolicy {
+                max_retries: 2,
+                base_delay_ms: 0,
+                max_delay_ms: 0,
+            },
+        )
+        .await
+        .expect("single request returns response");
+
+        assert_eq!(response.status, StatusCode::BAD_REQUEST);
+        assert_eq!(retry_count, 0);
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
     }
 
     #[test]
