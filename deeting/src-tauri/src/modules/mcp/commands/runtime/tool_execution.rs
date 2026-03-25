@@ -660,6 +660,7 @@ mod tests {
             "provider_preset.list",
             "provider_preset.upsert",
             "provider.verify",
+            "provider.template.verify",
             "cloud.provider_preset.list",
             "cloud.provider_preset.upsert",
         ];

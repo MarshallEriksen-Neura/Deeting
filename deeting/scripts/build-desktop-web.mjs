@@ -1,4 +1,4 @@
-import { mkdirSync, renameSync, existsSync, rmSync } from "node:fs";
+import { mkdirSync, renameSync, existsSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
@@ -14,7 +14,6 @@ const isWindows = process.platform === "win32";
 const disabledDesktopEntries = [
   "app/[locale]/@auth/[...catchAll]",
   "app/[locale]/@auth/(.)login",
-  "app/[locale]/admin",
   "app/[locale]/docs",
   "app/[locale]/download",
   "app/[locale]/gallery",
@@ -27,6 +26,14 @@ const disabledDesktopEntries = [
   "public/images/logo.svg",
   "public/images/deeting.jpeg",
 ];
+
+const adminDesktopRoot = "app/[locale]/admin";
+const allowedDesktopAdminEntries = new Set([
+  "layout.tsx",
+  "page.tsx",
+  "provider-presets",
+  "users",
+]);
 
 const hiddenRoot = path.join(projectRoot, ".tmp", "desktop-export-disabled-routes");
 
@@ -46,6 +53,16 @@ function moveEntry(fromRelative, toRoot) {
   return { fromPath, toPath };
 }
 
+function moveExcludedAdminEntries(toRoot) {
+  const adminRootPath = path.join(projectRoot, adminDesktopRoot);
+  if (!existsSync(adminRootPath)) return [];
+
+  return readdirSync(adminRootPath)
+    .filter((entry) => !allowedDesktopAdminEntries.has(entry))
+    .map((entry) => moveEntry(path.join(adminDesktopRoot, entry), toRoot))
+    .filter(Boolean);
+}
+
 function resolveNextCommand() {
   const localNext = path.join(
     projectRoot,
@@ -61,6 +78,7 @@ let exitCode = 1;
 
 try {
   ensureDir(hiddenRoot);
+  movedRoutes.push(...moveExcludedAdminEntries(hiddenRoot));
   for (const routeEntry of disabledDesktopEntries) {
     const moved = moveEntry(routeEntry, hiddenRoot);
     if (moved) movedRoutes.push(moved);
