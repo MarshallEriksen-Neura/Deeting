@@ -15,6 +15,44 @@ except ImportError:
 # Get Scout URL from environment
 SCOUT_SERVICE_URL = os.environ.get("SCOUT_SERVICE_URL", "http://scout:8001")
 
+
+def configure_stdio_utf8() -> None:
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="strict")
+
+
+def emit_json(payload: Dict[str, Any]) -> None:
+    try:
+        serialized = json.dumps(payload, ensure_ascii=False, default=str)
+    except Exception as exc:
+        serialized = json.dumps(
+            {
+                "status": "error",
+                "error": f"skill_serialization_error: {type(exc).__name__}: {exc}",
+            },
+            ensure_ascii=True,
+        )
+
+    try:
+        sys.stdout.write(serialized)
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+    except UnicodeEncodeError as exc:
+        fallback = json.dumps(
+            {
+                "status": "error",
+                "error": f"skill_output_encoding_error: {type(exc).__name__}: {exc}",
+            },
+            ensure_ascii=True,
+        )
+        if hasattr(sys.stdout, "buffer"):
+            sys.stdout.buffer.write(fallback.encode("ascii") + b"\n")
+            sys.stdout.flush()
+            return
+        raise
+
 async def fetch_web_content(url: str, js_mode: bool = True) -> Dict[str, Any]:
     """Fetch content from a single URL via Scout service."""
     scout_endpoint = f"{SCOUT_SERVICE_URL.rstrip('/')}/v1/scout/inspect"
@@ -35,18 +73,25 @@ async def fetch_web_content(url: str, js_mode: bool = True) -> Dict[str, Any]:
             
             response.raise_for_status()
             data = response.json()
+            if not isinstance(data, dict):
+                return {
+                    "status": "error",
+                    "error": "Scout Service Contract Error: response body must be an object",
+                }
 
             if data.get("status") == "failed":
                 print(f"[!] Scout reported failure: {data.get('error')}", file=sys.stderr)
                 return {"status": "error", "error": data.get("error")}
 
             markdown = data.get("markdown")
+            metadata = data.get("metadata") or {}
+            title = data.get("title") or metadata.get("title")
             return {
                 "status": "success",
-                "title": data.get("metadata", {}).get("title"),
+                "title": title,
                 "markdown": markdown,
                 "content": markdown, # for compatibility
-                "metadata": data.get("metadata"),
+                "metadata": metadata,
                 "url": url
             }
         except httpx.HTTPStatusError as e:
@@ -127,12 +172,13 @@ async def handle_input():
             result = {"error": f"Unknown tool: {method}"}
             print(f"[!] Error: Unknown method {method}", file=sys.stderr)
             
-        print(json.dumps(result, ensure_ascii=False))
+        emit_json(result)
     except Exception as e:
         print(f"[!] Critical Error in handle_input: {str(e)}", file=sys.stderr)
-        print(json.dumps({"error": str(e)}))
+        emit_json({"status": "error", "error": str(e)})
 
 if __name__ == "__main__":
+    configure_stdio_utf8()
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     asyncio.run(handle_input())

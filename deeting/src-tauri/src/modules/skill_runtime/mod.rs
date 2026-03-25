@@ -342,6 +342,8 @@ pub(crate) async fn resolve_skill_binding_env(
         binding.tool_name.clone(),
     );
     if binding.binding_kind == "deeting_tool" && binding.runtime == "python" {
+        env.insert("PYTHONIOENCODING".to_string(), "utf-8".to_string());
+        env.insert("PYTHONUTF8".to_string(), "1".to_string());
         if let Some(pythonpath) = resolve_deeting_sdk_pythonpath(binding) {
             let merged = std::env::var("PYTHONPATH")
                 .ok()
@@ -1170,6 +1172,11 @@ mod tests {
             env.get("DEETING_SKILL_ACTION_ID").map(String::as_str),
             Some("crawl_website")
         );
+        assert_eq!(
+            env.get("PYTHONIOENCODING").map(String::as_str),
+            Some("utf-8")
+        );
+        assert_eq!(env.get("PYTHONUTF8").map(String::as_str), Some("1"));
         assert_eq!(
             env.get("DEETING_SKILL_CONFIG_JSON").map(String::as_str),
             Some(r#"{"max_pages":3,"mode":"deep"}"#)
