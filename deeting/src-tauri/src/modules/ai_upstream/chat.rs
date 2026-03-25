@@ -7,6 +7,10 @@ use crate::modules::ai_upstream::gateway_log_recorder::{
 };
 use crate::modules::ai_upstream::types::LocalModelConnection;
 use crate::modules::providers::protocols::infer_protocol_family;
+use crate::modules::providers::request_runtime::{
+    calculate_retry_backoff_ms, send_prepared_json_request_with_retry,
+    should_retry_transport_error, should_retry_upstream_status, UpstreamRetryPolicy,
+};
 use crate::state::AppState;
 use mcp_core::types::LocalChatInputMessage;
 use uuid::Uuid;
@@ -343,28 +347,74 @@ async fn request_platform_chat_via_proxy(
         body["session_id"] = serde_json::json!(id);
     }
 
-    let mut request = reqwest::Client::new()
-        .post(&url)
-        .json(&body)
-        .header("Content-Type", "application/json");
-    if let Some(token) = app_state
+    let auth_header = app_state
         .mcp
         .store
         .get_desktop_config("auth.token")
         .await
         .ok()
         .flatten()
-    {
-        let token = token.trim();
-        if !token.is_empty() {
-            request = request.header("Authorization", format!("Bearer {}", token));
-        }
-    }
+        .and_then(|token| {
+            let token = token.trim().to_string();
+            if token.is_empty() {
+                None
+            } else {
+                Some(format!("Bearer {}", token))
+            }
+        });
+    let retry_policy = UpstreamRetryPolicy::default();
+    let client = reqwest::Client::new();
     let call_start = std::time::Instant::now();
-    let response = request.send().await.map_err(to_string)?;
-    let status = response.status();
-    let raw_text = response.text().await.map_err(to_string)?;
-    let raw_json = serde_json::from_str::<serde_json::Value>(&raw_text).ok();
+    let mut retry_count = 0i64;
+
+    let (status, raw_text, raw_json) = loop {
+        let mut request = client
+            .post(&url)
+            .json(&body)
+            .header("Content-Type", "application/json");
+        if let Some(token) = auth_header.as_deref() {
+            request = request.header("Authorization", token);
+        }
+        match request.send().await {
+            Ok(response) => {
+                let status = response.status();
+                let raw_text = response.text().await.map_err(to_string)?;
+                let raw_json = serde_json::from_str::<serde_json::Value>(&raw_text).ok();
+                if retry_count < retry_policy.max_retries as i64
+                    && should_retry_upstream_status(status)
+                {
+                    let delay_ms = calculate_retry_backoff_ms(
+                        retry_count as u32,
+                        retry_policy.base_delay_ms,
+                        retry_policy.max_delay_ms,
+                    );
+                    retry_count += 1;
+                    if delay_ms > 0 {
+                        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                    }
+                    continue;
+                }
+                break (status, raw_text, raw_json);
+            }
+            Err(err) => {
+                if retry_count < retry_policy.max_retries as i64
+                    && should_retry_transport_error(&err)
+                {
+                    let delay_ms = calculate_retry_backoff_ms(
+                        retry_count as u32,
+                        retry_policy.base_delay_ms,
+                        retry_policy.max_delay_ms,
+                    );
+                    retry_count += 1;
+                    if delay_ms > 0 {
+                        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                    }
+                    continue;
+                }
+                return Err(err.to_string());
+            }
+        }
+    };
     if !status.is_success() {
         return Err(extract_upstream_error_message(
             status,
@@ -386,7 +436,7 @@ async fn request_platform_chat_via_proxy(
         &mut normalized,
         call_start.elapsed().as_millis() as i64,
         normalized_ttft_ms,
-        1,
+        retry_count + 1,
     );
     Ok(normalized)
 }
@@ -481,9 +531,10 @@ pub(crate) async fn request_provider_chat_completion(
         trace_id,
     )?;
     let call_start = std::time::Instant::now();
-    let response = crate::modules::providers::request_runtime::send_prepared_json_request(
+    let (response, retry_count) = send_prepared_json_request_with_retry(
         &reqwest::Client::new(),
         &prepared,
+        UpstreamRetryPolicy::default(),
     )
     .await?;
     let status = response.status;
@@ -522,6 +573,7 @@ pub(crate) async fn request_provider_chat_completion(
                 model: effective_model.clone(),
                 status_code: status.as_u16() as i64,
                 duration_ms: latency_ms as i64,
+                retry_count,
                 upstream_url: Some(prepared.display_url()),
                 error_code: extract_error_code_from_response(raw_json.as_ref()),
                 ..Default::default()
@@ -576,13 +628,14 @@ pub(crate) async fn request_provider_chat_completion(
             total_tokens,
             cost_upstream: computed_cost,
             cost_user: reported_cost,
+            retry_count,
             is_cached: extract_cache_hit_from_response(&response_headers, Some(&transformed))
                 || raw_cache_hit,
             ..Default::default()
         },
     );
     let mut normalized = normalize_chat_completion_response(transformed);
-    inject_runtime_metrics(&mut normalized, latency_ms as i64, ttft_ms, 1);
+    inject_runtime_metrics(&mut normalized, latency_ms as i64, ttft_ms, retry_count + 1);
     Ok(normalized)
 }
 
