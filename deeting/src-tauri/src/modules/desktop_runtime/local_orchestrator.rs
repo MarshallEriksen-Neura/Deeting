@@ -2240,6 +2240,24 @@ fn fallback_prefers_chinese(control_plane_result: Option<&LocalControlPlaneResul
         .unwrap_or_else(crate::tray::desktop_prefers_zh)
 }
 
+fn decorate_tool_error_message(error_message: &str, prefers_chinese: bool) -> String {
+    let trimmed = error_message.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    let is_output_encoding_failure = lower.contains("unicodeencodeerror")
+        || lower.contains("codec can't encode character")
+        || lower.contains("skill_output_encoding_error");
+
+    if !is_output_encoding_failure {
+        return trimmed.to_string();
+    }
+
+    if prefers_chinese {
+        format!("本地技能输出编码失败：{}", trimmed)
+    } else {
+        format!("Local skill output encoding failed: {}", trimmed)
+    }
+}
+
 fn latest_tool_error_summary(tool_trace_blocks: &[Value], prefers_chinese: bool) -> Option<String> {
     let error_block = tool_trace_blocks.iter().rev().find(|block| {
         block.get("type").and_then(Value::as_str) == Some("tool_result")
@@ -2263,6 +2281,7 @@ fn latest_tool_error_summary(tool_trace_blocks: &[Value], prefers_chinese: bool)
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .unwrap_or("tool call failed");
+    let error_message = decorate_tool_error_message(error_message, prefers_chinese);
 
     Some(if prefers_chinese {
         match error_code {
@@ -2761,6 +2780,25 @@ mod tests {
         })];
 
         assert!(latest_tool_error_summary(&blocks, false).is_none());
+    }
+
+    #[test]
+    fn latest_tool_error_summary_marks_output_encoding_failures() {
+        let blocks = vec![json!({
+            "type": "tool_result",
+            "toolName": "skill.official.skills.crawler.fetch_web_content",
+            "status": "error",
+            "result": {
+                "error": "UnicodeEncodeError: 'gbk' codec can't encode character '\\u200b' in position 17: illegal multibyte sequence",
+                "error_code": "LOCAL_TOOL_EXECUTION_FAILED"
+            }
+        })];
+
+        let summary = latest_tool_error_summary(&blocks, true).expect("tool error summary");
+
+        assert!(summary.contains("本地技能输出编码失败"));
+        assert!(summary.contains("skill.official.skills.crawler.fetch_web_content"));
+        assert!(summary.contains("LOCAL_TOOL_EXECUTION_FAILED"));
     }
 
     #[test]
