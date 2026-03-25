@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm"
 import remarkBreaks from "remark-breaks"
 import { cn } from "@/lib/utils"
 import { CodeBlock } from "@/components/chat/code-block"
+import { CopyablePre } from "@/components/chat/copyable-pre"
 import { ImageLightbox } from "@/components/ui/image-lightbox"
 import styles from "./markdown-viewer.module.css"
 
@@ -107,11 +108,7 @@ export function MarkdownViewer({
                 </CodeBlock>
               )
             }
-            return (
-              <pre className="mt-3 max-w-full overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-muted/60 p-3 text-xs font-mono">
-                {children}
-              </pre>
-            )
+            return <CopyablePre>{children}</CopyablePre>
           },
           blockquote: ({ children }) => (
             <blockquote className="border-l-2 border-border pl-3 text-muted-foreground">
