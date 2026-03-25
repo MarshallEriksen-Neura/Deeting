@@ -3,11 +3,29 @@
     "dashboard": {
       "title": "管理概览",
       "description": "系统总览与关键指标",
+      "commandCenter": "控制台入口",
+      "controlPlaneTitle": "把管理后台收成真正的控制平面",
+      "controlPlaneDescription": "在这里集中进入用户与 Provider preset 管理。入口页只负责导航和态势概览，真正的配置操作放到对应控制台与工作台里，不再用空卡片糊弄。",
       "loadingDescription": "正在加载仪表盘数据",
       "quickActions": "快速操作",
       "reviewAssistants": "审核助手",
       "manageUsers": "用户管理",
       "viewMonitoring": "查看监控",
+      "createPreset": "新建 Preset",
+      "moduleMeta": {
+        "users": "访问与权限",
+        "providerPresets": "协议与路由模板"
+      },
+      "surfaceStats": {
+        "coreModules": "核心后台模块",
+        "coreModulesHint": "当前已接线的核心管理入口",
+        "presetWorkflow": "Preset 工作流",
+        "presetWorkflowHint": "支持新增、编辑、删除与本地验证",
+        "userControls": "用户控制面",
+        "userControlsHint": "管理员账号与权限管理入口",
+        "ready": "已就绪",
+        "available": "可访问"
+      },
       "stats": {
         "activeAccounts": "{count} 个活跃账号",
         "publishedAssistants": "{count} 个已发布",
@@ -171,6 +189,9 @@
       "description": "管理系统用户与权限"
     },
     "usersPage": {
+      "consoleLabel": "Identity Control",
+      "consoleTitle": "Users Console",
+      "consoleDescription": "在这里完成系统用户创建、权限调整与账号巡检。列表负责批量操作，右侧抽屉负责查看单个账号上下文。",
       "loadingDescription": "正在加载用户数据",
       "status": {
         "active": "启用",
@@ -201,6 +222,7 @@
       },
       "drawer": {
         "title": "用户详情",
+        "subtitle": "查看账号状态、角色与最近元信息",
         "loading": "正在加载用户详情...",
         "failed": "加载用户详情失败",
         "rolesEmpty": "未分配角色",
@@ -240,6 +262,9 @@
         }
       },
       "createForm": {
+        "label": "快速开通",
+        "title": "创建新用户",
+        "subtitle": "直接在控制台中开通账号，默认用于内部运维和权限分配。",
         "placeholders": {
           "email": "邮箱",
           "usernameOptional": "用户名（可选）",
@@ -1218,13 +1243,45 @@
       }
     },
     "providerPresetsPage": {
+      "consoleLabel": "Provider Registry",
+      "consoleTitle": "Provider Presets Console",
       "managementHint": "从这里进入预设编辑页，管理员可以直接修改配置并验证请求。",
       "status": {
         "active": "启用",
         "inactive": "停用"
       },
       "actions": {
-        "edit": "编辑"
+        "edit": "编辑",
+        "create": "新建 Preset"
+      },
+      "stats": {
+        "totalPresets": "Preset 总数",
+        "activePresets": "启用中的 Preset",
+        "capabilityProfiles": "能力配置总数",
+        "customProviders": "自定义 / 非标准 Provider"
+      },
+      "filters": {
+        "status": "状态",
+        "provider": "Provider"
+      },
+      "table": {
+        "headers": {
+          "preset": "Preset",
+          "provider": "Provider",
+          "capabilities": "能力",
+          "endpoint": "Endpoint",
+          "schema": "Schema",
+          "updated": "更新时间",
+          "status": "状态"
+        }
+      },
+      "feedback": {
+        "deleted": "已删除 preset：{slug}",
+        "deleteFailed": "删除 preset 失败"
+      },
+      "deleteConfirm": {
+        "title": "删除 Provider Preset",
+        "description": "确认删除 preset「{name}」吗？如果它仍被 provider instance 引用，系统会阻止删除。"
       },
       "card": {
         "unnamedPreset": "未命名预设",
@@ -1239,6 +1296,16 @@
     "providerPresetsEditor": {
       "title": "编辑 Provider 预设",
       "description": "修改 preset 配置，并使用临时 API Key 验证骨架请求",
+      "createTitle": "新建 Provider Preset",
+      "createDescription": "先建立一个可管理的 preset 骨架，再进入完整编辑与验证流程。",
+      "status": {
+        "active": "启用",
+        "inactive": "停用"
+      },
+      "mode": {
+        "create": "创建模式",
+        "edit": "编辑模式"
+      },
       "sections": {
         "basic": "基础信息",
         "basicHint": "维护 preset 的基本识别信息与同步元数据。",
@@ -1247,7 +1314,11 @@
         "protocolProfiles": "Protocol Profiles",
         "protocolProfilesHint": "支持完整 JSON 编辑；服务端会把简化配置归一化为运行时 profile。",
         "verify": "本地验证",
-        "verifyHint": "输入临时 API Key，不落库，直接按当前草稿骨架请求调用上游。"
+        "verifyHint": "输入临时 API Key，不落库，直接按当前草稿骨架请求调用上游。",
+        "summary": "工作台摘要",
+        "summaryHint": "当前草稿的关键信息、状态和入口摘要。",
+        "preview": "草稿预览",
+        "previewHint": "保存前查看将要提交到后台的 payload。"
       },
       "fields": {
         "slug": "Slug",
@@ -1267,11 +1338,29 @@
         "protocolProfilesHelp": "当前可识别 capability: {capabilities}"
       },
       "actions": {
-        "verify": "验证骨架请求"
+        "verify": "验证骨架请求",
+        "formatJson": "格式化 JSON",
+        "createAndOpen": "创建并进入工作台"
+      },
+      "summary": {
+        "name": "当前名称",
+        "provider": "当前 Provider",
+        "updated": "最近更新时间",
+        "endpoint": "当前 Endpoint",
+        "notSaved": "尚未保存"
+      },
+      "authConfigHint": "仅保存鉴权规则，例如 header 名称、auth policy，不保存真实密钥。",
+      "deleteConfirm": {
+        "title": "删除 Provider Preset",
+        "description": "确认删除「{name}」吗？若存在引用它的 provider instance，系统会拒绝删除。"
       },
       "feedback": {
         "saved": "Provider preset 已保存",
+        "created": "Provider preset 已创建",
         "saveFailed": "保存失败",
+        "createFailed": "创建失败",
+        "deleted": "Provider preset 已删除",
+        "deleteFailed": "删除失败",
         "loadFailed": "加载 preset 失败",
         "invalidJson": "JSON 配置无效，请先修正",
         "invalidVersion": "版本号必须是大于等于 1 的整数",
@@ -1291,6 +1380,7 @@
         "apiKeyHint": "该 Key 仅用于本地验证，不会写入 preset 或数据库。",
         "feedback": {
           "missingInputs": "请填写临时 API Key 和测试模型",
+          "saveFirst": "先保存这个 preset，再执行真实上游验证。",
           "failed": "验证失败"
         },
         "result": {

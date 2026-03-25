@@ -1835,14 +1835,8 @@ pub fn build_upstream_url_with_params(
         }
     }
 
-    if base.ends_with("/v1") {
-        if let Some((head, tail)) = path.split_once('/') {
-            if head.eq_ignore_ascii_case("v1") {
-                path = tail.to_string();
-            }
-        } else if path.eq_ignore_ascii_case("v1") {
-            path.clear();
-        }
+    if has_versioned_path(base.as_str()) {
+        path = strip_redundant_version_prefix(path.as_str());
     }
 
     let url = if path.is_empty() {
@@ -1935,6 +1929,29 @@ fn has_versioned_path(base_url: &str) -> bool {
         }
     }
     false
+}
+
+fn strip_redundant_version_prefix(path: &str) -> String {
+    let segments: Vec<&str> = path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect();
+    if segments.is_empty() {
+        return String::new();
+    }
+
+    let trimmed = if is_version_segment(segments[0]) {
+        &segments[1..]
+    } else if segments.len() >= 2
+        && segments[0].eq_ignore_ascii_case("api")
+        && is_version_segment(segments[1])
+    {
+        &segments[2..]
+    } else {
+        &segments[..]
+    };
+
+    trimmed.join("/")
 }
 
 fn is_version_segment(segment: &str) -> bool {
@@ -2107,6 +2124,22 @@ mod tests {
             "https://example.openai.azure.com/openai/deployments/foo/chat/completions"
         );
         assert_eq!(params["api-version"], json!("2024-02-01"));
+    }
+
+    #[test]
+    fn build_upstream_url_with_params_strips_duplicate_v1_for_versioned_openai_base() {
+        let (url, params) = build_upstream_url_with_params(
+            "https://ark.cn-beijing.volces.com/api/v3",
+            "v1/chat/completions",
+            Some("openai"),
+            Some(true),
+            None,
+        );
+        assert_eq!(
+            url,
+            "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
+        );
+        assert!(params.as_object().is_some_and(|item| item.is_empty()));
     }
 
     #[test]

@@ -460,6 +460,13 @@ fn build_update_instance_meta(update_payload: &UpdateInstanceRequest, existing: 
         meta.insert("auto_append_v1".to_string(), Value::Bool(value));
     }
 
+    if update_payload.base_url.is_some()
+        || update_payload.protocol.is_some()
+        || update_payload.chat_transport_path.is_some()
+    {
+        meta.remove("chat_transport_path");
+    }
+
     let model_prefix = update_payload
         .model_prefix
         .as_deref()
@@ -471,6 +478,10 @@ fn build_update_instance_meta(update_payload: &UpdateInstanceRequest, existing: 
     }
 
     for (key, value) in [
+        (
+            "chat_transport_path",
+            update_payload.chat_transport_path.as_deref(),
+        ),
         ("resource_name", update_payload.resource_name.as_deref()),
         ("deployment_name", update_payload.deployment_name.as_deref()),
         ("api_version", update_payload.api_version.as_deref()),
@@ -509,6 +520,10 @@ fn build_create_instance_meta(payload: &CreateInstanceRequest) -> Value {
     }
 
     for (key, value) in [
+        (
+            "chat_transport_path",
+            payload.chat_transport_path.as_deref(),
+        ),
         ("resource_name", payload.resource_name.as_deref()),
         ("deployment_name", payload.deployment_name.as_deref()),
         ("api_version", payload.api_version.as_deref()),

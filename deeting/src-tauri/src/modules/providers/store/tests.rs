@@ -45,6 +45,16 @@ async fn insert_instance_with_preset(
     name: &str,
     base_url: &str,
 ) -> String {
+    insert_instance_with_preset_and_meta(store, preset_slug, name, base_url, "{}").await
+}
+
+async fn insert_instance_with_preset_and_meta(
+    store: &ProviderStore,
+    preset_slug: &str,
+    name: &str,
+    base_url: &str,
+    meta: &str,
+) -> String {
     let instance_id = Uuid::new_v4().to_string();
     let now = now_rfc3339().expect("time");
     sqlx::query(
@@ -60,7 +70,7 @@ async fn insert_instance_with_preset(
     .bind::<Option<&str>>(None)
     .bind::<Option<&str>>(None)
     .bind(0_i64)
-    .bind("{}")
+    .bind(meta)
     .bind(1_i64)
     .bind(1_i64)
     .bind(format!("db:{instance_id}"))
@@ -718,6 +728,32 @@ async fn quick_add_models_keeps_default_chat_path_for_custom_preset() {
         .expect("list models");
     assert_eq!(models.len(), 1);
     assert_eq!(models[0].upstream_path, "v1/chat/completions");
+}
+
+#[tokio::test]
+async fn quick_add_models_prefers_custom_instance_chat_transport_path() {
+    let store = init_store().await;
+
+    let instance_id = insert_instance_with_preset_and_meta(
+        &store,
+        "custom",
+        "Custom Anthropic",
+        "https://api.anthropic.com",
+        r#"{"chat_transport_path":"v1/messages"}"#,
+    )
+    .await;
+
+    store
+        .quick_add_models(&instance_id, vec!["claude-sonnet-4-6".to_string()], None)
+        .await
+        .expect("quick add models");
+
+    let models = store
+        .list_models(Some(instance_id), None)
+        .await
+        .expect("list models");
+    assert_eq!(models.len(), 1);
+    assert_eq!(models[0].upstream_path, "v1/messages");
 }
 
 #[tokio::test]

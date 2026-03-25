@@ -228,6 +228,7 @@ pub struct CreateInstanceRequest {
     pub preset_slug: String,
     pub name: String,
     pub base_url: String,
+    pub chat_transport_path: Option<String>,
     pub description: Option<String>,
     pub icon: Option<String>,
     pub priority: Option<i64>,
@@ -249,6 +250,7 @@ pub struct CreateInstanceRequest {
 pub struct UpdateInstanceRequest {
     pub name: Option<String>,
     pub base_url: Option<String>,
+    pub chat_transport_path: Option<String>,
     pub credential_source: Option<String>,
     pub description: Option<String>,
     pub icon: Option<String>,

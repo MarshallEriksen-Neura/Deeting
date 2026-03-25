@@ -473,6 +473,15 @@ impl ProviderStore {
             return Ok(None);
         };
         if instance.preset_slug.eq_ignore_ascii_case("custom") {
+            if capability.eq_ignore_ascii_case(CHAT_CAPABILITY) {
+                let path = instance
+                    .meta
+                    .get("chat_transport_path")
+                    .and_then(|path| path.as_str())
+                    .map(str::trim)
+                    .filter(|path| !path.is_empty());
+                return Ok(normalize_upstream_path(path));
+            }
             return Ok(None);
         }
 

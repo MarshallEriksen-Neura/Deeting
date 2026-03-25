@@ -3,11 +3,29 @@
     "dashboard": {
       "title": "Admin Dashboard",
       "description": "System overview and key metrics",
+      "commandCenter": "Command Center",
+      "controlPlaneTitle": "Turn admin into a real control plane",
+      "controlPlaneDescription": "Use this surface to enter user and provider preset management. The landing page stays focused on navigation and posture, while real configuration work happens inside dedicated consoles and workbenches.",
       "loadingDescription": "Loading dashboard data",
       "quickActions": "Quick Actions",
       "reviewAssistants": "Review Assistants",
       "manageUsers": "Manage Users",
       "viewMonitoring": "View Monitoring",
+      "createPreset": "New Preset",
+      "moduleMeta": {
+        "users": "Access and permissions",
+        "providerPresets": "Protocol and routing templates"
+      },
+      "surfaceStats": {
+        "coreModules": "Core Admin Modules",
+        "coreModulesHint": "Currently wired primary admin surfaces",
+        "presetWorkflow": "Preset Workflow",
+        "presetWorkflowHint": "Supports create, edit, delete, and live verification",
+        "userControls": "User Controls",
+        "userControlsHint": "Admin account and permission management entry",
+        "ready": "Ready",
+        "available": "Available"
+      },
       "stats": {
         "activeAccounts": "{count} active accounts",
         "publishedAssistants": "{count} published",
@@ -171,6 +189,9 @@
       "description": "Manage system users and permissions"
     },
     "usersPage": {
+      "consoleLabel": "Identity Control",
+      "consoleTitle": "Users Console",
+      "consoleDescription": "Create accounts, adjust privileges, and inspect identities here. The table handles batch actions, while the side drawer keeps per-user context visible.",
       "loadingDescription": "Loading user data",
       "status": {
         "active": "Active",
@@ -201,6 +222,7 @@
       },
       "drawer": {
         "title": "User Details",
+        "subtitle": "Inspect account state, assigned roles, and operational metadata",
         "loading": "Loading user details...",
         "failed": "Failed to load user details",
         "rolesEmpty": "No roles assigned",
@@ -240,6 +262,9 @@
         }
       },
       "createForm": {
+        "label": "Quick Provisioning",
+        "title": "Create New User",
+        "subtitle": "Provision an account directly from the console for internal operations and permission assignment.",
         "placeholders": {
           "email": "Email",
           "usernameOptional": "Username (optional)",
@@ -1218,13 +1243,45 @@
       }
     },
     "providerPresetsPage": {
+      "consoleLabel": "Provider Registry",
+      "consoleTitle": "Provider Presets Console",
       "managementHint": "Open a preset editor from here to modify configuration and verify live requests.",
       "status": {
         "active": "Active",
         "inactive": "Inactive"
       },
       "actions": {
-        "edit": "Edit"
+        "edit": "Edit",
+        "create": "New Preset"
+      },
+      "stats": {
+        "totalPresets": "Total Presets",
+        "activePresets": "Active Presets",
+        "capabilityProfiles": "Capability Profiles",
+        "customProviders": "Custom / Non-standard Providers"
+      },
+      "filters": {
+        "status": "Status",
+        "provider": "Provider"
+      },
+      "table": {
+        "headers": {
+          "preset": "Preset",
+          "provider": "Provider",
+          "capabilities": "Capabilities",
+          "endpoint": "Endpoint",
+          "schema": "Schema",
+          "updated": "Updated",
+          "status": "Status"
+        }
+      },
+      "feedback": {
+        "deleted": "Deleted preset: {slug}",
+        "deleteFailed": "Failed to delete preset"
+      },
+      "deleteConfirm": {
+        "title": "Delete Provider Preset",
+        "description": "Delete preset \"{name}\"? If any provider instance still references it, deletion will be blocked."
       },
       "card": {
         "unnamedPreset": "Unnamed Preset",
@@ -1239,6 +1296,16 @@
     "providerPresetsEditor": {
       "title": "Edit Provider Preset",
       "description": "Update preset configuration and verify skeleton requests with a temporary API key",
+      "createTitle": "Create Provider Preset",
+      "createDescription": "Create the preset shell first, then continue in the full editing and verification workflow.",
+      "status": {
+        "active": "Active",
+        "inactive": "Inactive"
+      },
+      "mode": {
+        "create": "Create Mode",
+        "edit": "Edit Mode"
+      },
       "sections": {
         "basic": "Basic Information",
         "basicHint": "Manage the preset identity and sync metadata.",
@@ -1247,7 +1314,11 @@
         "protocolProfiles": "Protocol Profiles",
         "protocolProfilesHint": "Full JSON editing is supported. The backend will normalize simplified entries into runtime profiles.",
         "verify": "Local Verification",
-        "verifyHint": "Use a temporary API key to verify the current draft against the upstream skeleton request without saving it."
+        "verifyHint": "Use a temporary API key to verify the current draft against the upstream skeleton request without saving it.",
+        "summary": "Workbench Summary",
+        "summaryHint": "Key draft metadata, current state, and quick operational context.",
+        "preview": "Draft Preview",
+        "previewHint": "Inspect the payload that will be sent to the backend before saving."
       },
       "fields": {
         "slug": "Slug",
@@ -1267,11 +1338,29 @@
         "protocolProfilesHelp": "Detected capabilities: {capabilities}"
       },
       "actions": {
-        "verify": "Verify Skeleton Request"
+        "verify": "Verify Skeleton Request",
+        "formatJson": "Format JSON",
+        "createAndOpen": "Create and Open Workbench"
+      },
+      "summary": {
+        "name": "Current Name",
+        "provider": "Current Provider",
+        "updated": "Last Updated",
+        "endpoint": "Current Endpoint",
+        "notSaved": "Not saved yet"
+      },
+      "authConfigHint": "Store auth rules only, such as header naming or policy. Never store the real secret here.",
+      "deleteConfirm": {
+        "title": "Delete Provider Preset",
+        "description": "Delete \"{name}\"? If any provider instance still references it, the backend will refuse deletion."
       },
       "feedback": {
         "saved": "Provider preset saved",
+        "created": "Provider preset created",
         "saveFailed": "Failed to save preset",
+        "createFailed": "Failed to create preset",
+        "deleted": "Provider preset deleted",
+        "deleteFailed": "Failed to delete preset",
         "loadFailed": "Failed to load preset",
         "invalidJson": "Invalid JSON configuration. Fix it first.",
         "invalidVersion": "Version must be an integer greater than or equal to 1",
@@ -1291,6 +1380,7 @@
         "apiKeyHint": "This key is used only for local verification and will not be stored.",
         "feedback": {
           "missingInputs": "Temporary API key and model are required",
+          "saveFirst": "Save this preset first, then run a real upstream verification.",
           "failed": "Verification failed"
         },
         "result": {

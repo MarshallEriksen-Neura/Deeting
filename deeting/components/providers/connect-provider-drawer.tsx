@@ -37,6 +37,7 @@ import { usePlatform } from "@/lib/platform/provider"
 import { Switch } from "@/components/ui/switch"
 import { VisuallyHidden } from "@/components/ui/visually-hidden"
 import { getIconComponent } from "@/lib/constants/provider-icons"
+import { normalizeProviderEndpointInput } from "@/lib/providers/endpoint-normalization"
 import { resolveProviderProtocol } from "@/lib/providers/protocol"
 
 const CHAT_COMPLETIONS_PATH = "chat/completions"
@@ -335,11 +336,16 @@ export function ConnectProviderDrawer({
     setConnectionStatus('testing')
     setLogs([`> ${t("drawer.sendingProbe")}`])
     try {
+      const normalizedEndpoint = normalizeProviderEndpointInput({
+        baseUrl,
+        protocol: protocol || preset?.protocol || preset?.provider || preset?.slug,
+      })
+      const effectiveProtocol = protocol || normalizedEndpoint.protocolHint || undefined
       const result = await verify({
         preset_slug: presetSlug || "custom",
-        base_url: baseUrl,
+        base_url: normalizedEndpoint.baseUrl,
         api_key: apiKey,
-        protocol,
+        protocol: effectiveProtocol,
         auto_append_v1: isOpenAIProtocol ? autoAppendV1 : undefined,
         resource_name: resourceName || undefined,
         deployment_name: deploymentName || undefined,
@@ -384,6 +390,11 @@ export function ConnectProviderDrawer({
     }
     const resolvedIcon = (customIconUrl || icon || preset?.icon_key || "").trim() || null
     const protocolValue = (protocol || "").trim()
+    const normalizedEndpoint = normalizeProviderEndpointInput({
+      baseUrl,
+      protocol: protocolValue || preset?.protocol || preset?.provider || preset?.slug,
+    })
+    const effectiveProtocolValue = protocolValue || normalizedEndpoint.protocolHint || null
     setSaving(true)
     setLogs([])
     try {
@@ -392,12 +403,13 @@ export function ConnectProviderDrawer({
           preset_slug: presetSlug || "custom",
           name,
           description: description || null,
-          base_url: baseUrl,
+          base_url: normalizedEndpoint.baseUrl,
+          chat_transport_path: normalizedEndpoint.chatTransportPath,
           icon: resolvedIcon,
           theme_color: brandColor || null,
           credentials_ref: null,
           api_key: trimmedApiKey || null,
-          protocol: protocolValue || null,
+          protocol: effectiveProtocolValue,
           auto_append_v1: isOpenAIProtocol ? autoAppendV1 : null,
           priority: 0,
           is_enabled: enabled,
@@ -411,7 +423,8 @@ export function ConnectProviderDrawer({
         const payload: Record<string, unknown> = {
           name,
           description: description || null,
-          base_url: baseUrl,
+          base_url: normalizedEndpoint.baseUrl,
+          chat_transport_path: normalizedEndpoint.chatTransportPath,
           icon: resolvedIcon,
           theme_color: brandColor || null,
           is_enabled: enabled,
@@ -425,12 +438,10 @@ export function ConnectProviderDrawer({
         if (trimmedApiKey) {
           payload.api_key = trimmedApiKey
         }
-        if (protocolValue) {
-          payload.protocol = protocolValue
-        }
+        payload.protocol = effectiveProtocolValue
         await update(instanceId, payload)
       }
-      onSave({ baseUrl, apiKey, protocol, name, description, is_enabled: enabled })
+      onSave({ baseUrl: normalizedEndpoint.baseUrl, apiKey, protocol: effectiveProtocolValue || "", name, description, is_enabled: enabled })
       onClose()
     } catch (err: any) {
       setLogs(buildErrorLogLines(err, t("drawer.errorSave", { defaultValue: "Save failed" })))

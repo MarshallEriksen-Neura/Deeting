@@ -1630,6 +1630,13 @@ const ProviderPresetPatchPayloadSchema = z.object({
   is_active: z.boolean().optional(),
 })
 
+const ProviderPresetCreatePayloadSchema = ProviderPresetPatchPayloadSchema.extend({
+  slug: z.string().min(1),
+  name: z.string().min(1),
+  provider: z.string().min(1),
+  base_url: z.string().min(1),
+})
+
 const ProviderPresetVerifyPayloadSchema = z.object({
   capability: z.string().default("chat"),
   api_key: z.string().min(1),
@@ -1657,6 +1664,7 @@ export async function fetchAdminProviderPresets() {
 }
 
 export type ProviderPresetPatchPayload = z.infer<typeof ProviderPresetPatchPayloadSchema>
+export type ProviderPresetCreatePayload = z.infer<typeof ProviderPresetCreatePayloadSchema>
 export type ProviderPresetVerifyPayload = z.infer<typeof ProviderPresetVerifyPayloadSchema>
 export type ProviderPresetVerifyResponse = z.infer<typeof ProviderPresetVerifyResponseSchema>
 
@@ -1664,6 +1672,15 @@ export async function fetchAdminProviderPreset(slug: string) {
   const data = await request<unknown>({
     url: `${ADMIN_BASE}/provider-presets/${slug}`,
     method: "GET",
+  })
+  return ProviderPresetItemSchema.parse(data)
+}
+
+export async function createAdminProviderPreset(payload: ProviderPresetCreatePayload) {
+  const data = await request<unknown>({
+    url: `${ADMIN_BASE}/provider-presets`,
+    method: "POST",
+    data: payload,
   })
   return ProviderPresetItemSchema.parse(data)
 }
@@ -1678,6 +1695,13 @@ export async function updateAdminProviderPreset(
     data: payload,
   })
   return ProviderPresetItemSchema.parse(data)
+}
+
+export async function deleteAdminProviderPreset(slug: string) {
+  return request<{ status: string; slug: string }>({
+    url: `${ADMIN_BASE}/provider-presets/${slug}`,
+    method: "DELETE",
+  })
 }
 
 export async function verifyAdminProviderPreset(

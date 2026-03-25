@@ -17,6 +17,8 @@ jest.mock("swr", () => ({
 }))
 
 jest.mock("@/components/admin", () => ({
+  AdminStatCards: () => <div>stats</div>,
+  AdminFilterBar: () => <div>filters</div>,
   AdminDataTable: ({
     data,
     columns = [],
@@ -41,21 +43,12 @@ jest.mock("@/components/admin", () => ({
 }))
 
 jest.mock("@/components/ui/button", () => ({
-  Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
-    <button {...props}>{children}</button>
-  ),
-}))
-
-jest.mock("./components/user-create-form", () => ({
-  UserCreateForm: () => <div>user-create-form</div>,
-}))
-
-jest.mock("./components/user-filter-bar", () => ({
-  UserFilterBar: () => <div>user-filter-bar</div>,
-}))
-
-jest.mock("./components/user-stats", () => ({
-  UserStats: () => <div>user-stats</div>,
+  Button: ({
+    children,
+    asChild,
+    ...props
+  }: React.PropsWithChildren<React.ButtonHTMLAttributes<HTMLButtonElement> & { asChild?: boolean }>) =>
+    asChild ? <>{children}</> : <button {...props}>{children}</button>,
 }))
 
 describe("Admin users page", () => {
@@ -64,38 +57,43 @@ describe("Admin users page", () => {
   })
 
   it("renders users from admin data", () => {
-    mockUseSWR
-      .mockReturnValueOnce({
+    mockUseSWR.mockImplementation((key: unknown) => {
+      if (key === "/api/v1/admin/users?limit=100") {
+        return {
+          data: {
+            items: [
+              {
+                id: "user-1",
+                username: "alice",
+                email: "alice@example.com",
+                is_active: true,
+                is_superuser: false,
+                created_at: "2026-03-25T00:00:00Z",
+                updated_at: "2026-03-25T00:00:00Z",
+              },
+            ],
+          },
+          error: null,
+          isLoading: false,
+          mutate: jest.fn(),
+        }
+      }
+      return {
         data: {
-          items: [
-            {
-              id: "user-1",
-              username: "alice",
-              email: "alice@example.com",
-              is_active: true,
-              is_superuser: false,
-              created_at: "2026-03-25T00:00:00Z",
-              updated_at: "2026-03-25T00:00:00Z",
-            },
-          ],
+          items: [],
         },
         error: null,
         isLoading: false,
         mutate: jest.fn(),
-      })
-      .mockReturnValueOnce({
-        data: null,
-        error: null,
-        isLoading: false,
-        mutate: jest.fn(),
-      })
+      }
+    })
 
     render(<PageContent />)
 
-    expect(screen.getByText("user-stats")).toBeInTheDocument()
-    expect(screen.getByText("user-create-form")).toBeInTheDocument()
-    expect(screen.getByText("user-filter-bar")).toBeInTheDocument()
+    expect(screen.getByText("stats")).toBeInTheDocument()
+    expect(screen.getByText("filters")).toBeInTheDocument()
     expect(screen.getByText("alice")).toBeInTheDocument()
     expect(screen.getByText("alice@example.com")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "actions.createUser" })).toBeInTheDocument()
   })
 })

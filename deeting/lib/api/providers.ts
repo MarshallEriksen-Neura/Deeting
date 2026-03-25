@@ -107,6 +107,7 @@ export const ProviderInstanceCreateSchema = z.object({
   name: z.string(),
   description: z.string().nullable().optional(),
   base_url: z.string(),
+  chat_transport_path: z.string().nullable().optional(),
   icon: z.string().nullable().optional(),
   theme_color: z.string().nullable().optional(),
   credentials_ref: z.string().nullable().optional(),

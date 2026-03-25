@@ -157,6 +157,8 @@ specs/
 .specs/
 impl-specs/
 plans/
+!docs/plans/
+!docs/plans/*.md
 media/
 .kiro/
 .secrets.baseline/

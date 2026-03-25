@@ -1,7 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type { IProviderService } from "../../core/types";
-import * as providerApi from "@/lib/api/providers";
 import type {
   ProviderCard,
   ProviderHubResponse,
@@ -17,14 +16,19 @@ import type {
   ProviderVerifyResponse,
 } from "@/lib/api/providers";
 
-import { toInstanceResponse, toModelResponse } from "./mappers";
+import { toHubResponse, toInstanceResponse, toModelResponse } from "./mappers";
 import type {
   LocalProviderInstance,
   LocalProviderModel,
+  LocalProviderPreset,
 } from "./types";
 
 async function listLocalInstances() {
   return await invoke<LocalProviderInstance[]>("list_local_provider_instances");
+}
+
+async function listLocalPresets() {
+  return await invoke<LocalProviderPreset[]>("list_local_provider_presets");
 }
 
 function buildHubStats(providers: ProviderCard[]): ProviderHubResponse["stats"] {
@@ -39,36 +43,38 @@ function buildHubStats(providers: ProviderCard[]): ProviderHubResponse["stats"] 
   };
 }
 
-function toLocalInstanceSummary(instance: LocalProviderInstance) {
-  return {
-    id: instance.id,
-    name: instance.name,
-    is_enabled: instance.is_enabled,
-    health_status: "unknown",
-    latency_ms: 0,
-  };
-}
-
-function mergeProviderCardWithLocalInstances(
-  card: ProviderCard,
-  instances: LocalProviderInstance[]
-): ProviderCard {
-  return {
-    ...card,
-    connected: instances.some((instance) => instance.preset_slug === card.slug),
-    instances: instances
-      .filter((instance) => instance.preset_slug === card.slug)
-      .map(toLocalInstanceSummary),
-  };
-}
-
-function mergeHubWithLocalInstances(
+function filterLocalHub(
   hub: ProviderHubResponse,
-  instances: LocalProviderInstance[]
+  params?: { category?: string; q?: string; include_public?: boolean }
 ): ProviderHubResponse {
-  const providers = hub.providers.map((provider) =>
-    mergeProviderCardWithLocalInstances(provider, instances)
-  );
+  const normalizedCategory = params?.category?.trim().toLowerCase() ?? "";
+  const normalizedQuery = params?.q?.trim().toLowerCase() ?? "";
+
+  const providers = hub.providers.filter((provider) => {
+    if (
+      normalizedCategory &&
+      (provider.category || "").trim().toLowerCase() !== normalizedCategory
+    ) {
+      return false;
+    }
+
+    if (!normalizedQuery) {
+      return true;
+    }
+
+    const haystack = [
+      provider.slug,
+      provider.name,
+      provider.provider,
+      provider.category,
+      provider.base_url,
+      provider.url_template,
+    ]
+      .filter((value): value is string => Boolean(value))
+      .map((value) => value.trim().toLowerCase());
+
+    return haystack.some((value) => value.includes(normalizedQuery));
+  });
 
   return {
     providers,
@@ -76,22 +82,28 @@ function mergeHubWithLocalInstances(
   };
 }
 
+async function buildLocalHub(
+  params?: { category?: string; q?: string; include_public?: boolean }
+): Promise<ProviderHubResponse> {
+  const [presets, instances] = await Promise.all([
+    listLocalPresets(),
+    listLocalInstances(),
+  ]);
+
+  return filterLocalHub(toHubResponse(presets, instances), params);
+}
+
 export const desktopProviderService: IProviderService = {
   getHub: async (params) => {
-    const [hub, instances] = await Promise.all([
-      providerApi.fetchProviderHub(params),
-      listLocalInstances(),
-    ]);
-
-    return mergeHubWithLocalInstances(hub, instances);
+    return await buildLocalHub(params);
   },
   getDetail: async (slug) => {
-    const [detail, instances] = await Promise.all([
-      providerApi.fetchProviderDetail(slug),
-      listLocalInstances(),
-    ]);
-
-    return mergeProviderCardWithLocalInstances(detail, instances);
+    const hub = await buildLocalHub();
+    const detail = hub.providers.find((provider) => provider.slug === slug);
+    if (!detail) {
+      throw new Error(`provider preset not found: ${slug}`);
+    }
+    return detail;
   },
   verify: async (payload: ProviderVerifyRequest): Promise<ProviderVerifyResponse> => {
     return await invoke<ProviderVerifyResponse>("verify_local_provider", { payload });
@@ -102,6 +114,7 @@ export const desktopProviderService: IProviderService = {
         preset_slug: payload.preset_slug,
         name: payload.name,
         base_url: payload.base_url,
+        chat_transport_path: payload.chat_transport_path ?? undefined,
         description: payload.description ?? undefined,
         icon: payload.icon ?? undefined,
         priority: payload.priority ?? undefined,
@@ -129,6 +142,7 @@ export const desktopProviderService: IProviderService = {
       payload: {
         name: payload.name ?? undefined,
         base_url: payload.base_url ?? undefined,
+        chat_transport_path: payload.chat_transport_path ?? undefined,
         description: payload.description ?? undefined,
         icon: payload.icon ?? undefined,
         priority: payload.priority ?? undefined,
