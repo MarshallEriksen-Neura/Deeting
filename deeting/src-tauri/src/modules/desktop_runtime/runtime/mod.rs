@@ -1,5 +1,7 @@
 pub mod activation;
+pub mod capability_contract;
 pub mod capability_discovery;
+pub mod capability_toolset;
 pub mod chat_completion;
 pub mod code_mode_catalog;
 pub mod code_mode_orchestration;
@@ -19,6 +21,7 @@ pub(crate) use crate::modules::skills::onboarding::install_local_skill_from_onbo
 pub(crate) use activation::{
     resolve_local_capability_activation_state, LocalCapabilityActivationState,
 };
+pub(crate) use capability_contract::CapabilityExecutionContract;
 #[cfg(test)]
 pub(crate) use chat_completion::normalize_chat_completion_response;
 pub(crate) use chat_completion::{

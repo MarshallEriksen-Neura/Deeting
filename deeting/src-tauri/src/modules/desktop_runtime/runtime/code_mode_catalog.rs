@@ -1,11 +1,13 @@
 use std::collections::HashSet;
 
+pub(crate) use super::capability_toolset::dynamic_capability_alias;
+use super::capability_toolset::{
+    build_dynamic_direct_capability_tools,
+    resolve_dynamic_direct_capability_tool_name as resolve_dynamic_direct_capability_tool_name_inner,
+};
 use crate::modules::code_mode::core_tool_contracts::build_core_tool_function_entries;
-use crate::modules::custom_task_agents::skill_actions::sanitize_callable_name;
 #[cfg(test)]
 use mcp_runtime::policy::full_execution_tool_names;
-
-const DYNAMIC_CAPABILITY_ALIAS_PREFIX: &str = "cap_";
 
 #[cfg(test)]
 pub(crate) fn build_local_code_mode_entry_tools() -> serde_json::Value {
@@ -39,10 +41,17 @@ pub(crate) fn build_local_code_mode_entry_tools_with_allowlist(
                     .unwrap_or(false)
             }),
     );
+    let reserved_names = reserved_local_execution_tool_names();
+    let existing_tool_names = tools
+        .iter()
+        .filter_map(function_tool_name)
+        .map(|name| name.trim().to_lowercase())
+        .collect::<HashSet<_>>();
     tools.extend(build_dynamic_direct_capability_tools(
         capability_snapshot,
         &allowlist,
-        &tools,
+        &existing_tool_names,
+        &reserved_names,
     ));
 
     if tools.is_empty() {
@@ -117,7 +126,7 @@ fn function_tool_name(tool: &serde_json::Value) -> Option<&str> {
     tool.get("function")?.get("name")?.as_str()
 }
 
-fn reserved_dynamic_capability_tool_names() -> HashSet<String> {
+fn reserved_local_execution_tool_names() -> HashSet<String> {
     let mut reserved = build_core_tool_function_entries()
         .into_iter()
         .filter_map(|tool| function_tool_name(&tool).map(|name| name.trim().to_lowercase()))
@@ -132,164 +141,16 @@ fn reserved_dynamic_capability_tool_names() -> HashSet<String> {
     reserved
 }
 
-fn is_provider_safe_tool_name(name: &str) -> bool {
-    let trimmed = name.trim();
-    !trimmed.is_empty()
-        && trimmed
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
-}
-
-fn stable_tool_name_hash(name: &str) -> u32 {
-    let mut hash = 0x811c9dc5u32;
-    for byte in name.as_bytes() {
-        hash ^= u32::from(*byte);
-        hash = hash.wrapping_mul(0x0100_0193);
-    }
-    hash
-}
-
-pub(crate) fn dynamic_capability_alias(name: &str) -> String {
-    let sanitized = sanitize_callable_name(name).trim().to_ascii_lowercase();
-    let stem = if sanitized.is_empty() {
-        "tool"
-    } else {
-        sanitized.as_str()
-    };
-    format!(
-        "{DYNAMIC_CAPABILITY_ALIAS_PREFIX}{stem}_{:08x}",
-        stable_tool_name_hash(name.trim())
-    )
-}
-
-fn direct_capability_requires_alias(name: &str, reserved_names: &HashSet<String>) -> bool {
-    let normalized = name.trim().to_lowercase();
-    normalized.is_empty()
-        || !is_provider_safe_tool_name(name)
-        || reserved_names.contains(&normalized)
-}
-
 pub(crate) fn resolve_dynamic_direct_capability_tool_name(
     provider_tool_name: &str,
     capability_snapshot: Option<&serde_json::Value>,
 ) -> Option<String> {
-    let requested = provider_tool_name.trim().to_lowercase();
-    if requested.is_empty() {
-        return None;
-    }
-
-    let reserved_names = reserved_dynamic_capability_tool_names();
-    let capabilities = capability_snapshot
-        .and_then(|snapshot| snapshot.get("capabilities"))
-        .and_then(serde_json::Value::as_array)?;
-
-    for capability in capabilities {
-        let callable = capability
-            .pointer("/status/callable")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false);
-        let invocation_mode = capability
-            .get("invocation_mode")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("");
-        if !callable || invocation_mode != "direct" {
-            continue;
-        }
-        let Some(canonical_name) = capability
-            .get("name")
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|name| !name.is_empty())
-            .map(|name| name.to_lowercase())
-        else {
-            continue;
-        };
-        if !direct_capability_requires_alias(&canonical_name, &reserved_names) {
-            continue;
-        }
-        if dynamic_capability_alias(&canonical_name) == requested {
-            return Some(canonical_name);
-        }
-    }
-
-    None
-}
-
-fn build_dynamic_direct_capability_tools(
-    capability_snapshot: Option<&serde_json::Value>,
-    allowlist: &HashSet<String>,
-    existing_tools: &[serde_json::Value],
-) -> Vec<serde_json::Value> {
-    let Some(capabilities) = capability_snapshot
-        .and_then(|snapshot| snapshot.get("capabilities"))
-        .and_then(serde_json::Value::as_array)
-    else {
-        return Vec::new();
-    };
-
-    let reserved_names = reserved_dynamic_capability_tool_names();
-    let mut existing_names = existing_tools
-        .iter()
-        .filter_map(function_tool_name)
-        .map(|name| name.trim().to_lowercase())
-        .collect::<HashSet<_>>();
-    existing_names.extend(reserved_names.iter().cloned());
-    let mut direct_tools = Vec::new();
-
-    for capability in capabilities {
-        let callable = capability
-            .pointer("/status/callable")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false);
-        let invocation_mode = capability
-            .get("invocation_mode")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("");
-        if !callable || invocation_mode != "direct" {
-            continue;
-        }
-        let Some(name) = capability
-            .get("name")
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|name| !name.is_empty())
-        else {
-            continue;
-        };
-        let normalized_name = name.to_lowercase();
-        if !allowlist.contains(&normalized_name) {
-            continue;
-        }
-        let provider_tool_name = if direct_capability_requires_alias(name, &reserved_names) {
-            dynamic_capability_alias(&normalized_name)
-        } else {
-            name.to_string()
-        };
-        if !existing_names.insert(provider_tool_name.to_lowercase()) {
-            continue;
-        }
-        let description = capability
-            .get("description")
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .unwrap_or("Direct callable capability discovered by search_sdk.");
-        let parameters = capability
-            .get("input_schema")
-            .cloned()
-            .filter(|value| value.is_object())
-            .unwrap_or_else(|| serde_json::json!({"type":"object","properties":{}}));
-        direct_tools.push(serde_json::json!({
-            "type": "function",
-            "function": {
-                "name": provider_tool_name,
-                "description": description,
-                "parameters": parameters
-            }
-        }));
-    }
-
-    direct_tools
+    let reserved_names = reserved_local_execution_tool_names();
+    resolve_dynamic_direct_capability_tool_name_inner(
+        provider_tool_name,
+        capability_snapshot,
+        &reserved_names,
+    )
 }
 
 #[cfg(test)]

@@ -5,19 +5,13 @@ use super::{
     build_local_tool_trace_blocks, execute_or_queue_mcp_tool_call_with_tool_ref,
     extract_chat_tool_calls, install_local_skill_from_onboarding_request,
     request_provider_chat_completion, resolve_dynamic_direct_capability_tool_name,
-    resolve_local_capability_activation_state, LocalCapabilityActivationState,
-    LocalExecutionPolicy, LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
-    LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
+    resolve_local_capability_activation_state, CapabilityExecutionContract,
+    LocalCapabilityActivationState, LocalExecutionPolicy,
+    LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION, LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
 };
 use crate::modules::mcp::commands::common_impl::to_string;
 use crate::modules::mcp::commands::common_impl::LocalModelConnection;
 use crate::modules::mcp::commands::support::*;
-
-#[derive(Debug, Clone)]
-struct CapabilityExecutionContract {
-    allowed_tools: Vec<String>,
-    capability_snapshot: serde_json::Value,
-}
 
 const DEFAULT_MAX_AGENTIC_ROUNDS: usize = 10;
 
@@ -845,7 +839,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
                 .get("dry_run")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(true);
-            let execution_contract = match build_execution_contract_from_search_result(
+            let execution_contract = match CapabilityExecutionContract::from_search_result(
                 last_capability_snapshot.as_ref(),
             ) {
                 Ok(contract) => contract,
@@ -1380,25 +1374,6 @@ pub(crate) async fn resume_suspended_local_chat_after_approval(
     }
 }
 
-fn build_execution_contract_from_search_result(
-    search_result: Option<&serde_json::Value>,
-) -> Result<CapabilityExecutionContract, String> {
-    let Some(search_result) = search_result else {
-        return Err(
-            "execute_code_plan requires a prior search_sdk result with callable direct capabilities"
-                .to_string(),
-        );
-    };
-    let allowed_tools =
-        crate::modules::capability_control_plane::extract_direct_callable_capability_names(
-            search_result,
-        )?;
-    Ok(CapabilityExecutionContract {
-        allowed_tools,
-        capability_snapshot: search_result.clone(),
-    })
-}
-
 fn canonicalize_tool_name_for_allowed_list(
     tool_name: &str,
     allowed_tool_names: &[String],
@@ -1434,7 +1409,7 @@ mod tests {
 
     #[test]
     fn build_execution_contract_from_search_result_requires_capabilities() {
-        let err = build_execution_contract_from_search_result(Some(&serde_json::json!({
+        let err = CapabilityExecutionContract::from_search_result(Some(&serde_json::json!({
             "recipes": [{"name": "Weather Skill"}]
         })))
         .expect_err("should require callable results");
@@ -1443,7 +1418,7 @@ mod tests {
 
     #[test]
     fn build_execution_contract_from_search_result_extracts_allowed_tools() {
-        let contract = build_execution_contract_from_search_result(Some(&serde_json::json!({
+        let contract = CapabilityExecutionContract::from_search_result(Some(&serde_json::json!({
             "capabilities": [
                 {"name": "search_web", "invocation_mode": "direct", "status": {"callable": true}},
                 {"name": "fetch_page", "invocation_mode": "direct", "status": {"callable": true}},

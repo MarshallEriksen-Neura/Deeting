@@ -20,6 +20,7 @@ use crate::modules::code_mode::types::{
     ExecuteLocalCodeModeResponse, ListCodeModeExecutionsQuery, LocalCodeModeBridgeStatus,
     ReplayLocalCodeModeRequest, ReplayLocalCodeModeResponse, RuntimeToolCallsEnvelope,
 };
+use crate::modules::desktop_runtime::runtime::CapabilityExecutionContract;
 use crate::modules::sandbox::manager::SandboxLaunchPolicy;
 use crate::modules::sandbox::types::{
     SandboxReadinessReport, SandboxReadinessStatus, SandboxRuntimeMode,
@@ -220,17 +221,18 @@ async fn run_execute_local_code_mode(
         })
         .await?;
 
-    let max_calls = payload.max_calls.unwrap_or(16).max(1);
-    let allowed_tools = resolve_allowed_tools(
-        payload.allowed_tools.as_ref(),
-        payload.capability_snapshot.as_ref(),
-    );
     let capability_snapshot = payload
         .capability_snapshot
         .clone()
         .filter(|value| value.is_object());
-    let context = with_capability_contract(
-        payload.context.clone().unwrap_or_else(|| {
+    let capability_contract = CapabilityExecutionContract::from_runtime_inputs(
+        payload.allowed_tools.as_deref(),
+        capability_snapshot.as_ref(),
+    );
+    let allowed_tools = capability_contract.allowed_tools_option();
+    let max_calls = payload.max_calls.unwrap_or(16).max(1);
+    let context =
+        capability_contract.embed_into_context(payload.context.clone().unwrap_or_else(|| {
             json!({
                 "identity": {
                     "user_id": LOCAL_DEFAULT_USER_ID,
@@ -240,10 +242,7 @@ async fn run_execute_local_code_mode(
                     "session_id": session_id.clone(),
                 }
             })
-        }),
-        allowed_tools.as_ref(),
-        capability_snapshot.as_ref(),
-    );
+        }));
     let issued = state
         .code_mode
         .bridge
@@ -389,59 +388,6 @@ fn now_rfc3339() -> String {
         .unwrap_or_else(|_| "".to_string())
 }
 
-fn resolve_allowed_tools(
-    request_allowed_tools: Option<&Vec<String>>,
-    capability_snapshot: Option<&Value>,
-) -> Option<Vec<String>> {
-    let mut names = BTreeSet::new();
-    if let Some(items) = request_allowed_tools {
-        for item in items {
-            let normalized = item.trim().to_lowercase();
-            if !normalized.is_empty() {
-                names.insert(normalized);
-            }
-        }
-    }
-    if let Some(snapshot) = capability_snapshot {
-        if let Ok(capability_names) =
-            crate::modules::capability_control_plane::extract_direct_callable_capability_names(
-                snapshot,
-            )
-        {
-            for name in capability_names {
-                if !name.is_empty() {
-                    names.insert(name);
-                }
-            }
-        }
-    }
-    if names.is_empty() {
-        None
-    } else {
-        Some(names.into_iter().collect())
-    }
-}
-
-fn with_capability_contract(
-    mut context: Value,
-    allowed_tools: Option<&Vec<String>>,
-    capability_snapshot: Option<&Value>,
-) -> Value {
-    let contract = json!({
-        "allowed_tools": allowed_tools.cloned().unwrap_or_default(),
-        "capability_snapshot": capability_snapshot.cloned().unwrap_or(Value::Null),
-    });
-    if let Some(object) = context.as_object_mut() {
-        object.insert("capability_contract".to_string(), contract);
-        context
-    } else {
-        json!({
-            "request_context": context,
-            "capability_contract": contract,
-        })
-    }
-}
-
 fn value_to_string_vec(value: &Value) -> Option<Vec<String>> {
     let array = value.as_array()?;
     let items = array
@@ -462,42 +408,6 @@ fn value_to_string_vec(value: &Value) -> Option<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn resolve_allowed_tools_merges_request_and_snapshot() {
-        let request_allowed = vec!["search_web".to_string(), "search_web".to_string()];
-        let snapshot = json!({
-            "capabilities": [
-                { "name": "fetch_page", "invocation_mode": "direct", "status": { "callable": true } },
-                { "name": "search_web", "invocation_mode": "direct", "status": { "callable": true } },
-                { "name": "execute_code_plan", "invocation_mode": "code_mode", "status": { "callable": true } }
-            ]
-        });
-        assert_eq!(
-            resolve_allowed_tools(Some(&request_allowed), Some(&snapshot)),
-            Some(vec!["fetch_page".to_string(), "search_web".to_string()])
-        );
-    }
-
-    #[test]
-    fn with_capability_contract_embeds_contract_into_context() {
-        let context = json!({"request": {"channel": "desktop"}});
-        let result = with_capability_contract(
-            context,
-            Some(&vec!["search_web".to_string()]),
-            Some(&json!({
-                "capabilities": [{
-                    "name": "search_web",
-                    "invocation_mode": "direct",
-                    "status": {"callable": true}
-                }]
-            })),
-        );
-        assert_eq!(
-            result["capability_contract"]["allowed_tools"],
-            json!(["search_web"])
-        );
-    }
 }
 
 fn build_sandbox_blocked_response(
