@@ -63,7 +63,6 @@ interface ConnectProviderInitialValues {
   base_url?: string
   api_key?: string | null
   app_id?: string | null
-  resource_id?: string | null
   is_enabled?: boolean
   icon?: string | null
   theme_color?: string | null
@@ -349,7 +348,6 @@ export function ConnectProviderDrawer({
   const [projectId, setProjectId] = React.useState(initialValues?.project_id || "")
   const [region, setRegion] = React.useState(initialValues?.region || "")
   const [appId, setAppId] = React.useState(initialValues?.app_id || "")
-  const [resourceId, setResourceId] = React.useState(initialValues?.resource_id || "")
 
   React.useEffect(() => {
     if (!isOpen) return
@@ -378,7 +376,6 @@ export function ConnectProviderDrawer({
     setProjectId(initialValues?.project_id || "")
     setRegion(initialValues?.region || "")
     setAppId(initialValues?.app_id || "")
-    setResourceId(initialValues?.resource_id || "")
     setLogs([])
     setConnectionStatus("idle")
   }, [isOpen, preset, initialValues])
@@ -502,7 +499,6 @@ export function ConnectProviderDrawer({
           project_id: projectId || null,
           region: region || null,
           app_id: appId || null,
-          resource_id: resourceId || null,
         })
       } else if (mode === "edit" && instanceId) {
         const payload: Record<string, unknown> = {
@@ -520,7 +516,6 @@ export function ConnectProviderDrawer({
           project_id: projectId || null,
           region: region || null,
           app_id: appId || null,
-          resource_id: resourceId || null,
         }
         if (trimmedApiKey) {
           payload.api_key = trimmedApiKey
@@ -967,13 +962,6 @@ export function ConnectProviderDrawer({
                       value={appId}
                       onChange={(e) => setAppId(e.target.value)}
                       placeholder="123456789"
-                      className={cn("h-9 text-sm", inputClass)}
-                    />
-                    <Label className="text-xs text-white/72">{t("drawer.volcengineResourceId")}</Label>
-                    <Input
-                      value={resourceId}
-                      onChange={(e) => setResourceId(e.target.value)}
-                      placeholder="seed-tts-2.0"
                       className={cn("h-9 text-sm", inputClass)}
                     />
                     <p className={hintTextClass}>{t("drawer.volcengineHint")}</p>

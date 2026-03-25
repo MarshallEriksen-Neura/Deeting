@@ -737,7 +737,6 @@ pub async fn sync_platform_models_impl(state: &AppState) -> Result<Vec<ProviderM
                         project_id: None,
                         region: None,
                         app_id: None,
-                        resource_id: None,
                         is_local: Some(false),
                         credential_source: Some("platform".to_string()),
                         secret_key: None,

@@ -97,8 +97,7 @@
       "vertexRegion": "Region",
       "vertexHint": "Replace {project} and {region} in the base URL for Vertex AI.",
       "volcengineAppId": "Volcengine App ID",
-      "volcengineResourceId": "Volcengine Resource ID",
-      "volcengineHint": "Volcengine OpenSpeech TTS requires instance-scoped App ID and Resource ID, saved together with the provider instance."
+      "volcengineHint": "Volcengine OpenSpeech TTS requires an instance-scoped App ID. Resource ID should come from the selected model configuration, not the provider instance."
     },
     "manager": {
       "title": "Neural Links",

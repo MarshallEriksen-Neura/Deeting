@@ -25,9 +25,10 @@ fn resolve_app_id(context: &ResolvedTtsContext) -> Option<String> {
 
 fn resolve_resource_id(context: &ResolvedTtsContext) -> Option<String> {
     context
-        .instance
-        .meta
+        .model
+        .config_override
         .get("resource_id")
+        .or_else(|| context.model.extra_meta.get("resource_id"))
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -128,7 +129,7 @@ pub(crate) async fn request_text_to_speech(
     let app_id = resolve_app_id(context)
         .ok_or_else(|| "Volcengine TTS requires app_id in provider instance metadata".to_string())?;
     let resource_id = resolve_resource_id(context)
-        .ok_or_else(|| "Volcengine TTS requires resource_id in provider instance metadata".to_string())?;
+        .ok_or_else(|| "Volcengine TTS requires resource_id in provider model configuration".to_string())?;
     let url = format!("{}/api/v3/tts/unidirectional", base_url.trim_end_matches('/'));
     let body = build_request_body(request, &app_id);
 

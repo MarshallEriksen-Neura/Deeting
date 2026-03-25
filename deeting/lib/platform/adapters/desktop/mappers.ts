@@ -38,7 +38,6 @@ export function toInstanceResponse(instance: LocalProviderInstance): ProviderIns
     project_id: readMetaString(instance.meta, "project_id"),
     region: readMetaString(instance.meta, "region"),
     app_id: readMetaString(instance.meta, "app_id"),
-    resource_id: readMetaString(instance.meta, "resource_id"),
     icon: instance.icon ?? null,
     theme_color: null,
     priority: instance.priority ?? 0,

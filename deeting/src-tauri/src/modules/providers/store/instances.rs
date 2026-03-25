@@ -488,7 +488,6 @@ fn build_update_instance_meta(update_payload: &UpdateInstanceRequest, existing: 
         ("project_id", update_payload.project_id.as_deref()),
         ("region", update_payload.region.as_deref()),
         ("app_id", update_payload.app_id.as_deref()),
-        ("resource_id", update_payload.resource_id.as_deref()),
     ] {
         if let Some(trimmed) = value.map(str::trim).filter(|item| !item.is_empty()) {
             meta.insert(key.to_string(), Value::String(trimmed.to_string()));
@@ -532,7 +531,6 @@ fn build_create_instance_meta(payload: &CreateInstanceRequest) -> Value {
         ("project_id", payload.project_id.as_deref()),
         ("region", payload.region.as_deref()),
         ("app_id", payload.app_id.as_deref()),
-        ("resource_id", payload.resource_id.as_deref()),
     ] {
         if let Some(trimmed) = value.map(str::trim).filter(|item| !item.is_empty()) {
             meta.insert(key.to_string(), Value::String(trimmed.to_string()));

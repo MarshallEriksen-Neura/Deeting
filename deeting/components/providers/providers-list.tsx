@@ -245,7 +245,6 @@ export function ProvidersList() {
                 project_id: editingInstance?.project_id || undefined,
                 region: editingInstance?.region || undefined,
                 app_id: editingInstance?.app_id || undefined,
-                resource_id: editingInstance?.resource_id || undefined,
                 has_credentials: editingInstance?.has_credentials ?? undefined,
               }
             : undefined

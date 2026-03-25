@@ -122,7 +122,6 @@ export const ProviderInstanceCreateSchema = z.object({
   project_id: z.string().nullable().optional(),
   region: z.string().nullable().optional(),
   app_id: z.string().nullable().optional(),
-  resource_id: z.string().nullable().optional(),
   priority: z.number().default(0),
   is_enabled: z.boolean().default(true),
 })
@@ -142,7 +141,6 @@ export const ProviderInstanceResponseSchema = z.object({
   project_id: z.string().nullable().optional(),
   region: z.string().nullable().optional(),
   app_id: z.string().nullable().optional(),
-  resource_id: z.string().nullable().optional(),
   icon: z.string().nullable().optional(),
   theme_color: z.string().nullable().optional(),
   priority: z.number(),
@@ -206,6 +204,7 @@ export const ProviderModelUpdateSchema = z.object({
   tokenizer_config: z.record(z.string(), z.any()).optional(),
   routing_config: z.record(z.string(), z.any()).optional(),
   config_override: z.record(z.string(), z.any()).optional(),
+  extra_meta: z.record(z.string(), z.any()).optional(),
 })
 
 export type ProviderModelUpdate = z.infer<typeof ProviderModelUpdateSchema>
