@@ -326,7 +326,7 @@ fn resolve_deeting_sdk_pythonpath(binding: &LocalSkillToolBindingSnapshot) -> Op
 
     std::env::current_dir()
         .ok()
-        .map(|cwd| cwd.join("packages").join("deeting-sdk"))
+        .map(|_| crate::modules::skills::registry_scan::resolve_workspace_deeting_sdk_dir())
         .filter(|candidate| candidate.exists())
         .map(|candidate| candidate.to_string_lossy().to_string())
 }

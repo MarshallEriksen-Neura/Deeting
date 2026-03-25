@@ -12,6 +12,17 @@ fn to_string(error: impl std::fmt::Display) -> String {
     error.to_string()
 }
 
+fn filter_skill_scan_targets_by_source(
+    scan_targets: &[(PathBuf, &'static str)],
+    source_prefix: &'static str,
+) -> Vec<(PathBuf, &'static str)> {
+    scan_targets
+        .iter()
+        .filter(|(_, prefix)| *prefix == source_prefix)
+        .map(|(path, prefix)| (path.clone(), *prefix))
+        .collect()
+}
+
 fn normalize_install_path_for_compare(path: &Path) -> String {
     if let Ok(canonical) = std::fs::canonicalize(path) {
         return canonical
@@ -121,40 +132,41 @@ async fn prune_stale_local_skill_state(
     Ok(pruned)
 }
 
-pub(crate) async fn register_local_skills_inner(
-    app: AppHandle,
+fn resolve_sdk_pythonpath(app: &AppHandle) -> String {
+    app.path()
+        .resource_dir()
+        .ok()
+        .map(|p| p.join("deeting-sdk"))
+        .filter(|p| p.exists())
+        .unwrap_or_else(crate::modules::skills::registry_scan::resolve_workspace_deeting_sdk_dir)
+        .to_string_lossy()
+        .to_string()
+}
+
+async fn refresh_local_skill_targets(
+    app: &AppHandle,
     app_state: &AppState,
+    scan_targets: &[(PathBuf, &'static str)],
+    refresh_label: &str,
 ) -> Result<usize, String> {
     let purged =
         crate::modules::skills::registry_impl::purge_legacy_skill_tool_state(app_state).await?;
     if purged > 0 {
         log::info!(
-            "register_local_skills_refresh: purged {} legacy skill-tool state entries before refresh",
+            "{}: purged {} legacy skill-tool state entries before refresh",
+            refresh_label,
             purged
         );
     }
-    let scan_targets =
-        crate::modules::skills::registry_scan::resolve_local_skill_scan_targets(&app)?;
     let pruned = prune_stale_local_skill_state(&scan_targets, app_state).await?;
     if pruned > 0 {
         log::info!(
-            "register_local_skills_refresh: pruned {} stale local skill installs before refresh",
+            "{}: pruned {} stale local skill installs before refresh",
+            refresh_label,
             pruned
         );
     }
-    let sdk_dir = app
-        .path()
-        .resource_dir()
-        .ok()
-        .map(|p| p.join("deeting-sdk"))
-        .filter(|p| p.exists())
-        .unwrap_or_else(|| {
-            std::env::current_dir()
-                .unwrap_or_default()
-                .join("packages")
-                .join("deeting-sdk")
-        });
-    let sdk_pythonpath = sdk_dir.to_string_lossy().to_string();
+    let sdk_pythonpath = resolve_sdk_pythonpath(app);
     crate::modules::skills::registry_scan::register_local_skills_from_scan_targets_inner(
         &scan_targets,
         &sdk_pythonpath,
@@ -162,6 +174,21 @@ pub(crate) async fn register_local_skills_inner(
         app_state.providers.clone(),
         app_state.memory.clone(),
         false,
+    )
+    .await
+}
+
+pub(crate) async fn register_local_skills_inner(
+    app: AppHandle,
+    app_state: &AppState,
+) -> Result<usize, String> {
+    let scan_targets =
+        crate::modules::skills::registry_scan::resolve_local_skill_scan_targets(&app)?;
+    refresh_local_skill_targets(
+        &app,
+        app_state,
+        &scan_targets,
+        "register_local_skills_refresh",
     )
     .await
 }
@@ -175,15 +202,31 @@ pub async fn register_local_skills(
 }
 
 #[tauri::command]
-pub async fn sync_official_skills_index(app_state: State<'_, AppState>) -> Result<usize, String> {
-    sync_official_skills_index_inner(app_state.inner()).await
+pub async fn sync_official_skills_index(
+    app: AppHandle,
+    app_state: State<'_, AppState>,
+) -> Result<usize, String> {
+    sync_official_skills_index_inner(app, app_state.inner()).await
 }
 
 pub(crate) async fn sync_official_skills_index_inner(
+    app: AppHandle,
     app_state: &AppState,
 ) -> Result<usize, String> {
-    let _ = app_state;
-    Ok(0)
+    let scan_targets =
+        crate::modules::skills::registry_scan::resolve_local_skill_scan_targets(&app)?;
+    let official_scan_targets = filter_skill_scan_targets_by_source(&scan_targets, "system_plugin");
+    if official_scan_targets.is_empty() {
+        return Ok(0);
+    }
+
+    refresh_local_skill_targets(
+        &app,
+        app_state,
+        &official_scan_targets,
+        "sync_official_skills_index",
+    )
+    .await
 }
 
 #[tauri::command]
@@ -311,4 +354,34 @@ pub async fn list_local_installed_skill_ids(
     app_state: State<'_, AppState>,
 ) -> Result<Vec<String>, String> {
     crate::modules::skills::registry_impl::list_local_installed_skill_ids(app_state).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::filter_skill_scan_targets_by_source;
+    use std::path::PathBuf;
+
+    #[test]
+    fn filter_skill_scan_targets_by_source_keeps_only_requested_prefix() {
+        let targets = vec![
+            (PathBuf::from("/tmp/official-skills"), "system_plugin"),
+            (PathBuf::from("/tmp/user-skills"), "user_skill"),
+            (PathBuf::from("/tmp/shared-skills"), "user_skill"),
+        ];
+
+        let filtered = filter_skill_scan_targets_by_source(&targets, "system_plugin");
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].0, PathBuf::from("/tmp/official-skills"));
+        assert_eq!(filtered[0].1, "system_plugin");
+    }
+
+    #[test]
+    fn filter_skill_scan_targets_by_source_returns_empty_when_prefix_missing() {
+        let targets = vec![(PathBuf::from("/tmp/user-skills"), "user_skill")];
+
+        let filtered = filter_skill_scan_targets_by_source(&targets, "system_plugin");
+
+        assert!(filtered.is_empty());
+    }
 }

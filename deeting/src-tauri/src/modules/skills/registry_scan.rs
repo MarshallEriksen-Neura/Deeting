@@ -389,11 +389,71 @@ pub(crate) fn resolve_shared_agent_skills_dir() -> Option<PathBuf> {
     dirs::home_dir().map(|home| home.join(".agents").join("skills"))
 }
 
+fn push_unique_path_candidate(candidates: &mut Vec<PathBuf>, candidate: Option<PathBuf>) {
+    let Some(candidate) = candidate else {
+        return;
+    };
+    if !candidates.iter().any(|existing| existing == &candidate) {
+        candidates.push(candidate);
+    }
+}
+
+fn resolve_workspace_packages_dir_from(current_dir: Option<&Path>, manifest_dir: &Path) -> PathBuf {
+    let mut candidates = Vec::new();
+
+    if let Some(current_dir) = current_dir {
+        push_unique_path_candidate(&mut candidates, Some(current_dir.join("packages")));
+        push_unique_path_candidate(
+            &mut candidates,
+            current_dir.parent().map(|parent| parent.join("packages")),
+        );
+        push_unique_path_candidate(
+            &mut candidates,
+            current_dir
+                .parent()
+                .and_then(|parent| parent.parent())
+                .map(|parent| parent.join("packages")),
+        );
+    }
+
+    push_unique_path_candidate(&mut candidates, Some(manifest_dir.join("packages")));
+    push_unique_path_candidate(
+        &mut candidates,
+        manifest_dir.parent().map(|parent| parent.join("packages")),
+    );
+    push_unique_path_candidate(
+        &mut candidates,
+        manifest_dir
+            .parent()
+            .and_then(|parent| parent.parent())
+            .map(|parent| parent.join("packages")),
+    );
+
+    candidates
+        .iter()
+        .find(|candidate| candidate.exists())
+        .cloned()
+        .unwrap_or_else(|| {
+            manifest_dir
+                .parent()
+                .and_then(|parent| parent.parent())
+                .map(|parent| parent.join("packages"))
+                .unwrap_or_else(|| manifest_dir.join("packages"))
+        })
+}
+
+pub(crate) fn resolve_workspace_packages_dir() -> PathBuf {
+    let current_dir = std::env::current_dir().ok();
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    resolve_workspace_packages_dir_from(current_dir.as_deref(), manifest_dir)
+}
+
 pub(crate) fn resolve_workspace_official_skills_dir() -> PathBuf {
-    std::env::current_dir()
-        .unwrap_or_default()
-        .join("packages")
-        .join("official-skills")
+    resolve_workspace_packages_dir().join("official-skills")
+}
+
+pub(crate) fn resolve_workspace_deeting_sdk_dir() -> PathBuf {
+    resolve_workspace_packages_dir().join("deeting-sdk")
 }
 
 pub(crate) fn select_official_skills_scan_dir(
@@ -692,4 +752,54 @@ pub(crate) async fn register_local_skills_from_scan_targets_inner(
     }
 
     Ok(total_indexed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_workspace_packages_dir_from;
+    use std::path::PathBuf;
+
+    fn temp_path(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "deeting-registry-scan-{label}-{}",
+            uuid::Uuid::new_v4().simple()
+        ))
+    }
+
+    #[test]
+    fn resolve_workspace_packages_dir_from_prefers_repo_root_packages_for_tauri_dev_cwd() {
+        let repo_root = temp_path("repo-root");
+        let packages_dir = repo_root.join("packages");
+        let app_dir = repo_root.join("deeting");
+        let manifest_dir = app_dir.join("src-tauri");
+
+        std::fs::create_dir_all(&packages_dir).expect("create packages dir");
+        std::fs::create_dir_all(&manifest_dir).expect("create manifest dir");
+
+        let resolved = resolve_workspace_packages_dir_from(Some(&app_dir), &manifest_dir);
+
+        assert_eq!(resolved, packages_dir);
+
+        let _ = std::fs::remove_dir_all(repo_root);
+    }
+
+    #[test]
+    fn resolve_workspace_packages_dir_from_falls_back_to_manifest_relative_repo_root() {
+        let repo_root = temp_path("manifest-root");
+        let packages_dir = repo_root.join("packages");
+        let manifest_dir = repo_root.join("deeting").join("src-tauri");
+        let unrelated_cwd = temp_path("unrelated-cwd");
+
+        std::fs::create_dir_all(&packages_dir).expect("create packages dir");
+        std::fs::create_dir_all(&manifest_dir).expect("create manifest dir");
+        std::fs::create_dir_all(&unrelated_cwd).expect("create unrelated cwd");
+
+        let resolved =
+            resolve_workspace_packages_dir_from(Some(unrelated_cwd.as_path()), &manifest_dir);
+
+        assert_eq!(resolved, packages_dir);
+
+        let _ = std::fs::remove_dir_all(repo_root);
+        let _ = std::fs::remove_dir_all(unrelated_cwd);
+    }
 }

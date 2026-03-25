@@ -11,8 +11,8 @@
   "permissions": [
     "network.outbound"
   ],
-  "restricted": true,
-  "allowed_roles": ["admin"],
+  "restricted": false,
+  "allowed_roles": [],
   "runtime": ["local"],
   "execution": {
     "timeout_seconds": 60

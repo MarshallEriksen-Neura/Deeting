@@ -1570,7 +1570,11 @@ fn remap_lexical_score(score: f64) -> f64 {
 }
 
 fn lexical_reason(score: f64) -> String {
-    if score >= 1000.0 {
+    if score >= 2200.0 {
+        "lexical_identifier_exact".to_string()
+    } else if score >= 1200.0 {
+        "lexical_identifier_match".to_string()
+    } else if score >= 1000.0 {
         "lexical_name_exact".to_string()
     } else if score >= 900.0 {
         "lexical_description_exact".to_string()

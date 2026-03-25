@@ -10,7 +10,7 @@ description: "Expert plugin for discovering and registering AI Providers."
 Expert plugin for discovering and registering AI Providers for the desktop-local runtime.
 
 - Runtime: `local`
-- Access: `admin`
+- Access: `all`
 - Permissions: `network.outbound`
 
 ## Available Tools
@@ -22,4 +22,4 @@ Expert plugin for discovering and registering AI Providers for the desktop-local
 ## Usage Notes
 
 - Keep requests within the tools listed above.
-- This package is restricted to `admin`.
+- This package is currently unrestricted in the desktop-local runtime.
