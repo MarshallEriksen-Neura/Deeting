@@ -22,4 +22,5 @@ Expert plugin for discovering AI Providers and uploading provider presets to the
 ## Usage Notes
 
 - Keep requests within the tools listed above.
+- This package does not crawl provider documentation. If the source of truth is a public docs site, use `provider_doc_ingestion` first and hand the drafted candidate back into this package for schema alignment and verification.
 - This package is currently unrestricted in the desktop-local runtime.

@@ -1,0 +1,70 @@
+{
+  "runtime_version": "v2",
+  "schema_version": "2026-03-07",
+  "profile_id": "<provider>:chat:<protocol_family>",
+  "provider": "<provider>",
+  "protocol_family": "openai_chat",
+  "capability": "chat",
+  "transport": {
+    "method": "POST",
+    "path": "api/v1/chat/completions",
+    "query_template": {},
+    "header_template": {},
+    "content_type": "application/json"
+  },
+  "request": {
+    "template_engine": "openai_compat",
+    "request_template": {
+      "model": null,
+      "messages": null,
+      "stream": null,
+      "temperature": null,
+      "max_tokens": null
+    },
+    "request_builder": null
+  },
+  "response": {
+    "decoder": {
+      "name": "openai_chat",
+      "config": {}
+    },
+    "response_template": {},
+    "output_mapping": {}
+  },
+  "stream": {
+    "stream_decoder": {
+      "name": "openai_chat_stream",
+      "config": {}
+    }
+  },
+  "auth": {
+    "auth_policy": "inherit",
+    "config": {}
+  },
+  "features": {
+    "supports_messages": true,
+    "supports_input_items": false,
+    "supports_tools": true,
+    "supports_reasoning": false,
+    "supports_json_mode": true
+  },
+  "defaults": {
+    "headers": {},
+    "query": {},
+    "body": {}
+  },
+  "metadata": {
+    "request_fields": {
+      "required": [
+        "model",
+        "messages"
+      ],
+      "optional": [
+        "stream",
+        "temperature",
+        "max_tokens"
+      ]
+    },
+    "async_config": {}
+  }
+}

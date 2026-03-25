@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProviderExtractionReport",
+  "type": "object",
+  "required": ["provider_identity", "auth", "capabilities", "evidence", "gaps"],
+  "properties": {
+    "provider_identity": {
+      "type": "object",
+      "required": ["provider", "product_name", "doc_base_url"],
+      "properties": {
+        "provider": { "type": "string" },
+        "product_name": { "type": "string" },
+        "doc_base_url": { "type": "string" }
+      }
+    },
+    "auth": {
+      "type": "object",
+      "properties": {
+        "auth_type": { "type": "string" },
+        "header_name": { "type": "string" },
+        "header_scheme": { "type": "string" },
+        "env_key_hint": { "type": "string" }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "field",
+          "value",
+          "source_url",
+          "source_snippet",
+          "confidence",
+          "explicit_or_inferred"
+        ],
+        "properties": {
+          "field": { "type": "string" },
+          "value": {},
+          "source_url": { "type": "string" },
+          "source_snippet": { "type": "string" },
+          "confidence": { "type": "string", "enum": ["high", "medium", "low"] },
+          "explicit_or_inferred": {
+            "type": "string",
+            "enum": ["explicit", "inferred"]
+          }
+        }
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

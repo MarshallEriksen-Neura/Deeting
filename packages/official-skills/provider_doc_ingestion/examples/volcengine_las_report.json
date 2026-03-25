@@ -1,0 +1,46 @@
+{
+  "provider_identity": {
+    "provider": "volcengine_las",
+    "product_name": "LAS",
+    "doc_base_url": "https://www.volcengine.com/docs/6492"
+  },
+  "auth": {
+    "auth_type": "api_key",
+    "header_name": "Authorization",
+    "header_scheme": "Bearer",
+    "env_key_hint": "ARK_API_KEY"
+  },
+  "capabilities": {
+    "chat": {
+      "base_url": "https://operator.las.cn-beijing.volces.com",
+      "transport": {
+        "method": "POST",
+        "path": "/api/v1/chat/completions",
+        "content_type": "application/json"
+      },
+      "request_fields": {
+        "required": ["model", "messages"],
+        "optional": ["thinking", "stream", "max_tokens", "temperature"]
+      }
+    }
+  },
+  "evidence": [
+    {
+      "field": "auth.header",
+      "value": "Authorization: Bearer <ARK_API_KEY>",
+      "source_url": "https://www.volcengine.com/docs/6492/2192010",
+      "source_snippet": "Authorization: Bearer <ARK_API_KEY>",
+      "confidence": "high",
+      "explicit_or_inferred": "explicit"
+    },
+    {
+      "field": "chat.transport.path",
+      "value": "/api/v1/chat/completions",
+      "source_url": "https://www.volcengine.com/docs/6492/2192011",
+      "source_snippet": "Path: /api/v1/chat/completions",
+      "confidence": "high",
+      "explicit_or_inferred": "explicit"
+    }
+  ],
+  "gaps": ["response_schema", "stream_event_schema", "error_schema"]
+}

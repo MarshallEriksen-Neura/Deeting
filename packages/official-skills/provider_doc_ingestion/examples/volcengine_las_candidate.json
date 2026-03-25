@@ -1,0 +1,74 @@
+{
+  "slug": "volcengine-las-chat",
+  "name": "Volcengine LAS Chat",
+  "provider": "volcengine_las",
+  "base_url": "https://operator.las.cn-beijing.volces.com",
+  "auth_type": "api_key",
+  "auth_header": {
+    "name": "Authorization",
+    "scheme": "Bearer",
+    "env_key_hint": "ARK_API_KEY"
+  },
+  "protocol_profiles": {
+    "chat": {
+      "protocol_family": "openai_chat",
+      "transport": {
+        "method": "POST",
+        "path": "api/v1/chat/completions",
+        "content_type": "application/json"
+      },
+      "request_fields": {
+        "required": ["model", "messages"],
+        "optional": ["thinking", "stream", "max_tokens", "temperature"]
+      }
+    }
+  },
+  "verification_gaps": ["response_schema", "stream_event_schema", "error_schema"],
+  "verification_ready": false,
+  "provider_registry_handoff": {
+    "get_unified_schema": {
+      "capability": "chat"
+    },
+    "verify_provider_template": {
+      "capability": "chat",
+      "base_url": "https://operator.las.cn-beijing.volces.com",
+      "protocol_family": "openai_chat",
+      "upstream_path": "api/v1/chat/completions",
+      "template_engine": "openai_compat",
+      "request_template": {
+        "model": null,
+        "messages": null,
+        "stream": null,
+        "temperature": null,
+        "max_tokens": null
+      },
+      "header_template": {},
+      "default_headers": {},
+      "default_params": {},
+      "response_template": {},
+      "output_mapping": {},
+      "request_builder": null,
+      "test_payload": {
+        "model": "gpt-4o-mini",
+        "messages": [
+          {
+            "role": "user",
+            "content": "ping"
+          }
+        ],
+        "stream": false
+      }
+    },
+    "save_provider_to_marketplace": {
+      "slug": "volcengine-las-chat",
+      "name": "Volcengine LAS Chat",
+      "provider": "volcengine_las",
+      "base_url": "https://operator.las.cn-beijing.volces.com",
+      "auth_type": "api_key",
+      "protocol_schema_version": "2026-03-07",
+      "protocol_profiles": {
+        "chat": "<full_protocol_profile_object>"
+      }
+    }
+  }
+}

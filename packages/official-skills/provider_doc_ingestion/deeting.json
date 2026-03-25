@@ -1,0 +1,23 @@
+{
+  "$schema": "../deeting-manifest-schema.json",
+  "id": "official.skills.provider_doc_ingestion",
+  "name": "Provider Doc Ingestion",
+  "version": "1.0.0",
+  "author": "Deeting Team",
+  "description": "Collect provider documentation evidence and draft verify-ready provider preset candidates.",
+  "entry": {
+    "backend": "main.py"
+  },
+  "permissions": [
+    "network.outbound"
+  ],
+  "restricted": false,
+  "allowed_roles": [],
+  "runtime": ["local"],
+  "execution": {
+    "timeout_seconds": 60
+  },
+  "capabilities": {
+    "llm_tools": "llm-tool.yaml"
+  }
+}
