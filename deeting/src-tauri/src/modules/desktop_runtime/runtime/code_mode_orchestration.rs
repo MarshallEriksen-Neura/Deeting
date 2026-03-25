@@ -4,10 +4,10 @@ use super::{
     build_local_sdk_search_result_with_runtime, build_local_tool_call_install_gate_error_meta,
     build_local_tool_trace_blocks, execute_or_queue_mcp_tool_call_with_tool_ref,
     extract_chat_tool_calls, install_local_skill_from_onboarding_request,
-    request_provider_chat_completion, resolve_callable_mcp_tool_by_ref,
-    resolve_dynamic_direct_capability_tool_name, resolve_local_capability_activation_state,
-    resolve_skill_binding_by_ref, LocalCapabilityActivationState, LocalExecutionPolicy,
-    LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION, LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
+    request_provider_chat_completion, resolve_dynamic_direct_capability_tool_name,
+    resolve_local_capability_activation_state, LocalCapabilityActivationState,
+    LocalExecutionPolicy, LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
+    LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
 };
 use crate::modules::mcp::commands::common_impl::to_string;
 use crate::modules::mcp::commands::common_impl::LocalModelConnection;

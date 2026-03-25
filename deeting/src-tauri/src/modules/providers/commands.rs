@@ -724,6 +724,7 @@ pub async fn sync_platform_models_impl(state: &AppState) -> Result<Vec<ProviderM
                         preset_slug: slug.clone(),
                         name: format!("{} (Platform)", provider_name),
                         base_url: "https://platform".to_string(),
+                        chat_transport_path: None,
                         description: Some("Models billed via platform credits".to_string()),
                         icon: None,
                         priority: Some(0),
