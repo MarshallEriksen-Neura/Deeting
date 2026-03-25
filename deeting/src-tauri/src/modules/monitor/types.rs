@@ -32,8 +32,14 @@ pub struct LocalMonitorTask {
     pub last_executed_at: Option<String>,
     pub next_run_at: Option<String>,
     pub current_interval_minutes: Option<i64>,
+    pub display_status: String,
     pub strategy_variants: Option<Value>,
+    pub analysis_mode: String,
+    pub policy_state: Value,
+    pub binding_state: String,
+    pub binding_error: Option<String>,
     pub assistant_id: Option<String>,
+    pub assistant_name: Option<String>,
     pub model_id: Option<String>,
     pub error_count: i64,
     pub notify_config: Value,
@@ -102,7 +108,9 @@ pub struct LocalMonitorLogsQuery {
 pub struct LocalMonitorTaskCreateRequest {
     pub title: String,
     pub objective: String,
+    pub assistant_id: String,
     pub cron_expr: Option<String>,
+    pub analysis_mode: Option<String>,
     pub notify_config: Option<Value>,
     pub allowed_tools: Option<Vec<String>>,
     pub execution_target: Option<String>,
@@ -112,7 +120,9 @@ pub struct LocalMonitorTaskCreateRequest {
 pub struct LocalMonitorTaskUpdateRequest {
     pub title: Option<String>,
     pub objective: Option<String>,
+    pub assistant_id: Option<String>,
     pub cron_expr: Option<String>,
+    pub analysis_mode: Option<String>,
     pub status: Option<String>,
     pub notify_config: Option<Value>,
     pub allowed_tools: Option<Vec<String>>,
@@ -132,6 +142,7 @@ pub struct LocalMonitorCreateResponse {
     pub title: String,
     pub status: String,
     pub message: String,
+    pub analysis_mode: String,
     pub assistant_id: Option<String>,
     pub execution_target: String,
 }
@@ -159,9 +170,30 @@ pub struct LocalExecutionResult {
     pub is_significant_change: bool,
     pub change_summary: String,
     pub new_snapshot: Value,
+    pub strategy_tag: Option<String>,
+    pub observations: Option<Value>,
     pub tokens_used: i64,
     pub model_id: String,
     pub events: Vec<Value>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LocalMonitorTaskCreateRequest;
+
+    #[test]
+    fn create_request_requires_assistant_id_when_deserializing() {
+        let error = serde_json::from_value::<LocalMonitorTaskCreateRequest>(serde_json::json!({
+            "title": "monitor",
+            "objective": "watch this"
+        }))
+        .expect_err("assistant_id should be required");
+
+        assert!(
+            error.to_string().contains("assistant_id"),
+            "unexpected error: {error}"
+        );
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

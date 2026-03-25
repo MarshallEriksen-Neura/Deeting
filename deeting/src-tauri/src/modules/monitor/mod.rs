@@ -1,8 +1,9 @@
+pub mod agent_runtime;
 pub mod commands;
+pub mod output_contract;
 pub mod store;
 pub mod types;
 
-use std::cmp::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -13,12 +14,18 @@ use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
-use crate::modules::ai_upstream::chat::request_provider_chat_completion;
+use crate::modules::custom_task_agents::store::get_custom_task_agent as get_custom_task_agent_profile;
+use crate::modules::custom_task_agents::types::CustomTaskAgentProfile;
 use crate::modules::desktop_runtime::local_orchestrator::{
     LocalOrchestrationEngine, LocalWorkflowStep,
 };
 use crate::modules::im::feishu::{FeishuClient, FeishuConfig};
 use crate::modules::im::{ImClient, MessageContent, SendMessageRequest};
+use crate::modules::monitor::agent_runtime::{
+    build_monitor_task_agent_message, execute_monitor_task_agent,
+    validate_monitor_task_agent_profile,
+};
+use crate::modules::monitor::output_contract::normalize_monitor_output;
 use crate::modules::monitor::store::MonitorStore;
 use crate::modules::monitor::types::{
     LocalExecutionResult, LocalMonitorActionResponse, LocalMonitorCreateResponse,
@@ -31,18 +38,17 @@ use crate::modules::monitor::types::{
     LocalNotificationChannelTestResponse, LocalNotificationChannelUpdateRequest,
     LocalNotificationChannelUpdateResponse, MonitorWorkerStartRequest, MonitorWorkerStatus,
 };
+use crate::modules::providers::store::ProviderStore;
 #[cfg(test)]
 use crate::modules::providers::store::LOCAL_DESKTOP_USER_ID;
-use crate::modules::providers::store::{ProviderConnection, ProviderStore};
+#[cfg(test)]
 use crate::modules::providers::types::{ProviderInstance, ProviderModel};
-use mcp_core::types::LocalChatInputMessage;
 
 const DEFAULT_MONITOR_POLL_INTERVAL_SECONDS: u64 = 20;
 const MIN_MONITOR_POLL_INTERVAL_SECONDS: u64 = 5;
 const MAX_MONITOR_POLL_INTERVAL_SECONDS: u64 = 300;
 const DEFAULT_MONITOR_PULL_LIMIT: u32 = 5;
 const MAX_MONITOR_PULL_LIMIT: u32 = 20;
-const MODEL_RESPONSE_MAX_CHARS: usize = 40_000;
 const SUMMARY_MAX_CHARS: usize = 4_000;
 
 #[derive(Clone)]
@@ -52,7 +58,6 @@ pub struct MonitorState {
 
 struct MonitorWorkerShared {
     client: reqwest::Client,
-    provider_store: Arc<ProviderStore>,
     store: Arc<MonitorStore>,
     mcp_store: Option<Arc<crate::modules::mcp::store::McpStore>>,
     worker_task: Mutex<Option<JoinHandle<()>>>,
@@ -80,15 +85,16 @@ struct MonitorWorkflowContext {
     task: LocalMonitorTask,
     execution_id: String,
     events: Vec<Value>,
-    model: Option<ProviderModel>,
-    instance: Option<ProviderInstance>,
-    connection: Option<ProviderConnection>,
+    agent_profile: Option<CustomTaskAgentProfile>,
+    executed_model_id: Option<String>,
     prompt: Option<String>,
     content: Option<String>,
     tokens_used: i64,
     is_significant_change: bool,
     change_summary: String,
     new_snapshot: Value,
+    strategy_tag: Option<String>,
+    observations: Option<Value>,
 }
 
 impl MonitorWorkflowContext {
@@ -98,15 +104,16 @@ impl MonitorWorkflowContext {
             task,
             execution_id: Uuid::new_v4().to_string(),
             events: Vec::new(),
-            model: None,
-            instance: None,
-            connection: None,
+            agent_profile: None,
+            executed_model_id: None,
             prompt: None,
             content: None,
             tokens_used: 0,
             is_significant_change: false,
             change_summary: String::new(),
             new_snapshot: json!({}),
+            strategy_tag: None,
+            observations: None,
         }
     }
 
@@ -137,7 +144,7 @@ impl MonitorWorkflowContext {
 impl MonitorState {
     pub async fn new(
         database_url: &str,
-        provider_store: Arc<ProviderStore>,
+        _provider_store: Arc<ProviderStore>,
         mcp_store: Option<Arc<crate::modules::mcp::store::McpStore>>,
     ) -> Result<Self, String> {
         let client = reqwest::Client::builder()
@@ -153,7 +160,6 @@ impl MonitorState {
         Ok(Self {
             shared: Arc::new(MonitorWorkerShared {
                 client,
-                provider_store,
                 store,
                 mcp_store,
                 worker_task: Mutex::new(None),
@@ -166,7 +172,7 @@ impl MonitorState {
 
     pub async fn with_pool(
         pool: sqlx::sqlite::SqlitePool,
-        provider_store: Arc<ProviderStore>,
+        _provider_store: Arc<ProviderStore>,
         mcp_store: Option<Arc<crate::modules::mcp::store::McpStore>>,
     ) -> Result<Self, String> {
         let client = reqwest::Client::builder()
@@ -182,7 +188,6 @@ impl MonitorState {
         Ok(Self {
             shared: Arc::new(MonitorWorkerShared {
                 client,
-                provider_store,
                 store,
                 mcp_store,
                 worker_task: Mutex::new(None),
@@ -262,34 +267,46 @@ impl MonitorState {
         &self,
         query: LocalMonitorListQuery,
     ) -> Result<LocalMonitorTaskListResponse, String> {
-        self.shared
+        let mut response = self
+            .shared
             .store
             .list_tasks(
                 query.skip.unwrap_or(0),
                 query.limit.unwrap_or(100),
                 query.status.as_deref(),
             )
-            .await
+            .await?;
+        let mut items = Vec::with_capacity(response.items.len());
+        for task in response.items {
+            items.push(self.decorate_task_binding_state(task).await);
+        }
+        response.items = items;
+        Ok(response)
     }
 
     pub async fn get_task(&self, task_id: String) -> Result<LocalMonitorTask, String> {
-        self.shared
+        let task = self
+            .shared
             .store
             .get_task(task_id.as_str())
             .await?
-            .ok_or_else(|| "任务不存在".to_string())
+            .ok_or_else(|| "任务不存在".to_string())?;
+        Ok(self.decorate_task_binding_state(task).await)
     }
 
     pub async fn create_task(
         &self,
         payload: LocalMonitorTaskCreateRequest,
     ) -> Result<LocalMonitorCreateResponse, String> {
+        self.ensure_bindable_task_agent(payload.assistant_id.as_str())
+            .await?;
         let task = self.shared.store.create_task(payload).await?;
         Ok(LocalMonitorCreateResponse {
             id: task.id,
             title: task.title,
             status: task.status,
             message: "任务创建成功（本地执行）".to_string(),
+            analysis_mode: task.analysis_mode,
             assistant_id: task.assistant_id,
             execution_target: task.execution_target,
         })
@@ -300,10 +317,76 @@ impl MonitorState {
         task_id: String,
         payload: LocalMonitorTaskUpdateRequest,
     ) -> Result<LocalMonitorTask, String> {
-        self.shared
+        if let Some(assistant_id) = payload.assistant_id.as_deref() {
+            self.ensure_bindable_task_agent(assistant_id).await?;
+        }
+        let task = self
+            .shared
             .store
             .update_task(task_id.as_str(), payload)
+            .await?;
+        Ok(self.decorate_task_binding_state(task).await)
+    }
+
+    async fn ensure_bindable_task_agent(
+        &self,
+        assistant_id: &str,
+    ) -> Result<CustomTaskAgentProfile, String> {
+        let store = self
+            .shared
+            .mcp_store
+            .as_ref()
+            .ok_or_else(|| "monitor task agent binding is unavailable".to_string())?;
+        let profile = get_custom_task_agent_profile(store.as_ref(), assistant_id)
             .await
+            .map_err(|err| err.to_string())?
+            .ok_or_else(|| "绑定的任务智能体不存在".to_string())?;
+        validate_monitor_task_agent_profile(&profile)?;
+        Ok(profile)
+    }
+
+    async fn decorate_task_binding_state(&self, mut task: LocalMonitorTask) -> LocalMonitorTask {
+        let (binding_state, binding_error, assistant_name) =
+            self.evaluate_task_binding_state(&task).await;
+        task.display_status =
+            derive_monitor_display_status(task.status.as_str(), binding_state.as_str());
+        task.binding_state = binding_state;
+        task.binding_error = binding_error;
+        task.assistant_name = assistant_name;
+        task
+    }
+
+    async fn evaluate_task_binding_state(
+        &self,
+        task: &LocalMonitorTask,
+    ) -> (String, Option<String>, Option<String>) {
+        let Some(assistant_id) = task
+            .assistant_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            return (
+                "binding_required".to_string(),
+                Some("请先绑定一个聊天任务智能体".to_string()),
+                None,
+            );
+        };
+
+        match self.ensure_bindable_task_agent(assistant_id).await {
+            Ok(profile) => ("ok".to_string(), None, Some(profile.name)),
+            Err(err) => ("binding_invalid".to_string(), Some(err), None),
+        }
+    }
+
+    async fn require_task_binding_ready(&self, task: &LocalMonitorTask) -> Result<(), String> {
+        let (binding_state, binding_error, _) = self.evaluate_task_binding_state(task).await;
+        if binding_state == "ok" {
+            return Ok(());
+        }
+
+        let _ = self.shared.store.pause_task(task.id.as_str()).await;
+        Err(binding_error.unwrap_or_else(|| "任务绑定状态异常".to_string()))
     }
 
     pub async fn pause_task(
@@ -329,6 +412,13 @@ impl MonitorState {
         &self,
         payload: LocalMonitorTaskIdRequest,
     ) -> Result<LocalMonitorActionResponse, String> {
+        let current = self
+            .shared
+            .store
+            .get_task(payload.task_id.as_str())
+            .await?
+            .ok_or_else(|| "任务不存在".to_string())?;
+        self.require_task_binding_ready(&current).await?;
         let task = self
             .shared
             .store
@@ -348,6 +438,13 @@ impl MonitorState {
         &self,
         payload: LocalMonitorTaskIdRequest,
     ) -> Result<LocalMonitorTriggerResponse, String> {
+        let current = self
+            .shared
+            .store
+            .get_task(payload.task_id.as_str())
+            .await?
+            .ok_or_else(|| "任务不存在".to_string())?;
+        self.require_task_binding_ready(&current).await?;
         let task = self
             .shared
             .store
@@ -580,6 +677,7 @@ impl MonitorState {
     }
 
     async fn process_single_task(&self, task: &LocalMonitorTask) -> Result<(), String> {
+        self.require_task_binding_ready(task).await?;
         match self.execute_task_local(task).await {
             Ok(result) => {
                 self.shared
@@ -651,73 +749,12 @@ impl MonitorState {
             is_significant_change: ctx.is_significant_change,
             change_summary: ctx.change_summary,
             new_snapshot: ctx.new_snapshot,
+            strategy_tag: ctx.strategy_tag,
+            observations: ctx.observations,
             tokens_used: ctx.tokens_used.max(0),
-            model_id: ctx
-                .model
-                .as_ref()
-                .map(|m| m.model_id.clone())
-                .unwrap_or_default(),
+            model_id: ctx.executed_model_id.unwrap_or_default(),
             events: ctx.events,
         })
-    }
-
-    async fn resolve_execution_model(
-        &self,
-        task: &LocalMonitorTask,
-    ) -> Result<(ProviderModel, ProviderInstance, ProviderConnection), String> {
-        let mut active_models = self
-            .shared
-            .provider_store
-            .list_active_models()
-            .await
-            .map_err(|err| format!("读取本地模型失败: {}", err))?;
-        if active_models.is_empty() {
-            return Err("未找到本地可用模型，请先在桌面端配置 Provider Model".to_string());
-        }
-
-        let task_model_hint = task
-            .model_id
-            .as_ref()
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty());
-        let secretary_model_hint = self
-            .shared
-            .provider_store
-            .get_or_create_user_secretary()
-            .await
-            .ok()
-            .and_then(|value| secretary_model_hint(&value));
-
-        let selected = task_model_hint
-            .as_deref()
-            .and_then(|hint| find_model_by_reference(&active_models, hint))
-            .or_else(|| {
-                secretary_model_hint
-                    .as_deref()
-                    .and_then(|hint| find_model_by_reference(&active_models, hint))
-            })
-            .unwrap_or_else(|| {
-                active_models.sort_by(compare_model_priority);
-                active_models[0].clone()
-            });
-
-        let connection = self
-            .shared
-            .provider_store
-            .get_instance_connection(&selected.instance_id.to_string())
-            .await
-            .map_err(|err| format!("读取模型连接失败: {}", err))?
-            .ok_or_else(|| "模型实例不存在或连接信息缺失".to_string())?;
-
-        let instance = self
-            .shared
-            .provider_store
-            .get_instance(&selected.instance_id.to_string())
-            .await
-            .map_err(|err| format!("读取模型实例失败: {}", err))?
-            .ok_or_else(|| "模型实例不存在".to_string())?;
-
-        Ok((selected, instance, connection))
     }
 
     async fn dispatch_change_notification(
@@ -1073,6 +1110,14 @@ fn normalize_pull_limit(value: u32) -> u32 {
     value.max(1).min(MAX_MONITOR_PULL_LIMIT)
 }
 
+fn derive_monitor_display_status(status: &str, binding_state: &str) -> String {
+    match binding_state {
+        "binding_required" => "binding_required".to_string(),
+        "binding_invalid" => "binding_invalid".to_string(),
+        _ => status.to_string(),
+    }
+}
+
 fn make_default_agent_id() -> String {
     format!("desktop-{}", Uuid::new_v4().simple())
 }
@@ -1081,118 +1126,13 @@ fn global_app_state_required() -> Result<crate::state::AppState, String> {
     crate::state::global_app_state().ok_or_else(|| "global app state is unavailable".to_string())
 }
 
-fn compare_model_priority(a: &ProviderModel, b: &ProviderModel) -> Ordering {
-    b.priority
-        .cmp(&a.priority)
-        .then_with(|| b.weight.cmp(&a.weight))
-        .then_with(|| a.model_id.cmp(&b.model_id))
-}
-
-fn find_model_by_reference(models: &[ProviderModel], reference: &str) -> Option<ProviderModel> {
-    let normalized = reference.trim().to_lowercase();
-    if normalized.is_empty() {
-        return None;
-    }
-    models
-        .iter()
-        .find(|model| matches_model_reference(model, &normalized))
-        .cloned()
-}
-
-fn secretary_model_hint(
-    secretary: &crate::modules::providers::types::UserSecretary,
-) -> Option<String> {
-    secretary
-        .provider_model_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-        .or_else(|| {
-            secretary
-                .model_name
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_string)
-        })
-}
-
-fn matches_model_reference(model: &ProviderModel, normalized_reference: &str) -> bool {
-    if model
-        .model_id
-        .trim()
-        .eq_ignore_ascii_case(normalized_reference)
-    {
-        return true;
-    }
-    if model
-        .id
-        .to_string()
-        .eq_ignore_ascii_case(normalized_reference)
-    {
-        return true;
-    }
-    if let Some(unified_model_id) = model.unified_model_id.as_ref() {
-        if unified_model_id
-            .trim()
-            .eq_ignore_ascii_case(normalized_reference)
-        {
-            return true;
-        }
-    }
-    if let Some(display_name) = model.display_name.as_ref() {
-        if display_name
-            .trim()
-            .eq_ignore_ascii_case(normalized_reference)
-        {
-            return true;
-        }
-    }
-    false
+fn global_app_handle_required() -> Result<tauri::AppHandle, String> {
+    crate::state::global_app_handle().ok_or_else(|| "global app handle is unavailable".to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn build_secretary(
-        legacy_model_name: Option<&str>,
-        provider_model_id: Option<&str>,
-    ) -> crate::modules::providers::types::UserSecretary {
-        crate::modules::providers::types::UserSecretary {
-            id: "11111111-1111-4111-8111-111111111111".to_string(),
-            user_id: "00000000-0000-0000-0000-000000000000".to_string(),
-            name: "secretary".to_string(),
-            model_name: legacy_model_name.map(str::to_string),
-            provider_model_id: provider_model_id.map(str::to_string),
-            created_at: "2026-03-10T00:00:00Z".to_string(),
-            updated_at: "2026-03-10T00:00:01Z".to_string(),
-        }
-    }
-
-    #[test]
-    fn secretary_model_hint_prefers_provider_model_id() {
-        let secretary = build_secretary(
-            Some("gpt-4o-mini"),
-            Some("22222222-2222-4222-8222-222222222222"),
-        );
-
-        assert_eq!(
-            secretary_model_hint(&secretary).as_deref(),
-            Some("22222222-2222-4222-8222-222222222222")
-        );
-    }
-
-    #[test]
-    fn secretary_model_hint_falls_back_to_legacy_model_name() {
-        let secretary = build_secretary(Some("gpt-4o-mini"), Some(" "));
-
-        assert_eq!(
-            secretary_model_hint(&secretary).as_deref(),
-            Some("gpt-4o-mini")
-        );
-    }
 
     #[test]
     fn build_monitor_gateway_log_entry_includes_local_dimensions_and_metrics() {
@@ -1276,94 +1216,11 @@ mod tests {
     }
 }
 
-fn build_monitor_prompt(task: &LocalMonitorTask) -> String {
-    let snapshot = task
-        .last_snapshot
-        .as_ref()
-        .filter(|value| value.is_object())
-        .map(Value::to_string)
-        .unwrap_or_else(|| "{}".to_string());
-    let tools = if task.allowed_tools.is_empty() {
-        "未限制".to_string()
-    } else {
-        task.allowed_tools.join(", ")
-    };
-    format!(
-        "你是高级情报研判官。\n任务标题: {}\n监控目标: {}\nCron: {}\n允许工具: {}\n历史快照: {}\n\n请输出 JSON:\n{{\"is_significant_change\": boolean, \"change_summary\": \"markdown\", \"new_snapshot\": {{}}}}",
-        task.title, task.objective, task.cron_expr, tools, snapshot
-    )
-}
+struct MonitorResolveTaskAgentStep;
 
-fn parse_monitor_analysis(content: &str) -> (bool, String, Value) {
-    let mut text = content.trim().to_string();
-    if text.len() > MODEL_RESPONSE_MAX_CHARS {
-        text = text.chars().take(MODEL_RESPONSE_MAX_CHARS).collect();
-    }
-
-    if let (Some(start), Some(end)) = (text.find('{'), text.rfind('}')) {
-        if end > start {
-            if let Ok(value) = serde_json::from_str::<Value>(&text[start..=end]) {
-                let is_change = value
-                    .get("is_significant_change")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false);
-                let summary = value
-                    .get("change_summary")
-                    .and_then(Value::as_str)
-                    .map(|v| truncate(v, SUMMARY_MAX_CHARS))
-                    .unwrap_or_default();
-                let snapshot = value
-                    .get("new_snapshot")
-                    .cloned()
-                    .filter(Value::is_object)
-                    .unwrap_or_else(|| json!({}));
-                let final_summary = if summary.trim().is_empty() {
-                    build_snapshot_summary(&snapshot, is_change)
-                } else {
-                    summary
-                };
-                return (is_change, final_summary, snapshot);
-            }
-        }
-    }
-
-    let fallback = truncate(&text, SUMMARY_MAX_CHARS);
-    (
-        false,
-        if fallback.trim().is_empty() {
-            "### 例行简报\n本次本地执行未返回可解析结果。".to_string()
-        } else {
-            fallback
-        },
-        json!({}),
-    )
-}
-
-fn build_snapshot_summary(snapshot: &Value, is_significant_change: bool) -> String {
-    if !snapshot.is_object() {
-        return if is_significant_change {
-            "### 研判结论\n检测到显著变化。".to_string()
-        } else {
-            "### 例行简报\n当前未检测到显著变化。".to_string()
-        };
-    }
-    let title = if is_significant_change {
-        "### 研判结论"
-    } else {
-        "### 例行简报"
-    };
-    format!(
-        "{}\n{}",
-        title,
-        truncate(&snapshot.to_string(), SUMMARY_MAX_CHARS)
-    )
-}
-
-struct MonitorResolveModelStep;
-
-impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorResolveModelStep {
+impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorResolveTaskAgentStep {
     fn name(&self) -> &'static str {
-        "monitor_resolve_model"
+        "monitor_resolve_task_agent"
     }
 
     fn execute<'a>(
@@ -1373,22 +1230,27 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorResolveModelStep {
         Box::pin(async move {
             ctx.emit_status(
                 "remember",
-                "monitor_resolve_model",
+                "monitor_resolve_task_agent",
                 "running",
-                "monitor.model.selecting",
+                "monitor.agent.resolving",
                 None,
             );
-            let (model, instance, connection) =
-                ctx.state.resolve_execution_model(&ctx.task).await?;
-            ctx.model = Some(model);
-            ctx.instance = Some(instance);
-            ctx.connection = Some(connection);
+            let assistant_id = ctx
+                .task
+                .assistant_id
+                .as_deref()
+                .ok_or_else(|| "monitor task agent binding is required".to_string())?;
+            let profile = ctx.state.ensure_bindable_task_agent(assistant_id).await?;
+            ctx.agent_profile = Some(profile.clone());
             ctx.emit_status(
                 "remember",
-                "monitor_resolve_model",
+                "monitor_resolve_task_agent",
                 "success",
-                "monitor.model.selected",
-                None,
+                "monitor.agent.resolved",
+                Some(json!({
+                    "assistant_id": profile.id,
+                    "assistant_name": profile.name,
+                })),
             );
             Ok(())
         })
@@ -1403,7 +1265,7 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorBuildPromptStep {
     }
 
     fn depends_on(&self) -> &'static [&'static str] {
-        &["monitor_resolve_model"]
+        &["monitor_resolve_task_agent"]
     }
 
     fn execute<'a>(
@@ -1418,7 +1280,7 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorBuildPromptStep {
                 "monitor.prompt.building",
                 None,
             );
-            let prompt = build_monitor_prompt(&ctx.task);
+            let prompt = build_monitor_task_agent_message(&ctx.task);
             ctx.prompt = Some(prompt);
             ctx.emit_status(
                 "evolve",
@@ -1432,11 +1294,11 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorBuildPromptStep {
     }
 }
 
-struct MonitorInvokeModelStep;
+struct MonitorInvokeTaskAgentStep;
 
-impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorInvokeModelStep {
+impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorInvokeTaskAgentStep {
     fn name(&self) -> &'static str {
-        "monitor_invoke_model"
+        "monitor_execute_task_agent"
     }
 
     fn depends_on(&self) -> &'static [&'static str] {
@@ -1448,19 +1310,12 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorInvokeModelStep {
         ctx: &'a mut MonitorWorkflowContext,
     ) -> BoxFuture<'a, Result<(), String>> {
         Box::pin(async move {
+            let app_handle = global_app_handle_required()?;
+            let profile = ctx
+                .agent_profile
+                .clone()
+                .ok_or_else(|| "monitor task agent missing".to_string())?;
             let app_state = global_app_state_required()?;
-            let connection = ctx
-                .connection
-                .clone()
-                .ok_or_else(|| "monitor model connection missing".to_string())?;
-            let model = ctx
-                .model
-                .clone()
-                .ok_or_else(|| "monitor model missing".to_string())?;
-            let instance = ctx
-                .instance
-                .clone()
-                .ok_or_else(|| "monitor model instance missing".to_string())?;
             let prompt = ctx
                 .prompt
                 .clone()
@@ -1468,71 +1323,57 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorInvokeModelStep {
 
             ctx.emit_status(
                 "evolve",
-                "monitor_invoke_model",
+                "monitor_execute_task_agent",
                 "running",
-                "monitor.upstream.request",
+                "monitor.agent.executing",
                 Some(json!({
-                    "model_id": model.model_id.clone(),
-                    "instance_id": instance.id.to_string(),
-                    "base_url": connection.base_url.clone(),
-                    "upstream_path": model.upstream_path.clone(),
-                    "has_mcp_store": ctx.state.shared.mcp_store.is_some(),
+                    "assistant_id": profile.id.clone(),
+                    "assistant_name": profile.name.clone(),
                 })),
             );
 
-            let provider_model_id = model.id.to_string();
-            let body_json = request_provider_chat_completion(
-                &app_state,
-                provider_model_id.as_str(),
-                &model.model_id,
-                vec![LocalChatInputMessage {
-                    role: "user".to_string(),
-                    content: prompt,
-                    tool_calls: vec![],
-                    tool_call_id: None,
-                    name: None,
-                }],
-                None,
-                None,
-                None,
-                Some(ctx.execution_id.as_str()),
-                None,
-            )
-            .await
-            .map_err(|err| {
-                let error_message = err.clone();
-                ctx.emit_status(
-                    "evolve",
-                    "monitor_invoke_model",
-                    "failed",
-                    "monitor.upstream.error",
-                    Some(json!({
-                        "message": error_message,
-                    })),
-                );
-                err
-            })?;
+            let response = execute_monitor_task_agent(&app_handle, &app_state, &profile, &prompt)
+                .await
+                .map_err(|err| {
+                    let error_message = err.clone();
+                    ctx.emit_status(
+                        "evolve",
+                        "monitor_execute_task_agent",
+                        "failed",
+                        "monitor.agent.error",
+                        Some(json!({
+                            "message": error_message,
+                        })),
+                    );
+                    err.to_string()
+                })?;
 
-            let content = extract_model_content(&body_json);
+            let content = response.content;
             if content.trim().is_empty() {
                 ctx.emit_status(
                     "render",
-                    "monitor_invoke_model",
+                    "monitor_execute_task_agent",
                     "failed",
                     "monitor.response.empty",
                     None,
                 );
                 return Err("模型返回内容为空".to_string());
             }
-            let tokens = extract_total_tokens(&body_json);
+            let tokens = response.tokens_used;
             ctx.content = Some(content);
             ctx.tokens_used = tokens;
+            ctx.executed_model_id = Some(response.model_id.clone());
             ctx.emit_status(
                 "render",
-                "monitor_invoke_model",
+                "monitor_execute_task_agent",
                 "success",
                 "monitor.response.received",
-                Some(json!({ "tokens_used": tokens })),
+                Some(json!({
+                    "assistant_id": profile.id,
+                    "model_id": response.model_id.clone(),
+                    "tokens_used": tokens,
+                    "tool_trace_len": response.tool_trace.len(),
+                })),
             );
             Ok(())
         })
@@ -1547,7 +1388,7 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorParseResultStep {
     }
 
     fn depends_on(&self) -> &'static [&'static str] {
-        &["monitor_invoke_model"]
+        &["monitor_execute_task_agent"]
     }
 
     fn execute<'a>(
@@ -1559,17 +1400,27 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorParseResultStep {
                 .content
                 .as_ref()
                 .ok_or_else(|| "monitor content missing".to_string())?;
-            let (is_change, summary, snapshot) = parse_monitor_analysis(content);
-            ctx.is_significant_change = is_change;
-            ctx.change_summary = summary;
-            ctx.new_snapshot = snapshot;
+            let result = normalize_monitor_output(content);
+            ctx.is_significant_change = result.is_significant_change;
+            ctx.change_summary = result.change_summary;
+            ctx.new_snapshot = result.new_snapshot;
+            ctx.strategy_tag = result.strategy_tag.clone();
+            ctx.observations = result.observations.clone();
             ctx.emit_status(
                 "render",
                 "monitor_parse_result",
                 "success",
                 "monitor.analysis.done",
-                Some(json!({ "is_significant_change": ctx.is_significant_change })),
+                Some(json!({
+                    "is_significant_change": ctx.is_significant_change,
+                    "strategy_tag": result.strategy_tag,
+                })),
             );
+            ctx.events.push(json!({
+                "type": "monitor.policy.result",
+                "strategy_tag": result.strategy_tag,
+                "observations": result.observations,
+            }));
             Ok(())
         })
     }
@@ -1577,93 +1428,12 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorParseResultStep {
 
 fn build_monitor_engine() -> LocalOrchestrationEngine<MonitorWorkflowContext> {
     LocalOrchestrationEngine::new(vec![
-        Box::new(MonitorResolveModelStep),
+        Box::new(MonitorResolveTaskAgentStep),
         Box::new(MonitorBuildPromptStep),
-        Box::new(MonitorInvokeModelStep),
+        Box::new(MonitorInvokeTaskAgentStep),
         Box::new(MonitorParseResultStep),
     ])
     .expect("monitor engine dag should be valid")
-}
-
-fn extract_model_content(value: &Value) -> String {
-    if let Some(content) = value.get("content") {
-        if let Some(text) = content.as_str() {
-            return text.to_string();
-        }
-        if let Some(parts) = content.as_array() {
-            let mut merged = Vec::new();
-            for part in parts {
-                if let Some(part_text) = part.get("text").and_then(Value::as_str) {
-                    merged.push(part_text.to_string());
-                } else if let Some(part_text) = part.get("content").and_then(Value::as_str) {
-                    merged.push(part_text.to_string());
-                }
-            }
-            if !merged.is_empty() {
-                return merged.join("\n");
-            }
-        }
-    }
-
-    if let Some(text) = value
-        .get("choices")
-        .and_then(Value::as_array)
-        .and_then(|choices| choices.first())
-        .and_then(|first| first.get("message"))
-        .and_then(|message| message.get("content"))
-    {
-        if let Some(content) = text.as_str() {
-            return content.to_string();
-        }
-        if let Some(parts) = text.as_array() {
-            let mut merged = Vec::new();
-            for part in parts {
-                if let Some(part_text) = part.get("text").and_then(Value::as_str) {
-                    merged.push(part_text.to_string());
-                }
-            }
-            if !merged.is_empty() {
-                return merged.join("\n");
-            }
-        }
-    }
-
-    if let Some(text) = value.get("output_text").and_then(Value::as_str) {
-        return text.to_string();
-    }
-    String::new()
-}
-
-fn extract_total_tokens(value: &Value) -> i64 {
-    value
-        .get("usage")
-        .and_then(|usage| {
-            usage
-                .get("total_tokens")
-                .and_then(Value::as_i64)
-                .or_else(|| {
-                    usage
-                        .get("total_tokens")
-                        .and_then(Value::as_u64)
-                        .map(|v| v as i64)
-                })
-                .or_else(|| {
-                    let input = usage
-                        .get("prompt_tokens")
-                        .and_then(Value::as_i64)
-                        .unwrap_or(0);
-                    let output = usage
-                        .get("completion_tokens")
-                        .and_then(Value::as_i64)
-                        .unwrap_or(0);
-                    if input > 0 || output > 0 {
-                        Some(input + output)
-                    } else {
-                        None
-                    }
-                })
-        })
-        .unwrap_or(0)
 }
 
 #[cfg(test)]

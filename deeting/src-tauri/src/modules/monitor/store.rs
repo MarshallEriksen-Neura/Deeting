@@ -19,6 +19,7 @@ const DEFAULT_INTERVAL_MINUTES: i64 = 360;
 const MAX_ERROR_COUNT: i64 = 3;
 const FAILURE_RETRY_SECONDS: i64 = 60;
 const DEFAULT_CHANNEL_PRIORITY: i64 = 100;
+const DEFAULT_ANALYSIS_MODE: &str = "concise";
 
 #[derive(Clone)]
 pub struct MonitorStore {
@@ -83,6 +84,21 @@ impl MonitorStore {
         .execute(&self.pool)
         .await
         .map_err(|err| err.to_string())?;
+
+        ensure_column(
+            &self.pool,
+            "local_monitor_tasks",
+            "analysis_mode",
+            &format!("TEXT NOT NULL DEFAULT '{}'", DEFAULT_ANALYSIS_MODE),
+        )
+        .await?;
+        ensure_column(
+            &self.pool,
+            "local_monitor_tasks",
+            "policy_state_json",
+            "TEXT NOT NULL DEFAULT '{}'",
+        )
+        .await?;
 
         sqlx::query(
             r#"
@@ -255,6 +271,7 @@ impl MonitorStore {
     ) -> Result<LocalMonitorTask, String> {
         let title = payload.title.trim().to_string();
         let objective = payload.objective.trim().to_string();
+        let assistant_id = normalize_assistant_id(payload.assistant_id)?;
         if title.is_empty() {
             return Err("title 不能为空".to_string());
         }
@@ -269,6 +286,8 @@ impl MonitorStore {
         let notify_config = payload.notify_config.unwrap_or_else(|| json!({}));
         let allowed_tools = normalize_allowed_tools(payload.allowed_tools.unwrap_or_default());
         let execution_target = normalize_execution_target(payload.execution_target.as_deref());
+        let analysis_mode = normalize_analysis_mode(payload.analysis_mode.as_deref());
+        let policy_state = json!({});
 
         let id = Uuid::new_v4().to_string();
         sqlx::query(
@@ -276,9 +295,9 @@ impl MonitorStore {
             INSERT INTO local_monitor_tasks (
               id, user_id, title, objective, cron_expr, status, last_snapshot_json,
               last_executed_ts, error_count, notify_config_json, allowed_tools_json, execution_target,
-              total_tokens, current_interval_minutes, next_run_ts, assistant_id, model_id, is_active,
+              total_tokens, current_interval_minutes, next_run_ts, assistant_id, model_id, analysis_mode, policy_state_json, is_active,
               created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, 'active', ?, NULL, 0, ?, ?, ?, 0, ?, ?, NULL, NULL, 1, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, 'active', ?, NULL, 0, ?, ?, ?, 0, ?, ?, ?, NULL, ?, ?, 1, ?, ?)
             "#,
         )
         .bind(&id)
@@ -292,6 +311,9 @@ impl MonitorStore {
         .bind(execution_target)
         .bind(interval_minutes)
         .bind(next_run_ts)
+        .bind(assistant_id)
+        .bind(analysis_mode)
+        .bind(json_to_string(&policy_state))
         .bind(&now_iso)
         .bind(&now_iso)
         .execute(&self.pool)
@@ -332,7 +354,16 @@ impl MonitorStore {
         } else {
             current.cron_expr
         };
+        let assistant_id = match payload.assistant_id {
+            Some(value) => Some(normalize_assistant_id(value)?),
+            None => current.assistant_id.clone(),
+        };
+        let assistant_id = assistant_id.ok_or_else(|| "assistant_id 不能为空".to_string())?;
         let interval_minutes = estimate_cron_interval_minutes(&cron_expr);
+        let analysis_mode = match payload.analysis_mode.as_deref() {
+            Some(value) => normalize_analysis_mode(Some(value)),
+            None => current.analysis_mode.clone(),
+        };
         let status = payload
             .status
             .as_deref()
@@ -372,6 +403,8 @@ impl MonitorStore {
                 notify_config_json = ?,
                 allowed_tools_json = ?,
                 execution_target = ?,
+                assistant_id = ?,
+                analysis_mode = ?,
                 current_interval_minutes = ?,
                 next_run_ts = ?,
                 updated_at = ?
@@ -385,6 +418,8 @@ impl MonitorStore {
         .bind(json_to_string(&notify_config))
         .bind(json_to_string(&json!(allowed_tools)))
         .bind(execution_target)
+        .bind(assistant_id)
+        .bind(analysis_mode)
         .bind(interval_minutes)
         .bind(if next_run_ts > 0 {
             Some(next_run_ts)
@@ -868,12 +903,16 @@ impl MonitorStore {
             "is_significant_change": result.is_significant_change,
             "change_summary": summary,
             "new_snapshot": result.new_snapshot,
+            "strategy_tag": result.strategy_tag,
+            "observations": result.observations,
             "events": result.events,
         });
         let input_data = json!({
             "source": "desktop_local_worker",
             "model": result.model_id,
-            "strategy": "desktop_local_worker",
+            "assistant_id": task.assistant_id,
+            "analysis_mode": task.analysis_mode,
+            "strategy": result.strategy_tag.clone().unwrap_or_else(|| task.analysis_mode.clone()),
         });
 
         sqlx::query(
@@ -1031,6 +1070,9 @@ fn row_to_task(row: &SqliteRow) -> Result<LocalMonitorTask, String> {
     let allowed_tools_json: String = row
         .try_get("allowed_tools_json")
         .map_err(|err| err.to_string())?;
+    let policy_state_json: String = row
+        .try_get("policy_state_json")
+        .map_err(|err| err.to_string())?;
     let last_executed_ts: Option<i64> = row
         .try_get("last_executed_ts")
         .map_err(|err| err.to_string())?;
@@ -1049,10 +1091,19 @@ fn row_to_task(row: &SqliteRow) -> Result<LocalMonitorTask, String> {
         current_interval_minutes: row
             .try_get::<Option<i64>, _>("current_interval_minutes")
             .map_err(|err| err.to_string())?,
+        display_status: row.try_get("status").map_err(|err| err.to_string())?,
         strategy_variants: None,
+        analysis_mode: row
+            .try_get::<String, _>("analysis_mode")
+            .map(|value| normalize_analysis_mode(Some(value.as_str())))
+            .map_err(|err| err.to_string())?,
+        policy_state: parse_json_value(&policy_state_json),
+        binding_state: "ok".to_string(),
+        binding_error: None,
         assistant_id: row
             .try_get::<Option<String>, _>("assistant_id")
             .map_err(|err| err.to_string())?,
+        assistant_name: None,
         model_id: row
             .try_get::<Option<String>, _>("model_id")
             .map_err(|err| err.to_string())?,
@@ -1142,6 +1193,28 @@ fn normalize_status(raw: &str) -> &'static str {
 fn normalize_execution_target(raw: Option<&str>) -> String {
     let _ = raw;
     "desktop".to_string()
+}
+
+fn normalize_assistant_id(raw: String) -> Result<String, String> {
+    let value = raw.trim().to_string();
+    if value.is_empty() {
+        return Err("assistant_id 不能为空".to_string());
+    }
+    Ok(value)
+}
+
+fn normalize_analysis_mode(raw: Option<&str>) -> String {
+    match raw
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(DEFAULT_ANALYSIS_MODE)
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "deep" => "deep".to_string(),
+        "alert_first" => "alert_first".to_string(),
+        _ => DEFAULT_ANALYSIS_MODE.to_string(),
+    }
 }
 
 fn normalize_notification_channel(raw: &str) -> Result<&'static str, String> {
@@ -1258,4 +1331,90 @@ fn truncate(raw: &str, max_chars: usize) -> String {
         return raw.to_string();
     }
     raw.chars().take(max_chars).collect::<String>()
+}
+
+async fn ensure_column(
+    pool: &SqlitePool,
+    table: &str,
+    column: &str,
+    definition: &str,
+) -> Result<(), String> {
+    let pragma = format!("PRAGMA table_info({table})");
+    let rows = sqlx::query(&pragma)
+        .fetch_all(pool)
+        .await
+        .map_err(|err| err.to_string())?;
+    let exists = rows.iter().any(|row| {
+        row.try_get::<String, _>("name")
+            .map(|name| name == column)
+            .unwrap_or(false)
+    });
+    if exists {
+        return Ok(());
+    }
+
+    let statement = format!("ALTER TABLE {table} ADD COLUMN {column} {definition}");
+    sqlx::query(&statement)
+        .execute(pool)
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn build_store() -> MonitorStore {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("memory sqlite pool");
+        MonitorStore::with_pool(pool).await.expect("monitor store")
+    }
+
+    #[tokio::test]
+    async fn create_task_rejects_blank_assistant_id() {
+        let store = build_store().await;
+
+        let error = store
+            .create_task(LocalMonitorTaskCreateRequest {
+                title: "Iran watch".to_string(),
+                objective: "Monitor developments".to_string(),
+                assistant_id: "   ".to_string(),
+                cron_expr: None,
+                analysis_mode: None,
+                notify_config: None,
+                allowed_tools: None,
+                execution_target: None,
+            })
+            .await
+            .expect_err("blank assistant_id should fail");
+
+        assert_eq!(error, "assistant_id 不能为空");
+    }
+
+    #[tokio::test]
+    async fn create_task_persists_analysis_mode_and_policy_state() {
+        let store = build_store().await;
+
+        let created = store
+            .create_task(LocalMonitorTaskCreateRequest {
+                title: "Iran watch".to_string(),
+                objective: "Monitor developments".to_string(),
+                assistant_id: "agent-1".to_string(),
+                cron_expr: Some("0 */6 * * *".to_string()),
+                analysis_mode: Some("alert_first".to_string()),
+                notify_config: None,
+                allowed_tools: None,
+                execution_target: None,
+            })
+            .await
+            .expect("task should be created");
+
+        assert_eq!(created.assistant_id.as_deref(), Some("agent-1"));
+        assert_eq!(created.analysis_mode, "alert_first");
+        assert_eq!(created.policy_state, json!({}));
+    }
 }

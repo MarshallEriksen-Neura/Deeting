@@ -53,7 +53,31 @@ const STATUS_CONFIG = {
     label: "已挂起",
     bg: "bg-red-500/5",
   },
+  binding_required: {
+    dot: "bg-amber-400",
+    ring: "ring-amber-400/20",
+    label: "待绑定",
+    bg: "bg-amber-500/5",
+  },
+  binding_invalid: {
+    dot: "bg-red-400",
+    ring: "ring-red-400/20",
+    label: "绑定失效",
+    bg: "bg-red-500/5",
+  },
 } as const
+
+const ANALYSIS_MODE_LABEL: Record<MonitorTask["analysis_mode"], string> = {
+  concise: "精简",
+  deep: "深度",
+  alert_first: "预警优先",
+}
+
+const BINDING_STATE_LABEL: Record<MonitorTask["binding_state"], string> = {
+  ok: "已绑定",
+  binding_required: "待绑定",
+  binding_invalid: "绑定失效",
+}
 
 export function MonitorTaskCard({
   task,
@@ -65,7 +89,11 @@ export function MonitorTaskCard({
 }: MonitorTaskCardProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [acting, setActing] = useState(false)
-  const config = STATUS_CONFIG[task.status]
+  const config = STATUS_CONFIG[task.display_status]
+  const bindingReady = task.binding_state === "ok"
+  const toggleDisabled =
+    acting || isTriggering || (!bindingReady && task.status !== "active")
+  const triggerDisabled = acting || isTriggering || task.status !== "active" || !bindingReady
 
   const handleToggle = useCallback(async () => {
     setActing(true)
@@ -140,6 +168,7 @@ export function MonitorTaskCard({
         <div className="relative shrink-0">
           <button
             onClick={() => setMenuOpen(!menuOpen)}
+            aria-label="更多操作"
             className="rounded-lg p-1 text-[var(--muted)] transition-colors hover:bg-[var(--foreground)]/5 hover:text-[var(--foreground)]"
           >
             <MoreHorizontal className="h-4 w-4" />
@@ -174,7 +203,7 @@ export function MonitorTaskCard({
                     setMenuOpen(false)
                     handleTrigger()
                   }}
-                  disabled={acting || isTriggering || task.status !== "active"}
+                  disabled={triggerDisabled}
                 />
                 <div className="my-1 h-px bg-white/5" />
                 <MenuButton
@@ -196,6 +225,36 @@ export function MonitorTaskCard({
       <p className="mb-4 line-clamp-2 text-xs leading-relaxed text-[var(--muted)]">
         {task.objective}
       </p>
+
+      <div className="mb-4 flex flex-wrap gap-2">
+        {task.assistant_id ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-[var(--primary)]/10 px-2.5 py-1 text-[10px] font-medium text-[var(--primary)]">
+            <Bot className="h-3 w-3" />
+            {task.assistant_name || task.assistant_id}
+          </span>
+        ) : null}
+        <span
+          className={cn(
+            "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-medium",
+            task.binding_state === "ok"
+              ? "bg-emerald-500/10 text-emerald-400"
+              : task.binding_state === "binding_required"
+                ? "bg-amber-500/10 text-amber-400"
+                : "bg-red-500/10 text-red-400"
+          )}
+        >
+          {BINDING_STATE_LABEL[task.binding_state]}
+        </span>
+        <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-2.5 py-1 text-[10px] font-medium text-[var(--muted)]">
+          {ANALYSIS_MODE_LABEL[task.analysis_mode]}
+        </span>
+      </div>
+
+      {task.binding_error ? (
+        <div className="mb-4 rounded-xl border border-amber-500/15 bg-amber-500/5 px-3 py-2 text-[11px] leading-relaxed text-amber-300">
+          {task.binding_error}
+        </div>
+      ) : null}
 
       {/* Metrics row */}
       <div className="mb-4 grid grid-cols-3 gap-3">
@@ -220,7 +279,7 @@ export function MonitorTaskCard({
       <div className="mt-3 mb-4">
         <CountdownTimer
           nextRunAt={task.next_run_at}
-          status={task.status}
+          status={task.display_status}
           isTriggering={isTriggering}
         />
       </div>
@@ -229,16 +288,16 @@ export function MonitorTaskCard({
       <div className="mt-auto flex items-center gap-2 pt-2 border-t border-white/5">
         <button
           onClick={handleToggle}
-          disabled={acting || isTriggering}
+          disabled={toggleDisabled}
           className={cn(
             "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all",
-            task.status === "active"
+            task.display_status === "active"
               ? "bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
               : "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20",
-            acting && "opacity-50 pointer-events-none"
+            toggleDisabled && "opacity-50 pointer-events-none"
           )}
         >
-          {task.status === "active" ? (
+          {task.display_status === "active" ? (
             <>
               <Pause className="h-3 w-3" /> 暂停
             </>
@@ -248,7 +307,15 @@ export function MonitorTaskCard({
             </>
           )}
         </button>
-        {task.assistant_id && (
+        {!bindingReady ? (
+          <button
+            onClick={() => onEdit(task)}
+            className="ml-auto flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs text-amber-300 transition-colors hover:bg-amber-500/10 hover:text-amber-200"
+          >
+            <Pencil className="h-3 w-3" />
+            修复绑定
+          </button>
+        ) : task.assistant_id ? (
           <a
             href={`/chat?assistant=${task.assistant_id}`}
             className="ml-auto flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs text-[var(--muted)] transition-colors hover:bg-[var(--foreground)]/5 hover:text-[var(--foreground)]"
@@ -256,7 +323,7 @@ export function MonitorTaskCard({
             <Bot className="h-3 w-3" />
             寻猎者
           </a>
-        )}
+        ) : null}
       </div>
     </GlassCard>
   )
@@ -353,7 +420,7 @@ function CountdownTimer({
   isTriggering,
 }: {
   nextRunAt: string | null
-  status: MonitorTask["status"]
+  status: MonitorTask["display_status"]
   isTriggering: boolean
 }) {
   const [nowMs, setNowMs] = useState(() => Date.now())
@@ -387,7 +454,15 @@ function CountdownTimer({
   if (!remaining) {
     return (
       <div className="text-[11px] text-[var(--muted)]">
-        {status === "paused" ? "已暂停调度" : status === "failed_suspended" ? "因连续失败挂起" : "等待调度..."}
+        {status === "paused"
+          ? "已暂停调度"
+          : status === "failed_suspended"
+            ? "因连续失败挂起"
+            : status === "binding_required"
+              ? "等待绑定任务智能体"
+              : status === "binding_invalid"
+                ? "绑定已失效，请先修复"
+                : "等待调度..."}
       </div>
     )
   }

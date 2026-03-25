@@ -349,10 +349,6 @@ describe("TaskAgentsClient", () => {
   })
 
   it("prompts before switching agents when the draft is dirty", async () => {
-    const confirmSpy = jest
-      .spyOn(window, "confirm")
-      .mockReturnValue(false)
-
     render(<TaskAgentsClient />)
 
     const nameInput = await screen.findByDisplayValue("Agent One")
@@ -362,7 +358,11 @@ describe("TaskAgentsClient", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Agent Two/i }))
 
-    expect(confirmSpy).toHaveBeenCalledWith("confirm.discardChanges")
+    expect(screen.getByText("discardDialog.title")).not.toBeNull()
+    expect(screen.getByText("discardDialog.description")).not.toBeNull()
+
+    fireEvent.click(screen.getByText("discardDialog.cancel"))
+
     expect(screen.getByDisplayValue("Changed Agent Name")).not.toBeNull()
   })
 

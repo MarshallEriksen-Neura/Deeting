@@ -289,8 +289,11 @@
       "cancel": "Cancel",
       "confirm": "Delete Agent"
     },
-    "confirm": {
-      "discardChanges": "You have unsaved changes. Discard them and continue?"
+    "discardDialog": {
+      "title": "Discard unsaved changes?",
+      "description": "You have unsaved changes that will be lost if you continue.",
+      "cancel": "Cancel",
+      "confirm": "Discard"
     },
     "toast": {
       "created": "Task agent created",

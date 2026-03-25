@@ -5,6 +5,10 @@ import { request } from "@/lib/http"
 // =====================
 
 export type MonitorStatus = "active" | "paused" | "failed_suspended"
+export type MonitorDisplayStatus =
+  | MonitorStatus
+  | "binding_required"
+  | "binding_invalid"
 export type MonitorExecutionTarget = "cloud" | "desktop"
 
 export interface MonitorTask {
@@ -18,10 +22,16 @@ export interface MonitorTask {
   last_executed_at: string | null
   next_run_at: string | null
   current_interval_minutes: number | null
+  display_status: MonitorDisplayStatus
+  analysis_mode: "concise" | "deep" | "alert_first"
+  policy_state: Record<string, unknown>
+  binding_state: "ok" | "binding_required" | "binding_invalid"
+  binding_error: string | null
   strategy_variants: {
     prompts?: Array<{ id: string; label: string; template: string }>
   } | null
   assistant_id: string | null
+  assistant_name: string | null
   model_id: string | null
   error_count: number
   notify_config: Record<string, unknown>
@@ -90,7 +100,9 @@ export interface MonitorExecutionLogList {
 export interface MonitorTaskCreateInput {
   title: string
   objective: string
+  assistant_id: string
   cron_expr?: string
+  analysis_mode?: "concise" | "deep" | "alert_first"
   notify_config?: Record<string, unknown>
   allowed_tools?: string[]
   execution_target?: MonitorExecutionTarget
@@ -99,7 +111,9 @@ export interface MonitorTaskCreateInput {
 export interface MonitorTaskUpdateInput {
   title?: string
   objective?: string
+  assistant_id?: string
   cron_expr?: string
+  analysis_mode?: "concise" | "deep" | "alert_first"
   status?: MonitorStatus
   notify_config?: Record<string, unknown>
   allowed_tools?: string[]
@@ -159,6 +173,7 @@ export interface MonitorTaskCreateResponse {
   title: string
   status: string
   message: string
+  analysis_mode?: "concise" | "deep" | "alert_first"
   assistant_id?: string | null
   execution_target?: MonitorExecutionTarget
 }
