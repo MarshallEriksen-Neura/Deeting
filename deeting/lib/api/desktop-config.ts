@@ -14,6 +14,7 @@ export async function setDesktopConfig(
 export const DESKTOP_CONFIG_KEYS = {
   maxAgenticRounds: "max_agentic_rounds",
   personaPrompt: "chat.persona_prompt",
+  workerWorkflowRouting: "workflow.route_worker_through_workflow",
   /** Persisted after login so desktop can call credits proxy with Authorization. */
   authToken: "auth.token",
   scoutBaseUrl: "scout.base_url",

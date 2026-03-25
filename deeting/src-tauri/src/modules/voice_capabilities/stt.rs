@@ -87,6 +87,9 @@ mod tests {
         assert_eq!(payload["audio_url"], json!("https://example.com/audio.mp3"));
         assert_eq!(payload["language"], json!("zh"));
         assert_eq!(payload["response_format"], json!("json"));
-        assert_eq!(payload["timestamp_granularities"], json!(["segment", "word"]));
+        assert_eq!(
+            payload["timestamp_granularities"],
+            json!(["segment", "word"])
+        );
     }
 }

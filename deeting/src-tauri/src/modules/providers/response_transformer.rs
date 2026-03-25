@@ -341,12 +341,24 @@ impl ResponseTransformer {
                         }
                     }
                     "function_call" | "tool_call" => {
+                        let call_id = item
+                            .get("call_id")
+                            .and_then(|value| value.as_str())
+                            .or_else(|| item.get("id").and_then(|value| value.as_str()))
+                            .unwrap_or_default();
                         tool_calls.push(json!({
-                            "id": item.get("id"),
+                            "id": call_id,
                             "type": "function",
                             "function": {
                                 "name": item.get("name"),
                                 "arguments": item.get("arguments").cloned().unwrap_or(Value::Null),
+                            },
+                            "extra_content": {
+                                "openai_responses": {
+                                    "response_item_id": item.get("id").cloned().unwrap_or(Value::Null),
+                                    "call_id": item.get("call_id").cloned().unwrap_or(Value::Null),
+                                    "status": item.get("status").cloned().unwrap_or(Value::Null),
+                                }
                             }
                         }));
                     }
@@ -458,5 +470,39 @@ mod openai_responses_tests {
             json!("hello rust responses")
         );
         assert_eq!(transformed["usage"]["total_tokens"], json!(5));
+    }
+
+    #[test]
+    fn transform_uses_openai_responses_call_id_for_tool_replay() {
+        let transformer = ResponseTransformer::new();
+        let transformed = transformer.transform(
+            "openai_compat",
+            Some("openai_responses"),
+            &json!({}),
+            json!({
+                "model": "gpt-5.3-codex",
+                "output": [{
+                    "id": "fc_123",
+                    "call_id": "call_123",
+                    "type": "function_call",
+                    "name": "search_sdk",
+                    "arguments": "{\"query\":\"tool replay\"}",
+                    "status": "completed"
+                }],
+                "usage": { "input_tokens": 2, "output_tokens": 3, "total_tokens": 5 },
+                "status": "completed"
+            }),
+            200,
+        );
+
+        assert_eq!(
+            transformed["choices"][0]["message"]["tool_calls"][0]["id"],
+            json!("call_123")
+        );
+        assert_eq!(
+            transformed["choices"][0]["message"]["tool_calls"][0]["extra_content"]
+                ["openai_responses"]["response_item_id"],
+            json!("fc_123")
+        );
     }
 }

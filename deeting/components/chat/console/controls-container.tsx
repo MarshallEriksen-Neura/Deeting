@@ -9,6 +9,7 @@ import { useI18n } from '@/hooks/use-i18n';
 import { isTauriRuntime as detectTauriRuntime } from '@/lib/runtime/tauri';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import Image from 'next/image';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Slider } from '@/components/ui/slider';
@@ -20,7 +21,13 @@ import { useChatMessaging } from '@/hooks/chat/use-chat-messaging';
 import { listLocalUserDocuments } from '@/lib/api/knowledge';
 import type { KnowledgeFile } from '@/types/knowledge';
 import { listCustomTaskAgents, type CustomTaskAgentProfile } from '@/lib/api/custom-task-agents';
+import { DESKTOP_CONFIG_KEYS, getDesktopConfig, setDesktopConfig } from '@/lib/api/desktop-config';
 import { resolveLeadingTaskAgentMention } from '@/hooks/chat/task-agent-mention';
+
+function parseDesktopConfigBool(raw: string | null | undefined) {
+  const normalized = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+  return ['1', 'true', 'yes', 'on', 'enabled'].includes(normalized);
+}
 
 /**
  * ControlsContainer - 聊天控制面板组件
@@ -48,6 +55,9 @@ function ControlsContainer() {
   const [knowledgeLoading, setKnowledgeLoading] = useState(false);
   const [knowledgeLoadError, setKnowledgeLoadError] = useState<string | null>(null);
   const [taskAgents, setTaskAgents] = useState<CustomTaskAgentProfile[]>([]);
+  const [workflowRoutingEnabled, setWorkflowRoutingEnabled] = useState(false);
+  const [workflowRoutingLoading, setWorkflowRoutingLoading] = useState(false);
+  const [workflowRoutingSaving, setWorkflowRoutingSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const t = useI18n('chat');
   const {
@@ -167,6 +177,28 @@ function ControlsContainer() {
       })
       .catch((error) => {
         console.warn("load_task_agents_failed", error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isTauriRuntime]);
+
+  useEffect(() => {
+    if (!isTauriRuntime) return;
+    let cancelled = false;
+    setWorkflowRoutingLoading(true);
+    void getDesktopConfig(DESKTOP_CONFIG_KEYS.workerWorkflowRouting)
+      .then((value) => {
+        if (cancelled) return;
+        setWorkflowRoutingEnabled(parseDesktopConfigBool(value));
+      })
+      .catch((error) => {
+        console.warn('load_workflow_routing_config_failed', error);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setWorkflowRoutingLoading(false);
+        }
       });
     return () => {
       cancelled = true;
@@ -315,6 +347,24 @@ function ControlsContainer() {
   const handleClearKnowledgeFiles = useCallback(() => {
     clearSelectedKnowledgeFileIds();
   }, [clearSelectedKnowledgeFileIds]);
+
+  const handleWorkflowRoutingChange = useCallback(async (checked: boolean) => {
+    if (!isTauriRuntime) return;
+    const previous = workflowRoutingEnabled;
+    setWorkflowRoutingEnabled(checked);
+    setWorkflowRoutingSaving(true);
+    try {
+      await setDesktopConfig(
+        DESKTOP_CONFIG_KEYS.workerWorkflowRouting,
+        checked ? 'true' : 'false',
+      );
+    } catch (error) {
+      console.warn('save_workflow_routing_config_failed', error);
+      setWorkflowRoutingEnabled(previous);
+    } finally {
+      setWorkflowRoutingSaving(false);
+    }
+  }, [isTauriRuntime, workflowRoutingEnabled]);
 
   const handleSendOrCancel = useCallback(() => {
     if (isGenerating) {
@@ -646,6 +696,25 @@ function ControlsContainer() {
                 )}
               </PopoverContent>
             </Popover>
+          ) : null}
+
+          {isTauriRuntime ? (
+            <div className="flex h-10 items-center gap-2 rounded-full bg-slate-100/80 px-3 text-slate-600 dark:bg-white/5 dark:text-white/70">
+              <span className="text-[11px] font-medium whitespace-nowrap">
+                {t("controls.workflowRouting")}
+              </span>
+              <Switch
+                aria-label={t("controls.workflowRouting")}
+                checked={workflowRoutingEnabled}
+                onCheckedChange={(checked) => void handleWorkflowRoutingChange(checked)}
+                disabled={isLoading || workflowRoutingLoading || workflowRoutingSaving}
+              />
+              <span className="hidden text-[10px] text-slate-500 dark:text-white/45 sm:inline">
+                {workflowRoutingEnabled
+                  ? t("controls.workflowRoutingOn")
+                  : t("controls.workflowRoutingOff")}
+              </span>
+            </div>
           ) : null}
 
           <Button

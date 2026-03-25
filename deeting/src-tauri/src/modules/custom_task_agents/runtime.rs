@@ -7,9 +7,9 @@ use uuid::Uuid;
 use crate::modules::ai_upstream::{
     request_provider_chat_completion, resolve_local_model_connection,
 };
-use crate::modules::custom_task_agents::voice_config::resolve_custom_task_agent_tts_config;
 use crate::modules::chat_assets::resolve_chat_assets_dir;
 use crate::modules::custom_task_agents::image_config::resolve_custom_task_agent_image_config;
+use crate::modules::custom_task_agents::voice_config::resolve_custom_task_agent_tts_config;
 use crate::modules::image_generation::commands::run_local_image_generation_task_inline;
 use crate::modules::image_generation::types::LocalImageGenerationTaskCreateRequest;
 use crate::modules::mcp::commands::runtime::{execute_mcp_tool, resolve_callable_mcp_tool_by_ref};
@@ -30,8 +30,7 @@ use crate::modules::voice_capabilities::types::TtsRequest;
 const MAX_CUSTOM_TASK_AGENT_TOOL_ROUNDS: usize = 4;
 const MAX_GUIDANCE_SKILL_DOCS: usize = 3;
 pub(crate) const IMAGE_AGENT_INPUT_REQUIRED_CODE: &str = "IMAGE_AGENT_INPUT_REQUIRED";
-pub(crate) const IMAGE_AGENT_INPUT_LIMIT_EXCEEDED_CODE: &str =
-    "IMAGE_AGENT_INPUT_LIMIT_EXCEEDED";
+pub(crate) const IMAGE_AGENT_INPUT_LIMIT_EXCEEDED_CODE: &str = "IMAGE_AGENT_INPUT_LIMIT_EXCEEDED";
 pub(crate) const IMAGE_AGENT_UPSTREAM_INPUT_LIMIT_EXCEEDED_CODE: &str =
     "IMAGE_AGENT_UPSTREAM_INPUT_LIMIT_EXCEEDED";
 pub(crate) const IMAGE_AGENT_INPUT_RESOLUTION_FAILED_CODE: &str =
@@ -126,24 +125,20 @@ pub(crate) async fn preview_custom_task_agent(
 
     let (model, provider_model_id) =
         resolve_custom_task_agent_model_selection(profile.model_config.as_ref());
-    let model_connection = resolve_local_model_connection(
-        app_state,
-        &model,
-        provider_model_id.as_deref(),
-    )
-    .await
-    .map_err(CustomTaskAgentRuntimeError::from)?;
+    let model_connection =
+        resolve_local_model_connection(app_state, &model, provider_model_id.as_deref())
+            .await
+            .map_err(CustomTaskAgentRuntimeError::from)?;
 
     if profile.invocation_kind == CustomTaskAgentInvocationKind::ImageGeneration {
         let image_config = resolve_custom_task_agent_image_config(profile.model_config.as_ref());
         let allow_text_only = image_config.allow_text_only.unwrap_or(true);
-        let configured_max_input_images = image_config.max_input_images.unwrap_or(1).max(0) as usize;
-        let upstream_max_input_images = resolve_upstream_max_input_images(
-            app_state,
-            &model_connection.provider_model_id,
-        )
-        .await
-        .unwrap_or(1);
+        let configured_max_input_images =
+            image_config.max_input_images.unwrap_or(1).max(0) as usize;
+        let upstream_max_input_images =
+            resolve_upstream_max_input_images(app_state, &model_connection.provider_model_id)
+                .await
+                .unwrap_or(1);
         let input_image_count = request.image_urls.len();
 
         if input_image_count == 0 && !allow_text_only {
@@ -183,10 +178,7 @@ pub(crate) async fn preview_custom_task_agent(
         )
         .await
         .map_err(|err| {
-            CustomTaskAgentRuntimeError::with_code(
-                IMAGE_AGENT_INPUT_RESOLUTION_FAILED_CODE,
-                err,
-            )
+            CustomTaskAgentRuntimeError::with_code(IMAGE_AGENT_INPUT_RESOLUTION_FAILED_CODE, err)
         })?;
         let detail = run_local_image_generation_task_inline(
             app_handle,
@@ -431,11 +423,7 @@ pub(crate) async fn preview_custom_task_agent(
         });
     }
 
-    Err(format!(
-        "custom task agent exceeded {} callable rounds",
-        max_rounds
-    )
-    .into())
+    Err(format!("custom task agent exceeded {} callable rounds", max_rounds).into())
 }
 
 async fn resolve_request_image_urls(

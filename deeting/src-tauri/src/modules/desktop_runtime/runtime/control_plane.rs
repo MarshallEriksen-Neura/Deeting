@@ -149,12 +149,8 @@ pub(crate) async fn maybe_override_route_with_custom_task_agent(
         return Ok(decision);
     }
 
-    let Some(selection) = select_worker_custom_task_agent(
-        app_state,
-        explicit_task_agent_id,
-        query,
-    )
-    .await?
+    let Some(selection) =
+        select_worker_custom_task_agent(app_state, explicit_task_agent_id, query).await?
     else {
         return Ok(decision);
     };
@@ -238,7 +234,10 @@ pub(crate) async fn select_explicit_worker_custom_task_agent(
     };
 
     if !profile.is_enabled || profile.is_deleted {
-        return Err(format!("explicit task agent '{}' is unavailable", profile.name));
+        return Err(format!(
+            "explicit task agent '{}' is unavailable",
+            profile.name
+        ));
     }
 
     Ok(Some(WorkerTargetSelection {

@@ -165,7 +165,7 @@ export async function getCustomTaskAgent(
   agentId: string,
 ): Promise<CustomTaskAgentProfile> {
   const data = await invokeTauri<unknown>("get_custom_task_agent", {
-    agent_id: agentId,
+    agentId,
   })
   return CustomTaskAgentProfileSchema.parse(data)
 }
@@ -199,7 +199,7 @@ export async function updateCustomTaskAgent(
   payload: UpsertCustomTaskAgentPayload,
 ): Promise<CustomTaskAgentProfile> {
   const data = await invokeTauri<unknown>("update_custom_task_agent", {
-    agent_id: agentId,
+    agentId,
     payload,
   })
   return CustomTaskAgentProfileSchema.parse(data)
@@ -207,7 +207,7 @@ export async function updateCustomTaskAgent(
 
 export async function deleteCustomTaskAgent(agentId: string): Promise<void> {
   await invokeTauri<void>("delete_custom_task_agent", {
-    agent_id: agentId,
+    agentId,
   })
 }
 
@@ -216,7 +216,7 @@ export async function previewCustomTaskAgent(
   payload: CustomTaskAgentPreviewPayload,
 ): Promise<CustomTaskAgentPreviewResponse> {
   const data = await invokeTauri<unknown>("preview_custom_task_agent", {
-    agent_id: agentId,
+    agentId,
     payload: {
       message: payload.message,
       image_urls: payload.image_urls ?? [],

@@ -1,5 +1,5 @@
 import React from "react"
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import ControlsContainer from "@/components/chat/console/controls-container"
 import { useChatStore } from "@/store/chat-store"
 import { useChatMessaging } from "@/hooks/chat/use-chat-messaging"
@@ -32,6 +32,17 @@ jest.mock("@/hooks/chat/use-chat-messaging", () => ({
   useChatMessaging: jest.fn(),
 }))
 
+const mockGetDesktopConfig = jest.fn()
+const mockSetDesktopConfig = jest.fn()
+
+jest.mock("@/lib/api/desktop-config", () => ({
+  DESKTOP_CONFIG_KEYS: {
+    workerWorkflowRouting: "workflow.route_worker_through_workflow",
+  },
+  getDesktopConfig: (...args: unknown[]) => mockGetDesktopConfig(...args),
+  setDesktopConfig: (...args: unknown[]) => mockSetDesktopConfig(...args),
+}))
+
 const mockUseChatMessaging = useChatMessaging as jest.MockedFunction<
   typeof useChatMessaging
 >
@@ -52,6 +63,8 @@ const buildMessagingMock = (
 describe("ControlsContainer (web)", () => {
   beforeEach(() => {
     mockUseChatMessaging.mockReset()
+    mockGetDesktopConfig.mockReset()
+    mockSetDesktopConfig.mockReset()
     delete (window as typeof window & { __TAURI__?: unknown }).__TAURI__
     delete (window as typeof window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
     useChatStore.setState({
@@ -62,6 +75,8 @@ describe("ControlsContainer (web)", () => {
       selectedAssistant: null,
     })
 
+    mockGetDesktopConfig.mockResolvedValue(null)
+    mockSetDesktopConfig.mockResolvedValue(undefined)
     mockUseChatMessaging.mockReturnValue(buildMessagingMock())
   })
 
@@ -127,5 +142,49 @@ describe("ControlsContainer (web)", () => {
         isTauriRuntime: false,
       }),
     ])
+  })
+
+  it("loads the desktop workflow routing switch from persisted config", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    mockGetDesktopConfig.mockResolvedValueOnce("enabled")
+    Object.defineProperty(window, "__TAURI__", {
+      configurable: true,
+      value: {},
+    })
+
+    render(<ControlsContainer />)
+
+    const toggle = await screen.findByRole("switch", {
+      name: "controls.workflowRouting",
+    })
+    await waitFor(() => {
+      expect(toggle).toHaveAttribute("aria-checked", "true")
+    })
+
+    expect(mockGetDesktopConfig).toHaveBeenCalledWith(
+      "workflow.route_worker_through_workflow"
+    )
+  })
+
+  it("persists desktop workflow routing changes from the chat controls", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    Object.defineProperty(window, "__TAURI__", {
+      configurable: true,
+      value: {},
+    })
+
+    render(<ControlsContainer />)
+
+    const toggle = await screen.findByRole("switch", {
+      name: "controls.workflowRouting",
+    })
+    fireEvent.click(toggle)
+
+    await waitFor(() => {
+      expect(mockSetDesktopConfig).toHaveBeenCalledWith(
+        "workflow.route_worker_through_workflow",
+        "true"
+      )
+    })
   })
 })

@@ -518,6 +518,7 @@ fn build_structured_tool_replay_messages(
     tool_call_meta: &[serde_json::Value],
 ) -> Option<Vec<LocalChatInputMessage>> {
     if protocol_family != "openai_chat"
+        && protocol_family != "openai_responses"
         && protocol_family != "anthropic_messages"
         && protocol_family != "google_gemini"
     {
@@ -572,6 +573,13 @@ fn serialize_tool_replay_content(item: &serde_json::Value) -> String {
     if let Some(result) = item.get("result") {
         if let Some(text) = result.as_str() {
             return text.to_string();
+        }
+        if result
+            .get("structuredContent")
+            .filter(|value| !value.is_null())
+            .is_some()
+        {
+            return serde_json::to_string(result).unwrap_or_else(|_| "{}".to_string());
         }
         if let Some(extracted) = extract_mcp_result_text_content(result) {
             return extracted;
@@ -1187,7 +1195,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
                 None,
                 Some(tool_name.clone()),
                 call.arguments.clone(),
-                true,
+                false,
             )
             .await
             {
@@ -1537,8 +1545,14 @@ mod tests {
         assert_eq!(gemini_replay.len(), 2);
         assert_eq!(gemini_replay[1].role, "tool");
 
-        assert!(
-            build_structured_tool_replay_messages("openai_responses", &response, &meta).is_none()
+        let responses_replay =
+            build_structured_tool_replay_messages("openai_responses", &response, &meta)
+                .expect("responses replay");
+        assert_eq!(responses_replay.len(), 2);
+        assert_eq!(responses_replay[0].role, "assistant");
+        assert_eq!(
+            responses_replay[1].tool_call_id.as_deref(),
+            Some("call_123")
         );
     }
 
@@ -1588,7 +1602,7 @@ mod tests {
     }
 
     #[test]
-    fn serialize_tool_replay_content_extracts_standard_mcp_text_content() {
+    fn serialize_tool_replay_content_preserves_structured_content_payloads() {
         let item = serde_json::json!({
             "id": "call_tavily",
             "name": "tavily-search",
@@ -1603,6 +1617,28 @@ mod tests {
                         { "title": "Example", "url": "https://example.com" }
                     ]
                 },
+                "isError": false
+            }
+        });
+
+        let serialized = serialize_tool_replay_content(&item);
+        let reparsed: serde_json::Value =
+            serde_json::from_str(&serialized).expect("structured tool replay should stay json");
+
+        assert_eq!(reparsed, item["result"]);
+    }
+
+    #[test]
+    fn serialize_tool_replay_content_extracts_standard_mcp_text_content_without_structured_data() {
+        let item = serde_json::json!({
+            "id": "call_tavily",
+            "name": "tavily-search",
+            "status": "success",
+            "result": {
+                "content": [
+                    { "type": "text", "text": "Detailed Results:" },
+                    { "type": "text", "text": "1. Example result body" }
+                ],
                 "isError": false
             }
         });

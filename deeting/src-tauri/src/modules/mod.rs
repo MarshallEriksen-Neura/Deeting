@@ -1,7 +1,7 @@
 pub mod admin;
 pub mod ai_upstream;
-pub mod audio;
 pub mod assistants;
+pub mod audio;
 pub mod capability_control_plane;
 pub mod chat_assets;
 pub mod code_mode;
@@ -22,5 +22,5 @@ pub mod scan;
 pub mod shell_executor;
 pub mod skill_runtime;
 pub mod skills;
-pub mod workflow;
 pub mod voice_capabilities;
+pub mod workflow;

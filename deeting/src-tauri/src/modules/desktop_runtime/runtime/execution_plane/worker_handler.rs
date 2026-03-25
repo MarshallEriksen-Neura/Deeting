@@ -220,11 +220,7 @@ where
                     "error": err_text,
                 })),
             );
-            build_delegated_worker_execution(
-                &selection.profile,
-                Err(err),
-                Vec::new(),
-            )
+            build_delegated_worker_execution(&selection.profile, Err(err), Vec::new())
         }
     };
 
@@ -280,7 +276,10 @@ fn latest_user_image_input(messages: &[LocalChatInputMessage]) -> LatestUserImag
         let Some(object) = item.as_object() else {
             continue;
         };
-        let block_type = object.get("type").and_then(|value| value.as_str()).unwrap_or_default();
+        let block_type = object
+            .get("type")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
         match block_type {
             "text" => {
                 if let Some(text) = object
@@ -297,15 +296,12 @@ fn latest_user_image_input(messages: &[LocalChatInputMessage]) -> LatestUserImag
                 if let Some(url) = object
                     .get("image_url")
                     .and_then(|value| {
-                        value
-                            .as_str()
-                            .map(str::to_string)
-                            .or_else(|| {
-                                value
-                                    .get("url")
-                                    .and_then(|entry| entry.as_str())
-                                    .map(str::to_string)
-                            })
+                        value.as_str().map(str::to_string).or_else(|| {
+                            value
+                                .get("url")
+                                .and_then(|entry| entry.as_str())
+                                .map(str::to_string)
+                        })
                     })
                     .map(|value| value.trim().to_string())
                     .filter(|value| !value.is_empty())

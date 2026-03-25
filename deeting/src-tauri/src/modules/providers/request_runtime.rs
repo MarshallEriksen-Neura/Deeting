@@ -245,7 +245,11 @@ pub async fn send_prepared_request_raw(
                 .map(|text| (key.as_str().to_string(), text.to_string()))
         })
         .collect();
-    let bytes = response.bytes().await.map_err(|err| err.to_string())?.to_vec();
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|err| err.to_string())?
+        .to_vec();
     let text = String::from_utf8(bytes.clone()).ok();
     let json = serde_json::from_slice::<Value>(&bytes).ok();
     Ok(PreparedRawResponse {
@@ -1002,6 +1006,268 @@ fn parse_gemini_tool_response_payload(content: Option<&Value>) -> Value {
     }
 }
 
+fn responses_messages_require_itemized_input(messages: &[Value]) -> bool {
+    if messages.len() > 1 {
+        return true;
+    }
+
+    messages.iter().any(|message| {
+        let role = message
+            .get("role")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
+        if role != "user" {
+            return true;
+        }
+        if message
+            .get("tool_calls")
+            .and_then(|value| value.as_array())
+            .is_some_and(|items| !items.is_empty())
+        {
+            return true;
+        }
+        if message
+            .get("tool_call_id")
+            .and_then(|value| value.as_str())
+            .is_some_and(|value| !value.trim().is_empty())
+        {
+            return true;
+        }
+        !matches!(message.get("content"), Some(Value::String(_)))
+    })
+}
+
+fn render_responses_input_from_canonical_messages(messages: &[Value]) -> Option<Vec<Value>> {
+    let mut input = Vec::new();
+
+    for message in messages {
+        let role = message
+            .get("role")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
+        if role == "tool" {
+            if let Some(item) = render_responses_function_call_output_item(message) {
+                input.push(item);
+            }
+            continue;
+        }
+
+        if let Some(item) = render_responses_message_item(message) {
+            input.push(item);
+        }
+        input.extend(render_responses_function_call_items(message));
+    }
+
+    if input.is_empty() {
+        None
+    } else {
+        Some(input)
+    }
+}
+
+fn render_responses_message_item(message: &Value) -> Option<Value> {
+    let role = message.get("role").and_then(|value| value.as_str())?;
+    let content = render_responses_message_content(message.get("content"))?;
+    Some(json!({
+        "role": role,
+        "content": content,
+    }))
+}
+
+fn render_responses_message_content(content: Option<&Value>) -> Option<Value> {
+    let content = content?;
+    match content {
+        Value::Null => None,
+        Value::String(text) => {
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(Value::String(text.clone()))
+            }
+        }
+        Value::Array(items) => {
+            let rendered: Vec<Value> = items
+                .iter()
+                .filter_map(render_responses_message_content_block)
+                .collect();
+            if rendered.is_empty() {
+                None
+            } else {
+                Some(Value::Array(rendered))
+            }
+        }
+        Value::Object(object) => {
+            if object
+                .get("type")
+                .and_then(|value| value.as_str())
+                .is_some()
+            {
+                render_responses_message_content_block(content)
+            } else if let Some(text) = object
+                .get("text")
+                .and_then(|value| value.as_str())
+                .or_else(|| object.get("content").and_then(|value| value.as_str()))
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                Some(Value::String(text.to_string()))
+            } else {
+                serde_json::to_string(content).ok().map(Value::String)
+            }
+        }
+        other => serde_json::to_string(other).ok().map(Value::String),
+    }
+}
+
+fn render_responses_message_content_block(item: &Value) -> Option<Value> {
+    let object = item.as_object()?;
+    let block_type = object.get("type").and_then(|value| value.as_str())?;
+
+    match block_type {
+        "text" | "input_text" => object
+            .get("text")
+            .and_then(|value| value.as_str())
+            .or_else(|| object.get("content").and_then(|value| value.as_str()))
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| json!({ "type": "input_text", "text": value })),
+        "image_url" | "input_image" => object
+            .get("image_url")
+            .and_then(|value| {
+                value.as_str().map(str::to_string).or_else(|| {
+                    value
+                        .get("url")
+                        .and_then(|entry| entry.as_str())
+                        .map(str::to_string)
+                })
+            })
+            .or_else(|| {
+                object
+                    .get("url")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string)
+            })
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .map(|value| json!({ "type": "input_image", "image_url": value })),
+        "input_file" => object
+            .get("input_file")
+            .and_then(|value| {
+                value.as_str().map(str::to_string).or_else(|| {
+                    value
+                        .get("file_id")
+                        .and_then(|entry| entry.as_str())
+                        .map(str::to_string)
+                })
+            })
+            .or_else(|| {
+                object
+                    .get("file_id")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string)
+            })
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .map(|value| {
+                let filename = object
+                    .get("input_file")
+                    .and_then(|entry| entry.get("filename"))
+                    .and_then(|entry| entry.as_str())
+                    .or_else(|| object.get("filename").and_then(|entry| entry.as_str()))
+                    .map(str::trim)
+                    .filter(|entry| !entry.is_empty());
+                json!({
+                    "type": "input_file",
+                    "file_id": value,
+                    "filename": filename,
+                })
+            }),
+        _ => Some(item.clone()),
+    }
+}
+
+fn render_responses_function_call_items(message: &Value) -> Vec<Value> {
+    message
+        .get("tool_calls")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|call| {
+                    let call_id = call
+                        .get("id")
+                        .and_then(|value| value.as_str())
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())?;
+                    let name = call
+                        .get("name")
+                        .and_then(|value| value.as_str())
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())?;
+                    let arguments = call.get("arguments").cloned().unwrap_or_else(|| json!({}));
+                    let serialized_arguments = match arguments {
+                        Value::String(text) => text,
+                        other => serde_json::to_string(&other).ok()?,
+                    };
+                    let response_item_id = call
+                        .get("extra_content")
+                        .and_then(|value| value.get("openai_responses"))
+                        .and_then(|value| value.get("response_item_id"))
+                        .and_then(|value| value.as_str())
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty());
+                    let status = call
+                        .get("extra_content")
+                        .and_then(|value| value.get("openai_responses"))
+                        .and_then(|value| value.get("status"))
+                        .and_then(|value| value.as_str())
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty());
+                    let mut object = Map::new();
+                    object.insert(
+                        "type".to_string(),
+                        Value::String("function_call".to_string()),
+                    );
+                    object.insert("call_id".to_string(), Value::String(call_id.to_string()));
+                    object.insert("name".to_string(), Value::String(name.to_string()));
+                    object.insert("arguments".to_string(), Value::String(serialized_arguments));
+                    if let Some(value) = response_item_id {
+                        object.insert("id".to_string(), Value::String(value.to_string()));
+                    }
+                    if let Some(value) = status {
+                        object.insert("status".to_string(), Value::String(value.to_string()));
+                    }
+                    Some(Value::Object(object))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn render_responses_function_call_output_item(message: &Value) -> Option<Value> {
+    let call_id = message
+        .get("tool_call_id")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+    let output = stringify_responses_function_output(message.get("content"))?;
+    Some(json!({
+        "type": "function_call_output",
+        "call_id": call_id,
+        "output": output,
+    }))
+}
+
+fn stringify_responses_function_output(content: Option<&Value>) -> Option<String> {
+    let content = content?;
+    match content {
+        Value::Null => Some(String::new()),
+        Value::String(text) => Some(text.clone()),
+        other => serde_json::to_string(other).ok(),
+    }
+}
+
 fn responses_input_from_messages_or_items_builder(
     rendered_body: Value,
     request_data: &Map<String, Value>,
@@ -1044,6 +1310,19 @@ fn responses_input_from_messages_or_items_builder(
                 },
             );
             return Value::Object(body);
+        }
+    }
+
+    if let Some(messages) = context
+        .get("canonical_request")
+        .and_then(|value| value.get("messages"))
+        .and_then(|value| value.as_array())
+    {
+        if responses_messages_require_itemized_input(messages) {
+            if let Some(rendered) = render_responses_input_from_canonical_messages(messages) {
+                body.insert("input".to_string(), Value::Array(rendered));
+                return Value::Object(body);
+            }
         }
     }
 
@@ -2038,6 +2317,201 @@ mod tests {
         assert_eq!(prepared.body["model"], json!("gpt-5.3-codex"));
         assert_eq!(prepared.body["input"], json!("hello responses"));
         assert!(prepared.body.get("messages").is_none());
+    }
+
+    #[test]
+    fn prepare_provider_request_responses_family_preserves_system_and_assistant_roles() {
+        let mut preset = mock_preset();
+        preset.provider = "openai".to_string();
+        preset.protocol_profiles = json!({
+            "chat": {
+                "runtime_version": "v2",
+                "schema_version": "2026-03-07",
+                "profile_id": "openai:chat:openai_responses",
+                "provider": "openai",
+                "protocol_family": "openai_responses",
+                "capability": "chat",
+                "transport": {
+                    "method": "POST",
+                    "path": "responses",
+                    "query_template": {},
+                    "header_template": {}
+                },
+                "request": {
+                    "template_engine": "openai_compat",
+                    "request_template": {
+                        "model": null,
+                        "input": null,
+                        "stream": null
+                    },
+                    "request_builder": {
+                        "name": "responses_input_from_messages_or_items",
+                        "config": {}
+                    }
+                },
+                "response": {
+                    "decoder": { "name": "openai_responses", "config": {} },
+                    "response_template": {}
+                },
+                "stream": {
+                    "stream_decoder": { "name": "openai_responses_events", "config": {} }
+                },
+                "auth": { "auth_policy": "inherit", "config": {} },
+                "features": {
+                    "supports_messages": false,
+                    "supports_input_items": true
+                },
+                "defaults": {
+                    "headers": { "X-Source": "desktop" },
+                    "query": {},
+                    "body": {}
+                }
+            }
+        });
+        let instance = mock_instance(json!({ "protocol": "responses", "auto_append_v1": true }));
+        let mut model = mock_model(&["chat"]);
+        model.upstream_path = "responses".to_string();
+
+        let prepared = prepare_provider_request(
+            Some(&preset),
+            &instance,
+            &model,
+            Some("sk-test"),
+            "chat",
+            json!({
+                "model": "gpt-5.3-codex",
+                "messages": [
+                    { "role": "system", "content": "be concise" },
+                    { "role": "assistant", "content": "Previous answer" },
+                    { "role": "user", "content": "Continue" }
+                ],
+                "stream": false,
+            }),
+            None,
+            None,
+        )
+        .expect("prepare structured responses request");
+
+        assert_eq!(
+            prepared.body["input"],
+            json!([
+                { "role": "system", "content": "be concise" },
+                { "role": "assistant", "content": "Previous answer" },
+                { "role": "user", "content": "Continue" }
+            ])
+        );
+    }
+
+    #[test]
+    fn prepare_provider_request_responses_family_renders_function_call_and_output_items() {
+        let mut preset = mock_preset();
+        preset.provider = "openai".to_string();
+        preset.protocol_profiles = json!({
+            "chat": {
+                "runtime_version": "v2",
+                "schema_version": "2026-03-07",
+                "profile_id": "openai:chat:openai_responses",
+                "provider": "openai",
+                "protocol_family": "openai_responses",
+                "capability": "chat",
+                "transport": {
+                    "method": "POST",
+                    "path": "responses",
+                    "query_template": {},
+                    "header_template": {}
+                },
+                "request": {
+                    "template_engine": "openai_compat",
+                    "request_template": {
+                        "model": null,
+                        "input": null,
+                        "stream": null
+                    },
+                    "request_builder": {
+                        "name": "responses_input_from_messages_or_items",
+                        "config": {}
+                    }
+                },
+                "response": {
+                    "decoder": { "name": "openai_responses", "config": {} },
+                    "response_template": {}
+                },
+                "stream": {
+                    "stream_decoder": { "name": "openai_responses_events", "config": {} }
+                },
+                "auth": { "auth_policy": "inherit", "config": {} },
+                "features": {
+                    "supports_messages": false,
+                    "supports_input_items": true
+                },
+                "defaults": {
+                    "headers": { "X-Source": "desktop" },
+                    "query": {},
+                    "body": {}
+                }
+            }
+        });
+        let instance = mock_instance(json!({ "protocol": "responses", "auto_append_v1": true }));
+        let mut model = mock_model(&["chat"]);
+        model.upstream_path = "responses".to_string();
+
+        let prepared = prepare_provider_request(
+            Some(&preset),
+            &instance,
+            &model,
+            Some("sk-test"),
+            "chat",
+            json!({
+                "model": "gpt-5.3-codex",
+                "messages": [
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "call_123",
+                                "name": "search_sdk",
+                                "arguments": { "query": "tool replay" },
+                                "extra_content": {
+                                    "openai_responses": {
+                                        "response_item_id": "fc_123",
+                                        "status": "completed"
+                                    }
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "role": "tool",
+                        "tool_call_id": "call_123",
+                        "content": "{\"status\":\"ok\"}"
+                    }
+                ],
+                "stream": false
+            }),
+            None,
+            None,
+        )
+        .expect("prepare responses replay request");
+
+        assert_eq!(
+            prepared.body["input"],
+            json!([
+                {
+                    "type": "function_call",
+                    "id": "fc_123",
+                    "call_id": "call_123",
+                    "name": "search_sdk",
+                    "arguments": "{\"query\":\"tool replay\"}",
+                    "status": "completed"
+                },
+                {
+                    "type": "function_call_output",
+                    "call_id": "call_123",
+                    "output": "{\"status\":\"ok\"}"
+                }
+            ])
+        );
     }
 
     #[test]
