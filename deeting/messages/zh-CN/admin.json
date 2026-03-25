@@ -1218,9 +1218,13 @@
       }
     },
     "providerPresetsPage": {
+      "managementHint": "从这里进入预设编辑页，管理员可以直接修改配置并验证请求。",
       "status": {
         "active": "启用",
         "inactive": "停用"
+      },
+      "actions": {
+        "edit": "编辑"
       },
       "card": {
         "unnamedPreset": "未命名预设",
@@ -1230,6 +1234,69 @@
         "loading": "正在加载 Provider 预设...",
         "failed": "加载 Provider 预设失败",
         "noData": "暂无 Provider 预设"
+      }
+    },
+    "providerPresetsEditor": {
+      "title": "编辑 Provider 预设",
+      "description": "修改 preset 配置，并使用临时 API Key 验证骨架请求",
+      "sections": {
+        "basic": "基础信息",
+        "basicHint": "维护 preset 的基本识别信息与同步元数据。",
+        "auth": "鉴权配置",
+        "authHint": "这里只保存鉴权规则，不保存真实 API Key。",
+        "protocolProfiles": "Protocol Profiles",
+        "protocolProfilesHint": "支持完整 JSON 编辑；服务端会把简化配置归一化为运行时 profile。",
+        "verify": "本地验证",
+        "verifyHint": "输入临时 API Key，不落库，直接按当前草稿骨架请求调用上游。"
+      },
+      "fields": {
+        "slug": "Slug",
+        "name": "名称",
+        "provider": "Provider",
+        "category": "分类",
+        "baseUrl": "Base URL",
+        "urlTemplate": "URL 模板",
+        "themeColor": "主题色",
+        "icon": "图标",
+        "version": "版本",
+        "active": "启用",
+        "authType": "鉴权方式",
+        "authConfig": "鉴权配置 JSON",
+        "protocolSchemaVersion": "Protocol Schema Version",
+        "protocolProfiles": "Protocol Profiles JSON",
+        "protocolProfilesHelp": "当前可识别 capability: {capabilities}"
+      },
+      "actions": {
+        "verify": "验证骨架请求"
+      },
+      "feedback": {
+        "saved": "Provider preset 已保存",
+        "saveFailed": "保存失败",
+        "loadFailed": "加载 preset 失败",
+        "invalidJson": "JSON 配置无效，请先修正",
+        "invalidVersion": "版本号必须是大于等于 1 的整数",
+        "requiredFields": "名称、Provider、Base URL 为必填项"
+      },
+      "verify": {
+        "fields": {
+          "capability": "验证能力",
+          "model": "测试模型",
+          "apiKey": "临时 API Key",
+          "prompt": "测试 Prompt"
+        },
+        "placeholders": {
+          "model": "例如：doubao-1-5-lite-32k-250115",
+          "apiKey": "仅本次验证使用，不会保存"
+        },
+        "apiKeyHint": "该 Key 仅用于本地验证，不会写入 preset 或数据库。",
+        "feedback": {
+          "missingInputs": "请填写临时 API Key 和测试模型",
+          "failed": "验证失败"
+        },
+        "result": {
+          "request": "渲染后的请求",
+          "response": "响应预览：{status}"
+        }
       }
     },
     "embeddingSettingsPage": {

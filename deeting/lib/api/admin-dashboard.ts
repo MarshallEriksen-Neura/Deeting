@@ -1602,12 +1602,51 @@ const ProviderPresetItemSchema = z.object({
   url_template: z.string().nullable().optional(),
   theme_color: z.string().nullable().optional(),
   icon: z.string().nullable().optional(),
+  auth_type: z.string().nullable().optional(),
+  auth_config: z.record(z.string(), z.unknown()).default({}),
   protocol_schema_version: z.string().nullable().optional(),
   protocol_profiles: z.record(z.string(), z.unknown()).default({}),
+  version: z.number().int().default(1),
   is_active: z.boolean().default(true),
+  created_at: z.string().nullable().optional(),
+  updated_at: z.string().nullable().optional(),
 }).passthrough()
 
 export type ProviderPresetItem = z.infer<typeof ProviderPresetItemSchema>
+
+const ProviderPresetPatchPayloadSchema = z.object({
+  name: z.string().optional(),
+  provider: z.string().optional(),
+  category: z.string().nullable().optional(),
+  base_url: z.string().optional(),
+  url_template: z.string().nullable().optional(),
+  theme_color: z.string().nullable().optional(),
+  icon: z.string().nullable().optional(),
+  auth_type: z.string().nullable().optional(),
+  auth_config: z.record(z.string(), z.unknown()).optional(),
+  protocol_schema_version: z.string().nullable().optional(),
+  protocol_profiles: z.record(z.string(), z.unknown()).optional(),
+  version: z.number().int().optional(),
+  is_active: z.boolean().optional(),
+})
+
+const ProviderPresetVerifyPayloadSchema = z.object({
+  capability: z.string().default("chat"),
+  api_key: z.string().min(1),
+  model: z.string().min(1),
+  prompt: z.string().default("ping"),
+  temperature: z.number().nullable().optional(),
+  max_output_tokens: z.number().int().nullable().optional(),
+  preset_override: ProviderPresetPatchPayloadSchema.optional(),
+})
+
+const ProviderPresetVerifyResponseSchema = z.object({
+  status: z.string(),
+  status_code: z.number().int(),
+  capability: z.string(),
+  rendered_request: z.record(z.string(), z.unknown()).default({}),
+  response_preview: z.string().default(""),
+})
 
 export async function fetchAdminProviderPresets() {
   const data = await request<unknown>({
@@ -1615,6 +1654,42 @@ export async function fetchAdminProviderPresets() {
     method: "GET",
   })
   return z.array(ProviderPresetItemSchema).parse(data)
+}
+
+export type ProviderPresetPatchPayload = z.infer<typeof ProviderPresetPatchPayloadSchema>
+export type ProviderPresetVerifyPayload = z.infer<typeof ProviderPresetVerifyPayloadSchema>
+export type ProviderPresetVerifyResponse = z.infer<typeof ProviderPresetVerifyResponseSchema>
+
+export async function fetchAdminProviderPreset(slug: string) {
+  const data = await request<unknown>({
+    url: `${ADMIN_BASE}/provider-presets/${slug}`,
+    method: "GET",
+  })
+  return ProviderPresetItemSchema.parse(data)
+}
+
+export async function updateAdminProviderPreset(
+  slug: string,
+  payload: ProviderPresetPatchPayload
+) {
+  const data = await request<unknown>({
+    url: `${ADMIN_BASE}/provider-presets/${slug}`,
+    method: "PATCH",
+    data: payload,
+  })
+  return ProviderPresetItemSchema.parse(data)
+}
+
+export async function verifyAdminProviderPreset(
+  slug: string,
+  payload: ProviderPresetVerifyPayload
+) {
+  const data = await request<unknown>({
+    url: `${ADMIN_BASE}/provider-presets/${slug}/verify`,
+    method: "POST",
+    data: payload,
+  })
+  return ProviderPresetVerifyResponseSchema.parse(data)
 }
 
 const RegistrationWindowSchema = z.object({

@@ -53,5 +53,9 @@ describe("Admin provider presets page", () => {
     expect(screen.getByText("OpenAI")).toBeInTheDocument()
     expect(screen.getByText("openai")).toBeInTheDocument()
     expect(screen.getByText("https://api.openai.com")).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "actions.edit" })).toHaveAttribute(
+      "href",
+      "/admin/provider-presets/openai"
+    )
   })
 })
