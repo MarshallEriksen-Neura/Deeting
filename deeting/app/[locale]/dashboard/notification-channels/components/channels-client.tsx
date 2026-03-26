@@ -571,8 +571,22 @@ const FIELD_DEFS: Record<ChannelType, FieldDef[]> = {
       label: "Bot Token",
       placeholder: "123456:ABC-DEF...",
       type: "password",
+      description: "bot_token 同时用于主动推送与桌面私聊 Bot。",
     },
-    { key: "chat_id", label: "Chat ID", placeholder: "-1001234567890" },
+    {
+      key: "chat_id",
+      label: "Chat ID",
+      placeholder: "-1001234567890",
+      description: "chat_id 仅用于主动推送目标，不影响私聊 Bot 收消息。",
+    },
+    {
+      key: "im_enabled",
+      label: "启用桌面 IM",
+      placeholder: "",
+      type: "switch",
+      valueKind: "boolean",
+      description: "启用后，桌面端会以长轮询方式接收 Telegram 私聊文本消息。",
+    },
   ],
   email: [
     { key: "smtp_host", label: "SMTP 服务器", placeholder: "smtp.gmail.com" },
