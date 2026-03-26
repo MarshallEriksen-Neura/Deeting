@@ -97,7 +97,8 @@
       "vertexRegion": "区域",
       "vertexHint": "在 Base URL 中替换 {project} 和 {region} 以调用 Vertex AI。",
       "volcengineAppId": "火山 App ID",
-      "volcengineHint": "火山 OpenSpeech TTS 需要实例级的 App ID；Resource ID 应随模型配置，而不是 provider instance 保存。"
+      "volcengineAppIdRequired": "火山 OpenSpeech TTS 需要填写 App ID。",
+      "volcengineHint": "火山 OpenSpeech TTS 需要实例级的 App ID；Resource ID 默认取所选 provider model 的模型 ID，如需覆盖可放在模型 metadata 中。"
     },
     "manager": {
       "title": "神经通道",

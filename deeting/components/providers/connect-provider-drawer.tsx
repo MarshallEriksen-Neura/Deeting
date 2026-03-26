@@ -462,6 +462,11 @@ export function ConnectProviderDrawer({
       setLogs([`> ${t("drawer.baseUrlRequired")}`])
       return
     }
+    if (isVolcengineOpenSpeechProtocol && !appId.trim()) {
+      setLogs([`> ${t("drawer.volcengineAppIdRequired")}`])
+      setConnectionStatus("error")
+      return
+    }
     const trimmedApiKey = apiKey.trim()
     if (mode === "create" && !trimmedApiKey) {
       setLogs([`> ${t("drawer.apiKeyRequired")}`])

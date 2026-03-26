@@ -164,6 +164,14 @@ export const MessageItem = React.memo<MessageItemProps>(
       !message.fromHistory &&
       !isActive &&
       !compareState
+    const userDisplayContent = React.useMemo(() => {
+      if (message.role !== "user") return message.content
+      const displayContent =
+        typeof message.metaInfo?.display_content === "string"
+          ? message.metaInfo.display_content.trim()
+          : ""
+      return displayContent || message.content
+    }, [message.content, message.metaInfo?.display_content, message.role])
     const excludedModelKeys = React.useMemo(() => {
       if (compareState) {
         return Object.keys(compareState.candidates)
@@ -264,7 +272,7 @@ export const MessageItem = React.memo<MessageItemProps>(
               </div>
             ) : null}
             <MarkdownViewer
-              content={message.content}
+              content={userDisplayContent}
               className="chat-markdown chat-markdown-user"
             />
             <div className="chat-user-bubble-meta mt-1 text-right text-[10px]">
@@ -284,6 +292,8 @@ export const MessageItem = React.memo<MessageItemProps>(
     const messageUnchanged =
       prevProps.message.id === nextProps.message.id &&
       prevProps.message.content === nextProps.message.content &&
+      prevProps.message.metaInfo?.display_content ===
+        nextProps.message.metaInfo?.display_content &&
       prevProps.message.blocks === nextProps.message.blocks
 
     // 附件未变化

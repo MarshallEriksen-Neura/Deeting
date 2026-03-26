@@ -367,7 +367,8 @@ const AgentListItem = React.memo(function AgentListItem({
 export function TaskAgentsClient() {
   const t = useTranslations("task-agents")
   const locale = useLocale()
-  const isDesktop = React.useMemo(() => supportsLocalCustomTaskAgents(), [])
+  const [desktopSupport, setDesktopSupport] = React.useState<boolean | null>(null)
+  const isDesktop = desktopSupport === true
   const deferredLocale = React.useDeferredValue(locale)
   const [searchQuery, setSearchQuery] = React.useState("")
   const deferredSearchQuery = React.useDeferredValue(searchQuery)
@@ -396,6 +397,10 @@ export function TaskAgentsClient() {
   const [discardDialogOpen, setDiscardDialogOpen] = React.useState(false)
   const pendingNavigationRef = React.useRef<(() => void) | null>(null)
   const hydratedSelectionRef = React.useRef<string | null>(null)
+
+  React.useEffect(() => {
+    setDesktopSupport(supportsLocalCustomTaskAgents())
+  }, [])
 
   const {
     data: agents = [],
@@ -1193,6 +1198,63 @@ export function TaskAgentsClient() {
       setIsPreviewing(false)
     }
   }, [previewDraft, selectedAgent, t])
+
+  if (desktopSupport === null) {
+    return (
+      <div className="space-y-8">
+        <PageHeader
+          title={t("title")}
+          description={t("subtitle")}
+          icon={Bot}
+        />
+
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <GlassCard key={`task-agent-stats-skeleton-${index}`} className="overflow-hidden">
+              <GlassCardContent className="space-y-3">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-9 w-20" />
+              </GlassCardContent>
+            </GlassCard>
+          ))}
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+          <GlassCard className="overflow-hidden">
+            <GlassCardHeader className="space-y-4">
+              <Skeleton className="h-6 w-40" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </GlassCardHeader>
+            <GlassCardContent className="space-y-3">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div
+                  key={`task-agent-library-skeleton-${index}`}
+                  className="space-y-3 rounded-2xl border border-white/10 p-4"
+                >
+                  <Skeleton className="h-5 w-2/3" />
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-5/6" />
+                </div>
+              ))}
+            </GlassCardContent>
+          </GlassCard>
+
+          <GlassCard className="overflow-hidden">
+            <GlassCardHeader className="space-y-4">
+              <Skeleton className="h-6 w-48" />
+              <Skeleton className="h-4 w-72 max-w-full" />
+            </GlassCardHeader>
+            <GlassCardContent className="space-y-4">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-48 w-full" />
+              <Skeleton className="h-24 w-full" />
+            </GlassCardContent>
+          </GlassCard>
+        </div>
+      </div>
+    )
+  }
 
   if (!isDesktop) {
     return (

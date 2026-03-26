@@ -11,7 +11,9 @@ use crate::modules::chat_assets::resolve_chat_assets_dir;
 use crate::modules::custom_task_agents::image_config::resolve_custom_task_agent_image_config;
 use crate::modules::custom_task_agents::voice_config::resolve_custom_task_agent_tts_config;
 use crate::modules::image_generation::commands::run_local_image_generation_task_inline;
-use crate::modules::image_generation::types::LocalImageGenerationTaskCreateRequest;
+use crate::modules::image_generation::types::{
+    LocalImageGenerationTaskCreateRequest, LocalImageGenerationTaskDetail,
+};
 use crate::modules::mcp::commands::runtime::{execute_mcp_tool, resolve_callable_mcp_tool_by_ref};
 use crate::state::AppState;
 use mcp_core::types::{LocalChatInputMessage, McpTool};
@@ -209,6 +211,7 @@ pub(crate) async fn preview_custom_task_agent(
         )
         .await
         .map_err(CustomTaskAgentRuntimeError::from)?;
+        validate_image_generation_detail(&detail)?;
         return Ok(CustomTaskAgentPreviewResponse {
             status: "completed".to_string(),
             content: String::new(),
@@ -749,6 +752,27 @@ fn build_callable_payload(
     }
 }
 
+fn validate_image_generation_detail(
+    detail: &LocalImageGenerationTaskDetail,
+) -> Result<(), CustomTaskAgentRuntimeError> {
+    if detail.status.eq_ignore_ascii_case("succeeded") {
+        return Ok(());
+    }
+
+    Err(CustomTaskAgentRuntimeError {
+        code: detail
+            .error_code
+            .clone()
+            .or_else(|| Some("upstream_failed".to_string())),
+        message: detail.error_message.clone().unwrap_or_else(|| {
+            format!(
+                "image generation failed with status {}",
+                detail.status.trim()
+            )
+        }),
+    })
+}
+
 fn build_callable_feedback_message(round: usize, action_results: &[Value]) -> String {
     format!(
         "## Callable Results\nRound: {}\nResults:\n{}\nContinue the same delegated task using only these callable results.",
@@ -795,5 +819,50 @@ fn merge_tts_extra_params(speed: Option<f64>, extra_params: Option<Value>) -> Op
         None
     } else {
         Some(Value::Object(object))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_image_generation_detail;
+    use crate::modules::image_generation::types::LocalImageGenerationTaskDetail;
+
+    fn make_detail(
+        status: &str,
+        error_code: Option<&str>,
+        error_message: Option<&str>,
+    ) -> LocalImageGenerationTaskDetail {
+        LocalImageGenerationTaskDetail {
+            task_id: "task-1".to_string(),
+            status: status.to_string(),
+            model: "test-model".to_string(),
+            created_at: "2026-03-26T00:00:00Z".to_string(),
+            updated_at: "2026-03-26T00:00:01Z".to_string(),
+            completed_at: Some("2026-03-26T00:00:02Z".to_string()),
+            error_code: error_code.map(str::to_string),
+            error_message: error_message.map(str::to_string),
+            outputs: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn validate_image_generation_detail_accepts_succeeded_status() {
+        let detail = make_detail("succeeded", None, None);
+
+        assert!(validate_image_generation_detail(&detail).is_ok());
+    }
+
+    #[test]
+    fn validate_image_generation_detail_returns_runtime_error_for_failed_status() {
+        let detail = make_detail(
+            "failed",
+            Some("bad_response_status_code"),
+            Some("upstream returned 404"),
+        );
+
+        let error = validate_image_generation_detail(&detail).expect_err("expected failure");
+
+        assert_eq!(error.code.as_deref(), Some("bad_response_status_code"));
+        assert_eq!(error.message, "upstream returned 404");
     }
 }

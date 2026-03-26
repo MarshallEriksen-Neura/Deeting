@@ -98,6 +98,7 @@ export default function HUD() {
 
   const { models: serviceModels, modelGroups: serviceModelGroups } = useChatService({
     enabled: true,
+    modelCapability: "chat",
     fetchAssistants: false,
   });
 

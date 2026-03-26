@@ -205,6 +205,9 @@ mod tests {
         assert_eq!(payload["output_format"], json!("url"));
         assert_eq!(payload["language_boost"], json!("auto"));
         assert_eq!(payload["subtitle_enable"], json!(true));
-        assert_eq!(payload["pronunciation_dict"]["tone"][0], json!("危险/dangerous"));
+        assert_eq!(
+            payload["pronunciation_dict"]["tone"][0],
+            json!("危险/dangerous")
+        );
     }
 }

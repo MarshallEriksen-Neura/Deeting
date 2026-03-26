@@ -41,8 +41,12 @@ pub(crate) async fn resolve_tts_context(
         .get_preset(&instance.preset_slug)
         .await
         .map_err(to_string)?;
-    let runtime_mode =
-        resolve_voice_runtime_mode(&model, &instance, preset.as_ref(), connection.protocol.as_deref());
+    let runtime_mode = resolve_voice_runtime_mode(
+        &model,
+        &instance,
+        preset.as_ref(),
+        connection.protocol.as_deref(),
+    );
 
     Ok(ResolvedTtsContext {
         model,
@@ -92,20 +96,18 @@ pub(crate) fn resolve_voice_runtime_mode(
 fn parse_voice_runtime_mode(value: &str) -> Option<VoiceRuntimeMode> {
     let normalized = value.trim().to_ascii_lowercase();
     match normalized.as_str() {
-        "openai" | "openai_tts" | "openai_compat" | "openai_compat_tts" | "custom"
-        | "voice" => Some(VoiceRuntimeMode::OpenAiTts),
+        "openai" | "openai_tts" | "openai_compat" | "openai_compat_tts" | "custom" | "voice" => {
+            Some(VoiceRuntimeMode::OpenAiTts)
+        }
         "minimax_tts" => Some(VoiceRuntimeMode::MiniMaxTts),
-        "volcengine_openspeech_tts" | "openspeech_tts" => {
+        "volcengine" | "volcengine_tts" | "volcengine_openspeech_tts" | "openspeech_tts" => {
             Some(VoiceRuntimeMode::VolcengineTts)
         }
         _ => None,
     }
 }
 
-pub(crate) fn build_audio_result(
-    request: &TtsRequest,
-    asset: AudioAssetRef,
-) -> AudioResultPayload {
+pub(crate) fn build_audio_result(request: &TtsRequest, asset: AudioAssetRef) -> AudioResultPayload {
     AudioResultPayload {
         asset,
         model: Some(request.model.clone()),
@@ -123,8 +125,8 @@ pub(crate) async fn persist_audio_bytes_result(
     content_type: &str,
     duration_ms: Option<i64>,
 ) -> Result<AudioResultPayload, String> {
-    let asset = persist_generated_audio(app_handle, app_state, bytes, content_type, duration_ms)
-        .await?;
+    let asset =
+        persist_generated_audio(app_handle, app_state, bytes, content_type, duration_ms).await?;
     Ok(build_audio_result(request, asset))
 }
 
@@ -164,7 +166,47 @@ pub(crate) fn extract_error_message(
                 })
                 .or_else(|| {
                     value
+                        .pointer("/header/message")
+                        .and_then(Value::as_str)
+                        .map(|message| {
+                            let code = value
+                                .pointer("/header/code")
+                                .and_then(Value::as_i64)
+                                .map(|item| item.to_string())
+                                .or_else(|| {
+                                    value
+                                        .pointer("/header/code")
+                                        .and_then(Value::as_str)
+                                        .map(str::to_string)
+                                });
+                            let reqid = value
+                                .pointer("/header/reqid")
+                                .and_then(Value::as_str)
+                                .map(str::trim)
+                                .filter(|item| !item.is_empty())
+                                .map(str::to_string);
+
+                            match (code, reqid) {
+                                (Some(code), Some(reqid)) => {
+                                    format!("{message} ({code}, reqid: {reqid})")
+                                }
+                                (Some(code), None) => format!("{message} ({code})"),
+                                (None, Some(reqid)) => {
+                                    format!("{message} (reqid: {reqid})")
+                                }
+                                (None, None) => message.to_string(),
+                            }
+                        })
+                })
+                .or_else(|| {
+                    value
                         .get("message")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                })
+                .or_else(|| {
+                    value
+                        .get("error")
                         .and_then(Value::as_str)
                         .map(str::to_string)
                 })
@@ -173,8 +215,9 @@ pub(crate) fn extract_error_message(
                         .pointer("/base_resp/status_code")
                         .and_then(Value::as_i64)
                         .map(|code| {
-                            if let Some(message) =
-                                value.pointer("/base_resp/status_msg").and_then(Value::as_str)
+                            if let Some(message) = value
+                                .pointer("/base_resp/status_msg")
+                                .and_then(Value::as_str)
                             {
                                 format!("{message} ({code})")
                             } else {
@@ -263,9 +306,9 @@ pub(crate) fn read_i64(source: &Value, key: &str) -> Option<i64> {
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_voice_runtime_mode;
-    use crate::modules::voice::types::VoiceRuntimeMode;
+    use super::{extract_error_message, resolve_voice_runtime_mode};
     use crate::modules::providers::types::{ProviderInstance, ProviderModel, ProviderPreset};
+    use crate::modules::voice::types::VoiceRuntimeMode;
     use serde_json::json;
     use uuid::Uuid;
 
@@ -350,9 +393,41 @@ mod tests {
         let instance = mock_instance();
         let preset = mock_preset("volcengine_openspeech_tts");
 
-        let mode =
-            resolve_voice_runtime_mode(&model, &instance, Some(&preset), Some("volcengine_openspeech_tts"));
+        let mode = resolve_voice_runtime_mode(
+            &model,
+            &instance,
+            Some(&preset),
+            Some("volcengine_openspeech_tts"),
+        );
 
         assert_eq!(mode, VoiceRuntimeMode::VolcengineTts);
+    }
+
+    #[test]
+    fn resolve_voice_runtime_mode_accepts_volcengine_protocol_alias() {
+        let model = mock_model();
+        let instance = mock_instance();
+        let preset = mock_preset("volcengine");
+
+        let mode = resolve_voice_runtime_mode(&model, &instance, Some(&preset), Some("volcengine"));
+
+        assert_eq!(mode, VoiceRuntimeMode::VolcengineTts);
+    }
+
+    #[test]
+    fn extract_error_message_reads_volcengine_header_payload() {
+        let message = extract_error_message(
+            Some(&json!({
+                "header": {
+                    "reqid": "abc-123",
+                    "code": 45000000,
+                    "message": "speaker permission denied"
+                }
+            })),
+            None,
+            "fallback",
+        );
+
+        assert_eq!(message, "speaker permission denied (45000000, reqid: abc-123)");
     }
 }

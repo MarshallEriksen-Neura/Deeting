@@ -876,6 +876,7 @@ export function useChatMessagingService() {
 
     let effectiveInput = trimmedInput
     let explicitTaskAgentId: string | undefined
+    let displayInput = trimmedInput
     if (isTauriRuntime) {
       const localAgents = await listCustomTaskAgents()
       const resolvedMention = resolveLeadingTaskAgentMention(
@@ -895,6 +896,7 @@ export function useChatMessagingService() {
         }
         explicitTaskAgentId = resolvedMention.agent.id
         effectiveInput = resolvedMention.mention.prompt.trim()
+        displayInput = trimmedInput
       }
     }
 
@@ -904,6 +906,12 @@ export function useChatMessagingService() {
       content: effectiveInput,
       attachments: attachments.length ? attachments : undefined,
       createdAt: Date.now(),
+      metaInfo:
+        displayInput !== effectiveInput
+          ? {
+              display_content: displayInput,
+            }
+          : undefined,
     }
     let outgoingUserMessage = userMessage
     if (attachments.length) {
