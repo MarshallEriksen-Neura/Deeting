@@ -35,12 +35,71 @@ fn config_bool(value: &Value, key: &str) -> Option<bool> {
     value.get(key).and_then(Value::as_bool)
 }
 
+fn feishu_transport_preference(value: &Value) -> ImTransportPreference {
+    match config_string(value, "transport_preference")
+        .as_deref()
+        .unwrap_or("auto")
+    {
+        "direct" => ImTransportPreference::Direct,
+        "relay" => ImTransportPreference::Relay,
+        _ => ImTransportPreference::Auto,
+    }
+}
+
 fn derive_profile_from_notification_channel(
     channel: &crate::modules::monitor::types::LocalNotificationChannel,
     wechat_account_id: Option<&str>,
 ) -> Option<ImConnectionProfile> {
     match channel.channel.trim().to_lowercase().as_str() {
-        "feishu" => {}
+        "feishu" => {
+            let has_im_fields = config_bool(&channel.config, "im_enabled").unwrap_or(false)
+                || config_string(&channel.config, "bot_app_id").is_some()
+                || config_string(&channel.config, "bot_app_secret").is_some()
+                || config_string(&channel.config, "relay_base_url").is_some()
+                || config_string(&channel.config, "relay_shared_secret").is_some()
+                || config_string(&channel.config, "transport_preference").is_some();
+            if !has_im_fields {
+                return None;
+            }
+
+            let mut profile = ImConnectionProfile::default_feishu();
+            profile.id = format!("notification-channel:{}", channel.id);
+            profile.display_name = channel
+                .display_name
+                .clone()
+                .unwrap_or_else(|| "Feishu".to_string());
+            profile.enabled =
+                channel.is_active && config_bool(&channel.config, "im_enabled").unwrap_or(false);
+            profile.transport_preference = feishu_transport_preference(&channel.config);
+            profile.direct_config.feishu_app_id =
+                config_string(&channel.config, "bot_app_id").unwrap_or_default();
+            profile.direct_config.feishu_app_secret =
+                config_string(&channel.config, "bot_app_secret").unwrap_or_default();
+            profile.relay_config.base_url =
+                config_string(&channel.config, "relay_base_url").unwrap_or_default();
+            profile.relay_config.shared_secret =
+                config_string(&channel.config, "relay_shared_secret").unwrap_or_default();
+            Some(profile)
+        }
+        "telegram" => {
+            let has_im_fields = config_bool(&channel.config, "im_enabled").unwrap_or(false)
+                || config_string(&channel.config, "bot_token").is_some();
+            if !has_im_fields {
+                return None;
+            }
+
+            let mut profile = ImConnectionProfile::default_telegram();
+            profile.id = format!("notification-channel:{}", channel.id);
+            profile.display_name = channel
+                .display_name
+                .clone()
+                .unwrap_or_else(|| "Telegram".to_string());
+            profile.enabled =
+                channel.is_active && config_bool(&channel.config, "im_enabled").unwrap_or(false);
+            profile.direct_config.telegram_bot_token =
+                config_string(&channel.config, "bot_token").unwrap_or_default();
+            Some(profile)
+        }
         "wechat" => {
             let has_im_fields = config_bool(&channel.config, "im_enabled").unwrap_or(false)
                 || config_string(&channel.config, "access_policy").is_some()
@@ -65,48 +124,10 @@ fn derive_profile_from_notification_channel(
             };
             profile.direct_config.wechat_account_id =
                 wechat_account_id.unwrap_or_default().trim().to_string();
-            return Some(profile);
+            Some(profile)
         }
-        _ => return None,
+        _ => None,
     }
-
-    let transport_preference = match config_string(&channel.config, "transport_preference")
-        .as_deref()
-        .unwrap_or("auto")
-    {
-        "direct" => ImTransportPreference::Direct,
-        "relay" => ImTransportPreference::Relay,
-        _ => ImTransportPreference::Auto,
-    };
-
-    let has_im_fields = config_bool(&channel.config, "im_enabled").unwrap_or(false)
-        || config_string(&channel.config, "bot_app_id").is_some()
-        || config_string(&channel.config, "bot_app_secret").is_some()
-        || config_string(&channel.config, "relay_base_url").is_some()
-        || config_string(&channel.config, "relay_shared_secret").is_some()
-        || config_string(&channel.config, "transport_preference").is_some();
-    if !has_im_fields {
-        return None;
-    }
-
-    let mut profile = ImConnectionProfile::default_feishu();
-    profile.id = format!("notification-channel:{}", channel.id);
-    profile.display_name = channel
-        .display_name
-        .clone()
-        .unwrap_or_else(|| "Feishu".to_string());
-    profile.enabled =
-        channel.is_active && config_bool(&channel.config, "im_enabled").unwrap_or(false);
-    profile.transport_preference = transport_preference;
-    profile.direct_config.feishu_app_id =
-        config_string(&channel.config, "bot_app_id").unwrap_or_default();
-    profile.direct_config.feishu_app_secret =
-        config_string(&channel.config, "bot_app_secret").unwrap_or_default();
-    profile.relay_config.base_url =
-        config_string(&channel.config, "relay_base_url").unwrap_or_default();
-    profile.relay_config.shared_secret =
-        config_string(&channel.config, "relay_shared_secret").unwrap_or_default();
-    Some(profile)
 }
 
 fn normalize_profiles(mut profiles: Vec<ImConnectionProfile>) -> Vec<ImConnectionProfile> {
@@ -419,5 +440,50 @@ pub async fn start_im_runtime_worker(app_state: AppState, app_handle: tauri::App
         if let Err(err) = result {
             warn!("im_runtime_task_join_failed: {}", err);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn notification_channel(
+        channel: &str,
+        config: Value,
+        is_active: bool,
+    ) -> crate::modules::monitor::types::LocalNotificationChannel {
+        crate::modules::monitor::types::LocalNotificationChannel {
+            id: "channel-1".to_string(),
+            user_id: "user-1".to_string(),
+            channel: channel.to_string(),
+            config,
+            display_name: Some("Telegram Bot".to_string()),
+            is_active,
+            priority: 1,
+            last_used_at: None,
+            created_at: "2026-03-26T00:00:00Z".to_string(),
+            updated_at: "2026-03-26T00:00:00Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn telegram_profile_is_derived_from_notification_channel() {
+        let channel = notification_channel(
+            "telegram",
+            json!({
+                "bot_token": "telegram-token",
+                "im_enabled": true
+            }),
+            true,
+        );
+
+        let profile = derive_profile_from_notification_channel(&channel)
+            .expect("telegram channel should derive a profile");
+
+        assert_eq!(profile.platform, ImPlatform::Telegram);
+        assert_eq!(profile.display_name, "Telegram Bot");
+        assert!(profile.enabled);
+        assert_eq!(profile.direct_config.telegram_bot_token, "telegram-token");
     }
 }

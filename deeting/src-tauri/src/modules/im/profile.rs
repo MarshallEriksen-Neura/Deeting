@@ -101,6 +101,18 @@ impl ImConnectionProfile {
         }
     }
 
+    pub fn default_telegram() -> Self {
+        Self {
+            id: "telegram-default".to_string(),
+            platform: ImPlatform::Telegram,
+            display_name: "Telegram".to_string(),
+            enabled: false,
+            transport_preference: ImTransportPreference::Auto,
+            direct_config: ImDirectConfig::default(),
+            relay_config: ImRelayConfig::default(),
+        }
+    }
+
     pub fn trim(mut self) -> Self {
         self.id = self.id.trim().to_string();
         self.display_name = self.display_name.trim().to_string();
@@ -268,6 +280,22 @@ mod tests {
         }
     }
 
+    fn telegram_profile(preference: ImTransportPreference) -> ImConnectionProfile {
+        ImConnectionProfile {
+            id: "profile-telegram".to_string(),
+            platform: ImPlatform::Telegram,
+            display_name: "Telegram".to_string(),
+            enabled: true,
+            transport_preference: preference,
+            direct_config: ImDirectConfig {
+                feishu_app_id: String::new(),
+                feishu_app_secret: String::new(),
+                telegram_bot_token: "telegram-token".to_string(),
+            },
+            relay_config: ImRelayConfig::default(),
+        }
+    }
+
     #[test]
     fn auto_prefers_direct_when_platform_supports_it() {
         let profile = feishu_profile(ImTransportPreference::Auto);
@@ -306,5 +334,15 @@ mod tests {
             resolved.reason_code,
             ImTransportReasonCode::DirectMissingCredentials
         );
+    }
+
+    #[test]
+    fn telegram_profile_with_token_supports_direct_transport() {
+        let profile = telegram_profile(ImTransportPreference::Auto);
+
+        let resolved = resolve_transport(&profile);
+
+        assert_eq!(resolved.effective, ImTransportKind::Direct);
+        assert_eq!(resolved.reason_code, ImTransportReasonCode::DirectSupported);
     }
 }
