@@ -1,5 +1,6 @@
 pub mod account_store;
 pub mod api;
+pub mod bridge_entry;
 pub mod bridge_client;
 pub mod bridge_protocol;
 pub mod commands;

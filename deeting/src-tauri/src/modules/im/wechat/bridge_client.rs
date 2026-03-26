@@ -24,6 +24,11 @@ struct BridgeProcess {
     stdout: BufReader<ChildStdout>,
 }
 
+struct BridgeLaunchSpec {
+    program: PathBuf,
+    envs: Vec<(String, String)>,
+}
+
 impl WechatBridgeClient {
     pub fn new() -> Self {
         Self {
@@ -163,9 +168,10 @@ impl WechatBridgeClient {
 }
 
 async fn spawn_bridge_process() -> Result<BridgeProcess, String> {
-    let executable = bridge_executable_path()?;
-    let mut command = Command::new(executable);
+    let launch = bridge_launch_spec()?;
+    let mut command = Command::new(&launch.program);
     configure_background_tokio_command(&mut command);
+    command.envs(launch.envs);
     command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = command.spawn().map_err(|err| err.to_string())?;
     let stdin = child
@@ -194,11 +200,14 @@ async fn spawn_bridge_process() -> Result<BridgeProcess, String> {
     })
 }
 
-fn bridge_executable_path() -> Result<PathBuf, String> {
+fn bridge_launch_spec() -> Result<BridgeLaunchSpec, String> {
     if let Ok(raw) = std::env::var("DEETING_WECHAT_BRIDGE_BIN") {
         let path = PathBuf::from(raw.trim());
         if path.exists() {
-            return Ok(path);
+            return Ok(BridgeLaunchSpec {
+                program: path,
+                envs: Vec::new(),
+            });
         }
     }
 
@@ -215,16 +224,22 @@ fn bridge_executable_path() -> Result<PathBuf, String> {
 
     let direct = parent.join(binary_name);
     if direct.exists() {
-        return Ok(direct);
+        return Ok(BridgeLaunchSpec {
+            program: direct,
+            envs: Vec::new(),
+        });
     }
 
     let sibling = parent.parent().unwrap_or(parent).join(binary_name);
     if sibling.exists() {
-        return Ok(sibling);
+        return Ok(BridgeLaunchSpec {
+            program: sibling,
+            envs: Vec::new(),
+        });
     }
 
-    Err(format!(
-        "wechat bridge executable not found near current exe: {}",
-        current.display()
-    ))
+    Ok(BridgeLaunchSpec {
+        program: current,
+        envs: vec![("DEETING_WECHAT_BRIDGE_MODE".to_string(), "1".to_string())],
+    })
 }
