@@ -97,8 +97,15 @@ export function getPrimaryFeishuProfile(
 export function getPrimaryFeishuResolution(
   snapshot: DesktopImSettingsSnapshot | null | undefined
 ): ResolvedDesktopImConnectionProfile | null {
+  return getPrimaryDesktopImResolution(snapshot, "feishu")
+}
+
+export function getPrimaryDesktopImResolution(
+  snapshot: DesktopImSettingsSnapshot | null | undefined,
+  platform: DesktopImConnectionProfile["platform"]
+): ResolvedDesktopImConnectionProfile | null {
   return (
-    snapshot?.resolved_profiles.find((profile) => profile.platform === "feishu") ??
+    snapshot?.resolved_profiles.find((profile) => profile.platform === platform) ??
     null
   )
 }

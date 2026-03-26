@@ -44,7 +44,7 @@ import {
   deleteNotificationChannel,
   testNotificationChannel,
 } from "@/lib/api/notification-channels"
-import { getDesktopImSettings, getPrimaryFeishuResolution } from "@/lib/api/desktop-im"
+import { getDesktopImSettings, getPrimaryDesktopImResolution } from "@/lib/api/desktop-im"
 import {
   approveLocalWechatPairing,
   cancelLocalWechatPairing,
@@ -718,6 +718,7 @@ function ChannelConfigForm({
     message: string | null
   } | null>(null)
   const [imRuntimeHint, setImRuntimeHint] = useState<{
+    enabled: boolean
     effective: string
     message: string
   } | null>(null)
@@ -949,7 +950,8 @@ function ChannelConfigForm({
 
   useEffect(() => {
     let active = true
-    if (channelType !== "feishu" || !isDesktopRuntime()) {
+    const shouldLoadRuntimeHint = channelType === "feishu" || channelType === "telegram"
+    if (!shouldLoadRuntimeHint || !isDesktopRuntime()) {
       setImRuntimeHint(null)
       return () => {
         active = false
@@ -959,10 +961,11 @@ function ChannelConfigForm({
     const loadRuntimeHint = async () => {
       try {
         const snapshot = await getDesktopImSettings()
-        const resolution = getPrimaryFeishuResolution(snapshot)
+        const resolution = getPrimaryDesktopImResolution(snapshot, channelType)
         if (!active) return
         if (resolution) {
           setImRuntimeHint({
+            enabled: resolution.enabled,
             effective: resolution.resolution.effective,
             message: resolution.resolution.user_message,
           })
@@ -1387,10 +1390,10 @@ function ChannelConfigForm({
         fields.map(renderField)
       )}
 
-      {channelType === "feishu" && imRuntimeHint && (
+      {(channelType === "feishu" || channelType === "telegram") && imRuntimeHint && (
         <div className="rounded-xl border border-white/10 bg-[var(--foreground)]/[0.03] px-3 py-2 text-xs text-[var(--muted)]">
           <div className="font-medium text-[var(--foreground)]">
-            当前桌面 IM: {imRuntimeHint.effective}
+            当前桌面 IM: {imRuntimeHint.enabled ? imRuntimeHint.effective : "disabled"}
           </div>
           <div className="mt-1">{imRuntimeHint.message}</div>
         </div>
