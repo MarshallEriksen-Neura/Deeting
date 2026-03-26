@@ -24,6 +24,16 @@ import {
   resumeMonitorTask,
   deleteMonitorTask,
 } from "@/lib/api/monitors"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 interface MonitorTaskCardProps {
   task: MonitorTask
@@ -89,6 +99,7 @@ export function MonitorTaskCard({
 }: MonitorTaskCardProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [acting, setActing] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const config = STATUS_CONFIG[task.display_status]
   const bindingReady = task.binding_state === "ok"
   const toggleDisabled =
@@ -123,12 +134,12 @@ export function MonitorTaskCard({
   }, [onTrigger, task])
 
   const handleDelete = useCallback(async () => {
-    if (!confirm("确定要删除该寻猎任务？此操作不可逆。")) return
     setActing(true)
     try {
       await deleteMonitorTask(task.id)
       toast.success("任务已删除")
       onRefresh()
+      setDeleteDialogOpen(false)
     } catch {
       toast.error("删除失败，请重试")
     } finally {
@@ -211,7 +222,7 @@ export function MonitorTaskCard({
                   label="删除"
                   onClick={() => {
                     setMenuOpen(false)
-                    handleDelete()
+                    setDeleteDialogOpen(true)
                   }}
                   destructive
                 />
@@ -325,6 +336,25 @@ export function MonitorTaskCard({
           </a>
         ) : null}
       </div>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确定要删除该寻猎任务？</AlertDialogTitle>
+            <AlertDialogDescription>此操作不可逆。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={acting}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={acting}
+              className="bg-red-600 text-white hover:bg-red-500"
+            >
+              {acting ? "删除中..." : "确定"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </GlassCard>
   )
 }
