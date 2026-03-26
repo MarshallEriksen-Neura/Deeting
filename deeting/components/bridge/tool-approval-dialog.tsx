@@ -313,6 +313,28 @@ export function ToolApprovalDialog() {
                 </div>
               )}
 
+              {pending.recovered ? (
+                <div
+                  className={[
+                    "rounded-xl p-3",
+                    "bg-amber-500/[0.08]",
+                    "border border-amber-500/15",
+                  ].join(" ")}
+                >
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]/70">
+                    {t("recoveryLabel")}
+                  </p>
+                  <p className="mt-1.5 text-xs leading-relaxed text-[var(--muted)]">
+                    {pending.recovery_reason ?? t("recoveryFallback")}
+                  </p>
+                  {typeof pending.attempts === "number" ? (
+                    <p className="mt-1 text-[11px] text-[var(--muted)]/80">
+                      {t("recoveryAttempts", { count: pending.attempts })}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+
               {/* Risk level panel */}
               {!!pending.risk_reasons?.length && (
                 <div

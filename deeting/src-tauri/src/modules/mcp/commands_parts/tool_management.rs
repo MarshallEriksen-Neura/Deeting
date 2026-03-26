@@ -2,15 +2,13 @@ use super::{
     common_impl::to_string,
     runtime::{
         apply_config_payload, build_desktop_mcp_tool_views,
-        execute_or_queue_mcp_tool_call_with_tool_ref, now_rfc3339,
-        resolve_callable_mcp_tool_by_ref, DesktopMcpToolView,
+        execute_or_queue_mcp_tool_call_with_tool_ref, now_rfc3339, DesktopMcpToolView,
     },
     support::*,
 };
 use crate::modules::knowledge::tool_index::{
     delete_mcp_tool_assets, index_mcp_tools, list_indexed_mcp_tool_ids, reindex_desktop_tool_asset,
 };
-use crate::modules::skill_runtime::resolve_skill_binding_by_ref;
 
 pub(crate) fn build_remote_transport_log_entries(tool: &McpTool) -> Vec<McpLogEntry> {
     vec![McpLogEntry {
@@ -314,52 +312,16 @@ pub async fn execute_mcp_tool_raw(
         execution_token.or(executionToken).as_deref(),
         None,
     );
-    match resolve_callable_mcp_tool_by_ref(
+    execute_or_queue_mcp_tool_call_with_tool_ref(
+        &approval_context,
+        Some(&state.mcp),
         state.mcp.store.as_ref(),
-        normalized_tool_id.as_deref(),
-        normalized_tool_name.as_deref(),
+        state.mcp.approvals.pending_tool_calls.as_ref(),
+        normalized_tool_id,
+        normalized_tool_name,
+        arguments,
     )
     .await
-    {
-        Ok(tool) => {
-            let risk = state.mcp.assess_tool_risk(&tool, &arguments);
-            execute_or_queue_mcp_tool_call_with_tool_ref(
-                &approval_context,
-                Some(&risk),
-                Some(&state.mcp),
-                state.mcp.store.as_ref(),
-                state.mcp.approvals.pending_tool_calls.as_ref(),
-                Some(tool.id),
-                Some(tool.name),
-                arguments,
-                risk.requires_approval,
-            )
-            .await
-        }
-        Err(tool_err) => {
-            let binding = resolve_skill_binding_by_ref(
-                state.mcp.store.as_ref(),
-                normalized_tool_id.as_deref(),
-                normalized_tool_name.as_deref(),
-            )
-            .await
-            .map_err(|err| err.to_string())?
-            .ok_or_else(|| tool_err.to_string())?;
-            let risk = state.mcp.assess_skill_binding_risk(&binding, &arguments);
-            execute_or_queue_mcp_tool_call_with_tool_ref(
-                &approval_context,
-                Some(&risk),
-                Some(&state.mcp),
-                state.mcp.store.as_ref(),
-                state.mcp.approvals.pending_tool_calls.as_ref(),
-                Some(binding.binding_id),
-                Some(binding.callable_name),
-                arguments,
-                risk.requires_approval,
-            )
-            .await
-        }
-    }
 }
 
 #[tauri::command]

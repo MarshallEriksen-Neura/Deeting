@@ -25,6 +25,10 @@ export function BrowserModePanel({ viewId, title }: BrowserModePanelProps) {
   const closeView = useWorkspaceStore((state) => state.closeView)
   const {
     status,
+    executionPhase,
+    executionLabel,
+    retryCount,
+    recoveryReason,
     request,
     connectionLabel,
     page,
@@ -35,6 +39,10 @@ export function BrowserModePanel({ viewId, title }: BrowserModePanelProps) {
   } = useBrowserModeStore(
     useShallow((state) => ({
       status: state.status,
+      executionPhase: state.executionPhase,
+      executionLabel: state.executionLabel,
+      retryCount: state.retryCount,
+      recoveryReason: state.recoveryReason,
       request: state.request,
       connectionLabel: state.connectionLabel,
       page: state.page,
@@ -153,6 +161,28 @@ export function BrowserModePanel({ viewId, title }: BrowserModePanelProps) {
             <span className="text-sm text-foreground">
               {lastAction?.summary ?? t("browserMode.panel.lastActionEmpty")}
             </span>
+          </section>
+
+          <section className="grid gap-1 rounded-xl border border-border/60 bg-muted/20 p-4">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              {t("browserMode.panel.executionLabel")}
+            </span>
+            <span className="text-sm font-medium text-foreground">
+              {t(`browserMode.panel.execution.${executionPhase}`)}
+            </span>
+            {executionLabel ? (
+              <span className="text-xs text-muted-foreground">{executionLabel}</span>
+            ) : null}
+            {retryCount > 0 ? (
+              <span className="text-xs text-muted-foreground">
+                {t("browserMode.panel.retryCount", { count: retryCount })}
+              </span>
+            ) : null}
+            {recoveryReason ? (
+              <span className="text-xs text-muted-foreground">
+                {recoveryReason}
+              </span>
+            ) : null}
           </section>
 
           {request?.prompt ? (

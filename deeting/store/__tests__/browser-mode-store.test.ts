@@ -94,6 +94,34 @@ describe("useBrowserModeStore", () => {
     })
   })
 
+  it("tracks execution phase and retry metadata for browser recovery flows", () => {
+    const store = useBrowserModeStore.getState()
+    store.requestBrowserMode({ prompt: "打开网页", source: "chat" })
+    store.confirm()
+    store.activate({
+      connectionLabel: "Connected",
+      page: {
+        tabId: 42,
+        title: "Example Domain",
+        url: "https://example.com/",
+        host: "example.com",
+      },
+      lastAction: {
+        kind: "click",
+        summary: 'Clicked "Continue"',
+      },
+    })
+
+    store.setExecutionState("waiting", "Waiting for Continue button")
+    store.markRecovery("Element no longer matched after navigation", 1)
+
+    const state = useBrowserModeStore.getState()
+    expect(state.executionPhase).toBe("recovering")
+    expect(state.executionLabel).toBe("Element no longer matched after navigation")
+    expect(state.retryCount).toBe(1)
+    expect(state.recoveryReason).toBe("Element no longer matched after navigation")
+  })
+
   it("ends browser mode and preserves a summary while clearing active page state", () => {
     const store = useBrowserModeStore.getState()
     store.requestBrowserMode({ prompt: "打开网页", source: "chat" })

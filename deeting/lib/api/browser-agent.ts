@@ -37,7 +37,44 @@ export const BrowserAgentElementLocatorSchema = z.object({
   text: z.string().optional(),
   role: z.string().optional(),
   tagName: z.string().optional(),
+  placeholder: z.string().optional(),
   index: z.number().optional(),
+})
+
+export const BrowserAgentWaitForElementResultSchema = z.object({
+  ok: z.boolean(),
+  matched: z.boolean(),
+  locator: BrowserAgentElementLocatorSchema.nullable(),
+  visible: z.boolean(),
+  url: z.string(),
+  title: z.string(),
+})
+
+export const BrowserAgentWaitForNavigationResultSchema = z.object({
+  ok: z.boolean(),
+  url: z.string(),
+  title: z.string(),
+  documentReadyState: z.string(),
+  changed: z.boolean(),
+})
+
+export const BrowserAgentScrollIntoViewResultSchema = z.object({
+  ok: z.boolean(),
+  visible: z.boolean(),
+})
+
+export const BrowserAgentRetryWithRelocateResultSchema = z.object({
+  ok: z.boolean(),
+  attempts: z.number(),
+  recovered: z.boolean(),
+  final_error: z.string().nullable(),
+  last_snapshot_summary: z
+    .object({
+      url: z.string(),
+      title: z.string(),
+      documentReadyState: z.string(),
+    })
+    .nullable(),
 })
 
 export const BrowserAgentDomQuerySchema = z.object({
@@ -85,6 +122,10 @@ export type BrowserAgentNavigateTabResult = z.infer<typeof BrowserAgentNavigateT
 export type BrowserAgentDomQuery = z.infer<typeof BrowserAgentDomQuerySchema>
 export type BrowserAgentDomQueryResult = z.infer<typeof BrowserAgentDomQueryResultSchema>
 export type BrowserAgentPageSnapshot = z.infer<typeof BrowserAgentPageSnapshotSchema>
+export type BrowserAgentWaitForElementResult = z.infer<typeof BrowserAgentWaitForElementResultSchema>
+export type BrowserAgentWaitForNavigationResult = z.infer<typeof BrowserAgentWaitForNavigationResultSchema>
+export type BrowserAgentScrollIntoViewResult = z.infer<typeof BrowserAgentScrollIntoViewResultSchema>
+export type BrowserAgentRetryWithRelocateResult = z.infer<typeof BrowserAgentRetryWithRelocateResultSchema>
 
 export async function getLocalBrowserAgentBridgeStatus(): Promise<BrowserAgentBridgeStatus> {
   if (!isTauriRuntime()) {
@@ -164,6 +205,92 @@ export async function queryLocalBrowserAgentDom(
     textQuery: normalized.textQuery ?? null,
   })
   return BrowserAgentDomQueryResultSchema.parse(data)
+}
+
+export async function waitForLocalBrowserAgentElement(
+  tabId: number,
+  input: {
+    target: BrowserAgentElementLocator
+    timeoutMs: number
+    pollIntervalMs: number
+  }
+): Promise<BrowserAgentWaitForElementResult> {
+  if (!isTauriRuntime()) {
+    throw new Error("waitForLocalBrowserAgentElement is only supported in Tauri runtime")
+  }
+  const data = await invokeTauri<unknown>("wait_for_local_browser_agent_element", {
+    tabId,
+    target: BrowserAgentElementLocatorSchema.parse(input.target),
+    timeoutMs: input.timeoutMs,
+    pollIntervalMs: input.pollIntervalMs,
+  })
+  return BrowserAgentWaitForElementResultSchema.parse(data)
+}
+
+export async function waitForLocalBrowserAgentNavigation(
+  tabId: number,
+  input: {
+    timeoutMs: number
+    expectedUrlContains?: string | null
+    expectedTitleContains?: string | null
+    waitForReadyState?: "loading" | "interactive" | "complete" | null
+  }
+): Promise<BrowserAgentWaitForNavigationResult> {
+  if (!isTauriRuntime()) {
+    throw new Error("waitForLocalBrowserAgentNavigation is only supported in Tauri runtime")
+  }
+  const data = await invokeTauri<unknown>("wait_for_local_browser_agent_navigation", {
+    tabId,
+    timeoutMs: input.timeoutMs,
+    expectedUrlContains: input.expectedUrlContains ?? null,
+    expectedTitleContains: input.expectedTitleContains ?? null,
+    waitForReadyState: input.waitForReadyState ?? null,
+  })
+  return BrowserAgentWaitForNavigationResultSchema.parse(data)
+}
+
+export async function scrollLocalBrowserAgentElementIntoView(
+  tabId: number,
+  input: {
+    target: BrowserAgentElementLocator
+    align?: "start" | "center" | "end" | "nearest"
+  }
+): Promise<BrowserAgentScrollIntoViewResult> {
+  if (!isTauriRuntime()) {
+    throw new Error("scrollLocalBrowserAgentElementIntoView is only supported in Tauri runtime")
+  }
+  const data = await invokeTauri<unknown>("scroll_local_browser_agent_element_into_view", {
+    tabId,
+    target: BrowserAgentElementLocatorSchema.parse(input.target),
+    align: input.align ?? null,
+  })
+  return BrowserAgentScrollIntoViewResultSchema.parse(data)
+}
+
+export async function retryLocalBrowserAgentWithRelocate(
+  tabId: number,
+  input: {
+    actionKind: "click" | "type"
+    target: BrowserAgentElementLocator
+    text?: string | null
+    maxAttempts: number
+    timeoutMs: number
+    pollIntervalMs: number
+  }
+): Promise<BrowserAgentRetryWithRelocateResult> {
+  if (!isTauriRuntime()) {
+    throw new Error("retryLocalBrowserAgentWithRelocate is only supported in Tauri runtime")
+  }
+  const data = await invokeTauri<unknown>("retry_local_browser_agent_with_relocate", {
+    tabId,
+    actionKind: input.actionKind,
+    target: BrowserAgentElementLocatorSchema.parse(input.target),
+    text: input.text ?? null,
+    maxAttempts: input.maxAttempts,
+    timeoutMs: input.timeoutMs,
+    pollIntervalMs: input.pollIntervalMs,
+  })
+  return BrowserAgentRetryWithRelocateResultSchema.parse(data)
 }
 
 export async function clickLocalBrowserAgentElement(

@@ -62,6 +62,85 @@ pub async fn get_local_browser_agent_page_snapshot(
 }
 
 #[tauri::command]
+pub async fn wait_for_local_browser_agent_element(
+    state: State<'_, AppState>,
+    tab_id: i64,
+    target: crate::modules::browser_agent::types::BrowserAgentElementLocator,
+    timeout_ms: i64,
+    poll_interval_ms: i64,
+) -> Result<serde_json::Value, String> {
+    state
+        .browser_agent
+        .service
+        .wait_for_element(state.mcp.store.as_ref(), tab_id, target, timeout_ms, poll_interval_ms)
+        .await
+}
+
+#[tauri::command]
+pub async fn wait_for_local_browser_agent_navigation(
+    state: State<'_, AppState>,
+    tab_id: i64,
+    timeout_ms: i64,
+    expected_url_contains: Option<String>,
+    expected_title_contains: Option<String>,
+    wait_for_ready_state: Option<String>,
+) -> Result<serde_json::Value, String> {
+    state
+        .browser_agent
+        .service
+        .wait_for_navigation(
+            state.mcp.store.as_ref(),
+            tab_id,
+            timeout_ms,
+            expected_url_contains.as_deref(),
+            expected_title_contains.as_deref(),
+            wait_for_ready_state.as_deref(),
+        )
+        .await
+}
+
+#[tauri::command]
+pub async fn scroll_local_browser_agent_element_into_view(
+    state: State<'_, AppState>,
+    tab_id: i64,
+    target: crate::modules::browser_agent::types::BrowserAgentElementLocator,
+    align: Option<String>,
+) -> Result<serde_json::Value, String> {
+    state
+        .browser_agent
+        .service
+        .scroll_into_view(state.mcp.store.as_ref(), tab_id, target, align.as_deref())
+        .await
+}
+
+#[tauri::command]
+pub async fn retry_local_browser_agent_with_relocate(
+    state: State<'_, AppState>,
+    tab_id: i64,
+    action_kind: String,
+    target: crate::modules::browser_agent::types::BrowserAgentElementLocator,
+    text: Option<String>,
+    max_attempts: i64,
+    timeout_ms: i64,
+    poll_interval_ms: i64,
+) -> Result<serde_json::Value, String> {
+    state
+        .browser_agent
+        .service
+        .retry_with_relocate(
+            state.mcp.store.as_ref(),
+            tab_id,
+            &action_kind,
+            target,
+            text.as_deref(),
+            max_attempts,
+            timeout_ms,
+            poll_interval_ms,
+        )
+        .await
+}
+
+#[tauri::command]
 pub async fn click_local_browser_agent_element(
     state: State<'_, AppState>,
     tab_id: i64,

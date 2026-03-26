@@ -3,11 +3,15 @@ import {
   getLocalBrowserAgentBridgeStatus,
   getLocalBrowserAgentBridgeUrl,
   getLocalBrowserAgentPageSnapshot,
+  retryLocalBrowserAgentWithRelocate,
+  scrollLocalBrowserAgentElementIntoView,
   navigateLocalBrowserAgentTab,
   openLocalBrowserAgentTab,
   queryLocalBrowserAgentDom,
   setLocalBrowserAgentBridgeUrl,
   typeLocalBrowserAgentElement,
+  waitForLocalBrowserAgentElement,
+  waitForLocalBrowserAgentNavigation,
 } from "@/lib/api/browser-agent"
 import { invoke } from "@tauri-apps/api/core"
 
@@ -80,6 +84,33 @@ describe("browser agent api", () => {
           },
         ],
       } as unknown)
+      .mockResolvedValueOnce({
+        ok: true,
+        matched: true,
+        locator: { text: "Continue" },
+        visible: true,
+        url: "https://example.com/docs",
+        title: "Example Docs",
+      } as unknown)
+      .mockResolvedValueOnce({
+        ok: true,
+        url: "https://example.com/dashboard",
+        title: "Dashboard",
+        documentReadyState: "complete",
+        changed: true,
+      } as unknown)
+      .mockResolvedValueOnce({ ok: true, visible: true } as unknown)
+      .mockResolvedValueOnce({
+        ok: true,
+        attempts: 2,
+        recovered: true,
+        final_error: null,
+        last_snapshot_summary: {
+          url: "https://example.com/docs",
+          title: "Example Docs",
+          documentReadyState: "complete",
+        },
+      } as unknown)
       .mockResolvedValueOnce({ tabId: 42, url: "https://example.com/search" } as unknown)
       .mockResolvedValueOnce({ tabId: 42, url: "https://example.com/docs" } as unknown)
 
@@ -94,6 +125,27 @@ describe("browser agent api", () => {
       "browser agent"
     )
     const queryResult = await queryLocalBrowserAgentDom(42, { selector: ".result" })
+    const waitElementResult = await waitForLocalBrowserAgentElement(42, {
+      target: { text: "Continue" },
+      timeoutMs: 10_000,
+      pollIntervalMs: 250,
+    })
+    const waitNavigationResult = await waitForLocalBrowserAgentNavigation(42, {
+      timeoutMs: 10_000,
+      expectedUrlContains: "/dashboard",
+      waitForReadyState: "complete",
+    })
+    const scrollResult = await scrollLocalBrowserAgentElementIntoView(42, {
+      target: { selector: "button.primary" },
+      align: "center",
+    })
+    const retryResult = await retryLocalBrowserAgentWithRelocate(42, {
+      actionKind: "click",
+      target: { text: "Continue" },
+      maxAttempts: 2,
+      timeoutMs: 10_000,
+      pollIntervalMs: 250,
+    })
     const navigateResult = await navigateLocalBrowserAgentTab(42, "https://example.com/search")
     const openResult = await openLocalBrowserAgentTab("https://example.com/docs")
 
@@ -104,6 +156,10 @@ describe("browser agent api", () => {
     expect(clickResult.ok).toBe(true)
     expect(typeResult.ok).toBe(true)
     expect(queryResult.data[0]?.text).toBe("Result 1")
+    expect(waitElementResult.matched).toBe(true)
+    expect(waitNavigationResult.changed).toBe(true)
+    expect(scrollResult.visible).toBe(true)
+    expect(retryResult.recovered).toBe(true)
     expect(navigateResult.url).toBe("https://example.com/search")
     expect(openResult.tabId).toBe(42)
     expect(mockInvoke).toHaveBeenNthCalledWith(
@@ -143,11 +199,54 @@ describe("browser agent api", () => {
     )
     expect(mockInvoke).toHaveBeenNthCalledWith(
       8,
+      "wait_for_local_browser_agent_element",
+      {
+        tabId: 42,
+        target: { text: "Continue" },
+        timeoutMs: 10_000,
+        pollIntervalMs: 250,
+      }
+    )
+    expect(mockInvoke).toHaveBeenNthCalledWith(
+      9,
+      "wait_for_local_browser_agent_navigation",
+      {
+        tabId: 42,
+        timeoutMs: 10_000,
+        expectedUrlContains: "/dashboard",
+        expectedTitleContains: null,
+        waitForReadyState: "complete",
+      }
+    )
+    expect(mockInvoke).toHaveBeenNthCalledWith(
+      10,
+      "scroll_local_browser_agent_element_into_view",
+      {
+        tabId: 42,
+        target: { selector: "button.primary" },
+        align: "center",
+      }
+    )
+    expect(mockInvoke).toHaveBeenNthCalledWith(
+      11,
+      "retry_local_browser_agent_with_relocate",
+      {
+        tabId: 42,
+        actionKind: "click",
+        target: { text: "Continue" },
+        text: null,
+        maxAttempts: 2,
+        timeoutMs: 10_000,
+        pollIntervalMs: 250,
+      }
+    )
+    expect(mockInvoke).toHaveBeenNthCalledWith(
+      12,
       "navigate_local_browser_agent_tab",
       { tabId: 42, url: "https://example.com/search" }
     )
     expect(mockInvoke).toHaveBeenNthCalledWith(
-      9,
+      13,
       "open_local_browser_agent_tab",
       { url: "https://example.com/docs" }
     )

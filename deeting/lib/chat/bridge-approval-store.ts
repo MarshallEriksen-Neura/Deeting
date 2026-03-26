@@ -9,6 +9,9 @@ export interface BasePendingApproval {
   description?: string
   risk_level?: string
   risk_reasons?: string[]
+  recovered?: boolean
+  recovery_reason?: string
+  attempts?: number
   expires_in_ms?: number
 }
 

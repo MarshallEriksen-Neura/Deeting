@@ -21,6 +21,9 @@ jest.mock("next-intl", () => ({
       "chat.approvalDialog.toolLabel": "工具",
       "chat.approvalDialog.argumentsLabel": "参数",
       "chat.approvalDialog.summaryLabel": "说明",
+      "chat.approvalDialog.recoveryLabel": "恢复后重新确认",
+      "chat.approvalDialog.recoveryFallback": "已恢复目标，需要重新确认后才能继续。",
+      "chat.approvalDialog.recoveryAttempts": "恢复尝试次数 {count}",
       "chat.approvalDialog.warningTitle": "执行前请确认",
       "chat.approvalDialog.warning":
         "该操作可能修改文件或执行系统命令，仅在你信任当前会话时才允许。",
@@ -409,6 +412,33 @@ describe("ToolApprovalDialog", () => {
     expect(
       screen.getByText('"Click the "Continue" element in the browser."')
     ).toBeInTheDocument()
+  })
+
+  it("renders recovery context when browser approval is re-issued after recovery", () => {
+    act(() => {
+      useBridgeApprovalStore.getState().setPending(
+        createBrowserAwareApproval({
+          approval_token: "approval-browser-recovered-1",
+          tool_name: "browser_click",
+          arguments: {
+            tab_id: 42,
+            target: { text: "Continue" },
+          },
+          recovered: true,
+          recovery_reason: "Target changed after refresh",
+          attempts: 2,
+          meta: {
+            call_id: "call-browser-recovered-1",
+          },
+        })
+      )
+    })
+
+    render(<ToolApprovalDialog />)
+
+    expect(screen.getByText("恢复后重新确认")).toBeInTheDocument()
+    expect(screen.getByText("Target changed after refresh")).toBeInTheDocument()
+    expect(screen.getByText("恢复尝试次数 2")).toBeInTheDocument()
   })
 
   it("uses translated rejection copy when the user denies execution", async () => {

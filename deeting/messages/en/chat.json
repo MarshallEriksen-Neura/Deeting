@@ -103,6 +103,8 @@
         "pageEmpty": "No page selected yet",
         "lastActionLabel": "Latest action",
         "lastActionEmpty": "No browser action has run yet",
+        "executionLabel": "Execution state",
+        "retryCount": "Retry count: {count}",
         "requestLabel": "Requested task",
         "pause": "Pause",
         "reconnect": "Reconnect",
@@ -122,6 +124,13 @@
           "paused": "Paused",
           "recovering": "Recovering",
           "ended": "Ended"
+        },
+        "execution": {
+          "idle": "Idle",
+          "waiting": "Waiting",
+          "acting": "Acting",
+          "verifying": "Verifying",
+          "recovering": "Recovering"
         }
       }
     },
@@ -332,6 +341,9 @@
       "toolLabel": "Tool",
       "argumentsLabel": "Arguments",
       "summaryLabel": "Summary",
+      "recoveryLabel": "Recovery review",
+      "recoveryFallback": "The browser target was recovered and needs fresh approval before continuing.",
+      "recoveryAttempts": "Recovery attempts {count}",
       "warningTitle": "Review before continuing",
       "warning": "This action may modify files or execute system commands. Only allow it if you trust the current conversation and this specific request.",
       "actions": {

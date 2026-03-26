@@ -2,6 +2,7 @@ pub mod bridge;
 pub mod commands;
 pub(crate) mod compat;
 pub mod error;
+pub mod policy;
 pub mod process;
 pub mod risk;
 pub mod store;
@@ -15,8 +16,9 @@ use serde_json::Value;
 use crate::modules::mcp::bridge::McpBridgeState;
 use crate::modules::mcp::process::ProcessManager;
 pub use crate::modules::mcp::risk::{
-    assess_mcp_tool_risk, assess_skill_binding_risk, is_high_risk_tool_name, ApprovalBoundaryClass,
-    RiskOperationClass, RiskTargetClass, SessionApprovalGrant, ToolRiskAssessment,
+    assess_core_tool_risk, assess_mcp_tool_risk, assess_skill_binding_risk, is_high_risk_tool_name,
+    ApprovalBoundaryClass, RiskOperationClass, RiskTargetClass, SessionApprovalGrant,
+    ToolRiskAssessment,
 };
 use crate::modules::mcp::store::McpStore;
 use mcp_core::types::McpTool;

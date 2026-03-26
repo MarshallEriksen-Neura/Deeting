@@ -16,6 +16,9 @@ type ToolApprovalPayload = {
   description?: string
   risk_level?: string
   risk_reasons?: string[]
+  recovered?: boolean
+  recovery_reason?: string
+  attempts?: number
   expires_in_ms?: number
 }
 
@@ -28,6 +31,9 @@ export type PendingToolApprovalSnapshot = {
   description?: string
   risk_level?: string
   risk_reasons?: string[]
+  recovered?: boolean
+  recovery_reason?: string
+  attempts?: number
   expires_in_ms?: number
   call_id?: string
   execution_token?: string
@@ -156,6 +162,12 @@ export function extractToolApprovalPayload(result: unknown): ToolApprovalPayload
     description: asTrimmedString(payload.description) ?? undefined,
     risk_level: asTrimmedString(payload.risk_level) ?? undefined,
     risk_reasons: asStringArray(payload.risk_reasons),
+    recovered: payload.recovered === true ? true : undefined,
+    recovery_reason: asTrimmedString(payload.recovery_reason) ?? undefined,
+    attempts:
+      typeof payload.attempts === "number" && Number.isFinite(payload.attempts)
+        ? payload.attempts
+        : undefined,
     expires_in_ms:
       typeof payload.expires_in_ms === "number" && Number.isFinite(payload.expires_in_ms)
         ? payload.expires_in_ms
@@ -187,6 +199,9 @@ export function buildBridgeToolApprovalFromResult(
     description: payload.description ?? fallback.description,
     risk_level: payload.risk_level,
     risk_reasons: payload.risk_reasons,
+    recovered: payload.recovered,
+    recovery_reason: payload.recovery_reason,
+    attempts: payload.attempts,
     expires_in_ms: payload.expires_in_ms,
     meta: fallback.meta,
   })
@@ -277,6 +292,9 @@ export function buildBridgeToolApprovalFromPendingSnapshot(
     description: payload.description,
     risk_level: payload.risk_level,
     risk_reasons: payload.risk_reasons,
+    recovered: payload.recovered,
+    recovery_reason: payload.recovery_reason,
+    attempts: payload.attempts,
     expires_in_ms: payload.expires_in_ms,
     meta: {
       call_id: callId,

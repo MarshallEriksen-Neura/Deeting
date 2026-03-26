@@ -5,6 +5,7 @@ import { ToolApprovalDialog } from "@/components/bridge/tool-approval-dialog"
 import { useChatStore, type ChatAssistant } from "@/store/chat-store"
 import { useChatMessagingService } from "@/hooks/chat/use-chat-messaging-service"
 import { useHydratePendingToolApproval } from "@/hooks/chat/use-hydrate-pending-tool-approval"
+import { useBrowserModeToolActivity } from "@/hooks/chat/use-browser-mode-tool-activity"
 
 /**
  * ChatContent - 聊天内容组件（重构版）
@@ -29,6 +30,7 @@ export function ChatContent({ agent }: ChatContentProps) {
   const sendFeedback = useChatStore((state) => state.sendFeedback)
   const { regenerateMessage, compareWithModel, finalizeCompareWinner } = useChatMessagingService()
   useHydratePendingToolApproval(sessionId, messages)
+  useBrowserModeToolActivity(messages)
 
   return (
     <>

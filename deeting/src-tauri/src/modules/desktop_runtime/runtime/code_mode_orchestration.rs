@@ -1182,14 +1182,12 @@ async fn maybe_handle_local_code_mode_tool_calls(
             );
             match execute_or_queue_mcp_tool_call_with_tool_ref(
                 &approval_context,
-                None,
                 Some(&app_state.mcp),
                 app_state.mcp.store.as_ref(),
                 app_state.mcp.approvals.pending_tool_calls.as_ref(),
                 None,
                 Some(tool_name.clone()),
                 call.arguments.clone(),
-                false,
             )
             .await
             {

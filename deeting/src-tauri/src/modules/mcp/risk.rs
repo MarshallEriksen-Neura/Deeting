@@ -175,6 +175,98 @@ pub fn is_high_risk_tool_name(tool_name: &str) -> bool {
         || name.contains("terminal")
 }
 
+pub fn assess_core_tool_risk(tool_name: &str, arguments: &Value) -> ToolRiskAssessment {
+    match tool_name.trim() {
+        "browser_agent_status" => ToolRiskAssessment {
+            requires_approval: false,
+            risk_level: "LOW",
+            reasons: vec!["status probe has no side effects".to_string()],
+            operation_class: RiskOperationClass::Unknown,
+            target_class: RiskTargetClass::Unknown,
+            boundary_class: ApprovalBoundaryClass::None,
+        },
+        "browser_open_tab" => {
+            let url = arguments
+                .get("url")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .unwrap_or_default();
+            match classify_url_target(url) {
+                Some(RiskTargetClass::Localhost) => ToolRiskAssessment {
+                    requires_approval: true,
+                    risk_level: "HIGH",
+                    reasons: vec![
+                        "browser navigation targets localhost endpoint".to_string(),
+                        "browser automation can trigger host-side effects".to_string(),
+                    ],
+                    operation_class: RiskOperationClass::NetworkRead,
+                    target_class: RiskTargetClass::Localhost,
+                    boundary_class: ApprovalBoundaryClass::HardBoundary,
+                },
+                Some(RiskTargetClass::PrivateNetwork) => ToolRiskAssessment {
+                    requires_approval: true,
+                    risk_level: "HIGH",
+                    reasons: vec![
+                        "browser navigation targets private network".to_string(),
+                        "browser automation can trigger host-side effects".to_string(),
+                    ],
+                    operation_class: RiskOperationClass::NetworkRead,
+                    target_class: RiskTargetClass::PrivateNetwork,
+                    boundary_class: ApprovalBoundaryClass::HardBoundary,
+                },
+                Some(RiskTargetClass::PublicInternet) => ToolRiskAssessment {
+                    requires_approval: true,
+                    risk_level: "MEDIUM",
+                    reasons: vec!["browser automation navigates public internet".to_string()],
+                    operation_class: RiskOperationClass::NetworkRead,
+                    target_class: RiskTargetClass::PublicInternet,
+                    boundary_class: ApprovalBoundaryClass::SoftBoundary,
+                },
+                _ => ToolRiskAssessment {
+                    requires_approval: true,
+                    risk_level: "MEDIUM",
+                    reasons: vec!["browser navigation target is unknown".to_string()],
+                    operation_class: RiskOperationClass::NetworkRead,
+                    target_class: RiskTargetClass::Unknown,
+                    boundary_class: ApprovalBoundaryClass::SoftBoundary,
+                },
+            }
+        }
+        "browser_get_page_snapshot" => ToolRiskAssessment {
+            requires_approval: true,
+            risk_level: "MEDIUM",
+            reasons: vec!["browser snapshot can expose page content".to_string()],
+            operation_class: RiskOperationClass::NetworkRead,
+            target_class: RiskTargetClass::Unknown,
+            boundary_class: ApprovalBoundaryClass::SoftBoundary,
+        },
+        "browser_click" | "browser_type" => ToolRiskAssessment {
+            requires_approval: true,
+            risk_level: "HIGH",
+            reasons: vec!["browser automation can trigger host-side mutations".to_string()],
+            operation_class: RiskOperationClass::ProcessExec,
+            target_class: RiskTargetClass::Host,
+            boundary_class: ApprovalBoundaryClass::HardBoundary,
+        },
+        "shell_execute" => ToolRiskAssessment {
+            requires_approval: true,
+            risk_level: "HIGH",
+            reasons: vec!["shell execution can mutate host state".to_string()],
+            operation_class: RiskOperationClass::ProcessExec,
+            target_class: RiskTargetClass::Host,
+            boundary_class: ApprovalBoundaryClass::HardBoundary,
+        },
+        _ => ToolRiskAssessment {
+            requires_approval: false,
+            risk_level: "LOW",
+            reasons: vec!["core tool not classified as risky".to_string()],
+            operation_class: RiskOperationClass::Unknown,
+            target_class: RiskTargetClass::Unknown,
+            boundary_class: ApprovalBoundaryClass::None,
+        },
+    }
+}
+
 pub fn assess_mcp_tool_risk(tool: &McpTool, arguments: &Value) -> ToolRiskAssessment {
     let mut score = 0_i32;
     let mut reasons = Vec::new();
@@ -775,6 +867,23 @@ mod tests {
         assert_eq!(risk.operation_class, RiskOperationClass::NetworkRead);
         assert_eq!(risk.target_class, RiskTargetClass::PublicInternet);
         assert_eq!(risk.boundary_class, ApprovalBoundaryClass::SoftBoundary);
+    }
+
+    #[test]
+    fn assess_core_tool_risk_requires_approval_for_browser_open_tab() {
+        let risk = assess_core_tool_risk("browser_open_tab", &json!({"url":"https://example.com"}));
+
+        assert!(risk.requires_approval);
+        assert_eq!(risk.operation_class, RiskOperationClass::NetworkRead);
+        assert_eq!(risk.target_class, RiskTargetClass::PublicInternet);
+    }
+
+    #[test]
+    fn assess_core_tool_risk_allows_browser_agent_status_probe() {
+        let risk = assess_core_tool_risk("browser_agent_status", &json!({}));
+
+        assert!(!risk.requires_approval);
+        assert_eq!(risk.boundary_class, ApprovalBoundaryClass::None);
     }
 
     #[test]

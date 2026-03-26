@@ -112,4 +112,51 @@ describe("BrowserModePanel", () => {
       screen.getByRole("button", { name: "browserMode.panel.endTask" })
     ).toBeInTheDocument()
   })
+
+  it("renders execution phase, retry count, and recovery reason when present", () => {
+    mockUseBrowserModeStatus.mockReturnValue({
+      bridgeStatus: null,
+      isRefreshing: false,
+      refresh: jest.fn(),
+      connectionState: "connected",
+      statusLabel: "connected",
+      statusDetail: "browser_agent_extension_connected",
+    })
+
+    useBrowserModeStore.getState().requestBrowserMode({
+      prompt: "打开 github 并查看 notifications",
+      source: "chat",
+    })
+    useBrowserModeStore.getState().confirm()
+    useBrowserModeStore.getState().activate({
+      connectionLabel: "Chrome extension connected",
+      page: {
+        tabId: 42,
+        title: "GitHub Notifications",
+        url: "https://github.com/notifications",
+        host: "github.com",
+      },
+      lastAction: {
+        kind: "click",
+        summary: "Opened notifications page",
+      },
+    })
+    useBrowserModeStore.getState().setExecutionState("verifying", "Confirming page transition")
+    useBrowserModeStore.getState().markRecovery("Target changed after refresh", 2)
+
+    useWorkspaceStore.getState().openView({
+      id: "browser-mode",
+      type: "browser-mode",
+      title: "Browser Mode",
+      content: { source: "chat-browser-mode" },
+    })
+
+    render(<WorkspacePanel />)
+
+    expect(screen.getByText("browserMode.panel.executionLabel")).toBeInTheDocument()
+    expect(screen.getByText("browserMode.panel.execution.recovering")).toBeInTheDocument()
+    expect(screen.getAllByText("Target changed after refresh").length).toBeGreaterThan(0)
+    expect(screen.getByText("browserMode.panel.retryCount")).toBeInTheDocument()
+    expect(useBrowserModeStore.getState().retryCount).toBe(2)
+  })
 })

@@ -103,6 +103,8 @@
         "pageEmpty": "当前还没有页面上下文",
         "lastActionLabel": "最近动作",
         "lastActionEmpty": "还没有执行浏览器动作",
+        "executionLabel": "执行状态",
+        "retryCount": "重试次数：{count}",
         "requestLabel": "请求内容",
         "pause": "暂停",
         "reconnect": "重连",
@@ -122,6 +124,13 @@
           "paused": "已暂停",
           "recovering": "恢复中",
           "ended": "已结束"
+        },
+        "execution": {
+          "idle": "空闲",
+          "waiting": "等待中",
+          "acting": "执行中",
+          "verifying": "校验中",
+          "recovering": "恢复中"
         }
       }
     },
@@ -332,6 +341,9 @@
       "toolLabel": "工具",
       "argumentsLabel": "参数",
       "summaryLabel": "说明",
+      "recoveryLabel": "恢复后重新确认",
+      "recoveryFallback": "目标已恢复，继续执行前需要重新确认。",
+      "recoveryAttempts": "恢复尝试次数 {count}",
       "warningTitle": "执行前请确认",
       "warning": "该操作可能修改文件或执行系统命令。仅在你信任当前会话和本次操作时才允许执行。",
       "actions": {

@@ -272,6 +272,184 @@ pub(crate) fn code_mode_core_tools() -> Vec<CoreToolContract> {
             example_arguments: json!({"tab_id": 42}),
         },
         CoreToolContract {
+            name: "browser_wait_for_element",
+            description: "Ask the connected browser agent extension to wait until a target element appears in a browser tab and return the matched locator plus current page metadata.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "tab_id": { "type": "integer", "description": "Browser tab identifier to target." },
+                    "target": {
+                        "type": "object",
+                        "properties": {
+                            "selector": { "type": "string" },
+                            "text": { "type": "string" },
+                            "role": { "type": "string" },
+                            "tag_name": { "type": "string" },
+                            "placeholder": { "type": "string" },
+                            "index": { "type": "integer" }
+                        }
+                    },
+                    "timeout_ms": { "type": "integer", "description": "Maximum time to wait for the element before timing out." },
+                    "poll_interval_ms": { "type": "integer", "description": "Polling interval between element checks." }
+                },
+                "required": ["tab_id", "target", "timeout_ms", "poll_interval_ms"]
+            }),
+            output_schema: json!({
+                "type": "object",
+                "properties": {
+                    "ok": {"type": "boolean"},
+                    "matched": {"type": "boolean"},
+                    "locator": {"type": ["object", "null"]},
+                    "visible": {"type": "boolean"},
+                    "url": {"type": "string"},
+                    "title": {"type": "string"}
+                },
+                "required": ["ok", "matched", "locator", "visible", "url", "title"]
+            }),
+            permission_scope: &["browser_agent_read", "local_runtime"],
+            read_only: true,
+            mutating: false,
+            risk_level: "LOW",
+            example_arguments: json!({
+                "tab_id": 42,
+                "target": {"text": "Continue"},
+                "timeout_ms": 10000,
+                "poll_interval_ms": 250
+            }),
+        },
+        CoreToolContract {
+            name: "browser_wait_for_navigation",
+            description: "Ask the connected browser agent extension to wait for navigation or page-state change in a browser tab and return the latest page metadata.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "tab_id": { "type": "integer", "description": "Browser tab identifier to target." },
+                    "timeout_ms": { "type": "integer", "description": "Maximum time to wait before timing out." },
+                    "expected_url_contains": { "type": "string", "description": "Optional substring expected in the resulting URL." },
+                    "expected_title_contains": { "type": "string", "description": "Optional substring expected in the resulting title." },
+                    "wait_for_ready_state": { "type": "string", "description": "Optional ready state expectation such as loading, interactive, or complete." }
+                },
+                "required": ["tab_id", "timeout_ms"]
+            }),
+            output_schema: json!({
+                "type": "object",
+                "properties": {
+                    "ok": {"type": "boolean"},
+                    "url": {"type": "string"},
+                    "title": {"type": "string"},
+                    "documentReadyState": {"type": "string"},
+                    "changed": {"type": "boolean"}
+                },
+                "required": ["ok", "url", "title", "documentReadyState", "changed"]
+            }),
+            permission_scope: &["browser_agent_read", "local_runtime"],
+            read_only: true,
+            mutating: false,
+            risk_level: "LOW",
+            example_arguments: json!({
+                "tab_id": 42,
+                "timeout_ms": 10000,
+                "expected_url_contains": "/dashboard"
+            }),
+        },
+        CoreToolContract {
+            name: "browser_scroll_into_view",
+            description: "Ask the connected browser agent extension to scroll a target element into view before interaction.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "tab_id": { "type": "integer", "description": "Browser tab identifier to target." },
+                    "target": {
+                        "type": "object",
+                        "properties": {
+                            "selector": { "type": "string" },
+                            "text": { "type": "string" },
+                            "role": { "type": "string" },
+                            "tag_name": { "type": "string" },
+                            "placeholder": { "type": "string" },
+                            "index": { "type": "integer" }
+                        }
+                    },
+                    "align": { "type": "string", "description": "Optional scroll alignment such as start, center, end, or nearest." }
+                },
+                "required": ["tab_id", "target"]
+            }),
+            output_schema: json!({
+                "type": "object",
+                "properties": {
+                    "ok": {"type": "boolean"},
+                    "visible": {"type": "boolean"}
+                },
+                "required": ["ok", "visible"]
+            }),
+            permission_scope: &["browser_agent_write", "local_runtime"],
+            read_only: false,
+            mutating: true,
+            risk_level: "LOW",
+            example_arguments: json!({
+                "tab_id": 42,
+                "target": {"selector": "button.primary"},
+                "align": "center"
+            }),
+        },
+        CoreToolContract {
+            name: "browser_retry_with_relocate",
+            description: "Retry a browser click or type action after refreshing page context, waiting for the target, and scrolling it into view.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "tab_id": { "type": "integer", "description": "Browser tab identifier to target." },
+                    "action_kind": { "type": "string", "enum": ["click", "type"], "description": "Action to retry once recovery has re-located the target." },
+                    "target": {
+                        "type": "object",
+                        "properties": {
+                            "selector": { "type": "string" },
+                            "text": { "type": "string" },
+                            "role": { "type": "string" },
+                            "tag_name": { "type": "string" },
+                            "placeholder": { "type": "string" },
+                            "index": { "type": "integer" }
+                        }
+                    },
+                    "text": { "type": "string", "description": "Required when action_kind is type." },
+                    "max_attempts": { "type": "integer", "description": "Maximum attempts including the first execution.", "default": 2 },
+                    "timeout_ms": { "type": "integer", "description": "Timeout used for re-location waiting." },
+                    "poll_interval_ms": { "type": "integer", "description": "Polling interval used for re-location waiting." }
+                },
+                "required": ["tab_id", "action_kind", "target", "max_attempts", "timeout_ms", "poll_interval_ms"]
+            }),
+            output_schema: json!({
+                "type": "object",
+                "properties": {
+                    "ok": {"type": "boolean"},
+                    "attempts": {"type": "integer"},
+                    "recovered": {"type": "boolean"},
+                    "final_error": {"type": ["string", "null"]},
+                    "last_snapshot_summary": {
+                        "type": ["object", "null"],
+                        "properties": {
+                            "url": {"type": "string"},
+                            "title": {"type": "string"},
+                            "documentReadyState": {"type": "string"}
+                        }
+                    }
+                },
+                "required": ["ok", "attempts", "recovered", "final_error", "last_snapshot_summary"]
+            }),
+            permission_scope: &["browser_agent_write", "local_runtime"],
+            read_only: false,
+            mutating: true,
+            risk_level: "LOW",
+            example_arguments: json!({
+                "tab_id": 42,
+                "action_kind": "click",
+                "target": {"text": "Continue"},
+                "max_attempts": 2,
+                "timeout_ms": 10000,
+                "poll_interval_ms": 250
+            }),
+        },
+        CoreToolContract {
             name: "browser_click",
             description: "Ask the connected browser agent extension to click an element in a browser tab using a structured locator. Use this after inspecting a page snapshot.",
             input_schema: json!({
@@ -401,6 +579,10 @@ fn core_tool_execution_surface(tool_name: &str) -> &'static str {
     match tool_name {
         "execute_code_plan" => "sandbox",
         "browser_open_tab" => "host",
+        "browser_wait_for_element" => "host",
+        "browser_wait_for_navigation" => "host",
+        "browser_scroll_into_view" => "host",
+        "browser_retry_with_relocate" => "host",
         "browser_click" => "host",
         "browser_type" => "host",
         "shell_execute" => "host",
@@ -530,6 +712,54 @@ mod tests {
             .into_iter()
             .find(|tool| tool.name == "browser_type")
             .expect("browser_type core tool should exist");
+
+        assert!(!tool.read_only);
+        assert!(tool.mutating);
+        assert_eq!(tool.risk_level, "LOW");
+    }
+
+    #[test]
+    fn core_tool_registry_includes_browser_wait_for_element() {
+        let tool = code_mode_core_tools()
+            .into_iter()
+            .find(|tool| tool.name == "browser_wait_for_element")
+            .expect("browser_wait_for_element core tool should exist");
+
+        assert!(tool.read_only);
+        assert!(!tool.mutating);
+        assert_eq!(tool.risk_level, "LOW");
+    }
+
+    #[test]
+    fn core_tool_registry_includes_browser_wait_for_navigation() {
+        let tool = code_mode_core_tools()
+            .into_iter()
+            .find(|tool| tool.name == "browser_wait_for_navigation")
+            .expect("browser_wait_for_navigation core tool should exist");
+
+        assert!(tool.read_only);
+        assert!(!tool.mutating);
+        assert_eq!(tool.risk_level, "LOW");
+    }
+
+    #[test]
+    fn core_tool_registry_includes_browser_scroll_into_view() {
+        let tool = code_mode_core_tools()
+            .into_iter()
+            .find(|tool| tool.name == "browser_scroll_into_view")
+            .expect("browser_scroll_into_view core tool should exist");
+
+        assert!(!tool.read_only);
+        assert!(tool.mutating);
+        assert_eq!(tool.risk_level, "LOW");
+    }
+
+    #[test]
+    fn core_tool_registry_includes_browser_retry_with_relocate() {
+        let tool = code_mode_core_tools()
+            .into_iter()
+            .find(|tool| tool.name == "browser_retry_with_relocate")
+            .expect("browser_retry_with_relocate core tool should exist");
 
         assert!(!tool.read_only);
         assert!(tool.mutating);

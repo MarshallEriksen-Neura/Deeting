@@ -22,8 +22,14 @@ pub struct BrowserAgentElementLocator {
     pub text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
-    #[serde(rename = "tagName", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "tagName",
+        alias = "tag_name",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub tag_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub placeholder: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub index: Option<i64>,
 }
@@ -56,6 +62,49 @@ pub enum BrowserAgentAction {
         tab_id: i64,
         target: BrowserAgentElementLocator,
         text: String,
+    },
+    #[serde(rename = "wait_for_element")]
+    WaitForElement {
+        #[serde(rename = "tabId")]
+        tab_id: i64,
+        target: BrowserAgentElementLocator,
+        #[serde(rename = "timeoutMs")]
+        timeout_ms: i64,
+        #[serde(rename = "pollIntervalMs")]
+        poll_interval_ms: i64,
+    },
+    #[serde(rename = "wait_for_navigation")]
+    WaitForNavigation {
+        #[serde(rename = "tabId")]
+        tab_id: i64,
+        #[serde(rename = "timeoutMs")]
+        timeout_ms: i64,
+        #[serde(
+            rename = "expectedUrlContains",
+            alias = "expected_url_contains",
+            skip_serializing_if = "Option::is_none"
+        )]
+        expected_url_contains: Option<String>,
+        #[serde(
+            rename = "expectedTitleContains",
+            alias = "expected_title_contains",
+            skip_serializing_if = "Option::is_none"
+        )]
+        expected_title_contains: Option<String>,
+        #[serde(
+            rename = "waitForReadyState",
+            alias = "wait_for_ready_state",
+            skip_serializing_if = "Option::is_none"
+        )]
+        wait_for_ready_state: Option<String>,
+    },
+    #[serde(rename = "scroll_into_view")]
+    ScrollIntoView {
+        #[serde(rename = "tabId")]
+        tab_id: i64,
+        target: BrowserAgentElementLocator,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        align: Option<String>,
     },
 }
 
@@ -94,4 +143,116 @@ pub struct BrowserAgentResultMessage {
     pub ok: bool,
     pub data: Option<Value>,
     pub error: Option<BrowserAgentResultError>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BrowserAgentAction, BrowserAgentElementLocator};
+
+    #[test]
+    fn wait_for_element_action_serializes_with_expected_shape() {
+        let action = BrowserAgentAction::WaitForElement {
+            tab_id: 42,
+            target: BrowserAgentElementLocator {
+                selector: None,
+                text: Some("Continue".to_string()),
+                role: None,
+                tag_name: None,
+                placeholder: None,
+                index: None,
+            },
+            timeout_ms: 10_000,
+            poll_interval_ms: 250,
+        };
+
+        let value = serde_json::to_value(action).expect("serialize action");
+
+        assert_eq!(
+            value.get("kind").and_then(|item| item.as_str()),
+            Some("wait_for_element")
+        );
+        assert_eq!(value.get("tabId").and_then(|item| item.as_i64()), Some(42));
+        assert_eq!(
+            value.get("timeoutMs").and_then(|item| item.as_i64()),
+            Some(10_000)
+        );
+        assert_eq!(
+            value.get("pollIntervalMs").and_then(|item| item.as_i64()),
+            Some(250)
+        );
+        assert_eq!(
+            value
+                .get("target")
+                .and_then(|item| item.get("text"))
+                .and_then(|item| item.as_str()),
+            Some("Continue")
+        );
+    }
+
+    #[test]
+    fn wait_for_navigation_action_serializes_with_expected_shape() {
+        let action = BrowserAgentAction::WaitForNavigation {
+            tab_id: 42,
+            timeout_ms: 10_000,
+            expected_url_contains: Some("/dashboard".to_string()),
+            expected_title_contains: None,
+            wait_for_ready_state: Some("complete".to_string()),
+        };
+
+        let value = serde_json::to_value(action).expect("serialize action");
+
+        assert_eq!(
+            value.get("kind").and_then(|item| item.as_str()),
+            Some("wait_for_navigation")
+        );
+        assert_eq!(value.get("tabId").and_then(|item| item.as_i64()), Some(42));
+        assert_eq!(
+            value.get("timeoutMs").and_then(|item| item.as_i64()),
+            Some(10_000)
+        );
+        assert_eq!(
+            value.get("expectedUrlContains")
+                .and_then(|item| item.as_str()),
+            Some("/dashboard")
+        );
+        assert_eq!(
+            value.get("waitForReadyState")
+                .and_then(|item| item.as_str()),
+            Some("complete")
+        );
+    }
+
+    #[test]
+    fn scroll_into_view_action_serializes_with_expected_shape() {
+        let action = BrowserAgentAction::ScrollIntoView {
+            tab_id: 42,
+            target: BrowserAgentElementLocator {
+                selector: Some("button.primary".to_string()),
+                text: None,
+                role: None,
+                tag_name: None,
+                placeholder: None,
+                index: None,
+            },
+            align: Some("center".to_string()),
+        };
+
+        let value = serde_json::to_value(action).expect("serialize action");
+
+        assert_eq!(
+            value.get("kind").and_then(|item| item.as_str()),
+            Some("scroll_into_view")
+        );
+        assert_eq!(value.get("tabId").and_then(|item| item.as_i64()), Some(42));
+        assert_eq!(
+            value.get("align").and_then(|item| item.as_str()),
+            Some("center")
+        );
+        assert_eq!(
+            value.get("target")
+                .and_then(|item| item.get("selector"))
+                .and_then(|item| item.as_str()),
+            Some("button.primary")
+        );
+    }
 }

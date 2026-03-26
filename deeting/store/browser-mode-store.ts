@@ -28,6 +28,13 @@ export interface BrowserModeActionSummary {
   summary: string
 }
 
+export type BrowserModeExecutionPhase =
+  | "idle"
+  | "waiting"
+  | "acting"
+  | "verifying"
+  | "recovering"
+
 interface ActivatePayload {
   connectionLabel: string
   page: BrowserModePageContext | null
@@ -36,6 +43,10 @@ interface ActivatePayload {
 
 interface BrowserModeState {
   status: BrowserModeStatus
+  executionPhase: BrowserModeExecutionPhase
+  executionLabel: string | null
+  retryCount: number
+  recoveryReason: string | null
   request: BrowserModeRequest | null
   connectionLabel: string | null
   page: BrowserModePageContext | null
@@ -48,12 +59,23 @@ interface BrowserModeState {
   pause: (label?: string | null) => void
   reconnect: (label?: string | null) => void
   markDisconnected: (label?: string | null) => void
+  setExecutionState: (
+    phase: BrowserModeExecutionPhase,
+    label?: string | null
+  ) => void
+  markRecovery: (reason: string, retryCount: number) => void
+  setLastAction: (action: BrowserModeActionSummary | null) => void
+  mergePage: (page: Partial<BrowserModePageContext>) => void
   end: (summary?: string | null) => void
   reset: () => void
 }
 
 const initialState = {
   status: "idle" as BrowserModeStatus,
+  executionPhase: "idle" as BrowserModeExecutionPhase,
+  executionLabel: null as string | null,
+  retryCount: 0,
+  recoveryReason: null as string | null,
   request: null as BrowserModeRequest | null,
   connectionLabel: null as string | null,
   page: null as BrowserModePageContext | null,
@@ -66,6 +88,10 @@ export const useBrowserModeStore = create<BrowserModeState>()((set) => ({
   requestBrowserMode: (request) =>
     set({
       status: "pending_confirmation",
+      executionPhase: "idle",
+      executionLabel: null,
+      retryCount: 0,
+      recoveryReason: null,
       request,
       connectionLabel: null,
       endedSummary: null,
@@ -73,6 +99,8 @@ export const useBrowserModeStore = create<BrowserModeState>()((set) => ({
   confirm: () =>
     set((state) => ({
       status: "connecting",
+      executionPhase: "waiting",
+      executionLabel: null,
       request: state.request,
       endedSummary: null,
     })),
@@ -83,6 +111,10 @@ export const useBrowserModeStore = create<BrowserModeState>()((set) => ({
   activate: ({ connectionLabel, page, lastAction }) =>
     set((state) => ({
       status: "active",
+      executionPhase: "acting",
+      executionLabel: null,
+      retryCount: 0,
+      recoveryReason: null,
       request: state.request,
       connectionLabel,
       page,
@@ -92,24 +124,64 @@ export const useBrowserModeStore = create<BrowserModeState>()((set) => ({
   pause: (label) =>
     set((state) => ({
       status: "paused",
+      executionPhase: state.executionPhase,
       request: state.request,
       connectionLabel: label ?? state.connectionLabel,
     })),
   reconnect: (label) =>
     set((state) => ({
       status: "connecting",
+      executionPhase: "recovering",
+      executionLabel: label ?? state.executionLabel,
       request: state.request,
       connectionLabel: label ?? state.connectionLabel,
     })),
   markDisconnected: (label) =>
     set((state) => ({
       status: "recovering",
+      executionPhase: "recovering",
+      executionLabel: label ?? state.executionLabel,
       request: state.request,
       connectionLabel: label ?? state.connectionLabel,
+    })),
+  setExecutionState: (phase, label) =>
+    set({
+      executionPhase: phase,
+      executionLabel: label ?? null,
+    }),
+  markRecovery: (reason, retryCount) =>
+    set((state) => ({
+      status: "recovering",
+      executionPhase: "recovering",
+      executionLabel: reason,
+      retryCount,
+      recoveryReason: reason,
+      request: state.request,
+    })),
+  setLastAction: (action) =>
+    set({
+      lastAction: action,
+    }),
+  mergePage: (page) =>
+    set((state) => ({
+      page: state.page
+        ? {
+            ...state.page,
+            ...page,
+          }
+        : {
+            tabId: null,
+            title: "",
+            url: "",
+            host: "",
+            ...page,
+          },
     })),
   end: (summary) =>
     set((state) => ({
       status: "ended",
+      executionPhase: "idle",
+      executionLabel: null,
       request: state.request,
       connectionLabel: state.connectionLabel,
       page: null,

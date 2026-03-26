@@ -291,6 +291,7 @@ mod tests {
                 feishu_app_id: String::new(),
                 feishu_app_secret: String::new(),
                 telegram_bot_token: "telegram-token".to_string(),
+                wechat_account_id: String::new(),
             },
             relay_config: ImRelayConfig::default(),
         }

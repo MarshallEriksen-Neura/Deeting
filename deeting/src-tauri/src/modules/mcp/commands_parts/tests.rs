@@ -1353,7 +1353,6 @@ for raw_line in sys.stdin:
             &pending_tool_calls,
             "skill.official.skills.weather.get_weather".to_string(),
             serde_json::json!({"city": "Paris"}),
-            false,
         )
         .await
         .expect("execute skill binding");
@@ -1441,7 +1440,6 @@ for raw_line in sys.stdin:
             &pending_tool_calls,
             "skill.openclaw-weather.fetch_weather".to_string(),
             serde_json::json!({"input": {"city": "Tokyo"}}),
-            false,
         )
         .await
         .expect("execute script runner binding");
@@ -1500,24 +1498,15 @@ for raw_line in sys.stdin:
             .await
             .expect("replace bindings");
 
-        let binding = store
-            .get_enabled_local_skill_tool_binding_by_ref(None, Some("skill.shell-skill.cleanup"))
-            .await
-            .expect("load binding")
-            .expect("binding");
-
         let pending_tool_calls =
             RwLock::new(HashMap::<String, crate::modules::mcp::PendingToolCall>::new());
-        let risk = crate::modules::mcp::assess_skill_binding_risk(&binding, &serde_json::json!({}));
         let queued = execute_or_queue_mcp_tool_call_with_context(
             &crate::modules::mcp::ToolApprovalContext::default(),
-            Some(&risk),
             None,
             &store,
             &pending_tool_calls,
             "skill.shell-skill.cleanup".to_string(),
             serde_json::json!({}),
-            true,
         )
         .await
         .expect("queue approval");
@@ -3401,7 +3390,6 @@ for raw_line in sys.stdin:
             &pending_tool_calls,
             "execute_demo".to_string(),
             serde_json::json!({"x": 1}),
-            true,
         )
         .await
         .expect("queue pending approval");
@@ -3436,7 +3424,6 @@ for raw_line in sys.stdin:
             &pending_tool_calls,
             "execute_demo".to_string(),
             serde_json::json!({"x": 2}),
-            true,
         )
         .await
         .expect("queue second pending approval");
@@ -3476,7 +3463,6 @@ for raw_line in sys.stdin:
             &pending_tool_calls,
             "execute_demo_by_id".to_string(),
             serde_json::json!({"x": 3}),
-            true,
         )
         .await
         .expect("queue pending approval");
@@ -3634,7 +3620,6 @@ for raw_line in sys.stdin:
             &pending_tool_calls,
             "stopped_demo".to_string(),
             serde_json::json!({"x": 1}),
-            false,
         )
         .await
         .expect_err("stopped tool should be blocked before execution");
@@ -3675,7 +3660,6 @@ for raw_line in sys.stdin:
             &pending_tool_calls,
             "echo".to_string(),
             serde_json::json!({"message": "hello from rmcp"}),
-            false,
         )
         .await
         .expect("execute stdio mcp tool through rmcp");
@@ -3760,7 +3744,6 @@ for raw_line in sys.stdin:
             &pending_tool_calls,
             "echo".to_string(),
             serde_json::json!({"message": "hello from imported config"}),
-            false,
         )
         .await
         .expect("execute imported stdio mcp tool through rmcp");
