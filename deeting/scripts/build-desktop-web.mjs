@@ -13,6 +13,7 @@ const isWindows = process.platform === "win32";
 
 const disabledDesktopEntries = [
   "app/[locale]/@auth/[...catchAll]",
+  "app/[locale]/admin/provider-presets/[slug]",
   "app/[locale]/@auth/(.)login",
   "app/[locale]/docs",
   "app/[locale]/download",

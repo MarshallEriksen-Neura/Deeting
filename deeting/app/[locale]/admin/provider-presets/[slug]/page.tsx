@@ -15,6 +15,10 @@ const PageContent = dynamic(
   }
 )
 
+export function generateStaticParams() {
+  return []
+}
+
 export default async function ProviderPresetDetailPage({
   params,
 }: {
