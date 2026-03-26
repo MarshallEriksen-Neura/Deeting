@@ -172,7 +172,10 @@ async fn spawn_bridge_process() -> Result<BridgeProcess, String> {
     let mut command = Command::new(&launch.program);
     configure_background_tokio_command(&mut command);
     command.envs(launch.envs);
-    command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     let mut child = command.spawn().map_err(|err| err.to_string())?;
     let stdin = child
         .stdin

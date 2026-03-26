@@ -8,9 +8,9 @@ use tokio::sync::{Mutex, RwLock};
 use super::account_store::WechatAccountStore;
 use super::bridge_client::WechatBridgeClient;
 use super::types::{
-    StoredWechatAccount, WechatCancelPairingResponse, WechatConnectionStateResponse, WechatDisconnectResponse,
-    WechatGetUpdatesResponse, WechatPairingDecisionResponse, WechatPairingResponse, WechatQrStatusResponse,
-    WECHAT_DEFAULT_BASE_URL,
+    StoredWechatAccount, WechatCancelPairingResponse, WechatConnectionStateResponse,
+    WechatDisconnectResponse, WechatGetUpdatesResponse, WechatPairingDecisionResponse,
+    WechatPairingResponse, WechatQrStatusResponse, WECHAT_DEFAULT_BASE_URL,
 };
 use crate::utils::now_rfc3339;
 

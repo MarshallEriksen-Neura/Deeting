@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+#[cfg(test)]
 pub(crate) use super::capability_toolset::dynamic_capability_alias;
 use super::capability_toolset::{
     build_dynamic_direct_capability_tools,

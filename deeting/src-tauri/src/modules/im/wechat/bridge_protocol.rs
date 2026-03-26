@@ -5,9 +5,18 @@ use super::types::{WechatGetUpdatesResponse, WechatQrCodeResponse, WechatQrStatu
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "method", rename_all = "snake_case")]
 pub enum BridgeRequest {
-    FetchLoginQr { base_url: String },
-    FetchQrStatus { base_url: String, qrcode_id: String },
-    GetUpdates { base_url: String, token: String, cursor: String },
+    FetchLoginQr {
+        base_url: String,
+    },
+    FetchQrStatus {
+        base_url: String,
+        qrcode_id: String,
+    },
+    GetUpdates {
+        base_url: String,
+        token: String,
+        cursor: String,
+    },
     SendText {
         base_url: String,
         token: String,

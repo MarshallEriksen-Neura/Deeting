@@ -3671,7 +3671,7 @@ impl McpStore {
             .filter_map(|row| {
                 let session_id = row.try_get::<String, _>("id").ok()?;
                 let last_active_at = row.try_get::<String, _>("last_active_at").ok()?;
-                let last_active_epoch = parse_rfc3339_to_unix_epoch(&last_active_at).ok()?;
+                let last_active_epoch = parse_rfc3339_to_unix_epoch(&last_active_at)?;
                 if last_active_epoch <= threshold_epoch {
                     Some(session_id)
                 } else {
