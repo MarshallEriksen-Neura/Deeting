@@ -3,6 +3,7 @@ use crate::modules::im::types::*;
 use async_trait::async_trait;
 use log::{error, info, warn};
 use reqwest::Client;
+use reqwest::StatusCode;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::Arc;
@@ -85,15 +86,34 @@ impl TelegramClient {
         )
     }
 
+    fn platform_error(code: i32, description: Option<String>) -> ImError {
+        ImError::PlatformError {
+            code,
+            message: telegram_api_error_message(code, description.as_deref().unwrap_or("未知错误")),
+        }
+    }
+
+    pub async fn probe_polling_available(&self) -> Result<(), ImError> {
+        self.get_updates_with_timeout(0).await.map(|_| ())
+    }
+
     /// 获取更新
     async fn get_updates(&self) -> Result<Vec<TelegramUpdate>, ImError> {
+        self.get_updates_with_timeout(self.config.poll_timeout)
+            .await
+    }
+
+    async fn get_updates_with_timeout(
+        &self,
+        timeout_seconds: i32,
+    ) -> Result<Vec<TelegramUpdate>, ImError> {
         let url = self.api_url("getUpdates");
 
         let offset = self.offset.load(Ordering::SeqCst);
 
         let body = serde_json::json!({
             "offset": if offset > 0 { offset + 1 } else { 0 },
-            "timeout": self.config.poll_timeout,
+            "timeout": timeout_seconds,
             "allowed_updates": ["message", "callback_query"],
         });
 
@@ -101,7 +121,7 @@ impl TelegramClient {
             .http
             .post(&url)
             .json(&body)
-            .timeout(Duration::from_secs(self.config.poll_timeout as u64 + 10))
+            .timeout(Duration::from_secs(timeout_seconds.max(0) as u64 + 10))
             .send()
             .await
             .map_err(|e| {
@@ -112,20 +132,26 @@ impl TelegramClient {
                 }
             })?;
 
-        if !resp.status().is_success() {
-            return Err(ImError::ConnectionError(format!("HTTP {}", resp.status())));
+        let status = resp.status();
+        let body = resp
+            .bytes()
+            .await
+            .map_err(|e| ImError::ConnectionError(e.to_string()))?;
+
+        if !status.is_success() {
+            let payload = serde_json::from_slice::<TelegramResponse<serde_json::Value>>(&body).ok();
+            let body_text = std::str::from_utf8(&body).ok();
+            return Err(telegram_http_error(status, payload, body_text));
         }
 
-        let result: TelegramResponse<Vec<TelegramUpdate>> = resp
-            .json()
-            .await
-            .map_err(|e| ImError::ParseError(e.to_string()))?;
+        let result: TelegramResponse<Vec<TelegramUpdate>> =
+            serde_json::from_slice(&body).map_err(|e| ImError::ParseError(e.to_string()))?;
 
         if !result.ok {
-            return Err(ImError::PlatformError {
-                code: result.error_code.unwrap_or(-1),
-                message: result.description.unwrap_or_else(|| "未知错误".to_string()),
-            });
+            return Err(Self::platform_error(
+                result.error_code.unwrap_or(-1),
+                result.description,
+            ));
         }
 
         Ok(result.result.unwrap_or_default())
@@ -396,10 +422,10 @@ impl TelegramClient {
             .map_err(|e| ImError::ParseError(e.to_string()))?;
 
         if !result.ok {
-            return Err(ImError::PlatformError {
-                code: result.error_code.unwrap_or(-1),
-                message: result.description.unwrap_or_else(|| "未知错误".to_string()),
-            });
+            return Err(Self::platform_error(
+                result.error_code.unwrap_or(-1),
+                result.description,
+            ));
         }
 
         result
@@ -442,13 +468,66 @@ impl TelegramClient {
             .map_err(|e| ImError::ParseError(e.to_string()))?;
 
         if !result.ok {
-            return Err(ImError::PlatformError {
-                code: result.error_code.unwrap_or(-1),
-                message: result.description.unwrap_or_else(|| "未知错误".to_string()),
-            });
+            return Err(Self::platform_error(
+                result.error_code.unwrap_or(-1),
+                result.description,
+            ));
         }
 
         Ok(())
+    }
+}
+
+fn telegram_api_error_message(code: i32, description: &str) -> String {
+    let trimmed = description.trim();
+    if code == 409 && trimmed.to_ascii_lowercase().contains("webhook") {
+        return format!(
+            "Telegram getUpdates is unavailable because a webhook is still configured: {}",
+            trimmed
+        );
+    }
+    if code == 409 && trimmed.to_ascii_lowercase().contains("getupdates") {
+        return format!(
+            "Telegram getUpdates is unavailable because another poller appears to be active: {}",
+            trimmed
+        );
+    }
+    if trimmed.is_empty() {
+        return "未知错误".to_string();
+    }
+    trimmed.to_string()
+}
+
+fn telegram_http_error(
+    status: StatusCode,
+    payload: Option<TelegramResponse<serde_json::Value>>,
+    body_text: Option<&str>,
+) -> ImError {
+    if let Some(payload) = payload {
+        if let Some(description) = payload.description {
+            return TelegramClient::platform_error(
+                payload.error_code.unwrap_or(status.as_u16() as i32),
+                Some(description),
+            );
+        }
+    }
+
+    let body_preview = body_text
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| {
+            if value.len() > 200 {
+                format!("{}…", value.chars().take(199).collect::<String>())
+            } else {
+                value.to_string()
+            }
+        });
+
+    match body_preview {
+        Some(body_preview) => {
+            ImError::ConnectionError(format!("HTTP {}: {}", status, body_preview))
+        }
+        None => ImError::ConnectionError(format!("HTTP {}", status)),
     }
 }
 
@@ -543,5 +622,113 @@ impl ImClient for TelegramClient {
 
         self.answer_callback_query_api(message_id, text, show_alert)
             .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_client(allow_group_message: bool) -> TelegramClient {
+        TelegramClient::new(TelegramConfig {
+            bot_token: "telegram-token".to_string(),
+            allow_group_message,
+            ..Default::default()
+        })
+    }
+
+    fn sample_message(chat_type: &str, text: Option<&str>) -> TelegramMessage {
+        TelegramMessage {
+            message_id: 42,
+            from: Some(TelegramUser {
+                id: 7,
+                is_bot: false,
+                first_name: "Alice".to_string(),
+                last_name: "Example".to_string(),
+                username: String::new(),
+                language_code: String::new(),
+            }),
+            sender_chat: None,
+            chat: TelegramChat {
+                id: 99,
+                chat_type: chat_type.to_string(),
+                title: String::new(),
+                username: String::new(),
+                first_name: "Alice".to_string(),
+                last_name: "Example".to_string(),
+            },
+            date: 1_717_171_717,
+            text: text.map(str::to_string),
+            caption: None,
+            entities: None,
+            reply_to_message: None,
+        }
+    }
+
+    #[test]
+    fn handle_message_returns_private_text_event() {
+        let client = make_client(false);
+
+        let event = client
+            .handle_message(&sample_message("private", Some("hello telegram")))
+            .expect("private text should become an event");
+
+        match event {
+            ImEvent::Message {
+                platform,
+                chat_type,
+                chat_id,
+                content: MessageContent::Text { text },
+                ..
+            } => {
+                assert_eq!(platform, ImPlatform::Telegram);
+                assert_eq!(chat_type, ChatType::Private);
+                assert_eq!(chat_id, "99");
+                assert_eq!(text, "hello telegram");
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn handle_message_ignores_group_messages_when_group_mode_is_disabled() {
+        let client = make_client(false);
+
+        let event = client.handle_message(&sample_message("group", Some("hello group")));
+
+        assert!(event.is_none(), "group messages should be ignored");
+    }
+
+    #[test]
+    fn telegram_api_error_message_mentions_webhook_conflict() {
+        let message = telegram_api_error_message(
+            409,
+            "Conflict: can't use getUpdates method while webhook is active",
+        );
+
+        assert!(message.contains("webhook"));
+        assert!(message.contains("getUpdates"));
+    }
+
+    #[test]
+    fn telegram_http_error_prefers_platform_conflict_payload() {
+        let error = telegram_http_error(
+            StatusCode::CONFLICT,
+            Some(TelegramResponse {
+                ok: false,
+                result: None,
+                description: Some(
+                    "Conflict: can't use getUpdates method while webhook is active".to_string(),
+                ),
+                error_code: Some(409),
+            }),
+            Some("{\"ok\":false}"),
+        );
+
+        let rendered = error.to_string();
+
+        assert!(rendered.contains("webhook"));
+        assert!(rendered.contains("getUpdates"));
+        assert!(rendered.contains("409"));
     }
 }
