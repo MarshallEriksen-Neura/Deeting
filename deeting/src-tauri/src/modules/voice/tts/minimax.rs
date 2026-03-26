@@ -112,9 +112,16 @@ pub(crate) async fn request_text_to_speech(
     if let Some(trace_id) = trace_id.map(str::trim).filter(|value| !value.is_empty()) {
         builder = builder.header("X-Trace-Id", trace_id);
     }
-    let response = builder.json(&body).send().await.map_err(|err| err.to_string())?;
+    let response = builder
+        .json(&body)
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
     let status = response.status();
-    let payload = response.json::<Value>().await.map_err(|err| err.to_string())?;
+    let payload = response
+        .json::<Value>()
+        .await
+        .map_err(|err| err.to_string())?;
     if !status.is_success() {
         return Err(extract_error_message(
             Some(&payload),
@@ -177,7 +184,10 @@ mod tests {
         })
         .expect("request body");
 
-        assert_eq!(payload["voice_setting"]["voice_id"], json!("male-qn-qingse"));
+        assert_eq!(
+            payload["voice_setting"]["voice_id"],
+            json!("male-qn-qingse")
+        );
         assert_eq!(payload["voice_setting"]["speed"], json!(1.2));
         assert_eq!(payload["audio_setting"]["format"], json!("mp3"));
         assert_eq!(payload["audio_setting"]["sample_rate"], json!(32000));

@@ -428,6 +428,9 @@ mod tests {
             "fallback",
         );
 
-        assert_eq!(message, "speaker permission denied (45000000, reqid: abc-123)");
+        assert_eq!(
+            message,
+            "speaker permission denied (45000000, reqid: abc-123)"
+        );
     }
 }

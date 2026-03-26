@@ -24,11 +24,7 @@ pub(crate) async fn request_text_to_speech(
         }
         VoiceRuntimeMode::VolcengineTts => {
             tts::volcengine::request_text_to_speech(
-                app_handle,
-                app_state,
-                request,
-                &context,
-                trace_id,
+                app_handle, app_state, request, &context, trace_id,
             )
             .await
         }

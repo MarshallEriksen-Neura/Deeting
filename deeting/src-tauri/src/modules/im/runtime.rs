@@ -37,9 +37,37 @@ fn config_bool(value: &Value, key: &str) -> Option<bool> {
 
 fn derive_profile_from_notification_channel(
     channel: &crate::modules::monitor::types::LocalNotificationChannel,
+    wechat_account_id: Option<&str>,
 ) -> Option<ImConnectionProfile> {
-    if channel.channel.trim().to_lowercase() != "feishu" {
-        return None;
+    match channel.channel.trim().to_lowercase().as_str() {
+        "feishu" => {}
+        "wechat" => {
+            let has_im_fields = config_bool(&channel.config, "im_enabled").unwrap_or(false)
+                || config_string(&channel.config, "access_policy").is_some()
+                || config_string(&channel.config, "bot_model").is_some()
+                || config_string(&channel.config, "bot_system_prompt").is_some();
+            if !has_im_fields {
+                return None;
+            }
+
+            let mut profile = ImConnectionProfile {
+                id: format!("notification-channel:{}", channel.id),
+                platform: ImPlatform::Wechat,
+                display_name: channel
+                    .display_name
+                    .clone()
+                    .unwrap_or_else(|| "WeChat".to_string()),
+                enabled: channel.is_active
+                    && config_bool(&channel.config, "im_enabled").unwrap_or(false),
+                transport_preference: ImTransportPreference::Direct,
+                direct_config: Default::default(),
+                relay_config: Default::default(),
+            };
+            profile.direct_config.wechat_account_id =
+                wechat_account_id.unwrap_or_default().trim().to_string();
+            return Some(profile);
+        }
+        _ => return None,
     }
 
     let transport_preference = match config_string(&channel.config, "transport_preference")
@@ -110,9 +138,16 @@ pub(crate) async fn load_im_connection_profiles(
         .await
         .map_err(|err| err.to_string())?
         .items;
+    let wechat_account_id = app_state
+        .wechat
+        .load_account()
+        .await?
+        .and_then(|account| account.account_id.or(account.user_id));
     let profiles = channels
         .iter()
-        .filter_map(derive_profile_from_notification_channel)
+        .filter_map(|channel| {
+            derive_profile_from_notification_channel(channel, wechat_account_id.as_deref())
+        })
         .collect();
 
     Ok(normalize_profiles(profiles))
@@ -348,6 +383,20 @@ pub async fn start_im_runtime_worker(app_state: AppState, app_handle: tauri::App
                             .await
                     {
                         warn!("im_relay_profile_worker_failed: {}", err);
+                    }
+                });
+            }
+            (ImPlatform::Wechat, ImTransportKind::Direct) => {
+                let state = app_state.clone();
+                let handle = app_handle.clone();
+                tasks.spawn(async move {
+                    if let Err(err) =
+                        crate::modules::im::wechat::runtime::run_wechat_direct_profile_worker(
+                            state, handle, profile,
+                        )
+                        .await
+                    {
+                        warn!("im_wechat_profile_worker_failed: {}", err);
                     }
                 });
             }

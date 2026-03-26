@@ -28,6 +28,7 @@ const LOCAL_CONVERSATION_SUMMARY_IDLE_SECONDS: i64 = 600;
 const LOCAL_CONVERSATION_IDLE_CHECK_BATCH_SIZE: i64 = 50;
 const LOCAL_PERIODIC_TASK_MAX_ERROR_CHARS: usize = 2000;
 const SQLITE_BUSY_RETRY_DELAYS_MS: [u64; 3] = [150, 400, 900];
+const CHAT_HISTORY_RETENTION_CONFIG_KEY: &str = "chat.history_retention_days";
 
 fn is_sqlite_busy_error(err: &McpError) -> bool {
     let text = err.to_string().to_ascii_lowercase();
@@ -38,6 +39,19 @@ fn is_sqlite_busy_error(err: &McpError) -> bool {
 
 fn storage_step_error(step: &str, err: impl std::fmt::Display) -> McpError {
     McpError::Storage(format!("append_message step={} err={}", step, err))
+}
+
+fn parse_chat_history_retention_days(value: Option<String>) -> Option<i64> {
+    let raw = value?.trim().to_string();
+    if raw.is_empty() {
+        return None;
+    }
+    let parsed = raw.parse::<i64>().ok()?;
+    if parsed <= 0 {
+        None
+    } else {
+        Some(parsed)
+    }
 }
 
 pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), McpError> {
@@ -3630,6 +3644,120 @@ impl McpStore {
         Ok(i64::try_from(result.rows_affected()).unwrap_or(i64::MAX))
     }
 
+    pub async fn cleanup_expired_local_conversations(
+        &self,
+        retention_days: i64,
+    ) -> Result<i64, McpError> {
+        if retention_days <= 0 {
+            return Err(McpError::validation(
+                "retention_days must be greater than 0",
+            ));
+        }
+
+        let retention_seconds = retention_days.saturating_mul(24 * 60 * 60);
+        let threshold_epoch = now_unix_epoch()?.saturating_sub(retention_seconds);
+        let rows = sqlx::query(
+            r#"
+            SELECT id, last_active_at
+            FROM conversation_session;
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let expired_ids: Vec<String> = rows
+            .into_iter()
+            .filter_map(|row| {
+                let session_id = row.try_get::<String, _>("id").ok()?;
+                let last_active_at = row.try_get::<String, _>("last_active_at").ok()?;
+                let last_active_epoch = parse_rfc3339_to_unix_epoch(&last_active_at).ok()?;
+                if last_active_epoch <= threshold_epoch {
+                    Some(session_id)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if expired_ids.is_empty() {
+            return Ok(0);
+        }
+
+        let mut tx = self.begin_write().await?;
+        let mut deleted = 0_i64;
+        for session_id in expired_ids {
+            sqlx::query(
+                r#"
+                DELETE FROM conversation_summary
+                WHERE session_id = ?;
+                "#,
+            )
+            .bind(&session_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+            sqlx::query(
+                r#"
+                DELETE FROM conversation_summary_job
+                WHERE session_id = ?;
+                "#,
+            )
+            .bind(&session_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+            sqlx::query(
+                r#"
+                DELETE FROM conversation_summary_idle_task
+                WHERE session_id = ?;
+                "#,
+            )
+            .bind(&session_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+            sqlx::query(
+                r#"
+                DELETE FROM conversation_message
+                WHERE session_id = ?;
+                "#,
+            )
+            .bind(&session_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+            let result = sqlx::query(
+                r#"
+                DELETE FROM conversation_session
+                WHERE id = ?;
+                "#,
+            )
+            .bind(&session_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+            deleted += i64::try_from(result.rows_affected()).unwrap_or(i64::MAX);
+        }
+        tx.commit().await?;
+
+        Ok(deleted)
+    }
+
+    pub async fn cleanup_expired_local_conversations_from_retention_config(
+        &self,
+    ) -> Result<i64, McpError> {
+        let retention_days = parse_chat_history_retention_days(
+            self.get_desktop_config(CHAT_HISTORY_RETENTION_CONFIG_KEY)
+                .await?,
+        );
+        let Some(retention_days) = retention_days else {
+            return Ok(0);
+        };
+        self.cleanup_expired_local_conversations(retention_days)
+            .await
+    }
+
     pub async fn get_local_conversation_history(
         &self,
         session_id: &str,
@@ -3848,5 +3976,124 @@ impl McpStore {
             meta,
             summary,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{McpStore, CHAT_HISTORY_RETENTION_CONFIG_KEY};
+    use sqlx::Row;
+    use uuid::Uuid;
+
+    async fn create_test_store(name: &str) -> McpStore {
+        let db_path = std::env::temp_dir().join(format!(
+            "deeting-conversations-{name}-{}.db",
+            Uuid::new_v4()
+        ));
+        let database_url = format!("sqlite:{}", db_path.to_string_lossy().replace('\\', "/"));
+        let store = McpStore::new(&database_url)
+            .await
+            .expect("create test conversation store");
+        store.init().await.expect("init conversation test store");
+        store
+    }
+
+    #[tokio::test]
+    async fn chat_retention_cleanup_deletes_expired_sessions_and_keeps_recent_ones() {
+        let store = create_test_store("chat-retention").await;
+        let now = mcp_storage::helpers::now_rfc3339().expect("current time");
+
+        store
+            .set_desktop_config(CHAT_HISTORY_RETENTION_CONFIG_KEY, "7")
+            .await
+            .expect("persist retention config");
+
+        sqlx::query(
+            r#"
+            INSERT INTO conversation_session (
+              id, channel, status, title, message_count, total_tokens,
+              last_summary_version, summarizing, summary_job_id, last_summary_generated_at,
+              last_model_id, last_provider_model_id, first_message_at, last_active_at,
+              created_at, updated_at
+            )
+            VALUES (?, 'internal', 'active', ?, 1, 0, 0, 0, '', NULL, NULL, NULL, ?, ?, ?, ?);
+            "#,
+        )
+        .bind("expired-session")
+        .bind("Expired")
+        .bind("2024-01-01T00:00:00Z")
+        .bind("2024-01-01T00:00:00Z")
+        .bind("2024-01-01T00:00:00Z")
+        .bind("2024-01-01T00:00:00Z")
+        .execute(&store.pool)
+        .await
+        .expect("insert expired session");
+
+        sqlx::query(
+            r#"
+            INSERT INTO conversation_message (
+              id, session_id, turn_index, role, content, token_estimate,
+              is_truncated, is_deleted, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, 0, 0, 0, ?, ?);
+            "#,
+        )
+        .bind("expired-message")
+        .bind("expired-session")
+        .bind(1_i64)
+        .bind("user")
+        .bind("old message")
+        .bind("2024-01-01T00:00:00Z")
+        .bind("2024-01-01T00:00:00Z")
+        .execute(&store.pool)
+        .await
+        .expect("insert expired message");
+
+        sqlx::query(
+            r#"
+            INSERT INTO conversation_session (
+              id, channel, status, title, message_count, total_tokens,
+              last_summary_version, summarizing, summary_job_id, last_summary_generated_at,
+              last_model_id, last_provider_model_id, first_message_at, last_active_at,
+              created_at, updated_at
+            )
+            VALUES (?, 'internal', 'active', ?, 1, 0, 0, 0, '', NULL, NULL, NULL, ?, ?, ?, ?);
+            "#,
+        )
+        .bind("recent-session")
+        .bind("Recent")
+        .bind(&now)
+        .bind(&now)
+        .bind(&now)
+        .bind(&now)
+        .execute(&store.pool)
+        .await
+        .expect("insert recent session");
+
+        let deleted = store
+            .cleanup_expired_local_conversations_from_retention_config()
+            .await
+            .expect("run chat retention cleanup");
+
+        assert_eq!(deleted, 1);
+
+        let remaining_sessions =
+            sqlx::query("SELECT id FROM conversation_session ORDER BY id ASC;")
+                .fetch_all(&store.pool)
+                .await
+                .expect("list remaining sessions");
+        let remaining_session_ids: Vec<String> = remaining_sessions
+            .into_iter()
+            .map(|row| row.try_get("id").expect("session id"))
+            .collect();
+        assert_eq!(remaining_session_ids, vec!["recent-session".to_string()]);
+
+        let remaining_message_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM conversation_message WHERE session_id = ?;")
+                .bind("expired-session")
+                .fetch_one(&store.pool)
+                .await
+                .expect("count remaining expired messages");
+        assert_eq!(remaining_message_count, 0);
     }
 }

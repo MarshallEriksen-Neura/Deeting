@@ -16,6 +16,7 @@ import {
   ChevronDown,
   ChevronUp,
   Sparkles,
+  MessageCircleMore,
 } from "lucide-react"
 import { GlassCard } from "@/components/ui/glass-card"
 import { Switch } from "@/components/ui/switch"
@@ -44,6 +45,20 @@ import {
   testNotificationChannel,
 } from "@/lib/api/notification-channels"
 import { getDesktopImSettings, getPrimaryFeishuResolution } from "@/lib/api/desktop-im"
+import {
+  approveLocalWechatPairing,
+  cancelLocalWechatPairing,
+  disconnectLocalWechatChannel,
+  getLocalWechatConnectionState,
+  getLocalWechatPairingStatus,
+  rejectLocalWechatPairing,
+  startLocalWechatPairing,
+} from "@/lib/api/wechat-connection"
+import {
+  WechatConnectDialog,
+  type WechatConnectionViewState,
+} from "./wechat-connect-dialog"
+import { WechatPairingPanel } from "./wechat-pairing-panel"
 
 const isDesktopRuntime = () =>
   process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
@@ -55,6 +70,7 @@ const isDesktopRuntime = () =>
 // =====================
 const CHANNEL_ICONS: Record<ChannelType, typeof Mail> = {
   feishu: MessageSquare,
+  wechat: MessageCircleMore,
   dingtalk: MessageSquare,
   telegram: Send,
   email: Mail,
@@ -63,6 +79,7 @@ const CHANNEL_ICONS: Record<ChannelType, typeof Mail> = {
 
 const CHANNEL_COLORS: Record<ChannelType, string> = {
   feishu: "bg-blue-500/10 text-blue-400",
+  wechat: "bg-emerald-500/10 text-emerald-400",
   dingtalk: "bg-sky-500/10 text-sky-400",
   telegram: "bg-cyan-500/10 text-cyan-400",
   email: "bg-amber-500/10 text-amber-400",
@@ -83,7 +100,15 @@ export function NotificationChannelsClient() {
 
   const channels = data?.items ?? []
   const selectableTypes = (Object.keys(CHANNEL_META) as ChannelType[]).filter(
-    (type) => !(isTauriRuntime && type === "email")
+    (type) => {
+      if (!isTauriRuntime && type === "wechat") {
+        return false
+      }
+      if (isTauriRuntime && type === "email") {
+        return false
+      }
+      return true
+    }
   )
 
   // Channels not yet added by the user
@@ -506,6 +531,40 @@ const FIELD_DEFS: Record<ChannelType, FieldDef[]> = {
       placeholder: "https://oapi.dingtalk.com/robot/send?access_token=xxx",
     },
   ],
+  wechat: [
+    {
+      key: "im_enabled",
+      label: "启用桌面 IM",
+      placeholder: "",
+      type: "switch",
+      valueKind: "boolean",
+      description: "启用后，桌面端会接收来自已连接微信账号的消息。",
+    },
+    {
+      key: "access_policy",
+      label: "访问策略",
+      placeholder: "选择访问策略",
+      type: "select",
+      options: [
+        { value: "pairing", label: "配对码" },
+        { value: "allowlist", label: "白名单" },
+      ],
+      description: "默认使用配对码模式；切换为白名单后，只允许已授权联系人进入本地 AI。",
+    },
+    {
+      key: "bot_model",
+      label: "回复模型",
+      placeholder: "选择一个回复模型（可选）",
+      type: "select",
+      description: "留空时使用桌面端当前默认的秘书/聊天模型。",
+    },
+    {
+      key: "bot_system_prompt",
+      label: "系统提示词",
+      placeholder: "可选：定义该微信渠道的回复风格",
+      type: "textarea",
+    },
+  ],
   telegram: [
     {
       key: "bot_token",
@@ -569,6 +628,16 @@ const FEISHU_FIELD_GROUPS = [
 
 type ChannelFormValue = string | boolean
 
+function defaultFormValues(channelType: ChannelType): Record<string, ChannelFormValue> {
+  if (channelType === "wechat") {
+    return {
+      im_enabled: true,
+      access_policy: "pairing",
+    }
+  }
+  return {}
+}
+
 function configToFormValues(
   fields: FieldDef[],
   config?: ChannelConfig
@@ -615,13 +684,16 @@ function ChannelConfigForm({
   const fields = FIELD_DEFS[channelType]
   const required = CHANNEL_REQUIRED_FIELDS[channelType]
   const { modelGroups, isLoadingModels } = useChatService({
-    enabled: channelType === "feishu",
+    enabled: channelType === "feishu" || channelType === "wechat",
     modelCapability: "chat",
     fetchAssistants: false,
   })
 
   const [values, setValues] = useState<Record<string, ChannelFormValue>>(() =>
-    configToFormValues(fields, initialConfig)
+    ({
+      ...defaultFormValues(channelType),
+      ...configToFormValues(fields, initialConfig),
+    })
   )
   const [displayName, setDisplayName] = useState(initialDisplayName ?? "")
   const [saving, setSaving] = useState(false)
@@ -635,12 +707,38 @@ function ChannelConfigForm({
     effective: string
     message: string
   } | null>(null)
+  const [wechatDialogOpen, setWechatDialogOpen] = useState(false)
+  const [wechatPairingId, setWechatPairingId] = useState<string | null>(null)
+  const [wechatPairingCode, setWechatPairingCode] = useState("")
+  const [wechatPairingBusy, setWechatPairingBusy] = useState(false)
+  const [wechatPairingFeedback, setWechatPairingFeedback] = useState<string | null>(null)
+  const [wechatStats, setWechatStats] = useState({
+    pendingPairings: 0,
+    allowlistSize: 0,
+  })
+  const [wechatConnectionState, setWechatConnectionState] = useState<WechatConnectionViewState>(
+    () => {
+      if (initialConfig?.connection_state === "connected") {
+        return {
+          state: "connected",
+          accountLabel: initialConfig.account_label,
+        }
+      }
+      if (initialConfig?.connection_state === "error") {
+        return {
+          state: "error",
+          error: "微信连接状态异常，请重新连接。",
+        }
+      }
+      return { state: "disconnected" }
+    }
+  )
 
   const setValue = (key: string, val: ChannelFormValue) =>
     setValues((prev) => ({ ...prev, [key]: val }))
 
   const botModelOptions = useMemo(() => {
-    if (channelType !== "feishu") return []
+    if (channelType !== "feishu" && channelType !== "wechat") return []
     return modelGroups.flatMap((group) =>
       group.models.map((model) => {
         const value = model.provider_model_id ?? model.id
@@ -667,11 +765,17 @@ function ChannelConfigForm({
       try {
         const detail = await fetchNotificationChannel(channelId)
         if (!active) return
-        setValues(configToFormValues(fields, detail.config))
+        setValues({
+          ...defaultFormValues(channelType),
+          ...configToFormValues(fields, detail.config),
+        })
         setDisplayName(detail.display_name ?? "")
       } catch {
         if (!active) return
-        setValues(configToFormValues(fields, initialConfig))
+        setValues({
+          ...defaultFormValues(channelType),
+          ...configToFormValues(fields, initialConfig),
+        })
       } finally {
         if (active) setLoadingConfig(false)
       }
@@ -682,6 +786,152 @@ function ChannelConfigForm({
       active = false
     }
   }, [channelId, fields, initialConfig])
+
+  useEffect(() => {
+    let active = true
+
+    if (channelType !== "wechat") {
+      setWechatConnectionState({ state: "disconnected" })
+      return () => {
+        active = false
+      }
+    }
+
+    if (
+      initialConfig?.connection_state === "connected" ||
+      initialConfig?.connection_state === "connecting" ||
+      initialConfig?.connection_state === "error"
+    ) {
+      if (initialConfig.connection_state === "connected") {
+        setWechatConnectionState({
+          state: "connected",
+          accountLabel: initialConfig.account_label,
+        })
+      } else if (initialConfig.connection_state === "connecting") {
+        setWechatConnectionState({ state: "connecting" })
+      } else {
+        setWechatConnectionState({
+          state: "error",
+          error: "微信连接状态异常，请重新连接。",
+        })
+      }
+    } else {
+      setWechatConnectionState({ state: "disconnected" })
+    }
+
+    if (!channelId || !isDesktopRuntime()) {
+      return () => {
+        active = false
+      }
+    }
+
+    const loadState = async () => {
+      try {
+        const state = await getLocalWechatConnectionState(channelId)
+        if (!active) return
+        if (state.state === "connected") {
+          setWechatConnectionState({
+            state: "connected",
+            accountLabel: state.account_label,
+          })
+        } else if (state.state === "connecting") {
+          setWechatConnectionState({ state: "connecting" })
+        } else if (state.state === "error") {
+          setWechatConnectionState({
+            state: "error",
+            error: state.last_error || "微信连接状态异常，请重新连接。",
+          })
+        } else {
+          setWechatConnectionState({ state: "disconnected" })
+        }
+        setWechatStats({
+          pendingPairings: state.pending_pairings,
+          allowlistSize: state.allowlist_size,
+        })
+      } catch {
+        if (active) {
+          setWechatConnectionState((current) => current)
+        }
+      }
+    }
+
+    void loadState()
+    return () => {
+      active = false
+    }
+  }, [channelType, channelId, initialConfig])
+
+  useEffect(() => {
+    if (channelType !== "wechat" || !wechatPairingId || !wechatDialogOpen || !isDesktopRuntime()) {
+      return
+    }
+
+    let active = true
+    const intervalId = window.setInterval(async () => {
+      try {
+        const status = await getLocalWechatPairingStatus(wechatPairingId)
+        if (!active) return
+        if (status.state === "connected") {
+          setWechatConnectionState({
+            state: "connected",
+            accountLabel: status.account_label,
+          })
+          setValue("connection_state", "connected")
+          if (status.account_label) {
+            setValue("account_label", status.account_label)
+          }
+          setWechatPairingId(null)
+          if (channelId) {
+            try {
+              const state = await getLocalWechatConnectionState(channelId)
+              if (!active) return
+              setWechatStats({
+                pendingPairings: state.pending_pairings,
+                allowlistSize: state.allowlist_size,
+              })
+            } catch {
+              // ignore
+            }
+          }
+        } else if (status.state === "connecting") {
+          setWechatConnectionState({ state: "connecting" })
+        } else if (status.state === "qr_ready" && status.qr_image_data) {
+          setWechatConnectionState({
+            state: "qr_ready",
+            qrImageData: status.qr_image_data,
+            expiresAt: status.expires_at,
+          })
+        } else if (status.state === "expired") {
+          setWechatConnectionState({
+            state: "error",
+            error: "二维码已过期，请重新发起连接。",
+          })
+          setWechatPairingId(null)
+        } else if (status.state === "cancelled") {
+          setWechatConnectionState({ state: "disconnected" })
+          setWechatPairingId(null)
+        } else if (status.state === "error") {
+          setWechatConnectionState({
+            state: "error",
+            error: status.error || "微信连接失败，请稍后重试。",
+          })
+          setWechatPairingId(null)
+        }
+      } catch (error) {
+        if (!active) return
+        setWechatConnectionState({
+          state: "error",
+          error: error instanceof Error ? error.message : "微信连接失败，请稍后重试。",
+        })
+        setWechatPairingId(null)
+      }
+    }, 2000)
+
+    return () => {
+      active = false
+      window.clearInterval(intervalId)
+    }
+  }, [channelType, wechatPairingId, wechatDialogOpen])
 
   useEffect(() => {
     let active = true
@@ -748,10 +998,29 @@ function ChannelConfigForm({
         }
       }
     }
+    if (channelType === "wechat") {
+      config.access_policy =
+        typeof values.access_policy === "string" && values.access_policy.trim().length > 0
+          ? (values.access_policy as "pairing" | "allowlist")
+          : "pairing"
+      config.im_enabled = Boolean(values.im_enabled)
+      config.connection_state = wechatConnectionState.state === "qr_ready"
+        ? "connecting"
+        : wechatConnectionState.state
+      if (wechatConnectionState.state === "connected" && wechatConnectionState.accountLabel) {
+        config.account_label = wechatConnectionState.accountLabel
+      }
+      if (typeof values.account_label === "string" && values.account_label.trim().length > 0) {
+        config.account_label = values.account_label.trim()
+      }
+    }
     return config
   }
 
   const validateConfig = () => {
+    if (channelType === "wechat") {
+      return true
+    }
     if (channelType !== "feishu") {
       return required.every((key) => {
         const value = values[key]
@@ -784,6 +1053,120 @@ function ChannelConfigForm({
       return hasRelayBaseUrl
     }
     return hasDirectCreds || hasRelayBaseUrl
+  }
+
+  const handleWechatConnect = async () => {
+    setWechatDialogOpen(true)
+    setWechatConnectionState({ state: "connecting" })
+    try {
+      const result = await startLocalWechatPairing()
+      setWechatPairingId(result.pairing_id)
+      if (result.state === "qr_ready" && result.qr_image_data) {
+        setWechatConnectionState({
+          state: "qr_ready",
+          qrImageData: result.qr_image_data,
+          expiresAt: result.expires_at,
+        })
+        return
+      }
+      if (result.state === "connected") {
+        setWechatConnectionState({
+          state: "connected",
+          accountLabel: result.account_label,
+        })
+        if (result.account_label) {
+          setValue("account_label", result.account_label)
+        }
+        setValue("connection_state", "connected")
+        setWechatPairingId(null)
+        return
+      }
+      setWechatConnectionState({ state: "connecting" })
+    } catch (error) {
+      setWechatConnectionState({
+        state: "error",
+        error: error instanceof Error ? error.message : "微信连接失败，请稍后重试。",
+      })
+      setWechatPairingId(null)
+    }
+  }
+
+  const handleWechatCancel = async () => {
+    const pairingId = wechatPairingId
+    setWechatPairingId(null)
+    setWechatConnectionState({ state: "disconnected" })
+    if (!pairingId) return
+    try {
+      await cancelLocalWechatPairing(pairingId)
+    } catch {
+      // ignore temporary cancellation errors and let UI recover locally
+    }
+  }
+
+  const handleWechatDisconnect = async () => {
+    if (channelId && isDesktopRuntime()) {
+      try {
+        await disconnectLocalWechatChannel(channelId)
+      } catch (error) {
+        setWechatConnectionState({
+          state: "error",
+          error: error instanceof Error ? error.message : "断开微信连接失败。",
+        })
+        return
+      }
+    }
+    setWechatPairingId(null)
+    setValue("account_label", "")
+    setValue("connection_state", "disconnected")
+    setWechatConnectionState({ state: "disconnected" })
+  }
+
+  const handleWechatApprovePairing = async () => {
+    if (!channelId || !isDesktopRuntime() || !wechatPairingCode.trim()) return
+    setWechatPairingBusy(true)
+    setWechatPairingFeedback(null)
+    try {
+      const result = await approveLocalWechatPairing(channelId, wechatPairingCode.trim())
+      setWechatPairingFeedback(
+        result.success
+          ? `已批准联系人 ${result.contact_id ?? ""}`.trim()
+          : "批准配对失败"
+      )
+      setWechatPairingCode("")
+      const state = await getLocalWechatConnectionState(channelId)
+      setWechatStats({
+        pendingPairings: state.pending_pairings,
+        allowlistSize: state.allowlist_size,
+      })
+    } catch (error) {
+      setWechatPairingFeedback(
+        error instanceof Error ? error.message : "批准配对失败"
+      )
+    } finally {
+      setWechatPairingBusy(false)
+    }
+  }
+
+  const handleWechatRejectPairing = async () => {
+    if (!channelId || !isDesktopRuntime() || !wechatPairingCode.trim()) return
+    setWechatPairingBusy(true)
+    setWechatPairingFeedback(null)
+    try {
+      await rejectLocalWechatPairing(channelId, wechatPairingCode.trim())
+      setWechatPairingFeedback("已拒绝该配对请求")
+      setWechatPairingCode("")
+      const state = await getLocalWechatConnectionState(channelId)
+      setWechatStats({
+        pendingPairings: state.pending_pairings,
+        allowlistSize: state.allowlist_size,
+      })
+    } catch (error) {
+      setWechatPairingFeedback(
+        error instanceof Error ? error.message : "拒绝配对失败"
+      )
+    } finally {
+      setWechatPairingBusy(false)
+    }
   }
 
   const isValid = validateConfig()
@@ -877,7 +1260,77 @@ function ChannelConfigForm({
       />
 
       {/* Channel-specific fields */}
-      {channelType === "feishu" ? (
+      {channelType === "wechat" ? (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-white/8 bg-[var(--foreground)]/[0.02] p-4">
+            <div className="mb-3 flex items-start gap-3">
+              <div className="mt-0.5 rounded-xl bg-emerald-500/10 p-2 text-emerald-400">
+                <MessageCircleMore className="h-3.5 w-3.5" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-[var(--foreground)]">
+                  微信扫码连接
+                </div>
+                <div className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
+                  扫码后即可让普通微信账号连接当前桌面实例，不需要填写 Relay 地址或回调配置。
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-white/5 px-2.5 py-1 text-[11px] text-[var(--muted)]">
+                当前状态：
+                {wechatConnectionState.state === "connected"
+                  ? "已连接"
+                  : wechatConnectionState.state === "connecting" ||
+                      wechatConnectionState.state === "qr_ready"
+                    ? "连接中"
+                    : wechatConnectionState.state === "error"
+                      ? "异常"
+                      : "未连接"}
+              </span>
+              {wechatConnectionState.state === "connected" && wechatConnectionState.accountLabel ? (
+                <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] text-emerald-300">
+                  {wechatConnectionState.accountLabel}
+                </span>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => {
+                  setWechatDialogOpen(true)
+                  if (wechatConnectionState.state === "disconnected") {
+                    void handleWechatConnect()
+                  }
+                }}
+                className="rounded-xl border border-white/10 px-3.5 py-2 text-xs text-[var(--foreground)] transition-colors hover:bg-[var(--foreground)]/5"
+              >
+                {wechatConnectionState.state === "connected" ? "查看连接状态" : "连接微信"}
+              </button>
+            </div>
+            {wechatConnectionState.state === "error" ? (
+              <div className="mt-3 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                {wechatConnectionState.error}
+              </div>
+            ) : null}
+          </div>
+          {channelId && isDesktopRuntime() ? (
+            <WechatPairingPanel
+              pendingPairings={wechatStats.pendingPairings}
+              allowlistSize={wechatStats.allowlistSize}
+              pairingCode={wechatPairingCode}
+              onPairingCodeChange={setWechatPairingCode}
+              onApprove={() => {
+                void handleWechatApprovePairing()
+              }}
+              onReject={() => {
+                void handleWechatRejectPairing()
+              }}
+              busy={wechatPairingBusy}
+              feedback={wechatPairingFeedback}
+            />
+          ) : null}
+          {fields.map(renderField)}
+        </div>
+      ) : channelType === "feishu" ? (
         <div className="space-y-4">
           {FEISHU_FIELD_GROUPS.map((group) => (
             <div
@@ -929,6 +1382,26 @@ function ChannelConfigForm({
         </div>
       )}
 
+      {channelType === "wechat" ? (
+        <WechatConnectDialog
+          open={wechatDialogOpen}
+          onOpenChange={setWechatDialogOpen}
+          state={wechatConnectionState}
+          onStartConnect={() => {
+            void handleWechatConnect()
+          }}
+          onReconnect={() => {
+            void handleWechatConnect()
+          }}
+          onDisconnect={() => {
+            void handleWechatDisconnect()
+          }}
+          onCancelPairing={() => {
+            void handleWechatCancel()
+          }}
+        />
+      ) : null}
+
       {/* Test result */}
       <AnimatePresence>
         {testResult && (
@@ -957,7 +1430,7 @@ function ChannelConfigForm({
 
       {/* Actions */}
       <div className="flex items-center gap-2 pt-1">
-        {showTest && (
+        {showTest && channelType !== "wechat" && (
           <button
             onClick={handleTest}
             disabled={testing || !isValid}

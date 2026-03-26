@@ -13,3 +13,7 @@
 	path = packages/official-skills/weather-plugin
 	url = https://github.com/MarshallEriksen-Neura/weather_plugin.git
 	branch = main
+[submodule "packages/deeting_chrome"]
+	path = packages/deeting_chrome
+	url = https://github.com/MarshallEriksen-Neura/deeting_chrome.git
+	branch = main

@@ -90,6 +90,15 @@ fn resolve_core_tool_name(tool_id: Option<&str>, tool_name: Option<&str>) -> Opt
     let normalized_tool_name = tool_name.map(str::trim).unwrap_or_default();
     let normalized_tool_id = tool_id.map(str::trim).unwrap_or_default();
     match (normalized_tool_name, normalized_tool_id) {
+        ("browser_agent_status", _) | (_, "core.browser_agent_status") => {
+            Some("browser_agent_status")
+        }
+        ("browser_open_tab", _) | (_, "core.browser_open_tab") => Some("browser_open_tab"),
+        ("browser_get_page_snapshot", _) | (_, "core.browser_get_page_snapshot") => {
+            Some("browser_get_page_snapshot")
+        }
+        ("browser_click", _) | (_, "core.browser_click") => Some("browser_click"),
+        ("browser_type", _) | (_, "core.browser_type") => Some("browser_type"),
         ("shell_execute", _) | (_, "core.shell_execute") => Some("shell_execute"),
         _ => None,
     }
@@ -109,6 +118,105 @@ pub(crate) async fn execute_or_queue_core_tool_call_with_tool_ref(
     };
 
     match core_tool_name {
+        "browser_agent_status" => {
+            let app_state = crate::state::global_app_state()
+                .ok_or_else(|| "global app state is unavailable".to_string())?;
+            let result = app_state
+                .browser_agent
+                .service
+                .status_report(app_state.mcp.store.as_ref())
+                .await?;
+            Ok(Some(
+                serde_json::to_value(result).map_err(|err| err.to_string())?,
+            ))
+        }
+        "browser_open_tab" => {
+            let app_state = crate::state::global_app_state()
+                .ok_or_else(|| "global app state is unavailable".to_string())?;
+            let url = arguments
+                .get("url")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| "browser_open_tab requires a non-empty url".to_string())?;
+            let result = app_state
+                .browser_agent
+                .service
+                .open_tab(app_state.mcp.store.as_ref(), url)
+                .await?;
+            Ok(Some(result))
+        }
+        "browser_get_page_snapshot" => {
+            let app_state = crate::state::global_app_state()
+                .ok_or_else(|| "global app state is unavailable".to_string())?;
+            let tab_id = arguments
+                .get("tab_id")
+                .and_then(Value::as_i64)
+                .filter(|value| *value > 0)
+                .ok_or_else(|| {
+                    "browser_get_page_snapshot requires a positive tab_id".to_string()
+                })?;
+            let result = app_state
+                .browser_agent
+                .service
+                .get_page_snapshot(app_state.mcp.store.as_ref(), tab_id)
+                .await?;
+            Ok(Some(result))
+        }
+        "browser_click" => {
+            let app_state = crate::state::global_app_state()
+                .ok_or_else(|| "global app state is unavailable".to_string())?;
+            let tab_id = arguments
+                .get("tab_id")
+                .and_then(Value::as_i64)
+                .filter(|value| *value > 0)
+                .ok_or_else(|| "browser_click requires a positive tab_id".to_string())?;
+            let target = serde_json::from_value::<
+                crate::modules::browser_agent::types::BrowserAgentElementLocator,
+            >(
+                arguments
+                    .get("target")
+                    .cloned()
+                    .ok_or_else(|| "browser_click requires a target locator".to_string())?,
+            )
+            .map_err(|err| err.to_string())?;
+            let result = app_state
+                .browser_agent
+                .service
+                .click_element(app_state.mcp.store.as_ref(), tab_id, target)
+                .await?;
+            Ok(Some(result))
+        }
+        "browser_type" => {
+            let app_state = crate::state::global_app_state()
+                .ok_or_else(|| "global app state is unavailable".to_string())?;
+            let tab_id = arguments
+                .get("tab_id")
+                .and_then(Value::as_i64)
+                .filter(|value| *value > 0)
+                .ok_or_else(|| "browser_type requires a positive tab_id".to_string())?;
+            let target = serde_json::from_value::<
+                crate::modules::browser_agent::types::BrowserAgentElementLocator,
+            >(
+                arguments
+                    .get("target")
+                    .cloned()
+                    .ok_or_else(|| "browser_type requires a target locator".to_string())?,
+            )
+            .map_err(|err| err.to_string())?;
+            let text = arguments
+                .get("text")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| "browser_type requires non-empty text".to_string())?;
+            let result = app_state
+                .browser_agent
+                .service
+                .type_element(app_state.mcp.store.as_ref(), tab_id, target, text)
+                .await?;
+            Ok(Some(result))
+        }
         "shell_execute" => {
             let home_dir =
                 dirs::home_dir().ok_or_else(|| "home directory is unavailable".to_string())?;
@@ -715,6 +823,66 @@ mod tests {
         assert_eq!(
             resolve_official_skill_host_tool_route("shell_execute"),
             OfficialSkillHostToolRoute::Unsupported
+        );
+    }
+
+    #[test]
+    fn core_tool_resolution_recognizes_browser_agent_status() {
+        assert_eq!(
+            resolve_core_tool_name(None, Some("browser_agent_status")),
+            Some("browser_agent_status")
+        );
+        assert_eq!(
+            resolve_core_tool_name(Some("core.browser_agent_status"), None),
+            Some("browser_agent_status")
+        );
+    }
+
+    #[test]
+    fn core_tool_resolution_recognizes_browser_open_tab() {
+        assert_eq!(
+            resolve_core_tool_name(None, Some("browser_open_tab")),
+            Some("browser_open_tab")
+        );
+        assert_eq!(
+            resolve_core_tool_name(Some("core.browser_open_tab"), None),
+            Some("browser_open_tab")
+        );
+    }
+
+    #[test]
+    fn core_tool_resolution_recognizes_browser_get_page_snapshot() {
+        assert_eq!(
+            resolve_core_tool_name(None, Some("browser_get_page_snapshot")),
+            Some("browser_get_page_snapshot")
+        );
+        assert_eq!(
+            resolve_core_tool_name(Some("core.browser_get_page_snapshot"), None),
+            Some("browser_get_page_snapshot")
+        );
+    }
+
+    #[test]
+    fn core_tool_resolution_recognizes_browser_click() {
+        assert_eq!(
+            resolve_core_tool_name(None, Some("browser_click")),
+            Some("browser_click")
+        );
+        assert_eq!(
+            resolve_core_tool_name(Some("core.browser_click"), None),
+            Some("browser_click")
+        );
+    }
+
+    #[test]
+    fn core_tool_resolution_recognizes_browser_type() {
+        assert_eq!(
+            resolve_core_tool_name(None, Some("browser_type")),
+            Some("browser_type")
+        );
+        assert_eq!(
+            resolve_core_tool_name(Some("core.browser_type"), None),
+            Some("browser_type")
         );
     }
 

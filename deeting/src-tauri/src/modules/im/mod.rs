@@ -17,6 +17,7 @@ mod types;
 
 pub mod feishu;
 pub mod telegram;
+pub mod wechat;
 
 pub use manager::{ImManager, ImManagerBuilder};
 pub use profile::*;

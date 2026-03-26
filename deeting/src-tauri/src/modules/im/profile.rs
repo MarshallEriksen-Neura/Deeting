@@ -39,6 +39,8 @@ pub struct ImDirectConfig {
     pub feishu_app_secret: String,
     #[serde(default)]
     pub telegram_bot_token: String,
+    #[serde(default)]
+    pub wechat_account_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -107,13 +109,18 @@ impl ImConnectionProfile {
             self.direct_config.feishu_app_secret.trim().to_string();
         self.direct_config.telegram_bot_token =
             self.direct_config.telegram_bot_token.trim().to_string();
+        self.direct_config.wechat_account_id =
+            self.direct_config.wechat_account_id.trim().to_string();
         self.relay_config.base_url = self.relay_config.base_url.trim().to_string();
         self.relay_config.shared_secret = self.relay_config.shared_secret.trim().to_string();
         self
     }
 
     pub fn supports_direct_transport(&self) -> bool {
-        matches!(self.platform, ImPlatform::Feishu | ImPlatform::Telegram)
+        matches!(
+            self.platform,
+            ImPlatform::Feishu | ImPlatform::Telegram | ImPlatform::Wechat
+        )
     }
 
     pub fn has_direct_credentials(&self) -> bool {
@@ -123,6 +130,7 @@ impl ImConnectionProfile {
                     && !self.direct_config.feishu_app_secret.trim().is_empty()
             }
             ImPlatform::Telegram => !self.direct_config.telegram_bot_token.trim().is_empty(),
+            ImPlatform::Wechat => !self.direct_config.wechat_account_id.trim().is_empty(),
             _ => false,
         }
     }
@@ -251,6 +259,7 @@ mod tests {
                 feishu_app_id: "cli_xxx".to_string(),
                 feishu_app_secret: "secret".to_string(),
                 telegram_bot_token: String::new(),
+                wechat_account_id: String::new(),
             },
             relay_config: ImRelayConfig {
                 base_url: "https://relay.example.com".to_string(),

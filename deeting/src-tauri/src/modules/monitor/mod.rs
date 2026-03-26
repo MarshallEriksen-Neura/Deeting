@@ -889,6 +889,7 @@ impl MonitorState {
                 self.send_feishu_notification(channel, title, content, payload)
                     .await
             }
+            "wechat" => Err("桌面端微信渠道仅支持聊天式接入，请先完成连接。".to_string()),
             "dingtalk" => {
                 self.send_dingtalk_notification(channel, title, content, payload)
                     .await
@@ -1133,6 +1134,7 @@ fn global_app_handle_required() -> Result<tauri::AppHandle, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
 
     #[test]
     fn build_monitor_gateway_log_entry_includes_local_dimensions_and_metrics() {
@@ -1213,6 +1215,45 @@ mod tests {
         assert_eq!(entry.cost_upstream, 0.008);
         assert_eq!(entry.cost_user, 0.0099);
         assert!(entry.error_code.is_none());
+    }
+
+    #[test]
+    fn supported_notification_channels_include_wechat() {
+        assert!(is_supported_notification_channel("wechat"));
+    }
+
+    #[tokio::test]
+    async fn test_notification_channel_rejects_wechat_until_connection_exists() {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("memory sqlite pool");
+        let provider_store = Arc::new(
+            ProviderStore::new("sqlite::memory:")
+                .await
+                .expect("provider store"),
+        );
+        let state = MonitorState::with_pool(pool, provider_store, None)
+            .await
+            .expect("monitor state");
+
+        let response = state
+            .test_notification_channel(LocalNotificationChannelTestRequest {
+                channel: "wechat".to_string(),
+                config: json!({
+                    "im_enabled": true
+                }),
+            })
+            .await
+            .expect("wechat test should return structured failure");
+
+        assert!(!response.success);
+        assert_eq!(response.channel, "wechat");
+        assert_eq!(
+            response.message.as_deref(),
+            Some("桌面端微信渠道仅支持聊天式接入，请先完成连接。")
+        );
     }
 }
 
@@ -1547,7 +1588,7 @@ fn config_string_list(config: &Value, key: &str) -> Vec<String> {
 fn is_supported_notification_channel(value: &str) -> bool {
     matches!(
         value,
-        "feishu" | "dingtalk" | "telegram" | "email" | "webhook"
+        "feishu" | "wechat" | "dingtalk" | "telegram" | "email" | "webhook"
     )
 }
 

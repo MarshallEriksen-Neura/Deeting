@@ -17,6 +17,27 @@ import {
 const DEFAULT_MAX_ROUNDS = 10
 const MIN_ROUNDS = 1
 const MAX_ROUNDS = 50
+const DEFAULT_CHAT_HISTORY_RETENTION_DAYS = "0"
+const CHAT_HISTORY_RETENTION_OPTIONS = [
+  "0",
+  "7",
+  "30",
+  "90",
+  "180",
+  "365",
+] as const
+
+function normalizeChatHistoryRetentionDays(value: string | null | undefined): string {
+  const normalized = value?.trim() ?? ""
+  if (
+    CHAT_HISTORY_RETENTION_OPTIONS.includes(
+      normalized as (typeof CHAT_HISTORY_RETENTION_OPTIONS)[number]
+    )
+  ) {
+    return normalized
+  }
+  return DEFAULT_CHAT_HISTORY_RETENTION_DAYS
+}
 
 interface AgentSettingsCardProps {
   isTauriRuntime: boolean
@@ -28,6 +49,11 @@ export function AgentSettingsCard({ isTauriRuntime }: AgentSettingsCardProps) {
   const [savedValue, setSavedValue] = React.useState<string>(String(DEFAULT_MAX_ROUNDS))
   const [personaPrompt, setPersonaPrompt] = React.useState("")
   const [savedPersonaPrompt, setSavedPersonaPrompt] = React.useState("")
+  const [chatHistoryRetentionDays, setChatHistoryRetentionDays] = React.useState(
+    DEFAULT_CHAT_HISTORY_RETENTION_DAYS
+  )
+  const [savedChatHistoryRetentionDays, setSavedChatHistoryRetentionDays] =
+    React.useState(DEFAULT_CHAT_HISTORY_RETENTION_DAYS)
   const [isLoading, setIsLoading] = React.useState(true)
   const [isSaving, setIsSaving] = React.useState(false)
 
@@ -37,8 +63,9 @@ export function AgentSettingsCard({ isTauriRuntime }: AgentSettingsCardProps) {
     Promise.all([
       getDesktopConfig(DESKTOP_CONFIG_KEYS.maxAgenticRounds),
       getDesktopConfig(DESKTOP_CONFIG_KEYS.personaPrompt),
+      getDesktopConfig(DESKTOP_CONFIG_KEYS.chatHistoryRetentionDays),
     ])
-      .then(([value, personaValue]) => {
+      .then(([value, personaValue, retentionValue]) => {
         if (cancelled) return
         const parsed = value ? String(parseInt(value, 10) || DEFAULT_MAX_ROUNDS) : String(DEFAULT_MAX_ROUNDS)
         setMaxRounds(parsed)
@@ -46,6 +73,10 @@ export function AgentSettingsCard({ isTauriRuntime }: AgentSettingsCardProps) {
         const nextPersonaPrompt = personaValue?.trim() ?? ""
         setPersonaPrompt(nextPersonaPrompt)
         setSavedPersonaPrompt(nextPersonaPrompt)
+        const nextChatHistoryRetentionDays =
+          normalizeChatHistoryRetentionDays(retentionValue)
+        setChatHistoryRetentionDays(nextChatHistoryRetentionDays)
+        setSavedChatHistoryRetentionDays(nextChatHistoryRetentionDays)
       })
       .catch(() => {})
       .finally(() => {
@@ -56,7 +87,10 @@ export function AgentSettingsCard({ isTauriRuntime }: AgentSettingsCardProps) {
 
   if (!isTauriRuntime) return null
 
-  const hasChanges = maxRounds !== savedValue || personaPrompt !== savedPersonaPrompt
+  const hasChanges =
+    maxRounds !== savedValue ||
+    personaPrompt !== savedPersonaPrompt ||
+    chatHistoryRetentionDays !== savedChatHistoryRetentionDays
 
   const handleSave = async () => {
     const parsed = parseInt(maxRounds, 10)
@@ -66,14 +100,22 @@ export function AgentSettingsCard({ isTauriRuntime }: AgentSettingsCardProps) {
     }
     setIsSaving(true)
     try {
+      const normalizedChatHistoryRetentionDays =
+        normalizeChatHistoryRetentionDays(chatHistoryRetentionDays)
       await Promise.all([
         setDesktopConfig(DESKTOP_CONFIG_KEYS.maxAgenticRounds, String(parsed)),
         setDesktopConfig(DESKTOP_CONFIG_KEYS.personaPrompt, personaPrompt.trim()),
+        setDesktopConfig(
+          DESKTOP_CONFIG_KEYS.chatHistoryRetentionDays,
+          normalizedChatHistoryRetentionDays
+        ),
       ])
       setSavedValue(String(parsed))
       setMaxRounds(String(parsed))
       setSavedPersonaPrompt(personaPrompt.trim())
       setPersonaPrompt(personaPrompt.trim())
+      setSavedChatHistoryRetentionDays(normalizedChatHistoryRetentionDays)
+      setChatHistoryRetentionDays(normalizedChatHistoryRetentionDays)
       toast.success(t("agent.saveSuccess"))
     } catch {
       toast.error(t("agent.saveFailed"))
@@ -145,6 +187,30 @@ export function AgentSettingsCard({ isTauriRuntime }: AgentSettingsCardProps) {
           />
           <p className="text-xs text-muted-foreground">
             {t("agent.personaPromptHelp")}
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="chat-history-retention-days" className="text-xs font-medium">
+            {t("agent.chatHistoryRetentionLabel")}
+          </Label>
+          <select
+            id="chat-history-retention-days"
+            value={chatHistoryRetentionDays}
+            onChange={(event) => setChatHistoryRetentionDays(event.target.value)}
+            disabled={isLoading || isSaving}
+            className="border-input bg-background text-foreground focus-visible:border-ring focus-visible:ring-ring/50 h-10 w-full rounded-xl border px-3 py-2 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-background/50"
+          >
+            {CHAT_HISTORY_RETENTION_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {option === "0"
+                  ? t("agent.chatHistoryRetentionForever")
+                  : t("agent.chatHistoryRetentionDays", { days: Number(option) })}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-muted-foreground">
+            {t("agent.chatHistoryRetentionHelp")}
           </p>
         </div>
 

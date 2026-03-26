@@ -175,6 +175,7 @@ mod tests {
             last_executed_at: None,
             next_run_at: None,
             current_interval_minutes: Some(360),
+            display_status: "active".to_string(),
             strategy_variants: None,
             analysis_mode: "alert_first".to_string(),
             policy_state: json!({"score": 0.9}),

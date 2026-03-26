@@ -40,6 +40,25 @@ pub(crate) async fn start_local_periodic_worker(state: McpRuntimeState) {
         {
             log::warn!("periodic worker cleanup old jobs error: {}", err);
         }
+        match state
+            .store
+            .cleanup_expired_local_conversations_from_retention_config()
+            .await
+        {
+            Ok(deleted) if deleted > 0 => {
+                log::info!(
+                    "periodic worker cleaned up {} expired local conversation sessions",
+                    deleted
+                );
+            }
+            Ok(_) => {}
+            Err(err) => {
+                log::warn!(
+                    "periodic worker cleanup expired conversations error: {}",
+                    err
+                );
+            }
+        }
     }
 }
 

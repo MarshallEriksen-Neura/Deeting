@@ -80,7 +80,9 @@ pub(crate) async fn request_text_to_speech(
         .get("content-type")
         .map(|value| value.split(';').next().unwrap_or(value).trim().to_string())
         .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| audio_content_type_from_format(request.response_format.as_deref()).to_string());
+        .unwrap_or_else(|| {
+            audio_content_type_from_format(request.response_format.as_deref()).to_string()
+        });
 
     if is_audio_content_type(content_type.as_str()) {
         return persist_audio_bytes_result(
@@ -95,11 +97,7 @@ pub(crate) async fn request_text_to_speech(
     }
 
     if let Some(url) = extract_audio_url(response.json.as_ref()) {
-        return Ok(build_remote_audio_result(
-            request,
-            url,
-            Some(content_type),
-        ));
+        return Ok(build_remote_audio_result(request, url, Some(content_type)));
     }
 
     Err("text_to_speech response did not contain audio bytes or a playable audio URL".to_string())

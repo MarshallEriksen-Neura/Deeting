@@ -1,5 +1,7 @@
+use crate::modules::browser_agent::BrowserAgentState;
 use crate::modules::code_mode::CodeModeState;
 use crate::modules::im::runtime::spawn_im_runtime_worker;
+use crate::modules::im::wechat::WechatState;
 use crate::modules::knowledge::KnowledgeState;
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::process::ProcessManager;
@@ -215,6 +217,20 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         log_startup_phase("init_memory_state", phase_started_at);
 
         let phase_started_at = Instant::now();
+        let browser_agent_state = BrowserAgentState::new();
+        log_startup_phase("build_browser_agent_state", phase_started_at);
+
+        let phase_started_at = Instant::now();
+        if let Err(err) = browser_agent_state
+            .service
+            .ensure_started(mcp_state.store.as_ref())
+            .await
+        {
+            warn!("browser agent bridge startup skipped: {}", err);
+        }
+        log_startup_phase("start_browser_agent_bridge", phase_started_at);
+
+        let phase_started_at = Instant::now();
         let sandbox_state = SandboxState::new(boxrun_home_dir.clone());
         log_startup_phase("build_sandbox_state", phase_started_at);
         let phase_started_at = Instant::now();
@@ -234,14 +250,22 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         log_startup_phase("init_monitor_state", phase_started_at);
 
         let phase_started_at = Instant::now();
+        let wechat_state = WechatState::with_pool(global_pool.clone(), &database_url)
+            .await
+            .map_err(|e| McpError::Storage(e.to_string()))?;
+        log_startup_phase("init_wechat_state", phase_started_at);
+
+        let phase_started_at = Instant::now();
         Ok::<_, McpError>(AppState::new(
             mcp_state,
+            browser_agent_state,
             knowledge_state,
             provider_state,
             memory_state,
             sandbox_state,
             code_mode_state,
             monitor_state,
+            wechat_state,
         ))
         .inspect(|_| log_startup_phase("build_app_state", phase_started_at))
     })

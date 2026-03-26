@@ -58,6 +58,17 @@
       "title": "扫描审查",
       "description": "查看本地扫描结果、风险信号以及 doc-first 资产的索引对账情况"
     },
+    "notificationChannels": {
+      "wechat": {
+        "connect": "连接微信",
+        "reconnect": "重新连接",
+        "disconnect": "断开连接",
+        "scanQr": "请使用微信扫码登录",
+        "waiting": "正在等待扫码确认",
+        "connectedAccount": "当前已连接账号",
+        "pairingRequired": "首次联系人需要先完成配对授权"
+      }
+    },
     "scanReviewsPage": {
       "executionSurface": {
         "recipe": "配方指导",

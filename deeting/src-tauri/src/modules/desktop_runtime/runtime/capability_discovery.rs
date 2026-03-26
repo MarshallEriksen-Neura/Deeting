@@ -1779,17 +1779,15 @@ mod tests {
             tool_contract_source: None,
         };
 
-        let shell_rank = rank_registry_entry(shell_entry, &profile).expect("shell rank")
-            ["rank_score"]
-            .as_f64()
-            .expect("shell score");
-        let memory_rank = rank_registry_entry(memory_entry, &profile).expect("memory rank")
-            ["rank_score"]
-            .as_f64()
-            .expect("memory score");
-        let web_rank = rank_registry_entry(web_entry, &profile).expect("web rank")["rank_score"]
-            .as_f64()
-            .expect("web score");
+        let shell_rank = rank_registry_entry(shell_entry, &profile)
+            .expect("shell rank")
+            .score;
+        let memory_rank = rank_registry_entry(memory_entry, &profile)
+            .expect("memory rank")
+            .score;
+        let web_rank = rank_registry_entry(web_entry, &profile)
+            .expect("web rank")
+            .score;
 
         assert!(
             shell_rank > memory_rank,
@@ -1872,17 +1870,15 @@ mod tests {
             tool_contract_source: None,
         };
 
-        let web_rank = rank_registry_entry(web_entry, &profile).expect("web rank")["rank_score"]
-            .as_f64()
-            .expect("web score");
-        let shell_rank = rank_registry_entry(shell_entry, &profile).expect("shell rank")
-            ["rank_score"]
-            .as_f64()
-            .expect("shell score");
-        let memory_rank = rank_registry_entry(memory_entry, &profile).expect("memory rank")
-            ["rank_score"]
-            .as_f64()
-            .expect("memory score");
+        let web_rank = rank_registry_entry(web_entry, &profile)
+            .expect("web rank")
+            .score;
+        let shell_rank = rank_registry_entry(shell_entry, &profile)
+            .expect("shell rank")
+            .score;
+        let memory_rank = rank_registry_entry(memory_entry, &profile)
+            .expect("memory rank")
+            .score;
 
         assert!(web_rank > shell_rank, "web={web_rank}, shell={shell_rank}");
         assert!(
@@ -1966,17 +1962,15 @@ mod tests {
             tool_contract_source: None,
         };
 
-        let memory_rank = rank_registry_entry(memory_entry, &profile).expect("memory rank")
-            ["rank_score"]
-            .as_f64()
-            .expect("memory score");
-        let shell_rank = rank_registry_entry(shell_entry, &profile).expect("shell rank")
-            ["rank_score"]
-            .as_f64()
-            .expect("shell score");
-        let web_rank = rank_registry_entry(web_entry, &profile).expect("web rank")["rank_score"]
-            .as_f64()
-            .expect("web score");
+        let memory_rank = rank_registry_entry(memory_entry, &profile)
+            .expect("memory rank")
+            .score;
+        let shell_rank = rank_registry_entry(shell_entry, &profile)
+            .expect("shell rank")
+            .score;
+        let web_rank = rank_registry_entry(web_entry, &profile)
+            .expect("web rank")
+            .score;
 
         assert!(
             memory_rank > shell_rank,

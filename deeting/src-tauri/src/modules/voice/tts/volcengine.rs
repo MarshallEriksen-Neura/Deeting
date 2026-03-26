@@ -232,10 +232,7 @@ pub(crate) async fn request_text_to_speech(
         .await
         .map_err(|err| err.to_string())?;
     let status = response.status();
-    let response_body = response
-        .bytes()
-        .await
-        .map_err(|err| err.to_string())?;
+    let response_body = response.bytes().await.map_err(|err| err.to_string())?;
     let payloads = parse_chunked_json_values(response_body.as_ref())?;
     if !status.is_success() {
         return Err(extract_error_message(
@@ -390,7 +387,8 @@ mod tests {
 
     #[test]
     fn parse_chunked_json_values_supports_multiple_concatenated_objects() {
-        let body = br#"{"code":0,"message":"","data":"YQ=="}{"code":20000000,"message":"ok","data":null}"#;
+        let body =
+            br#"{"code":0,"message":"","data":"YQ=="}{"code":20000000,"message":"ok","data":null}"#;
 
         let payloads = parse_chunked_json_values(body).expect("payloads");
 

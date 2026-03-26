@@ -4,7 +4,13 @@ import { request } from "@/lib/http"
 // Types
 // =====================
 
-export type ChannelType = "feishu" | "dingtalk" | "telegram" | "email" | "webhook"
+export type ChannelType =
+  | "feishu"
+  | "wechat"
+  | "dingtalk"
+  | "telegram"
+  | "email"
+  | "webhook"
 
 export interface NotificationChannel {
   id: string
@@ -38,6 +44,12 @@ export interface ChannelConfig {
   bot_app_secret?: string
   relay_base_url?: string
   relay_shared_secret?: string
+  // WeChat desktop direct config
+  access_policy?: "pairing" | "allowlist"
+  allowed_contact_ids?: string[]
+  account_label?: string
+  connection_state?: "disconnected" | "connecting" | "connected" | "error"
+  last_connected_at?: string
   // Telegram
   bot_token?: string
   chat_id?: string
@@ -183,6 +195,12 @@ export const CHANNEL_META: Record<
     color: "text-blue-400",
     description: "通过飞书机器人发送通知，并可作为桌面 IM 接入配置入口",
   },
+  wechat: {
+    label: "微信",
+    icon: "wechat",
+    color: "text-emerald-400",
+    description: "通过桌面端扫码连接普通微信账号，本地接收消息并驱动本地 AI 对话",
+  },
   dingtalk: {
     label: "钉钉",
     icon: "dingtalk",
@@ -212,6 +230,7 @@ export const CHANNEL_META: Record<
 /** Fields required per channel type for form validation */
 export const CHANNEL_REQUIRED_FIELDS: Record<ChannelType, string[]> = {
   feishu: [],
+  wechat: [],
   dingtalk: ["webhook_url"],
   telegram: ["bot_token", "chat_id"],
   email: ["smtp_host", "smtp_port", "from_email", "to_email"],

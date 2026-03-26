@@ -1220,6 +1220,7 @@ fn normalize_analysis_mode(raw: Option<&str>) -> String {
 fn normalize_notification_channel(raw: &str) -> Result<&'static str, String> {
     match raw.trim().to_lowercase().as_str() {
         "feishu" => Ok("feishu"),
+        "wechat" => Ok("wechat"),
         "dingtalk" => Ok("dingtalk"),
         "telegram" => Ok("telegram"),
         "email" => Ok("email"),
@@ -1416,5 +1417,13 @@ mod tests {
         assert_eq!(created.assistant_id.as_deref(), Some("agent-1"));
         assert_eq!(created.analysis_mode, "alert_first");
         assert_eq!(created.policy_state, json!({}));
+    }
+
+    #[test]
+    fn normalize_notification_channel_accepts_wechat() {
+        assert_eq!(
+            normalize_notification_channel("wechat").expect("wechat should be accepted"),
+            "wechat"
+        );
     }
 }

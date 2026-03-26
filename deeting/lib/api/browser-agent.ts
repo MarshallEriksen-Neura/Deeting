@@ -1,0 +1,145 @@
+import { z } from "zod"
+
+const isTauriRuntime = () =>
+  process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
+  typeof window !== "undefined" &&
+  ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
+
+async function invokeTauri<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  const { invoke } = await import("@tauri-apps/api/core")
+  return invoke<T>(command, args)
+}
+
+export const BrowserAgentBridgeStatusSchema = z.object({
+  bridge_url: z.string(),
+  config_source: z.string(),
+  configured: z.boolean(),
+  running: z.boolean(),
+  connected_sessions: z.number(),
+  active_session_id: z.string().nullable().optional(),
+  reachable: z.boolean(),
+  status: z.string(),
+  status_reason: z.string(),
+})
+
+export const BrowserAgentOpenTabResultSchema = z.object({
+  tabId: z.number().nullable().optional(),
+  url: z.string(),
+})
+
+export const BrowserAgentElementLocatorSchema = z.object({
+  selector: z.string().optional(),
+  text: z.string().optional(),
+  role: z.string().optional(),
+  tagName: z.string().optional(),
+  index: z.number().optional(),
+})
+
+export const BrowserAgentPageSnapshotSchema = z.object({
+  url: z.string(),
+  title: z.string(),
+  documentReadyState: z.string(),
+  visibleText: z.string(),
+  mainText: z.string(),
+  headings: z.array(z.object({ level: z.number(), text: z.string() })),
+  links: z.array(z.object({ text: z.string(), href: z.string() })),
+  buttons: z.array(z.object({ text: z.string(), disabled: z.boolean() })),
+  inputs: z.array(
+    z.object({
+      type: z.string().optional(),
+      name: z.string().optional(),
+      placeholder: z.string().optional(),
+    })
+  ),
+  forms: z.array(
+    z.object({
+      action: z.string().optional(),
+      method: z.string().optional(),
+    })
+  ),
+})
+
+export type BrowserAgentBridgeStatus = z.infer<typeof BrowserAgentBridgeStatusSchema>
+export type BrowserAgentElementLocator = z.infer<typeof BrowserAgentElementLocatorSchema>
+export type BrowserAgentOpenTabResult = z.infer<typeof BrowserAgentOpenTabResultSchema>
+export type BrowserAgentPageSnapshot = z.infer<typeof BrowserAgentPageSnapshotSchema>
+
+export async function getLocalBrowserAgentBridgeStatus(): Promise<BrowserAgentBridgeStatus> {
+  if (!isTauriRuntime()) {
+    return BrowserAgentBridgeStatusSchema.parse({
+      bridge_url: "ws://127.0.0.1:31937/bridge",
+      config_source: "unsupported",
+      configured: false,
+      running: false,
+      connected_sessions: 0,
+      active_session_id: null,
+      reachable: false,
+      status: "unsupported",
+      status_reason: "browser_agent_desktop_only",
+    })
+  }
+
+  const data = await invokeTauri<unknown>("get_local_browser_agent_bridge_status")
+  return BrowserAgentBridgeStatusSchema.parse(data)
+}
+
+export async function getLocalBrowserAgentBridgeUrl(): Promise<string> {
+  if (!isTauriRuntime()) {
+    return "ws://127.0.0.1:31937/bridge"
+  }
+  return invokeTauri<string>("get_local_browser_agent_bridge_url")
+}
+
+export async function setLocalBrowserAgentBridgeUrl(url: string): Promise<string> {
+  if (!isTauriRuntime()) {
+    return url.trim()
+  }
+  return invokeTauri<string>("set_local_browser_agent_bridge_url", { url })
+}
+
+export async function openLocalBrowserAgentTab(
+  url: string
+): Promise<BrowserAgentOpenTabResult> {
+  if (!isTauriRuntime()) {
+    throw new Error("openLocalBrowserAgentTab is only supported in Tauri runtime")
+  }
+  const data = await invokeTauri<unknown>("open_local_browser_agent_tab", { url })
+  return BrowserAgentOpenTabResultSchema.parse(data)
+}
+
+export async function getLocalBrowserAgentPageSnapshot(
+  tabId: number
+): Promise<BrowserAgentPageSnapshot> {
+  if (!isTauriRuntime()) {
+    throw new Error("getLocalBrowserAgentPageSnapshot is only supported in Tauri runtime")
+  }
+  const data = await invokeTauri<unknown>("get_local_browser_agent_page_snapshot", { tabId })
+  return BrowserAgentPageSnapshotSchema.parse(data)
+}
+
+export async function clickLocalBrowserAgentElement(
+  tabId: number,
+  target: BrowserAgentElementLocator
+): Promise<{ ok: boolean }> {
+  if (!isTauriRuntime()) {
+    throw new Error("clickLocalBrowserAgentElement is only supported in Tauri runtime")
+  }
+  const data = await invokeTauri<unknown>("click_local_browser_agent_element", { tabId, target })
+  return z.object({ ok: z.boolean() }).parse(data)
+}
+
+export async function typeLocalBrowserAgentElement(
+  tabId: number,
+  target: BrowserAgentElementLocator,
+  text: string
+): Promise<{ ok: boolean }> {
+  if (!isTauriRuntime()) {
+    throw new Error("typeLocalBrowserAgentElement is only supported in Tauri runtime")
+  }
+  const data = await invokeTauri<unknown>("type_local_browser_agent_element", {
+    tabId,
+    target,
+    text,
+  })
+  return z.object({ ok: z.boolean() }).parse(data)
+}

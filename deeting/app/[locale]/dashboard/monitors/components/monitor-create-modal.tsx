@@ -35,6 +35,7 @@ import { CHANNEL_META } from "@/lib/api/notification-channels"
 
 const CHANNEL_ICON_MAP: Record<ChannelType, typeof Bell> = {
   feishu: MessageSquare,
+  wechat: MessageSquare,
   dingtalk: MessageSquare,
   telegram: Send,
   email: Mail,

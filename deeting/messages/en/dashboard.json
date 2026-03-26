@@ -58,6 +58,17 @@
       "title": "Scan Reviews",
       "description": "Review local scan output, security signals, and index reconciliation for doc-first assets"
     },
+    "notificationChannels": {
+      "wechat": {
+        "connect": "Connect WeChat",
+        "reconnect": "Reconnect",
+        "disconnect": "Disconnect",
+        "scanQr": "Scan the QR code with WeChat",
+        "waiting": "Waiting for WeChat confirmation",
+        "connectedAccount": "Connected account",
+        "pairingRequired": "New contacts must complete pairing approval first"
+      }
+    },
     "scanReviewsPage": {
       "executionSurface": {
         "recipe": "Recipe guidance",

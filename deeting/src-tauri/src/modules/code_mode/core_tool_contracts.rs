@@ -188,6 +188,157 @@ pub(crate) fn code_mode_core_tools() -> Vec<CoreToolContract> {
             example_arguments: json!({}),
         },
         CoreToolContract {
+            name: "browser_agent_status",
+            description: "Inspect the desktop-local browser agent bridge configuration and current reachability. This is the runtime truth for whether the browser extension lane is configured and reachable from the desktop app.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {}
+            }),
+            output_schema: json!({
+                "type": "object",
+                "properties": {
+                    "bridge_url": {"type": "string"},
+                    "config_source": {"type": "string"},
+                    "configured": {"type": "boolean"},
+                    "running": {"type": "boolean"},
+                    "connected_sessions": {"type": "integer"},
+                    "active_session_id": {"type": ["string", "null"]},
+                    "reachable": {"type": "boolean"},
+                    "status": {"type": "string"},
+                    "status_reason": {"type": "string"}
+                },
+                "required": ["bridge_url", "config_source", "configured", "running", "connected_sessions", "reachable", "status", "status_reason"]
+            }),
+            permission_scope: &["browser_agent_read", "local_runtime"],
+            read_only: true,
+            mutating: false,
+            risk_level: "LOW",
+            example_arguments: json!({}),
+        },
+        CoreToolContract {
+            name: "browser_open_tab",
+            description: "Ask the connected browser agent extension to open a new browser tab for an http or https URL. This uses the desktop-local browser bridge and requires an active extension session.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "url": { "type": "string", "description": "Target http or https URL to open in the browser." }
+                },
+                "required": ["url"]
+            }),
+            output_schema: json!({
+                "type": "object",
+                "properties": {
+                    "tabId": {"type": ["integer", "null"]},
+                    "url": {"type": "string"}
+                },
+                "required": ["url"]
+            }),
+            permission_scope: &["browser_agent_write", "local_runtime"],
+            read_only: false,
+            mutating: true,
+            risk_level: "LOW",
+            example_arguments: json!({"url": "https://example.com/docs"}),
+        },
+        CoreToolContract {
+            name: "browser_get_page_snapshot",
+            description: "Ask the connected browser agent extension to return a structured page snapshot for a tab id. Use this after browser_open_tab or after another browser navigation step.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "tab_id": { "type": "integer", "description": "Browser tab identifier returned by browser_open_tab or prior browser actions." }
+                },
+                "required": ["tab_id"]
+            }),
+            output_schema: json!({
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string"},
+                    "title": {"type": "string"},
+                    "documentReadyState": {"type": "string"},
+                    "visibleText": {"type": "string"},
+                    "mainText": {"type": "string"},
+                    "headings": {"type": "array"},
+                    "links": {"type": "array"},
+                    "buttons": {"type": "array"},
+                    "inputs": {"type": "array"},
+                    "forms": {"type": "array"}
+                },
+                "required": ["url", "title", "documentReadyState", "visibleText", "mainText", "headings", "links", "buttons", "inputs", "forms"]
+            }),
+            permission_scope: &["browser_agent_read", "local_runtime"],
+            read_only: true,
+            mutating: false,
+            risk_level: "LOW",
+            example_arguments: json!({"tab_id": 42}),
+        },
+        CoreToolContract {
+            name: "browser_click",
+            description: "Ask the connected browser agent extension to click an element in a browser tab using a structured locator. Use this after inspecting a page snapshot.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "tab_id": { "type": "integer", "description": "Browser tab identifier to target." },
+                    "target": {
+                        "type": "object",
+                        "properties": {
+                            "selector": { "type": "string" },
+                            "text": { "type": "string" },
+                            "role": { "type": "string" },
+                            "tag_name": { "type": "string" },
+                            "index": { "type": "integer" }
+                        }
+                    }
+                },
+                "required": ["tab_id", "target"]
+            }),
+            output_schema: json!({
+                "type": "object",
+                "properties": {
+                    "ok": {"type": "boolean"}
+                },
+                "required": ["ok"]
+            }),
+            permission_scope: &["browser_agent_write", "local_runtime"],
+            read_only: false,
+            mutating: true,
+            risk_level: "LOW",
+            example_arguments: json!({"tab_id": 42, "target": {"text": "Continue"}}),
+        },
+        CoreToolContract {
+            name: "browser_type",
+            description: "Ask the connected browser agent extension to type text into an element in a browser tab using a structured locator.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "tab_id": { "type": "integer", "description": "Browser tab identifier to target." },
+                    "target": {
+                        "type": "object",
+                        "properties": {
+                            "selector": { "type": "string" },
+                            "text": { "type": "string" },
+                            "role": { "type": "string" },
+                            "tag_name": { "type": "string" },
+                            "index": { "type": "integer" }
+                        }
+                    },
+                    "text": { "type": "string", "description": "Text to input into the target element." }
+                },
+                "required": ["tab_id", "target", "text"]
+            }),
+            output_schema: json!({
+                "type": "object",
+                "properties": {
+                    "ok": {"type": "boolean"}
+                },
+                "required": ["ok"]
+            }),
+            permission_scope: &["browser_agent_write", "local_runtime"],
+            read_only: false,
+            mutating: true,
+            risk_level: "LOW",
+            example_arguments: json!({"tab_id": 42, "target": {"selector": "input[name='q']"}, "text": "browser agent"}),
+        },
+        CoreToolContract {
             name: "shell_execute",
             description: "Execute shell commands on the user's machine with security checks and user approval. Supports cross-platform command execution (Windows: cmd, Linux/Mac: sh). Automatically handles encoding (UTF-8/GBK) and provides timeout control.",
             input_schema: json!({
@@ -249,6 +400,9 @@ pub(crate) fn code_mode_core_tools() -> Vec<CoreToolContract> {
 fn core_tool_execution_surface(tool_name: &str) -> &'static str {
     match tool_name {
         "execute_code_plan" => "sandbox",
+        "browser_open_tab" => "host",
+        "browser_click" => "host",
+        "browser_type" => "host",
         "shell_execute" => "host",
         _ => "host",
     }
@@ -316,4 +470,69 @@ pub(crate) async fn sync_core_tool_registry_entries(
         .replace_local_capability_registry_entries("code_mode.core", &entries)
         .await
         .map_err(|err| err.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::code_mode_core_tools;
+
+    #[test]
+    fn core_tool_registry_includes_browser_agent_status() {
+        let tool = code_mode_core_tools()
+            .into_iter()
+            .find(|tool| tool.name == "browser_agent_status")
+            .expect("browser_agent_status core tool should exist");
+
+        assert!(tool.read_only);
+        assert!(!tool.mutating);
+        assert_eq!(tool.risk_level, "LOW");
+    }
+
+    #[test]
+    fn core_tool_registry_includes_browser_open_tab() {
+        let tool = code_mode_core_tools()
+            .into_iter()
+            .find(|tool| tool.name == "browser_open_tab")
+            .expect("browser_open_tab core tool should exist");
+
+        assert!(!tool.read_only);
+        assert!(tool.mutating);
+        assert_eq!(tool.risk_level, "LOW");
+    }
+
+    #[test]
+    fn core_tool_registry_includes_browser_get_page_snapshot() {
+        let tool = code_mode_core_tools()
+            .into_iter()
+            .find(|tool| tool.name == "browser_get_page_snapshot")
+            .expect("browser_get_page_snapshot core tool should exist");
+
+        assert!(tool.read_only);
+        assert!(!tool.mutating);
+        assert_eq!(tool.risk_level, "LOW");
+    }
+
+    #[test]
+    fn core_tool_registry_includes_browser_click() {
+        let tool = code_mode_core_tools()
+            .into_iter()
+            .find(|tool| tool.name == "browser_click")
+            .expect("browser_click core tool should exist");
+
+        assert!(!tool.read_only);
+        assert!(tool.mutating);
+        assert_eq!(tool.risk_level, "LOW");
+    }
+
+    #[test]
+    fn core_tool_registry_includes_browser_type() {
+        let tool = code_mode_core_tools()
+            .into_iter()
+            .find(|tool| tool.name == "browser_type")
+            .expect("browser_type core tool should exist");
+
+        assert!(!tool.read_only);
+        assert!(tool.mutating);
+        assert_eq!(tool.risk_level, "LOW");
+    }
 }
