@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use log::warn;
+use qrcodegen::{QrCode, QrCodeEcc};
 use sqlx::sqlite::SqlitePool;
 use tokio::sync::{Mutex, RwLock};
 
@@ -73,7 +74,11 @@ impl WechatState {
             pairing_id: pairing_id.clone(),
             qrcode_id,
             qr_image_url: qr.qrcode_img_content.clone(),
-            qr_image_data: qr.qrcode_img_content.clone(),
+            qr_image_data: qr
+                .qrcode_img_content
+                .as_deref()
+                .and_then(qr_data_uri_from_content)
+                .or_else(|| qr.qrcode.as_deref().and_then(qr_data_uri_from_content)),
             expires_at: Some(expires_at.clone()),
             state: "qr_ready".to_string(),
             account_label: None,
@@ -360,5 +365,32 @@ fn pairing_to_response(session: PairingSession) -> WechatPairingResponse {
         expires_at: session.expires_at,
         account_label: session.account_label,
         error: session.error,
+    }
+}
+
+fn qr_data_uri_from_content(content: &str) -> Option<String> {
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if trimmed.starts_with("data:image/") {
+        return Some(trimmed.to_string());
+    }
+
+    let qr = QrCode::encode_text(trimmed, QrCodeEcc::Medium).ok()?;
+    let svg = qr.to_svg_string(4);
+    let encoded = base64::engine::general_purpose::STANDARD.encode(svg.as_bytes());
+    Some(format!("data:image/svg+xml;base64,{}", encoded))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::qr_data_uri_from_content;
+
+    #[test]
+    fn qr_data_uri_from_content_generates_svg_data_uri_for_url() {
+        let data = qr_data_uri_from_content("https://liteapp.weixin.qq.com/q/test?qrcode=abc")
+            .expect("svg data uri");
+        assert!(data.starts_with("data:image/svg+xml;base64,"));
     }
 }
