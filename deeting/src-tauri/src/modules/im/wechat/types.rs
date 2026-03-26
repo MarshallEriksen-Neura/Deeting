@@ -61,13 +61,13 @@ pub struct StoredWechatAccount {
     pub saved_at: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WechatQrCodeResponse {
     pub qrcode: Option<String>,
     pub qrcode_img_content: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WechatQrStatusResponse {
     pub status: Option<String>,
     pub bot_token: Option<String>,
@@ -87,7 +87,7 @@ pub struct WechatGetUpdatesRequest {
     pub base_info: WechatBaseInfo,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WechatGetUpdatesResponse {
     pub ret: Option<i64>,
     pub errcode: Option<i64>,
@@ -96,7 +96,7 @@ pub struct WechatGetUpdatesResponse {
     pub get_updates_buf: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WechatMessage {
     pub message_id: Option<i64>,
     pub from_user_id: Option<String>,
@@ -105,13 +105,13 @@ pub struct WechatMessage {
     pub context_token: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WechatMessageItem {
     pub r#type: Option<i64>,
     pub text_item: Option<WechatTextItem>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WechatTextItem {
     pub text: Option<String>,
 }

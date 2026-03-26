@@ -9,10 +9,9 @@ use crate::state::AppState;
 
 use super::feishu::{FeishuClient, FeishuConfig};
 use super::handlers::{build_direct_card_action_outcome, generate_local_chat_reply_content};
-use super::telegram::{TelegramClient, TelegramConfig};
 use super::{
-    build_settings_snapshot, resolve_transport, ChatType, ImClient, ImConnectionProfile, ImEvent,
-    ImPlatform, ImTransportKind, ImTransportPreference, LocalImSettingsSnapshot, MessageContent,
+    build_settings_snapshot, resolve_transport, ImClient, ImConnectionProfile, ImEvent, ImPlatform,
+    ImTransportKind, ImTransportPreference, LocalImSettingsSnapshot, MessageContent,
     SendMessageRequest,
 };
 
@@ -36,71 +35,12 @@ fn config_bool(value: &Value, key: &str) -> Option<bool> {
     value.get(key).and_then(Value::as_bool)
 }
 
-fn feishu_transport_preference(value: &Value) -> ImTransportPreference {
-    match config_string(value, "transport_preference")
-        .as_deref()
-        .unwrap_or("auto")
-    {
-        "direct" => ImTransportPreference::Direct,
-        "relay" => ImTransportPreference::Relay,
-        _ => ImTransportPreference::Auto,
-    }
-}
-
 fn derive_profile_from_notification_channel(
     channel: &crate::modules::monitor::types::LocalNotificationChannel,
     wechat_account_id: Option<&str>,
 ) -> Option<ImConnectionProfile> {
     match channel.channel.trim().to_lowercase().as_str() {
-        "feishu" => {
-            let has_im_fields = config_bool(&channel.config, "im_enabled").unwrap_or(false)
-                || config_string(&channel.config, "bot_app_id").is_some()
-                || config_string(&channel.config, "bot_app_secret").is_some()
-                || config_string(&channel.config, "relay_base_url").is_some()
-                || config_string(&channel.config, "relay_shared_secret").is_some()
-                || config_string(&channel.config, "transport_preference").is_some();
-            if !has_im_fields {
-                return None;
-            }
-
-            let mut profile = ImConnectionProfile::default_feishu();
-            profile.id = format!("notification-channel:{}", channel.id);
-            profile.display_name = channel
-                .display_name
-                .clone()
-                .unwrap_or_else(|| "Feishu".to_string());
-            profile.enabled =
-                channel.is_active && config_bool(&channel.config, "im_enabled").unwrap_or(false);
-            profile.transport_preference = feishu_transport_preference(&channel.config);
-            profile.direct_config.feishu_app_id =
-                config_string(&channel.config, "bot_app_id").unwrap_or_default();
-            profile.direct_config.feishu_app_secret =
-                config_string(&channel.config, "bot_app_secret").unwrap_or_default();
-            profile.relay_config.base_url =
-                config_string(&channel.config, "relay_base_url").unwrap_or_default();
-            profile.relay_config.shared_secret =
-                config_string(&channel.config, "relay_shared_secret").unwrap_or_default();
-            Some(profile)
-        }
-        "telegram" => {
-            let has_im_fields = config_bool(&channel.config, "im_enabled").unwrap_or(false)
-                || config_string(&channel.config, "bot_token").is_some();
-            if !has_im_fields {
-                return None;
-            }
-
-            let mut profile = ImConnectionProfile::default_telegram();
-            profile.id = format!("notification-channel:{}", channel.id);
-            profile.display_name = channel
-                .display_name
-                .clone()
-                .unwrap_or_else(|| "Telegram".to_string());
-            profile.enabled =
-                channel.is_active && config_bool(&channel.config, "im_enabled").unwrap_or(false);
-            profile.direct_config.telegram_bot_token =
-                config_string(&channel.config, "bot_token").unwrap_or_default();
-            Some(profile)
-        }
+        "feishu" => {}
         "wechat" => {
             let has_im_fields = config_bool(&channel.config, "im_enabled").unwrap_or(false)
                 || config_string(&channel.config, "access_policy").is_some()
@@ -125,10 +65,48 @@ fn derive_profile_from_notification_channel(
             };
             profile.direct_config.wechat_account_id =
                 wechat_account_id.unwrap_or_default().trim().to_string();
-            Some(profile)
+            return Some(profile);
         }
-        _ => None,
+        _ => return None,
     }
+
+    let transport_preference = match config_string(&channel.config, "transport_preference")
+        .as_deref()
+        .unwrap_or("auto")
+    {
+        "direct" => ImTransportPreference::Direct,
+        "relay" => ImTransportPreference::Relay,
+        _ => ImTransportPreference::Auto,
+    };
+
+    let has_im_fields = config_bool(&channel.config, "im_enabled").unwrap_or(false)
+        || config_string(&channel.config, "bot_app_id").is_some()
+        || config_string(&channel.config, "bot_app_secret").is_some()
+        || config_string(&channel.config, "relay_base_url").is_some()
+        || config_string(&channel.config, "relay_shared_secret").is_some()
+        || config_string(&channel.config, "transport_preference").is_some();
+    if !has_im_fields {
+        return None;
+    }
+
+    let mut profile = ImConnectionProfile::default_feishu();
+    profile.id = format!("notification-channel:{}", channel.id);
+    profile.display_name = channel
+        .display_name
+        .clone()
+        .unwrap_or_else(|| "Feishu".to_string());
+    profile.enabled =
+        channel.is_active && config_bool(&channel.config, "im_enabled").unwrap_or(false);
+    profile.transport_preference = transport_preference;
+    profile.direct_config.feishu_app_id =
+        config_string(&channel.config, "bot_app_id").unwrap_or_default();
+    profile.direct_config.feishu_app_secret =
+        config_string(&channel.config, "bot_app_secret").unwrap_or_default();
+    profile.relay_config.base_url =
+        config_string(&channel.config, "relay_base_url").unwrap_or_default();
+    profile.relay_config.shared_secret =
+        config_string(&channel.config, "relay_shared_secret").unwrap_or_default();
+    Some(profile)
 }
 
 fn normalize_profiles(mut profiles: Vec<ImConnectionProfile>) -> Vec<ImConnectionProfile> {
@@ -173,169 +151,6 @@ pub(crate) async fn load_im_connection_profiles(
         .collect();
 
     Ok(normalize_profiles(profiles))
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct TelegramPrivateTextEvent {
-    chat_id: String,
-    message_id: String,
-    sender_name: String,
-    text: String,
-}
-
-fn extract_telegram_private_text_event(event: ImEvent) -> Option<TelegramPrivateTextEvent> {
-    match event {
-        ImEvent::Message {
-            platform: ImPlatform::Telegram,
-            chat_id,
-            chat_type: ChatType::Private,
-            message_id,
-            sender,
-            content: MessageContent::Text { text },
-            ..
-        } => Some(TelegramPrivateTextEvent {
-            chat_id,
-            message_id,
-            sender_name: sender
-                .name
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or_else(|| "用户".to_string()),
-            text,
-        }),
-        _ => None,
-    }
-}
-
-fn telegram_polling_unavailable_error(err: &impl std::fmt::Display) -> String {
-    format!("telegram polling unavailable: {}", err)
-}
-
-async fn run_telegram_direct_profile_worker(
-    app_state: AppState,
-    app_handle: tauri::AppHandle,
-    profile: ImConnectionProfile,
-) -> Result<(), String> {
-    let bot_token = profile.direct_config.telegram_bot_token.trim().to_string();
-    if bot_token.is_empty() {
-        return Err("telegram polling unavailable: bot_token is missing".to_string());
-    }
-
-    let client = TelegramClient::new(TelegramConfig {
-        bot_token,
-        allow_group_message: false,
-        ..Default::default()
-    });
-    client
-        .probe_polling_available()
-        .await
-        .map_err(|err| telegram_polling_unavailable_error(&err))?;
-    let (event_tx, mut event_rx) = mpsc::channel(256);
-    client
-        .start(event_tx)
-        .await
-        .map_err(|err| telegram_polling_unavailable_error(&err))?;
-
-    while let Some(event) = event_rx.recv().await {
-        if let Some(message) = extract_telegram_private_text_event(event.clone()) {
-            let session_id = format!("im:{}:chat:{}", profile.id, message.chat_id);
-            let reply_to = Some(message.message_id.clone());
-            if let Err(err) = client
-                .send_message(SendMessageRequest {
-                    chat_id: message.chat_id.clone(),
-                    content: MessageContent::Text {
-                        text: "收到，正在处理中…".to_string(),
-                    },
-                    reply_to: reply_to.clone(),
-                })
-                .await
-            {
-                warn!(
-                    "telegram_direct_profile ack_send_failed profile={} chat_id={} err={}",
-                    profile.id, message.chat_id, err
-                );
-            }
-
-            let reply_content = match generate_local_chat_reply_content(
-                &app_state,
-                &app_handle,
-                message.text.as_str(),
-                session_id.as_str(),
-            )
-            .await
-            {
-                Ok(Some(content)) => content,
-                Ok(None) => continue,
-                Err(err) => {
-                    warn!(
-                        "telegram_direct_profile chat_reply_failed profile={} session={} err={}",
-                        profile.id, session_id, err
-                    );
-                    let _ = client
-                        .send_message(SendMessageRequest {
-                            chat_id: message.chat_id.clone(),
-                            content: MessageContent::Text {
-                                text: "本地处理失败，请稍后重试。".to_string(),
-                            },
-                            reply_to,
-                        })
-                        .await;
-                    continue;
-                }
-            };
-
-            let quoted = message.text.trim();
-            let quoted_preview = if quoted.len() > 60 {
-                format!(
-                    "{}…",
-                    quoted.chars().take(57).collect::<String>().trim_end()
-                )
-            } else {
-                quoted.to_string()
-            };
-            let display_reply = match &reply_content {
-                MessageContent::Text { text } => Some(format!(
-                    "| 回复 {}: {}\n\n{}",
-                    message.sender_name,
-                    quoted_preview,
-                    text.trim()
-                )),
-                _ => None,
-            };
-
-            if let Err(err) = client
-                .send_message(SendMessageRequest {
-                    chat_id: message.chat_id.clone(),
-                    content: match (display_reply, reply_content) {
-                        (Some(display_text), MessageContent::Text { .. }) => {
-                            MessageContent::Text { text: display_text }
-                        }
-                        (_, content) => content,
-                    },
-                    reply_to: Some(message.message_id),
-                })
-                .await
-            {
-                warn!(
-                    "telegram_direct_profile send_message_failed profile={} chat_id={} err={}",
-                    profile.id, message.chat_id, err
-                );
-            }
-            continue;
-        }
-
-        if let ImEvent::ConnectionStatus {
-            platform: ImPlatform::Telegram,
-            status,
-        } = event
-        {
-            info!(
-                "im_direct_profile_status profile={} platform=telegram status={:?}",
-                profile.id, status
-            );
-        }
-    }
-
-    Ok(())
 }
 
 async fn run_feishu_direct_profile_worker(
@@ -559,17 +374,6 @@ pub async fn start_im_runtime_worker(app_state: AppState, app_handle: tauri::App
                     }
                 });
             }
-            (ImPlatform::Telegram, ImTransportKind::Direct) => {
-                let state = app_state.clone();
-                let handle = app_handle.clone();
-                tasks.spawn(async move {
-                    if let Err(err) =
-                        run_telegram_direct_profile_worker(state, handle, profile).await
-                    {
-                        warn!("im_direct_profile_worker_failed: {}", err);
-                    }
-                });
-            }
             (ImPlatform::Feishu, ImTransportKind::Relay) => {
                 let state = app_state.clone();
                 let handle = app_handle.clone();
@@ -615,118 +419,5 @@ pub async fn start_im_runtime_worker(app_state: AppState, app_handle: tauri::App
         if let Err(err) = result {
             warn!("im_runtime_task_join_failed: {}", err);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::modules::im::{Sender, SenderType};
-    use serde_json::json;
-
-    fn notification_channel(
-        channel: &str,
-        config: Value,
-        is_active: bool,
-    ) -> crate::modules::monitor::types::LocalNotificationChannel {
-        crate::modules::monitor::types::LocalNotificationChannel {
-            id: "channel-1".to_string(),
-            user_id: "user-1".to_string(),
-            channel: channel.to_string(),
-            config,
-            display_name: Some("Telegram Bot".to_string()),
-            is_active,
-            priority: 1,
-            last_used_at: None,
-            created_at: "2026-03-26T00:00:00Z".to_string(),
-            updated_at: "2026-03-26T00:00:00Z".to_string(),
-        }
-    }
-
-    #[test]
-    fn telegram_profile_is_derived_from_notification_channel() {
-        let channel = notification_channel(
-            "telegram",
-            json!({
-                "bot_token": "telegram-token",
-                "im_enabled": true
-            }),
-            true,
-        );
-
-        let profile = derive_profile_from_notification_channel(&channel)
-            .expect("telegram channel should derive a profile");
-
-        assert_eq!(profile.platform, ImPlatform::Telegram);
-        assert_eq!(profile.display_name, "Telegram Bot");
-        assert!(profile.enabled);
-        assert_eq!(profile.direct_config.telegram_bot_token, "telegram-token");
-    }
-
-    #[test]
-    fn extract_telegram_private_text_event_accepts_private_text_messages() {
-        let event = ImEvent::Message {
-            platform: ImPlatform::Telegram,
-            chat_id: "99".to_string(),
-            chat_type: super::ChatType::Private,
-            message_id: "42".to_string(),
-            sender: Sender {
-                sender_type: SenderType::User,
-                open_id: None,
-                user_id: Some("7".to_string()),
-                name: Some("Alice".to_string()),
-            },
-            content: MessageContent::Text {
-                text: "hello".to_string(),
-            },
-            mentions: vec![],
-            raw: Value::Null,
-        };
-
-        let extracted =
-            extract_telegram_private_text_event(event).expect("private text should pass through");
-
-        assert_eq!(extracted.chat_id, "99");
-        assert_eq!(extracted.message_id, "42");
-        assert_eq!(extracted.sender_name, "Alice");
-        assert_eq!(extracted.text, "hello");
-    }
-
-    #[test]
-    fn extract_telegram_private_text_event_ignores_non_private_messages() {
-        let event = ImEvent::Message {
-            platform: ImPlatform::Telegram,
-            chat_id: "99".to_string(),
-            chat_type: super::ChatType::Group,
-            message_id: "42".to_string(),
-            sender: Sender {
-                sender_type: SenderType::User,
-                open_id: None,
-                user_id: Some("7".to_string()),
-                name: Some("Alice".to_string()),
-            },
-            content: MessageContent::Text {
-                text: "hello group".to_string(),
-            },
-            mentions: vec![],
-            raw: Value::Null,
-        };
-
-        assert!(extract_telegram_private_text_event(event).is_none());
-    }
-
-    #[test]
-    fn telegram_polling_unavailable_error_is_readable() {
-        let error = crate::modules::im::ImError::PlatformError {
-            code: 409,
-            message: "Telegram getUpdates is unavailable because a webhook is still configured"
-                .to_string(),
-        };
-
-        let message = telegram_polling_unavailable_error(&error);
-
-        assert!(message.contains("telegram polling unavailable"));
-        assert!(message.contains("webhook"));
-        assert!(message.contains("getUpdates"));
     }
 }

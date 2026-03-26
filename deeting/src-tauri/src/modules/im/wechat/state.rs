@@ -1,17 +1,16 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
 
 use log::warn;
 use sqlx::sqlite::SqlitePool;
 use tokio::sync::{Mutex, RwLock};
 
 use super::account_store::WechatAccountStore;
-use super::api::{fetch_login_qr, fetch_qr_status};
+use super::bridge_client::WechatBridgeClient;
 use super::types::{
-    StoredWechatAccount, WechatCancelPairingResponse, WechatConnectionStateResponse,
-    WechatDisconnectResponse, WechatPairingDecisionResponse, WechatPairingResponse,
-    WechatQrStatusResponse, WECHAT_DEFAULT_BASE_URL,
+    StoredWechatAccount, WechatCancelPairingResponse, WechatConnectionStateResponse, WechatDisconnectResponse,
+    WechatGetUpdatesResponse, WechatPairingDecisionResponse, WechatPairingResponse, WechatQrStatusResponse,
+    WECHAT_DEFAULT_BASE_URL,
 };
 use crate::utils::now_rfc3339;
 
@@ -21,7 +20,7 @@ pub struct WechatState {
 }
 
 struct WechatShared {
-    client: reqwest::Client,
+    bridge: WechatBridgeClient,
     store: WechatAccountStore,
     qr_sessions: Mutex<HashMap<String, PairingSession>>,
     last_error: RwLock<Option<String>>,
@@ -41,15 +40,11 @@ struct PairingSession {
 
 impl WechatState {
     pub async fn with_pool(pool: SqlitePool, database_url: &str) -> Result<Self, String> {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(65))
-            .build()
-            .unwrap_or_else(|_| reqwest::Client::new());
         let store = WechatAccountStore::new(pool, database_url)?;
         store.init().await?;
         Ok(Self {
             shared: Arc::new(WechatShared {
-                client,
+                bridge: WechatBridgeClient::new(),
                 store,
                 qr_sessions: Mutex::new(HashMap::new()),
                 last_error: RwLock::new(None),
@@ -58,7 +53,11 @@ impl WechatState {
     }
 
     pub async fn start_pairing(&self) -> Result<WechatPairingResponse, String> {
-        let qr = fetch_login_qr(&self.shared.client, WECHAT_DEFAULT_BASE_URL).await?;
+        let qr = self
+            .shared
+            .bridge
+            .fetch_login_qr(WECHAT_DEFAULT_BASE_URL)
+            .await?;
         let pairing_id = uuid::Uuid::new_v4().to_string();
         let qrcode_id = qr
             .qrcode
@@ -110,12 +109,11 @@ impl WechatState {
             return Ok(pairing_to_response(current));
         }
 
-        let status = fetch_qr_status(
-            &self.shared.client,
-            WECHAT_DEFAULT_BASE_URL,
-            current.qrcode_id.as_str(),
-        )
-        .await?;
+        let status = self
+            .shared
+            .bridge
+            .fetch_qr_status(WECHAT_DEFAULT_BASE_URL, current.qrcode_id.as_str())
+            .await?;
         let updated = self.apply_qr_status(current, status).await?;
         Ok(pairing_to_response(updated))
     }
@@ -230,6 +228,32 @@ impl WechatState {
 
     pub async fn update_cursor(&self, cursor: &str) -> Result<(), String> {
         self.shared.store.update_cursor(cursor).await
+    }
+
+    pub async fn get_updates(
+        &self,
+        base_url: &str,
+        token: &str,
+        cursor: &str,
+    ) -> Result<WechatGetUpdatesResponse, String> {
+        self.shared
+            .bridge
+            .get_updates(base_url, token, cursor)
+            .await
+    }
+
+    pub async fn send_text(
+        &self,
+        base_url: &str,
+        token: &str,
+        contact_id: &str,
+        text: &str,
+        context_token: &str,
+    ) -> Result<(), String> {
+        self.shared
+            .bridge
+            .send_text(base_url, token, contact_id, text, context_token)
+            .await
     }
 
     pub async fn ensure_allowed_or_create_pairing(

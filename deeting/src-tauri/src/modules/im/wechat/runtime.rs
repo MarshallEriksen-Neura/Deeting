@@ -8,12 +8,7 @@ use crate::modules::im::handlers::{
 use crate::modules::im::{ImConnectionProfile, MessageContent};
 use crate::state::AppState;
 
-use super::api::{get_updates, send_text_message};
-use super::types::{
-    WechatOutboundMessage, WechatOutboundMessageItem, WechatOutboundTextItem,
-    WECHAT_ITEM_TYPE_TEXT, WECHAT_MESSAGE_STATE_FINISH, WECHAT_MESSAGE_TYPE_BOT,
-    WECHAT_MESSAGE_TYPE_USER,
-};
+use super::types::{WECHAT_ITEM_TYPE_TEXT, WECHAT_MESSAGE_TYPE_USER};
 
 #[derive(Debug, Clone)]
 struct PendingWechatTextApproval {
@@ -31,20 +26,17 @@ pub async fn run_wechat_direct_profile_worker(
         return Err("wechat account is not connected".to_string());
     };
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(65))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
     let mut pending_text_approvals = HashMap::<String, PendingWechatTextApproval>::new();
 
     loop {
-        let response = get_updates(
-            &client,
-            account.base_url.as_str(),
-            account.token.as_str(),
-            account.cursor.as_str(),
-        )
-        .await?;
+        let response = app_state
+            .wechat
+            .get_updates(
+                account.base_url.as_str(),
+                account.token.as_str(),
+                account.cursor.as_str(),
+            )
+            .await?;
 
         if response.errcode == Some(-14) {
             app_state
@@ -109,7 +101,7 @@ pub async fn run_wechat_direct_profile_worker(
                 Ok(()) => {}
                 Err(code) => {
                     send_text(
-                        &client,
+                        &app_state,
                         &account.base_url,
                         &account.token,
                         contact_id,
@@ -147,7 +139,7 @@ pub async fn run_wechat_direct_profile_worker(
                     for follow_up in outcome.follow_up_messages {
                         if let MessageContent::Text { text } = follow_up {
                             send_text(
-                                &client,
+                                &app_state,
                                 &account.base_url,
                                 &account.token,
                                 contact_id,
@@ -160,7 +152,7 @@ pub async fn run_wechat_direct_profile_worker(
                     }
                     if !sent_any {
                         send_text(
-                            &client,
+                            &app_state,
                             &account.base_url,
                             &account.token,
                             contact_id,
@@ -177,7 +169,7 @@ pub async fn run_wechat_direct_profile_worker(
                 }
 
                 send_text(
-                    &client,
+                    &app_state,
                     &account.base_url,
                     &account.token,
                     contact_id,
@@ -190,7 +182,7 @@ pub async fn run_wechat_direct_profile_worker(
 
             let session_id = format!("im:{}:chat:{}", profile.id, contact_id);
             send_text(
-                &client,
+                &app_state,
                 &account.base_url,
                 &account.token,
                 contact_id,
@@ -221,7 +213,7 @@ pub async fn run_wechat_direct_profile_worker(
                     },
                 );
                 send_text(
-                    &client,
+                    &app_state,
                     &account.base_url,
                     &account.token,
                     contact_id,
@@ -235,7 +227,7 @@ pub async fn run_wechat_direct_profile_worker(
             match reply_outcome.content {
                 MessageContent::Text { text } => {
                     send_text(
-                        &client,
+                        &app_state,
                         &account.base_url,
                         &account.token,
                         contact_id,
@@ -246,7 +238,7 @@ pub async fn run_wechat_direct_profile_worker(
                 }
                 _ => {
                     send_text(
-                        &client,
+                        &app_state,
                         &account.base_url,
                         &account.token,
                         contact_id,
@@ -272,28 +264,23 @@ fn parse_text_approval_command(text: &str) -> Option<bool> {
 }
 
 async fn send_text(
-    client: &reqwest::Client,
+    app_state: &AppState,
     base_url: &str,
     token: &str,
     contact_id: &str,
     text: &str,
     context_token: &str,
 ) -> Result<(), String> {
-    let message = WechatOutboundMessage {
-        to_user_id: contact_id.trim().to_string(),
-        from_user_id: String::new(),
-        client_id: uuid::Uuid::new_v4().to_string(),
-        message_type: WECHAT_MESSAGE_TYPE_BOT,
-        message_state: WECHAT_MESSAGE_STATE_FINISH,
-        context_token: context_token.trim().to_string(),
-        item_list: vec![WechatOutboundMessageItem {
-            r#type: WECHAT_ITEM_TYPE_TEXT,
-            text_item: WechatOutboundTextItem {
-                text: markdown_to_plain_text(text),
-            },
-        }],
-    };
-    send_text_message(client, base_url, token, message).await
+    app_state
+        .wechat
+        .send_text(
+            base_url,
+            token,
+            contact_id,
+            markdown_to_plain_text(text).as_str(),
+            context_token,
+        )
+        .await
 }
 
 fn markdown_to_plain_text(input: &str) -> String {
