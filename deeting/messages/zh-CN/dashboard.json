@@ -69,6 +69,291 @@
         "pairingRequired": "首次联系人需要先完成配对授权"
       }
     },
+    "notificationChannelsPage": {
+      "title": "通知渠道",
+      "subtitle": "配置你的通知渠道，寻猎任务发现质变时将按优先级依次推送",
+      "actions": {
+        "addChannel": "添加通知渠道",
+        "addFirstChannel": "添加第一个渠道",
+        "selectType": "选择渠道类型",
+        "cancel": "取消",
+        "expand": "展开",
+        "collapse": "收起",
+        "delete": "删除",
+        "confirmDelete": "确认删除",
+        "save": "保存",
+        "testSend": "测试发送"
+      },
+      "empty": {
+        "description": "尚未配置通知渠道，添加后寻猎任务可自动推送研判结果",
+        "addFirst": "添加第一个渠道"
+      },
+      "status": {
+        "enabled": "已启用",
+        "disabled": "已停用",
+        "lastUsedDate": "上次使用 {date}"
+      },
+      "deleteDialog": {
+        "title": "确认删除 {channel} 渠道？",
+        "description": "删除后该渠道将不再接收通知。"
+      },
+      "channelTypes": {
+        "feishu": {
+          "label": "飞书",
+          "description": "通过飞书机器人发送通知，并可作为桌面 IM 接入配置入口"
+        },
+        "wechat": {
+          "label": "微信",
+          "description": "通过桌面端扫码连接普通微信账号，本地接收消息并驱动本地 AI 对话"
+        },
+        "dingtalk": {
+          "label": "钉钉",
+          "description": "通过钉钉群机器人 Webhook 推送消息"
+        },
+        "telegram": {
+          "label": "Telegram",
+          "description": "通过 Telegram Bot 推送消息到指定 Chat"
+        },
+        "email": {
+          "label": "邮件",
+          "description": "通过 SMTP 服务发送邮件通知"
+        },
+        "webhook": {
+          "label": "Webhook",
+          "description": "向自定义 HTTP 端点推送 JSON 载荷"
+        }
+      },
+      "fields": {
+        "shared": {
+          "displayName": {
+            "label": "显示名称",
+            "placeholder": "我的{channel}"
+          },
+          "loadingModels": "正在加载可用聊天模型..."
+        },
+        "feishu": {
+          "webhook_url": {
+            "label": "Webhook URL",
+            "placeholder": "https://open.feishu.cn/open-apis/bot/v2/hook/xxx"
+          },
+          "chat_ids": {
+            "label": "群 Chat IDs",
+            "placeholder": "oc_xxxxx\\noc_yyyyy",
+            "description": "每行一个 chat_id，用于多群路由到当前用户"
+          },
+          "bot_open_id": {
+            "label": "机器人 Open ID",
+            "placeholder": "ou_xxx（可选，用于精确匹配@）"
+          },
+          "bot_model": {
+            "label": "回复模型",
+            "placeholder": "选择一个回复模型（可选）",
+            "description": "留空时使用桌面端当前默认的秘书/聊天模型。"
+          },
+          "bot_system_prompt": {
+            "label": "系统提示词",
+            "placeholder": "可选：定义该渠道机器人的回复风格"
+          },
+          "bot_app_id": {
+            "label": "飞书 App ID",
+            "placeholder": "cli_xxx（可选，渠道级覆盖）"
+          },
+          "bot_app_secret": {
+            "label": "飞书 App Secret",
+            "placeholder": "可选，渠道级覆盖"
+          },
+          "im_enabled": {
+            "label": "启用桌面 IM",
+            "placeholder": "",
+            "description": "启用后，桌面端会根据下面的直连 / Relay 配置启动飞书机器人接入。"
+          },
+          "transport_preference": {
+            "label": "桌面传输偏好",
+            "placeholder": "选择传输模式",
+            "description": "自动模式优先直连；强制直连或强制 Relay 时不会静默切换到另一条链路。"
+          },
+          "relay_base_url": {
+            "label": "Relay 服务地址",
+            "placeholder": "https://your-relay.example.com",
+            "description": "仅在自动回退或强制 Relay 时使用。"
+          },
+          "relay_shared_secret": {
+            "label": "Relay 共享密钥",
+            "placeholder": "可选，Relay 模式使用",
+            "description": "与 deeting-relay 的 RELAY_SHARED_SECRET 保持一致。"
+          }
+        },
+        "wechat": {
+          "im_enabled": {
+            "label": "启用桌面 IM",
+            "placeholder": "",
+            "description": "启用后，桌面端会接收来自已连接微信账号的消息。"
+          },
+          "access_policy": {
+            "label": "访问策略",
+            "placeholder": "选择访问策略",
+            "description": "默认使用配对码模式；切换为白名单后，只允许已授权联系人进入本地 AI。"
+          },
+          "bot_model": {
+            "label": "回复模型",
+            "placeholder": "选择一个回复模型（可选）",
+            "description": "留空时使用桌面端当前默认的秘书/聊天模型。"
+          },
+          "bot_system_prompt": {
+            "label": "系统提示词",
+            "placeholder": "可选：定义该微信渠道的回复风格"
+          }
+        },
+        "dingtalk": {
+          "webhook_url": {
+            "label": "Webhook URL",
+            "placeholder": "https://oapi.dingtalk.com/robot/send?access_token=xxx"
+          }
+        },
+        "telegram": {
+          "bot_token": {
+            "label": "Bot Token",
+            "placeholder": "123456:ABC-DEF..."
+          },
+          "chat_id": {
+            "label": "Chat ID",
+            "placeholder": "-1001234567890"
+          }
+        },
+        "email": {
+          "smtp_host": {
+            "label": "SMTP 服务器",
+            "placeholder": "smtp.gmail.com"
+          },
+          "smtp_port": {
+            "label": "SMTP 端口",
+            "placeholder": "587"
+          },
+          "from_email": {
+            "label": "发件人邮箱",
+            "placeholder": "you@example.com"
+          },
+          "from_name": {
+            "label": "发件人名称",
+            "placeholder": "Deeting OS"
+          },
+          "to_email": {
+            "label": "收件人邮箱",
+            "placeholder": "target@example.com"
+          },
+          "username": {
+            "label": "SMTP 用户名",
+            "placeholder": "（可选）"
+          },
+          "password": {
+            "label": "SMTP 密码",
+            "placeholder": "（可选）"
+          }
+        },
+        "webhook": {
+          "webhook_url": {
+            "label": "Webhook URL",
+            "placeholder": "https://your-endpoint.com/hook"
+          }
+        }
+      },
+      "fieldOptions": {
+        "transport": {
+          "auto": "自动",
+          "direct": "直连",
+          "relay": "Relay"
+        },
+        "accessPolicy": {
+          "pairing": "配对码",
+          "allowlist": "白名单"
+        }
+      },
+      "feishuGroups": {
+        "base": {
+          "title": "基础通知",
+          "description": "用于主动推送通知；如果你只关心桌面机器人直连，可以先留空 Webhook。"
+        },
+        "desktopIm": {
+          "title": "桌面 IM",
+          "description": "决定桌面端是否直接接入飞书机器人，以及直连 / Relay 的选择方式。",
+          "disabledHint": "当前未启用桌面 IM，下面的直连与回复字段会暂时弱化显示。",
+          "preferenceHint": "当前偏好：{mode}"
+        },
+        "replyBehavior": {
+          "title": "回复行为",
+          "description": "控制机器人收到消息后的模型和回复风格。"
+        }
+      },
+      "runtimeHint": {
+        "currentDesktopIm": "当前桌面 IM: {mode}",
+        "disabled": "disabled"
+      },
+      "test": {
+        "success": "测试通知已发送成功",
+        "failed": "发送失败"
+      },
+      "wechat": {
+        "connectCard": {
+          "title": "微信扫码连接",
+          "description": "扫码后即可让普通微信账号连接当前桌面实例，不需要填写 Relay 地址或回调配置。",
+          "currentStatus": "当前状态："
+        },
+        "actions": {
+          "viewConnection": "查看连接状态",
+          "connect": "连接微信"
+        },
+        "status": {
+          "connected": "已连接",
+          "connecting": "连接中",
+          "error": "异常",
+          "disconnected": "未连接"
+        },
+        "errors": {
+          "stateAbnormal": "微信连接状态异常，请重新连接。",
+          "qrExpired": "二维码已过期，请重新发起连接。",
+          "connectFailed": "微信连接失败，请稍后重试。",
+          "disconnectFailed": "断开微信连接失败。"
+        }
+      },
+      "wechatPairing": {
+        "pendingPairings": "待处理配对 {count}",
+        "allowlistSize": "已授权联系人 {count}",
+        "codePlaceholder": "输入 6 位配对码",
+        "approve": "批准配对",
+        "reject": "拒绝配对",
+        "approved": "已批准联系人 {contactId}",
+        "approveFailed": "批准配对失败",
+        "rejected": "已拒绝该配对请求",
+        "rejectFailed": "拒绝配对失败"
+      },
+      "wechatDialog": {
+        "title": "微信连接",
+        "description": "在桌面端完成扫码绑定后，微信消息会直接进入本地 AI 运行时。",
+        "disconnected": {
+          "description": "扫码后将当前桌面实例与微信账号绑定。"
+        },
+        "qrReady": {
+          "qrAlt": "微信登录二维码",
+          "title": "请使用微信扫码登录",
+          "expiresAt": "二维码有效期至 {time}"
+        },
+        "connecting": {
+          "title": "正在等待扫码确认",
+          "description": "微信端确认后，桌面会自动完成绑定。"
+        },
+        "connected": {
+          "currentAccount": "当前已连接账号",
+          "defaultAccount": "已连接微信账号"
+        },
+        "actions": {
+          "connect": "连接微信",
+          "cancelScan": "取消扫码",
+          "reconnect": "重新连接",
+          "disconnect": "断开连接",
+          "tryAgain": "再试一次"
+        }
+      }
+    },
     "scanReviewsPage": {
       "executionSurface": {
         "recipe": "配方指导",

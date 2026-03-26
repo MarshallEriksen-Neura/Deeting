@@ -69,6 +69,291 @@
         "pairingRequired": "New contacts must complete pairing approval first"
       }
     },
+    "notificationChannelsPage": {
+      "title": "Notification Channels",
+      "subtitle": "Configure notification channels so key Hunt findings can be delivered by priority",
+      "actions": {
+        "addChannel": "Add Notification Channel",
+        "addFirstChannel": "Add Your First Channel",
+        "selectType": "Select Channel Type",
+        "cancel": "Cancel",
+        "expand": "Expand",
+        "collapse": "Collapse",
+        "delete": "Delete",
+        "confirmDelete": "Delete Channel",
+        "save": "Save",
+        "testSend": "Test Send"
+      },
+      "empty": {
+        "description": "No notification channels configured yet. Add one to receive Hunt results automatically.",
+        "addFirst": "Add Your First Channel"
+      },
+      "status": {
+        "enabled": "Enabled",
+        "disabled": "Disabled",
+        "lastUsedDate": "Last used {date}"
+      },
+      "deleteDialog": {
+        "title": "Delete {channel} channel?",
+        "description": "After deletion, this channel will stop receiving notifications."
+      },
+      "channelTypes": {
+        "feishu": {
+          "label": "Feishu",
+          "description": "Send notifications through Feishu bot and configure desktop IM access"
+        },
+        "wechat": {
+          "label": "WeChat",
+          "description": "Connect a regular WeChat account locally and route messages into desktop AI runtime"
+        },
+        "dingtalk": {
+          "label": "DingTalk",
+          "description": "Push notifications via DingTalk bot Webhook"
+        },
+        "telegram": {
+          "label": "Telegram",
+          "description": "Push notifications to a Telegram chat via Bot"
+        },
+        "email": {
+          "label": "Email",
+          "description": "Send notifications using SMTP"
+        },
+        "webhook": {
+          "label": "Webhook",
+          "description": "Push JSON payloads to custom HTTP endpoints"
+        }
+      },
+      "fields": {
+        "shared": {
+          "displayName": {
+            "label": "Display Name",
+            "placeholder": "My {channel}"
+          },
+          "loadingModels": "Loading available chat models..."
+        },
+        "feishu": {
+          "webhook_url": {
+            "label": "Webhook URL",
+            "placeholder": "https://open.feishu.cn/open-apis/bot/v2/hook/xxx"
+          },
+          "chat_ids": {
+            "label": "Group Chat IDs",
+            "placeholder": "oc_xxxxx\\noc_yyyyy",
+            "description": "One chat_id per line for multi-group routing."
+          },
+          "bot_open_id": {
+            "label": "Bot Open ID",
+            "placeholder": "ou_xxx (optional, for precise @ mentions)"
+          },
+          "bot_model": {
+            "label": "Reply Model",
+            "placeholder": "Select a reply model (optional)",
+            "description": "When empty, desktop default secretary/chat model is used."
+          },
+          "bot_system_prompt": {
+            "label": "System Prompt",
+            "placeholder": "Optional: define reply style for this channel"
+          },
+          "bot_app_id": {
+            "label": "Feishu App ID",
+            "placeholder": "cli_xxx (optional channel override)"
+          },
+          "bot_app_secret": {
+            "label": "Feishu App Secret",
+            "placeholder": "Optional channel override"
+          },
+          "im_enabled": {
+            "label": "Enable Desktop IM",
+            "placeholder": "",
+            "description": "When enabled, desktop starts Feishu bot access with direct/relay settings below."
+          },
+          "transport_preference": {
+            "label": "Desktop Transport Preference",
+            "placeholder": "Select transport mode",
+            "description": "Auto prefers direct; force direct or relay will not silently switch routes."
+          },
+          "relay_base_url": {
+            "label": "Relay Base URL",
+            "placeholder": "https://your-relay.example.com",
+            "description": "Used only in auto fallback mode or forced relay mode."
+          },
+          "relay_shared_secret": {
+            "label": "Relay Shared Secret",
+            "placeholder": "Optional, used by relay mode",
+            "description": "Keep this consistent with deeting-relay RELAY_SHARED_SECRET."
+          }
+        },
+        "wechat": {
+          "im_enabled": {
+            "label": "Enable Desktop IM",
+            "placeholder": "",
+            "description": "When enabled, desktop receives messages from the connected WeChat account."
+          },
+          "access_policy": {
+            "label": "Access Policy",
+            "placeholder": "Select access policy",
+            "description": "Pairing is default; allowlist mode only permits approved contacts."
+          },
+          "bot_model": {
+            "label": "Reply Model",
+            "placeholder": "Select a reply model (optional)",
+            "description": "When empty, desktop default secretary/chat model is used."
+          },
+          "bot_system_prompt": {
+            "label": "System Prompt",
+            "placeholder": "Optional: define reply style for this WeChat channel"
+          }
+        },
+        "dingtalk": {
+          "webhook_url": {
+            "label": "Webhook URL",
+            "placeholder": "https://oapi.dingtalk.com/robot/send?access_token=xxx"
+          }
+        },
+        "telegram": {
+          "bot_token": {
+            "label": "Bot Token",
+            "placeholder": "123456:ABC-DEF..."
+          },
+          "chat_id": {
+            "label": "Chat ID",
+            "placeholder": "-1001234567890"
+          }
+        },
+        "email": {
+          "smtp_host": {
+            "label": "SMTP Host",
+            "placeholder": "smtp.gmail.com"
+          },
+          "smtp_port": {
+            "label": "SMTP Port",
+            "placeholder": "587"
+          },
+          "from_email": {
+            "label": "From Email",
+            "placeholder": "you@example.com"
+          },
+          "from_name": {
+            "label": "From Name",
+            "placeholder": "Deeting OS"
+          },
+          "to_email": {
+            "label": "To Email",
+            "placeholder": "target@example.com"
+          },
+          "username": {
+            "label": "SMTP Username",
+            "placeholder": "(optional)"
+          },
+          "password": {
+            "label": "SMTP Password",
+            "placeholder": "(optional)"
+          }
+        },
+        "webhook": {
+          "webhook_url": {
+            "label": "Webhook URL",
+            "placeholder": "https://your-endpoint.com/hook"
+          }
+        }
+      },
+      "fieldOptions": {
+        "transport": {
+          "auto": "Auto",
+          "direct": "Direct",
+          "relay": "Relay"
+        },
+        "accessPolicy": {
+          "pairing": "Pairing Code",
+          "allowlist": "Allowlist"
+        }
+      },
+      "feishuGroups": {
+        "base": {
+          "title": "Base Notification",
+          "description": "For proactive notification delivery; if you only need desktop bot direct access, Webhook can stay empty."
+        },
+        "desktopIm": {
+          "title": "Desktop IM",
+          "description": "Controls whether desktop directly connects the Feishu bot and how direct/relay is chosen.",
+          "disabledHint": "Desktop IM is disabled, so direct and reply fields below are dimmed temporarily.",
+          "preferenceHint": "Current preference: {mode}"
+        },
+        "replyBehavior": {
+          "title": "Reply Behavior",
+          "description": "Controls model choice and reply style after receiving messages."
+        }
+      },
+      "runtimeHint": {
+        "currentDesktopIm": "Current Desktop IM: {mode}",
+        "disabled": "disabled"
+      },
+      "test": {
+        "success": "Test notification sent successfully",
+        "failed": "Send failed"
+      },
+      "wechat": {
+        "connectCard": {
+          "title": "WeChat QR Connect",
+          "description": "Scan once to connect a regular WeChat account to this desktop instance. No relay URL or callback config is required.",
+          "currentStatus": "Current status: "
+        },
+        "actions": {
+          "viewConnection": "View Connection",
+          "connect": "Connect WeChat"
+        },
+        "status": {
+          "connected": "Connected",
+          "connecting": "Connecting",
+          "error": "Error",
+          "disconnected": "Disconnected"
+        },
+        "errors": {
+          "stateAbnormal": "WeChat connection state is abnormal. Please reconnect.",
+          "qrExpired": "QR code expired. Please start pairing again.",
+          "connectFailed": "Failed to connect WeChat. Please try again later.",
+          "disconnectFailed": "Failed to disconnect WeChat."
+        }
+      },
+      "wechatPairing": {
+        "pendingPairings": "Pending pairings {count}",
+        "allowlistSize": "Approved contacts {count}",
+        "codePlaceholder": "Enter 6-digit pairing code",
+        "approve": "Approve Pairing",
+        "reject": "Reject Pairing",
+        "approved": "Approved contact {contactId}",
+        "approveFailed": "Failed to approve pairing",
+        "rejected": "Pairing request rejected",
+        "rejectFailed": "Failed to reject pairing"
+      },
+      "wechatDialog": {
+        "title": "WeChat Connection",
+        "description": "After QR bind is completed on desktop, WeChat messages are routed directly into local AI runtime.",
+        "disconnected": {
+          "description": "Scan to bind this desktop instance with your WeChat account."
+        },
+        "qrReady": {
+          "qrAlt": "WeChat login QR code",
+          "title": "Scan this code in WeChat",
+          "expiresAt": "QR code expires at {time}"
+        },
+        "connecting": {
+          "title": "Waiting for scan confirmation",
+          "description": "Desktop finishes binding automatically after confirmation in WeChat."
+        },
+        "connected": {
+          "currentAccount": "Connected account",
+          "defaultAccount": "Connected WeChat account"
+        },
+        "actions": {
+          "connect": "Connect WeChat",
+          "cancelScan": "Cancel Scan",
+          "reconnect": "Reconnect",
+          "disconnect": "Disconnect",
+          "tryAgain": "Try Again"
+        }
+      }
+    },
     "scanReviewsPage": {
       "executionSurface": {
         "recipe": "Recipe guidance",
