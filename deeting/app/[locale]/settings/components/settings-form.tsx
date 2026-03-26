@@ -42,6 +42,7 @@ import { SettingsNav, type SettingsSection } from "./settings-nav";
 import { type ModelGroup, type SettingsFormValues } from "../types";
 import {
   DeferredAgentSettingsCard,
+  DeferredDesktopBrowserAgentPanelCard,
   DeferredDesktopObjectStorageSettingsCard,
   DeferredDesktopSandboxSettingsCard,
   DeferredDesktopScoutSettingsCard,
@@ -651,6 +652,7 @@ export function SettingsForm({
           {activeSection === "agent" && (
             <div className="flex flex-col gap-5">
               <DeferredAgentSettingsCard isTauriRuntime={isTauriRuntime} />
+              <DeferredDesktopBrowserAgentPanelCard isTauriRuntime={isTauriRuntime} />
               <DeferredDesktopSandboxSettingsCard isTauriRuntime={isTauriRuntime} />
             </div>
           )}

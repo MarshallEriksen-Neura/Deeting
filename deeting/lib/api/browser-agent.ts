@@ -27,12 +27,31 @@ export const BrowserAgentOpenTabResultSchema = z.object({
   url: z.string(),
 })
 
+export const BrowserAgentNavigateTabResultSchema = z.object({
+  tabId: z.number().nullable().optional(),
+  url: z.string(),
+})
+
 export const BrowserAgentElementLocatorSchema = z.object({
   selector: z.string().optional(),
   text: z.string().optional(),
   role: z.string().optional(),
   tagName: z.string().optional(),
   index: z.number().optional(),
+})
+
+export const BrowserAgentDomQuerySchema = z.object({
+  selector: z.string().optional(),
+  textQuery: z.string().nullable().optional(),
+})
+
+export const BrowserAgentDomQueryResultSchema = z.object({
+  data: z.array(
+    z.object({
+      text: z.string().optional(),
+      html: z.string().optional(),
+    })
+  ),
 })
 
 export const BrowserAgentPageSnapshotSchema = z.object({
@@ -62,6 +81,9 @@ export const BrowserAgentPageSnapshotSchema = z.object({
 export type BrowserAgentBridgeStatus = z.infer<typeof BrowserAgentBridgeStatusSchema>
 export type BrowserAgentElementLocator = z.infer<typeof BrowserAgentElementLocatorSchema>
 export type BrowserAgentOpenTabResult = z.infer<typeof BrowserAgentOpenTabResultSchema>
+export type BrowserAgentNavigateTabResult = z.infer<typeof BrowserAgentNavigateTabResultSchema>
+export type BrowserAgentDomQuery = z.infer<typeof BrowserAgentDomQuerySchema>
+export type BrowserAgentDomQueryResult = z.infer<typeof BrowserAgentDomQueryResultSchema>
 export type BrowserAgentPageSnapshot = z.infer<typeof BrowserAgentPageSnapshotSchema>
 
 export async function getLocalBrowserAgentBridgeStatus(): Promise<BrowserAgentBridgeStatus> {
@@ -107,6 +129,17 @@ export async function openLocalBrowserAgentTab(
   return BrowserAgentOpenTabResultSchema.parse(data)
 }
 
+export async function navigateLocalBrowserAgentTab(
+  tabId: number,
+  url: string
+): Promise<BrowserAgentNavigateTabResult> {
+  if (!isTauriRuntime()) {
+    throw new Error("navigateLocalBrowserAgentTab is only supported in Tauri runtime")
+  }
+  const data = await invokeTauri<unknown>("navigate_local_browser_agent_tab", { tabId, url })
+  return BrowserAgentNavigateTabResultSchema.parse(data)
+}
+
 export async function getLocalBrowserAgentPageSnapshot(
   tabId: number
 ): Promise<BrowserAgentPageSnapshot> {
@@ -115,6 +148,22 @@ export async function getLocalBrowserAgentPageSnapshot(
   }
   const data = await invokeTauri<unknown>("get_local_browser_agent_page_snapshot", { tabId })
   return BrowserAgentPageSnapshotSchema.parse(data)
+}
+
+export async function queryLocalBrowserAgentDom(
+  tabId: number,
+  query: BrowserAgentDomQuery
+): Promise<BrowserAgentDomQueryResult> {
+  if (!isTauriRuntime()) {
+    throw new Error("queryLocalBrowserAgentDom is only supported in Tauri runtime")
+  }
+  const normalized = BrowserAgentDomQuerySchema.parse(query)
+  const data = await invokeTauri<unknown>("query_local_browser_agent_dom", {
+    tabId,
+    selector: normalized.selector ?? null,
+    textQuery: normalized.textQuery ?? null,
+  })
+  return BrowserAgentDomQueryResultSchema.parse(data)
 }
 
 export async function clickLocalBrowserAgentElement(

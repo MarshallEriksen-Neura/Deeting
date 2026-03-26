@@ -15,6 +15,14 @@ export const DeferredDesktopSandboxSettingsCard = dynamic(
   { ssr: false }
 )
 
+export const DeferredDesktopBrowserAgentPanelCard = dynamic(
+  () =>
+    import("./desktop-browser-agent-panel-card").then(
+      (mod) => mod.DesktopBrowserAgentPanelCard
+    ),
+  { ssr: false }
+)
+
 export const DeferredDesktopObjectStorageSettingsCard = dynamic(
   () =>
     import("./desktop-object-storage-settings-card").then(
