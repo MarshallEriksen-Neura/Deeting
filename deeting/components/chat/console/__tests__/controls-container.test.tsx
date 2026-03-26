@@ -1,7 +1,9 @@
+import "@testing-library/jest-dom"
 import React from "react"
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import ControlsContainer from "@/components/chat/console/controls-container"
 import { useChatStore } from "@/store/chat-store"
+import { useBrowserModeStore } from "@/store/browser-mode-store"
 import { useChatMessaging } from "@/hooks/chat/use-chat-messaging"
 
 jest.mock("next-intl", () => ({
@@ -32,6 +34,10 @@ jest.mock("@/hooks/chat/use-chat-messaging", () => ({
   useChatMessaging: jest.fn(),
 }))
 
+jest.mock("@/lib/api/custom-task-agents", () => ({
+  listCustomTaskAgents: jest.fn().mockResolvedValue([]),
+}))
+
 const mockGetDesktopConfig = jest.fn()
 const mockSetDesktopConfig = jest.fn()
 
@@ -39,6 +45,7 @@ jest.mock("@/lib/api/desktop-config", () => ({
   DESKTOP_CONFIG_KEYS: {
     workerWorkflowRouting: "workflow.route_worker_through_workflow",
   },
+  isTauriRuntime: () => true,
   getDesktopConfig: (...args: unknown[]) => mockGetDesktopConfig(...args),
   setDesktopConfig: (...args: unknown[]) => mockSetDesktopConfig(...args),
 }))
@@ -74,6 +81,7 @@ describe("ControlsContainer (web)", () => {
       models: [{ id: "model-1", provider_model_id: "model-1" }],
       selectedAssistant: null,
     })
+    useBrowserModeStore.getState().reset()
 
     mockGetDesktopConfig.mockResolvedValue(null)
     mockSetDesktopConfig.mockResolvedValue(undefined)
@@ -178,6 +186,9 @@ describe("ControlsContainer (web)", () => {
     const toggle = await screen.findByRole("switch", {
       name: "controls.workflowRouting",
     })
+    await waitFor(() => {
+      expect(toggle).not.toBeDisabled()
+    })
     fireEvent.click(toggle)
 
     await waitFor(() => {
@@ -186,5 +197,26 @@ describe("ControlsContainer (web)", () => {
         "true"
       )
     })
+  })
+
+  it("renders the browser mode confirmation bar when browser mode is pending confirmation", () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    Object.defineProperty(window, "__TAURI__", {
+      configurable: true,
+      value: {},
+    })
+    act(() => {
+      useBrowserModeStore.getState().requestBrowserMode({
+        prompt: "打开 github 并查看 notifications",
+        source: "chat",
+      })
+    })
+
+    render(<ControlsContainer />)
+
+    expect(screen.getByText("browserMode.confirmation.title")).toBeInTheDocument()
+    expect(
+      screen.getByText("打开 github 并查看 notifications")
+    ).toBeInTheDocument()
   })
 })

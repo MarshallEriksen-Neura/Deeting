@@ -2,7 +2,7 @@
 
 import { create } from "zustand"
 
-export type WorkspaceViewType = "native-canvas" | "plugin-iframe"
+export type WorkspaceViewType = "native-canvas" | "plugin-iframe" | "browser-mode"
 
 export interface BaseWorkspaceView {
   id: string
@@ -22,7 +22,12 @@ export interface PluginIframeView extends BaseWorkspaceView {
   content: { url: string }
 }
 
-export type WorkspaceView = NativeCanvasView | PluginIframeView
+export interface BrowserModeView extends BaseWorkspaceView {
+  type: "browser-mode"
+  content: { source: string }
+}
+
+export type WorkspaceView = NativeCanvasView | PluginIframeView | BrowserModeView
 
 interface WorkspaceState {
   views: WorkspaceView[]
@@ -57,6 +62,16 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
               lastActiveAt: now,
             }
           }
+          if (view.type === "browser-mode") {
+            const browserModeView = view as Omit<BrowserModeView, "lastActiveAt">
+            return {
+              ...item,
+              ...browserModeView,
+              type: "browser-mode" as const,
+              content: browserModeView.content,
+              lastActiveAt: now,
+            }
+          }
           const canvasView = view as Omit<NativeCanvasView, "lastActiveAt">
           return {
             ...item,
@@ -86,6 +101,14 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
               keepAlive: view.keepAlive ?? true,
               lastActiveAt: now,
             }
+          : view.type === "browser-mode"
+            ? {
+                ...(view as Omit<BrowserModeView, "lastActiveAt">),
+                type: "browser-mode",
+                content: (view as Omit<BrowserModeView, "lastActiveAt">).content,
+                keepAlive: view.keepAlive ?? true,
+                lastActiveAt: now,
+              }
           : {
               ...(view as Omit<NativeCanvasView, "lastActiveAt">),
               type: "native-canvas",

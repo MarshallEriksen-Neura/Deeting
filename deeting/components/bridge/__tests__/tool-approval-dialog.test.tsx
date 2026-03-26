@@ -6,6 +6,7 @@ import {
   createBridgeToolApproval,
   useBridgeApprovalStore,
 } from "@/lib/chat/bridge-approval-store"
+import { createBridgeToolApproval as createBrowserAwareApproval } from "@/lib/chat/tool-approval"
 import { invoke } from "@tauri-apps/api/core"
 import { bridgeCallTool } from "@/lib/api/bridge"
 import { toast } from "sonner"
@@ -380,9 +381,34 @@ describe("ToolApprovalDialog", () => {
       screen.getByText("当前 AI 正请求在本地执行一个高风险工具。").parentElement
     ).toHaveClass("max-h-[60vh]", "overflow-y-auto")
     expect(screen.getByText("参数").nextElementSibling).toHaveClass(
-      "max-h-[40vh]",
+      "max-h-[35vh]",
       "overflow-y-auto"
     )
+  })
+
+  it("renders a browser-specific human-readable summary when the approval is for browser actions", () => {
+    act(() => {
+      useBridgeApprovalStore.getState().setPending(
+        createBrowserAwareApproval({
+          approval_token: "approval-browser-dialog-1",
+          tool_name: "browser_click",
+          arguments: {
+            tab_id: 42,
+            target: { text: "Continue" },
+          },
+          meta: {
+            call_id: "call-browser-dialog-1",
+          },
+        })
+      )
+    })
+
+    render(<ToolApprovalDialog />)
+
+    expect(screen.getByText("说明")).toBeInTheDocument()
+    expect(
+      screen.getByText('"Click the "Continue" element in the browser."')
+    ).toBeInTheDocument()
   })
 
   it("uses translated rejection copy when the user denies execution", async () => {

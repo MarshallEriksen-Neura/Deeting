@@ -86,6 +86,45 @@
       "blockedDesc": "This URL is not on the allowlist.",
       "nativeDesc": "Native view placeholder. Content will be wired later."
     },
+    "browserMode": {
+      "confirmation": {
+        "title": "This task can use browser assistance",
+        "description": "Deeting can connect to your local Chrome extension and keep browser actions approval-aware.",
+        "confirm": "Enter Browser Mode",
+        "reject": "Not now",
+        "dismiss": "Dismiss browser mode suggestion"
+      },
+      "panel": {
+        "title": "Browser Mode",
+        "description": "Live browser session state for the current chat task.",
+        "connectionLabel": "Connection",
+        "connectionUnknown": "Waiting for browser bridge state",
+        "pageLabel": "Current page",
+        "pageEmpty": "No page selected yet",
+        "lastActionLabel": "Latest action",
+        "lastActionEmpty": "No browser action has run yet",
+        "requestLabel": "Requested task",
+        "pause": "Pause",
+        "reconnect": "Reconnect",
+        "reconnectContinue": "Reconnect and continue",
+        "end": "End",
+        "endTask": "End browser task",
+        "pausedStatus": "Paused by user",
+        "reconnectingStatus": "Reconnect requested",
+        "endedSummary": "Browser mode ended by user",
+        "recoveryTitle": "Browser connection interrupted",
+        "recoveryDescription": "Browser actions are paused until the extension reconnects. Reconnect before continuing this task.",
+        "status": {
+          "idle": "Idle",
+          "pending_confirmation": "Waiting for confirmation",
+          "connecting": "Connecting",
+          "active": "Active",
+          "paused": "Paused",
+          "recovering": "Recovering",
+          "ended": "Ended"
+        }
+      }
+    },
     "input": {
       "placeholder": "Message {name}...",
       "image": {

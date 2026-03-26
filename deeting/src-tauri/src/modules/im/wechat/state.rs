@@ -1,6 +1,8 @@
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::sync::Arc;
 
+use base64::Engine;
 use log::warn;
 use qrcodegen::{QrCode, QrCodeEcc};
 use sqlx::sqlite::SqlitePool;
@@ -378,9 +380,28 @@ fn qr_data_uri_from_content(content: &str) -> Option<String> {
     }
 
     let qr = QrCode::encode_text(trimmed, QrCodeEcc::Medium).ok()?;
-    let svg = qr.to_svg_string(4);
+    let svg = qr_to_svg_string(&qr, 4);
     let encoded = base64::engine::general_purpose::STANDARD.encode(svg.as_bytes());
     Some(format!("data:image/svg+xml;base64,{}", encoded))
+}
+
+fn qr_to_svg_string(qr: &QrCode, border: i32) -> String {
+    let border = border.max(0);
+    let size = qr.size();
+    let dimension = size + border * 2;
+    let mut path = String::new();
+    for y in 0..size {
+        for x in 0..size {
+            if qr.get_module(x, y) {
+                let _ = write!(&mut path, "M{},{}h1v1h-1z", x + border, y + border);
+            }
+        }
+    }
+
+    format!(
+        "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 {0} {0}' shape-rendering='crispEdges'><rect width='100%' height='100%' fill='#fff'/><path d='{1}' fill='#000'/></svg>",
+        dimension, path
+    )
 }
 
 #[cfg(test)]

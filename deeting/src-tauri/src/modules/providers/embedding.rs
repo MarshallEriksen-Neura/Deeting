@@ -72,9 +72,10 @@ impl EmbeddingService {
             })?;
 
         if uses_platform_proxy(connection.credential_source.as_deref()) {
-            return self
-                .embed_text_via_platform_proxy(embedding_model, text)
-                .await;
+            return Err(ProviderError::Validation(
+                "platform credits embedding runtime has been disabled; switch embedding model to local credentials"
+                    .to_string(),
+            ));
         }
 
         let instance = self
@@ -552,30 +553,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn platform_embedding_model_smoke_uses_internal_proxy_with_auth_token() {
+    async fn platform_embedding_model_smoke_returns_disabled_error_without_proxy_request() {
         let (base_url, capture, server_handle) = start_mock_platform_embedding_server().await;
-        let (service, model, _mcp_store) = create_platform_embedding_service(base_url).await;
+        let (service, _model, _mcp_store) = create_platform_embedding_service(base_url).await;
 
-        let vector = service
+        let err = service
             .embed_text("hello world")
             .await
-            .expect("platform embedding request should succeed");
-
-        assert_eq!(vector, vec![0.11, 0.22, 0.33]);
-
-        let captured = capture
-            .lock()
-            .expect("lock capture state")
-            .clone()
-            .expect("captured request");
-        assert_eq!(captured.path, "/api/v1/internal/embeddings");
-        assert_eq!(
-            captured.authorization.as_deref(),
-            Some("Bearer desktop-test-token")
+            .expect_err("platform embedding runtime should be disabled");
+        assert!(
+            err.to_string()
+                .contains("platform credits embedding runtime has been disabled"),
+            "unexpected error: {err}"
         );
-        assert_eq!(captured.payload["model"], model.model_id);
-        assert_eq!(captured.payload["input"], "hello world");
-        assert_eq!(captured.payload["provider_model_id"], model.id.to_string());
+
+        let captured = capture.lock().expect("lock capture state").clone();
+        assert!(
+            captured.is_none(),
+            "proxy request should not be issued when runtime is disabled"
+        );
 
         server_handle.abort();
     }

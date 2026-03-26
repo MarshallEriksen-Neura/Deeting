@@ -3,10 +3,10 @@
 import type { MessageBlock, ToolResultBlock } from "@/lib/chat/message-protocol"
 import type { Message } from "@/lib/chat/message-types"
 import {
-  createBridgeToolApproval,
   type BridgeToolPendingApproval,
   useBridgeApprovalStore,
 } from "@/lib/chat/bridge-approval-store"
+import { createBridgeToolApproval as createRawBridgeToolApproval } from "@/lib/chat/bridge-approval-store"
 
 type ToolApprovalPayload = {
   approval_token: string
@@ -51,6 +51,92 @@ function asStringArray(value: unknown): string[] | undefined {
     .map((item) => (typeof item === "string" ? item.trim() : ""))
     .filter((item) => item.length > 0)
   return items.length > 0 ? items : undefined
+}
+
+function describeBrowserTarget(value: unknown): string {
+  const target = toRecord(value)
+  if (!target) return "the targeted element in the browser"
+
+  const text = asTrimmedString(target.text)
+  if (text) {
+    return `the "${text}" element in the browser`
+  }
+
+  const selector = asTrimmedString(target.selector)
+  if (selector) {
+    return `the element matching selector "${selector}"`
+  }
+
+  const role = asTrimmedString(target.role)
+  if (role) {
+    return `the ${role} element in the browser`
+  }
+
+  const tagName =
+    asTrimmedString(target.tag_name) ?? asTrimmedString(target.tagName)
+  if (tagName) {
+    return `the <${tagName}> element in the browser`
+  }
+
+  const index = typeof target.index === "number" ? target.index : null
+  if (index != null && Number.isFinite(index)) {
+    return `targeted browser element #${index + 1}`
+  }
+
+  return "the targeted element in the browser"
+}
+
+export function deriveApprovalDescription(
+  toolName: string,
+  argumentsValue: Record<string, unknown>,
+  explicitDescription?: string
+): string | undefined {
+  const provided = asTrimmedString(explicitDescription)
+  if (provided) return provided
+
+  switch (toolName) {
+    case "browser_open_tab": {
+      const url = asTrimmedString(argumentsValue.url)
+      return url ? `Open a new browser tab to "${url}".` : "Open a new browser tab."
+    }
+    case "browser_get_page_snapshot": {
+      const tabId =
+        typeof argumentsValue.tab_id === "number"
+          ? argumentsValue.tab_id
+          : typeof argumentsValue.tabId === "number"
+            ? argumentsValue.tabId
+            : null
+      return tabId != null
+        ? `Read the current page content from browser tab #${tabId}.`
+        : "Read the current page content from the browser."
+    }
+    case "browser_click":
+      return `Click ${describeBrowserTarget(argumentsValue.target)}.`
+    case "browser_type": {
+      const text = asTrimmedString(argumentsValue.text)
+      const target = describeBrowserTarget(argumentsValue.target)
+      return text
+        ? `Type "${text}" into ${target}.`
+        : `Type into ${target}.`
+    }
+    case "browser_agent_status":
+      return "Check the local browser bridge connection state."
+    default:
+      return undefined
+  }
+}
+
+export function createBridgeToolApproval(
+  approval: Omit<BridgeToolPendingApproval, "kind">
+): BridgeToolPendingApproval {
+  return createRawBridgeToolApproval({
+    ...approval,
+    description: deriveApprovalDescription(
+      approval.tool_name,
+      approval.arguments,
+      approval.description
+    ),
+  })
 }
 
 export function extractToolApprovalPayload(result: unknown): ToolApprovalPayload | null {

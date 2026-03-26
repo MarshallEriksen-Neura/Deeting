@@ -8,8 +8,7 @@ use crate::modules::ai_upstream::gateway_log_recorder::{
 use crate::modules::ai_upstream::types::LocalModelConnection;
 use crate::modules::providers::protocols::infer_protocol_family;
 use crate::modules::providers::request_runtime::{
-    calculate_retry_backoff_ms, send_prepared_json_request_with_retry,
-    should_retry_transport_error, should_retry_upstream_status, UpstreamRetryPolicy,
+    send_prepared_json_request_with_retry, UpstreamRetryPolicy,
 };
 use crate::state::AppState;
 use mcp_core::types::LocalChatInputMessage;
@@ -307,140 +306,6 @@ async fn select_model_by_bandit(
         .unwrap_or_else(|| models[0].clone())
 }
 
-async fn request_platform_chat_via_proxy(
-    app_state: &AppState,
-    model_id: &str,
-    messages: Vec<LocalChatInputMessage>,
-    tools: Option<serde_json::Value>,
-    temperature: Option<f32>,
-    max_tokens: Option<u32>,
-    trace_id: Option<&str>,
-    session_id: Option<&str>,
-) -> Result<serde_json::Value, String> {
-    let base_url = app_state.mcp.transport.cloud_base_url.read().await.clone();
-    let base_url = base_url.trim().trim_end_matches('/');
-    if base_url.is_empty() {
-        return Err(
-            "cloud API base URL not configured; set api.base_url for platform models".to_string(),
-        );
-    }
-    let url = format!("{}/api/v1/credits/chat/completions", base_url);
-    let serialized_messages = serialize_local_chat_messages(messages);
-    let mut body = serde_json::json!({
-        "model": model_id.trim(),
-        "messages": serialized_messages,
-        "stream": false
-    });
-    if let Some(t) = temperature {
-        body["temperature"] = serde_json::json!(t);
-    }
-    if let Some(m) = max_tokens {
-        body["max_tokens"] = serde_json::json!(m);
-    }
-    if let Some(ref t) = tools {
-        body["tools"] = t.clone();
-    }
-    if let Some(id) = trace_id.filter(|value| !value.trim().is_empty()) {
-        body["trace_id"] = serde_json::json!(id);
-    }
-    if let Some(id) = session_id.filter(|value| !value.trim().is_empty()) {
-        body["session_id"] = serde_json::json!(id);
-    }
-
-    let auth_header = app_state
-        .mcp
-        .store
-        .get_desktop_config("auth.token")
-        .await
-        .ok()
-        .flatten()
-        .and_then(|token| {
-            let token = token.trim().to_string();
-            if token.is_empty() {
-                None
-            } else {
-                Some(format!("Bearer {}", token))
-            }
-        });
-    let retry_policy = UpstreamRetryPolicy::default();
-    let client = reqwest::Client::new();
-    let call_start = std::time::Instant::now();
-    let mut retry_count = 0i64;
-
-    let (status, raw_text, raw_json) = loop {
-        let mut request = client
-            .post(&url)
-            .json(&body)
-            .header("Content-Type", "application/json");
-        if let Some(token) = auth_header.as_deref() {
-            request = request.header("Authorization", token);
-        }
-        match request.send().await {
-            Ok(response) => {
-                let status = response.status();
-                let raw_text = response.text().await.map_err(to_string)?;
-                let raw_json = serde_json::from_str::<serde_json::Value>(&raw_text).ok();
-                if retry_count < retry_policy.max_retries as i64
-                    && should_retry_upstream_status(status)
-                {
-                    let delay_ms = calculate_retry_backoff_ms(
-                        retry_count as u32,
-                        retry_policy.base_delay_ms,
-                        retry_policy.max_delay_ms,
-                    );
-                    retry_count += 1;
-                    if delay_ms > 0 {
-                        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
-                    }
-                    continue;
-                }
-                break (status, raw_text, raw_json);
-            }
-            Err(err) => {
-                if retry_count < retry_policy.max_retries as i64
-                    && should_retry_transport_error(&err)
-                {
-                    let delay_ms = calculate_retry_backoff_ms(
-                        retry_count as u32,
-                        retry_policy.base_delay_ms,
-                        retry_policy.max_delay_ms,
-                    );
-                    retry_count += 1;
-                    if delay_ms > 0 {
-                        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
-                    }
-                    continue;
-                }
-                return Err(err.to_string());
-            }
-        }
-    };
-    if !status.is_success() {
-        return Err(extract_upstream_error_message(
-            status,
-            raw_json.as_ref(),
-            &raw_text,
-        ));
-    }
-    let out = raw_json.ok_or_else(|| {
-        format!(
-            "credits proxy returned non-json (status={}): {}",
-            status.as_u16(),
-            truncate_upstream_body(&raw_text, 300)
-        )
-    })?;
-    let raw_ttft_ms = extract_ttft_ms_from_response(&out);
-    let mut normalized = normalize_chat_completion_response(out);
-    let normalized_ttft_ms = extract_ttft_ms_from_response(&normalized).or(raw_ttft_ms);
-    inject_runtime_metrics(
-        &mut normalized,
-        call_start.elapsed().as_millis() as i64,
-        normalized_ttft_ms,
-        retry_count + 1,
-    );
-    Ok(normalized)
-}
-
 pub(crate) async fn request_provider_chat_completion(
     app_state: &AppState,
     provider_model_id: &str,
@@ -450,7 +315,7 @@ pub(crate) async fn request_provider_chat_completion(
     temperature: Option<f32>,
     max_tokens: Option<u32>,
     trace_id: Option<&str>,
-    session_id: Option<&str>,
+    _session_id: Option<&str>,
 ) -> Result<serde_json::Value, String> {
     let provider_model_uuid = Uuid::parse_str(provider_model_id).map_err(to_string)?;
     let model = app_state
@@ -480,22 +345,9 @@ pub(crate) async fn request_provider_chat_completion(
         .map(|source| source.eq_ignore_ascii_case("platform"))
         .unwrap_or(false)
     {
-        let effective_model = if model_id.trim().is_empty() {
-            model.model_id.as_str()
-        } else {
-            model_id
-        };
-        return request_platform_chat_via_proxy(
-            app_state,
-            effective_model,
-            messages,
-            tools,
-            temperature,
-            max_tokens,
-            trace_id,
-            session_id,
-        )
-        .await;
+        return Err(
+            "platform credits runtime has been disabled; switch this model instance to local credentials".to_string(),
+        );
     }
     let effective_model = if model_id.trim().is_empty() {
         model.model_id.clone()

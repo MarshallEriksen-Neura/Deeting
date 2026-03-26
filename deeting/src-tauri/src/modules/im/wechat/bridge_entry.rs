@@ -4,7 +4,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 
 use super::api::{fetch_login_qr, fetch_qr_status, get_updates, send_text_message};
 use super::bridge_protocol::{
-    BridgeEnvelope, BridgeResponseEnvelope, BridgeRequest, BridgeResponsePayload,
+    BridgeEnvelope, BridgeRequest, BridgeResponseEnvelope, BridgeResponsePayload,
 };
 use super::types::{
     WechatOutboundMessage, WechatOutboundMessageItem, WechatOutboundTextItem,
@@ -56,12 +56,13 @@ async fn handle_request(
                 Err(message) => BridgeResponsePayload::Error { message },
             }
         }
-        BridgeRequest::FetchQrStatus { base_url, qrcode_id } => {
-            match fetch_qr_status(client, base_url.as_str(), qrcode_id.as_str()).await {
-                Ok(data) => BridgeResponsePayload::FetchQrStatus { data },
-                Err(message) => BridgeResponsePayload::Error { message },
-            }
-        }
+        BridgeRequest::FetchQrStatus {
+            base_url,
+            qrcode_id,
+        } => match fetch_qr_status(client, base_url.as_str(), qrcode_id.as_str()).await {
+            Ok(data) => BridgeResponsePayload::FetchQrStatus { data },
+            Err(message) => BridgeResponsePayload::Error { message },
+        },
         BridgeRequest::GetUpdates {
             base_url,
             token,
