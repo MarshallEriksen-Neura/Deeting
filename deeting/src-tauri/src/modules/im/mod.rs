@@ -13,6 +13,7 @@ pub(crate) mod handlers;
 mod manager;
 mod profile;
 pub mod runtime;
+mod text_runtime;
 mod types;
 
 pub mod feishu;

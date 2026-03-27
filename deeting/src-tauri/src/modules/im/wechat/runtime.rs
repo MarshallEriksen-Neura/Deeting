@@ -1,21 +1,10 @@
-use std::collections::HashMap;
-
 use log::info;
 
-use crate::modules::im::handlers::{
-    build_direct_card_action_outcome, build_text_approval_prompt, generate_local_chat_reply_outcome,
-};
-use crate::modules::im::{ImConnectionProfile, MessageContent};
+use crate::modules::im::text_runtime::TextImConversationRuntime;
+use crate::modules::im::ImConnectionProfile;
 use crate::state::AppState;
 
 use super::types::{WECHAT_ITEM_TYPE_TEXT, WECHAT_MESSAGE_TYPE_USER};
-
-#[derive(Debug, Clone)]
-struct PendingWechatTextApproval {
-    approval_token: String,
-    call_id: Option<String>,
-    tool_name: String,
-}
 
 pub async fn run_wechat_direct_profile_worker(
     app_state: AppState,
@@ -26,7 +15,7 @@ pub async fn run_wechat_direct_profile_worker(
         return Err("wechat account is not connected".to_string());
     };
 
-    let mut pending_text_approvals = HashMap::<String, PendingWechatTextApproval>::new();
+    let mut text_runtime = TextImConversationRuntime::default();
 
     loop {
         let response = app_state
@@ -117,149 +106,39 @@ pub async fn run_wechat_direct_profile_worker(
                 }
             }
 
-            if let Some(pending) = pending_text_approvals.get(contact_id).cloned() {
-                if let Some(approved) = parse_text_approval_command(text.as_str()) {
-                    pending_text_approvals.remove(contact_id);
-                    let outcome = build_direct_card_action_outcome(
-                        &app_handle,
-                        &app_state,
-                        if approved {
-                            "approve_tool"
-                        } else {
-                            "reject_tool"
-                        },
-                        &serde_json::json!({
-                            "approval_token": pending.approval_token,
-                            "call_id": pending.call_id,
-                            "tool_name": pending.tool_name,
-                        }),
-                    )
-                    .await?;
-                    let mut sent_any = false;
-                    for follow_up in outcome.follow_up_messages {
-                        if let MessageContent::Text { text } = follow_up {
+            text_runtime
+                .handle_incoming_text(
+                    &app_state,
+                    &app_handle,
+                    &profile,
+                    contact_id,
+                    text.as_str(),
+                    "微信",
+                    |reply_text| {
+                        let app_state = app_state.clone();
+                        let base_url = account.base_url.clone();
+                        let token = account.token.clone();
+                        let context_token = context_token.clone();
+                        let contact_id = contact_id.to_string();
+                        let text = reply_text;
+                        async move {
                             send_text(
                                 &app_state,
-                                &account.base_url,
-                                &account.token,
-                                contact_id,
+                                base_url.as_str(),
+                                token.as_str(),
+                                contact_id.as_str(),
                                 text.as_str(),
                                 context_token.as_str(),
                             )
-                            .await?;
-                            sent_any = true;
+                            .await
                         }
-                    }
-                    if !sent_any {
-                        send_text(
-                            &app_state,
-                            &account.base_url,
-                            &account.token,
-                            contact_id,
-                            if approved {
-                                "已批准，当前流程继续执行。"
-                            } else {
-                                "已拒绝，本次工具调用不会继续执行。"
-                            },
-                            context_token.as_str(),
-                        )
-                        .await?;
-                    }
-                    continue;
-                }
-
-                send_text(
-                    &app_state,
-                    &account.base_url,
-                    &account.token,
-                    contact_id,
-                    "当前有待审批操作，请先回复 `1` 确认执行，或回复 `0` 拒绝执行。",
-                    context_token.as_str(),
-                )
-                .await?;
-                continue;
-            }
-
-            let session_id = format!("im:{}:chat:{}", profile.id, contact_id);
-            send_text(
-                &app_state,
-                &account.base_url,
-                &account.token,
-                contact_id,
-                "收到，正在处理中…",
-                context_token.as_str(),
-            )
-            .await?;
-
-            let Some(reply_outcome) = generate_local_chat_reply_outcome(
-                &app_state,
-                &app_handle,
-                text.as_str(),
-                session_id.as_str(),
-            )
-            .await?
-            else {
-                continue;
-            };
-
-            if let Some(approval_request) = reply_outcome.approval_request {
-                let approval_prompt = build_text_approval_prompt(&approval_request);
-                pending_text_approvals.insert(
-                    contact_id.to_string(),
-                    PendingWechatTextApproval {
-                        approval_token: approval_request.approval_token,
-                        call_id: approval_request.call_id,
-                        tool_name: approval_request.tool_name,
                     },
-                );
-                send_text(
-                    &app_state,
-                    &account.base_url,
-                    &account.token,
-                    contact_id,
-                    approval_prompt.as_str(),
-                    context_token.as_str(),
                 )
                 .await?;
-                continue;
-            }
-
-            match reply_outcome.content {
-                MessageContent::Text { text } => {
-                    send_text(
-                        &app_state,
-                        &account.base_url,
-                        &account.token,
-                        contact_id,
-                        text.as_str(),
-                        context_token.as_str(),
-                    )
-                    .await?;
-                }
-                _ => {
-                    send_text(
-                        &app_state,
-                        &account.base_url,
-                        &account.token,
-                        contact_id,
-                        "当前微信通道暂不支持该回复格式，请在桌面端查看完整结果。",
-                        context_token.as_str(),
-                    )
-                    .await?;
-                }
-            }
         }
 
         app_state.wechat.clear_last_error().await;
         info!("wechat_runtime_tick profile={}", profile.id);
-    }
-}
-
-fn parse_text_approval_command(text: &str) -> Option<bool> {
-    match text.trim() {
-        "1" => Some(true),
-        "0" => Some(false),
-        _ => None,
     }
 }
 
@@ -294,7 +173,7 @@ fn markdown_to_plain_text(input: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_text_approval_command;
+    use crate::modules::im::text_runtime::parse_text_approval_command;
 
     #[test]
     fn parse_text_approval_command_accepts_numeric_choices() {

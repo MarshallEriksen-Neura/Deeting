@@ -273,7 +273,9 @@ impl BrowserAgentService {
             return Err("browser retry_with_relocate requires a positive tab id".to_string());
         }
         if locator_is_empty(&target) {
-            return Err("browser retry_with_relocate requires a non-empty target locator".to_string());
+            return Err(
+                "browser retry_with_relocate requires a non-empty target locator".to_string(),
+            );
         }
         if max_attempts <= 0 {
             return Err("browser retry_with_relocate requires a positive max_attempts".to_string());
@@ -282,7 +284,9 @@ impl BrowserAgentService {
             return Err("browser retry_with_relocate requires a positive timeout".to_string());
         }
         if poll_interval_ms <= 0 {
-            return Err("browser retry_with_relocate requires a positive poll interval".to_string());
+            return Err(
+                "browser retry_with_relocate requires a positive poll interval".to_string(),
+            );
         }
 
         let action_kind = parse_retry_action_kind(action_kind, text)?;
@@ -297,12 +301,13 @@ impl BrowserAgentService {
                 let snapshot = self.get_page_snapshot(store, tab_id).await?;
                 last_snapshot_summary = snapshot_summary(snapshot);
 
-                let wait_result =
-                    self.wait_for_element(store, tab_id, target.clone(), timeout_ms, poll_interval_ms)
-                        .await?;
+                let wait_result = self
+                    .wait_for_element(store, tab_id, target.clone(), timeout_ms, poll_interval_ms)
+                    .await?;
                 if !result_ok(&wait_result) {
-                    let error = extract_result_error(&wait_result)
-                        .unwrap_or_else(|| "browser wait_for_element did not match the target".to_string());
+                    let error = extract_result_error(&wait_result).unwrap_or_else(|| {
+                        "browser wait_for_element did not match the target".to_string()
+                    });
                     return Ok(json!({
                         "ok": false,
                         "attempts": attempts,
@@ -470,7 +475,10 @@ pub(crate) fn locator_is_empty(locator: &BrowserAgentElementLocator) -> bool {
         || locator.index.is_some())
 }
 
-fn parse_retry_action_kind(action_kind: &str, text: Option<&str>) -> Result<BrowserRetryActionKind, String> {
+fn parse_retry_action_kind(
+    action_kind: &str,
+    text: Option<&str>,
+) -> Result<BrowserRetryActionKind, String> {
     match action_kind.trim() {
         "click" => Ok(BrowserRetryActionKind::Click),
         "type" => {
@@ -490,7 +498,10 @@ fn parse_retry_action_kind(action_kind: &str, text: Option<&str>) -> Result<Brow
 }
 
 fn requires_fresh_approval_after_recovery(action_kind: &BrowserRetryActionKind) -> bool {
-    matches!(action_kind, BrowserRetryActionKind::Click | BrowserRetryActionKind::Type)
+    matches!(
+        action_kind,
+        BrowserRetryActionKind::Click | BrowserRetryActionKind::Type
+    )
 }
 
 fn is_recoverable_browser_action_error(error: &str) -> bool {
@@ -509,7 +520,8 @@ fn result_ok(value: &serde_json::Value) -> bool {
 }
 
 fn extract_result_error(value: &serde_json::Value) -> Option<String> {
-    value.get("error")
+    value
+        .get("error")
         .and_then(serde_json::Value::as_str)
         .map(str::to_string)
 }
@@ -589,17 +601,25 @@ mod tests {
 
     #[test]
     fn click_and_type_require_fresh_approval_after_recovery() {
-        assert!(requires_fresh_approval_after_recovery(&BrowserRetryActionKind::Click));
-        assert!(requires_fresh_approval_after_recovery(&BrowserRetryActionKind::Type));
+        assert!(requires_fresh_approval_after_recovery(
+            &BrowserRetryActionKind::Click
+        ));
+        assert!(requires_fresh_approval_after_recovery(
+            &BrowserRetryActionKind::Type
+        ));
     }
 
     #[test]
     fn recoverable_browser_action_errors_match_locator_and_transport_failures() {
-        assert!(is_recoverable_browser_action_error("click target not found"));
+        assert!(is_recoverable_browser_action_error(
+            "click target not found"
+        ));
         assert!(is_recoverable_browser_action_error(
             "browser agent request timed out"
         ));
-        assert!(!is_recoverable_browser_action_error("unsupported action_kind"));
+        assert!(!is_recoverable_browser_action_error(
+            "unsupported action_kind"
+        ));
     }
 
     #[test]

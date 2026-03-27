@@ -211,12 +211,14 @@ mod tests {
             Some(10_000)
         );
         assert_eq!(
-            value.get("expectedUrlContains")
+            value
+                .get("expectedUrlContains")
                 .and_then(|item| item.as_str()),
             Some("/dashboard")
         );
         assert_eq!(
-            value.get("waitForReadyState")
+            value
+                .get("waitForReadyState")
                 .and_then(|item| item.as_str()),
             Some("complete")
         );
@@ -249,7 +251,8 @@ mod tests {
             Some("center")
         );
         assert_eq!(
-            value.get("target")
+            value
+                .get("target")
                 .and_then(|item| item.get("selector"))
                 .and_then(|item| item.as_str()),
             Some("button.primary")

@@ -382,25 +382,27 @@ async fn execute_core_tool_call_with_tool_ref_internal(
                 .and_then(Value::as_i64)
                 .filter(|value| *value > 0)
                 .ok_or_else(|| "browser_wait_for_element requires a positive tab_id".to_string())?;
-            let target = serde_json::from_value::<
-                crate::modules::browser_agent::types::BrowserAgentElementLocator,
-            >(
-                arguments
-                    .get("target")
-                    .cloned()
-                    .ok_or_else(|| "browser_wait_for_element requires a target locator".to_string())?,
-            )
-            .map_err(|err| err.to_string())?;
+            let target =
+                serde_json::from_value::<
+                    crate::modules::browser_agent::types::BrowserAgentElementLocator,
+                >(arguments.get("target").cloned().ok_or_else(|| {
+                    "browser_wait_for_element requires a target locator".to_string()
+                })?)
+                .map_err(|err| err.to_string())?;
             let timeout_ms = arguments
                 .get("timeout_ms")
                 .and_then(Value::as_i64)
                 .filter(|value| *value > 0)
-                .ok_or_else(|| "browser_wait_for_element requires a positive timeout_ms".to_string())?;
+                .ok_or_else(|| {
+                    "browser_wait_for_element requires a positive timeout_ms".to_string()
+                })?;
             let poll_interval_ms = arguments
                 .get("poll_interval_ms")
                 .and_then(Value::as_i64)
                 .filter(|value| *value > 0)
-                .ok_or_else(|| "browser_wait_for_element requires a positive poll_interval_ms".to_string())?;
+                .ok_or_else(|| {
+                    "browser_wait_for_element requires a positive poll_interval_ms".to_string()
+                })?;
 
             if !skip_approval_gate {
                 let risk = assess_policy_risk(PolicyTargetRef::CoreTool {
@@ -445,12 +447,16 @@ async fn execute_core_tool_call_with_tool_ref_internal(
                 .get("tab_id")
                 .and_then(Value::as_i64)
                 .filter(|value| *value > 0)
-                .ok_or_else(|| "browser_wait_for_navigation requires a positive tab_id".to_string())?;
+                .ok_or_else(|| {
+                    "browser_wait_for_navigation requires a positive tab_id".to_string()
+                })?;
             let timeout_ms = arguments
                 .get("timeout_ms")
                 .and_then(Value::as_i64)
                 .filter(|value| *value > 0)
-                .ok_or_else(|| "browser_wait_for_navigation requires a positive timeout_ms".to_string())?;
+                .ok_or_else(|| {
+                    "browser_wait_for_navigation requires a positive timeout_ms".to_string()
+                })?;
             let expected_url_contains = arguments
                 .get("expected_url_contains")
                 .and_then(Value::as_str)
@@ -511,15 +517,13 @@ async fn execute_core_tool_call_with_tool_ref_internal(
                 .and_then(Value::as_i64)
                 .filter(|value| *value > 0)
                 .ok_or_else(|| "browser_scroll_into_view requires a positive tab_id".to_string())?;
-            let target = serde_json::from_value::<
-                crate::modules::browser_agent::types::BrowserAgentElementLocator,
-            >(
-                arguments
-                    .get("target")
-                    .cloned()
-                    .ok_or_else(|| "browser_scroll_into_view requires a target locator".to_string())?,
-            )
-            .map_err(|err| err.to_string())?;
+            let target =
+                serde_json::from_value::<
+                    crate::modules::browser_agent::types::BrowserAgentElementLocator,
+                >(arguments.get("target").cloned().ok_or_else(|| {
+                    "browser_scroll_into_view requires a target locator".to_string()
+                })?)
+                .map_err(|err| err.to_string())?;
             let align = arguments
                 .get("align")
                 .and_then(Value::as_str)
@@ -562,7 +566,9 @@ async fn execute_core_tool_call_with_tool_ref_internal(
                 .get("tab_id")
                 .and_then(Value::as_i64)
                 .filter(|value| *value > 0)
-                .ok_or_else(|| "browser_retry_with_relocate requires a positive tab_id".to_string())?;
+                .ok_or_else(|| {
+                    "browser_retry_with_relocate requires a positive tab_id".to_string()
+                })?;
             let action_kind = arguments
                 .get("action_kind")
                 .and_then(Value::as_str)
@@ -571,12 +577,9 @@ async fn execute_core_tool_call_with_tool_ref_internal(
                 .ok_or_else(|| "browser_retry_with_relocate requires action_kind".to_string())?;
             let target = serde_json::from_value::<
                 crate::modules::browser_agent::types::BrowserAgentElementLocator,
-            >(
-                arguments
-                    .get("target")
-                    .cloned()
-                    .ok_or_else(|| "browser_retry_with_relocate requires a target locator".to_string())?,
-            )
+            >(arguments.get("target").cloned().ok_or_else(|| {
+                "browser_retry_with_relocate requires a target locator".to_string()
+            })?)
             .map_err(|err| err.to_string())?;
             let text = arguments
                 .get("text")
@@ -587,17 +590,23 @@ async fn execute_core_tool_call_with_tool_ref_internal(
                 .get("max_attempts")
                 .and_then(Value::as_i64)
                 .filter(|value| *value > 0)
-                .ok_or_else(|| "browser_retry_with_relocate requires a positive max_attempts".to_string())?;
+                .ok_or_else(|| {
+                    "browser_retry_with_relocate requires a positive max_attempts".to_string()
+                })?;
             let timeout_ms = arguments
                 .get("timeout_ms")
                 .and_then(Value::as_i64)
                 .filter(|value| *value > 0)
-                .ok_or_else(|| "browser_retry_with_relocate requires a positive timeout_ms".to_string())?;
+                .ok_or_else(|| {
+                    "browser_retry_with_relocate requires a positive timeout_ms".to_string()
+                })?;
             let poll_interval_ms = arguments
                 .get("poll_interval_ms")
                 .and_then(Value::as_i64)
                 .filter(|value| *value > 0)
-                .ok_or_else(|| "browser_retry_with_relocate requires a positive poll_interval_ms".to_string())?;
+                .ok_or_else(|| {
+                    "browser_retry_with_relocate requires a positive poll_interval_ms".to_string()
+                })?;
 
             if !skip_approval_gate {
                 let risk = assess_policy_risk(PolicyTargetRef::CoreTool {

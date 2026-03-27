@@ -72,7 +72,13 @@ pub async fn wait_for_local_browser_agent_element(
     state
         .browser_agent
         .service
-        .wait_for_element(state.mcp.store.as_ref(), tab_id, target, timeout_ms, poll_interval_ms)
+        .wait_for_element(
+            state.mcp.store.as_ref(),
+            tab_id,
+            target,
+            timeout_ms,
+            poll_interval_ms,
+        )
         .await
 }
 

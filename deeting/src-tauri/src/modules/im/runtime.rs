@@ -41,6 +41,26 @@ fn derive_profile_from_notification_channel(
 ) -> Option<ImConnectionProfile> {
     match channel.channel.trim().to_lowercase().as_str() {
         "feishu" => {}
+        "telegram" => {
+            let has_im_fields = config_string(&channel.config, "bot_token").is_some()
+                || config_string(&channel.config, "bot_model").is_some()
+                || config_string(&channel.config, "bot_system_prompt").is_some();
+            if !has_im_fields {
+                return None;
+            }
+
+            let mut profile = ImConnectionProfile::default_telegram();
+            profile.id = format!("notification-channel:{}", channel.id);
+            profile.display_name = channel
+                .display_name
+                .clone()
+                .unwrap_or_else(|| "Telegram".to_string());
+            profile.enabled = channel.is_active;
+            profile.transport_preference = ImTransportPreference::Direct;
+            profile.direct_config.telegram_bot_token =
+                config_string(&channel.config, "bot_token").unwrap_or_default();
+            return Some(profile);
+        }
         "wechat" => {
             let has_im_fields = config_bool(&channel.config, "im_enabled").unwrap_or(false)
                 || config_string(&channel.config, "access_policy").is_some()
@@ -397,6 +417,20 @@ pub async fn start_im_runtime_worker(app_state: AppState, app_handle: tauri::App
                         .await
                     {
                         warn!("im_wechat_profile_worker_failed: {}", err);
+                    }
+                });
+            }
+            (ImPlatform::Telegram, ImTransportKind::Direct) => {
+                let state = app_state.clone();
+                let handle = app_handle.clone();
+                tasks.spawn(async move {
+                    if let Err(err) =
+                        crate::modules::im::telegram::runtime::run_telegram_direct_profile_worker(
+                            state, handle, profile,
+                        )
+                        .await
+                    {
+                        warn!("im_telegram_profile_worker_failed: {}", err);
                     }
                 });
             }
