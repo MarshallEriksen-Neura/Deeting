@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "deeting",
-  "version": "0.1.0-3",
+  "version": "0.1.0-4",
   "identifier": "com.deeting.desktop",
   "build": {
     "frontendDist": "../out",
@@ -53,7 +53,10 @@
         "installerIcon": "icons/icon.ico",
         "headerImage": "icons/nsis-header.bmp",
         "sidebarImage": "icons/nsis-sidebar.bmp",
-        "languages": ["SimpChinese", "English"],
+        "languages": [
+          "SimpChinese",
+          "English"
+        ],
         "displayLanguageSelector": true
       }
     },
@@ -73,7 +76,10 @@
     },
     "linux": {
       "deb": {
-        "depends": ["libwebkit2gtk-4.1-0", "libappindicator3-1"]
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libappindicator3-1"
+        ]
       }
     }
   },
@@ -86,7 +92,9 @@
     },
     "deep-link": {
       "desktop": {
-        "schemes": ["deeting"]
+        "schemes": [
+          "deeting"
+        ]
       }
     }
   }

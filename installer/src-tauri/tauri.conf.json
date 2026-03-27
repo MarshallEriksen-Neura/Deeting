@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Deeting Setup",
-  "version": "0.1.0-3",
+  "version": "0.1.0-4",
   "identifier": "com.deeting.installer",
   "build": {
     "frontendDist": "../out",
@@ -29,7 +29,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "resources": {
       "resources/deeting-setup.exe": "resources/"
     },
@@ -43,7 +45,10 @@
       "nsis": {
         "installMode": "currentUser",
         "installerIcon": "../../deeting/src-tauri/icons/icon.ico",
-        "languages": ["SimpChinese", "English"],
+        "languages": [
+          "SimpChinese",
+          "English"
+        ],
         "displayLanguageSelector": true
       }
     }

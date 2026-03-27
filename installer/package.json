@@ -1,6 +1,6 @@
 {
   "name": "deeting-installer",
-  "version": "0.1.0-3",
+  "version": "0.1.0-4",
   "private": true,
   "scripts": {
     "dev": "next dev --port 3001",
