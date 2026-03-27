@@ -71,6 +71,12 @@ const buildMessagingMock = (
   hasContent: false,
   isLoading: false,
   errorMessage: null,
+  pendingTakeover: null,
+  pendingTakeoverRequestedAction: null,
+  queuePendingTakeoverFromCurrentDraft: jest.fn(),
+  stopAndSendPendingTakeover: jest.fn(),
+  markPendingTakeoverForDeferredSend: jest.fn(),
+  cancelPendingTakeover: jest.fn(),
   cancelActiveRequest: jest.fn(),
   hasInterruptedGeneration: false,
   continueInterruptedGeneration: jest.fn(),
@@ -144,6 +150,80 @@ describe("ControlsContainer (web)", () => {
     fireEvent.click(continueButton)
 
     expect(continueInterruptedGeneration).toHaveBeenCalledTimes(1)
+  })
+
+  it("renders the pending takeover bar and dispatches its actions", () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "false"
+    const stopAndSendPendingTakeover = jest.fn()
+    const markPendingTakeoverForDeferredSend = jest.fn()
+    const cancelPendingTakeover = jest.fn()
+    mockUseChatMessaging.mockReturnValue(buildMessagingMock({
+      pendingTakeover: {
+        input: "follow-up prompt",
+        attachments: [],
+        selectedKnowledgeFileIds: ["doc-1"],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      stopAndSendPendingTakeover,
+      markPendingTakeoverForDeferredSend,
+      cancelPendingTakeover,
+    }))
+
+    render(<ControlsContainer />)
+
+    expect(screen.getByText("takeover.title")).toBeInTheDocument()
+    expect(screen.getByText("follow-up prompt")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText("takeover.actions.immediateStop"))
+    fireEvent.click(screen.getByText("takeover.actions.sendAfterStep"))
+    fireEvent.click(screen.getAllByText("takeover.actions.cancel")[0])
+
+    expect(stopAndSendPendingTakeover).toHaveBeenCalledTimes(1)
+    expect(markPendingTakeoverForDeferredSend).toHaveBeenCalledTimes(1)
+    expect(cancelPendingTakeover).toHaveBeenCalledTimes(1)
+  })
+
+  it("queues a pending takeover instead of cancelling when the run is active and the composer has content", () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "false"
+    const queuePendingTakeoverFromCurrentDraft = jest.fn()
+    const cancelActiveRequest = jest.fn()
+    useChatStore.setState({
+      input: "follow-up prompt",
+      isLoading: true,
+    })
+    mockUseChatMessaging.mockReturnValue(buildMessagingMock({
+      isLoading: true,
+      queuePendingTakeoverFromCurrentDraft,
+      cancelActiveRequest,
+    }))
+
+    render(<ControlsContainer />)
+    fireEvent.click(screen.getByLabelText("controls.queueTakeover"))
+
+    expect(queuePendingTakeoverFromCurrentDraft).toHaveBeenCalledTimes(1)
+    expect(cancelActiveRequest).not.toHaveBeenCalled()
+  })
+
+  it("keeps the stop action when the run is active and the composer is empty", () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "false"
+    const queuePendingTakeoverFromCurrentDraft = jest.fn()
+    const cancelActiveRequest = jest.fn()
+    useChatStore.setState({
+      input: "",
+      isLoading: true,
+    })
+    mockUseChatMessaging.mockReturnValue(buildMessagingMock({
+      isLoading: true,
+      queuePendingTakeoverFromCurrentDraft,
+      cancelActiveRequest,
+    }))
+
+    render(<ControlsContainer />)
+    fireEvent.click(screen.getByLabelText("controls.stop"))
+
+    expect(cancelActiveRequest).toHaveBeenCalledTimes(1)
+    expect(queuePendingTakeoverFromCurrentDraft).not.toHaveBeenCalled()
   })
 
   it("passes the selected assistant directly into chat messaging on web", () => {

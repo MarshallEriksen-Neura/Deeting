@@ -1,16 +1,16 @@
 import { useEffect, useRef, useState } from "react"
 
-const DEFAULT_BASE_INTERVAL = 28
+const DEFAULT_BASE_INTERVAL = 16
 const MEDIUM_TEXT_LENGTH = 300
 const LONG_TEXT_LENGTH = 800
-const MEDIUM_INTERVAL = 18
-const LONG_INTERVAL = 12
-const MIN_INTERVAL = 8
-const MAX_INTERVAL = 40
-const MAX_DURATION_MS = 7000
-const PUNCTUATION_DELAY = 120
-const SHORT_PAUSE_DELAY = 60
-const NEWLINE_DELAY = 180
+const MEDIUM_INTERVAL = 12
+const LONG_INTERVAL = 8
+const MIN_INTERVAL = 6
+const MAX_INTERVAL = 28
+const MAX_DURATION_MS = 4500
+const PUNCTUATION_DELAY = 70
+const SHORT_PAUSE_DELAY = 35
+const NEWLINE_DELAY = 100
 
 function resolveBaseInterval(length: number) {
   if (length >= LONG_TEXT_LENGTH) return LONG_INTERVAL

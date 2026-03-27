@@ -1,6 +1,9 @@
 import "@testing-library/jest-dom"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { getLocalBrowserAgentPageSnapshot } from "@/lib/api/browser-agent"
+import {
+  getLocalBrowserAgentPageSnapshot,
+  type BrowserAgentPageSnapshot,
+} from "@/lib/api/browser-agent"
 import { useBrowserModeStatus } from "@/hooks/chat/use-browser-mode-status"
 import { WorkspacePanel } from "@/components/workspace/workspace-panel"
 import { useWorkspaceStore } from "@/store/workspace-store"
@@ -71,10 +74,15 @@ describe("BrowserModePanel", () => {
     render(<WorkspacePanel />)
 
     expect(screen.getAllByText("Browser Mode")).toHaveLength(2)
-    expect(screen.getByText("Chrome extension connected")).toBeInTheDocument()
-    expect(screen.getByText("GitHub Notifications")).toBeInTheDocument()
-    expect(screen.getByText("github.com")).toBeInTheDocument()
+    expect(screen.getAllByText("Chrome extension connected").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("GitHub Notifications").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("github.com").length).toBeGreaterThan(0)
     expect(screen.getByText("Opened notifications page")).toBeInTheDocument()
+    expect(screen.getByTestId("browser-mode-panel-scroll-body")).toHaveClass(
+      "min-h-0",
+      "flex-1",
+      "overflow-y-auto"
+    )
     expect(screen.getByRole("button", { name: "browserMode.panel.inspect" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "browserMode.panel.pause" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "browserMode.panel.reconnect" })).toBeInTheDocument()
@@ -164,8 +172,12 @@ describe("BrowserModePanel", () => {
 
     render(<WorkspacePanel />)
 
-    expect(screen.getByText("browserMode.panel.executionLabel")).toBeInTheDocument()
-    expect(screen.getByText("browserMode.panel.execution.recovering")).toBeInTheDocument()
+    expect(
+      screen.getAllByText("browserMode.panel.executionLabel").length
+    ).toBeGreaterThan(0)
+    expect(
+      screen.getAllByText("browserMode.panel.execution.recovering").length
+    ).toBeGreaterThan(0)
     expect(screen.getAllByText("Target changed after refresh").length).toBeGreaterThan(0)
     expect(screen.getByText("browserMode.panel.retryCount")).toBeInTheDocument()
     expect(useBrowserModeStore.getState().retryCount).toBe(2)
@@ -233,7 +245,7 @@ describe("BrowserModePanel", () => {
       buttons: [{ text: "刷新", disabled: false }],
       inputs: [{ placeholder: "搜索订单" }],
       forms: [],
-    } as any)
+    } satisfies BrowserAgentPageSnapshot)
 
     useBrowserModeStore.getState().requestBrowserMode({
       prompt: "巡检当前页面",
