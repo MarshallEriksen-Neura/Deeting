@@ -4,7 +4,9 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import ControlsContainer from "@/components/chat/console/controls-container"
 import { useChatStore } from "@/store/chat-store"
 import { useBrowserModeStore } from "@/store/browser-mode-store"
+import { useWorkspaceStore } from "@/store/workspace-store"
 import { useChatMessaging } from "@/hooks/chat/use-chat-messaging"
+import { getLocalBrowserAgentPageSnapshot } from "@/lib/api/browser-agent"
 
 jest.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
@@ -34,6 +36,10 @@ jest.mock("@/hooks/chat/use-chat-messaging", () => ({
   useChatMessaging: jest.fn(),
 }))
 
+jest.mock("@/lib/api/browser-agent", () => ({
+  getLocalBrowserAgentPageSnapshot: jest.fn(),
+}))
+
 jest.mock("@/lib/api/custom-task-agents", () => ({
   listCustomTaskAgents: jest.fn().mockResolvedValue([]),
 }))
@@ -53,6 +59,10 @@ jest.mock("@/lib/api/desktop-config", () => ({
 const mockUseChatMessaging = useChatMessaging as jest.MockedFunction<
   typeof useChatMessaging
 >
+const mockGetLocalBrowserAgentPageSnapshot =
+  getLocalBrowserAgentPageSnapshot as jest.MockedFunction<
+    typeof getLocalBrowserAgentPageSnapshot
+  >
 
 const buildMessagingMock = (
   overrides: Partial<ReturnType<typeof useChatMessaging>> = {}
@@ -68,6 +78,8 @@ const buildMessagingMock = (
 })
 
 describe("ControlsContainer (web)", () => {
+  let messagingMock: ReturnType<typeof useChatMessaging>
+
   beforeEach(() => {
     mockUseChatMessaging.mockReset()
     mockGetDesktopConfig.mockReset()
@@ -82,10 +94,13 @@ describe("ControlsContainer (web)", () => {
       selectedAssistant: null,
     })
     useBrowserModeStore.getState().reset()
+    useWorkspaceStore.getState().closeAll()
+    mockGetLocalBrowserAgentPageSnapshot.mockReset()
 
     mockGetDesktopConfig.mockResolvedValue(null)
     mockSetDesktopConfig.mockResolvedValue(undefined)
-    mockUseChatMessaging.mockReturnValue(buildMessagingMock())
+    messagingMock = buildMessagingMock()
+    mockUseChatMessaging.mockReturnValue(messagingMock)
   })
 
   it("should hide assistant selector on web", () => {
@@ -218,5 +233,59 @@ describe("ControlsContainer (web)", () => {
     expect(
       screen.getByText("打开 github 并查看 notifications")
     ).toBeInTheDocument()
+  })
+
+  it("opens page inspection mode from chat when the input asks to inspect the current page", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    Object.defineProperty(window, "__TAURI__", {
+      configurable: true,
+      value: {},
+    })
+    useChatStore.setState({
+      input: "帮我巡检这个页面",
+      models: [{ id: "model-1", provider_model_id: "model-1" }],
+    })
+    useBrowserModeStore.getState().activate({
+      connectionLabel: "Chrome extension connected",
+      page: {
+        tabId: 42,
+        title: "Order Dashboard",
+        url: "https://example.com/admin/orders",
+        host: "example.com",
+      },
+      lastAction: {
+        kind: "open_tab",
+        summary: "Opened order dashboard",
+      },
+    })
+    mockGetLocalBrowserAgentPageSnapshot.mockResolvedValueOnce({
+      url: "https://example.com/admin/orders",
+      title: "Order Dashboard",
+      documentReadyState: "complete",
+      visibleText: "待处理 12\n失败 3",
+      mainText: "待处理 12\n失败 3",
+      headings: [{ level: 1, text: "订单面板" }],
+      links: [{ text: "详情", href: "https://example.com/admin/orders/1024" }],
+      buttons: [{ text: "刷新", disabled: false }],
+      inputs: [{ placeholder: "搜索订单" }],
+      forms: [],
+    } as any)
+
+    render(<ControlsContainer />)
+    fireEvent.click(screen.getByLabelText("controls.send"))
+
+    await waitFor(() => {
+      expect(mockGetLocalBrowserAgentPageSnapshot).toHaveBeenCalledWith(42)
+    })
+
+    expect(messagingMock.handleSendMessage).not.toHaveBeenCalled()
+    expect(useWorkspaceStore.getState().views).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "native-canvas",
+          title: "inspection.title",
+        }),
+      ])
+    )
   })
 })

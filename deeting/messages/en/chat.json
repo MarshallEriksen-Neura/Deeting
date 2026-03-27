@@ -97,6 +97,7 @@
       "panel": {
         "title": "Browser Mode",
         "description": "Live browser session state for the current chat task.",
+        "inspect": "Inspect page",
         "connectionLabel": "Connection",
         "connectionUnknown": "Waiting for browser bridge state",
         "pageLabel": "Current page",
@@ -134,6 +135,14 @@
           "recovering": "Recovering"
         }
       }
+    },
+    "inspection": {
+      "title": "Page inspection",
+      "pageOverview": "Page overview",
+      "keyMetrics": "Key metrics",
+      "findings": "Findings",
+      "records": "Highlighted records",
+      "nextActions": "Suggested next actions"
     },
     "input": {
       "placeholder": "Message {name}...",

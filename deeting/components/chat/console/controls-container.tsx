@@ -16,6 +16,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Slider } from '@/components/ui/slider';
 import { cn } from '@/lib/utils';
 import { formatFileSize } from '@/lib/utils/file';
+import { getLocalBrowserAgentPageSnapshot } from '@/lib/api/browser-agent';
+import { buildPageInspectionResult, isPageInspectionPrompt } from '@/lib/browser/page-inspection';
 import { buildChatAttachments, UPLOAD_ERROR_CODES, ATTACHMENT_INVALID_ERROR_CODES } from '@/lib/chat/attachments';
 import { createConversation } from '@/lib/api/conversations';
 import { useChatMessaging } from '@/hooks/chat/use-chat-messaging';
@@ -24,6 +26,8 @@ import type { KnowledgeFile } from '@/types/knowledge';
 import { listCustomTaskAgents, type CustomTaskAgentProfile } from '@/lib/api/custom-task-agents';
 import { DESKTOP_CONFIG_KEYS, getDesktopConfig, setDesktopConfig } from '@/lib/api/desktop-config';
 import { resolveLeadingTaskAgentMention } from '@/hooks/chat/task-agent-mention';
+import { useBrowserModeStore } from '@/store/browser-mode-store';
+import { useWorkspaceStore } from '@/store/workspace-store';
 
 function parseDesktopConfigBool(raw: string | null | undefined) {
   const normalized = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
@@ -104,6 +108,8 @@ function ControlsContainer() {
   );
 
   const isTauriRuntime = detectTauriRuntime();
+  const browserModePage = useBrowserModeStore((state) => state.page)
+  const openWorkspaceView = useWorkspaceStore((state) => state.openView)
 
   const {
     handleSendMessage,
@@ -255,18 +261,44 @@ function ControlsContainer() {
     setGlobalLoading,
   ]);
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     if (!canSend) return;
+    if (
+      isTauriRuntime &&
+      isPageInspectionPrompt(input) &&
+      browserModePage?.tabId
+    ) {
+      const snapshot = await getLocalBrowserAgentPageSnapshot(browserModePage.tabId)
+      const result = buildPageInspectionResult(snapshot)
+      openWorkspaceView({
+        id: `browser-inspection-${browserModePage.tabId}`,
+        type: "native-canvas",
+        title: t("inspection.title"),
+        content: {
+          viewType: "page-inspection",
+          result,
+        },
+      })
+      setInput("")
+      return
+    }
+
     handleSendMessage();
   }, [
+    browserModePage,
     canSend,
     handleSendMessage,
+    input,
+    isTauriRuntime,
+    openWorkspaceView,
+    setInput,
+    t,
   ]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      void handleSend();
     }
   }, [handleSend]);
 
@@ -376,7 +408,7 @@ function ControlsContainer() {
       void continueInterruptedGeneration();
       return;
     }
-    handleSend();
+    void handleSend();
   }, [
     isGenerating,
     canContinueGeneration,

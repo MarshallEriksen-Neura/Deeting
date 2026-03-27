@@ -12,8 +12,11 @@ import {
 } from "@/components/ui/card"
 import { useI18n } from "@/hooks/use-i18n"
 import { useBrowserModeStatus } from "@/hooks/chat/use-browser-mode-status"
+import { getLocalBrowserAgentPageSnapshot } from "@/lib/api/browser-agent"
+import { buildPageInspectionResult } from "@/lib/browser/page-inspection"
 import { useBrowserModeStore } from "@/store/browser-mode-store"
 import { useWorkspaceStore } from "@/store/workspace-store"
+import { useState } from "react"
 
 interface BrowserModePanelProps {
   viewId: string
@@ -22,7 +25,13 @@ interface BrowserModePanelProps {
 
 export function BrowserModePanel({ viewId, title }: BrowserModePanelProps) {
   const t = useI18n("chat")
-  const closeView = useWorkspaceStore((state) => state.closeView)
+  const { closeView, openView } = useWorkspaceStore(
+    useShallow((state) => ({
+      closeView: state.closeView,
+      openView: state.openView,
+    }))
+  )
+  const [isInspecting, setIsInspecting] = useState(false)
   const {
     status,
     executionPhase,
@@ -84,6 +93,27 @@ export function BrowserModePanel({ viewId, title }: BrowserModePanelProps) {
     void refresh()
   }
 
+  const handleInspectPage = async () => {
+    if (!page?.tabId) return
+
+    setIsInspecting(true)
+    try {
+      const snapshot = await getLocalBrowserAgentPageSnapshot(page.tabId)
+      const result = buildPageInspectionResult(snapshot)
+      openView({
+        id: `browser-inspection-${page.tabId}`,
+        type: "native-canvas",
+        title: t("inspection.title"),
+        content: {
+          viewType: "page-inspection",
+          result,
+        },
+      })
+    } finally {
+      setIsInspecting(false)
+    }
+  }
+
   return (
     <div className="h-full w-full p-6">
       <Card className="h-full">
@@ -91,6 +121,16 @@ export function BrowserModePanel({ viewId, title }: BrowserModePanelProps) {
           <CardTitle className="text-base">{title}</CardTitle>
           <CardDescription>{t("browserMode.panel.description")}</CardDescription>
           <CardAction className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void handleInspectPage()}
+              aria-label={t("browserMode.panel.inspect")}
+              disabled={!page?.tabId || isInspecting}
+            >
+              {t("browserMode.panel.inspect")}
+            </Button>
             <Button
               type="button"
               variant="outline"

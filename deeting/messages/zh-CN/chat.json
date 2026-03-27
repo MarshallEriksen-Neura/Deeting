@@ -97,6 +97,7 @@
       "panel": {
         "title": "Browser Mode",
         "description": "显示当前聊天任务的浏览器执行状态。",
+        "inspect": "巡检当前页",
         "connectionLabel": "连接状态",
         "connectionUnknown": "等待浏览器连接状态",
         "pageLabel": "当前页面",
@@ -134,6 +135,14 @@
           "recovering": "恢复中"
         }
       }
+    },
+    "inspection": {
+      "title": "页面巡检",
+      "pageOverview": "页面概览",
+      "keyMetrics": "关键指标",
+      "findings": "异常与风险",
+      "records": "重点记录",
+      "nextActions": "建议下一步"
     },
     "input": {
       "placeholder": "给 {name} 发消息...",

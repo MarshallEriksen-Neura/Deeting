@@ -2,6 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useI18n } from "@/hooks/use-i18n"
+import PageInspectionResultPanel from "@/components/inspection/page-inspection-result-panel"
 import type { NativeCanvasView } from "@/store/workspace-store"
 import { WorkflowRuntime } from "@/components/workflow/workflow-runtime"
 
@@ -19,6 +20,14 @@ export function NativeCanvasRenderer({
         initialGoal={view.content.goal as string | undefined}
         initialRunId={view.content.runId as string | undefined}
       />
+    )
+  }
+
+  if (view.content?.viewType === "page-inspection" && view.content?.result) {
+    return (
+      <div className="h-full w-full p-6">
+        <PageInspectionResultPanel result={view.content.result as any} />
+      </div>
     )
   }
 
