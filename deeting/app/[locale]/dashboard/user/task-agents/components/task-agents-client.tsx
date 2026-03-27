@@ -3,6 +3,7 @@
 import * as React from "react"
 import useSWR from "swr"
 import { useLocale, useTranslations } from "next-intl"
+import { useRouter } from "next/navigation"
 import {
   Bot,
   CheckCircle2,
@@ -270,6 +271,24 @@ function buildTaskAgentModelOptionValue(instanceId: string, modelValue: string):
   return `${instanceId}::${modelValue}`
 }
 
+function resolveSameOriginNavigationHref(anchor: HTMLAnchorElement): string | null {
+  const href = anchor.getAttribute("href")
+  if (!href || href.startsWith("#")) return null
+  if (anchor.target && anchor.target !== "_self") return null
+  if (anchor.hasAttribute("download")) return null
+  if (/^(mailto:|tel:|javascript:)/i.test(href)) return null
+
+  const destination = new URL(anchor.href, window.location.href)
+  const current = new URL(window.location.href)
+  if (destination.origin !== current.origin) return null
+
+  const nextPath = `${destination.pathname}${destination.search}${destination.hash}`
+  const currentPath = `${current.pathname}${current.search}${current.hash}`
+  if (nextPath === currentPath) return null
+
+  return nextPath
+}
+
 const AgentListItem = React.memo(function AgentListItem({
   agent,
   isSelected,
@@ -367,6 +386,7 @@ const AgentListItem = React.memo(function AgentListItem({
 export function TaskAgentsClient() {
   const t = useTranslations("task-agents")
   const locale = useLocale()
+  const router = useRouter()
   const [desktopSupport, setDesktopSupport] = React.useState<boolean | null>(null)
   const isDesktop = desktopSupport === true
   const deferredLocale = React.useDeferredValue(locale)
@@ -953,19 +973,6 @@ export function TaskAgentsClient() {
       !draftPayload.task_prompt ||
     !hasUnsavedChanges
 
-  React.useEffect(() => {
-    if (!hasUnsavedChanges) return
-
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault()
-      event.returnValue = ""
-      return ""
-    }
-
-    window.addEventListener("beforeunload", handleBeforeUnload)
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload)
-  }, [hasUnsavedChanges])
-
   const requestDiscardOrProceed = React.useCallback(
     (action: () => void) => {
       if (!hasUnsavedChanges) {
@@ -977,6 +984,32 @@ export function TaskAgentsClient() {
     },
     [hasUnsavedChanges],
   )
+
+  React.useEffect(() => {
+    if (!hasUnsavedChanges) return
+
+    const handleDocumentClick = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0) return
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+      if (!(event.target instanceof Element)) return
+
+      const anchor = event.target.closest("a[href]")
+      if (!(anchor instanceof HTMLAnchorElement)) return
+
+      const nextHref = resolveSameOriginNavigationHref(anchor)
+      if (!nextHref) return
+
+      event.preventDefault()
+      requestDiscardOrProceed(() => {
+        router.push(nextHref)
+      })
+    }
+
+    document.addEventListener("click", handleDocumentClick, true)
+    return () => {
+      document.removeEventListener("click", handleDocumentClick, true)
+    }
+  }, [hasUnsavedChanges, requestDiscardOrProceed, router])
 
   const handleDiscardConfirm = React.useCallback(() => {
     setDiscardDialogOpen(false)

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import { CheckCircle2, Loader2, MessageCircleMore, Send, Sparkles, XCircle } from "lucide-react"
 import { useTranslations } from "next-intl"
@@ -22,6 +22,7 @@ import {
 import { WechatConnectDialog, type WechatConnectionViewState } from "./wechat-connect-dialog"
 import { WechatPairingPanel } from "./wechat-pairing-panel"
 import { ChannelFormField } from "./channel-form-field"
+import { ChannelModelPickerField } from "./channel-model-picker-field"
 import {
   configToFormValues,
   defaultFormValues,
@@ -50,6 +51,7 @@ export function ChannelConfigForm({
   showTest?: boolean
 }) {
   const t = useTranslations("dashboard.notificationChannelsPage")
+  const tSettingsPersonal = useTranslations("settings.personal")
   const fields = FIELD_DEFS[channelType]
   const required = CHANNEL_REQUIRED_FIELDS[channelType]
   const { modelGroups, isLoadingModels } = useChatService({
@@ -102,20 +104,6 @@ export function ChannelConfigForm({
 
   const setValue = (key: string, val: ChannelFormValue) =>
     setValues((prev) => ({ ...prev, [key]: val }))
-
-  const botModelOptions = useMemo(() => {
-    if (channelType !== "feishu" && channelType !== "wechat") return []
-    return modelGroups.flatMap((group) =>
-      group.models.map((model) => {
-        const value = model.provider_model_id ?? model.id
-        const provider = group.provider || model.owned_by || group.instance_name
-        return {
-          value,
-          label: `${model.id}${provider ? ` · ${provider}` : ""}`,
-        }
-      })
-    )
-  }, [channelType, modelGroups])
 
   useEffect(() => {
     let active = true
@@ -589,9 +577,6 @@ export function ChannelConfigForm({
   }
 
   const resolveFieldOptions = (field: FieldDef) => {
-    if (field.key === "bot_model") {
-      return botModelOptions
-    }
     return field.options?.map((option) => ({
       value: option.value,
       label: t(option.labelKey),
@@ -601,6 +586,30 @@ export function ChannelConfigForm({
   const renderField = (field: FieldDef) => {
     const muted = isFieldMuted(field.key)
     const disabled = loadingConfig || muted
+
+    if (field.key === "bot_model") {
+      return (
+        <div key={field.key} className={cn("transition-all", muted && "opacity-45")}>
+          <ChannelModelPickerField
+            id={`${channelType}-${field.key}`}
+            label={t(field.labelKey)}
+            placeholder={t(field.placeholderKey)}
+            value={typeof values[field.key] === "string" ? (values[field.key] as string) : ""}
+            onChange={(nextValue) => setValue(field.key, nextValue)}
+            required={required.includes(field.key)}
+            description={resolveFieldDescription(field)}
+            disabled={disabled}
+            isLoading={isLoadingModels}
+            loadingText={t("fields.shared.loadingModels")}
+            searchPlaceholder={tSettingsPersonal("modelSearchPlaceholder")}
+            emptyText={tSettingsPersonal("emptyHint")}
+            noResultsText={tSettingsPersonal("modelNoResults")}
+            modelGroups={modelGroups}
+          />
+        </div>
+      )
+    }
+
     return (
       <div key={field.key} className={cn("transition-all", muted && "opacity-45")}>
         <ChannelFormField

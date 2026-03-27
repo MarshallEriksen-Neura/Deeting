@@ -121,6 +121,7 @@
       },
       "draft": "草稿",
       "updatedAt": "最近更新 {value}",
+      "requiredHint": "* 为必填项",
       "basic": {
         "title": "智能体身份",
         "description": "命名这个智能体，并定义它的主要职责。"

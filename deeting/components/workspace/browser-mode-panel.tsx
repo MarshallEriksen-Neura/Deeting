@@ -8,7 +8,6 @@ import {
   Globe,
   Link2,
   MousePointerClick,
-  Route,
   Sparkles,
 } from "lucide-react"
 import { useShallow } from "zustand/react/shallow"
@@ -94,39 +93,42 @@ function InspectorSection({
   )
 }
 
-function MetricRow({
+function MetricStack({
   icon,
   label,
-  value,
+  primary,
+  secondary,
   detail,
-  emphasize = false,
+  className,
 }: {
   icon: ReactNode
   label: string
-  value: ReactNode
+  primary: ReactNode
+  secondary?: ReactNode
   detail?: ReactNode
-  emphasize?: boolean
+  className?: string
 }) {
   return (
-    <div className="grid gap-2 rounded-2xl border border-border/50 bg-muted/[0.14] p-3">
+    <div
+      className={cn(
+        "grid gap-2 rounded-2xl border border-border/50 bg-muted/[0.12] p-3.5",
+        className
+      )}
+    >
       <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
         <span className="flex h-7 w-7 items-center justify-center rounded-full border border-border/60 bg-background/80 text-foreground/70">
           {icon}
         </span>
         <span>{label}</span>
       </div>
-      <div className="grid gap-1">
-        <span
-          className={cn(
-            "text-sm leading-6 text-foreground",
-            emphasize && "font-medium"
-          )}
-        >
-          {value}
-        </span>
-        {detail ? (
-          <span className="text-xs leading-5 text-muted-foreground">{detail}</span>
+      <div className="grid gap-1.5">
+        <span className="text-sm font-medium leading-6 text-foreground">{primary}</span>
+        {secondary ? (
+          <span className="text-xs font-medium leading-5 text-muted-foreground">
+            {secondary}
+          </span>
         ) : null}
+        {detail ? <div className="text-xs leading-5 text-muted-foreground">{detail}</div> : null}
       </div>
     </div>
   )
@@ -279,26 +281,26 @@ export function BrowserModePanel({ viewId, title }: BrowserModePanelProps) {
   }
 
   return (
-    <div className="flex h-full min-h-0 w-full p-4 md:p-6">
+    <div className="flex h-full min-h-0 w-full p-3 md:p-4">
       <Card className="flex h-full min-h-0 w-full flex-col overflow-hidden border-border/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0))] py-0 shadow-[0_12px_40px_rgba(0,0,0,0.12)] backdrop-blur-sm">
-        <CardHeader className="shrink-0 gap-5 border-b border-border/70 bg-[linear-gradient(180deg,rgba(120,140,180,0.08),rgba(120,140,180,0.01))] px-4 py-4 md:px-6 md:py-5">
-          <div className="space-y-4">
+        <CardHeader className="shrink-0 gap-4 border-b border-border/70 bg-[linear-gradient(180deg,rgba(120,140,180,0.08),rgba(120,140,180,0.01))] px-4 py-4 md:px-5 md:py-4.5">
+          <div className="space-y-3">
             <div className="space-y-3">
               <StatusChip className="w-fit border-primary/20 bg-primary/6 text-primary">
                 <Sparkles className="h-3.5 w-3.5" />
                 {title}
               </StatusChip>
               <div className="space-y-2">
-                <CardTitle className="text-lg font-semibold tracking-tight">
+                <CardTitle className="text-xl font-semibold tracking-tight">
                   {resolvedExecutionLabel}
                 </CardTitle>
-                <CardDescription className="max-w-[42ch] leading-6 text-muted-foreground/90">
+                <CardDescription className="max-w-[34ch] text-sm leading-6 text-muted-foreground/90">
                   {t("browserMode.panel.description")}
                 </CardDescription>
               </div>
             </div>
 
-            <div className="grid gap-3 rounded-[1.35rem] border border-border/60 bg-background/75 p-3.5 shadow-[0_1px_0_rgba(255,255,255,0.04)_inset]">
+            <div className="grid gap-2.5 rounded-[1.25rem] border border-border/60 bg-background/75 p-3.5 shadow-[0_1px_0_rgba(255,255,255,0.04)_inset]">
               <div className="flex flex-wrap gap-2">
                 <StatusChip>{resolvedConnectionLabel}</StatusChip>
                 <StatusChip className={getExecutionToneClass(executionPhase)}>
@@ -311,7 +313,7 @@ export function BrowserModePanel({ viewId, title }: BrowserModePanelProps) {
                   <span className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
                     {t("browserMode.panel.requestLabel")}
                   </span>
-                  <span className="text-sm leading-6 text-foreground">
+                  <span className="line-clamp-3 text-sm leading-6 text-foreground">
                     {requestPrompt}
                   </span>
                 </div>
@@ -367,9 +369,9 @@ export function BrowserModePanel({ viewId, title }: BrowserModePanelProps) {
         </CardHeader>
         <CardContent
           data-testid="browser-mode-panel-scroll-body"
-          className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-5"
+          className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-5 md:py-4"
         >
-          <div className="grid gap-4">
+          <div className="grid gap-3.5">
             {isRecovering ? (
               <section className="grid gap-2 rounded-[1.25rem] border border-amber-300/60 bg-amber-50/80 p-4 dark:border-amber-400/20 dark:bg-amber-500/10">
                 <span className="text-[11px] uppercase tracking-[0.2em] text-amber-800/80 dark:text-amber-100/75">
@@ -385,41 +387,33 @@ export function BrowserModePanel({ viewId, title }: BrowserModePanelProps) {
             ) : null}
 
             <InspectorSection label={t("browserMode.panel.executionLabel")}>
-              <div className="grid gap-3 md:grid-cols-2">
-                <MetricRow
+              <div className="grid gap-3">
+                <MetricStack
                   icon={<Link2 className="h-3.5 w-3.5" />}
                   label={t("browserMode.panel.connectionLabel")}
-                  value={resolvedConnectionLabel}
+                  primary={resolvedConnectionLabel}
                   detail={resolvedStatusDetail}
-                  emphasize
                 />
-                <MetricRow
+                <MetricStack
                   icon={<Globe className="h-3.5 w-3.5" />}
                   label={t("browserMode.panel.pageLabel")}
-                  value={page?.title ?? t("browserMode.panel.pageEmpty")}
+                  primary={page?.title ?? t("browserMode.panel.pageEmpty")}
+                  secondary={page?.host}
                   detail={
-                    page?.host && page?.url ? (
-                      <span className="grid gap-1">
-                        <span className="font-medium">{page.host}</span>
-                        <span className="truncate">{page.url}</span>
-                      </span>
-                    ) : page?.host ? (
-                      page.host
-                    ) : page?.url ? (
-                      page.url
+                    page?.url ? (
+                      <span className="block truncate">{page.url}</span>
                     ) : null
                   }
-                  emphasize
                 />
-                <MetricRow
+                <MetricStack
                   icon={<MousePointerClick className="h-3.5 w-3.5" />}
                   label={t("browserMode.panel.lastActionLabel")}
-                  value={lastAction?.summary ?? t("browserMode.panel.lastActionEmpty")}
+                  primary={lastAction?.summary ?? t("browserMode.panel.lastActionEmpty")}
                 />
-                <MetricRow
+                <MetricStack
                   icon={<Activity className="h-3.5 w-3.5" />}
                   label={t("browserMode.panel.executionLabel")}
-                  value={resolvedExecutionLabel}
+                  primary={resolvedExecutionLabel}
                   detail={
                     <span className="grid gap-1">
                       {executionLabel ? <span>{executionLabel}</span> : null}
@@ -429,7 +423,6 @@ export function BrowserModePanel({ viewId, title }: BrowserModePanelProps) {
                       {recoveryReason ? <span>{recoveryReason}</span> : null}
                     </span>
                   }
-                  emphasize
                 />
               </div>
             </InspectorSection>
@@ -457,11 +450,14 @@ export function BrowserModePanel({ viewId, title }: BrowserModePanelProps) {
               </InspectorSection>
             ) : null}
 
-            <InspectorSection label={t("browserMode.panel.pageLabel")} className="gap-4">
-              <div className="grid gap-3 rounded-[1.15rem] border border-border/50 bg-muted/[0.16] p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="grid gap-1">
-                    <span className="text-sm font-medium text-foreground">
+            {page?.url ? (
+              <InspectorSection label={t("browserMode.panel.pageLabel")} className="gap-3">
+                <div className="flex items-start gap-3 rounded-[1.15rem] border border-border/50 bg-muted/[0.12] p-3.5">
+                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border/60 bg-background/80 text-foreground/70">
+                    <ExternalLink className="h-4 w-4" />
+                  </span>
+                  <div className="min-w-0 grid gap-1.5">
+                    <span className="text-sm font-medium leading-6 text-foreground">
                       {page?.title ?? t("browserMode.panel.pageEmpty")}
                     </span>
                     {page?.host ? (
@@ -469,33 +465,13 @@ export function BrowserModePanel({ viewId, title }: BrowserModePanelProps) {
                         {page.host}
                       </span>
                     ) : null}
-                  </div>
-                  {page?.url ? (
-                    <StatusChip className="shrink-0">
-                      <ExternalLink className="h-3.5 w-3.5" />
-                      {t("browserMode.panel.pageLabel")}
-                    </StatusChip>
-                  ) : null}
-                </div>
-                {page?.url ? (
-                  <div className="rounded-2xl border border-border/50 bg-background/80 px-3 py-2 text-xs text-muted-foreground">
-                    <span className="block truncate">{page.url}</span>
-                  </div>
-                ) : null}
-                <div className="grid gap-1">
-                  <span className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                    {t("browserMode.panel.executionLabel")}
-                  </span>
-                  <div className="flex flex-wrap gap-2">
-                    <StatusChip className="bg-muted/35">
-                      <Route className="h-3.5 w-3.5" />
-                      {resolvedExecutionLabel}
-                    </StatusChip>
-                    {page?.host ? <StatusChip className="bg-muted/35">{page.host}</StatusChip> : null}
+                    <span className="truncate text-xs leading-5 text-muted-foreground">
+                      {page.url}
+                    </span>
                   </div>
                 </div>
-              </div>
-            </InspectorSection>
+              </InspectorSection>
+            ) : null}
           </div>
         </CardContent>
       </Card>

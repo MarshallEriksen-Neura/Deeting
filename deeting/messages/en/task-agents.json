@@ -121,6 +121,7 @@
       },
       "draft": "Draft",
       "updatedAt": "Last updated {value}",
+      "requiredHint": "* indicates a required field",
       "basic": {
         "title": "Agent Identity",
         "description": "Name the agent and define how it should behave."

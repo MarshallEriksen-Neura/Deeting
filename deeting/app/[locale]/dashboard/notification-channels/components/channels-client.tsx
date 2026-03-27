@@ -18,16 +18,13 @@ export function NotificationChannelsClient() {
   const [showAdd, setShowAdd] = useState(false)
   const [addType, setAddType] = useState<ChannelType | null>(null)
 
-  const channels = data?.items ?? []
-  const selectableTypes = (Object.keys(CHANNEL_META) as ChannelType[]).filter((type) => {
-    if (!isDesktopRuntime() && type === "wechat") {
-      return false
-    }
-    if (isDesktopRuntime() && type === "email") {
-      return false
-    }
-    return true
-  })
+  const enabledChannelTypes: ChannelType[] = ["feishu", "wechat", "telegram"]
+  const channels = (data?.items ?? []).filter((channel) =>
+    enabledChannelTypes.includes(channel.channel)
+  )
+  const selectableTypes = (Object.keys(CHANNEL_META) as ChannelType[]).filter(
+    (type) => enabledChannelTypes.includes(type) && (isDesktopRuntime() || type !== "wechat")
+  )
   const availableTypes = selectableTypes.filter(
     (type) => !channels.some((channel) => channel.channel === type)
   )

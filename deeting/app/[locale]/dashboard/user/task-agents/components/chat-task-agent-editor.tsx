@@ -98,6 +98,23 @@ type ChatTaskAgentEditorProps = {
   toggleBinding: (kind: "tool" | "skill", identifier: string, checked: boolean) => void
 }
 
+function RequiredFieldLabel({
+  htmlFor,
+  label,
+}: {
+  htmlFor: string
+  label: string
+}) {
+  return (
+    <Label htmlFor={htmlFor} className="flex items-center gap-1">
+      <span>{label}</span>
+      <span className="text-red-400" aria-hidden="true">
+        *
+      </span>
+    </Label>
+  )
+}
+
 export function ChatTaskAgentEditor({
   t,
   draft,
@@ -133,15 +150,26 @@ export function ChatTaskAgentEditor({
           title={t("editor.basic.title")}
           description={t("editor.basic.description")}
         />
+        <p className="text-xs text-[var(--muted)]">
+          <span className="mr-1 text-red-400" aria-hidden="true">
+            *
+          </span>
+          {t("editor.requiredHint")}
+        </p>
 
         <div className="grid gap-5 lg:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="task-agent-name">{t("editor.fields.name")}</Label>
+            <RequiredFieldLabel
+              htmlFor="task-agent-name"
+              label={t("editor.fields.name")}
+            />
             <Input
               id="task-agent-name"
               value={draft.name}
               onChange={(event) => updateDraft("name", event.target.value)}
               placeholder={t("editor.placeholders.name")}
+              required
+              aria-required="true"
             />
           </div>
           <div className="space-y-2">
@@ -170,13 +198,18 @@ export function ChatTaskAgentEditor({
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="task-agent-prompt">{t("editor.fields.taskPrompt")}</Label>
+          <RequiredFieldLabel
+            htmlFor="task-agent-prompt"
+            label={t("editor.fields.taskPrompt")}
+          />
           <Textarea
             id="task-agent-prompt"
             value={draft.task_prompt}
             onChange={(event) => updateDraft("task_prompt", event.target.value)}
             rows={8}
             placeholder={t("editor.placeholders.taskPrompt")}
+            required
+            aria-required="true"
           />
         </div>
 

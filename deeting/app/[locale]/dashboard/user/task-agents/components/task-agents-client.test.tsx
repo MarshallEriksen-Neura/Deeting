@@ -1,5 +1,5 @@
 import React from "react"
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 
 import { TaskAgentsClient } from "./task-agents-client"
 import {
@@ -11,6 +11,7 @@ import {
 const mockMutate = jest.fn()
 const mockUseSWR = jest.fn()
 const mockUseChatService = jest.fn()
+const mockRouterPush = jest.fn()
 
 jest.mock("next-intl", () => ({
   useTranslations: () => {
@@ -20,6 +21,12 @@ jest.mock("next-intl", () => ({
     return t
   },
   useLocale: () => "en",
+}))
+
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: mockRouterPush,
+  }),
 }))
 
 jest.mock("swr", () => ({
@@ -366,7 +373,7 @@ describe("TaskAgentsClient", () => {
     expect(screen.getByDisplayValue("Changed Agent Name")).not.toBeNull()
   })
 
-  it("registers beforeunload protection when there are unsaved changes", async () => {
+  it("does not register native beforeunload protection when there are unsaved changes", async () => {
     render(<TaskAgentsClient />)
 
     const nameInput = await screen.findByDisplayValue("Agent One")
@@ -388,9 +395,45 @@ describe("TaskAgentsClient", () => {
     window.dispatchEvent(beforeUnloadEvent)
 
     await waitFor(() => {
-      expect(beforeUnloadEvent.defaultPrevented).toBe(true)
-      expect(beforeUnloadEvent.returnValue).toBe("")
+      expect(beforeUnloadEvent.defaultPrevented).toBe(false)
+      expect(beforeUnloadEvent.returnValue).toBeUndefined()
     })
+  })
+
+  it("prompts before leaving the page through a same-origin link when the draft is dirty", async () => {
+    render(<TaskAgentsClient />)
+
+    const link = document.createElement("a")
+    link.href = "/dashboard/notification-channels"
+    link.textContent = "Leave page"
+    document.body.append(link)
+
+    const nameInput = await screen.findByDisplayValue("Agent One")
+    fireEvent.change(nameInput, {
+      target: { value: "Changed Agent Name" },
+    })
+
+    const clickEvent = new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+    })
+
+    act(() => {
+      link.dispatchEvent(clickEvent)
+    })
+
+    await waitFor(() => {
+      expect(clickEvent.defaultPrevented).toBe(true)
+      expect(screen.getByText("discardDialog.title")).not.toBeNull()
+      expect(screen.getByText("discardDialog.description")).not.toBeNull()
+    })
+
+    fireEvent.click(screen.getByText("discardDialog.confirm"))
+
+    expect(mockRouterPush).toHaveBeenCalledWith("/dashboard/notification-channels")
+
+    link.remove()
   })
 
   it("filters tools by local binding search", () => {
@@ -451,6 +494,39 @@ describe("TaskAgentsClient", () => {
     render(<TaskAgentsClient />)
 
     expect(screen.getByText("bindings.title")).not.toBeNull()
+  })
+
+  it("marks chat task agent required fields in the editor", () => {
+    render(<TaskAgentsClient />)
+
+    expect(screen.getByText("editor.requiredHint")).not.toBeNull()
+    expect(
+      screen.getByText(
+        (_, element) =>
+          element?.tagName.toLowerCase() === "label" &&
+          element.textContent === "editor.fields.name*",
+      ),
+    ).not.toBeNull()
+    expect(
+      screen.getByText(
+        (_, element) =>
+          element?.tagName.toLowerCase() === "label" &&
+          element.textContent === "editor.fields.taskPrompt*",
+      ),
+    ).not.toBeNull()
+    expect(
+      screen.getByDisplayValue("Agent One"),
+    ).toHaveAttribute("required")
+    expect(
+      screen.getByDisplayValue("Do task one"),
+    ).toHaveAttribute("required")
+    expect(
+      screen.getByText(
+        (_, element) =>
+          element?.tagName.toLowerCase() === "label" &&
+          element.textContent === "editor.fields.description",
+      ),
+    ).not.toBeNull()
   })
 
   it("shows structured image config fields for image-generation agents without chat bindings", async () => {

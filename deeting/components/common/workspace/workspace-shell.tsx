@@ -45,7 +45,7 @@ export const WorkspaceShell = memo<WorkspaceShellProps>(function WorkspaceShell(
         className={cn(
           "border-l bg-background transition-all duration-300",
           hasViews
-            ? "w-[40%] min-w-[400px] max-w-[720px]"
+            ? "w-[44%] min-w-[460px] max-w-[880px]"
             : "w-0 overflow-hidden pointer-events-none"
         )}
         style={{ height: viewportHeight }}
