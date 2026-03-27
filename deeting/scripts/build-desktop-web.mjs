@@ -1,4 +1,4 @@
-import { mkdirSync, renameSync, existsSync, readdirSync, rmSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
@@ -11,119 +11,53 @@ const require = createRequire(import.meta.url);
 const { postprocessDesktopExport } = require("./desktop-export-postprocess.cjs");
 const isWindows = process.platform === "win32";
 
-const disabledDesktopEntries = [
-  "app/[locale]/@auth/[...catchAll]",
-  "app/[locale]/admin/provider-presets/[slug]",
-  "app/[locale]/@auth/(.)login",
-  "app/[locale]/docs",
-  "app/[locale]/download",
-  "app/[locale]/gallery",
-  "app/[locale]/plugins",
-  "app/[locale]/plugins/market",
-  "app/[locale]/spec-agent",
-  "app/[locale]/video",
-  "app/[locale]/videos",
-  "public/docs",
-  "public/images/logo.svg",
-  "public/images/deeting.jpeg",
-];
-
-const adminDesktopRoot = "app/[locale]/admin";
-const allowedDesktopAdminEntries = new Set([
-  "layout.tsx",
-  "page.tsx",
-  "provider-presets",
-  "users",
-]);
-
-const hiddenRoot = path.join(projectRoot, ".tmp", "desktop-export-disabled-routes");
-
-function ensureDir(dir) {
-  mkdirSync(dir, { recursive: true });
-}
-
-function moveEntry(fromRelative, toRoot) {
-  const fromPath = path.join(projectRoot, fromRelative);
-  if (!existsSync(fromPath)) return null;
-  const toPath = path.join(toRoot, fromRelative);
-  ensureDir(path.dirname(toPath));
-  if (existsSync(toPath)) {
-    rmSync(toPath, { recursive: true, force: true });
-  }
-  renameSync(fromPath, toPath);
-  return { fromPath, toPath };
-}
-
-function moveExcludedAdminEntries(toRoot) {
-  const adminRootPath = path.join(projectRoot, adminDesktopRoot);
-  if (!existsSync(adminRootPath)) return [];
-
-  return readdirSync(adminRootPath)
-    .filter((entry) => !allowedDesktopAdminEntries.has(entry))
-    .map((entry) => moveEntry(path.join(adminDesktopRoot, entry), toRoot))
-    .filter(Boolean);
-}
-
 function resolveNextCommand() {
-  const localNext = path.join(
-    projectRoot,
-    "node_modules",
-    ".bin",
-    isWindows ? "next.cmd" : "next"
-  );
-  return existsSync(localNext) ? localNext : "next";
+  const localNextCandidates = isWindows
+    ? ["next.cmd", "next.exe"]
+    : ["next"];
+
+  for (const candidate of localNextCandidates) {
+    const localNext = path.join(projectRoot, "node_modules", ".bin", candidate);
+    if (existsSync(localNext)) {
+      return localNext;
+    }
+  }
+
+  return "next";
 }
 
-const movedRoutes = [];
 let exitCode = 1;
 
-try {
-  ensureDir(hiddenRoot);
-  movedRoutes.push(...moveExcludedAdminEntries(hiddenRoot));
-  for (const routeEntry of disabledDesktopEntries) {
-    const moved = moveEntry(routeEntry, hiddenRoot);
-    if (moved) movedRoutes.push(moved);
-  }
+const result = spawnSync(resolveNextCommand(), ["build"], {
+  cwd: projectRoot,
+  env: {
+    ...process.env,
+    DEETING_DESKTOP_EXPORT: "true",
+  },
+  shell: false,
+  stdio: "inherit",
+});
 
-  const result = spawnSync(resolveNextCommand(), ["build"], {
-    cwd: projectRoot,
-    env: {
-      ...process.env,
-      DEETING_DESKTOP_EXPORT: "true",
-    },
-    shell: false,
-    stdio: "inherit",
-  });
+if (result.error) {
+  console.error(`[build-desktop-web] failed to execute next build: ${result.error.message}`);
+  exitCode = 1;
+} else {
+  exitCode = result.status ?? 1;
+}
 
-  if (result.error) {
-    console.error(`[build-desktop-web] failed to execute next build: ${result.error.message}`);
+if (exitCode === 0) {
+  try {
+    const { defaultLocale, copiedPaths } = postprocessDesktopExport(projectRoot);
+
+    if (copiedPaths.length > 0) {
+      console.log(
+        `[build-desktop-web] mirrored ${copiedPaths.length} ${defaultLocale} export file(s) into unprefixed desktop paths.`
+      );
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[build-desktop-web] desktop export postprocess failed: ${message}`);
     exitCode = 1;
-  } else {
-    exitCode = result.status ?? 1;
-  }
-
-  if (exitCode === 0) {
-    try {
-      const { defaultLocale, copiedPaths } = postprocessDesktopExport(projectRoot);
-
-      if (copiedPaths.length > 0) {
-        console.log(
-          `[build-desktop-web] mirrored ${copiedPaths.length} ${defaultLocale} export file(s) into unprefixed desktop paths.`
-        );
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(`[build-desktop-web] desktop export postprocess failed: ${message}`);
-      exitCode = 1;
-    }
-  }
-} finally {
-  for (let i = movedRoutes.length - 1; i >= 0; i -= 1) {
-    const moved = movedRoutes[i];
-    if (existsSync(moved.toPath)) {
-      ensureDir(path.dirname(moved.fromPath));
-      renameSync(moved.toPath, moved.fromPath);
-    }
   }
 }
 

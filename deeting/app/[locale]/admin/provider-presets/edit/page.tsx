@@ -15,16 +15,12 @@ const PageContent = dynamic(
   }
 )
 
-export function generateStaticParams() {
-  return []
-}
-
-export default async function ProviderPresetDetailPage({
+export default async function EditProviderPresetPage({
   params,
 }: {
-  params: Promise<{ locale: string; slug: string }>
+  params: Promise<{ locale: string }>
 }) {
-  const { locale, slug } = await params
+  const { locale } = await params
   setRequestLocale(locale)
   const tAdmin = await getTranslations({ locale, namespace: "admin" })
 
@@ -34,7 +30,7 @@ export default async function ProviderPresetDetailPage({
       description={tAdmin("providerPresetsEditor.description")}
       icon={<Package2 />}
     >
-      <PageContent slug={slug} />
+      <PageContent />
     </AdminPageShell>
   )
 }

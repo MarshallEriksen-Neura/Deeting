@@ -94,7 +94,7 @@ describe("Admin provider presets page", () => {
     )
     expect(screen.getByRole("link", { name: "actions.edit" })).toHaveAttribute(
       "href",
-      "/admin/provider-presets/openai"
+      "/admin/provider-presets/edit?slug=openai"
     )
   })
 })

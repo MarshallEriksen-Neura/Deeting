@@ -323,9 +323,10 @@ export function PresetEditorConsole(props: PresetEditorConsoleProps) {
     try {
       if (mode === "create") {
         const created = await createAdminProviderPreset(draftPayload as ProviderPresetCreatePayload)
+        const createdSlug = (created.slug ?? draftPayload.slug).trim()
         setFeedbackTone("success")
         setFeedback(t("feedback.created"))
-        router.replace(`/admin/provider-presets/${created.slug}`)
+        router.replace(`/admin/provider-presets/edit?slug=${encodeURIComponent(createdSlug)}`)
         return
       }
 

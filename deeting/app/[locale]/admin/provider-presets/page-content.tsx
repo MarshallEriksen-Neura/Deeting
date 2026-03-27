@@ -74,7 +74,9 @@ function PresetRowActions({
     <div className="flex items-center justify-end gap-2">
       {slug ? (
         <Button asChild size="sm" variant="outline">
-          <Link href={`/admin/provider-presets/${slug}`}>{t("actions.edit")}</Link>
+          <Link href={`/admin/provider-presets/edit?slug=${encodeURIComponent(slug)}`}>
+            {t("actions.edit")}
+          </Link>
         </Button>
       ) : null}
       {slug ? (
