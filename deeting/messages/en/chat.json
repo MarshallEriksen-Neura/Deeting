@@ -100,6 +100,20 @@
         "inspect": "Inspect page",
         "connectionLabel": "Connection",
         "connectionUnknown": "Waiting for browser bridge state",
+        "connectionState": {
+          "idle": "Checking bridge",
+          "connecting": "Connecting bridge",
+          "connected": "Connected",
+          "extension_not_connected": "Extension not connected",
+          "unsupported": "Unsupported",
+          "error": "Connection error"
+        },
+        "connectionDetail": {
+          "browser_agent_extension_connected": "Chrome extension is connected to the desktop bridge.",
+          "browser_agent_bridge_listening": "Desktop bridge is listening. Connect the Chrome extension to continue.",
+          "browser_agent_desktop_only": "Browser mode is only available in the desktop app.",
+          "browser_agent_bridge_start_failed": "Failed to start the browser bridge: {detail}"
+        },
         "pageLabel": "Current page",
         "pageEmpty": "No page selected yet",
         "lastActionLabel": "Latest action",

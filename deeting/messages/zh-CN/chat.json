@@ -100,6 +100,20 @@
         "inspect": "巡检当前页",
         "connectionLabel": "连接状态",
         "connectionUnknown": "等待浏览器连接状态",
+        "connectionState": {
+          "idle": "正在检查连接",
+          "connecting": "正在连接桥接服务",
+          "connected": "已连接",
+          "extension_not_connected": "扩展未连接",
+          "unsupported": "当前环境不支持",
+          "error": "连接异常"
+        },
+        "connectionDetail": {
+          "browser_agent_extension_connected": "Chrome 扩展已连接到桌面桥接服务。",
+          "browser_agent_bridge_listening": "桌面桥接服务已启动，请连接 Chrome 扩展后继续。",
+          "browser_agent_desktop_only": "Browser Mode 仅在桌面应用中可用。",
+          "browser_agent_bridge_start_failed": "浏览器桥接服务启动失败：{detail}"
+        },
         "pageLabel": "当前页面",
         "pageEmpty": "当前还没有页面上下文",
         "lastActionLabel": "最近动作",

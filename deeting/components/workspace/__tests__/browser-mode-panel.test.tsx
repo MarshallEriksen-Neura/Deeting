@@ -132,6 +132,41 @@ describe("BrowserModePanel", () => {
     ).toBeInTheDocument()
   })
 
+  it("uses connection-state and connection-detail translation keys when store labels are unavailable", () => {
+    mockUseBrowserModeStatus.mockReturnValue({
+      bridgeStatus: null,
+      isRefreshing: false,
+      refresh: jest.fn(),
+      connectionState: "connected",
+      statusLabel: "connected",
+      statusDetail: "browser_agent_extension_connected",
+    })
+
+    useBrowserModeStore.getState().requestBrowserMode({
+      prompt: "打开 github 并查看 notifications",
+      source: "chat",
+    })
+    useBrowserModeStore.getState().confirm()
+
+    useWorkspaceStore.getState().openView({
+      id: "browser-mode",
+      type: "browser-mode",
+      title: "Browser Mode",
+      content: { source: "chat-browser-mode" },
+    })
+
+    render(<WorkspacePanel />)
+
+    expect(
+      screen.getAllByText("browserMode.panel.connectionState.connected").length
+    ).toBeGreaterThan(0)
+    expect(
+      screen.getByText(
+        "browserMode.panel.connectionDetail.browser_agent_extension_connected"
+      )
+    ).toBeInTheDocument()
+  })
+
   it("renders execution phase, retry count, and recovery reason when present", () => {
     mockUseBrowserModeStatus.mockReturnValue({
       bridgeStatus: null,

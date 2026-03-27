@@ -1,5 +1,4 @@
 use serde_json::{json, Value};
-use std::collections::BTreeSet;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct CapabilityExecutionContract {
@@ -15,10 +14,9 @@ impl CapabilityExecutionContract {
                     .to_string(),
             );
         };
+        mcp_runtime::capability_snapshot::extract_callable_direct_capability_names(search_result)?;
         let allowed_tools =
-            crate::modules::capability_control_plane::extract_direct_callable_capability_names(
-                search_result,
-            )?;
+            mcp_runtime::capability_snapshot::merge_allowed_tool_names(&[], Some(search_result));
         Ok(Self {
             allowed_tools,
             capability_snapshot: search_result.clone(),
@@ -29,31 +27,11 @@ impl CapabilityExecutionContract {
         request_allowed_tools: Option<&[String]>,
         capability_snapshot: Option<&Value>,
     ) -> Self {
-        let mut names = BTreeSet::new();
-        if let Some(items) = request_allowed_tools {
-            for item in items {
-                let normalized = item.trim().to_lowercase();
-                if !normalized.is_empty() {
-                    names.insert(normalized);
-                }
-            }
-        }
-        if let Some(snapshot) = capability_snapshot {
-            if let Ok(capability_names) =
-                crate::modules::capability_control_plane::extract_direct_callable_capability_names(
-                    snapshot,
-                )
-            {
-                for name in capability_names {
-                    if !name.is_empty() {
-                        names.insert(name);
-                    }
-                }
-            }
-        }
-
         Self {
-            allowed_tools: names.into_iter().collect(),
+            allowed_tools: mcp_runtime::capability_snapshot::merge_allowed_tool_names(
+                request_allowed_tools.unwrap_or(&[]),
+                capability_snapshot,
+            ),
             capability_snapshot: capability_snapshot.cloned().unwrap_or(Value::Null),
         }
     }

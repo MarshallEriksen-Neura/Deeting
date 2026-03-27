@@ -1,6 +1,8 @@
 use serde::Serialize;
 use serde_json::{json, Value};
 
+use crate::capability_snapshot::extract_callable_direct_capability_names;
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub enum LocalRouteKind {
     Direct,
@@ -329,26 +331,13 @@ impl TaskProfile {
 
 impl RouteEvidence {
     pub fn from_search_result(search_result: &Value) -> Self {
+        let callable_direct_capability_names =
+            extract_callable_direct_capability_names(search_result).unwrap_or_default();
         let direct_callable_capability_count = search_result
             .pointer("/routing_hint/direct_callable_capability_count")
             .and_then(Value::as_u64)
             .map(|value| value as usize)
-            .unwrap_or_else(|| {
-                search_result
-                    .get("capabilities")
-                    .and_then(Value::as_array)
-                    .map(|items| {
-                        items
-                            .iter()
-                            .filter(|item| {
-                                item.pointer("/status/callable")
-                                    .and_then(Value::as_bool)
-                                    .unwrap_or(false)
-                            })
-                            .count()
-                    })
-                    .unwrap_or(0)
-            });
+            .unwrap_or(callable_direct_capability_names.len());
         let capabilities = search_result
             .get("capabilities")
             .and_then(Value::as_array)
@@ -364,26 +353,10 @@ impl RouteEvidence {
                 .and_then(Value::as_str)
                 .is_some_and(|value| matches!(value, "high" | "critical"))
         });
-        let direct_capability_names = capabilities
+        let direct_capability_names = callable_direct_capability_names
             .iter()
-            .filter(|item| {
-                item.pointer("/status/callable")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false)
-            })
-            .filter_map(|item| item.get("name").and_then(Value::as_str))
             .take(3)
-            .map(|value| value.to_string())
-            .collect::<Vec<_>>();
-        let callable_direct_capability_names = capabilities
-            .iter()
-            .filter(|item| {
-                item.pointer("/status/callable")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false)
-            })
-            .filter_map(|item| item.get("name").and_then(Value::as_str))
-            .map(|value| value.to_string())
+            .cloned()
             .collect::<Vec<_>>();
         let has_programmatic_executor = search_result
             .get("orchestration_primitives")

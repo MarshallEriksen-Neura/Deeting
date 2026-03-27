@@ -1,8 +1,7 @@
-use std::collections::BTreeSet;
-
 use serde::Serialize;
 use serde_json::{json, Value};
 
+use crate::capability_snapshot::merge_allowed_tool_names;
 use crate::prompt::{PromptAssets, PromptPlan};
 use crate::route::{
     build_local_route_status_meta, LocalRouteDecision, LocalRouteKind, RouteEvidence,
@@ -112,22 +111,7 @@ impl LocalExecutionPolicy {
         &self,
         capability_snapshot: Option<&serde_json::Value>,
     ) -> Vec<String> {
-        let mut allowed = self.allowed_tool_names.clone();
-        if let Some(snapshot) = capability_snapshot {
-            if let Some(items) = snapshot
-                .get("allowed_tool_names")
-                .and_then(|v| v.as_array())
-            {
-                for item in items {
-                    if let Some(text) = item.as_str() {
-                        allowed.push(text.to_string());
-                    }
-                }
-            }
-        }
-        allowed.sort();
-        allowed.dedup();
-        allowed
+        merge_allowed_tool_names(&self.allowed_tool_names, capability_snapshot)
     }
 }
 
@@ -202,18 +186,14 @@ pub fn enrich_execution_policy_with_runtime_discovery(
     }
     if let Some(discovery) = runtime_discovery {
         policy.capability_snapshot = Some(discovery.raw_search_result().clone());
-        allowed.extend(
-            discovery
-                .route_evidence
-                .callable_direct_capability_names
-                .iter()
-                .cloned(),
-        );
     } else {
         policy.capability_snapshot = None;
     }
 
-    policy.allowed_tool_names = normalize_tool_names(allowed);
+    policy.allowed_tool_names = merge_allowed_tool_names(
+        &allowed,
+        runtime_discovery.map(RuntimeDiscoveryBundle::raw_search_result),
+    );
     policy
 }
 
@@ -238,19 +218,6 @@ fn extract_array_items(search_result: &Value, field: &str) -> Vec<Value> {
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default()
-}
-
-fn normalize_tool_names<I>(names: I) -> Vec<String>
-where
-    I: IntoIterator<Item = String>,
-{
-    names
-        .into_iter()
-        .map(|name| name.trim().to_lowercase())
-        .filter(|name| !name.is_empty())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
 }
 
 #[cfg(test)]
@@ -311,11 +278,11 @@ mod tests {
     fn enrich_execution_policy_with_runtime_discovery_allows_all_callable_direct_capabilities() {
         let discovery = RuntimeDiscoveryBundle::from_search_result(json!({
             "capabilities": [
-                {"name": "exa", "status": {"callable": true}},
-                {"name": "tavily-search", "status": {"callable": true}},
-                {"name": "tavily-extract", "status": {"callable": true}},
-                {"name": "fetch_page", "status": {"callable": true}},
-                {"name": "disabled_tool", "status": {"callable": false}}
+                {"name": "exa", "invocation_mode": "direct", "status": {"callable": true}},
+                {"name": "tavily-search", "invocation_mode": "direct", "status": {"callable": true}},
+                {"name": "tavily-extract", "invocation_mode": "direct", "status": {"callable": true}},
+                {"name": "fetch_page", "invocation_mode": "direct", "status": {"callable": true}},
+                {"name": "disabled_tool", "invocation_mode": "direct", "status": {"callable": false}}
             ]
         }));
 
@@ -342,6 +309,33 @@ mod tests {
                 "search_sdk".to_string(),
                 "tavily-extract".to_string(),
                 "tavily-search".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn effective_allowed_tool_names_merges_snapshot_direct_capabilities_without_legacy_field() {
+        let policy = LocalExecutionPolicy {
+            route: LocalRouteKind::Worker,
+            plane: LocalExecutionPlane::WorkerReasoning,
+            allowed_tool_names: vec!["search_sdk".to_string()],
+            inject_execution_protocol: true,
+            allow_worker_delegation: true,
+            prefer_workflow_runtime: false,
+            capability_snapshot: None,
+        };
+
+        assert_eq!(
+            policy.effective_allowed_tool_names(Some(&json!({
+                "capabilities": [
+                    {"name": "browser_open_tab", "invocation_mode": "direct", "status": {"callable": true}},
+                    {"name": "browser_get_page_snapshot", "invocation_mode": "direct", "status": {"callable": true}}
+                ]
+            }))),
+            vec![
+                "browser_get_page_snapshot".to_string(),
+                "browser_open_tab".to_string(),
+                "search_sdk".to_string(),
             ]
         );
     }

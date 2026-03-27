@@ -21,7 +21,10 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { useI18n } from "@/hooks/use-i18n"
-import { useBrowserModeStatus } from "@/hooks/chat/use-browser-mode-status"
+import {
+  useBrowserModeStatus,
+  type BrowserModeConnectionState,
+} from "@/hooks/chat/use-browser-mode-status"
 import { getLocalBrowserAgentPageSnapshot } from "@/lib/api/browser-agent"
 import { buildPageInspectionResult } from "@/lib/browser/page-inspection"
 import { cn } from "@/lib/utils"
@@ -32,6 +35,9 @@ interface BrowserModePanelProps {
   viewId: string
   title: string
 }
+
+const BROWSER_AGENT_BRIDGE_START_FAILED_PREFIX =
+  "browser_agent_bridge_start_failed:"
 
 function getExecutionToneClass(phase: string) {
   switch (phase) {
@@ -48,6 +54,12 @@ function getExecutionToneClass(phase: string) {
     default:
       return "border-primary/20 bg-primary/8 text-primary"
   }
+}
+
+function getConnectionStateTranslationKey(
+  connectionState: BrowserModeConnectionState
+) {
+  return `browserMode.panel.connectionState.${connectionState}` as const
 }
 
 function StatusChip({
@@ -132,6 +144,41 @@ function MetricStack({
       </div>
     </div>
   )
+}
+
+function resolveConnectionDetail(
+  statusDetail: string | null,
+  connectionState: BrowserModeConnectionState,
+  t: ReturnType<typeof useI18n>
+) {
+  if (!statusDetail) {
+    if (connectionState === "idle") {
+      return t("browserMode.panel.connectionUnknown")
+    }
+
+    return t(getConnectionStateTranslationKey(connectionState))
+  }
+
+  switch (statusDetail) {
+    case "browser_agent_extension_connected":
+      return t("browserMode.panel.connectionDetail.browser_agent_extension_connected")
+    case "browser_agent_bridge_listening":
+      return t("browserMode.panel.connectionDetail.browser_agent_bridge_listening")
+    case "browser_agent_desktop_only":
+      return t("browserMode.panel.connectionDetail.browser_agent_desktop_only")
+    default:
+      if (statusDetail.startsWith(BROWSER_AGENT_BRIDGE_START_FAILED_PREFIX)) {
+        const detail = statusDetail
+          .slice(BROWSER_AGENT_BRIDGE_START_FAILED_PREFIX.length)
+          .trim()
+
+        return t("browserMode.panel.connectionDetail.browser_agent_bridge_start_failed", {
+          detail: detail || statusDetail,
+        })
+      }
+
+      return statusDetail
+  }
 }
 
 function TimelineEntry({
@@ -232,10 +279,13 @@ export function BrowserModePanel({ viewId, title }: BrowserModePanelProps) {
 
   const resolvedConnectionLabel =
     connectionLabel ??
-    t(`browserMode.panel.status.${connectionState}`)
+    t(getConnectionStateTranslationKey(connectionState))
 
-  const resolvedStatusDetail =
-    statusDetail ?? t(`browserMode.panel.status.${connectionState}`)
+  const resolvedStatusDetail = resolveConnectionDetail(
+    statusDetail,
+    connectionState,
+    t
+  )
   const isRecovering =
     status === "recovering" ||
     connectionState === "extension_not_connected" ||
