@@ -117,10 +117,10 @@ pub fn select_local_route_with_evidence(
 pub fn render_local_route_prompt(decision: &LocalRouteDecision) -> String {
     let route_guidance = match decision.route {
         LocalRouteKind::Direct => {
-            "Prefer direct answer or the lightest direct callable capability that can finish the job. If capability choice is the blocker, you must use search_sdk to discover the best direct capability and exhaust reasonable low-cost refinements before answering or refusing. Escalate into execute_code_plan when the user wants a concrete deliverable that needs multi-step coordination."
+            "Prefer direct answer or the lightest direct callable capability that can finish the job. If capability choice is the blocker, you must call search_sdk before any refusal, inability claim, or manual-user handoff. If results are weak, refine the query with concrete action-and-target terms at least once before answering or refusing. For browser/page/tab requests, search for the requested action and target first rather than assuming the browser lane is unavailable. Escalate into execute_code_plan when the user wants a concrete deliverable that needs multi-step coordination."
         }
         LocalRouteKind::Worker => {
-            "Treat this as analysis, planning, or decomposition work, but keep moving toward completion. If the task depends on unknown runtime capabilities or installed tools, you must use search_sdk and exhaust reasonable low-cost discovery before concluding what is or is not possible. When the task needs multi-step coordination, loops, aggregation, or broad edits, you may use execute_code_plan as a worker execution tool. If verified sources and available capabilities are enough to produce the requested deliverable, do that instead of stopping at recommendations."
+            "Treat this as analysis, planning, or decomposition work, but keep moving toward completion. If the task depends on unknown runtime capabilities or installed tools, you must use search_sdk before concluding what is or is not possible, and refine weak results with concrete action-and-target terms at least once. Do not default to a generic inability claim for browser/page/tab actions before discovery has ruled out the relevant lane. When the task needs multi-step coordination, loops, aggregation, or broad edits, you may use execute_code_plan as a worker execution tool. If verified sources and available capabilities are enough to produce the requested deliverable, do that instead of stopping at recommendations."
         }
     };
     let reasons = if decision.reasons.is_empty() {
@@ -425,5 +425,33 @@ mod tests {
 
         assert_eq!(decision.route, LocalRouteKind::Worker);
         assert_eq!(decision.reasons, vec!["explicit_route".to_string()]);
+    }
+
+    #[test]
+    fn rendered_direct_route_prompt_requires_search_before_refusal() {
+        let prompt = render_local_route_prompt(&LocalRouteDecision {
+            route: LocalRouteKind::Direct,
+            reasons: vec!["multiple_direct_candidates".to_string()],
+            profile: TaskProfile {
+                explicit_route: None,
+                has_batch_scope: false,
+                wants_programmatic_logic: false,
+                wants_analysis: false,
+                wants_single_action: true,
+                destructive_intent: false,
+                approval_sensitive: false,
+            },
+            evidence: RouteEvidence {
+                direct_callable_capability_count: 2,
+                has_programmatic_executor: false,
+                any_mutating_capability: false,
+                any_high_risk_capability: false,
+                direct_capability_names: vec!["browser_click".to_string()],
+                callable_direct_capability_names: vec!["browser_click".to_string()],
+            },
+        });
+
+        assert!(prompt.contains("must call search_sdk before any refusal"));
+        assert!(prompt.contains("browser/page/tab requests"));
     }
 }

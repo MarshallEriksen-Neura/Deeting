@@ -6,7 +6,9 @@ const MISSING_CAPABILITIES_ERROR: &str = "search_sdk result is missing capabilit
 const NO_CALLABLE_DIRECT_CAPABILITIES_ERROR: &str =
     "search_sdk returned no callable direct capabilities; refine the search before execute_code_plan";
 
-pub fn extract_callable_direct_capability_names(search_result: &Value) -> Result<Vec<String>, String> {
+pub fn extract_callable_direct_capability_names(
+    search_result: &Value,
+) -> Result<Vec<String>, String> {
     let capabilities = search_result
         .get("capabilities")
         .and_then(Value::as_array)

@@ -92,6 +92,7 @@ fn render_skill_recipe_prompt(recipes: &[Value]) -> Option<String> {
         "## Installed Skills".to_string(),
         "These are installed skill bundles. Recipe entries are supporting guidance only; the current request allowlist plus `search_sdk` capability results are the source of truth for what is executable right now.".to_string(),
         "Read the recipe details when helpful, but if `search_sdk` surfaces a callable direct capability for this request you may call it directly.".to_string(),
+        "Do not stop at recipe guidance, refusal, or manual handoff until `search_sdk` has verified the executable capability set for this request.".to_string(),
     ];
 
     for recipe in recipes {
@@ -2554,6 +2555,7 @@ mod tests {
         assert!(prompt.contains("Planner"));
         assert!(prompt.contains("source of truth"));
         assert!(prompt.contains("callable direct capability"));
+        assert!(prompt.contains("manual handoff"));
         assert!(prompt.contains("read_skill_docs"));
         assert!(prompt.contains("SKILL.md"));
         assert!(prompt.contains("backend=main.py"));
