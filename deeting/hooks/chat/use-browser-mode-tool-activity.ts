@@ -75,6 +75,16 @@ function applyBrowserToolResult(
     if (result.recovered === true || result.ok === false) {
       update.markRecovery(recoveryReason, retryCount)
     }
+    update.appendTimelineEvent({
+      kind: "tool_result",
+      phase: "recovering",
+      label:
+        asString(result.status) === "REQUIRES_APPROVAL"
+          ? "Fresh approval required after recovery"
+          : result.ok === true
+            ? "Recovered browser action after re-locating target"
+            : recoveryReason,
+    })
     update.setLastAction({
       kind: toolName,
       summary:
@@ -97,6 +107,11 @@ function applyBrowserToolResult(
 
   if (toolName === "browser_wait_for_element") {
     update.setExecutionState("waiting", "Target element located")
+    update.appendTimelineEvent({
+      kind: "tool_result",
+      phase: "waiting",
+      label: "Target element located",
+    })
     update.setLastAction({ kind: toolName, summary: "Target element located" })
     const url = asString(result.url)
     const title = asString(result.title)
@@ -110,6 +125,11 @@ function applyBrowserToolResult(
 
   if (toolName === "browser_wait_for_navigation") {
     update.setExecutionState("verifying", "Navigation confirmed")
+    update.appendTimelineEvent({
+      kind: "tool_result",
+      phase: "verifying",
+      label: "Navigation confirmed",
+    })
     update.setLastAction({ kind: toolName, summary: "Navigation confirmed" })
     const url = asString(result.url)
     const title = asString(result.title)
@@ -123,12 +143,22 @@ function applyBrowserToolResult(
 
   if (toolName === "browser_scroll_into_view") {
     update.setExecutionState("acting", "Scrolled target into view")
+    update.appendTimelineEvent({
+      kind: "tool_result",
+      phase: "acting",
+      label: "Scrolled target into view",
+    })
     update.setLastAction({ kind: toolName, summary: "Scrolled target into view" })
     return
   }
 
   if (toolName === "browser_click") {
     update.setExecutionState("acting", "Clicked browser element")
+    update.appendTimelineEvent({
+      kind: "tool_result",
+      phase: "acting",
+      label: "Clicked browser element",
+    })
     update.setLastAction({ kind: toolName, summary: "Clicked browser element" })
     return
   }
@@ -136,6 +166,11 @@ function applyBrowserToolResult(
   if (toolName === "browser_type") {
     const text = asString(toolArgs?.text)
     update.setExecutionState("acting", "Typed into browser element")
+    update.appendTimelineEvent({
+      kind: "tool_result",
+      phase: "acting",
+      label: text ? `Typed "${text}" into browser element` : "Typed into browser element",
+    })
     update.setLastAction({
       kind: toolName,
       summary: text ? `Typed "${text}" into browser element` : "Typed into browser element",
@@ -189,6 +224,11 @@ export function useBrowserModeToolActivity(messages: Message[]) {
     if (block.type === "tool_call") {
       const next = describeToolCall(toolName)
       browserModeStore.setExecutionState(next.phase, next.label)
+      browserModeStore.appendTimelineEvent({
+        kind: "tool_call",
+        phase: next.phase,
+        label: next.label,
+      })
       return
     }
 

@@ -55,6 +55,15 @@ describe("useBrowserModeToolActivity", () => {
 
     expect(useBrowserModeStore.getState().executionPhase).toBe("waiting")
     expect(useBrowserModeStore.getState().executionLabel).toBe("Waiting for target element")
+    expect(useBrowserModeStore.getState().timeline).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "tool_call",
+          phase: "waiting",
+          label: "Waiting for target element",
+        }),
+      ])
+    )
   })
 
   it("hydrates recovery metadata from browser retry results", async () => {
@@ -110,6 +119,15 @@ describe("useBrowserModeToolActivity", () => {
     expect(useBrowserModeStore.getState().lastAction).toMatchObject({
       summary: "Recovered browser action after re-locating target",
     })
+    expect(useBrowserModeStore.getState().timeline).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "tool_result",
+          phase: "recovering",
+          label: "Recovered browser action after re-locating target",
+        }),
+      ])
+    )
     expect(useBrowserModeStore.getState().page).toMatchObject({
       title: "Dashboard",
       url: "https://example.com/dashboard",
@@ -172,5 +190,14 @@ describe("useBrowserModeToolActivity", () => {
     expect(useBrowserModeStore.getState().lastAction).toMatchObject({
       summary: "Fresh approval required after recovery",
     })
+    expect(useBrowserModeStore.getState().timeline).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "tool_result",
+          phase: "recovering",
+          label: "Fresh approval required after recovery",
+        }),
+      ])
+    )
   })
 })

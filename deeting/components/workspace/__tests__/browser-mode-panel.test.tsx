@@ -159,4 +159,46 @@ describe("BrowserModePanel", () => {
     expect(screen.getByText("browserMode.panel.retryCount")).toBeInTheDocument()
     expect(useBrowserModeStore.getState().retryCount).toBe(2)
   })
+
+  it("renders a browser execution timeline when timeline events exist", () => {
+    mockUseBrowserModeStatus.mockReturnValue({
+      bridgeStatus: null,
+      isRefreshing: false,
+      refresh: jest.fn(),
+      connectionState: "connected",
+      statusLabel: "connected",
+      statusDetail: "browser_agent_extension_connected",
+    })
+
+    useBrowserModeStore.getState().requestBrowserMode({
+      prompt: "打开 github 并查看 notifications",
+      source: "chat",
+    })
+    useBrowserModeStore.getState().confirm()
+    useBrowserModeStore.getState().appendTimelineEvent({
+      kind: "tool_call",
+      label: "Waiting for target element",
+      phase: "waiting",
+    })
+    useBrowserModeStore.getState().appendTimelineEvent({
+      kind: "tool_result",
+      label: "Navigation confirmed",
+      phase: "verifying",
+    })
+
+    useWorkspaceStore.getState().openView({
+      id: "browser-mode",
+      type: "browser-mode",
+      title: "Browser Mode",
+      content: { source: "chat-browser-mode" },
+    })
+
+    render(<WorkspacePanel />)
+
+    expect(screen.getByText("browserMode.panel.timelineLabel")).toBeInTheDocument()
+    expect(screen.getByText("Waiting for target element")).toBeInTheDocument()
+    expect(screen.getByText("Navigation confirmed")).toBeInTheDocument()
+    expect(screen.getAllByText("browserMode.panel.execution.waiting").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("browserMode.panel.execution.verifying").length).toBeGreaterThan(0)
+  })
 })

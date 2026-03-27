@@ -122,6 +122,34 @@ describe("useBrowserModeStore", () => {
     expect(state.recoveryReason).toBe("Element no longer matched after navigation")
   })
 
+  it("records timeline events for browser execution progress", () => {
+    const store = useBrowserModeStore.getState()
+
+    store.appendTimelineEvent({
+      kind: "tool_call",
+      label: "Waiting for target element",
+      phase: "waiting",
+    })
+    store.appendTimelineEvent({
+      kind: "tool_result",
+      label: "Navigation confirmed",
+      phase: "verifying",
+    })
+
+    const state = useBrowserModeStore.getState()
+    expect(state.timeline).toHaveLength(2)
+    expect(state.timeline[0]).toMatchObject({
+      kind: "tool_call",
+      label: "Waiting for target element",
+      phase: "waiting",
+    })
+    expect(state.timeline[1]).toMatchObject({
+      kind: "tool_result",
+      label: "Navigation confirmed",
+      phase: "verifying",
+    })
+  })
+
   it("ends browser mode and preserves a summary while clearing active page state", () => {
     const store = useBrowserModeStore.getState()
     store.requestBrowserMode({ prompt: "打开网页", source: "chat" })

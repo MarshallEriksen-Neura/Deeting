@@ -28,6 +28,14 @@ export interface BrowserModeActionSummary {
   summary: string
 }
 
+export interface BrowserModeTimelineEntry {
+  id: string
+  kind: "tool_call" | "tool_result" | "system"
+  label: string
+  phase: BrowserModeExecutionPhase
+  createdAt: number
+}
+
 export type BrowserModeExecutionPhase =
   | "idle"
   | "waiting"
@@ -51,6 +59,7 @@ interface BrowserModeState {
   connectionLabel: string | null
   page: BrowserModePageContext | null
   lastAction: BrowserModeActionSummary | null
+  timeline: BrowserModeTimelineEntry[]
   endedSummary: string | null
   requestBrowserMode: (request: BrowserModeRequest) => void
   confirm: () => void
@@ -66,6 +75,9 @@ interface BrowserModeState {
   markRecovery: (reason: string, retryCount: number) => void
   setLastAction: (action: BrowserModeActionSummary | null) => void
   mergePage: (page: Partial<BrowserModePageContext>) => void
+  appendTimelineEvent: (
+    entry: Omit<BrowserModeTimelineEntry, "id" | "createdAt">
+  ) => void
   end: (summary?: string | null) => void
   reset: () => void
 }
@@ -80,6 +92,7 @@ const initialState = {
   connectionLabel: null as string | null,
   page: null as BrowserModePageContext | null,
   lastAction: null as BrowserModeActionSummary | null,
+  timeline: [] as BrowserModeTimelineEntry[],
   endedSummary: null as string | null,
 }
 
@@ -94,6 +107,7 @@ export const useBrowserModeStore = create<BrowserModeState>()((set) => ({
       recoveryReason: null,
       request,
       connectionLabel: null,
+      timeline: [],
       endedSummary: null,
     }),
   confirm: () =>
@@ -119,6 +133,7 @@ export const useBrowserModeStore = create<BrowserModeState>()((set) => ({
       connectionLabel,
       page,
       lastAction: lastAction ?? state.lastAction,
+      timeline: state.timeline,
       endedSummary: null,
     })),
   pause: (label) =>
@@ -177,6 +192,18 @@ export const useBrowserModeStore = create<BrowserModeState>()((set) => ({
             ...page,
           },
     })),
+  appendTimelineEvent: (entry) =>
+    set((state) => {
+      const nextEntry: BrowserModeTimelineEntry = {
+        ...entry,
+        id: `browser-mode-timeline-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        createdAt: Date.now(),
+      }
+      const nextTimeline = [...state.timeline, nextEntry].slice(-12)
+      return {
+        timeline: nextTimeline,
+      }
+    }),
   end: (summary) =>
     set((state) => ({
       status: "ended",
@@ -186,6 +213,7 @@ export const useBrowserModeStore = create<BrowserModeState>()((set) => ({
       connectionLabel: state.connectionLabel,
       page: null,
       lastAction: state.lastAction,
+      timeline: state.timeline,
       endedSummary: summary ?? null,
     })),
   reset: () =>

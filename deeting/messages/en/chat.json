@@ -106,6 +106,7 @@
         "executionLabel": "Execution state",
         "retryCount": "Retry count: {count}",
         "requestLabel": "Requested task",
+        "timelineLabel": "Execution timeline",
         "pause": "Pause",
         "reconnect": "Reconnect",
         "reconnectContinue": "Reconnect and continue",

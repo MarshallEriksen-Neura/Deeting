@@ -106,6 +106,7 @@
         "executionLabel": "执行状态",
         "retryCount": "重试次数：{count}",
         "requestLabel": "请求内容",
+        "timelineLabel": "执行时间线",
         "pause": "暂停",
         "reconnect": "重连",
         "reconnectContinue": "重连并继续",

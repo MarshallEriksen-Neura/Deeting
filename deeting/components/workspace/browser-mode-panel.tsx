@@ -33,6 +33,7 @@ export function BrowserModePanel({ viewId, title }: BrowserModePanelProps) {
     connectionLabel,
     page,
     lastAction,
+    timeline,
     pause,
     reconnect,
     end,
@@ -47,6 +48,7 @@ export function BrowserModePanel({ viewId, title }: BrowserModePanelProps) {
       connectionLabel: state.connectionLabel,
       page: state.page,
       lastAction: state.lastAction,
+      timeline: state.timeline,
       pause: state.pause,
       reconnect: state.reconnect,
       end: state.end,
@@ -191,6 +193,29 @@ export function BrowserModePanel({ viewId, title }: BrowserModePanelProps) {
                 {t("browserMode.panel.requestLabel")}
               </span>
               <span className="text-sm text-foreground">{request.prompt}</span>
+            </section>
+          ) : null}
+
+          {timeline.length > 0 ? (
+            <section className="grid gap-2 rounded-xl border border-border/60 bg-muted/20 p-4">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {t("browserMode.panel.timelineLabel")}
+              </span>
+              <div className="grid gap-2">
+                {timeline.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="rounded-lg border border-border/50 bg-background/60 px-3 py-2"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm text-foreground">{entry.label}</span>
+                      <span className="text-[11px] text-muted-foreground">
+                        {t(`browserMode.panel.execution.${entry.phase}`)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </section>
           ) : null}
         </CardContent>
