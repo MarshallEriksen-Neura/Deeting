@@ -136,6 +136,15 @@
         }
       }
     },
+    "takeover": {
+      "title": "New message received",
+      "description": "The assistant will hand over after the current step finishes.",
+      "actions": {
+        "immediateStop": "Stop now",
+        "sendAfterStep": "Send after this step",
+        "cancel": "Cancel"
+      }
+    },
     "inspection": {
       "title": "Page inspection",
       "pageOverview": "Page overview",
@@ -318,6 +327,7 @@
       "menu": "Actions",
       "stop": "Stop",
       "continue": "Continue",
+      "queueTakeover": "Queue follow-up",
       "send": "Send"
     },
     "codeBlock": {

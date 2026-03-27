@@ -20,6 +20,9 @@ export function useHydratePendingToolApproval(
   messages: Message[]
 ) {
   const pendingToken = useBridgeApprovalStore((state) => state.pending?.approval_token ?? null)
+  const recentApprovedCallId = useBridgeApprovalStore(
+    (state) => state.recentApprovedExecution?.call_id ?? null
+  )
   const lastHydratedKeyRef = useRef<string | null>(null)
 
   const callIdToMessageId = useMemo(() => {
@@ -53,7 +56,13 @@ export function useHydratePendingToolApproval(
         const snapshots = await listPendingMcpApprovals(normalizedSessionId)
         if (cancelled || snapshots.length === 0) return
 
-        const snapshot = snapshots[0]
+        const snapshot =
+          snapshots.find((candidate) => {
+            const callId =
+              typeof candidate.call_id === "string" ? candidate.call_id.trim() : ""
+            return !callId || callId !== recentApprovedCallId
+          }) ?? null
+        if (!snapshot) return
         const approvalKey =
           typeof snapshot.approval_token === "string" && snapshot.approval_token.trim().length > 0
             ? `${normalizedSessionId}:${snapshot.approval_token.trim()}`
@@ -81,5 +90,5 @@ export function useHydratePendingToolApproval(
     return () => {
       cancelled = true
     }
-  }, [callIdToMessageId, messages, pendingToken, sessionId])
+  }, [callIdToMessageId, messages, pendingToken, recentApprovedCallId, sessionId])
 }

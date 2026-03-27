@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   cancelChatCompletion,
   cancelDesktopLocalChatCompletion,
@@ -41,6 +41,12 @@ import type { MessageBlock } from "@/lib/chat/message-protocol"
 import { extractAssistantTextFromBlocks } from "@/lib/chat/message-blocks"
 import { listCustomTaskAgents } from "@/lib/api/custom-task-agents"
 import { resolveLeadingTaskAgentMention } from "./task-agent-mention"
+import {
+  buildPendingTakeoverDispatchDraft,
+  isPendingTakeoverSafeBoundary,
+  normalizePendingTakeoverDraft,
+  type PendingTakeoverDispatchDraft,
+} from "@/lib/chat/takeover"
 
 function createMessageId() {
   const cryptoObj = typeof globalThis !== "undefined" ? globalThis.crypto : undefined
@@ -481,17 +487,23 @@ export function useChatMessagingService() {
   })
   const [interruptedAssistantMessageId, setInterruptedAssistantMessageId] = useState<string | null>(null)
   const openedWorkflowRunIdsRef = useRef<Set<string>>(new Set())
+  const pendingTakeoverDispatchingRef = useRef(false)
   const {
     input,
     attachments,
     selectedKnowledgeFileIds,
+    pendingTakeover,
+    pendingTakeoverRequestedAction,
     messages,
     config,
     models,
     selectedAssistant,
     selectedAssistantId,
     streamEnabled,
+    isLoading,
+    statusCode,
     setInput,
+    setSelectedKnowledgeFileIds,
     clearAttachments,
     setMessages,
     mergeMessageMeta,
@@ -509,6 +521,9 @@ export function useChatMessagingService() {
     setErrorMessage,
     setStatus,
     clearStatus,
+    setPendingTakeover,
+    setPendingTakeoverRequestedAction,
+    clearPendingTakeover,
   } = useChatStore()
   const openWorkspaceView = useWorkspaceStore((state) => state.openView)
 
@@ -857,17 +872,68 @@ export function useChatMessagingService() {
     )
   }, [setMessages])
 
-  const sendMessage = useCallback(async (sessionIdOverride?: string | null) => {
-    const trimmedInput = input.trim()
-    if (!trimmedInput && attachments.length === 0) return
+  const composerMatchesDraft = useCallback((draft: PendingTakeoverDispatchDraft) => {
+    const currentState = useChatStore.getState()
+    const normalizedCurrent = normalizePendingTakeoverDraft({
+      input: currentState.input,
+      attachments: currentState.attachments,
+      selectedKnowledgeFileIds: currentState.selectedKnowledgeFileIds,
+    })
+    const normalizedDraft = normalizePendingTakeoverDraft(draft)
+    if (!normalizedCurrent || !normalizedDraft) return false
+    if (normalizedCurrent.input !== normalizedDraft.input) return false
+    if (normalizedCurrent.attachments.length !== normalizedDraft.attachments.length) return false
+    if (
+      normalizedCurrent.attachments.some((attachment, index) => {
+        const nextAttachment = normalizedDraft.attachments[index]
+        return (
+          attachment.id !== nextAttachment?.id ||
+          attachment.fileId !== nextAttachment?.fileId ||
+          attachment.sha256 !== nextAttachment?.sha256 ||
+          attachment.url !== nextAttachment?.url
+        )
+      })
+    ) {
+      return false
+    }
+    if (
+      normalizedCurrent.selectedKnowledgeFileIds.length !==
+      normalizedDraft.selectedKnowledgeFileIds.length
+    ) {
+      return false
+    }
+    return normalizedCurrent.selectedKnowledgeFileIds.every(
+      (value, index) => value === normalizedDraft.selectedKnowledgeFileIds[index]
+    )
+  }, [])
 
+  const clearComposer = useCallback(() => {
+    setInput("")
+    clearAttachments()
+    setSelectedKnowledgeFileIds([])
+  }, [setInput, clearAttachments, setSelectedKnowledgeFileIds])
+
+  const dispatchDraft = useCallback(async ({
+    draft,
+    sessionIdOverride,
+    clearComposerMode = "never",
+  }: {
+    draft: PendingTakeoverDispatchDraft
+    sessionIdOverride?: string | null
+    clearComposerMode?: "always" | "if_matching_draft" | "never"
+  }) => {
+    const trimmedInput = draft.input.trim()
+    if (!trimmedInput && draft.attachments.length === 0) return false
+
+    const currentMessages = useChatStore.getState().messages
+    let dispatchedToConversation = false
     const selectedModel =
       models.find((model) => model.provider_model_id === config.model || model.id === config.model) ??
       models[0]
     const preferLocalRoute =
       isTauriRuntime && (selectedModel?.request_route ?? "local_invoke") === "local_invoke"
     const selectedAssistantForRequest = selectedAssistant
-    if (!selectedModel) return
+    if (!selectedModel) return false
 
     const { assistantId, sessionStorageKey } = resolveChatRequestContext({
       isTauriRuntime,
@@ -886,13 +952,13 @@ export function useChatMessagingService() {
       if (resolvedMention) {
         if (!resolvedMention.mention.prompt.trim()) {
           setErrorMessage("Task agent mention requires a prompt")
-          return
+          return false
         }
         if (!resolvedMention.agent) {
           setErrorMessage(
             `Task agent '${resolvedMention.mention.agentName}' not found`,
           )
-          return
+          return false
         }
         explicitTaskAgentId = resolvedMention.agent.id
         effectiveInput = resolvedMention.mention.prompt.trim()
@@ -904,7 +970,7 @@ export function useChatMessagingService() {
       id: createMessageId(),
       role: "user",
       content: effectiveInput,
-      attachments: attachments.length ? attachments : undefined,
+      attachments: draft.attachments.length ? draft.attachments : undefined,
       createdAt: Date.now(),
       metaInfo:
         displayInput !== effectiveInput
@@ -914,7 +980,7 @@ export function useChatMessagingService() {
           : undefined,
     }
     let outgoingUserMessage = userMessage
-    if (attachments.length) {
+    if (draft.attachments.length) {
       try {
         const [resolvedUserMessage] = await resolveMessageAttachments([userMessage], isTauriRuntime)
         if (resolvedUserMessage) {
@@ -936,9 +1002,14 @@ export function useChatMessagingService() {
     clearAllCompareStates()
 
     // 更新 UI 状态
-    setMessages([...messages, outgoingUserMessage, assistantMessage])
-    setInput("")
-    clearAttachments()
+    setMessages([...currentMessages, outgoingUserMessage, assistantMessage])
+    dispatchedToConversation = true
+    if (
+      clearComposerMode === "always" ||
+      (clearComposerMode === "if_matching_draft" && composerMatchesDraft(draft))
+    ) {
+      clearComposer()
+    }
     setIsLoading(true)
     clearStatus()
 
@@ -950,7 +1021,7 @@ export function useChatMessagingService() {
 
       // Local route: Rust orchestrator injects assistant persona; skip frontend prepend to avoid duplication.
       const requestMessages = buildChatMessages(
-        [...messages, outgoingUserMessage],
+        [...currentMessages, outgoingUserMessage],
         preferLocalRoute ? undefined : selectedAssistantForRequest?.systemPrompt,
       )
       const payload = {
@@ -963,7 +1034,7 @@ export function useChatMessagingService() {
         request_id: createRequestId(),
         assistant_id: assistantId,
         session_id: resolvedSessionId ?? undefined,
-        metadata: buildKnowledgeSelectionMetadata(selectedKnowledgeFileIds),
+        metadata: buildKnowledgeSelectionMetadata(draft.selectedKnowledgeFileIds),
       }
       requestIdRef.current = payload.request_id ?? null
       activeRequestRouteRef.current = preferLocalRoute ? "local_gateway" : "cloud"
@@ -1015,18 +1086,13 @@ export function useChatMessagingService() {
       activeAssistantMessageIdRef.current = null
       interruptedMessageIdsRef.current.delete(assistantMessageId)
     }
+    return dispatchedToConversation
   }, [
-    input,
-    attachments,
-    selectedKnowledgeFileIds,
-    messages,
     config,
     models,
     isTauriRuntime,
     selectedAssistant,
     selectedAssistantId,
-    setInput,
-    clearAttachments,
     setMessages,
     mergeMessageMeta,
     appendMessageBlocks,
@@ -1039,7 +1105,54 @@ export function useChatMessagingService() {
     clearAllCompareStates,
     resolveCurrentSessionId,
     runStreamedRequest,
+    composerMatchesDraft,
+    clearComposer,
   ])
+
+  const sendMessage = useCallback(async (sessionIdOverride?: string | null) => {
+    await dispatchDraft({
+      draft: {
+        input,
+        attachments,
+        selectedKnowledgeFileIds,
+      },
+      sessionIdOverride,
+      clearComposerMode: "always",
+    })
+  }, [dispatchDraft, input, attachments, selectedKnowledgeFileIds])
+
+  const queuePendingTakeoverFromCurrentDraft = useCallback(() => {
+    const currentState = useChatStore.getState()
+    const normalizedDraft = normalizePendingTakeoverDraft({
+      input: currentState.input,
+      attachments: currentState.attachments,
+      selectedKnowledgeFileIds: currentState.selectedKnowledgeFileIds,
+    })
+    if (!normalizedDraft) return
+    setPendingTakeover(normalizedDraft)
+  }, [setPendingTakeover])
+
+  const cancelPendingTakeover = useCallback(() => {
+    clearPendingTakeover()
+  }, [clearPendingTakeover])
+
+  const markPendingTakeoverForDeferredSend = useCallback(() => {
+    setPendingTakeoverRequestedAction("send_after_step")
+  }, [setPendingTakeoverRequestedAction])
+
+  const stopAndSendPendingTakeover = useCallback(async () => {
+    const currentPendingTakeover = useChatStore.getState().pendingTakeover
+    if (!currentPendingTakeover) return
+
+    await cancelActiveRequest()
+    const dispatched = await dispatchDraft({
+      draft: buildPendingTakeoverDispatchDraft(currentPendingTakeover),
+      clearComposerMode: "if_matching_draft",
+    })
+    if (dispatched) {
+      clearPendingTakeover()
+    }
+  }, [cancelActiveRequest, clearPendingTakeover, dispatchDraft])
 
   const regenerateMessage = useCallback(async (targetMessageId: string) => {
     // 并发保护：如果有正在进行的请求，先取消
@@ -1489,8 +1602,67 @@ export function useChatMessagingService() {
     await regenerateMessage(targetMessageId)
   }, [interruptedAssistantMessageId, regenerateMessage])
 
+  useEffect(() => {
+    if (!pendingTakeover || pendingTakeoverRequestedAction !== "send_after_step") {
+      return
+    }
+    if (pendingTakeoverDispatchingRef.current) {
+      return
+    }
+
+    const activeAssistantBlocks = activeAssistantMessageIdRef.current
+      ? (
+          useChatStore
+            .getState()
+            .messages.find((message) => message.id === activeAssistantMessageIdRef.current)?.blocks ?? []
+        ) as MessageBlock[]
+      : []
+
+    if (
+      !isPendingTakeoverSafeBoundary({
+        isLoading,
+        statusCode,
+        assistantBlocks: activeAssistantBlocks,
+      })
+    ) {
+      return
+    }
+
+    pendingTakeoverDispatchingRef.current = true
+
+    void dispatchDraft({
+      draft: buildPendingTakeoverDispatchDraft(pendingTakeover),
+      clearComposerMode: "if_matching_draft",
+    })
+      .then((dispatched) => {
+        if (dispatched) {
+          clearPendingTakeover()
+          return
+        }
+        setPendingTakeoverRequestedAction(null)
+      })
+      .finally(() => {
+      pendingTakeoverDispatchingRef.current = false
+    })
+  }, [
+    pendingTakeover,
+    pendingTakeoverRequestedAction,
+    isLoading,
+    statusCode,
+    messages,
+    clearPendingTakeover,
+    dispatchDraft,
+    setPendingTakeoverRequestedAction,
+  ])
+
   return {
     sendMessage,
+    pendingTakeover,
+    pendingTakeoverRequestedAction,
+    queuePendingTakeoverFromCurrentDraft,
+    stopAndSendPendingTakeover,
+    markPendingTakeoverForDeferredSend,
+    cancelPendingTakeover,
     regenerateMessage,
     compareWithModel,
     finalizeCompareWinner,

@@ -146,7 +146,10 @@ describe("ToolApprovalDialog", () => {
     })
 
     render(<ToolApprovalDialog />)
-    fireEvent.click(screen.getByRole("button", { name: "批准执行" }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "批准执行" }))
+      await Promise.resolve()
+    })
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("approve_mcp_tool", {
@@ -189,7 +192,10 @@ describe("ToolApprovalDialog", () => {
     })
 
     render(<ToolApprovalDialog />)
-    fireEvent.click(screen.getByRole("button", { name: "批准执行" }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "批准执行" }))
+      await Promise.resolve()
+    })
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("approve_mcp_tool", {
@@ -236,7 +242,10 @@ describe("ToolApprovalDialog", () => {
       )
     })
 
-    fireEvent.click(screen.getByRole("button", { name: "批准执行" }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "批准执行" }))
+      await Promise.resolve()
+    })
 
     await waitFor(() => {
       expect(useBridgeApprovalStore.getState().pending).toBeNull()
@@ -325,7 +334,10 @@ describe("ToolApprovalDialog", () => {
     })
 
     render(<ToolApprovalDialog />)
-    fireEvent.click(screen.getByRole("button", { name: "批准执行" }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "批准执行" }))
+      await Promise.resolve()
+    })
 
     await waitFor(() => {
       expect(useBridgeApprovalStore.getState().pending).toBeNull()
@@ -461,7 +473,10 @@ describe("ToolApprovalDialog", () => {
     })
 
     render(<ToolApprovalDialog />)
-    fireEvent.click(screen.getByRole("button", { name: "拒绝" }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "拒绝" }))
+      await Promise.resolve()
+    })
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("reject_mcp_tool", {
@@ -533,7 +548,10 @@ describe("ToolApprovalDialog", () => {
     })
 
     render(<ToolApprovalDialog />)
-    fireEvent.click(screen.getByRole("button", { name: "批准执行" }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "批准执行" }))
+      await Promise.resolve()
+    })
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("approve_mcp_tool", {
@@ -613,7 +631,10 @@ describe("ToolApprovalDialog", () => {
     })
 
     render(<ToolApprovalDialog />)
-    fireEvent.click(screen.getByRole("button", { name: "批准执行" }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "批准执行" }))
+      await Promise.resolve()
+    })
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("approve_mcp_tool", {

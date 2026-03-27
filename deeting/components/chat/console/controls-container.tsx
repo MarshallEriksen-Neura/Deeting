@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { BrowserModeConfirmationBar } from '@/components/chat/browser-mode/browser-mode-confirmation-bar';
+import { TakeoverPendingBar } from '@/components/chat/takeover/takeover-pending-bar';
 import Image from 'next/image';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Slider } from '@/components/ui/slider';
@@ -113,6 +114,11 @@ function ControlsContainer() {
 
   const {
     handleSendMessage,
+    pendingTakeover,
+    queuePendingTakeoverFromCurrentDraft,
+    stopAndSendPendingTakeover,
+    markPendingTakeoverForDeferredSend,
+    cancelPendingTakeover,
     cancelActiveRequest,
     hasInterruptedGeneration,
     continueInterruptedGeneration,
@@ -124,9 +130,17 @@ function ControlsContainer() {
   });
 
   // 缓存计算值
+  const hasComposerContent = useMemo(
+    () => Boolean(input.trim().length > 0 || attachments.length > 0),
+    [input, attachments.length]
+  );
   const canSend = useMemo(
-    () => Boolean(models.length > 0 && (input.trim().length > 0 || attachments.length > 0) && !isLoading),
-    [models.length, input, attachments.length, isLoading]
+    () => Boolean(models.length > 0 && hasComposerContent && !isLoading),
+    [models.length, hasComposerContent, isLoading]
+  );
+  const canQueuePendingTakeover = useMemo(
+    () => Boolean(models.length > 0 && hasComposerContent && isLoading),
+    [models.length, hasComposerContent, isLoading]
   );
   const selectedModel = useMemo(
     () =>
@@ -262,6 +276,10 @@ function ControlsContainer() {
   ]);
 
   const handleSend = useCallback(async () => {
+    if (canQueuePendingTakeover) {
+      queuePendingTakeoverFromCurrentDraft();
+      return;
+    }
     if (!canSend) return;
     if (
       isTauriRuntime &&
@@ -287,10 +305,12 @@ function ControlsContainer() {
   }, [
     browserModePage,
     canSend,
+    canQueuePendingTakeover,
     handleSendMessage,
     input,
     isTauriRuntime,
     openWorkspaceView,
+    queuePendingTakeoverFromCurrentDraft,
     setInput,
     t,
   ]);
@@ -401,6 +421,10 @@ function ControlsContainer() {
 
   const handleSendOrCancel = useCallback(() => {
     if (isGenerating) {
+      if (hasComposerContent) {
+        queuePendingTakeoverFromCurrentDraft();
+        return;
+      }
       void cancelActiveRequest();
       return;
     }
@@ -411,6 +435,8 @@ function ControlsContainer() {
     void handleSend();
   }, [
     isGenerating,
+    hasComposerContent,
+    queuePendingTakeoverFromCurrentDraft,
     canContinueGeneration,
     cancelActiveRequest,
     continueInterruptedGeneration,
@@ -419,6 +445,12 @@ function ControlsContainer() {
 
   return (
     <div className="flex flex-col gap-2 p-2 relative rounded-2xl border border-slate-200/70 dark:border-white/10 bg-white/90 dark:bg-[#0a0a0a]/90 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.2)] backdrop-blur-xl">
+      <TakeoverPendingBar
+        pendingTakeover={pendingTakeover}
+        onImmediateStop={() => void stopAndSendPendingTakeover()}
+        onSendAfterStep={() => void markPendingTakeoverForDeferredSend()}
+        onCancel={() => void cancelPendingTakeover()}
+      />
       <BrowserModeConfirmationBar />
 
       {/* 1. Main Input Area */}
@@ -776,10 +808,14 @@ function ControlsContainer() {
               hover:bg-slate-800 dark:hover:bg-white dark:hover:text-black transition-all duration-300 active:scale-95 shadow-sm
               ${isGenerating || canContinueGeneration ? 'cursor-pointer' : !canSend ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
             `}
-            aria-label={isGenerating ? t("controls.stop") : canContinueGeneration ? t("controls.continue") : t("controls.send")}
+            aria-label={isGenerating ? (hasComposerContent ? t("controls.queueTakeover") : t("controls.stop")) : canContinueGeneration ? t("controls.continue") : t("controls.send")}
           >
             {isGenerating ? (
-              <Square className="w-5 h-5" />
+              hasComposerContent ? (
+                <ArrowUp className="w-5 h-5" />
+              ) : (
+                <Square className="w-5 h-5" />
+              )
             ) : canContinueGeneration ? (
               <Play className="w-5 h-5" />
             ) : (

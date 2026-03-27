@@ -127,6 +127,24 @@ export type BrowserAgentWaitForNavigationResult = z.infer<typeof BrowserAgentWai
 export type BrowserAgentScrollIntoViewResult = z.infer<typeof BrowserAgentScrollIntoViewResultSchema>
 export type BrowserAgentRetryWithRelocateResult = z.infer<typeof BrowserAgentRetryWithRelocateResultSchema>
 
+function parseBrowserAgentPageSnapshot(data: unknown): BrowserAgentPageSnapshot {
+  const direct = BrowserAgentPageSnapshotSchema.safeParse(data)
+  if (direct.success) {
+    return direct.data
+  }
+
+  const wrapped = z
+    .object({
+      data: BrowserAgentPageSnapshotSchema,
+    })
+    .safeParse(data)
+  if (wrapped.success) {
+    return wrapped.data.data
+  }
+
+  return BrowserAgentPageSnapshotSchema.parse(data)
+}
+
 export async function getLocalBrowserAgentBridgeStatus(): Promise<BrowserAgentBridgeStatus> {
   if (!isTauriRuntime()) {
     return BrowserAgentBridgeStatusSchema.parse({
@@ -188,7 +206,7 @@ export async function getLocalBrowserAgentPageSnapshot(
     throw new Error("getLocalBrowserAgentPageSnapshot is only supported in Tauri runtime")
   }
   const data = await invokeTauri<unknown>("get_local_browser_agent_page_snapshot", { tabId })
-  return BrowserAgentPageSnapshotSchema.parse(data)
+  return parseBrowserAgentPageSnapshot(data)
 }
 
 export async function queryLocalBrowserAgentDom(

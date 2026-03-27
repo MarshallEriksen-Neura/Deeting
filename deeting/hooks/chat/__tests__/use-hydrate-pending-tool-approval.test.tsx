@@ -4,7 +4,11 @@ import React from "react"
 import { act, render, waitFor } from "@testing-library/react"
 import { invoke } from "@tauri-apps/api/core"
 import { useHydratePendingToolApproval } from "@/hooks/chat/use-hydrate-pending-tool-approval"
-import { useBridgeApprovalStore } from "@/lib/chat/bridge-approval-store"
+import {
+  announceBridgeApprovalExecution,
+  createBridgeToolApproval,
+  useBridgeApprovalStore,
+} from "@/lib/chat/bridge-approval-store"
 import type { Message } from "@/lib/chat/message-types"
 
 jest.mock("@tauri-apps/api/core", () => ({
@@ -105,6 +109,64 @@ describe("useHydratePendingToolApproval", () => {
           message_id: "assistant-runtime-1",
         },
       })
+    })
+  })
+
+  it("does not rehydrate the same runtime approval that was just approved locally", async () => {
+    mockInvoke.mockResolvedValueOnce([
+      {
+        status: "REQUIRES_APPROVAL",
+        approval_token: "approval-runtime-inflight-1",
+        tool_name: "skill.official.skills.crawler.crawl_website",
+        arguments: { url: "https://example.com/runtime/inflight" },
+        session_id: "session-runtime-inflight-1",
+        call_id: "call-runtime-inflight-1",
+      },
+    ] as never)
+
+    act(() => {
+      announceBridgeApprovalExecution(
+        createBridgeToolApproval({
+          approval_token: "approval-runtime-inflight-1",
+          tool_name: "skill.official.skills.crawler.crawl_website",
+          arguments: { url: "https://example.com/runtime/inflight" },
+          meta: {
+            call_id: "call-runtime-inflight-1",
+            message_id: "assistant-runtime-inflight-1",
+          },
+        })
+      )
+    })
+
+    render(
+      <Harness
+        sessionId="session-runtime-inflight-1"
+        messages={[
+          {
+            id: "assistant-runtime-inflight-1",
+            role: "assistant",
+            content: "",
+            createdAt: 1,
+            blocks: [
+              {
+                id: "call-runtime-inflight-1",
+                type: "tool_call",
+                callId: "call-runtime-inflight-1",
+                toolName: "skill.official.skills.crawler.crawl_website",
+                status: "running",
+              },
+            ],
+          },
+        ]}
+      />
+    )
+
+    await waitFor(() => {
+      expect(useBridgeApprovalStore.getState().pending).toBeNull()
+    })
+
+    expect(mockInvoke).toHaveBeenCalledWith("list_pending_mcp_approvals", {
+      sessionId: "session-runtime-inflight-1",
     })
   })
 })

@@ -136,6 +136,15 @@
         }
       }
     },
+    "takeover": {
+      "title": "已收到新消息",
+      "description": "将会在当前步骤完成后接管。",
+      "actions": {
+        "immediateStop": "立即停止",
+        "sendAfterStep": "步骤后发送",
+        "cancel": "取消"
+      }
+    },
     "inspection": {
       "title": "页面巡检",
       "pageOverview": "页面概览",
@@ -318,6 +327,7 @@
       "menu": "更多功能",
       "stop": "停止",
       "continue": "继续生成",
+      "queueTakeover": "加入待接管",
       "send": "发送"
     },
     "codeBlock": {

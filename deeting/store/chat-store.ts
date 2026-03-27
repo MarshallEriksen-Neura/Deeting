@@ -58,6 +58,16 @@ export interface MessageCompareState {
   candidates: Record<string, CompareCandidate>
 }
 
+export type PendingTakeoverRequestedAction = "immediate_stop" | "send_after_step"
+
+export interface PendingChatTakeover {
+  input: string
+  attachments: ChatImageAttachment[]
+  selectedKnowledgeFileIds: string[]
+  createdAt: number
+  updatedAt: number
+}
+
 const normalizeAssistantId = (value: unknown): string | null => {
   if (typeof value === "string") {
     const trimmed = value.trim()
@@ -139,6 +149,8 @@ interface ChatStore {
   input: string
   attachments: ChatImageAttachment[]
   selectedKnowledgeFileIds: string[]
+  pendingTakeover: PendingChatTakeover | null
+  pendingTakeoverRequestedAction: PendingTakeoverRequestedAction | null
 
   // === 配置状态 ===
   config: ChatConfig
@@ -185,6 +197,15 @@ interface ChatStore {
   setSelectedKnowledgeFileIds: (fileIds: string[]) => void
   toggleSelectedKnowledgeFileId: (fileId: string) => void
   clearSelectedKnowledgeFileIds: () => void
+  setPendingTakeover: (draft: {
+    input: string
+    attachments: ChatImageAttachment[]
+    selectedKnowledgeFileIds: string[]
+  }) => void
+  setPendingTakeoverRequestedAction: (
+    action: PendingTakeoverRequestedAction | null
+  ) => void
+  clearPendingTakeover: () => void
   setConfig: (config: Partial<ChatConfig>) => void
   setStreamEnabled: (enabled: boolean) => void
   setModels: (models: ModelInfo[]) => void
@@ -223,6 +244,8 @@ export const useChatStore = create<ChatStore>()(
       input: "",
       attachments: [],
       selectedKnowledgeFileIds: [],
+      pendingTakeover: null,
+      pendingTakeoverRequestedAction: null,
 
       // === 配置状态初始值 ===
       config: {
@@ -278,6 +301,8 @@ export const useChatStore = create<ChatStore>()(
                   input: "",
                   attachments: [],
                   selectedKnowledgeFileIds: [],
+                  pendingTakeover: null,
+                  pendingTakeoverRequestedAction: null,
                   errorMessage: null,
                   statusStage: null,
                   statusCode: null,
@@ -339,6 +364,8 @@ export const useChatStore = create<ChatStore>()(
             input: "",
             attachments: [],
             selectedKnowledgeFileIds: [],
+            pendingTakeover: null,
+            pendingTakeoverRequestedAction: null,
             errorMessage: null,
             statusStage: null,
             statusCode: null,
@@ -424,6 +451,8 @@ export const useChatStore = create<ChatStore>()(
         set({
           selectedAssistantId: null,
           selectedAssistant: null,
+          pendingTakeover: null,
+          pendingTakeoverRequestedAction: null,
         }),
 
       setMessages: (messages) =>
@@ -674,6 +703,43 @@ export const useChatStore = create<ChatStore>()(
 
       clearSelectedKnowledgeFileIds: () => set({ selectedKnowledgeFileIds: [] }),
 
+      setPendingTakeover: (draft) =>
+        set({
+          pendingTakeover: {
+            input: draft.input,
+            attachments: draft.attachments,
+            selectedKnowledgeFileIds: Array.from(
+              new Set(
+                draft.selectedKnowledgeFileIds
+                  .map((value) => value.trim())
+                  .filter((value) => value.length > 0)
+              )
+            ),
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          },
+          pendingTakeoverRequestedAction: null,
+        }),
+
+      setPendingTakeoverRequestedAction: (action) =>
+        set((state) => {
+          if (!state.pendingTakeover) {
+            return {
+              pendingTakeoverRequestedAction: null,
+            }
+          }
+
+          return {
+            pendingTakeoverRequestedAction: action,
+          }
+        }),
+
+      clearPendingTakeover: () =>
+        set({
+          pendingTakeover: null,
+          pendingTakeoverRequestedAction: null,
+        }),
+
       setConfig: (newConfig) =>
         set((state) => ({ config: { ...state.config, ...newConfig } })),
 
@@ -800,6 +866,8 @@ export const useChatStore = create<ChatStore>()(
           input: "",
           attachments: [],
           selectedKnowledgeFileIds: [],
+          pendingTakeover: null,
+          pendingTakeoverRequestedAction: null,
           initialized: false, // 重置初始化状态
           sessionId: null,
           errorMessage: null,
@@ -818,6 +886,8 @@ export const useChatStore = create<ChatStore>()(
           input: "",
           attachments: [],
           selectedKnowledgeFileIds: [],
+          pendingTakeover: null,
+          pendingTakeoverRequestedAction: null,
           sessionId: null,
           initialized: false,
           errorMessage: null,
@@ -838,6 +908,8 @@ export const useChatStore = create<ChatStore>()(
           input: "",
           attachments: [],
           selectedKnowledgeFileIds: [],
+          pendingTakeover: null,
+          pendingTakeoverRequestedAction: null,
           initialized: false,
           isLoading: false,
           globalLoading: false,

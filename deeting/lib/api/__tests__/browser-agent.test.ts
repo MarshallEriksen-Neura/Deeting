@@ -251,4 +251,35 @@ describe("browser agent api", () => {
       { url: "https://example.com/docs" }
     )
   })
+
+  it("unwraps wrapped snapshot payloads returned by the browser bridge", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        url: "https://example.com/docs",
+        title: "Example Docs",
+        documentReadyState: "complete",
+        visibleText: "Visible content",
+        mainText: "Main content",
+        headings: [{ level: 1, text: "Example Docs" }],
+        links: [{ text: "Home", href: "https://example.com/" }],
+        buttons: [{ text: "Continue", disabled: false }],
+        inputs: [],
+        forms: [],
+      },
+    } as unknown)
+
+    const snapshot = await getLocalBrowserAgentPageSnapshot(42)
+
+    expect(snapshot).toMatchObject({
+      url: "https://example.com/docs",
+      title: "Example Docs",
+      documentReadyState: "complete",
+    })
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_browser_agent_page_snapshot", {
+      tabId: 42,
+    })
+  })
 })
