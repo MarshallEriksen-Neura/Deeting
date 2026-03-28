@@ -10,6 +10,44 @@ export type MonitorDisplayStatus =
   | "binding_required"
   | "binding_invalid"
 export type MonitorExecutionTarget = "cloud" | "desktop"
+export type MonitorDeliveryDetailLevel = "summary" | "stage" | "detailed"
+export type MonitorRunEventKind =
+  | "run_started"
+  | "stage_changed"
+  | "tool_called"
+  | "tool_succeeded"
+  | "tool_failed"
+  | "run_completed"
+  | "run_failed"
+  | "delivery_failed"
+
+export interface MonitorDeliveryPolicy {
+  notify_on_change: boolean
+  notify_on_failure: boolean
+  heartbeat_enabled: boolean
+  notify_on_start: boolean
+  detail_level: MonitorDeliveryDetailLevel
+}
+
+export interface MonitorNotifyConfig {
+  channel_ids?: string[]
+  delivery_policy?: MonitorDeliveryPolicy
+  force_notify?: boolean
+}
+
+export interface MonitorRunEvent {
+  event_id: string
+  execution_id: string
+  task_id: string
+  occurred_at: string
+  seq: number
+  kind: MonitorRunEventKind
+  stage?: string | null
+  step?: string | null
+  state?: string | null
+  summary?: string | null
+  meta?: Record<string, unknown> | null
+}
 
 export interface MonitorTask {
   id: string
@@ -34,7 +72,7 @@ export interface MonitorTask {
   assistant_name: string | null
   model_id: string | null
   error_count: number
-  notify_config: Record<string, unknown>
+  notify_config: MonitorNotifyConfig
   allowed_tools: string[]
   execution_target: MonitorExecutionTarget
   total_tokens: number
@@ -73,17 +111,7 @@ export interface MonitorExecutionLog {
     is_significant_change?: boolean
     change_summary?: string
     new_snapshot?: Record<string, unknown>
-    events?: Array<{
-      type?: string
-      scope?: string
-      execution_id?: string
-      task_id?: string
-      stage?: string
-      step?: string
-      state?: string
-      code?: string
-      meta?: Record<string, unknown> | null
-    }>
+    events?: MonitorRunEvent[]
   } | null
   tokens_used: number
   error_message: string | null
@@ -97,13 +125,30 @@ export interface MonitorExecutionLogList {
   limit: number
 }
 
+export interface MonitorDeliveryStateRecord {
+  task_id: string
+  channel_id: string
+  channel_kind: string
+  channel_display_name: string | null
+  status: string
+  target_key: string
+  anchor_message_id: string | null
+  anchor_context: Record<string, unknown>
+  updated_at: string
+}
+
+export interface MonitorDeliveryStateList {
+  items: MonitorDeliveryStateRecord[]
+  total: number
+}
+
 export interface MonitorTaskCreateInput {
   title: string
   objective: string
   assistant_id: string
   cron_expr?: string
   analysis_mode?: "concise" | "deep" | "alert_first"
-  notify_config?: Record<string, unknown>
+  notify_config?: MonitorNotifyConfig
   allowed_tools?: string[]
   execution_target?: MonitorExecutionTarget
 }
@@ -115,7 +160,7 @@ export interface MonitorTaskUpdateInput {
   cron_expr?: string
   analysis_mode?: "concise" | "deep" | "alert_first"
   status?: MonitorStatus
-  notify_config?: Record<string, unknown>
+  notify_config?: MonitorNotifyConfig
   allowed_tools?: string[]
   execution_target?: MonitorExecutionTarget
 }
@@ -128,7 +173,7 @@ export interface MonitorLocalTaskPayload {
   model_id: string | null
   allowed_tools: string[]
   last_snapshot: Record<string, unknown>
-  notify_config: Record<string, unknown>
+  notify_config: MonitorNotifyConfig
   execution_target: MonitorExecutionTarget
   claimed_until: string
 }
@@ -332,6 +377,17 @@ export async function fetchMonitorLogs(
     method: "GET",
     params,
   })
+}
+
+export async function fetchMonitorDeliveryStates(
+  taskId: string
+): Promise<MonitorDeliveryStateList> {
+  if (isTauriRuntime()) {
+    return invokeTauri<MonitorDeliveryStateList>("list_local_monitor_delivery_states", {
+      taskId,
+    })
+  }
+  throw new Error("delivery states are only supported in desktop local runtime")
 }
 
 export async function submitMonitorFeedback(

@@ -3,12 +3,14 @@ import type {
   MonitorTaskList,
   MonitorStats,
   MonitorExecutionLogList,
+  MonitorDeliveryStateList,
   MonitorStatus,
 } from "@/lib/api/monitors"
 import {
   fetchMonitorTasks,
   fetchMonitorStats,
   fetchMonitorLogs,
+  fetchMonitorDeliveryStates,
 } from "@/lib/api/monitors"
 
 /**
@@ -31,8 +33,7 @@ export function useMonitorTasks(params?: {
     key,
     () => fetchMonitorTasks(params),
     {
-      refreshInterval: 30000,
-      revalidateOnFocus: true,
+      revalidateOnFocus: false,
       dedupingInterval: 5000,
     }
   )
@@ -48,8 +49,7 @@ export function useMonitorStats() {
     "/api/v1/monitors/stats",
     fetchMonitorStats,
     {
-      refreshInterval: 30000,
-      revalidateOnFocus: true,
+      revalidateOnFocus: false,
       dedupingInterval: 5000,
     }
   )
@@ -72,8 +72,21 @@ export function useMonitorLogs(
     key,
     () => (taskId ? fetchMonitorLogs(taskId, params) : Promise.reject()),
     {
-      refreshInterval: 15000,
-      revalidateOnFocus: true,
+      revalidateOnFocus: false,
+    }
+  )
+
+  return { data, error, isLoading, mutate }
+}
+
+export function useMonitorDeliveryStates(taskId: string | null) {
+  const key = taskId ? `/api/v1/monitors/${taskId}/delivery-states` : null
+
+  const { data, error, isLoading, mutate } = useSWR<MonitorDeliveryStateList>(
+    key,
+    () => (taskId ? fetchMonitorDeliveryStates(taskId) : Promise.reject()),
+    {
+      revalidateOnFocus: false,
     }
   )
 

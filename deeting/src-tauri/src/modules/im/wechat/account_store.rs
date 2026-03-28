@@ -223,12 +223,11 @@ impl WechatAccountStore {
     }
 
     pub async fn list_allowlist_contacts(&self) -> Result<Vec<String>, String> {
-        let rows = sqlx::query(
-            "SELECT contact_id FROM local_wechat_allowlist ORDER BY contact_id ASC",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|err| err.to_string())?;
+        let rows =
+            sqlx::query("SELECT contact_id FROM local_wechat_allowlist ORDER BY contact_id ASC")
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|err| err.to_string())?;
         let mut result = Vec::new();
         for row in rows {
             let contact_id: String = row.try_get("contact_id").map_err(|err| err.to_string())?;

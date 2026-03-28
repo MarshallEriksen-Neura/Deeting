@@ -290,7 +290,10 @@ impl WechatState {
         &self,
         contact_id: &str,
     ) -> Result<Option<String>, String> {
-        self.shared.store.context_token_for_contact(contact_id).await
+        self.shared
+            .store
+            .context_token_for_contact(contact_id)
+            .await
     }
 
     pub async fn ensure_allowed_or_create_pairing(

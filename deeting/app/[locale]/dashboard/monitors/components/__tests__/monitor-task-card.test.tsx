@@ -3,6 +3,8 @@ import { fireEvent, render, screen } from "@testing-library/react"
 import { MonitorTaskCard } from "@/app/[locale]/dashboard/monitors/components/monitor-task-card"
 import type { MonitorTask } from "@/lib/api/monitors"
 
+const mockUseMonitorDeliveryStates = jest.fn()
+
 jest.mock("sonner", () => ({
   toast: {
     success: jest.fn(),
@@ -24,6 +26,10 @@ jest.mock("@/lib/api/monitors", () => ({
   pauseMonitorTask: jest.fn(),
   resumeMonitorTask: jest.fn(),
   deleteMonitorTask: jest.fn(),
+}))
+
+jest.mock("@/lib/swr/use-monitors", () => ({
+  useMonitorDeliveryStates: (...args: unknown[]) => mockUseMonitorDeliveryStates(...args),
 }))
 
 function makeTask(overrides: Partial<MonitorTask> = {}): MonitorTask {
@@ -60,6 +66,16 @@ function makeTask(overrides: Partial<MonitorTask> = {}): MonitorTask {
 }
 
 describe("MonitorTaskCard", () => {
+  beforeEach(() => {
+    mockUseMonitorDeliveryStates.mockReset()
+    mockUseMonitorDeliveryStates.mockReturnValue({
+      data: {
+        total: 0,
+        items: [],
+      },
+    })
+  })
+
   it("shows assistant name and binding repair state for invalid bindings", () => {
     const onEdit = jest.fn()
     render(
@@ -105,5 +121,64 @@ describe("MonitorTaskCard", () => {
     expect(
       (screen.getByRole("button", { name: "立即触发" }) as HTMLButtonElement).disabled
     ).toBe(true)
+  })
+
+  it("shows a compact delivery summary across feishu telegram and wechat", () => {
+    mockUseMonitorDeliveryStates.mockReturnValue({
+      data: {
+        total: 3,
+        items: [
+          {
+            task_id: "task-1",
+            channel_id: "channel-feishu",
+            channel_kind: "feishu",
+            channel_display_name: "飞书战情群",
+            status: "anchored",
+            target_key: "feishu:oc_123",
+            anchor_message_id: "om_456",
+            anchor_context: {},
+            updated_at: "2026-03-28T00:00:00Z",
+          },
+          {
+            task_id: "task-1",
+            channel_id: "channel-telegram",
+            channel_kind: "telegram",
+            channel_display_name: "Telegram 频道",
+            status: "pending",
+            target_key: "telegram:12345",
+            anchor_message_id: null,
+            anchor_context: {},
+            updated_at: "2026-03-28T00:00:00Z",
+          },
+          {
+            task_id: "task-1",
+            channel_id: "channel-wechat",
+            channel_kind: "wechat",
+            channel_display_name: "微信值班人",
+            status: "waiting_for_contact_message",
+            target_key: "wechat:user-1",
+            anchor_message_id: null,
+            anchor_context: {},
+            updated_at: "2026-03-28T00:00:00Z",
+          },
+        ],
+      },
+    })
+
+    render(
+      <MonitorTaskCard
+        task={makeTask()}
+        onEdit={jest.fn()}
+        onViewLogs={jest.fn()}
+        onRefresh={jest.fn()}
+        onTrigger={jest.fn().mockResolvedValue(undefined)}
+      />
+    )
+
+    expect(screen.getByText("飞书已建立线程")).toBeTruthy()
+    expect(screen.getByText("Telegram待建立线程")).toBeTruthy()
+    expect(screen.getByText("微信等待先发消息")).toBeTruthy()
+    expect(screen.getByText("首次投递后会自动建立线程锚点")).toBeTruthy()
+    expect(screen.getByText("让联系人先发一条消息后即可建立微信上下文")).toBeTruthy()
   })
 })

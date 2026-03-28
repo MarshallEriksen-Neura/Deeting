@@ -1,15 +1,16 @@
 use tauri::State;
 
 use crate::modules::monitor::types::{
-    LocalMonitorActionResponse, LocalMonitorCreateResponse, LocalMonitorExecutionLogListResponse,
-    LocalMonitorFeedbackRequest, LocalMonitorListQuery, LocalMonitorLogsQuery,
-    LocalMonitorStatsResponse, LocalMonitorTask, LocalMonitorTaskCreateRequest,
-    LocalMonitorTaskIdRequest, LocalMonitorTaskListResponse, LocalMonitorTaskUpdateRequest,
-    LocalMonitorTriggerResponse, LocalNotificationChannel, LocalNotificationChannelCreateRequest,
-    LocalNotificationChannelCreateResponse, LocalNotificationChannelDeleteResponse,
-    LocalNotificationChannelListResponse, LocalNotificationChannelTestRequest,
-    LocalNotificationChannelTestResponse, LocalNotificationChannelUpdateRequest,
-    LocalNotificationChannelUpdateResponse, MonitorWorkerStartRequest, MonitorWorkerStatus,
+    LocalMonitorActionResponse, LocalMonitorCreateResponse, LocalMonitorDeliveryStateListResponse,
+    LocalMonitorExecutionLogListResponse, LocalMonitorFeedbackRequest, LocalMonitorListQuery,
+    LocalMonitorLogsQuery, LocalMonitorStatsResponse, LocalMonitorTask,
+    LocalMonitorTaskCreateRequest, LocalMonitorTaskIdRequest, LocalMonitorTaskListResponse,
+    LocalMonitorTaskUpdateRequest, LocalMonitorTriggerResponse, LocalNotificationChannel,
+    LocalNotificationChannelCreateRequest, LocalNotificationChannelCreateResponse,
+    LocalNotificationChannelDeleteResponse, LocalNotificationChannelListResponse,
+    LocalNotificationChannelTestRequest, LocalNotificationChannelTestResponse,
+    LocalNotificationChannelUpdateRequest, LocalNotificationChannelUpdateResponse,
+    MonitorWorkerStartRequest, MonitorWorkerStatus,
 };
 use crate::state::AppState;
 
@@ -91,6 +92,14 @@ pub async fn list_local_monitor_logs(
     query: LocalMonitorLogsQuery,
 ) -> Result<LocalMonitorExecutionLogListResponse, String> {
     state.monitor.list_logs(query).await
+}
+
+#[tauri::command]
+pub async fn list_local_monitor_delivery_states(
+    state: State<'_, AppState>,
+    task_id: String,
+) -> Result<LocalMonitorDeliveryStateListResponse, String> {
+    state.monitor.list_delivery_states(task_id).await
 }
 
 #[tauri::command]

@@ -18,12 +18,13 @@ import {
 import { GlassCard } from "@/components/ui/glass-card"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
-import type { MonitorTask } from "@/lib/api/monitors"
+import type { MonitorDeliveryStateRecord, MonitorTask } from "@/lib/api/monitors"
 import {
   pauseMonitorTask,
   resumeMonitorTask,
   deleteMonitorTask,
 } from "@/lib/api/monitors"
+import { useMonitorDeliveryStates } from "@/lib/swr/use-monitors"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -100,11 +101,14 @@ export function MonitorTaskCard({
   const [menuOpen, setMenuOpen] = useState(false)
   const [acting, setActing] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const { data: deliveryStates } = useMonitorDeliveryStates(task.id)
   const config = STATUS_CONFIG[task.display_status]
   const bindingReady = task.binding_state === "ok"
   const toggleDisabled =
     acting || isTriggering || (!bindingReady && task.status !== "active")
   const triggerDisabled = acting || isTriggering || task.status !== "active" || !bindingReady
+  const deliverySummary = summarizeDeliveryStates(deliveryStates?.items ?? [])
+  const deliveryHints = summarizeDeliveryHints(deliveryStates?.items ?? [])
 
   const handleToggle = useCallback(async () => {
     setActing(true)
@@ -264,6 +268,28 @@ export function MonitorTaskCard({
       {task.binding_error ? (
         <div className="mb-4 rounded-xl border border-amber-500/15 bg-amber-500/5 px-3 py-2 text-[11px] leading-relaxed text-amber-300">
           {task.binding_error}
+        </div>
+      ) : null}
+
+      {deliverySummary.length > 0 ? (
+        <div className="mb-4 space-y-2">
+          <div className="flex flex-wrap gap-1.5">
+            {deliverySummary.map((item) => (
+              <span
+                key={item}
+                className="rounded-full bg-[var(--foreground)]/6 px-2 py-1 text-[10px] text-[var(--muted)]"
+              >
+                {item}
+              </span>
+            ))}
+          </div>
+          {deliveryHints.length > 0 ? (
+            <div className="space-y-1 text-[10px] leading-relaxed text-[var(--muted)]">
+              {deliveryHints.map((hint) => (
+                <div key={hint}>{hint}</div>
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -517,6 +543,61 @@ function formatInterval(minutes: number | null): string {
   if (minutes >= 1440) return `每${Math.round(minutes / 1440)}天`
   if (minutes >= 60) return `每${Math.round(minutes / 60)}小时`
   return `每${minutes}分钟`
+}
+
+function summarizeDeliveryStates(states: MonitorDeliveryStateRecord[]): string[] {
+  const seen = new Set<string>()
+  const items: string[] = []
+
+  for (const item of states) {
+    const label = deliverySummaryLabel(item)
+    if (!label || seen.has(label)) continue
+    seen.add(label)
+    items.push(label)
+  }
+
+  return items.slice(0, 3)
+}
+
+function summarizeDeliveryHints(states: MonitorDeliveryStateRecord[]): string[] {
+  const hints: string[] = []
+  const hasPendingThread = states.some(
+    (item) =>
+      (item.channel_kind === "feishu" || item.channel_kind === "telegram") &&
+      item.status === "pending"
+  )
+  const hasWechatWaiting = states.some(
+    (item) =>
+      item.channel_kind === "wechat" &&
+      item.status === "waiting_for_contact_message"
+  )
+
+  if (hasPendingThread) {
+    hints.push("首次投递后会自动建立线程锚点")
+  }
+  if (hasWechatWaiting) {
+    hints.push("让联系人先发一条消息后即可建立微信上下文")
+  }
+
+  return hints
+}
+
+function deliverySummaryLabel(item: MonitorDeliveryStateRecord): string | null {
+  const channelKind = item.channel_kind.trim().toLowerCase()
+
+  if (channelKind === "feishu") {
+    return item.status === "anchored" ? "飞书已建立线程" : "飞书待建立线程"
+  }
+  if (channelKind === "telegram") {
+    return item.status === "anchored" ? "Telegram已建立线程" : "Telegram待建立线程"
+  }
+  if (channelKind === "wechat") {
+    if (item.status === "context_ready") return "微信上下文已建立"
+    if (item.status === "waiting_for_contact_message") return "微信等待先发消息"
+    return "微信待建立上下文"
+  }
+
+  return null
 }
 
 function formatTokens(n: number): string {

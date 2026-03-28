@@ -101,6 +101,9 @@ export function MonitorCreateModal({
   // Notification channels
   const { data: channelsData } = useNotificationChannels()
   const activeChannels = (channelsData?.items ?? []).filter((c) => c.is_active)
+  const selectedChannels = activeChannels.filter((channel) =>
+    selectedChannelIds.includes(channel.id)
+  )
   const bindableTaskAgents = taskAgents.filter(
     (agent) =>
       agent.invocation_kind === "chat" && agent.is_enabled && !agent.is_deleted
@@ -410,6 +413,13 @@ export function MonitorCreateModal({
                 <ExternalLink className="ml-auto h-3 w-3" />
               </a>
             )}
+            {selectedChannels.length > 0 ? (
+              <div className="mt-2 space-y-1 text-[11px] leading-relaxed text-[var(--muted)]">
+                {buildDeliveryHints(selectedChannels).map((hint) => (
+                  <div key={hint}>{hint}</div>
+                ))}
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -439,4 +449,20 @@ export function MonitorCreateModal({
       </DialogContent>
     </Dialog>
   )
+}
+
+function buildDeliveryHints(
+  channels: Array<{ channel: string; display_name?: string | null }>
+): string[] {
+  const kinds = new Set(channels.map((channel) => channel.channel))
+  const hints: string[] = []
+
+  if (kinds.has("feishu") || kinds.has("telegram")) {
+    hints.push("飞书和 Telegram 在首次投递后会自动建立线程锚点")
+  }
+  if (kinds.has("wechat")) {
+    hints.push("微信联系人需要先发一条消息，系统才能建立上下文")
+  }
+
+  return hints
 }

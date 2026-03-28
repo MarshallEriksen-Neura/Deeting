@@ -6,11 +6,12 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use crate::modules::monitor::types::{
-    LocalExecutionResult, LocalMonitorExecutionLog, LocalMonitorExecutionLogListResponse,
-    LocalMonitorStatsResponse, LocalMonitorTask, LocalMonitorTaskCreateRequest,
-    LocalMonitorTaskListResponse, LocalMonitorTaskUpdateRequest, LocalNotificationChannel,
-    LocalNotificationChannelCreateRequest, LocalNotificationChannelListResponse,
-    LocalNotificationChannelUpdateRequest,
+    normalize_monitor_notify_config, LocalExecutionResult, LocalMonitorDeliveryStateListResponse,
+    LocalMonitorDeliveryStateRecord, LocalMonitorExecutionLog,
+    LocalMonitorExecutionLogListResponse, LocalMonitorStatsResponse, LocalMonitorTask,
+    LocalMonitorTaskCreateRequest, LocalMonitorTaskListResponse, LocalMonitorTaskUpdateRequest,
+    LocalNotificationChannel, LocalNotificationChannelCreateRequest,
+    LocalNotificationChannelListResponse, LocalNotificationChannelUpdateRequest,
 };
 
 const LOCAL_MONITOR_USER_ID: &str = "00000000-0000-0000-0000-000000000000";
@@ -24,6 +25,13 @@ const DEFAULT_ANALYSIS_MODE: &str = "concise";
 #[derive(Clone)]
 pub struct MonitorStore {
     pool: SqlitePool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct MonitorDeliveryState {
+    pub(crate) anchor_message_id: Option<String>,
+    pub(crate) anchor_context: Value,
+    pub(crate) updated_at: String,
 }
 
 impl MonitorStore {
@@ -175,6 +183,23 @@ impl MonitorStore {
         .await
         .map_err(|err| err.to_string())?;
 
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS local_monitor_delivery_state (
+              task_id TEXT NOT NULL,
+              channel_id TEXT NOT NULL,
+              target_key TEXT NOT NULL,
+              anchor_message_id TEXT,
+              anchor_context_json TEXT NOT NULL DEFAULT '{}',
+              updated_at TEXT NOT NULL,
+              PRIMARY KEY (task_id, channel_id, target_key)
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| err.to_string())?;
+
         Ok(())
     }
 
@@ -283,7 +308,8 @@ impl MonitorStore {
         let now_ts = now_unix_timestamp();
         let now_iso = now_rfc3339();
         let next_run_ts = now_ts + interval_minutes * 60;
-        let notify_config = payload.notify_config.unwrap_or_else(|| json!({}));
+        let notify_config =
+            normalize_monitor_notify_config(&payload.notify_config.unwrap_or_else(|| json!({})));
         let allowed_tools = normalize_allowed_tools(payload.allowed_tools.unwrap_or_default());
         let execution_target = normalize_execution_target(payload.execution_target.as_deref());
         let analysis_mode = normalize_analysis_mode(payload.analysis_mode.as_deref());
@@ -371,7 +397,9 @@ impl MonitorStore {
             .filter(|value| !value.is_empty())
             .map(ToString::to_string)
             .unwrap_or(current.status.clone());
-        let notify_config = payload.notify_config.unwrap_or(current.notify_config);
+        let notify_config = normalize_monitor_notify_config(
+            &payload.notify_config.unwrap_or(current.notify_config),
+        );
         let allowed_tools = payload
             .allowed_tools
             .map(normalize_allowed_tools)
@@ -863,6 +891,184 @@ impl MonitorStore {
         Ok(())
     }
 
+    pub(crate) async fn get_delivery_state(
+        &self,
+        task_id: &str,
+        channel_id: &str,
+        target_key: &str,
+    ) -> Result<Option<MonitorDeliveryState>, String> {
+        let row = sqlx::query(
+            r#"
+            SELECT anchor_message_id, anchor_context_json, updated_at
+            FROM local_monitor_delivery_state
+            WHERE task_id = ? AND channel_id = ? AND target_key = ?
+            LIMIT 1
+            "#,
+        )
+        .bind(task_id.trim())
+        .bind(channel_id.trim())
+        .bind(target_key.trim())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| err.to_string())?;
+        let Some(row) = row else {
+            return Ok(None);
+        };
+
+        Ok(Some(MonitorDeliveryState {
+            anchor_message_id: row
+                .try_get::<Option<String>, _>("anchor_message_id")
+                .map_err(|err| err.to_string())?,
+            anchor_context: parse_json_value(
+                &row.try_get::<String, _>("anchor_context_json")
+                    .map_err(|err| err.to_string())?,
+            ),
+            updated_at: row.try_get("updated_at").map_err(|err| err.to_string())?,
+        }))
+    }
+
+    pub(crate) async fn upsert_delivery_state(
+        &self,
+        task_id: &str,
+        channel_id: &str,
+        target_key: &str,
+        anchor_message_id: Option<&str>,
+        anchor_context: Option<&Value>,
+    ) -> Result<(), String> {
+        let updated_at = now_rfc3339();
+        let normalized_message_id = anchor_message_id
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let context_json = json_to_string(anchor_context.unwrap_or(&json!({})));
+        sqlx::query(
+            r#"
+            INSERT INTO local_monitor_delivery_state (
+              task_id, channel_id, target_key, anchor_message_id, anchor_context_json, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(task_id, channel_id, target_key)
+            DO UPDATE SET
+              anchor_message_id = excluded.anchor_message_id,
+              anchor_context_json = excluded.anchor_context_json,
+              updated_at = excluded.updated_at
+            "#,
+        )
+        .bind(task_id.trim())
+        .bind(channel_id.trim())
+        .bind(target_key.trim())
+        .bind(normalized_message_id)
+        .bind(context_json)
+        .bind(updated_at)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| err.to_string())?;
+        Ok(())
+    }
+
+    pub async fn list_delivery_states(
+        &self,
+        task_id: &str,
+    ) -> Result<LocalMonitorDeliveryStateListResponse, String> {
+        let task = self
+            .get_task(task_id)
+            .await?
+            .ok_or_else(|| "任务不存在".to_string())?;
+        let channel_ids = task
+            .notify_config
+            .get("channel_ids")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let configured_channels = if channel_ids.is_empty() {
+            Vec::new()
+        } else {
+            self.list_active_notification_channels_by_ids(&channel_ids)
+                .await?
+        };
+
+        let rows = sqlx::query(
+            r#"
+            SELECT
+              state.task_id,
+              state.channel_id,
+              channel.channel,
+              channel.display_name,
+              state.target_key,
+              state.anchor_message_id,
+              state.anchor_context_json,
+              state.updated_at
+            FROM local_monitor_delivery_state AS state
+            LEFT JOIN local_notification_channels AS channel
+              ON channel.id = state.channel_id
+            WHERE task_id = ?
+            ORDER BY datetime(state.updated_at) DESC, state.rowid DESC
+            "#,
+        )
+        .bind(task_id.trim())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| err.to_string())?;
+
+        let persisted_items = rows
+            .into_iter()
+            .map(|row| -> Result<LocalMonitorDeliveryStateRecord, String> {
+                let anchor_context_json: String = row
+                    .try_get("anchor_context_json")
+                    .map_err(|err| err.to_string())?;
+                let anchor_context = parse_json_value(&anchor_context_json);
+                let anchor_message_id = row
+                    .try_get::<Option<String>, _>("anchor_message_id")
+                    .map_err(|err| err.to_string())?;
+                Ok(LocalMonitorDeliveryStateRecord {
+                    task_id: row.try_get("task_id").map_err(|err| err.to_string())?,
+                    channel_id: row.try_get("channel_id").map_err(|err| err.to_string())?,
+                    channel_kind: row
+                        .try_get::<Option<String>, _>("channel")
+                        .map_err(|err| err.to_string())?
+                        .unwrap_or_default(),
+                    channel_display_name: row
+                        .try_get::<Option<String>, _>("display_name")
+                        .map_err(|err| err.to_string())?,
+                    status: derive_delivery_state_status(
+                        anchor_message_id.clone(),
+                        anchor_context.clone(),
+                    ),
+                    target_key: row.try_get("target_key").map_err(|err| err.to_string())?,
+                    anchor_message_id,
+                    anchor_context,
+                    updated_at: row.try_get("updated_at").map_err(|err| err.to_string())?,
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut items = Vec::new();
+        let mut seen = std::collections::BTreeSet::new();
+        for item in persisted_items {
+            seen.insert(item.target_key.clone());
+            items.push(item);
+        }
+        for channel in configured_channels {
+            for item in derive_channel_target_records(task.id.as_str(), &channel) {
+                if seen.insert(item.target_key.clone()) {
+                    items.push(item);
+                }
+            }
+        }
+        items.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
+
+        Ok(LocalMonitorDeliveryStateListResponse {
+            total: items.len() as i64,
+            items,
+        })
+    }
+
     pub async fn list_due_tasks(&self, limit: i64) -> Result<Vec<LocalMonitorTask>, String> {
         let safe_limit = limit.clamp(1, 50);
         let now_ts = now_unix_timestamp();
@@ -969,6 +1175,7 @@ impl MonitorStore {
         &self,
         task: &LocalMonitorTask,
         error_message: &str,
+        events: Option<Vec<Value>>,
     ) -> Result<(), String> {
         let now_ts = now_unix_timestamp();
         let now_iso = now_rfc3339();
@@ -984,6 +1191,9 @@ impl MonitorStore {
             None
         };
         let error_text = truncate(error_message, 1900);
+        let output_data = json!({
+            "events": events.unwrap_or_default(),
+        });
 
         sqlx::query(
             r#"
@@ -997,7 +1207,7 @@ impl MonitorStore {
         .bind(task.id.as_str())
         .bind(now_iso.as_str())
         .bind(json_to_string(&json!({"source": "desktop_local_worker"})))
-        .bind(json_to_string(&json!({})))
+        .bind(json_to_string(&output_data))
         .bind(error_text)
         .bind(now_iso.as_str())
         .execute(&self.pool)
@@ -1108,7 +1318,7 @@ fn row_to_task(row: &SqliteRow) -> Result<LocalMonitorTask, String> {
             .try_get::<Option<String>, _>("model_id")
             .map_err(|err| err.to_string())?,
         error_count: row.try_get("error_count").map_err(|err| err.to_string())?,
-        notify_config: parse_json_value(&notify_config_json),
+        notify_config: normalize_monitor_notify_config(&parse_json_value(&notify_config_json)),
         allowed_tools: parse_json_value(&allowed_tools_json)
             .as_array()
             .map(|items| {
@@ -1232,6 +1442,119 @@ fn normalize_notification_channel(raw: &str) -> Result<&'static str, String> {
 fn normalize_display_name(raw: Option<String>) -> Option<String> {
     raw.map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+fn derive_delivery_state_status(
+    anchor_message_id: Option<String>,
+    anchor_context: Value,
+) -> String {
+    if anchor_message_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .is_some()
+    {
+        return "anchored".to_string();
+    }
+    if anchor_context
+        .get("context_token")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .is_some()
+    {
+        return "context_ready".to_string();
+    }
+    "pending".to_string()
+}
+
+fn derive_channel_target_records(
+    task_id: &str,
+    channel: &LocalNotificationChannel,
+) -> Vec<LocalMonitorDeliveryStateRecord> {
+    match channel.channel.trim().to_lowercase().as_str() {
+        "telegram" => config_string(&channel.config, "chat_id")
+            .map(|chat_id| {
+                vec![LocalMonitorDeliveryStateRecord {
+                    task_id: task_id.to_string(),
+                    channel_id: channel.id.clone(),
+                    channel_kind: "telegram".to_string(),
+                    channel_display_name: channel.display_name.clone(),
+                    status: "pending".to_string(),
+                    target_key: format!("telegram:{}", chat_id),
+                    anchor_message_id: None,
+                    anchor_context: json!({
+                        "chat_id": chat_id,
+                    }),
+                    updated_at: channel.updated_at.clone(),
+                }]
+            })
+            .unwrap_or_default(),
+        "feishu" => config_string_list(&channel.config, "chat_ids")
+            .into_iter()
+            .map(|chat_id| LocalMonitorDeliveryStateRecord {
+                task_id: task_id.to_string(),
+                channel_id: channel.id.clone(),
+                channel_kind: "feishu".to_string(),
+                channel_display_name: channel.display_name.clone(),
+                status: "pending".to_string(),
+                target_key: format!("feishu:{}", chat_id),
+                anchor_message_id: None,
+                anchor_context: json!({
+                    "chat_id": chat_id,
+                }),
+                updated_at: channel.updated_at.clone(),
+            })
+            .collect(),
+        "wechat" => config_string_list(&channel.config, "notify_contact_ids")
+            .into_iter()
+            .map(|contact_id| LocalMonitorDeliveryStateRecord {
+                task_id: task_id.to_string(),
+                channel_id: channel.id.clone(),
+                channel_kind: "wechat".to_string(),
+                channel_display_name: channel.display_name.clone(),
+                status: "waiting_for_contact_message".to_string(),
+                target_key: format!("wechat:{}", contact_id),
+                anchor_message_id: None,
+                anchor_context: json!({
+                    "contact_id": contact_id,
+                }),
+                updated_at: channel.updated_at.clone(),
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn config_string(config: &Value, key: &str) -> Option<String> {
+    config
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn config_string_list(config: &Value, key: &str) -> Vec<String> {
+    let Some(value) = config.get(key) else {
+        return Vec::new();
+    };
+    match value {
+        Value::Array(items) => items
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .collect(),
+        Value::String(text) => text
+            .split(|ch| ch == '\n' || ch == ',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 
 fn normalize_allowed_tools(values: Vec<String>) -> Vec<String> {
@@ -1425,5 +1748,185 @@ mod tests {
             normalize_notification_channel("wechat").expect("wechat should be accepted"),
             "wechat"
         );
+    }
+
+    #[tokio::test]
+    async fn delivery_state_round_trips_anchor_message_and_context() {
+        let store = build_store().await;
+
+        store
+            .upsert_delivery_state(
+                "task-1",
+                "channel-1",
+                "telegram:chat-1",
+                Some("msg-1"),
+                Some(&json!({
+                    "chat_id": "chat-1"
+                })),
+            )
+            .await
+            .expect("state should persist");
+
+        let state = store
+            .get_delivery_state("task-1", "channel-1", "telegram:chat-1")
+            .await
+            .expect("query should succeed")
+            .expect("state should exist");
+
+        assert_eq!(state.anchor_message_id.as_deref(), Some("msg-1"));
+        assert_eq!(state.anchor_context, json!({"chat_id": "chat-1"}));
+    }
+
+    #[tokio::test]
+    async fn delivery_state_upsert_replaces_existing_anchor() {
+        let store = build_store().await;
+
+        store
+            .upsert_delivery_state(
+                "task-1",
+                "channel-1",
+                "feishu:chat-1",
+                Some("msg-1"),
+                Some(&json!({"root_id": "msg-1"})),
+            )
+            .await
+            .expect("initial state should persist");
+        store
+            .upsert_delivery_state(
+                "task-1",
+                "channel-1",
+                "feishu:chat-1",
+                Some("msg-2"),
+                Some(&json!({"root_id": "msg-2"})),
+            )
+            .await
+            .expect("updated state should persist");
+
+        let state = store
+            .get_delivery_state("task-1", "channel-1", "feishu:chat-1")
+            .await
+            .expect("query should succeed")
+            .expect("state should exist");
+
+        assert_eq!(state.anchor_message_id.as_deref(), Some("msg-2"));
+        assert_eq!(state.anchor_context, json!({"root_id": "msg-2"}));
+    }
+
+    #[tokio::test]
+    async fn list_delivery_states_returns_all_records_for_task() {
+        let store = build_store().await;
+
+        let task = store
+            .create_task(LocalMonitorTaskCreateRequest {
+                title: "Iran watch".to_string(),
+                objective: "Monitor developments".to_string(),
+                assistant_id: "agent-1".to_string(),
+                cron_expr: None,
+                analysis_mode: None,
+                notify_config: Some(json!({})),
+                allowed_tools: None,
+                execution_target: None,
+            })
+            .await
+            .expect("task should be created");
+
+        store
+            .upsert_delivery_state(
+                task.id.as_str(),
+                "channel-1",
+                "telegram:chat-1",
+                Some("msg-1"),
+                Some(&json!({"chat_id": "chat-1"})),
+            )
+            .await
+            .expect("telegram anchor should persist");
+        store
+            .upsert_delivery_state(
+                task.id.as_str(),
+                "channel-2",
+                "wechat:user-1",
+                None,
+                Some(&json!({"context_token": "ctx-1"})),
+            )
+            .await
+            .expect("wechat anchor should persist");
+
+        let states = store
+            .list_delivery_states(task.id.as_str())
+            .await
+            .expect("list should succeed");
+
+        assert_eq!(states.total, 2);
+        assert!(states
+            .items
+            .iter()
+            .any(|item| item.target_key == "telegram:chat-1"));
+        assert!(states
+            .items
+            .iter()
+            .any(|item| item.target_key == "wechat:user-1"));
+    }
+
+    #[tokio::test]
+    async fn list_delivery_states_derives_pending_targets_from_task_channel_config() {
+        let store = build_store().await;
+
+        let telegram = store
+            .create_notification_channel(LocalNotificationChannelCreateRequest {
+                channel: "telegram".to_string(),
+                config: json!({
+                    "bot_token": "bot-token",
+                    "chat_id": "12345"
+                }),
+                display_name: Some("Telegram 战情群".to_string()),
+                priority: None,
+            })
+            .await
+            .expect("telegram channel should be created");
+        let wechat = store
+            .create_notification_channel(LocalNotificationChannelCreateRequest {
+                channel: "wechat".to_string(),
+                config: json!({
+                    "im_enabled": true,
+                    "notify_contact_ids": ["wx-user-1"]
+                }),
+                display_name: Some("微信值班人".to_string()),
+                priority: None,
+            })
+            .await
+            .expect("wechat channel should be created");
+
+        let task = store
+            .create_task(LocalMonitorTaskCreateRequest {
+                title: "Iran watch".to_string(),
+                objective: "Monitor developments".to_string(),
+                assistant_id: "agent-1".to_string(),
+                cron_expr: None,
+                analysis_mode: None,
+                notify_config: Some(json!({
+                    "channel_ids": [telegram.id, wechat.id]
+                })),
+                allowed_tools: None,
+                execution_target: None,
+            })
+            .await
+            .expect("task should be created");
+
+        let states = store
+            .list_delivery_states(task.id.as_str())
+            .await
+            .expect("list should succeed");
+
+        assert_eq!(states.total, 2);
+        assert!(states.items.iter().any(|item| {
+            item.channel_kind == "telegram"
+                && item.target_key == "telegram:12345"
+                && item.status == "pending"
+        }));
+        assert!(states.items.iter().any(|item| {
+            item.channel_kind == "wechat"
+                && item.target_key == "wechat:wx-user-1"
+                && item.status == "waiting_for_contact_message"
+        }));
     }
 }

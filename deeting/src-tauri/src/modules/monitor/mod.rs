@@ -1,13 +1,15 @@
 pub mod agent_runtime;
 pub mod commands;
+mod delivery;
 pub mod output_contract;
+mod run_events;
 pub mod store;
 pub mod types;
+mod workflow;
 
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures_util::future::BoxFuture;
 use log::warn;
 use serde_json::{json, Value};
 use tokio::sync::{Mutex, RwLock};
@@ -16,33 +18,32 @@ use uuid::Uuid;
 
 use crate::modules::custom_task_agents::store::get_custom_task_agent as get_custom_task_agent_profile;
 use crate::modules::custom_task_agents::types::CustomTaskAgentProfile;
-use crate::modules::desktop_runtime::local_orchestrator::{
-    LocalOrchestrationEngine, LocalWorkflowStep,
-};
-use crate::modules::im::feishu::{FeishuClient, FeishuConfig};
-use crate::modules::im::{ImClient, MessageContent, SendMessageRequest};
-use crate::modules::monitor::agent_runtime::{
-    build_monitor_task_agent_message, execute_monitor_task_agent,
-    validate_monitor_task_agent_profile,
-};
-use crate::modules::monitor::output_contract::normalize_monitor_output;
+use crate::modules::monitor::agent_runtime::validate_monitor_task_agent_profile;
 use crate::modules::monitor::store::MonitorStore;
 use crate::modules::monitor::types::{
-    LocalExecutionResult, LocalMonitorActionResponse, LocalMonitorCreateResponse,
-    LocalMonitorExecutionLogListResponse, LocalMonitorListQuery, LocalMonitorLogsQuery,
-    LocalMonitorStatsResponse, LocalMonitorTask, LocalMonitorTaskCreateRequest,
-    LocalMonitorTaskIdRequest, LocalMonitorTaskListResponse, LocalMonitorTaskUpdateRequest,
-    LocalMonitorTriggerResponse, LocalNotificationChannel, LocalNotificationChannelCreateRequest,
-    LocalNotificationChannelCreateResponse, LocalNotificationChannelDeleteResponse,
-    LocalNotificationChannelListResponse, LocalNotificationChannelTestRequest,
-    LocalNotificationChannelTestResponse, LocalNotificationChannelUpdateRequest,
-    LocalNotificationChannelUpdateResponse, MonitorWorkerStartRequest, MonitorWorkerStatus,
+    monitor_delivery_policy_from_notify_config, LocalExecutionResult, LocalMonitorActionResponse,
+    LocalMonitorCreateResponse, LocalMonitorExecutionLogListResponse, LocalMonitorListQuery,
+    LocalMonitorLogsQuery, LocalMonitorStatsResponse, LocalMonitorTask,
+    LocalMonitorTaskCreateRequest, LocalMonitorTaskIdRequest, LocalMonitorTaskListResponse,
+    LocalMonitorTaskUpdateRequest, LocalMonitorTriggerResponse, LocalNotificationChannel,
+    LocalNotificationChannelCreateRequest, LocalNotificationChannelCreateResponse,
+    LocalNotificationChannelDeleteResponse, LocalNotificationChannelListResponse,
+    LocalNotificationChannelTestRequest, LocalNotificationChannelTestResponse,
+    LocalNotificationChannelUpdateRequest, LocalNotificationChannelUpdateResponse,
+    MonitorWorkerStartRequest, MonitorWorkerStatus,
 };
 use crate::modules::providers::store::ProviderStore;
 #[cfg(test)]
 use crate::modules::providers::store::LOCAL_DESKTOP_USER_ID;
 #[cfg(test)]
 use crate::modules::providers::types::{ProviderInstance, ProviderModel};
+#[cfg(test)]
+use delivery::{is_supported_notification_channel, render_channel_notification_text};
+use run_events::{build_delivery_failed_event, should_notify_run};
+#[cfg(test)]
+use run_events::{build_run_terminal_event, project_tool_trace_run_events};
+#[cfg(test)]
+use workflow::MonitorWorkflowContext;
 
 const DEFAULT_MONITOR_POLL_INTERVAL_SECONDS: u64 = 20;
 const MIN_MONITOR_POLL_INTERVAL_SECONDS: u64 = 5;
@@ -79,67 +80,6 @@ struct WorkerRuntime {
     last_tick_at: Option<String>,
     last_error: Option<String>,
     last_claimed: i64,
-}
-
-struct MonitorWorkflowContext {
-    state: MonitorState,
-    task: LocalMonitorTask,
-    execution_id: String,
-    events: Vec<Value>,
-    agent_profile: Option<CustomTaskAgentProfile>,
-    executed_model_id: Option<String>,
-    prompt: Option<String>,
-    content: Option<String>,
-    tokens_used: i64,
-    is_significant_change: bool,
-    change_summary: String,
-    new_snapshot: Value,
-    strategy_tag: Option<String>,
-    observations: Option<Value>,
-}
-
-impl MonitorWorkflowContext {
-    fn new(state: MonitorState, task: LocalMonitorTask) -> Self {
-        Self {
-            state,
-            task,
-            execution_id: Uuid::new_v4().to_string(),
-            events: Vec::new(),
-            agent_profile: None,
-            executed_model_id: None,
-            prompt: None,
-            content: None,
-            tokens_used: 0,
-            is_significant_change: false,
-            change_summary: String::new(),
-            new_snapshot: json!({}),
-            strategy_tag: None,
-            observations: None,
-        }
-    }
-
-    fn emit_status(
-        &mut self,
-        stage: &str,
-        step: &str,
-        state: &str,
-        code: &str,
-        meta: Option<Value>,
-    ) {
-        let payload = json!({
-            "type": "status",
-            "scope": "monitor",
-            "execution_id": self.execution_id,
-            "task_id": self.task.id,
-            "stage": stage,
-            "step": step,
-            "state": state,
-            "code": code,
-            "meta": meta,
-        });
-        self.events.push(payload.clone());
-        log::info!("monitor_status {}", payload.to_string());
-    }
 }
 
 impl MonitorState {
@@ -510,6 +450,16 @@ impl MonitorState {
             .await
     }
 
+    pub async fn list_delivery_states(
+        &self,
+        task_id: String,
+    ) -> Result<crate::modules::monitor::types::LocalMonitorDeliveryStateListResponse, String> {
+        self.shared
+            .store
+            .list_delivery_states(task_id.as_str())
+            .await
+    }
+
     pub async fn submit_feedback(
         &self,
         task_id: String,
@@ -689,37 +639,54 @@ impl MonitorState {
     async fn process_single_task(&self, task: &LocalMonitorTask) -> Result<(), String> {
         self.require_task_binding_ready(task).await?;
         match self.execute_task_local(task).await {
-            Ok(result) => {
-                self.shared
-                    .store
-                    .record_execution_success(task, &result)
-                    .await
-                    .map_err(|err| format!("record_success_failed: {}", err))?;
-
-                let force_notify = task
-                    .notify_config
-                    .get("force_notify")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false);
-                if result.is_significant_change || force_notify {
-                    if let Err(err) = self.dispatch_change_notification(task, &result).await {
+            Ok(mut result) => {
+                let delivery_policy =
+                    monitor_delivery_policy_from_notify_config(&task.notify_config);
+                if should_notify_run(&delivery_policy, Some(&result), None, false) {
+                    if let Err(err) = self
+                        .dispatch_run_notification(task, &result, &delivery_policy)
+                        .await
+                    {
+                        let next_seq = (result.events.len() as u32) + 1;
+                        result.events.push(build_delivery_failed_event(
+                            result
+                                .events
+                                .first()
+                                .and_then(|event| event.get("execution_id"))
+                                .and_then(Value::as_str)
+                                .unwrap_or_default(),
+                            task.id.as_str(),
+                            next_seq,
+                            err.as_str(),
+                        ));
                         warn!(
                             "monitor_local_notification_failed task_id={} err={}",
                             task.id, err
                         );
                     }
                 }
+
+                self.shared
+                    .store
+                    .record_execution_success(task, &result)
+                    .await
+                    .map_err(|err| format!("record_success_failed: {}", err))?;
                 Ok(())
             }
             Err(err) => {
                 self.shared
                     .store
-                    .record_execution_failure(task, &err)
+                    .record_execution_failure(task, &err.message, Some(err.events.clone()))
                     .await
                     .map_err(|report_err| {
-                        format!("record_failure_failed: {} (origin: {})", report_err, err)
+                        format!(
+                            "record_failure_failed: {} (origin: {})",
+                            report_err, err.message
+                        )
                     })?;
 
+                let delivery_policy =
+                    monitor_delivery_policy_from_notify_config(&task.notify_config);
                 if let Some(updated) =
                     self.shared
                         .store
@@ -729,13 +696,28 @@ impl MonitorState {
                             format!("query_task_after_failure_failed: {}", query_err)
                         })?
                 {
-                    if updated.status == "failed_suspended" {
-                        if let Err(notify_err) = self
-                            .dispatch_suspended_notification(&updated, err.as_str())
+                    if should_notify_run(&delivery_policy, None, Some(err.message.as_str()), false)
+                    {
+                        let notify_result = if updated.status == "failed_suspended" {
+                            self.dispatch_suspended_notification(
+                                &updated,
+                                err.message.as_str(),
+                                &err.events,
+                                &delivery_policy,
+                            )
                             .await
-                        {
+                        } else {
+                            self.dispatch_failed_notification(
+                                &updated,
+                                err.message.as_str(),
+                                &err.events,
+                                &delivery_policy,
+                            )
+                            .await
+                        };
+                        if let Err(notify_err) = notify_result {
                             warn!(
-                                "monitor_local_suspend_notification_failed task_id={} err={}",
+                                "monitor_local_failure_notification_failed task_id={} err={}",
                                 updated.id, notify_err
                             );
                         }
@@ -744,430 +726,6 @@ impl MonitorState {
                 Ok(())
             }
         }
-    }
-
-    async fn execute_task_local(
-        &self,
-        task: &LocalMonitorTask,
-    ) -> Result<LocalExecutionResult, String> {
-        let ctx_task = task.clone();
-        let mut ctx = MonitorWorkflowContext::new(self.clone(), ctx_task);
-        let engine = build_monitor_engine();
-        engine.execute(&mut ctx).await?;
-
-        Ok(LocalExecutionResult {
-            is_significant_change: ctx.is_significant_change,
-            change_summary: ctx.change_summary,
-            new_snapshot: ctx.new_snapshot,
-            strategy_tag: ctx.strategy_tag,
-            observations: ctx.observations,
-            tokens_used: ctx.tokens_used.max(0),
-            model_id: ctx.executed_model_id.unwrap_or_default(),
-            events: ctx.events,
-        })
-    }
-
-    async fn dispatch_change_notification(
-        &self,
-        task: &LocalMonitorTask,
-        result: &LocalExecutionResult,
-    ) -> Result<(), String> {
-        let title = format!("🔔 监控提醒: {}", task.title.trim());
-        let summary = if result.change_summary.trim().is_empty() {
-            "### 研判结论\n检测到显著变化。".to_string()
-        } else {
-            truncate(result.change_summary.as_str(), SUMMARY_MAX_CHARS)
-        };
-        let payload = json!({
-            "type": "monitor_change",
-            "task_id": task.id,
-            "task_title": task.title,
-            "status": "success",
-            "is_significant_change": result.is_significant_change,
-            "summary": summary,
-            "snapshot": result.new_snapshot,
-            "tokens_used": result.tokens_used,
-            "model_id": result.model_id,
-            "sent_at": now_rfc3339(),
-        });
-        self.dispatch_notification(task, title.as_str(), summary.as_str(), &payload)
-            .await
-    }
-
-    async fn dispatch_suspended_notification(
-        &self,
-        task: &LocalMonitorTask,
-        error_message: &str,
-    ) -> Result<(), String> {
-        let title = format!("⚠️ 任务熔断: {}", task.title.trim());
-        let summary = format!(
-            "### 任务已自动挂起\n连续失败次数已超阈值，请检查任务配置。\n\n最近错误：{}",
-            truncate(error_message, 600)
-        );
-        let payload = json!({
-            "type": "monitor_suspended",
-            "task_id": task.id,
-            "task_title": task.title,
-            "status": "failed_suspended",
-            "error_message": truncate(error_message, 1200),
-            "sent_at": now_rfc3339(),
-        });
-        self.dispatch_notification(task, title.as_str(), summary.as_str(), &payload)
-            .await
-    }
-
-    async fn dispatch_notification(
-        &self,
-        task: &LocalMonitorTask,
-        title: &str,
-        content: &str,
-        payload: &Value,
-    ) -> Result<(), String> {
-        let channel_ids = extract_notify_channel_ids(&task.notify_config);
-        let (channels, stop_on_success) = if channel_ids.is_empty() {
-            (
-                self.shared
-                    .store
-                    .list_active_notification_channels()
-                    .await?,
-                true,
-            )
-        } else {
-            (
-                self.shared
-                    .store
-                    .list_active_notification_channels_by_ids(&channel_ids)
-                    .await?,
-                false,
-            )
-        };
-        if channels.is_empty() {
-            return Ok(());
-        }
-
-        let mut sent = 0_i64;
-        let mut failures = Vec::new();
-        for channel in channels {
-            match self
-                .send_notification_to_channel(&channel, title, content, payload)
-                .await
-            {
-                Ok(_) => {
-                    sent += 1;
-                    if let Err(err) = self
-                        .shared
-                        .store
-                        .touch_notification_channel(&channel.id)
-                        .await
-                    {
-                        warn!(
-                            "touch_local_notification_channel_failed channel_id={} err={}",
-                            channel.id, err
-                        );
-                    }
-                    if stop_on_success {
-                        break;
-                    }
-                }
-                Err(err) => failures.push(format!("{}:{} -> {}", channel.channel, channel.id, err)),
-            }
-        }
-
-        if sent > 0 {
-            return Ok(());
-        }
-        if failures.is_empty() {
-            return Err("无可用通知渠道".to_string());
-        }
-        Err(failures.join("; "))
-    }
-
-    async fn send_notification_to_channel(
-        &self,
-        channel: &LocalNotificationChannel,
-        title: &str,
-        content: &str,
-        payload: &Value,
-    ) -> Result<String, String> {
-        let channel_kind = channel.channel.trim().to_lowercase();
-        if !is_supported_notification_channel(channel_kind.as_str()) {
-            return Err("不支持的通知渠道类型".to_string());
-        }
-
-        match channel_kind.as_str() {
-            "feishu" => {
-                self.send_feishu_notification(channel, title, content, payload)
-                    .await
-            }
-            "wechat" => self
-                .send_wechat_notification(channel, title, content, payload)
-                .await,
-            "dingtalk" => {
-                self.send_dingtalk_notification(channel, title, content, payload)
-                    .await
-            }
-            "webhook" => {
-                self.send_webhook_notification(channel, title, content, payload)
-                    .await
-            }
-            "telegram" => {
-                self.send_telegram_notification(channel, title, content, payload)
-                    .await
-            }
-            "email" => Err("桌面端暂不支持 email 通知渠道".to_string()),
-            _ => Err("不支持的通知渠道类型".to_string()),
-        }
-    }
-
-    async fn send_feishu_notification(
-        &self,
-        channel: &LocalNotificationChannel,
-        title: &str,
-        content: &str,
-        payload: &Value,
-    ) -> Result<String, String> {
-        let text = format!("{}\n\n{}", title, content);
-        if let Some(webhook_url) = config_string(&channel.config, "webhook_url") {
-            let body = json!({
-                "msg_type": "text",
-                "content": { "text": truncate(text.as_str(), 4000) },
-                "meta": payload,
-            });
-            let response = self
-                .shared
-                .client
-                .post(webhook_url.as_str())
-                .json(&body)
-                .send()
-                .await
-                .map_err(|err| format!("请求失败: {}", err))?;
-            let status = response.status();
-            let body_json: Value = response.json().await.unwrap_or_else(|_| json!({}));
-            if !status.is_success() {
-                return Err(format!("HTTP {}", status.as_u16()));
-            }
-            if body_json.get("code").and_then(Value::as_i64).unwrap_or(0) != 0 {
-                let msg = body_json
-                    .get("msg")
-                    .or_else(|| body_json.get("message"))
-                    .and_then(Value::as_str)
-                    .unwrap_or("feishu error");
-                return Err(msg.to_string());
-            }
-            return Ok("发送成功".to_string());
-        }
-
-        let app_id = config_string(&channel.config, "bot_app_id")
-            .ok_or_else(|| "缺少 webhook_url 或 bot_app_id".to_string())?;
-        let app_secret = config_string(&channel.config, "bot_app_secret")
-            .ok_or_else(|| "缺少 bot_app_secret".to_string())?;
-        let chat_ids = config_string_list(&channel.config, "chat_ids");
-        if chat_ids.is_empty() {
-            return Err("缺少 chat_ids".to_string());
-        }
-        let client = FeishuClient::new(FeishuConfig {
-            app_id,
-            app_secret,
-            ..Default::default()
-        });
-        let text = truncate(
-            format!("{}\n\n{}\n\n{}", title, content, payload).as_str(),
-            4000,
-        );
-        for chat_id in &chat_ids {
-            client
-                .send_message(SendMessageRequest {
-                    chat_id: chat_id.clone(),
-                    content: MessageContent::Text { text: text.clone() },
-                    reply_to: None,
-                })
-                .await
-                .map_err(|err| err.to_string())?;
-        }
-        Ok("发送成功".to_string())
-    }
-
-    async fn send_wechat_notification(
-        &self,
-        channel: &LocalNotificationChannel,
-        title: &str,
-        content: &str,
-        payload: &Value,
-    ) -> Result<String, String> {
-        let wechat_state = self
-            .shared
-            .wechat_state
-            .read()
-            .await
-            .clone()
-            .ok_or_else(|| "桌面端微信渠道尚未初始化。".to_string())?;
-        let account = wechat_state
-            .load_account()
-            .await?
-            .ok_or_else(|| "桌面端微信渠道仅支持聊天式接入，请先完成连接。".to_string())?;
-        let notify_contact_ids = config_string_list(&channel.config, "notify_contact_ids");
-        if notify_contact_ids.is_empty() {
-            return Err("请先配置微信主动通知目标联系人。".to_string());
-        }
-
-        let mut sent = 0_i64;
-        let mut failures = Vec::new();
-        let text = truncate(
-            format!("{}\n\n{}\n\n{}", title, content, payload).as_str(),
-            4000,
-        );
-
-        for contact_id in notify_contact_ids {
-            let Some(context_token) = wechat_state.context_token_for_contact(contact_id.as_str()).await? else {
-                failures.push(format!("{} -> 缺少历史会话上下文，请先让该联系人发送一条消息。", contact_id));
-                continue;
-            };
-            match wechat_state
-                .send_text(
-                    account.base_url.as_str(),
-                    account.token.as_str(),
-                    contact_id.as_str(),
-                    text.as_str(),
-                    context_token.as_str(),
-                )
-                .await
-            {
-                Ok(()) => {
-                    sent += 1;
-                }
-                Err(err) => failures.push(format!("{} -> {}", contact_id, err)),
-            }
-        }
-
-        if sent > 0 {
-            return Ok("发送成功".to_string());
-        }
-        Err(failures.join("; "))
-    }
-
-    async fn send_dingtalk_notification(
-        &self,
-        channel: &LocalNotificationChannel,
-        title: &str,
-        content: &str,
-        payload: &Value,
-    ) -> Result<String, String> {
-        let webhook_url = config_string(&channel.config, "webhook_url")
-            .ok_or_else(|| "缺少 webhook_url".to_string())?;
-        let text = format!("{}\n\n{}\n\n{}", title, content, payload);
-        let body = json!({
-            "msgtype": "text",
-            "text": { "content": truncate(text.as_str(), 4000) },
-        });
-        let response = self
-            .shared
-            .client
-            .post(webhook_url.as_str())
-            .json(&body)
-            .send()
-            .await
-            .map_err(|err| format!("请求失败: {}", err))?;
-        let status = response.status();
-        let body_json: Value = response.json().await.unwrap_or_else(|_| json!({}));
-        if !status.is_success() {
-            return Err(format!("HTTP {}", status.as_u16()));
-        }
-        if body_json
-            .get("errcode")
-            .and_then(Value::as_i64)
-            .unwrap_or(0)
-            != 0
-        {
-            let msg = body_json
-                .get("errmsg")
-                .or_else(|| body_json.get("message"))
-                .and_then(Value::as_str)
-                .unwrap_or("dingtalk error");
-            return Err(msg.to_string());
-        }
-        Ok("发送成功".to_string())
-    }
-
-    async fn send_webhook_notification(
-        &self,
-        channel: &LocalNotificationChannel,
-        title: &str,
-        content: &str,
-        payload: &Value,
-    ) -> Result<String, String> {
-        let webhook_url = config_string(&channel.config, "webhook_url")
-            .ok_or_else(|| "缺少 webhook_url".to_string())?;
-        let method = config_string(&channel.config, "method")
-            .unwrap_or_else(|| "POST".to_string())
-            .to_uppercase();
-        let parsed_method = method
-            .parse::<reqwest::Method>()
-            .map_err(|_| "method 非法".to_string())?;
-        let body = json!({
-            "title": title,
-            "content": content,
-            "payload": payload,
-            "sent_at": now_rfc3339(),
-        });
-        let response = self
-            .shared
-            .client
-            .request(parsed_method, webhook_url.as_str())
-            .json(&body)
-            .send()
-            .await
-            .map_err(|err| format!("请求失败: {}", err))?;
-        if !response.status().is_success() {
-            return Err(format!("HTTP {}", response.status().as_u16()));
-        }
-        Ok("发送成功".to_string())
-    }
-
-    async fn send_telegram_notification(
-        &self,
-        channel: &LocalNotificationChannel,
-        title: &str,
-        content: &str,
-        payload: &Value,
-    ) -> Result<String, String> {
-        let bot_token = config_string(&channel.config, "bot_token")
-            .ok_or_else(|| "缺少 bot_token".to_string())?;
-        let chat_id =
-            config_string(&channel.config, "chat_id").ok_or_else(|| "缺少 chat_id".to_string())?;
-        let endpoint = format!(
-            "https://api.telegram.org/bot{}/sendMessage",
-            bot_token.trim()
-        );
-        let text = format!("{}\n\n{}\n\n{}", title, content, payload);
-        let response = self
-            .shared
-            .client
-            .post(endpoint.as_str())
-            .json(&json!({
-                "chat_id": chat_id,
-                "text": truncate(text.as_str(), 4000),
-                "disable_web_page_preview": true,
-            }))
-            .send()
-            .await
-            .map_err(|err| format!("请求失败: {}", err))?;
-        let status = response.status();
-        let body_json: Value = response.json().await.unwrap_or_else(|_| json!({}));
-        if !status.is_success() {
-            return Err(format!("HTTP {}", status.as_u16()));
-        }
-        if !body_json
-            .get("ok")
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-        {
-            let msg = body_json
-                .get("description")
-                .and_then(Value::as_str)
-                .unwrap_or("telegram error");
-            return Err(msg.to_string());
-        }
-        Ok("发送成功".to_string())
     }
 }
 
@@ -1204,6 +762,9 @@ fn global_app_handle_required() -> Result<tauri::AppHandle, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::modules::monitor::types::{
+        monitor_delivery_policy_from_notify_config, MonitorDeliveryDetailLevel, MonitorRunEventKind,
+    };
     use std::sync::Arc;
 
     #[test]
@@ -1292,6 +853,81 @@ mod tests {
         assert!(is_supported_notification_channel("wechat"));
     }
 
+    #[test]
+    fn emit_status_should_project_canonical_stage_event_shape() {
+        let state =
+            MonitorState {
+                shared: Arc::new(MonitorWorkerShared {
+                    client: reqwest::Client::new(),
+                    store: Arc::new(tokio::runtime::Runtime::new().expect("runtime").block_on(
+                        async {
+                            let pool = sqlx::sqlite::SqlitePoolOptions::new()
+                                .max_connections(1)
+                                .connect("sqlite::memory:")
+                                .await
+                                .expect("memory sqlite pool");
+                            MonitorStore::with_pool(pool).await.expect("monitor store")
+                        },
+                    )),
+                    mcp_store: None,
+                    wechat_state: RwLock::new(None),
+                    worker_task: Mutex::new(None),
+                    tick_lock: Mutex::new(()),
+                    config: RwLock::new(WorkerConfig {
+                        agent_id: "agent".to_string(),
+                        poll_interval_seconds: DEFAULT_MONITOR_POLL_INTERVAL_SECONDS,
+                        pull_limit: DEFAULT_MONITOR_PULL_LIMIT,
+                    }),
+                    runtime: RwLock::new(WorkerRuntime::default()),
+                }),
+            };
+        let task = LocalMonitorTask {
+            id: "task-1".to_string(),
+            user_id: "user-1".to_string(),
+            title: "Monitor".to_string(),
+            objective: "Watch".to_string(),
+            cron_expr: "0 */6 * * *".to_string(),
+            status: "active".to_string(),
+            last_snapshot: None,
+            last_executed_at: None,
+            next_run_at: None,
+            current_interval_minutes: Some(360),
+            display_status: "active".to_string(),
+            strategy_variants: None,
+            analysis_mode: "concise".to_string(),
+            policy_state: json!({}),
+            binding_state: "ok".to_string(),
+            binding_error: None,
+            assistant_id: Some("agent-1".to_string()),
+            assistant_name: Some("Agent".to_string()),
+            model_id: None,
+            error_count: 0,
+            notify_config: json!({}),
+            allowed_tools: Vec::new(),
+            execution_target: "desktop".to_string(),
+            total_tokens: 0,
+            is_active: true,
+            created_at: "2026-03-28T00:00:00Z".to_string(),
+            updated_at: "2026-03-28T00:00:00Z".to_string(),
+        };
+        let mut ctx = MonitorWorkflowContext::new(state, task);
+
+        ctx.emit_status(
+            "remember",
+            "monitor_resolve_task_agent",
+            "running",
+            "monitor.agent.resolving",
+            None,
+        );
+
+        let first = ctx.events.first().expect("event");
+        assert_eq!(
+            first.get("kind").and_then(Value::as_str),
+            Some("stage_changed")
+        );
+        assert_eq!(first.get("seq").and_then(Value::as_u64), Some(1));
+    }
+
     #[tokio::test]
     async fn test_notification_channel_rejects_wechat_until_connection_exists() {
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
@@ -1322,7 +958,7 @@ mod tests {
         assert_eq!(response.channel, "wechat");
         assert_eq!(
             response.message.as_deref(),
-            Some("桌面端微信渠道仅支持聊天式接入，请先完成连接。")
+            Some("桌面端微信渠道尚未初始化。")
         );
     }
 
@@ -1341,13 +977,13 @@ mod tests {
         let monitor = MonitorState::with_pool(pool.clone(), provider_store, None)
             .await
             .expect("monitor state");
-        let wechat_state = crate::modules::im::wechat::WechatState::with_pool(
-            pool,
-            "sqlite::memory:",
-        )
-        .await
-        .expect("wechat state");
-        monitor.attach_wechat_state(Arc::new(wechat_state.clone())).await;
+        let wechat_state =
+            crate::modules::im::wechat::WechatState::with_pool(pool, "sqlite::memory:")
+                .await
+                .expect("wechat state");
+        monitor
+            .attach_wechat_state(Arc::new(wechat_state.clone()))
+            .await;
         wechat_state
             .save_account(&crate::modules::im::wechat::types::StoredWechatAccount {
                 token: "token-1".to_string(),
@@ -1377,226 +1013,179 @@ mod tests {
             Some("请先配置微信主动通知目标联系人。")
         );
     }
-}
 
-struct MonitorResolveTaskAgentStep;
+    #[test]
+    fn project_tool_trace_events_emits_called_and_terminal_events() {
+        let mut events = Vec::new();
+        let next_seq = project_tool_trace_run_events(
+            &mut events,
+            "execution-1",
+            "task-1",
+            3,
+            &[
+                json!({
+                    "id": "call-1",
+                    "name": "search_sdk",
+                    "status": "success",
+                    "result": {"items": 2}
+                }),
+                json!({
+                    "id": "call-2",
+                    "name": "fetch_url",
+                    "status": "error",
+                    "error": "timeout"
+                }),
+            ],
+        );
 
-impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorResolveTaskAgentStep {
-    fn name(&self) -> &'static str {
-        "monitor_resolve_task_agent"
+        assert_eq!(next_seq, 7);
+        assert_eq!(events.len(), 4);
+        assert_eq!(
+            events[0].get("kind").and_then(Value::as_str),
+            Some("tool_called")
+        );
+        assert_eq!(
+            events[1].get("kind").and_then(Value::as_str),
+            Some("tool_succeeded")
+        );
+        assert_eq!(
+            events[2].get("kind").and_then(Value::as_str),
+            Some("tool_called")
+        );
+        assert_eq!(
+            events[3].get("kind").and_then(Value::as_str),
+            Some("tool_failed")
+        );
     }
 
-    fn execute<'a>(
-        &'a self,
-        ctx: &'a mut MonitorWorkflowContext,
-    ) -> BoxFuture<'a, Result<(), String>> {
-        Box::pin(async move {
-            ctx.emit_status(
-                "remember",
-                "monitor_resolve_task_agent",
-                "running",
-                "monitor.agent.resolving",
-                None,
-            );
-            let assistant_id = ctx
-                .task
-                .assistant_id
-                .as_deref()
-                .ok_or_else(|| "monitor task agent binding is required".to_string())?;
-            let profile = ctx.state.ensure_bindable_task_agent(assistant_id).await?;
-            ctx.agent_profile = Some(profile.clone());
-            ctx.emit_status(
-                "remember",
-                "monitor_resolve_task_agent",
-                "success",
-                "monitor.agent.resolved",
-                Some(json!({
-                    "assistant_id": profile.id,
-                    "assistant_name": profile.name,
-                })),
-            );
-            Ok(())
-        })
-    }
-}
+    #[test]
+    fn should_notify_run_defaults_to_change_or_failure_only() {
+        let default_policy = monitor_delivery_policy_from_notify_config(&json!({}));
 
-struct MonitorBuildPromptStep;
+        let changed = LocalExecutionResult {
+            is_significant_change: true,
+            change_summary: "changed".to_string(),
+            new_snapshot: json!({}),
+            strategy_tag: None,
+            observations: None,
+            tokens_used: 0,
+            model_id: "gpt-4o".to_string(),
+            events: vec![],
+        };
+        let unchanged = LocalExecutionResult {
+            is_significant_change: false,
+            change_summary: "same".to_string(),
+            new_snapshot: json!({}),
+            strategy_tag: None,
+            observations: None,
+            tokens_used: 0,
+            model_id: "gpt-4o".to_string(),
+            events: vec![],
+        };
 
-impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorBuildPromptStep {
-    fn name(&self) -> &'static str {
-        "monitor_build_prompt"
-    }
-
-    fn depends_on(&self) -> &'static [&'static str] {
-        &["monitor_resolve_task_agent"]
-    }
-
-    fn execute<'a>(
-        &'a self,
-        ctx: &'a mut MonitorWorkflowContext,
-    ) -> BoxFuture<'a, Result<(), String>> {
-        Box::pin(async move {
-            ctx.emit_status(
-                "evolve",
-                "monitor_build_prompt",
-                "running",
-                "monitor.prompt.building",
-                None,
-            );
-            let prompt = build_monitor_task_agent_message(&ctx.task);
-            ctx.prompt = Some(prompt);
-            ctx.emit_status(
-                "evolve",
-                "monitor_build_prompt",
-                "success",
-                "monitor.prompt.built",
-                None,
-            );
-            Ok(())
-        })
-    }
-}
-
-struct MonitorInvokeTaskAgentStep;
-
-impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorInvokeTaskAgentStep {
-    fn name(&self) -> &'static str {
-        "monitor_execute_task_agent"
+        assert!(should_notify_run(
+            &default_policy,
+            Some(&changed),
+            None,
+            false
+        ));
+        assert!(!should_notify_run(
+            &default_policy,
+            Some(&unchanged),
+            None,
+            false
+        ));
+        assert!(should_notify_run(
+            &default_policy,
+            None,
+            Some("failure"),
+            false
+        ));
     }
 
-    fn depends_on(&self) -> &'static [&'static str] {
-        &["monitor_build_prompt"]
+    #[test]
+    fn build_run_terminal_event_uses_canonical_kind_names() {
+        let event = build_run_terminal_event(
+            "execution-1",
+            "task-1",
+            4,
+            MonitorRunEventKind::RunCompleted,
+            Some("done".to_string()),
+            Some(json!({"detail_level": MonitorDeliveryDetailLevel::Stage})),
+        );
+
+        assert_eq!(
+            event.get("kind").and_then(Value::as_str),
+            Some("run_completed")
+        );
+        assert_eq!(event.get("summary").and_then(Value::as_str), Some("done"));
     }
 
-    fn execute<'a>(
-        &'a self,
-        ctx: &'a mut MonitorWorkflowContext,
-    ) -> BoxFuture<'a, Result<(), String>> {
-        Box::pin(async move {
-            let app_handle = global_app_handle_required()?;
-            let profile = ctx
-                .agent_profile
-                .clone()
-                .ok_or_else(|| "monitor task agent missing".to_string())?;
-            let app_state = global_app_state_required()?;
-            let prompt = ctx
-                .prompt
-                .clone()
-                .ok_or_else(|| "monitor prompt missing".to_string())?;
+    #[test]
+    fn render_feishu_notification_text_includes_stage_lines_and_metrics() {
+        let rendered = render_channel_notification_text(
+            "feishu",
+            "🔔 寻猎运行: 任务一",
+            "### 研判结论\n发现显著变化。",
+            &json!({
+                "tokens_used": 88,
+                "model_id": "gpt-4o",
+                "delivery_policy": {
+                    "detail_level": "stage"
+                },
+                "events": [
+                    {
+                        "kind": "run_started",
+                        "summary": "monitor run started"
+                    },
+                    {
+                        "kind": "stage_changed",
+                        "summary": "monitor analysis done"
+                    },
+                    {
+                        "kind": "run_completed",
+                        "summary": "monitor run completed"
+                    }
+                ]
+            }),
+        );
 
-            ctx.emit_status(
-                "evolve",
-                "monitor_execute_task_agent",
-                "running",
-                "monitor.agent.executing",
-                Some(json!({
-                    "assistant_id": profile.id.clone(),
-                    "assistant_name": profile.name.clone(),
-                })),
-            );
-
-            let response = execute_monitor_task_agent(&app_handle, &app_state, &profile, &prompt)
-                .await
-                .map_err(|err| {
-                    let error_message = err.clone();
-                    ctx.emit_status(
-                        "evolve",
-                        "monitor_execute_task_agent",
-                        "failed",
-                        "monitor.agent.error",
-                        Some(json!({
-                            "message": error_message,
-                        })),
-                    );
-                    err.to_string()
-                })?;
-
-            let content = response.content;
-            if content.trim().is_empty() {
-                ctx.emit_status(
-                    "render",
-                    "monitor_execute_task_agent",
-                    "failed",
-                    "monitor.response.empty",
-                    None,
-                );
-                return Err("模型返回内容为空".to_string());
-            }
-            let tokens = response.tokens_used;
-            ctx.content = Some(content);
-            ctx.tokens_used = tokens;
-            ctx.executed_model_id = Some(response.model_id.clone());
-            ctx.emit_status(
-                "render",
-                "monitor_execute_task_agent",
-                "success",
-                "monitor.response.received",
-                Some(json!({
-                    "assistant_id": profile.id,
-                    "model_id": response.model_id.clone(),
-                    "tokens_used": tokens,
-                    "tool_trace_len": response.tool_trace.len(),
-                })),
-            );
-            Ok(())
-        })
-    }
-}
-
-struct MonitorParseResultStep;
-
-impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorParseResultStep {
-    fn name(&self) -> &'static str {
-        "monitor_parse_result"
+        assert!(rendered.contains("阶段记录"));
+        assert!(rendered.contains("monitor analysis done"));
+        assert!(rendered.contains("模型: gpt-4o"));
+        assert!(rendered.contains("Tokens: 88"));
     }
 
-    fn depends_on(&self) -> &'static [&'static str] {
-        &["monitor_execute_task_agent"]
-    }
+    #[test]
+    fn render_wechat_notification_text_stays_compact_without_tool_noise() {
+        let rendered = render_channel_notification_text(
+            "wechat",
+            "🔔 寻猎运行: 任务一",
+            "### 研判结论\n发现显著变化。",
+            &json!({
+                "delivery_policy": {
+                    "detail_level": "detailed"
+                },
+                "events": [
+                    {
+                        "kind": "tool_called",
+                        "summary": "调用工具 search_sdk"
+                    },
+                    {
+                        "kind": "tool_succeeded",
+                        "summary": "工具 search_sdk 执行成功"
+                    },
+                    {
+                        "kind": "run_completed",
+                        "summary": "monitor run completed"
+                    }
+                ]
+            }),
+        );
 
-    fn execute<'a>(
-        &'a self,
-        ctx: &'a mut MonitorWorkflowContext,
-    ) -> BoxFuture<'a, Result<(), String>> {
-        Box::pin(async move {
-            let content = ctx
-                .content
-                .as_ref()
-                .ok_or_else(|| "monitor content missing".to_string())?;
-            let result = normalize_monitor_output(content);
-            ctx.is_significant_change = result.is_significant_change;
-            ctx.change_summary = result.change_summary;
-            ctx.new_snapshot = result.new_snapshot;
-            ctx.strategy_tag = result.strategy_tag.clone();
-            ctx.observations = result.observations.clone();
-            ctx.emit_status(
-                "render",
-                "monitor_parse_result",
-                "success",
-                "monitor.analysis.done",
-                Some(json!({
-                    "is_significant_change": ctx.is_significant_change,
-                    "strategy_tag": result.strategy_tag,
-                })),
-            );
-            ctx.events.push(json!({
-                "type": "monitor.policy.result",
-                "strategy_tag": result.strategy_tag,
-                "observations": result.observations,
-            }));
-            Ok(())
-        })
+        assert!(rendered.contains("monitor run completed"));
+        assert!(!rendered.contains("search_sdk"));
     }
-}
-
-fn build_monitor_engine() -> LocalOrchestrationEngine<MonitorWorkflowContext> {
-    LocalOrchestrationEngine::new(vec![
-        Box::new(MonitorResolveTaskAgentStep),
-        Box::new(MonitorBuildPromptStep),
-        Box::new(MonitorInvokeTaskAgentStep),
-        Box::new(MonitorParseResultStep),
-    ])
-    .expect("monitor engine dag should be valid")
 }
 
 #[cfg(test)]
@@ -1654,64 +1243,6 @@ fn build_monitor_gateway_log_entry(
         error_code,
         ..Default::default()
     }
-}
-
-fn extract_notify_channel_ids(notify_config: &Value) -> Vec<String> {
-    let mut result = Vec::new();
-    let mut seen = std::collections::BTreeSet::new();
-    let Some(items) = notify_config.get("channel_ids").and_then(Value::as_array) else {
-        return result;
-    };
-    for raw in items {
-        let Some(id) = raw.as_str() else {
-            continue;
-        };
-        let normalized = id.trim().to_string();
-        if normalized.is_empty() {
-            continue;
-        }
-        if seen.insert(normalized.clone()) {
-            result.push(normalized);
-        }
-    }
-    result
-}
-
-fn config_string(config: &Value, key: &str) -> Option<String> {
-    config
-        .get(key)
-        .and_then(Value::as_str)
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-}
-
-fn config_string_list(config: &Value, key: &str) -> Vec<String> {
-    let Some(value) = config.get(key) else {
-        return Vec::new();
-    };
-    match value {
-        Value::Array(items) => items
-            .iter()
-            .filter_map(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
-            .collect(),
-        Value::String(text) => text
-            .split(|ch| ch == '\n' || ch == ',')
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
-            .collect(),
-        _ => Vec::new(),
-    }
-}
-
-fn is_supported_notification_channel(value: &str) -> bool {
-    matches!(
-        value,
-        "feishu" | "wechat" | "dingtalk" | "telegram" | "email" | "webhook"
-    )
 }
 
 fn truncate(input: &str, max_chars: usize) -> String {

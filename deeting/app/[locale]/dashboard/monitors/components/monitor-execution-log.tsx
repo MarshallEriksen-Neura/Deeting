@@ -15,9 +15,12 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { GlassCard } from "@/components/ui/glass-card"
-import { useMonitorLogs } from "@/lib/swr/use-monitors"
+import { useMonitorDeliveryStates, useMonitorLogs } from "@/lib/swr/use-monitors"
 import { submitMonitorFeedback } from "@/lib/api/monitors"
-import type { MonitorExecutionLog as LogEntry } from "@/lib/api/monitors"
+import type {
+  MonitorDeliveryStateRecord,
+  MonitorExecutionLog as LogEntry,
+} from "@/lib/api/monitors"
 
 interface MonitorExecutionLogProps {
   taskId: string | null
@@ -50,6 +53,7 @@ export function MonitorExecutionLog({
   onClose,
 }: MonitorExecutionLogProps) {
   const { data: logs, isLoading, mutate } = useMonitorLogs(taskId)
+  const { data: deliveryStates } = useMonitorDeliveryStates(taskId)
 
   const handleFeedback = useCallback(
     async (log: LogEntry, score: number) => {
@@ -104,6 +108,18 @@ export function MonitorExecutionLog({
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto px-6 py-4">
+              {deliveryStates?.items?.length ? (
+                <div className="mb-4 rounded-xl border border-white/8 bg-[var(--foreground)]/[0.03] p-3">
+                  <div className="mb-2 text-[11px] font-medium text-[var(--muted)]">
+                    交付锚点
+                  </div>
+                  <div className="space-y-2">
+                    {deliveryStates.items.map((item) => (
+                      <DeliveryStateRow key={`${item.channel_id}-${item.target_key}`} item={item} />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               {isLoading ? (
                 <div className="space-y-3">
                   {Array.from({ length: 5 }).map((_, i) => (
@@ -145,6 +161,30 @@ export function MonitorExecutionLog({
         </>
       )}
     </AnimatePresence>
+  )
+}
+
+function DeliveryStateRow({ item }: { item: MonitorDeliveryStateRecord }) {
+  return (
+    <div className="rounded-lg border border-white/6 bg-black/10 px-3 py-2">
+      <div className="flex items-center gap-2 text-[11px] text-[var(--foreground)]">
+        <span className="rounded bg-[var(--foreground)]/8 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-[var(--muted)]">
+          {item.channel_kind || item.target_key.split(":")[0] || "channel"}
+        </span>
+        <span className="truncate">
+          {item.channel_display_name || item.target_key}
+        </span>
+        <span className="ml-auto rounded bg-[var(--foreground)]/6 px-1.5 py-0.5 text-[10px] text-[var(--muted)]">
+          {deliveryStateLabel(item)}
+        </span>
+      </div>
+      <div className="mt-1 text-[10px] text-[var(--muted)]">
+        <span className="mr-2">{item.target_key}</span>
+        {item.anchor_message_id
+          ? `消息锚点: ${item.anchor_message_id}`
+          : `上下文锚点: ${formatAnchorContext(item.anchor_context)}`}
+      </div>
+    </div>
   )
 }
 
@@ -207,19 +247,20 @@ function LogCard({
       {events.length > 0 && (
         <div className="mb-2 mt-1 space-y-1 border-l border-white/10 pl-3">
           {events.slice(0, 6).map((evt, idx) => {
-            const code = typeof evt.code === "string" ? evt.code : ""
+            const kind = typeof evt.kind === "string" ? evt.kind : ""
             const stage = typeof evt.stage === "string" ? evt.stage : ""
             const step = typeof evt.step === "string" ? evt.step : ""
             const state = typeof evt.state === "string" ? evt.state : ""
-            const key = `${idx}-${code}-${stage}-${step}`
+            const summary = typeof evt.summary === "string" ? evt.summary : ""
+            const key = `${idx}-${kind}-${stage}-${step}`
             return (
               <div key={key} className="flex items-center gap-2 text-[10px] text-[var(--muted)]">
                 <span className="inline-flex h-1.5 w-1.5 rounded-full bg-[var(--muted)]" />
                 <span className="uppercase text-[9px] tracking-wide opacity-70">
-                  {stage || "stage"}
+                  {kind || stage || "event"}
                 </span>
                 <span className="text-[var(--foreground)]/80">
-                  {code || step || state || "event"}
+                  {summary || step || state || "event"}
                 </span>
               </div>
             )
@@ -284,4 +325,30 @@ function formatTime(isoStr: string): string {
     hour: "2-digit",
     minute: "2-digit",
   })
+}
+
+function formatAnchorContext(anchorContext: Record<string, unknown>): string {
+  if (typeof anchorContext.context_token === "string" && anchorContext.context_token.trim()) {
+    return anchorContext.context_token
+  }
+  if (typeof anchorContext.chat_id === "string" && anchorContext.chat_id.trim()) {
+    return anchorContext.chat_id
+  }
+  if (typeof anchorContext.contact_id === "string" && anchorContext.contact_id.trim()) {
+    return anchorContext.contact_id
+  }
+  return "已建立"
+}
+
+function deliveryStateLabel(item: MonitorDeliveryStateRecord): string {
+  if (item.status === "anchored") {
+    return "线程锚点已建立"
+  }
+  if (item.status === "context_ready") {
+    return "上下文已建立"
+  }
+  if (item.status === "waiting_for_contact_message") {
+    return "等待联系人先发消息"
+  }
+  return "待建立线程锚点"
 }

@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use futures_util::future::BoxFuture;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tauri::AppHandle;
 use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
@@ -25,15 +25,15 @@ use crate::modules::desktop_runtime::runtime::prompt_plan::{
 use crate::modules::desktop_runtime::runtime::resolve_local_model_connection;
 #[cfg(test)]
 use crate::modules::desktop_runtime::runtime::route_selector::{
-    LocalRouteKind, select_local_route,
+    select_local_route, LocalRouteKind,
 };
 use crate::modules::desktop_runtime::runtime::{
-    LocalControlPlaneResult, LocalExecutionPolicy, LocalExecutionRequest, LocalRouteDecision,
-    RuntimeDiscoveryBundle, apply_desktop_execution_policy_overrides,
-    build_default_local_execution_policy, build_local_control_plane_result,
-    build_local_control_plane_status_meta, build_local_execution_policy,
-    build_runtime_discovery_bundle_with_runtime, maybe_override_route_with_custom_task_agent,
-    render_local_route_prompt, run_local_execution_plane, select_local_route_with_evidence,
+    apply_desktop_execution_policy_overrides, build_default_local_execution_policy,
+    build_local_control_plane_result, build_local_control_plane_status_meta,
+    build_local_execution_policy, build_runtime_discovery_bundle_with_runtime,
+    maybe_override_route_with_custom_task_agent, render_local_route_prompt,
+    run_local_execution_plane, select_local_route_with_evidence, LocalControlPlaneResult,
+    LocalExecutionPolicy, LocalExecutionRequest, LocalRouteDecision, RuntimeDiscoveryBundle,
 };
 use crate::modules::memory::types::{
     LocalMemoryItem, LocalMemoryListQuery, LocalMemorySearchItem, LocalMemorySearchQuery,
@@ -260,8 +260,8 @@ impl<C> LocalOrchestrationEngine<C> {
         &self.execution_layers
     }
 }
-fn build_desktop_local_chat_engine()
--> Result<LocalOrchestrationEngine<LocalWorkflowContext>, String> {
+fn build_desktop_local_chat_engine(
+) -> Result<LocalOrchestrationEngine<LocalWorkflowContext>, String> {
     LocalOrchestrationEngine::new(vec![
         Box::new(SummaryInjectionStep),
         Box::new(PersonaPromptInjectionStep),

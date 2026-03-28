@@ -237,7 +237,7 @@ export const MessageItem = React.memo<MessageItemProps>(
                 />
               )}
               <div className="ml-auto flex items-center gap-2">
-                {runtimeMetricsSummary ? (
+                {!isActive && runtimeMetricsSummary ? (
                   <span className="text-[10px] text-muted-foreground/80">
                     {runtimeMetricsSummary}
                   </span>

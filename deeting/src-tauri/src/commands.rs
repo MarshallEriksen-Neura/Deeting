@@ -199,6 +199,7 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::monitor::commands::delete_local_monitor_task,
         crate::modules::monitor::commands::get_local_monitor_stats,
         crate::modules::monitor::commands::list_local_monitor_logs,
+        crate::modules::monitor::commands::list_local_monitor_delivery_states,
         crate::modules::monitor::commands::submit_local_monitor_feedback,
         crate::modules::monitor::commands::list_local_notification_channels,
         crate::modules::monitor::commands::get_local_notification_channel,

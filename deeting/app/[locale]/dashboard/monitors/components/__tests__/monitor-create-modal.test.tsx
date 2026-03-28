@@ -7,6 +7,8 @@ import {
 } from "@/lib/api/monitors"
 import { listCustomTaskAgents } from "@/lib/api/custom-task-agents"
 
+const mockUseNotificationChannels = jest.fn()
+
 jest.mock("@/components/ui/dialog", () => ({
   Dialog: ({
     open,
@@ -31,9 +33,7 @@ jest.mock("@/lib/api/custom-task-agents", () => ({
 }))
 
 jest.mock("@/lib/swr/use-notification-channels", () => ({
-  useNotificationChannels: () => ({
-    data: { items: [] },
-  }),
+  useNotificationChannels: (...args: unknown[]) => mockUseNotificationChannels(...args),
 }))
 
 const mockCreateMonitorTask = createMonitorTask as jest.MockedFunction<
@@ -80,6 +80,7 @@ describe("MonitorCreateModal", () => {
   beforeEach(() => {
     mockCreateMonitorTask.mockReset()
     mockListCustomTaskAgents.mockReset()
+    mockUseNotificationChannels.mockReset()
     mockCreateMonitorTask.mockResolvedValue({
       id: "task-1",
       title: "伊朗局势72H监控",
@@ -145,6 +146,48 @@ describe("MonitorCreateModal", () => {
         updated_at: "2026-03-25T00:00:00Z",
       },
     ])
+    mockUseNotificationChannels.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: "channel-feishu",
+            channel: "feishu",
+            display_name: "飞书战情群",
+            is_active: true,
+            priority: 100,
+            config: {},
+            user_id: "user-1",
+            last_used_at: null,
+            created_at: "2026-03-25T00:00:00Z",
+            updated_at: "2026-03-25T00:00:00Z",
+          },
+          {
+            id: "channel-telegram",
+            channel: "telegram",
+            display_name: "Telegram 频道",
+            is_active: true,
+            priority: 100,
+            config: {},
+            user_id: "user-1",
+            last_used_at: null,
+            created_at: "2026-03-25T00:00:00Z",
+            updated_at: "2026-03-25T00:00:00Z",
+          },
+          {
+            id: "channel-wechat",
+            channel: "wechat",
+            display_name: "微信值班人",
+            is_active: true,
+            priority: 100,
+            config: {},
+            user_id: "user-1",
+            last_used_at: null,
+            created_at: "2026-03-25T00:00:00Z",
+            updated_at: "2026-03-25T00:00:00Z",
+          },
+        ],
+      },
+    })
   })
 
   it("requires selecting an enabled chat task agent before create and submits assistant binding", async () => {
@@ -217,5 +260,27 @@ describe("MonitorCreateModal", () => {
     expect(screen.getByDisplayValue("已存在目标")).toBeTruthy()
     expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("agent-1")
     expect(screen.getByRole("button", { name: /预警优先/ })).toBeTruthy()
+  })
+
+  it("shows channel-specific delivery hints before submission", async () => {
+    render(
+      <MonitorCreateModal
+        open
+        onOpenChange={jest.fn()}
+        editTask={null}
+        onSuccess={jest.fn()}
+      />
+    )
+
+    await waitFor(() => {
+      expect(mockListCustomTaskAgents).toHaveBeenCalled()
+    })
+
+    fireEvent.click(screen.getByText("飞书战情群"))
+    fireEvent.click(screen.getByText("Telegram 频道"))
+    fireEvent.click(screen.getByText("微信值班人"))
+
+    expect(screen.getByText("飞书和 Telegram 在首次投递后会自动建立线程锚点")).toBeTruthy()
+    expect(screen.getByText("微信联系人需要先发一条消息，系统才能建立上下文")).toBeTruthy()
   })
 })

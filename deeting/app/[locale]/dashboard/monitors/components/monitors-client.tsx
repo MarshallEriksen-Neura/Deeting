@@ -1,12 +1,12 @@
 "use client"
 
 import { useState, useCallback, useEffect, useRef } from "react"
-import { Plus, Crosshair } from "lucide-react"
+import { Plus, Crosshair, RefreshCw } from "lucide-react"
 import { AnimatePresence, motion } from "framer-motion"
 import { toast } from "sonner"
 
 import { Container } from "@/components/ui/container"
-import { useMonitorTasks, useMonitorStats } from "@/lib/swr/use-monitors"
+import { useMonitorTasks } from "@/lib/swr/use-monitors"
 import {
   fetchMonitorLogs,
   triggerMonitorTask,
@@ -14,7 +14,6 @@ import {
   type MonitorStatus,
 } from "@/lib/api/monitors"
 
-import { MonitorStatsRow } from "./monitor-stats-row"
 import { MonitorTaskCard } from "./monitor-task-card"
 import { MonitorCreateModal } from "./monitor-create-modal"
 import { MonitorExecutionLog } from "./monitor-execution-log"
@@ -37,12 +36,10 @@ export function MonitorsClient() {
 
   const queryParams = statusFilter === "all" ? undefined : { status: statusFilter }
   const { data: tasks, isLoading, mutate: mutateTasks } = useMonitorTasks(queryParams)
-  const { data: stats, mutate: mutateStats } = useMonitorStats()
 
   const refreshAll = useCallback(() => {
     mutateTasks()
-    mutateStats()
-  }, [mutateTasks, mutateStats])
+  }, [mutateTasks])
 
   useEffect(() => {
     return () => {
@@ -155,21 +152,27 @@ export function MonitorsClient() {
               主动寻猎
             </h1>
             <p className="mt-0.5 text-sm text-[var(--muted)]">
-              自动化监控与绑定智能体研判 · 系统策略层持续优化
+              任务配置、手动触发与执行记录
             </p>
           </div>
         </div>
-        <button
-          onClick={() => setCreateOpen(true)}
-          className="flex items-center gap-2 rounded-xl bg-[var(--primary)] px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-[var(--primary)]/20 transition-all hover:shadow-xl hover:shadow-[var(--primary)]/30 hover:-translate-y-0.5 active:translate-y-0"
-        >
-          <Plus className="h-4 w-4" />
-          新建寻猎任务
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => refreshAll()}
+            className="flex items-center gap-2 rounded-xl border border-white/10 bg-[var(--foreground)]/[0.03] px-3.5 py-2.5 text-sm text-[var(--foreground)] transition-colors hover:bg-[var(--foreground)]/[0.06]"
+          >
+            <RefreshCw className="h-4 w-4" />
+            刷新记录
+          </button>
+          <button
+            onClick={() => setCreateOpen(true)}
+            className="flex items-center gap-2 rounded-xl bg-[var(--primary)] px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-[var(--primary)]/20 transition-all hover:shadow-xl hover:shadow-[var(--primary)]/30 hover:-translate-y-0.5 active:translate-y-0"
+          >
+            <Plus className="h-4 w-4" />
+            新建寻猎任务
+          </button>
+        </div>
       </div>
-
-      {/* KPI Stats */}
-      <MonitorStatsRow stats={stats} isLoading={!stats} />
 
       {/* Filter Bar */}
       <div className="mb-6 flex items-center gap-2">
