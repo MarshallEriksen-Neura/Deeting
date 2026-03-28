@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react"
 
-import { ChannelModelPickerField } from "../channel-model-picker-field"
+import { ModelPickerField } from "@/components/models/model-picker-field"
 
 jest.mock("@/components/models/model-picker", () => ({
   ModelPicker: ({
@@ -27,10 +27,10 @@ jest.mock("@/components/models/model-visual", () => ({
   }),
 }))
 
-describe("ChannelModelPickerField", () => {
+describe("ModelPickerField", () => {
   it("opens the searchable model picker for channel reply model selection", () => {
     render(
-      <ChannelModelPickerField
+      <ModelPickerField
         id="wechat-bot-model"
         label="回复模型"
         placeholder="选择一个回复模型（可选）"

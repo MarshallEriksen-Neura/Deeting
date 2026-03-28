@@ -3,15 +3,13 @@
 import { useMemo, useState } from "react"
 import { ChevronDown } from "lucide-react"
 
-import {
-  ModelPicker,
-  type ModelPickerModel,
-} from "@/components/models/model-picker"
 import { resolveModelVisual } from "@/components/models/model-visual"
 import { Label } from "@/components/ui/label"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import type { ModelGroup } from "@/lib/api/models"
 import { cn } from "@/lib/utils"
+
+import { ModelPicker, type ModelPickerModel } from "./model-picker"
 
 type SelectedModel = {
   model: ModelGroup["models"][number]
@@ -33,7 +31,7 @@ const findSelectedModel = (
   return null
 }
 
-export function ChannelModelPickerField({
+export function ModelPickerField({
   id,
   label,
   placeholder,
@@ -97,15 +95,20 @@ export function ChannelModelPickerField({
       ? loadingText || placeholder
       : selectedModel?.model.id || selectedValue || placeholder
   const subtitle = selectedModel
-    ? selectedModel.model.owned_by || selectedModel.group?.provider || selectedModel.group?.instance_name
+    ? selectedModel.model.owned_by ||
+      selectedModel.group?.provider ||
+      selectedModel.group?.instance_name
     : selectedValue
-    ? "custom"
-    : null
+      ? "custom"
+      : null
   const isUnlisted = Boolean(selectedValue) && !selectedModel && !isLoading
 
   return (
     <div>
-      <Label htmlFor={id} className="mb-1 flex items-center gap-1 text-[11px] text-[var(--muted)]">
+      <Label
+        htmlFor={id}
+        className="mb-1 flex items-center gap-1 text-[11px] text-[var(--muted)]"
+      >
         {label}
         {required ? <span className="text-red-400">*</span> : null}
       </Label>
@@ -144,7 +147,9 @@ export function ChannelModelPickerField({
                   {title}
                 </span>
                 {subtitle ? (
-                  <span className="truncate text-[11px] text-[var(--muted)]/80">{subtitle}</span>
+                  <span className="truncate text-[11px] text-[var(--muted)]/80">
+                    {subtitle}
+                  </span>
                 ) : null}
               </span>
             </span>
@@ -156,7 +161,12 @@ export function ChannelModelPickerField({
             />
           </button>
         </PopoverTrigger>
-        <PopoverContent className="w-[min(520px,92vw)] p-0" align="start" side="bottom" sideOffset={8}>
+        <PopoverContent
+          className="w-[min(520px,92vw)] p-0"
+          align="start"
+          side="bottom"
+          sideOffset={8}
+        >
           {isOpen ? (
             <ModelPicker
               value={selectedValue}

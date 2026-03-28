@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion"
 import { CheckCircle2, Loader2, MessageCircleMore, Send, Sparkles, XCircle } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
+import { ModelPickerField } from "@/components/models"
 import { GlassButton } from "@/components/ui/glass-button"
 import { CHANNEL_REQUIRED_FIELDS, fetchNotificationChannel, testNotificationChannel } from "@/lib/api/notification-channels"
 import type { ChannelConfig, ChannelType } from "@/lib/api/notification-channels"
@@ -22,7 +23,6 @@ import {
 import { WechatConnectDialog, type WechatConnectionViewState } from "./wechat-connect-dialog"
 import { WechatPairingPanel } from "./wechat-pairing-panel"
 import { ChannelFormField } from "./channel-form-field"
-import { ChannelModelPickerField } from "./channel-model-picker-field"
 import {
   configToFormValues,
   defaultFormValues,
@@ -590,7 +590,7 @@ export function ChannelConfigForm({
     if (field.key === "bot_model") {
       return (
         <div key={field.key} className={cn("transition-all", muted && "opacity-45")}>
-          <ChannelModelPickerField
+          <ModelPickerField
             id={`${channelType}-${field.key}`}
             label={t(field.labelKey)}
             placeholder={t(field.placeholderKey)}
