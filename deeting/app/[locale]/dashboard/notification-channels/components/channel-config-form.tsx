@@ -85,6 +85,8 @@ export function ChannelConfigForm({
   const [wechatStats, setWechatStats] = useState({
     pendingPairings: 0,
     allowlistSize: 0,
+    allowlistContacts: [] as string[],
+    contextContacts: [] as string[],
   })
   const [wechatConnectionState, setWechatConnectionState] = useState<WechatConnectionViewState>(() => {
     if (initialConfig?.connection_state === "connected") {
@@ -206,6 +208,8 @@ export function ChannelConfigForm({
         setWechatStats({
           pendingPairings: state.pending_pairings,
           allowlistSize: state.allowlist_size,
+          allowlistContacts: state.allowlist_contacts ?? [],
+          contextContacts: state.context_contacts ?? [],
         })
       } catch {
         if (active) {
@@ -247,6 +251,8 @@ export function ChannelConfigForm({
               setWechatStats({
                 pendingPairings: state.pending_pairings,
                 allowlistSize: state.allowlist_size,
+                allowlistContacts: state.allowlist_contacts ?? [],
+                contextContacts: state.context_contacts ?? [],
               })
             } catch {
               // ignore polling fetch errors
@@ -491,6 +497,8 @@ export function ChannelConfigForm({
       setWechatStats({
         pendingPairings: state.pending_pairings,
         allowlistSize: state.allowlist_size,
+        allowlistContacts: state.allowlist_contacts ?? [],
+        contextContacts: state.context_contacts ?? [],
       })
     } catch (error) {
       setWechatPairingFeedback(error instanceof Error ? error.message : t("wechatPairing.approveFailed"))
@@ -511,6 +519,8 @@ export function ChannelConfigForm({
       setWechatStats({
         pendingPairings: state.pending_pairings,
         allowlistSize: state.allowlist_size,
+        allowlistContacts: state.allowlist_contacts ?? [],
+        contextContacts: state.context_contacts ?? [],
       })
     } catch (error) {
       setWechatPairingFeedback(error instanceof Error ? error.message : t("wechatPairing.rejectFailed"))
@@ -643,6 +653,29 @@ export function ChannelConfigForm({
     return t("fieldOptions.transport.auto")
   }
 
+  const selectedWechatNotifyContacts =
+    typeof values.notify_contact_ids === "string"
+      ? values.notify_contact_ids
+          .split(/\r?\n|,/)
+          .map((item) => item.trim())
+          .filter(Boolean)
+      : []
+
+  const handleWechatCopyContact = async (contactId: string) => {
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(contactId)
+        setWechatPairingFeedback(t("wechatPairing.copied", { contactId }))
+      } else {
+        setWechatPairingFeedback(t("wechatPairing.copyUnavailable"))
+      }
+    } catch (error) {
+      setWechatPairingFeedback(
+        error instanceof Error ? error.message : t("wechatPairing.copyFailed")
+      )
+    }
+  }
+
   return (
     <div className="space-y-3">
       <ChannelFormField
@@ -709,8 +742,28 @@ export function ChannelConfigForm({
             <WechatPairingPanel
               pendingPairings={wechatStats.pendingPairings}
               allowlistSize={wechatStats.allowlistSize}
+              allowlistContacts={wechatStats.allowlistContacts}
+              contextContacts={wechatStats.contextContacts}
               pairingCode={wechatPairingCode}
               onPairingCodeChange={setWechatPairingCode}
+              onUseContact={(contactId) => {
+                const currentValue =
+                  typeof values.notify_contact_ids === "string"
+                    ? values.notify_contact_ids
+                    : ""
+                const existing = currentValue
+                  .split(/\r?\n|,/)
+                  .map((item) => item.trim())
+                  .filter(Boolean)
+                if (existing.includes(contactId)) {
+                  return
+                }
+                const nextValue = existing.length > 0 ? `${existing.join("\n")}\n${contactId}` : contactId
+                setValue("notify_contact_ids", nextValue)
+              }}
+              onCopyContact={(contactId) => {
+                void handleWechatCopyContact(contactId)
+              }}
               onApprove={() => {
                 void handleWechatApprovePairing()
               }}
@@ -720,6 +773,28 @@ export function ChannelConfigForm({
               busy={wechatPairingBusy}
               feedback={wechatPairingFeedback}
             />
+          ) : null}
+          {selectedWechatNotifyContacts.length > 0 ? (
+            <div className="rounded-2xl border border-white/8 bg-[var(--foreground)]/[0.02] p-4">
+              <div className="mb-2 text-[11px] font-medium text-[var(--muted)]">
+                {t("wechat.selectedNotifyContacts")}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {selectedWechatNotifyContacts.map((contactId) => (
+                  <button
+                    key={`selected-${contactId}`}
+                    type="button"
+                    onClick={() => {
+                      const next = selectedWechatNotifyContacts.filter((item) => item !== contactId)
+                      setValue("notify_contact_ids", next.join("\n"))
+                    }}
+                    className="rounded-full border border-sky-500/20 bg-sky-500/10 px-2.5 py-1 text-[11px] text-sky-300"
+                  >
+                    {contactId} · {t("wechat.removeSelectedContact")}
+                  </button>
+                ))}
+              </div>
+            </div>
           ) : null}
           {fields.map(renderField)}
         </div>

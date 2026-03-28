@@ -32,8 +32,12 @@ describe("WechatPairingPanel", () => {
       <WechatPairingPanel
         pendingPairings={2}
         allowlistSize={5}
+        allowlistContacts={["contact-a"]}
+        contextContacts={["contact-b"]}
         pairingCode="123456"
         onPairingCodeChange={onPairingCodeChange}
+        onUseContact={jest.fn()}
+        onCopyContact={jest.fn()}
         onApprove={onApprove}
         onReject={onReject}
       />
@@ -51,5 +55,55 @@ describe("WechatPairingPanel", () => {
     expect(onPairingCodeChange).toHaveBeenCalledWith("654321")
     expect(onApprove).toHaveBeenCalledTimes(1)
     expect(onReject).toHaveBeenCalledTimes(1)
+  })
+
+  it("renders contact chips and forwards contact selection", () => {
+    const onUseContact = jest.fn()
+
+    render(
+      <WechatPairingPanel
+        pendingPairings={0}
+        allowlistSize={1}
+        allowlistContacts={["contact-a"]}
+        contextContacts={["contact-b"]}
+        pairingCode=""
+        onPairingCodeChange={jest.fn()}
+        onUseContact={onUseContact}
+        onCopyContact={jest.fn()}
+        onApprove={jest.fn()}
+        onReject={jest.fn()}
+      />
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "contact-a · approved" }))
+    fireEvent.click(screen.getByRole("button", { name: "contact-b · hasContext" }))
+
+    expect(onUseContact).toHaveBeenNthCalledWith(1, "contact-a")
+    expect(onUseContact).toHaveBeenNthCalledWith(2, "contact-b")
+  })
+
+  it("forwards contact copy actions", () => {
+    const onCopyContact = jest.fn()
+
+    render(
+      <WechatPairingPanel
+        pendingPairings={0}
+        allowlistSize={1}
+        allowlistContacts={["contact-a"]}
+        contextContacts={["contact-b"]}
+        pairingCode=""
+        onPairingCodeChange={jest.fn()}
+        onUseContact={jest.fn()}
+        onCopyContact={onCopyContact}
+        onApprove={jest.fn()}
+        onReject={jest.fn()}
+      />
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "copy contact-a" }))
+    fireEvent.click(screen.getByRole("button", { name: "copy contact-b" }))
+
+    expect(onCopyContact).toHaveBeenNthCalledWith(1, "contact-a")
+    expect(onCopyContact).toHaveBeenNthCalledWith(2, "contact-b")
   })
 })

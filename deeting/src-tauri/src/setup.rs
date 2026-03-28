@@ -254,6 +254,9 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
             .await
             .map_err(|e| McpError::Storage(e.to_string()))?;
         log_startup_phase("init_wechat_state", phase_started_at);
+        monitor_state
+            .attach_wechat_state(std::sync::Arc::new(wechat_state.clone()))
+            .await;
 
         let phase_started_at = Instant::now();
         Ok::<_, McpError>(AppState::new(

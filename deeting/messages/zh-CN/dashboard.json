@@ -202,6 +202,11 @@
           "bot_system_prompt": {
             "label": "系统提示词",
             "placeholder": "可选：定义该微信渠道的回复风格"
+          },
+          "notify_contact_ids": {
+            "label": "主动通知目标联系人",
+            "placeholder": "每行一个 contact_id",
+            "description": "仅对已与该微信 bot 聊过一次、并已建立会话上下文的联系人生效。"
           }
         },
         "dingtalk": {
@@ -298,6 +303,8 @@
           "description": "扫码后即可让普通微信账号连接当前桌面实例，不需要填写 Relay 地址或回调配置。",
           "currentStatus": "当前状态："
         },
+        "selectedNotifyContacts": "当前主动通知目标",
+        "removeSelectedContact": "移除",
         "actions": {
           "viewConnection": "查看连接状态",
           "connect": "连接微信"
@@ -318,6 +325,14 @@
       "wechatPairing": {
         "pendingPairings": "待处理配对 {count}",
         "allowlistSize": "已授权联系人 {count}",
+        "approvedContacts": "已授权联系人列表",
+        "contextContacts": "已建立上下文联系人",
+        "approved": "已授权",
+        "hasContext": "可主动通知",
+        "copy": "复制",
+        "copied": "已复制联系人 {contactId}",
+        "copyFailed": "复制联系人失败",
+        "copyUnavailable": "当前环境不支持剪贴板复制",
         "codePlaceholder": "输入 6 位配对码",
         "approve": "批准配对",
         "reject": "拒绝配对",

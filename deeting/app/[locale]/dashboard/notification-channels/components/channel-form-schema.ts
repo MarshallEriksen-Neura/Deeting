@@ -128,6 +128,14 @@ export const FIELD_DEFS: Record<ChannelType, FieldDef[]> = {
       placeholderKey: "fields.wechat.bot_system_prompt.placeholder",
       type: "textarea",
     },
+    {
+      key: "notify_contact_ids",
+      labelKey: "fields.wechat.notify_contact_ids.label",
+      placeholderKey: "fields.wechat.notify_contact_ids.placeholder",
+      type: "textarea",
+      valueKind: "string[]",
+      descriptionKey: "fields.wechat.notify_contact_ids.description",
+    },
   ],
   telegram: [
     {
@@ -252,4 +260,3 @@ export function configToFormValues(
   }
   return values
 }
-

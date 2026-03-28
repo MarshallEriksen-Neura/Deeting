@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 pub const WECHAT_DEFAULT_BASE_URL: &str = "https://ilinkai.weixin.qq.com";
 pub const WECHAT_CHANNEL_VERSION: &str = "0.1.0";
@@ -31,6 +32,10 @@ pub struct WechatConnectionStateResponse {
     pub connected_at: Option<String>,
     pub pending_pairings: i64,
     pub allowlist_size: i64,
+    #[serde(default)]
+    pub allowlist_contacts: Vec<String>,
+    #[serde(default)]
+    pub context_contacts: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,6 +64,8 @@ pub struct StoredWechatAccount {
     pub account_id: Option<String>,
     pub cursor: String,
     pub saved_at: String,
+    #[serde(default)]
+    pub context_tokens_by_contact: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

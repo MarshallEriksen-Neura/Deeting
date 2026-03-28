@@ -127,6 +127,56 @@ impl WechatAccountStore {
         Ok(())
     }
 
+    pub async fn update_context_token(
+        &self,
+        contact_id: &str,
+        context_token: &str,
+    ) -> Result<(), String> {
+        let contact_id = contact_id.trim();
+        let context_token = context_token.trim();
+        if contact_id.is_empty() || context_token.is_empty() {
+            return Ok(());
+        }
+
+        let Some((_, _, mut account)) = self.load_account().await? else {
+            return Ok(());
+        };
+        account
+            .context_tokens_by_contact
+            .insert(contact_id.to_string(), context_token.to_string());
+        self.save_account(&account).await?;
+        Ok(())
+    }
+
+    pub async fn context_token_for_contact(
+        &self,
+        contact_id: &str,
+    ) -> Result<Option<String>, String> {
+        let Some((_, _, account)) = self.load_account().await? else {
+            return Ok(None);
+        };
+        Ok(account
+            .context_tokens_by_contact
+            .get(contact_id.trim())
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()))
+    }
+
+    pub async fn list_context_contacts(&self) -> Result<Vec<String>, String> {
+        let Some((_, _, account)) = self.load_account().await? else {
+            return Ok(Vec::new());
+        };
+        let mut contacts = account
+            .context_tokens_by_contact
+            .keys()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .collect::<Vec<_>>();
+        contacts.sort();
+        contacts.dedup();
+        Ok(contacts)
+    }
+
     pub async fn clear_account(&self) -> Result<(), String> {
         sqlx::query("DELETE FROM local_wechat_accounts WHERE account_key = ?")
             .bind(WECHAT_DEFAULT_ACCOUNT_KEY)
@@ -170,6 +220,24 @@ impl WechatAccountStore {
             .map_err(|err| err.to_string())?;
         row.try_get::<i64, _>("total")
             .map_err(|err| err.to_string())
+    }
+
+    pub async fn list_allowlist_contacts(&self) -> Result<Vec<String>, String> {
+        let rows = sqlx::query(
+            "SELECT contact_id FROM local_wechat_allowlist ORDER BY contact_id ASC",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| err.to_string())?;
+        let mut result = Vec::new();
+        for row in rows {
+            let contact_id: String = row.try_get("contact_id").map_err(|err| err.to_string())?;
+            let normalized = contact_id.trim().to_string();
+            if !normalized.is_empty() {
+                result.push(normalized);
+            }
+        }
+        Ok(result)
     }
 
     pub async fn create_or_reuse_pending_pairing(
@@ -316,6 +384,7 @@ mod tests {
                 account_id: Some("bot-1".to_string()),
                 cursor: "cursor-1".to_string(),
                 saved_at: "2026-03-26T00:00:00Z".to_string(),
+                context_tokens_by_contact: std::collections::HashMap::new(),
             })
             .await
             .expect("save");
@@ -327,5 +396,75 @@ mod tests {
 
         store.clear_account().await.expect("clear");
         assert!(store.load_account().await.expect("reload").is_none());
+    }
+
+    #[tokio::test]
+    async fn account_store_persists_context_tokens_by_contact() {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("memory sqlite");
+        let store = WechatAccountStore::new(pool, "sqlite::memory:").expect("store");
+        store.init().await.expect("init");
+
+        store
+            .save_account(&StoredWechatAccount {
+                token: "token-1".to_string(),
+                base_url: "https://ilinkai.weixin.qq.com".to_string(),
+                user_id: Some("wx-user-1".to_string()),
+                account_id: Some("bot-1".to_string()),
+                cursor: "cursor-1".to_string(),
+                saved_at: "2026-03-26T00:00:00Z".to_string(),
+                context_tokens_by_contact: std::collections::HashMap::new(),
+            })
+            .await
+            .expect("save");
+
+        store
+            .update_context_token("contact-1", "ctx-1")
+            .await
+            .expect("update context");
+
+        let token = store
+            .context_token_for_contact("contact-1")
+            .await
+            .expect("load context");
+        assert_eq!(token.as_deref(), Some("ctx-1"));
+
+        let contacts = store
+            .list_context_contacts()
+            .await
+            .expect("context contacts");
+        assert_eq!(contacts, vec!["contact-1".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn account_store_lists_allowlist_contacts() {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("memory sqlite");
+        let store = WechatAccountStore::new(pool, "sqlite::memory:").expect("store");
+        store.init().await.expect("init");
+
+        store
+            .add_allowed_contact("contact-b")
+            .await
+            .expect("contact b");
+        store
+            .add_allowed_contact("contact-a")
+            .await
+            .expect("contact a");
+
+        let contacts = store
+            .list_allowlist_contacts()
+            .await
+            .expect("allowlist contacts");
+        assert_eq!(
+            contacts,
+            vec!["contact-a".to_string(), "contact-b".to_string()]
+        );
     }
 }

@@ -60,6 +60,7 @@ struct MonitorWorkerShared {
     client: reqwest::Client,
     store: Arc<MonitorStore>,
     mcp_store: Option<Arc<crate::modules::mcp::store::McpStore>>,
+    wechat_state: RwLock<Option<Arc<crate::modules::im::wechat::WechatState>>>,
     worker_task: Mutex<Option<JoinHandle<()>>>,
     tick_lock: Mutex<()>,
     config: RwLock<WorkerConfig>,
@@ -162,6 +163,7 @@ impl MonitorState {
                 client,
                 store,
                 mcp_store,
+                wechat_state: RwLock::new(None),
                 worker_task: Mutex::new(None),
                 tick_lock: Mutex::new(()),
                 config: RwLock::new(config),
@@ -190,6 +192,7 @@ impl MonitorState {
                 client,
                 store,
                 mcp_store,
+                wechat_state: RwLock::new(None),
                 worker_task: Mutex::new(None),
                 tick_lock: Mutex::new(()),
                 config: RwLock::new(config),
@@ -231,6 +234,13 @@ impl MonitorState {
         }
         drop(worker_task_guard);
         self.get_status().await
+    }
+
+    pub async fn attach_wechat_state(
+        &self,
+        wechat_state: Arc<crate::modules::im::wechat::WechatState>,
+    ) {
+        *self.shared.wechat_state.write().await = Some(wechat_state);
     }
 
     pub async fn stop_worker(&self) -> Result<MonitorWorkerStatus, String> {
@@ -889,7 +899,9 @@ impl MonitorState {
                 self.send_feishu_notification(channel, title, content, payload)
                     .await
             }
-            "wechat" => Err("桌面端微信渠道仅支持聊天式接入，请先完成连接。".to_string()),
+            "wechat" => self
+                .send_wechat_notification(channel, title, content, payload)
+                .await,
             "dingtalk" => {
                 self.send_dingtalk_notification(channel, title, content, payload)
                     .await
@@ -973,6 +985,64 @@ impl MonitorState {
                 .map_err(|err| err.to_string())?;
         }
         Ok("发送成功".to_string())
+    }
+
+    async fn send_wechat_notification(
+        &self,
+        channel: &LocalNotificationChannel,
+        title: &str,
+        content: &str,
+        payload: &Value,
+    ) -> Result<String, String> {
+        let wechat_state = self
+            .shared
+            .wechat_state
+            .read()
+            .await
+            .clone()
+            .ok_or_else(|| "桌面端微信渠道尚未初始化。".to_string())?;
+        let account = wechat_state
+            .load_account()
+            .await?
+            .ok_or_else(|| "桌面端微信渠道仅支持聊天式接入，请先完成连接。".to_string())?;
+        let notify_contact_ids = config_string_list(&channel.config, "notify_contact_ids");
+        if notify_contact_ids.is_empty() {
+            return Err("请先配置微信主动通知目标联系人。".to_string());
+        }
+
+        let mut sent = 0_i64;
+        let mut failures = Vec::new();
+        let text = truncate(
+            format!("{}\n\n{}\n\n{}", title, content, payload).as_str(),
+            4000,
+        );
+
+        for contact_id in notify_contact_ids {
+            let Some(context_token) = wechat_state.context_token_for_contact(contact_id.as_str()).await? else {
+                failures.push(format!("{} -> 缺少历史会话上下文，请先让该联系人发送一条消息。", contact_id));
+                continue;
+            };
+            match wechat_state
+                .send_text(
+                    account.base_url.as_str(),
+                    account.token.as_str(),
+                    contact_id.as_str(),
+                    text.as_str(),
+                    context_token.as_str(),
+                )
+                .await
+            {
+                Ok(()) => {
+                    sent += 1;
+                }
+                Err(err) => failures.push(format!("{} -> {}", contact_id, err)),
+            }
+        }
+
+        if sent > 0 {
+            return Ok("发送成功".to_string());
+        }
+        Err(failures.join("; "))
     }
 
     async fn send_dingtalk_notification(
@@ -1253,6 +1323,58 @@ mod tests {
         assert_eq!(
             response.message.as_deref(),
             Some("桌面端微信渠道仅支持聊天式接入，请先完成连接。")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_notification_channel_rejects_wechat_without_notify_targets() {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("memory sqlite pool");
+        let provider_store = Arc::new(
+            ProviderStore::new("sqlite::memory:")
+                .await
+                .expect("provider store"),
+        );
+        let monitor = MonitorState::with_pool(pool.clone(), provider_store, None)
+            .await
+            .expect("monitor state");
+        let wechat_state = crate::modules::im::wechat::WechatState::with_pool(
+            pool,
+            "sqlite::memory:",
+        )
+        .await
+        .expect("wechat state");
+        monitor.attach_wechat_state(Arc::new(wechat_state.clone())).await;
+        wechat_state
+            .save_account(&crate::modules::im::wechat::types::StoredWechatAccount {
+                token: "token-1".to_string(),
+                base_url: "https://ilinkai.weixin.qq.com".to_string(),
+                user_id: Some("wx-user-1".to_string()),
+                account_id: Some("bot-1".to_string()),
+                cursor: String::new(),
+                saved_at: "2026-03-26T00:00:00Z".to_string(),
+                context_tokens_by_contact: std::collections::HashMap::new(),
+            })
+            .await
+            .expect("save account");
+
+        let response = monitor
+            .test_notification_channel(LocalNotificationChannelTestRequest {
+                channel: "wechat".to_string(),
+                config: json!({
+                    "im_enabled": true
+                }),
+            })
+            .await
+            .expect("wechat test should return structured failure");
+
+        assert!(!response.success);
+        assert_eq!(
+            response.message.as_deref(),
+            Some("请先配置微信主动通知目标联系人。")
         );
     }
 }

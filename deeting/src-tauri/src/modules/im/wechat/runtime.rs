@@ -81,6 +81,12 @@ pub async fn run_wechat_direct_profile_worker(
                 .map(str::trim)
                 .unwrap_or_default()
                 .to_string();
+            if !context_token.is_empty() {
+                app_state
+                    .wechat
+                    .update_context_token(contact_id, context_token.as_str())
+                    .await?;
+            }
 
             match app_state
                 .wechat

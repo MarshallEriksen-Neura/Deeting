@@ -44,6 +44,8 @@ export interface LocalWechatConnectionState {
   connected_at?: string
   pending_pairings: number
   allowlist_size: number
+  allowlist_contacts: string[]
+  context_contacts: string[]
 }
 
 export interface LocalWechatDisconnectResult {

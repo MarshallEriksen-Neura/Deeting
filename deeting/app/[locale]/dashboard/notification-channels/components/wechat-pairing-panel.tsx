@@ -7,8 +7,12 @@ import { Input } from "@/components/ui/input"
 export function WechatPairingPanel({
   pendingPairings,
   allowlistSize,
+  allowlistContacts,
+  contextContacts,
   pairingCode,
   onPairingCodeChange,
+  onUseContact,
+  onCopyContact,
   onApprove,
   onReject,
   busy = false,
@@ -16,8 +20,12 @@ export function WechatPairingPanel({
 }: {
   pendingPairings: number
   allowlistSize: number
+  allowlistContacts: string[]
+  contextContacts: string[]
   pairingCode: string
   onPairingCodeChange: (value: string) => void
+  onUseContact: (contactId: string) => void
+  onCopyContact: (contactId: string) => void
   onApprove: () => void
   onReject: () => void
   busy?: boolean
@@ -66,6 +74,70 @@ export function WechatPairingPanel({
       {feedback ? (
         <div className="mt-2 text-xs text-[var(--muted)]">
           {feedback}
+        </div>
+      ) : null}
+
+      {contextContacts.length > 0 ? (
+        <div className="mt-3">
+          <div className="mb-2 text-[11px] font-medium text-[var(--muted)]">
+            {t("contextContacts")}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {contextContacts.map((contactId) => (
+              <div
+                key={`ctx-${contactId}`}
+                className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[11px] text-emerald-300"
+              >
+                <button
+                  type="button"
+                  onClick={() => onUseContact(contactId)}
+                  className="rounded-full px-1"
+                >
+                  {contactId} · {t("hasContext")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onCopyContact(contactId)}
+                  className="rounded-full border border-emerald-500/20 px-1.5 py-0.5 text-[10px]"
+                  aria-label={`${t("copy")} ${contactId}`}
+                >
+                  {t("copy")}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {allowlistContacts.length > 0 ? (
+        <div className="mt-3">
+          <div className="mb-2 text-[11px] font-medium text-[var(--muted)]">
+            {t("approvedContacts")}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {allowlistContacts.map((contactId) => (
+              <div
+                key={`allow-${contactId}`}
+                className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-[var(--foreground)]"
+              >
+                <button
+                  type="button"
+                  onClick={() => onUseContact(contactId)}
+                  className="rounded-full px-1"
+                >
+                  {contactId} · {t("approved")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onCopyContact(contactId)}
+                  className="rounded-full border border-white/10 px-1.5 py-0.5 text-[10px]"
+                  aria-label={`${t("copy")} ${contactId}`}
+                >
+                  {t("copy")}
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       ) : null}
     </div>

@@ -47,6 +47,7 @@ export interface ChannelConfig {
   // WeChat desktop direct config
   access_policy?: "pairing" | "allowlist"
   allowed_contact_ids?: string[]
+  notify_contact_ids?: string[]
   account_label?: string
   connection_state?: "disconnected" | "connecting" | "connected" | "error"
   last_connected_at?: string

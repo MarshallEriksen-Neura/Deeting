@@ -202,6 +202,11 @@
           "bot_system_prompt": {
             "label": "System Prompt",
             "placeholder": "Optional: define reply style for this WeChat channel"
+          },
+          "notify_contact_ids": {
+            "label": "Proactive Notify Contacts",
+            "placeholder": "One contact_id per line",
+            "description": "Only works for contacts that have already messaged this WeChat bot and established conversation context."
           }
         },
         "dingtalk": {
@@ -298,6 +303,8 @@
           "description": "Scan once to connect a regular WeChat account to this desktop instance. No relay URL or callback config is required.",
           "currentStatus": "Current status: "
         },
+        "selectedNotifyContacts": "Selected proactive notify contacts",
+        "removeSelectedContact": "remove",
         "actions": {
           "viewConnection": "View Connection",
           "connect": "Connect WeChat"
@@ -318,6 +325,14 @@
       "wechatPairing": {
         "pendingPairings": "Pending pairings {count}",
         "allowlistSize": "Approved contacts {count}",
+        "approvedContacts": "Approved contacts",
+        "contextContacts": "Contacts with conversation context",
+        "approved": "approved",
+        "hasContext": "notify-ready",
+        "copy": "copy",
+        "copied": "Copied contact {contactId}",
+        "copyFailed": "Failed to copy contact",
+        "copyUnavailable": "Clipboard copy is not available in this environment",
         "codePlaceholder": "Enter 6-digit pairing code",
         "approve": "Approve Pairing",
         "reject": "Reject Pairing",

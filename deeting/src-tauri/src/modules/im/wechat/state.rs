@@ -143,6 +143,8 @@ impl WechatState {
     pub async fn get_connection_state(&self) -> Result<WechatConnectionStateResponse, String> {
         let pending_pairings = self.shared.store.count_pending_pairings().await?;
         let allowlist_size = self.shared.store.count_allowlist().await?;
+        let allowlist_contacts = self.shared.store.list_allowlist_contacts().await?;
+        let context_contacts = self.shared.store.list_context_contacts().await?;
         let last_error = self.shared.last_error.read().await.clone();
         let active_qr = self
             .shared
@@ -161,6 +163,8 @@ impl WechatState {
                 connected_at: Some(connected_at),
                 pending_pairings,
                 allowlist_size,
+                allowlist_contacts,
+                context_contacts,
             });
         }
 
@@ -176,6 +180,8 @@ impl WechatState {
                 connected_at: None,
                 pending_pairings,
                 allowlist_size,
+                allowlist_contacts,
+                context_contacts,
             });
         }
 
@@ -190,6 +196,8 @@ impl WechatState {
             connected_at: None,
             pending_pairings,
             allowlist_size,
+            allowlist_contacts,
+            context_contacts,
         })
     }
 
@@ -233,6 +241,10 @@ impl WechatState {
             .map(|(_, _, account)| account))
     }
 
+    pub async fn save_account(&self, account: &StoredWechatAccount) -> Result<String, String> {
+        self.shared.store.save_account(account).await
+    }
+
     pub async fn update_cursor(&self, cursor: &str) -> Result<(), String> {
         self.shared.store.update_cursor(cursor).await
     }
@@ -261,6 +273,24 @@ impl WechatState {
             .bridge
             .send_text(base_url, token, contact_id, text, context_token)
             .await
+    }
+
+    pub async fn update_context_token(
+        &self,
+        contact_id: &str,
+        context_token: &str,
+    ) -> Result<(), String> {
+        self.shared
+            .store
+            .update_context_token(contact_id, context_token)
+            .await
+    }
+
+    pub async fn context_token_for_contact(
+        &self,
+        contact_id: &str,
+    ) -> Result<Option<String>, String> {
+        self.shared.store.context_token_for_contact(contact_id).await
     }
 
     pub async fn ensure_allowed_or_create_pairing(
@@ -322,6 +352,7 @@ impl WechatState {
                     account_id: status.ilink_bot_id.clone(),
                     cursor: String::new(),
                     saved_at: saved_at.clone(),
+                    context_tokens_by_contact: std::collections::HashMap::new(),
                 };
                 let label = self.shared.store.save_account(&account).await?;
                 session.state = "connected".to_string();
