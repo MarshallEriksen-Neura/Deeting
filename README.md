@@ -187,6 +187,12 @@ Deeting 想做的不是这种黑盒。
 - [macOS 安装说明](./docs/macos-installation.md)
 - [Windows Installer 文档](./installer/README.md)
 
+## 社区邀请
+
+如果你也认同真诚、友善、团结、专业的社区氛围，欢迎来 [linux.do](https://linux.do/) 和我们交流 Deeting，分享体验、提出建议、一起参与共建。
+
+我们不止发布功能，也认真回应问题、分享实践、打磨细节。无论你是开发者、重度用户，还是对 Local-First AI 感兴趣的朋友，都欢迎加入，一起共建一个你我都能引以为荣的社区。
+
 ## 适合谁
 
 - 想把 AI、知识库和自动化任务收拢到同一个桌面入口的人
