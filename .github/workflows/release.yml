@@ -379,6 +379,57 @@ jobs:
         shell: bash
         run: find ./release-upload -maxdepth 1 -type f | sort
 
+      - name: Prepare updater manifest asset directory
+        shell: bash
+        run: |
+          mkdir -p ./release-manifest-assets
+          cp -a ./release-upload/. ./release-manifest-assets/
+          python - <<'PY'
+          import shutil
+          from pathlib import Path
+
+          release_assets_dir = Path("release-assets")
+          manifest_assets_dir = Path("release-manifest-assets")
+          windows_assets_dir = release_assets_dir / "main-x86_64-pc-windows-msvc"
+
+          if not windows_assets_dir.exists():
+              raise SystemExit(
+                  f"expected Windows artifact directory is missing: {windows_assets_dir}"
+              )
+
+          allowed_suffixes = (
+              ".app.tar.gz.sig",
+              ".app.tar.gz",
+              ".appimage.sig",
+              ".appimage",
+              ".dmg.sig",
+              ".dmg",
+              ".deb.sig",
+              ".deb",
+              ".rpm.sig",
+              ".rpm",
+              ".msi.sig",
+              ".msi",
+              ".exe.sig",
+              ".exe",
+          )
+
+          for path in sorted(windows_assets_dir.rglob("*")):
+              if not path.is_file():
+                  continue
+              lower = path.name.lower()
+              if lower != "latest.json" and not any(lower.endswith(suffix) for suffix in allowed_suffixes):
+                  continue
+              dest = manifest_assets_dir / path.name
+              if dest.exists():
+                  raise SystemExit(f"duplicate manifest asset name found: {dest.name}")
+              shutil.copy2(path, dest)
+          PY
+
+      - name: Inspect updater manifest asset staging
+        shell: bash
+        run: find ./release-manifest-assets -maxdepth 1 -type f | sort
+
       - name: Remove leaked non-release assets from existing release
         shell: bash
         env:
@@ -460,7 +511,7 @@ jobs:
         shell: bash
         run: |
           python .github/scripts/generate_updater_manifest.py \
-            --assets-dir ./release-assets \
+            --assets-dir ./release-manifest-assets \
             --repo "${{ github.repository }}" \
             --release-tag "$RELEASE_TAG" \
             --metadata-json ./release-metadata.json \
