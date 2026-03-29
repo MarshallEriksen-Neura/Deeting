@@ -13,9 +13,9 @@ use tokio::task::JoinHandle;
 use crate::modules::sandbox::error::SandboxError;
 use crate::modules::sandbox::provider::SandboxProvider;
 use crate::modules::sandbox::types::{
-    SandboxBoxLiteStatus, SandboxExecutionProbe, SandboxExecutionProbeStatus,
-    SandboxInstallGuide, SandboxLeaseInfo, SandboxPythonStatus, SandboxReadinessReport,
-    SandboxReadinessStatus, SandboxRunResult, SandboxRuntimeMode, SandboxWslStatus,
+    SandboxBoxLiteStatus, SandboxExecutionProbe, SandboxExecutionProbeStatus, SandboxInstallGuide,
+    SandboxLeaseInfo, SandboxPythonStatus, SandboxReadinessReport, SandboxReadinessStatus,
+    SandboxRunResult, SandboxRuntimeMode, SandboxWslStatus,
 };
 
 #[cfg(target_os = "windows")]
@@ -175,7 +175,7 @@ impl SandboxRuntimeManager {
         let provider_name = self.provider_name().await;
         let runtime_mode = runtime_mode_from_provider_name(&provider_name);
         let boxlite = self.boxlite_status().await;
-        let execution_probe = SandboxExecutionProbe::default();
+        let mut execution_probe = SandboxExecutionProbe::default();
 
         #[cfg(target_os = "windows")]
         {
@@ -537,12 +537,8 @@ impl SandboxRuntimeManager {
                         attempt + 1,
                         SESSION_BUSY_RETRY_ATTEMPTS
                     );
-                    self.remove_lease(&normalized_session, &lease.sandbox_id)
+                    self.cleanup_missing_sandbox_state(normalized_session, &lease, &backend)
                         .await;
-                    let _ = backend.stop_box(&lease.sandbox_id).await;
-                    if lease.sandbox_name != lease.sandbox_id {
-                        let _ = backend.stop_box(&lease.sandbox_name).await;
-                    }
                     let _ = self.prepare().await;
                     continue;
                 }
@@ -556,10 +552,90 @@ impl SandboxRuntimeManager {
         )))
     }
 
+    async fn execute_session_code_without_prepare(
+        &self,
+        normalized_session: &str,
+        code: &str,
+        timeout_secs: u64,
+    ) -> Result<SandboxRunResult, SandboxError> {
+        for attempt in 0..SESSION_BUSY_RETRY_ATTEMPTS {
+            let lease = self.get_or_create_sandbox(&normalized_session).await?;
+            let backend = self.current_backend().await;
+            match backend
+                .run_python(&lease.sandbox_id, code, timeout_secs)
+                .await
+            {
+                Ok(output) => {
+                    self.touch_lease(&normalized_session).await;
+                    let result = if output.exit_code == 0 {
+                        output.stdout.clone()
+                    } else {
+                        Vec::new()
+                    };
+                    return Ok(SandboxRunResult {
+                        sandbox_id: lease.sandbox_id,
+                        stdout: output.stdout,
+                        stderr: output.stderr,
+                        result,
+                        exit_code: output.exit_code,
+                    });
+                }
+                Err(err)
+                    if is_session_busy_error(&err) && attempt + 1 < SESSION_BUSY_RETRY_ATTEMPTS =>
+                {
+                    log::warn!(
+                        "sandbox session busy for session {} (attempt {}/{}), recreating sandbox",
+                        normalized_session,
+                        attempt + 1,
+                        SESSION_BUSY_RETRY_ATTEMPTS
+                    );
+                    let _ = self
+                        .stop_sandbox(&lease.sandbox_id, Some(&normalized_session))
+                        .await;
+                    continue;
+                }
+                Err(err)
+                    if is_missing_sandbox_error(&err)
+                        && attempt + 1 < SESSION_BUSY_RETRY_ATTEMPTS =>
+                {
+                    log::warn!(
+                        "sandbox missing for session {} (attempt {}/{}), retrying without auto-prepare",
+                        normalized_session,
+                        attempt + 1,
+                        SESSION_BUSY_RETRY_ATTEMPTS
+                    );
+                    self.cleanup_missing_sandbox_state(normalized_session, &lease, &backend)
+                        .await;
+                    continue;
+                }
+                Err(err) => return Err(err),
+            }
+        }
+
+        Err(SandboxError::Busy(format!(
+            "session {} is busy",
+            normalized_session
+        )))
+    }
+
+    async fn cleanup_missing_sandbox_state(
+        &self,
+        normalized_session: &str,
+        lease: &SandboxLeaseInfo,
+        backend: &Arc<dyn SandboxProvider>,
+    ) {
+        self.remove_lease(normalized_session, &lease.sandbox_id)
+            .await;
+        let _ = backend.stop_box(&lease.sandbox_id).await;
+        if lease.sandbox_name != lease.sandbox_id {
+            let _ = backend.stop_box(&lease.sandbox_name).await;
+        }
+    }
+
     async fn programmatic_execution_probe(&self) -> SandboxExecutionProbe {
         let checked_at_unix_ms = Some(now_unix_ms());
         match self
-            .execute_session_code(
+            .execute_session_code_without_prepare(
                 EXECUTION_PROBE_SESSION_ID,
                 &format!("print({EXECUTION_PROBE_SENTINEL:?})"),
                 EXECUTION_PROBE_TIMEOUT_SECS,
@@ -1439,10 +1515,7 @@ mod tests {
             "mock-sandbox"
         }
 
-        async fn get_or_create_box(
-            &self,
-            box_name: &str,
-        ) -> Result<SandboxIdentity, SandboxError> {
+        async fn get_or_create_box(&self, box_name: &str) -> Result<SandboxIdentity, SandboxError> {
             Ok(SandboxIdentity {
                 sandbox_id: format!("{box_name}-id"),
                 sandbox_name: box_name.to_string(),
@@ -1466,9 +1539,9 @@ mod tests {
                     exit_code: 0,
                     error_message: None,
                 }),
-                MockProbeOutcome::FailedNotFound => {
-                    Err(SandboxError::NotFound("sandbox probe not found".to_string()))
-                }
+                MockProbeOutcome::FailedNotFound => Err(SandboxError::NotFound(
+                    "sandbox probe not found".to_string(),
+                )),
             }
         }
     }

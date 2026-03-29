@@ -1,8 +1,9 @@
 use crate::modules::providers::error::ProviderError;
 use crate::modules::providers::store::utils::has_embedding_capability;
 use crate::modules::providers::store::ProviderStore;
-use crate::modules::providers::types::ProviderModel;
+use crate::modules::providers::types::{ProviderInstance, ProviderModel, ProviderPreset};
 use serde::Deserialize;
+use std::collections::VecDeque;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
@@ -23,6 +24,23 @@ struct EmbeddingResponse {
 #[derive(Debug, Deserialize)]
 struct EmbeddingData {
     embedding: Vec<f32>,
+}
+
+const EMBEDDING_CHUNK_TARGET_CHARS: usize = 3000;
+const EMBEDDING_CHUNK_OVERLAP_CHARS: usize = 300;
+const EMBEDDING_CHUNK_MAX_DEPTH: usize = 8;
+
+#[derive(Clone)]
+struct ResolvedEmbeddingRequest {
+    model: ProviderModel,
+    instance: ProviderInstance,
+    preset: Option<ProviderPreset>,
+    secret_key: Option<String>,
+}
+
+struct PendingEmbeddingChunk {
+    text: String,
+    depth: usize,
 }
 
 #[derive(Clone)]
@@ -58,6 +76,63 @@ impl EmbeddingService {
     }
 
     pub async fn embed_text(&self, text: &str) -> Result<Vec<f32>, ProviderError> {
+        let request = self.resolve_embedding_request().await?;
+        let mut pending = VecDeque::from([PendingEmbeddingChunk {
+            text: text.to_string(),
+            depth: 0,
+        }]);
+        let mut vectors: Vec<Vec<f32>> = Vec::new();
+        let mut weights: Vec<usize> = Vec::new();
+
+        while let Some(chunk) = pending.pop_front() {
+            match self.request_text_embedding(&request, &chunk.text).await {
+                Ok(vector) => {
+                    weights.push(chunk.text.chars().count().max(1));
+                    vectors.push(vector);
+                }
+                Err(error) if is_input_too_long_error(&error) => {
+                    if chunk.depth >= EMBEDDING_CHUNK_MAX_DEPTH {
+                        return Err(ProviderError::Network(
+                            "embedding input remains too long after chunk retries".to_string(),
+                        ));
+                    }
+
+                    let chunks = split_text_for_embedding(&chunk.text, true);
+                    if chunks.len() <= 1 {
+                        return Err(error);
+                    }
+
+                    log::warn!(
+                        "EmbeddingService: input too long, applying chunk fallback depth={} chunks={}",
+                        chunk.depth,
+                        chunks.len()
+                    );
+
+                    for next in chunks.into_iter().rev() {
+                        pending.push_front(PendingEmbeddingChunk {
+                            text: next,
+                            depth: chunk.depth + 1,
+                        });
+                    }
+                }
+                Err(error) => return Err(error),
+            }
+        }
+
+        if vectors.is_empty() {
+            return Err(ProviderError::Network(
+                "Empty embedding data in response".to_string(),
+            ));
+        }
+        if vectors.len() == 1 {
+            return vectors.pop().ok_or_else(|| {
+                ProviderError::Network("Empty embedding data in response".to_string())
+            });
+        }
+        aggregate_chunk_vectors(vectors, weights)
+    }
+
+    async fn resolve_embedding_request(&self) -> Result<ResolvedEmbeddingRequest, ProviderError> {
         let models = self.store.list_active_models().await?;
         let embedding_config = self.store.get_or_create_user_embedding_config().await?;
 
@@ -88,14 +163,27 @@ impl EmbeddingService {
             .ok_or_else(|| ProviderError::Validation("Model instance not found".to_string()))?;
         let preset = self.store.get_preset(&instance.preset_slug).await?;
 
+        Ok(ResolvedEmbeddingRequest {
+            model: embedding_model.clone(),
+            instance,
+            preset,
+            secret_key: connection.secret_key,
+        })
+    }
+
+    async fn request_text_embedding(
+        &self,
+        request: &ResolvedEmbeddingRequest,
+        text: &str,
+    ) -> Result<Vec<f32>, ProviderError> {
         let prepared = crate::modules::providers::request_runtime::prepare_provider_request(
-            preset.as_ref(),
-            &instance,
-            embedding_model,
-            connection.secret_key.as_deref(),
+            request.preset.as_ref(),
+            &request.instance,
+            &request.model,
+            request.secret_key.as_deref(),
             "embedding",
             serde_json::json!({
-                "model": embedding_model.model_id.clone(),
+                "model": request.model.model_id.clone(),
                 "input": text.to_string(),
             }),
             None,
@@ -237,6 +325,105 @@ fn extract_proxy_error_message(raw_text: &str) -> String {
         .unwrap_or_else(|| raw_text.to_string())
 }
 
+fn split_text_for_embedding(text: &str, force: bool) -> Vec<String> {
+    let raw = text.to_string();
+    let chars: Vec<char> = raw.chars().collect();
+    if chars.is_empty() {
+        return vec![String::new()];
+    }
+
+    if chars.len() <= EMBEDDING_CHUNK_TARGET_CHARS {
+        if force && chars.len() > 1 {
+            let midpoint = chars.len() / 2;
+            return vec![
+                chars[..midpoint].iter().collect::<String>(),
+                chars[midpoint..].iter().collect::<String>(),
+            ];
+        }
+        return vec![raw];
+    }
+
+    let mut chunks = Vec::new();
+    let step = (EMBEDDING_CHUNK_TARGET_CHARS.saturating_sub(EMBEDDING_CHUNK_OVERLAP_CHARS)).max(1);
+    let mut start = 0usize;
+    while start < chars.len() {
+        let end = (start + EMBEDDING_CHUNK_TARGET_CHARS).min(chars.len());
+        let chunk = chars[start..end].iter().collect::<String>();
+        if !chunk.is_empty() {
+            chunks.push(chunk);
+        }
+        if end >= chars.len() {
+            break;
+        }
+        start += step;
+    }
+    chunks
+}
+
+fn aggregate_chunk_vectors(
+    vectors: Vec<Vec<f32>>,
+    weights: Vec<usize>,
+) -> Result<Vec<f32>, ProviderError> {
+    if vectors.is_empty() {
+        return Err(ProviderError::Network(
+            "embedding provider returned empty embedding chunks".to_string(),
+        ));
+    }
+
+    let dim = vectors[0].len();
+    if dim == 0 {
+        return Err(ProviderError::Network(
+            "embedding provider returned empty embedding vector".to_string(),
+        ));
+    }
+    if vectors.iter().any(|vector| vector.len() != dim) {
+        return Err(ProviderError::Network(
+            "embedding provider returned inconsistent dimensions".to_string(),
+        ));
+    }
+
+    let total_weight = weights
+        .iter()
+        .map(|weight| (*weight).max(1) as f32)
+        .sum::<f32>()
+        .max(vectors.len() as f32);
+    let mut merged = vec![0.0f32; dim];
+    for (vector, weight) in vectors.iter().zip(weights.iter()) {
+        let weight = (*weight).max(1) as f32;
+        for (idx, value) in vector.iter().enumerate() {
+            merged[idx] += *value * weight;
+        }
+    }
+
+    let averaged = merged
+        .into_iter()
+        .map(|value| value / total_weight)
+        .collect::<Vec<_>>();
+    let norm = averaged
+        .iter()
+        .map(|value| value * value)
+        .sum::<f32>()
+        .sqrt();
+    if norm <= f32::EPSILON {
+        return Ok(averaged);
+    }
+    Ok(averaged.into_iter().map(|value| value / norm).collect())
+}
+
+fn is_input_too_long_error(error: &ProviderError) -> bool {
+    let message = error.to_string().to_ascii_lowercase();
+    let bad_request = message.contains("status=400")
+        || message.contains("400 bad request")
+        || message.contains("bad request");
+    if !bad_request {
+        return false;
+    }
+    (message.contains("input length")
+        && message.contains("token")
+        && message.contains("exceeds maximum allowed token size"))
+        || message.contains("maximum context length")
+}
+
 pub(crate) fn select_embedding_model<'a>(
     models: &'a [ProviderModel],
     configured_provider_model_id: Option<String>,
@@ -265,12 +452,12 @@ pub(crate) fn select_embedding_model<'a>(
 mod tests {
     use super::{
         build_platform_embedding_proxy_body, build_platform_embedding_proxy_url,
-        select_embedding_model, uses_platform_proxy,
+        select_embedding_model, split_text_for_embedding, uses_platform_proxy, EmbeddingService,
     };
     use crate::modules::providers::types::ProviderModel;
     use axum::{
         extract::State as AxumState,
-        http::{HeaderMap, Uri},
+        http::{HeaderMap, StatusCode, Uri},
         routing::post,
         Json, Router,
     };
@@ -286,6 +473,12 @@ mod tests {
         path: String,
         authorization: Option<String>,
         payload: serde_json::Value,
+    }
+
+    #[derive(Debug, Default)]
+    struct LocalEmbeddingRequestCapture {
+        max_chars: usize,
+        calls: Vec<String>,
     }
 
     async fn mock_platform_embedding_handler(
@@ -329,6 +522,68 @@ mod tests {
                 "/api/v1/internal/embeddings",
                 post(mock_platform_embedding_handler),
             )
+            .with_state(capture.clone());
+        let server = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        (format!("http://{}", addr), capture, server)
+    }
+
+    async fn mock_local_embedding_handler(
+        AxumState(state): AxumState<Arc<Mutex<LocalEmbeddingRequestCapture>>>,
+        Json(payload): Json<serde_json::Value>,
+    ) -> (StatusCode, Json<serde_json::Value>) {
+        let text = payload
+            .get("input")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default()
+            .to_string();
+        let mut guard = state.lock().expect("lock local capture state");
+        guard.calls.push(text.clone());
+        if text.chars().count() > guard.max_chars {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "error": format!(
+                        "Input length {} exceeds maximum allowed token size {}",
+                        text.chars().count(),
+                        guard.max_chars
+                    )
+                })),
+            );
+        }
+        (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "data": [
+                    {
+                        "embedding": [text.chars().count() as f32, 0.0]
+                    }
+                ]
+            })),
+        )
+    }
+
+    async fn start_mock_local_embedding_server(
+        max_chars: usize,
+    ) -> (
+        String,
+        Arc<Mutex<LocalEmbeddingRequestCapture>>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind mock local embedding listener");
+        let addr = listener
+            .local_addr()
+            .expect("read mock local embedding listener addr");
+        let capture = Arc::new(Mutex::new(LocalEmbeddingRequestCapture {
+            max_chars,
+            calls: Vec::new(),
+        }));
+        let app = Router::new()
+            .route("/v1/embeddings", post(mock_local_embedding_handler))
             .with_state(capture.clone());
         let server = tokio::spawn(async move {
             let _ = axum::serve(listener, app).await;
@@ -428,6 +683,74 @@ mod tests {
             Arc::new(RwLock::new(cloud_base_url)),
         );
         (service, model, mcp_store)
+    }
+
+    async fn create_local_embedding_service(base_url: String) -> EmbeddingService {
+        let provider_store = Arc::new(
+            crate::modules::providers::store::ProviderStore::new(&temp_sqlite_url("local"))
+                .await
+                .expect("create local provider store"),
+        );
+        provider_store
+            .init()
+            .await
+            .expect("init local provider store");
+
+        let instance = provider_store
+            .create_instance(crate::modules::providers::types::CreateInstanceRequest {
+                preset_slug: "openai".to_string(),
+                name: "Local Embedding".to_string(),
+                base_url,
+                chat_transport_path: None,
+                description: None,
+                icon: None,
+                priority: Some(0),
+                protocol: Some("openai".to_string()),
+                model_prefix: None,
+                auto_append_v1: Some(false),
+                resource_name: None,
+                deployment_name: None,
+                api_version: None,
+                project_id: None,
+                region: None,
+                app_id: None,
+                is_local: Some(true),
+                credential_source: Some("local".to_string()),
+                secret_key: Some("desktop-test-secret".to_string()),
+            })
+            .await
+            .expect("create local instance");
+
+        provider_store
+            .quick_add_models(
+                &instance.id.to_string(),
+                vec!["text-embedding-3-small".to_string()],
+                Some("embedding"),
+            )
+            .await
+            .expect("quick add local embedding model");
+
+        let _ = provider_store
+            .get_or_create_user_embedding_config()
+            .await
+            .expect("init local embedding config");
+        let model = provider_store
+            .list_active_models()
+            .await
+            .expect("list local active models")
+            .into_iter()
+            .find(|item| item.model_id == "text-embedding-3-small")
+            .expect("local embedding model");
+        provider_store
+            .update_user_embedding_config(
+                crate::modules::providers::types::UserEmbeddingConfigUpdateRequest {
+                    provider_model_id: Some(Some(model.id.to_string())),
+                },
+            )
+            .await
+            .expect("select local embedding model");
+
+        EmbeddingService::new(provider_store)
     }
 
     fn mock_model(model_id: &str, capabilities: &[&str], is_active: bool) -> ProviderModel {
@@ -579,6 +902,61 @@ mod tests {
             captured.is_none(),
             "proxy request should not be issued when runtime is disabled"
         );
+
+        server_handle.abort();
+    }
+
+    #[test]
+    fn split_text_for_embedding_force_splits_small_input_in_half() {
+        let chunks = split_text_for_embedding("abcdefghij", true);
+
+        assert_eq!(chunks, vec!["abcde".to_string(), "fghij".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn embed_text_splits_and_aggregates_when_upstream_rejects_long_input() {
+        let (base_url, capture, server_handle) = start_mock_local_embedding_server(5).await;
+        let service = create_local_embedding_service(base_url).await;
+
+        let vector = service
+            .embed_text("abcdefghij")
+            .await
+            .expect("embedding with fallback");
+
+        let calls = capture
+            .lock()
+            .expect("lock local capture state")
+            .calls
+            .clone();
+        assert_eq!(calls, vec!["abcdefghij", "abcde", "fghij"]);
+        assert_eq!(vector, vec![1.0, 0.0]);
+
+        server_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn embed_text_recursively_splits_when_chunk_is_still_too_long() {
+        let (base_url, capture, server_handle) = start_mock_local_embedding_server(2).await;
+        let service = create_local_embedding_service(base_url).await;
+
+        let vector = service
+            .embed_text("abcdefgh")
+            .await
+            .expect("recursive embedding fallback");
+
+        let calls = capture
+            .lock()
+            .expect("lock local capture state")
+            .calls
+            .clone();
+        assert_eq!(calls[0], "abcdefgh");
+        assert!(calls.contains(&"abcd".to_string()));
+        assert!(calls.contains(&"efgh".to_string()));
+        assert_eq!(calls.iter().filter(|item| item.as_str() == "ab").count(), 1);
+        assert_eq!(calls.iter().filter(|item| item.as_str() == "cd").count(), 1);
+        assert_eq!(calls.iter().filter(|item| item.as_str() == "ef").count(), 1);
+        assert_eq!(calls.iter().filter(|item| item.as_str() == "gh").count(), 1);
+        assert_eq!(vector, vec![1.0, 0.0]);
 
         server_handle.abort();
     }

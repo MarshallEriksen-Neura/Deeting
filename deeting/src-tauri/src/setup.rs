@@ -373,7 +373,7 @@ fn spawn_capability_registry_bootstrap(sync_state: AppState) {
     });
 }
 
-fn spawn_background_tasks(handle: AppHandle, sync_state: AppState) {
+fn spawn_background_tasks(_handle: AppHandle, sync_state: AppState) {
     tauri::async_runtime::spawn(async move {
         let mcp = &sync_state.mcp;
         let source = match mcp.store.ensure_local_source().await {
