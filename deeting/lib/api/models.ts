@@ -75,6 +75,21 @@ type LocalProviderModel = {
   extra_meta?: Record<string, unknown> | null
 }
 
+type DesktopLocalModelInventory = {
+  enabledInstances: LocalProviderInstance[]
+  modelsByInstance: Map<string, LocalProviderModel[]>
+}
+
+type DesktopLocalModelInventoryCacheEntry = {
+  expiresAt: number
+  value: DesktopLocalModelInventory | null
+  promise: Promise<DesktopLocalModelInventory> | null
+}
+
+const DESKTOP_LOCAL_MODEL_INVENTORY_TTL_MS = 30_000
+
+let desktopLocalModelInventoryCache: DesktopLocalModelInventoryCacheEntry | null = null
+
 const hasCapability = (model: LocalProviderModel, capability?: string) => {
   return modelSupportsCapability({
     capabilities: model.capabilities,
@@ -99,26 +114,86 @@ const markModelRoute = (
   })),
 })
 
+export function invalidateDesktopLocalModelsCache() {
+  desktopLocalModelInventoryCache = null
+}
+
+async function fetchDesktopLocalModelInventory(): Promise<DesktopLocalModelInventory> {
+  const now = Date.now()
+  if (
+    desktopLocalModelInventoryCache?.value &&
+    desktopLocalModelInventoryCache.expiresAt > now
+  ) {
+    return desktopLocalModelInventoryCache.value
+  }
+
+  if (desktopLocalModelInventoryCache?.promise) {
+    return desktopLocalModelInventoryCache.promise
+  }
+
+  const pending = (async () => {
+    const instances = await invokeTauri<LocalProviderInstance[]>("list_local_provider_instances")
+    const enabledInstances = instances.filter((instance) => instance.is_enabled !== false)
+
+    if (enabledInstances.length === 0) {
+      const emptyInventory: DesktopLocalModelInventory = {
+        enabledInstances: [],
+        modelsByInstance: new Map(),
+      }
+      desktopLocalModelInventoryCache = {
+        expiresAt: Date.now() + DESKTOP_LOCAL_MODEL_INVENTORY_TTL_MS,
+        value: emptyInventory,
+        promise: null,
+      }
+      return emptyInventory
+    }
+
+    const modelsByInstanceEntries = await Promise.all(
+      enabledInstances.map(async (instance) => {
+        const models = await invokeTauri<LocalProviderModel[]>("list_local_provider_models", {
+          instanceId: instance.id,
+        })
+        return [instance.id, Array.isArray(models) ? models : []] as const
+      })
+    )
+
+    const inventory: DesktopLocalModelInventory = {
+      enabledInstances,
+      modelsByInstance: new Map(modelsByInstanceEntries),
+    }
+
+    desktopLocalModelInventoryCache = {
+      expiresAt: Date.now() + DESKTOP_LOCAL_MODEL_INVENTORY_TTL_MS,
+      value: inventory,
+      promise: null,
+    }
+
+    return inventory
+  })().catch((error) => {
+    desktopLocalModelInventoryCache = null
+    throw error
+  })
+
+  desktopLocalModelInventoryCache = {
+    expiresAt: now + DESKTOP_LOCAL_MODEL_INVENTORY_TTL_MS,
+    value: desktopLocalModelInventoryCache?.value ?? null,
+    promise: pending,
+  }
+
+  return pending
+}
+
 async function fetchDesktopLocalModels(options?: {
   capability?: string
 }): Promise<ModelListResponse> {
-  const instances = await invokeTauri<LocalProviderInstance[]>("list_local_provider_instances")
-  const enabled = instances.filter((instance) => instance.is_enabled !== false)
-  if (enabled.length === 0) {
+  const { enabledInstances, modelsByInstance } = await fetchDesktopLocalModelInventory()
+  if (enabledInstances.length === 0) {
     return { instances: [] }
   }
 
-  const modelsByInstance = await Promise.all(
-    enabled.map(async (instance) => {
-      const models = await invokeTauri<LocalProviderModel[]>("list_local_provider_models", {
-        instanceId: instance.id,
-      })
-      return { instance, models }
-    })
-  )
-
-  const groups = modelsByInstance
-    .map(({ instance, models }) => {
+  const groups = enabledInstances
+    .map((instance) => {
+      const models = modelsByInstance.get(instance.id) ?? []
       const filteredModels = (Array.isArray(models) ? models : [])
         .filter((model) => model.is_active !== false)
         .filter((model) => hasCapability(model, options?.capability))

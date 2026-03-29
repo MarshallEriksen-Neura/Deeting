@@ -155,6 +155,7 @@ export function useProviderModels(instanceId: string | null) {
     instanceId ? () => provider.getModels(instanceId) : null,
     {
       revalidateOnFocus: false,
+      revalidateOnReconnect: false,
       dedupingInterval: 120000, // 2 minutes - models change occasionally
     }
   )

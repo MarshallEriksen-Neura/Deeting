@@ -16,6 +16,7 @@ import type {
   ProviderVerifyRequest,
   ProviderVerifyResponse,
 } from "@/lib/api/providers";
+import { invalidateDesktopLocalModelsCache } from "@/lib/api/models";
 import { fetchProviderPresetConfigs } from "@/lib/api/providers";
 
 import { toHubResponse, toInstanceResponse, toModelResponse } from "./mappers";
@@ -165,6 +166,7 @@ export const desktopProviderService: IProviderService = {
         secret_key: payload.api_key ?? undefined,
       },
     });
+    invalidateDesktopLocalModelsCache();
     return toInstanceResponse(created);
   },
   getInstances: async (): Promise<ProviderInstanceResponse[]> => {
@@ -194,10 +196,12 @@ export const desktopProviderService: IProviderService = {
         secret_key: payload.api_key ?? undefined,
       },
     });
+    invalidateDesktopLocalModelsCache();
     return toInstanceResponse(updated);
   },
   deleteInstance: async (id: string): Promise<void> => {
     await invoke("delete_local_provider_instance", { instanceId: id });
+    invalidateDesktopLocalModelsCache();
   },
   getModels: async (instanceId: string): Promise<ProviderModelResponse[]> => {
     const models = await invoke<LocalProviderModel[]>("list_local_provider_models", {
@@ -209,6 +213,7 @@ export const desktopProviderService: IProviderService = {
     const models = await invoke<LocalProviderModel[]>("sync_local_provider_models", {
       instanceId,
     });
+    invalidateDesktopLocalModelsCache();
     return models.map(toModelResponse);
   },
   quickAddModels: async (
@@ -219,6 +224,7 @@ export const desktopProviderService: IProviderService = {
       instanceId,
       payload,
     });
+    invalidateDesktopLocalModelsCache();
     return models.map(toModelResponse);
   },
   updateModel: async (modelId: string, payload: ProviderModelUpdate): Promise<ProviderModelResponse> => {
@@ -226,6 +232,7 @@ export const desktopProviderService: IProviderService = {
       modelId,
       payload,
     });
+    invalidateDesktopLocalModelsCache();
     return toModelResponse(updated);
   },
   testModel: async (modelId: string, payload?: ProviderModelTestRequest): Promise<ProviderModelTestResponse> => {

@@ -84,6 +84,39 @@ describe("ChatRouteClient", () => {
     })
   })
 
+  it("falls through from a stale legacy agent route to session restore after normalization times out", async () => {
+    jest.useFakeTimers()
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    mockUseParams.mockReturnValue({ agentId: "legacy-agent" })
+    mockUseSearchParams.mockReturnValue(new URLSearchParams(""))
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {})
+
+    render(<ChatRouteClientMemo />)
+
+    expect(mockFetchConversationSessions).not.toHaveBeenCalled()
+    expect(mockReplace).toHaveBeenCalledWith("/chat")
+
+    await act(async () => {
+      jest.advanceTimersByTime(1600)
+    })
+
+    await waitFor(() => {
+      expect(mockFetchConversationSessions).toHaveBeenCalledWith({ size: 1, status: "active" })
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-container")).toBeInTheDocument()
+    })
+    expect(warnSpy).toHaveBeenCalledWith(
+      "desktop legacy chat route normalization timed out; continuing with in-place session restore",
+      {
+        pathAgentId: "legacy-agent",
+        queryAgentId: null,
+      }
+    )
+
+    warnSpy.mockRestore()
+  })
+
   it("does not redirect when desktop has no existing history", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     mockUseParams.mockReturnValue({})
@@ -112,7 +145,7 @@ describe("ChatRouteClient", () => {
     expect(mockReplace).not.toHaveBeenCalled()
   })
 
-  it("falls through to an empty desktop chat when latest-session restore never resolves", async () => {
+  it("keeps the empty desktop chat visible when latest-session restore never resolves", async () => {
     jest.useFakeTimers()
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     mockUseParams.mockReturnValue({})
@@ -126,7 +159,7 @@ describe("ChatRouteClient", () => {
       expect(mockFetchConversationSessions).toHaveBeenCalledWith({ size: 1, status: "active" })
     })
 
-    expect(screen.queryByTestId("chat-container")).not.toBeInTheDocument()
+    expect(screen.getByTestId("chat-container")).toBeInTheDocument()
 
     await act(async () => {
       jest.advanceTimersByTime(3500)

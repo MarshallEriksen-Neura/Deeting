@@ -2,39 +2,28 @@
 
 import * as React from "react"
 import { useParams, useSearchParams, useRouter } from "next/navigation"
+
 import { ChatContainer } from "@/components/chat/core"
 import { fetchConversationSessions } from "@/lib/api/conversations"
 import { isTauriRuntime as detectTauriRuntime } from "@/lib/runtime/tauri"
+
 import { ChatRouteFallback } from "./chat-route-fallback"
 
 const DESKTOP_SESSION_RESTORE_TIMEOUT_MS = 3000
 const DESKTOP_SESSION_RESTORE_TIMEOUT = Symbol("desktop-session-restore-timeout")
+const LEGACY_ROUTE_NORMALIZE_TIMEOUT_MS = 1500
 
-/**
- * ChatRouteClient - 聊天路由客户端组件
- * 
- * 功能：
- * - 解析历史聊天路由参数（agentId）
- * - 在桌面端忽略旧助手路由参数并统一回到 `/chat`
- * - 渲染 ChatContainer
- * 
- * 性能优化：
- * - 使用 React.memo 避免不必要的重渲染
- * - 使用 useMemo 缓存计算值
- */
 function ChatRouteClient() {
   const router = useRouter()
   const params = useParams<{ agentId?: string | string[] }>()
   const searchParams = useSearchParams()
   const isTauriRuntime = detectTauriRuntime()
-  const [isResolvingDesktopSession, setIsResolvingDesktopSession] = React.useState(false)
-  // 缓存路径中的 agentId
+
   const pathAgentId = React.useMemo(() => {
     const value = params?.agentId
     return Array.isArray(value) ? value[0] : value
   }, [params?.agentId])
 
-  // 缓存查询参数中的 agentId
   const queryAgentId = React.useMemo(
     () => searchParams?.get("agentId")?.trim() || null,
     [searchParams]
@@ -44,30 +33,61 @@ function ChatRouteClient() {
     [searchParams]
   )
   const searchParamsKey = React.useMemo(() => searchParams?.toString() ?? "", [searchParams])
+  const hasLegacyAssistantRoute = Boolean(pathAgentId || queryAgentId)
+  const [isNormalizingLegacyRoute, setIsNormalizingLegacyRoute] = React.useState(
+    () => isTauriRuntime && hasLegacyAssistantRoute
+  )
 
   const redirectedRef = React.useRef(false)
   const desktopRestoreKeyRef = React.useRef<string | null>(null)
 
   React.useEffect(() => {
-    if (!isTauriRuntime) return
-    if ((pathAgentId || queryAgentId) && !redirectedRef.current) {
-      redirectedRef.current = true
-      router.replace(`/chat`)
+    if (!isTauriRuntime) {
+      redirectedRef.current = false
+      setIsNormalizingLegacyRoute(false)
+      return
     }
-  }, [isTauriRuntime, pathAgentId, queryAgentId, router])
+
+    if (!hasLegacyAssistantRoute) {
+      redirectedRef.current = false
+      setIsNormalizingLegacyRoute(false)
+      return
+    }
+
+    setIsNormalizingLegacyRoute(true)
+
+    if (!redirectedRef.current) {
+      redirectedRef.current = true
+      router.replace("/chat")
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      console.warn(
+        "desktop legacy chat route normalization timed out; continuing with in-place session restore",
+        {
+          pathAgentId: pathAgentId ?? null,
+          queryAgentId: queryAgentId ?? null,
+        }
+      )
+      setIsNormalizingLegacyRoute(false)
+    }, LEGACY_ROUTE_NORMALIZE_TIMEOUT_MS)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [hasLegacyAssistantRoute, isTauriRuntime, pathAgentId, queryAgentId, router])
 
   React.useEffect(() => {
     if (!isTauriRuntime) return
-    if (pathAgentId || queryAgentId) return
+    if (hasLegacyAssistantRoute && (!redirectedRef.current || isNormalizingLegacyRoute)) return
     if (querySessionId) return
 
-    const restoreKey = searchParamsKey
+    const restoreKey = `${pathAgentId ?? ""}|${searchParamsKey}`
     if (desktopRestoreKeyRef.current === restoreKey) return
 
     desktopRestoreKeyRef.current = restoreKey
     let cancelled = false
     let timeoutId: number | null = null
-    setIsResolvingDesktopSession(true)
 
     void (async () => {
       try {
@@ -105,23 +125,31 @@ function ChatRouteClient() {
         if (timeoutId !== null) {
           window.clearTimeout(timeoutId)
         }
-        if (!cancelled) {
-          setIsResolvingDesktopSession(false)
-        }
       }
     })()
 
     return () => {
       cancelled = true
     }
-  }, [isTauriRuntime, pathAgentId, queryAgentId, querySessionId, router, searchParamsKey])
+  }, [
+    hasLegacyAssistantRoute,
+    isNormalizingLegacyRoute,
+    isTauriRuntime,
+    pathAgentId,
+    querySessionId,
+    router,
+    searchParamsKey,
+  ])
 
-  if (isTauriRuntime && ((pathAgentId || queryAgentId) || isResolvingDesktopSession)) {
+  const shouldBlockChatRender =
+    isTauriRuntime &&
+    (hasLegacyAssistantRoute && (!redirectedRef.current || isNormalizingLegacyRoute))
+
+  if (shouldBlockChatRender) {
     return <ChatRouteFallback />
   }
 
   return <ChatContainer agentId="" />
 }
 
-// 使用 React.memo 优化，避免不必要的重渲染
 export const ChatRouteClientMemo = React.memo(ChatRouteClient)

@@ -14,6 +14,7 @@ import { useAuthStore } from "@/store/auth-store"
 
 const INSTALLS_QUERY_KEY = "/api/v1/assistants/installs"
 const MODELS_QUERY_KEY = "/api/v1/internal/models"
+const MODEL_LIST_DEDUPING_INTERVAL_MS = 60_000
 
 const COLOR_PRESETS = [
   "from-indigo-500 to-purple-500",
@@ -87,8 +88,14 @@ export function useChatService({
   const {
     data: modelList,
     isLoading: isLoadingAllModels,
-  } = useSWR(modelQueryKey, () =>
-    fetchChatModels(modelCapability ? { capability: modelCapability } : undefined)
+  } = useSWR(
+    modelQueryKey,
+    () => fetchChatModels(modelCapability ? { capability: modelCapability } : undefined),
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      dedupingInterval: MODEL_LIST_DEDUPING_INTERVAL_MS,
+    }
   )
 
   const assistant = useMemo(() => {

@@ -30,7 +30,6 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
   // 从 store 获取状态和 action
   const initSession = useChatStore((state) => state.initSession)
   const selectedAssistant = useChatStore((state) => state.selectedAssistant)
-  const isLoading = useChatStore((state) => state.isLoading)
   const initialized = useChatStore((state) => state.initialized)
 
   // 环境检测
@@ -41,7 +40,7 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
     const querySessionId = searchParams?.get("session")?.trim()
     if (querySessionId) return querySessionId
     return null
-  }, [searchParams, agentId])
+  }, [searchParams])
 
   // 使用 ref 追踪是否已调用 initSession，避免重复调用
   const initCalledRef = React.useRef<string | null>(null)

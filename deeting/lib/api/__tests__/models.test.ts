@@ -1,4 +1,4 @@
-import { fetchChatModels } from "@/lib/api/models"
+import { fetchChatModels, invalidateDesktopLocalModelsCache } from "@/lib/api/models"
 import { request } from "@/lib/http"
 import { invoke } from "@tauri-apps/api/core"
 
@@ -21,6 +21,7 @@ const windowWithTauri = window as Window & {
 
 describe("models api", () => {
   afterEach(() => {
+    invalidateDesktopLocalModelsCache()
     mockRequest.mockReset()
     mockInvoke.mockReset()
     process.env.NEXT_PUBLIC_IS_TAURI = originalTauriFlag
@@ -267,5 +268,43 @@ describe("models api", () => {
     const result = await fetchChatModels({ capability: "video_generation" })
     expect(result.instances).toHaveLength(1)
     expect(result.instances[0]?.models[0]?.provider_model_id).toBe("pm-local-routing")
+  })
+
+  it("reuses desktop local inventory across capability-filtered requests within ttl", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+
+    mockInvoke
+      .mockResolvedValueOnce([
+        {
+          id: "inst-local-shared",
+          name: "Shared Local Provider",
+          preset_slug: "ollama",
+          icon: null,
+          is_enabled: true,
+        },
+      ] as unknown)
+      .mockResolvedValueOnce([
+        {
+          id: "pm-local-shared",
+          instance_id: "inst-local-shared",
+          model_id: "shared-model",
+          unified_model_id: null,
+          capabilities: ["chat", "embedding"],
+          is_active: true,
+          extra_meta: { input_types: ["text"] },
+        },
+      ] as unknown)
+
+    const chatResult = await fetchChatModels({ capability: "chat" })
+    const embeddingResult = await fetchChatModels({ capability: "embedding" })
+
+    expect(chatResult.instances).toHaveLength(1)
+    expect(embeddingResult.instances).toHaveLength(1)
+    expect(mockInvoke).toHaveBeenCalledTimes(2)
+    expect(mockInvoke).toHaveBeenNthCalledWith(1, "list_local_provider_instances", undefined)
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, "list_local_provider_models", {
+      instanceId: "inst-local-shared",
+    })
   })
 })
