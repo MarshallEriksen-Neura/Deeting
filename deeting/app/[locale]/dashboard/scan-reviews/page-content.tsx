@@ -20,6 +20,7 @@ import {
   scanDirectoryReview,
   scanFileReview,
   type LocalScanFindingAction,
+  type LocalScanReviewBatchResult,
   type LocalScanRun,
 } from "@/lib/api/local-scan"
 
@@ -92,6 +93,15 @@ function formatRiskTuple(parts: Array<string | null | undefined>) {
   return compact.length > 0 ? compact.join(" · ") : null
 }
 
+function readErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message.trim() ? error.message : fallback
+}
+
+function readBatchFailureMessage(result: LocalScanReviewBatchResult, fallback: string) {
+  const failed = result.results.find((item) => item.status === "failed" && item.message.trim().length > 0)
+  return failed?.message ?? fallback
+}
+
 /* -------------------------------------------------------------------------- */
 /*  PageContent                                                                */
 /* -------------------------------------------------------------------------- */
@@ -122,6 +132,7 @@ export function PageContent() {
 
   // ── Action feedback ──────────────────────────────────────
   const [feedback, setFeedback] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [actioningId, setActioningId] = useState<string | null>(null)
   const [batchRunning, setBatchRunning] = useState(false)
 
@@ -143,6 +154,7 @@ export function PageContent() {
     setIsScanning(true)
     setScanError(null)
     setFeedback(null)
+    setActionError(null)
     try {
       const fileRequest: ScanRequest = { kind: "file", path: normalized }
       const result = await executeScanRequest(fileRequest)
@@ -166,6 +178,7 @@ export function PageContent() {
     setIsScanning(true)
     setScanError(null)
     setFeedback(null)
+    setActionError(null)
     try {
       const request: ScanRequest = { kind: "all" }
       const result = await executeScanRequest(request)
@@ -183,6 +196,7 @@ export function PageContent() {
     if (!request) return
     if (!options?.preserveFeedback) {
       setFeedback(null)
+      setActionError(null)
     }
     setScanError(null)
     setIsScanning(true)
@@ -244,13 +258,21 @@ export function PageContent() {
     const action = finding.action
     if (!action) return
     setFeedback(null)
+    setActionError(null)
+    setScanError(null)
     setActioningId(finding.id)
     try {
       const result = await runScanReviewAction(action)
+      if (result?.status === "failed") {
+        setActionError(result.message || t("feedback.actionFailed"))
+        return
+      }
       setFeedback(result?.message ?? t("feedback.actionApplied"))
-      await handleRescan({ preserveFeedback: true })
+      if (result?.status === "applied") {
+        await handleRescan({ preserveFeedback: true })
+      }
     } catch (actionError) {
-      setFeedback(actionError instanceof Error ? actionError.message : t("feedback.actionFailed"))
+      setActionError(readErrorMessage(actionError, t("feedback.actionFailed")))
     } finally {
       setActioningId(null)
     }
@@ -259,21 +281,32 @@ export function PageContent() {
   const handleBatchFix = async () => {
     if (!actionableFindings.length) return
     setFeedback(null)
+    setActionError(null)
+    setScanError(null)
     setBatchRunning(true)
     try {
       const result = await runScanReviewActions(actionableFindings)
-      setFeedback(
-        result
-          ? t("feedback.batchApplied", {
+      if (result) {
+        if (result.applied > 0 || result.skipped > 0 || result.failed === 0) {
+          setFeedback(
+            t("feedback.batchApplied", {
               applied: result.applied,
               failed: result.failed,
               skipped: result.skipped,
             })
-          : t("feedback.actionApplied")
-      )
-      await handleRescan({ preserveFeedback: true })
+          )
+        }
+        if (result.failed > 0) {
+          setActionError(readBatchFailureMessage(result, t("feedback.actionFailed")))
+        }
+        if (result.applied > 0) {
+          await handleRescan({ preserveFeedback: true })
+        }
+      } else {
+        setFeedback(t("feedback.actionApplied"))
+      }
     } catch (actionError) {
-      setFeedback(actionError instanceof Error ? actionError.message : t("feedback.actionFailed"))
+      setActionError(readErrorMessage(actionError, t("feedback.actionFailed")))
     } finally {
       setBatchRunning(false)
     }
@@ -551,6 +584,7 @@ export function PageContent() {
             }
           />
           {feedback && <p className="text-xs text-[var(--muted)]" role="status">{feedback}</p>}
+          {actionError && <p className="text-sm text-red-500 dark:text-red-400" role="alert">{actionError}</p>}
           {scanError && <p className="text-sm text-red-500 dark:text-red-400" role="alert">{scanError}</p>}
           <div className="grid gap-2 text-xs text-[var(--muted)] md:grid-cols-3">
             <div>{t("summary.target")}: {data.target_path}</div>

@@ -101,6 +101,21 @@ describe("local scan api", () => {
     })
   })
 
+  it("normalizes tauri invoke errors for scan review actions", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockRejectedValue({ message: "Embedding request failed: 400 Bad Request" } as unknown)
+
+    await expect(
+      runScanReviewAction({
+        kind: "reindex_bundle",
+        bundle_id: "demo.skill",
+        path: "/tmp/skills/demo-skill",
+        destructive: false,
+      })
+    ).rejects.toThrow("Embedding request failed: 400 Bad Request")
+  })
+
   it("invokes run_scan_review_actions in tauri runtime", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}

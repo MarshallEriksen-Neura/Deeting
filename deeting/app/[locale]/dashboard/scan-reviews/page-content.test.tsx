@@ -259,6 +259,23 @@ describe("Dashboard scan reviews page", () => {
     })
   })
 
+  it("shows an alert when a finding action fails", async () => {
+    mockRunScanReviewAction.mockRejectedValue(new Error("Embedding request failed: 400 Bad Request"))
+    mockScanFileReview.mockResolvedValue(mockRun)
+
+    await triggerScanWithResults()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "actions.reindex_bundle" }))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("Embedding request failed: 400 Bad Request")
+    })
+
+    expect(mockScanFileReview).toHaveBeenCalledTimes(1)
+  })
+
   it("runs batch fix for all actionable findings", async () => {
     mockRunScanReviewActions.mockResolvedValue({ total: 1, applied: 1, failed: 0, skipped: 0, results: [] })
     mockScanFileReview.mockResolvedValue(mockRun)
@@ -286,6 +303,37 @@ describe("Dashboard scan reviews page", () => {
     expect(
       screen.getByText('feedback.batchApplied:{"applied":1,"failed":0,"skipped":0}')
     ).toBeInTheDocument()
+  })
+
+  it("shows an alert when batch fix returns failed actions", async () => {
+    mockRunScanReviewActions.mockResolvedValue({
+      total: 1,
+      applied: 0,
+      failed: 1,
+      skipped: 0,
+      results: [
+        {
+          kind: "reindex_bundle",
+          status: "failed",
+          message: "Embedding request failed: 400 Bad Request",
+          bundle_id: "skill.find-skills",
+          path: "/tmp/skills/skill.find-skills",
+        },
+      ],
+    })
+    mockScanFileReview.mockResolvedValue(mockRun)
+
+    await triggerScanWithResults()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "actions.fixAll" }))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("Embedding request failed: 400 Bad Request")
+    })
+
+    expect(mockScanFileReview).toHaveBeenCalledTimes(1)
   })
 
   it("rescans the original scan-all scope after batch fix", async () => {

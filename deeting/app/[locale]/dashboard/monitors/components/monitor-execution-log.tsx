@@ -199,9 +199,7 @@ function LogCard({
   const StatusIcon = config.icon
   const hasChange = log.output_data?.is_significant_change === true
   const summary = log.output_data?.change_summary
-  const events = Array.isArray(log.output_data?.events)
-    ? (log.output_data!.events as Array<Record<string, unknown>>)
-    : []
+  const events = log.output_data?.events ?? []
 
   return (
     <GlassCard padding="sm" hover="none" className="relative">

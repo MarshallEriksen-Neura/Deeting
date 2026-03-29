@@ -81,9 +81,40 @@ export type LocalScanFindingAction = z.infer<typeof ScanFindingActionSchema>
 export type LocalScanReviewActionResult = z.infer<typeof ScanReviewActionResultSchema>
 export type LocalScanReviewBatchResult = z.infer<typeof ScanReviewBatchResultSchema>
 
+function readInvokeErrorMessage(error: unknown): string | null {
+  if (error instanceof Error) {
+    const message = error.message.trim()
+    if (message) return message
+  }
+  if (typeof error === "string") {
+    const message = error.trim()
+    if (message) return message
+  }
+  if (!error || typeof error !== "object" || Array.isArray(error)) {
+    return null
+  }
+  const record = error as Record<string, unknown>
+  for (const key of ["message", "error", "detail", "details", "cause"]) {
+    const value = record[key]
+    if (typeof value === "string" && value.trim()) {
+      return value.trim()
+    }
+  }
+  try {
+    const serialized = JSON.stringify(error)
+    return serialized && serialized !== "{}" ? serialized : null
+  } catch {
+    return null
+  }
+}
+
 async function invokeTauri<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke } = await import("@tauri-apps/api/core")
-  return invoke<T>(command, args)
+  try {
+    return await invoke<T>(command, args)
+  } catch (error) {
+    throw new Error(readInvokeErrorMessage(error) ?? `Tauri command ${command} failed`)
+  }
 }
 
 export async function scanDirectoryReview(options?: { path?: string }): Promise<LocalScanRun | null> {
