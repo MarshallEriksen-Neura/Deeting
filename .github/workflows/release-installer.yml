@@ -77,33 +77,35 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          asset_name="$(
-            python - <<'PY'
-            import json
-            import os
-            import subprocess
+          asset_name_file=.release-installer-asset-name
+          python - <<'PY' > "${asset_name_file}"
+          import json
+          import os
+          import subprocess
 
-            release_tag = os.environ["RELEASE_TAG"]
-            raw = subprocess.check_output(
-                ["gh", "release", "view", release_tag, "--json", "assets"],
-                text=True,
-            )
-            assets = json.loads(raw)["assets"]
-            candidates = [
-                asset["name"]
-                for asset in assets
-                if asset["name"].lower().endswith(".exe")
-                and "bootstrapper" not in asset["name"].lower()
-            ]
+          release_tag = os.environ["RELEASE_TAG"]
+          raw = subprocess.check_output(
+              ["gh", "release", "view", release_tag, "--json", "assets"],
+              text=True,
+          )
+          assets = json.loads(raw)["assets"]
+          candidates = [
+              asset["name"]
+              for asset in assets
+              if asset["name"].lower().endswith(".exe")
+              and "bootstrapper" not in asset["name"].lower()
+          ]
 
-            if len(candidates) != 1:
-                raise SystemExit(
-                    f"expected exactly one non-bootstrapper .exe asset for {release_tag}, found {candidates!r}"
-                )
+          if len(candidates) != 1:
+              raise SystemExit(
+                  f"expected exactly one non-bootstrapper .exe asset for {release_tag}, found {candidates!r}"
+              )
 
-            print(candidates[0], end="")
-            PY
-          )"
+          print(candidates[0], end="")
+          PY
+
+          asset_name="$(< "${asset_name_file}")"
+          rm -f "${asset_name_file}"
 
           mkdir -p main-installer
           gh release download "${RELEASE_TAG}" --pattern "${asset_name}" --dir ./main-installer

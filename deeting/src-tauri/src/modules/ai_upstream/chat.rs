@@ -496,11 +496,7 @@ pub(crate) fn normalize_chat_completion_response(raw: serde_json::Value) -> serd
         return raw;
     }
     let usage = raw.get("usage").cloned();
-    let mut content = raw
-        .get("content")
-        .and_then(|value| value.as_str())
-        .unwrap_or("")
-        .to_string();
+    let mut content = extract_text_content(raw.get("content"));
     let mut reasoning_content = raw
         .get("reasoning_content")
         .and_then(|value| value.as_str())
@@ -514,11 +510,7 @@ pub(crate) fn normalize_chat_completion_response(raw: serde_json::Value) -> serd
     {
         if let Some(message) = choice.get("message") {
             if content.is_empty() {
-                content = message
-                    .get("content")
-                    .and_then(|value| value.as_str())
-                    .unwrap_or("")
-                    .to_string();
+                content = extract_text_content(message.get("content"));
             }
             if reasoning_content.is_empty() {
                 reasoning_content = message
@@ -570,6 +562,21 @@ pub(crate) fn normalize_chat_completion_response(raw: serde_json::Value) -> serd
     if normalized_tool_calls.is_empty() {
         if let Some(tool_calls) = raw.get("tool_calls").and_then(|value| value.as_array()) {
             normalized_tool_calls.extend(tool_calls.iter().cloned());
+        } else if let Some(content_blocks) = raw.get("content").and_then(|value| value.as_array()) {
+            for block in content_blocks {
+                if block.get("type").and_then(|value| value.as_str()) != Some("tool_use") {
+                    continue;
+                }
+                normalized_tool_calls.push(serde_json::json!({
+                    "id": block.get("id").and_then(|value| value.as_str()).unwrap_or_default(),
+                    "name": block.get("name").and_then(|value| value.as_str()).unwrap_or_default(),
+                    "arguments": block
+                        .get("input")
+                        .cloned()
+                        .unwrap_or_else(|| serde_json::json!({})),
+                    "extra_content": block.clone(),
+                }));
+            }
         }
     }
     let mut result = serde_json::json!({ "content": content, "tool_calls": normalized_tool_calls });
@@ -580,6 +587,38 @@ pub(crate) fn normalize_chat_completion_response(raw: serde_json::Value) -> serd
         result["usage"] = usage;
     }
     result
+}
+
+fn extract_text_content(value: Option<&serde_json::Value>) -> String {
+    match value {
+        Some(serde_json::Value::String(text)) => text.clone(),
+        Some(serde_json::Value::Array(items)) => items
+            .iter()
+            .filter_map(|item| {
+                item.as_object().and_then(|object| {
+                    let block_type = object.get("type").and_then(|value| value.as_str());
+                    if matches!(block_type, Some("tool_use") | Some("server_tool_use")) {
+                        return None;
+                    }
+                    object
+                        .get("text")
+                        .and_then(|value| value.as_str())
+                        .or_else(|| object.get("content").and_then(|value| value.as_str()))
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(ToString::to_string)
+                })
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+        Some(serde_json::Value::Object(object)) => object
+            .get("text")
+            .and_then(|value| value.as_str())
+            .or_else(|| object.get("content").and_then(|value| value.as_str()))
+            .unwrap_or("")
+            .to_string(),
+        _ => String::new(),
+    }
 }
 
 pub(crate) fn extract_upstream_error_message(
@@ -673,5 +712,33 @@ mod tests {
 
         assert_eq!(normalized["content"], json!("hello"));
         assert_eq!(normalized["usage"]["total_tokens"], json!(18));
+    }
+
+    #[test]
+    fn normalize_chat_completion_response_extracts_text_from_raw_anthropic_message() {
+        let normalized = super::normalize_chat_completion_response(json!({
+            "id": "msg_123",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-haiku-4-5",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Hello! How can I help you today?"
+                }
+            ],
+            "stop_reason": "end_turn",
+            "usage": {
+                "input_tokens": 28,
+                "output_tokens": 9
+            }
+        }));
+
+        assert_eq!(
+            normalized["content"],
+            json!("Hello! How can I help you today?")
+        );
+        assert_eq!(normalized["usage"]["input_tokens"], json!(28));
+        assert_eq!(normalized["usage"]["output_tokens"], json!(9));
     }
 }
