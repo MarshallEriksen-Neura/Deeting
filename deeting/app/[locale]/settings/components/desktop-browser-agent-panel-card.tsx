@@ -30,10 +30,7 @@ import {
   type BrowserAgentBridgeStatus,
   type BrowserAgentElementLocator,
 } from "@/lib/api/browser-agent"
-
-const isPanelEnabled =
-  process.env.NODE_ENV !== "production" ||
-  process.env.NEXT_PUBLIC_ENABLE_BROWSER_AGENT_PANEL === "true"
+import { isBrowserAgentPanelEnabled } from "./browser-agent-panel-flags"
 
 function formatError(err: unknown): string {
   if (err instanceof Error && err.message) return err.message
@@ -48,6 +45,7 @@ interface DesktopBrowserAgentPanelCardProps {
 export function DesktopBrowserAgentPanelCard({
   isTauriRuntime,
 }: DesktopBrowserAgentPanelCardProps) {
+  const isPanelEnabled = isBrowserAgentPanelEnabled()
   const t = useI18n("settings")
   const [status, setStatus] = React.useState<BrowserAgentBridgeStatus | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)

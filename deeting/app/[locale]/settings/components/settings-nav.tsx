@@ -4,6 +4,7 @@ import type { ElementType } from "react"
 import { Boxes, Bot, Database, Globe, Server } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/hooks/use-i18n"
+import { isBrowserAgentPanelEnabled } from "./browser-agent-panel-flags"
 
 export type SettingsSection =
   | "models"
@@ -38,9 +39,12 @@ export function SettingsNav({
   isTauriRuntime,
 }: SettingsNavProps) {
   const t = useI18n("settings")
+  const isBrowserSectionVisible = isBrowserAgentPanelEnabled()
 
   const visibleItems = NAV_ITEMS.filter(
-    (item) => !item.desktopOnly || isTauriRuntime
+    (item) =>
+      (!item.desktopOnly || isTauriRuntime) &&
+      (item.id !== "browser" || isBrowserSectionVisible)
   )
 
   return (

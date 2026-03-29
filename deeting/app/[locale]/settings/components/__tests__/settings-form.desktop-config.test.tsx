@@ -97,9 +97,20 @@ jest.mock("../settings-nav", () => ({
 }))
 
 describe("SettingsForm desktop config loading", () => {
+  const originalNodeEnv = process.env.NODE_ENV
+  const originalBrowserPanelFlag =
+    process.env.NEXT_PUBLIC_ENABLE_BROWSER_AGENT_PANEL
+
   beforeEach(() => {
     mockGetDesktopScoutBaseUrl.mockClear()
     mockFetchDesktopObjectStorageConfig.mockClear()
+    process.env.NODE_ENV = originalNodeEnv
+    if (originalBrowserPanelFlag === undefined) {
+      delete process.env.NEXT_PUBLIC_ENABLE_BROWSER_AGENT_PANEL
+    } else {
+      process.env.NEXT_PUBLIC_ENABLE_BROWSER_AGENT_PANEL =
+        originalBrowserPanelFlag
+    }
   })
 
   it("loads desktop scout and storage settings only after their sections are opened", async () => {
@@ -129,6 +140,26 @@ describe("SettingsForm desktop config loading", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "agent" }))
     expect(screen.queryByTestId("browser-agent-panel")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "browser" }))
+    expect(screen.getByTestId("browser-agent-panel")).toBeInTheDocument()
+  })
+
+  it("does not render the browser section in production when the panel flag is off", () => {
+    process.env.NODE_ENV = "production"
+    delete process.env.NEXT_PUBLIC_ENABLE_BROWSER_AGENT_PANEL
+
+    render(<SettingsForm isAuthenticated isTauriRuntime />)
+
+    fireEvent.click(screen.getByRole("button", { name: "browser" }))
+    expect(screen.queryByTestId("browser-agent-panel")).not.toBeInTheDocument()
+  })
+
+  it("still renders the browser section in production when the panel flag is on", () => {
+    process.env.NODE_ENV = "production"
+    process.env.NEXT_PUBLIC_ENABLE_BROWSER_AGENT_PANEL = "true"
+
+    render(<SettingsForm isAuthenticated isTauriRuntime />)
 
     fireEvent.click(screen.getByRole("button", { name: "browser" }))
     expect(screen.getByTestId("browser-agent-panel")).toBeInTheDocument()

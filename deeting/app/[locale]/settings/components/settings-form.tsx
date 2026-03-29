@@ -40,6 +40,7 @@ import { PersonalSettingsCard } from "./personal-settings-card";
 import { SettingsFormActions } from "./settings-form-actions";
 import { SettingsNav, type SettingsSection } from "./settings-nav";
 import { type ModelGroup, type SettingsFormValues } from "../types";
+import { isBrowserAgentPanelEnabled } from "./browser-agent-panel-flags";
 import {
   DeferredAgentSettingsCard,
   DeferredDesktopBrowserAgentPanelCard,
@@ -88,6 +89,7 @@ export function SettingsForm({
   isTauriRuntime,
 }: SettingsFormProps) {
   const t = useI18n("settings");
+  const isBrowserSectionVisible = isBrowserAgentPanelEnabled();
   const [activeSection, setActiveSection] =
     React.useState<SettingsSection>("models");
   const {
@@ -657,7 +659,7 @@ export function SettingsForm({
           )}
 
           {/* Browser section */}
-          {activeSection === "browser" && (
+          {activeSection === "browser" && isBrowserSectionVisible && (
             <div className="flex flex-col gap-5">
               <DeferredDesktopBrowserAgentPanelCard isTauriRuntime={isTauriRuntime} />
             </div>
@@ -685,14 +687,15 @@ export function SettingsForm({
             </div>
           )}
 
-          {activeSection !== "agent" && activeSection !== "browser" && (
+          {activeSection !== "agent" &&
+            (activeSection !== "browser" || !isBrowserSectionVisible) && (
             <SettingsFormActions
               canSave={canSave}
               isSaving={isSaving}
               isSubmitting={form.formState.isSubmitting}
               onReset={() => form.reset()}
             />
-          )}
+            )}
         </form>
       </div>
 
