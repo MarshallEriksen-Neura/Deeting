@@ -161,10 +161,10 @@ describe("BrowserModePanel", () => {
       screen.getAllByText("browserMode.panel.connectionState.connected").length
     ).toBeGreaterThan(0)
     expect(
-      screen.getByText(
+      screen.getAllByText(
         "browserMode.panel.connectionDetail.browser_agent_extension_connected"
-      )
-    ).toBeInTheDocument()
+      ).length
+    ).toBeGreaterThan(0)
   })
 
   it("renders execution phase, retry count, and recovery reason when present", () => {

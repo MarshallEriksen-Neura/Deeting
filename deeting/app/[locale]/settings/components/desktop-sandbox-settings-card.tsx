@@ -111,6 +111,7 @@ export function DesktopSandboxSettingsCard({
 
   const readinessKey = data?.status ?? "unsupported"
   const runtimeKey = data?.runtime_mode ?? "disabled"
+  const executionProbeKey = data?.execution_probe.status ?? "skipped"
   const pythonSummary = data?.python
     ? !data.python.installed
       ? t("agent.sandbox.pythonMissing")
@@ -202,6 +203,15 @@ export function DesktopSandboxSettingsCard({
                   ? t("agent.sandbox.bridgeReachable")
                   : t("agent.sandbox.bridgeUnreachable")}
               </p>
+              <p className="text-[11px] text-muted-foreground">
+                {t("agent.sandbox.executionProbeLabel")}:{" "}
+                {t(`agent.sandbox.executionProbe${executionProbeKey.charAt(0).toUpperCase()}${executionProbeKey.slice(1)}`)}
+              </p>
+              {data.execution_probe.detail ? (
+                <p className="text-[11px] text-muted-foreground">
+                  {data.execution_probe.detail}
+                </p>
+              ) : null}
               <p className="text-[11px] text-muted-foreground">
                 {t("agent.sandbox.ownershipLabel")}:{" "}
                 {data.boxlite.managed_by_deeting

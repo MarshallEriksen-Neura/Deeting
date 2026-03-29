@@ -4,8 +4,6 @@ import type { ReactNode } from "react"
 import { useState } from "react"
 import {
   Activity,
-  ExternalLink,
-  Globe,
   Link2,
   MousePointerClick,
   Sparkles,
@@ -14,7 +12,6 @@ import { useShallow } from "zustand/react/shallow"
 import { Button } from "@/components/ui/button"
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -334,32 +331,44 @@ export function BrowserModePanel({ viewId, title }: BrowserModePanelProps) {
     <div className="flex h-full min-h-0 w-full p-3 md:p-4">
       <Card className="flex h-full min-h-0 w-full flex-col overflow-hidden border-border/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0))] py-0 shadow-[0_12px_40px_rgba(0,0,0,0.12)] backdrop-blur-sm">
         <CardHeader className="shrink-0 gap-4 border-b border-border/70 bg-[linear-gradient(180deg,rgba(120,140,180,0.08),rgba(120,140,180,0.01))] px-4 py-4 md:px-5 md:py-4.5">
-          <div className="space-y-3">
-            <div className="space-y-3">
-              <StatusChip className="w-fit border-primary/20 bg-primary/6 text-primary">
-                <Sparkles className="h-3.5 w-3.5" />
-                {title}
-              </StatusChip>
-              <div className="space-y-2">
-                <CardTitle className="text-xl font-semibold tracking-tight">
-                  {resolvedExecutionLabel}
-                </CardTitle>
-                <CardDescription className="max-w-[34ch] text-sm leading-6 text-muted-foreground/90">
-                  {t("browserMode.panel.description")}
-                </CardDescription>
+          <div className="grid gap-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 flex-1 space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusChip className="w-fit border-primary/20 bg-primary/6 text-primary">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    {title}
+                  </StatusChip>
+                  <StatusChip className={getExecutionToneClass(executionPhase)}>
+                    {resolvedExecutionLabel}
+                  </StatusChip>
+                  {page?.host ? <StatusChip>{page.host}</StatusChip> : null}
+                </div>
+                <div className="space-y-2">
+                  <CardTitle className="text-xl font-semibold tracking-tight">
+                    {resolvedExecutionLabel}
+                  </CardTitle>
+                  <CardDescription className="max-w-[40ch] text-sm leading-6 text-muted-foreground/90">
+                    {t("browserMode.panel.description")}
+                  </CardDescription>
+                </div>
+              </div>
+              <div className="grid min-w-[132px] gap-2 rounded-[1.1rem] border border-border/60 bg-background/80 p-2.5 shadow-[0_1px_0_rgba(255,255,255,0.05)_inset]">
+                <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                  {t("browserMode.panel.connectionLabel")}
+                </span>
+                <span className="text-sm font-semibold leading-5 text-foreground">
+                  {resolvedConnectionLabel}
+                </span>
+                <span className="text-xs leading-5 text-muted-foreground">
+                  {resolvedStatusDetail}
+                </span>
               </div>
             </div>
 
-            <div className="grid gap-2.5 rounded-[1.25rem] border border-border/60 bg-background/75 p-3.5 shadow-[0_1px_0_rgba(255,255,255,0.04)_inset]">
-              <div className="flex flex-wrap gap-2">
-                <StatusChip>{resolvedConnectionLabel}</StatusChip>
-                <StatusChip className={getExecutionToneClass(executionPhase)}>
-                  {resolvedExecutionLabel}
-                </StatusChip>
-                {page?.host ? <StatusChip>{page.host}</StatusChip> : null}
-              </div>
+            <div className="grid gap-3 rounded-[1.25rem] border border-border/60 bg-background/75 p-4 shadow-[0_1px_0_rgba(255,255,255,0.04)_inset]">
               {requestPrompt ? (
-                <div className="grid gap-1">
+                <div className="grid gap-1.5">
                   <span className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
                     {t("browserMode.panel.requestLabel")}
                   </span>
@@ -368,15 +377,45 @@ export function BrowserModePanel({ viewId, title }: BrowserModePanelProps) {
                   </span>
                 </div>
               ) : null}
+
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div className="rounded-[1rem] border border-border/50 bg-muted/[0.12] px-3.5 py-3">
+                  <span className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                    {t("browserMode.panel.executionLabel")}
+                  </span>
+                  <div className="mt-1.5 grid gap-1">
+                    <span className="text-sm font-semibold leading-6 text-foreground">
+                      {resolvedExecutionLabel}
+                    </span>
+                    {executionLabel ? (
+                      <span className="text-xs leading-5 text-muted-foreground">
+                        {executionLabel}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="rounded-[1rem] border border-border/50 bg-muted/[0.12] px-3.5 py-3">
+                  <span className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                    {t("browserMode.panel.pageLabel")}
+                  </span>
+                  <div className="mt-1.5 grid gap-1">
+                    <span className="truncate text-sm font-semibold leading-6 text-foreground">
+                      {page?.title ?? t("browserMode.panel.pageEmpty")}
+                    </span>
+                    <span className="truncate text-xs leading-5 text-muted-foreground">
+                      {page?.url ?? page?.host ?? t("browserMode.panel.pageEmpty")}
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
-          <CardAction className="col-start-1 row-start-2 mt-1 max-w-full justify-self-start sm:col-start-2 sm:row-span-2 sm:row-start-1 sm:mt-0 sm:justify-self-end">
-            <div className="flex flex-wrap items-center gap-2 rounded-full border border-border/60 bg-background/80 p-1.5 shadow-[0_1px_0_rgba(255,255,255,0.05)_inset]">
+
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="rounded-full border-transparent bg-transparent shadow-none hover:border-border/60 hover:bg-muted/60"
+              className="h-10 rounded-2xl border-border/60 bg-background/80 shadow-none hover:bg-muted/60"
               onClick={() => void handleInspectPage()}
               aria-label={t("browserMode.panel.inspect")}
               disabled={!page?.tabId || isInspecting}
@@ -387,7 +426,7 @@ export function BrowserModePanel({ viewId, title }: BrowserModePanelProps) {
               type="button"
               variant="outline"
               size="sm"
-              className="rounded-full border-transparent bg-transparent shadow-none hover:border-border/60 hover:bg-muted/60"
+              className="h-10 rounded-2xl border-border/60 bg-background/80 shadow-none hover:bg-muted/60"
               onClick={() => pause(t("browserMode.panel.pausedStatus"))}
               aria-label={t("browserMode.panel.pause")}
             >
@@ -397,7 +436,7 @@ export function BrowserModePanel({ viewId, title }: BrowserModePanelProps) {
               type="button"
               variant="outline"
               size="sm"
-              className="rounded-full border-transparent bg-transparent shadow-none hover:border-border/60 hover:bg-muted/60"
+              className="h-10 rounded-2xl border-border/60 bg-background/80 shadow-none hover:bg-muted/60"
               onClick={handleReconnect}
               aria-label={reconnectLabel}
               disabled={isRefreshing}
@@ -408,14 +447,14 @@ export function BrowserModePanel({ viewId, title }: BrowserModePanelProps) {
               type="button"
               variant="destructive"
               size="sm"
-              className="rounded-full shadow-none"
+              className="h-10 rounded-2xl shadow-none"
               onClick={handleEnd}
               aria-label={endLabel}
             >
               {endLabel}
             </Button>
             </div>
-          </CardAction>
+          </div>
         </CardHeader>
         <CardContent
           data-testid="browser-mode-panel-scroll-body"
@@ -444,36 +483,29 @@ export function BrowserModePanel({ viewId, title }: BrowserModePanelProps) {
                   primary={resolvedConnectionLabel}
                   detail={resolvedStatusDetail}
                 />
-                <MetricStack
-                  icon={<Globe className="h-3.5 w-3.5" />}
-                  label={t("browserMode.panel.pageLabel")}
-                  primary={page?.title ?? t("browserMode.panel.pageEmpty")}
-                  secondary={page?.host}
-                  detail={
-                    page?.url ? (
-                      <span className="block truncate">{page.url}</span>
-                    ) : null
-                  }
-                />
-                <MetricStack
-                  icon={<MousePointerClick className="h-3.5 w-3.5" />}
-                  label={t("browserMode.panel.lastActionLabel")}
-                  primary={lastAction?.summary ?? t("browserMode.panel.lastActionEmpty")}
-                />
-                <MetricStack
-                  icon={<Activity className="h-3.5 w-3.5" />}
-                  label={t("browserMode.panel.executionLabel")}
-                  primary={resolvedExecutionLabel}
-                  detail={
-                    <span className="grid gap-1">
-                      {executionLabel ? <span>{executionLabel}</span> : null}
-                      {retryCount > 0 ? (
-                        <span>{t("browserMode.panel.retryCount", { count: retryCount })}</span>
-                      ) : null}
-                      {recoveryReason ? <span>{recoveryReason}</span> : null}
-                    </span>
-                  }
-                />
+                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                  <MetricStack
+                    icon={<Activity className="h-3.5 w-3.5" />}
+                    label={t("browserMode.panel.executionLabel")}
+                    primary={resolvedExecutionLabel}
+                    detail={
+                      <span className="grid gap-1">
+                        {executionLabel ? <span>{executionLabel}</span> : null}
+                        {retryCount > 0 ? (
+                          <span>{t("browserMode.panel.retryCount", { count: retryCount })}</span>
+                        ) : null}
+                        {recoveryReason ? <span>{recoveryReason}</span> : null}
+                      </span>
+                    }
+                  />
+                  <MetricStack
+                    icon={<MousePointerClick className="h-3.5 w-3.5" />}
+                    label={t("browserMode.panel.lastActionLabel")}
+                    primary={
+                      lastAction?.summary ?? t("browserMode.panel.lastActionEmpty")
+                    }
+                  />
+                </div>
               </div>
             </InspectorSection>
 
@@ -496,29 +528,6 @@ export function BrowserModePanel({ viewId, title }: BrowserModePanelProps) {
                       ) : null}
                     </TimelineEntry>
                   ))}
-                </div>
-              </InspectorSection>
-            ) : null}
-
-            {page?.url ? (
-              <InspectorSection label={t("browserMode.panel.pageLabel")} className="gap-3">
-                <div className="flex items-start gap-3 rounded-[1.15rem] border border-border/50 bg-muted/[0.12] p-3.5">
-                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border/60 bg-background/80 text-foreground/70">
-                    <ExternalLink className="h-4 w-4" />
-                  </span>
-                  <div className="min-w-0 grid gap-1.5">
-                    <span className="text-sm font-medium leading-6 text-foreground">
-                      {page?.title ?? t("browserMode.panel.pageEmpty")}
-                    </span>
-                    {page?.host ? (
-                      <span className="text-xs font-medium text-muted-foreground">
-                        {page.host}
-                      </span>
-                    ) : null}
-                    <span className="truncate text-xs leading-5 text-muted-foreground">
-                      {page.url}
-                    </span>
-                  </div>
                 </div>
               </InspectorSection>
             ) : null}
