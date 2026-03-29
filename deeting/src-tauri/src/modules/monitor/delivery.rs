@@ -767,6 +767,7 @@ fn resolve_anchor_message_id(persisted_state: Option<&MonitorDeliveryState>) -> 
         .filter(|value| !value.is_empty())
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn next_anchor_message_id(
     existing_anchor: Option<String>,
     latest_message_id: Option<String>,

@@ -2,6 +2,7 @@ use serde_json::Value;
 
 use super::types::SttRequest;
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn build_stt_request_data(request: &SttRequest) -> Value {
     let mut data = serde_json::Map::new();
     data.insert("model".to_string(), Value::String(request.model.clone()));

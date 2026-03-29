@@ -466,17 +466,8 @@ fn spawn_background_tasks(handle: AppHandle, sync_state: AppState) {
             .await;
         });
 
-        let app_state_for_knowledge_index = sync_state.clone();
-        tauri::async_runtime::spawn(async move {
-            if let Err(err) =
-                crate::modules::knowledge::asset_indexing::rebuild_local_knowledge_vector_index(
-                    &app_state_for_knowledge_index,
-                )
-                .await
-            {
-                warn!("local knowledge vector index bootstrap failed: {}", err);
-            }
-        });
+        // Temporarily disable automatic knowledge vector index rebuild on app startup.
+        // Keep the manual rebuild command available for explicit user-triggered maintenance.
     });
 }
 

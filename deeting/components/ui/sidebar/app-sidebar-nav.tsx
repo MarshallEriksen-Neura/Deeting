@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils"
 import { useSidebar } from "./sidebar-context"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
+  isNavItemActive,
   type NavGroup,
   type NavItem,
 } from "@/components/layout/sidebar/navigation-config"
@@ -235,7 +236,7 @@ interface SidebarItemProps {
 
 function SidebarItem({ item, isCollapsed = false, translate, isMobile = false }: SidebarItemProps) {
   const pathname = usePathname()
-  const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
+  const isActive = isNavItemActive(item, pathname)
   const Icon = navIconMap[item.icon] ?? defaultNavIcon
   const label = translate(item.label)
 

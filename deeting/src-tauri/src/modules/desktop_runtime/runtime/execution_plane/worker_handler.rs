@@ -227,6 +227,7 @@ where
     Ok(Some(execution))
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn latest_user_message(messages: &[LocalChatInputMessage]) -> Option<String> {
     messages
         .iter()

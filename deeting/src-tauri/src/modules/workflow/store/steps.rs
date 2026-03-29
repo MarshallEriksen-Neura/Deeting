@@ -95,6 +95,7 @@ pub(crate) async fn create_workflow_step_run(
     })
 }
 
+#[allow(dead_code)]
 pub(crate) async fn get_workflow_step_run(
     store: &McpStore,
     id: &str,

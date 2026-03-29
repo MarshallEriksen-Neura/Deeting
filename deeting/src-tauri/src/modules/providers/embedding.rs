@@ -9,7 +9,9 @@ use uuid::Uuid;
 
 #[derive(Clone)]
 struct PlatformEmbeddingProxyConfig {
+    #[allow(dead_code)]
     mcp_store: Arc<crate::modules::mcp::store::McpStore>,
+    #[allow(dead_code)]
     cloud_base_url: Arc<RwLock<String>>,
 }
 
@@ -27,6 +29,7 @@ struct EmbeddingData {
 pub struct EmbeddingService {
     store: Arc<ProviderStore>,
     client: reqwest::Client,
+    #[allow(dead_code)]
     platform_proxy: Option<PlatformEmbeddingProxyConfig>,
 }
 
@@ -130,6 +133,7 @@ impl EmbeddingService {
             .ok_or_else(|| ProviderError::Network("Empty embedding data in response".to_string()))
     }
 
+    #[allow(dead_code)]
     async fn embed_text_via_platform_proxy(
         &self,
         embedding_model: &ProviderModel,
@@ -195,6 +199,7 @@ fn uses_platform_proxy(credential_source: Option<&str>) -> bool {
         .unwrap_or(false)
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn build_platform_embedding_proxy_url(base_url: &str) -> Result<String, ProviderError> {
     let normalized = base_url.trim().trim_end_matches('/');
     if normalized.is_empty() {
@@ -205,6 +210,7 @@ fn build_platform_embedding_proxy_url(base_url: &str) -> Result<String, Provider
     Ok(format!("{}/api/v1/internal/embeddings", normalized))
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn build_platform_embedding_proxy_body(
     embedding_model: &ProviderModel,
     text: &str,
@@ -216,6 +222,7 @@ fn build_platform_embedding_proxy_body(
     })
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn extract_proxy_error_message(raw_text: &str) -> String {
     serde_json::from_str::<serde_json::Value>(raw_text)
         .ok()

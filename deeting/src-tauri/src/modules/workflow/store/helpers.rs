@@ -76,6 +76,7 @@ pub(super) fn parse_step_type(row: &SqliteRow, column: &str) -> Result<WorkflowS
     WorkflowStepType::from_str(&value).map_err(McpError::Storage)
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn parse_artifact_kind(
     row: &SqliteRow,
     column: &str,

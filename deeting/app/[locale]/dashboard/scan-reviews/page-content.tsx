@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useLocale, useTranslations } from "next-intl"
 import { AlertTriangle, Database, Files, FileSearch, FolderSearch, Loader2, RefreshCcw } from "lucide-react"
 import {
@@ -99,7 +99,11 @@ function formatRiskTuple(parts: Array<string | null | undefined>) {
 export function PageContent() {
   const t = useTranslations("dashboard.scanReviewsPage")
   const locale = useLocale()
-  const supported = isTauriRuntime()
+  const [supported, setSupported] = useState(false)
+
+  useEffect(() => {
+    setSupported(isTauriRuntime())
+  }, [])
 
   // ── Scan input ───────────────────────────────────────────
   const [targetPath, setTargetPath] = useState("")

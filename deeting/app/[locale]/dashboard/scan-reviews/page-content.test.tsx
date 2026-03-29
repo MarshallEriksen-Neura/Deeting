@@ -1,5 +1,7 @@
 import React from "react"
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { hydrateRoot } from "react-dom/client"
+import { renderToString } from "react-dom/server.node"
 
 import { PageContent } from "./page-content"
 
@@ -13,9 +15,11 @@ const mockScanFileReview = jest.fn()
 const mockScanDirectoryReview = jest.fn()
 const mockRunScanReviewAction = jest.fn()
 const mockRunScanReviewActions = jest.fn()
+const runtimeState = { isTauri: true }
+const mockIsTauriRuntime = jest.fn(() => runtimeState.isTauri)
 
 jest.mock("@/lib/api/desktop-config", () => ({
-  isTauriRuntime: () => true,
+  isTauriRuntime: () => mockIsTauriRuntime(),
 }))
 
 jest.mock("@/lib/api/local-scan", () => ({
@@ -135,6 +139,39 @@ async function triggerScanWithResults(path = "/tmp/skills/skill.find-skills/SKIL
 describe("Dashboard scan reviews page", () => {
   beforeEach(() => {
     jest.clearAllMocks()
+    runtimeState.isTauri = true
+  })
+
+  it("keeps the first client render hydration-safe before enabling desktop-only controls", async () => {
+    const container = document.createElement("div")
+    document.body.appendChild(container)
+    const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => undefined)
+    let root: ReturnType<typeof hydrateRoot> | null = null
+
+    try {
+      runtimeState.isTauri = false
+      container.innerHTML = renderToString(<PageContent />)
+
+      expect(container.querySelector("input")).toBeDisabled()
+      expect(container.textContent).toContain("empty.desktopOnly")
+
+      runtimeState.isTauri = true
+
+      await act(async () => {
+        root = hydrateRoot(container, <PageContent />)
+      })
+
+      await waitFor(() => {
+        expect(container.querySelector("input")).not.toBeDisabled()
+      })
+
+      expect(container.textContent).not.toContain("empty.desktopOnly")
+      expect(consoleErrorSpy).not.toHaveBeenCalled()
+    } finally {
+      root?.unmount()
+      consoleErrorSpy.mockRestore()
+      container.remove()
+    }
   })
 
   it("shows empty state with scan input on initial render", () => {

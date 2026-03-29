@@ -1,5 +1,7 @@
 import { type IconName } from "./icon-map"
 
+export type NavMatchMode = "exact" | "prefix"
+
 /**
  * Navigation Item Interface
  */
@@ -10,6 +12,8 @@ export interface NavItem {
   label: string
   /** Navigation path */
   href: string
+  /** Route matching mode for active-state detection */
+  matchMode?: NavMatchMode
   /** Icon name mapped to actual component on client */
   icon: IconName
   /** Badge count (optional) */
@@ -45,6 +49,7 @@ export const userNavigation: NavGroup[] = [
         id: "dashboard",
         label: "nav.dashboard",
         href: "/dashboard",
+        matchMode: "exact",
         icon: "layoutDashboard",
       },
       {
@@ -344,4 +349,14 @@ export function getUserDashboardNavigation(options?: {
       items: group.items.filter((item) => !item.desktopHidden),
     }))
     .filter((group) => group.items.length > 0)
+}
+
+export function isNavItemActive(item: NavItem, pathname: string): boolean {
+  const hrefPath = item.href.split("?")[0]
+
+  if ((item.matchMode ?? "prefix") === "exact") {
+    return pathname === hrefPath
+  }
+
+  return pathname === hrefPath || pathname.startsWith(`${hrefPath}/`)
 }

@@ -9,6 +9,7 @@ pub(crate) struct CustomTaskAgentTtsConfig {
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct CustomTaskAgentSttConfig {
     pub(crate) language: Option<String>,
     pub(crate) response_format: Option<String>,
@@ -47,6 +48,7 @@ pub(crate) fn resolve_custom_task_agent_tts_config(
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn resolve_custom_task_agent_stt_config(
     model_config: Option<&Value>,
 ) -> CustomTaskAgentSttConfig {

@@ -13,6 +13,7 @@ import { GlassButton } from "@/components/ui/glass-button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import {
+  isNavItemActive,
   type NavGroup,
   type NavItem,
   userNavigation,
@@ -131,8 +132,7 @@ interface SidebarItemProps {
 function SidebarItem({ item, isCollapsed = false }: SidebarItemProps) {
   const pathname = usePathname()
   const { t } = useSidebar()
-  const hrefPath = item.href.split("?")[0]
-  const isActive = pathname === hrefPath || pathname.startsWith(`${hrefPath}/`)
+  const isActive = isNavItemActive(item, pathname)
 
   const Icon = navIconMap[item.icon] ?? defaultNavIcon
   const label = t(item.label)
@@ -336,8 +336,7 @@ function MobileSecondaryNav({ navigation }: MobileSecondaryNavProps) {
       <div className="overflow-x-auto scrollbar-hide">
         <div className="flex items-center gap-1 px-4 py-2">
           {allItems.map((item) => {
-            const hrefPath = item.href.split("?")[0]
-            const isActive = pathname === hrefPath || pathname.startsWith(`${hrefPath}/`)
+            const isActive = isNavItemActive(item, pathname)
             const Icon = navIconMap[item.icon as keyof typeof navIconMap] ?? defaultNavIcon
             const label = t(item.label)
 
