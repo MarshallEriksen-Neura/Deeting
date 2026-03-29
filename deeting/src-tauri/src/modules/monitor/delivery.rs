@@ -855,6 +855,9 @@ mod tests {
     #[test]
     fn payload_task_id_rejects_blank_values() {
         assert_eq!(payload_task_id(&json!({"task_id": ""})), None);
-        assert_eq!(payload_task_id(&json!({"task_id": "task-1"})), Some("task-1"));
+        assert_eq!(
+            payload_task_id(&json!({"task_id": "task-1"})),
+            Some("task-1")
+        );
     }
 }

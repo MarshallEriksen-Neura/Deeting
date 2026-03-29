@@ -642,7 +642,10 @@ fn inject_tools(body: &mut Value, tools: Option<&Value>, engine: &str) {
         return;
     };
 
-    let raw_tools = extract_tool_definitions(tools_value);
+    let raw_tools = extract_tool_definitions(tools_value)
+        .into_iter()
+        .map(sanitize_tool_definition_for_provider_compat)
+        .collect::<Vec<_>>();
     if raw_tools.is_empty() {
         return;
     }
@@ -724,6 +727,72 @@ fn inject_tools(body: &mut Value, tools: Option<&Value>, engine: &str) {
                 .entry("tool_choice".to_string())
                 .or_insert_with(|| Value::String("auto".to_string()));
         }
+    }
+}
+
+fn sanitize_tool_definition_for_provider_compat(mut tool: Value) -> Value {
+    if let Some(schema) = tool.get_mut("input_schema") {
+        normalize_schema_array_items_in_place(schema);
+    }
+    if let Some(schema) = tool.get_mut("parameters") {
+        normalize_schema_array_items_in_place(schema);
+    }
+    if let Some(function) = tool.get_mut("function").and_then(Value::as_object_mut) {
+        if let Some(schema) = function.get_mut("input_schema") {
+            normalize_schema_array_items_in_place(schema);
+        }
+        if let Some(schema) = function.get_mut("parameters") {
+            normalize_schema_array_items_in_place(schema);
+        }
+    }
+    tool
+}
+
+fn normalize_schema_array_items_in_place(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            if map.get("type").and_then(Value::as_str) == Some("array")
+                && !map.contains_key("items")
+            {
+                map.insert("items".to_string(), json!({}));
+            }
+
+            for key in [
+                "items",
+                "additionalProperties",
+                "contains",
+                "if",
+                "then",
+                "else",
+                "not",
+            ] {
+                if let Some(child) = map.get_mut(key) {
+                    normalize_schema_array_items_in_place(child);
+                }
+            }
+
+            for key in ["oneOf", "anyOf", "allOf", "prefixItems"] {
+                if let Some(Value::Array(items)) = map.get_mut(key) {
+                    for item in items {
+                        normalize_schema_array_items_in_place(item);
+                    }
+                }
+            }
+
+            for key in ["properties", "patternProperties", "definitions", "$defs"] {
+                if let Some(Value::Object(children)) = map.get_mut(key) {
+                    for child in children.values_mut() {
+                        normalize_schema_array_items_in_place(child);
+                    }
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                normalize_schema_array_items_in_place(item);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -2509,6 +2578,56 @@ mod tests {
             json!("search_sdk")
         );
         assert_eq!(prepared.body["tool_choice"], json!("auto"));
+    }
+
+    #[test]
+    fn prepare_provider_request_sanitizes_wrapped_tool_array_schemas() {
+        let preset = mock_preset();
+        let instance = mock_instance(json!({ "protocol": "openai", "auto_append_v1": true }));
+        let model = mock_model(&["chat"]);
+
+        let prepared = prepare_provider_request(
+            Some(&preset),
+            &instance,
+            &model,
+            Some("sk-test"),
+            "chat",
+            json!({
+                "model": "gpt-4o-mini",
+                "messages": [{ "role": "user", "content": "hi" }],
+                "stream": false,
+            }),
+            Some(&json!({
+                "tools": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "cap_skill_last30days_evaluate_search_quality_79e05e80",
+                            "description": "Generated script binding",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {
+                                    "input": {
+                                        "oneOf": [
+                                            { "type": "array" },
+                                            { "type": "object" }
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            })),
+            None,
+        )
+        .expect("prepare request with sanitized wrapped tool");
+
+        assert_eq!(
+            prepared.body["tools"][0]["function"]["parameters"]["properties"]["input"]["oneOf"][0]
+                ["items"],
+            json!({})
+        );
     }
 
     #[test]

@@ -931,7 +931,10 @@ fn build_generated_script_input_schema() -> JsonValue {
                 "description": "Optional JSON payload written to stdin for the script.",
                 "oneOf": [
                     { "type": "object" },
-                    { "type": "array" },
+                    {
+                        "type": "array",
+                        "items": {}
+                    },
                     { "type": "string" },
                     { "type": "number" },
                     { "type": "boolean" }
@@ -3666,6 +3669,17 @@ mod tests {
                 "alias": "legacy-manager"
             })
         );
+    }
+
+    #[test]
+    fn build_generated_script_input_schema_includes_items_for_array_input_payloads() {
+        let schema = build_generated_script_input_schema();
+        let array_branch = schema
+            .pointer("/properties/input/oneOf/1")
+            .expect("array branch in oneOf");
+
+        assert_eq!(array_branch.get("type"), Some(&json!("array")));
+        assert_eq!(array_branch.get("items"), Some(&json!({})));
     }
 
     #[tokio::test]
