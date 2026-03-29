@@ -21,7 +21,7 @@ use crate::modules::custom_task_agents::types::CustomTaskAgentProfile;
 use crate::modules::monitor::agent_runtime::validate_monitor_task_agent_profile;
 use crate::modules::monitor::store::MonitorStore;
 use crate::modules::monitor::types::{
-    monitor_delivery_policy_from_notify_config, LocalExecutionResult, LocalMonitorActionResponse,
+    monitor_delivery_policy_from_notify_config, LocalMonitorActionResponse,
     LocalMonitorCreateResponse, LocalMonitorExecutionLogListResponse, LocalMonitorListQuery,
     LocalMonitorLogsQuery, LocalMonitorStatsResponse, LocalMonitorTask,
     LocalMonitorTaskCreateRequest, LocalMonitorTaskIdRequest, LocalMonitorTaskListResponse,
@@ -37,8 +37,9 @@ use crate::modules::providers::store::ProviderStore;
 use crate::modules::providers::store::LOCAL_DESKTOP_USER_ID;
 #[cfg(test)]
 use crate::modules::providers::types::{ProviderInstance, ProviderModel};
+use delivery::is_supported_notification_channel;
 #[cfg(test)]
-use delivery::{is_supported_notification_channel, render_channel_notification_text};
+use delivery::render_channel_notification_text;
 use run_events::{build_delivery_failed_event, should_notify_run};
 #[cfg(test)]
 use run_events::{build_run_terminal_event, project_tool_trace_run_events};
@@ -763,7 +764,8 @@ fn global_app_handle_required() -> Result<tauri::AppHandle, String> {
 mod tests {
     use super::*;
     use crate::modules::monitor::types::{
-        monitor_delivery_policy_from_notify_config, MonitorDeliveryDetailLevel, MonitorRunEventKind,
+        monitor_delivery_policy_from_notify_config, LocalExecutionResult,
+        MonitorDeliveryDetailLevel, MonitorRunEventKind,
     };
     use std::sync::Arc;
 
