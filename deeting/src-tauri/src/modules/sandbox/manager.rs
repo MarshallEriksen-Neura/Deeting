@@ -13,9 +13,9 @@ use tokio::task::JoinHandle;
 use crate::modules::sandbox::error::SandboxError;
 use crate::modules::sandbox::provider::SandboxProvider;
 use crate::modules::sandbox::types::{
-    SandboxBoxLiteStatus, SandboxInstallGuide, SandboxLeaseInfo, SandboxPythonStatus,
-    SandboxReadinessReport, SandboxReadinessStatus, SandboxRunResult, SandboxRuntimeMode,
-    SandboxWslStatus,
+    SandboxBoxLiteStatus, SandboxExecutionProbe, SandboxExecutionProbeStatus,
+    SandboxInstallGuide, SandboxLeaseInfo, SandboxPythonStatus, SandboxReadinessReport,
+    SandboxReadinessStatus, SandboxRunResult, SandboxRuntimeMode, SandboxWslStatus,
 };
 
 #[cfg(target_os = "windows")]
@@ -33,6 +33,9 @@ const MIN_EXEC_TIMEOUT_SECS: u64 = 5;
 const SESSION_BUSY_RETRY_ATTEMPTS: usize = 2;
 const REAPER_INTERVAL_SECS: u64 = 60;
 const DEFAULT_BOXRUN_PORT: u16 = 9090;
+const EXECUTION_PROBE_SESSION_ID: &str = "__deeting_status_probe__";
+const EXECUTION_PROBE_TIMEOUT_SECS: u64 = 5;
+const EXECUTION_PROBE_SENTINEL: &str = "__deeting_probe_ok__";
 
 #[cfg(target_os = "windows")]
 const DEFAULT_BRIDGE_DISCOVERY_TIMEOUT_MS: u64 = 300;
@@ -172,6 +175,7 @@ impl SandboxRuntimeManager {
         let provider_name = self.provider_name().await;
         let runtime_mode = runtime_mode_from_provider_name(&provider_name);
         let boxlite = self.boxlite_status().await;
+        let execution_probe = SandboxExecutionProbe::default();
 
         #[cfg(target_os = "windows")]
         {
@@ -182,8 +186,17 @@ impl SandboxRuntimeManager {
                 None
             };
             let boxlite_binary_found = boxlite.binary_found;
-            let (status, blocking_reason, next_actions) =
+            let (mut status, mut blocking_reason, mut next_actions) =
                 derive_windows_readiness(runtime_mode, &wsl, python.as_ref(), &boxlite);
+            if status == SandboxReadinessStatus::Ready {
+                execution_probe = self.programmatic_execution_probe().await;
+                (status, blocking_reason, next_actions) = refine_ready_status_with_execution_probe(
+                    status,
+                    blocking_reason,
+                    next_actions,
+                    execution_probe.clone(),
+                );
+            }
             return SandboxReadinessReport {
                 platform: current_platform().to_string(),
                 platform_supported: true,
@@ -193,6 +206,7 @@ impl SandboxRuntimeManager {
                 wsl: Some(wsl),
                 python,
                 boxlite,
+                execution_probe,
                 blocking_reason,
                 can_auto_prepare: status != SandboxReadinessStatus::NeedsWsl
                     && status != SandboxReadinessStatus::NeedsPython
@@ -212,6 +226,7 @@ impl SandboxRuntimeManager {
                 wsl: None,
                 python: None,
                 boxlite,
+                execution_probe,
                 blocking_reason: Some(
                     "Desktop sandbox install flow is currently only supported on Windows + WSL."
                         .to_string(),
@@ -466,6 +481,16 @@ impl SandboxRuntimeManager {
             ));
         }
 
+        self.execute_session_code(&normalized_session, code, timeout_secs)
+            .await
+    }
+
+    async fn execute_session_code(
+        &self,
+        normalized_session: &str,
+        code: &str,
+        timeout_secs: u64,
+    ) -> Result<SandboxRunResult, SandboxError> {
         for attempt in 0..SESSION_BUSY_RETRY_ATTEMPTS {
             let lease = self.get_or_create_sandbox(&normalized_session).await?;
             let backend = self.current_backend().await;
@@ -515,6 +540,9 @@ impl SandboxRuntimeManager {
                     self.remove_lease(&normalized_session, &lease.sandbox_id)
                         .await;
                     let _ = backend.stop_box(&lease.sandbox_id).await;
+                    if lease.sandbox_name != lease.sandbox_id {
+                        let _ = backend.stop_box(&lease.sandbox_name).await;
+                    }
                     let _ = self.prepare().await;
                     continue;
                 }
@@ -526,6 +554,54 @@ impl SandboxRuntimeManager {
             "session {} is busy",
             normalized_session
         )))
+    }
+
+    async fn programmatic_execution_probe(&self) -> SandboxExecutionProbe {
+        let checked_at_unix_ms = Some(now_unix_ms());
+        match self
+            .execute_session_code(
+                EXECUTION_PROBE_SESSION_ID,
+                &format!("print({EXECUTION_PROBE_SENTINEL:?})"),
+                EXECUTION_PROBE_TIMEOUT_SECS,
+            )
+            .await
+        {
+            Ok(run) if run.exit_code == 0
+                && run.stdout.iter().any(|line| line.contains(EXECUTION_PROBE_SENTINEL)) =>
+            {
+                SandboxExecutionProbe {
+                    status: SandboxExecutionProbeStatus::Passed,
+                    detail: Some(
+                        "Sandbox execution probe passed. Programmatic execution is responding."
+                            .to_string(),
+                    ),
+                    checked_at_unix_ms,
+                }
+            }
+            Ok(run) => SandboxExecutionProbe {
+                status: SandboxExecutionProbeStatus::Failed,
+                detail: Some(format!(
+                    "Sandbox execution probe returned exit code {} without the expected success marker.",
+                    run.exit_code
+                )),
+                checked_at_unix_ms,
+            },
+            Err(SandboxError::Busy(detail)) => SandboxExecutionProbe {
+                status: SandboxExecutionProbeStatus::Skipped,
+                detail: Some(format!(
+                    "Sandbox execution probe skipped because the runtime is busy: {detail}"
+                )),
+                checked_at_unix_ms,
+            },
+            Err(err) => SandboxExecutionProbe {
+                status: SandboxExecutionProbeStatus::Failed,
+                detail: Some(format!(
+                    "Sandbox bridge is reachable, but a lightweight execution probe failed: {}",
+                    err.user_message()
+                )),
+                checked_at_unix_ms,
+            },
+        }
     }
 
     pub async fn list_active_sandboxes(&self) -> Vec<SandboxLeaseInfo> {
@@ -918,6 +994,38 @@ fn derive_windows_readiness(
     )
 }
 
+fn refine_ready_status_with_execution_probe(
+    status: SandboxReadinessStatus,
+    blocking_reason: Option<String>,
+    next_actions: Vec<String>,
+    execution_probe: SandboxExecutionProbe,
+) -> (SandboxReadinessStatus, Option<String>, Vec<String>) {
+    if status != SandboxReadinessStatus::Ready {
+        return (status, blocking_reason, next_actions);
+    }
+
+    match execution_probe.status {
+        SandboxExecutionProbeStatus::Passed | SandboxExecutionProbeStatus::Skipped => {
+            (status, blocking_reason, next_actions)
+        }
+        SandboxExecutionProbeStatus::Failed => (
+            SandboxReadinessStatus::RepairNeeded,
+            execution_probe.detail.or(blocking_reason).or_else(|| {
+                Some(
+                    "Sandbox bridge is reachable, but a lightweight execution probe failed."
+                        .to_string(),
+                )
+            }),
+            vec![
+                "Try Prepare to recreate a healthy runnable sandbox session.".to_string(),
+                "If it still fails, use Repair to restart the sandbox service.".to_string(),
+                "If the issue keeps repeating, use Rebuild Sandbox to clear stale runtime state."
+                    .to_string(),
+            ],
+        ),
+    }
+}
+
 fn build_install_guide(report: &SandboxReadinessReport) -> SandboxInstallGuide {
     match report.status {
         SandboxReadinessStatus::Ready => SandboxInstallGuide {
@@ -1235,6 +1343,7 @@ mod session_name_tests {
                 reachable: false,
                 managed_by_deeting: true,
             },
+            execution_probe: SandboxExecutionProbe::default(),
             blocking_reason: Some("BoxLite is installed but not reachable yet.".to_string()),
             next_actions: vec![],
             can_auto_prepare: true,
@@ -1282,6 +1391,163 @@ fn now_unix_ms() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::{HashMap, HashSet};
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    use async_trait::async_trait;
+
+    use crate::modules::sandbox::provider::SandboxProvider;
+    use crate::modules::sandbox::types::{SandboxExecutionOutput, SandboxIdentity};
+
+    #[derive(Default)]
+    struct MockProviderState {
+        broken_name_removed: bool,
+        stop_calls: Vec<String>,
+        run_calls: Vec<String>,
+    }
+
+    #[derive(Clone)]
+    struct MockZombieByNameProvider {
+        broken_box_name: String,
+        state: Arc<Mutex<MockProviderState>>,
+    }
+
+    impl MockZombieByNameProvider {
+        fn new(broken_box_name: String) -> Self {
+            Self {
+                broken_box_name,
+                state: Arc::new(Mutex::new(MockProviderState::default())),
+            }
+        }
+    }
+
+    #[derive(Clone)]
+    enum MockProbeOutcome {
+        Passed,
+        FailedNotFound,
+    }
+
+    #[derive(Clone)]
+    struct MockProbeProvider {
+        outcome: MockProbeOutcome,
+    }
+
+    #[async_trait]
+    impl SandboxProvider for MockProbeProvider {
+        fn provider_name(&self) -> &str {
+            "mock-sandbox"
+        }
+
+        async fn get_or_create_box(
+            &self,
+            box_name: &str,
+        ) -> Result<SandboxIdentity, SandboxError> {
+            Ok(SandboxIdentity {
+                sandbox_id: format!("{box_name}-id"),
+                sandbox_name: box_name.to_string(),
+            })
+        }
+
+        async fn stop_box(&self, _box_id_or_name: &str) -> Result<(), SandboxError> {
+            Ok(())
+        }
+
+        async fn run_python(
+            &self,
+            _box_id_or_name: &str,
+            _code: &str,
+            _timeout_seconds: u64,
+        ) -> Result<SandboxExecutionOutput, SandboxError> {
+            match self.outcome {
+                MockProbeOutcome::Passed => Ok(SandboxExecutionOutput {
+                    stdout: vec![EXECUTION_PROBE_SENTINEL.to_string()],
+                    stderr: vec![],
+                    exit_code: 0,
+                    error_message: None,
+                }),
+                MockProbeOutcome::FailedNotFound => {
+                    Err(SandboxError::NotFound("sandbox probe not found".to_string()))
+                }
+            }
+        }
+    }
+
+    #[async_trait]
+    impl SandboxProvider for MockZombieByNameProvider {
+        fn provider_name(&self) -> &str {
+            "mock-sandbox"
+        }
+
+        async fn get_or_create_box(&self, box_name: &str) -> Result<SandboxIdentity, SandboxError> {
+            let state = self.state.lock().await;
+            let sandbox_id = if state.broken_name_removed {
+                "fresh-box"
+            } else {
+                "stale-box"
+            };
+            Ok(SandboxIdentity {
+                sandbox_id: sandbox_id.to_string(),
+                sandbox_name: box_name.to_string(),
+            })
+        }
+
+        async fn stop_box(&self, box_id_or_name: &str) -> Result<(), SandboxError> {
+            let mut state = self.state.lock().await;
+            state.stop_calls.push(box_id_or_name.to_string());
+            if box_id_or_name == self.broken_box_name {
+                state.broken_name_removed = true;
+            }
+            Ok(())
+        }
+
+        async fn run_python(
+            &self,
+            box_id_or_name: &str,
+            _code: &str,
+            _timeout_seconds: u64,
+        ) -> Result<SandboxExecutionOutput, SandboxError> {
+            let mut state = self.state.lock().await;
+            state.run_calls.push(box_id_or_name.to_string());
+            match box_id_or_name {
+                "stale-box" => Err(SandboxError::NotFound(
+                    "sandbox stale-box not found".to_string(),
+                )),
+                "fresh-box" => Ok(SandboxExecutionOutput {
+                    stdout: vec!["ok".to_string()],
+                    stderr: vec![],
+                    exit_code: 0,
+                    error_message: None,
+                }),
+                other => Err(SandboxError::Internal(format!(
+                    "unexpected sandbox id {other}"
+                ))),
+            }
+        }
+    }
+
+    fn test_manager(provider: Arc<dyn SandboxProvider>) -> SandboxRuntimeManager {
+        SandboxRuntimeManager {
+            backend: Arc::new(RwLock::new(provider)),
+            provisioner: None,
+            options: SandboxManagerOptions {
+                home_dir: PathBuf::from("/tmp/deeting-sandbox-tests"),
+                default_timeout: Duration::from_secs(DEFAULT_TIMEOUT_SECS),
+                max_sandboxes: DEFAULT_MAX_SANDBOXES,
+                image: "python:3.11-slim".to_string(),
+                cpus: Some(1),
+                memory_mib: Some(512),
+                working_dir: Some("/workspace".to_string()),
+                python_bin: "python3".to_string(),
+                bridge_url: None,
+                bridge_api_key: None,
+            },
+            session_leases: Arc::new(RwLock::new(HashMap::new())),
+            active_ids: Arc::new(RwLock::new(HashSet::new())),
+            run_locks: Arc::new(RwLock::new(HashMap::new())),
+            cleanup_task: Arc::new(Mutex::new(None)),
+        }
+    }
 
     #[test]
     fn session_name_is_stable_and_safe() {
@@ -1331,5 +1597,79 @@ mod tests {
         assert!(!is_missing_sandbox_error(&SandboxError::Busy(
             "session is busy".to_string()
         )));
+    }
+
+    #[tokio::test]
+    async fn missing_sandbox_retry_recreates_box_when_name_alias_is_stale() {
+        let session_id = "chat-session";
+        let stale_box_name = session_to_box_name(session_id);
+        let provider = MockZombieByNameProvider::new(stale_box_name.clone());
+        let state = provider.state.clone();
+        let manager = test_manager(Arc::new(provider));
+
+        let result = manager
+            .run_code(
+                session_id,
+                "print('hello')",
+                Some("python"),
+                Some(5),
+                SandboxLaunchPolicy::StrictSandbox,
+            )
+            .await;
+
+        let run = result.expect("missing sandbox recovery should recreate a fresh box");
+        assert_eq!(run.stdout, vec!["ok".to_string()]);
+
+        let state = state.lock().await;
+        assert_eq!(
+            state.run_calls,
+            vec!["stale-box".to_string(), "fresh-box".to_string()]
+        );
+        assert_eq!(
+            state.stop_calls,
+            vec!["stale-box".to_string(), stale_box_name]
+        );
+    }
+
+    #[tokio::test]
+    async fn execution_probe_reports_passed_when_tiny_command_runs() {
+        let manager = test_manager(Arc::new(MockProbeProvider {
+            outcome: MockProbeOutcome::Passed,
+        }));
+
+        let probe = manager.programmatic_execution_probe().await;
+        assert_eq!(probe.status, SandboxExecutionProbeStatus::Passed);
+    }
+
+    #[tokio::test]
+    async fn execution_probe_reports_failed_when_runtime_cannot_run() {
+        let manager = test_manager(Arc::new(MockProbeProvider {
+            outcome: MockProbeOutcome::FailedNotFound,
+        }));
+
+        let probe = manager.programmatic_execution_probe().await;
+        assert_eq!(probe.status, SandboxExecutionProbeStatus::Failed);
+        assert!(probe
+            .detail
+            .unwrap_or_default()
+            .contains("lightweight execution probe failed"));
+    }
+
+    #[test]
+    fn failed_execution_probe_downgrades_ready_status() {
+        let (status, reason, actions) = refine_ready_status_with_execution_probe(
+            SandboxReadinessStatus::Ready,
+            None,
+            vec!["Sandbox is ready for programmatic execution.".to_string()],
+            SandboxExecutionProbe {
+                status: SandboxExecutionProbeStatus::Failed,
+                detail: Some("Execution probe failed.".to_string()),
+                checked_at_unix_ms: Some(123),
+            },
+        );
+
+        assert_eq!(status, SandboxReadinessStatus::RepairNeeded);
+        assert_eq!(reason.as_deref(), Some("Execution probe failed."));
+        assert!(actions.iter().any(|step| step.contains("Rebuild")));
     }
 }

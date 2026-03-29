@@ -15,7 +15,8 @@ const LOCAL_ROUTER_BASE_PROMPT_TEMPLATE: &str = concat!(
     "## Phase 2: Capability Discovery (search_sdk)\n",
     "- Mandatory Discovery Gate: If the task may depend on runtime capabilities, external knowledge, files, browser/page interaction, executing code, or system interaction, call `search_sdk` before making any capability claim or refusal.\n",
     "- Action-Oriented Search: Infer the required capability from the task, and search by action + target + surface rather than just matching proper nouns or product names.\n",
-    "- No Premature Refusal: Do not say a tool is unavailable, or ask the user to do the step manually, until `search_sdk` has been used in the current turn and weak results have been refined at least once with adjacent capability terms.\n\n",
+    "- No Premature Refusal: Do not say a tool is unavailable, or ask the user to do the step manually, until `search_sdk` has been used in the current turn and weak results have been refined at least once with adjacent capability terms.\n",
+    "- Retry Missing Capability Discovery: If `search_sdk` still does not surface the needed callable tool, refine the query and call `search_sdk` again to search for that capability instead of stopping.\n\n",
 
     "## Phase 3: Execution & Tool Selection\n",
     "- Optimize for end-to-end completion using the minimum effective steps.\n",
@@ -175,5 +176,17 @@ mod tests {
         assert!(prompt.contains("Mandatory Discovery Gate"));
         assert!(prompt.contains("call `search_sdk` before making any capability claim or refusal"));
         assert!(prompt.contains("Do not say a tool is unavailable"));
+    }
+
+    #[test]
+    fn local_router_prompt_retries_search_sdk_before_stopping_on_missing_tool() {
+        let prompt = render_local_router_base_prompt(
+            "2026-03-27",
+            "Asia/Shanghai",
+            "Simplified Chinese (zh-CN)",
+        );
+
+        assert!(prompt.contains("call `search_sdk` again"));
+        assert!(prompt.contains("instead of stopping"));
     }
 }

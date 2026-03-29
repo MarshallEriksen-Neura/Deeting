@@ -51,6 +51,14 @@ pub enum SandboxReadinessStatus {
     Unsupported,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SandboxExecutionProbeStatus {
+    Passed,
+    Failed,
+    Skipped,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SandboxWslStatus {
     pub installed: bool,
@@ -77,6 +85,23 @@ pub struct SandboxBoxLiteStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SandboxExecutionProbe {
+    pub status: SandboxExecutionProbeStatus,
+    pub detail: Option<String>,
+    pub checked_at_unix_ms: Option<i64>,
+}
+
+impl Default for SandboxExecutionProbe {
+    fn default() -> Self {
+        Self {
+            status: SandboxExecutionProbeStatus::Skipped,
+            detail: None,
+            checked_at_unix_ms: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SandboxReadinessReport {
     pub platform: String,
     pub platform_supported: bool,
@@ -86,6 +111,7 @@ pub struct SandboxReadinessReport {
     pub wsl: Option<SandboxWslStatus>,
     pub python: Option<SandboxPythonStatus>,
     pub boxlite: SandboxBoxLiteStatus,
+    pub execution_probe: SandboxExecutionProbe,
     pub blocking_reason: Option<String>,
     pub next_actions: Vec<String>,
     pub can_auto_prepare: bool,

@@ -25,6 +25,12 @@ export const SandboxReadinessStatusSchema = z.enum([
   "unsupported",
 ])
 
+export const SandboxExecutionProbeStatusSchema = z.enum([
+  "passed",
+  "failed",
+  "skipped",
+])
+
 export const SandboxWslStatusSchema = z.object({
   installed: z.boolean(),
   ready: z.boolean(),
@@ -38,6 +44,12 @@ export const SandboxBoxLiteStatusSchema = z.object({
   endpoint: z.string().nullable().optional(),
   reachable: z.boolean(),
   managed_by_deeting: z.boolean(),
+})
+
+export const SandboxExecutionProbeSchema = z.object({
+  status: SandboxExecutionProbeStatusSchema,
+  detail: z.string().nullable().optional(),
+  checked_at_unix_ms: z.number().nullable().optional(),
 })
 
 export const SandboxPythonStatusSchema = z.object({
@@ -56,6 +68,7 @@ export const SandboxReadinessReportSchema = z.object({
   wsl: SandboxWslStatusSchema.nullish(),
   python: SandboxPythonStatusSchema.nullish(),
   boxlite: SandboxBoxLiteStatusSchema,
+  execution_probe: SandboxExecutionProbeSchema,
   blocking_reason: z.string().nullable().optional(),
   next_actions: z.array(z.string()).default([]),
   can_auto_prepare: z.boolean(),
@@ -71,6 +84,7 @@ export const SandboxInstallGuideSchema = z.object({
 
 export type SandboxRuntimeMode = z.infer<typeof SandboxRuntimeModeSchema>
 export type SandboxReadinessStatus = z.infer<typeof SandboxReadinessStatusSchema>
+export type SandboxExecutionProbeStatus = z.infer<typeof SandboxExecutionProbeStatusSchema>
 export type SandboxReadinessReport = z.infer<typeof SandboxReadinessReportSchema>
 export type SandboxInstallGuide = z.infer<typeof SandboxInstallGuideSchema>
 
@@ -90,6 +104,11 @@ export async function getLocalSandboxStatus(): Promise<SandboxReadinessReport> {
         endpoint: null,
         reachable: false,
         managed_by_deeting: false,
+      },
+      execution_probe: {
+        status: "skipped",
+        detail: "Sandbox execution probe is only available in the desktop app.",
+        checked_at_unix_ms: null,
       },
       blocking_reason: "Sandbox status is only available in the desktop app.",
       next_actions: [],
