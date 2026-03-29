@@ -276,7 +276,9 @@
       "storage": "Storage",
       "storageDesc": "Desktop OSS buckets",
       "agent": "Agent",
-      "agentDesc": "Tool execution settings",
+      "agentDesc": "Local execution and sandbox",
+      "browser": "Browser",
+      "browserDesc": "Browser debug and bridge",
       "relay": "Local Services",
       "relayDesc": "Desktop Scout and other local-only settings"
     },

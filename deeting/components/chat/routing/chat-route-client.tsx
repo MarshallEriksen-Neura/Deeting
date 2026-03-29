@@ -7,6 +7,9 @@ import { fetchConversationSessions } from "@/lib/api/conversations"
 import { isTauriRuntime as detectTauriRuntime } from "@/lib/runtime/tauri"
 import { ChatRouteFallback } from "./chat-route-fallback"
 
+const DESKTOP_SESSION_RESTORE_TIMEOUT_MS = 3000
+const DESKTOP_SESSION_RESTORE_TIMEOUT = Symbol("desktop-session-restore-timeout")
+
 /**
  * ChatRouteClient - 聊天路由客户端组件
  * 
@@ -63,13 +66,28 @@ function ChatRouteClient() {
 
     desktopRestoreKeyRef.current = restoreKey
     let cancelled = false
+    let timeoutId: number | null = null
     setIsResolvingDesktopSession(true)
 
     void (async () => {
       try {
-        const page = await fetchConversationSessions({ size: 1, status: "active" })
-        const latestSessionId = page.items?.[0]?.session_id?.trim()
+        const page = await Promise.race([
+          fetchConversationSessions({ size: 1, status: "active" }),
+          new Promise<typeof DESKTOP_SESSION_RESTORE_TIMEOUT>((resolve) => {
+            timeoutId = window.setTimeout(
+              () => resolve(DESKTOP_SESSION_RESTORE_TIMEOUT),
+              DESKTOP_SESSION_RESTORE_TIMEOUT_MS
+            )
+          }),
+        ])
         if (cancelled) return
+
+        if (page === DESKTOP_SESSION_RESTORE_TIMEOUT) {
+          console.warn("desktop latest chat session restore timed out; falling back to empty chat")
+          return
+        }
+
+        const latestSessionId = page.items?.[0]?.session_id?.trim()
 
         if (latestSessionId) {
           const nextParams = new URLSearchParams(searchParamsKey)
@@ -84,6 +102,9 @@ function ChatRouteClient() {
           console.warn("desktop latest chat session restore failed", error)
         }
       } finally {
+        if (timeoutId !== null) {
+          window.clearTimeout(timeoutId)
+        }
         if (!cancelled) {
           setIsResolvingDesktopSession(false)
         }

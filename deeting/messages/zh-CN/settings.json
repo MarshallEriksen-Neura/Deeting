@@ -276,7 +276,9 @@
       "storage": "存储",
       "storageDesc": "桌面端 OSS 存储桶",
       "agent": "Agent",
-      "agentDesc": "工具执行设置",
+      "agentDesc": "本地执行与沙箱",
+      "browser": "Browser",
+      "browserDesc": "浏览器调试与桥接",
       "relay": "本地服务",
       "relayDesc": "Scout 等桌面端本地配置"
     },

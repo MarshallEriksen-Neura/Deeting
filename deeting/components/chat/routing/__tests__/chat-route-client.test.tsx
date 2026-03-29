@@ -1,7 +1,7 @@
 /** @jest-environment jsdom */
 
 import React from "react"
-import { render, screen, waitFor } from "@testing-library/react"
+import { act, render, screen, waitFor } from "@testing-library/react"
 import { ChatRouteClientMemo } from "@/components/chat/routing/chat-route-client"
 
 const mockReplace = jest.fn()
@@ -32,6 +32,7 @@ jest.mock("@/lib/api/conversations", () => ({
 
 describe("ChatRouteClient", () => {
   beforeEach(() => {
+    jest.useRealTimers()
     process.env.NEXT_PUBLIC_IS_TAURI = "false"
     mockReplace.mockReset()
     mockUseParams.mockReset()
@@ -109,5 +110,36 @@ describe("ChatRouteClient", () => {
     expect(screen.getByTestId("chat-container")).toBeInTheDocument()
     expect(mockFetchConversationSessions).not.toHaveBeenCalled()
     expect(mockReplace).not.toHaveBeenCalled()
+  })
+
+  it("falls through to an empty desktop chat when latest-session restore never resolves", async () => {
+    jest.useFakeTimers()
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    mockUseParams.mockReturnValue({})
+    mockUseSearchParams.mockReturnValue(new URLSearchParams(""))
+    mockFetchConversationSessions.mockReturnValue(new Promise(() => {}))
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {})
+
+    render(<ChatRouteClientMemo />)
+
+    await waitFor(() => {
+      expect(mockFetchConversationSessions).toHaveBeenCalledWith({ size: 1, status: "active" })
+    })
+
+    expect(screen.queryByTestId("chat-container")).not.toBeInTheDocument()
+
+    await act(async () => {
+      jest.advanceTimersByTime(3500)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-container")).toBeInTheDocument()
+    })
+    expect(mockReplace).not.toHaveBeenCalled()
+    expect(warnSpy).toHaveBeenCalledWith(
+      "desktop latest chat session restore timed out; falling back to empty chat"
+    )
+
+    warnSpy.mockRestore()
   })
 })

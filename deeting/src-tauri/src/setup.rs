@@ -448,23 +448,8 @@ fn spawn_background_tasks(handle: AppHandle, sync_state: AppState) {
             });
         }
 
-        // Register and index all local skills (Official & User)
-        // then auto-install runtimes for official skills that need it.
-        let app_state_for_skills = sync_state.clone();
-        let app_handle_for_skills = handle.clone();
-        tauri::async_runtime::spawn(async move {
-            let _ = crate::modules::skills::commands::register_local_skills_inner(
-                app_handle_for_skills.clone(),
-                &app_state_for_skills,
-            )
-            .await;
-
-            crate::modules::skills::registry_impl::auto_install_official_skill_runtimes(
-                &app_handle_for_skills,
-                &app_state_for_skills,
-            )
-            .await;
-        });
+        // Temporarily disable automatic local skill registration/indexing on app startup.
+        // Keep manual skill sync/register commands available for explicit user-triggered maintenance.
 
         // Temporarily disable automatic knowledge vector index rebuild on app startup.
         // Keep the manual rebuild command available for explicit user-triggered maintenance.

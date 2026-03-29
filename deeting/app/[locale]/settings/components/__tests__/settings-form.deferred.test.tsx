@@ -5,6 +5,7 @@ describe("SettingsForm deferred sections", () => {
 
   it("does not eagerly import non-model settings sections on initial module load", () => {
     let agentCardLoads = 0
+    let browserPanelLoads = 0
     let sandboxCardLoads = 0
     let storageCardLoads = 0
     let scoutCardLoads = 0
@@ -89,6 +90,10 @@ describe("SettingsForm deferred sections", () => {
         sandboxCardLoads += 1
         return { DesktopSandboxSettingsCard: () => null }
       })
+      jest.doMock("../desktop-browser-agent-panel-card", () => {
+        browserPanelLoads += 1
+        return { DesktopBrowserAgentPanelCard: () => null }
+      })
       jest.doMock("../desktop-object-storage-settings-card", () => {
         storageCardLoads += 1
         return { DesktopObjectStorageSettingsCard: () => null }
@@ -102,6 +107,7 @@ describe("SettingsForm deferred sections", () => {
     })
 
     expect(agentCardLoads).toBe(0)
+    expect(browserPanelLoads).toBe(0)
     expect(sandboxCardLoads).toBe(0)
     expect(storageCardLoads).toBe(0)
     expect(scoutCardLoads).toBe(0)

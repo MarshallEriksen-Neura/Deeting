@@ -652,8 +652,14 @@ export function SettingsForm({
           {activeSection === "agent" && (
             <div className="flex flex-col gap-5">
               <DeferredAgentSettingsCard isTauriRuntime={isTauriRuntime} />
-              <DeferredDesktopBrowserAgentPanelCard isTauriRuntime={isTauriRuntime} />
               <DeferredDesktopSandboxSettingsCard isTauriRuntime={isTauriRuntime} />
+            </div>
+          )}
+
+          {/* Browser section */}
+          {activeSection === "browser" && (
+            <div className="flex flex-col gap-5">
+              <DeferredDesktopBrowserAgentPanelCard isTauriRuntime={isTauriRuntime} />
             </div>
           )}
 
@@ -679,7 +685,7 @@ export function SettingsForm({
             </div>
           )}
 
-          {activeSection !== "agent" && (
+          {activeSection !== "agent" && activeSection !== "browser" && (
             <SettingsFormActions
               canSave={canSave}
               isSaving={isSaving}

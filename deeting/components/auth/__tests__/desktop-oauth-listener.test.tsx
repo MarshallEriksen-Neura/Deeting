@@ -44,6 +44,8 @@ jest.mock("swr", () => ({
   mutate: jest.fn(),
 }))
 
+const PROCESSED_DEEP_LINK_STORAGE_KEY = "deeting:desktop-oauth:processed-deep-links"
+
 describe("DesktopOAuthListener", () => {
   beforeEach(() => {
     mockToastSuccess.mockReset()
@@ -53,6 +55,7 @@ describe("DesktopOAuthListener", () => {
     mockConfirmDesktopOAuthBindingGrant.mockReset()
     mockGetCurrentDesktopDeepLinks.mockReset()
     mockListenForDesktopDeepLinks.mockReset()
+    window.sessionStorage.clear()
     mockGetCurrentDesktopDeepLinks.mockResolvedValue(null)
     mockListenForDesktopDeepLinks.mockResolvedValue(jest.fn())
   })
@@ -90,6 +93,26 @@ describe("DesktopOAuthListener", () => {
         grant: "grant-2",
       })
     })
+  })
+
+  it("skips replaying a startup deep link that was already processed in this desktop session", async () => {
+    mockGetCurrentDesktopDeepLinks.mockResolvedValueOnce([
+      "deeting://auth/callback?provider=browser&session_id=sess-2&grant=grant-2",
+    ])
+    window.sessionStorage.setItem(
+      PROCESSED_DEEP_LINK_STORAGE_KEY,
+      JSON.stringify(["login:browser:sess-2::grant-2"])
+    )
+
+    render(<DesktopOAuthListener />)
+
+    await waitFor(() => {
+      expect(mockGetCurrentDesktopDeepLinks).toHaveBeenCalled()
+    })
+
+    expect(mockExchangeDesktopBrowserLoginGrant).not.toHaveBeenCalled()
+    expect(mockToastSuccess).not.toHaveBeenCalled()
+    expect(mockToastError).not.toHaveBeenCalled()
   })
 
   it("exchanges provider login grants for supported oauth callbacks", async () => {
@@ -154,5 +177,37 @@ describe("DesktopOAuthListener", () => {
         "Command plugin:deep-link|get_current not allowed by scope"
       )
     })
+  })
+
+  it("suppresses stale callback replays after a terminal inactive-session error", async () => {
+    mockExchangeDesktopOAuthLoginGrant.mockRejectedValueOnce(
+      new Error("OAuth session is not active")
+    )
+    mockGetCurrentDesktopDeepLinks
+      .mockResolvedValueOnce([
+        "deeting://auth/callback?provider=linuxdo&session_id=sess-oauth&state=state-oauth&grant=grant-oauth",
+      ])
+      .mockResolvedValueOnce([
+        "deeting://auth/callback?provider=linuxdo&session_id=sess-oauth&state=state-oauth&grant=grant-oauth",
+      ])
+
+    const firstRender = render(<DesktopOAuthListener />)
+
+    await waitFor(() => {
+      expect(mockToastError).toHaveBeenCalledWith("OAuth session is not active")
+    })
+
+    firstRender.unmount()
+    mockToastError.mockClear()
+    mockExchangeDesktopOAuthLoginGrant.mockClear()
+
+    render(<DesktopOAuthListener />)
+
+    await waitFor(() => {
+      expect(mockGetCurrentDesktopDeepLinks).toHaveBeenCalledTimes(2)
+    })
+
+    expect(mockExchangeDesktopOAuthLoginGrant).not.toHaveBeenCalled()
+    expect(mockToastError).not.toHaveBeenCalled()
   })
 })

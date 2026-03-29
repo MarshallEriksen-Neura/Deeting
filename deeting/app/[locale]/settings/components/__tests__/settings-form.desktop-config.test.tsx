@@ -29,13 +29,12 @@ jest.mock("@/lib/swr/use-embedding-settings", () => ({
 }))
 
 jest.mock("@/lib/api/desktop-config", () => ({
-  getDesktopScoutBaseUrl: (...args: unknown[]) => mockGetDesktopScoutBaseUrl(...args),
+  getDesktopScoutBaseUrl: () => mockGetDesktopScoutBaseUrl(),
   setDesktopScoutBaseUrl: jest.fn(),
 }))
 
 jest.mock("@/lib/api/desktop-object-storage", () => ({
-  fetchDesktopObjectStorageConfig: (...args: unknown[]) =>
-    mockFetchDesktopObjectStorageConfig(...args),
+  fetchDesktopObjectStorageConfig: () => mockFetchDesktopObjectStorageConfig(),
   updateDesktopObjectStorageConfig: jest.fn(),
 }))
 
@@ -61,6 +60,9 @@ jest.mock("../settings-form-actions", () => ({
 
 jest.mock("../settings-lazy", () => ({
   DeferredAgentSettingsCard: () => null,
+  DeferredDesktopBrowserAgentPanelCard: () => (
+    <div data-testid="browser-agent-panel">browser panel</div>
+  ),
   DeferredDesktopSandboxSettingsCard: () => null,
   DeferredDesktopObjectStorageSettingsCard: () => null,
   DeferredDesktopScoutSettingsCard: () => null,
@@ -70,7 +72,9 @@ jest.mock("../settings-nav", () => ({
   SettingsNav: ({
     onSectionChange,
   }: {
-    onSectionChange: (section: "models" | "storage" | "agent" | "relay") => void
+    onSectionChange: (
+      section: "models" | "storage" | "agent" | "browser" | "relay"
+    ) => void
   }) => (
     <div>
       <button type="button" onClick={() => onSectionChange("models")}>
@@ -78,6 +82,12 @@ jest.mock("../settings-nav", () => ({
       </button>
       <button type="button" onClick={() => onSectionChange("storage")}>
         storage
+      </button>
+      <button type="button" onClick={() => onSectionChange("agent")}>
+        agent
+      </button>
+      <button type="button" onClick={() => onSectionChange("browser")}>
+        browser
       </button>
       <button type="button" onClick={() => onSectionChange("relay")}>
         relay
@@ -110,5 +120,17 @@ describe("SettingsForm desktop config loading", () => {
     await waitFor(() => {
       expect(mockFetchDesktopObjectStorageConfig).toHaveBeenCalledTimes(1)
     })
+  })
+
+  it("shows the browser agent panel only in the dedicated browser section", () => {
+    render(<SettingsForm isAuthenticated isTauriRuntime />)
+
+    expect(screen.queryByTestId("browser-agent-panel")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "agent" }))
+    expect(screen.queryByTestId("browser-agent-panel")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "browser" }))
+    expect(screen.getByTestId("browser-agent-panel")).toBeInTheDocument()
   })
 })
