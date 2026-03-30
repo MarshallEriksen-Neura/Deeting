@@ -1991,7 +1991,7 @@ pub fn build_upstream_url_with_params(
         && !protocol.contains("azure")
     {
         let append_v1 = auto_append_v1.unwrap_or_else(|| !has_versioned_path(base.as_str()));
-        if append_v1 && !base.ends_with("/v1") {
+        if append_v1 && !has_versioned_path(base.as_str()) {
             base = format!("{base}/v1");
         }
     }
@@ -2351,6 +2351,19 @@ mod tests {
             url,
             "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
         );
+        assert!(params.as_object().is_some_and(|item| item.is_empty()));
+    }
+
+    #[test]
+    fn build_upstream_url_with_params_keeps_plain_versioned_openai_base() {
+        let (url, params) = build_upstream_url_with_params(
+            "https://open.bigmodel.cn/api/paas/v4",
+            "v1/chat/completions",
+            Some("openai"),
+            Some(true),
+            None,
+        );
+        assert_eq!(url, "https://open.bigmodel.cn/api/paas/v4/chat/completions");
         assert!(params.as_object().is_some_and(|item| item.is_empty()));
     }
 

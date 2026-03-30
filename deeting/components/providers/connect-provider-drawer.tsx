@@ -37,7 +37,10 @@ import { usePlatform } from "@/lib/platform/provider"
 import { Switch } from "@/components/ui/switch"
 import { VisuallyHidden } from "@/components/ui/visually-hidden"
 import { getIconComponent } from "@/lib/constants/provider-icons"
-import { normalizeProviderEndpointInput } from "@/lib/providers/endpoint-normalization"
+import {
+  normalizeProviderEndpointInput,
+  resolveOpenAICompatibleBaseUrl,
+} from "@/lib/providers/endpoint-normalization"
 import { resolveProviderProtocol } from "@/lib/providers/protocol"
 
 const CHAT_COMPLETIONS_PATH = "chat/completions"
@@ -248,13 +251,12 @@ export function ConnectProviderDrawer({
   const hasCredentials = Boolean(initialValues?.has_credentials)
 
   const normalizedBaseUrl = React.useMemo(() => {
-    const raw = baseUrl.trim()
-    if (!raw) {
+    const base = baseUrl.trim().replace(/\/+$/, "")
+    if (!base) {
       return ""
     }
-    const base = raw.replace(/\/+$/, "")
-    if (isChatOpenAIProtocol && autoAppendV1 && !base.endsWith("/v1")) {
-      return `${base}/v1`
+    if (isChatOpenAIProtocol) {
+      return resolveOpenAICompatibleBaseUrl(base, autoAppendV1)
     }
     return base
   }, [baseUrl, isChatOpenAIProtocol, autoAppendV1])

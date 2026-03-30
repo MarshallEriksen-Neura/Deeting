@@ -8,6 +8,11 @@ import { RefreshCw, AlertCircle, Sparkles } from "lucide-react"
 import { useProviderModels, useSyncProviderModels, useProviderInstances, useUpdateProviderModel, useTestProviderModel, useQuickAddProviderModels, useProviderModelPurchase } from "@/hooks/use-providers"
 import { GlassButton } from "@/components/ui/glass-button"
 import { GlassCard } from "@/components/ui/glass-card"
+import {
+  hasVersionedPath,
+  resolveOpenAICompatibleBaseUrl,
+  stripRedundantVersionPrefix,
+} from "@/lib/providers/endpoint-normalization"
 import { ModelEmptyState } from "./empty-state"
 import { InstanceDashboard } from "./instance-dashboard"
 import { FilterLens } from "./filter-lens"
@@ -115,7 +120,7 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
       if (!baseUrl) return ""
       const base = baseUrl.trim().replace(/\/+$/, "")
       if (!base) return ""
-      const path = (upstreamPath || "").replace(/^\/+/, "")
+      let path = (upstreamPath || "").replace(/^\/+/, "")
       const protocolValue = (
         instance?.protocol ||
         instance?.provider ||
@@ -124,9 +129,11 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
       ).toLowerCase()
       const isOpenAI = protocolValue.includes("openai") && !protocolValue.includes("azure")
       const appendV1 = instance?.auto_append_v1 ?? (isOpenAI ? true : false)
-      let resolvedBase = base
-      if (isOpenAI && appendV1 && !resolvedBase.endsWith("/v1")) {
-        resolvedBase = `${resolvedBase}/v1`
+      const resolvedBase = isOpenAI
+        ? resolveOpenAICompatibleBaseUrl(base, appendV1)
+        : base
+      if (hasVersionedPath(resolvedBase)) {
+        path = stripRedundantVersionPrefix(path)
       }
       return path ? `${resolvedBase}/${path}` : resolvedBase
     },

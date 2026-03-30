@@ -1,5 +1,7 @@
 import {
+  hasVersionedPath,
   normalizeProviderEndpointInput,
+  resolveOpenAICompatibleBaseUrl,
   stripRedundantVersionPrefix,
 } from "./endpoint-normalization"
 
@@ -94,5 +96,33 @@ describe("stripRedundantVersionPrefix", () => {
 
   it("strips api version prefix", () => {
     expect(stripRedundantVersionPrefix("api/v3/chat/completions")).toBe("chat/completions")
+  })
+})
+
+describe("hasVersionedPath", () => {
+  it("detects plain version suffixes", () => {
+    expect(hasVersionedPath("https://open.bigmodel.cn/api/paas/v4")).toBe(true)
+  })
+
+  it("detects api version segments", () => {
+    expect(hasVersionedPath("https://ark.cn-beijing.volces.com/api/v3")).toBe(true)
+  })
+
+  it("returns false for unversioned roots", () => {
+    expect(hasVersionedPath("https://api.openai.com")).toBe(false)
+  })
+})
+
+describe("resolveOpenAICompatibleBaseUrl", () => {
+  it("appends /v1 for unversioned openai-compatible bases", () => {
+    expect(resolveOpenAICompatibleBaseUrl("https://api.openai.com", true)).toBe(
+      "https://api.openai.com/v1"
+    )
+  })
+
+  it("keeps existing version suffixes untouched", () => {
+    expect(resolveOpenAICompatibleBaseUrl("https://open.bigmodel.cn/api/paas/v4", true)).toBe(
+      "https://open.bigmodel.cn/api/paas/v4"
+    )
   })
 })

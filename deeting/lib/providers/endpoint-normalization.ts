@@ -16,6 +16,38 @@ function isVersionSegment(segment: string): boolean {
   return VERSION_SEGMENT_RE.test((segment || "").trim())
 }
 
+export function hasVersionedPath(baseUrl: string): boolean {
+  const withoutQuery = (baseUrl || "").split("?")[0] || ""
+  const path = (() => {
+    const parts = withoutQuery.split("://")
+    if (parts.length > 1) {
+      const rest = parts.slice(1).join("://")
+      const pathIndex = rest.indexOf("/")
+      return pathIndex >= 0 ? rest.slice(pathIndex + 1) : ""
+    }
+    return withoutQuery.replace(/^\/+/, "")
+  })()
+
+  const segments = path.split("/").filter(Boolean)
+  return segments.some((segment, index) => {
+    if (isVersionSegment(segment)) {
+      return true
+    }
+    return segment.toLowerCase() === "api" && isVersionSegment(segments[index + 1] || "")
+  })
+}
+
+export function resolveOpenAICompatibleBaseUrl(baseUrl: string, autoAppendV1: boolean): string {
+  const normalizedBaseUrl = (baseUrl || "").trim().replace(/\/+$/, "")
+  if (!normalizedBaseUrl) {
+    return ""
+  }
+  if (autoAppendV1 && !hasVersionedPath(normalizedBaseUrl)) {
+    return `${normalizedBaseUrl}/v1`
+  }
+  return normalizedBaseUrl
+}
+
 function normalizeProtocolHint(protocol?: string | null): string {
   return (protocol || "").trim().toLowerCase()
 }
