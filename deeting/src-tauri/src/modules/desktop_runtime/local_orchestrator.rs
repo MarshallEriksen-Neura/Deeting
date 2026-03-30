@@ -1771,9 +1771,8 @@ pub async fn execute_local_orchestrated_chat(
     let delegated_worker = execution_outcome.delegated_worker;
     let response_json = execution_outcome.response_json;
 
-    let mut response_text = extract_content_text(
-        response_json.get("content").cloned().unwrap_or(Value::Null),
-    );
+    let mut response_text =
+        extract_content_text(response_json.get("content").cloned().unwrap_or(Value::Null));
     let mut response_text_was_synthesized_from_error = false;
     ctx.emit_status(
         "render",

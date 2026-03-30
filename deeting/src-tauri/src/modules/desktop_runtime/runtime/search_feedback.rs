@@ -57,10 +57,12 @@ pub(crate) fn compute_feedback_boost(
     {
         boost.score += RECENT_EXACT_TOOL_BOOST;
         boost.reasons.push("session:exact_tool".to_string());
-    } else if tool_namespace
-        .as_ref()
-        .is_some_and(|namespace| context.recent_tools.iter().any(|tool| same_namespace(tool, namespace)))
-    {
+    } else if tool_namespace.as_ref().is_some_and(|namespace| {
+        context
+            .recent_tools
+            .iter()
+            .any(|tool| same_namespace(tool, namespace))
+    }) {
         boost.score += RECENT_NAMESPACE_SIBLING_BOOST;
         boost.reasons.push("session:namespace_sibling".to_string());
     }
@@ -87,9 +89,7 @@ pub(crate) fn compute_feedback_boost(
     {
         if score > 0.0 {
             boost.score += score;
-            boost
-                .reasons
-                .push(format!("history:exact_tool:{score:.2}"));
+            boost.reasons.push(format!("history:exact_tool:{score:.2}"));
         }
     } else if let Some(namespace) = tool_namespace.as_ref() {
         let namespace_score = context
@@ -311,7 +311,10 @@ mod tests {
         );
 
         assert!(exact.score > sibling.score);
-        assert!(exact.reasons.iter().any(|reason| reason == "session:exact_tool"));
+        assert!(exact
+            .reasons
+            .iter()
+            .any(|reason| reason == "session:exact_tool"));
         assert!(sibling
             .reasons
             .iter()

@@ -178,8 +178,6 @@ impl SandboxRuntimeManager {
         let provider_name = self.provider_name().await;
         let runtime_mode = runtime_mode_from_provider_name(&provider_name);
         let boxlite = self.boxlite_status().await;
-        let execution_probe = SandboxExecutionProbe::default();
-
         #[cfg(target_os = "windows")]
         {
             let wsl = diagnose_wsl_availability();
@@ -191,15 +189,18 @@ impl SandboxRuntimeManager {
             let boxlite_binary_found = boxlite.binary_found;
             let (mut status, mut blocking_reason, mut next_actions) =
                 derive_windows_readiness(runtime_mode, &wsl, python.as_ref(), &boxlite);
-            if status == SandboxReadinessStatus::Ready {
-                execution_probe = self.programmatic_execution_probe().await;
+            let execution_probe = if status == SandboxReadinessStatus::Ready {
+                let execution_probe = self.programmatic_execution_probe().await;
                 (status, blocking_reason, next_actions) = refine_ready_status_with_execution_probe(
                     status,
                     blocking_reason,
                     next_actions,
                     execution_probe.clone(),
                 );
-            }
+                execution_probe
+            } else {
+                SandboxExecutionProbe::default()
+            };
             return SandboxReadinessReport {
                 platform: current_platform().to_string(),
                 platform_supported: true,
@@ -229,7 +230,7 @@ impl SandboxRuntimeManager {
                 wsl: None,
                 python: None,
                 boxlite,
-                execution_probe,
+                execution_probe: SandboxExecutionProbe::default(),
                 blocking_reason: Some(
                     "Desktop sandbox install flow is currently only supported on Windows + WSL."
                         .to_string(),

@@ -42,7 +42,10 @@ async fn record_successful_tool_execution(
     if !should_record_tool_execution_result(result) {
         return;
     }
-    if let Err(err) = store.record_tool_execution(session_id, tool_name, true).await {
+    if let Err(err) = store
+        .record_tool_execution(session_id, tool_name, true)
+        .await
+    {
         log::warn!(
             "tool_execution_history_record_failed {}",
             serde_json::json!({
@@ -59,11 +62,7 @@ fn should_record_tool_execution_result(result: &Value) -> bool {
         Some(status)
             if matches!(
                 status,
-                "REQUIRES_APPROVAL"
-                    | "RECOVERED_REQUIRES_APPROVAL"
-                    | "DENIED"
-                    | "error"
-                    | "ERROR"
+                "REQUIRES_APPROVAL" | "RECOVERED_REQUIRES_APPROVAL" | "DENIED" | "error" | "ERROR"
             ) =>
         {
             false
@@ -1360,13 +1359,8 @@ pub(crate) async fn approve_mcp_tool_inner_with_context(
         return Err("pending tool call already consumed".to_string());
     }
     let result = execute_mcp_tool(store, &tool, &pending.arguments).await?;
-    record_successful_tool_execution(
-        store,
-        pending.session_id.as_deref(),
-        &tool.name,
-        &result,
-    )
-    .await;
+    record_successful_tool_execution(store, pending.session_id.as_deref(), &tool.name, &result)
+        .await;
     if let (Some(runtime), Some(key)) = (runtime_state, pending.approval_grant_key.as_deref()) {
         if let Some(grant) = crate::modules::mcp::SessionApprovalGrant::from_key(key, now as i128) {
             runtime

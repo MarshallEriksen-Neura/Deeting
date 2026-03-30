@@ -6,8 +6,8 @@ use super::{
     execute_or_queue_mcp_tool_call_with_tool_ref, extract_chat_tool_calls,
     install_local_skill_from_onboarding_request, request_provider_chat_completion,
     resolve_dynamic_direct_capability_tool_name, resolve_local_capability_activation_state,
-    search_feedback::search_feedback_context_from_tool_call_meta,
-    CapabilityExecutionContract, LocalCapabilityActivationState, LocalExecutionPolicy,
+    search_feedback::search_feedback_context_from_tool_call_meta, CapabilityExecutionContract,
+    LocalCapabilityActivationState, LocalExecutionPolicy,
     LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION, LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
 };
 use crate::modules::mcp::commands::common_impl::to_string;
@@ -185,7 +185,9 @@ async fn record_query_affinity_from_tool_meta(
         ) {
             continue;
         }
-        let _ = store.upsert_tool_query_affinity(&search_query, tool_name).await;
+        let _ = store
+            .upsert_tool_query_affinity(&search_query, tool_name)
+            .await;
     }
 }
 

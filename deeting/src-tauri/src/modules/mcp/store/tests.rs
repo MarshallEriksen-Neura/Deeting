@@ -633,11 +633,15 @@ async fn record_tool_execution_persists_successful_events() {
 
     assert_eq!(rows.len(), 1);
     assert_eq!(
-        rows[0].try_get::<String, _>("session_id").expect("session id"),
+        rows[0]
+            .try_get::<String, _>("session_id")
+            .expect("session id"),
         "session-1"
     );
     assert_eq!(
-        rows[0].try_get::<String, _>("tool_name").expect("tool name"),
+        rows[0]
+            .try_get::<String, _>("tool_name")
+            .expect("tool name"),
         "browser_open_tab"
     );
     assert_eq!(rows[0].try_get::<i64, _>("success").expect("success"), 1);

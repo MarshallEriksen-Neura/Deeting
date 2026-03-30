@@ -2,10 +2,10 @@ use serde_json::Value;
 
 pub(crate) mod store;
 
-pub(crate) use crate::modules::desktop_runtime::runtime::capability_discovery::CapabilitySearchResultBundle;
 pub(crate) use crate::modules::desktop_runtime::desktop_capabilities::{
     DesktopCurrentUserInfo, DesktopOfficialSkillCapabilitySpec,
 };
+pub(crate) use crate::modules::desktop_runtime::runtime::capability_discovery::CapabilitySearchResultBundle;
 use crate::modules::desktop_runtime::runtime::capability_discovery::SearchSdkDetailLevel;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,8 +92,7 @@ pub(crate) async fn dispatch_get_tool_schema(
         .and_then(Value::as_str)
         .unwrap_or("");
     crate::modules::desktop_runtime::runtime::capability_discovery::build_tool_schema_lookup_result(
-        mcp_store,
-        tool_name,
+        mcp_store, tool_name,
     )
     .await
 }
@@ -148,9 +147,9 @@ pub(crate) async fn dispatch_internal_skill_host_tool(
         OfficialSkillHostToolRoute::SearchSdk => {
             dispatch_search_sdk(mcp_store, arguments).await.map(Some)
         }
-        OfficialSkillHostToolRoute::GetToolSchema => {
-            dispatch_get_tool_schema(mcp_store, arguments).await.map(Some)
-        }
+        OfficialSkillHostToolRoute::GetToolSchema => dispatch_get_tool_schema(mcp_store, arguments)
+            .await
+            .map(Some),
         OfficialSkillHostToolRoute::Unsupported => Ok(None),
     }
 }

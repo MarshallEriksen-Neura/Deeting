@@ -137,16 +137,14 @@ pub(crate) async fn build_capability_search_result_bundle_with_feedback(
     let mut feedback_context = feedback_context.clone();
     if feedback_context.historical_affinity.is_empty() {
         if let Ok(rows) = mcp_store.list_tool_execution_affinity_rows(32).await {
-            let now_unix_ms =
-                time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+            let now_unix_ms = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
             feedback_context.historical_affinity =
                 historical_affinity_from_rows(&rows, now_unix_ms as i64);
         }
     }
     if feedback_context.query_affinity.is_empty() {
         if let Ok(rows) = mcp_store.list_tool_query_affinity_rows(64).await {
-            let now_unix_ms =
-                time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+            let now_unix_ms = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
             feedback_context.query_affinity =
                 query_affinity_from_rows(query, &rows, now_unix_ms as i64);
         }
@@ -170,12 +168,7 @@ pub(crate) async fn build_capability_search_result_bundle_with_feedback(
     let mut ranked = registry_entries
         .into_iter()
         .filter_map(|entry| {
-            rank_registry_entry_with_feedback(
-                entry,
-                &profile,
-                &feedback_context,
-                &retrieval_scores,
-            )
+            rank_registry_entry_with_feedback(entry, &profile, &feedback_context, &retrieval_scores)
         })
         .collect::<Vec<_>>();
     ranked.sort_by(|left, right| {
@@ -331,7 +324,9 @@ pub(crate) async fn build_tool_schema_lookup_result(
             .and_then(Value::as_str)
             .is_some_and(|name| name.trim() == normalized_tool_name)
     }) else {
-        return Err(format!("tool schema not found for '{normalized_tool_name}'"));
+        return Err(format!(
+            "tool schema not found for '{normalized_tool_name}'"
+        ));
     };
 
     let CapabilityRegistryEntry {
@@ -411,7 +406,8 @@ fn build_search_result_payload(
 }
 
 fn serialize_search_items(items: &[Value], detail_level: SearchSdkDetailLevel) -> Vec<Value> {
-    items.iter()
+    items
+        .iter()
         .map(|item| match detail_level {
             SearchSdkDetailLevel::Summary => summarize_search_item(item),
             SearchSdkDetailLevel::Full => item.clone(),
@@ -422,10 +418,8 @@ fn serialize_search_items(items: &[Value], detail_level: SearchSdkDetailLevel) -
 fn summarize_search_item(item: &Value) -> Value {
     let mut summary = item.clone();
     if let Some(object) = summary.as_object_mut() {
-        let keep_permission_scope = object
-            .get("semantic_kind")
-            .and_then(Value::as_str)
-            == Some("orchestration_primitive");
+        let keep_permission_scope =
+            object.get("semantic_kind").and_then(Value::as_str) == Some("orchestration_primitive");
         let schema_available = object
             .get("input_schema")
             .map(Value::is_object)
@@ -478,10 +472,9 @@ where
         .iter()
         .filter(|item| predicate(item))
         .map(|item| match detail_level {
-            SearchSdkDetailLevel::Summary => item
-                .get("name")
-                .cloned()
-                .unwrap_or_else(|| Value::Null),
+            SearchSdkDetailLevel::Summary => {
+                item.get("name").cloned().unwrap_or_else(|| Value::Null)
+            }
             SearchSdkDetailLevel::Full => item.clone(),
         })
         .collect()
@@ -763,7 +756,10 @@ async fn build_retrieval_score_maps(
 
     let semantic = if let Ok(query_vector) = embedding_service.embed_text(&profile.normalized).await
     {
-        if let Ok(rows) = memory_store.search_assets(query_vector, entries.len().max(8), None).await {
+        if let Ok(rows) = memory_store
+            .search_assets(query_vector, entries.len().max(8), None)
+            .await
+        {
             normalize_score_map(
                 rows.into_iter()
                     .enumerate()
@@ -2024,7 +2020,10 @@ fn matches_domain(domain: &str, text: &str) -> bool {
             &["网页", "网站", "url", "html", "web", "抓取", "页面", "标题"],
         ),
         "finance" => contains_any(text, &["股票", "stock", "quote", "行情"]),
-        "memory" => contains_any(text, &["记忆", "记住", "memory", "remember", "memo", "knowledge"]),
+        "memory" => contains_any(
+            text,
+            &["记忆", "记住", "memory", "remember", "memo", "knowledge"],
+        ),
         _ => false,
     }
 }

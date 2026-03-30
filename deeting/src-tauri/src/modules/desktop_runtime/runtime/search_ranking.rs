@@ -101,8 +101,7 @@ pub(crate) fn bm25_asset_match_scores(
             let n = documents.len() as f64;
             let idf = (((n - df + 0.5) / (df + 0.5)) + 1.0).ln();
             let numerator = tf * (BM25_K1 + 1.0);
-            let denominator =
-                tf + BM25_K1 * (1.0 - BM25_B + BM25_B * (doc_len / average_doc_len));
+            let denominator = tf + BM25_K1 * (1.0 - BM25_B + BM25_B * (doc_len / average_doc_len));
             score += idf * (numerator / denominator);
         }
 
@@ -246,7 +245,9 @@ fn ranking_terms(input: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{asset_score_key, bm25_asset_match_scores, normalize_score_map, reciprocal_rank_fusion};
+    use super::{
+        asset_score_key, bm25_asset_match_scores, normalize_score_map, reciprocal_rank_fusion,
+    };
     use serde_json::json;
     use std::collections::HashMap;
 
@@ -292,10 +293,7 @@ mod tests {
         ];
 
         let scores = bm25_asset_match_scores("browser open tab", &items);
-        let top_score = scores
-            .values()
-            .copied()
-            .fold(0.0_f64, f64::max);
+        let top_score = scores.values().copied().fold(0.0_f64, f64::max);
 
         assert_eq!(top_score, 1.0);
     }

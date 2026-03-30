@@ -533,9 +533,8 @@ impl McpStore {
         &self,
         limit: usize,
     ) -> Result<Vec<ToolQueryAffinityRow>, McpError> {
-        let retention_cutoff =
-            time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000
-                - TOOL_QUERY_AFFINITY_RETENTION_MS as i128;
+        let retention_cutoff = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000
+            - TOOL_QUERY_AFFINITY_RETENTION_MS as i128;
         let rows = sqlx::query(
             r#"
             SELECT query_text, tool_name, success_count, last_matched_at_unix_ms
