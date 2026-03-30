@@ -375,7 +375,7 @@ async fn load_tool_contract_sources(
 }
 
 impl RegistryAvailability {
-    fn from_asset(
+    pub(crate) fn from_asset(
         asset_type: &str,
         source_type: &str,
         asset_id: &str,

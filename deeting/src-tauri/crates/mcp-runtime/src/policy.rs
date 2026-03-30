@@ -19,7 +19,7 @@ pub const REFRESH_SKILL_INDEX_TOOL_NAME: &str = "refresh_skill_index";
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct RuntimeDiscoveryBundle {
-    raw_search_result: Value,
+    execution_snapshot: Value,
     pub capabilities: Vec<Value>,
     pub recipes: Vec<Value>,
     pub orchestration_primitives: Vec<Value>,
@@ -36,13 +36,13 @@ impl RuntimeDiscoveryBundle {
                 "orchestration_primitives",
             ),
             route_evidence: RouteEvidence::from_search_result(&search_result),
-            raw_search_result: search_result,
+            execution_snapshot: search_result,
         }
     }
 
     #[allow(dead_code)]
-    pub fn raw_search_result(&self) -> &Value {
-        &self.raw_search_result
+    pub fn execution_snapshot(&self) -> &Value {
+        &self.execution_snapshot
     }
 
     #[allow(dead_code)]
@@ -186,14 +186,14 @@ pub fn enrich_execution_policy_with_runtime_discovery(
         allowed.push(SEARCH_SDK_TOOL_NAME.to_string());
     }
     if let Some(discovery) = runtime_discovery {
-        policy.capability_snapshot = Some(discovery.raw_search_result().clone());
+        policy.capability_snapshot = Some(discovery.execution_snapshot().clone());
     } else {
         policy.capability_snapshot = None;
     }
 
     policy.allowed_tool_names = merge_allowed_tool_names(
         &allowed,
-        runtime_discovery.map(RuntimeDiscoveryBundle::raw_search_result),
+        runtime_discovery.map(RuntimeDiscoveryBundle::execution_snapshot),
     );
     policy
 }
@@ -312,6 +312,20 @@ mod tests {
                 "tavily-extract".to_string(),
                 "tavily-search".to_string(),
             ]
+        );
+    }
+
+    #[test]
+    fn runtime_discovery_exposes_execution_snapshot_accessor() {
+        let discovery = RuntimeDiscoveryBundle::from_search_result(json!({
+            "capabilities": [{"name": "weather_lookup"}],
+            "recipes": [],
+            "orchestration_primitives": [],
+        }));
+
+        assert_eq!(
+            discovery.execution_snapshot()["capabilities"][0]["name"],
+            json!("weather_lookup")
         );
     }
 

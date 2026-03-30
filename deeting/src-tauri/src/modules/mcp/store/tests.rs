@@ -709,3 +709,56 @@ async fn upsert_tool_query_affinity_accumulates_success_count() {
     assert_eq!(rows[0].tool_name, "eslint_check");
     assert_eq!(rows[0].success_count, 2);
 }
+
+#[tokio::test]
+async fn list_tool_query_affinity_rows_ignores_stale_rows() {
+    let store = create_test_store("tool-query-affinity-stale").await;
+    store.init().await.expect("init store");
+
+    sqlx::query(
+        "INSERT INTO tool_query_affinity (query_text, tool_name, success_count, last_matched_at_unix_ms)
+         VALUES (?, ?, ?, ?), (?, ?, ?, ?)",
+    )
+    .bind("very old query")
+    .bind("shell_execute")
+    .bind(4_i64)
+    .bind(1_i64)
+    .bind("fresh query")
+    .bind("shell_execute")
+    .bind(2_i64)
+    .bind((time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000) as i64)
+    .execute(&store.pool)
+    .await
+    .expect("seed query affinity rows");
+
+    let rows = store
+        .list_tool_query_affinity_rows(8)
+        .await
+        .expect("list query affinity rows");
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].query_text, "fresh query");
+}
+
+#[tokio::test]
+async fn upsert_tool_query_affinity_clamps_rows_per_tool() {
+    let store = create_test_store("tool-query-affinity-cap").await;
+    store.init().await.expect("init store");
+
+    for index in 0..20 {
+        store
+            .upsert_tool_query_affinity(&format!("query-{index}"), "shell_execute")
+            .await
+            .expect("upsert bounded affinity");
+    }
+
+    let rows = sqlx::query(
+        "SELECT query_text FROM tool_query_affinity WHERE tool_name = ? ORDER BY last_matched_at_unix_ms DESC",
+    )
+    .bind("shell_execute")
+    .fetch_all(&store.pool)
+    .await
+    .expect("read stored query affinity rows");
+
+    assert!(rows.len() <= 12, "rows={}", rows.len());
+}

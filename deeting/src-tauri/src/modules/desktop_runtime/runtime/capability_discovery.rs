@@ -152,13 +152,22 @@ pub(crate) async fn build_capability_search_result_bundle_with_feedback(
         }
     }
     let registry = build_capability_registry(mcp_store).await;
+    let mut registry_entries = registry.entries.clone();
+    registry_entries.extend(
+        build_memory_fallback_registry_entries(
+            mcp_store,
+            memory_store,
+            registry.read_path_mode,
+            &registry_entries,
+        )
+        .await,
+    );
     let profile = QueryProfile::from_query(query);
     let limit = limit.clamp(1, MAX_LIMIT);
     let retrieval_scores =
-        build_retrieval_score_maps(&registry.entries, &profile, embedding_service, memory_store)
+        build_retrieval_score_maps(&registry_entries, &profile, embedding_service, memory_store)
             .await;
-    let mut ranked = registry
-        .entries
+    let mut ranked = registry_entries
         .into_iter()
         .filter_map(|entry| {
             rank_registry_entry_with_feedback(
@@ -199,6 +208,7 @@ pub(crate) async fn build_capability_search_result_bundle_with_feedback(
                 .and_then(|value| value.get("callable"))
                 .and_then(|value| value.as_bool())
                 .unwrap_or(false)
+                && item.get("asset_namespace").and_then(Value::as_str) != Some("core")
         })
         .count();
 
@@ -229,6 +239,79 @@ pub(crate) async fn build_capability_search_result_bundle_with_feedback(
         summary_payload,
         full_payload,
     }
+}
+
+async fn build_memory_fallback_registry_entries(
+    mcp_store: &crate::modules::mcp::store::McpStore,
+    memory_store: &crate::modules::memory::service::MemoryService,
+    _read_path_mode: mcp_registry::assets::CapabilityRegistryReadMode,
+    existing_entries: &[CapabilityRegistryEntry],
+) -> Vec<CapabilityRegistryEntry> {
+    let Ok(memory_assets) = memory_store.list_assets_catalog().await else {
+        return Vec::new();
+    };
+    if memory_assets.is_empty() {
+        return Vec::new();
+    }
+
+    let existing_keys = existing_entries
+        .iter()
+        .filter_map(|entry| asset_score_key(&entry.asset))
+        .collect::<HashSet<_>>();
+    let enabled_assistant_ids = mcp_store
+        .list_enabled_local_assistant_ids()
+        .await
+        .unwrap_or_else(|_| HashSet::new());
+    let enabled_skill_ids = mcp_store
+        .list_enabled_local_skill_ids()
+        .await
+        .unwrap_or_else(|_| HashSet::new());
+    let tool_availability_catalog =
+        crate::modules::mcp::commands::runtime::build_db_tool_availability_catalog(mcp_store)
+            .await
+            .unwrap_or_default();
+
+    memory_assets
+        .into_iter()
+        .filter_map(|asset| {
+            let asset_type = asset
+                .get("asset_type")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown");
+            if !matches!(asset_type, "tool" | "skill_tool") {
+                return None;
+            }
+            let key = asset_score_key(&asset)?;
+            if existing_keys.contains(&key) {
+                return None;
+            }
+            let source_type = asset
+                .get("source_type")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown");
+            let asset_id = asset.get("id").and_then(Value::as_str).unwrap_or("");
+            let tool_name = asset.get("name").and_then(Value::as_str).unwrap_or("");
+            let pkg_name = asset.get("pkg_name").and_then(Value::as_str);
+            let asset_metadata = asset.get("metadata");
+
+            Some(CapabilityRegistryEntry {
+                availability: RegistryAvailability::from_asset(
+                    asset_type,
+                    source_type,
+                    asset_id,
+                    tool_name,
+                    pkg_name,
+                    asset_metadata,
+                    mcp_registry::assets::CapabilityRegistryReadMode::LegacyOnly,
+                    &enabled_assistant_ids,
+                    &enabled_skill_ids,
+                    &tool_availability_catalog,
+                ),
+                tool_contract_source: None,
+                asset,
+            })
+        })
+        .collect()
 }
 
 pub(crate) async fn build_tool_schema_lookup_result(
@@ -339,6 +422,10 @@ fn serialize_search_items(items: &[Value], detail_level: SearchSdkDetailLevel) -
 fn summarize_search_item(item: &Value) -> Value {
     let mut summary = item.clone();
     if let Some(object) = summary.as_object_mut() {
+        let keep_permission_scope = object
+            .get("semantic_kind")
+            .and_then(Value::as_str)
+            == Some("orchestration_primitive");
         let schema_available = object
             .get("input_schema")
             .map(Value::is_object)
@@ -351,9 +438,11 @@ fn summarize_search_item(item: &Value) -> Value {
             "signature",
             "python_stub",
             "example_arguments",
-            "permission_scope",
         ] {
             object.remove(key);
+        }
+        if !keep_permission_scope {
+            object.remove("permission_scope");
         }
         if schema_available {
             object.insert("schema_available".to_string(), Value::Bool(true));
@@ -541,6 +630,16 @@ fn rank_registry_entry_with_feedback(
         return None;
     }
 
+    let has_tool_contract = availability.is_direct_callable()
+        && matches!(asset_type, "tool" | "skill_tool")
+        && build_tool_contract(
+            name,
+            description,
+            source_type,
+            asset_metadata.as_ref(),
+            tool_contract_source.as_ref(),
+        )
+        .is_some();
     let mut value = materialize_ranked_entry(
         &id,
         name,
@@ -555,8 +654,9 @@ fn rank_registry_entry_with_feedback(
         rank.structured_score,
         rank.lexical_score,
         rank_score,
+        has_tool_contract,
     );
-    if availability.is_direct_callable() && matches!(asset_type, "tool" | "skill_tool") {
+    if has_tool_contract {
         if let Some(contract) = build_tool_contract(
             name,
             description,
@@ -827,6 +927,25 @@ fn capability_profile_feature_score(
         _ => {}
     }
 
+    if profile.domain == "memory" {
+        if signals.memory_like {
+            score += 28.0;
+            reasons.push("feature:memory_domain".to_string());
+        }
+        if signals.web_like {
+            score -= 14.0;
+            reasons.push("penalty:not_memory_web".to_string());
+        }
+        if signals.shell_like {
+            score -= 14.0;
+            reasons.push("penalty:not_memory_shell".to_string());
+        }
+        if signals.monitor_like {
+            score -= 10.0;
+            reasons.push("penalty:not_memory_monitor".to_string());
+        }
+    }
+
     (score, reasons)
 }
 
@@ -963,12 +1082,19 @@ fn materialize_ranked_entry(
     semantic_score: Option<f64>,
     lexical_score: Option<f64>,
     rank_score: f64,
+    has_tool_contract: bool,
 ) -> Value {
     let asset_namespace =
         resolve_asset_namespace(asset_type, source_type, pkg_name.as_deref(), asset_metadata);
     let skill_backed_tool =
         asset_namespace == "skill" && matches!(asset_type, "tool" | "skill_tool");
-    let group = classify_semantic_group(name, asset_type, pkg_name.as_deref(), availability);
+    let group = classify_semantic_group(
+        name,
+        asset_type,
+        pkg_name.as_deref(),
+        availability,
+        has_tool_contract,
+    );
     let mut value = json!({
         "capability_id": id,
         "name": name,
@@ -1147,6 +1273,7 @@ fn classify_semantic_group(
     asset_type: &str,
     pkg_name: Option<&str>,
     availability: &RegistryAvailability,
+    has_tool_contract: bool,
 ) -> SemanticGroup {
     if matches!(name.trim(), "search_sdk" | "execute_code_plan") {
         return SemanticGroup::OrchestrationPrimitive;
@@ -1154,7 +1281,7 @@ fn classify_semantic_group(
     if asset_type == "skill_tool"
         || (asset_type == "tool" && pkg_name.is_some_and(|value| value.starts_with("skill.")))
     {
-        return if availability.is_direct_callable() {
+        return if availability.is_direct_callable() && has_tool_contract {
             SemanticGroup::Capability
         } else {
             SemanticGroup::Recipe
@@ -1805,7 +1932,7 @@ impl QueryProfile {
             "web"
         } else if contains_any(&normalized, &["股票", "stock", "quote", "行情"]) {
             "finance"
-        } else if contains_any(&normalized, &["记忆", "memory", "remember", "memo"]) {
+        } else if contains_any(&normalized, &["记忆", "记住", "memory", "remember", "memo"]) {
             "memory"
         } else {
             "general"
@@ -1897,7 +2024,7 @@ fn matches_domain(domain: &str, text: &str) -> bool {
             &["网页", "网站", "url", "html", "web", "抓取", "页面", "标题"],
         ),
         "finance" => contains_any(text, &["股票", "stock", "quote", "行情"]),
-        "memory" => contains_any(text, &["记忆", "memory", "remember", "memo"]),
+        "memory" => contains_any(text, &["记忆", "记住", "memory", "remember", "memo", "knowledge"]),
         _ => false,
     }
 }

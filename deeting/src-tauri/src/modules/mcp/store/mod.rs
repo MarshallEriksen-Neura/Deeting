@@ -18,6 +18,8 @@ use mcp_core::types::{
 
 const DEFAULT_LOCAL_SOURCE_PATH: &str = "~/.config/deeting/mcp.json";
 const DEFAULT_CLOUD_SOURCE_NAME: &str = "Deeting Cloud";
+const TOOL_QUERY_AFFINITY_RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+const TOOL_QUERY_AFFINITY_MAX_ROWS_PER_TOOL: i64 = 12;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ToolExecutionAffinityRow {
@@ -487,8 +489,40 @@ impl McpStore {
             "#,
         )
         .bind(normalized_query_text)
-        .bind(normalized_tool_name)
+        .bind(normalized_tool_name.as_str())
         .bind(now as i64)
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let retention_cutoff = now as i64 - TOOL_QUERY_AFFINITY_RETENTION_MS;
+        sqlx::query(
+            r#"
+            DELETE FROM tool_query_affinity
+            WHERE last_matched_at_unix_ms < ?
+            "#,
+        )
+        .bind(retention_cutoff)
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            DELETE FROM tool_query_affinity
+            WHERE tool_name = ?
+              AND query_text NOT IN (
+                SELECT query_text
+                FROM tool_query_affinity
+                WHERE tool_name = ?
+                ORDER BY last_matched_at_unix_ms DESC, success_count DESC, query_text ASC
+                LIMIT ?
+              )
+            "#,
+        )
+        .bind(normalized_tool_name.as_str())
+        .bind(normalized_tool_name.as_str())
+        .bind(TOOL_QUERY_AFFINITY_MAX_ROWS_PER_TOOL)
         .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
@@ -499,14 +533,19 @@ impl McpStore {
         &self,
         limit: usize,
     ) -> Result<Vec<ToolQueryAffinityRow>, McpError> {
+        let retention_cutoff =
+            time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000
+                - TOOL_QUERY_AFFINITY_RETENTION_MS as i128;
         let rows = sqlx::query(
             r#"
             SELECT query_text, tool_name, success_count, last_matched_at_unix_ms
             FROM tool_query_affinity
+            WHERE last_matched_at_unix_ms >= ?
             ORDER BY last_matched_at_unix_ms DESC, success_count DESC
             LIMIT ?
             "#,
         )
+        .bind(retention_cutoff as i64)
         .bind(limit.max(1) as i64)
         .fetch_all(&self.pool)
         .await

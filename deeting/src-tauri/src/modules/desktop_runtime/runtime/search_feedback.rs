@@ -30,6 +30,8 @@ const QUERY_AFFINITY_HALF_LIFE_MS: f64 = 14.0 * 24.0 * 60.0 * 60.0 * 1000.0;
 const RECENT_EXACT_TOOL_BOOST: f64 = 18.0;
 const RECENT_NAMESPACE_SIBLING_BOOST: f64 = 8.0;
 const HISTORICAL_EXACT_TOOL_MAX_BOOST: f64 = 16.0;
+const HISTORICAL_NAMESPACE_FACTOR: f64 = 0.35;
+const HISTORICAL_NAMESPACE_MAX_BOOST: f64 = 6.0;
 const QUERY_AFFINITY_EXACT_MAX_BOOST: f64 = 14.0;
 const QUERY_AFFINITY_MIN_SUCCESS_COUNT: i64 = 2;
 const QUERY_AFFINITY_MIN_TOKENS: usize = 2;
@@ -74,6 +76,35 @@ pub(crate) fn compute_feedback_boost(
             boost
                 .reasons
                 .push(format!("query_affinity:exact_tool:{score:.2}"));
+        }
+    }
+
+    if let Some(score) = context
+        .historical_affinity
+        .iter()
+        .find(|item| normalize_tool_name(&item.tool_name) == normalized_tool_name)
+        .map(|item| item.score.clamp(0.0, HISTORICAL_EXACT_TOOL_MAX_BOOST))
+    {
+        if score > 0.0 {
+            boost.score += score;
+            boost
+                .reasons
+                .push(format!("history:exact_tool:{score:.2}"));
+        }
+    } else if let Some(namespace) = tool_namespace.as_ref() {
+        let namespace_score = context
+            .historical_affinity
+            .iter()
+            .filter(|item| same_namespace(&item.tool_name, namespace))
+            .map(|item| item.score)
+            .fold(0.0_f64, f64::max)
+            * HISTORICAL_NAMESPACE_FACTOR;
+        let namespace_score = namespace_score.clamp(0.0, HISTORICAL_NAMESPACE_MAX_BOOST);
+        if namespace_score > 0.0 {
+            boost.score += namespace_score;
+            boost
+                .reasons
+                .push(format!("history:namespace_sibling:{namespace_score:.2}"));
         }
     }
 

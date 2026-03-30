@@ -22,6 +22,9 @@ pub fn local_capability_registry_entry_is_usable(entry: &LocalCapabilityRegistry
     if entry.asset_kind != "skill_tool" {
         return true;
     }
+    if entry.source_kind == "builtin" || entry.execution_surface == "desktop_capability" {
+        return true;
+    }
     entry
         .entry_path
         .as_deref()

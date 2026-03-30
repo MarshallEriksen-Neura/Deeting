@@ -1322,8 +1322,22 @@ for raw_line in sys.stdin:
             matched["description"],
             serde_json::json!("抓取网页内容并提取标题")
         );
-        assert!(matched.get("required_parameters").is_some());
-        assert!(matched.get("python_stub").is_some());
+        let full_result = build_local_sdk_search_result_with_runtime_full(
+            &store,
+            &provider_state.embedding,
+            memory_state.service.as_ref(),
+            query,
+            8,
+        )
+        .await;
+        let full_matched = full_result["capabilities"]
+            .as_array()
+            .expect("full capabilities array")
+            .iter()
+            .find(|item| item["name"] == serde_json::json!("search_web"))
+            .expect("matched full skill tool capability");
+        assert!(full_matched.get("required_parameters").is_some());
+        assert!(full_matched.get("python_stub").is_some());
 
         server_handle.abort();
     }

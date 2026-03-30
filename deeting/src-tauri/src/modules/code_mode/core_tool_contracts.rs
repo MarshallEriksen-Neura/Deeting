@@ -201,6 +201,75 @@ pub(crate) fn code_mode_core_tools() -> Vec<CoreToolContract> {
             }),
         },
         CoreToolContract {
+            name: "monitor.create",
+            description: "Create a local monitor task that runs an assistant on a schedule and records execution results.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "title": { "type": "string", "description": "Human-readable monitor title." },
+                    "objective": { "type": "string", "description": "Task objective the assistant should execute." },
+                    "assistant_id": { "type": "string", "description": "Local assistant ID to run for this monitor." },
+                    "cron_expr": { "type": "string", "description": "Optional cron expression controlling the schedule." },
+                    "analysis_mode": { "type": "string", "description": "Optional analysis mode override." },
+                    "notify_config": { "type": "object", "description": "Optional notification configuration." },
+                    "allowed_tools": { "type": "array", "items": { "type": "string" }, "description": "Optional tool allowlist for monitor execution." },
+                    "execution_target": { "type": "string", "description": "Optional execution target." }
+                },
+                "required": ["title", "objective", "assistant_id"]
+            }),
+            output_schema: json!({
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "title": {"type": "string"},
+                    "status": {"type": "string"},
+                    "message": {"type": "string"},
+                    "analysis_mode": {"type": "string"},
+                    "assistant_id": {"type": ["string", "null"]},
+                    "execution_target": {"type": "string"}
+                }
+            }),
+            permission_scope: &["monitor_write", "assistant_execution", "local_state_write"],
+            read_only: false,
+            mutating: true,
+            risk_level: "HIGH",
+            example_arguments: json!({
+                "title": "Daily Site Check",
+                "objective": "Check the homepage and summarize any visible failures.",
+                "assistant_id": "assistant.weather",
+                "cron_expr": "0 */6 * * *"
+            }),
+        },
+        CoreToolContract {
+            name: "monitor.list",
+            description: "List local monitor tasks with optional paging and status filtering.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "skip": { "type": "integer", "description": "Optional number of tasks to skip." },
+                    "limit": { "type": "integer", "description": "Optional max number of tasks to return." },
+                    "status": { "type": "string", "description": "Optional status filter." }
+                }
+            }),
+            output_schema: json!({
+                "type": "object",
+                "properties": {
+                    "items": {"type": "array"},
+                    "total": {"type": "integer"},
+                    "skip": {"type": "integer"},
+                    "limit": {"type": "integer"}
+                }
+            }),
+            permission_scope: &["monitor_read", "local_state_read"],
+            read_only: true,
+            mutating: false,
+            risk_level: "LOW",
+            example_arguments: json!({
+                "limit": 20,
+                "status": "active"
+            }),
+        },
+        CoreToolContract {
             name: "refresh_skill_index",
             description: "Rescan local skill directories and rebuild the desktop skill registry after external installs, manual file changes, or shared-skill updates.",
             input_schema: json!({
