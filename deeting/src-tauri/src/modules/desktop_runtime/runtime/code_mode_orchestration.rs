@@ -1,11 +1,12 @@
 use super::{
     append_streamable_local_tool_result_blocks, build_auto_code_mode_tool_feedback,
     build_local_code_mode_entry_tools_with_allowlist, build_local_consult_expert_network_result,
-    build_local_sdk_search_result_with_runtime, build_local_tool_call_install_gate_error_meta,
-    build_local_tool_trace_blocks, execute_or_queue_mcp_tool_call_with_tool_ref,
-    extract_chat_tool_calls, install_local_skill_from_onboarding_request,
-    request_provider_chat_completion, resolve_dynamic_direct_capability_tool_name,
-    resolve_local_capability_activation_state, CapabilityExecutionContract,
+    build_local_sdk_search_result_bundle_with_feedback_runtime,
+    build_local_tool_call_install_gate_error_meta, build_local_tool_trace_blocks,
+    execute_or_queue_mcp_tool_call_with_tool_ref, extract_chat_tool_calls,
+    install_local_skill_from_onboarding_request, request_provider_chat_completion,
+    resolve_dynamic_direct_capability_tool_name, resolve_local_capability_activation_state,
+    search_feedback::search_feedback_context_from_tool_call_meta, CapabilityExecutionContract,
     LocalCapabilityActivationState, LocalExecutionPolicy,
     LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION, LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
 };
@@ -382,6 +383,7 @@ async fn continue_local_chat_complete_with_auto_code_mode(
             app,
             app_state,
             &response,
+            &state.all_tool_call_meta,
             &state.chat_ctx,
             &effective_allowed_tool_names,
             state.active_capability.as_ref(),
@@ -757,6 +759,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
     app: &AppHandle,
     app_state: &AppState,
     chat_response: &serde_json::Value,
+    prior_tool_call_meta: &[serde_json::Value],
     chat_ctx: &LocalConversationChatContext,
     effective_allowed_tool_names: &[String],
     active_capability: Option<&LocalCapabilityActivationState>,
@@ -931,15 +934,20 @@ async fn maybe_handle_local_code_mode_tool_calls(
                 .and_then(|v| v.as_u64())
                 .map(|v| v as usize)
                 .unwrap_or(8);
-            let search_res = build_local_sdk_search_result_with_runtime(
+            let mut feedback_meta = prior_tool_call_meta.to_vec();
+            feedback_meta.extend(tool_call_meta.iter().cloned());
+            let feedback_context = search_feedback_context_from_tool_call_meta(&feedback_meta);
+            let search_bundle = build_local_sdk_search_result_bundle_with_feedback_runtime(
                 app_state.mcp.store.as_ref(),
                 &app_state.providers.embedding,
                 app_state.memory.service.as_ref(),
                 query,
                 limit,
+                &feedback_context,
             )
             .await;
-            *last_capability_snapshot = Some(search_res.clone());
+            let search_res = search_bundle.summary_payload;
+            *last_capability_snapshot = Some(search_bundle.full_payload);
             synthesized = true;
             let meta = serde_json::json!({"id":call.id,"name":tool_name,"status":"success","result":search_res});
             let mut streamed_blocks = Vec::new();

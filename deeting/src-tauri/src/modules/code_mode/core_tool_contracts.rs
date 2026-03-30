@@ -74,7 +74,13 @@ pub(crate) fn code_mode_core_tools() -> Vec<CoreToolContract> {
                 "type": "object",
                 "properties": {
                     "query": { "type": "string", "description": "Natural language intent to search tools." },
-                    "limit": { "type": "integer", "description": "Max capability results to return (1-20).", "default": 8 }
+                    "limit": { "type": "integer", "description": "Max capability results to return (1-20).", "default": 8 },
+                    "detail_level": {
+                        "type": "string",
+                        "description": "Return lightweight references with 'summary' or include full tool contracts with 'full'.",
+                        "enum": ["summary", "full"],
+                        "default": "summary"
+                    }
                 },
                 "required": ["query"]
             }),
@@ -97,7 +103,35 @@ pub(crate) fn code_mode_core_tools() -> Vec<CoreToolContract> {
             read_only: true,
             mutating: false,
             risk_level: "LOW",
-            example_arguments: json!({"query": "search web tools", "limit": 8}),
+            example_arguments: json!({"query": "search web tools", "limit": 8, "detail_level": "summary"}),
+        },
+        CoreToolContract {
+            name: "get_tool_schema",
+            description: "Return the full callable contract for a selected direct tool, including input schema, typed parameter docs, example arguments, and risk metadata. Use this after search_sdk summary results when you need exact invocation details for one chosen tool.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "tool_name": { "type": "string", "description": "Exact tool name returned by search_sdk." }
+                },
+                "required": ["tool_name"]
+            }),
+            output_schema: json!({
+                "type": "object",
+                "properties": {
+                    "tool_name": {"type": "string"},
+                    "capability_id": {"type": ["string", "null"]},
+                    "description": {"type": "string"},
+                    "input_schema": {"type": "object"},
+                    "required_parameters": {"type": "array"},
+                    "python_stub": {"type": "string"}
+                },
+                "required": ["tool_name", "input_schema"]
+            }),
+            permission_scope: &["local_catalog_read", "capability_discovery"],
+            read_only: true,
+            mutating: false,
+            risk_level: "LOW",
+            example_arguments: json!({"tool_name": "browser_open_tab"}),
         },
         CoreToolContract {
             name: "execute_code_plan",

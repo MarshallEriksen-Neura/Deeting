@@ -1,6 +1,6 @@
 use super::prompt_assets::PromptAssets;
 use super::prompt_plan::build_local_prompt_plan;
-use super::{build_local_sdk_search_result_with_runtime, LocalRouteDecision, LocalRouteKind};
+use super::{build_local_sdk_search_result_with_runtime_full, LocalRouteDecision, LocalRouteKind};
 use crate::modules::custom_task_agents::store::{get_custom_task_agent, list_custom_task_agents};
 use crate::modules::custom_task_agents::types::{
     CustomTaskAgentInvocationKind, CustomTaskAgentProfile,
@@ -38,7 +38,7 @@ pub(crate) async fn build_runtime_discovery_bundle_with_runtime(
     limit: usize,
 ) -> RuntimeDiscoveryBundle {
     RuntimeDiscoveryBundle::from_search_result(
-        build_local_sdk_search_result_with_runtime(
+        build_local_sdk_search_result_with_runtime_full(
             mcp_store,
             embedding_service,
             memory_store,

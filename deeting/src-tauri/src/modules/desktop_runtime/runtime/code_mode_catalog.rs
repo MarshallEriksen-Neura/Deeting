@@ -62,6 +62,7 @@ pub(crate) fn build_local_code_mode_entry_tools_with_allowlist(
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) async fn build_local_sdk_search_result_with_runtime(
     mcp_store: &crate::modules::mcp::store::McpStore,
     embedding_service: &crate::modules::providers::embedding::EmbeddingService,
@@ -75,6 +76,62 @@ pub(crate) async fn build_local_sdk_search_result_with_runtime(
         memory_store,
         query,
         limit,
+        super::capability_discovery::SearchSdkDetailLevel::Summary,
+    )
+    .await
+}
+
+pub(crate) async fn build_local_sdk_search_result_with_runtime_full(
+    mcp_store: &crate::modules::mcp::store::McpStore,
+    embedding_service: &crate::modules::providers::embedding::EmbeddingService,
+    memory_store: &crate::modules::memory::service::MemoryService,
+    query: &str,
+    limit: usize,
+) -> serde_json::Value {
+    crate::modules::capability_control_plane::build_search_sdk_result(
+        mcp_store,
+        embedding_service,
+        memory_store,
+        query,
+        limit,
+        super::capability_discovery::SearchSdkDetailLevel::Full,
+    )
+    .await
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) async fn build_local_sdk_search_result_bundle_with_runtime(
+    mcp_store: &crate::modules::mcp::store::McpStore,
+    embedding_service: &crate::modules::providers::embedding::EmbeddingService,
+    memory_store: &crate::modules::memory::service::MemoryService,
+    query: &str,
+    limit: usize,
+) -> crate::modules::capability_control_plane::CapabilitySearchResultBundle {
+    crate::modules::capability_control_plane::build_search_sdk_result_bundle(
+        mcp_store,
+        embedding_service,
+        memory_store,
+        query,
+        limit,
+    )
+    .await
+}
+
+pub(crate) async fn build_local_sdk_search_result_bundle_with_feedback_runtime(
+    mcp_store: &crate::modules::mcp::store::McpStore,
+    embedding_service: &crate::modules::providers::embedding::EmbeddingService,
+    memory_store: &crate::modules::memory::service::MemoryService,
+    query: &str,
+    limit: usize,
+    feedback_context: &crate::modules::desktop_runtime::runtime::search_feedback::SearchFeedbackContext,
+) -> crate::modules::capability_control_plane::CapabilitySearchResultBundle {
+    crate::modules::capability_control_plane::build_search_sdk_result_bundle_with_feedback(
+        mcp_store,
+        embedding_service,
+        memory_store,
+        query,
+        limit,
+        feedback_context,
     )
     .await
 }

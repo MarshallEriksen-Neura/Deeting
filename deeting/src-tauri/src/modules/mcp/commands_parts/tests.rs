@@ -9,8 +9,9 @@ mod tests {
     use crate::modules::desktop_runtime::runtime::consult::build_local_consult_expert_network_result_with_runtime;
     use crate::modules::desktop_runtime::runtime::{
         build_auto_code_mode_tool_feedback, build_local_code_mode_entry_tools,
-        build_local_sdk_search_result_with_runtime, build_local_tool_call_install_gate_error_meta,
-        build_local_tool_trace_blocks, extract_chat_tool_calls, normalize_chat_completion_response,
+        build_local_sdk_search_result_with_runtime, build_local_sdk_search_result_with_runtime_full,
+        build_local_tool_call_install_gate_error_meta, build_local_tool_trace_blocks,
+        extract_chat_tool_calls, normalize_chat_completion_response,
         LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
     };
     use crate::modules::mcp::commands::runtime::{
@@ -888,7 +889,10 @@ for raw_line in sys.stdin:
             .map(|items| {
                 items
                     .iter()
-                    .any(|item| item["name"] == serde_json::json!(name))
+                    .any(|item| match item {
+                        serde_json::Value::String(text) => text == name,
+                        _ => item["name"] == serde_json::json!(name),
+                    })
             })
             .unwrap_or(false)
     }
@@ -1057,11 +1061,106 @@ for raw_line in sys.stdin:
             .collect::<Vec<_>>();
 
         assert!(names.contains(&"search_sdk"));
+        assert!(names.contains(&"get_tool_schema"));
         assert!(names.contains(&"consult_expert_network"));
         assert!(names.contains(&"attach_capability"));
         assert!(names.contains(&"detach_capability"));
         assert!(names.contains(&"execute_code_plan"));
         assert!(names.contains(&"sys_submit_onboarding_request"));
+    }
+
+    #[tokio::test]
+    async fn search_sdk_summary_and_full_payloads_split_schema_density() {
+        let query = "open a browser tab and inspect the page";
+        let (base_url, server_handle) = start_mock_embedding_server(HashMap::from([(
+            query.to_lowercase(),
+            vec![0.0, 0.0, 0.0],
+        )]))
+        .await;
+        let provider_state = create_test_provider_state("sdk-summary-full", &base_url).await;
+        let memory_state = create_test_memory_state("sdk-summary-full", 3).await;
+        let store = create_test_store("sdk-summary-full").await;
+
+        let summary = crate::modules::capability_control_plane::build_search_sdk_result(
+            &store,
+            &provider_state.embedding,
+            memory_state.service.as_ref(),
+            query,
+            8,
+            crate::modules::desktop_runtime::runtime::capability_discovery::SearchSdkDetailLevel::Summary,
+        )
+        .await;
+        let full = crate::modules::capability_control_plane::build_search_sdk_result(
+            &store,
+            &provider_state.embedding,
+            memory_state.service.as_ref(),
+            query,
+            8,
+            crate::modules::desktop_runtime::runtime::capability_discovery::SearchSdkDetailLevel::Full,
+        )
+        .await;
+
+        assert_eq!(summary["detail_level"], serde_json::json!("summary"));
+        assert_eq!(full["detail_level"], serde_json::json!("full"));
+
+        let summary_first = summary["capabilities"][0].clone();
+        let full_first = full["capabilities"][0].clone();
+        assert_eq!(summary_first["schema_available"], serde_json::json!(true));
+        assert!(summary_first.get("input_schema").is_none());
+        assert!(summary_first.get("python_stub").is_none());
+        assert!(full_first.get("input_schema").is_some());
+        assert!(full_first.get("python_stub").is_some());
+
+        let summary_core_tools = summary["capability_groups"]["core_tools"]
+            .as_array()
+            .expect("summary core tools array");
+        let full_core_tools = full["capability_groups"]["core_tools"]
+            .as_array()
+            .expect("full core tools array");
+        assert!(summary_core_tools[0].is_string());
+        assert!(full_core_tools[0].is_object());
+
+        server_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn get_tool_schema_returns_full_contract_for_core_tool() {
+        let query = "open a browser tab and inspect the page";
+        let (base_url, server_handle) = start_mock_embedding_server(HashMap::from([(
+            query.to_lowercase(),
+            vec![0.0, 0.0, 0.0],
+        )]))
+        .await;
+        let provider_state = create_test_provider_state("sdk-tool-schema", &base_url).await;
+        let memory_state = create_test_memory_state("sdk-tool-schema", 3).await;
+        let store = create_test_store("sdk-tool-schema").await;
+
+        let result = crate::modules::capability_control_plane::dispatch_internal_skill_host_tool(
+            &store,
+            "get_tool_schema",
+            &serde_json::json!({"tool_name": "browser_open_tab"}),
+        )
+        .await
+        .expect("tool schema dispatch")
+        .expect("tool schema result");
+
+        assert_eq!(result["tool_name"], serde_json::json!("browser_open_tab"));
+        assert!(result.get("input_schema").is_some());
+        assert!(result.get("required_parameters").is_some());
+        assert!(result.get("python_stub").is_some());
+
+        let summary = crate::modules::capability_control_plane::build_search_sdk_result(
+            &store,
+            &provider_state.embedding,
+            memory_state.service.as_ref(),
+            query,
+            8,
+            crate::modules::desktop_runtime::runtime::capability_discovery::SearchSdkDetailLevel::Summary,
+        )
+        .await;
+        assert!(summary["capabilities"][0].get("input_schema").is_none());
+
+        server_handle.abort();
     }
 
     #[tokio::test]
@@ -1591,25 +1690,42 @@ for raw_line in sys.stdin:
             .expect("skill tools array");
         let matched = skill_tools
             .iter()
-            .find(|item| item["name"] == serde_json::json!("skill.openclaw_weather.fetch_weather"))
+            .find(|item| item == &&serde_json::json!("skill.openclaw_weather.fetch_weather"))
             .expect("script runner surfaced");
-        assert_eq!(matched["asset_type"], serde_json::json!("skill_tool"));
-        assert_eq!(matched["asset_namespace"], serde_json::json!("skill"));
+        assert_eq!(matched, &serde_json::json!("skill.openclaw_weather.fetch_weather"));
+
+        let full_search = build_local_sdk_search_result_with_runtime_full(
+            &store,
+            &provider_state.embedding,
+            memory_state.service.as_ref(),
+            "天气 script skill",
+            8,
+        )
+        .await;
+        let full_skill_tools = full_search["capability_groups"]["skill_tools"]
+            .as_array()
+            .expect("full skill tools array");
+        let full_matched = full_skill_tools
+            .iter()
+            .find(|item| item["name"] == serde_json::json!("skill.openclaw_weather.fetch_weather"))
+            .expect("full script runner surfaced");
+        assert_eq!(full_matched["asset_type"], serde_json::json!("skill_tool"));
+        assert_eq!(full_matched["asset_namespace"], serde_json::json!("skill"));
         assert_eq!(
-            matched["adapter_kind"],
+            full_matched["adapter_kind"],
             serde_json::json!("openclaw_script")
         );
         assert_eq!(
-            matched["normalized_execution_surface"],
+            full_matched["normalized_execution_surface"],
             serde_json::json!("script_runner")
         );
-        assert_eq!(matched["runnable_now"], serde_json::json!(false));
+        assert_eq!(full_matched["runnable_now"], serde_json::json!(false));
         assert_eq!(
-            matched["missing_env"][0],
+            full_matched["missing_env"][0],
             serde_json::json!("OPENWEATHER_API_KEY")
         );
         assert_eq!(
-            matched["blocking_reason"],
+            full_matched["blocking_reason"],
             serde_json::json!("script_runner")
         );
 

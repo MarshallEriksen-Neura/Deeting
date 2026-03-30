@@ -18,6 +18,7 @@ target-codex-warnings/
 .omc/
 .omx/
 .agents/
+.gemini/
 target-codex-shell/
 
 backend/__pycache__

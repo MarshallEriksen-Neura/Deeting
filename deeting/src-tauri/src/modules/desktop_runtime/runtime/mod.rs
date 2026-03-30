@@ -11,6 +11,7 @@ pub mod execution_plane;
 pub mod prompt_assets;
 pub mod prompt_plan;
 pub mod route_selector;
+pub mod search_feedback;
 pub mod search_ranking;
 pub mod tool_feedback;
 pub mod tool_result_blocks;
@@ -28,10 +29,13 @@ pub(crate) use chat_completion::{
     request_provider_chat_completion, resolve_local_model_connection,
 };
 #[cfg(test)]
-pub(crate) use code_mode_catalog::build_local_code_mode_entry_tools;
 pub(crate) use code_mode_catalog::{
-    build_local_code_mode_entry_tools_with_allowlist, build_local_sdk_search_result_with_runtime,
-    resolve_dynamic_direct_capability_tool_name,
+    build_local_code_mode_entry_tools, build_local_sdk_search_result_with_runtime,
+};
+pub(crate) use code_mode_catalog::{
+    build_local_code_mode_entry_tools_with_allowlist,
+    build_local_sdk_search_result_bundle_with_feedback_runtime,
+    build_local_sdk_search_result_with_runtime_full, resolve_dynamic_direct_capability_tool_name,
 };
 pub(crate) use code_mode_orchestration::{
     resume_suspended_local_chat_after_approval, run_local_chat_complete_with_auto_code_mode,

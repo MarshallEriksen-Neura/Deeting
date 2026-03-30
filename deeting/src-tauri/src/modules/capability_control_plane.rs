@@ -2,14 +2,17 @@ use serde_json::Value;
 
 pub(crate) mod store;
 
+pub(crate) use crate::modules::desktop_runtime::runtime::capability_discovery::CapabilitySearchResultBundle;
 pub(crate) use crate::modules::desktop_runtime::desktop_capabilities::{
     DesktopCurrentUserInfo, DesktopOfficialSkillCapabilitySpec,
 };
+use crate::modules::desktop_runtime::runtime::capability_discovery::SearchSdkDetailLevel;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OfficialSkillHostToolRoute {
     DesktopCapability,
     SearchSdk,
+    GetToolSchema,
     Unsupported,
 }
 
@@ -19,6 +22,7 @@ pub(crate) async fn build_search_sdk_result(
     memory_store: &crate::modules::memory::service::MemoryService,
     query: &str,
     limit: usize,
+    detail_level: SearchSdkDetailLevel,
 ) -> Value {
     crate::modules::desktop_runtime::runtime::capability_discovery::build_capability_search_result(
         mcp_store,
@@ -26,6 +30,44 @@ pub(crate) async fn build_search_sdk_result(
         memory_store,
         query,
         limit,
+        detail_level,
+    )
+    .await
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) async fn build_search_sdk_result_bundle(
+    mcp_store: &crate::modules::mcp::store::McpStore,
+    embedding_service: &crate::modules::providers::embedding::EmbeddingService,
+    memory_store: &crate::modules::memory::service::MemoryService,
+    query: &str,
+    limit: usize,
+) -> CapabilitySearchResultBundle {
+    crate::modules::desktop_runtime::runtime::capability_discovery::build_capability_search_result_bundle(
+        mcp_store,
+        embedding_service,
+        memory_store,
+        query,
+        limit,
+    )
+    .await
+}
+
+pub(crate) async fn build_search_sdk_result_bundle_with_feedback(
+    mcp_store: &crate::modules::mcp::store::McpStore,
+    embedding_service: &crate::modules::providers::embedding::EmbeddingService,
+    memory_store: &crate::modules::memory::service::MemoryService,
+    query: &str,
+    limit: usize,
+    feedback_context: &crate::modules::desktop_runtime::runtime::search_feedback::SearchFeedbackContext,
+) -> CapabilitySearchResultBundle {
+    crate::modules::desktop_runtime::runtime::capability_discovery::build_capability_search_result_bundle_with_feedback(
+        mcp_store,
+        embedding_service,
+        memory_store,
+        query,
+        limit,
+        feedback_context,
     )
     .await
 }
@@ -42,6 +84,11 @@ pub(crate) async fn dispatch_search_sdk(
         .and_then(Value::as_u64)
         .map(|value| value as usize)
         .unwrap_or(8);
+    let detail_level = arguments
+        .get("detail_level")
+        .and_then(Value::as_str)
+        .map(SearchSdkDetailLevel::from_str)
+        .unwrap_or(SearchSdkDetailLevel::Summary);
 
     Ok(build_search_sdk_result(
         mcp_store,
@@ -49,8 +96,24 @@ pub(crate) async fn dispatch_search_sdk(
         app_state.memory.service.as_ref(),
         query,
         limit,
+        detail_level,
     )
     .await)
+}
+
+pub(crate) async fn dispatch_get_tool_schema(
+    mcp_store: &crate::modules::mcp::store::McpStore,
+    arguments: &Value,
+) -> Result<Value, String> {
+    let tool_name = arguments
+        .get("tool_name")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    crate::modules::desktop_runtime::runtime::capability_discovery::build_tool_schema_lookup_result(
+        mcp_store,
+        tool_name,
+    )
+    .await
 }
 
 pub(crate) fn resolve_official_skill_host_tool_route(
@@ -67,6 +130,7 @@ pub(crate) fn resolve_official_skill_host_tool_route(
 
     match normalized_tool_name {
         "search_sdk" => OfficialSkillHostToolRoute::SearchSdk,
+        "get_tool_schema" => OfficialSkillHostToolRoute::GetToolSchema,
         _ => OfficialSkillHostToolRoute::Unsupported,
     }
 }
@@ -101,6 +165,9 @@ pub(crate) async fn dispatch_internal_skill_host_tool(
         }
         OfficialSkillHostToolRoute::SearchSdk => {
             dispatch_search_sdk(mcp_store, arguments).await.map(Some)
+        }
+        OfficialSkillHostToolRoute::GetToolSchema => {
+            dispatch_get_tool_schema(mcp_store, arguments).await.map(Some)
         }
         OfficialSkillHostToolRoute::Unsupported => Ok(None),
     }

@@ -2,6 +2,7 @@ use std::collections::{BTreeSet, HashSet};
 
 use serde_json::{json, Value};
 
+use super::search_feedback::{compute_feedback_boost, SearchFeedbackContext};
 use super::search_ranking::lexical_asset_match_score;
 use crate::modules::mcp::commands::runtime::capability_catalog::{
     build_capability_registry, CapabilityRegistryEntry, RegistryAvailability, ToolContractSource,
@@ -11,6 +12,34 @@ const MAX_LIMIT: usize = 20;
 const SEMANTIC_SCORE_FLOOR: f64 = 0.30;
 const MIN_RANK_SCORE: f64 = 8.0;
 const SEARCH_RESULT_FORMAT_VERSION: &str = "sdk_control_plane.v1";
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) enum SearchSdkDetailLevel {
+    Summary,
+    Full,
+}
+
+impl SearchSdkDetailLevel {
+    pub(crate) fn from_str(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "full" => Self::Full,
+            _ => Self::Summary,
+        }
+    }
+
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Summary => "summary",
+            Self::Full => "full",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct CapabilitySearchResultBundle {
+    pub(crate) summary_payload: Value,
+    pub(crate) full_payload: Value,
+}
 
 #[derive(Clone)]
 struct QueryProfile {
@@ -25,6 +54,18 @@ struct QueryProfile {
 struct RankedCapability {
     value: Value,
     score: f64,
+}
+
+#[derive(Clone, Debug)]
+struct RankComputation {
+    lexical_score: Option<f64>,
+    structured_score: Option<f64>,
+    domain_hit: bool,
+    intent_hit: bool,
+    feature_score: f64,
+    feature_reasons: Vec<String>,
+    feedback_score: f64,
+    feedback_reasons: Vec<String>,
 }
 
 #[derive(Copy, Clone, Eq, PartialEq)]
@@ -48,18 +89,61 @@ struct ParameterDoc {
 
 pub(crate) async fn build_capability_search_result(
     mcp_store: &crate::modules::mcp::store::McpStore,
+    embedding_service: &crate::modules::providers::embedding::EmbeddingService,
+    memory_store: &crate::modules::memory::service::MemoryService,
+    query: &str,
+    limit: usize,
+    detail_level: SearchSdkDetailLevel,
+) -> Value {
+    let bundle = build_capability_search_result_bundle_with_feedback(
+        mcp_store,
+        embedding_service,
+        memory_store,
+        query,
+        limit,
+        &SearchFeedbackContext::default(),
+    )
+    .await;
+    match detail_level {
+        SearchSdkDetailLevel::Summary => bundle.summary_payload,
+        SearchSdkDetailLevel::Full => bundle.full_payload,
+    }
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) async fn build_capability_search_result_bundle(
+    mcp_store: &crate::modules::mcp::store::McpStore,
     _embedding_service: &crate::modules::providers::embedding::EmbeddingService,
     _memory_store: &crate::modules::memory::service::MemoryService,
     query: &str,
     limit: usize,
-) -> Value {
+) -> CapabilitySearchResultBundle {
+    build_capability_search_result_bundle_with_feedback(
+        mcp_store,
+        _embedding_service,
+        _memory_store,
+        query,
+        limit,
+        &SearchFeedbackContext::default(),
+    )
+    .await
+}
+
+pub(crate) async fn build_capability_search_result_bundle_with_feedback(
+    mcp_store: &crate::modules::mcp::store::McpStore,
+    _embedding_service: &crate::modules::providers::embedding::EmbeddingService,
+    _memory_store: &crate::modules::memory::service::MemoryService,
+    query: &str,
+    limit: usize,
+    feedback_context: &SearchFeedbackContext,
+) -> CapabilitySearchResultBundle {
     let registry = build_capability_registry(mcp_store).await;
     let profile = QueryProfile::from_query(query);
     let limit = limit.clamp(1, MAX_LIMIT);
     let mut ranked = registry
         .entries
         .into_iter()
-        .filter_map(|entry| rank_registry_entry(entry, &profile))
+        .filter_map(|entry| rank_registry_entry_with_feedback(entry, &profile, feedback_context))
         .collect::<Vec<_>>();
     ranked.sort_by(|left, right| {
         right
@@ -94,48 +178,117 @@ pub(crate) async fn build_capability_search_result(
         })
         .count();
 
-    let capability_groups = json!({
-        "skill_tools": capabilities
-            .iter()
-            .filter(|item| item.get("asset_namespace").and_then(Value::as_str) == Some("skill"))
-            .cloned()
-            .collect::<Vec<_>>(),
-        "user_mcp_tools": capabilities
-            .iter()
-            .filter(|item| item.get("asset_namespace").and_then(Value::as_str) == Some("user_mcp"))
-            .cloned()
-            .collect::<Vec<_>>(),
-        "core_tools": capabilities
-            .iter()
-            .filter(|item| item.get("asset_namespace").and_then(Value::as_str) == Some("core"))
-            .cloned()
-            .collect::<Vec<_>>(),
+    let summary_payload = build_search_result_payload(
+        query,
+        &profile,
+        registry.enabled_assistant_count,
+        registry.read_path_mode.as_str(),
+        &capabilities,
+        &recipes,
+        &orchestration_primitives,
+        direct_callable_capability_count,
+        SearchSdkDetailLevel::Summary,
+    );
+    let full_payload = build_search_result_payload(
+        query,
+        &profile,
+        registry.enabled_assistant_count,
+        registry.read_path_mode.as_str(),
+        &capabilities,
+        &recipes,
+        &orchestration_primitives,
+        direct_callable_capability_count,
+        SearchSdkDetailLevel::Full,
+    );
+
+    CapabilitySearchResultBundle {
+        summary_payload,
+        full_payload,
+    }
+}
+
+pub(crate) async fn build_tool_schema_lookup_result(
+    mcp_store: &crate::modules::mcp::store::McpStore,
+    tool_name: &str,
+) -> Result<Value, String> {
+    let normalized_tool_name = tool_name.trim();
+    if normalized_tool_name.is_empty() {
+        return Err("tool_name is required".to_string());
+    }
+
+    let registry = build_capability_registry(mcp_store).await;
+    let Some(entry) = registry.entries.into_iter().find(|entry| {
+        entry
+            .asset
+            .get("name")
+            .and_then(Value::as_str)
+            .is_some_and(|name| name.trim() == normalized_tool_name)
+    }) else {
+        return Err(format!("tool schema not found for '{normalized_tool_name}'"));
+    };
+
+    let CapabilityRegistryEntry {
+        asset,
+        tool_contract_source,
+        ..
+    } = entry;
+    let description = asset
+        .get("description")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let source_type = asset
+        .get("source_type")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let contract = build_tool_contract(
+        normalized_tool_name,
+        description,
+        source_type,
+        asset.get("metadata"),
+        tool_contract_source.as_ref(),
+    )
+    .ok_or_else(|| format!("tool schema unavailable for '{normalized_tool_name}'"))?;
+
+    let mut result = json!({
+        "tool_name": normalized_tool_name,
+        "capability_id": asset.get("id").cloned().unwrap_or_else(|| json!(normalized_tool_name)),
+        "description": description,
     });
-    let recipe_groups = json!({
-        "skills": recipes
-            .iter()
-            .filter(|item| item.get("asset_namespace").and_then(Value::as_str) == Some("skill"))
-            .cloned()
-            .collect::<Vec<_>>(),
-        "assistants": recipes
-            .iter()
-            .filter(|item| item.get("asset_type").and_then(Value::as_str) == Some("assistant"))
-            .cloned()
-            .collect::<Vec<_>>(),
-    });
+    merge_object(&mut result, contract);
+    Ok(result)
+}
+
+fn build_search_result_payload(
+    query: &str,
+    profile: &QueryProfile,
+    enabled_assistant_count: usize,
+    read_path_mode: &str,
+    capabilities: &[Value],
+    recipes: &[Value],
+    orchestration_primitives: &[Value],
+    direct_callable_capability_count: usize,
+    detail_level: SearchSdkDetailLevel,
+) -> Value {
+    let serialized_capabilities = serialize_search_items(capabilities, detail_level);
+    let serialized_recipes = serialize_search_items(recipes, detail_level);
+    let serialized_orchestration_primitives =
+        serialize_search_items(orchestration_primitives, detail_level);
+    let capability_groups = build_capability_groups(capabilities, detail_level);
+    let recipe_groups = build_recipe_groups(recipes, detail_level);
 
     json!({
         "format_version": SEARCH_RESULT_FORMAT_VERSION,
         "runtime_protocol_version": crate::modules::code_mode::contract::RUNTIME_PROTOCOL_VERSION,
         "mode": "code_mode",
+        "detail_level": detail_level.as_str(),
         "query": query,
         "normalized_query": profile.to_value(),
-        "count": capabilities.len() + recipes.len() + orchestration_primitives.len(),
-        "capabilities": capabilities,
-        "recipes": recipes,
+        "count": serialized_capabilities.len() + serialized_recipes.len() + serialized_orchestration_primitives.len(),
+        "capabilities": serialized_capabilities,
+        "recipes": serialized_recipes,
         "capability_groups": capability_groups,
         "recipe_groups": recipe_groups,
-        "orchestration_primitives": orchestration_primitives,
+        "orchestration_primitives": serialized_orchestration_primitives,
         "routing_hint": {
             "default_path": "direct_capability_call",
             "programmatic_path": "execute_code_plan",
@@ -143,11 +296,82 @@ pub(crate) async fn build_capability_search_result(
         },
         "usage_hint": "优先从 capability_groups.skill_tools 与 capability_groups.user_mcp_tools 中选择 direct host 能力直接调用；recipe_groups.skills 表示 skill bundle 的指导性入口，本身不是可直接执行的 tool。只有在需要多步程序逻辑、循环、条件分支或结果聚合时，才进入 orchestration_primitives 里的 execute_code_plan。",
         "availability": {
-            "enabled_assistant_count": registry.enabled_assistant_count,
-            "read_path_mode": registry.read_path_mode.as_str(),
+            "enabled_assistant_count": enabled_assistant_count,
+            "read_path_mode": read_path_mode,
             "legacy_control_plane_reads_enabled": false,
         }
     })
+}
+
+fn serialize_search_items(items: &[Value], detail_level: SearchSdkDetailLevel) -> Vec<Value> {
+    items.iter()
+        .map(|item| match detail_level {
+            SearchSdkDetailLevel::Summary => summarize_search_item(item),
+            SearchSdkDetailLevel::Full => item.clone(),
+        })
+        .collect()
+}
+
+fn summarize_search_item(item: &Value) -> Value {
+    let mut summary = item.clone();
+    if let Some(object) = summary.as_object_mut() {
+        let schema_available = object
+            .get("input_schema")
+            .map(Value::is_object)
+            .unwrap_or(false);
+        for key in [
+            "input_schema",
+            "output_schema",
+            "parameters",
+            "required_parameters",
+            "signature",
+            "python_stub",
+            "example_arguments",
+            "permission_scope",
+        ] {
+            object.remove(key);
+        }
+        if schema_available {
+            object.insert("schema_available".to_string(), Value::Bool(true));
+        }
+    }
+    summary
+}
+
+fn build_capability_groups(items: &[Value], detail_level: SearchSdkDetailLevel) -> Value {
+    json!({
+        "skill_tools": collect_group_items(items, detail_level, |item| item.get("asset_namespace").and_then(Value::as_str) == Some("skill")),
+        "user_mcp_tools": collect_group_items(items, detail_level, |item| item.get("asset_namespace").and_then(Value::as_str) == Some("user_mcp")),
+        "core_tools": collect_group_items(items, detail_level, |item| item.get("asset_namespace").and_then(Value::as_str) == Some("core")),
+    })
+}
+
+fn build_recipe_groups(items: &[Value], detail_level: SearchSdkDetailLevel) -> Value {
+    json!({
+        "skills": collect_group_items(items, detail_level, |item| item.get("asset_namespace").and_then(Value::as_str) == Some("skill")),
+        "assistants": collect_group_items(items, detail_level, |item| item.get("asset_type").and_then(Value::as_str) == Some("assistant")),
+    })
+}
+
+fn collect_group_items<F>(
+    items: &[Value],
+    detail_level: SearchSdkDetailLevel,
+    predicate: F,
+) -> Vec<Value>
+where
+    F: Fn(&Value) -> bool,
+{
+    items
+        .iter()
+        .filter(|item| predicate(item))
+        .map(|item| match detail_level {
+            SearchSdkDetailLevel::Summary => item
+                .get("name")
+                .cloned()
+                .unwrap_or_else(|| Value::Null),
+            SearchSdkDetailLevel::Full => item.clone(),
+        })
+        .collect()
 }
 
 fn dedupe_ranked_capabilities(ranked: Vec<RankedCapability>) -> Vec<RankedCapability> {
@@ -175,6 +399,14 @@ fn capability_dedupe_key(value: &Value) -> Option<String> {
 fn rank_registry_entry(
     entry: CapabilityRegistryEntry,
     profile: &QueryProfile,
+) -> Option<RankedCapability> {
+    rank_registry_entry_with_feedback(entry, profile, &SearchFeedbackContext::default())
+}
+
+fn rank_registry_entry_with_feedback(
+    entry: CapabilityRegistryEntry,
+    profile: &QueryProfile,
+    feedback_context: &SearchFeedbackContext,
 ) -> Option<RankedCapability> {
     let CapabilityRegistryEntry {
         asset,
@@ -208,59 +440,53 @@ fn rank_registry_entry(
     } else {
         None
     };
-    let lexical_score = lexical_asset_match_score(&profile.normalized, &asset);
-    let structured_score = capability_structured_match_score(
+    let rank = compute_rank_computation(
         profile,
+        &asset,
         name,
         description,
-        asset_type,
-        source_type,
-        asset_metadata.as_ref(),
-        tool_contract_source.as_ref(),
-    );
-    let combined_text = format!("{}\n{}", name.to_lowercase(), description.to_lowercase());
-    let domain_hit = matches_domain(profile.domain, &combined_text);
-    let intent_hit = matches_intent(profile.intent, &combined_text, asset_type, source_type);
-    let (feature_score, feature_reasons) = capability_profile_feature_score(
-        profile,
         asset_type,
         source_type,
         &availability,
         asset_metadata.as_ref(),
         tool_contract_source.as_ref(),
+        feedback_context,
     );
-    let has_signal = lexical_score.is_some()
-        || structured_score.is_some()
-        || domain_hit
-        || intent_hit
-        || feature_score != 0.0;
+    let has_signal = rank.lexical_score.is_some()
+        || rank.structured_score.is_some()
+        || rank.domain_hit
+        || rank.intent_hit
+        || rank.feature_score != 0.0
+        || rank.feedback_score != 0.0;
     if !has_signal {
         return None;
     }
 
     let mut rank_score = 0.0;
     let mut match_reason = Vec::new();
-    if let Some(score) = structured_score {
+    if let Some(score) = rank.structured_score {
         if score >= SEMANTIC_SCORE_FLOOR {
             rank_score += score * 25.0;
             match_reason.push(format!("structured_match:{score:.2}"));
         }
     }
-    if let Some(score) = lexical_score {
+    if let Some(score) = rank.lexical_score {
         let mapped_score = remap_lexical_score(score);
         rank_score += mapped_score;
         match_reason.push(lexical_reason(score));
     }
-    if domain_hit {
+    if rank.domain_hit {
         rank_score += 14.0;
         match_reason.push(format!("domain:{}", profile.domain));
     }
-    if intent_hit {
+    if rank.intent_hit {
         rank_score += 10.0;
         match_reason.push(format!("intent:{}", profile.intent));
     }
-    rank_score += feature_score;
-    match_reason.extend(feature_reasons);
+    rank_score += rank.feature_score;
+    match_reason.extend(rank.feature_reasons);
+    rank_score += rank.feedback_score;
+    match_reason.extend(rank.feedback_reasons);
     if availability.is_direct_callable() {
         rank_score += 12.0;
         match_reason.push("direct_callable".to_string());
@@ -289,8 +515,8 @@ fn rank_registry_entry(
         asset_metadata.as_ref(),
         &availability,
         match_reason,
-        structured_score,
-        lexical_score,
+        rank.structured_score,
+        rank.lexical_score,
         rank_score,
     );
     if availability.is_direct_callable() && matches!(asset_type, "tool" | "skill_tool") {
@@ -309,6 +535,53 @@ fn rank_registry_entry(
         score: rank_score,
         value,
     })
+}
+
+fn compute_rank_computation(
+    profile: &QueryProfile,
+    asset: &Value,
+    name: &str,
+    description: &str,
+    asset_type: &str,
+    source_type: &str,
+    availability: &RegistryAvailability,
+    asset_metadata: Option<&Value>,
+    tool_source: Option<&ToolContractSource>,
+    feedback_context: &SearchFeedbackContext,
+) -> RankComputation {
+    let lexical_score = lexical_asset_match_score(&profile.normalized, asset);
+    let structured_score = capability_structured_match_score(
+        profile,
+        name,
+        description,
+        asset_type,
+        source_type,
+        asset_metadata,
+        tool_source,
+    );
+    let combined_text = format!("{}\n{}", name.to_lowercase(), description.to_lowercase());
+    let domain_hit = matches_domain(profile.domain, &combined_text);
+    let intent_hit = matches_intent(profile.intent, &combined_text, asset_type, source_type);
+    let (feature_score, feature_reasons) = capability_profile_feature_score(
+        profile,
+        asset_type,
+        source_type,
+        availability,
+        asset_metadata,
+        tool_source,
+    );
+    let feedback_boost = compute_feedback_boost(name, feedback_context);
+
+    RankComputation {
+        lexical_score,
+        structured_score,
+        domain_hit,
+        intent_hit,
+        feature_score,
+        feature_reasons,
+        feedback_score: feedback_boost.score,
+        feedback_reasons: feedback_boost.reasons,
+    }
 }
 
 fn capability_structured_match_score(
@@ -1666,6 +1939,55 @@ mod tests {
     }
 
     #[test]
+    fn summarize_search_item_omits_heavy_contract_fields_but_keeps_schema_flag() {
+        let summary = summarize_search_item(&json!({
+            "name": "browser_open_tab",
+            "description": "Open a browser tab",
+            "status": {"callable": true},
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string"}
+                },
+                "required": ["url"]
+            },
+            "output_schema": {"type": "object"},
+            "parameters": [{"name": "url"}],
+            "required_parameters": ["url"],
+            "signature": "browser_open_tab(url:string) -> dict[str, Any]",
+            "python_stub": "def browser_open_tab(url: str) -> dict[str, Any]: ...",
+            "example_arguments": {"url": "https://example.com"},
+            "permission_scope": ["network_read"],
+            "mutating": true,
+            "risk_level": "LOW"
+        }));
+
+        assert_eq!(summary["schema_available"], json!(true));
+        assert_eq!(summary["mutating"], json!(true));
+        assert_eq!(summary["risk_level"], json!("LOW"));
+        assert!(summary.get("input_schema").is_none());
+        assert!(summary.get("required_parameters").is_none());
+        assert!(summary.get("python_stub").is_none());
+    }
+
+    #[test]
+    fn summary_groups_use_name_refs_instead_of_cloned_objects() {
+        let groups = build_capability_groups(
+            &[json!({
+                "name": "skill.openclaw_weather.fetch_weather",
+                "asset_namespace": "skill",
+                "input_schema": {"type": "object"}
+            })],
+            SearchSdkDetailLevel::Summary,
+        );
+
+        assert_eq!(
+            groups["skill_tools"],
+            json!(["skill.openclaw_weather.fetch_weather"])
+        );
+    }
+
+    #[test]
     fn query_profile_prefers_local_inspection_over_install_recipe_for_machine_queries() {
         let profile = QueryProfile::from_query(
             "检查当前机器是否安装某个软件，读取本机已安装程序、注册表和终端信息",
@@ -1980,5 +2302,76 @@ mod tests {
             memory_rank > web_rank,
             "memory={memory_rank}, web={web_rank}"
         );
+    }
+
+    #[test]
+    fn rank_registry_entry_with_feedback_boosts_recent_tool_over_similar_peer() {
+        let profile = QueryProfile::from_query("browser tool for page work");
+        let recent_context = SearchFeedbackContext {
+            recent_tools: vec!["browser_wait_for_element".to_string()],
+            historical_affinity: Vec::new(),
+        };
+
+        let open_tab_entry = CapabilityRegistryEntry {
+            asset: json!({
+                "id": "core.browser_open_tab",
+                "name": "browser_open_tab",
+                "description": "Ask the browser agent to work with the current page.",
+                "asset_type": "tool",
+                "source_type": "code_mode_core",
+                "pkg_name": "code_mode.core",
+                "metadata": {
+                    "execution_surface": "host",
+                    "runtime_state": "ready",
+                    "activation_state": "enabled",
+                    "search_index_state": "not_required"
+                }
+            }),
+            availability: RegistryAvailability {
+                class: ToolAvailabilityClass::CallableDirect,
+                install_required: false,
+                activation_required: false,
+                recommended_action: "execute",
+                status_reason: "core_code_mode_tool",
+            },
+            tool_contract_source: None,
+        };
+
+        let wait_entry = CapabilityRegistryEntry {
+            asset: json!({
+                "id": "core.browser_wait_for_element",
+                "name": "browser_wait_for_element",
+                "description": "Ask the browser agent to work with the current page.",
+                "asset_type": "tool",
+                "source_type": "code_mode_core",
+                "pkg_name": "code_mode.core",
+                "metadata": {
+                    "execution_surface": "host",
+                    "runtime_state": "ready",
+                    "activation_state": "enabled",
+                    "search_index_state": "not_required"
+                }
+            }),
+            availability: RegistryAvailability {
+                class: ToolAvailabilityClass::CallableDirect,
+                install_required: false,
+                activation_required: false,
+                recommended_action: "execute",
+                status_reason: "core_code_mode_tool",
+            },
+            tool_contract_source: None,
+        };
+
+        let open_rank = rank_registry_entry_with_feedback(open_tab_entry, &profile, &recent_context)
+            .expect("open tab rank");
+        let wait_rank = rank_registry_entry_with_feedback(wait_entry, &profile, &recent_context)
+            .expect("wait rank");
+
+        assert!(wait_rank.score > open_rank.score);
+        assert!(wait_rank.value["match_reason"]
+            .as_array()
+            .expect("match reason")
+            .iter()
+            .any(|reason| reason == "session:exact_tool"));
     }
 }
