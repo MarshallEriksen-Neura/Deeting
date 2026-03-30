@@ -2292,6 +2292,7 @@ async fn index_local_skill_tool_binding_assets(
 /// Automatically install runtimes for official skills that need it.
 /// Called once after `register_local_skills_inner` during app startup.
 /// Each install runs in a background task so it never blocks the launch.
+#[allow(dead_code)]
 pub(crate) async fn auto_install_official_skill_runtimes(app: &AppHandle, app_state: &AppState) {
     let installs = match app_state.mcp.store.list_local_skill_install_details().await {
         Ok(list) => list,

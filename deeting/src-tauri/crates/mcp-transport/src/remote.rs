@@ -200,7 +200,10 @@ async fn spawn_local_stdio_client(
         .map_err(|err| err.to_string())
 }
 
-fn configure_background_tokio_command(command: &mut tokio::process::Command) {
+fn configure_background_tokio_command(
+    #[cfg(not(target_os = "windows"))] _command: &mut tokio::process::Command,
+    #[cfg(target_os = "windows")] command: &mut tokio::process::Command,
+) {
     #[cfg(target_os = "windows")]
     {
         command.creation_flags(CREATE_NO_WINDOW);

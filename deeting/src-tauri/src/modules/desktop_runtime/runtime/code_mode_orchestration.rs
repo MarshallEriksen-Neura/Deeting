@@ -6,8 +6,8 @@ use super::{
     execute_or_queue_mcp_tool_call_with_tool_ref, extract_chat_tool_calls,
     install_local_skill_from_onboarding_request, request_provider_chat_completion,
     resolve_dynamic_direct_capability_tool_name, resolve_local_capability_activation_state,
-    search_feedback::search_feedback_context_from_tool_call_meta, CapabilityExecutionContract,
-    LocalCapabilityActivationState, LocalExecutionPolicy,
+    search_feedback::search_feedback_context_from_tool_call_meta,
+    CapabilityExecutionContract, LocalCapabilityActivationState, LocalExecutionPolicy,
     LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION, LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
 };
 use crate::modules::mcp::commands::common_impl::to_string;
@@ -141,6 +141,52 @@ fn enrich_response_with_tool_trace(
     }
     runtime_metrics.inject_into_response(&mut response);
     response
+}
+
+async fn record_query_affinity_from_tool_meta(
+    store: &crate::modules::mcp::store::McpStore,
+    last_capability_snapshot: Option<&serde_json::Value>,
+    tool_meta: &[serde_json::Value],
+) {
+    let search_query = last_capability_snapshot
+        .and_then(|snapshot| snapshot.get("query"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let Some(search_query) = search_query else {
+        return;
+    };
+
+    for item in tool_meta {
+        let status = item
+            .get("status")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
+        if !status.eq_ignore_ascii_case("success") {
+            continue;
+        }
+        let tool_name = item
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let Some(tool_name) = tool_name else {
+            continue;
+        };
+        if matches!(
+            tool_name,
+            "search_sdk"
+                | "get_tool_schema"
+                | "execute_code_plan"
+                | "consult_expert_network"
+                | "attach_capability"
+                | "detach_capability"
+        ) {
+            continue;
+        }
+        let _ = store.upsert_tool_query_affinity(&search_query, tool_name).await;
+    }
 }
 
 #[derive(Clone)]
@@ -398,6 +444,12 @@ async fn continue_local_chat_complete_with_auto_code_mode(
                 results,
                 capability_update,
             } => {
+                record_query_affinity_from_tool_meta(
+                    app_state.mcp.store.as_ref(),
+                    state.last_capability_snapshot.as_ref(),
+                    &tool_call_meta,
+                )
+                .await;
                 if !synthesized {
                     let mut current_tool_call_meta = state.all_tool_call_meta.clone();
                     current_tool_call_meta.extend(tool_call_meta);
@@ -431,6 +483,12 @@ async fn continue_local_chat_complete_with_auto_code_mode(
                 call_id,
                 tool_name,
             } => {
+                record_query_affinity_from_tool_meta(
+                    app_state.mcp.store.as_ref(),
+                    state.last_capability_snapshot.as_ref(),
+                    &tool_call_meta,
+                )
+                .await;
                 let suspended = SuspendedLocalChatExecution::from_state(
                     &state,
                     &response,

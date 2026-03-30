@@ -5,7 +5,6 @@ import {
   Bot,
   BrainCircuit,
   ImageIcon,
-  Volume2,
   Play,
   Sparkles,
   Wrench,

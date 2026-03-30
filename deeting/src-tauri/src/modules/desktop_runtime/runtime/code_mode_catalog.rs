@@ -99,24 +99,6 @@ pub(crate) async fn build_local_sdk_search_result_with_runtime_full(
     .await
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
-pub(crate) async fn build_local_sdk_search_result_bundle_with_runtime(
-    mcp_store: &crate::modules::mcp::store::McpStore,
-    embedding_service: &crate::modules::providers::embedding::EmbeddingService,
-    memory_store: &crate::modules::memory::service::MemoryService,
-    query: &str,
-    limit: usize,
-) -> crate::modules::capability_control_plane::CapabilitySearchResultBundle {
-    crate::modules::capability_control_plane::build_search_sdk_result_bundle(
-        mcp_store,
-        embedding_service,
-        memory_store,
-        query,
-        limit,
-    )
-    .await
-}
-
 pub(crate) async fn build_local_sdk_search_result_bundle_with_feedback_runtime(
     mcp_store: &crate::modules::mcp::store::McpStore,
     embedding_service: &crate::modules::providers::embedding::EmbeddingService,

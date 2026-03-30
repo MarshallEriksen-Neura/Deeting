@@ -33,8 +33,11 @@ const MIN_EXEC_TIMEOUT_SECS: u64 = 5;
 const SESSION_BUSY_RETRY_ATTEMPTS: usize = 2;
 const REAPER_INTERVAL_SECS: u64 = 60;
 const DEFAULT_BOXRUN_PORT: u16 = 9090;
+#[allow(dead_code)]
 const EXECUTION_PROBE_SESSION_ID: &str = "__deeting_status_probe__";
+#[allow(dead_code)]
 const EXECUTION_PROBE_TIMEOUT_SECS: u64 = 5;
+#[allow(dead_code)]
 const EXECUTION_PROBE_SENTINEL: &str = "__deeting_probe_ok__";
 
 #[cfg(target_os = "windows")]
@@ -175,7 +178,7 @@ impl SandboxRuntimeManager {
         let provider_name = self.provider_name().await;
         let runtime_mode = runtime_mode_from_provider_name(&provider_name);
         let boxlite = self.boxlite_status().await;
-        let mut execution_probe = SandboxExecutionProbe::default();
+        let execution_probe = SandboxExecutionProbe::default();
 
         #[cfg(target_os = "windows")]
         {
@@ -552,6 +555,7 @@ impl SandboxRuntimeManager {
         )))
     }
 
+    #[allow(dead_code)]
     async fn execute_session_code_without_prepare(
         &self,
         normalized_session: &str,
@@ -632,6 +636,7 @@ impl SandboxRuntimeManager {
         }
     }
 
+    #[allow(dead_code)]
     async fn programmatic_execution_probe(&self) -> SandboxExecutionProbe {
         let checked_at_unix_ms = Some(now_unix_ms());
         match self
@@ -1070,6 +1075,7 @@ fn derive_windows_readiness(
     )
 }
 
+#[allow(dead_code)]
 fn refine_ready_status_with_execution_probe(
     status: SandboxReadinessStatus,
     blocking_reason: Option<String>,

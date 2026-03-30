@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
+use sqlx::Row;
 
 use crate::modules::admin::store_init::init_admin_tables;
 use crate::modules::assistants::store::init_assistant_tables;
@@ -17,6 +18,21 @@ use mcp_core::types::{
 
 const DEFAULT_LOCAL_SOURCE_PATH: &str = "~/.config/deeting/mcp.json";
 const DEFAULT_CLOUD_SOURCE_NAME: &str = "Deeting Cloud";
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ToolExecutionAffinityRow {
+    pub tool_name: String,
+    pub success_count: i64,
+    pub last_used_at_unix_ms: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ToolQueryAffinityRow {
+    pub query_text: String,
+    pub tool_name: String,
+    pub success_count: i64,
+    pub last_matched_at_unix_ms: i64,
+}
 
 pub struct McpStore {
     pub(crate) pool: SqlitePool,
@@ -122,7 +138,7 @@ impl McpStore {
             );
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -263,6 +279,66 @@ impl McpStore {
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS tool_execution_history (
+              id TEXT PRIMARY KEY,
+              session_id TEXT,
+              tool_name TEXT NOT NULL,
+              success INTEGER NOT NULL,
+              created_at_unix_ms INTEGER NOT NULL
+            );
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_tool_execution_history_tool_name_created_at
+            ON tool_execution_history(tool_name, created_at_unix_ms DESC);
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_tool_execution_history_session_id_created_at
+            ON tool_execution_history(session_id, created_at_unix_ms DESC);
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS tool_query_affinity (
+              query_text TEXT NOT NULL,
+              tool_name TEXT NOT NULL,
+              success_count INTEGER NOT NULL DEFAULT 0,
+              last_matched_at_unix_ms INTEGER NOT NULL,
+              PRIMARY KEY (query_text, tool_name)
+            );
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_tool_query_affinity_last_matched
+            ON tool_query_affinity(last_matched_at_unix_ms DESC);
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
         init_admin_tables(self).await?;
 
         init_conversation_tables(self).await?;
@@ -319,5 +395,140 @@ impl McpStore {
 
         self.purge_legacy_skill_mcp_rows().await?;
         Ok(())
+    }
+
+    pub async fn record_tool_execution(
+        &self,
+        session_id: Option<&str>,
+        tool_name: &str,
+        success: bool,
+    ) -> Result<(), McpError> {
+        let normalized_tool_name = tool_name.trim();
+        if normalized_tool_name.is_empty() {
+            return Ok(());
+        }
+        let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+        sqlx::query(
+            r#"
+            INSERT INTO tool_execution_history (
+              id, session_id, tool_name, success, created_at_unix_ms
+            ) VALUES (?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(uuid::Uuid::new_v4().to_string())
+        .bind(session_id.map(str::trim).filter(|value| !value.is_empty()))
+        .bind(normalized_tool_name)
+        .bind(if success { 1_i64 } else { 0_i64 })
+        .bind(now as i64)
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        Ok(())
+    }
+
+    pub async fn list_tool_execution_affinity_rows(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<ToolExecutionAffinityRow>, McpError> {
+        let rows = sqlx::query(
+            r#"
+            SELECT
+              tool_name,
+              COUNT(*) as success_count,
+              MAX(created_at_unix_ms) as last_used_at_unix_ms
+            FROM tool_execution_history
+            WHERE success = 1
+            GROUP BY tool_name
+            ORDER BY last_used_at_unix_ms DESC
+            LIMIT ?
+            "#,
+        )
+        .bind(limit.max(1) as i64)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        rows.into_iter()
+            .map(|row| {
+                Ok(ToolExecutionAffinityRow {
+                    tool_name: row
+                        .try_get::<String, _>("tool_name")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    success_count: row
+                        .try_get::<i64, _>("success_count")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    last_used_at_unix_ms: row
+                        .try_get::<i64, _>("last_used_at_unix_ms")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                })
+            })
+            .collect()
+    }
+
+    pub async fn upsert_tool_query_affinity(
+        &self,
+        query_text: &str,
+        tool_name: &str,
+    ) -> Result<(), McpError> {
+        let normalized_query_text = query_text.trim().to_lowercase();
+        let normalized_tool_name = tool_name.trim().to_ascii_lowercase();
+        if normalized_query_text.is_empty() || normalized_tool_name.is_empty() {
+            return Ok(());
+        }
+        let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+        sqlx::query(
+            r#"
+            INSERT INTO tool_query_affinity (
+              query_text, tool_name, success_count, last_matched_at_unix_ms
+            ) VALUES (?, ?, 1, ?)
+            ON CONFLICT(query_text, tool_name) DO UPDATE SET
+              success_count = success_count + 1,
+              last_matched_at_unix_ms = excluded.last_matched_at_unix_ms
+            "#,
+        )
+        .bind(normalized_query_text)
+        .bind(normalized_tool_name)
+        .bind(now as i64)
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        Ok(())
+    }
+
+    pub async fn list_tool_query_affinity_rows(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<ToolQueryAffinityRow>, McpError> {
+        let rows = sqlx::query(
+            r#"
+            SELECT query_text, tool_name, success_count, last_matched_at_unix_ms
+            FROM tool_query_affinity
+            ORDER BY last_matched_at_unix_ms DESC, success_count DESC
+            LIMIT ?
+            "#,
+        )
+        .bind(limit.max(1) as i64)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        rows.into_iter()
+            .map(|row| {
+                Ok(ToolQueryAffinityRow {
+                    query_text: row
+                        .try_get::<String, _>("query_text")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    tool_name: row
+                        .try_get::<String, _>("tool_name")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    success_count: row
+                        .try_get::<i64, _>("success_count")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    last_matched_at_unix_ms: row
+                        .try_get::<i64, _>("last_matched_at_unix_ms")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                })
+            })
+            .collect()
     }
 }

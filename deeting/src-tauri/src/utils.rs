@@ -33,7 +33,10 @@ pub fn resolve_database_url<R: tauri::Runtime>(app: &tauri::App<R>) -> Result<St
     Ok(path_to_sqlite_url(&absolute))
 }
 
-pub fn configure_background_std_command(command: &mut StdCommand) {
+pub fn configure_background_std_command(
+    #[cfg(not(target_os = "windows"))] _command: &mut StdCommand,
+    #[cfg(target_os = "windows")] command: &mut StdCommand,
+) {
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;

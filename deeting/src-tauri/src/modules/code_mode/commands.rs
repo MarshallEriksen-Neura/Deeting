@@ -406,9 +406,7 @@ fn value_to_string_vec(value: &Value) -> Option<Vec<String>> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-}
+mod tests {}
 
 fn build_sandbox_blocked_response(
     session_id: &str,

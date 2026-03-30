@@ -52,6 +52,7 @@ mod tests {
         LocalConversationHistoryQuery, LocalConversationSessionsQuery, LocalConversationStatus,
     };
     use serde::Deserialize;
+    use sqlx::Row;
     use std::collections::{HashMap, HashSet};
     use std::path::Path;
     use std::path::PathBuf;
@@ -1164,6 +1165,50 @@ for raw_line in sys.stdin:
     }
 
     #[tokio::test]
+    async fn search_sdk_uses_historical_tool_execution_affinity_in_default_builder() {
+        let query = "browser tool for page work";
+        let (base_url, server_handle) = start_mock_embedding_server(HashMap::from([(
+            query.to_lowercase(),
+            vec![0.0, 0.0, 0.0],
+        )]))
+        .await;
+        let provider_state = create_test_provider_state("sdk-history-boost", &base_url).await;
+        let memory_state = create_test_memory_state("sdk-history-boost", 3).await;
+        let store = create_test_store("sdk-history-boost").await;
+
+        store
+            .record_tool_execution(Some("session-history"), "browser_wait_for_element", true)
+            .await
+            .expect("record history 1");
+        store
+            .record_tool_execution(Some("session-history"), "browser_wait_for_element", true)
+            .await
+            .expect("record history 2");
+
+        let result = crate::modules::capability_control_plane::build_search_sdk_result(
+            &store,
+            &provider_state.embedding,
+            memory_state.service.as_ref(),
+            query,
+            8,
+            crate::modules::desktop_runtime::runtime::capability_discovery::SearchSdkDetailLevel::Summary,
+        )
+        .await;
+
+        let names = result["capabilities"]
+            .as_array()
+            .expect("capabilities")
+            .iter()
+            .filter_map(|item| item.get("name").and_then(|value| value.as_str()))
+            .take(3)
+            .collect::<Vec<_>>();
+
+        assert!(names.contains(&"browser_wait_for_element"));
+
+        server_handle.abort();
+    }
+
+    #[tokio::test]
     async fn search_sdk_smoke_surfaces_enabled_skill_tool_as_callable_capability() {
         let query = "帮我抓取网页并提取标题";
         let (base_url, server_handle) = start_mock_embedding_server(HashMap::from([(
@@ -1279,6 +1324,116 @@ for raw_line in sys.stdin:
         );
         assert!(matched.get("required_parameters").is_some());
         assert!(matched.get("python_stub").is_some());
+
+        server_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn search_sdk_can_surface_semantic_match_without_strong_lexical_overlap() {
+        let query = "launch site destination";
+        let (base_url, server_handle) = start_mock_embedding_server(HashMap::from([(
+            query.to_lowercase(),
+            vec![1.0, 0.0, 0.0],
+        )]))
+        .await;
+        let provider_state = create_test_provider_state("sdk-semantic-match", &base_url).await;
+        let memory_state = create_test_memory_state("sdk-semantic-match", 3).await;
+        let store = create_test_store("sdk-semantic-match").await;
+
+        memory_state
+            .store
+            .upsert_asset(
+                "core.browser_open_tab".to_string(),
+                "browser_open_tab".to_string(),
+                "Launch a website destination in the local browser".to_string(),
+                "tool".to_string(),
+                "code_mode_core".to_string(),
+                Some("code_mode.core".to_string()),
+                vec![1.0, 0.0, 0.0],
+                Some(serde_json::json!({
+                    "read_only": false,
+                    "permission_scope": ["browser_write"],
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "url": {"type": "string", "description": "Page URL"}
+                        },
+                        "required": ["url"]
+                    }
+                })),
+            )
+            .await
+            .expect("insert semantic asset");
+
+        let result = build_local_sdk_search_result_with_runtime(
+            &store,
+            &provider_state.embedding,
+            memory_state.service.as_ref(),
+            query,
+            8,
+        )
+        .await;
+
+        let matched = result["capabilities"]
+            .as_array()
+            .expect("capabilities")
+            .iter()
+            .find(|item| item.get("name").and_then(|value| value.as_str()) == Some("browser_open_tab"))
+            .expect("browser_open_tab capability");
+        assert!(matched["match_reason"]
+            .as_array()
+            .expect("match reasons")
+            .iter()
+            .filter_map(|value| value.as_str())
+            .any(|reason| reason.starts_with("semantic:")));
+
+        server_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn search_sdk_uses_query_affinity_after_phase_two_stabilization() {
+        let query = "check bug";
+        let (base_url, server_handle) = start_mock_embedding_server(HashMap::from([(
+            query.to_lowercase(),
+            vec![0.0, 0.0, 0.0],
+        )]))
+        .await;
+        let provider_state = create_test_provider_state("sdk-query-affinity-live", &base_url).await;
+        let memory_state = create_test_memory_state("sdk-query-affinity-live", 3).await;
+        let store = create_test_store("sdk-query-affinity-live").await;
+
+        store
+            .upsert_tool_query_affinity("check bug", "shell_execute")
+            .await
+            .expect("upsert affinity 1");
+        store
+            .upsert_tool_query_affinity("check bug", "shell_execute")
+            .await
+            .expect("upsert affinity 2");
+
+        let result = crate::modules::capability_control_plane::build_search_sdk_result(
+            &store,
+            &provider_state.embedding,
+            memory_state.service.as_ref(),
+            query,
+            8,
+            crate::modules::desktop_runtime::runtime::capability_discovery::SearchSdkDetailLevel::Summary,
+        )
+        .await;
+
+        let matched = result["capabilities"]
+            .as_array()
+            .expect("capabilities")
+            .iter()
+            .find(|item| item.get("name").and_then(|value| value.as_str()) == Some("shell_execute"))
+            .expect("shell_execute capability");
+
+        assert!(matched["match_reason"]
+            .as_array()
+            .expect("match reasons")
+            .iter()
+            .filter_map(|value| value.as_str())
+            .any(|reason| reason.starts_with("query_affinity:")));
 
         server_handle.abort();
     }
@@ -3779,9 +3934,22 @@ for raw_line in sys.stdin:
         )
         .await
         .expect("execute stdio mcp tool through rmcp");
+        assert_eq!(
+            result.get("status").and_then(|value| value.as_str()),
+            Some("REQUIRES_APPROVAL")
+        );
+        let approval_token = result
+            .get("approval_token")
+            .and_then(|value| value.as_str())
+            .expect("approval token")
+            .to_string();
+
+        let approved = approve_mcp_tool_inner(&store, &pending_tool_calls, &approval_token)
+            .await
+            .expect("approve stdio mcp tool");
 
         assert_eq!(
-            result
+            approved
                 .get("structuredContent")
                 .and_then(|value| value.get("echo"))
                 .and_then(|value| value.get("message"))
@@ -3789,10 +3957,30 @@ for raw_line in sys.stdin:
             Some("hello from rmcp")
         );
         assert_eq!(
-            result.get("isError").and_then(|value| value.as_bool()),
+            approved.get("isError").and_then(|value| value.as_bool()),
             Some(false)
         );
         assert!(pending_tool_calls.read().await.is_empty());
+
+        let execution_rows = sqlx::query(
+            "SELECT tool_name, success FROM tool_execution_history ORDER BY created_at_unix_ms DESC",
+        )
+        .fetch_all(&store.pool)
+        .await
+        .expect("read tool execution history");
+        assert_eq!(execution_rows.len(), 1);
+        assert_eq!(
+            execution_rows[0]
+                .try_get::<String, _>("tool_name")
+                .expect("tool name"),
+            "echo"
+        );
+        assert_eq!(
+            execution_rows[0]
+                .try_get::<i64, _>("success")
+                .expect("success"),
+            1
+        );
     }
 
     #[cfg(not(target_os = "windows"))]

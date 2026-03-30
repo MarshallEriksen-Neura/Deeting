@@ -613,3 +613,99 @@ async fn gateway_log_queries_filter_by_dimensions_and_stats() {
     assert_eq!(stats.total_cost_user, 0.01);
     assert_eq!(stats.error_distribution[0].key, "429");
 }
+
+#[tokio::test]
+async fn record_tool_execution_persists_successful_events() {
+    let store = create_test_store("tool-execution-history").await;
+    store.init().await.expect("init store");
+
+    store
+        .record_tool_execution(Some("session-1"), "browser_open_tab", true)
+        .await
+        .expect("record tool execution");
+
+    let rows = sqlx::query(
+        "SELECT session_id, tool_name, success FROM tool_execution_history ORDER BY created_at_unix_ms DESC",
+    )
+    .fetch_all(&store.pool)
+    .await
+    .expect("read tool execution history");
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows[0].try_get::<String, _>("session_id").expect("session id"),
+        "session-1"
+    );
+    assert_eq!(
+        rows[0].try_get::<String, _>("tool_name").expect("tool name"),
+        "browser_open_tab"
+    );
+    assert_eq!(rows[0].try_get::<i64, _>("success").expect("success"), 1);
+}
+
+#[tokio::test]
+async fn list_tool_execution_affinity_rows_orders_newer_tool_usage_first() {
+    let store = create_test_store("tool-execution-affinity").await;
+    store.init().await.expect("init store");
+
+    sqlx::query(
+        "INSERT INTO tool_execution_history (id, session_id, tool_name, success, created_at_unix_ms)
+         VALUES (?, ?, ?, ?, ?), (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)",
+    )
+    .bind("row-1")
+    .bind::<Option<&str>>(Some("session-1"))
+    .bind("browser_open_tab")
+    .bind(1_i64)
+    .bind(1_000_i64)
+    .bind("row-2")
+    .bind::<Option<&str>>(Some("session-1"))
+    .bind("browser_open_tab")
+    .bind(1_i64)
+    .bind(2_000_i64)
+    .bind("row-3")
+    .bind::<Option<&str>>(Some("session-2"))
+    .bind("browser_wait_for_element")
+    .bind(1_i64)
+    .bind(5_000_i64)
+    .execute(&store.pool)
+    .await
+    .expect("seed tool execution history");
+
+    let rows = store
+        .list_tool_execution_affinity_rows(8)
+        .await
+        .expect("list affinity rows");
+
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].tool_name, "browser_wait_for_element");
+    assert_eq!(rows[0].success_count, 1);
+    assert_eq!(rows[0].last_used_at_unix_ms, 5_000);
+    assert_eq!(rows[1].tool_name, "browser_open_tab");
+    assert_eq!(rows[1].success_count, 2);
+    assert_eq!(rows[1].last_used_at_unix_ms, 2_000);
+}
+
+#[tokio::test]
+async fn upsert_tool_query_affinity_accumulates_success_count() {
+    let store = create_test_store("tool-query-affinity").await;
+    store.init().await.expect("init store");
+
+    store
+        .upsert_tool_query_affinity("check bug", "eslint_check")
+        .await
+        .expect("upsert affinity 1");
+    store
+        .upsert_tool_query_affinity("check bug", "eslint_check")
+        .await
+        .expect("upsert affinity 2");
+
+    let rows = store
+        .list_tool_query_affinity_rows(8)
+        .await
+        .expect("list query affinity rows");
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].query_text, "check bug");
+    assert_eq!(rows[0].tool_name, "eslint_check");
+    assert_eq!(rows[0].success_count, 2);
+}

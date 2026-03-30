@@ -33,6 +33,45 @@ fn summarize_tool_arguments(arguments: &Value) -> Value {
     }
 }
 
+async fn record_successful_tool_execution(
+    store: &crate::modules::mcp::store::McpStore,
+    session_id: Option<&str>,
+    tool_name: &str,
+    result: &Value,
+) {
+    if !should_record_tool_execution_result(result) {
+        return;
+    }
+    if let Err(err) = store.record_tool_execution(session_id, tool_name, true).await {
+        log::warn!(
+            "tool_execution_history_record_failed {}",
+            serde_json::json!({
+                "tool_name": tool_name,
+                "session_id": session_id,
+                "error": err.to_string(),
+            })
+        );
+    }
+}
+
+fn should_record_tool_execution_result(result: &Value) -> bool {
+    match result.get("status").and_then(Value::as_str) {
+        Some(status)
+            if matches!(
+                status,
+                "REQUIRES_APPROVAL"
+                    | "RECOVERED_REQUIRES_APPROVAL"
+                    | "DENIED"
+                    | "error"
+                    | "ERROR"
+            ) =>
+        {
+            false
+        }
+        _ => true,
+    }
+}
+
 fn log_skill_binding_lookup_start(
     tool_id: Option<&str>,
     tool_name: Option<&str>,
@@ -1054,7 +1093,15 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_tool_ref(
                 "approved_by_grant": approved_by_grant,
             }),
         );
-        return execute_skill_binding(store, &binding, &arguments).await;
+        let result = execute_skill_binding(store, &binding, &arguments).await?;
+        record_successful_tool_execution(
+            store,
+            approval_context.session_id.as_deref(),
+            &binding.callable_name,
+            &result,
+        )
+        .await;
+        return Ok(result);
     }
     log_skill_binding_lookup_miss(tool_id.as_deref(), tool_name.as_deref());
 
@@ -1068,6 +1115,15 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_tool_ref(
     )
     .await?
     {
+        let resolved_tool_name = resolve_core_tool_name(tool_id.as_deref(), tool_name.as_deref())
+            .unwrap_or_else(|| tool_name.as_deref().unwrap_or_default());
+        record_successful_tool_execution(
+            store,
+            approval_context.session_id.as_deref(),
+            resolved_tool_name,
+            &result,
+        )
+        .await;
         return Ok(result);
     }
 
@@ -1152,7 +1208,15 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_tool_ref(
             }));
         }
     }
-    execute_mcp_tool(store, &tool, &arguments).await
+    let result = execute_mcp_tool(store, &tool, &arguments).await?;
+    record_successful_tool_execution(
+        store,
+        approval_context.session_id.as_deref(),
+        &tool.name,
+        &result,
+    )
+    .await;
+    Ok(result)
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -1219,6 +1283,13 @@ pub(crate) async fn approve_mcp_tool_inner_with_context(
             return Err("pending tool call already consumed".to_string());
         }
         let result = execute_skill_binding(store, &binding, &pending.arguments).await?;
+        record_successful_tool_execution(
+            store,
+            pending.session_id.as_deref(),
+            &binding.callable_name,
+            &result,
+        )
+        .await;
         if let (Some(runtime), Some(key)) = (runtime_state, pending.approval_grant_key.as_deref()) {
             if let Some(grant) =
                 crate::modules::mcp::SessionApprovalGrant::from_key(key, now as i128)
@@ -1253,6 +1324,13 @@ pub(crate) async fn approve_mcp_tool_inner_with_context(
         {
             return Err("pending tool call already consumed".to_string());
         }
+        record_successful_tool_execution(
+            store,
+            pending.session_id.as_deref(),
+            &pending.tool_name,
+            &result,
+        )
+        .await;
         return Ok(result);
     }
 
@@ -1282,6 +1360,13 @@ pub(crate) async fn approve_mcp_tool_inner_with_context(
         return Err("pending tool call already consumed".to_string());
     }
     let result = execute_mcp_tool(store, &tool, &pending.arguments).await?;
+    record_successful_tool_execution(
+        store,
+        pending.session_id.as_deref(),
+        &tool.name,
+        &result,
+    )
+    .await;
     if let (Some(runtime), Some(key)) = (runtime_state, pending.approval_grant_key.as_deref()) {
         if let Some(grant) = crate::modules::mcp::SessionApprovalGrant::from_key(key, now as i128) {
             runtime

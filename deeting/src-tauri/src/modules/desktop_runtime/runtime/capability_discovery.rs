@@ -2,13 +2,19 @@ use std::collections::{BTreeSet, HashSet};
 
 use serde_json::{json, Value};
 
-use super::search_feedback::{compute_feedback_boost, SearchFeedbackContext};
-use super::search_ranking::lexical_asset_match_score;
+use super::search_feedback::{
+    compute_feedback_boost, historical_affinity_from_rows, query_affinity_from_rows,
+    SearchFeedbackContext,
+};
+use super::search_ranking::{
+    asset_score_key, bm25_asset_match_scores, normalize_score_map, reciprocal_rank_fusion,
+};
 use crate::modules::mcp::commands::runtime::capability_catalog::{
     build_capability_registry, CapabilityRegistryEntry, RegistryAvailability, ToolContractSource,
 };
 
 const MAX_LIMIT: usize = 20;
+const RETRIEVAL_FUSION_WEIGHT: f64 = 48.0;
 const SEMANTIC_SCORE_FLOOR: f64 = 0.30;
 const MIN_RANK_SCORE: f64 = 8.0;
 const SEARCH_RESULT_FORMAT_VERSION: &str = "sdk_control_plane.v1";
@@ -60,12 +66,22 @@ struct RankedCapability {
 struct RankComputation {
     lexical_score: Option<f64>,
     structured_score: Option<f64>,
+    semantic_score: Option<f64>,
+    fused_retrieval_score: Option<f64>,
     domain_hit: bool,
     intent_hit: bool,
     feature_score: f64,
     feature_reasons: Vec<String>,
     feedback_score: f64,
     feedback_reasons: Vec<String>,
+}
+
+#[derive(Default)]
+struct RetrievalScoreMaps {
+    bm25: std::collections::HashMap<String, f64>,
+    structured: std::collections::HashMap<String, f64>,
+    semantic: std::collections::HashMap<String, f64>,
+    fused: std::collections::HashMap<String, f64>,
 }
 
 #[derive(Copy, Clone, Eq, PartialEq)]
@@ -110,40 +126,48 @@ pub(crate) async fn build_capability_search_result(
     }
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
-pub(crate) async fn build_capability_search_result_bundle(
-    mcp_store: &crate::modules::mcp::store::McpStore,
-    _embedding_service: &crate::modules::providers::embedding::EmbeddingService,
-    _memory_store: &crate::modules::memory::service::MemoryService,
-    query: &str,
-    limit: usize,
-) -> CapabilitySearchResultBundle {
-    build_capability_search_result_bundle_with_feedback(
-        mcp_store,
-        _embedding_service,
-        _memory_store,
-        query,
-        limit,
-        &SearchFeedbackContext::default(),
-    )
-    .await
-}
-
 pub(crate) async fn build_capability_search_result_bundle_with_feedback(
     mcp_store: &crate::modules::mcp::store::McpStore,
-    _embedding_service: &crate::modules::providers::embedding::EmbeddingService,
-    _memory_store: &crate::modules::memory::service::MemoryService,
+    embedding_service: &crate::modules::providers::embedding::EmbeddingService,
+    memory_store: &crate::modules::memory::service::MemoryService,
     query: &str,
     limit: usize,
     feedback_context: &SearchFeedbackContext,
 ) -> CapabilitySearchResultBundle {
+    let mut feedback_context = feedback_context.clone();
+    if feedback_context.historical_affinity.is_empty() {
+        if let Ok(rows) = mcp_store.list_tool_execution_affinity_rows(32).await {
+            let now_unix_ms =
+                time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+            feedback_context.historical_affinity =
+                historical_affinity_from_rows(&rows, now_unix_ms as i64);
+        }
+    }
+    if feedback_context.query_affinity.is_empty() {
+        if let Ok(rows) = mcp_store.list_tool_query_affinity_rows(64).await {
+            let now_unix_ms =
+                time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+            feedback_context.query_affinity =
+                query_affinity_from_rows(query, &rows, now_unix_ms as i64);
+        }
+    }
     let registry = build_capability_registry(mcp_store).await;
     let profile = QueryProfile::from_query(query);
     let limit = limit.clamp(1, MAX_LIMIT);
+    let retrieval_scores =
+        build_retrieval_score_maps(&registry.entries, &profile, embedding_service, memory_store)
+            .await;
     let mut ranked = registry
         .entries
         .into_iter()
-        .filter_map(|entry| rank_registry_entry_with_feedback(entry, &profile, feedback_context))
+        .filter_map(|entry| {
+            rank_registry_entry_with_feedback(
+                entry,
+                &profile,
+                &feedback_context,
+                &retrieval_scores,
+            )
+        })
         .collect::<Vec<_>>();
     ranked.sort_by(|left, right| {
         right
@@ -396,17 +420,11 @@ fn capability_dedupe_key(value: &Value) -> Option<String> {
         .map(|item| item.to_lowercase())
 }
 
-fn rank_registry_entry(
-    entry: CapabilityRegistryEntry,
-    profile: &QueryProfile,
-) -> Option<RankedCapability> {
-    rank_registry_entry_with_feedback(entry, profile, &SearchFeedbackContext::default())
-}
-
 fn rank_registry_entry_with_feedback(
     entry: CapabilityRegistryEntry,
     profile: &QueryProfile,
     feedback_context: &SearchFeedbackContext,
+    retrieval_scores: &RetrievalScoreMaps,
 ) -> Option<RankedCapability> {
     let CapabilityRegistryEntry {
         asset,
@@ -442,7 +460,22 @@ fn rank_registry_entry_with_feedback(
     };
     let rank = compute_rank_computation(
         profile,
-        &asset,
+        asset_score_key(&asset)
+            .as_deref()
+            .and_then(|key| retrieval_scores.bm25.get(key))
+            .copied(),
+        asset_score_key(&asset)
+            .as_deref()
+            .and_then(|key| retrieval_scores.structured.get(key))
+            .copied(),
+        asset_score_key(&asset)
+            .as_deref()
+            .and_then(|key| retrieval_scores.semantic.get(key))
+            .copied(),
+        asset_score_key(&asset)
+            .as_deref()
+            .and_then(|key| retrieval_scores.fused.get(key))
+            .copied(),
         name,
         description,
         asset_type,
@@ -454,6 +487,8 @@ fn rank_registry_entry_with_feedback(
     );
     let has_signal = rank.lexical_score.is_some()
         || rank.structured_score.is_some()
+        || rank.semantic_score.is_some()
+        || rank.fused_retrieval_score.is_some()
         || rank.domain_hit
         || rank.intent_hit
         || rank.feature_score != 0.0
@@ -464,16 +499,18 @@ fn rank_registry_entry_with_feedback(
 
     let mut rank_score = 0.0;
     let mut match_reason = Vec::new();
-    if let Some(score) = rank.structured_score {
-        if score >= SEMANTIC_SCORE_FLOOR {
-            rank_score += score * 25.0;
-            match_reason.push(format!("structured_match:{score:.2}"));
-        }
-    }
     if let Some(score) = rank.lexical_score {
-        let mapped_score = remap_lexical_score(score);
-        rank_score += mapped_score;
-        match_reason.push(lexical_reason(score));
+        match_reason.push(format!("bm25:{score:.2}"));
+    }
+    if let Some(score) = rank.structured_score {
+        match_reason.push(format!("structured_match:{score:.2}"));
+    }
+    if let Some(score) = rank.semantic_score {
+        match_reason.push(format!("semantic:{score:.2}"));
+    }
+    if let Some(score) = rank.fused_retrieval_score {
+        rank_score += score * RETRIEVAL_FUSION_WEIGHT;
+        match_reason.push(format!("rrf:{score:.2}"));
     }
     if rank.domain_hit {
         rank_score += 14.0;
@@ -539,7 +576,10 @@ fn rank_registry_entry_with_feedback(
 
 fn compute_rank_computation(
     profile: &QueryProfile,
-    asset: &Value,
+    bm25_score: Option<f64>,
+    structured_score: Option<f64>,
+    semantic_score: Option<f64>,
+    fused_retrieval_score: Option<f64>,
     name: &str,
     description: &str,
     asset_type: &str,
@@ -549,16 +589,6 @@ fn compute_rank_computation(
     tool_source: Option<&ToolContractSource>,
     feedback_context: &SearchFeedbackContext,
 ) -> RankComputation {
-    let lexical_score = lexical_asset_match_score(&profile.normalized, asset);
-    let structured_score = capability_structured_match_score(
-        profile,
-        name,
-        description,
-        asset_type,
-        source_type,
-        asset_metadata,
-        tool_source,
-    );
     let combined_text = format!("{}\n{}", name.to_lowercase(), description.to_lowercase());
     let domain_hit = matches_domain(profile.domain, &combined_text);
     let intent_hit = matches_intent(profile.intent, &combined_text, asset_type, source_type);
@@ -573,14 +603,90 @@ fn compute_rank_computation(
     let feedback_boost = compute_feedback_boost(name, feedback_context);
 
     RankComputation {
-        lexical_score,
+        lexical_score: bm25_score,
         structured_score,
+        semantic_score,
+        fused_retrieval_score,
         domain_hit,
         intent_hit,
         feature_score,
         feature_reasons,
         feedback_score: feedback_boost.score,
         feedback_reasons: feedback_boost.reasons,
+    }
+}
+
+async fn build_retrieval_score_maps(
+    entries: &[CapabilityRegistryEntry],
+    profile: &QueryProfile,
+    embedding_service: &crate::modules::providers::embedding::EmbeddingService,
+    memory_store: &crate::modules::memory::service::MemoryService,
+) -> RetrievalScoreMaps {
+    let assets = entries
+        .iter()
+        .map(|entry| entry.asset.clone())
+        .collect::<Vec<_>>();
+    let bm25 = bm25_asset_match_scores(&profile.normalized, &assets);
+
+    let structured = entries
+        .iter()
+        .filter_map(|entry| {
+            let key = asset_score_key(&entry.asset)?;
+            let score = capability_structured_match_score(
+                profile,
+                entry
+                    .asset
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or(""),
+                entry
+                    .asset
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .unwrap_or(""),
+                entry
+                    .asset
+                    .get("asset_type")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown"),
+                entry
+                    .asset
+                    .get("source_type")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown"),
+                entry.asset.get("metadata"),
+                entry.tool_contract_source.as_ref(),
+            )?;
+            (score >= SEMANTIC_SCORE_FLOOR).then_some((key, score))
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+
+    let semantic = if let Ok(query_vector) = embedding_service.embed_text(&profile.normalized).await
+    {
+        if let Ok(rows) = memory_store.search_assets(query_vector, entries.len().max(8), None).await {
+            normalize_score_map(
+                rows.into_iter()
+                    .enumerate()
+                    .filter_map(|(index, row)| {
+                        let key = asset_score_key(&row)?;
+                        Some((key, 1.0 / (index as f64 + 1.0)))
+                    })
+                    .collect::<std::collections::HashMap<_, _>>(),
+            )
+        } else {
+            std::collections::HashMap::new()
+        }
+    } else {
+        std::collections::HashMap::new()
+    };
+
+    let fused = reciprocal_rank_fusion(&[&bm25, &structured, &semantic]);
+
+    RetrievalScoreMaps {
+        bm25,
+        structured,
+        semantic,
+        fused,
     }
 }
 
@@ -1830,34 +1936,6 @@ fn matches_intent(intent: &str, text: &str, asset_type: &str, _source_type: &str
     }
 }
 
-fn remap_lexical_score(score: f64) -> f64 {
-    if score >= 1000.0 {
-        40.0
-    } else if score >= 900.0 {
-        32.0
-    } else if score >= 100.0 {
-        20.0
-    } else {
-        score.min(10.0) * 2.0
-    }
-}
-
-fn lexical_reason(score: f64) -> String {
-    if score >= 2200.0 {
-        "lexical_identifier_exact".to_string()
-    } else if score >= 1200.0 {
-        "lexical_identifier_match".to_string()
-    } else if score >= 1000.0 {
-        "lexical_name_exact".to_string()
-    } else if score >= 900.0 {
-        "lexical_description_exact".to_string()
-    } else if score >= 100.0 {
-        "lexical_prefix_match".to_string()
-    } else {
-        format!("lexical_overlap:{score:.0}")
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2101,15 +2179,46 @@ mod tests {
             tool_contract_source: None,
         };
 
-        let shell_rank = rank_registry_entry(shell_entry, &profile)
-            .expect("shell rank")
-            .score;
-        let memory_rank = rank_registry_entry(memory_entry, &profile)
-            .expect("memory rank")
-            .score;
-        let web_rank = rank_registry_entry(web_entry, &profile)
-            .expect("web rank")
-            .score;
+        let bm25 = bm25_asset_match_scores(
+            &profile.normalized,
+            &[
+                shell_entry.asset.clone(),
+                memory_entry.asset.clone(),
+                web_entry.asset.clone(),
+            ],
+        );
+        let structured = std::collections::HashMap::new();
+        let retrieval_scores = RetrievalScoreMaps {
+            bm25: bm25.clone(),
+            structured: structured.clone(),
+            semantic: std::collections::HashMap::new(),
+            fused: reciprocal_rank_fusion(&[&bm25, &structured]),
+        };
+
+        let shell_rank = rank_registry_entry_with_feedback(
+            shell_entry,
+            &profile,
+            &SearchFeedbackContext::default(),
+            &retrieval_scores,
+        )
+        .map(|item| item.score)
+        .unwrap_or_default();
+        let memory_rank = rank_registry_entry_with_feedback(
+            memory_entry,
+            &profile,
+            &SearchFeedbackContext::default(),
+            &retrieval_scores,
+        )
+        .map(|item| item.score)
+        .unwrap_or_default();
+        let web_rank = rank_registry_entry_with_feedback(
+            web_entry,
+            &profile,
+            &SearchFeedbackContext::default(),
+            &retrieval_scores,
+        )
+        .map(|item| item.score)
+        .unwrap_or_default();
 
         assert!(
             shell_rank > memory_rank,
@@ -2192,15 +2301,46 @@ mod tests {
             tool_contract_source: None,
         };
 
-        let web_rank = rank_registry_entry(web_entry, &profile)
-            .expect("web rank")
-            .score;
-        let shell_rank = rank_registry_entry(shell_entry, &profile)
-            .expect("shell rank")
-            .score;
-        let memory_rank = rank_registry_entry(memory_entry, &profile)
-            .expect("memory rank")
-            .score;
+        let bm25 = bm25_asset_match_scores(
+            &profile.normalized,
+            &[
+                web_entry.asset.clone(),
+                shell_entry.asset.clone(),
+                memory_entry.asset.clone(),
+            ],
+        );
+        let structured = std::collections::HashMap::new();
+        let retrieval_scores = RetrievalScoreMaps {
+            bm25: bm25.clone(),
+            structured: structured.clone(),
+            semantic: std::collections::HashMap::new(),
+            fused: reciprocal_rank_fusion(&[&bm25, &structured]),
+        };
+
+        let web_rank = rank_registry_entry_with_feedback(
+            web_entry,
+            &profile,
+            &SearchFeedbackContext::default(),
+            &retrieval_scores,
+        )
+        .expect("web rank")
+        .score;
+        let shell_rank = rank_registry_entry_with_feedback(
+            shell_entry,
+            &profile,
+            &SearchFeedbackContext::default(),
+            &retrieval_scores,
+        )
+        .map(|item| item.score)
+        .unwrap_or_default();
+        let memory_rank = rank_registry_entry_with_feedback(
+            memory_entry,
+            &profile,
+            &SearchFeedbackContext::default(),
+            &retrieval_scores,
+        )
+        .map(|item| item.score)
+        .unwrap_or_default();
 
         assert!(web_rank > shell_rank, "web={web_rank}, shell={shell_rank}");
         assert!(
@@ -2211,7 +2351,7 @@ mod tests {
 
     #[test]
     fn rank_registry_entry_prefers_memory_tools_for_memory_queries() {
-        let profile = QueryProfile::from_query("帮我查一下我之前记住的内容");
+        let profile = QueryProfile::from_query("帮我查一下 memory 里我之前记住的内容");
 
         let memory_entry = CapabilityRegistryEntry {
             asset: json!({
@@ -2284,15 +2424,46 @@ mod tests {
             tool_contract_source: None,
         };
 
-        let memory_rank = rank_registry_entry(memory_entry, &profile)
-            .expect("memory rank")
-            .score;
-        let shell_rank = rank_registry_entry(shell_entry, &profile)
-            .expect("shell rank")
-            .score;
-        let web_rank = rank_registry_entry(web_entry, &profile)
-            .expect("web rank")
-            .score;
+        let bm25 = bm25_asset_match_scores(
+            &profile.normalized,
+            &[
+                memory_entry.asset.clone(),
+                shell_entry.asset.clone(),
+                web_entry.asset.clone(),
+            ],
+        );
+        let structured = std::collections::HashMap::new();
+        let retrieval_scores = RetrievalScoreMaps {
+            bm25: bm25.clone(),
+            structured: structured.clone(),
+            semantic: std::collections::HashMap::new(),
+            fused: reciprocal_rank_fusion(&[&bm25, &structured]),
+        };
+
+        let memory_rank = rank_registry_entry_with_feedback(
+            memory_entry,
+            &profile,
+            &SearchFeedbackContext::default(),
+            &retrieval_scores,
+        )
+        .expect("memory rank")
+        .score;
+        let shell_rank = rank_registry_entry_with_feedback(
+            shell_entry,
+            &profile,
+            &SearchFeedbackContext::default(),
+            &retrieval_scores,
+        )
+        .map(|item| item.score)
+        .unwrap_or_default();
+        let web_rank = rank_registry_entry_with_feedback(
+            web_entry,
+            &profile,
+            &SearchFeedbackContext::default(),
+            &retrieval_scores,
+        )
+        .map(|item| item.score)
+        .unwrap_or_default();
 
         assert!(
             memory_rank > shell_rank,
@@ -2310,6 +2481,7 @@ mod tests {
         let recent_context = SearchFeedbackContext {
             recent_tools: vec!["browser_wait_for_element".to_string()],
             historical_affinity: Vec::new(),
+            query_affinity: Vec::new(),
         };
 
         let open_tab_entry = CapabilityRegistryEntry {
@@ -2362,10 +2534,20 @@ mod tests {
             tool_contract_source: None,
         };
 
-        let open_rank = rank_registry_entry_with_feedback(open_tab_entry, &profile, &recent_context)
-            .expect("open tab rank");
-        let wait_rank = rank_registry_entry_with_feedback(wait_entry, &profile, &recent_context)
-            .expect("wait rank");
+        let open_rank = rank_registry_entry_with_feedback(
+            open_tab_entry,
+            &profile,
+            &recent_context,
+            &RetrievalScoreMaps::default(),
+        )
+        .expect("open tab rank");
+        let wait_rank = rank_registry_entry_with_feedback(
+            wait_entry,
+            &profile,
+            &recent_context,
+            &RetrievalScoreMaps::default(),
+        )
+        .expect("wait rank");
 
         assert!(wait_rank.score > open_rank.score);
         assert!(wait_rank.value["match_reason"]

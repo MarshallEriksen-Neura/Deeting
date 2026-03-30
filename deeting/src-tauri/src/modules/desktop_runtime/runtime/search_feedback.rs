@@ -8,6 +8,7 @@ pub(crate) struct ToolAffinityScore {
 pub(crate) struct SearchFeedbackContext {
     pub(crate) recent_tools: Vec<String>,
     pub(crate) historical_affinity: Vec<ToolAffinityScore>,
+    pub(crate) query_affinity: Vec<ToolAffinityScore>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -24,11 +25,15 @@ const SEARCH_META_TOOLS: &[&str] = &[
     "attach_capability",
     "detach_capability",
 ];
+const HISTORICAL_HALF_LIFE_MS: f64 = 7.0 * 24.0 * 60.0 * 60.0 * 1000.0;
+const QUERY_AFFINITY_HALF_LIFE_MS: f64 = 14.0 * 24.0 * 60.0 * 60.0 * 1000.0;
 const RECENT_EXACT_TOOL_BOOST: f64 = 18.0;
 const RECENT_NAMESPACE_SIBLING_BOOST: f64 = 8.0;
 const HISTORICAL_EXACT_TOOL_MAX_BOOST: f64 = 16.0;
-const HISTORICAL_NAMESPACE_FACTOR: f64 = 0.35;
-const HISTORICAL_NAMESPACE_MAX_BOOST: f64 = 6.0;
+const QUERY_AFFINITY_EXACT_MAX_BOOST: f64 = 14.0;
+const QUERY_AFFINITY_MIN_SUCCESS_COUNT: i64 = 2;
+const QUERY_AFFINITY_MIN_TOKENS: usize = 2;
+const QUERY_AFFINITY_MIN_MATCH_STRENGTH: f64 = 0.65;
 
 pub(crate) fn compute_feedback_boost(
     tool_name: &str,
@@ -59,31 +64,16 @@ pub(crate) fn compute_feedback_boost(
     }
 
     if let Some(score) = context
-        .historical_affinity
+        .query_affinity
         .iter()
         .find(|item| normalize_tool_name(&item.tool_name) == normalized_tool_name)
-        .map(|item| item.score.clamp(0.0, HISTORICAL_EXACT_TOOL_MAX_BOOST))
+        .map(|item| item.score.clamp(0.0, QUERY_AFFINITY_EXACT_MAX_BOOST))
     {
         if score > 0.0 {
             boost.score += score;
             boost
                 .reasons
-                .push(format!("history:exact_tool:{score:.2}"));
-        }
-    } else if let Some(namespace) = tool_namespace.as_ref() {
-        let namespace_score = context
-            .historical_affinity
-            .iter()
-            .filter(|item| same_namespace(&item.tool_name, namespace))
-            .map(|item| item.score)
-            .fold(0.0_f64, f64::max)
-            * HISTORICAL_NAMESPACE_FACTOR;
-        let namespace_score = namespace_score.clamp(0.0, HISTORICAL_NAMESPACE_MAX_BOOST);
-        if namespace_score > 0.0 {
-            boost.score += namespace_score;
-            boost
-                .reasons
-                .push(format!("history:namespace_sibling:{namespace_score:.2}"));
+                .push(format!("query_affinity:exact_tool:{score:.2}"));
         }
     }
 
@@ -119,7 +109,82 @@ pub(crate) fn search_feedback_context_from_tool_call_meta(
     SearchFeedbackContext {
         recent_tools,
         historical_affinity: Vec::new(),
+        query_affinity: Vec::new(),
     }
+}
+
+pub(crate) fn historical_affinity_from_rows(
+    rows: &[crate::modules::mcp::store::ToolExecutionAffinityRow],
+    now_unix_ms: i64,
+) -> Vec<ToolAffinityScore> {
+    rows.iter()
+        .filter_map(|row| {
+            let normalized_tool_name = normalize_tool_name(&row.tool_name);
+            if normalized_tool_name.is_empty() {
+                return None;
+            }
+            let age_ms = (now_unix_ms - row.last_used_at_unix_ms).max(0) as f64;
+            let decay = 0.5_f64.powf(age_ms / HISTORICAL_HALF_LIFE_MS);
+            let score = ((row.success_count as f64).sqrt() * 6.0 * decay)
+                .clamp(0.0, HISTORICAL_EXACT_TOOL_MAX_BOOST);
+            (score > 0.0).then_some(ToolAffinityScore {
+                tool_name: normalized_tool_name,
+                score,
+            })
+        })
+        .collect()
+}
+
+pub(crate) fn query_affinity_from_rows(
+    current_query: &str,
+    rows: &[crate::modules::mcp::store::ToolQueryAffinityRow],
+    now_unix_ms: i64,
+) -> Vec<ToolAffinityScore> {
+    let normalized_query = current_query.trim().to_lowercase();
+    if normalized_query.is_empty() {
+        return Vec::new();
+    }
+    let current_tokens = query_tokens(&normalized_query);
+    if current_tokens.len() < QUERY_AFFINITY_MIN_TOKENS {
+        return Vec::new();
+    }
+
+    let mut by_tool = std::collections::BTreeMap::<String, f64>::new();
+    for row in rows {
+        let normalized_row_query = row.query_text.trim().to_lowercase();
+        let normalized_tool_name = normalize_tool_name(&row.tool_name);
+        if normalized_row_query.is_empty() || normalized_tool_name.is_empty() {
+            continue;
+        }
+        if row.success_count < QUERY_AFFINITY_MIN_SUCCESS_COUNT {
+            continue;
+        }
+        if query_tokens(&normalized_row_query).len() < QUERY_AFFINITY_MIN_TOKENS {
+            continue;
+        }
+
+        let match_strength = query_match_strength(&normalized_query, &normalized_row_query);
+        if match_strength < QUERY_AFFINITY_MIN_MATCH_STRENGTH {
+            continue;
+        }
+
+        let age_ms = (now_unix_ms - row.last_matched_at_unix_ms).max(0) as f64;
+        let decay = 0.5_f64.powf(age_ms / QUERY_AFFINITY_HALF_LIFE_MS);
+        let score = ((row.success_count as f64).sqrt() * 5.0 * decay * match_strength)
+            .clamp(0.0, QUERY_AFFINITY_EXACT_MAX_BOOST);
+        if score <= 0.0 {
+            continue;
+        }
+        by_tool
+            .entry(normalized_tool_name)
+            .and_modify(|existing| *existing = existing.max(score))
+            .or_insert(score);
+    }
+
+    by_tool
+        .into_iter()
+        .map(|(tool_name, score)| ToolAffinityScore { tool_name, score })
+        .collect()
 }
 
 fn same_namespace(tool_name: &str, namespace: &str) -> bool {
@@ -130,6 +195,51 @@ fn same_namespace(tool_name: &str, namespace: &str) -> bool {
 
 fn normalize_tool_name(tool_name: &str) -> String {
     tool_name.trim().to_ascii_lowercase()
+}
+
+fn query_match_strength(current_query: &str, stored_query: &str) -> f64 {
+    if current_query == stored_query {
+        return 1.0;
+    }
+    if current_query.contains(stored_query) || stored_query.contains(current_query) {
+        return 0.8;
+    }
+
+    let current_tokens = query_tokens(current_query);
+    let stored_tokens = query_tokens(stored_query);
+    if current_tokens.is_empty() || stored_tokens.is_empty() {
+        return 0.0;
+    }
+    let overlap = stored_tokens
+        .iter()
+        .filter(|token| current_tokens.contains(*token))
+        .count();
+    if overlap == 0 {
+        return 0.0;
+    }
+    (overlap as f64 / stored_tokens.len() as f64).clamp(0.0, 0.7)
+}
+
+fn query_tokens(text: &str) -> std::collections::BTreeSet<String> {
+    let mut tokens = std::collections::BTreeSet::new();
+    let mut ascii_buffer = String::new();
+    for ch in text.chars() {
+        if ch.is_ascii_alphanumeric() {
+            ascii_buffer.push(ch);
+            continue;
+        }
+        if !ascii_buffer.is_empty() {
+            tokens.insert(ascii_buffer.clone());
+            ascii_buffer.clear();
+        }
+        if !ch.is_whitespace() {
+            tokens.insert(ch.to_string());
+        }
+    }
+    if !ascii_buffer.is_empty() {
+        tokens.insert(ascii_buffer);
+    }
+    tokens
 }
 
 fn namespace_key(tool_name: &str) -> Option<String> {
@@ -157,6 +267,7 @@ mod tests {
             &SearchFeedbackContext {
                 recent_tools: vec!["browser_open_tab".to_string()],
                 historical_affinity: Vec::new(),
+                query_affinity: Vec::new(),
             },
         );
         let sibling = compute_feedback_boost(
@@ -164,6 +275,7 @@ mod tests {
             &SearchFeedbackContext {
                 recent_tools: vec!["browser_open_tab".to_string()],
                 historical_affinity: Vec::new(),
+                query_affinity: Vec::new(),
             },
         );
 
@@ -185,6 +297,7 @@ mod tests {
                     tool_name: "skill.openclaw_weather.fetch_weather".to_string(),
                     score: 9.5,
                 }],
+                query_affinity: Vec::new(),
             },
         );
         let sibling = compute_feedback_boost(
@@ -195,6 +308,7 @@ mod tests {
                     tool_name: "skill.openclaw_weather.fetch_weather".to_string(),
                     score: 9.5,
                 }],
+                query_affinity: Vec::new(),
             },
         );
 
@@ -241,5 +355,80 @@ mod tests {
                 "browser_open_tab".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn historical_affinity_from_rows_decays_older_usage() {
+        let now_unix_ms = 10_000_i64;
+        let scores = historical_affinity_from_rows(
+            &[
+                crate::modules::mcp::store::ToolExecutionAffinityRow {
+                    tool_name: "browser_open_tab".to_string(),
+                    success_count: 4,
+                    last_used_at_unix_ms: 9_000,
+                },
+                crate::modules::mcp::store::ToolExecutionAffinityRow {
+                    tool_name: "browser_wait_for_element".to_string(),
+                    success_count: 4,
+                    last_used_at_unix_ms: 1_000,
+                },
+            ],
+            now_unix_ms,
+        );
+
+        assert_eq!(scores.len(), 2);
+        assert!(scores[0].score > scores[1].score);
+    }
+
+    #[test]
+    fn query_affinity_from_rows_prefers_exact_and_recent_query_matches() {
+        let now_unix_ms = 20_000_i64;
+        let scores = query_affinity_from_rows(
+            "check bug",
+            &[
+                crate::modules::mcp::store::ToolQueryAffinityRow {
+                    query_text: "check bug".to_string(),
+                    tool_name: "eslint_check".to_string(),
+                    success_count: 3,
+                    last_matched_at_unix_ms: 19_000,
+                },
+                crate::modules::mcp::store::ToolQueryAffinityRow {
+                    query_text: "browser inspect".to_string(),
+                    tool_name: "browser_get_page_snapshot".to_string(),
+                    success_count: 5,
+                    last_matched_at_unix_ms: 19_500,
+                },
+            ],
+            now_unix_ms,
+        );
+
+        assert_eq!(scores.len(), 1);
+        assert_eq!(scores[0].tool_name, "eslint_check");
+        assert!(scores[0].score > 0.0);
+    }
+
+    #[test]
+    fn query_affinity_from_rows_ignores_low_confidence_rows() {
+        let now_unix_ms = 20_000_i64;
+        let scores = query_affinity_from_rows(
+            "check bug",
+            &[
+                crate::modules::mcp::store::ToolQueryAffinityRow {
+                    query_text: "check".to_string(),
+                    tool_name: "eslint_check".to_string(),
+                    success_count: 10,
+                    last_matched_at_unix_ms: 19_000,
+                },
+                crate::modules::mcp::store::ToolQueryAffinityRow {
+                    query_text: "check bug".to_string(),
+                    tool_name: "eslint_check".to_string(),
+                    success_count: 1,
+                    last_matched_at_unix_ms: 19_500,
+                },
+            ],
+            now_unix_ms,
+        );
+
+        assert!(scores.is_empty());
     }
 }

@@ -468,6 +468,7 @@ mod tests {
     use tokio::sync::RwLock;
     use uuid::Uuid;
 
+    #[allow(dead_code)]
     #[derive(Debug, Clone)]
     struct PlatformEmbeddingRequestCapture {
         path: String,

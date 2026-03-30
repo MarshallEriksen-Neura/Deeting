@@ -35,24 +35,6 @@ pub(crate) async fn build_search_sdk_result(
     .await
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
-pub(crate) async fn build_search_sdk_result_bundle(
-    mcp_store: &crate::modules::mcp::store::McpStore,
-    embedding_service: &crate::modules::providers::embedding::EmbeddingService,
-    memory_store: &crate::modules::memory::service::MemoryService,
-    query: &str,
-    limit: usize,
-) -> CapabilitySearchResultBundle {
-    crate::modules::desktop_runtime::runtime::capability_discovery::build_capability_search_result_bundle(
-        mcp_store,
-        embedding_service,
-        memory_store,
-        query,
-        limit,
-    )
-    .await
-}
-
 pub(crate) async fn build_search_sdk_result_bundle_with_feedback(
     mcp_store: &crate::modules::mcp::store::McpStore,
     embedding_service: &crate::modules::providers::embedding::EmbeddingService,

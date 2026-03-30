@@ -11,6 +11,7 @@ use crate::modules::sandbox::backend_wsl::{
     detect_wsl_python_abi, resolve_wsl_home_dir, shell_quote, windows_path_to_wsl,
 };
 use crate::modules::sandbox::error::SandboxError;
+#[cfg(target_os = "windows")]
 use crate::utils::configure_background_std_command;
 
 const BOXLITE_VERSION: &str = "0.6.0";
