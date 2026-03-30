@@ -5,6 +5,7 @@ use crate::modules::assistants::capability_registry::assistant_capability_availa
 use crate::modules::assistants::capability_registry::{
     assistant_registry_availability_override, replaced_by_assistant_registry,
 };
+use crate::modules::mcp::commands::runtime::capability_registry_cache::get_capability_registry_base_snapshot;
 #[cfg(test)]
 use mcp_core::types::{McpConflictStatus, McpSourceType, McpTool, McpToolStatus};
 use mcp_registry::assets::build_capability_assets_for_read_mode as build_capability_assets_for_read_mode_inner;
@@ -34,14 +35,21 @@ pub(crate) struct CapabilityRegistry {
     pub read_path_mode: CapabilityRegistryReadMode,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
+pub(crate) struct CapabilityRegistryBaseSnapshot {
+    pub entries: Vec<CapabilityRegistryEntry>,
+    pub enabled_assistant_count: usize,
+    pub read_path_mode: CapabilityRegistryReadMode,
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct CapabilityRegistryEntry {
     pub asset: Value,
     pub availability: RegistryAvailability,
     pub tool_contract_source: Option<ToolContractSource>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct ToolContractSource {
     pub config: Value,
     pub is_read_only: bool,
@@ -50,7 +58,7 @@ pub(crate) struct ToolContractSource {
     pub source_type: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct RegistryAvailability {
     pub class: ToolAvailabilityClass,
     pub install_required: bool,
@@ -62,6 +70,15 @@ pub(crate) struct RegistryAvailability {
 pub(crate) async fn build_capability_registry(
     mcp_store: &crate::modules::mcp::store::McpStore,
 ) -> CapabilityRegistry {
+    let base_snapshot = get_capability_registry_base_snapshot(mcp_store).await;
+    let current_user =
+        crate::modules::capability_control_plane::current_desktop_user_info_optional().await;
+    build_capability_registry_from_base_snapshot(base_snapshot.as_ref(), current_user.as_ref())
+}
+
+pub(crate) async fn build_capability_registry_base_snapshot(
+    mcp_store: &crate::modules::mcp::store::McpStore,
+) -> CapabilityRegistryBaseSnapshot {
     let read_path_mode = CapabilityRegistryReadMode::RegistryFirst;
     let enabled_assistant_ids = mcp_store
         .list_enabled_local_assistant_ids()
@@ -81,12 +98,9 @@ pub(crate) async fn build_capability_registry(
         .unwrap_or_default();
     let assets =
         build_capability_assets_for_read_mode(Vec::new(), &registry_entries, read_path_mode);
-    let current_user =
-        crate::modules::capability_control_plane::current_desktop_user_info_optional().await;
 
     let entries = assets
         .into_iter()
-        .filter(|asset| asset_visible_to_desktop_user(asset, current_user.as_ref()))
         .filter(|asset| asset.get("asset_type").and_then(Value::as_str) != Some("assistant"))
         .map(|asset| {
             let asset_type = asset
@@ -128,11 +142,33 @@ pub(crate) async fn build_capability_registry(
         })
         .collect();
 
-    CapabilityRegistry {
+    CapabilityRegistryBaseSnapshot {
         entries,
         enabled_assistant_count: enabled_assistant_ids.len(),
         read_path_mode,
     }
+}
+
+fn build_capability_registry_from_base_snapshot(
+    base_snapshot: &CapabilityRegistryBaseSnapshot,
+    current_user: Option<&crate::modules::capability_control_plane::DesktopCurrentUserInfo>,
+) -> CapabilityRegistry {
+    CapabilityRegistry {
+        entries: filter_registry_entries_for_current_user(&base_snapshot.entries, current_user),
+        enabled_assistant_count: base_snapshot.enabled_assistant_count,
+        read_path_mode: base_snapshot.read_path_mode,
+    }
+}
+
+fn filter_registry_entries_for_current_user(
+    entries: &[CapabilityRegistryEntry],
+    current_user: Option<&crate::modules::capability_control_plane::DesktopCurrentUserInfo>,
+) -> Vec<CapabilityRegistryEntry> {
+    entries
+        .iter()
+        .filter(|entry| asset_visible_to_desktop_user(&entry.asset, current_user))
+        .cloned()
+        .collect()
 }
 
 pub(crate) fn build_capability_assets_for_read_mode(
@@ -679,6 +715,7 @@ fn core_registry_availability_override(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     #[test]
     fn local_registry_skill_assets_replace_memory_backed_skill_assets() {
@@ -1108,5 +1145,71 @@ mod tests {
             availability.status_reason,
             "skill_tool_registry_metadata_missing"
         );
+    }
+
+    #[test]
+    fn base_snapshot_visibility_filtering_stays_query_time() {
+        let base_entries = vec![
+            CapabilityRegistryEntry {
+                asset: json!({
+                    "id": "official.skills.provider_registry",
+                    "name": "Provider Registry",
+                    "asset_type": "skill",
+                    "source_type": "builtin",
+                    "restricted": true,
+                    "allowed_roles": ["admin"],
+                    "metadata": {
+                        "skill_id": "official.skills.provider_registry",
+                        "restricted": true,
+                        "allowed_roles": ["admin"],
+                    }
+                }),
+                availability: RegistryAvailability {
+                    class: ToolAvailabilityClass::CallableDirect,
+                    install_required: false,
+                    activation_required: false,
+                    recommended_action: "execute",
+                    status_reason: "ready",
+                },
+                tool_contract_source: None,
+            },
+            CapabilityRegistryEntry {
+                asset: json!({
+                    "id": "skill.weather",
+                    "name": "Weather",
+                    "asset_type": "skill",
+                    "source_type": "builtin",
+                    "restricted": false,
+                    "metadata": {
+                        "skill_id": "skill.weather",
+                        "restricted": false,
+                    }
+                }),
+                availability: RegistryAvailability {
+                    class: ToolAvailabilityClass::CallableDirect,
+                    install_required: false,
+                    activation_required: false,
+                    recommended_action: "execute",
+                    status_reason: "ready",
+                },
+                tool_contract_source: None,
+            },
+        ];
+        let admin_user =
+            crate::modules::desktop_runtime::desktop_capabilities::DesktopCurrentUserInfo {
+                is_superuser: false,
+                permission_flags: HashMap::from([("can_manage_providers".to_string(), 1)]),
+            };
+
+        let anonymous_entries = filter_registry_entries_for_current_user(&base_entries, None);
+        let admin_entries =
+            filter_registry_entries_for_current_user(&base_entries, Some(&admin_user));
+
+        assert_eq!(anonymous_entries.len(), 1);
+        assert_eq!(anonymous_entries[0].asset["id"], json!("skill.weather"));
+        assert_eq!(admin_entries.len(), 2);
+        assert!(admin_entries
+            .iter()
+            .any(|entry| entry.asset["id"] == json!("official.skills.provider_registry")));
     }
 }

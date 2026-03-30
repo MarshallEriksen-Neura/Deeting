@@ -1371,14 +1371,18 @@ impl McpStore {
             "UPDATE assistant_install\n             SET is_enabled = 0, updated_at = ?\n             WHERE user_id = ?\n               AND is_enabled = 1\n               AND assistant_id IN ({placeholders});"
         );
         let mut query = sqlx::query(&sql).bind(&now).bind(LOCAL_DESKTOP_USER_ID);
-        for assistant_id in normalized_assistant_ids {
+        for assistant_id in normalized_assistant_ids.iter().cloned() {
             query = query.bind(assistant_id);
         }
         let result = query
             .execute(&self.pool)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
-        Ok(result.rows_affected() as i64)
+        let rows_affected = result.rows_affected() as i64;
+        for assistant_id in &normalized_assistant_ids {
+            let _ = self.sync_assistant_registry_entry(assistant_id).await?;
+        }
+        Ok(rows_affected)
     }
 
     pub async fn archive_cloud_system_assistants_by_ids(

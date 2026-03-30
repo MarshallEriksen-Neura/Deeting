@@ -1,6 +1,7 @@
 use sqlx::sqlite::SqliteRow;
 use sqlx::Row;
 
+use crate::modules::mcp::commands::runtime::capability_registry_cache::invalidate_capability_registry_cache;
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::store::McpStore;
 use mcp_registry::types::{LocalCapabilityRegistrySnapshot, LocalCapabilityRegistryUpsert};
@@ -134,6 +135,7 @@ impl McpStore {
         tx.commit()
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
+        invalidate_capability_registry_cache(self, "replace_local_capability_registry_entries");
         Ok(entries.len() as i64)
     }
 
@@ -211,7 +213,11 @@ impl McpStore {
         .execute(&self.pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
-        Ok(result.rows_affected() as i64)
+        let rows_affected = result.rows_affected() as i64;
+        if rows_affected > 0 {
+            invalidate_capability_registry_cache(self, "delete_local_capability_registry_entries");
+        }
+        Ok(rows_affected)
     }
 
     pub async fn update_local_capability_registry_states(
@@ -261,7 +267,11 @@ impl McpStore {
         .execute(&self.pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
-        Ok(result.rows_affected() as i64)
+        let rows_affected = result.rows_affected() as i64;
+        if rows_affected > 0 {
+            invalidate_capability_registry_cache(self, "update_local_capability_registry_states");
+        }
+        Ok(rows_affected)
     }
 }
 

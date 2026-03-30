@@ -334,6 +334,8 @@ pub(crate) async fn build_local_capability_registry_diagnostics(
         .map_err(to_string)?;
     let read_path_enabled = true;
     let legacy_control_plane_reads_enabled = false;
+    let cache_status =
+        crate::modules::mcp::commands::runtime::capability_registry_cache::capability_registry_cache_diagnostics(&state.mcp.store);
     let registry_mcp_count = entries
         .iter()
         .filter(|entry| entry.source_kind == "mcp")
@@ -429,6 +431,7 @@ pub(crate) async fn build_local_capability_registry_diagnostics(
         migration_gaps,
         legacy_only_assets,
         registry_first_only_assets,
+        cache_status: Some(cache_status),
         items: entries
             .into_iter()
             .map(|entry| LocalCapabilityRegistryDiagnosticsItem {

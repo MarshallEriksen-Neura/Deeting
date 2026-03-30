@@ -56,6 +56,19 @@ const LocalCapabilityRegistryParityItemSchema = z.object({
   package_id: z.string().nullable().optional(),
 })
 
+const LocalCapabilityRegistryCacheStatusSchema = z.object({
+  current_epoch: z.number(),
+  cache_present: z.boolean(),
+  cache_ttl_ms: z.number(),
+  cache_age_ms: z.number().nullable().optional(),
+  last_build_epoch: z.number().nullable().optional(),
+  last_invalidation_epoch: z.number().nullable().optional(),
+  last_invalidation_reason: z.string().nullable().optional(),
+  cache_hit_count: z.number(),
+  cache_miss_count: z.number(),
+  build_count: z.number(),
+})
+
 const LocalCapabilityRegistryDiagnosticsResponseSchema = z.object({
   read_path_enabled: z.boolean(),
   read_path_mode: z.string(),
@@ -74,6 +87,7 @@ const LocalCapabilityRegistryDiagnosticsResponseSchema = z.object({
   migration_gaps: z.array(z.string()),
   legacy_only_assets: z.array(LocalCapabilityRegistryParityItemSchema),
   registry_first_only_assets: z.array(LocalCapabilityRegistryParityItemSchema),
+  cache_status: LocalCapabilityRegistryCacheStatusSchema.nullable().optional(),
   items: z.array(LocalCapabilityRegistryDiagnosticsItemSchema),
 })
 

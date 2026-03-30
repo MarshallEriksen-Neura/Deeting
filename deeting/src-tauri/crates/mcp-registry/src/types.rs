@@ -83,6 +83,20 @@ pub struct LocalCapabilityRegistryParityItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalCapabilityRegistryCacheStatus {
+    pub current_epoch: u64,
+    pub cache_present: bool,
+    pub cache_ttl_ms: u64,
+    pub cache_age_ms: Option<u64>,
+    pub last_build_epoch: Option<u64>,
+    pub last_invalidation_epoch: Option<u64>,
+    pub last_invalidation_reason: Option<String>,
+    pub cache_hit_count: u64,
+    pub cache_miss_count: u64,
+    pub build_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalCapabilityRegistryDiagnosticsResponse {
     pub read_path_enabled: bool,
     pub read_path_mode: String,
@@ -101,5 +115,6 @@ pub struct LocalCapabilityRegistryDiagnosticsResponse {
     pub migration_gaps: Vec<String>,
     pub legacy_only_assets: Vec<LocalCapabilityRegistryParityItem>,
     pub registry_first_only_assets: Vec<LocalCapabilityRegistryParityItem>,
+    pub cache_status: Option<LocalCapabilityRegistryCacheStatus>,
     pub items: Vec<LocalCapabilityRegistryDiagnosticsItem>,
 }

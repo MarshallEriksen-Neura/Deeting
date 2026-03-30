@@ -1,4 +1,5 @@
 pub(crate) mod capability_catalog;
+pub(crate) mod capability_registry_cache;
 pub(crate) mod config;
 pub(crate) mod remote_transport;
 pub(crate) mod source_sync;

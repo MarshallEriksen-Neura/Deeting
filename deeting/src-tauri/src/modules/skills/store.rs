@@ -4,6 +4,7 @@ use serde_json::Value;
 use sqlx::sqlite::SqliteRow;
 use sqlx::Row;
 
+use crate::modules::mcp::commands::runtime::capability_registry_cache::invalidate_capability_registry_cache;
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::store::McpStore;
 use mcp_storage::helpers::now_rfc3339;
@@ -790,14 +791,20 @@ impl McpStore {
             "UPDATE local_skill_install\n             SET is_enabled = 1, updated_at = ?\n             WHERE user_id = ?\n               AND skill_id IN ({placeholders});"
         );
         let mut query = sqlx::query(&sql).bind(&now).bind(LOCAL_DESKTOP_USER_ID);
-        for skill_id in normalized_skill_ids {
+        for skill_id in normalized_skill_ids.iter().cloned() {
             query = query.bind(skill_id);
         }
         let result = query
             .execute(&self.pool)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
-        Ok(result.rows_affected() as i64)
+        let rows_affected = result.rows_affected() as i64;
+        for skill_id in &normalized_skill_ids {
+            let _ = self
+                .sync_local_skill_registry_entry_from_store(skill_id)
+                .await?;
+        }
+        Ok(rows_affected)
     }
 
     pub async fn delete_local_skill_install(&self, skill_id: &str) -> Result<(), McpError> {
@@ -823,6 +830,7 @@ impl McpStore {
         tx.commit()
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
+        invalidate_capability_registry_cache(self, "delete_local_skill_install");
         Ok(())
     }
 }

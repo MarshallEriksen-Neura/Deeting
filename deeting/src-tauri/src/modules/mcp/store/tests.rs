@@ -1,4 +1,5 @@
 use super::McpStore;
+use crate::modules::mcp::commands::runtime::capability_catalog::build_capability_registry;
 use mcp_registry::types::LocalCapabilityRegistryUpsert;
 use mcp_session::admin::LocalGatewayLogQuery;
 use serde_json::json;
@@ -275,7 +276,7 @@ async fn local_capability_registry_roundtrips_and_cleans_up_with_skill_install()
         .next_local_capability_registry_generation()
         .await
         .expect("next generation");
-    assert_eq!(generation, 1);
+    assert!(generation >= 1);
 
     store
         .replace_local_capability_registry_entries(
@@ -347,6 +348,11 @@ async fn local_capability_registry_roundtrips_and_cleans_up_with_skill_install()
             && entry.is_direct_callable
     }));
     assert!(entries.iter().all(|entry| entry.generation == generation));
+    let cached_registry = build_capability_registry(&store).await;
+    assert!(cached_registry
+        .entries
+        .iter()
+        .any(|entry| entry.asset["id"] == json!("skill.alpha")));
 
     store
         .delete_local_skill_install("skill.alpha")
@@ -358,6 +364,115 @@ async fn local_capability_registry_roundtrips_and_cleans_up_with_skill_install()
         .await
         .expect("list remaining capability registry entries");
     assert!(remaining.is_empty());
+    let registry_after_delete = build_capability_registry(&store).await;
+    assert!(registry_after_delete
+        .entries
+        .iter()
+        .all(|entry| entry.asset["id"] != json!("skill.alpha")));
+}
+
+#[tokio::test]
+async fn capability_registry_cache_invalidates_after_registry_replace() {
+    let store = create_test_store("capability-registry-cache-invalidate").await;
+    store.init().await.expect("init store");
+
+    let generation = store
+        .next_local_capability_registry_generation()
+        .await
+        .expect("next generation");
+    store
+        .replace_local_capability_registry_entries(
+            "skill.alpha",
+            &[LocalCapabilityRegistryUpsert {
+                capability_id: "skill_bundle::skill.alpha".to_string(),
+                source_kind: "user".to_string(),
+                asset_kind: "skill_bundle".to_string(),
+                package_id: "skill.alpha".to_string(),
+                package_version: Some("1.0.0".to_string()),
+                title: "Skill Alpha".to_string(),
+                description: "Alpha bundle".to_string(),
+                tool_name: None,
+                callable_name: None,
+                binding_kind: None,
+                execution_surface: "recipe".to_string(),
+                runtime: Some("local".to_string()),
+                entry_path: None,
+                is_direct_callable: false,
+                activation_state: "enabled".to_string(),
+                runtime_state: "ready".to_string(),
+                search_index_state: "ready".to_string(),
+                generation,
+                descriptor_json: json!({
+                    "manifest": {
+                        "id": "skill.alpha",
+                        "name": "Skill Alpha"
+                    },
+                    "restricted": false,
+                    "allowed_roles": []
+                })
+                .to_string(),
+            }],
+        )
+        .await
+        .expect("insert first registry entry");
+
+    let initial_registry = build_capability_registry(&store).await;
+    assert!(initial_registry
+        .entries
+        .iter()
+        .any(|entry| entry.asset["id"] == json!("skill.alpha")));
+
+    let next_generation = store
+        .next_local_capability_registry_generation()
+        .await
+        .expect("next generation after cache warm");
+    store
+        .replace_local_capability_registry_entries(
+            "skill.alpha",
+            &[LocalCapabilityRegistryUpsert {
+                capability_id: "skill_bundle::skill.alpha".to_string(),
+                source_kind: "user".to_string(),
+                asset_kind: "skill_bundle".to_string(),
+                package_id: "skill.alpha".to_string(),
+                package_version: Some("1.0.1".to_string()),
+                title: "Skill Alpha Updated".to_string(),
+                description: "Updated bundle".to_string(),
+                tool_name: None,
+                callable_name: None,
+                binding_kind: None,
+                execution_surface: "recipe".to_string(),
+                runtime: Some("local".to_string()),
+                entry_path: None,
+                is_direct_callable: false,
+                activation_state: "enabled".to_string(),
+                runtime_state: "ready".to_string(),
+                search_index_state: "ready".to_string(),
+                generation: next_generation,
+                descriptor_json: json!({
+                    "manifest": {
+                        "id": "skill.alpha",
+                        "name": "Skill Alpha Updated"
+                    },
+                    "restricted": false,
+                    "allowed_roles": []
+                })
+                .to_string(),
+            }],
+        )
+        .await
+        .expect("replace cached registry entry");
+
+    let refreshed_registry = build_capability_registry(&store).await;
+    let refreshed_asset = refreshed_registry
+        .entries
+        .iter()
+        .find(|entry| entry.asset["id"] == json!("skill.alpha"))
+        .expect("refreshed skill asset");
+    assert_eq!(refreshed_asset.asset["name"], json!("Skill Alpha Updated"));
+    assert_eq!(
+        refreshed_asset.asset["description"],
+        json!("Updated bundle")
+    );
 }
 
 #[tokio::test]

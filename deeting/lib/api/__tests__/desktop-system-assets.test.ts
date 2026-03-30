@@ -105,6 +105,18 @@ describe("desktop system assets api", () => {
         },
       ],
       registry_first_only_assets: [],
+      cache_status: {
+        current_epoch: 7,
+        cache_present: true,
+        cache_ttl_ms: 15000,
+        cache_age_ms: 120,
+        last_build_epoch: 7,
+        last_invalidation_epoch: 6,
+        last_invalidation_reason: "replace_local_capability_registry_entries",
+        cache_hit_count: 4,
+        cache_miss_count: 2,
+        build_count: 2,
+      },
       items: [],
     } as unknown)
 
@@ -112,6 +124,7 @@ describe("desktop system assets api", () => {
 
     expect(result?.read_path_mode).toBe("registry_first")
     expect(result?.legacy_only_assets).toHaveLength(1)
-    expect(mockInvoke).toHaveBeenCalledWith("get_local_capability_registry_diagnostics")
+    expect(result?.cache_status?.cache_present).toBe(true)
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_capability_registry_diagnostics", undefined)
   })
 })

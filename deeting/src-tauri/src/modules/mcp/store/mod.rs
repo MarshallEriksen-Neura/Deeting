@@ -6,6 +6,7 @@ use crate::modules::admin::store_init::init_admin_tables;
 use crate::modules::assistants::store::init_assistant_tables;
 use crate::modules::conversations::store::init_conversation_tables;
 use crate::modules::desktop_config::store_init::init_desktop_config_table;
+use crate::modules::mcp::commands::runtime::capability_registry_cache::CapabilityRegistryBaseCache;
 use crate::modules::mcp::error::McpError;
 use crate::modules::providers::store::secret_store::SecretStore;
 use crate::modules::skills::store_init::init_skill_tables;
@@ -24,6 +25,7 @@ pub struct McpStore {
     /// SQLite "database is locked" errors from concurrent write contention.
     pub(crate) write_pool: SqlitePool,
     pub(crate) secret_store: SecretStore,
+    pub(crate) capability_registry_base_cache: CapabilityRegistryBaseCache,
 }
 
 pub use mcp_storage::types::{
@@ -61,6 +63,7 @@ impl McpStore {
             pool,
             write_pool,
             secret_store,
+            capability_registry_base_cache: CapabilityRegistryBaseCache::new(),
         })
     }
 
@@ -71,6 +74,7 @@ impl McpStore {
             write_pool: pool.clone(),
             pool,
             secret_store,
+            capability_registry_base_cache: CapabilityRegistryBaseCache::new(),
         }
     }
 
@@ -85,6 +89,7 @@ impl McpStore {
             pool,
             write_pool,
             secret_store,
+            capability_registry_base_cache: CapabilityRegistryBaseCache::new(),
         })
     }
 
