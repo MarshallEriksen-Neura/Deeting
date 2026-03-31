@@ -1,10 +1,11 @@
 use super::super::support::*;
 use super::remote_transport::{call_local_stdio_tool, call_remote_sse_tool};
 use super::tool_resolution::resolve_callable_mcp_tool_by_ref;
+use crate::modules::execution::core_tool::ShellExecuteCoreTool;
+use crate::modules::execution::ExecutionRequest;
 use crate::modules::mcp::policy::{
     assess_policy_risk, resolve_approval_decision, ApprovalDecision, PolicyTargetRef,
 };
-use crate::modules::shell_executor::core_tool::ShellExecuteCoreTool;
 use crate::modules::skill_runtime::{
     execute_local_mcp_tool, execute_skill_binding, resolve_local_tool_env,
     resolve_skill_binding_by_ref, skill_binding_fingerprint,
@@ -853,15 +854,17 @@ async fn execute_core_tool_call_with_tool_ref_internal(
             let home_dir =
                 dirs::home_dir().ok_or_else(|| "home directory is unavailable".to_string())?;
             let shell_tool = ShellExecuteCoreTool::new(home_dir);
-            let command = arguments
-                .get("command")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .ok_or_else(|| "shell_execute requires a non-empty command".to_string())?;
+            let request: ExecutionRequest = serde_json::from_value(arguments.clone())
+                .map_err(|err| format!("Invalid arguments: {err}"))?;
+            let command = request.command_label();
+            if command.is_empty() {
+                return Err(
+                    "shell_execute requires a non-empty command, program, or script".to_string(),
+                );
+            }
 
             if !skip_approval_gate {
-                let risk = shell_tool.assess_risk(command, &arguments);
+                let risk = shell_tool.assess_risk(&request);
                 if let Some(queued) = maybe_queue_core_tool_approval(
                     approval_context,
                     runtime_state,
@@ -879,7 +882,7 @@ async fn execute_core_tool_call_with_tool_ref_internal(
                 }
             }
 
-            let result = shell_tool.execute(arguments).await?;
+            let result = shell_tool.execute_request(request).await?;
             Ok(Some(result))
         }
         _ => Ok(None),

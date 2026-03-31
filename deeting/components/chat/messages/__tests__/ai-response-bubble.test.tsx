@@ -349,4 +349,93 @@ describe("AIResponseBubble debug panel", () => {
       JSON.stringify({ execution_id: "exec_copy_1" }, null, 2)
     );
   });
+
+  it("renders shell execution metadata for paired tool results", () => {
+    const parts: MessageBlock[] = [
+      {
+        id: "tool-call-shell-1",
+        type: "tool_call",
+        callId: "call-shell-1",
+        toolName: "shell_execute",
+        status: "success",
+      },
+      {
+        id: "tool-result-shell-1",
+        type: "tool_result",
+        callId: "call-shell-1",
+        toolName: "shell_execute",
+        status: "success",
+        result: {
+          command: "[System.Environment]::Version.ToString()",
+          resolved_program: "powershell.exe",
+          resolved_args: ["-NoLogo", "-Command", "[System.Environment]::Version.ToString()"],
+          shell_family: "powershell",
+          exit_code: 0,
+          duration_ms: 1746,
+          encoding_stdout: "utf-8",
+          encoding_stderr: "gb18030",
+          stdout: "7.5.0",
+          stderr: "",
+          diagnostics: ["used auto shell resolver"],
+          warnings: ["stdout was normalized"],
+        },
+      },
+    ];
+
+    render(<AIResponseBubble parts={parts} />);
+
+    expect(screen.getByText("Shell Execute")).toBeInTheDocument();
+    expect(screen.getByText("powershell.exe · powershell · exit 0 · enc utf-8/gb18030 · 1746ms")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Shell Execute"));
+
+    expect(screen.getByText("program:powershell.exe")).toBeInTheDocument();
+    expect(screen.getByText("shell:powershell")).toBeInTheDocument();
+    expect(screen.getByText("exit:0")).toBeInTheDocument();
+    expect(screen.getByText("1746ms")).toBeInTheDocument();
+    expect(screen.getByText("[System.Environment]::Version.ToString()")).toBeInTheDocument();
+    expect(screen.getByText("Encoding:")).toBeInTheDocument();
+    expect(screen.getByText("utf-8 / gb18030")).toBeInTheDocument();
+    expect(screen.getByText("Warnings")).toBeInTheDocument();
+    expect(screen.getByText("stdout was normalized")).toBeInTheDocument();
+    expect(screen.getByText("Diagnostics")).toBeInTheDocument();
+    expect(screen.getByText("used auto shell resolver")).toBeInTheDocument();
+    expect(screen.getByText("stdout")).toBeInTheDocument();
+    expect(screen.getByText("7.5.0")).toBeInTheDocument();
+  });
+
+  it("renders shell execution metadata for standalone tool results", () => {
+    const parts: MessageBlock[] = [
+      {
+        id: "tool-result-shell-standalone",
+        type: "tool_result",
+        toolName: "shell_execute",
+        status: "error",
+        result: {
+          command: "dir \"%APPDATA%\\\\com.deeting.desktop\\\\skills\" /s /b",
+          resolved_program: "cmd.exe",
+          shell_family: "cmd",
+          exit_code: 1,
+          duration_ms: 226,
+          encoding_stdout: "utf-8",
+          encoding_stderr: "gb18030",
+          stdout: "",
+          stderr: "系统找不到指定的路径。",
+        },
+      },
+    ];
+
+    render(<AIResponseBubble parts={parts} />);
+
+    expect(screen.getByText("Shell Execute")).toBeInTheDocument();
+    expect(screen.getByText("cmd.exe · cmd · exit 1 · enc utf-8/gb18030 · 226ms")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Shell Execute"));
+
+    expect(screen.getByText("program:cmd.exe")).toBeInTheDocument();
+    expect(screen.getByText("shell:cmd")).toBeInTheDocument();
+    expect(screen.getByText("exit:1")).toBeInTheDocument();
+    expect(screen.getByText("stderr")).toBeInTheDocument();
+    expect(screen.getByText("系统找不到指定的路径。")).toBeInTheDocument();
+  });
 });

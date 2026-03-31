@@ -621,26 +621,44 @@ pub(crate) fn code_mode_core_tools() -> Vec<CoreToolContract> {
         },
         CoreToolContract {
             name: "shell_execute",
-            description: "Execute shell commands on the user's machine with security checks and user approval. Supports cross-platform command execution (Windows: cmd, Linux/Mac: sh). Automatically handles encoding (UTF-8/GBK) and provides timeout control.",
+            description: "Execute commands on the user's machine through a cross-platform execution runtime. Supports direct process execution, shell execution, and script execution. Automatically selects a platform shell when needed and decodes common terminal encodings.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
+                    "mode": {
+                        "type": "string",
+                        "enum": ["process", "shell", "script"],
+                        "description": "Optional execution mode. Omit to let the runtime infer process vs shell vs script."
+                    },
+                    "shell": {
+                        "type": "string",
+                        "enum": ["auto", "cmd", "powershell", "pwsh", "sh", "bash", "zsh"],
+                        "description": "Optional shell family for shell/script modes."
+                    },
                     "command": {
                         "type": "string",
-                        "description": "The command to execute (e.g., 'npm install', 'git status')"
+                        "description": "Command text. For compatibility, this may be either a shell command string or a program name when paired with args."
+                    },
+                    "program": {
+                        "type": "string",
+                        "description": "Program name for direct process execution."
+                    },
+                    "script": {
+                        "type": "string",
+                        "description": "Script body for script execution."
                     },
                     "args": {
                         "type": "array",
                         "items": { "type": "string" },
-                        "description": "Optional arguments for the command"
+                        "description": "Optional argv list for direct process execution."
                     },
                     "working_dir": {
                         "type": "string",
-                        "description": "Working directory for command execution. Must be within allowed paths (user directories)."
+                        "description": "Working directory for command execution. Must be within allowed paths."
                     },
                     "timeout_seconds": {
                         "type": "integer",
-                        "description": "Execution timeout in seconds",
+                        "description": "Execution timeout in seconds.",
                         "default": 300,
                         "minimum": 5,
                         "maximum": 1800
@@ -648,10 +666,14 @@ pub(crate) fn code_mode_core_tools() -> Vec<CoreToolContract> {
                     "env": {
                         "type": "object",
                         "additionalProperties": { "type": "string" },
-                        "description": "Environment variables for the command"
+                        "description": "Environment variables for command execution."
                     }
                 },
-                "required": ["command"]
+                "anyOf": [
+                    { "required": ["command"] },
+                    { "required": ["program"] },
+                    { "required": ["script"] }
+                ]
             }),
             output_schema: json!({
                 "type": "object",
@@ -662,7 +684,15 @@ pub(crate) fn code_mode_core_tools() -> Vec<CoreToolContract> {
                     "command": {"type": "string"},
                     "working_dir": {"type": "string"},
                     "duration_ms": {"type": "integer"},
-                    "approval_level": {"type": "string"}
+                    "approval_level": {"type": "string"},
+                    "mode": {"type": "string"},
+                    "resolved_program": {"type": "string"},
+                    "resolved_args": {"type": "array", "items": {"type": "string"}},
+                    "shell_family": {"type": "string"},
+                    "encoding_stdout": {"type": "string"},
+                    "encoding_stderr": {"type": "string"},
+                    "diagnostics": {"type": "array", "items": {"type": "string"}},
+                    "warnings": {"type": "array", "items": {"type": "string"}}
                 },
                 "required": ["stdout", "stderr", "exit_code", "command", "duration_ms", "approval_level"]
             }),
@@ -671,7 +701,8 @@ pub(crate) fn code_mode_core_tools() -> Vec<CoreToolContract> {
             mutating: true,
             risk_level: "MEDIUM",
             example_arguments: json!({
-                "command": "git status",
+                "program": "git",
+                "args": ["status"],
                 "working_dir": "/home/user/project"
             }),
         },

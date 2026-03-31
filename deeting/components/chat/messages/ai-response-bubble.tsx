@@ -57,6 +57,22 @@ type SkillInstallInsight =
       indexedTools: number | null;
     };
 
+type ShellExecutionInsight = {
+  command: string | null;
+  resolvedProgram: string | null;
+  shellFamily: string | null;
+  exitCode: number | null;
+  durationMs: number | null;
+  workingDir: string | null;
+  encodingStdout: string | null;
+  encodingStderr: string | null;
+  stdout: string | null;
+  stderr: string | null;
+  approvalLevel: string | null;
+  diagnostics: string[];
+  warnings: string[];
+};
+
 function toRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object") return null;
   return value as Record<string, unknown>;
@@ -222,6 +238,7 @@ const INTERNAL_TOOL_NAMES = new Set([
   "attach_capability",
   "detach_capability",
   "sys_submit_onboarding_request",
+  "shell_execute",
 ]);
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
@@ -231,6 +248,8 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   attach_capability: "Activate Skill",
   detach_capability: "Deactivate Skill",
   sys_submit_onboarding_request: "Onboarding",
+  shell_execute: "Shell Execute",
+  "shell.exec": "Shell Execute",
 };
 
 function humanizeToolName(name?: string): string {
@@ -244,6 +263,13 @@ function isInternalTool(name?: string): boolean {
 
 function asTrimmedString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter((item) => item.length > 0);
 }
 
 function extractSkillInstallInsight(toolName?: string, result?: unknown): SkillInstallInsight | null {
@@ -275,6 +301,64 @@ function extractSkillInstallInsight(toolName?: string, result?: unknown): SkillI
   }
 
   return null;
+}
+
+function extractShellExecutionInsight(toolName?: string, result?: unknown): ShellExecutionInsight | null {
+  const payload = toRecord(result);
+  if (!payload) return null;
+
+  const shellTool = toolName === "shell_execute" || toolName === "shell.exec";
+  const hasExecutionFields =
+    payload.resolved_program !== undefined ||
+    payload.shell_family !== undefined ||
+    payload.encoding_stdout !== undefined ||
+    payload.encoding_stderr !== undefined ||
+    payload.exit_code !== undefined ||
+    payload.duration_ms !== undefined;
+  const hasOutputFields =
+    typeof payload.stdout === "string" ||
+    typeof payload.stderr === "string" ||
+    typeof payload.command === "string";
+
+  if (!hasExecutionFields && !(shellTool && hasOutputFields)) {
+    return null;
+  }
+
+  return {
+    command: asTrimmedString(payload.command),
+    resolvedProgram: asTrimmedString(payload.resolved_program),
+    shellFamily: asTrimmedString(payload.shell_family),
+    exitCode: toNumber(payload.exit_code),
+    durationMs: toNumber(payload.duration_ms),
+    workingDir: asTrimmedString(payload.working_dir),
+    encodingStdout: asTrimmedString(payload.encoding_stdout),
+    encodingStderr: asTrimmedString(payload.encoding_stderr),
+    stdout: typeof payload.stdout === "string" ? payload.stdout : null,
+    stderr: typeof payload.stderr === "string" ? payload.stderr : null,
+    approvalLevel: asTrimmedString(payload.approval_level),
+    diagnostics: toStringArray(payload.diagnostics),
+    warnings: toStringArray(payload.warnings),
+  };
+}
+
+function summarizeShellExecutionInsight(insight: ShellExecutionInsight): string | null {
+  const parts: string[] = [];
+  if (insight.resolvedProgram) parts.push(insight.resolvedProgram);
+  if (insight.shellFamily) parts.push(insight.shellFamily);
+  if (insight.exitCode !== null) parts.push(`exit ${insight.exitCode}`);
+
+  const encodings = [insight.encodingStdout, insight.encodingStderr].filter(
+    (value, index, values): value is string => !!value && values.indexOf(value) === index
+  );
+  if (encodings.length > 0) {
+    parts.push(`enc ${encodings.join("/")}`);
+  }
+
+  if (insight.durationMs !== null) {
+    parts.push(`${insight.durationMs}ms`);
+  }
+
+  return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 function summarizeToolCalls(parts: MessageBlock[]) {
@@ -379,6 +463,11 @@ function resolveToolPreview(
       return toInlinePreview(uiBlock.title);
     }
   }
+  const shellExecutionInsight = extractShellExecutionInsight(resultBlock?.toolName, resultBlock?.result);
+  const shellExecutionPreview = shellExecutionInsight
+    ? summarizeShellExecutionInsight(shellExecutionInsight)
+    : null;
+  if (shellExecutionPreview) return shellExecutionPreview;
   const resultPreview = summarizeUnknownValue(resultBlock?.result);
   if (resultPreview) return resultPreview;
   if (typeof args === "string" && args.trim()) {
@@ -458,6 +547,108 @@ const SkillInstallStatusCard = memo<{ insight: SkillInstallInsight }>(function S
           <div>Indexed tools: <span className="font-mono">{insight.indexedTools}</span></div>
         ) : null}
       </div>
+    </div>
+  );
+});
+
+const ShellExecutionResultCard = memo<{ insight: ShellExecutionInsight }>(function ShellExecutionResultCard({
+  insight,
+}) {
+  const encodingSummary = [insight.encodingStdout, insight.encodingStderr]
+    .filter((value, index, values): value is string => !!value && values.indexOf(value) === index)
+    .join(" / ");
+
+  return (
+    <div className="rounded-lg border border-slate-300 bg-slate-50/80 p-3 dark:border-zinc-800 dark:bg-zinc-950/40">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        {insight.resolvedProgram ? (
+          <Badge variant="outline" className="h-5 text-[10px] font-normal">
+            program:{insight.resolvedProgram}
+          </Badge>
+        ) : null}
+        {insight.shellFamily ? (
+          <Badge variant="outline" className="h-5 text-[10px] font-normal">
+            shell:{insight.shellFamily}
+          </Badge>
+        ) : null}
+        {insight.exitCode !== null ? (
+          <Badge variant="outline" className="h-5 text-[10px] font-normal">
+            exit:{insight.exitCode}
+          </Badge>
+        ) : null}
+        {insight.durationMs !== null ? (
+          <Badge variant="outline" className="h-5 text-[10px] font-normal">
+            {insight.durationMs}ms
+          </Badge>
+        ) : null}
+      </div>
+
+      <div className="space-y-1 text-[11px] text-slate-800/90 dark:text-zinc-200/90">
+        {insight.command ? (
+          <div>
+            Command: <span className="font-mono break-all">{insight.command}</span>
+          </div>
+        ) : null}
+        {insight.workingDir ? (
+          <div>
+            Working dir: <span className="font-mono break-all">{insight.workingDir}</span>
+          </div>
+        ) : null}
+        {encodingSummary ? (
+          <div>
+            Encoding: <span className="font-mono">{encodingSummary}</span>
+          </div>
+        ) : null}
+        {insight.approvalLevel ? (
+          <div>
+            Approval: <span className="font-mono">{insight.approvalLevel}</span>
+          </div>
+        ) : null}
+      </div>
+
+      {insight.warnings.length > 0 ? (
+        <div className="mt-3 rounded-md border border-amber-300/80 bg-amber-50/70 p-2 dark:border-amber-900 dark:bg-amber-950/20">
+          <div className="mb-1 text-[11px] font-semibold text-amber-800 dark:text-amber-200">Warnings</div>
+          <div className="space-y-1 text-[11px] text-amber-900/90 dark:text-amber-200/90">
+            {insight.warnings.map((warning, index) => (
+              <div key={`warning-${index}`}>{warning}</div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {insight.diagnostics.length > 0 ? (
+        <div className="mt-3 rounded-md border border-sky-300/80 bg-sky-50/70 p-2 dark:border-sky-900 dark:bg-sky-950/20">
+          <div className="mb-1 text-[11px] font-semibold text-sky-800 dark:text-sky-200">Diagnostics</div>
+          <div className="space-y-1 text-[11px] text-sky-900/90 dark:text-sky-200/90">
+            {insight.diagnostics.map((diagnostic, index) => (
+              <div key={`diagnostic-${index}`}>{diagnostic}</div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {insight.stdout ? (
+        <details className="mt-3 group" open>
+          <summary className="cursor-pointer select-none text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
+            stdout
+          </summary>
+          <pre className="mt-2 overflow-x-auto rounded-md border border-emerald-200 bg-emerald-50/70 p-2 text-[11px] whitespace-pre-wrap break-all text-emerald-950 dark:border-emerald-900 dark:bg-emerald-950/20 dark:text-emerald-100">
+            {insight.stdout}
+          </pre>
+        </details>
+      ) : null}
+
+      {insight.stderr ? (
+        <details className="mt-3 group" open={insight.exitCode !== 0}>
+          <summary className="cursor-pointer select-none text-[11px] font-semibold text-red-700 dark:text-red-300">
+            stderr
+          </summary>
+          <pre className="mt-2 overflow-x-auto rounded-md border border-red-200 bg-red-50/70 p-2 text-[11px] whitespace-pre-wrap break-all text-red-950 dark:border-red-900 dark:bg-red-950/20 dark:text-red-100">
+            {insight.stderr}
+          </pre>
+        </details>
+      ) : null}
     </div>
   );
 });
@@ -1229,6 +1420,10 @@ const ToolCallBlock = memo<{
       () => extractSkillInstallInsight(resultBlock?.toolName || name, resultBlock?.result),
       [resultBlock?.toolName, name, resultBlock?.result]
     );
+    const shellExecutionInsight = useMemo(
+      () => extractShellExecutionInsight(resultBlock?.toolName || name, resultBlock?.result),
+      [resultBlock?.toolName, name, resultBlock?.result]
+    );
     const visualState = useMemo(
       () => resolveToolVisualState(status, resultBlock),
       [resultBlock, status]
@@ -1337,6 +1532,18 @@ const ToolCallBlock = memo<{
               <TaskLiveBlock taskId={taskLiveId} />
             ) : skillInstallInsight ? (
               <SkillInstallStatusCard insight={skillInstallInsight} />
+            ) : shellExecutionInsight ? (
+              <div className={cn(
+                "rounded-2xl border p-3 text-sm overflow-hidden",
+                isResultError
+                  ? "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-900/20"
+                  : isResultPendingApproval
+                    ? "border-amber-200 bg-amber-50/50 dark:border-amber-900 dark:bg-amber-900/20"
+                    : "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-900/20"
+              )}>
+                <ShellExecutionResultCard insight={shellExecutionInsight} />
+                <ToolDebugPanel debug={resultBlock?.debug} />
+              </div>
             ) : hasUi ? (
               <div className="space-y-3">
                 {uiBlocks.map((uiBlock, index) => (
@@ -1543,6 +1750,10 @@ const ToolResultBlock = memo<{
     () => extractSkillInstallInsight(name, result),
     [name, result]
   );
+  const shellExecutionInsight = useMemo(
+    () => extractShellExecutionInsight(name, result),
+    [name, result]
+  );
 
   // Special Handling for System Skills (Live Tasks)
   if (
@@ -1561,7 +1772,12 @@ const ToolResultBlock = memo<{
   const content = useMemo(() => {
     return formatObjectAsMarkdown(result);
   }, [result]);
-  const preview = useMemo(() => summarizeUnknownValue(result), [result]);
+  const preview = useMemo(() => {
+    const shellPreview = shellExecutionInsight
+      ? summarizeShellExecutionInsight(shellExecutionInsight)
+      : null;
+    return shellPreview || summarizeUnknownValue(result);
+  }, [result, shellExecutionInsight]);
   const visualState: ToolVisualState = isError ? "error" : isPendingApproval ? "pending" : "success";
 
   return (
@@ -1629,6 +1845,8 @@ const ToolResultBlock = memo<{
           )}>
             {skillInstallInsight ? (
               <SkillInstallStatusCard insight={skillInstallInsight} />
+            ) : shellExecutionInsight ? (
+              <ShellExecutionResultCard insight={shellExecutionInsight} />
             ) : content ? (
               <div className="overflow-x-auto">
                 <MarkdownViewer content={content} className="chat-markdown chat-markdown-assistant text-sm" />

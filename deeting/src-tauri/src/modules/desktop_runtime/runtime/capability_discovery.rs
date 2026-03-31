@@ -2235,7 +2235,11 @@ mod tests {
                     "input_schema": {
                         "type": "object",
                         "properties": {
-                            "command": {"type": "string", "description": "The command to execute"},
+                            "mode": {"type": "string"},
+                            "shell": {"type": "string"},
+                            "command": {"type": "string", "description": "Command text"},
+                            "program": {"type": "string", "description": "Program name"},
+                            "script": {"type": "string", "description": "Script body"},
                             "working_dir": {"type": "string", "description": "Working directory"}
                         }
                     }
