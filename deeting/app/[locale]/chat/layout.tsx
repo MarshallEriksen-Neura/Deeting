@@ -70,7 +70,7 @@ export default async function ChatLayout({
             {/* Chat content */}
             <div
               data-chat-scroll
-              className="min-h-0 overflow-y-auto overflow-x-hidden"
+              className="relative min-h-0 overflow-y-auto overflow-x-hidden"
             >
               <div className="flex min-h-0 h-full w-full">{children}</div>
             </div>

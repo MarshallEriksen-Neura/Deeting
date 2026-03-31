@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { ArrowDown, ArrowUp } from "lucide-react"
+import { createPortal } from "react-dom"
 import { Virtuoso, VirtuosoHandle } from "react-virtuoso"
 import { Button } from "@/components/ui/button"
 import { MessageItem } from "./message-item"
@@ -83,6 +84,7 @@ export function ChatMessageList({
   const scrollContainerRef = React.useRef<HTMLElement | null>(null)
   const containerRef = React.useRef<HTMLDivElement>(null)
   const [scrollParent, setScrollParent] = React.useState<HTMLElement | null>(null)
+  const [scrollControlsHost, setScrollControlsHost] = React.useState<HTMLElement | null>(null)
 
   // 使用 ref 存储滚动状态，避免 setState 触发重渲染循环
   const scrollStateRef = React.useRef({
@@ -163,12 +165,14 @@ export function ChatMessageList({
 
   React.useEffect(() => {
     if (typeof document === "undefined") return
+    const layoutScrollParent = document.querySelector<HTMLElement>("[data-chat-scroll]")
     const parent = useVirtualScroll
-      ? document.querySelector<HTMLElement>("[data-chat-scroll]")
+      ? layoutScrollParent
       : containerRef.current
     if (!parent) return
     scrollContainerRef.current = parent
     setScrollParent(parent)
+    setScrollControlsHost(layoutScrollParent ?? parent)
   }, [useVirtualScroll])
 
   // 自动滚动到底部（普通滚动模式）
@@ -212,8 +216,21 @@ export function ChatMessageList({
     // 初始检查
     handleScroll()
     container.addEventListener("scroll", handleScroll, { passive: true })
-    return () => container.removeEventListener("scroll", handleScroll)
-  }, [useVirtualScroll, scrollParent, updateScrollButtons])
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => handleScroll())
+
+    resizeObserver?.observe(container)
+    if (container.firstElementChild instanceof HTMLElement) {
+      resizeObserver?.observe(container.firstElementChild)
+    }
+
+    return () => {
+      container.removeEventListener("scroll", handleScroll)
+      resizeObserver?.disconnect()
+    }
+  }, [useVirtualScroll, scrollParent, updateScrollButtons, messages.length, isTyping])
 
   // 滚动到顶部
   const scrollToTop = React.useCallback(() => {
@@ -341,6 +358,34 @@ export function ChatMessageList({
     </>
   ), [renderTypingIndicator])
 
+  const scrollControls =
+    scrollButtons.showTop || scrollButtons.showBottom ? (
+      <div className="pointer-events-none absolute bottom-4 right-4 z-20 flex flex-col gap-2">
+        {scrollButtons.showTop && (
+          <Button
+            variant="secondary"
+            size="icon"
+            className="pointer-events-auto h-9 w-9 rounded-full shadow-md"
+            aria-label={t("scroll.toTop")}
+            onClick={scrollToTop}
+          >
+            <ArrowUp className="h-4 w-4" />
+          </Button>
+        )}
+        {scrollButtons.showBottom && (
+          <Button
+            variant="secondary"
+            size="icon"
+            className="pointer-events-auto h-9 w-9 rounded-full shadow-md"
+            aria-label={t("scroll.toBottom")}
+            onClick={scrollToBottom}
+          >
+            <ArrowDown className="h-4 w-4" />
+          </Button>
+        )}
+      </div>
+    ) : null
+
   return (
     <div
       ref={containerRef}
@@ -381,30 +426,8 @@ export function ChatMessageList({
       )}
 
       {/* 滚动按钮 */}
-      <div className="pointer-events-none absolute bottom-4 right-4 flex flex-col gap-2">
-        {scrollButtons.showTop && (
-          <Button
-            variant="secondary"
-            size="icon"
-            className="pointer-events-auto h-9 w-9 rounded-full shadow-md"
-            aria-label={t("scroll.toTop")}
-            onClick={scrollToTop}
-          >
-            <ArrowUp className="h-4 w-4" />
-          </Button>
-        )}
-        {scrollButtons.showBottom && (
-          <Button
-            variant="secondary"
-            size="icon"
-            className="pointer-events-auto h-9 w-9 rounded-full shadow-md"
-            aria-label={t("scroll.toBottom")}
-            onClick={scrollToBottom}
-          >
-            <ArrowDown className="h-4 w-4" />
-          </Button>
-        )}
-      </div>
+      {!scrollControlsHost && scrollControls}
+      {scrollControlsHost ? createPortal(scrollControls, scrollControlsHost) : null}
     </div>
   )
 }
