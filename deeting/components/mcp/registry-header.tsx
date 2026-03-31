@@ -8,7 +8,7 @@ import { useTranslations } from "next-intl"
 const AddServerSheet = dynamic(() => import("./add-server-sheet").then(mod => mod.AddServerSheet), { ssr: false })
 
 interface RegistryHeaderProps {
-  onCreateManual: (payload: { config: Record<string, unknown> }) => void
+  onCreateManual: (payload: { config: Record<string, unknown> }) => Promise<boolean> | boolean
 }
 
 export function RegistryHeader({ onCreateManual }: RegistryHeaderProps) {

@@ -151,6 +151,8 @@
       "invalidConfig": "Invalid JSON config. Please check the mcpServers format."
     },
     "save": "Save Server",
+    "saving": "Adding...",
+    "pendingHint": "Importing the configuration and discovering tools. The runtime grid will refresh automatically when it is ready.",
     "transport": {
       "stdio": "Stdio",
       "sse": "SSE"

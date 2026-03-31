@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import { Loader2 } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { GlassButton } from "@/components/ui/glass-button"
 import { Input } from "@/components/ui/input"
@@ -20,7 +21,7 @@ import { useNotifications } from "@/components/contexts/notification-context"
 
 interface AddServerSheetProps {
   children?: React.ReactNode
-  onCreate: (payload: { config: Record<string, unknown> }) => void
+  onCreate: (payload: { config: Record<string, unknown> }) => Promise<boolean> | boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
 }
@@ -55,6 +56,25 @@ export function AddServerSheet({ children, onCreate, open, onOpenChange }: AddSe
   const [args, setArgs] = useState("")
   const [envText, setEnvText] = useState("")
   const [jsonText, setJsonText] = useState("")
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const isControlled = typeof open === "boolean"
+  const isOpen = isControlled ? open : internalOpen
+  const setOpen = onOpenChange ?? setInternalOpen
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (isSubmitting) return
+    setOpen(nextOpen)
+  }
+
+  const resetForm = () => {
+    setActiveTab("wizard")
+    setName("")
+    setCommand("")
+    setArgs("")
+    setEnvText("")
+    setJsonText("")
+  }
 
   const wizardPayload = useMemo(() => {
     if (!name || !command) return null
@@ -69,7 +89,11 @@ export function AddServerSheet({ children, onCreate, open, onOpenChange }: AddSe
     }
   }, [args, command, envText, name])
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (isSubmitting) return
+
+    let config: Record<string, unknown> | null = null
+
     if (activeTab === "wizard") {
       if (!wizardPayload) {
         addNotification({
@@ -80,39 +104,44 @@ export function AddServerSheet({ children, onCreate, open, onOpenChange }: AddSe
         })
         return
       }
-      onCreate({ config: wizardPayload })
-      setOpen(false)
-      setName("")
-      setCommand("")
-      setArgs("")
-      setEnvText("")
+      config = wizardPayload
+    } else {
+      try {
+        const parsed = JSON.parse(jsonText || "{}")
+        if (!parsed.mcpServers || typeof parsed.mcpServers !== "object") {
+          throw new Error("invalid mcpServers")
+        }
+        config = parsed
+      } catch (err) {
+        addNotification({
+          type: "error",
+          title: t("toast.saveFailed"),
+          description: String(err),
+          timestamp: Date.now(),
+        })
+        return
+      }
+    }
+
+    if (!config) {
       return
     }
 
+    setIsSubmitting(true)
     try {
-      const parsed = JSON.parse(jsonText || "{}")
-      if (!parsed.mcpServers || typeof parsed.mcpServers !== "object") {
-        throw new Error("invalid mcpServers")
+      const created = await onCreate({ config })
+      if (!created) {
+        return
       }
-      onCreate({ config: parsed })
       setOpen(false)
-      setJsonText("")
-    } catch (err) {
-      addNotification({
-        type: "error",
-        title: t("toast.saveFailed"),
-        description: String(err),
-        timestamp: Date.now(),
-      })
+      resetForm()
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
-  const isControlled = typeof open === "boolean"
-  const isOpen = isControlled ? open : internalOpen
-  const setOpen = onOpenChange ?? setInternalOpen
-
   return (
-    <Sheet open={isOpen} onOpenChange={setOpen}>
+    <Sheet open={isOpen} onOpenChange={handleOpenChange}>
       {children ? (
         <SheetTrigger asChild>
           {children}
@@ -128,20 +157,25 @@ export function AddServerSheet({ children, onCreate, open, onOpenChange }: AddSe
         
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "wizard" | "json")} className="mt-6 px-6 sm:px-8">
             <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="wizard">{t("addServer.tabs.wizard")}</TabsTrigger>
-                <TabsTrigger value="json">{t("addServer.tabs.json")}</TabsTrigger>
+                <TabsTrigger value="wizard" disabled={isSubmitting}>{t("addServer.tabs.wizard")}</TabsTrigger>
+                <TabsTrigger value="json" disabled={isSubmitting}>{t("addServer.tabs.json")}</TabsTrigger>
             </TabsList>
             
             <TabsContent value="wizard" className="space-y-4 py-4">
                 <div className="space-y-2">
                     <Label>{t("addServer.fields.name")}</Label>
-                    <Input placeholder={t("addServer.placeholders.name")} value={name} onChange={(event) => setName(event.target.value)} />
+                    <Input
+                      placeholder={t("addServer.placeholders.name")}
+                      value={name}
+                      onChange={(event) => setName(event.target.value)}
+                      disabled={isSubmitting}
+                    />
                 </div>
                 
                 <div className="space-y-2">
                     <Label>{t("addServer.fields.transport")}</Label>
                     <div className="flex gap-2">
-                        <GlassButton className="flex-1">{t("addServer.transport.stdio")}</GlassButton>
+                        <GlassButton className="flex-1" disabled={isSubmitting}>{t("addServer.transport.stdio")}</GlassButton>
                         <GlassButton variant="secondary" className="flex-1 text-muted-foreground" disabled>
                           {t("addServer.transport.sse")}
                         </GlassButton>
@@ -150,17 +184,33 @@ export function AddServerSheet({ children, onCreate, open, onOpenChange }: AddSe
 
                 <div className="space-y-2">
                     <Label>{t("addServer.fields.command")}</Label>
-                    <Input placeholder={t("addServer.placeholders.command")} value={command} onChange={(event) => setCommand(event.target.value)} />
+                    <Input
+                      placeholder={t("addServer.placeholders.command")}
+                      value={command}
+                      onChange={(event) => setCommand(event.target.value)}
+                      disabled={isSubmitting}
+                    />
                 </div>
 
                 <div className="space-y-2">
                     <Label>{t("addServer.fields.args")}</Label>
-                    <Input placeholder={t("addServer.placeholders.args")} value={args} onChange={(event) => setArgs(event.target.value)} />
+                    <Input
+                      placeholder={t("addServer.placeholders.args")}
+                      value={args}
+                      onChange={(event) => setArgs(event.target.value)}
+                      disabled={isSubmitting}
+                    />
                 </div>
 
                 <div className="space-y-2">
                     <Label>{t("addServer.fields.env")}</Label>
-                    <Textarea placeholder={t("addServer.placeholders.env")} className="font-mono text-xs" value={envText} onChange={(event) => setEnvText(event.target.value)} />
+                    <Textarea
+                      placeholder={t("addServer.placeholders.env")}
+                      className="font-mono text-xs"
+                      value={envText}
+                      onChange={(event) => setEnvText(event.target.value)}
+                      disabled={isSubmitting}
+                    />
                 </div>
             </TabsContent>
 
@@ -172,14 +222,31 @@ export function AddServerSheet({ children, onCreate, open, onOpenChange }: AddSe
                         placeholder={t.raw("addServer.placeholders.json")}
                         value={jsonText}
                         onChange={(event) => setJsonText(event.target.value)}
+                        disabled={isSubmitting}
                     />
                 </div>
             </TabsContent>
         </Tabs>
 
+        {isSubmitting ? (
+          <div className="mx-6 rounded-2xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-sm text-sky-800 sm:mx-8">
+            <div className="flex items-start gap-2">
+              <Loader2 className="mt-0.5 size-4 animate-spin shrink-0" />
+              <p>{t("addServer.pendingHint")}</p>
+            </div>
+          </div>
+        ) : null}
+
         <SheetFooter className="px-6 sm:px-8">
-            <GlassButton type="submit" className="w-full" onClick={handleSave}>
-              {t("addServer.save")}
+            <GlassButton type="submit" className="w-full" onClick={() => void handleSave()} disabled={isSubmitting}>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  {t("addServer.saving")}
+                </>
+              ) : (
+                t("addServer.save")
+              )}
             </GlassButton>
         </SheetFooter>
       </SheetContent>

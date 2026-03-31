@@ -140,7 +140,7 @@ export function useMcpRegistryImportAction({
       const parsed = parseMcpRegistryImportConfig(payload.config)
       if (parsed.kind !== "ok") {
         addNotification(getMcpRegistryNotification(t, "invalid_config"))
-        return
+        return false
       }
 
       const results = await Promise.allSettled(
@@ -165,14 +165,16 @@ export function useMcpRegistryImportAction({
       }
 
       await refreshAll()
-      return
+      return succeeded > 0
     }
 
     try {
       await invoke(DESKTOP_MCP_COMMANDS.importConfig, { payload })
       await refreshAll()
+      return true
     } catch (err) {
       addNotification(getMcpRegistryErrorNotification(t, "save", err))
+      return false
     }
   }, [addNotification, createServer, isTauri, refreshAll, syncServer, t])
 

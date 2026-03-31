@@ -151,6 +151,8 @@
       "invalidConfig": "JSON 配置不合法，请检查 mcpServers 格式。"
     },
     "save": "保存服务",
+    "saving": "正在添加...",
+    "pendingHint": "正在导入配置并发现工具，请稍候。完成后会自动刷新工具列表。",
     "transport": {
       "stdio": "Stdio",
       "sse": "SSE"
