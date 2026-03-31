@@ -9,6 +9,7 @@ import { request } from "@/lib/http"
 import { handleModelConfigRequiredError } from "@/lib/model-config-required"
 
 const CONVERSATION_BASE = "/api/v1/internal/conversations"
+const LIST_PENDING_APPROVALS_COMMAND = "list_pending_mcp_approvals"
 
 const isTauriRuntime = () =>
   process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
@@ -81,6 +82,24 @@ export const ConversationHistoryResponseSchema = z.object({
 
 export type ConversationHistoryResponse = z.infer<typeof ConversationHistoryResponseSchema>
 
+type PendingToolApprovalSnapshot = {
+  status?: string
+  approval_token?: string
+  tool_id?: string
+  tool_name?: string
+  arguments?: Record<string, unknown>
+  description?: string
+  risk_level?: string
+  risk_reasons?: string[]
+  recovered?: boolean
+  recovery_reason?: string
+  attempts?: number
+  expires_in_ms?: number
+  call_id?: string
+  execution_token?: string
+  session_id?: string
+}
+
 const isConversationMessageLike = (value: unknown): value is ConversationMessage =>
   value !== null && typeof value === "object" && "role" in value
 
@@ -121,9 +140,188 @@ const normalizeConversationHistoryPayload = (
   }
 }
 
+const asTrimmedString = (value: unknown): string | null =>
+  typeof value === "string" && value.trim().length > 0 ? value.trim() : null
+
+const asStringArray = (value: unknown): string[] | undefined => {
+  if (!Array.isArray(value)) return undefined
+  const items = value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter((item) => item.length > 0)
+  return items.length > 0 ? items : undefined
+}
+
+const asRecord = (value: unknown): Record<string, unknown> | null => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  return value as Record<string, unknown>
+}
+
+const collectHistoryToolCallIds = (messages: ConversationMessage[]) => {
+  const callIds = new Set<string>()
+
+  for (const message of messages) {
+    const meta = asRecord(message.meta_info)
+    const blocks = Array.isArray(meta?.blocks) ? meta.blocks : []
+    for (const block of blocks) {
+      const blockRecord = asRecord(block)
+      if (!blockRecord) continue
+      const type = asTrimmedString(blockRecord.type)
+      if (type !== "tool_call" && type !== "tool_result") continue
+      const callId = asTrimmedString(blockRecord.callId)
+      if (callId) {
+        callIds.add(callId)
+      }
+    }
+  }
+
+  return callIds
+}
+
+const buildPendingApprovalResultPayload = (snapshot: PendingToolApprovalSnapshot) => {
+  const result: Record<string, unknown> = {
+    status: "REQUIRES_APPROVAL",
+  }
+
+  if (snapshot.approval_token) result.approval_token = snapshot.approval_token
+  if (snapshot.tool_id) result.tool_id = snapshot.tool_id
+  if (snapshot.tool_name) result.tool_name = snapshot.tool_name
+  if (snapshot.arguments) result.arguments = snapshot.arguments
+  if (snapshot.description) result.description = snapshot.description
+  if (snapshot.risk_level) result.risk_level = snapshot.risk_level
+
+  const riskReasons = asStringArray(snapshot.risk_reasons)
+  if (riskReasons) result.risk_reasons = riskReasons
+  if (snapshot.recovered === true) result.recovered = true
+  if (snapshot.recovery_reason) result.recovery_reason = snapshot.recovery_reason
+  if (typeof snapshot.attempts === "number" && Number.isFinite(snapshot.attempts)) {
+    result.attempts = snapshot.attempts
+  }
+  if (
+    typeof snapshot.expires_in_ms === "number" &&
+    Number.isFinite(snapshot.expires_in_ms)
+  ) {
+    result.expires_in_ms = snapshot.expires_in_ms
+  }
+
+  return result
+}
+
+const buildSyntheticPendingApprovalMessage = ({
+  snapshot,
+  turnIndex,
+  createdAt,
+}: {
+  snapshot: PendingToolApprovalSnapshot
+  turnIndex: number
+  createdAt: string
+}): ConversationMessage | null => {
+  const approvalToken = asTrimmedString(snapshot.approval_token)
+  const callId = asTrimmedString(snapshot.call_id)
+  const toolName =
+    asTrimmedString(snapshot.tool_name) ?? asTrimmedString(snapshot.tool_id) ?? "unknown_tool"
+
+  if (!approvalToken || !callId) return null
+
+  const toolArgs =
+    snapshot.arguments && Object.keys(snapshot.arguments).length > 0
+      ? JSON.stringify(snapshot.arguments, null, 2)
+      : undefined
+
+  return {
+    role: "assistant",
+    content: "",
+    turn_index: turnIndex,
+    created_at: createdAt,
+    is_truncated: false,
+    name: null,
+    meta_info: {
+      pending_approval_snapshot: true,
+      blocks: [
+        {
+          type: "tool_call",
+          callId,
+          toolName,
+          ...(toolArgs ? { toolArgs } : {}),
+          status: "success",
+        },
+        {
+          type: "tool_result",
+          callId,
+          toolName,
+          status: "requires_approval",
+          result: buildPendingApprovalResultPayload(snapshot),
+        },
+      ],
+    },
+  }
+}
+
+const mergePendingApprovalSnapshotsIntoHistory = (
+  response: ConversationHistoryResponse,
+  snapshots: PendingToolApprovalSnapshot[]
+): ConversationHistoryResponse => {
+  if (!snapshots.length) return response
+
+  const existingCallIds = collectHistoryToolCallIds(response.messages)
+  let nextTurnIndex = response.messages.reduce((maxTurnIndex, message) => {
+    return typeof message.turn_index === "number" && Number.isFinite(message.turn_index)
+      ? Math.max(maxTurnIndex, message.turn_index)
+      : maxTurnIndex
+  }, 0)
+  let nextCreatedAtMs = response.messages.reduce((maxCreatedAt, message) => {
+    const createdAt = typeof message.created_at === "string" ? Date.parse(message.created_at) : NaN
+    return Number.isFinite(createdAt) ? Math.max(maxCreatedAt, createdAt) : maxCreatedAt
+  }, 0)
+
+  const syntheticMessages: ConversationMessage[] = []
+
+  for (const snapshot of snapshots) {
+    if (asTrimmedString(snapshot.status) !== "REQUIRES_APPROVAL") continue
+
+    const callId = asTrimmedString(snapshot.call_id)
+    if (!callId || existingCallIds.has(callId)) continue
+
+    existingCallIds.add(callId)
+    nextTurnIndex += 1
+    nextCreatedAtMs = nextCreatedAtMs > 0 ? nextCreatedAtMs + 1 : Date.now() + syntheticMessages.length
+
+    const syntheticMessage = buildSyntheticPendingApprovalMessage({
+      snapshot,
+      turnIndex: nextTurnIndex,
+      createdAt: new Date(nextCreatedAtMs).toISOString(),
+    })
+    if (syntheticMessage) {
+      syntheticMessages.push(syntheticMessage)
+    }
+  }
+
+  if (!syntheticMessages.length) return response
+
+  return {
+    ...response,
+    messages: [...response.messages, ...syntheticMessages],
+  }
+}
+
+async function listPendingLocalApprovals(
+  sessionId: string
+): Promise<PendingToolApprovalSnapshot[]> {
+  try {
+    const result = await invokeTauri<unknown>(LIST_PENDING_APPROVALS_COMMAND, { sessionId })
+    return Array.isArray(result)
+      ? (result.filter(
+          (item): item is PendingToolApprovalSnapshot =>
+            Boolean(item && typeof item === "object" && !Array.isArray(item))
+        ) as PendingToolApprovalSnapshot[])
+      : []
+  } catch {
+    return []
+  }
+}
+
 export async function fetchConversationHistory(
   sessionId: string,
-  options: { cursor?: number; limit?: number } = {}
+  options: { cursor?: number; limit?: number; includePendingApprovals?: boolean } = {}
 ): Promise<ConversationHistoryResponse> {
   if (isTauriRuntime()) {
     try {
@@ -139,7 +337,12 @@ export async function fetchConversationHistory(
       )
       const normalized = normalizeConversationHistoryPayload(sessionId, data)
       const parsed = ConversationHistoryResponseSchema.safeParse(data)
-      return parsed.success ? parsed.data : normalized
+      const baseResponse = parsed.success ? parsed.data : normalized
+      if (options.cursor != null || options.includePendingApprovals === false) {
+        return baseResponse
+      }
+      const pendingApprovals = await listPendingLocalApprovals(sessionId)
+      return mergePendingApprovalSnapshotsIntoHistory(baseResponse, pendingApprovals)
     } catch {
       return { session_id: sessionId, messages: [], next_cursor: null, has_more: false }
     }
@@ -367,7 +570,10 @@ export async function deleteConversationMessage(
 ): Promise<ConversationDeleteResponse> {
   if (isTauriRuntime()) {
     try {
-      const history = await fetchConversationHistory(sessionId, { limit: 500 })
+      const history = await fetchConversationHistory(sessionId, {
+        limit: 500,
+        includePendingApprovals: false,
+      })
       const targetMessages = (history.messages ?? []).filter(
         (message) => message.turn_index === turnIndex
       )
@@ -441,7 +647,10 @@ async function cleanupDesktopObjectStorageAssetsForMessages(
 
 async function cleanupLocalAssetsForConversation(sessionId: string): Promise<void> {
   try {
-    const history = await fetchConversationHistory(sessionId, { limit: 500 })
+    const history = await fetchConversationHistory(sessionId, {
+      limit: 500,
+      includePendingApprovals: false,
+    })
     const sha256Set = new Set<string>()
     for (const msg of history.messages ?? []) {
       const content = typeof msg.content === "string" ? msg.content : ""

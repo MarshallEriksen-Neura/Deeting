@@ -1,6 +1,7 @@
 import {
   clearConversation,
   deleteConversationMessage,
+  fetchConversationHistory,
   fetchConversationSessions,
   fetchConversationWindow,
 } from "@/lib/api/conversations"
@@ -114,6 +115,118 @@ describe("conversation tauri apis", () => {
       },
     })
     expect(mockRequest).not.toHaveBeenCalled()
+  })
+
+  it("hydrates a pending approval assistant turn into first-page local history", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke
+      .mockResolvedValueOnce({
+        session_id: "session-local-history-1",
+        messages: [{ role: "user", content: "查一下资料", turn_index: 1 }],
+        next_cursor: null,
+        has_more: false,
+      } as unknown)
+      .mockResolvedValueOnce([
+        {
+          status: "REQUIRES_APPROVAL",
+          approval_token: "approval-1",
+          tool_name: "tavily_search",
+          arguments: { query: "tool replay" },
+          call_id: "call-1",
+          session_id: "session-local-history-1",
+        },
+      ] as unknown)
+
+    const result = await fetchConversationHistory("session-local-history-1")
+
+    expect(result.messages).toHaveLength(2)
+    expect(result.messages[1]).toMatchObject({
+      role: "assistant",
+      content: "",
+      turn_index: 2,
+      meta_info: {
+        pending_approval_snapshot: true,
+        blocks: [
+          {
+            type: "tool_call",
+            callId: "call-1",
+            toolName: "tavily_search",
+            status: "success",
+          },
+          {
+            type: "tool_result",
+            callId: "call-1",
+            toolName: "tavily_search",
+            status: "requires_approval",
+            result: expect.objectContaining({
+              status: "REQUIRES_APPROVAL",
+              approval_token: "approval-1",
+            }),
+          },
+        ],
+      },
+    })
+    expect(mockInvoke).toHaveBeenNthCalledWith(1, "list_local_conversation_history", {
+      query: { session_id: "session-local-history-1", cursor: null, limit: null },
+    })
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, "list_pending_mcp_approvals", {
+      sessionId: "session-local-history-1",
+    })
+  })
+
+  it("does not duplicate a pending approval turn when history already contains the same tool call", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke
+      .mockResolvedValueOnce({
+        session_id: "session-local-history-2",
+        messages: [
+          { role: "user", content: "查一下资料", turn_index: 1 },
+          {
+            role: "assistant",
+            content: "",
+            turn_index: 2,
+            meta_info: {
+              blocks: [
+                {
+                  type: "tool_result",
+                  callId: "call-existing",
+                  toolName: "tavily_search",
+                  status: "requires_approval",
+                  result: {
+                    status: "REQUIRES_APPROVAL",
+                    approval_token: "approval-existing",
+                  },
+                },
+              ],
+            },
+          },
+        ],
+        next_cursor: null,
+        has_more: false,
+      } as unknown)
+      .mockResolvedValueOnce([
+        {
+          status: "REQUIRES_APPROVAL",
+          approval_token: "approval-existing",
+          tool_name: "tavily_search",
+          arguments: { query: "tool replay" },
+          call_id: "call-existing",
+          session_id: "session-local-history-2",
+        },
+      ] as unknown)
+
+    const result = await fetchConversationHistory("session-local-history-2")
+
+    expect(result.messages).toHaveLength(2)
+    expect(result.messages[1]).toMatchObject({
+      role: "assistant",
+      turn_index: 2,
+    })
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, "list_pending_mcp_approvals", {
+      sessionId: "session-local-history-2",
+    })
   })
 
   it("falls back to web conversation sessions outside tauri runtime", async () => {

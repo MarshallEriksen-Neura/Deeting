@@ -190,6 +190,47 @@ async fn record_query_affinity_from_tool_meta(
     }
 }
 
+fn tool_call_meta_matches_call_id(item: &serde_json::Value, call_id: &str) -> bool {
+    let expected = call_id.trim();
+    if expected.is_empty() {
+        return false;
+    }
+
+    item.get("id")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .is_some_and(|value| value == expected)
+}
+
+fn push_local_tool_call_error_meta(
+    tool_call_meta: &mut Vec<serde_json::Value>,
+    results: &mut Vec<String>,
+    realtime_emitter: &mut LocalRealtimeToolTraceEmitter,
+    call_id: Option<&str>,
+    tool_name: &str,
+    error_code: &str,
+    error: impl Into<String>,
+) {
+    let error = error.into();
+    let meta = serde_json::json!({
+        "id": call_id
+            .map(str::trim)
+            .filter(|value| !value.is_empty()),
+        "name": tool_name,
+        "status": "error",
+        "error_code": error_code,
+        "error": error,
+    });
+    let mut streamed_blocks = Vec::new();
+    append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+    realtime_emitter.emit_blocks(streamed_blocks);
+    tool_call_meta.push(meta);
+    results.push(format!(
+        "Tool call '{}' failed [{}]: {}",
+        tool_name, error_code, error
+    ));
+}
+
 #[derive(Clone)]
 pub(crate) struct SuspendedLocalChatExecution {
     max_rounds: usize,
@@ -584,13 +625,39 @@ fn build_structured_tool_replay_messages(
         return None;
     }
 
+    let mut ordered_tool_meta = Vec::with_capacity(tool_calls.len());
+    for tool_call in &tool_calls {
+        let Some(call_id) = tool_call
+            .id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            log::warn!("structured tool replay skipped because a tool call is missing call_id");
+            return None;
+        };
+
+        let Some(meta) = tool_call_meta
+            .iter()
+            .find(|item| tool_call_meta_matches_call_id(item, call_id))
+        else {
+            log::warn!(
+                "structured tool replay skipped because tool output is missing for call_id={}",
+                call_id
+            );
+            return None;
+        };
+
+        ordered_tool_meta.push((call_id.to_string(), meta));
+    }
+
     let assistant_content = response
         .get("content")
         .and_then(|value| value.as_str())
         .unwrap_or_default()
         .trim()
         .to_string();
-    let mut messages = Vec::with_capacity(1 + tool_call_meta.len());
+    let mut messages = Vec::with_capacity(1 + ordered_tool_meta.len());
     messages.push(LocalChatInputMessage {
         role: "assistant".to_string(),
         content: assistant_content,
@@ -599,20 +666,12 @@ fn build_structured_tool_replay_messages(
         name: None,
     });
 
-    for item in tool_call_meta {
-        let Some(call_id) = item
-            .get("id")
-            .and_then(|value| value.as_str())
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        else {
-            continue;
-        };
+    for (call_id, item) in ordered_tool_meta {
         messages.push(LocalChatInputMessage {
             role: "tool".to_string(),
             content: serialize_tool_replay_content(item),
             tool_calls: vec![],
-            tool_call_id: Some(call_id.to_string()),
+            tool_call_id: Some(call_id),
             name: item
                 .get("name")
                 .and_then(|value| value.as_str())
@@ -849,6 +908,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
             canonicalize_tool_name_for_allowed_list(&tool_name, effective_allowed_tool_names)
                 .unwrap_or(tool_name);
         let call_id = call.id.clone().unwrap_or_default();
+        let meta_len_before = tool_call_meta.len();
         if !effective_allowed_tool_names
             .iter()
             .any(|item| item == &tool_name)
@@ -924,59 +984,67 @@ async fn maybe_handle_local_code_mode_tool_calls(
                     continue;
                 }
             };
-            if !code.is_empty() {
-                let execution_res =
-                    crate::modules::code_mode::commands::execute_local_code_mode_inner(
-                        app_state,
-                        ExecuteLocalCodeModeRequest {
-                            code: code.to_string(),
-                            session_id: Some(chat_ctx.session_id.clone()),
-                            language: Some(language.to_string()),
-                            execution_timeout,
-                            dry_run: Some(dry_run),
-                            context: None,
-                            max_calls: None,
-                            allowed_tools: Some(execution_contract.allowed_tools.clone()),
-                            capability_snapshot: Some(
-                                execution_contract.capability_snapshot.clone(),
-                            ),
-                        },
-                        build_runtime_bridge_stream_target(realtime_emitter),
-                    )
-                    .await;
-                match execution_res {
-                    Ok(res) => {
-                        synthesized = true;
-                        let meta_status = if res.success { "success" } else { "error" };
-                        let meta = serde_json::json!({
-                            "id":call.id,
-                            "name":tool_name,
-                            "status":meta_status,
-                            "errorCode":res.error_code,
-                            "result":res
-                        });
-                        let mut streamed_blocks = Vec::new();
-                        append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
-                        realtime_emitter.emit_blocks(streamed_blocks);
-                        tool_call_meta.push(meta);
-                        if res.success {
-                            results
-                                .push(format!("Code Execution Result:\n{}", res.result.join("\n")));
-                        } else {
-                            results.push(format!(
-                                "Code Execution Blocked: {}",
-                                res.error.unwrap_or_else(|| "sandbox not ready".to_string())
-                            ));
-                        }
+            if code.trim().is_empty() {
+                synthesized = true;
+                push_local_tool_call_error_meta(
+                    &mut tool_call_meta,
+                    &mut results,
+                    realtime_emitter,
+                    call.id.as_deref(),
+                    &tool_name,
+                    "CODE_MODE_EMPTY_CODE",
+                    "execute_code_plan requires a non-empty 'code' argument",
+                );
+                continue;
+            }
+
+            let execution_res = crate::modules::code_mode::commands::execute_local_code_mode_inner(
+                app_state,
+                ExecuteLocalCodeModeRequest {
+                    code: code.to_string(),
+                    session_id: Some(chat_ctx.session_id.clone()),
+                    language: Some(language.to_string()),
+                    execution_timeout,
+                    dry_run: Some(dry_run),
+                    context: None,
+                    max_calls: None,
+                    allowed_tools: Some(execution_contract.allowed_tools.clone()),
+                    capability_snapshot: Some(execution_contract.capability_snapshot.clone()),
+                },
+                build_runtime_bridge_stream_target(realtime_emitter),
+            )
+            .await;
+            match execution_res {
+                Ok(res) => {
+                    synthesized = true;
+                    let meta_status = if res.success { "success" } else { "error" };
+                    let meta = serde_json::json!({
+                        "id":call.id,
+                        "name":tool_name,
+                        "status":meta_status,
+                        "errorCode":res.error_code,
+                        "result":res
+                    });
+                    let mut streamed_blocks = Vec::new();
+                    append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+                    realtime_emitter.emit_blocks(streamed_blocks);
+                    tool_call_meta.push(meta);
+                    if res.success {
+                        results.push(format!("Code Execution Result:\n{}", res.result.join("\n")));
+                    } else {
+                        results.push(format!(
+                            "Code Execution Blocked: {}",
+                            res.error.unwrap_or_else(|| "sandbox not ready".to_string())
+                        ));
                     }
-                    Err(err) => {
-                        let meta = serde_json::json!({"id":call.id,"name":tool_name,"status":"error","error":err.to_string()});
-                        let mut streamed_blocks = Vec::new();
-                        append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
-                        realtime_emitter.emit_blocks(streamed_blocks);
-                        tool_call_meta.push(meta);
-                        results.push(format!("Code Execution Failed: {}", err));
-                    }
+                }
+                Err(err) => {
+                    let meta = serde_json::json!({"id":call.id,"name":tool_name,"status":"error","error":err.to_string()});
+                    let mut streamed_blocks = Vec::new();
+                    append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+                    realtime_emitter.emit_blocks(streamed_blocks);
+                    tool_call_meta.push(meta);
+                    results.push(format!("Code Execution Failed: {}", err));
                 }
             }
         } else if tool_name == "search_sdk" {
@@ -1158,8 +1226,8 @@ async fn maybe_handle_local_code_mode_tool_calls(
             if asset_type == "assistant" {
                 let create_req: Result<mcp_session::assistant::CreateLocalAssistantRequest, _> =
                     serde_json::from_value(payload);
-                if let Ok(req) = create_req {
-                    match app_state.mcp.store.create_local_assistant(req).await {
+                match create_req {
+                    Ok(req) => match app_state.mcp.store.create_local_assistant(req).await {
                         Ok(id) => {
                             synthesized = true;
                             let meta = serde_json::json!({"id":call.id,"name":tool_name,"status":"success","result":{"action":"created","id":id}});
@@ -1170,12 +1238,29 @@ async fn maybe_handle_local_code_mode_tool_calls(
                             results.push(format!("Assistant created successfully with ID: {}", id));
                         }
                         Err(err) => {
-                            let meta = serde_json::json!({"id":call.id,"name":tool_name,"status":"error","error":err.to_string()});
-                            let mut streamed_blocks = Vec::new();
-                            append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
-                            realtime_emitter.emit_blocks(streamed_blocks);
-                            tool_call_meta.push(meta);
+                            synthesized = true;
+                            push_local_tool_call_error_meta(
+                                &mut tool_call_meta,
+                                &mut results,
+                                realtime_emitter,
+                                call.id.as_deref(),
+                                &tool_name,
+                                "LOCAL_ASSISTANT_CREATE_FAILED",
+                                format!("assistant creation failed: {}", err),
+                            );
                         }
+                    },
+                    Err(err) => {
+                        synthesized = true;
+                        push_local_tool_call_error_meta(
+                            &mut tool_call_meta,
+                            &mut results,
+                            realtime_emitter,
+                            call.id.as_deref(),
+                            &tool_name,
+                            "INVALID_ONBOARDING_ASSISTANT_PAYLOAD",
+                            format!("assistant onboarding payload could not be parsed: {}", err),
+                        );
                     }
                 }
             } else if asset_type == "skill" {
@@ -1203,6 +1288,25 @@ async fn maybe_handle_local_code_mode_tool_calls(
                         results.push(format!("Skill onboarding failed: {}", err));
                     }
                 }
+            } else {
+                synthesized = true;
+                let asset_type_label = if asset_type.trim().is_empty() {
+                    "<empty>"
+                } else {
+                    asset_type
+                };
+                push_local_tool_call_error_meta(
+                    &mut tool_call_meta,
+                    &mut results,
+                    realtime_emitter,
+                    call.id.as_deref(),
+                    &tool_name,
+                    "UNSUPPORTED_ONBOARDING_ASSET_TYPE",
+                    format!(
+                        "unsupported onboarding asset_type '{}'; expected 'assistant' or 'skill'",
+                        asset_type_label
+                    ),
+                );
             }
         } else if tool_name == "refresh_skill_index" {
             realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call.id,"toolName":tool_name,"status":"running"})]);
@@ -1314,6 +1418,28 @@ async fn maybe_handle_local_code_mode_tool_calls(
                     ));
                 }
             }
+        }
+
+        if tool_call_meta.len() == meta_len_before {
+            synthesized = true;
+            let error = format!(
+                "tool call '{}' completed without recording a result; synthesized a fallback error output to keep replay stable",
+                tool_name
+            );
+            log::warn!(
+                "local code mode tool call missing output meta: tool_name={} call_id={}",
+                tool_name,
+                call_id
+            );
+            push_local_tool_call_error_meta(
+                &mut tool_call_meta,
+                &mut results,
+                realtime_emitter,
+                call.id.as_deref(),
+                &tool_name,
+                "LOCAL_TOOL_RESULT_MISSING",
+                error,
+            );
         }
     }
     LocalToolCallProcessingOutcome::Completed {
@@ -1592,6 +1718,35 @@ mod tests {
         assert_eq!(
             responses_replay[1].tool_call_id.as_deref(),
             Some("call_123")
+        );
+    }
+
+    #[test]
+    fn structured_tool_replay_messages_require_output_for_every_call() {
+        let response = serde_json::json!({
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call_123",
+                    "name": "search_sdk",
+                    "arguments": { "query": "tool replay" }
+                },
+                {
+                    "id": "call_456",
+                    "name": "refresh_skill_index",
+                    "arguments": {}
+                }
+            ]
+        });
+        let meta = vec![serde_json::json!({
+            "id": "call_123",
+            "name": "search_sdk",
+            "status": "success",
+            "result": { "ok": true }
+        })];
+
+        assert!(
+            build_structured_tool_replay_messages("openai_responses", &response, &meta).is_none()
         );
     }
 
