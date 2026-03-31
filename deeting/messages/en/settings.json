@@ -225,6 +225,37 @@
         }
       }
     },
+    "version": {
+      "title": "Version Management",
+      "description": "View the current desktop version and trigger the built-in updater manually.",
+      "currentLabel": "Current version",
+      "currentLoading": "Reading version...",
+      "currentUnknown": "Unknown",
+      "statusLabel": "Update status",
+      "manualHint": "Run a manual check to see whether a newer desktop build is available.",
+      "checkingDescription": "Contacting the updater feed now.",
+      "upToDateDescription": "This desktop app is already on the latest available version.",
+      "latestDescription": "A newer desktop version is available and ready to install.",
+      "unavailableDescription": "The updater feed is not available in this environment yet.",
+      "errorDescription": "The updater could not be reached right now.",
+      "latestLabel": "Available version",
+      "releaseNotesLabel": "Release notes",
+      "progressLabel": "Download progress",
+      "progressValue": "{progress}%",
+      "check": "Check for updates",
+      "checkingButton": "Checking...",
+      "install": "Install update",
+      "installing": "Downloading...",
+      "footerHint": "The current version is read from the desktop runtime. Update checks reuse the existing Tauri updater flow.",
+      "status": {
+        "idle": "Not checked yet",
+        "checking": "Checking...",
+        "up_to_date": "Up to date",
+        "update_available": "Update available",
+        "unavailable": "Updater unavailable",
+        "error": "Check failed"
+      }
+    },
     "browserAgent": {
       "title": "Browser Agent Debug Panel",
       "description": "Dev-only panel to validate the desktop browser_agent tool chain.",

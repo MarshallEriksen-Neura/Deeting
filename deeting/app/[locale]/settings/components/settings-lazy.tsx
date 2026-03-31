@@ -15,6 +15,14 @@ export const DeferredDesktopSandboxSettingsCard = dynamic(
   { ssr: false }
 )
 
+export const DeferredDesktopVersionManagementCard = dynamic(
+  () =>
+    import("./desktop-version-management-card").then(
+      (mod) => mod.DesktopVersionManagementCard
+    ),
+  { ssr: false }
+)
+
 export const DeferredDesktopBrowserAgentPanelCard = dynamic(
   () =>
     import("./desktop-browser-agent-panel-card").then(

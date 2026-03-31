@@ -225,6 +225,37 @@
         }
       }
     },
+    "version": {
+      "title": "版本管理",
+      "description": "查看当前桌面版本，并手动触发内置更新流程。",
+      "currentLabel": "当前版本",
+      "currentLoading": "正在读取版本...",
+      "currentUnknown": "未知",
+      "statusLabel": "更新状态",
+      "manualHint": "可以手动检查是否有新的桌面版本可用。",
+      "checkingDescription": "正在连接更新源。",
+      "upToDateDescription": "当前桌面端已是最新可用版本。",
+      "latestDescription": "已发现新的桌面版本，可以直接安装。",
+      "unavailableDescription": "当前环境暂时无法获取更新清单。",
+      "errorDescription": "暂时无法连接更新服务。",
+      "latestLabel": "可用版本",
+      "releaseNotesLabel": "更新说明",
+      "progressLabel": "下载进度",
+      "progressValue": "{progress}%",
+      "check": "检查更新",
+      "checkingButton": "检查中...",
+      "install": "立即安装",
+      "installing": "正在下载...",
+      "footerHint": "当前版本由桌面运行时直接读取，检查更新复用现有 Tauri updater 流程。",
+      "status": {
+        "idle": "尚未检查",
+        "checking": "检查中...",
+        "up_to_date": "已是最新",
+        "update_available": "发现新版本",
+        "unavailable": "更新源不可用",
+        "error": "检查失败"
+      }
+    },
     "browserAgent": {
       "title": "Browser Agent 调试面板",
       "description": "用于验证桌面端 browser_agent 工具链路（开发/调试用）。",

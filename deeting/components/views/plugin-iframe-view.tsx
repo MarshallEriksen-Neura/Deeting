@@ -6,7 +6,11 @@ import { useI18n } from "@/hooks/use-i18n"
 import type { NativeViewProps } from "./registry"
 
 /**
- * Inline chat ViewBlock for plugin.iframe.
+ * Legacy compatibility ViewBlock for plugin.iframe.
+ *
+ * The current main UI path prefers html.v1 and asset-backed rendering.
+ * This component remains on disk for compatibility work, but is no longer
+ * registered in the default native view registry.
  *
  * Lifecycle:
  *  1. Renders a sandboxed <iframe> pointing at metadata.renderer_url.
@@ -29,6 +33,8 @@ const PluginIframeView = memo<NativeViewProps>(function PluginIframeView({
 
   const rendererUrl = (metadata?.renderer_url as string) ?? ""
   const iframeHeight = (metadata?.iframe_height as number) ?? 320
+  const missingRendererUrl = !rendererUrl
+  const effectiveError = missingRendererUrl ? t("views.pluginIframe.noUrl") : error
 
   // Derive expected origin from renderer_url for postMessage origin check
   const expectedOrigin = (() => {
@@ -62,15 +68,11 @@ const PluginIframeView = memo<NativeViewProps>(function PluginIframeView({
   )
 
   useEffect(() => {
-    if (!rendererUrl) {
-      setError(t("views.pluginIframe.noUrl"))
-      setLoading(false)
-      return
-    }
+    if (!rendererUrl) return
 
     window.addEventListener("message", handleMessage)
     return () => window.removeEventListener("message", handleMessage)
-  }, [rendererUrl, handleMessage, t])
+  }, [rendererUrl, handleMessage])
 
   const handleLoad = useCallback(() => {
     setLoading(false)
@@ -81,18 +83,18 @@ const PluginIframeView = memo<NativeViewProps>(function PluginIframeView({
     setError(t("views.pluginIframe.loadError"))
   }, [t])
 
-  if (error) {
+  if (effectiveError) {
     return (
       <div className="flex items-center gap-2 text-xs text-destructive py-2">
         <AlertTriangle size={14} className="shrink-0" />
-        <span>{error}</span>
+        <span>{effectiveError}</span>
       </div>
     )
   }
 
   return (
     <div className="relative w-full" style={{ height: iframeHeight }}>
-      {loading && (
+      {!missingRendererUrl && loading && (
         <div className="absolute inset-0 flex items-center justify-center bg-muted/30 rounded">
           <Loader2 size={20} className="animate-spin text-muted-foreground" />
         </div>

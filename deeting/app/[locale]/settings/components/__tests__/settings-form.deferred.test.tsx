@@ -9,6 +9,7 @@ describe("SettingsForm deferred sections", () => {
     let sandboxCardLoads = 0
     let storageCardLoads = 0
     let scoutCardLoads = 0
+    let versionCardLoads = 0
 
     jest.isolateModules(() => {
       jest.doMock("next/dynamic", () => ({
@@ -90,6 +91,10 @@ describe("SettingsForm deferred sections", () => {
         sandboxCardLoads += 1
         return { DesktopSandboxSettingsCard: () => null }
       })
+      jest.doMock("../desktop-version-management-card", () => {
+        versionCardLoads += 1
+        return { DesktopVersionManagementCard: () => null }
+      })
       jest.doMock("../desktop-browser-agent-panel-card", () => {
         browserPanelLoads += 1
         return { DesktopBrowserAgentPanelCard: () => null }
@@ -103,6 +108,7 @@ describe("SettingsForm deferred sections", () => {
         return { DesktopScoutSettingsCard: () => null }
       })
 
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       require("../settings-form")
     })
 
@@ -111,5 +117,6 @@ describe("SettingsForm deferred sections", () => {
     expect(sandboxCardLoads).toBe(0)
     expect(storageCardLoads).toBe(0)
     expect(scoutCardLoads).toBe(0)
+    expect(versionCardLoads).toBe(0)
   })
 })

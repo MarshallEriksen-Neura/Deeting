@@ -15,7 +15,6 @@ const NativeRegistry: Record<string, NativeViewComponent> = {
   "table.v1": dynamic(() => import("./native-table"), { ssr: false }) as unknown as NativeViewComponent,
   "chart.line": dynamic(() => import("./native-line-chart"), { ssr: false }) as unknown as NativeViewComponent,
   "html.v1": dynamic(() => import("./html-runtime-view"), { ssr: false }) as unknown as NativeViewComponent,
-  "plugin.iframe": dynamic(() => import("./plugin-iframe-view"), { ssr: false }) as unknown as NativeViewComponent,
   "generated.file": dynamic(() => import("./generated-file-view"), { ssr: false }) as unknown as NativeViewComponent,
   "image.result": dynamic(() => import("./image-result-view"), { ssr: false }) as unknown as NativeViewComponent,
   "audio.result": dynamic(() => import("./audio-result-view"), { ssr: false }) as unknown as NativeViewComponent,
