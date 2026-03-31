@@ -157,7 +157,8 @@
       "billing": "计费与配额",
       "storage": "存储",
       "knowledge": "知识库",
-      "memory": "用户记忆"
+      "memory": "用户记忆",
+      "assets": "Assets"
     }
   }
 }

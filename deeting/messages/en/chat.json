@@ -349,7 +349,10 @@
       "copied": "Copied",
       "collapse": "Collapse code",
       "expand": "Expand code",
-      "collapsed": "Collapsed · {count} lines"
+      "collapsed": "Collapsed · {count} lines",
+      "svgPreview": "SVG preview",
+      "svgPreviewAlt": "SVG preview",
+      "svgPreviewUnavailable": "Preview unavailable for this SVG"
     },
     "scroll": {
       "toTop": "Scroll to top",

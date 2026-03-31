@@ -4,12 +4,14 @@ use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use sqlx::Row;
 
 use crate::modules::admin::store_init::init_admin_tables;
+use crate::modules::asset_registry::store::init_asset_registry_tables;
 use crate::modules::assistants::store::init_assistant_tables;
 use crate::modules::conversations::store::init_conversation_tables;
 use crate::modules::desktop_config::store_init::init_desktop_config_table;
 use crate::modules::mcp::commands::runtime::capability_registry_cache::CapabilityRegistryBaseCache;
 use crate::modules::mcp::error::McpError;
 use crate::modules::providers::store::secret_store::SecretStore;
+use crate::modules::render_runtime::store::init_render_runtime_tables;
 use crate::modules::skills::store_init::init_skill_tables;
 use mcp_core::types::{
     McpConflictStatus, McpSource, McpSourceStatus, McpSourceType, McpTool, McpToolConfigPayload,
@@ -394,6 +396,8 @@ impl McpStore {
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
         init_desktop_config_table(self).await?;
+        init_render_runtime_tables(self).await?;
+        init_asset_registry_tables(self).await?;
 
         self.purge_legacy_skill_mcp_rows().await?;
         Ok(())

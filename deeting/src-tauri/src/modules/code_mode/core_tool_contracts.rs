@@ -201,6 +201,57 @@ pub(crate) fn code_mode_core_tools() -> Vec<CoreToolContract> {
             }),
         },
         CoreToolContract {
+            name: "save_asset",
+            description: "Save a reusable local HTML asset for later retrieval and rendering. Persists HTML plus lightweight asset metadata such as match hints, props hints, and output example schema.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "asset_id": { "type": "string", "description": "Stable local asset identifier." },
+                    "title": { "type": "string", "description": "User-facing asset title." },
+                    "html": { "type": "string", "description": "Full HTML document or fragment to persist as the asset entry." },
+                    "summary": { "type": "string", "description": "Optional short summary shown in asset management surfaces." },
+                    "render_hint": { "type": "string", "description": "Optional render hint reused when the asset is recalled." },
+                    "data_mode": { "type": "string", "enum": ["ai_data", "self_fetch"], "description": "Whether future runs expect AI-provided data or self-fetched props." },
+                    "match_hints": { "type": "array", "items": { "type": "string" }, "description": "Phrases used to match future prompts to this asset." },
+                    "props_hint": { "type": "array", "items": { "type": "string" }, "description": "Parameters the model should extract when the asset is recalled." },
+                    "output_example": { "type": "object", "description": "Example output data shape for future AI-generated render data." },
+                    "origin_session_id": { "type": "string", "description": "Optional source chat session id." },
+                    "origin_turn_index": { "type": "integer", "description": "Optional source turn index." },
+                    "source_block_id": { "type": "string", "description": "Optional source block id." }
+                },
+                "required": ["asset_id", "title", "html"]
+            }),
+            output_schema: json!({
+                "type": "object",
+                "properties": {
+                    "asset_id": {"type": "string"},
+                    "asset_kind": {"type": "string"},
+                    "title": {"type": "string"},
+                    "status": {"type": "string"},
+                    "html_entry": {"type": ["string", "null"]},
+                    "data_mode": {"type": ["string", "null"]},
+                    "match_hints_json": {"type": ["string", "null"]},
+                    "props_hint_json": {"type": ["string", "null"]},
+                    "output_example_json": {"type": ["string", "null"]}
+                },
+                "required": ["asset_id", "asset_kind", "title", "status"]
+            }),
+            permission_scope: &["local_asset_write", "local_state_write"],
+            read_only: false,
+            mutating: true,
+            risk_level: "HIGH",
+            example_arguments: json!({
+                "asset_id": "weather-ios18-card",
+                "title": "Weather iOS18",
+                "html": "<!doctype html><html><body><div id='app'></div></body></html>",
+                "render_hint": "weather-card",
+                "data_mode": "ai_data",
+                "match_hints": ["weather", "天气"],
+                "props_hint": ["location"],
+                "output_example": { "location": "Beijing", "temp_c": 22 }
+            }),
+        },
+        CoreToolContract {
             name: "monitor.create",
             description: "Create a local monitor task that runs an assistant on a schedule and records execution results.",
             input_schema: json!({
@@ -719,6 +770,7 @@ fn core_tool_execution_surface(tool_name: &str) -> &'static str {
         "browser_retry_with_relocate" => "host",
         "browser_click" => "host",
         "browser_type" => "host",
+        "save_asset" => "host",
         "shell_execute" => "host",
         _ => "host",
     }
@@ -838,6 +890,18 @@ mod tests {
         assert!(!tool.read_only);
         assert!(tool.mutating);
         assert_eq!(tool.risk_level, "LOW");
+    }
+
+    #[test]
+    fn core_tool_registry_includes_save_asset() {
+        let tool = code_mode_core_tools()
+            .into_iter()
+            .find(|tool| tool.name == "save_asset")
+            .expect("save_asset core tool should exist");
+
+        assert!(!tool.read_only);
+        assert!(tool.mutating);
+        assert_eq!(tool.risk_level, "HIGH");
     }
 
     #[test]

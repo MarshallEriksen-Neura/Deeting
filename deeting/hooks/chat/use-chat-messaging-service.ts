@@ -37,7 +37,7 @@ import { prepareDesktopObjectStorageRead } from "@/lib/api/desktop-object-storag
 import { signAssets } from "@/lib/api/media-assets"
 import { useChatStore, type CompareCandidate, type Message } from "@/store/chat-store"
 import { useWorkspaceStore } from "@/store/workspace-store"
-import type { MessageBlock } from "@/lib/chat/message-protocol"
+import type { HtmlRuntimeRefreshSpec, MessageBlock } from "@/lib/chat/message-protocol"
 import { extractAssistantTextFromBlocks } from "@/lib/chat/message-blocks"
 import { listCustomTaskAgents } from "@/lib/api/custom-task-agents"
 import { resolveLeadingTaskAgentMention } from "./task-agent-mention"
@@ -855,7 +855,7 @@ export function useChatMessagingService() {
     ) {
       onBlocks([{ type: "text", content: streamedText } as MessageBlock])
     }
-  }, [streamEnabled])
+  }, [streamEnabled, t])
 
   const replaceAssistantMessage = useCallback((targetMessageId: string, replacement: Message) => {
     const currentMessages = useChatStore.getState().messages
@@ -917,10 +917,12 @@ export function useChatMessagingService() {
     draft,
     sessionIdOverride,
     clearComposerMode = "never",
+    explicitTaskAgentIdOverride,
   }: {
     draft: PendingTakeoverDispatchDraft
     sessionIdOverride?: string | null
     clearComposerMode?: "always" | "if_matching_draft" | "never"
+    explicitTaskAgentIdOverride?: string
   }) => {
     const trimmedInput = draft.input.trim()
     if (!trimmedInput && draft.attachments.length === 0) return false
@@ -941,9 +943,9 @@ export function useChatMessagingService() {
     })
 
     let effectiveInput = trimmedInput
-    let explicitTaskAgentId: string | undefined
+    let explicitTaskAgentId = explicitTaskAgentIdOverride?.trim() || undefined
     let displayInput = trimmedInput
-    if (isTauriRuntime) {
+    if (isTauriRuntime && !explicitTaskAgentId) {
       const localAgents = await listCustomTaskAgents()
       const resolvedMention = resolveLeadingTaskAgentMention(
         trimmedInput,
@@ -1107,6 +1109,7 @@ export function useChatMessagingService() {
     runStreamedRequest,
     composerMatchesDraft,
     clearComposer,
+    t,
   ])
 
   const sendMessage = useCallback(async (sessionIdOverride?: string | null) => {
@@ -1120,6 +1123,38 @@ export function useChatMessagingService() {
       clearComposerMode: "always",
     })
   }, [dispatchDraft, input, attachments, selectedKnowledgeFileIds])
+
+  const dispatchRenderRefresh = useCallback(async (refreshSpec: HtmlRuntimeRefreshSpec) => {
+    if (refreshSpec.kind !== "chat_replay") return false
+    const payload =
+      refreshSpec.input && typeof refreshSpec.input === "object"
+        ? (refreshSpec.input as Record<string, unknown>)
+        : null
+    const inputValue =
+      typeof payload?.message === "string" ? payload.message.trim() : ""
+    if (!inputValue) return false
+
+    const explicitTaskAgentId =
+      typeof payload?.explicit_task_agent_id === "string"
+        ? payload.explicit_task_agent_id.trim()
+        : ""
+    const refreshKnowledgeFileIds = Array.isArray(payload?.selected_knowledge_file_ids)
+      ? payload.selected_knowledge_file_ids
+          .filter((value): value is string => typeof value === "string")
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0)
+      : []
+
+    return dispatchDraft({
+      draft: {
+        input: inputValue,
+        attachments: [],
+        selectedKnowledgeFileIds: refreshKnowledgeFileIds,
+      },
+      clearComposerMode: "never",
+      explicitTaskAgentIdOverride: explicitTaskAgentId || undefined,
+    })
+  }, [dispatchDraft])
 
   const queuePendingTakeoverFromCurrentDraft = useCallback(() => {
     const currentState = useChatStore.getState()
@@ -1500,6 +1535,7 @@ export function useChatMessagingService() {
     upsertCompareCandidate,
     runStreamedRequest,
     appendCompareCandidateBlocks,
+    t,
   ])
 
   const finalizeCompareWinner = useCallback(async (targetMessageId: string, modelKey: string) => {
@@ -1657,6 +1693,7 @@ export function useChatMessagingService() {
 
   return {
     sendMessage,
+    dispatchRenderRefresh,
     pendingTakeover,
     pendingTakeoverRequestedAction,
     queuePendingTakeoverFromCurrentDraft,

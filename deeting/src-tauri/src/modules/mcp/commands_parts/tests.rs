@@ -2744,7 +2744,8 @@ for raw_line in sys.stdin:
 
     #[tokio::test]
     async fn search_sdk_surfaces_core_onboarding_and_execution_tools() {
-        let query = "install a local skill, create a monitor task, and execute a code plan";
+        let query =
+            "install a local skill, create a monitor task, save a reusable html widget asset, and execute a code plan";
         let (base_url, server_handle) = start_mock_embedding_server(HashMap::from([(
             query.to_lowercase(),
             vec![0.0, 0.0, 0.0],
@@ -2778,6 +2779,10 @@ for raw_line in sys.stdin:
             .iter()
             .find(|item| item["name"] == serde_json::json!("monitor.list"))
             .expect("monitor list core tool");
+        let save_asset = callable
+            .iter()
+            .find(|item| item["name"] == serde_json::json!("save_asset"))
+            .expect("save_asset core tool");
         let execute = result["orchestration_primitives"]
             .as_array()
             .expect("orchestration primitives array")
@@ -2795,6 +2800,9 @@ for raw_line in sys.stdin:
         assert_eq!(monitor_list["asset_namespace"], serde_json::json!("core"));
         assert_eq!(monitor_list["invocation_mode"], serde_json::json!("direct"));
         assert_eq!(monitor_list["risk_level"], serde_json::json!("LOW"));
+        assert_eq!(save_asset["asset_namespace"], serde_json::json!("core"));
+        assert_eq!(save_asset["invocation_mode"], serde_json::json!("direct"));
+        assert_eq!(save_asset["risk_level"], serde_json::json!("HIGH"));
         assert_eq!(execute["risk_level"], serde_json::json!("HIGH"));
         assert!(execute["permission_scope"]
             .as_array()

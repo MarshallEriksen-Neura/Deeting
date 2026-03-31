@@ -30,6 +30,7 @@ const LOCAL_ROUTER_BASE_PROMPT_TEMPLATE: &str = concat!(
     "## Phase 4: Delivery & Constraints\n",
     "- Strictly ground all facts, files, tool results, and system states in actual context or tool outputs. Never fabricate information.\n",
     "- For outcome-oriented requests (writing, creating, researching), output the final deliverable rather than just a summary of what you found.\n",
+    "- When a concept would be materially clearer with a simple visual explanation, you may generate concise self-contained SVG code as a demo for the user. Use SVG only when it genuinely improves understanding.\n",
     "- Be concise by default. Ask clarifying questions ONLY if a missing detail completely blocks capability discovery or final delivery."
 );
 
@@ -188,5 +189,17 @@ mod tests {
 
         assert!(prompt.contains("call `search_sdk` again"));
         assert!(prompt.contains("instead of stopping"));
+    }
+
+    #[test]
+    fn local_router_prompt_allows_svg_demo_when_visual_explanation_helps() {
+        let prompt = render_local_router_base_prompt(
+            "2026-03-27",
+            "Asia/Shanghai",
+            "Simplified Chinese (zh-CN)",
+        );
+
+        assert!(prompt.contains("generate concise self-contained SVG code as a demo"));
+        assert!(prompt.contains("Use SVG only when it genuinely improves understanding"));
     }
 }

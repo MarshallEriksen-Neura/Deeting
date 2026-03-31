@@ -1,6 +1,8 @@
 use super::super::support::*;
 use super::remote_transport::{call_local_stdio_tool, call_remote_sse_tool};
 use super::tool_resolution::resolve_callable_mcp_tool_by_ref;
+use crate::modules::asset_registry::service::save_local_asset;
+use crate::modules::asset_registry::types::SaveLocalAssetRequest;
 use crate::modules::execution::core_tool::ShellExecuteCoreTool;
 use crate::modules::execution::ExecutionRequest;
 use crate::modules::mcp::policy::{
@@ -153,6 +155,7 @@ fn resolve_core_tool_name(tool_id: Option<&str>, tool_name: Option<&str>) -> Opt
         }
         ("browser_click", _) | (_, "core.browser_click") => Some("browser_click"),
         ("browser_type", _) | (_, "core.browser_type") => Some("browser_type"),
+        ("save_asset", _) | (_, "core.save_asset") => Some("save_asset"),
         ("shell_execute", _) | (_, "core.shell_execute") => Some("shell_execute"),
         _ => None,
     }
@@ -884,6 +887,47 @@ async fn execute_core_tool_call_with_tool_ref_internal(
 
             let result = shell_tool.execute_request(request).await?;
             Ok(Some(result))
+        }
+        "save_asset" => {
+            let app_state = crate::state::global_app_state()
+                .ok_or_else(|| "global app state is unavailable".to_string())?;
+            let app_handle = crate::state::global_app_handle()
+                .ok_or_else(|| "global app handle is unavailable".to_string())?;
+            let request: SaveLocalAssetRequest = serde_json::from_value(arguments.clone())
+                .map_err(|err| format!("Invalid arguments: {err}"))?;
+            let asset_id = request.asset_id.trim().to_string();
+            if asset_id.is_empty() {
+                return Err("save_asset requires a non-empty asset_id".to_string());
+            }
+
+            if !skip_approval_gate {
+                let risk = assess_policy_risk(PolicyTargetRef::CoreTool {
+                    tool_name: core_tool_name,
+                    arguments: &arguments,
+                });
+                if let Some(queued) = maybe_queue_core_tool_approval(
+                    approval_context,
+                    runtime_state,
+                    pending_tool_calls,
+                    "core.save_asset",
+                    "save_asset",
+                    &arguments,
+                    "Save a reusable local HTML asset on the user's machine.",
+                    &risk,
+                    format!("core.save_asset:{asset_id}"),
+                )
+                .await?
+                {
+                    return Ok(Some(queued));
+                }
+            }
+
+            let record = save_local_asset(&app_handle, app_state.mcp.store.as_ref(), request)
+                .await
+                .map_err(|err| err.to_string())?;
+            Ok(Some(
+                serde_json::to_value(record).map_err(|err| err.to_string())?,
+            ))
         }
         _ => Ok(None),
     }

@@ -152,7 +152,8 @@
           },
           "bot_system_prompt": {
             "label": "System Prompt",
-            "placeholder": "Optional: define reply style for this channel"
+            "placeholder": "Optional: define reply style for this channel",
+            "description": "Replies always use the current secretary model; this only controls channel-specific reply style."
           },
           "bot_app_id": {
             "label": "Feishu App ID",
@@ -201,7 +202,8 @@
           },
           "bot_system_prompt": {
             "label": "System Prompt",
-            "placeholder": "Optional: define reply style for this WeChat channel"
+            "placeholder": "Optional: define reply style for this WeChat channel",
+            "description": "Replies always use the current secretary model; this only controls channel-specific reply style."
           },
           "notify_contact_ids": {
             "label": "Proactive Notify Contacts",
@@ -286,7 +288,7 @@
         },
         "replyBehavior": {
           "title": "Reply Behavior",
-          "description": "Controls model choice and reply style after receiving messages."
+          "description": "Replies always use the current secretary model; this section only controls reply style."
         }
       },
       "runtimeHint": {
@@ -468,6 +470,86 @@
         "failed": "Failed to load scan results",
         "noDocuments": "No documents found",
         "noFindings": "No findings found"
+      }
+    },
+    "assetsPage": {
+      "title": "Assets",
+      "subtitle": "Reusable cards created from chat, ready for quick access and future automation.",
+      "sections": {
+        "pinned": "Pinned Assets",
+        "recent": "Recent Assets",
+        "renderData": "Render Data",
+        "refreshSpec": "Refresh Spec",
+        "outputExample": "Output Example",
+        "assetContract": "Asset Contract",
+        "matchHints": "Match Hints",
+        "propsHint": "Props Hint"
+      },
+      "actions": {
+        "create": "Create Asset",
+        "reload": "Reload",
+        "pin": "Pin asset",
+        "unpin": "Unpin asset",
+        "refresh": "Refresh asset",
+        "archive": "Archive asset",
+        "openConversation": "Open Conversation",
+        "openManager": "Open Manager"
+      },
+      "createDialog": {
+        "title": "Create HTML Asset",
+        "description": "Paste reusable HTML and lightweight matching metadata to save a local asset.",
+        "fields": {
+          "assetId": "Asset ID",
+          "title": "Title",
+          "summary": "Summary",
+          "renderHint": "Render Hint",
+          "dataMode": "Data Mode",
+          "matchHints": "Match Hints",
+          "propsHint": "Props Hint",
+          "outputExample": "Output Example JSON",
+          "html": "HTML"
+        },
+        "placeholders": {
+          "summary": "Short description for dashboard and chat reuse",
+          "matchHints": "weather, 天气, forecast",
+          "propsHint": "location, date",
+          "outputExample": "{\n  \"location\": \"Beijing\",\n  \"temp_c\": 22\n}",
+          "html": "<!doctype html>\n<html>\n  <body>\n    <div id=\"app\"></div>\n  </body>\n</html>"
+        },
+        "options": {
+          "aiData": "AI data",
+          "selfFetch": "Self fetch"
+        },
+        "actions": {
+          "cancel": "Cancel",
+          "save": "Save Asset"
+        }
+      },
+      "fields": {
+        "updatedAt": "Updated {value}",
+        "dataModeLabel": "Data Mode",
+        "htmlEntry": "HTML Entry"
+      },
+      "empty": {
+        "summary": "No summary available",
+        "pinned": "No pinned assets yet.",
+        "recent": "No reusable assets have been registered yet.",
+        "snapshot": "No snapshot preview available.",
+        "renderData": "No render data recorded.",
+        "refreshSpec": "No refresh spec recorded.",
+        "outputExample": "No output example recorded.",
+        "matchHints": "No match hints recorded.",
+        "propsHint": "No props hint recorded.",
+        "dataMode": "No data mode recorded.",
+        "htmlEntry": "No HTML entry recorded."
+      },
+      "feedback": {
+        "loading": "Loading assets...",
+        "loadFailed": "Failed to load assets",
+        "updateFailed": "Failed to update asset",
+        "createFailed": "Failed to create asset",
+        "createMissingFields": "Asset ID, title, and HTML are required.",
+        "invalidOutputExample": "Output Example must be valid JSON."
       }
     }
   }

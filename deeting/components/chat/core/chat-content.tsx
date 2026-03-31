@@ -1,5 +1,4 @@
 "use client"
-
 import { ChatMessageList } from "../messages"
 import { ToolApprovalDialog } from "@/components/bridge/tool-approval-dialog"
 import { useChatStore, type ChatAssistant } from "@/store/chat-store"
@@ -28,7 +27,11 @@ export function ChatContent({ agent }: ChatContentProps) {
   const statusCode = useChatStore((state) => state.statusCode)
   const statusMeta = useChatStore((state) => state.statusMeta)
   const sendFeedback = useChatStore((state) => state.sendFeedback)
-  const { regenerateMessage, compareWithModel, finalizeCompareWinner } = useChatMessagingService()
+  const {
+    regenerateMessage,
+    compareWithModel,
+    finalizeCompareWinner,
+  } = useChatMessagingService()
   useHydratePendingToolApproval(sessionId, messages)
   useBrowserModeToolActivity(messages)
 

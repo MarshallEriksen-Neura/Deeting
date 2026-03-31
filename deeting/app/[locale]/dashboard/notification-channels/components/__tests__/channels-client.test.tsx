@@ -93,6 +93,20 @@ describe("NotificationChannelsClient telegram config", () => {
     expect(screen.getByText("fields.telegram.chat_id.label", { selector: "label" })).toBeTruthy()
   })
 
+  it("does not show a reply model field in the feishu add form", async () => {
+    render(<NotificationChannelsClient />)
+
+    fireEvent.click(screen.getByRole("button", { name: "actions.addChannel" }))
+    fireEvent.click(screen.getByRole("button", { name: "channelTypes.feishu.label" }))
+
+    expect(
+      screen.queryByText("fields.feishu.bot_model.label", { selector: "label" })
+    ).toBeNull()
+    expect(
+      screen.getByText("fields.feishu.bot_system_prompt.label", { selector: "label" })
+    ).toBeTruthy()
+  })
+
   it("shows telegram runtime status from desktop im snapshot", async () => {
     mockGetDesktopImSettings.mockResolvedValue({
       profiles: [],

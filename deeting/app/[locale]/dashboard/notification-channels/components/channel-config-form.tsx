@@ -5,11 +5,9 @@ import { AnimatePresence, motion } from "framer-motion"
 import { CheckCircle2, Loader2, MessageCircleMore, Send, Sparkles, XCircle } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
-import { ModelPickerField } from "@/components/models"
 import { GlassButton } from "@/components/ui/glass-button"
 import { CHANNEL_REQUIRED_FIELDS, fetchNotificationChannel, testNotificationChannel } from "@/lib/api/notification-channels"
 import type { ChannelConfig, ChannelType } from "@/lib/api/notification-channels"
-import { useChatService } from "@/hooks/use-chat-service"
 import { getDesktopImSettings, getPrimaryDesktopImResolution } from "@/lib/api/desktop-im"
 import {
   approveLocalWechatPairing,
@@ -51,14 +49,8 @@ export function ChannelConfigForm({
   showTest?: boolean
 }) {
   const t = useTranslations("dashboard.notificationChannelsPage")
-  const tSettingsPersonal = useTranslations("settings.personal")
   const fields = FIELD_DEFS[channelType]
   const required = CHANNEL_REQUIRED_FIELDS[channelType]
-  const { modelGroups, isLoadingModels } = useChatService({
-    enabled: channelType === "feishu" || channelType === "wechat",
-    modelCapability: "chat",
-    fetchAssistants: false,
-  })
 
   const [values, setValues] = useState<Record<string, ChannelFormValue>>(() => ({
     ...defaultFormValues(channelType),
@@ -573,16 +565,13 @@ export function ChannelConfigForm({
     if (["relay_base_url", "relay_shared_secret"].includes(fieldKey)) {
       return !isFeishuImEnabled || transportPreference === "direct"
     }
-    if (["bot_model", "bot_system_prompt"].includes(fieldKey)) {
+    if (fieldKey === "bot_system_prompt") {
       return !isFeishuImEnabled
     }
     return false
   }
 
   const resolveFieldDescription = (field: FieldDef) => {
-    if (field.key === "bot_model" && isLoadingModels) {
-      return t("fields.shared.loadingModels")
-    }
     return field.descriptionKey ? t(field.descriptionKey) : undefined
   }
 
@@ -596,29 +585,6 @@ export function ChannelConfigForm({
   const renderField = (field: FieldDef) => {
     const muted = isFieldMuted(field.key)
     const disabled = loadingConfig || muted
-
-    if (field.key === "bot_model") {
-      return (
-        <div key={field.key} className={cn("transition-all", muted && "opacity-45")}>
-          <ModelPickerField
-            id={`${channelType}-${field.key}`}
-            label={t(field.labelKey)}
-            placeholder={t(field.placeholderKey)}
-            value={typeof values[field.key] === "string" ? (values[field.key] as string) : ""}
-            onChange={(nextValue) => setValue(field.key, nextValue)}
-            required={required.includes(field.key)}
-            description={resolveFieldDescription(field)}
-            disabled={disabled}
-            isLoading={isLoadingModels}
-            loadingText={t("fields.shared.loadingModels")}
-            searchPlaceholder={tSettingsPersonal("modelSearchPlaceholder")}
-            emptyText={tSettingsPersonal("emptyHint")}
-            noResultsText={tSettingsPersonal("modelNoResults")}
-            modelGroups={modelGroups}
-          />
-        </div>
-      )
-    }
 
     return (
       <div key={field.key} className={cn("transition-all", muted && "opacity-45")}>

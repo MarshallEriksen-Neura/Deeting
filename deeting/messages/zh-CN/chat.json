@@ -349,7 +349,10 @@
       "copied": "已复制",
       "collapse": "折叠代码",
       "expand": "展开代码",
-      "collapsed": "已折叠 · {count} 行"
+      "collapsed": "已折叠 · {count} 行",
+      "svgPreview": "SVG 预览",
+      "svgPreviewAlt": "SVG 预览",
+      "svgPreviewUnavailable": "当前 SVG 暂时无法预览"
     },
     "scroll": {
       "toTop": "滚动到顶部",

@@ -1,5 +1,6 @@
 pub mod admin;
 pub mod ai_upstream;
+pub mod asset_registry;
 pub mod assistants;
 pub mod audio;
 pub mod browser_agent;
@@ -19,6 +20,7 @@ pub mod memory;
 pub mod monitor;
 pub mod providers;
 pub mod relay;
+pub mod render_runtime;
 pub mod sandbox;
 pub mod scan;
 pub mod skill_runtime;

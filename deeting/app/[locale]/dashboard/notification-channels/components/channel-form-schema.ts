@@ -31,17 +31,11 @@ export const FIELD_DEFS: Record<ChannelType, FieldDef[]> = {
       placeholderKey: "fields.feishu.bot_open_id.placeholder",
     },
     {
-      key: "bot_model",
-      labelKey: "fields.feishu.bot_model.label",
-      placeholderKey: "fields.feishu.bot_model.placeholder",
-      type: "select",
-      descriptionKey: "fields.feishu.bot_model.description",
-    },
-    {
       key: "bot_system_prompt",
       labelKey: "fields.feishu.bot_system_prompt.label",
       placeholderKey: "fields.feishu.bot_system_prompt.placeholder",
       type: "textarea",
+      descriptionKey: "fields.feishu.bot_system_prompt.description",
     },
     {
       key: "bot_app_id",
@@ -116,17 +110,11 @@ export const FIELD_DEFS: Record<ChannelType, FieldDef[]> = {
       descriptionKey: "fields.wechat.access_policy.description",
     },
     {
-      key: "bot_model",
-      labelKey: "fields.wechat.bot_model.label",
-      placeholderKey: "fields.wechat.bot_model.placeholder",
-      type: "select",
-      descriptionKey: "fields.wechat.bot_model.description",
-    },
-    {
       key: "bot_system_prompt",
       labelKey: "fields.wechat.bot_system_prompt.label",
       placeholderKey: "fields.wechat.bot_system_prompt.placeholder",
       type: "textarea",
+      descriptionKey: "fields.wechat.bot_system_prompt.description",
     },
     {
       key: "notify_contact_ids",
@@ -219,7 +207,7 @@ export const FEISHU_FIELD_GROUPS = [
   {
     titleKey: "feishuGroups.replyBehavior.title",
     descriptionKey: "feishuGroups.replyBehavior.description",
-    keys: ["bot_model", "bot_system_prompt"],
+    keys: ["bot_system_prompt"],
   },
 ] as const
 

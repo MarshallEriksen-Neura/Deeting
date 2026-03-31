@@ -58,6 +58,12 @@ export const userNavigation: NavGroup[] = [
         href: "/dashboard/plugins",
         icon: "store",
       },
+      {
+        id: "assets",
+        label: "nav.assets",
+        href: "/dashboard/assets",
+        icon: "layoutDashboard",
+      },
     ],
   },
   {

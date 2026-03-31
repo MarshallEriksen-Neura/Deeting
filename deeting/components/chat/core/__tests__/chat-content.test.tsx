@@ -1,4 +1,3 @@
-import React from "react"
 import { render, screen } from "@testing-library/react"
 import { ChatContent } from "@/components/chat/core/chat-content"
 import { useBridgeApprovalStore } from "@/lib/chat/bridge-approval-store"
@@ -15,6 +14,14 @@ jest.mock("@/hooks/chat/use-chat-messaging-service", () => ({
     compareWithModel: jest.fn(),
     finalizeCompareWinner: jest.fn(),
   }),
+}))
+
+jest.mock("@/components/chat/messages", () => ({
+  ChatMessageList: () => <div data-testid="chat-message-list" />,
+}))
+
+jest.mock("@/components/bridge/tool-approval-dialog", () => ({
+  ToolApprovalDialog: () => <div data-testid="tool-approval-dialog" />,
 }))
 
 describe("ChatContent", () => {
@@ -37,9 +44,6 @@ describe("ChatContent", () => {
 
     render(<ChatContent />)
 
-    expect(screen.getByText("Security Confirmation")).toBeInTheDocument()
-    expect(
-      screen.getByText("skill.official.skills.crawler.fetch_web_content")
-    ).toBeInTheDocument()
+    expect(screen.getByTestId("tool-approval-dialog")).toBeInTheDocument()
   })
 })

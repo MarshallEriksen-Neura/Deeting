@@ -97,6 +97,44 @@ export interface UIBlock extends BaseBlock {
   metadata?: Record<string, unknown>
 }
 
+export interface HtmlRuntimePayload {
+  asset_id?: string
+  snapshot_html?: string
+  html?: string
+  summary?: string
+  render_hint?: string
+  render_data?: unknown
+  initial_data?: unknown
+  refresh_spec?: HtmlRuntimeRefreshSpec
+}
+
+export interface HtmlRuntimeRefreshSpec {
+  kind: string
+  target?: string
+  input?: unknown
+}
+
+export interface HtmlRuntimeMetadata {
+  asset_id?: string
+  data_mode?: string
+  html_entry?: string
+  render_hint?: string
+  runtime_mode?: 'html_static' | 'html_interactive' | 'trusted_local_bundle'
+  template_id?: string
+  template_source?: string
+  template_version?: string
+  schema_fingerprint?: string
+  cache_key?: string
+  snapshot_mode?: 'frozen'
+  snapshot_created_at?: string
+  live_channel_id?: string
+  refresh_interval_ms?: number
+  expires_at_ms?: number
+  has_refresh_spec?: boolean
+  allow_live_updates?: boolean
+  iframe_height?: number
+}
+
 export type MessageBlock =
   | TextBlock
   | ThoughtBlock

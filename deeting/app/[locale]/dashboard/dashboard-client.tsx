@@ -24,6 +24,10 @@ const RecentErrorsList = dynamic(
   () => import("./components/recent-errors-list").then((mod) => mod.RecentErrorsList),
   { loading: () => <DashboardPanelSkeleton className="h-[320px]" /> }
 )
+const AssetSummaryCard = dynamic(
+  () => import("./components/asset-summary-card").then((mod) => mod.AssetSummaryCard),
+  { loading: () => <DashboardPanelSkeleton className="h-[280px]" /> }
+)
 
 export function DashboardClient() {
   const { data, isLoading } = useDashboardOverview({
@@ -49,6 +53,10 @@ export function DashboardClient() {
       <div className="grid gap-6 lg:grid-cols-2">
         <ProviderHealthStatus providers={data?.providerHealth} isLoading={isLoading} />
         <RecentErrorsList errors={data?.recentErrors} isLoading={isLoading} />
+      </div>
+
+      <div className="mt-6">
+        <AssetSummaryCard />
       </div>
     </>
   )

@@ -7,6 +7,7 @@ use tauri::AppHandle;
 use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
 
+use crate::modules::asset_registry::service::find_best_local_asset_match;
 use crate::modules::conversations::summary_generation::generate_local_conversation_title_with_secretary_model;
 #[cfg(test)]
 use crate::modules::custom_task_agents::types::{
@@ -39,6 +40,7 @@ use crate::modules::memory::types::{
     LocalMemoryItem, LocalMemoryListQuery, LocalMemorySearchItem, LocalMemorySearchQuery,
 };
 use crate::modules::providers::model_guard::ensure_required_local_models_configured;
+use crate::modules::render_runtime::resolve_response_rendering;
 use crate::state::AppState;
 use mcp_core::types::LocalChatInputMessage;
 use mcp_session::conversation::CreateConversationMessageRequest;
@@ -139,17 +141,8 @@ fn render_skill_recipe_prompt(recipes: &[Value]) -> Option<String> {
                 .and_then(Value::as_str)
                 .map(str::trim)
                 .filter(|value| !value.is_empty());
-            let ui = entry
-                .get("ui")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty());
-            if backend.is_some() || ui.is_some() {
-                lines.push(format!(
-                    "  - Bundle entry: backend={}, ui={}",
-                    backend.unwrap_or("-"),
-                    ui.unwrap_or("-")
-                ));
+            if let Some(backend) = backend {
+                lines.push(format!("  - Bundle backend: {}", backend));
             }
         }
     }
@@ -267,6 +260,7 @@ fn build_desktop_local_chat_engine(
         Box::new(PersonaPromptInjectionStep),
         Box::new(SemanticMemoryInjectionStep),
         Box::new(SelectedKnowledgeInjectionStep),
+        Box::new(AssetRecallInjectionStep),
         Box::new(RouteSelectionStep),
         Box::new(SkillRecipeInjectionStep),
         Box::new(ActiveCapabilityHintStep),
@@ -1237,6 +1231,109 @@ fn compact_knowledge_snippet(content: &str, max_chars: usize) -> String {
 
 struct ActiveCapabilityHintStep;
 
+struct AssetRecallInjectionStep;
+
+impl LocalWorkflowStep<LocalWorkflowContext> for AssetRecallInjectionStep {
+    fn name(&self) -> &'static str {
+        "asset_recall_injection"
+    }
+
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a mut LocalWorkflowContext,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            let latest_user_query = latest_user_message(&ctx.messages)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+                .unwrap_or_default();
+            if latest_user_query.is_empty() {
+                return Ok(());
+            }
+
+            let matched = match find_best_local_asset_match(
+                ctx.app_state.mcp.store.as_ref(),
+                &latest_user_query,
+            )
+            .await
+            {
+                Ok(value) => value,
+                Err(err) => {
+                    log::warn!(
+                        "asset_recall_lookup_failed session={} err={}",
+                        ctx.session_id,
+                        err
+                    );
+                    None
+                }
+            };
+
+            let Some(matched) = matched else {
+                return Ok(());
+            };
+
+            let render_hint = matched
+                .record
+                .render_hint
+                .clone()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| matched.record.title.clone());
+            let output_shape = matched
+                .output_example
+                .as_ref()
+                .map(|value| {
+                    serde_json::to_string_pretty(value).unwrap_or_else(|_| "{}".to_string())
+                })
+                .unwrap_or_else(|| "{}".to_string());
+            let props_hint = if matched.props_hint.is_empty() {
+                "[]".to_string()
+            } else {
+                serde_json::to_string(&matched.props_hint).unwrap_or_else(|_| "[]".to_string())
+            };
+            let match_hints = if matched.match_hints.is_empty() {
+                "[]".to_string()
+            } else {
+                serde_json::to_string(&matched.match_hints).unwrap_or_else(|_| "[]".to_string())
+            };
+            let data_mode = matched
+                .record
+                .data_mode
+                .clone()
+                .unwrap_or_else(|| "ai_data".to_string());
+            let matched_asset_id = matched.record.asset_id.clone();
+            let matched_title = matched.record.title.clone();
+            let matched_record_data_mode = matched.record.data_mode.clone();
+
+            ctx.push_system_message(format!(
+                "## Reusable HTML Asset Match\nA saved local HTML asset has been matched for this request. Reuse the matched asset instead of generating new HTML, CSS, JS, templates, or iframe markup.\n\nMatched asset:\n- asset_id: {asset_id}\n- title: {title}\n- render_hint: {render_hint}\n- data_mode: {data_mode}\n- match_hints: {match_hints}\n- props_hint: {props_hint}\n- output_example:\n{output_shape}\n\nResponse contract:\n- Return a top-level JSON object with optional `summary` and a `render` object.\n- Set `render.asset_id` to `{asset_id}`.\n- Set `render.hint` to `{render_hint}`.\n- Put the asset input data in `render.data`.\n- Do not generate new HTML.\n- If `data_mode` is `ai_data`, fill `render.data` using the same field shape as `output_example`.\n- If `data_mode` is `self_fetch`, only return the extracted props needed by the asset in `render.data`.\n\nExample:\n{{\n  \"summary\": \"short user-facing summary\",\n  \"render\": {{\n    \"asset_id\": \"{asset_id}\",\n    \"hint\": \"{render_hint}\",\n    \"data\": {output_shape}\n  }}\n}}",
+                asset_id = matched_asset_id.as_str(),
+                title = matched_title.as_str(),
+                render_hint = render_hint.as_str(),
+                data_mode = data_mode.as_str(),
+                match_hints = match_hints.as_str(),
+                props_hint = props_hint.as_str(),
+                output_shape = output_shape.as_str(),
+            ));
+
+            ctx.emit_status(
+                "remember",
+                Some("asset_recall"),
+                "success",
+                "asset.matched",
+                Some(json!({
+                    "asset_id": matched_asset_id,
+                    "title": matched_title,
+                    "score": matched.score,
+                    "data_mode": matched_record_data_mode,
+                })),
+            );
+
+            Ok(())
+        })
+    }
+}
+
 impl LocalWorkflowStep<LocalWorkflowContext> for ActiveCapabilityHintStep {
     fn name(&self) -> &'static str {
         "active_capability_hint"
@@ -1774,6 +1871,13 @@ pub async fn execute_local_orchestrated_chat(
     let mut response_text =
         extract_content_text(response_json.get("content").cloned().unwrap_or(Value::Null));
     let mut response_text_was_synthesized_from_error = false;
+    let render_resolution =
+        resolve_response_rendering(app_handle, app_state.mcp.store.as_ref(), &response_json).await;
+    if response_text.trim().is_empty() {
+        if let Some(summary) = render_resolution.summary_text.as_deref() {
+            response_text = summary.to_string();
+        }
+    }
     ctx.emit_status(
         "render",
         Some("upstream_call"),
@@ -1823,6 +1927,10 @@ pub async fn execute_local_orchestrated_chat(
         });
         ctx.emit_blocks(vec![text_block.clone()]);
         assistant_blocks.push(text_block);
+    }
+    if !render_resolution.blocks.is_empty() {
+        ctx.emit_blocks(render_resolution.blocks.clone());
+        assistant_blocks.extend(render_resolution.blocks);
     }
 
     let total_latency_ms = ctx.started_at.elapsed().as_millis() as i64;
@@ -1885,7 +1993,6 @@ pub async fn execute_local_orchestrated_chat(
                     session_id, e
                 )
             })?;
-
         let title_app_state = app_state.clone();
         let title_session_id = session_id.clone();
         tauri::async_runtime::spawn(async move {

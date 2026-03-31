@@ -222,8 +222,7 @@ fn render_skill_recipe_prompt_defers_execution_truth_to_search_sdk() {
             "reason": "skill_routed_via_docs"
         },
         "entry": {
-            "backend": "main.py",
-            "ui": "ui/index.html"
+            "backend": "main.py"
         }
     })])
     .expect("skill recipe prompt");
@@ -235,7 +234,8 @@ fn render_skill_recipe_prompt_defers_execution_truth_to_search_sdk() {
     assert!(prompt.contains("manual handoff"));
     assert!(prompt.contains("read_skill_docs"));
     assert!(prompt.contains("SKILL.md"));
-    assert!(prompt.contains("backend=main.py"));
+    assert!(prompt.contains("Bundle backend: main.py"));
+    assert!(!prompt.contains("ui/index.html"));
 }
 
 #[test]
