@@ -5,6 +5,7 @@ use crate::modules::custom_task_agents::runtime::preview_custom_task_agent;
 use crate::modules::custom_task_agents::types::{
     CustomTaskAgentInvocationKind, CustomTaskAgentPreviewRequest, CustomTaskAgentProfile,
 };
+use crate::modules::desktop_config::{parse_max_agentic_rounds, MAX_AGENTIC_ROUNDS_CONFIG_KEY};
 use crate::modules::monitor::types::LocalMonitorTask;
 use crate::state::AppState;
 
@@ -65,6 +66,17 @@ pub(crate) fn build_monitor_task_agent_message(task: &LocalMonitorTask) -> Strin
     )
 }
 
+async fn resolve_monitor_task_agent_max_rounds(app_state: &AppState) -> u32 {
+    let configured_max_rounds = app_state
+        .mcp
+        .store
+        .get_desktop_config(MAX_AGENTIC_ROUNDS_CONFIG_KEY)
+        .await
+        .ok()
+        .flatten();
+    parse_max_agentic_rounds(configured_max_rounds.as_deref()).min(u32::MAX as usize) as u32
+}
+
 pub(crate) async fn execute_monitor_task_agent(
     app_handle: &AppHandle,
     app_state: &AppState,
@@ -72,6 +84,7 @@ pub(crate) async fn execute_monitor_task_agent(
     message: &str,
 ) -> Result<MonitorTaskAgentExecution, String> {
     validate_monitor_task_agent_profile(profile)?;
+    let max_rounds = resolve_monitor_task_agent_max_rounds(app_state).await;
 
     let response = preview_custom_task_agent(
         app_handle,
@@ -82,7 +95,7 @@ pub(crate) async fn execute_monitor_task_agent(
             image_urls: Vec::new(),
             temperature: None,
             max_tokens: None,
-            max_rounds: None,
+            max_rounds: Some(max_rounds),
         },
     )
     .await

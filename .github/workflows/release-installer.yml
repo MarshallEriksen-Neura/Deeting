@@ -127,6 +127,7 @@ jobs:
         working-directory: installer
 
       - name: Build installer
+        id: build_installer
         uses: tauri-apps/tauri-action@action-v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -138,27 +139,99 @@ jobs:
           includeRelease: false
           args: ""
 
-      - name: Rename installer
+      - name: Resolve bootstrapper installer artifact
+        id: bootstrapper_artifact
         shell: bash
+        env:
+          ARTIFACT_PATHS_JSON: ${{ steps.build_installer.outputs.artifactPaths }}
         run: |
-          cd installer/src-tauri/target/release/bundle/nsis
-          for file in *.exe; do
-            if [[ "$file" != *"bootstrapper"* ]]; then
-              mv "$file" "${file%.exe}-bootstrapper.exe"
-            fi
-          done
-          ls -la
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          raw_artifact_paths = os.environ.get("ARTIFACT_PATHS_JSON", "").strip()
+          if not raw_artifact_paths:
+              raise SystemExit(
+                  "tauri-action did not return artifactPaths for the installer build"
+              )
+
+          artifact_paths = json.loads(raw_artifact_paths)
+          candidates = []
+          skipped_directory_paths = []
+
+          for artifact_path in artifact_paths:
+              path = Path(artifact_path)
+              if not path.exists():
+                  raise SystemExit(
+                      f"tauri-action returned missing artifact path: {artifact_path}"
+                  )
+              if path.is_dir():
+                  skipped_directory_paths.append(artifact_path)
+                  continue
+
+              posix_path = path.as_posix().lower()
+              if "/bundle/nsis/" in posix_path and posix_path.endswith(".exe"):
+                  candidates.append(path)
+
+          if len(candidates) != 1:
+              raise SystemExit(
+                  "expected exactly one NSIS .exe bootstrapper artifact, found "
+                  f"{[path.as_posix() for path in candidates]!r}"
+              )
+
+          if skipped_directory_paths:
+              print(
+                  "Skipping directory artifact paths returned by tauri-action:",
+                  file=sys.stderr,
+              )
+              for artifact_path in skipped_directory_paths:
+                  print(f"- {artifact_path}", file=sys.stderr)
+
+          selected_path = candidates[0]
+          print(f"Selected bootstrapper installer: {selected_path.as_posix()}", file=sys.stderr)
+          print(f"path={selected_path.as_posix()}")
+          PY
+
+      - name: Rename installer
+        id: rename_installer
+        shell: bash
+        env:
+          INSTALLER_PATH: ${{ steps.bootstrapper_artifact.outputs.path }}
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import os
+          import sys
+          from pathlib import Path
+
+          installer_path = Path(os.environ["INSTALLER_PATH"])
+          if not installer_path.exists():
+              raise SystemExit(f"installer artifact does not exist: {installer_path}")
+
+          if installer_path.name.lower().endswith("-bootstrapper.exe"):
+              renamed_path = installer_path
+          else:
+              renamed_path = installer_path.with_name(
+                  f"{installer_path.stem}-bootstrapper{installer_path.suffix}"
+              )
+              installer_path.rename(renamed_path)
+
+          print(f"Bootstrapper installer ready: {renamed_path.as_posix()}", file=sys.stderr)
+          print(f"path={renamed_path.as_posix()}")
+          PY
 
       - name: Upload bootstrapper installer artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-bootstrapper-installer
-          path: installer/src-tauri/target/release/bundle/nsis/*.exe
+          path: ${{ steps.rename_installer.outputs.path }}
           retention-days: 1
 
       - name: Upload bootstrapper installer to release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INSTALLER_PATH: ${{ steps.rename_installer.outputs.path }}
         run: |
-          gh release upload "${RELEASE_TAG}" installer/src-tauri/target/release/bundle/nsis/*.exe --clobber
+          gh release upload "${RELEASE_TAG}" "${INSTALLER_PATH}" --clobber

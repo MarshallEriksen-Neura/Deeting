@@ -10,11 +10,10 @@ use super::{
     LocalCapabilityActivationState, LocalExecutionPolicy,
     LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION, LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
 };
+use crate::modules::desktop_config::{parse_max_agentic_rounds, MAX_AGENTIC_ROUNDS_CONFIG_KEY};
 use crate::modules::mcp::commands::common_impl::to_string;
 use crate::modules::mcp::commands::common_impl::LocalModelConnection;
 use crate::modules::mcp::commands::support::*;
-
-const DEFAULT_MAX_AGENTIC_ROUNDS: usize = 10;
 
 #[derive(Debug, Clone, Default)]
 struct RuntimeMetricsAccumulator {
@@ -289,15 +288,14 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
     trace_id: Option<&str>,
     request_id: Option<&str>,
 ) -> Result<serde_json::Value, String> {
-    let max_rounds = match app_state
+    let configured_max_rounds = app_state
         .mcp
         .store
-        .get_desktop_config("max_agentic_rounds")
+        .get_desktop_config(MAX_AGENTIC_ROUNDS_CONFIG_KEY)
         .await
-    {
-        Ok(Some(val)) => val.parse::<usize>().unwrap_or(DEFAULT_MAX_AGENTIC_ROUNDS),
-        _ => DEFAULT_MAX_AGENTIC_ROUNDS,
-    };
+        .ok()
+        .flatten();
+    let max_rounds = parse_max_agentic_rounds(configured_max_rounds.as_deref());
     let trace_id = trace_id
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty())
