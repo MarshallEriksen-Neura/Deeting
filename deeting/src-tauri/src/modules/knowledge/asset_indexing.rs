@@ -4,6 +4,7 @@ use log::warn;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
+use crate::modules::asset_registry::service::sync_local_asset_memory_index;
 use crate::state::AppState;
 
 use super::types::{
@@ -307,41 +308,56 @@ pub async fn rebuild_local_embedding_assets(
         Vec::new()
     };
 
-    let (tools, assistant_candidates, local_knowledge_files) = if rebuild_scope.rebuilds_assets() {
-        let tools = app_state.mcp.store.list_tools().await.map_err(to_string)?;
-        let assistants = app_state
-            .mcp
-            .store
-            .list_local_assistants()
-            .await
-            .map_err(to_string)?;
-        let enabled_assistant_ids = app_state
-            .mcp
-            .store
-            .list_enabled_local_assistant_ids()
-            .await
-            .unwrap_or_else(|_| HashSet::new());
-        let local_knowledge_files = app_state
-            .knowledge
-            .store
-            .list_local_user_documents(LocalUserDocumentListQuery {
-                folder_id: None,
-                status: None,
-                q: None,
-            })
-            .await
-            .map_err(to_string)?;
-        let assistant_candidates = assistants
-            .into_iter()
-            .filter(|assistant| enabled_assistant_ids.contains(assistant.id.as_str()))
-            .collect::<Vec<_>>();
-        (tools, assistant_candidates, local_knowledge_files)
-    } else {
-        (Vec::new(), Vec::new(), Vec::new())
-    };
+    let (tools, assistant_candidates, local_knowledge_files, local_html_assets) =
+        if rebuild_scope.rebuilds_assets() {
+            let tools = app_state.mcp.store.list_tools().await.map_err(to_string)?;
+            let assistants = app_state
+                .mcp
+                .store
+                .list_local_assistants()
+                .await
+                .map_err(to_string)?;
+            let enabled_assistant_ids = app_state
+                .mcp
+                .store
+                .list_enabled_local_assistant_ids()
+                .await
+                .unwrap_or_else(|_| HashSet::new());
+            let local_knowledge_files = app_state
+                .knowledge
+                .store
+                .list_local_user_documents(LocalUserDocumentListQuery {
+                    folder_id: None,
+                    status: None,
+                    q: None,
+                })
+                .await
+                .map_err(to_string)?;
+            let assistant_candidates = assistants
+                .into_iter()
+                .filter(|assistant| enabled_assistant_ids.contains(assistant.id.as_str()))
+                .collect::<Vec<_>>();
+            let local_html_assets = app_state
+                .mcp
+                .store
+                .list_active_local_assets_by_kind("html_asset")
+                .await
+                .map_err(to_string)?;
+            (
+                tools,
+                assistant_candidates,
+                local_knowledge_files,
+                local_html_assets,
+            )
+        } else {
+            (Vec::new(), Vec::new(), Vec::new(), Vec::new())
+        };
 
     let memory_total = memories.len();
-    let asset_total = tools.len() + assistant_candidates.len() + local_knowledge_files.len();
+    let asset_total = tools.len()
+        + assistant_candidates.len()
+        + local_knowledge_files.len()
+        + local_html_assets.len();
     let total = memory_total + asset_total;
     let (mut processed, mut indexed, mut failed) = (0usize, 0usize, 0usize);
     let (mut memory_indexed, mut memory_failed, mut asset_indexed, mut asset_failed) =
@@ -552,6 +568,29 @@ pub async fn rebuild_local_embedding_assets(
                 .await
                 .unwrap_or(false);
             let upserted = summary_upserted && chunk_upserted;
+            processed += 1;
+            if upserted {
+                indexed += 1;
+                asset_indexed += 1;
+            } else {
+                failed += 1;
+                asset_failed += 1;
+            }
+        }
+
+        for asset in local_html_assets {
+            emit_local_embedding_rebuild_progress(
+                &app,
+                "indexing_html_assets",
+                total,
+                processed,
+                indexed,
+                failed,
+                Some(asset.title.clone()),
+            );
+            let upserted = sync_local_asset_memory_index(app_state.inner(), &asset)
+                .await
+                .is_ok();
             processed += 1;
             if upserted {
                 indexed += 1;

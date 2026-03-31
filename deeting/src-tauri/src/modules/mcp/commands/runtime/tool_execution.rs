@@ -922,9 +922,14 @@ async fn execute_core_tool_call_with_tool_ref_internal(
                 }
             }
 
-            let record = save_local_asset(&app_handle, app_state.mcp.store.as_ref(), request)
-                .await
-                .map_err(|err| err.to_string())?;
+            let record = save_local_asset(
+                &app_handle,
+                &app_state,
+                app_state.mcp.store.as_ref(),
+                request,
+            )
+            .await
+            .map_err(|err| err.to_string())?;
             Ok(Some(
                 serde_json::to_value(record).map_err(|err| err.to_string())?,
             ))

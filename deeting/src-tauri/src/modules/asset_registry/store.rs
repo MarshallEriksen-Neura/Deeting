@@ -181,6 +181,33 @@ impl McpStore {
         rows.into_iter().map(row_to_local_asset_record).collect()
     }
 
+    pub async fn list_active_local_assets_by_kind(
+        &self,
+        asset_kind: &str,
+    ) -> Result<Vec<LocalAssetRecord>, McpError> {
+        let normalized_asset_kind = asset_kind.trim();
+        if normalized_asset_kind.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let rows = sqlx::query(&format!(
+            r#"
+            SELECT {LOCAL_ASSET_SELECT_COLUMNS}
+            FROM {LOCAL_ASSET_REGISTRY_TABLE}
+            WHERE is_archived = 0
+              AND LOWER(status) = 'active'
+              AND asset_kind = ?
+            ORDER BY is_pinned DESC, updated_at DESC, created_at DESC
+            "#
+        ))
+        .bind(normalized_asset_kind)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        rows.into_iter().map(row_to_local_asset_record).collect()
+    }
+
     pub async fn get_local_asset_record(
         &self,
         asset_id: &str,

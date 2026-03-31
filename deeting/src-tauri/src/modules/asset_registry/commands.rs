@@ -38,7 +38,7 @@ pub async fn save_local_asset(
     state: State<'_, AppState>,
     request: SaveLocalAssetRequest,
 ) -> Result<LocalAssetRecord, String> {
-    save_local_asset_inner(&app, state.mcp.store.as_ref(), request)
+    save_local_asset_inner(&app, state.inner(), state.mcp.store.as_ref(), request)
         .await
         .map_err(|err| err.to_string())
 }

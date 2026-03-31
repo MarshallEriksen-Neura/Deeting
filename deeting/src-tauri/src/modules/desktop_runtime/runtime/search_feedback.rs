@@ -1,14 +1,14 @@
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct ToolAffinityScore {
-    pub(crate) tool_name: String,
+pub(crate) struct SearchAffinityScore {
+    pub(crate) target_name: String,
     pub(crate) score: f64,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct SearchFeedbackContext {
-    pub(crate) recent_tools: Vec<String>,
-    pub(crate) historical_affinity: Vec<ToolAffinityScore>,
-    pub(crate) query_affinity: Vec<ToolAffinityScore>,
+    pub(crate) recent_targets: Vec<String>,
+    pub(crate) historical_affinity: Vec<SearchAffinityScore>,
+    pub(crate) query_affinity: Vec<SearchAffinityScore>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -38,30 +38,30 @@ const QUERY_AFFINITY_MIN_TOKENS: usize = 2;
 const QUERY_AFFINITY_MIN_MATCH_STRENGTH: f64 = 0.65;
 
 pub(crate) fn compute_feedback_boost(
-    tool_name: &str,
+    target_name: &str,
     context: &SearchFeedbackContext,
 ) -> SearchFeedbackBoost {
-    let normalized_tool_name = normalize_tool_name(tool_name);
-    if normalized_tool_name.is_empty() {
+    let normalized_target_name = normalize_target_name(target_name);
+    if normalized_target_name.is_empty() {
         return SearchFeedbackBoost::default();
     }
 
     let mut boost = SearchFeedbackBoost::default();
-    let tool_namespace = namespace_key(&normalized_tool_name);
+    let target_namespace = namespace_key(&normalized_target_name);
 
     if context
-        .recent_tools
+        .recent_targets
         .iter()
-        .map(|tool| normalize_tool_name(tool))
-        .any(|tool| tool == normalized_tool_name)
+        .map(|target| normalize_target_name(target))
+        .any(|target| target == normalized_target_name)
     {
         boost.score += RECENT_EXACT_TOOL_BOOST;
         boost.reasons.push("session:exact_tool".to_string());
-    } else if tool_namespace.as_ref().is_some_and(|namespace| {
+    } else if target_namespace.as_ref().is_some_and(|namespace| {
         context
-            .recent_tools
+            .recent_targets
             .iter()
-            .any(|tool| same_namespace(tool, namespace))
+            .any(|target| same_namespace(target, namespace))
     }) {
         boost.score += RECENT_NAMESPACE_SIBLING_BOOST;
         boost.reasons.push("session:namespace_sibling".to_string());
@@ -70,7 +70,7 @@ pub(crate) fn compute_feedback_boost(
     if let Some(score) = context
         .query_affinity
         .iter()
-        .find(|item| normalize_tool_name(&item.tool_name) == normalized_tool_name)
+        .find(|item| normalize_target_name(&item.target_name) == normalized_target_name)
         .map(|item| item.score.clamp(0.0, QUERY_AFFINITY_EXACT_MAX_BOOST))
     {
         if score > 0.0 {
@@ -84,18 +84,18 @@ pub(crate) fn compute_feedback_boost(
     if let Some(score) = context
         .historical_affinity
         .iter()
-        .find(|item| normalize_tool_name(&item.tool_name) == normalized_tool_name)
+        .find(|item| normalize_target_name(&item.target_name) == normalized_target_name)
         .map(|item| item.score.clamp(0.0, HISTORICAL_EXACT_TOOL_MAX_BOOST))
     {
         if score > 0.0 {
             boost.score += score;
             boost.reasons.push(format!("history:exact_tool:{score:.2}"));
         }
-    } else if let Some(namespace) = tool_namespace.as_ref() {
+    } else if let Some(namespace) = target_namespace.as_ref() {
         let namespace_score = context
             .historical_affinity
             .iter()
-            .filter(|item| same_namespace(&item.tool_name, namespace))
+            .filter(|item| same_namespace(&item.target_name, namespace))
             .map(|item| item.score)
             .fold(0.0_f64, f64::max)
             * HISTORICAL_NAMESPACE_FACTOR;
@@ -114,7 +114,7 @@ pub(crate) fn compute_feedback_boost(
 pub(crate) fn search_feedback_context_from_tool_call_meta(
     tool_call_meta: &[serde_json::Value],
 ) -> SearchFeedbackContext {
-    let recent_tools = tool_call_meta
+    let recent_targets = tool_call_meta
         .iter()
         .rev()
         .filter(|item| {
@@ -123,7 +123,7 @@ pub(crate) fn search_feedback_context_from_tool_call_meta(
                 .is_some_and(|status| status.eq_ignore_ascii_case("success"))
         })
         .filter_map(|item| item.get("name").and_then(serde_json::Value::as_str))
-        .map(normalize_tool_name)
+        .map(normalize_target_name)
         .filter(|name| {
             !name.is_empty()
                 && !SEARCH_META_TOOLS
@@ -138,39 +138,71 @@ pub(crate) fn search_feedback_context_from_tool_call_meta(
         });
 
     SearchFeedbackContext {
-        recent_tools,
+        recent_targets,
         historical_affinity: Vec::new(),
         query_affinity: Vec::new(),
     }
 }
 
-pub(crate) fn historical_affinity_from_rows(
-    rows: &[crate::modules::mcp::store::ToolExecutionAffinityRow],
+fn historical_affinity_from_records<'a>(
+    rows: impl IntoIterator<Item = (&'a str, i64, i64)>,
     now_unix_ms: i64,
-) -> Vec<ToolAffinityScore> {
-    rows.iter()
-        .filter_map(|row| {
-            let normalized_tool_name = normalize_tool_name(&row.tool_name);
-            if normalized_tool_name.is_empty() {
+) -> Vec<SearchAffinityScore> {
+    rows.into_iter()
+        .filter_map(|(target_name, success_count, last_used_at_unix_ms)| {
+            let normalized_target_name = normalize_target_name(target_name);
+            if normalized_target_name.is_empty() {
                 return None;
             }
-            let age_ms = (now_unix_ms - row.last_used_at_unix_ms).max(0) as f64;
+            let age_ms = (now_unix_ms - last_used_at_unix_ms).max(0) as f64;
             let decay = 0.5_f64.powf(age_ms / HISTORICAL_HALF_LIFE_MS);
-            let score = ((row.success_count as f64).sqrt() * 6.0 * decay)
+            let score = ((success_count as f64).sqrt() * 6.0 * decay)
                 .clamp(0.0, HISTORICAL_EXACT_TOOL_MAX_BOOST);
-            (score > 0.0).then_some(ToolAffinityScore {
-                tool_name: normalized_tool_name,
+            (score > 0.0).then_some(SearchAffinityScore {
+                target_name: normalized_target_name,
                 score,
             })
         })
         .collect()
 }
 
-pub(crate) fn query_affinity_from_rows(
-    current_query: &str,
-    rows: &[crate::modules::mcp::store::ToolQueryAffinityRow],
+pub(crate) fn historical_affinity_from_rows(
+    rows: &[crate::modules::mcp::store::ToolExecutionAffinityRow],
     now_unix_ms: i64,
-) -> Vec<ToolAffinityScore> {
+) -> Vec<SearchAffinityScore> {
+    historical_affinity_from_records(
+        rows.iter().map(|row| {
+            (
+                row.tool_name.as_str(),
+                row.success_count,
+                row.last_used_at_unix_ms,
+            )
+        }),
+        now_unix_ms,
+    )
+}
+
+pub(crate) fn historical_affinity_from_asset_rows(
+    rows: &[crate::modules::mcp::store::AssetExecutionAffinityRow],
+    now_unix_ms: i64,
+) -> Vec<SearchAffinityScore> {
+    historical_affinity_from_records(
+        rows.iter().map(|row| {
+            (
+                row.asset_id.as_str(),
+                row.success_count,
+                row.last_used_at_unix_ms,
+            )
+        }),
+        now_unix_ms,
+    )
+}
+
+fn query_affinity_from_records<'a>(
+    current_query: &str,
+    rows: impl IntoIterator<Item = (&'a str, &'a str, i64, i64)>,
+    now_unix_ms: i64,
+) -> Vec<SearchAffinityScore> {
     let normalized_query = current_query.trim().to_lowercase();
     if normalized_query.is_empty() {
         return Vec::new();
@@ -180,14 +212,14 @@ pub(crate) fn query_affinity_from_rows(
         return Vec::new();
     }
 
-    let mut by_tool = std::collections::BTreeMap::<String, f64>::new();
-    for row in rows {
-        let normalized_row_query = row.query_text.trim().to_lowercase();
-        let normalized_tool_name = normalize_tool_name(&row.tool_name);
-        if normalized_row_query.is_empty() || normalized_tool_name.is_empty() {
+    let mut by_target = std::collections::BTreeMap::<String, f64>::new();
+    for (query_text, target_name, success_count, last_matched_at_unix_ms) in rows {
+        let normalized_row_query = query_text.trim().to_lowercase();
+        let normalized_target_name = normalize_target_name(target_name);
+        if normalized_row_query.is_empty() || normalized_target_name.is_empty() {
             continue;
         }
-        if row.success_count < QUERY_AFFINITY_MIN_SUCCESS_COUNT {
+        if success_count < QUERY_AFFINITY_MIN_SUCCESS_COUNT {
             continue;
         }
         if query_tokens(&normalized_row_query).len() < QUERY_AFFINITY_MIN_TOKENS {
@@ -199,33 +231,71 @@ pub(crate) fn query_affinity_from_rows(
             continue;
         }
 
-        let age_ms = (now_unix_ms - row.last_matched_at_unix_ms).max(0) as f64;
+        let age_ms = (now_unix_ms - last_matched_at_unix_ms).max(0) as f64;
         let decay = 0.5_f64.powf(age_ms / QUERY_AFFINITY_HALF_LIFE_MS);
-        let score = ((row.success_count as f64).sqrt() * 5.0 * decay * match_strength)
+        let score = ((success_count as f64).sqrt() * 5.0 * decay * match_strength)
             .clamp(0.0, QUERY_AFFINITY_EXACT_MAX_BOOST);
         if score <= 0.0 {
             continue;
         }
-        by_tool
-            .entry(normalized_tool_name)
+        by_target
+            .entry(normalized_target_name)
             .and_modify(|existing| *existing = existing.max(score))
             .or_insert(score);
     }
 
-    by_tool
+    by_target
         .into_iter()
-        .map(|(tool_name, score)| ToolAffinityScore { tool_name, score })
+        .map(|(target_name, score)| SearchAffinityScore { target_name, score })
         .collect()
 }
 
-fn same_namespace(tool_name: &str, namespace: &str) -> bool {
-    namespace_key(&normalize_tool_name(tool_name))
+pub(crate) fn query_affinity_from_rows(
+    current_query: &str,
+    rows: &[crate::modules::mcp::store::ToolQueryAffinityRow],
+    now_unix_ms: i64,
+) -> Vec<SearchAffinityScore> {
+    query_affinity_from_records(
+        current_query,
+        rows.iter().map(|row| {
+            (
+                row.query_text.as_str(),
+                row.tool_name.as_str(),
+                row.success_count,
+                row.last_matched_at_unix_ms,
+            )
+        }),
+        now_unix_ms,
+    )
+}
+
+pub(crate) fn query_affinity_from_asset_rows(
+    current_query: &str,
+    rows: &[crate::modules::mcp::store::AssetQueryAffinityRow],
+    now_unix_ms: i64,
+) -> Vec<SearchAffinityScore> {
+    query_affinity_from_records(
+        current_query,
+        rows.iter().map(|row| {
+            (
+                row.query_text.as_str(),
+                row.asset_id.as_str(),
+                row.success_count,
+                row.last_matched_at_unix_ms,
+            )
+        }),
+        now_unix_ms,
+    )
+}
+
+fn same_namespace(target_name: &str, namespace: &str) -> bool {
+    namespace_key(&normalize_target_name(target_name))
         .as_deref()
         .is_some_and(|candidate| candidate == namespace)
 }
 
-fn normalize_tool_name(tool_name: &str) -> String {
-    tool_name.trim().to_ascii_lowercase()
+fn normalize_target_name(target_name: &str) -> String {
+    target_name.trim().to_ascii_lowercase()
 }
 
 fn query_match_strength(current_query: &str, stored_query: &str) -> f64 {
@@ -273,8 +343,8 @@ fn query_tokens(text: &str) -> std::collections::BTreeSet<String> {
     tokens
 }
 
-fn namespace_key(tool_name: &str) -> Option<String> {
-    let trimmed = tool_name.trim();
+fn namespace_key(target_name: &str) -> Option<String> {
+    let trimmed = target_name.trim();
     if trimmed.is_empty() {
         return None;
     }
@@ -296,7 +366,7 @@ mod tests {
         let exact = compute_feedback_boost(
             "browser_open_tab",
             &SearchFeedbackContext {
-                recent_tools: vec!["browser_open_tab".to_string()],
+                recent_targets: vec!["browser_open_tab".to_string()],
                 historical_affinity: Vec::new(),
                 query_affinity: Vec::new(),
             },
@@ -304,7 +374,7 @@ mod tests {
         let sibling = compute_feedback_boost(
             "browser_wait_for_element",
             &SearchFeedbackContext {
-                recent_tools: vec!["browser_open_tab".to_string()],
+                recent_targets: vec!["browser_open_tab".to_string()],
                 historical_affinity: Vec::new(),
                 query_affinity: Vec::new(),
             },
@@ -326,9 +396,9 @@ mod tests {
         let exact = compute_feedback_boost(
             "skill.openclaw_weather.fetch_weather",
             &SearchFeedbackContext {
-                recent_tools: Vec::new(),
-                historical_affinity: vec![ToolAffinityScore {
-                    tool_name: "skill.openclaw_weather.fetch_weather".to_string(),
+                recent_targets: Vec::new(),
+                historical_affinity: vec![SearchAffinityScore {
+                    target_name: "skill.openclaw_weather.fetch_weather".to_string(),
                     score: 9.5,
                 }],
                 query_affinity: Vec::new(),
@@ -337,9 +407,9 @@ mod tests {
         let sibling = compute_feedback_boost(
             "skill.openclaw_weather.fetch_alerts",
             &SearchFeedbackContext {
-                recent_tools: Vec::new(),
-                historical_affinity: vec![ToolAffinityScore {
-                    tool_name: "skill.openclaw_weather.fetch_weather".to_string(),
+                recent_targets: Vec::new(),
+                historical_affinity: vec![SearchAffinityScore {
+                    target_name: "skill.openclaw_weather.fetch_weather".to_string(),
                     score: 9.5,
                 }],
                 query_affinity: Vec::new(),
@@ -383,7 +453,7 @@ mod tests {
         ]);
 
         assert_eq!(
-            context.recent_tools,
+            context.recent_targets,
             vec![
                 "browser_wait_for_element".to_string(),
                 "browser_open_tab".to_string(),
@@ -437,7 +507,7 @@ mod tests {
         );
 
         assert_eq!(scores.len(), 1);
-        assert_eq!(scores[0].tool_name, "eslint_check");
+        assert_eq!(scores[0].target_name, "eslint_check");
         assert!(scores[0].score > 0.0);
     }
 

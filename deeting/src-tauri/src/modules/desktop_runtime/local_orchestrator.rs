@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use futures_util::future::BoxFuture;
@@ -1253,7 +1253,8 @@ impl LocalWorkflowStep<LocalWorkflowContext> for AssetRecallInjectionStep {
             }
 
             let matched = match find_best_local_asset_match(
-                ctx.app_state.mcp.store.as_ref(),
+                &ctx.app_state,
+                Some(ctx.session_id.as_str()),
                 &latest_user_query,
             )
             .await
@@ -1834,6 +1835,11 @@ pub async fn execute_local_orchestrated_chat(
         })),
     );
 
+    let latest_user_query = latest_user_message(&ctx.messages)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_default();
     let engine = build_desktop_local_chat_engine()?;
     engine.execute(&mut ctx).await?;
 
@@ -1873,6 +1879,7 @@ pub async fn execute_local_orchestrated_chat(
     let mut response_text_was_synthesized_from_error = false;
     let render_resolution =
         resolve_response_rendering(app_handle, app_state.mcp.store.as_ref(), &response_json).await;
+    let rendered_asset_ids = extract_saved_asset_ids_from_blocks(&render_resolution.blocks);
     if response_text.trim().is_empty() {
         if let Some(summary) = render_resolution.summary_text.as_deref() {
             response_text = summary.to_string();
@@ -1993,6 +2000,32 @@ pub async fn execute_local_orchestrated_chat(
                     session_id, e
                 )
             })?;
+        if !latest_user_query.is_empty() {
+            for asset_id in &rendered_asset_ids {
+                if let Err(err) = store
+                    .record_asset_execution(Some(&session_id), asset_id, true)
+                    .await
+                {
+                    log::warn!(
+                        "record_asset_execution failed session={} asset_id={} err={}",
+                        session_id,
+                        asset_id,
+                        err
+                    );
+                }
+                if let Err(err) = store
+                    .upsert_asset_query_affinity(&latest_user_query, asset_id)
+                    .await
+                {
+                    log::warn!(
+                        "upsert_asset_query_affinity failed session={} asset_id={} err={}",
+                        session_id,
+                        asset_id,
+                        err
+                    );
+                }
+            }
+        }
         let title_app_state = app_state.clone();
         let title_session_id = session_id.clone();
         tauri::async_runtime::spawn(async move {
@@ -2115,6 +2148,23 @@ fn extract_summary_text(summary: Option<&Value>) -> Option<String> {
         .and_then(|value| value.as_str())
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+fn extract_saved_asset_ids_from_blocks(blocks: &[Value]) -> Vec<String> {
+    let mut asset_ids = BTreeSet::new();
+    for block in blocks {
+        let Some(asset_id) = block
+            .get("metadata")
+            .and_then(|value| value.get("asset_id"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        asset_ids.insert(asset_id.to_string());
+    }
+    asset_ids.into_iter().collect()
 }
 
 fn extract_response_runtime_metrics(response: &Value) -> (Option<i64>, Option<i64>, Option<i64>) {

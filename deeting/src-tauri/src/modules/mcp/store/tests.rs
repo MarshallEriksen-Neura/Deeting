@@ -766,3 +766,201 @@ async fn upsert_tool_query_affinity_clamps_rows_per_tool() {
 
     assert!(rows.len() <= 12, "rows={}", rows.len());
 }
+
+#[tokio::test]
+async fn record_asset_execution_persists_session_and_asset_id() {
+    let store = create_test_store("asset-execution-history").await;
+    store.init().await.expect("init store");
+
+    store
+        .record_asset_execution(Some("session-1"), "weather-ios18-card", true)
+        .await
+        .expect("record asset execution");
+
+    let rows = sqlx::query(
+        "SELECT session_id, asset_id, success FROM asset_execution_history ORDER BY created_at_unix_ms DESC",
+    )
+    .fetch_all(&store.pool)
+    .await
+    .expect("read asset execution history");
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows[0]
+            .try_get::<String, _>("session_id")
+            .expect("session id"),
+        "session-1"
+    );
+    assert_eq!(
+        rows[0].try_get::<String, _>("asset_id").expect("asset id"),
+        "weather-ios18-card"
+    );
+    assert_eq!(rows[0].try_get::<i64, _>("success").expect("success"), 1);
+}
+
+#[tokio::test]
+async fn list_asset_execution_affinity_rows_orders_newer_asset_usage_first() {
+    let store = create_test_store("asset-execution-affinity").await;
+    store.init().await.expect("init store");
+
+    sqlx::query(
+        "INSERT INTO asset_execution_history (id, session_id, asset_id, success, created_at_unix_ms)
+         VALUES (?, ?, ?, ?, ?), (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)",
+    )
+    .bind("row-1")
+    .bind::<Option<&str>>(Some("session-1"))
+    .bind("weather-ios18-card")
+    .bind(1_i64)
+    .bind(1_000_i64)
+    .bind("row-2")
+    .bind::<Option<&str>>(Some("session-1"))
+    .bind("weather-ios18-card")
+    .bind(1_i64)
+    .bind(2_000_i64)
+    .bind("row-3")
+    .bind::<Option<&str>>(Some("session-2"))
+    .bind("stocks-market-card")
+    .bind(1_i64)
+    .bind(5_000_i64)
+    .execute(&store.pool)
+    .await
+    .expect("seed asset execution history");
+
+    let rows = store
+        .list_asset_execution_affinity_rows(8)
+        .await
+        .expect("list asset affinity rows");
+
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].asset_id, "stocks-market-card");
+    assert_eq!(rows[0].success_count, 1);
+    assert_eq!(rows[0].last_used_at_unix_ms, 5_000);
+    assert_eq!(rows[1].asset_id, "weather-ios18-card");
+    assert_eq!(rows[1].success_count, 2);
+    assert_eq!(rows[1].last_used_at_unix_ms, 2_000);
+}
+
+#[tokio::test]
+async fn list_recent_session_asset_ids_deduplicates_and_orders_by_latest_use() {
+    let store = create_test_store("asset-session-recent").await;
+    store.init().await.expect("init store");
+
+    sqlx::query(
+        "INSERT INTO asset_execution_history (id, session_id, asset_id, success, created_at_unix_ms)
+         VALUES (?, ?, ?, ?, ?), (?, ?, ?, ?, ?), (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)",
+    )
+    .bind("row-1")
+    .bind::<Option<&str>>(Some("session-1"))
+    .bind("weather-ios18-card")
+    .bind(1_i64)
+    .bind(1_000_i64)
+    .bind("row-2")
+    .bind::<Option<&str>>(Some("session-1"))
+    .bind("stocks-market-card")
+    .bind(1_i64)
+    .bind(5_000_i64)
+    .bind("row-3")
+    .bind::<Option<&str>>(Some("session-1"))
+    .bind("weather-ios18-card")
+    .bind(1_i64)
+    .bind(8_000_i64)
+    .bind("row-4")
+    .bind::<Option<&str>>(Some("session-2"))
+    .bind("ignored-other-session")
+    .bind(1_i64)
+    .bind(9_000_i64)
+    .execute(&store.pool)
+    .await
+    .expect("seed asset execution history");
+
+    let rows = store
+        .list_recent_session_asset_ids("session-1", 8)
+        .await
+        .expect("list recent session asset ids");
+
+    assert_eq!(
+        rows,
+        vec![
+            "weather-ios18-card".to_string(),
+            "stocks-market-card".to_string()
+        ]
+    );
+}
+
+#[tokio::test]
+async fn upsert_asset_query_affinity_accumulates_success_count() {
+    let store = create_test_store("asset-query-affinity").await;
+    store.init().await.expect("init store");
+
+    store
+        .upsert_asset_query_affinity("check weather", "weather-ios18-card")
+        .await
+        .expect("upsert asset affinity 1");
+    store
+        .upsert_asset_query_affinity("check weather", "weather-ios18-card")
+        .await
+        .expect("upsert asset affinity 2");
+
+    let rows = store
+        .list_asset_query_affinity_rows(8)
+        .await
+        .expect("list asset query affinity rows");
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].query_text, "check weather");
+    assert_eq!(rows[0].asset_id, "weather-ios18-card");
+    assert_eq!(rows[0].success_count, 2);
+}
+
+#[tokio::test]
+async fn list_asset_query_affinity_rows_ignores_stale_rows() {
+    let store = create_test_store("asset-query-affinity-stale").await;
+    store.init().await.expect("init store");
+
+    sqlx::query(
+        "INSERT INTO asset_query_affinity (query_text, asset_id, success_count, last_matched_at_unix_ms)
+         VALUES (?, ?, ?, ?), (?, ?, ?, ?)",
+    )
+    .bind("very old weather")
+    .bind("weather-ios18-card")
+    .bind(4_i64)
+    .bind(1_i64)
+    .bind("fresh weather")
+    .bind("weather-ios18-card")
+    .bind(2_i64)
+    .bind((time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000) as i64)
+    .execute(&store.pool)
+    .await
+    .expect("seed asset query affinity rows");
+
+    let rows = store
+        .list_asset_query_affinity_rows(8)
+        .await
+        .expect("list asset query affinity rows");
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].query_text, "fresh weather");
+}
+
+#[tokio::test]
+async fn upsert_asset_query_affinity_clamps_rows_per_asset() {
+    let store = create_test_store("asset-query-affinity-cap").await;
+    store.init().await.expect("init store");
+
+    for index in 0..20 {
+        store
+            .upsert_asset_query_affinity(&format!("query-{index}"), "weather-ios18-card")
+            .await
+            .expect("upsert bounded asset affinity");
+    }
+
+    let rows = sqlx::query(
+        "SELECT query_text FROM asset_query_affinity WHERE asset_id = ? ORDER BY last_matched_at_unix_ms DESC",
+    )
+    .bind("weather-ios18-card")
+    .fetch_all(&store.pool)
+    .await
+    .expect("read stored asset affinity rows");
+
+    assert!(rows.len() <= 12, "rows={}", rows.len());
+}

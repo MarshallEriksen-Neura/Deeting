@@ -2609,7 +2609,7 @@ mod tests {
     fn rank_registry_entry_with_feedback_boosts_recent_tool_over_similar_peer() {
         let profile = QueryProfile::from_query("browser tool for page work");
         let recent_context = SearchFeedbackContext {
-            recent_tools: vec!["browser_wait_for_element".to_string()],
+            recent_targets: vec!["browser_wait_for_element".to_string()],
             historical_affinity: Vec::new(),
             query_affinity: Vec::new(),
         };

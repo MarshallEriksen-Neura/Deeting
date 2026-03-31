@@ -1,10 +1,17 @@
 use super::resolve_asset_registry_bundle_dir;
 use super::types::{LocalAssetRecord, SaveLocalAssetManifest, SaveLocalAssetRequest};
+use crate::modules::desktop_runtime::runtime::search_feedback::{
+    compute_feedback_boost, historical_affinity_from_asset_rows, query_affinity_from_asset_rows,
+    SearchFeedbackContext,
+};
+use crate::modules::desktop_runtime::runtime::search_ranking::{
+    asset_score_key, bm25_asset_match_scores, normalize_score_map, reciprocal_rank_fusion,
+};
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::store::McpStore;
+use crate::state::AppState;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::collections::HashSet;
 use std::path::Path;
 use tauri::Manager;
 use time::OffsetDateTime;
@@ -20,6 +27,7 @@ pub(crate) struct LocalAssetRecallMatch {
 
 pub(crate) async fn save_local_asset<R: tauri::Runtime>(
     app_handle: &tauri::AppHandle<R>,
+    app_state: &AppState,
     store: &McpStore,
     request: SaveLocalAssetRequest,
 ) -> Result<LocalAssetRecord, McpError> {
@@ -62,6 +70,13 @@ pub(crate) async fn save_local_asset<R: tauri::Runtime>(
     };
 
     store.upsert_local_asset_record(&record).await?;
+    if let Err(err) = sync_local_asset_memory_index(app_state, &record).await {
+        log::warn!(
+            "sync_local_asset_memory_index failed asset_id={} err={}",
+            record.asset_id,
+            err
+        );
+    }
     store
         .get_local_asset_record(&prepared.asset_id)
         .await?
@@ -69,28 +84,84 @@ pub(crate) async fn save_local_asset<R: tauri::Runtime>(
 }
 
 pub(crate) async fn find_best_local_asset_match(
-    store: &McpStore,
+    app_state: &AppState,
+    session_id: Option<&str>,
     query: &str,
 ) -> Result<Option<LocalAssetRecallMatch>, McpError> {
+    let store = app_state.mcp.store.as_ref();
     let normalized_query = normalize_match_text(query);
     if normalized_query.is_empty() {
         return Ok(None);
     }
 
-    let query_terms = split_match_terms(&normalized_query);
-    let assets = store.list_recent_local_assets(100).await?;
+    let assets = store.list_active_local_assets_by_kind("html_asset").await?;
+    if assets.is_empty() {
+        return Ok(None);
+    }
+
+    let lexical_documents = assets
+        .iter()
+        .map(local_asset_record_to_search_document)
+        .collect::<Vec<_>>();
+    let bm25 = normalize_score_map(bm25_asset_match_scores(
+        &normalized_query,
+        &lexical_documents,
+    ));
+    let feedback_context =
+        build_local_asset_feedback_context(store, &normalized_query, session_id).await;
+    let feedback = normalize_score_map(
+        assets
+            .iter()
+            .filter_map(|record| {
+                let key = record.asset_id.trim().to_ascii_lowercase();
+                if key.is_empty() {
+                    return None;
+                }
+                let boost = compute_feedback_boost(&record.asset_id, &feedback_context);
+                (boost.score > 0.0).then_some((key, boost.score))
+            })
+            .collect::<std::collections::HashMap<_, _>>(),
+    );
+    let semantic_limit = assets.len().clamp(8, 64);
+    let semantic = if let Ok(vector) = app_state
+        .providers
+        .embedding
+        .embed_text(&normalized_query)
+        .await
+    {
+        match app_state
+            .memory
+            .service
+            .search_assets(vector, semantic_limit, Some("html_asset"))
+            .await
+        {
+            Ok(rows) => normalize_score_map(
+                rows.into_iter()
+                    .enumerate()
+                    .filter_map(|(index, row)| {
+                        let key = asset_score_key(&row)?;
+                        Some((key, 1.0 / (index as f64 + 1.0)))
+                    })
+                    .collect::<std::collections::HashMap<_, _>>(),
+            ),
+            Err(err) => {
+                log::warn!("local_asset_semantic_search_failed err={}", err);
+                std::collections::HashMap::new()
+            }
+        }
+    } else {
+        std::collections::HashMap::new()
+    };
+    let fused = reciprocal_rank_fusion(&[&bm25, &semantic, &feedback]);
     let mut best: Option<LocalAssetRecallMatch> = None;
 
     for record in assets {
-        if record.is_archived || !record.status.eq_ignore_ascii_case("active") {
-            continue;
-        }
-
         let match_hints = parse_string_list_json(record.match_hints_json.as_deref());
         let props_hint = parse_string_list_json(record.props_hint_json.as_deref());
         let output_example = parse_value_json(record.output_example_json.as_deref());
-        let score = score_local_asset_match(&record, &normalized_query, &query_terms, &match_hints);
-        if score <= 0 {
+        let key = record.asset_id.trim().to_ascii_lowercase();
+        let score = fused.get(&key).copied().unwrap_or(0.0);
+        if score <= 0.0 {
             continue;
         }
 
@@ -99,7 +170,7 @@ pub(crate) async fn find_best_local_asset_match(
             match_hints,
             props_hint,
             output_example,
-            score,
+            score: (score * 1000.0).round() as i32,
         };
 
         let replace = best
@@ -350,6 +421,138 @@ fn to_json_string<T: serde::Serialize>(value: &T) -> Option<String> {
     serde_json::to_string(value).ok()
 }
 
+async fn build_local_asset_feedback_context(
+    store: &McpStore,
+    query: &str,
+    session_id: Option<&str>,
+) -> SearchFeedbackContext {
+    let mut context = SearchFeedbackContext::default();
+
+    if let Some(normalized_session_id) = session_id.map(str::trim).filter(|value| !value.is_empty())
+    {
+        if let Ok(recent_targets) = store
+            .list_recent_session_asset_ids(normalized_session_id, 4)
+            .await
+        {
+            context.recent_targets = recent_targets;
+        }
+    }
+
+    let now_unix_ms = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+    if let Ok(rows) = store.list_asset_execution_affinity_rows(32).await {
+        context.historical_affinity =
+            historical_affinity_from_asset_rows(&rows, now_unix_ms as i64);
+    }
+    if let Ok(rows) = store.list_asset_query_affinity_rows(64).await {
+        context.query_affinity = query_affinity_from_asset_rows(query, &rows, now_unix_ms as i64);
+    }
+
+    context
+}
+
+fn build_local_asset_memory_text(record: &LocalAssetRecord) -> String {
+    let mut sections = vec![format!("title: {}", record.title)];
+    if let Some(summary) = record
+        .summary
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        sections.push(format!("summary: {summary}"));
+    }
+    if let Some(render_hint) = record
+        .render_hint
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        sections.push(format!("render_hint: {render_hint}"));
+    }
+    if let Some(data_mode) = record
+        .data_mode
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        sections.push(format!("data_mode: {data_mode}"));
+    }
+    let match_hints = parse_string_list_json(record.match_hints_json.as_deref());
+    if !match_hints.is_empty() {
+        sections.push(format!("match_hints: {}", match_hints.join(", ")));
+    }
+    let props_hint = parse_string_list_json(record.props_hint_json.as_deref());
+    if !props_hint.is_empty() {
+        sections.push(format!("props_hint: {}", props_hint.join(", ")));
+    }
+    if let Some(output_example) = parse_value_json(record.output_example_json.as_deref()) {
+        sections.push(format!(
+            "output_example: {}",
+            serde_json::to_string(&output_example).unwrap_or_else(|_| "{}".to_string())
+        ));
+    }
+    sections.join("\n")
+}
+
+fn local_asset_record_to_memory_metadata(record: &LocalAssetRecord) -> Value {
+    serde_json::json!({
+        "asset_id": record.asset_id,
+        "render_hint": record.render_hint,
+        "data_mode": record.data_mode,
+        "html_entry": record.html_entry,
+        "template_id": record.template_id,
+        "template_version": record.template_version,
+        "match_hints": parse_string_list_json(record.match_hints_json.as_deref()),
+        "props_hint": parse_string_list_json(record.props_hint_json.as_deref()),
+        "output_example": parse_value_json(record.output_example_json.as_deref()),
+        "source_view_type": record.source_view_type,
+    })
+}
+
+fn local_asset_record_to_search_document(record: &LocalAssetRecord) -> Value {
+    serde_json::json!({
+        "id": record.asset_id,
+        "name": record.title,
+        "description": build_local_asset_memory_text(record),
+        "asset_type": "html_asset",
+        "source_type": "local_asset_registry",
+        "pkg_name": record.asset_id,
+        "metadata": local_asset_record_to_memory_metadata(record),
+    })
+}
+
+pub(crate) async fn sync_local_asset_memory_index(
+    app_state: &AppState,
+    record: &LocalAssetRecord,
+) -> Result<(), String> {
+    if !record.asset_kind.eq_ignore_ascii_case("html_asset") {
+        return Ok(());
+    }
+
+    let text = build_local_asset_memory_text(record);
+    let vector = app_state
+        .providers
+        .embedding
+        .embed_text(&text)
+        .await
+        .map_err(|err| err.to_string())?;
+
+    app_state
+        .memory
+        .service
+        .upsert_asset(
+            record.asset_id.clone(),
+            record.title.clone(),
+            text,
+            "html_asset".to_string(),
+            "local_asset_registry".to_string(),
+            Some(record.asset_id.clone()),
+            vector,
+            Some(local_asset_record_to_memory_metadata(record)),
+        )
+        .await
+        .map_err(|err| err.to_string())
+}
+
 fn parse_string_list_json(raw: Option<&str>) -> Vec<String> {
     raw.and_then(|value| serde_json::from_str::<Vec<String>>(value).ok())
         .map(normalize_string_list)
@@ -367,54 +570,6 @@ fn normalize_match_text(input: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
         .to_lowercase()
-}
-
-fn split_match_terms(input: &str) -> HashSet<String> {
-    input
-        .split(|ch: char| !ch.is_alphanumeric())
-        .map(str::trim)
-        .filter(|value| value.len() >= 2)
-        .map(|value| value.to_lowercase())
-        .collect()
-}
-
-fn score_local_asset_match(
-    record: &LocalAssetRecord,
-    normalized_query: &str,
-    query_terms: &HashSet<String>,
-    match_hints: &[String],
-) -> i32 {
-    let mut score = 0i32;
-    let mut candidate_strings = vec![record.title.clone()];
-    if let Some(render_hint) = record.render_hint.clone() {
-        candidate_strings.push(render_hint);
-    }
-    candidate_strings.extend(match_hints.iter().cloned());
-
-    for candidate in candidate_strings {
-        let normalized_candidate = normalize_match_text(&candidate);
-        if normalized_candidate.is_empty() {
-            continue;
-        }
-
-        if normalized_candidate == normalized_query {
-            score = score.max(420);
-        } else if normalized_query.contains(&normalized_candidate)
-            && normalized_candidate.len() >= 2
-        {
-            score = score.max(260);
-        } else if normalized_candidate.contains(normalized_query) && normalized_query.len() >= 4 {
-            score = score.max(180);
-        }
-
-        let candidate_terms = split_match_terms(&normalized_candidate);
-        let overlap = query_terms.intersection(&candidate_terms).count() as i32;
-        if overlap > 0 {
-            score = score.max(overlap * 60);
-        }
-    }
-
-    score
 }
 
 fn render_asset_record_from_block(
@@ -625,12 +780,12 @@ mod tests {
     }
 
     #[test]
-    fn score_local_asset_match_prefers_direct_hint_hits() {
+    fn build_local_asset_memory_text_includes_recall_hints() {
         let record = LocalAssetRecord {
             asset_id: "weather-ios18-card".to_string(),
             asset_kind: "html_asset".to_string(),
             title: "Weather iOS18".to_string(),
-            summary: None,
+            summary: Some("Compact weather card".to_string()),
             origin_session_id: "".to_string(),
             origin_turn_index: 0,
             source_block_id: None,
@@ -655,14 +810,89 @@ mod tests {
             last_opened_at: None,
         };
 
-        let query = normalize_match_text("帮我查一下天气");
-        let score = score_local_asset_match(
-            &record,
-            &query,
-            &split_match_terms(&query),
-            &parse_string_list_json(record.match_hints_json.as_deref()),
-        );
+        let text = build_local_asset_memory_text(&record);
+        assert!(text.contains("title: Weather iOS18"));
+        assert!(text.contains("summary: Compact weather card"));
+        assert!(text.contains("render_hint: weather-card"));
+        assert!(text.contains("match_hints: 天气, weather"));
+        assert!(text.contains("props_hint: location"));
+        assert!(text.contains("\"temp_c\":22"));
+    }
 
-        assert!(score >= 120);
+    #[test]
+    fn local_asset_search_document_exposes_hint_text_to_bm25() {
+        let weather = LocalAssetRecord {
+            asset_id: "weather-ios18-card".to_string(),
+            asset_kind: "html_asset".to_string(),
+            title: "Weather iOS18".to_string(),
+            summary: Some("Compact weather card".to_string()),
+            origin_session_id: "".to_string(),
+            origin_turn_index: 0,
+            source_block_id: None,
+            source_view_type: "html.v1".to_string(),
+            render_hint: Some("weather-card".to_string()),
+            template_id: Some("asset://weather-ios18-card".to_string()),
+            template_version: Some("v1".to_string()),
+            html_entry: Some("bundles/weather/index.html".to_string()),
+            data_mode: Some("ai_data".to_string()),
+            match_hints_json: Some("[\"天气\",\"weather\"]".to_string()),
+            props_hint_json: None,
+            output_example_json: None,
+            latest_snapshot_html: None,
+            latest_render_data_json: None,
+            refresh_spec_json: None,
+            status: "active".to_string(),
+            is_pinned: false,
+            is_archived: false,
+            created_at: "2026-03-31T00:00:00Z".to_string(),
+            updated_at: "2026-03-31T00:00:00Z".to_string(),
+            last_refreshed_at: None,
+            last_opened_at: None,
+        };
+        let stocks = LocalAssetRecord {
+            asset_id: "stocks-market-card".to_string(),
+            asset_kind: "html_asset".to_string(),
+            title: "Market Movers".to_string(),
+            summary: Some("Stock dashboard".to_string()),
+            origin_session_id: "".to_string(),
+            origin_turn_index: 0,
+            source_block_id: None,
+            source_view_type: "html.v1".to_string(),
+            render_hint: Some("stocks-card".to_string()),
+            template_id: Some("asset://stocks-market-card".to_string()),
+            template_version: Some("v1".to_string()),
+            html_entry: Some("bundles/stocks/index.html".to_string()),
+            data_mode: Some("ai_data".to_string()),
+            match_hints_json: Some("[\"股价\",\"stocks\"]".to_string()),
+            props_hint_json: None,
+            output_example_json: None,
+            latest_snapshot_html: None,
+            latest_render_data_json: None,
+            refresh_spec_json: None,
+            status: "active".to_string(),
+            is_pinned: false,
+            is_archived: false,
+            created_at: "2026-03-31T00:00:00Z".to_string(),
+            updated_at: "2026-03-31T00:00:00Z".to_string(),
+            last_refreshed_at: None,
+            last_opened_at: None,
+        };
+
+        let documents = vec![
+            local_asset_record_to_search_document(&weather),
+            local_asset_record_to_search_document(&stocks),
+        ];
+        let scores = bm25_asset_match_scores(&normalize_match_text("帮我查一下天气"), &documents);
+
+        assert!(
+            scores
+                .get("weather-ios18-card")
+                .copied()
+                .unwrap_or_default()
+                > scores
+                    .get("stocks-market-card")
+                    .copied()
+                    .unwrap_or_default()
+        );
     }
 }
