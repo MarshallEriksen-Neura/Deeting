@@ -349,8 +349,13 @@ pub(crate) async fn preview_custom_task_agent(
         let mut action_results = Vec::new();
         for callable in callables {
             if let Some(tool) = mcp_tools.get(callable.name.as_str()) {
-                match execute_mcp_tool(app_state.mcp.store.as_ref(), tool, &callable.arguments)
-                    .await
+                match execute_mcp_tool(
+                    Some(&app_state.mcp),
+                    app_state.mcp.store.as_ref(),
+                    tool,
+                    &callable.arguments,
+                )
+                .await
                 {
                     Ok(result) => {
                         let meta = json!({

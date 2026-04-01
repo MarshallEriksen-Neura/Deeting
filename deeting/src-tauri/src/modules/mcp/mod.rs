@@ -14,14 +14,14 @@ use mcp_storage::types::LocalSkillToolBindingSnapshot;
 use serde_json::Value;
 
 use crate::modules::mcp::bridge::McpBridgeState;
-use crate::modules::mcp::process::ProcessManager;
+use crate::modules::mcp::process::{LocalStdioMcpSessionManager, ProcessManager};
 pub use crate::modules::mcp::risk::{
     assess_core_tool_risk, assess_mcp_tool_risk, assess_skill_binding_risk, is_high_risk_tool_name,
     ApprovalBoundaryClass, RiskOperationClass, RiskTargetClass, SessionApprovalGrant,
     ToolRiskAssessment,
 };
 use crate::modules::mcp::store::McpStore;
-use mcp_core::types::McpTool;
+use mcp_core::types::{McpTool, McpToolStatus};
 pub use mcp_facade::runtime::{
     build_approval_context as facade_build_approval_context,
     build_pending_tool_call as facade_build_pending_tool_call,
@@ -42,6 +42,7 @@ pub struct SuspendedLocalChatExecutionEnvelope {
 pub struct McpRuntimeState {
     pub store: Arc<McpStore>,
     pub process_manager: ProcessManager,
+    pub stdio_mcp_sessions: LocalStdioMcpSessionManager,
     pub transport: McpTransportFacade<
         McpBridgeState,
         crate::modules::desktop_runtime::local_gateway::LocalGatewayServer,
@@ -61,6 +62,7 @@ impl McpRuntimeState {
         Self {
             store,
             process_manager,
+            stdio_mcp_sessions: LocalStdioMcpSessionManager::new(),
             transport: McpTransportFacade::new(
                 cloud_base_url.clone(),
                 McpBridgeState::new(cloud_base_url),
@@ -127,4 +129,53 @@ impl McpRuntimeState {
             approval_context,
         )
     }
+}
+
+pub(crate) async fn list_stdio_mcp_server_tools(
+    store: &McpStore,
+    tool: &McpTool,
+) -> Result<Vec<McpTool>, error::McpError> {
+    if !tool.is_stdio_mcp_tool() {
+        return Ok(vec![tool.clone()]);
+    }
+
+    let Some(source_id) = tool.source_id.as_deref() else {
+        return Ok(vec![tool.clone()]);
+    };
+    let Some(server_name) = tool.remote_server_name() else {
+        return Ok(vec![tool.clone()]);
+    };
+
+    let peers = store
+        .list_tools()
+        .await?
+        .into_iter()
+        .filter(|candidate| candidate.is_stdio_mcp_tool())
+        .filter(|candidate| candidate.source_id.as_deref() == Some(source_id))
+        .filter(|candidate| candidate.remote_server_name().as_deref() == Some(server_name.as_str()))
+        .collect::<Vec<_>>();
+
+    if peers.is_empty() {
+        return Ok(vec![tool.clone()]);
+    }
+
+    Ok(peers)
+}
+
+pub(crate) async fn update_stdio_mcp_server_statuses(
+    store: &McpStore,
+    tool: &McpTool,
+    status: McpToolStatus,
+    error: Option<String>,
+) -> Result<Vec<McpTool>, error::McpError> {
+    let peers = list_stdio_mcp_server_tools(store, tool).await?;
+    for peer in &peers {
+        store
+            .set_tool_status(&peer.id, status.clone(), None, error.clone())
+            .await?;
+        if status == McpToolStatus::Healthy {
+            let _ = store.set_tool_new_flag(&peer.id, false).await;
+        }
+    }
+    Ok(peers)
 }

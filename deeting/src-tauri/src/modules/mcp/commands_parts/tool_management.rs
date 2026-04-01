@@ -9,6 +9,7 @@ use super::{
 use crate::modules::knowledge::tool_index::{
     delete_mcp_tool_assets, index_mcp_tools, list_indexed_mcp_tool_ids, reindex_desktop_tool_asset,
 };
+use crate::modules::skill_runtime::resolve_local_tool_env;
 
 pub(crate) fn build_remote_transport_log_entries(tool: &McpTool) -> Vec<McpLogEntry> {
     vec![McpLogEntry {
@@ -78,6 +79,43 @@ pub(crate) async fn start_mcp_tool_inner(
         ));
     }
 
+    if tool.is_stdio_mcp_tool() {
+        let env = resolve_local_tool_env(state.store.as_ref(), &tool)
+            .await
+            .map_err(to_string)?;
+        match state
+            .stdio_mcp_sessions
+            .ensure_tool_session(&tool, env.as_ref())
+            .await
+        {
+            Ok(()) => {
+                crate::modules::mcp::update_stdio_mcp_server_statuses(
+                    state.store.as_ref(),
+                    &tool,
+                    McpToolStatus::Healthy,
+                    None,
+                )
+                .await
+                .map_err(to_string)?;
+                return Ok(serde_json::json!({
+                    "status": "STARTED",
+                    "tool_id": tool_id,
+                    "transport": "stdio",
+                }));
+            }
+            Err(err) => {
+                let _ = crate::modules::mcp::update_stdio_mcp_server_statuses(
+                    state.store.as_ref(),
+                    &tool,
+                    McpToolStatus::Error,
+                    Some(err.clone()),
+                )
+                .await;
+                return Err(err);
+            }
+        }
+    }
+
     state
         .process_manager
         .start_tool(tool, true)
@@ -106,6 +144,26 @@ pub(crate) async fn stop_mcp_tool_inner(
         return stop_remote_transport_tool(state.store.as_ref(), &tool).await;
     }
 
+    if tool.is_stdio_mcp_tool() {
+        let env = resolve_local_tool_env(state.store.as_ref(), &tool)
+            .await
+            .map_err(to_string)?;
+        state
+            .stdio_mcp_sessions
+            .close_tool_session(&tool, env.as_ref())
+            .await
+            .map_err(to_string)?;
+        crate::modules::mcp::update_stdio_mcp_server_statuses(
+            state.store.as_ref(),
+            &tool,
+            McpToolStatus::Stopped,
+            None,
+        )
+        .await
+        .map_err(to_string)?;
+        return Ok(());
+    }
+
     state
         .process_manager
         .stop_tool(&tool.id)
@@ -126,6 +184,8 @@ pub(crate) async fn get_mcp_logs_inner(
 
     let logs = if tool.is_remote_sse() {
         build_remote_transport_log_entries(&tool)
+    } else if tool.is_stdio_mcp_tool() {
+        state.stdio_mcp_sessions.logs(&tool.id).await
     } else {
         state.process_manager.logs(&tool.id).await
     };
@@ -151,7 +211,11 @@ pub(crate) async fn clear_mcp_logs_inner(
         return Ok(());
     }
 
-    state.process_manager.clear_logs(&tool.id).await;
+    if tool.is_stdio_mcp_tool() {
+        state.stdio_mcp_sessions.clear_logs(&tool.id).await;
+    } else {
+        state.process_manager.clear_logs(&tool.id).await;
+    }
     Ok(())
 }
 
@@ -237,7 +301,15 @@ pub async fn delete_local_mcp_tool(
         .map_err(to_string)?
         .ok_or_else(|| format!("tool {} not found", tool_id))?;
 
-    if tool.supports_local_process_lifecycle() {
+    if tool.is_stdio_mcp_tool() {
+        if let Ok(env) = resolve_local_tool_env(state.mcp.store.as_ref(), &tool).await {
+            let _ = state
+                .mcp
+                .stdio_mcp_sessions
+                .close_tool_session(&tool, env.as_ref())
+                .await;
+        }
+    } else if tool.supports_local_process_lifecycle() {
         let _ = state.mcp.process_manager.stop_tool(&tool.id).await;
     }
 

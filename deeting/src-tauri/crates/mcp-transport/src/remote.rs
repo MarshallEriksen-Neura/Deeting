@@ -17,6 +17,7 @@ use std::{
     process::Stdio,
 };
 use tokio::io::AsyncBufReadExt;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -26,6 +27,72 @@ pub struct RemoteDiscoveredTool {
     pub name: String,
     pub description: Option<String>,
     pub input_schema: Value,
+}
+
+pub struct LocalStdioMcpClient {
+    client: RunningService<RoleClient, ClientInfo>,
+}
+
+impl LocalStdioMcpClient {
+    pub async fn connect(
+        command: &str,
+        args: &[String],
+        env: Option<&HashMap<String, String>>,
+    ) -> Result<Self, String> {
+        Self::connect_with_stderr(command, args, env, None).await
+    }
+
+    pub async fn connect_with_stderr(
+        command: &str,
+        args: &[String],
+        env: Option<&HashMap<String, String>>,
+        stderr_sender: Option<UnboundedSender<String>>,
+    ) -> Result<Self, String> {
+        connect_local_stdio_client_with_stderr(command, args, env, stderr_sender)
+            .await
+            .map(|client| Self { client })
+    }
+
+    pub async fn list_tools(&mut self) -> Result<Vec<RemoteDiscoveredTool>, String> {
+        self.client
+            .peer()
+            .list_all_tools()
+            .await
+            .map_err(|err| err.to_string())
+            .map(|tools| {
+                tools
+                    .into_iter()
+                    .map(|tool| RemoteDiscoveredTool {
+                        name: tool.name.into_owned(),
+                        description: tool.description.map(|value| value.into_owned()),
+                        input_schema: Value::Object(tool.input_schema.as_ref().clone()),
+                    })
+                    .collect()
+            })
+    }
+
+    pub async fn call_tool(&mut self, tool_name: &str, arguments: &Value) -> Result<Value, String> {
+        let normalized_arguments = normalized_call_arguments(arguments, "local stdio MCP tool")?;
+        let request = normalized_arguments.map_or_else(
+            || CallToolRequestParams::new(tool_name.to_string()),
+            |arguments| CallToolRequestParams::new(tool_name.to_string()).with_arguments(arguments),
+        );
+        let response = self
+            .client
+            .peer()
+            .call_tool(request)
+            .await
+            .map_err(|err| err.to_string())?;
+        serde_json::to_value(response).map_err(|err| err.to_string())
+    }
+
+    pub async fn close(&mut self) -> Result<(), String> {
+        self.client
+            .close()
+            .await
+            .map(|_| ())
+            .map_err(|err| err.to_string())
+    }
 }
 
 async fn connect_sse_client(
@@ -137,9 +204,25 @@ async fn connect_local_stdio_client(
     args: &[String],
     env: Option<&HashMap<String, String>>,
 ) -> Result<RunningService<RoleClient, ClientInfo>, String> {
+    connect_local_stdio_client_with_stderr(command, args, env, None).await
+}
+
+async fn connect_local_stdio_client_with_stderr(
+    command: &str,
+    args: &[String],
+    env: Option<&HashMap<String, String>>,
+    stderr_sender: Option<UnboundedSender<String>>,
+) -> Result<RunningService<RoleClient, ClientInfo>, String> {
     let mut last_error: Option<String> = None;
     for (candidate_command, candidate_args) in local_stdio_command_candidates(command, args) {
-        match spawn_local_stdio_client(&candidate_command, &candidate_args, env).await {
+        match spawn_local_stdio_client(
+            &candidate_command,
+            &candidate_args,
+            env,
+            stderr_sender.clone(),
+        )
+        .await
+        {
             Ok(client) => return Ok(client),
             Err(err) => {
                 last_error = Some(format!(
@@ -163,6 +246,7 @@ async fn spawn_local_stdio_client(
     command: &str,
     args: &[String],
     env: Option<&HashMap<String, String>>,
+    stderr_sender: Option<UnboundedSender<String>>,
 ) -> Result<RunningService<RoleClient, ClientInfo>, String> {
     let mut child_command = tokio::process::Command::new(command);
     configure_background_tokio_command(&mut child_command);
@@ -176,21 +260,24 @@ async fn spawn_local_stdio_client(
         .map_err(|err| err.to_string())?;
     if let Some(stderr) = stderr_handle {
         let command_label = format_command_label(command, args);
+        let stderr_sender = stderr_sender.clone();
         tokio::spawn(async move {
             let mut lines = tokio::io::BufReader::new(stderr).lines();
             let mut line_count = 0usize;
             while let Ok(Some(line)) = lines.next_line().await {
                 let trimmed = line.trim();
                 if !trimmed.is_empty() {
-                    warn!(
-                        "mcp subprocess stderr command='{}' line='{}'",
-                        command_label, trimmed
-                    );
+                    if line_count < 30 {
+                        warn!(
+                            "mcp subprocess stderr command='{}' line='{}'",
+                            command_label, trimmed
+                        );
+                    }
+                    if let Some(sender) = stderr_sender.as_ref() {
+                        let _ = sender.send(trimmed.to_string());
+                    }
                 }
                 line_count += 1;
-                if line_count >= 30 {
-                    break;
-                }
             }
         });
     }
@@ -670,22 +757,8 @@ pub async fn list_local_stdio_tools(
     args: &[String],
     env: Option<&HashMap<String, String>>,
 ) -> Result<Vec<RemoteDiscoveredTool>, String> {
-    let mut client = connect_local_stdio_client(command, args, env).await?;
-    let result = client
-        .peer()
-        .list_all_tools()
-        .await
-        .map_err(|err| err.to_string())
-        .map(|tools| {
-            tools
-                .into_iter()
-                .map(|tool| RemoteDiscoveredTool {
-                    name: tool.name.into_owned(),
-                    description: tool.description.map(|value| value.into_owned()),
-                    input_schema: Value::Object(tool.input_schema.as_ref().clone()),
-                })
-                .collect()
-        });
+    let mut client = LocalStdioMcpClient::connect(command, args, env).await?;
+    let result = client.list_tools().await;
     let _ = client.close().await;
     result
 }
@@ -697,19 +770,14 @@ pub async fn call_local_stdio_tool(
     tool_name: &str,
     arguments: &Value,
 ) -> Result<Value, String> {
-    let normalized_arguments = normalized_call_arguments(arguments, "local stdio MCP tool")?;
-    let mut client = connect_local_stdio_client(command, args, env).await?;
-    let request = normalized_arguments.map_or_else(
-        || CallToolRequestParams::new(tool_name.to_string()),
-        |arguments| CallToolRequestParams::new(tool_name.to_string()).with_arguments(arguments),
-    );
-    let response = client
-        .peer()
-        .call_tool(request)
-        .await
-        .map_err(|err| err.to_string())?;
+    let mut client = LocalStdioMcpClient::connect(command, args, env).await?;
+    let result = client.call_tool(tool_name, arguments).await;
     let _ = client.close().await;
-    serde_json::to_value(response).map_err(|err| err.to_string())
+    result
+}
+
+pub fn unbounded_stderr_channel() -> (UnboundedSender<String>, UnboundedReceiver<String>) {
+    tokio::sync::mpsc::unbounded_channel()
 }
 
 #[cfg(test)]

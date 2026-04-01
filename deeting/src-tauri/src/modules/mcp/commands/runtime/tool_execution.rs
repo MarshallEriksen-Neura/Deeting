@@ -976,6 +976,7 @@ fn log_skill_binding_stage(binding: &LocalSkillToolBindingSnapshot, stage: &str,
 }
 
 pub(crate) async fn execute_mcp_tool(
+    runtime_state: Option<&crate::modules::mcp::McpRuntimeState>,
     store: &crate::modules::mcp::store::McpStore,
     tool: &McpTool,
     arguments: &Value,
@@ -991,6 +992,36 @@ pub(crate) async fn execute_mcp_tool(
     }
 
     if tool.is_stdio_mcp_tool() {
+        let env = resolve_local_tool_env(store, tool).await?;
+        if let Some(runtime) = runtime_state {
+            let result = runtime
+                .stdio_mcp_sessions
+                .call_tool(tool, env.as_ref(), arguments)
+                .await;
+            match result {
+                Ok(value) => {
+                    let _ = crate::modules::mcp::update_stdio_mcp_server_statuses(
+                        store,
+                        tool,
+                        mcp_core::types::McpToolStatus::Healthy,
+                        None,
+                    )
+                    .await;
+                    return Ok(value);
+                }
+                Err(err) => {
+                    let _ = crate::modules::mcp::update_stdio_mcp_server_statuses(
+                        store,
+                        tool,
+                        mcp_core::types::McpToolStatus::Error,
+                        Some(err.clone()),
+                    )
+                    .await;
+                    return Err(err);
+                }
+            }
+        }
+
         let command = tool
             .command
             .as_deref()
@@ -998,7 +1029,6 @@ pub(crate) async fn execute_mcp_tool(
         let tool_name = tool
             .stdio_mcp_tool_name()
             .ok_or_else(|| format!("stdio MCP tool {} is missing tool metadata", tool.name))?;
-        let env = resolve_local_tool_env(store, tool).await?;
         let args = tool.args.clone().unwrap_or_default();
         return call_local_stdio_tool(command, &args, env.as_ref(), &tool_name, arguments).await;
     }
@@ -1259,7 +1289,7 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_tool_ref(
             }));
         }
     }
-    let result = execute_mcp_tool(store, &tool, &arguments).await?;
+    let result = execute_mcp_tool(runtime_state, store, &tool, &arguments).await?;
     record_successful_tool_execution(
         store,
         approval_context.session_id.as_deref(),
@@ -1410,7 +1440,7 @@ pub(crate) async fn approve_mcp_tool_inner_with_context(
     {
         return Err("pending tool call already consumed".to_string());
     }
-    let result = execute_mcp_tool(store, &tool, &pending.arguments).await?;
+    let result = execute_mcp_tool(runtime_state, store, &tool, &pending.arguments).await?;
     record_successful_tool_execution(store, pending.session_id.as_deref(), &tool.name, &result)
         .await;
     if let (Some(runtime), Some(key)) = (runtime_state, pending.approval_grant_key.as_deref()) {

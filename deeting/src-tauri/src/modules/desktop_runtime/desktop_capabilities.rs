@@ -928,6 +928,7 @@ async fn dispatch_web_fetch(arguments: &Value) -> Result<Value, String> {
     .await
     .map_err(|err| err.to_string())?;
     crate::modules::mcp::commands::runtime::execute_mcp_tool(
+        Some(&app_state.mcp),
         app_state.mcp.store.as_ref(),
         &tool,
         arguments,
