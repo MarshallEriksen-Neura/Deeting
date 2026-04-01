@@ -1880,6 +1880,9 @@ pub async fn execute_local_orchestrated_chat(
     let render_resolution =
         resolve_response_rendering(app_handle, app_state.mcp.store.as_ref(), &response_json).await;
     let rendered_asset_ids = extract_saved_asset_ids_from_blocks(&render_resolution.blocks);
+    if render_resolution.consumed_content {
+        response_text = render_resolution.summary_text.clone().unwrap_or_default();
+    }
     if response_text.trim().is_empty() {
         if let Some(summary) = render_resolution.summary_text.as_deref() {
             response_text = summary.to_string();

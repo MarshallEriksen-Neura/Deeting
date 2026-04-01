@@ -14,6 +14,7 @@ use crate::modules::desktop_config::{parse_max_agentic_rounds, MAX_AGENTIC_ROUND
 use crate::modules::mcp::commands::common_impl::to_string;
 use crate::modules::mcp::commands::common_impl::LocalModelConnection;
 use crate::modules::mcp::commands::support::*;
+use mcp_session::conversation::CreateConversationMessageRequest;
 
 #[derive(Debug, Clone, Default)]
 struct RuntimeMetricsAccumulator {
@@ -1502,6 +1503,123 @@ fn build_local_chat_resume_continuation_blocks(
     blocks
 }
 
+fn extract_resume_response_text(content: &serde_json::Value) -> String {
+    match content {
+        serde_json::Value::String(text) => text.clone(),
+        serde_json::Value::Array(items) => {
+            let mut out = Vec::new();
+            for item in items {
+                let Some(object) = item.as_object() else {
+                    continue;
+                };
+                let text = object
+                    .get("text")
+                    .and_then(serde_json::Value::as_str)
+                    .or_else(|| object.get("content").and_then(serde_json::Value::as_str))
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty());
+                if let Some(text) = text {
+                    out.push(text.to_string());
+                }
+            }
+            out.join("\n")
+        }
+        serde_json::Value::Object(object) => object
+            .get("text")
+            .and_then(serde_json::Value::as_str)
+            .or_else(|| object.get("content").and_then(serde_json::Value::as_str))
+            .map(str::to_string)
+            .unwrap_or_else(|| {
+                serde_json::to_string(&serde_json::Value::Object(object.clone()))
+                    .unwrap_or_default()
+            }),
+        serde_json::Value::Null => String::new(),
+        other => serde_json::to_string(other).unwrap_or_default(),
+    }
+}
+
+fn build_persisted_resume_assistant_blocks(
+    resumed_response: &serde_json::Value,
+) -> Vec<serde_json::Value> {
+    let mut blocks = resumed_response
+        .get("tool_trace_blocks")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+
+    let response_text = extract_resume_response_text(
+        resumed_response
+            .get("content")
+            .unwrap_or(&serde_json::Value::Null),
+    );
+    if !response_text.trim().is_empty() {
+        blocks.push(serde_json::json!({
+            "type": "text",
+            "content": response_text,
+        }));
+    }
+
+    blocks
+}
+
+fn build_persisted_resume_assistant_meta(
+    resumed_response: &serde_json::Value,
+    model_connection: &LocalModelConnection,
+) -> serde_json::Value {
+    let mut meta = serde_json::Map::new();
+    let blocks = build_persisted_resume_assistant_blocks(resumed_response);
+    if !blocks.is_empty() {
+        meta.insert("blocks".to_string(), serde_json::Value::Array(blocks));
+    }
+    meta.insert(
+        "model_id".to_string(),
+        serde_json::Value::String(model_connection.model_id.clone()),
+    );
+    meta.insert(
+        "provider_model_id".to_string(),
+        serde_json::Value::String(model_connection.provider_model_id.clone()),
+    );
+    if let Some(runtime_metrics) = resumed_response.get("runtime_metrics").cloned() {
+        meta.insert("runtime_metrics".to_string(), runtime_metrics);
+    }
+    serde_json::Value::Object(meta)
+}
+
+async fn persist_resumed_local_chat_assistant_message(
+    app_state: &AppState,
+    session_id: &str,
+    model_connection: &LocalModelConnection,
+    resumed_response: &serde_json::Value,
+) -> Result<(), String> {
+    let response_text = extract_resume_response_text(
+        resumed_response
+            .get("content")
+            .unwrap_or(&serde_json::Value::Null),
+    );
+    let assistant_meta = build_persisted_resume_assistant_meta(resumed_response, model_connection);
+
+    app_state
+        .mcp
+        .store
+        .append_local_conversation_message(CreateConversationMessageRequest {
+            session_id: session_id.to_string(),
+            role: "assistant".to_string(),
+            content: response_text,
+            name: None,
+            meta_info: Some(assistant_meta),
+            is_truncated: Some(false),
+            parent_message_id: None,
+        })
+        .await
+        .map(|_| ())
+        .map_err(|err| {
+            format!(
+                "chat step=append_resumed_assistant_message session={} err={}",
+                session_id, err
+            )
+        })
+}
+
 pub(crate) async fn resume_suspended_local_chat_after_approval(
     app: &AppHandle,
     app_state: &AppState,
@@ -1528,6 +1646,8 @@ pub(crate) async fn resume_suspended_local_chat_after_approval(
     let pending_capability_update = suspended.pending_capability_update.clone();
 
     let mut state = suspended.into_runtime_state();
+    let session_id = state.chat_ctx.session_id.clone();
+    let model_connection = state.model_connection.clone();
     finalize_tool_round(
         &mut state.orchestrated_messages,
         &mut state.active_capability,
@@ -1544,6 +1664,16 @@ pub(crate) async fn resume_suspended_local_chat_after_approval(
 
     match continue_local_chat_complete_with_auto_code_mode(app, app_state, state).await {
         Ok(output) => {
+            if let Err(err) = persist_resumed_local_chat_assistant_message(
+                app_state,
+                &session_id,
+                &model_connection,
+                &output.response,
+            )
+            .await
+            {
+                log::warn!("{err}");
+            }
             let continuation_meta = output
                 .all_tool_call_meta
                 .get(baseline_meta_count..)
@@ -1840,6 +1970,76 @@ mod tests {
         assert_eq!(
             serialize_tool_replay_content(&item),
             "Detailed Results:\n1. Example result body"
+        );
+    }
+
+    #[test]
+    fn build_persisted_resume_assistant_blocks_keeps_tool_trace_and_final_text() {
+        let response = serde_json::json!({
+            "content": "Final answer after approval.",
+            "tool_trace_blocks": [
+                {
+                    "type": "tool_call",
+                    "callId": "call_123",
+                    "toolName": "firecrawl_search",
+                    "status": "success"
+                },
+                {
+                    "type": "tool_result",
+                    "callId": "call_123",
+                    "toolName": "firecrawl_search",
+                    "status": "success",
+                    "result": {
+                        "structuredContent": {
+                            "results": [{ "title": "Tianjin Weather" }]
+                        }
+                    }
+                }
+            ]
+        });
+
+        let blocks = build_persisted_resume_assistant_blocks(&response);
+
+        assert_eq!(blocks.len(), 3);
+        assert_eq!(blocks[0]["type"], serde_json::json!("tool_call"));
+        assert_eq!(blocks[1]["type"], serde_json::json!("tool_result"));
+        assert_eq!(blocks[2]["type"], serde_json::json!("text"));
+        assert_eq!(
+            blocks[2]["content"],
+            serde_json::json!("Final answer after approval.")
+        );
+    }
+
+    #[test]
+    fn build_persisted_resume_assistant_meta_carries_runtime_metadata() {
+        let response = serde_json::json!({
+            "content": "Resumed after approval.",
+            "tool_trace_blocks": [],
+            "runtime_metrics": {
+                "upstream_latency_ms": 1200,
+                "upstream_calls": 2
+            }
+        });
+        let model_connection = LocalModelConnection {
+            model_id: "deeting-os".to_string(),
+            provider_model_id: "deepseek-v3.1".to_string(),
+            protocol_family: "openai_chat".to_string(),
+        };
+
+        let meta = build_persisted_resume_assistant_meta(&response, &model_connection);
+
+        assert_eq!(meta["model_id"], serde_json::json!("deeting-os"));
+        assert_eq!(
+            meta["provider_model_id"],
+            serde_json::json!("deepseek-v3.1")
+        );
+        assert_eq!(
+            meta["runtime_metrics"]["upstream_latency_ms"],
+            serde_json::json!(1200)
+        );
+        assert_eq!(
+            meta["blocks"][0]["content"],
+            serde_json::json!("Resumed after approval.")
         );
     }
 }

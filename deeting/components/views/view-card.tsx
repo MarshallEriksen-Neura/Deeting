@@ -9,9 +9,16 @@ interface ViewCardProps {
   viewType?: string
   children: ReactNode
   className?: string
+  contentClassName?: string
 }
 
-export function ViewCard({ title, viewType, children, className }: ViewCardProps) {
+export function ViewCard({
+  title,
+  viewType,
+  children,
+  className,
+  contentClassName,
+}: ViewCardProps) {
   return (
     <div
       className={cn(
@@ -34,7 +41,7 @@ export function ViewCard({ title, viewType, children, className }: ViewCardProps
           )}
         </div>
       )}
-      <div className="p-3">{children}</div>
+      <div className={cn("p-3", contentClassName)}>{children}</div>
     </div>
   )
 }

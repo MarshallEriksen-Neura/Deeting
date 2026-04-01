@@ -17,6 +17,7 @@ use time::OffsetDateTime;
 pub(crate) struct ResponseRenderResolution {
     pub summary_text: Option<String>,
     pub blocks: Vec<Value>,
+    pub consumed_content: bool,
 }
 
 pub(crate) async fn resolve_response_rendering<R: tauri::Runtime>(
@@ -24,8 +25,10 @@ pub(crate) async fn resolve_response_rendering<R: tauri::Runtime>(
     store: &McpStore,
     response_json: &Value,
 ) -> ResponseRenderResolution {
-    let envelope = serde_json::from_value::<AssistantRenderEnvelope>(response_json.clone())
-        .unwrap_or_default();
+    let Some((envelope, consumed_content)) = resolve_assistant_render_envelope(response_json)
+    else {
+        return ResponseRenderResolution::default();
+    };
     let Some(mut render) = envelope.render else {
         return ResponseRenderResolution::default();
     };
@@ -158,7 +161,121 @@ pub(crate) async fn resolve_response_rendering<R: tauri::Runtime>(
     ResponseRenderResolution {
         summary_text,
         blocks: vec![block],
+        consumed_content,
     }
+}
+
+fn resolve_assistant_render_envelope(
+    response_json: &Value,
+) -> Option<(AssistantRenderEnvelope, bool)> {
+    if let Some(envelope) = assistant_render_envelope_from_value(response_json) {
+        return Some((envelope, false));
+    }
+
+    response_json
+        .get("content")
+        .and_then(assistant_render_envelope_from_content_value)
+        .map(|envelope| (envelope, true))
+}
+
+fn assistant_render_envelope_from_content_value(
+    content: &Value,
+) -> Option<AssistantRenderEnvelope> {
+    match content {
+        Value::String(text) => assistant_render_envelope_from_text(text),
+        Value::Array(items) => items
+            .iter()
+            .find_map(assistant_render_envelope_from_content_item),
+        Value::Object(object) => assistant_render_envelope_from_content_object(object),
+        _ => None,
+    }
+}
+
+fn assistant_render_envelope_from_content_item(item: &Value) -> Option<AssistantRenderEnvelope> {
+    let object = item.as_object()?;
+    assistant_render_envelope_from_content_object(object)
+}
+
+fn assistant_render_envelope_from_content_object(
+    object: &serde_json::Map<String, Value>,
+) -> Option<AssistantRenderEnvelope> {
+    assistant_render_envelope_from_value(&Value::Object(object.clone())).or_else(|| {
+        object
+            .get("text")
+            .and_then(Value::as_str)
+            .or_else(|| object.get("content").and_then(Value::as_str))
+            .or_else(|| object.get("output_text").and_then(Value::as_str))
+            .and_then(assistant_render_envelope_from_text)
+    })
+}
+
+fn assistant_render_envelope_from_value(value: &Value) -> Option<AssistantRenderEnvelope> {
+    let envelope = serde_json::from_value::<AssistantRenderEnvelope>(value.clone()).ok()?;
+    envelope.render.as_ref()?;
+    Some(envelope)
+}
+
+fn assistant_render_envelope_from_text(raw: &str) -> Option<AssistantRenderEnvelope> {
+    let cleaned = strip_markdown_code_fence(raw.trim());
+    assistant_render_envelope_from_json_str(cleaned).or_else(|| {
+        extract_json_object_substring(cleaned).and_then(assistant_render_envelope_from_json_str)
+    })
+}
+
+fn assistant_render_envelope_from_json_str(raw: &str) -> Option<AssistantRenderEnvelope> {
+    let parsed = serde_json::from_str::<Value>(raw).ok()?;
+    assistant_render_envelope_from_value(&parsed)
+}
+
+fn strip_markdown_code_fence(raw: &str) -> &str {
+    if !raw.starts_with("```") {
+        return raw;
+    }
+
+    raw.trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim()
+}
+
+fn extract_json_object_substring(raw: &str) -> Option<&str> {
+    let start = raw.find('{')?;
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for (index, ch) in raw[start..].char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            match ch {
+                '\\' => escaped = true,
+                '"' => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+
+        match ch {
+            '"' => in_string = true,
+            '{' => depth = depth.saturating_add(1),
+            '}' => {
+                if depth == 0 {
+                    return None;
+                }
+                depth -= 1;
+                if depth == 0 {
+                    let end = start + index + ch.len_utf8();
+                    return Some(&raw[start..end]);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    None
 }
 
 fn normalize_runtime_mode(value: Option<&str>) -> &'static str {
@@ -170,7 +287,7 @@ fn normalize_runtime_mode(value: Option<&str>) -> &'static str {
 }
 
 fn clamp_iframe_height(value: Option<u32>) -> u32 {
-    value.unwrap_or(280).clamp(180, 720)
+    value.unwrap_or(520).clamp(360, 960)
 }
 
 struct TemplateResolution {
@@ -638,5 +755,50 @@ mod tests {
         );
 
         assert!(html.contains("{{not_handlebars}}"));
+    }
+
+    #[test]
+    fn clamp_iframe_height_uses_larger_readable_defaults() {
+        assert_eq!(clamp_iframe_height(None), 520);
+        assert_eq!(clamp_iframe_height(Some(280)), 360);
+        assert_eq!(clamp_iframe_height(Some(1200)), 960);
+    }
+
+    #[test]
+    fn assistant_render_envelope_from_text_extracts_embedded_json_object() {
+        let envelope = assistant_render_envelope_from_text(
+            "基于获取到的天气信息，我来为您展示天津今天的天气情况：\n\n{\n  \"summary\": \"多云\",\n  \"render\": {\n    \"asset_id\": \"ios18-weather-cards\",\n    \"hint\": \"iOS 18 风格天气卡片\",\n    \"data\": {\n      \"temperature\": \"12.4C\"\n    }\n  }\n}",
+        )
+        .expect("embedded envelope should parse");
+
+        assert_eq!(envelope.summary.as_deref(), Some("多云"));
+        assert_eq!(
+            envelope
+                .render
+                .as_ref()
+                .and_then(|render| render.asset_id.as_deref()),
+            Some("ios18-weather-cards")
+        );
+        assert_eq!(
+            envelope.render.as_ref().map(|render| render.hint.as_str()),
+            Some("iOS 18 风格天气卡片")
+        );
+    }
+
+    #[test]
+    fn assistant_render_envelope_from_content_value_reads_text_blocks() {
+        let envelope = assistant_render_envelope_from_content_value(&json!([
+            {
+                "type": "output_text",
+                "text": "{\"summary\":\"Cloudy\",\"render\":{\"hint\":\"weather-card\",\"data\":{\"temp_c\":22}}}"
+            }
+        ]))
+        .expect("content blocks should parse");
+
+        assert_eq!(envelope.summary.as_deref(), Some("Cloudy"));
+        assert_eq!(
+            envelope.render.as_ref().map(|render| render.hint.as_str()),
+            Some("weather-card")
+        );
     }
 }

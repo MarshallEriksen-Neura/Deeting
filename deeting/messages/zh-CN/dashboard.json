@@ -540,6 +540,17 @@
         "openManager": "打开管理页",
         "openDetails": "查看详情"
       },
+      "tooltips": {
+        "pin": "将这项资产固定在顶部，方便快速访问",
+        "unpin": "取消置顶这项资产",
+        "archive": "归档这项资产，并将它从当前列表移除"
+      },
+      "archiveDialog": {
+        "title": "确认归档这项资产？",
+        "description": "归档后，“{name}” 将从当前资产库中移除。",
+        "cancel": "取消",
+        "confirm": "确认归档"
+      },
       "createDialog": {
         "title": "创建 HTML 资产",
         "description": "粘贴可复用的 HTML 和匹配元数据，保存为可在 dashboard 与聊天中复用的本地资产。",

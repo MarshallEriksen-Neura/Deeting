@@ -1549,7 +1549,12 @@ const ToolCallBlock = memo<{
                 {uiBlocks.map((uiBlock, index) => (
                   <div
                     key={uiBlock.id || `${callId || name || "tool"}-ui-${index}`}
-                    className="overflow-hidden rounded-2xl border border-border/80 bg-background/80 p-2"
+                    className={cn(
+                      "overflow-hidden rounded-2xl",
+                      uiBlock.viewType === "html.v1"
+                        ? "border-transparent bg-transparent p-0"
+                        : "border border-border/80 bg-background/80 p-2"
+                    )}
                   >
                     <ViewBlock
                       viewType={uiBlock.viewType}

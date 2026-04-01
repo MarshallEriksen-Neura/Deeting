@@ -12,6 +12,10 @@ interface ViewBlockProps {
   metadata?: Record<string, unknown>
 }
 
+export function rendersWithoutViewCard(viewType: string) {
+  return viewType === "html.v1"
+}
+
 export const ViewBlock = memo<ViewBlockProps>(function ViewBlock({
   viewType,
   payload,
@@ -21,6 +25,10 @@ export const ViewBlock = memo<ViewBlockProps>(function ViewBlock({
   const NativeComponent = resolveNativeView(viewType)
 
   if (NativeComponent) {
+    if (rendersWithoutViewCard(viewType)) {
+      return <NativeComponent data={payload} title={title} metadata={metadata} />
+    }
+
     return (
       <ViewCard title={title} viewType={viewType}>
         <NativeComponent data={payload} title={title} metadata={metadata} />

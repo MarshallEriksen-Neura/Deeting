@@ -540,6 +540,17 @@
         "openManager": "Open Manager",
         "openDetails": "Open details"
       },
+      "tooltips": {
+        "pin": "Keep this asset pinned at the top",
+        "unpin": "Remove this asset from pinned items",
+        "archive": "Archive this asset and remove it from the active list"
+      },
+      "archiveDialog": {
+        "title": "Archive this asset?",
+        "description": "\"{name}\" will be removed from the active asset library.",
+        "cancel": "Cancel",
+        "confirm": "Archive"
+      },
       "createDialog": {
         "title": "Create HTML Asset",
         "description": "Paste reusable HTML and matching metadata to save a local asset that can be reused across dashboard and chat surfaces.",

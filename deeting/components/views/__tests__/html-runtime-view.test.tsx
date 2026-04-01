@@ -90,4 +90,16 @@ describe("HtmlRuntimeView", () => {
       "*"
     )
   })
+
+  it("promotes legacy compact iframe heights into a readable preview", () => {
+    render(
+      <HtmlRuntimeView
+        data={{ snapshot_html: "<div>snapshot</div>", asset_id: "weather" }}
+        metadata={{ iframe_height: 280, template_version: "v1" }}
+      />
+    )
+
+    expect(screen.getByTitle("html-runtime-view")).toHaveStyle({ height: "520px" })
+    expect(screen.getByText("ASSET: WEATHER_V1")).toBeInTheDocument()
+  })
 })

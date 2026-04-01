@@ -1,10 +1,26 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { Archive, Clock3, ExternalLink, Pin, PinOff } from "lucide-react";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { LocalAsset } from "@/lib/api/local-assets";
 import { cn } from "@/lib/utils";
 
@@ -36,11 +52,16 @@ export function AssetLibraryCard({
   onTogglePin,
   t,
 }: AssetLibraryCardProps) {
+  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const matchHints = parseStringList(asset.match_hints_json);
   const activityLabel = getAssetActivityLabel(asset, locale, t);
   const sourceLabel = asset.origin_session_id
     ? t("fields.sourceSession", { value: asset.origin_session_id })
     : t("fields.createdLocally");
+  const isBusy = busyAssetId === asset.asset_id;
+  const pinTooltip = asset.is_pinned
+    ? t("tooltips.unpin")
+    : t("tooltips.pin");
 
   return (
     <article
@@ -90,41 +111,87 @@ export function AssetLibraryCard({
           </button>
 
           <div className="flex items-center gap-1">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              className="rounded-full"
-              disabled={busyAssetId === asset.asset_id}
-              onClick={(event) => {
-                event.stopPropagation();
-                onTogglePin();
-              }}
-              aria-label={
-                asset.is_pinned ? t("actions.unpin") : t("actions.pin")
-              }
-            >
-              {asset.is_pinned ? (
-                <PinOff className="size-4" />
-              ) : (
-                <Pin className="size-4" />
-              )}
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="rounded-full"
+                  disabled={isBusy}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onTogglePin();
+                  }}
+                  aria-label={
+                    asset.is_pinned ? t("actions.unpin") : t("actions.pin")
+                  }
+                >
+                  {asset.is_pinned ? (
+                    <PinOff className="size-4" />
+                  ) : (
+                    <Pin className="size-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <p>{pinTooltip}</p>
+              </TooltipContent>
+            </Tooltip>
 
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              className="rounded-full"
-              disabled={busyAssetId === asset.asset_id}
-              onClick={(event) => {
-                event.stopPropagation();
-                onArchive();
-              }}
-              aria-label={t("actions.archive")}
+            <AlertDialog
+              open={archiveConfirmOpen}
+              onOpenChange={setArchiveConfirmOpen}
             >
-              <Archive className="size-4" />
-            </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="rounded-full"
+                    disabled={isBusy}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setArchiveConfirmOpen(true);
+                    }}
+                    aria-label={t("actions.archive")}
+                  >
+                    <Archive className="size-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  <p>{t("tooltips.archive")}</p>
+                </TooltipContent>
+              </Tooltip>
+
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>{t("archiveDialog.title")}</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    {t("archiveDialog.description", { name: asset.title })}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>
+                    {t("archiveDialog.cancel")}
+                  </AlertDialogCancel>
+                  <AlertDialogAction asChild>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      onClick={() => {
+                        onArchive();
+                        setArchiveConfirmOpen(false);
+                      }}
+                      disabled={isBusy}
+                    >
+                      {t("archiveDialog.confirm")}
+                    </Button>
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
 
             {onOpenConversation ? (
               <Button
