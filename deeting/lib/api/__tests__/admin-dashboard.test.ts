@@ -59,6 +59,16 @@ describe("admin dashboard api", () => {
           model: "gpt-4o",
           status_code: 200,
           duration_ms: 120,
+          cached_tokens: 24,
+          cache_read_input_tokens: 24,
+          cache_source: "provider_reported",
+          usage_source: "provider_reported",
+          meta: {
+            usage_normalized: {
+              cached_tokens: 24,
+              cache_source: "provider_reported",
+            },
+          },
           created_at: "2026-03-03T00:00:00Z",
         },
       ],
@@ -71,6 +81,8 @@ describe("admin dashboard api", () => {
     })
 
     expect(result.total).toBe(1)
+    expect(result.items[0]?.cached_tokens).toBe(24)
+    expect(result.items[0]?.cache_source).toBe("provider_reported")
     expect(mockInvoke).toHaveBeenCalledWith("list_local_gateway_logs", {
       query: {
         skip: 0,

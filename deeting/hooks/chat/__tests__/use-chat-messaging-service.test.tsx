@@ -51,7 +51,7 @@ describe("useChatMessagingService pending takeover orchestration", () => {
         model: "model-1",
         temperature: 0.7,
         topP: 1,
-        maxTokens: 8192,
+        maxTokens: null,
       },
       selectedAssistantId: "assistant-1",
       selectedAssistant: {

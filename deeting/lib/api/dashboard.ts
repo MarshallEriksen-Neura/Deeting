@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { request } from "@/lib/http"
+import { computePreferredDesktopCacheRate } from "@/lib/gateway-log/cache-metrics"
 import {
   fetchAdminGatewayLogs,
   fetchAdminGatewayLogStats,
@@ -137,6 +138,13 @@ let localGatewayLogCache: LocalGatewayLogCacheEntry | null = null
 let localGatewayLogInflight: { maxItems: number; promise: Promise<GatewayLogItem[]> } | null = null
 let localGatewayStatsCache: LocalGatewayStatsCacheEntry | null = null
 let localGatewayStatsInflight: Promise<LocalGatewayLogStats> | null = null
+
+export function __resetLocalDashboardCacheForTests(): void {
+  localGatewayLogCache = null
+  localGatewayLogInflight = null
+  localGatewayStatsCache = null
+  localGatewayStatsInflight = null
+}
 
 function toTimestamp(value?: string | null): number | null {
   if (!value) return null
@@ -378,6 +386,10 @@ function computeSmartRouterStatsFromLocal(
   stats: LocalGatewayLogStats,
   logs: GatewayLogItem[]
 ): SmartRouterStats {
+  const cacheHitRate = computePreferredDesktopCacheRate(
+    logs,
+    toFiniteNumber(stats.cache_hit_rate, 0)
+  )
   const cachedDurations = logs
     .filter((item) => item.is_cached)
     .map((item) => toFiniteNumber(item.duration_ms, 0))
@@ -417,7 +429,7 @@ function computeSmartRouterStatsFromLocal(
   const costSavings = Number((directSavings > 0 ? directSavings : fallbackSavings).toFixed(6))
 
   return SmartRouterStatsSchema.parse({
-    cacheHitRate: toFiniteNumber(stats.cache_hit_rate, 0),
+    cacheHitRate,
     costSavings,
     requestsBlocked: blocked,
     avgSpeedup: Number(speedup.toFixed(2)),

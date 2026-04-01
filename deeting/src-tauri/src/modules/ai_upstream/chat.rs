@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
 use crate::modules::ai_upstream::gateway_log_recorder::{
-    calculate_token_cost, extract_billing_amount_from_response, extract_cache_hit_from_response,
-    extract_error_code_from_response, extract_ttft_ms_from_response, extract_usage_from_response,
-    record_gateway_log, GatewayLogEntry,
+    build_gateway_log_meta, calculate_token_cost, extract_billing_amount_from_response,
+    extract_cache_details_from_response, extract_error_code_from_response,
+    extract_ttft_ms_from_response, extract_usage_details_from_response, record_gateway_log,
+    GatewayLogEntry,
 };
 use crate::modules::ai_upstream::types::LocalModelConnection;
 use crate::modules::providers::protocols::infer_protocol_family;
@@ -414,6 +415,15 @@ pub(crate) async fn request_provider_chat_completion(
         log::warn!("failed to record bandit feedback: {}", err);
     }
     if !success {
+        let raw_usage = raw_json
+            .as_ref()
+            .map(extract_usage_details_from_response)
+            .unwrap_or_default();
+        let cache_details = extract_cache_details_from_response(
+            &response_headers,
+            raw_json.as_ref(),
+            Some(&raw_usage),
+        );
         record_gateway_log(
             app_state.mcp.store.clone(),
             GatewayLogEntry {
@@ -427,7 +437,16 @@ pub(crate) async fn request_provider_chat_completion(
                 duration_ms: latency_ms as i64,
                 retry_count,
                 upstream_url: Some(prepared.display_url()),
+                input_tokens: raw_usage.input_tokens,
+                output_tokens: raw_usage.output_tokens,
+                total_tokens: raw_usage.total_tokens,
+                is_cached: cache_details.is_cached,
                 error_code: extract_error_code_from_response(raw_json.as_ref()),
+                meta: build_gateway_log_meta(
+                    &raw_usage,
+                    raw_usage.has_usage_details().then_some("provider_reported"),
+                    &cache_details,
+                ),
                 ..Default::default()
             },
         );
@@ -441,7 +460,6 @@ pub(crate) async fn request_provider_chat_completion(
     let raw_billing_amount = raw_json
         .as_ref()
         .and_then(extract_billing_amount_from_response);
-    let raw_cache_hit = extract_cache_hit_from_response(&response_headers, raw_json.as_ref());
     let raw = raw_json.ok_or_else(|| {
         format!(
             "failed to parse upstream json response (status={}): {}",
@@ -449,6 +467,9 @@ pub(crate) async fn request_provider_chat_completion(
             truncate_upstream_body(raw_text.as_str(), 300)
         )
     })?;
+    let raw_usage = extract_usage_details_from_response(&raw);
+    let raw_cache_details =
+        extract_cache_details_from_response(&response_headers, Some(&raw), Some(&raw_usage));
     let transformed = app_state.providers.transformer.transform(
         prepared.template_engine.as_str(),
         Some(prepared.response_decoder.as_str()),
@@ -456,9 +477,30 @@ pub(crate) async fn request_provider_chat_completion(
         raw,
         status.as_u16(),
     );
-    let (input_tokens, output_tokens, total_tokens) = extract_usage_from_response(&transformed);
-    let computed_cost =
-        calculate_token_cost(&model.pricing_config, input_tokens, output_tokens).unwrap_or(0.0);
+    let transformed_usage = extract_usage_details_from_response(&transformed);
+    let usage_details = transformed_usage.merged_with_fallback(&raw_usage);
+    let usage_source = if transformed_usage.has_token_counts() {
+        Some("transformed")
+    } else if raw_usage.has_usage_details() {
+        Some("provider_reported")
+    } else {
+        None
+    };
+    let cache_details = if raw_cache_details.cache_source.as_deref() == Some("unknown") {
+        extract_cache_details_from_response(
+            &response_headers,
+            Some(&transformed),
+            Some(&usage_details),
+        )
+    } else {
+        raw_cache_details
+    };
+    let computed_cost = calculate_token_cost(
+        &model.pricing_config,
+        usage_details.input_tokens,
+        usage_details.output_tokens,
+    )
+    .unwrap_or(0.0);
     let reported_cost = extract_billing_amount_from_response(&transformed)
         .or(raw_billing_amount)
         .unwrap_or(computed_cost);
@@ -475,14 +517,14 @@ pub(crate) async fn request_provider_chat_completion(
             duration_ms: latency_ms as i64,
             ttft_ms,
             upstream_url: Some(prepared.display_url()),
-            input_tokens,
-            output_tokens,
-            total_tokens,
+            input_tokens: usage_details.input_tokens,
+            output_tokens: usage_details.output_tokens,
+            total_tokens: usage_details.total_tokens,
             cost_upstream: computed_cost,
             cost_user: reported_cost,
             retry_count,
-            is_cached: extract_cache_hit_from_response(&response_headers, Some(&transformed))
-                || raw_cache_hit,
+            is_cached: cache_details.is_cached,
+            meta: build_gateway_log_meta(&usage_details, usage_source, &cache_details),
             ..Default::default()
         },
     );

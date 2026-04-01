@@ -1464,7 +1464,7 @@ impl McpStore {
             FROM conversation_session
             WHERE channel = 'internal'
               AND status = ?
-              AND message_count > 0
+              AND message_count > 1
             ORDER BY COALESCE(last_active_at, updated_at, created_at) DESC
             LIMIT 1;
             "#,

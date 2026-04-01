@@ -86,7 +86,13 @@ pub struct LocalGatewayLogItem {
     pub cost_upstream: f64,
     pub cost_user: f64,
     pub is_cached: bool,
+    pub cached_tokens: Option<i64>,
+    pub cache_read_input_tokens: Option<i64>,
+    pub cache_write_input_tokens: Option<i64>,
+    pub cache_source: Option<String>,
+    pub usage_source: Option<String>,
     pub error_code: Option<String>,
+    pub meta: Option<Value>,
     pub created_at: String,
 }
 

@@ -2556,7 +2556,7 @@ impl McpStore {
             SELECT
               id, trace_id, user_id, api_key_id, preset_id, model, status_code, duration_ms, ttft_ms,
               input_tokens, output_tokens, total_tokens, cost_upstream, cost_user, is_cached,
-              error_code, created_at
+              error_code, meta, created_at
             FROM gateway_log
             WHERE (? IS NULL OR user_id = ?)
               AND (? IS NULL OR api_key_id = ?)
@@ -2597,6 +2597,13 @@ impl McpStore {
 
         let mut items = Vec::with_capacity(rows.len());
         for row in rows {
+            let meta = row
+                .try_get::<Option<String>, _>("meta")?
+                .and_then(|value| serde_json::from_str::<serde_json::Value>(&value).ok());
+            let usage_normalized = meta
+                .as_ref()
+                .and_then(|value| value.get("usage_normalized"))
+                .and_then(|value| value.as_object());
             items.push(LocalGatewayLogItem {
                 id: row.try_get("id")?,
                 trace_id: row.try_get("trace_id")?,
@@ -2613,7 +2620,28 @@ impl McpStore {
                 cost_upstream: row.try_get::<f64, _>("cost_upstream").unwrap_or(0.0),
                 cost_user: row.try_get::<f64, _>("cost_user").unwrap_or(0.0),
                 is_cached: row.try_get::<i64, _>("is_cached")? != 0,
+                cached_tokens: usage_normalized
+                    .and_then(|value| value.get("cached_tokens"))
+                    .and_then(|value| value.as_i64())
+                    .map(|value| value.max(0)),
+                cache_read_input_tokens: usage_normalized
+                    .and_then(|value| value.get("cache_read_input_tokens"))
+                    .and_then(|value| value.as_i64())
+                    .map(|value| value.max(0)),
+                cache_write_input_tokens: usage_normalized
+                    .and_then(|value| value.get("cache_write_input_tokens"))
+                    .and_then(|value| value.as_i64())
+                    .map(|value| value.max(0)),
+                cache_source: usage_normalized
+                    .and_then(|value| value.get("cache_source"))
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string),
+                usage_source: usage_normalized
+                    .and_then(|value| value.get("usage_source"))
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string),
                 error_code: row.try_get("error_code")?,
+                meta,
                 created_at: row.try_get("created_at")?,
             });
         }

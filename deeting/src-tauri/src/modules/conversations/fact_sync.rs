@@ -2,12 +2,32 @@ use mcp_session::context::LocalConversationRuntimeWindow;
 use mcp_session::conversation::{
     LocalConversationCompareFinalizeRequest, LocalConversationCompareFinalizeResponse,
 };
+use mcp_storage::helpers::now_unix_epoch;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 use crate::modules::memory::fact_extractor::FactExtractionOutcome;
 use crate::modules::memory::service::MemoryService;
 use crate::modules::memory::types::{LocalMemoryItem, LocalMemoryListQuery};
 use crate::state::AppState;
+
+const FACT_EXTRACTION_LAST_HASH_KEY_PREFIX: &str = "fact_extraction.last_hash";
+const FACT_EXTRACTION_LAST_RUN_AT_KEY_PREFIX: &str = "fact_extraction.last_run_at";
+const FACT_EXTRACTION_COMPARE_FINALIZE_COOLDOWN_SECONDS: i64 = 120;
+
+fn build_fact_extraction_last_hash_key(session_id: &str) -> String {
+    format!("{}.{}", FACT_EXTRACTION_LAST_HASH_KEY_PREFIX, session_id)
+}
+
+fn build_fact_extraction_last_run_at_key(session_id: &str) -> String {
+    format!("{}.{}", FACT_EXTRACTION_LAST_RUN_AT_KEY_PREFIX, session_id)
+}
+
+fn hash_fact_extraction_conversation_text(conversation_text: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(conversation_text.trim().as_bytes());
+    hex::encode(hasher.finalize())
+}
 
 pub(crate) async fn sync_compare_finalize_memories(
     app_state: AppState,
@@ -17,8 +37,12 @@ pub(crate) async fn sync_compare_finalize_memories(
     let fact_app_state = app_state.clone();
     let fact_session_id = response.session_id.clone();
     tauri::async_runtime::spawn(async move {
-        if let Err(err) =
-            refresh_session_auto_extracted_facts(fact_app_state, &fact_session_id).await
+        if let Err(err) = refresh_session_auto_extracted_facts_with_source(
+            fact_app_state,
+            &fact_session_id,
+            "compare_finalize",
+        )
+        .await
         {
             log::warn!(
                 "compare finalize fact rebuild failed for session {}: {}",
@@ -35,9 +59,44 @@ pub(crate) async fn refresh_session_auto_extracted_facts(
     app_state: AppState,
     session_id: &str,
 ) -> Result<FactExtractionOutcome, String> {
+    refresh_session_auto_extracted_facts_with_source(app_state, session_id, "new_chat").await
+}
+
+async fn refresh_session_auto_extracted_facts_with_source(
+    app_state: AppState,
+    session_id: &str,
+    trigger_source: &str,
+) -> Result<FactExtractionOutcome, String> {
     let normalized_session_id = session_id.trim().to_string();
     if normalized_session_id.is_empty() {
         return Ok(FactExtractionOutcome::Skipped);
+    }
+    let normalized_trigger_source = trigger_source.trim().to_string();
+    let last_run_at_key = build_fact_extraction_last_run_at_key(&normalized_session_id);
+    if normalized_trigger_source == "compare_finalize" {
+        let existing_last_run_at = app_state
+            .mcp
+            .store
+            .get_desktop_config(&last_run_at_key)
+            .await
+            .map_err(|err| err.to_string())?;
+        let now_epoch = now_unix_epoch().map_err(|err| err.to_string())?;
+        if let Some(last_run_at) = existing_last_run_at
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .and_then(|value| value.parse::<i64>().ok())
+        {
+            if now_epoch.saturating_sub(last_run_at)
+                < FACT_EXTRACTION_COMPARE_FINALIZE_COOLDOWN_SECONDS
+            {
+                log::info!(
+                    "fact extraction refresh skipped compare_finalize cooldown session={}",
+                    normalized_session_id
+                );
+                return Ok(FactExtractionOutcome::Skipped);
+            }
+        }
     }
 
     let runtime_window = app_state
@@ -54,6 +113,26 @@ pub(crate) async fn refresh_session_auto_extracted_facts(
     let Some(conversation_text) = build_fact_rebuild_conversation_text(&runtime_window) else {
         return Ok(FactExtractionOutcome::Skipped);
     };
+    let conversation_hash = hash_fact_extraction_conversation_text(&conversation_text);
+    let hash_key = build_fact_extraction_last_hash_key(&normalized_session_id);
+    let existing_hash = app_state
+        .mcp
+        .store
+        .get_desktop_config(&hash_key)
+        .await
+        .map_err(|err| err.to_string())?;
+    if existing_hash
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        == Some(conversation_hash.as_str())
+    {
+        log::info!(
+            "fact extraction refresh skipped unchanged session={}",
+            normalized_session_id
+        );
+        return Ok(FactExtractionOutcome::Skipped);
+    }
 
     let deleted = clear_session_auto_extraction_memories(
         app_state.memory.service.as_ref(),
@@ -68,14 +147,44 @@ pub(crate) async fn refresh_session_auto_extracted_facts(
         );
     }
 
-    crate::modules::memory::fact_extractor::extract_and_store_facts_with_secretary_model(
-        &app_state,
-        app_state.memory.service.clone(),
-        &conversation_text,
-        &normalized_session_id,
-        runtime_window.assistant_id.as_deref(),
-    )
-    .await
+    let outcome =
+        crate::modules::memory::fact_extractor::extract_and_store_facts_with_secretary_model(
+            &app_state,
+            app_state.memory.service.clone(),
+            &conversation_text,
+            &normalized_session_id,
+            runtime_window.assistant_id.as_deref(),
+        )
+        .await?;
+
+    if let Err(err) = app_state
+        .mcp
+        .store
+        .set_desktop_config(&hash_key, &conversation_hash)
+        .await
+    {
+        log::warn!(
+            "fact extraction hash marker write failed session={} err={}",
+            normalized_session_id,
+            err
+        );
+    }
+    if let Ok(now_epoch) = now_unix_epoch().map_err(|err| err.to_string()) {
+        if let Err(err) = app_state
+            .mcp
+            .store
+            .set_desktop_config(&last_run_at_key, &now_epoch.to_string())
+            .await
+        {
+            log::warn!(
+                "fact extraction run marker write failed session={} err={}",
+                normalized_session_id,
+                err
+            );
+        }
+    }
+
+    Ok(outcome)
 }
 
 pub(crate) async fn clear_session_auto_extraction_memories(
@@ -145,16 +254,13 @@ fn build_fact_rebuild_conversation_text(
     }
 
     for message in &runtime_window.messages {
+        if !message.role.trim().eq_ignore_ascii_case("user") {
+            continue;
+        }
         let Some(content) = history_message_text(message.content.as_ref()) else {
             continue;
         };
-        let role = match message.role.trim().to_ascii_lowercase().as_str() {
-            "user" => "User",
-            "assistant" => "Assistant",
-            "system" => "System",
-            _ => "Message",
-        };
-        sections.push(format!("{}: {}", role, content));
+        sections.push(format!("User: {}", content));
     }
 
     let conversation = sections.join("\n").trim().to_string();
@@ -271,7 +377,7 @@ mod tests {
     }
 
     #[test]
-    fn build_fact_rebuild_conversation_text_uses_summary_and_canonical_messages() {
+    fn build_fact_rebuild_conversation_text_uses_summary_and_user_messages() {
         let runtime_window = LocalConversationRuntimeWindow {
             session_id: "session-1".to_string(),
             assistant_id: Some("assistant-1".to_string()),
@@ -304,6 +410,6 @@ mod tests {
 
         assert!(conversation.contains("Summary: User is building desktop compare mode."));
         assert!(conversation.contains("User: Please compare these answers."));
-        assert!(conversation.contains("Assistant: Winner answer kept in canonical history."));
+        assert!(!conversation.contains("Assistant: Winner answer kept in canonical history."));
     }
 }

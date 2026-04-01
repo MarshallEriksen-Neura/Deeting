@@ -82,7 +82,16 @@ const toGatewayLogDTO = (item: Awaited<ReturnType<typeof fetchAdminGatewayLogs>>
     cost_upstream: item.cost_upstream,
     cost_user: item.cost_user,
     is_cached: item.is_cached,
+    cached_tokens: item.cached_tokens ?? null,
+    cache_read_input_tokens: item.cache_read_input_tokens ?? null,
+    cache_write_input_tokens: item.cache_write_input_tokens ?? null,
+    cache_source: item.cache_source ?? null,
+    usage_source: item.usage_source ?? null,
     error_code: item.error_code ?? null,
+    meta:
+      item.meta && typeof item.meta === "object"
+        ? (item.meta as Record<string, unknown>)
+        : null,
     created_at: item.created_at,
   }) satisfies GatewayLogDTO
 

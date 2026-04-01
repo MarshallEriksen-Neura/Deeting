@@ -1,4 +1,5 @@
 import {
+  __resetLocalDashboardCacheForTests,
   fetchDashboardStats,
   fetchProviderHealth,
   fetchRecentErrors,
@@ -42,6 +43,7 @@ describe("dashboard apis", () => {
     jest.setSystemTime(new Date("2026-03-04T10:00:00.000Z"))
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
+    __resetLocalDashboardCacheForTests()
   })
 
   afterEach(() => {
@@ -50,6 +52,7 @@ describe("dashboard apis", () => {
     mockInvoke.mockReset()
     mockFetchAdminGatewayLogs.mockReset()
     mockFetchAdminGatewayLogStats.mockReset()
+    __resetLocalDashboardCacheForTests()
     process.env.NEXT_PUBLIC_IS_TAURI = originalTauriFlag
     delete windowWithTauri.__TAURI__
     delete windowWithTauri.__TAURI_INTERNALS__
@@ -146,6 +149,9 @@ describe("dashboard apis", () => {
           cost_upstream: 0.1,
           cost_user: 0.1,
           is_cached: false,
+          cached_tokens: null,
+          cache_read_input_tokens: null,
+          cache_source: null,
           error_code: null,
           created_at: "2026-03-04T09:30:00.000Z",
         },
@@ -160,6 +166,9 @@ describe("dashboard apis", () => {
           cost_upstream: 0.08,
           cost_user: 0.04,
           is_cached: true,
+          cached_tokens: 24,
+          cache_read_input_tokens: 24,
+          cache_source: "provider_reported",
           error_code: null,
           created_at: "2026-03-04T08:30:00.000Z",
         },
@@ -173,7 +182,7 @@ describe("dashboard apis", () => {
 
     expect(throughput.timeline).toHaveLength(24)
     expect(throughput.totalInput).toBe(200)
-    expect(routerStats.cacheHitRate).toBe(50)
+    expect(routerStats.cacheHitRate).toBe(30)
     expect(routerStats.costSavings).toBe(0.04)
     expect(routerStats.avgSpeedup).toBeGreaterThan(0)
   })
@@ -212,18 +221,10 @@ describe("dashboard apis", () => {
         },
       ],
     })
-    mockInvoke
-      .mockResolvedValueOnce([
-        { id: "inst-1", name: "OpenAI", is_enabled: true, priority: 10 },
-        { id: "inst-2", name: "Disabled Provider", is_enabled: false, priority: 20 },
-      ] as never)
-      .mockResolvedValueOnce([
-        {
-          id: "model-1",
-          is_active: true,
-          extra_meta: { latency_ms: 320 },
-        },
-      ] as never)
+    mockInvoke.mockResolvedValueOnce([
+      { id: "inst-1", name: "OpenAI", status: "active", priority: 10, latency: 320 },
+      { id: "inst-2", name: "Disabled Provider", status: "down", priority: 20, latency: 0 },
+    ] as never)
 
     const [providers, errors] = await Promise.all([
       fetchProviderHealth(),
@@ -235,10 +236,7 @@ describe("dashboard apis", () => {
     expect(providers[1]?.status).toBe("down")
     expect(errors).toHaveLength(1)
     expect(errors[0]?.errorCode).toBe("BAD_GATEWAY")
-    expect(mockInvoke).toHaveBeenCalledWith("list_local_provider_instances", undefined)
-    expect(mockInvoke).toHaveBeenCalledWith("list_local_provider_models", {
-      instanceId: "inst-1",
-    })
+    expect(mockInvoke).toHaveBeenCalledWith("list_local_provider_health", undefined)
   })
 
   it("falls back to http request outside tauri runtime", async () => {

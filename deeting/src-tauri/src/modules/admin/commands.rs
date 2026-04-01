@@ -130,7 +130,7 @@ pub async fn create_local_gateway_log(
             payload.cost_user,
             payload.is_cached,
             payload.error_code.as_deref(),
-            None,
+            payload.meta.as_ref(),
         )
         .await
         .map_err(to_string)

@@ -550,7 +550,23 @@ async fn gateway_log_queries_filter_by_dimensions_and_stats() {
             0.02,
             true,
             None,
-            None,
+            Some(&json!({
+                "usage_normalized": {
+                    "usage_source": "provider_reported",
+                    "cache_source": "provider_reported",
+                    "request_cache_hit": true,
+                    "cached_tokens": 12,
+                    "cache_read_input_tokens": 12,
+                    "cache_write_input_tokens": 0
+                },
+                "provider_usage_raw": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 20,
+                    "prompt_tokens_details": {
+                        "cached_tokens": 12
+                    }
+                }
+            })),
         )
         .await
         .expect("insert cached success log");
@@ -596,6 +612,18 @@ async fn gateway_log_queries_filter_by_dimensions_and_stats() {
     assert_eq!(filtered.items[0].preset_id.as_deref(), Some("preset-a"));
     assert_eq!(filtered.items[0].total_tokens, 30);
     assert_eq!(filtered.items[0].cost_upstream, 0.015);
+    assert_eq!(filtered.items[0].cached_tokens, Some(12));
+    assert_eq!(filtered.items[0].cache_read_input_tokens, Some(12));
+    assert_eq!(filtered.items[0].cache_write_input_tokens, Some(0));
+    assert_eq!(
+        filtered.items[0].cache_source.as_deref(),
+        Some("provider_reported")
+    );
+    assert_eq!(
+        filtered.items[0].usage_source.as_deref(),
+        Some("provider_reported")
+    );
+    assert!(filtered.items[0].meta.is_some());
 
     let stats = store
         .get_local_gateway_log_stats(LocalGatewayLogQuery {

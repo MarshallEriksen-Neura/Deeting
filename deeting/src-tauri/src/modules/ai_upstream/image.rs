@@ -4,8 +4,9 @@ use uuid::Uuid;
 
 use crate::modules::ai_upstream::chat::{extract_upstream_error_message, truncate_upstream_body};
 use crate::modules::ai_upstream::gateway_log_recorder::{
-    extract_billing_amount_from_response, extract_cache_hit_from_response,
-    extract_error_code_from_response, extract_ttft_ms_from_response, record_gateway_log,
+    build_gateway_log_meta, extract_billing_amount_from_response,
+    extract_cache_details_from_response, extract_error_code_from_response,
+    extract_ttft_ms_from_response, extract_usage_details_from_response, record_gateway_log,
     GatewayLogEntry,
 };
 use crate::modules::image_generation::types::LocalImageGenerationTaskRecord;
@@ -114,6 +115,15 @@ pub(crate) async fn request_provider_image_generation(
         log::warn!("failed to record bandit feedback: {}", err);
     }
     if !success {
+        let raw_usage = raw_json
+            .as_ref()
+            .map(extract_usage_details_from_response)
+            .unwrap_or_default();
+        let cache_details = extract_cache_details_from_response(
+            &response_headers,
+            raw_json.as_ref(),
+            Some(&raw_usage),
+        );
         record_gateway_log(
             app_state.mcp.store.clone(),
             GatewayLogEntry {
@@ -127,7 +137,16 @@ pub(crate) async fn request_provider_image_generation(
                 duration_ms: latency_ms as i64,
                 retry_count,
                 upstream_url: Some(prepared.display_url()),
+                input_tokens: raw_usage.input_tokens,
+                output_tokens: raw_usage.output_tokens,
+                total_tokens: raw_usage.total_tokens,
+                is_cached: cache_details.is_cached,
                 error_code: extract_error_code_from_response(raw_json.as_ref()),
+                meta: build_gateway_log_meta(
+                    &raw_usage,
+                    raw_usage.has_usage_details().then_some("provider_reported"),
+                    &cache_details,
+                ),
                 ..Default::default()
             },
         );
@@ -144,6 +163,12 @@ pub(crate) async fn request_provider_image_generation(
             truncate_upstream_body(raw_text.as_str(), 300)
         )
     })?;
+    let usage_details = extract_usage_details_from_response(&submit_payload);
+    let cache_details = extract_cache_details_from_response(
+        &response_headers,
+        Some(&submit_payload),
+        Some(&usage_details),
+    );
 
     record_gateway_log(
         app_state.mcp.store.clone(),
@@ -158,8 +183,18 @@ pub(crate) async fn request_provider_image_generation(
             ttft_ms: extract_ttft_ms_from_response(&submit_payload),
             retry_count,
             upstream_url: Some(prepared.display_url()),
+            input_tokens: usage_details.input_tokens,
+            output_tokens: usage_details.output_tokens,
+            total_tokens: usage_details.total_tokens,
             cost_user: extract_billing_amount_from_response(&submit_payload).unwrap_or(0.0),
-            is_cached: extract_cache_hit_from_response(&response_headers, Some(&submit_payload)),
+            is_cached: cache_details.is_cached,
+            meta: build_gateway_log_meta(
+                &usage_details,
+                usage_details
+                    .has_usage_details()
+                    .then_some("provider_reported"),
+                &cache_details,
+            ),
             ..Default::default()
         },
     );

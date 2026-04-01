@@ -39,6 +39,10 @@ export function SmartRouterValueCard({
 
   const cacheHitRate = stats?.cacheHitRate || 0
   const costSavings = stats?.costSavings || 0
+  const isDesktopRuntime =
+    process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
+    typeof window !== "undefined" &&
+    ("__TAURI__" in window || "__TAURI_INTERNALS__" in window)
 
   return (
     <GlassCard className="relative h-full overflow-hidden">
@@ -88,17 +92,19 @@ export function SmartRouterValueCard({
           </div>
 
           {/* Benchmark indicator */}
-          <div className="mt-2 flex items-center gap-1.5 text-xs text-[var(--muted)]">
-            <div className="flex items-center gap-1">
-              <div className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              <span>{t("industry")}: 20-30%</span>
+          {!isDesktopRuntime && (
+            <div className="mt-2 flex items-center gap-1.5 text-xs text-[var(--muted)]">
+              <div className="flex items-center gap-1">
+                <div className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                <span>{t("industry")}: 20-30%</span>
+              </div>
+              {cacheHitRate > 30 && (
+                <span className="ml-auto font-semibold text-emerald-400">
+                  {t("outperforming")}
+                </span>
+              )}
             </div>
-            {cacheHitRate > 30 && (
-              <span className="ml-auto font-semibold text-emerald-400">
-                {t("outperforming")}
-              </span>
-            )}
-          </div>
+          )}
         </div>
 
         {/* Divider */}

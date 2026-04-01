@@ -789,7 +789,13 @@ const GatewayLogItemSchema = z.object({
   cost_upstream: z.number().default(0),
   cost_user: z.number().default(0),
   is_cached: z.boolean().default(false),
+  cached_tokens: z.number().int().nonnegative().nullable().optional(),
+  cache_read_input_tokens: z.number().int().nonnegative().nullable().optional(),
+  cache_write_input_tokens: z.number().int().nonnegative().nullable().optional(),
+  cache_source: z.string().nullable().optional(),
+  usage_source: z.string().nullable().optional(),
   error_code: z.string().nullable().optional(),
+  meta: z.unknown().nullable().optional(),
   created_at: z.string(),
 }).passthrough()
 

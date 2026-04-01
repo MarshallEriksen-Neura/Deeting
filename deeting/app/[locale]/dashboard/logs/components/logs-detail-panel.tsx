@@ -41,9 +41,15 @@ export function LogsDetailPanel({ log }: LogsDetailPanelProps) {
       cost_user: log.cost_user,
       cost_upstream: log.cost_upstream,
       is_cached: log.is_cached,
+      cached_tokens: log.cached_tokens,
+      cache_read_input_tokens: log.cache_read_input_tokens,
+      cache_write_input_tokens: log.cache_write_input_tokens,
+      cache_source: log.cache_source,
+      usage_source: log.usage_source,
       error_code: log.error_code,
       user_id: log.user_id,
       preset_id: log.preset_id,
+      meta: log.meta,
       created_at: log.created_at,
     }
 

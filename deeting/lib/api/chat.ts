@@ -258,6 +258,13 @@ async function streamViaSse(
                 prompt_tokens?: number
                 completion_tokens?: number
                 total_tokens?: number
+                cached_tokens?: number
+                cache_read_input_tokens?: number
+                cache_creation_input_tokens?: number
+                cache_write_input_tokens?: number
+                prompt_tokens_details?: {
+                  cached_tokens?: number
+                }
               }
               trace_id?: string
               duration_ms?: number
@@ -275,6 +282,38 @@ async function streamViaSse(
 
         if (parsedMessage?.usage && process.env.NEXT_PUBLIC_IS_TAURI === "true") {
           const usage = parsedMessage.usage
+          const cachedTokens =
+            usage.prompt_tokens_details?.cached_tokens ??
+            usage.cached_tokens ??
+            usage.cache_read_input_tokens
+          const cacheReadInputTokens =
+            usage.cache_read_input_tokens ?? usage.prompt_tokens_details?.cached_tokens
+          const cacheWriteInputTokens =
+            usage.cache_creation_input_tokens ?? usage.cache_write_input_tokens
+          const requestCacheHit =
+            typeof cachedTokens === "number" ? cachedTokens > 0 : false
+          const meta =
+            typeof cachedTokens === "number" ||
+            typeof cacheReadInputTokens === "number" ||
+            typeof cacheWriteInputTokens === "number"
+              ? {
+                  usage_normalized: {
+                    usage_source: "provider_reported",
+                    request_cache_hit: requestCacheHit,
+                    cache_source: requestCacheHit ? "provider_reported" : "unknown",
+                    ...(typeof cachedTokens === "number"
+                      ? { cached_tokens: cachedTokens }
+                      : {}),
+                    ...(typeof cacheReadInputTokens === "number"
+                      ? { cache_read_input_tokens: cacheReadInputTokens }
+                      : {}),
+                    ...(typeof cacheWriteInputTokens === "number"
+                      ? { cache_write_input_tokens: cacheWriteInputTokens }
+                      : {}),
+                  },
+                  provider_usage_raw: usage,
+                }
+              : undefined
           invokeTauri("create_local_gateway_log", {
             payload: {
               id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -291,8 +330,9 @@ async function streamViaSse(
               total_tokens: usage.total_tokens || 0,
               cost_upstream: parsedMessage.billing?.amount || 0,
               cost_user: parsedMessage.billing?.amount || 0,
-              is_cached: false,
+              is_cached: requestCacheHit,
               error_code: null,
+              meta,
               created_at: new Date().toISOString(),
             },
           }).catch((error) => console.warn("[ChatAPI] Local log backfill failed", error))

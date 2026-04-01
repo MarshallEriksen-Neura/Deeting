@@ -6,6 +6,7 @@ import { useLocale, useTranslations } from "next-intl"
 
 import { GlassButton } from "@/components/ui/glass-button"
 import { GlassStatCard } from "@/components/ui/glass-card"
+import { computePreferredDesktopCacheRate } from "@/lib/gateway-log/cache-metrics"
 import { useGatewayLogs, useGatewayLogStats, type GatewayLogQuery } from "@/lib/swr"
 
 import { LogsDetailPanel } from "./logs-detail-panel"
@@ -86,15 +87,17 @@ export function LogsClient() {
   const summary = useMemo(() => {
     const pageTotal = items.length
     const failed = items.filter((item) => isFailedRequest(item.status_code, item.error_code)).length
-    const cacheHits = items.filter((item) => item.is_cached).length
     const total = statsData?.total ?? pageTotal
     const totalCost = statsData?.total_cost_user ?? items.reduce((acc, item) => acc + item.cost_user, 0)
+    const cacheHitRate = computePreferredDesktopCacheRate(
+      items,
+      statsData?.cache_hit_rate
+    )
 
     return {
       total,
       errorRate: statsData != null ? 100 - statsData.success_rate : total === 0 ? 0 : (failed / total) * 100,
-      cacheHitRate:
-        statsData != null ? statsData.cache_hit_rate : total === 0 ? 0 : (cacheHits / total) * 100,
+      cacheHitRate,
       totalCost,
     }
   }, [items, statsData])
