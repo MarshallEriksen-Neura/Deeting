@@ -18,8 +18,58 @@ export const DESKTOP_CONFIG_KEYS = {
   workerWorkflowRouting: "workflow.route_worker_through_workflow",
   /** Persisted after login so desktop can call credits proxy with Authorization. */
   authToken: "auth.token",
+  desktopProxyMode: "network.proxy.mode",
+  desktopProxyUrl: "network.proxy.url",
   scoutBaseUrl: "scout.base_url",
 } as const;
+
+export type DesktopProxyMode = "none" | "system" | "custom";
+
+export interface DesktopNetworkProxySettings {
+  mode: DesktopProxyMode;
+  url: string;
+}
+
+export function normalizeDesktopProxyMode(
+  value: string | null | undefined,
+): DesktopProxyMode {
+  switch (value?.trim().toLowerCase()) {
+    case "none":
+      return "none";
+    case "custom":
+      return "custom";
+    default:
+      return "system";
+  }
+}
+
+export async function getDesktopNetworkProxySettings(): Promise<DesktopNetworkProxySettings> {
+  if (!isTauriRuntime()) {
+    return { mode: "system", url: "" };
+  }
+  const [mode, url] = await Promise.all([
+    getDesktopConfig(DESKTOP_CONFIG_KEYS.desktopProxyMode),
+    getDesktopConfig(DESKTOP_CONFIG_KEYS.desktopProxyUrl),
+  ]);
+  return {
+    mode: normalizeDesktopProxyMode(mode),
+    url: url?.trim() ?? "",
+  };
+}
+
+export async function setDesktopNetworkProxySettings(
+  settings: DesktopNetworkProxySettings,
+): Promise<void> {
+  if (!isTauriRuntime()) return;
+  const normalizedMode = normalizeDesktopProxyMode(settings.mode);
+  await Promise.all([
+    setDesktopConfig(DESKTOP_CONFIG_KEYS.desktopProxyMode, normalizedMode),
+    setDesktopConfig(
+      DESKTOP_CONFIG_KEYS.desktopProxyUrl,
+      settings.url.trim(),
+    ),
+  ]);
+}
 
 export async function getDesktopScoutBaseUrl(): Promise<string> {
   if (!isTauriRuntime()) return "";

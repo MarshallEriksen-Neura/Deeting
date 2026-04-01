@@ -12,6 +12,7 @@ __pycache__/
 .specify/
 .uv-cache/
 .mcp.json
+.firecrawl/
 opencode.json
 target-codex-warnings/
 .tmp/

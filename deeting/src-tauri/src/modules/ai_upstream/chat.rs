@@ -383,13 +383,14 @@ pub(crate) async fn request_provider_chat_completion(
         tools.as_ref(),
         trace_id,
     )?;
-    let call_start = std::time::Instant::now();
-    let (response, retry_count) = send_prepared_json_request_with_retry(
-        &reqwest::Client::new(),
-        &prepared,
-        UpstreamRetryPolicy::default(),
+    let client = crate::modules::desktop_config::network::build_proxy_aware_reqwest_client(
+        app_state.mcp.store.as_ref(),
     )
     .await?;
+    let call_start = std::time::Instant::now();
+    let (response, retry_count) =
+        send_prepared_json_request_with_retry(&client, &prepared, UpstreamRetryPolicy::default())
+            .await?;
     let status = response.status;
     let response_headers = response.headers.clone();
     let latency_ms = call_start.elapsed().as_millis() as f64;

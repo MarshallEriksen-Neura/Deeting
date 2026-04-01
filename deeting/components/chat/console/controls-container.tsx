@@ -29,6 +29,7 @@ import { DESKTOP_CONFIG_KEYS, getDesktopConfig, setDesktopConfig } from '@/lib/a
 import { resolveLeadingTaskAgentMention } from '@/hooks/chat/task-agent-mention';
 import { useBrowserModeStore } from '@/store/browser-mode-store';
 import { useWorkspaceStore } from '@/store/workspace-store';
+import { deriveAssistantActivityState } from '@/lib/chat/assistant-activity';
 
 function parseDesktopConfigBool(raw: string | null | undefined) {
   const normalized = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
@@ -69,6 +70,7 @@ function ControlsContainer() {
   const {
     input,
     attachments,
+    messages,
     selectedKnowledgeFileIds,
     setInput,
     setMessages,
@@ -89,6 +91,7 @@ function ControlsContainer() {
     useShallow((state) => ({
       input: state.input,
       attachments: state.attachments,
+      messages: state.messages,
       selectedKnowledgeFileIds: state.selectedKnowledgeFileIds,
       setInput: state.setInput,
       setMessages: state.setMessages,
@@ -134,13 +137,25 @@ function ControlsContainer() {
     () => Boolean(input.trim().length > 0 || attachments.length > 0),
     [input, attachments.length]
   );
+  const latestAssistantActivity = useMemo(() => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message.role !== 'assistant') continue;
+      return deriveAssistantActivityState(message.blocks);
+    }
+    return deriveAssistantActivityState([]);
+  }, [messages]);
+  const isApprovalFlowActive = useMemo(
+    () => !isLoading && latestAssistantActivity.isActive,
+    [isLoading, latestAssistantActivity.isActive]
+  );
   const canSend = useMemo(
-    () => Boolean(models.length > 0 && hasComposerContent && !isLoading),
-    [models.length, hasComposerContent, isLoading]
+    () => Boolean(models.length > 0 && hasComposerContent && !isLoading && !isApprovalFlowActive),
+    [models.length, hasComposerContent, isLoading, isApprovalFlowActive]
   );
   const canQueuePendingTakeover = useMemo(
-    () => Boolean(models.length > 0 && hasComposerContent && isLoading),
-    [models.length, hasComposerContent, isLoading]
+    () => Boolean(models.length > 0 && hasComposerContent && (isLoading || isApprovalFlowActive)),
+    [models.length, hasComposerContent, isLoading, isApprovalFlowActive]
   );
   const selectedModel = useMemo(
     () =>
@@ -154,6 +169,9 @@ function ControlsContainer() {
   }, [knowledgeFiles]);
 
   const isGenerating = isLoading;
+  const isApprovalPending = latestAssistantActivity.statusCode === 'approval.required';
+  const isApprovalExecuting = latestAssistantActivity.statusCode === 'approval.executing';
+  const isApprovalBusy = isApprovalFlowActive && !hasComposerContent;
   const canContinueGeneration = useMemo(
     () =>
       !isGenerating &&
@@ -162,6 +180,45 @@ function ControlsContainer() {
       attachments.length === 0,
     [isGenerating, hasInterruptedGeneration, input, attachments.length]
   );
+  const sendButtonDisabled = useMemo(() => {
+    if (isGenerating) return false;
+    if (canQueuePendingTakeover) return false;
+    if (canContinueGeneration) return false;
+    if (isApprovalBusy) return true;
+    return !canSend;
+  }, [
+    canContinueGeneration,
+    canQueuePendingTakeover,
+    canSend,
+    isApprovalBusy,
+    isGenerating,
+  ]);
+  const sendButtonAriaLabel = useMemo(() => {
+    if (isGenerating) {
+      return hasComposerContent ? t("controls.queueTakeover") : t("controls.stop");
+    }
+    if (canQueuePendingTakeover) {
+      return t("controls.queueTakeover");
+    }
+    if (isApprovalPending) {
+      return t("approvalDialog.title");
+    }
+    if (isApprovalExecuting) {
+      return t("approvalDialog.actions.approving");
+    }
+    if (canContinueGeneration) {
+      return t("controls.continue");
+    }
+    return t("controls.send");
+  }, [
+    canContinueGeneration,
+    canQueuePendingTakeover,
+    hasComposerContent,
+    isApprovalExecuting,
+    isApprovalPending,
+    isGenerating,
+    t,
+  ]);
   
   // 缓存事件处理函数
   const handleParamsOpenChange = useCallback((open: boolean) => {
@@ -315,8 +372,11 @@ function ControlsContainer() {
     t,
   ]);
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
+      if (e.nativeEvent.isComposing || e.keyCode === 229) {
+        return;
+      }
       e.preventDefault();
       void handleSend();
     }
@@ -802,13 +862,13 @@ function ControlsContainer() {
           <Button
             type="button"
             onClick={handleSendOrCancel}
-            disabled={isGenerating ? false : canContinueGeneration ? false : !canSend}
+            disabled={sendButtonDisabled}
             className={`
               min-h-[44px] min-w-[44px] size-11 rounded-full bg-slate-900 text-white dark:bg-white/10 dark:text-white
               hover:bg-slate-800 dark:hover:bg-white dark:hover:text-black transition-all duration-300 active:scale-95 shadow-sm
-              ${isGenerating || canContinueGeneration ? 'cursor-pointer' : !canSend ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+              ${isGenerating || canQueuePendingTakeover || canContinueGeneration ? 'cursor-pointer' : isApprovalBusy ? 'opacity-80 cursor-wait' : !canSend ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
             `}
-            aria-label={isGenerating ? (hasComposerContent ? t("controls.queueTakeover") : t("controls.stop")) : canContinueGeneration ? t("controls.continue") : t("controls.send")}
+            aria-label={sendButtonAriaLabel}
           >
             {isGenerating ? (
               hasComposerContent ? (
@@ -816,6 +876,10 @@ function ControlsContainer() {
               ) : (
                 <Square className="w-5 h-5" />
               )
+            ) : canQueuePendingTakeover ? (
+              <ArrowUp className="w-5 h-5" />
+            ) : isApprovalBusy ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
             ) : canContinueGeneration ? (
               <Play className="w-5 h-5" />
             ) : (

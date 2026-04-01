@@ -10,7 +10,6 @@ use uuid::Uuid;
 
 #[derive(Clone)]
 struct PlatformEmbeddingProxyConfig {
-    #[allow(dead_code)]
     mcp_store: Arc<crate::modules::mcp::store::McpStore>,
     #[allow(dead_code)]
     cloud_base_url: Arc<RwLock<String>>,
@@ -47,15 +46,19 @@ struct PendingEmbeddingChunk {
 pub struct EmbeddingService {
     store: Arc<ProviderStore>,
     client: reqwest::Client,
-    #[allow(dead_code)]
+    mcp_store: Option<Arc<crate::modules::mcp::store::McpStore>>,
     platform_proxy: Option<PlatformEmbeddingProxyConfig>,
 }
 
 impl EmbeddingService {
-    pub fn new(store: Arc<ProviderStore>) -> Self {
+    pub fn new(
+        store: Arc<ProviderStore>,
+        mcp_store: Option<Arc<crate::modules::mcp::store::McpStore>>,
+    ) -> Self {
         Self {
             store,
             client: reqwest::Client::new(),
+            mcp_store,
             platform_proxy: None,
         }
     }
@@ -68,10 +71,24 @@ impl EmbeddingService {
         Self {
             store,
             client: reqwest::Client::new(),
+            mcp_store: Some(mcp_store.clone()),
             platform_proxy: Some(PlatformEmbeddingProxyConfig {
                 mcp_store,
                 cloud_base_url,
             }),
+        }
+    }
+
+    async fn upstream_client(&self) -> Result<reqwest::Client, ProviderError> {
+        match self.mcp_store.as_ref() {
+            Some(store) => {
+                crate::modules::desktop_config::network::build_proxy_aware_reqwest_client(
+                    store.as_ref(),
+                )
+                .await
+                .map_err(ProviderError::Network)
+            }
+            None => Ok(self.client.clone()),
         }
     }
 
@@ -191,9 +208,9 @@ impl EmbeddingService {
         )
         .map_err(ProviderError::Network)?;
 
+        let client = self.upstream_client().await?;
         let response = crate::modules::providers::request_runtime::send_prepared_json_request(
-            &self.client,
-            &prepared,
+            &client, &prepared,
         )
         .await
         .map_err(ProviderError::Network)?;
@@ -245,8 +262,8 @@ impl EmbeddingService {
                     "Authentication required for platform embedding models".to_string(),
                 )
             })?;
-        let response = self
-            .client
+        let client = self.upstream_client().await?;
+        let response = client
             .post(url)
             .header("Content-Type", "application/json")
             .header("Authorization", format!("Bearer {}", auth_token))
@@ -751,7 +768,7 @@ mod tests {
             .await
             .expect("select local embedding model");
 
-        EmbeddingService::new(provider_store)
+        EmbeddingService::new(provider_store, None)
     }
 
     fn mock_model(model_id: &str, capabilities: &[&str], is_active: bool) -> ProviderModel {

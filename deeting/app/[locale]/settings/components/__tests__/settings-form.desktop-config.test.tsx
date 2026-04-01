@@ -2,6 +2,10 @@ import React from "react"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { SettingsForm } from "../settings-form"
 
+const mockGetDesktopNetworkProxySettings = jest.fn(async () => ({
+  mode: "system" as const,
+  url: "",
+}))
 const mockGetDesktopScoutBaseUrl = jest.fn(async () => "http://scout:8001")
 const mockFetchDesktopObjectStorageConfig = jest.fn(async () => ({
   provider: "cloudflare_r2_s3",
@@ -29,8 +33,11 @@ jest.mock("@/lib/swr/use-embedding-settings", () => ({
 }))
 
 jest.mock("@/lib/api/desktop-config", () => ({
+  getDesktopNetworkProxySettings: () => mockGetDesktopNetworkProxySettings(),
+  setDesktopNetworkProxySettings: jest.fn(),
   getDesktopScoutBaseUrl: () => mockGetDesktopScoutBaseUrl(),
   setDesktopScoutBaseUrl: jest.fn(),
+  normalizeDesktopProxyMode: (value: string) => value,
 }))
 
 jest.mock("@/lib/api/desktop-object-storage", () => ({
@@ -64,7 +71,9 @@ jest.mock("../settings-lazy", () => ({
     <div data-testid="browser-agent-panel">browser panel</div>
   ),
   DeferredDesktopSandboxSettingsCard: () => null,
+  DeferredDesktopVersionManagementCard: () => null,
   DeferredDesktopObjectStorageSettingsCard: () => null,
+  DeferredDesktopNetworkSettingsCard: () => null,
   DeferredDesktopScoutSettingsCard: () => null,
 }))
 
@@ -102,6 +111,7 @@ describe("SettingsForm desktop config loading", () => {
     process.env.NEXT_PUBLIC_ENABLE_BROWSER_AGENT_PANEL
 
   beforeEach(() => {
+    mockGetDesktopNetworkProxySettings.mockClear()
     mockGetDesktopScoutBaseUrl.mockClear()
     mockFetchDesktopObjectStorageConfig.mockClear()
     process.env.NODE_ENV = originalNodeEnv
@@ -116,12 +126,14 @@ describe("SettingsForm desktop config loading", () => {
   it("loads desktop scout and storage settings only after their sections are opened", async () => {
     render(<SettingsForm isAuthenticated isTauriRuntime />)
 
+    expect(mockGetDesktopNetworkProxySettings).not.toHaveBeenCalled()
     expect(mockGetDesktopScoutBaseUrl).not.toHaveBeenCalled()
     expect(mockFetchDesktopObjectStorageConfig).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole("button", { name: "relay" }))
 
     await waitFor(() => {
+      expect(mockGetDesktopNetworkProxySettings).toHaveBeenCalledTimes(1)
       expect(mockGetDesktopScoutBaseUrl).toHaveBeenCalledTimes(1)
     })
     expect(mockFetchDesktopObjectStorageConfig).not.toHaveBeenCalled()

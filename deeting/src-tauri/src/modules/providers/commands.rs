@@ -332,11 +332,20 @@ pub async fn list_local_provider_health(
 
 #[tauri::command]
 pub async fn verify_local_provider(
+    state: State<'_, AppState>,
+    payload: ProviderVerifyRequest,
+) -> Result<ProviderVerifyResponse, String> {
+    verify_local_provider_impl(&state, payload).await
+}
+
+pub(crate) async fn verify_local_provider_impl(
+    state: &AppState,
     payload: ProviderVerifyRequest,
 ) -> Result<ProviderVerifyResponse, String> {
     let protocol = normalize_protocol(payload.protocol.as_deref());
     let started = Instant::now();
     let result = fetch_model_ids_from_upstream(
+        &state,
         &payload.base_url,
         Some(payload.api_key.as_str()),
         Some(protocol.as_str()),
@@ -374,6 +383,7 @@ pub async fn sync_local_provider_models(
         .ok_or_else(|| "instance not found".to_string())?;
 
     let result = fetch_model_ids_from_upstream(
+        &state,
         &connection.base_url,
         connection.secret_key.as_deref(),
         connection.protocol.as_deref(),
@@ -537,13 +547,15 @@ pub async fn test_local_provider_model(
         None,
         None,
     )?;
-
-    let started = Instant::now();
-    let response = crate::modules::providers::request_runtime::send_prepared_json_request(
-        &reqwest::Client::new(),
-        &prepared,
+    let client = crate::modules::desktop_config::network::build_proxy_aware_reqwest_client(
+        state.mcp.store.as_ref(),
     )
     .await?;
+
+    let started = Instant::now();
+    let response =
+        crate::modules::providers::request_runtime::send_prepared_json_request(&client, &prepared)
+            .await?;
     let status = response.status;
     let body_json: Value = response
         .json
@@ -637,7 +649,11 @@ pub async fn sync_platform_models_impl(state: &AppState) -> Result<Vec<ProviderM
     }
     let url = format!("{}/api/v1/credits/models", base_url);
 
-    let mut request = reqwest::Client::new().get(&url);
+    let client = crate::modules::desktop_config::network::build_proxy_aware_reqwest_client(
+        state.mcp.store.as_ref(),
+    )
+    .await?;
+    let mut request = client.get(&url);
     if let Some(token) = state
         .mcp
         .store
@@ -821,12 +837,16 @@ pub async fn sync_platform_models_impl(state: &AppState) -> Result<Vec<ProviderM
 }
 
 async fn fetch_model_ids_from_upstream(
+    state: &AppState,
     base_url: &str,
     secret_key: Option<&str>,
     protocol: Option<&str>,
     auto_append_v1: Option<bool>,
 ) -> Result<UpstreamModelsFetchResult, String> {
-    let client = reqwest::Client::new();
+    let client = crate::modules::desktop_config::network::build_proxy_aware_reqwest_client(
+        state.mcp.store.as_ref(),
+    )
+    .await?;
     let normalized_protocol = normalize_protocol(protocol);
     let candidates = build_models_endpoints(base_url, &normalized_protocol, auto_append_v1);
     let has_secret = secret_key

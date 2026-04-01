@@ -66,7 +66,11 @@ pub(crate) async fn request_text_to_speech(
         None,
         trace_id,
     )?;
-    let response = send_prepared_request_raw(&reqwest::Client::new(), &prepared).await?;
+    let client = crate::modules::desktop_config::network::build_proxy_aware_reqwest_client(
+        app_state.mcp.store.as_ref(),
+    )
+    .await?;
+    let response = send_prepared_request_raw(&client, &prepared).await?;
     if !response.status.is_success() {
         return Err(extract_error_message(
             response.json.as_ref(),

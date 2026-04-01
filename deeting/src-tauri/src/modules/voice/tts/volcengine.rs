@@ -7,7 +7,6 @@ use crate::modules::voice::types::ResolvedTtsContext;
 use crate::modules::voice_capabilities::types::TtsRequest;
 use crate::state::AppState;
 use base64::Engine;
-use reqwest::Client;
 use serde_json::{json, Deserializer, Map, Value};
 use tauri::AppHandle;
 use uuid::Uuid;
@@ -209,7 +208,11 @@ pub(crate) async fn request_text_to_speech(
     );
     let body = build_request_body(request, &app_id);
 
-    let mut builder = Client::new()
+    let client = crate::modules::desktop_config::network::build_proxy_aware_reqwest_client(
+        app_state.mcp.store.as_ref(),
+    )
+    .await?;
+    let mut builder = client
         .post(url)
         .header("Content-Type", "application/json")
         .header("X-Api-App-Id", app_id.as_str())

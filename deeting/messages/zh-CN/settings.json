@@ -70,6 +70,26 @@
       "unavailableDesc": "请在桌面端配置本地 embedding 模型。",
       "download": "前往获取桌面端",
       "scopeBadge": "仅本地",
+      "network": {
+        "title": "桌面网络代理",
+        "description": "控制桌面端 Rust 运行时请求上游时是直连、跟随系统代理，还是走自定义代理。",
+        "modeLabel": "代理模式",
+        "modeHelp": "作用于桌面端 Rust 上游模型请求、Provider 验证与模型同步，不影响云端路由。",
+        "mode": {
+          "none": "不使用代理",
+          "system": "使用系统代理",
+          "custom": "自定义代理"
+        },
+        "modeDesc": {
+          "none": "桌面端上游请求显式绕过系统与环境代理。",
+          "system": "跟随操作系统，或 HTTP_PROXY / HTTPS_PROXY 等环境代理设置。",
+          "custom": "让桌面端上游请求统一走指定的 HTTP、HTTPS 或 SOCKS 代理。"
+        },
+        "urlLabel": "自定义代理地址",
+        "urlPlaceholder": "http://127.0.0.1:7890",
+        "urlHelp": "支持 http://、https:// 与 socks5://。仅在“自定义代理”模式下需要填写。",
+        "footerHint": "仅当前桌面端使用，并在 Rust 运行时创建上游 HTTP client 时生效。"
+      },
       "scout": {
         "title": "桌面 Scout 服务",
         "description": "配置本地官方爬虫工具使用的 Scout 抓取服务地址，可填写你自建的 Scout，也可填写官方服务地址。",
@@ -314,8 +334,8 @@
       "agentDesc": "本地执行与沙箱",
       "browser": "Browser",
       "browserDesc": "浏览器调试与桥接",
-      "relay": "本地服务",
-      "relayDesc": "Scout 等桌面端本地配置"
+      "relay": "网络与本地服务",
+      "relayDesc": "桌面代理、Scout 等本地配置"
     },
     "actions": {
       "hint": "云端、桌面与个人设置互不影响，请按需保存。",
@@ -333,6 +353,8 @@
       "rebuildFailed": "本地记忆与向量索引重建失败，请稍后重试",
       "repairSuccess": "本地注册表与索引修复完成",
       "repairFailed": "本地注册表与索引修复失败，请稍后重试",
+      "desktopProxyValidation": "自定义代理模式必须填写代理地址",
+      "desktopProxyUpdated": "桌面网络代理配置已更新",
       "desktopScoutUpdated": "桌面 Scout 配置已更新",
       "desktopObjectStorageUpdated": "桌面对象存储配置已更新"
     }

@@ -70,6 +70,26 @@
       "unavailableDesc": "Configure local embedding models in the desktop app.",
       "download": "Get the desktop app",
       "scopeBadge": "Local only",
+      "network": {
+        "title": "Desktop Network Proxy",
+        "description": "Control whether desktop-side upstream requests go direct, follow the system proxy, or use a custom proxy endpoint.",
+        "modeLabel": "Proxy mode",
+        "modeHelp": "Applies to desktop Rust upstream model requests, provider verification, and model sync. It does not change cloud-side routing.",
+        "mode": {
+          "none": "No proxy",
+          "system": "System proxy",
+          "custom": "Custom proxy"
+        },
+        "modeDesc": {
+          "none": "Bypass system and environment proxies for desktop upstream requests.",
+          "system": "Follow the operating system or HTTP_PROXY / HTTPS_PROXY environment proxy.",
+          "custom": "Route desktop upstream requests through a specific HTTP, HTTPS, or SOCKS proxy."
+        },
+        "urlLabel": "Custom proxy URL",
+        "urlPlaceholder": "http://127.0.0.1:7890",
+        "urlHelp": "Supports http://, https://, and socks5://. Leave empty unless Custom proxy is selected.",
+        "footerHint": "Used only by this desktop app and applied when the Rust runtime creates outbound upstream clients."
+      },
       "scout": {
         "title": "Desktop Scout Service",
         "description": "Configure the Scout crawler endpoint used by local official crawler tools. You can point it to your own Scout deployment or the official service URL.",
@@ -314,8 +334,8 @@
       "agentDesc": "Local execution and sandbox",
       "browser": "Browser",
       "browserDesc": "Browser debug and bridge",
-      "relay": "Local Services",
-      "relayDesc": "Desktop Scout and other local-only settings"
+      "relay": "Network & Services",
+      "relayDesc": "Desktop proxy, Scout, and other local-only settings"
     },
     "actions": {
       "hint": "Cloud, desktop, and personal settings are independent. Save as needed.",
@@ -333,6 +353,8 @@
       "rebuildFailed": "Rebuilding local memories and vector indexes failed. Please try again.",
       "repairSuccess": "Local registry and index repair completed",
       "repairFailed": "Local registry and index repair failed. Please try again.",
+      "desktopProxyValidation": "Custom proxy mode requires a proxy URL",
+      "desktopProxyUpdated": "Desktop network proxy settings updated",
       "desktopScoutUpdated": "Desktop Scout settings updated",
       "desktopObjectStorageUpdated": "Desktop object storage settings updated"
     }

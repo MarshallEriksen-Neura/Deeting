@@ -95,6 +95,7 @@ describe("ControlsContainer (web)", () => {
     useChatStore.setState({
       input: "",
       attachments: [],
+      messages: [],
       isLoading: false,
       models: [{ id: "model-1", provider_model_id: "model-1" }],
       selectedAssistant: null,
@@ -205,6 +206,58 @@ describe("ControlsContainer (web)", () => {
     expect(cancelActiveRequest).not.toHaveBeenCalled()
   })
 
+  it("queues a pending takeover when Enter is pressed during an active run with draft content", () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "false"
+    const queuePendingTakeoverFromCurrentDraft = jest.fn()
+    const cancelActiveRequest = jest.fn()
+    useChatStore.setState({
+      input: "follow-up prompt",
+      isLoading: true,
+    })
+    mockUseChatMessaging.mockReturnValue(buildMessagingMock({
+      isLoading: true,
+      queuePendingTakeoverFromCurrentDraft,
+      cancelActiveRequest,
+    }))
+
+    render(<ControlsContainer />)
+    fireEvent.keyDown(screen.getByLabelText("controls.placeholder"), {
+      key: "Enter",
+      code: "Enter",
+      keyCode: 13,
+      which: 13,
+    })
+
+    expect(queuePendingTakeoverFromCurrentDraft).toHaveBeenCalledTimes(1)
+    expect(cancelActiveRequest).not.toHaveBeenCalled()
+  })
+
+  it("ignores Enter while IME composition is still active", () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "false"
+    const queuePendingTakeoverFromCurrentDraft = jest.fn()
+    const handleSendMessage = jest.fn()
+    useChatStore.setState({
+      input: "follow-up prompt",
+      isLoading: true,
+    })
+    mockUseChatMessaging.mockReturnValue(buildMessagingMock({
+      isLoading: true,
+      queuePendingTakeoverFromCurrentDraft,
+      handleSendMessage,
+    }))
+
+    render(<ControlsContainer />)
+    fireEvent.keyDown(screen.getByLabelText("controls.placeholder"), {
+      key: "Enter",
+      code: "Enter",
+      keyCode: 229,
+      which: 229,
+    })
+
+    expect(queuePendingTakeoverFromCurrentDraft).not.toHaveBeenCalled()
+    expect(handleSendMessage).not.toHaveBeenCalled()
+  })
+
   it("keeps the stop action when the run is active and the composer is empty", () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "false"
     const queuePendingTakeoverFromCurrentDraft = jest.fn()
@@ -224,6 +277,105 @@ describe("ControlsContainer (web)", () => {
 
     expect(cancelActiveRequest).toHaveBeenCalledTimes(1)
     expect(queuePendingTakeoverFromCurrentDraft).not.toHaveBeenCalled()
+  })
+
+  it("keeps the composer button in an approval-required busy state instead of falling back to send", () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "false"
+    useChatStore.setState({
+      isLoading: false,
+      messages: [
+        {
+          id: "assistant-approval",
+          role: "assistant",
+          content: "",
+          createdAt: Date.now(),
+          blocks: [
+            {
+              type: "tool_call",
+              callId: "call-1",
+              toolName: "firecrawl_browser_create",
+              status: "requires_approval",
+            },
+            {
+              type: "tool_result",
+              callId: "call-1",
+              toolName: "firecrawl_browser_create",
+              status: "requires_approval",
+              result: { status: "REQUIRES_APPROVAL" },
+            },
+          ],
+        },
+      ],
+    })
+
+    render(<ControlsContainer />)
+
+    expect(screen.getByLabelText("approvalDialog.title")).toBeDisabled()
+    expect(screen.queryByLabelText("controls.send")).not.toBeInTheDocument()
+  })
+
+  it("keeps the composer button busy after approval resumes execution", () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "false"
+    useChatStore.setState({
+      isLoading: false,
+      messages: [
+        {
+          id: "assistant-running-tool",
+          role: "assistant",
+          content: "",
+          createdAt: Date.now(),
+          blocks: [
+            {
+              type: "tool_call",
+              callId: "call-2",
+              toolName: "firecrawl_browser_create",
+              status: "running",
+            },
+          ],
+        },
+      ],
+    })
+
+    render(<ControlsContainer />)
+
+    expect(screen.getByLabelText("approvalDialog.actions.approving")).toBeDisabled()
+    expect(screen.queryByLabelText("controls.send")).not.toBeInTheDocument()
+  })
+
+  it("queues a follow-up takeover instead of sending immediately while approval execution is still active", () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "false"
+    const queuePendingTakeoverFromCurrentDraft = jest.fn()
+    const handleSendMessage = jest.fn()
+    useChatStore.setState({
+      input: "follow-up prompt",
+      isLoading: false,
+      messages: [
+        {
+          id: "assistant-running-tool-with-draft",
+          role: "assistant",
+          content: "",
+          createdAt: Date.now(),
+          blocks: [
+            {
+              type: "tool_call",
+              callId: "call-3",
+              toolName: "firecrawl_browser_create",
+              status: "running",
+            },
+          ],
+        },
+      ],
+    })
+    mockUseChatMessaging.mockReturnValue(buildMessagingMock({
+      queuePendingTakeoverFromCurrentDraft,
+      handleSendMessage,
+    }))
+
+    render(<ControlsContainer />)
+    fireEvent.click(screen.getByLabelText("controls.queueTakeover"))
+
+    expect(queuePendingTakeoverFromCurrentDraft).toHaveBeenCalledTimes(1)
+    expect(handleSendMessage).not.toHaveBeenCalled()
   })
 
   it("passes the selected assistant directly into chat messaging on web", () => {

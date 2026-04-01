@@ -39,7 +39,8 @@ impl ProviderState {
             (Some(mcp_store), Some(cloud_base_url)) => {
                 EmbeddingService::with_platform_proxy(store.clone(), mcp_store, cloud_base_url)
             }
-            _ => EmbeddingService::new(store.clone()),
+            (Some(mcp_store), None) => EmbeddingService::new(store.clone(), Some(mcp_store)),
+            _ => EmbeddingService::new(store.clone(), None),
         };
         let transformer = ResponseTransformer::new();
         Ok(Self {
@@ -61,7 +62,8 @@ impl ProviderState {
             (Some(mcp_store), Some(cloud_base_url)) => {
                 EmbeddingService::with_platform_proxy(store.clone(), mcp_store, cloud_base_url)
             }
-            _ => EmbeddingService::new(store.clone()),
+            (Some(mcp_store), None) => EmbeddingService::new(store.clone(), Some(mcp_store)),
+            _ => EmbeddingService::new(store.clone(), None),
         };
         let transformer = ResponseTransformer::new();
         Ok(Self {

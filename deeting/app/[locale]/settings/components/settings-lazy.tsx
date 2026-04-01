@@ -39,6 +39,14 @@ export const DeferredDesktopObjectStorageSettingsCard = dynamic(
   { ssr: false }
 )
 
+export const DeferredDesktopNetworkSettingsCard = dynamic(
+  () =>
+    import("./desktop-network-settings-card").then(
+      (mod) => mod.DesktopNetworkSettingsCard
+    ),
+  { ssr: false }
+)
+
 export const DeferredDesktopScoutSettingsCard = dynamic(
   () =>
     import("./desktop-scout-settings-card").then(

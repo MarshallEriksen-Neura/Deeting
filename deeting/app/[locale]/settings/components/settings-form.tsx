@@ -44,6 +44,7 @@ import { isBrowserAgentPanelEnabled } from "./browser-agent-panel-flags";
 import {
   DeferredAgentSettingsCard,
   DeferredDesktopBrowserAgentPanelCard,
+  DeferredDesktopNetworkSettingsCard,
   DeferredDesktopObjectStorageSettingsCard,
   DeferredDesktopSandboxSettingsCard,
   DeferredDesktopScoutSettingsCard,
@@ -128,7 +129,7 @@ export function SettingsForm({
     React.useState<LocalEmbeddingRebuildResponse | null>(null);
   const [isRepairingIndexes, setIsRepairingIndexes] = React.useState(false);
   const [repairMessage, setRepairMessage] = React.useState<string | null>(null);
-  const [hasLoadedDesktopScoutSettings, setHasLoadedDesktopScoutSettings] =
+  const [hasLoadedDesktopRelaySettings, setHasLoadedDesktopRelaySettings] =
     React.useState(false);
   const [hasLoadedDesktopStorageSettings, setHasLoadedDesktopStorageSettings] =
     React.useState(false);
@@ -137,6 +138,8 @@ export function SettingsForm({
     defaultValues: {
       secretaryModel: "",
       desktopEmbeddingProviderModelId: "",
+      desktopProxyMode: "system",
+      desktopProxyUrl: "",
       scoutBaseUrl: "",
       objectStorageProvider: "cloudflare_r2_s3",
       objectStorageBucket: "",
@@ -182,18 +185,26 @@ export function SettingsForm({
 
   React.useEffect(() => {
     if (!isAuthenticated || !isTauriRuntime) return;
-    if (activeSection !== "relay" || hasLoadedDesktopScoutSettings) return;
+    if (activeSection !== "relay" || hasLoadedDesktopRelaySettings) return;
 
     let cancelled = false;
     (async () => {
       try {
-        const { getDesktopScoutBaseUrl } = await import("@/lib/api/desktop-config");
-        const scoutBaseUrl = await getDesktopScoutBaseUrl();
+        const { getDesktopNetworkProxySettings, getDesktopScoutBaseUrl } =
+          await import("@/lib/api/desktop-config");
+        const [proxySettings, scoutBaseUrl] = await Promise.all([
+          getDesktopNetworkProxySettings(),
+          getDesktopScoutBaseUrl(),
+        ]);
         if (cancelled) return;
-        applyFormValues(form, { scoutBaseUrl });
-        setHasLoadedDesktopScoutSettings(true);
+        applyFormValues(form, {
+          desktopProxyMode: proxySettings.mode,
+          desktopProxyUrl: proxySettings.url,
+          scoutBaseUrl,
+        });
+        setHasLoadedDesktopRelaySettings(true);
       } catch (error) {
-        console.warn("[desktop-settings] load scout settings failed", error);
+        console.warn("[desktop-settings] load relay settings failed", error);
       }
     })();
 
@@ -203,7 +214,7 @@ export function SettingsForm({
   }, [
     activeSection,
     form,
-    hasLoadedDesktopScoutSettings,
+    hasLoadedDesktopRelaySettings,
     isAuthenticated,
     isTauriRuntime,
   ]);
@@ -331,9 +342,18 @@ export function SettingsForm({
       toast.error(t("toast.noPermission"));
       return;
     }
+    if (canEditDesktop && isTauriRuntime) {
+      const { normalizeDesktopProxyMode } = await import("@/lib/api/desktop-config");
+      const nextProxyMode = normalizeDesktopProxyMode(values.desktopProxyMode);
+      if (nextProxyMode === "custom" && !values.desktopProxyUrl.trim()) {
+        toast.error(t("toast.desktopProxyValidation"));
+        return;
+      }
+    }
     setIsSaving(true);
     try {
       let desktopEmbeddingChanged = false;
+      let desktopProxyChanged = false;
       let scoutSettingsChanged = false;
       let objectStorageChanged = false;
 
@@ -377,19 +397,40 @@ export function SettingsForm({
         }
 
         // Desktop-local settings are only meaningful in Tauri runtime.
-        if (isTauriRuntime && hasLoadedDesktopScoutSettings) {
-          const { getDesktopScoutBaseUrl, setDesktopScoutBaseUrl } =
+        if (isTauriRuntime && hasLoadedDesktopRelaySettings) {
+          const {
+            getDesktopNetworkProxySettings,
+            getDesktopScoutBaseUrl,
+            normalizeDesktopProxyMode,
+            setDesktopNetworkProxySettings,
+            setDesktopScoutBaseUrl,
+          } =
             await import("@/lib/api/desktop-config");
           try {
-            const currentScoutBaseUrl = (await getDesktopScoutBaseUrl()).trim();
+            const [currentProxySettings, currentScoutBaseUrl] = await Promise.all([
+              getDesktopNetworkProxySettings(),
+              getDesktopScoutBaseUrl(),
+            ]);
+            const nextProxyMode = normalizeDesktopProxyMode(values.desktopProxyMode);
+            const nextProxyUrl = values.desktopProxyUrl.trim();
             const nextScoutBaseUrl = values.scoutBaseUrl.trim();
+            if (
+              nextProxyMode !== currentProxySettings.mode ||
+              nextProxyUrl !== currentProxySettings.url.trim()
+            ) {
+              await setDesktopNetworkProxySettings({
+                mode: nextProxyMode,
+                url: nextProxyUrl,
+              });
+              desktopProxyChanged = true;
+            }
             if (nextScoutBaseUrl !== currentScoutBaseUrl) {
               await setDesktopScoutBaseUrl(nextScoutBaseUrl);
               scoutSettingsChanged = true;
             }
           } catch (error) {
             console.warn(
-              "[desktop-settings] update scout settings failed",
+              "[desktop-settings] update relay settings failed",
               error,
             );
           }
@@ -494,6 +535,9 @@ export function SettingsForm({
             });
         }
         toast(t("toast.desktopScoutUpdated"));
+      }
+      if (desktopProxyChanged) {
+        toast(t("toast.desktopProxyUpdated"));
       }
       if (objectStorageChanged) {
         toast(t("toast.desktopObjectStorageUpdated"));
@@ -681,6 +725,11 @@ export function SettingsForm({
           {/* Relay section */}
           {activeSection === "relay" && (
             <div className="flex flex-col gap-5">
+              <DeferredDesktopNetworkSettingsCard
+                control={form.control}
+                isTauriRuntime={isTauriRuntime}
+                canEditDesktop={canEditDesktop}
+              />
               <DeferredDesktopScoutSettingsCard
                 control={form.control}
                 isTauriRuntime={isTauriRuntime}

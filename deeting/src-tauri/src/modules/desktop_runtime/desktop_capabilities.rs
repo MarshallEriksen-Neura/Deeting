@@ -467,9 +467,12 @@ async fn dispatch_cloud_provider_preset_upsert(arguments: &Value) -> Result<Valu
 }
 
 async fn dispatch_provider_verify(arguments: &Value) -> Result<Value, String> {
+    let app_state = global_app_state_required()?;
     let payload: ProviderVerifyRequest =
         serde_json::from_value(arguments.clone()).map_err(|err| err.to_string())?;
-    let result = crate::modules::providers::commands::verify_local_provider(payload).await?;
+    let result =
+        crate::modules::providers::commands::verify_local_provider_impl(&app_state, payload)
+            .await?;
     serde_json::to_value(result).map_err(|err| err.to_string())
 }
 

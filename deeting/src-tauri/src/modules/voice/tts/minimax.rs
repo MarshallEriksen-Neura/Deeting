@@ -6,7 +6,6 @@ use crate::modules::voice::shared::{
 use crate::modules::voice::types::ResolvedTtsContext;
 use crate::modules::voice_capabilities::types::TtsRequest;
 use crate::state::AppState;
-use reqwest::Client;
 use serde_json::{Map, Value};
 use tauri::AppHandle;
 
@@ -105,7 +104,11 @@ pub(crate) async fn request_text_to_speech(
     let url = format!("{}/v1/t2a_v2", base_url.trim_end_matches('/'));
     let body = build_request_body(request)?;
 
-    let mut builder = Client::new()
+    let client = crate::modules::desktop_config::network::build_proxy_aware_reqwest_client(
+        app_state.mcp.store.as_ref(),
+    )
+    .await?;
+    let mut builder = client
         .post(url)
         .header("Authorization", format!("Bearer {secret}"))
         .header("Content-Type", "application/json");
