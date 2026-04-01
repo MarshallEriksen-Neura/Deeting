@@ -35,6 +35,9 @@ interface ChatConfig {
   maxTokens: number
 }
 
+const LEGACY_DEFAULT_CHAT_MAX_TOKENS = 2048
+const DEFAULT_CHAT_MAX_TOKENS = 8192
+
 export interface CompareCandidate {
   modelKey: string
   modelId: string
@@ -252,7 +255,7 @@ export const useChatStore = create<ChatStore>()(
         model: "gpt-4o",
         temperature: 0.7,
         topP: 1.0,
-        maxTokens: 2048,
+        maxTokens: DEFAULT_CHAT_MAX_TOKENS,
       },
       streamEnabled: false,
       models: [],
@@ -929,6 +932,27 @@ export const useChatStore = create<ChatStore>()(
         config: state.config,
         streamEnabled: state.streamEnabled,
       }),
+      merge: (persistedState, currentState) => {
+        const persisted = (persistedState as Partial<ChatStore> | undefined) ?? {}
+        const persistedConfig = persisted.config ?? currentState.config
+        const normalizedMaxTokens =
+          persistedConfig.maxTokens === LEGACY_DEFAULT_CHAT_MAX_TOKENS
+            ? DEFAULT_CHAT_MAX_TOKENS
+            : persistedConfig.maxTokens
+
+        return {
+          ...currentState,
+          ...persisted,
+          config: {
+            ...currentState.config,
+            ...persistedConfig,
+            maxTokens:
+              typeof normalizedMaxTokens === "number"
+                ? normalizedMaxTokens
+                : currentState.config.maxTokens,
+          },
+        }
+      },
     }
   )
 )

@@ -2,7 +2,7 @@ use super::text_utils::truncate_text_chars;
 use mcp_session::conversation::LocalConversationHistoryMessage;
 
 pub(crate) const LOCAL_CONVERSATION_SUMMARY_MAX_CHARS: usize = 2000;
-pub(crate) const LOCAL_CONVERSATION_SUMMARY_PROMPT_INPUT_MAX_CHARS: usize = 4000;
+pub(crate) const LOCAL_CONVERSATION_SUMMARY_PROMPT_INPUT_MAX_CHARS: usize = 12000;
 pub(crate) const LOCAL_CONVERSATION_SUMMARY_FALLBACK_RECENT_MESSAGES: usize = 8;
 
 fn extract_text_from_history_message(message: &LocalConversationHistoryMessage) -> Option<String> {

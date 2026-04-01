@@ -1,4 +1,4 @@
-use sqlx::Row;
+use sqlx::{sqlite::SqliteRow, Row};
 use uuid::Uuid;
 
 use crate::modules::mcp::error::McpError;
@@ -21,8 +21,9 @@ const CONVERSATION_SUMMARY_JOB_STATUS_RUNNING: &str = "running";
 const CONVERSATION_SUMMARY_JOB_STATUS_COMPLETED: &str = "completed";
 const CONVERSATION_SUMMARY_JOB_STATUS_FAILED: &str = "failed";
 const CONVERSATION_SUMMARY_JOB_MAX_ATTEMPTS: i64 = 5;
-const LOCAL_CONVERSATION_ACTIVE_WINDOW_TURNS_INTERNAL: i64 = 12;
-const LOCAL_CONVERSATION_FLUSH_THRESHOLD_TOKENS: i64 = 6144;
+const LOCAL_CONVERSATION_ACTIVE_WINDOW_TURN_CAP_INTERNAL: i64 = 48;
+const LOCAL_CONVERSATION_ACTIVE_WINDOW_TOKENS_INTERNAL: i64 = 16384;
+const LOCAL_CONVERSATION_FLUSH_THRESHOLD_TOKENS: i64 = 16384;
 const LOCAL_CONVERSATION_SUMMARY_MIN_INTERVAL_SECONDS: i64 = 120;
 const LOCAL_CONVERSATION_SUMMARY_IDLE_SECONDS: i64 = 600;
 const LOCAL_CONVERSATION_IDLE_CHECK_BATCH_SIZE: i64 = 50;
@@ -52,6 +53,29 @@ fn parse_chat_history_retention_days(value: Option<String>) -> Option<i64> {
     } else {
         Some(parsed)
     }
+}
+
+fn local_conversation_row_token_estimate(row: &SqliteRow) -> i64 {
+    row.try_get::<i64, _>("token_estimate").unwrap_or(0).max(0)
+}
+
+fn trim_local_active_window_rows(rows: Vec<SqliteRow>) -> Vec<SqliteRow> {
+    let mut selected_rows = Vec::new();
+    let mut total_tokens = 0_i64;
+
+    for row in rows.into_iter() {
+        let next_total = total_tokens.saturating_add(local_conversation_row_token_estimate(&row));
+        if !selected_rows.is_empty()
+            && next_total > LOCAL_CONVERSATION_ACTIVE_WINDOW_TOKENS_INTERNAL
+        {
+            break;
+        }
+        total_tokens = next_total;
+        selected_rows.push(row);
+    }
+
+    selected_rows.reverse();
+    selected_rows
 }
 
 pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), McpError> {
@@ -1783,7 +1807,7 @@ impl McpStore {
                 "#,
             )
             .bind(&normalized_session_id)
-            .bind(LOCAL_CONVERSATION_ACTIVE_WINDOW_TURNS_INTERNAL)
+            .bind(LOCAL_CONVERSATION_ACTIVE_WINDOW_TURN_CAP_INTERNAL)
             .bind(&now)
             .bind(&now)
             .bind(&normalized_session_id)
@@ -2048,7 +2072,7 @@ impl McpStore {
                     "#,
                 )
                 .bind(&normalized_session_id)
-                .bind(LOCAL_CONVERSATION_ACTIVE_WINDOW_TURNS_INTERNAL)
+                .bind(LOCAL_CONVERSATION_ACTIVE_WINDOW_TURN_CAP_INTERNAL)
                 .bind(&now)
                 .bind(&now)
                 .bind(&normalized_session_id)
@@ -2154,31 +2178,28 @@ impl McpStore {
 
         let assistant_id: Option<String> = session_row.try_get("assistant_id")?;
 
-        let rows = sqlx::query(
+        let recent_rows = sqlx::query(
             r#"
-            SELECT role, content, turn_index, created_at, is_truncated, name, meta_info
-            FROM (
-              SELECT role, content, turn_index, created_at, is_truncated, name, meta_info
-              FROM conversation_message
-              WHERE session_id = ? AND is_deleted = 0
-              ORDER BY turn_index DESC
-              LIMIT ?
-            ) windowed
-            ORDER BY turn_index ASC;
+            SELECT role, content, turn_index, created_at, is_truncated, name, meta_info, token_estimate
+            FROM conversation_message
+            WHERE session_id = ? AND is_deleted = 0
+            ORDER BY turn_index DESC
+            LIMIT ?;
             "#,
         )
         .bind(&normalized_session_id)
-        .bind(LOCAL_CONVERSATION_ACTIVE_WINDOW_TURNS_INTERNAL)
+        .bind(LOCAL_CONVERSATION_ACTIVE_WINDOW_TURN_CAP_INTERNAL)
         .fetch_all(&self.pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
+        let rows = trim_local_active_window_rows(recent_rows);
         if rows.is_empty() {
             return Err(McpError::validation("conversation has no messages"));
         }
 
         let mut messages = Vec::with_capacity(rows.len());
-        for row in rows {
+        for row in &rows {
             let content_text: Option<String> = row.try_get("content")?;
             let meta_info_text: Option<String> = row.try_get("meta_info")?;
             messages.push(LocalConversationHistoryMessage {
@@ -2412,7 +2433,7 @@ impl McpStore {
             "#,
         )
         .bind(&session_id)
-        .bind(LOCAL_CONVERSATION_ACTIVE_WINDOW_TURNS_INTERNAL)
+        .bind(LOCAL_CONVERSATION_ACTIVE_WINDOW_TURN_CAP_INTERNAL)
         .fetch_one(&mut *tx)
         .await
         .map_err(|err| storage_step_error("compute_window_tokens", err))?;
@@ -2602,25 +2623,22 @@ impl McpStore {
         .map_err(|err| McpError::Storage(err.to_string()))?
         .ok_or_else(|| McpError::NotFound("conversation session not found".to_string()))?;
 
-        let message_rows = sqlx::query(
+        let recent_message_rows = sqlx::query(
             r#"
             SELECT id, turn_index, token_estimate
-            FROM (
-              SELECT id, turn_index, token_estimate
-              FROM conversation_message
-              WHERE session_id = ? AND is_deleted = 0
-              ORDER BY turn_index DESC
-              LIMIT ?
-            ) windowed
-            ORDER BY turn_index ASC;
+            FROM conversation_message
+            WHERE session_id = ? AND is_deleted = 0
+            ORDER BY turn_index DESC
+            LIMIT ?;
             "#,
         )
         .bind(&normalized_session_id)
-        .bind(LOCAL_CONVERSATION_ACTIVE_WINDOW_TURNS_INTERNAL)
+        .bind(LOCAL_CONVERSATION_ACTIVE_WINDOW_TURN_CAP_INTERNAL)
         .fetch_all(&mut *tx)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
+        let message_rows = trim_local_active_window_rows(recent_message_rows);
         if message_rows.is_empty() {
             return Err(McpError::validation("conversation has no messages"));
         }

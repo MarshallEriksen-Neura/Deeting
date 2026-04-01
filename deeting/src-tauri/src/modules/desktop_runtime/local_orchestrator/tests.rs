@@ -538,8 +538,12 @@ fn build_selected_knowledge_fallback_hits_uses_document_leading_chunks() {
 
 #[test]
 fn derive_local_finish_reason_uses_error_for_synthesized_failure_text() {
-    assert_eq!(derive_local_finish_reason(true), "error");
-    assert_eq!(derive_local_finish_reason(false), "stop");
+    assert_eq!(derive_local_finish_reason(&json!({}), true), "error");
+    assert_eq!(derive_local_finish_reason(&json!({}), false), "stop");
+    assert_eq!(
+        derive_local_finish_reason(&json!({ "finish_reason": "length" }), false),
+        "length"
+    );
 }
 
 #[test]

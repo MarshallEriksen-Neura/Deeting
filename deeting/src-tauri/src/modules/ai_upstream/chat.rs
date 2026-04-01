@@ -492,8 +492,13 @@ pub(crate) async fn request_provider_chat_completion(
 }
 
 pub(crate) fn normalize_chat_completion_response(raw: serde_json::Value) -> serde_json::Value {
+    let finish_reason = extract_finish_reason(&raw);
     if raw.get("content").is_some() && raw.get("tool_calls").is_some() {
-        return raw;
+        let mut result = raw;
+        if let Some(reason) = finish_reason {
+            result["finish_reason"] = serde_json::json!(reason);
+        }
+        return result;
     }
     let usage = raw.get("usage").cloned();
     let mut content = extract_text_content(raw.get("content"));
@@ -586,7 +591,34 @@ pub(crate) fn normalize_chat_completion_response(raw: serde_json::Value) -> serd
     if let Some(usage) = usage {
         result["usage"] = usage;
     }
+    if let Some(reason) = finish_reason {
+        result["finish_reason"] = serde_json::json!(reason);
+    }
     result
+}
+
+fn extract_finish_reason(raw: &serde_json::Value) -> Option<String> {
+    raw.get("finish_reason")
+        .and_then(|value| value.as_str())
+        .or_else(|| {
+            raw.get("choices")
+                .and_then(|value| value.as_array())
+                .and_then(|items| items.first())
+                .and_then(|choice| choice.get("finish_reason"))
+                .and_then(|value| value.as_str())
+        })
+        .or_else(|| raw.get("stop_reason").and_then(|value| value.as_str()))
+        .or_else(|| {
+            raw.get("choices")
+                .and_then(|value| value.as_array())
+                .and_then(|items| items.first())
+                .and_then(|choice| choice.get("stop_reason"))
+                .and_then(|value| value.as_str())
+        })
+        .or_else(|| raw.get("status").and_then(|value| value.as_str()))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
 }
 
 fn extract_text_content(value: Option<&serde_json::Value>) -> String {
@@ -701,7 +733,8 @@ mod tests {
             "choices": [{
                 "message": {
                     "content": "hello"
-                }
+                },
+                "finish_reason": "length"
             }],
             "usage": {
                 "prompt_tokens": 11,
@@ -712,6 +745,7 @@ mod tests {
 
         assert_eq!(normalized["content"], json!("hello"));
         assert_eq!(normalized["usage"]["total_tokens"], json!(18));
+        assert_eq!(normalized["finish_reason"], json!("length"));
     }
 
     #[test]
@@ -738,6 +772,7 @@ mod tests {
             normalized["content"],
             json!("Hello! How can I help you today?")
         );
+        assert_eq!(normalized["finish_reason"], json!("end_turn"));
         assert_eq!(normalized["usage"]["input_tokens"], json!(28));
         assert_eq!(normalized["usage"]["output_tokens"], json!(9));
     }

@@ -125,6 +125,10 @@ function buildKnowledgeSelectionMetadata(selectedKnowledgeFileIds: string[]) {
   }
 }
 
+function resolveRequestedMaxTokens(value: number | null | undefined) {
+  return typeof value === "number" && value > 0 ? value : undefined
+}
+
 function mapConversationMessages(rawMessages: Array<{ role?: string; content?: unknown; turn_index?: number | null }>) {
   return normalizeConversationMessages(rawMessages as ConversationMessage[], { idPrefix: "conv" })
 }
@@ -1032,7 +1036,7 @@ export function useChatMessagingService() {
         explicit_task_agent_id: explicitTaskAgentId,
         messages: requestMessages,
         temperature: config.temperature,
-        max_tokens: config.maxTokens,
+        max_tokens: resolveRequestedMaxTokens(config.maxTokens),
         request_id: createRequestId(),
         assistant_id: assistantId,
         session_id: resolvedSessionId ?? undefined,
@@ -1248,7 +1252,7 @@ export function useChatMessagingService() {
         provider_model_id: selectedModel.provider_model_id ?? undefined,
         messages: requestMessages,
         temperature: config.temperature,
-        max_tokens: config.maxTokens,
+        max_tokens: resolveRequestedMaxTokens(config.maxTokens),
         request_id: createRequestId(),
         assistant_id: assistantId,
         session_id: resolvedSessionId ?? undefined,
@@ -1427,7 +1431,7 @@ export function useChatMessagingService() {
           provider_model_id: selectedCompareModel.provider_model_id ?? undefined,
           messages: requestMessages,
           temperature: config.temperature,
-          max_tokens: config.maxTokens,
+          max_tokens: resolveRequestedMaxTokens(config.maxTokens),
           request_id: createRequestId(),
           assistant_id: assistantId,
           session_id: resolvedSessionId,

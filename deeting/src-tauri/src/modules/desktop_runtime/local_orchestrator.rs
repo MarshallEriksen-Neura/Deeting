@@ -2134,7 +2134,10 @@ pub async fn execute_local_orchestrated_chat(
         "trace_id": trace_id,
         "choices": [{
             "index": 0,
-            "finish_reason": derive_local_finish_reason(response_text_was_synthesized_from_error),
+            "finish_reason": derive_local_finish_reason(
+                &response_json,
+                response_text_was_synthesized_from_error,
+            ),
             "message": message,
         }],
     });
@@ -2457,11 +2460,24 @@ fn latest_tool_error_summary(tool_trace_blocks: &[Value], prefers_chinese: bool)
     })
 }
 
-fn derive_local_finish_reason(response_text_was_synthesized_from_error: bool) -> &'static str {
+fn derive_local_finish_reason(
+    response_json: &Value,
+    response_text_was_synthesized_from_error: bool,
+) -> String {
     if response_text_was_synthesized_from_error {
-        "error"
-    } else {
-        "stop"
+        return "error".to_string();
+    }
+
+    match response_json
+        .get("finish_reason")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        Some("completed") | Some("end_turn") | Some("stop") => "stop".to_string(),
+        Some("max_tokens") | Some("max_output_tokens") | Some("length") => "length".to_string(),
+        Some(reason) => reason.to_string(),
+        None => "stop".to_string(),
     }
 }
 
