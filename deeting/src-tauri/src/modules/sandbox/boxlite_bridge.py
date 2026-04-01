@@ -53,6 +53,25 @@ class BoxLiteBridge:
         with self.lock:
             self.names_path.write_text(json.dumps(mapping, ensure_ascii=False, indent=2), encoding="utf-8")
 
+    def forget_box(self, identifier: str, mapping=None):
+        current = dict(mapping) if mapping is not None else self.load_names()
+        box_id = current.get(identifier, identifier)
+        changed = False
+
+        if identifier in current:
+            current.pop(identifier, None)
+            changed = True
+
+        stale_aliases = [name for name, value in current.items() if value == box_id]
+        for name in stale_aliases:
+            current.pop(name, None)
+            changed = True
+
+        if changed:
+            self.save_names(current)
+
+        return box_id
+
     async def get_box(self, identifier: str):
         mapping = self.load_names()
         box_id = mapping.get(identifier, identifier)
@@ -61,9 +80,7 @@ class BoxLiteBridge:
             name = next((n for n, value in mapping.items() if value == box_id), identifier)
             return {"id": box_id, "name": name}, box
         except Exception:
-            if identifier in mapping:
-                mapping.pop(identifier, None)
-                self.save_names(mapping)
+            self.forget_box(identifier, mapping)
             return None, None
 
     async def list_boxes(self):
@@ -97,6 +114,8 @@ class BoxLiteBridge:
             await box.stop()
         except Exception:
             pass
+        if meta:
+            self.forget_box(meta.get("id") or identifier)
         return bool(meta)
 
     async def exec_sync(self, identifier: str, payload):

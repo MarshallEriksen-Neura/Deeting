@@ -1,40 +1,47 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
-import { AssetsClient } from "@/app/[locale]/dashboard/assets/components/assets-client"
+import { AssetsClient } from "@/app/[locale]/dashboard/assets/components/assets-client";
 import {
   listLocalAssets,
   saveLocalAsset,
   updateLocalAsset,
   type LocalAsset,
-} from "@/lib/api/local-assets"
+} from "@/lib/api/local-assets";
 
 jest.mock("next-intl", () => ({
   useTranslations: () => (key: string, vars?: Record<string, unknown>) =>
     vars ? `${key}:${JSON.stringify(vars)}` : key,
-}))
+  useLocale: () => "en",
+}));
 
 jest.mock("sonner", () => ({
   toast: {
     error: jest.fn(),
   },
-}))
+}));
 
 jest.mock("@/lib/api/local-assets", () => ({
   listLocalAssets: jest.fn(),
   saveLocalAsset: jest.fn(),
   updateLocalAsset: jest.fn(),
-}))
+}));
 
-const mockListLocalAssets = listLocalAssets as jest.MockedFunction<typeof listLocalAssets>
-const mockSaveLocalAsset = saveLocalAsset as jest.MockedFunction<typeof saveLocalAsset>
-const mockUpdateLocalAsset = updateLocalAsset as jest.MockedFunction<typeof updateLocalAsset>
+const mockListLocalAssets = listLocalAssets as jest.MockedFunction<
+  typeof listLocalAssets
+>;
+const mockSaveLocalAsset = saveLocalAsset as jest.MockedFunction<
+  typeof saveLocalAsset
+>;
+const mockUpdateLocalAsset = updateLocalAsset as jest.MockedFunction<
+  typeof updateLocalAsset
+>;
 
 describe("AssetsClient", () => {
   beforeEach(() => {
-    mockListLocalAssets.mockReset()
-    mockSaveLocalAsset.mockReset()
-    mockUpdateLocalAsset.mockReset()
-  })
+    mockListLocalAssets.mockReset();
+    mockSaveLocalAsset.mockReset();
+    mockUpdateLocalAsset.mockReset();
+  });
 
   it("renders pinned and recent assets", async () => {
     mockListLocalAssets.mockResolvedValue([
@@ -51,8 +58,8 @@ describe("AssetsClient", () => {
         template_id: "manual://weather-card",
         template_version: "v1",
         latest_snapshot_html: "<div></div>",
-        latest_render_data_json: "{\"temp_c\":22}",
-        refresh_spec_json: "{\"kind\":\"chat_replay\"}",
+        latest_render_data_json: '{"temp_c":22}',
+        refresh_spec_json: '{"kind":"chat_replay"}',
         status: "active",
         is_pinned: true,
         is_archived: false,
@@ -74,8 +81,8 @@ describe("AssetsClient", () => {
         template_id: "manual://stock-card",
         template_version: "v1",
         latest_snapshot_html: "<div></div>",
-        latest_render_data_json: "{\"price\":180}",
-        refresh_spec_json: "{\"kind\":\"chat_replay\"}",
+        latest_render_data_json: '{"price":180}',
+        refresh_spec_json: '{"kind":"chat_replay"}',
         status: "active",
         is_pinned: false,
         is_archived: false,
@@ -84,18 +91,18 @@ describe("AssetsClient", () => {
         last_refreshed_at: null,
         last_opened_at: null,
       },
-    ])
+    ]);
 
-    render(<AssetsClient />)
+    render(<AssetsClient />);
 
     await waitFor(() => {
-      expect(screen.getAllByText("Weather Card")).toHaveLength(2)
-    })
+      expect(screen.getByText("Weather Card")).toBeInTheDocument();
+    });
 
-    expect(screen.getByText("Stock Card")).toBeInTheDocument()
-    expect(screen.getByText("sections.pinned")).toBeInTheDocument()
-    expect(screen.getByText("sections.recent")).toBeInTheDocument()
-  })
+    expect(screen.getByText("Stock Card")).toBeInTheDocument();
+    expect(screen.getByText("sections.pinned")).toBeInTheDocument();
+    expect(screen.getByText("sections.library")).toBeInTheDocument();
+  });
 
   it("updates an asset when pin is toggled", async () => {
     mockListLocalAssets.mockResolvedValue([
@@ -112,8 +119,8 @@ describe("AssetsClient", () => {
         template_id: "manual://weather-card",
         template_version: "v1",
         latest_snapshot_html: "<div></div>",
-        latest_render_data_json: "{\"temp_c\":22}",
-        refresh_spec_json: "{\"kind\":\"chat_replay\"}",
+        latest_render_data_json: '{"temp_c":22}',
+        refresh_spec_json: '{"kind":"chat_replay"}',
         status: "active",
         is_pinned: false,
         is_archived: false,
@@ -122,7 +129,7 @@ describe("AssetsClient", () => {
         last_refreshed_at: null,
         last_opened_at: null,
       },
-    ])
+    ]);
     mockUpdateLocalAsset.mockResolvedValue({
       asset_id: "asset-1",
       asset_kind: "render_card",
@@ -136,8 +143,8 @@ describe("AssetsClient", () => {
       template_id: "manual://weather-card",
       template_version: "v1",
       latest_snapshot_html: "<div></div>",
-      latest_render_data_json: "{\"temp_c\":22}",
-      refresh_spec_json: "{\"kind\":\"chat_replay\"}",
+      latest_render_data_json: '{"temp_c":22}',
+      refresh_spec_json: '{"kind":"chat_replay"}',
       status: "active",
       is_pinned: true,
       is_archived: false,
@@ -145,20 +152,22 @@ describe("AssetsClient", () => {
       updated_at: "2026-03-31T00:00:00Z",
       last_refreshed_at: null,
       last_opened_at: null,
-    })
+    });
 
-    render(<AssetsClient />)
-
-    await waitFor(() => {
-      expect(screen.getByText("Weather Card")).toBeInTheDocument()
-    })
-
-    fireEvent.click(screen.getByRole("button", { name: "actions.pin" }))
+    render(<AssetsClient />);
 
     await waitFor(() => {
-      expect(mockUpdateLocalAsset).toHaveBeenCalledWith("asset-1", { isPinned: true })
-    })
-  })
+      expect(screen.getByText("Weather Card")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "actions.pin" }));
+
+    await waitFor(() => {
+      expect(mockUpdateLocalAsset).toHaveBeenCalledWith("asset-1", {
+        isPinned: true,
+      });
+    });
+  });
 
   it("creates a local html asset from the dashboard dialog", async () => {
     const createdAsset: LocalAsset = {
@@ -175,9 +184,9 @@ describe("AssetsClient", () => {
       template_version: "v1",
       html_entry: "bundles/weather-ios18-card/index.html",
       data_mode: "ai_data",
-      match_hints_json: "[\"weather\",\"天气\"]",
-      props_hint_json: "[\"location\"]",
-      output_example_json: "{\"temp_c\":22}",
+      match_hints_json: '["weather","天气"]',
+      props_hint_json: '["location"]',
+      output_example_json: '{"temp_c":22}',
       latest_snapshot_html: "<div>weather</div>",
       latest_render_data_json: null,
       refresh_spec_json: null,
@@ -188,48 +197,53 @@ describe("AssetsClient", () => {
       updated_at: "2026-03-31T00:00:00Z",
       last_refreshed_at: null,
       last_opened_at: null,
-    }
-    let currentAssets: LocalAsset[] = []
-    mockListLocalAssets.mockImplementation(async () => currentAssets)
+    };
+    let currentAssets: LocalAsset[] = [];
+    mockListLocalAssets.mockImplementation(async () => currentAssets);
     mockSaveLocalAsset.mockImplementation(async () => {
-      currentAssets = [createdAsset]
-      return createdAsset
-    })
+      currentAssets = [createdAsset];
+      return createdAsset;
+    });
 
-    render(<AssetsClient />)
+    render(<AssetsClient />);
 
     await waitFor(() => {
-      expect(screen.getByText("empty.recent")).toBeInTheDocument()
-    })
+      expect(screen.getByText("empty.recent")).toBeInTheDocument();
+    });
 
-    fireEvent.click(screen.getByRole("button", { name: "actions.create" }))
+    fireEvent.click(screen.getByRole("button", { name: "actions.create" }));
 
     fireEvent.change(screen.getByLabelText("createDialog.fields.assetId"), {
       target: { value: "weather-ios18-card" },
-    })
+    });
     fireEvent.change(screen.getByLabelText("createDialog.fields.title"), {
       target: { value: "Weather iOS18" },
-    })
+    });
     fireEvent.change(screen.getByLabelText("createDialog.fields.summary"), {
       target: { value: "Reusable weather card" },
-    })
+    });
     fireEvent.change(screen.getByLabelText("createDialog.fields.renderHint"), {
       target: { value: "weather-card" },
-    })
+    });
     fireEvent.change(screen.getByLabelText("createDialog.fields.matchHints"), {
       target: { value: "weather, 天气" },
-    })
+    });
     fireEvent.change(screen.getByLabelText("createDialog.fields.propsHint"), {
       target: { value: "location" },
-    })
-    fireEvent.change(screen.getByLabelText("createDialog.fields.outputExample"), {
-      target: { value: "{\"temp_c\":22}" },
-    })
+    });
+    fireEvent.change(
+      screen.getByLabelText("createDialog.fields.outputExample"),
+      {
+        target: { value: '{"temp_c":22}' },
+      },
+    );
     fireEvent.change(screen.getByLabelText("createDialog.fields.html"), {
       target: { value: "<div>weather</div>" },
-    })
+    });
 
-    fireEvent.click(screen.getByRole("button", { name: "createDialog.actions.save" }))
+    fireEvent.click(
+      screen.getByRole("button", { name: "createDialog.actions.save" }),
+    );
 
     await waitFor(() => {
       expect(mockSaveLocalAsset).toHaveBeenCalledWith({
@@ -242,13 +256,13 @@ describe("AssetsClient", () => {
         matchHints: ["weather", "天气"],
         propsHint: ["location"],
         outputExample: { temp_c: 22 },
-      })
-    })
+      });
+    });
 
     await waitFor(() => {
-      expect(screen.getByText("Weather iOS18")).toBeInTheDocument()
-    })
-  })
+      expect(screen.getByText("Weather iOS18")).toBeInTheDocument();
+    });
+  });
 
   it("opens a detail sheet when an asset card body is clicked", async () => {
     mockListLocalAssets.mockResolvedValue([
@@ -265,8 +279,8 @@ describe("AssetsClient", () => {
         template_id: "manual://weather-card",
         template_version: "v1",
         latest_snapshot_html: "<div>snapshot</div>",
-        latest_render_data_json: "{\"temp_c\":22}",
-        refresh_spec_json: "{\"kind\":\"chat_replay\"}",
+        latest_render_data_json: '{"temp_c":22}',
+        refresh_spec_json: '{"kind":"chat_replay"}',
         status: "active",
         is_pinned: false,
         is_archived: false,
@@ -275,7 +289,7 @@ describe("AssetsClient", () => {
         last_refreshed_at: null,
         last_opened_at: null,
       },
-    ])
+    ]);
     mockUpdateLocalAsset.mockResolvedValue({
       asset_id: "asset-1",
       asset_kind: "render_card",
@@ -289,8 +303,8 @@ describe("AssetsClient", () => {
       template_id: "manual://weather-card",
       template_version: "v1",
       latest_snapshot_html: "<div>snapshot</div>",
-      latest_render_data_json: "{\"temp_c\":22}",
-      refresh_spec_json: "{\"kind\":\"chat_replay\"}",
+      latest_render_data_json: '{"temp_c":22}',
+      refresh_spec_json: '{"kind":"chat_replay"}',
       status: "active",
       is_pinned: false,
       is_archived: false,
@@ -298,20 +312,22 @@ describe("AssetsClient", () => {
       updated_at: "2026-03-31T00:00:00Z",
       last_refreshed_at: null,
       last_opened_at: "2026-03-31T00:00:00Z",
-    })
+    });
 
-    render(<AssetsClient />)
-
-    await waitFor(() => {
-      expect(screen.getByText("Weather Card")).toBeInTheDocument()
-    })
-
-    fireEvent.click(screen.getByRole("button", { name: /Weather Card/ }))
+    render(<AssetsClient />);
 
     await waitFor(() => {
-      expect(screen.getByRole("dialog")).toBeInTheDocument()
-    })
-    expect(screen.getByTitle("Weather Card")).toBeInTheDocument()
-    expect(mockUpdateLocalAsset).toHaveBeenCalledWith("asset-1", { markOpened: true })
-  })
-})
+      expect(screen.getByText("Weather Card")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Weather Card/ }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+    expect(screen.getByTitle("Weather Card")).toBeInTheDocument();
+    expect(mockUpdateLocalAsset).toHaveBeenCalledWith("asset-1", {
+      markOpened: true,
+    });
+  });
+});

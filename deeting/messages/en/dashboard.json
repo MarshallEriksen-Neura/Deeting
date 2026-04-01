@@ -474,10 +474,33 @@
     },
     "assetsPage": {
       "title": "Assets",
-      "subtitle": "Reusable cards created from chat, ready for quick access and future automation.",
+      "subtitle": "Turn reusable chat outputs into a local asset library for faster dashboards, richer replies, and future automation.",
+      "hero": {
+        "eyebrow": "Local asset registry"
+      },
+      "stats": {
+        "total": {
+          "label": "Active assets",
+          "hint": "Reusable cards currently available locally"
+        },
+        "pinned": {
+          "label": "Pinned",
+          "hint": "Assets kept in quick reach"
+        },
+        "selfFetch": {
+          "label": "Self fetch",
+          "hint": "Assets that can refresh without chat replay"
+        },
+        "snapshot": {
+          "label": "Preview ready",
+          "hint": "Assets with snapshot previews available"
+        }
+      },
       "sections": {
         "pinned": "Pinned Assets",
         "recent": "Recent Assets",
+        "library": "Asset Library",
+        "spotlight": "Spotlight",
         "renderData": "Render Data",
         "refreshSpec": "Refresh Spec",
         "outputExample": "Output Example",
@@ -485,19 +508,34 @@
         "matchHints": "Match Hints",
         "propsHint": "Props Hint"
       },
+      "descriptions": {
+        "pinned": "Hand-picked assets that stay ready for daily flows.",
+        "library": "Search and filter every active asset in your local registry."
+      },
+      "filters": {
+        "all": "All assets",
+        "pinned": "Pinned only",
+        "aiData": "AI data",
+        "selfFetch": "Self fetch"
+      },
+      "search": {
+        "placeholder": "Search title, summary, hint, template, or session"
+      },
       "actions": {
         "create": "Create Asset",
         "reload": "Reload",
+        "clearSearch": "Clear",
         "pin": "Pin asset",
         "unpin": "Unpin asset",
         "refresh": "Refresh asset",
         "archive": "Archive asset",
         "openConversation": "Open Conversation",
-        "openManager": "Open Manager"
+        "openManager": "Open Manager",
+        "openDetails": "Open details"
       },
       "createDialog": {
         "title": "Create HTML Asset",
-        "description": "Paste reusable HTML and lightweight matching metadata to save a local asset.",
+        "description": "Paste reusable HTML and matching metadata to save a local asset that can be reused across dashboard and chat surfaces.",
         "fields": {
           "assetId": "Asset ID",
           "title": "Title",
@@ -511,7 +549,7 @@
         },
         "placeholders": {
           "summary": "Short description for dashboard and chat reuse",
-          "matchHints": "weather, 天气, forecast",
+          "matchHints": "weather, forecast, temperature",
           "propsHint": "location, date",
           "outputExample": "{\n  \"location\": \"Beijing\",\n  \"temp_c\": 22\n}",
           "html": "<!doctype html>\n<html>\n  <body>\n    <div id=\"app\"></div>\n  </body>\n</html>"
@@ -527,13 +565,24 @@
       },
       "fields": {
         "updatedAt": "Updated {value}",
+        "lastOpenedAt": "Opened {value}",
+        "lastRefreshedAt": "Refreshed {value}",
+        "sourceSession": "Session {value}",
+        "createdLocally": "Created locally",
         "dataModeLabel": "Data Mode",
         "htmlEntry": "HTML Entry"
       },
+      "dataModes": {
+        "ai_data": "AI data",
+        "self_fetch": "Self fetch",
+        "unknown": "Unknown"
+      },
       "empty": {
         "summary": "No summary available",
-        "pinned": "No pinned assets yet.",
+        "pinned": "Pin important assets to keep them at the top of this workspace.",
         "recent": "No reusable assets have been registered yet.",
+        "filtered": "No assets matched the current search and filter.",
+        "spotlight": "No featured asset yet.",
         "snapshot": "No snapshot preview available.",
         "renderData": "No render data recorded.",
         "refreshSpec": "No refresh spec recorded.",

@@ -473,83 +473,132 @@
       }
     },
     "assetsPage": {
-      "title": "Assets",
-      "subtitle": "Reusable cards created from chat, ready for quick access and future automation.",
+      "title": "资产",
+      "subtitle": "把聊天中可复用的输出沉淀为本地资产库，方便更快复用到 dashboard、回复和后续自动化。",
+      "hero": {
+        "eyebrow": "本地资产注册表"
+      },
+      "stats": {
+        "total": {
+          "label": "活跃资产",
+          "hint": "当前本地可直接复用的卡片资产"
+        },
+        "pinned": {
+          "label": "已置顶",
+          "hint": "优先保留在工作台顶部的资产"
+        },
+        "selfFetch": {
+          "label": "自主拉取",
+          "hint": "无需重放聊天即可自行刷新的资产"
+        },
+        "snapshot": {
+          "label": "可预览",
+          "hint": "已经生成快照预览的资产"
+        }
+      },
       "sections": {
-        "pinned": "Pinned Assets",
-        "recent": "Recent Assets",
-        "renderData": "Render Data",
-        "refreshSpec": "Refresh Spec",
-        "outputExample": "Output Example",
-        "assetContract": "Asset Contract",
-        "matchHints": "Match Hints",
-        "propsHint": "Props Hint"
+        "pinned": "置顶资产",
+        "recent": "最近资产",
+        "library": "资产库",
+        "spotlight": "焦点资产",
+        "renderData": "渲染数据",
+        "refreshSpec": "刷新规格",
+        "outputExample": "输出示例",
+        "assetContract": "资产契约",
+        "matchHints": "匹配提示",
+        "propsHint": "参数提示"
+      },
+      "descriptions": {
+        "pinned": "保留那些你想在日常流程里最快拿到的资产。",
+        "library": "按标题、提示词或来源快速检索本地资产库。"
+      },
+      "filters": {
+        "all": "全部资产",
+        "pinned": "仅看置顶",
+        "aiData": "AI 数据",
+        "selfFetch": "自主拉取"
+      },
+      "search": {
+        "placeholder": "搜索标题、摘要、render hint、模板或会话"
       },
       "actions": {
-        "create": "Create Asset",
-        "reload": "Reload",
-        "pin": "Pin asset",
-        "unpin": "Unpin asset",
-        "refresh": "Refresh asset",
-        "archive": "Archive asset",
-        "openConversation": "Open Conversation",
-        "openManager": "Open Manager"
+        "create": "创建资产",
+        "reload": "重新加载",
+        "clearSearch": "清除",
+        "pin": "置顶资产",
+        "unpin": "取消置顶",
+        "refresh": "刷新资产",
+        "archive": "归档资产",
+        "openConversation": "打开原对话",
+        "openManager": "打开管理页",
+        "openDetails": "查看详情"
       },
       "createDialog": {
-        "title": "Create HTML Asset",
-        "description": "Paste reusable HTML and lightweight matching metadata to save a local asset.",
+        "title": "创建 HTML 资产",
+        "description": "粘贴可复用的 HTML 和匹配元数据，保存为可在 dashboard 与聊天中复用的本地资产。",
         "fields": {
-          "assetId": "Asset ID",
-          "title": "Title",
-          "summary": "Summary",
+          "assetId": "资产 ID",
+          "title": "标题",
+          "summary": "摘要",
           "renderHint": "Render Hint",
-          "dataMode": "Data Mode",
-          "matchHints": "Match Hints",
-          "propsHint": "Props Hint",
-          "outputExample": "Output Example JSON",
+          "dataMode": "数据模式",
+          "matchHints": "匹配提示",
+          "propsHint": "参数提示",
+          "outputExample": "输出示例 JSON",
           "html": "HTML"
         },
         "placeholders": {
-          "summary": "Short description for dashboard and chat reuse",
-          "matchHints": "weather, 天气, forecast",
+          "summary": "用于 dashboard 和聊天复用的简短说明",
+          "matchHints": "天气, forecast, 温度",
           "propsHint": "location, date",
           "outputExample": "{\n  \"location\": \"Beijing\",\n  \"temp_c\": 22\n}",
           "html": "<!doctype html>\n<html>\n  <body>\n    <div id=\"app\"></div>\n  </body>\n</html>"
         },
         "options": {
-          "aiData": "AI data",
-          "selfFetch": "Self fetch"
+          "aiData": "AI 数据",
+          "selfFetch": "自主拉取"
         },
         "actions": {
-          "cancel": "Cancel",
-          "save": "Save Asset"
+          "cancel": "取消",
+          "save": "保存资产"
         }
       },
       "fields": {
-        "updatedAt": "Updated {value}",
-        "dataModeLabel": "Data Mode",
-        "htmlEntry": "HTML Entry"
+        "updatedAt": "更新于 {value}",
+        "lastOpenedAt": "最近打开 {value}",
+        "lastRefreshedAt": "最近刷新 {value}",
+        "sourceSession": "来源会话 {value}",
+        "createdLocally": "本地创建",
+        "dataModeLabel": "数据模式",
+        "htmlEntry": "HTML 入口"
+      },
+      "dataModes": {
+        "ai_data": "AI 数据",
+        "self_fetch": "自主拉取",
+        "unknown": "未知"
       },
       "empty": {
-        "summary": "No summary available",
-        "pinned": "No pinned assets yet.",
-        "recent": "No reusable assets have been registered yet.",
-        "snapshot": "No snapshot preview available.",
-        "renderData": "No render data recorded.",
-        "refreshSpec": "No refresh spec recorded.",
-        "outputExample": "No output example recorded.",
-        "matchHints": "No match hints recorded.",
-        "propsHint": "No props hint recorded.",
-        "dataMode": "No data mode recorded.",
-        "htmlEntry": "No HTML entry recorded."
+        "summary": "暂无摘要说明",
+        "pinned": "还没有置顶资产，把最常用的资产固定在这里吧。",
+        "recent": "还没有注册任何可复用资产。",
+        "filtered": "当前搜索和筛选条件下没有匹配的资产。",
+        "spotlight": "还没有可展示的焦点资产。",
+        "snapshot": "暂无快照预览。",
+        "renderData": "暂无渲染数据记录。",
+        "refreshSpec": "暂无刷新规格记录。",
+        "outputExample": "暂无输出示例。",
+        "matchHints": "暂无匹配提示。",
+        "propsHint": "暂无参数提示。",
+        "dataMode": "暂无数据模式记录。",
+        "htmlEntry": "暂无 HTML 入口记录。"
       },
       "feedback": {
-        "loading": "Loading assets...",
-        "loadFailed": "Failed to load assets",
-        "updateFailed": "Failed to update asset",
-        "createFailed": "Failed to create asset",
-        "createMissingFields": "Asset ID, title, and HTML are required.",
-        "invalidOutputExample": "Output Example must be valid JSON."
+        "loading": "正在加载资产...",
+        "loadFailed": "加载资产失败",
+        "updateFailed": "更新资产失败",
+        "createFailed": "创建资产失败",
+        "createMissingFields": "资产 ID、标题和 HTML 为必填项。",
+        "invalidOutputExample": "输出示例必须是合法的 JSON。"
       }
     }
   }

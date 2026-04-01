@@ -1165,14 +1165,27 @@ fn build_install_guide(report: &SandboxReadinessReport) -> SandboxInstallGuide {
         SandboxReadinessStatus::RepairNeeded => SandboxInstallGuide {
             status: report.status,
             title: "Repair sandbox service".to_string(),
-            description:
+            description: if report.boxlite.reachable {
+                "BoxLite is reachable, but the desktop sandbox session is stale or no longer runnable."
+                    .to_string()
+            } else {
                 "BoxLite is installed in WSL, but the local sandbox bridge is not reachable."
-                    .to_string(),
-            steps: vec![
-                "Click Prepare to try starting BoxLite automatically.".to_string(),
-                "If Prepare does not work, click Repair to restart the sandbox process."
-                    .to_string(),
-            ],
+                    .to_string()
+            },
+            steps: if report.boxlite.reachable {
+                vec![
+                    "Click Prepare to recreate a healthy runnable sandbox session.".to_string(),
+                    "If it still fails, click Repair to restart the sandbox service.".to_string(),
+                    "If the same stale-session error returns, click Rebuild Sandbox to clear the runtime state."
+                        .to_string(),
+                ]
+            } else {
+                vec![
+                    "Click Prepare to try starting BoxLite automatically.".to_string(),
+                    "If Prepare does not work, click Repair to restart the sandbox process."
+                        .to_string(),
+                ]
+            },
             primary_command: None,
         },
         SandboxReadinessStatus::Unsupported => SandboxInstallGuide {
@@ -1435,6 +1448,58 @@ mod session_name_tests {
         assert_eq!(guide.status, SandboxReadinessStatus::RepairNeeded);
         assert!(guide.title.contains("Repair"));
         assert!(guide.steps.iter().any(|step| step.contains("Prepare")));
+    }
+
+    #[test]
+    fn build_install_guide_for_reachable_probe_failure_mentions_rebuild() {
+        let guide = build_install_guide(&SandboxReadinessReport {
+            platform: "windows".to_string(),
+            platform_supported: true,
+            status: SandboxReadinessStatus::RepairNeeded,
+            provider_name: "boxlite".to_string(),
+            runtime_mode: SandboxRuntimeMode::Sandbox,
+            wsl: Some(SandboxWslStatus {
+                installed: true,
+                ready: true,
+                detail: None,
+                recommended_command: None,
+            }),
+            python: Some(SandboxPythonStatus {
+                installed: true,
+                abi: Some("cp312".to_string()),
+                supported: true,
+                detail: None,
+            }),
+            boxlite: SandboxBoxLiteStatus {
+                binary_found: true,
+                binary_path: Some("/home/timeline/.local/lib/python3.12/site-packages".to_string()),
+                endpoint: Some("http://127.0.0.1:9090".to_string()),
+                reachable: true,
+                managed_by_deeting: true,
+            },
+            execution_probe: SandboxExecutionProbe {
+                status: SandboxExecutionProbeStatus::Failed,
+                detail: Some(
+                    "Sandbox bridge is reachable, but a lightweight execution probe failed."
+                        .to_string(),
+                ),
+                checked_at_unix_ms: Some(123),
+            },
+            blocking_reason: Some(
+                "Sandbox bridge is reachable, but a lightweight execution probe failed."
+                    .to_string(),
+            ),
+            next_actions: vec![],
+            can_auto_prepare: true,
+        });
+
+        assert_eq!(guide.status, SandboxReadinessStatus::RepairNeeded);
+        assert!(guide.description.contains("reachable"));
+        assert!(!guide.description.contains("not reachable"));
+        assert!(guide
+            .steps
+            .iter()
+            .any(|step| step.contains("Rebuild Sandbox")));
     }
 }
 

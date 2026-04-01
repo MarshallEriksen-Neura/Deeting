@@ -1,24 +1,30 @@
-"use client"
+"use client";
 
-import Link from "next/link"
-import { ExternalLink } from "lucide-react"
-import { useTranslations } from "next-intl"
+import Link from "next/link";
+import { ExternalLink } from "lucide-react";
+import { useLocale, useTranslations } from "next-intl";
 
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from "@/components/ui/sheet"
-import type { LocalAsset } from "@/lib/api/local-assets"
+} from "@/components/ui/sheet";
+import type { LocalAsset } from "@/lib/api/local-assets";
+
+import {
+  formatAssetDate,
+  getDataModeLabel,
+  type AssetPageTranslator,
+} from "./assets-utils";
 
 interface AssetDetailSheetProps {
-  asset: LocalAsset | null
-  open: boolean
-  onOpenChange: (open: boolean) => void
+  asset: LocalAsset | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }
 
 export function AssetDetailSheet({
@@ -26,15 +32,19 @@ export function AssetDetailSheet({
   open,
   onOpenChange,
 }: AssetDetailSheetProps) {
-  const t = useTranslations("dashboard.assetsPage")
+  const t = useTranslations("dashboard.assetsPage");
+  const locale = useLocale();
 
-  if (!asset) return null
+  if (!asset) return null;
 
-  const renderData = safeParseJson(asset.latest_render_data_json)
-  const refreshSpec = safeParseJson(asset.refresh_spec_json)
-  const outputExample = safeParseJson(asset.output_example_json)
-  const matchHints = safeParseJson(asset.match_hints_json)
-  const propsHint = safeParseJson(asset.props_hint_json)
+  const renderData = safeParseJson(asset.latest_render_data_json);
+  const refreshSpec = safeParseJson(asset.refresh_spec_json);
+  const outputExample = safeParseJson(asset.output_example_json);
+  const matchHints = safeParseJson(asset.match_hints_json);
+  const propsHint = safeParseJson(asset.props_hint_json);
+  const sourceLabel = asset.origin_session_id
+    ? t("fields.sourceSession", { value: asset.origin_session_id })
+    : t("fields.createdLocally");
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -54,12 +64,15 @@ export function AssetDetailSheet({
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="secondary" className="uppercase tracking-[0.14em] text-[10px]">
+              <Badge
+                variant="secondary"
+                className="uppercase tracking-[0.14em] text-[10px]"
+              >
                 {asset.render_hint || asset.source_view_type}
               </Badge>
               {asset.data_mode ? (
                 <Badge variant="outline" className="text-[10px]">
-                  {asset.data_mode}
+                  {getDataModeLabel(asset.data_mode, t as AssetPageTranslator)}
                 </Badge>
               ) : null}
               {asset.template_id ? (
@@ -75,17 +88,31 @@ export function AssetDetailSheet({
             </div>
 
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span>{t("fields.updatedAt", { value: asset.updated_at })}</span>
+              <span>
+                {t("fields.updatedAt", {
+                  value: formatAssetDate(asset.updated_at, locale),
+                })}
+              </span>
               <span>·</span>
-              <span>{t("fields.sourceSession", { value: asset.origin_session_id })}</span>
+              <span>{sourceLabel}</span>
             </div>
 
-            <Button asChild type="button" variant="outline" size="sm" className="w-fit">
-              <Link href={`/chat?session=${encodeURIComponent(asset.origin_session_id)}`}>
-                <ExternalLink className="mr-2 h-4 w-4" />
-                {t("actions.openConversation")}
-              </Link>
-            </Button>
+            {asset.origin_session_id ? (
+              <Button
+                asChild
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-fit"
+              >
+                <Link
+                  href={`/chat?session=${encodeURIComponent(asset.origin_session_id)}`}
+                >
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  {t("actions.openConversation")}
+                </Link>
+              </Button>
+            ) : null}
           </div>
         </SheetHeader>
 
@@ -191,14 +218,14 @@ export function AssetDetailSheet({
         </div>
       </SheetContent>
     </Sheet>
-  )
+  );
 }
 
 function safeParseJson(value: string | null | undefined) {
-  if (!value) return null
+  if (!value) return null;
   try {
-    return JSON.parse(value)
+    return JSON.parse(value);
   } catch {
-    return null
+    return null;
   }
 }

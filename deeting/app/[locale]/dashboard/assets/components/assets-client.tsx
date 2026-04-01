@@ -1,149 +1,179 @@
-"use client"
+"use client";
 
-import Link from "next/link"
-import { useCallback, useEffect, useMemo, useState } from "react"
-import { useTranslations } from "next-intl"
-import { Archive, ExternalLink, Loader2, Pin, PinOff, Plus } from "lucide-react"
-import { toast } from "sonner"
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { Search } from "lucide-react";
+import { useLocale, useTranslations } from "next-intl";
+import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Container } from "@/components/ui/container";
+import { Input } from "@/components/ui/input";
 import {
   listLocalAssets,
   saveLocalAsset,
   updateLocalAsset,
   type LocalAsset,
-} from "@/lib/api/local-assets"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
-import { AssetDetailSheet } from "./asset-detail-sheet"
+} from "@/lib/api/local-assets";
+import { cn } from "@/lib/utils";
 
-interface CreateAssetFormState {
-  assetId: string
-  title: string
-  summary: string
-  renderHint: string
-  dataMode: "ai_data" | "self_fetch"
-  matchHints: string
-  propsHint: string
-  outputExample: string
-  html: string
-}
-
-const INITIAL_CREATE_FORM: CreateAssetFormState = {
-  assetId: "",
-  title: "",
-  summary: "",
-  renderHint: "",
-  dataMode: "ai_data",
-  matchHints: "",
-  propsHint: "",
-  outputExample: "",
-  html: "",
-}
+import { AssetDetailSheet } from "./asset-detail-sheet";
+import { AssetLibraryCard } from "./asset-library-card";
+import { AssetsCreateDialog } from "./assets-create-dialog";
+import { AssetsHero } from "./assets-hero";
+import {
+  INITIAL_CREATE_FORM,
+  matchesAssetFilter,
+  matchesAssetQuery,
+  sortAssetsByActivity,
+  splitCommaSeparatedValues,
+  type AssetFilter,
+  type CreateAssetFormState,
+} from "./assets-utils";
 
 export function AssetsClient() {
-  const t = useTranslations("dashboard.assetsPage")
-  const [assets, setAssets] = useState<LocalAsset[]>([])
-  const [loading, setLoading] = useState(true)
-  const [busyAssetId, setBusyAssetId] = useState<string | null>(null)
-  const [selectedAsset, setSelectedAsset] = useState<LocalAsset | null>(null)
-  const [detailOpen, setDetailOpen] = useState(false)
-  const [createOpen, setCreateOpen] = useState(false)
-  const [creating, setCreating] = useState(false)
-  const [createForm, setCreateForm] = useState<CreateAssetFormState>(INITIAL_CREATE_FORM)
+  const t = useTranslations("dashboard.assetsPage");
+  const locale = useLocale();
+
+  const [assets, setAssets] = useState<LocalAsset[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyAssetId, setBusyAssetId] = useState<string | null>(null);
+  const [selectedAsset, setSelectedAsset] = useState<LocalAsset | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeFilter, setActiveFilter] = useState<AssetFilter>("all");
+  const [createForm, setCreateForm] =
+    useState<CreateAssetFormState>(INITIAL_CREATE_FORM);
+
+  const deferredSearchQuery = useDeferredValue(
+    searchQuery.trim().toLowerCase(),
+  );
 
   const loadAssets = useCallback(async () => {
-    setLoading(true)
+    setLoading(true);
     try {
-      const data = await listLocalAssets({ limit: 100 })
-      setAssets(data)
+      const data = await listLocalAssets({ limit: 100 });
+      setAssets(data);
     } catch (error) {
-      console.warn("load_local_assets_failed", error)
-      toast.error(t("feedback.loadFailed"))
+      console.warn("load_local_assets_failed", error);
+      toast.error(t("feedback.loadFailed"));
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }, [t])
+  }, [t]);
 
   useEffect(() => {
-    void loadAssets()
-  }, [loadAssets])
+    void loadAssets();
+  }, [loadAssets]);
 
+  const activeAssets = useMemo(
+    () => sortAssetsByActivity(assets.filter((asset) => !asset.is_archived)),
+    [assets],
+  );
   const pinnedAssets = useMemo(
-    () => assets.filter((asset) => asset.is_pinned && !asset.is_archived),
-    [assets]
-  )
-  const recentAssets = useMemo(
-    () => assets.filter((asset) => !asset.is_archived),
-    [assets]
-  )
+    () => activeAssets.filter((asset) => asset.is_pinned),
+    [activeAssets],
+  );
+  const selfFetchAssets = useMemo(
+    () => activeAssets.filter((asset) => asset.data_mode === "self_fetch"),
+    [activeAssets],
+  );
+  const previewReadyCount = useMemo(
+    () =>
+      activeAssets.filter((asset) => Boolean(asset.latest_snapshot_html))
+        .length,
+    [activeAssets],
+  );
+  const filteredAssets = useMemo(
+    () =>
+      activeAssets.filter(
+        (asset) =>
+          matchesAssetFilter(asset, activeFilter) &&
+          matchesAssetQuery(asset, deferredSearchQuery),
+      ),
+    [activeAssets, activeFilter, deferredSearchQuery],
+  );
+  const filteredPinnedAssets = useMemo(
+    () => filteredAssets.filter((asset) => asset.is_pinned),
+    [filteredAssets],
+  );
+  const spotlightAsset =
+    filteredPinnedAssets[0] ??
+    filteredAssets[0] ??
+    pinnedAssets[0] ??
+    activeAssets[0] ??
+    null;
+
+  const hasFiltering = activeFilter !== "all" || deferredSearchQuery.length > 0;
 
   const mutateAsset = useCallback(
     async (
       assetId: string,
-      request: { isPinned?: boolean; isArchived?: boolean; markOpened?: boolean }
+      request: {
+        isPinned?: boolean;
+        isArchived?: boolean;
+        markOpened?: boolean;
+      },
     ) => {
-      setBusyAssetId(assetId)
+      setBusyAssetId(assetId);
       try {
-        const updated = await updateLocalAsset(assetId, request)
+        const updated = await updateLocalAsset(assetId, request);
         setAssets((current) =>
-          current.map((asset) => (asset.asset_id === updated.asset_id ? updated : asset))
-        )
+          current.map((asset) =>
+            asset.asset_id === updated.asset_id ? updated : asset,
+          ),
+        );
+        setSelectedAsset((current) =>
+          current?.asset_id === updated.asset_id ? updated : current,
+        );
       } catch (error) {
-        console.warn("update_local_asset_failed", error)
-        toast.error(t("feedback.updateFailed"))
+        console.warn("update_local_asset_failed", error);
+        toast.error(t("feedback.updateFailed"));
       } finally {
-        setBusyAssetId(null)
+        setBusyAssetId(null);
       }
     },
-    [t]
-  )
+    [t],
+  );
 
   const openAssetDetail = useCallback(
     async (asset: LocalAsset) => {
-      setSelectedAsset(asset)
-      setDetailOpen(true)
-      await mutateAsset(asset.asset_id, { markOpened: true })
+      setSelectedAsset(asset);
+      setDetailOpen(true);
+      await mutateAsset(asset.asset_id, { markOpened: true });
     },
-    [mutateAsset]
-  )
+    [mutateAsset],
+  );
 
   const handleCreateAsset = useCallback(async () => {
-    const assetId = createForm.assetId.trim()
-    const title = createForm.title.trim()
-    const html = createForm.html.trim()
+    const assetId = createForm.assetId.trim();
+    const title = createForm.title.trim();
+    const html = createForm.html.trim();
+
     if (!assetId || !title || !html) {
-      toast.error(t("feedback.createMissingFields"))
-      return
+      toast.error(t("feedback.createMissingFields"));
+      return;
     }
 
-    let outputExample: unknown = undefined
+    let outputExample: unknown = undefined;
     if (createForm.outputExample.trim()) {
       try {
-        outputExample = JSON.parse(createForm.outputExample)
+        outputExample = JSON.parse(createForm.outputExample);
       } catch {
-        toast.error(t("feedback.invalidOutputExample"))
-        return
+        toast.error(t("feedback.invalidOutputExample"));
+        return;
       }
     }
 
-    setCreating(true)
+    setCreating(true);
     try {
       await saveLocalAsset({
         assetId,
@@ -155,293 +185,245 @@ export function AssetsClient() {
         matchHints: splitCommaSeparatedValues(createForm.matchHints),
         propsHint: splitCommaSeparatedValues(createForm.propsHint),
         outputExample,
-      })
+      });
 
-      await loadAssets()
-      setCreateForm(INITIAL_CREATE_FORM)
-      setCreateOpen(false)
+      await loadAssets();
+      setCreateForm(INITIAL_CREATE_FORM);
+      setCreateOpen(false);
     } catch (error) {
-      console.warn("save_local_asset_failed", error)
-      toast.error(t("feedback.createFailed"))
+      console.warn("save_local_asset_failed", error);
+      toast.error(t("feedback.createFailed"));
     } finally {
-      setCreating(false)
+      setCreating(false);
     }
-  }, [createForm, loadAssets, t])
+  }, [createForm, loadAssets, t]);
 
-  const renderAssetCard = (asset: LocalAsset) => (
-    <div
-      key={asset.asset_id}
-      className="rounded-2xl border border-border/70 bg-background/80 p-4 shadow-sm"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <button
-          type="button"
-          className="min-w-0 flex-1 text-left"
-          onClick={() => void openAssetDetail(asset)}
-        >
-          <div className="truncate text-sm font-semibold text-foreground">{asset.title}</div>
-          <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-            {asset.summary || t("empty.summary")}
-          </div>
-          <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-            <span>{asset.render_hint || asset.source_view_type}</span>
-            <span>·</span>
-            <span>{t("fields.updatedAt", { value: asset.updated_at })}</span>
-          </div>
-        </button>
-        <div className="flex items-center gap-1">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            disabled={busyAssetId === asset.asset_id}
-            onClick={(event) => {
-              event.stopPropagation()
-              void mutateAsset(asset.asset_id, { isPinned: !asset.is_pinned })
-            }}
-            aria-label={asset.is_pinned ? t("actions.unpin") : t("actions.pin")}
-          >
-            {asset.is_pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            disabled={busyAssetId === asset.asset_id}
-            onClick={(event) => {
-              event.stopPropagation()
-              void mutateAsset(asset.asset_id, { isArchived: true })
-            }}
-            aria-label={t("actions.archive")}
-          >
-            <Archive className="h-4 w-4" />
-          </Button>
-          <Button asChild type="button" variant="ghost" size="icon" className="h-8 w-8">
-            <Link
-              href={`/chat?session=${encodeURIComponent(asset.origin_session_id)}`}
-              onClick={(event) => event.stopPropagation()}
-            >
-              <ExternalLink className="h-4 w-4" />
-            </Link>
-          </Button>
-        </div>
-      </div>
-    </div>
-  )
+  const filterOptions: Array<{ value: AssetFilter; label: string }> = [
+    { value: "all", label: t("filters.all") },
+    { value: "pinned", label: t("filters.pinned") },
+    { value: "ai_data", label: t("filters.aiData") },
+    { value: "self_fetch", label: t("filters.selfFetch") },
+  ];
 
   return (
-    <div className="h-full flex flex-col bg-gray-50 dark:bg-[#05050A]">
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
-              {t("title")}
-            </h1>
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              {t("subtitle")}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button type="button" onClick={() => setCreateOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              {t("actions.create")}
-            </Button>
-            <Button type="button" variant="outline" onClick={() => void loadAssets()}>
-              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              {t("actions.reload")}
-            </Button>
-          </div>
+    <div className="h-full overflow-y-auto bg-[linear-gradient(180deg,#f7fbff_0%,#f2f7ff_32%,#fbfcfe_100%)] dark:bg-[linear-gradient(180deg,#08111c_0%,#091521_40%,#0b1220_100%)]">
+      <div className="pointer-events-none absolute inset-x-0 top-0 hidden h-[420px] bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.18),transparent_34%),radial-gradient(circle_at_top_right,rgba(16,185,129,0.14),transparent_24%)] dark:block" />
+      <Container
+        as="main"
+        size="full"
+        gutter="md"
+        className="relative py-6 md:py-8"
+      >
+        <div className="flex flex-col gap-6">
+          <AssetsHero
+            activeAssetCount={activeAssets.length}
+            loading={loading}
+            onCreate={() => setCreateOpen(true)}
+            onOpenSpotlight={() =>
+              spotlightAsset && void openAssetDetail(spotlightAsset)
+            }
+            onReload={() => void loadAssets()}
+            pinnedAssetCount={pinnedAssets.length}
+            previewReadyCount={previewReadyCount}
+            selfFetchAssetCount={selfFetchAssets.length}
+            spotlightAsset={spotlightAsset}
+            t={t}
+          />
+
+          <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto]">
+            <div className="flex items-center gap-3 rounded-[24px] border border-slate-200/70 bg-white/80 px-4 py-3 shadow-[0_18px_45px_-38px_rgba(15,23,42,0.45)] dark:border-white/10 dark:bg-white/[0.05]">
+              <Search className="size-4 text-slate-400" />
+              <Input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder={t("search.placeholder")}
+                className="border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
+              />
+              {searchQuery ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="rounded-full"
+                  onClick={() => setSearchQuery("")}
+                >
+                  {t("actions.clearSearch")}
+                </Button>
+              ) : null}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {filterOptions.map((option) => (
+                <Button
+                  key={option.value}
+                  type="button"
+                  size="sm"
+                  variant={
+                    activeFilter === option.value ? "default" : "secondary"
+                  }
+                  className={cn(
+                    "rounded-full px-4",
+                    activeFilter === option.value
+                      ? "bg-slate-950 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100"
+                      : "bg-white/80 text-slate-700 hover:bg-white dark:bg-white/[0.05] dark:text-slate-300 dark:hover:bg-white/[0.08]",
+                  )}
+                  onClick={() => setActiveFilter(option.value)}
+                >
+                  {option.label}
+                </Button>
+              ))}
+            </div>
+          </section>
+
+          <AssetSection
+            count={filteredPinnedAssets.length}
+            description={t("descriptions.pinned")}
+            emptyMessage={
+              hasFiltering ? t("empty.filtered") : t("empty.pinned")
+            }
+            locale={locale}
+            title={t("sections.pinned")}
+            assets={filteredPinnedAssets}
+            busyAssetId={busyAssetId}
+            onArchive={(asset) =>
+              void mutateAsset(asset.asset_id, { isArchived: true })
+            }
+            onOpenDetails={(asset) => void openAssetDetail(asset)}
+            onTogglePin={(asset) =>
+              void mutateAsset(asset.asset_id, { isPinned: !asset.is_pinned })
+            }
+            t={t}
+          />
+
+          <AssetSection
+            count={filteredAssets.length}
+            description={t("descriptions.library")}
+            emptyMessage={
+              hasFiltering ? t("empty.filtered") : t("empty.recent")
+            }
+            locale={locale}
+            title={t("sections.library")}
+            assets={loading ? [] : filteredAssets}
+            busyAssetId={busyAssetId}
+            loading={loading}
+            onArchive={(asset) =>
+              void mutateAsset(asset.asset_id, { isArchived: true })
+            }
+            onOpenDetails={(asset) => void openAssetDetail(asset)}
+            onTogglePin={(asset) =>
+              void mutateAsset(asset.asset_id, { isPinned: !asset.is_pinned })
+            }
+            t={t}
+          />
         </div>
+      </Container>
 
-        <section className="space-y-3">
-          <div className="text-sm font-semibold text-foreground">{t("sections.pinned")}</div>
-          {pinnedAssets.length > 0 ? (
-            <div className="grid gap-3">{pinnedAssets.map(renderAssetCard)}</div>
-          ) : (
-            <div className="rounded-2xl border border-dashed border-border/70 p-4 text-sm text-muted-foreground">
-              {t("empty.pinned")}
-            </div>
-          )}
-        </section>
-
-        <section className="space-y-3">
-          <div className="text-sm font-semibold text-foreground">{t("sections.recent")}</div>
-          {loading ? (
-            <div className="rounded-2xl border border-dashed border-border/70 p-4 text-sm text-muted-foreground">
-              {t("feedback.loading")}
-            </div>
-          ) : recentAssets.length > 0 ? (
-            <div className="grid gap-3">{recentAssets.map(renderAssetCard)}</div>
-          ) : (
-            <div className="rounded-2xl border border-dashed border-border/70 p-4 text-sm text-muted-foreground">
-              {t("empty.recent")}
-            </div>
-          )}
-        </section>
-      </div>
       <AssetDetailSheet
         asset={selectedAsset}
         open={detailOpen}
         onOpenChange={setDetailOpen}
       />
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>{t("createDialog.title")}</DialogTitle>
-            <DialogDescription>{t("createDialog.description")}</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-2">
-            <div className="grid gap-2 md:grid-cols-2">
-              <div className="grid gap-2">
-                <Label htmlFor="asset-id">{t("createDialog.fields.assetId")}</Label>
-                <Input
-                  id="asset-id"
-                  value={createForm.assetId}
-                  onChange={(event) =>
-                    setCreateForm((current) => ({ ...current, assetId: event.target.value }))
-                  }
-                  placeholder="weather-ios18-card"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="asset-title">{t("createDialog.fields.title")}</Label>
-                <Input
-                  id="asset-title"
-                  value={createForm.title}
-                  onChange={(event) =>
-                    setCreateForm((current) => ({ ...current, title: event.target.value }))
-                  }
-                  placeholder="Weather iOS18"
-                />
-              </div>
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="asset-summary">{t("createDialog.fields.summary")}</Label>
-              <Input
-                id="asset-summary"
-                value={createForm.summary}
-                onChange={(event) =>
-                  setCreateForm((current) => ({ ...current, summary: event.target.value }))
-                }
-                placeholder={t("createDialog.placeholders.summary")}
-              />
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="grid gap-2">
-                <Label htmlFor="asset-render-hint">{t("createDialog.fields.renderHint")}</Label>
-                <Input
-                  id="asset-render-hint"
-                  value={createForm.renderHint}
-                  onChange={(event) =>
-                    setCreateForm((current) => ({ ...current, renderHint: event.target.value }))
-                  }
-                  placeholder="weather-card"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label>{t("createDialog.fields.dataMode")}</Label>
-                <Select
-                  value={createForm.dataMode}
-                  onValueChange={(value: "ai_data" | "self_fetch") =>
-                    setCreateForm((current) => ({ ...current, dataMode: value }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ai_data">{t("createDialog.options.aiData")}</SelectItem>
-                    <SelectItem value="self_fetch">
-                      {t("createDialog.options.selfFetch")}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="grid gap-2">
-                <Label htmlFor="asset-match-hints">{t("createDialog.fields.matchHints")}</Label>
-                <Input
-                  id="asset-match-hints"
-                  value={createForm.matchHints}
-                  onChange={(event) =>
-                    setCreateForm((current) => ({ ...current, matchHints: event.target.value }))
-                  }
-                  placeholder={t("createDialog.placeholders.matchHints")}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="asset-props-hint">{t("createDialog.fields.propsHint")}</Label>
-                <Input
-                  id="asset-props-hint"
-                  value={createForm.propsHint}
-                  onChange={(event) =>
-                    setCreateForm((current) => ({ ...current, propsHint: event.target.value }))
-                  }
-                  placeholder={t("createDialog.placeholders.propsHint")}
-                />
-              </div>
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="asset-output-example">
-                {t("createDialog.fields.outputExample")}
-              </Label>
-              <Textarea
-                id="asset-output-example"
-                value={createForm.outputExample}
-                onChange={(event) =>
-                  setCreateForm((current) => ({
-                    ...current,
-                    outputExample: event.target.value,
-                  }))
-                }
-                className="min-h-28 font-mono"
-                placeholder={t("createDialog.placeholders.outputExample")}
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="asset-html">{t("createDialog.fields.html")}</Label>
-              <Textarea
-                id="asset-html"
-                value={createForm.html}
-                onChange={(event) =>
-                  setCreateForm((current) => ({ ...current, html: event.target.value }))
-                }
-                className="min-h-64 font-mono"
-                placeholder={t("createDialog.placeholders.html")}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setCreateOpen(false)}
-              disabled={creating}
-            >
-              {t("createDialog.actions.cancel")}
-            </Button>
-            <Button type="button" onClick={() => void handleCreateAsset()} disabled={creating}>
-              {creating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              {t("createDialog.actions.save")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AssetsCreateDialog
+        creating={creating}
+        form={createForm}
+        htmlPlaceholder={t.raw("createDialog.placeholders.html") as string}
+        onFieldChange={(patch) =>
+          setCreateForm((current) => ({
+            ...current,
+            ...patch,
+          }))
+        }
+        onOpenChange={setCreateOpen}
+        onSubmit={() => void handleCreateAsset()}
+        open={createOpen}
+        outputExamplePlaceholder={
+          t.raw("createDialog.placeholders.outputExample") as string
+        }
+        t={t}
+      />
     </div>
-  )
+  );
 }
 
-function splitCommaSeparatedValues(value: string): string[] {
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0)
+function AssetSection({
+  assets,
+  busyAssetId,
+  count,
+  description,
+  emptyMessage,
+  loading = false,
+  locale,
+  onArchive,
+  onOpenDetails,
+  onTogglePin,
+  t,
+  title,
+}: {
+  assets: LocalAsset[];
+  busyAssetId: string | null;
+  count: number;
+  description: string;
+  emptyMessage: string;
+  loading?: boolean;
+  locale: string;
+  onArchive: (asset: LocalAsset) => void;
+  onOpenDetails: (asset: LocalAsset) => void;
+  onTogglePin: (asset: LocalAsset) => void;
+  t: (key: string, values?: Record<string, string | number>) => string;
+  title: string;
+}) {
+  return (
+    <section className="space-y-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="text-xl font-semibold tracking-[-0.02em] text-slate-950 dark:text-white">
+            {title}
+          </h2>
+          <p className="text-sm text-slate-600 dark:text-slate-400">
+            {description}
+          </p>
+        </div>
+        <Badge
+          variant="outline"
+          className="border-slate-200 bg-white/80 px-3 py-1 text-slate-700 dark:border-white/10 dark:bg-white/[0.05] dark:text-slate-300"
+        >
+          {count}
+        </Badge>
+      </div>
+
+      {loading ? (
+        <EmptyStateCard>{t("feedback.loading")}</EmptyStateCard>
+      ) : assets.length > 0 ? (
+        <div className="grid gap-4 xl:grid-cols-2 2xl:grid-cols-3">
+          {assets.map((asset) => (
+            <AssetLibraryCard
+              key={asset.asset_id}
+              asset={asset}
+              busyAssetId={busyAssetId}
+              locale={locale}
+              onArchive={() => onArchive(asset)}
+              onOpenConversation={
+                asset.origin_session_id
+                  ? `/chat?session=${encodeURIComponent(asset.origin_session_id)}`
+                  : null
+              }
+              onOpenDetails={() => onOpenDetails(asset)}
+              onTogglePin={() => onTogglePin(asset)}
+              t={t}
+            />
+          ))}
+        </div>
+      ) : (
+        <EmptyStateCard>{emptyMessage}</EmptyStateCard>
+      )}
+    </section>
+  );
+}
+
+function EmptyStateCard({ children }: { children: string }) {
+  return (
+    <div className="rounded-[28px] border border-dashed border-slate-300/80 bg-white/70 p-8 text-sm text-slate-500 shadow-[0_18px_45px_-38px_rgba(15,23,42,0.35)] dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-400">
+      {children}
+    </div>
+  );
 }
