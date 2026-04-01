@@ -4,6 +4,7 @@ import { ChevronRight } from "lucide-react"
 import { useLocale, useTranslations } from "next-intl"
 
 import { Badge } from "@/components/ui/badge"
+import { getNormalizedCacheSource } from "@/lib/gateway-log/cache-metrics"
 import {
   Table,
   TableBody,
@@ -97,7 +98,9 @@ export function LogsTable({ items, isLoading, selectedId, onSelect }: LogsTableP
                     )}
                     {item.is_cached && (
                       <Badge variant="outline" className="border-emerald-500/30 text-emerald-300">
-                        {t("table.cacheBadge")}
+                        {getNormalizedCacheSource(item) === "provider_reported"
+                          ? t("table.cacheBadge")
+                          : t("table.cacheFlagBadge")}
                       </Badge>
                     )}
                   </div>

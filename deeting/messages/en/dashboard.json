@@ -32,6 +32,12 @@
       "title": "Smart Router Value",
       "description": "Performance and cost optimization metrics",
       "cacheHitRate": "Cache Hit Rate",
+      "desktopTitle": "Local Runtime Signals",
+      "desktopDescription": "Observed provider cache reuse and request efficiency from local gateway logs",
+      "desktopCacheReuseRate": "Cache Reuse Rate",
+      "desktopObservedSavings": "Observed Savings",
+      "desktopLatencyRatio": "Latency Ratio",
+      "desktopMethodology": "Uses provider-reported cache tokens when available, then falls back to request-level cache flags.",
       "costSavings": "Cost Savings",
       "thisMonth": "Last 24h",
       "industry": "Industry Avg",
@@ -39,7 +45,8 @@
       "protection": "Protected",
       "blocked": "blocked",
       "acceleration": "Speedup",
-      "ms": "ms"
+      "ms": "ms",
+      "times": "x"
     },
     "providerHealth": {
       "title": "Provider Health",

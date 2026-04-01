@@ -32,6 +32,15 @@ export function hasProviderReportedCacheUsage(log: CacheMetricLogLike): boolean 
   )
 }
 
+export function getNormalizedCacheSource(log: CacheMetricLogLike): string {
+  const source = String(log.cache_source ?? "")
+    .trim()
+    .toLowerCase()
+  if (source) return source
+  if (log.is_cached) return "request_flag"
+  return "unknown"
+}
+
 export function computeRequestCacheHitRate(logs: CacheMetricLogLike[]): number {
   if (logs.length === 0) return 0
   const hits = logs.filter((item) => Boolean(item.is_cached)).length

@@ -33,6 +33,7 @@
       "totalTokens": "Σ {value}",
       "cached": "Cached",
       "cacheBadge": "CACHE",
+      "cacheFlagBadge": "CACHE FLAG",
       "tech": {
         "input": "Input Tokens",
         "output": "Output Tokens",
@@ -95,6 +96,8 @@
         "input": "Input Tokens",
         "output": "Output Tokens",
         "total": "Total",
+        "cachedInput": "Cached Input",
+        "cacheWrite": "Cache Write",
         "totalValue": "{value} tokens"
       },
       "cost": {
@@ -107,9 +110,20 @@
         "userId": "User ID",
         "presetId": "Preset ID",
         "errorCode": "Error Code",
+        "cacheSource": "Cache Source",
+        "usageSource": "Usage Source",
         "anonymous": "Anonymous",
         "directCall": "Direct Call",
         "errorBadge": "Error"
+      },
+      "sources": {
+        "providerReported": "Provider reported",
+        "providerReportedHit": "Provider-reported hit",
+        "headerInferred": "Header inferred",
+        "headerInferredHit": "Header-inferred hit",
+        "requestFlag": "Request flag only",
+        "transformed": "Transformed response",
+        "unknown": "Unknown"
       },
       "actions": {
         "copy": "Copy to clipboard"
@@ -135,7 +149,7 @@
     "summary": {
       "totalRequests": "Requests on this page",
       "errorRate": "Error rate",
-      "cacheHitRate": "Cache hit rate",
+      "cacheHitRate": "Cache reuse rate",
       "totalCost": "User cost on this page"
     },
     "states": {

@@ -32,6 +32,12 @@
       "title": "智能路由价值",
       "description": "性能和成本优化指标",
       "cacheHitRate": "缓存命中率",
+      "desktopTitle": "本地运行信号",
+      "desktopDescription": "基于本地 gateway 日志观察到的 provider 缓存复用与请求效率",
+      "desktopCacheReuseRate": "缓存复用率",
+      "desktopObservedSavings": "观测节省",
+      "desktopLatencyRatio": "延迟比值",
+      "desktopMethodology": "优先使用 provider 实报的缓存 token；缺失时再回退到请求级缓存标记。",
       "costSavings": "节省成本",
       "thisMonth": "近24小时",
       "industry": "行业平均",
@@ -39,7 +45,8 @@
       "protection": "已保护",
       "blocked": "拦截",
       "acceleration": "加速",
-      "ms": "毫秒"
+      "ms": "毫秒",
+      "times": "x"
     },
     "providerHealth": {
       "title": "上游健康度",

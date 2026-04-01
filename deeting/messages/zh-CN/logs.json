@@ -1,17 +1,17 @@
 {
   "logs": {
     "title": "日志审计",
-    "subtitle": "全链路监控 API 调用详情、耗时分析与成本审计",
+    "subtitle": "全链路观察 API 调用详情、耗时分析与成本信号。",
     "filters": {
-      "model": "按模型名精确筛选",
+      "model": "按模型筛选",
       "status": "状态码",
       "statusAll": "全部状态",
       "cacheAll": "缓存：全部",
       "cacheHit": "仅命中",
-      "cacheMiss": "未命中",
+      "cacheMiss": "仅未命中",
       "errorCode": "错误码",
-      "start": "开始",
-      "end": "结束",
+      "start": "开始时间",
+      "end": "结束时间",
       "refresh": "刷新",
       "pageSize": "每页条数"
     },
@@ -33,6 +33,7 @@
       "totalTokens": "Σ {value}",
       "cached": "命中缓存",
       "cacheBadge": "缓存",
+      "cacheFlagBadge": "缓存标记",
       "tech": {
         "input": "输入 Tokens",
         "output": "输出 Tokens",
@@ -59,7 +60,7 @@
       "banner": {
         "success": "请求成功",
         "failed": "请求失败",
-        "statusLine": "状态 {status} • {time}"
+        "statusLine": "状态 {status} · {time}"
       },
       "sections": {
         "requestTrace": "请求链路",
@@ -95,6 +96,8 @@
         "input": "输入 Tokens",
         "output": "输出 Tokens",
         "total": "合计",
+        "cachedInput": "缓存输入",
+        "cacheWrite": "缓存写入",
         "totalValue": "{value} Tokens"
       },
       "cost": {
@@ -107,9 +110,20 @@
         "userId": "用户 ID",
         "presetId": "预设 ID",
         "errorCode": "错误码",
+        "cacheSource": "缓存来源",
+        "usageSource": "Usage 来源",
         "anonymous": "匿名",
         "directCall": "直连",
         "errorBadge": "错误"
+      },
+      "sources": {
+        "providerReported": "Provider 实报",
+        "providerReportedHit": "Provider 实报命中",
+        "headerInferred": "Header 推断",
+        "headerInferredHit": "Header 推断命中",
+        "requestFlag": "仅请求标记",
+        "transformed": "转换后的响应",
+        "unknown": "未知"
       },
       "actions": {
         "copy": "复制到剪贴板"
@@ -117,12 +131,12 @@
       "title": "请求详情",
       "id": "ID: {id}",
       "status": "状态",
-      "duration": "总耗时",
-      "ttft": "TTFT (首字延迟)",
+      "duration": "耗时",
+      "ttft": "TTFT",
       "cache": "缓存命中",
       "tokenStats": "Token 统计",
       "costAnalysis": "成本分析",
-      "costUser": "用户扣费",
+      "costUser": "用户成本",
       "costUpstream": "上游成本",
       "callUser": "调用者 ID",
       "preset": "预设 ID",
@@ -135,7 +149,7 @@
     "summary": {
       "totalRequests": "当前页请求数",
       "errorRate": "错误率",
-      "cacheHitRate": "缓存命中率",
+      "cacheHitRate": "缓存复用率",
       "totalCost": "当前页用户成本"
     },
     "states": {

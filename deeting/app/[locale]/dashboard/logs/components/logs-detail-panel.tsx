@@ -12,6 +12,10 @@ import {
   GlassCardHeader,
   GlassCardTitle,
 } from "@/components/ui/glass-card"
+import {
+  getNormalizedCacheSource,
+  getReportedCacheReadTokens,
+} from "@/lib/gateway-log/cache-metrics"
 import type { GatewayLogDTO } from "@/types/gateway_log"
 import { cn } from "@/lib/utils"
 
@@ -19,10 +23,18 @@ interface LogsDetailPanelProps {
   log: GatewayLogDTO | null
 }
 
+type LogsTranslator = ReturnType<typeof useTranslations>
+
 export function LogsDetailPanel({ log }: LogsDetailPanelProps) {
   const t = useTranslations("logs")
   const locale = useLocale()
   const [copied, setCopied] = useState(false)
+  const cacheReadTokens = log ? getReportedCacheReadTokens(log) : null
+  const cacheWriteTokens = log?.cache_write_input_tokens ?? null
+  const cacheSource = log ? getNormalizedCacheSource(log) : "unknown"
+  const cacheStatusLabel = log ? getCacheStatusLabel(log, t) : t("detail.metrics.na")
+  const usageSourceLabel = log ? getUsageSourceLabel(log.usage_source, t) : t("detail.metrics.na")
+  const cacheSourceLabel = log ? getCacheSourceLabel(cacheSource, t) : t("detail.metrics.na")
 
   const canCopy = Boolean(log)
 
@@ -140,7 +152,7 @@ export function LogsDetailPanel({ log }: LogsDetailPanelProps) {
               <MetricCard label={t("detail.metrics.statusCode")} value={String(log.status_code)} />
               <MetricCard
                 label={t("detail.metrics.cacheStatus")}
-                value={log.is_cached ? t("detail.metrics.hit") : t("detail.metrics.miss")}
+                value={cacheStatusLabel}
               />
             </section>
 
@@ -162,6 +174,22 @@ export function LogsDetailPanel({ log }: LogsDetailPanelProps) {
                     label={t("detail.tokens.total")}
                     value={new Intl.NumberFormat(locale).format(log.total_tokens)}
                     strong
+                  />
+                  <KeyValue
+                    label={t("detail.tokens.cachedInput")}
+                    value={
+                      cacheReadTokens == null
+                        ? t("detail.metrics.na")
+                        : new Intl.NumberFormat(locale).format(cacheReadTokens)
+                    }
+                  />
+                  <KeyValue
+                    label={t("detail.tokens.cacheWrite")}
+                    value={
+                      cacheWriteTokens == null
+                        ? t("detail.metrics.na")
+                        : new Intl.NumberFormat(locale).format(cacheWriteTokens)
+                    }
                   />
                 </div>
               </div>
@@ -199,6 +227,14 @@ export function LogsDetailPanel({ log }: LogsDetailPanelProps) {
                   label={t("detail.meta.errorCode")}
                   value={log.error_code ?? t("detail.metrics.na")}
                 />
+                <MetaItem
+                  label={t("detail.meta.cacheSource")}
+                  value={cacheSourceLabel}
+                />
+                <MetaItem
+                  label={t("detail.meta.usageSource")}
+                  value={usageSourceLabel}
+                />
               </div>
             </section>
           </div>
@@ -214,6 +250,36 @@ function TraceBadge({ label }: { label: string }) {
       {label}
     </span>
   )
+}
+
+function getCacheStatusLabel(log: GatewayLogDTO, t: LogsTranslator) {
+  if (!log.is_cached) return t("detail.metrics.miss")
+  const source = getNormalizedCacheSource(log)
+  if (source === "provider_reported") return t("detail.sources.providerReportedHit")
+  if (source === "header_inferred") return t("detail.sources.headerInferredHit")
+  return t("detail.metrics.hit")
+}
+
+function getCacheSourceLabel(
+  source: string,
+  t: LogsTranslator
+) {
+  if (source === "provider_reported") return t("detail.sources.providerReported")
+  if (source === "header_inferred") return t("detail.sources.headerInferred")
+  if (source === "request_flag") return t("detail.sources.requestFlag")
+  return t("detail.sources.unknown")
+}
+
+function getUsageSourceLabel(
+  source: string | null | undefined,
+  t: LogsTranslator
+) {
+  const normalized = String(source ?? "")
+    .trim()
+    .toLowerCase()
+  if (normalized === "provider_reported") return t("detail.sources.providerReported")
+  if (normalized === "transformed") return t("detail.sources.transformed")
+  return t("detail.sources.unknown")
 }
 
 function MetricCard({ label, value }: { label: string; value: string }) {

@@ -43,6 +43,12 @@ export function SmartRouterValueCard({
     process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
     typeof window !== "undefined" &&
     ("__TAURI__" in window || "__TAURI_INTERNALS__" in window)
+  const title = isDesktopRuntime ? t("desktopTitle") : t("title")
+  const description = isDesktopRuntime ? t("desktopDescription") : t("description")
+  const cacheRateLabel = isDesktopRuntime ? t("desktopCacheReuseRate") : t("cacheHitRate")
+  const savingsLabel = isDesktopRuntime ? t("desktopObservedSavings") : t("costSavings")
+  const accelerationLabel = isDesktopRuntime ? t("desktopLatencyRatio") : t("acceleration")
+  const accelerationSuffix = isDesktopRuntime ? t("times") : "ms"
 
   return (
     <GlassCard className="relative h-full overflow-hidden">
@@ -57,10 +63,10 @@ export function SmartRouterValueCard({
       <GlassCardHeader>
         <GlassCardTitle className="flex items-center gap-2">
           <Shield className="h-5 w-5 text-[var(--teal-accent)]" />
-          {t("title")}
+          {title}
         </GlassCardTitle>
         <GlassCardDescription className="mt-1">
-          {t("description")}
+          {description}
         </GlassCardDescription>
       </GlassCardHeader>
 
@@ -69,7 +75,7 @@ export function SmartRouterValueCard({
         <div className="relative">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-sm font-medium text-[var(--muted)]">
-              {t("cacheHitRate")}
+              {cacheRateLabel}
             </span>
             {isLoading ? (
               <span className="inline-block h-8 w-16 animate-pulse rounded bg-[var(--foreground)]/10" />
@@ -92,7 +98,7 @@ export function SmartRouterValueCard({
           </div>
 
           {/* Benchmark indicator */}
-          {!isDesktopRuntime && (
+          {!isDesktopRuntime ? (
             <div className="mt-2 flex items-center gap-1.5 text-xs text-[var(--muted)]">
               <div className="flex items-center gap-1">
                 <div className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
@@ -104,6 +110,8 @@ export function SmartRouterValueCard({
                 </span>
               )}
             </div>
+          ) : (
+            <div className="mt-2 text-xs text-[var(--muted)]">{t("desktopMethodology")}</div>
           )}
         </div>
 
@@ -114,7 +122,7 @@ export function SmartRouterValueCard({
         <div>
           <div className="mb-2 flex items-center justify-between">
             <span className="text-sm font-medium text-[var(--muted)]">
-              {t("costSavings")}
+              {savingsLabel}
             </span>
             {isLoading ? (
               <span className="inline-block h-8 w-20 animate-pulse rounded bg-[var(--foreground)]/10" />
@@ -140,10 +148,10 @@ export function SmartRouterValueCard({
           />
           <ValueCard
             icon={Zap}
-            label={t("acceleration")}
+            label={accelerationLabel}
             value={stats?.avgSpeedup || 0}
-            suffix="ms"
-            isSpeedup
+            suffix={accelerationSuffix}
+            isSpeedup={!isDesktopRuntime}
           />
         </div>
       </GlassCardContent>
