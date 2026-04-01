@@ -185,6 +185,25 @@ describe("ControlsContainer (web)", () => {
     expect(cancelPendingTakeover).toHaveBeenCalledTimes(1)
   })
 
+  it("hides the secondary send-after-step action once the follow-up is already scheduled", () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "false"
+    mockUseChatMessaging.mockReturnValue(buildMessagingMock({
+      pendingTakeover: {
+        input: "follow-up prompt",
+        attachments: [],
+        selectedKnowledgeFileIds: ["doc-1"],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      pendingTakeoverRequestedAction: "send_after_step",
+    }))
+
+    render(<ControlsContainer />)
+
+    expect(screen.getByText("takeover.title")).toBeInTheDocument()
+    expect(screen.queryByText("takeover.actions.sendAfterStep")).not.toBeInTheDocument()
+  })
+
   it("queues a pending takeover instead of cancelling when the run is active and the composer has content", () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "false"
     const queuePendingTakeoverFromCurrentDraft = jest.fn()
@@ -202,7 +221,7 @@ describe("ControlsContainer (web)", () => {
     render(<ControlsContainer />)
     fireEvent.click(screen.getByLabelText("controls.queueTakeover"))
 
-    expect(queuePendingTakeoverFromCurrentDraft).toHaveBeenCalledTimes(1)
+    expect(queuePendingTakeoverFromCurrentDraft).toHaveBeenCalledWith("send_after_step")
     expect(cancelActiveRequest).not.toHaveBeenCalled()
   })
 
@@ -228,7 +247,7 @@ describe("ControlsContainer (web)", () => {
       which: 13,
     })
 
-    expect(queuePendingTakeoverFromCurrentDraft).toHaveBeenCalledTimes(1)
+    expect(queuePendingTakeoverFromCurrentDraft).toHaveBeenCalledWith("send_after_step")
     expect(cancelActiveRequest).not.toHaveBeenCalled()
   })
 
@@ -374,7 +393,7 @@ describe("ControlsContainer (web)", () => {
     render(<ControlsContainer />)
     fireEvent.click(screen.getByLabelText("controls.queueTakeover"))
 
-    expect(queuePendingTakeoverFromCurrentDraft).toHaveBeenCalledTimes(1)
+    expect(queuePendingTakeoverFromCurrentDraft).toHaveBeenCalledWith("send_after_step")
     expect(handleSendMessage).not.toHaveBeenCalled()
   })
 

@@ -35,7 +35,12 @@ import {
 import type { ConversationMessage } from "@/lib/api/conversations"
 import { prepareDesktopObjectStorageRead } from "@/lib/api/desktop-object-storage"
 import { signAssets } from "@/lib/api/media-assets"
-import { useChatStore, type CompareCandidate, type Message } from "@/store/chat-store"
+import {
+  useChatStore,
+  type CompareCandidate,
+  type Message,
+  type PendingTakeoverRequestedAction,
+} from "@/store/chat-store"
 import { useWorkspaceStore } from "@/store/workspace-store"
 import type { HtmlRuntimeRefreshSpec, MessageBlock } from "@/lib/chat/message-protocol"
 import { extractAssistantTextFromBlocks } from "@/lib/chat/message-blocks"
@@ -1160,7 +1165,9 @@ export function useChatMessagingService() {
     })
   }, [dispatchDraft])
 
-  const queuePendingTakeoverFromCurrentDraft = useCallback(() => {
+  const queuePendingTakeoverFromCurrentDraft = useCallback((
+    requestedAction?: PendingTakeoverRequestedAction | null
+  ) => {
     const currentState = useChatStore.getState()
     const normalizedDraft = normalizePendingTakeoverDraft({
       input: currentState.input,
@@ -1169,7 +1176,10 @@ export function useChatMessagingService() {
     })
     if (!normalizedDraft) return
     setPendingTakeover(normalizedDraft)
-  }, [setPendingTakeover])
+    if (requestedAction) {
+      setPendingTakeoverRequestedAction(requestedAction)
+    }
+  }, [setPendingTakeover, setPendingTakeoverRequestedAction])
 
   const cancelPendingTakeover = useCallback(() => {
     clearPendingTakeover()

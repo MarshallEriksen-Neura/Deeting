@@ -3,15 +3,20 @@
 import { Clock3, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useI18n } from "@/hooks/use-i18n"
-import type { PendingChatTakeover } from "@/store/chat-store"
+import type {
+  PendingChatTakeover,
+  PendingTakeoverRequestedAction,
+} from "@/store/chat-store"
 
 export function TakeoverPendingBar({
   pendingTakeover,
+  requestedAction,
   onImmediateStop,
   onSendAfterStep,
   onCancel,
 }: {
   pendingTakeover: PendingChatTakeover | null
+  requestedAction?: PendingTakeoverRequestedAction | null
   onImmediateStop: () => void
   onSendAfterStep: () => void
   onCancel: () => void
@@ -23,6 +28,7 @@ export function TakeoverPendingBar({
   }
 
   const preview = pendingTakeover.input.trim()
+  const isDeferredSendScheduled = requestedAction === "send_after_step"
 
   return (
     <div className="rounded-2xl border border-amber-200/70 bg-amber-50/90 p-3 text-amber-950 shadow-[0_10px_30px_-18px_rgba(180,83,9,0.35)] backdrop-blur-xl dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-50">
@@ -59,14 +65,16 @@ export function TakeoverPendingBar({
         >
           {t("takeover.actions.cancel")}
         </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          className="h-9 rounded-full px-4 text-amber-900 hover:bg-amber-500/10 hover:text-amber-950 dark:text-amber-100 dark:hover:bg-amber-400/10 dark:hover:text-amber-50"
-          onClick={onSendAfterStep}
-        >
-          {t("takeover.actions.sendAfterStep")}
-        </Button>
+        {!isDeferredSendScheduled ? (
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-9 rounded-full px-4 text-amber-900 hover:bg-amber-500/10 hover:text-amber-950 dark:text-amber-100 dark:hover:bg-amber-400/10 dark:hover:text-amber-50"
+            onClick={onSendAfterStep}
+          >
+            {t("takeover.actions.sendAfterStep")}
+          </Button>
+        ) : null}
         <Button
           type="button"
           className="h-9 rounded-full bg-amber-700 px-4 text-white hover:bg-amber-800 dark:bg-amber-400 dark:text-slate-950 dark:hover:bg-amber-300"

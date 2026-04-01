@@ -181,6 +181,55 @@ describe("useChatMessagingService pending takeover orchestration", () => {
     expect(useChatStore.getState().selectedKnowledgeFileIds).toEqual([])
   })
 
+  it("auto-dispatches a scheduled takeover after the active streamed request naturally finishes", async () => {
+    const firstRequest = createDeferred<string>()
+    mockStreamChatCompletion.mockImplementationOnce(async () => firstRequest.promise)
+    mockStreamChatCompletion.mockImplementationOnce(async () => "")
+
+    useChatStore.setState({
+      input: "initial prompt",
+      isLoading: false,
+    })
+
+    const { result } = renderHook(() => useChatMessagingService())
+
+    act(() => {
+      void result.current.sendMessage()
+    })
+
+    await waitFor(() => {
+      expect(useChatStore.getState().isLoading).toBe(true)
+      expect(mockStreamChatCompletion).toHaveBeenCalledTimes(1)
+    })
+
+    act(() => {
+      useChatStore.setState({
+        input: "queued follow-up",
+        attachments: [],
+        selectedKnowledgeFileIds: ["doc-5"],
+      })
+      result.current.queuePendingTakeoverFromCurrentDraft("send_after_step")
+    })
+
+    expect(useChatStore.getState().pendingTakeoverRequestedAction).toBe("send_after_step")
+
+    await act(async () => {
+      firstRequest.resolve("")
+      await firstRequest.promise
+    })
+
+    await waitFor(() => {
+      expect(mockStreamChatCompletion).toHaveBeenCalledTimes(2)
+    })
+
+    const secondPayload = mockStreamChatCompletion.mock.calls[1]?.[0]
+    expect(JSON.stringify(secondPayload?.messages ?? [])).toContain("queued follow-up")
+    expect(useChatStore.getState().pendingTakeover).toBeNull()
+    expect(useChatStore.getState().pendingTakeoverRequestedAction).toBeNull()
+    expect(useChatStore.getState().input).toBe("")
+    expect(useChatStore.getState().selectedKnowledgeFileIds).toEqual([])
+  })
+
   it("cancels the pending takeover without touching the active run", () => {
     useChatStore.setState({
       pendingTakeover: {

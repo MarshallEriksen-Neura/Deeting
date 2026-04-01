@@ -118,6 +118,7 @@ function ControlsContainer() {
   const {
     handleSendMessage,
     pendingTakeover,
+    pendingTakeoverRequestedAction,
     queuePendingTakeoverFromCurrentDraft,
     stopAndSendPendingTakeover,
     markPendingTakeoverForDeferredSend,
@@ -334,7 +335,7 @@ function ControlsContainer() {
 
   const handleSend = useCallback(async () => {
     if (canQueuePendingTakeover) {
-      queuePendingTakeoverFromCurrentDraft();
+      queuePendingTakeoverFromCurrentDraft("send_after_step");
       return;
     }
     if (!canSend) return;
@@ -367,6 +368,7 @@ function ControlsContainer() {
     input,
     isTauriRuntime,
     openWorkspaceView,
+    pendingTakeoverRequestedAction,
     queuePendingTakeoverFromCurrentDraft,
     setInput,
     t,
@@ -482,7 +484,7 @@ function ControlsContainer() {
   const handleSendOrCancel = useCallback(() => {
     if (isGenerating) {
       if (hasComposerContent) {
-        queuePendingTakeoverFromCurrentDraft();
+        queuePendingTakeoverFromCurrentDraft("send_after_step");
         return;
       }
       void cancelActiveRequest();
@@ -496,6 +498,7 @@ function ControlsContainer() {
   }, [
     isGenerating,
     hasComposerContent,
+    pendingTakeoverRequestedAction,
     queuePendingTakeoverFromCurrentDraft,
     canContinueGeneration,
     cancelActiveRequest,
@@ -507,6 +510,7 @@ function ControlsContainer() {
     <div className="flex flex-col gap-2 p-2 relative rounded-2xl border border-slate-200/70 dark:border-white/10 bg-white/90 dark:bg-[#0a0a0a]/90 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.2)] backdrop-blur-xl">
       <TakeoverPendingBar
         pendingTakeover={pendingTakeover}
+        requestedAction={pendingTakeoverRequestedAction}
         onImmediateStop={() => void stopAndSendPendingTakeover()}
         onSendAfterStep={() => void markPendingTakeoverForDeferredSend()}
         onCancel={() => void cancelPendingTakeover()}
