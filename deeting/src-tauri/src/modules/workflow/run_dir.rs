@@ -123,6 +123,28 @@ pub fn read_result_md(phase_dir: &Path) -> Result<Option<String>, String> {
         .map_err(|err| format!("Failed to read result.md: {err}"))
 }
 
+pub fn read_context_md(phase_dir: &Path) -> Result<Option<String>, String> {
+    let path = phase_dir.join("context.md");
+    if !path.exists() {
+        return Ok(None);
+    }
+    std::fs::read_to_string(path)
+        .map(Some)
+        .map_err(|err| format!("Failed to read context.md: {err}"))
+}
+
+pub fn read_context_json(phase_dir: &Path) -> Result<Option<ContextJson>, String> {
+    let path = phase_dir.join("context.json");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = std::fs::read_to_string(path)
+        .map_err(|err| format!("Failed to read context.json: {err}"))?;
+    serde_json::from_str(&text)
+        .map(Some)
+        .map_err(|err| format!("Failed to parse context.json: {err}"))
+}
+
 pub fn read_result_json(phase_dir: &Path) -> Result<Option<ResultJson>, String> {
     let path = phase_dir.join("result.json");
     if !path.exists() {

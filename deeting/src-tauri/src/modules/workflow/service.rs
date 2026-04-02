@@ -9,8 +9,8 @@ use crate::modules::workflow::types::{
     ApprovalAction, ApproveWorkflowRequest, CompileResult, CreateWorkflowEventRequest,
     CreateWorkflowRunRequest, EditRemainingPhasesRequest, ExecutionSnapshot,
     GenerateProposalRequest, QuickWorkflowRequest, QuickWorkflowResult, RegenerateProposalRequest,
-    RerunPhaseRequest, UpdateProposalRequest, WorkflowRun, WorkflowRunDetail, WorkflowRunStatus,
-    WorkflowStepStatus,
+    RerunPhaseRequest, UpdateProposalRequest, WorkflowPhaseContext, WorkflowRun,
+    WorkflowRunDetail, WorkflowRunStatus, WorkflowStepStatus,
 };
 use crate::state::AppState;
 use tauri::Manager;
@@ -507,6 +507,37 @@ pub(crate) async fn get_workflow_run_status(
 ) -> Result<crate::modules::workflow::types::WorkflowRunDetail, String> {
     let store_ref = app_state.mcp.store.as_ref();
     get_workflow_run_status_with_store(store_ref, run_id).await
+}
+
+pub(crate) async fn get_workflow_phase_context(
+    app_handle: &tauri::AppHandle,
+    app_state: &AppState,
+    run_id: &str,
+    phase_id: &str,
+) -> Result<WorkflowPhaseContext, String> {
+    let detail = get_workflow_run_status(app_state, run_id).await?;
+    let step = detail
+        .steps
+        .iter()
+        .find(|step| step.phase_id == phase_id)
+        .ok_or_else(|| format!("Phase not found in workflow run: {phase_id}"))?;
+    let run_dir = detail
+        .run
+        .run_dir
+        .as_deref()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| run_dir::resolve_run_dir(app_handle.path().app_data_dir().ok(), run_id));
+    let phase_dir = run_dir.join("phases").join(phase_id.trim());
+    let context_md = run_dir::read_context_md(&phase_dir)?;
+    let context_json = run_dir::read_context_json(&phase_dir)?;
+
+    Ok(WorkflowPhaseContext {
+        run_id: run_id.to_string(),
+        phase_id: phase_id.to_string(),
+        phase_title: step.title.clone(),
+        context_md,
+        context_json,
+    })
 }
 
 pub(crate) async fn approve_workflow(

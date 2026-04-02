@@ -1,5 +1,6 @@
 import type { MessageBlock, ToolCallBlock, ToolResultBlock } from "@/lib/chat/message-protocol"
 import { isToolApprovalResultBlock } from "@/lib/chat/assistant-activity"
+import { extractRootExecutionIdFromBlock } from "@/lib/chat/execution-tree"
 
 export function extractAssistantTextFromBlocks(blocks?: MessageBlock[]): string {
   if (!Array.isArray(blocks) || blocks.length === 0) return ""
@@ -49,6 +50,24 @@ function upsertToolBlock(next: MessageBlock[], block: MessageBlock): boolean {
     return true
   }
 
+  return true
+}
+
+function upsertExecutionLifecycleBlock(next: MessageBlock[], block: MessageBlock): boolean {
+  const rootExecutionId = extractRootExecutionIdFromBlock(block)
+  if (!rootExecutionId) return false
+
+  const existingIndex = next.findIndex(
+    (candidate) => extractRootExecutionIdFromBlock(candidate) === rootExecutionId
+  )
+  if (existingIndex < 0) return false
+
+  const existing = next[existingIndex]
+  next[existingIndex] = {
+    ...existing,
+    ...block,
+    id: existing.id || block.id,
+  }
   return true
 }
 
@@ -121,6 +140,10 @@ export function appendMessageBlocks(
     }
 
     if (upsertToolBlock(next, block)) {
+      continue
+    }
+
+    if (upsertExecutionLifecycleBlock(next, block)) {
       continue
     }
 

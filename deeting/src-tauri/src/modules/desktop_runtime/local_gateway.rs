@@ -27,7 +27,8 @@ use mcp_session::conversation::{
     LocalConversationCompareFinalizeRequest, LocalConversationCompareFinalizeResponse,
 };
 use mcp_transport::gateway::{
-    build_stream_error_payload, extract_selected_knowledge_file_ids, normalize_optional_string,
+    build_stream_error_payload, extract_root_execution_id, extract_selected_knowledge_file_ids,
+    normalize_optional_string,
     GatewayHealthResponse, LocalChatCancelResponse, LocalChatCompletionRequest,
     LocalCompareFinalizeErrorResponse,
 };
@@ -384,6 +385,7 @@ fn map_request_to_orchestrator_input(
 ) -> Result<LocalOrchestratorInput, String> {
     let selected_knowledge_file_ids =
         extract_selected_knowledge_file_ids(payload.metadata.as_ref());
+    let root_execution_id = extract_root_execution_id(payload.metadata.as_ref());
     let session_id = normalize_optional_string(payload.session_id.as_deref())
         .ok_or_else(|| "session_id is required for desktop local chat".to_string())?;
     let stream = payload.stream.unwrap_or(true);
@@ -402,6 +404,7 @@ fn map_request_to_orchestrator_input(
         explicit_task_agent_id: normalize_optional_string(
             payload.explicit_task_agent_id.as_deref(),
         ),
+        root_execution_id,
         session_id,
         capability_id: normalize_optional_string(payload.assistant_id.as_deref()),
         regenerate: payload.regenerate.unwrap_or(false),

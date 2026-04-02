@@ -84,4 +84,35 @@ describe("assistant activity helpers", () => {
       statusMeta: null,
     })
   })
+
+  it("treats a running execution lifecycle block as active", () => {
+    const blocks: MessageBlock[] = [
+      {
+        id: "exec-ui-1",
+        type: "ui",
+        viewType: "execution.lifecycle",
+        payload: {
+          schema_version: 1,
+          root_execution_id: "exec-root-1",
+          execution_kind: "workflow",
+          execution_status: "running",
+          target: {
+            name: "Research Worker",
+          },
+        },
+      } as MessageBlock,
+    ]
+
+    expect(deriveAssistantActivityState(blocks)).toMatchObject({
+      isActive: true,
+      statusStage: "render",
+      statusCode: "execution.running",
+      statusMeta: {
+        target_name: "Research Worker",
+        execution_kind: "workflow",
+        root_execution_id: "exec-root-1",
+        execution_status: "running",
+      },
+    })
+  })
 })

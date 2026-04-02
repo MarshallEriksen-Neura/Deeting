@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use std::future::Future;
 
+use crate::modules::conversation::service as conversation;
 use crate::modules::im::handlers::{
-    build_direct_card_action_outcome, build_text_approval_prompt, generate_local_chat_reply_outcome,
+    build_direct_card_action_outcome, generate_local_chat_reply_outcome,
 };
 use crate::modules::im::{ImConnectionProfile, MessageContent};
 use crate::state::AppState;
@@ -90,7 +91,7 @@ impl TextImConversationRuntime {
         };
 
         if let Some(approval_request) = reply_outcome.approval_request {
-            let approval_prompt = build_text_approval_prompt(&approval_request);
+            let approval_prompt = conversation::build_text_approval_prompt(&approval_request);
             self.pending_text_approvals.insert(
                 peer_id.to_string(),
                 PendingTextApproval {

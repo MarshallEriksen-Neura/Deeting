@@ -287,6 +287,15 @@ pub struct WorkflowRunDetail {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowPhaseContext {
+    pub run_id: String,
+    pub phase_id: String,
+    pub phase_title: String,
+    pub context_md: Option<String>,
+    pub context_json: Option<ContextJson>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateWorkflowRunRequest {
     pub title: String,
     pub goal: String,

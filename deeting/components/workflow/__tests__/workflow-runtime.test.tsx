@@ -2,6 +2,7 @@ import { render, waitFor } from "@testing-library/react"
 import { WorkflowRuntime } from "@/components/workflow/workflow-runtime"
 
 const getWorkflowRunStatus = jest.fn()
+const getWorkflowPhaseContext = jest.fn()
 
 const workflowStore = {
   runId: null,
@@ -51,6 +52,7 @@ jest.mock("@/lib/workflow/commands", () => ({
   startWorkflowRun: jest.fn(),
   regenerateWorkflowProposal: jest.fn(),
   getWorkflowRunStatus: (...args: unknown[]) => getWorkflowRunStatus(...args),
+  getWorkflowPhaseContext: (...args: unknown[]) => getWorkflowPhaseContext(...args),
   approveWorkflow: jest.fn(),
   rerunPhase: jest.fn(),
 }))
@@ -93,6 +95,13 @@ describe("WorkflowRuntime", () => {
       steps: [],
       events: [],
     })
+    getWorkflowPhaseContext.mockResolvedValue({
+      run_id: "run-123",
+      phase_id: "phase-1",
+      phase_title: "Execute",
+      context_md: "context",
+      context_json: { worker_ref: "direct_llm:default" },
+    })
   })
 
   it("hydrates an existing run when initialRunId is provided", async () => {
@@ -104,6 +113,25 @@ describe("WorkflowRuntime", () => {
 
     await waitFor(() => {
       expect(workflowStore.setRunDetail).toHaveBeenCalled()
+    })
+  })
+
+  it("loads phase context when initialContextPhaseId is provided", async () => {
+    workflowStore.runId = "run-123"
+
+    render(
+      <WorkflowRuntime
+        initialRunId="run-123"
+        initialContextPhaseId="phase-1"
+      />
+    )
+
+    await waitFor(() => {
+      expect(getWorkflowPhaseContext).toHaveBeenCalledWith("run-123", "phase-1")
+    })
+
+    await waitFor(() => {
+      expect(workflowStore.openContextViewer).toHaveBeenCalledWith("phase-1")
     })
   })
 })

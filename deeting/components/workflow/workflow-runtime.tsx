@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
 import { useWorkflowStore, type WorkflowView } from "@/store/workflow-store"
 import {
@@ -10,10 +10,11 @@ import {
   startWorkflowRun,
   regenerateWorkflowProposal,
   getWorkflowRunStatus,
+  getWorkflowPhaseContext,
   approveWorkflow,
   rerunPhase,
 } from "@/lib/workflow/commands"
-import type { WorkflowProgress } from "@/lib/workflow/types"
+import type { WorkflowPhaseContext, WorkflowProgress } from "@/lib/workflow/types"
 import { WorkflowLanding } from "./workflow-landing"
 import { PlanEditor } from "./plan-editor"
 import type { PlanPhaseData } from "./plan-phase-card"
@@ -24,11 +25,20 @@ import { PhaseContextViewer } from "./phase-context-viewer"
 interface WorkflowRuntimeProps {
   initialGoal?: string
   initialRunId?: string
+  initialPhaseId?: string
+  initialContextPhaseId?: string
   onClose?: () => void
 }
 
-export function WorkflowRuntime({ initialGoal, initialRunId, onClose }: WorkflowRuntimeProps) {
+export function WorkflowRuntime({
+  initialGoal,
+  initialRunId,
+  initialPhaseId,
+  initialContextPhaseId,
+  onClose,
+}: WorkflowRuntimeProps) {
   const store = useWorkflowStore()
+  const [phaseContext, setPhaseContext] = useState<WorkflowPhaseContext | null>(null)
 
   useEffect(() => {
     if (!initialRunId) return
@@ -57,6 +67,29 @@ export function WorkflowRuntime({ initialGoal, initialRunId, onClose }: Workflow
       cancelled = true
     }
   }, [initialRunId, store.runId, store.setError, store.setRunDetail])
+
+  useEffect(() => {
+    const phaseId = initialPhaseId?.trim()
+    if (!phaseId) return
+    store.setActivePhaseId(phaseId)
+  }, [initialPhaseId, store.setActivePhaseId])
+
+  const handleOpenContextViewer = useCallback(async (phaseId: string) => {
+    if (!store.runId) return
+    try {
+      const context = await getWorkflowPhaseContext(store.runId, phaseId)
+      setPhaseContext(context)
+      store.openContextViewer(phaseId)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err))
+    }
+  }, [store.runId])
+
+  useEffect(() => {
+    const phaseId = initialContextPhaseId?.trim()
+    if (!phaseId || !store.runId) return
+    void handleOpenContextViewer(phaseId)
+  }, [handleOpenContextViewer, initialContextPhaseId, store.runId])
 
   // --- Tauri event listener for progress updates ---
   useEffect(() => {
@@ -240,7 +273,7 @@ export function WorkflowRuntime({ initialGoal, initialRunId, onClose }: Workflow
               expandedPhaseIds={store.expandedPhaseIds}
               onToggleExpand={(id) => store.togglePhaseExpanded(id)}
               onRerunPhase={handleRerunPhase}
-              onViewContext={(id) => store.openContextViewer(id)}
+              onViewContext={handleOpenContextViewer}
               onBack={handleBack}
             />
           </div>
@@ -273,10 +306,10 @@ export function WorkflowRuntime({ initialGoal, initialRunId, onClose }: Workflow
       <PhaseContextViewer
         open={store.contextViewerPhaseId !== null}
         onClose={() => store.closeContextViewer()}
-        phaseId={store.contextViewerPhaseId ?? ""}
-        phaseTitle=""
-        contextMd={null}
-        contextJson={null}
+        phaseId={phaseContext?.phase_id ?? store.contextViewerPhaseId ?? ""}
+        phaseTitle={phaseContext?.phase_title ?? ""}
+        contextMd={phaseContext?.context_md ?? null}
+        contextJson={phaseContext?.context_json ?? null}
       />
     </div>
   )

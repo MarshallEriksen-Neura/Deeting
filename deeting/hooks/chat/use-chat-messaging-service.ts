@@ -44,6 +44,14 @@ import {
 import { useWorkspaceStore } from "@/store/workspace-store"
 import type { HtmlRuntimeRefreshSpec, MessageBlock } from "@/lib/chat/message-protocol"
 import { extractAssistantTextFromBlocks } from "@/lib/chat/message-blocks"
+import {
+  buildExecutionLifecycleBlocksFromMessage,
+  extractExecutionTreeBlockFromBlocks,
+  extractExecutionTreeFromMessage,
+  extractRootExecutionIdFromMessage,
+  extractWorkflowRunIdFromMessage,
+  extractWorkflowRunIdFromExecutionTree,
+} from "@/lib/chat/execution-tree"
 import { listCustomTaskAgents } from "@/lib/api/custom-task-agents"
 import { resolveLeadingTaskAgentMention } from "./task-agent-mention"
 import {
@@ -128,6 +136,35 @@ function buildKnowledgeSelectionMetadata(selectedKnowledgeFileIds: string[]) {
       doc_ids: docIds,
     },
   }
+}
+
+function buildRequestMetadata(
+  selectedKnowledgeFileIds: string[],
+  rootExecutionId?: string | null
+) {
+  const knowledge = buildKnowledgeSelectionMetadata(selectedKnowledgeFileIds)
+  const normalizedRootExecutionId =
+    typeof rootExecutionId === "string" && rootExecutionId.trim().length > 0
+      ? rootExecutionId.trim()
+      : null
+
+  if (!knowledge && !normalizedRootExecutionId) return undefined
+
+  return {
+    ...(knowledge ?? {}),
+    ...(normalizedRootExecutionId
+      ? {
+          execution: {
+            root_execution_id: normalizedRootExecutionId,
+          },
+        }
+      : {}),
+  }
+}
+
+function resolveExecutionRootForFollowup(message: Message | undefined | null) {
+  if (!message) return undefined
+  return extractRootExecutionIdFromMessage(message) ?? undefined
 }
 
 function resolveRequestedMaxTokens(value: number | null | undefined) {
@@ -324,6 +361,16 @@ function asTrimmedString(value: unknown): string | null {
 }
 
 export function extractWorkflowRunIdFromBlocks(blocks: MessageBlock[]): string | null {
+  const executionTreeBlock = extractExecutionTreeBlockFromBlocks(blocks)
+  if (executionTreeBlock?.type === "ui") {
+    const runId = extractWorkflowRunIdFromExecutionTree(
+      executionTreeBlock.payload && typeof executionTreeBlock.payload === "object"
+        ? (executionTreeBlock.payload as Record<string, unknown>)
+        : null
+    )
+    if (runId) return runId
+  }
+
   for (const block of blocks) {
     if (block.type === "tool_result") {
       const result = asRecord(block.result)
@@ -360,6 +407,13 @@ function getAssistantBlocksForCandidate(message: Message): MessageBlock[] {
   if (Array.isArray(message.blocks) && message.blocks.length > 0) {
     return message.blocks as MessageBlock[]
   }
+  const executionBlocks = buildExecutionLifecycleBlocksFromMessage(message, {
+    id: `${message.id}-execution-tree`,
+    title: "Delegated Execution",
+    displayMode: "bubble",
+    streamState: "completed",
+  })
+  if (executionBlocks.length > 0) return executionBlocks
   if (message.content.trim()) {
     return [{ type: "text", content: message.content } as MessageBlock]
   }
@@ -1060,7 +1114,12 @@ export function useChatMessagingService() {
         errorBlockIdBase: assistantMessageId,
         onBlocks: (blocks) => {
           appendMessageBlocks(assistantMessageId, blocks)
-          const workflowRunId = extractWorkflowRunIdFromBlocks(blocks)
+          const latestMessage = useChatStore
+            .getState()
+            .messages.find((message) => message.id === assistantMessageId)
+          const workflowRunId = latestMessage
+            ? extractWorkflowRunIdFromMessage(latestMessage)
+            : extractWorkflowRunIdFromBlocks(blocks)
           if (workflowRunId) {
             openWorkflowRun(workflowRunId)
           }
@@ -1215,6 +1274,7 @@ export function useChatMessagingService() {
       (m) => m.id === targetMessageId && m.role === "assistant"
     )
     if (targetIndex < 0) return
+    const targetMessage = currentMessages[targetIndex]
 
     const selectedModel =
       models.find((model) => model.provider_model_id === config.model || model.id === config.model) ??
@@ -1267,7 +1327,10 @@ export function useChatMessagingService() {
         assistant_id: assistantId,
         session_id: resolvedSessionId ?? undefined,
         regenerate: true,
-        metadata: buildKnowledgeSelectionMetadata(selectedKnowledgeFileIds),
+        metadata: buildRequestMetadata(
+          selectedKnowledgeFileIds,
+          resolveExecutionRootForFollowup(targetMessage)
+        ),
       }
       requestIdRef.current = payload.request_id ?? null
       activeRequestRouteRef.current = preferLocalRoute ? "local_gateway" : "cloud"
@@ -1282,7 +1345,12 @@ export function useChatMessagingService() {
         errorBlockIdBase: assistantMessageId,
         onBlocks: (blocks) => {
           appendMessageBlocks(assistantMessageId, blocks)
-          const workflowRunId = extractWorkflowRunIdFromBlocks(blocks)
+          const latestMessage = useChatStore
+            .getState()
+            .messages.find((message) => message.id === assistantMessageId)
+          const workflowRunId = latestMessage
+            ? extractWorkflowRunIdFromMessage(latestMessage)
+            : extractWorkflowRunIdFromBlocks(blocks)
           if (workflowRunId) {
             openWorkflowRun(workflowRunId)
           }
@@ -1423,7 +1491,14 @@ export function useChatMessagingService() {
       modelId: selectedCompareModel.id,
       providerModelId: selectedCompareModel.provider_model_id ?? undefined,
       content: existingCandidate?.content ?? "",
-      blocks: existingCandidate?.blocks ?? [],
+      blocks:
+        existingCandidate?.blocks ??
+        buildExecutionLifecycleBlocksFromMessage(targetMessage, {
+          id: `${targetMessageId}-${compareModelKey}-execution-tree`,
+          title: "Delegated Execution",
+          displayMode: "bubble",
+          streamState: "completed",
+        }),
       loading: true,
       baseline: false,
       traceId: existingCandidate?.traceId,
@@ -1594,6 +1669,18 @@ export function useChatMessagingService() {
         clearCompareState(targetMessageId)
         return
       }
+      const executionTree =
+        extractExecutionTreeFromMessage({
+          blocks: candidate.blocks,
+          metaInfo: {
+            execution_tree: candidate.blocks.length > 0 ? undefined : undefined,
+          },
+        }) ??
+        extractExecutionTreeFromMessage({
+          blocks: normalized?.blocks,
+          metaInfo: normalized?.metaInfo,
+        }) ??
+        extractExecutionTreeFromMessage(currentMessage)
 
       replaceAssistantMessage(targetMessageId, {
         ...(normalized ?? currentMessage),
@@ -1601,6 +1688,7 @@ export function useChatMessagingService() {
         blocks: candidate.blocks,
         metaInfo: {
           ...(normalized?.metaInfo ?? currentMessage.metaInfo ?? {}),
+          ...(executionTree ? { execution_tree: executionTree } : {}),
           model_id: candidate.modelId,
           provider_model_id: candidate.providerModelId,
           compare_winner: true,
@@ -1638,13 +1726,13 @@ export function useChatMessagingService() {
   const continueInterruptedGeneration = useCallback(async () => {
     const targetMessageId = interruptedAssistantMessageId
     if (!targetMessageId) return
-    const targetExists = useChatStore
+    const targetMessage = useChatStore
       .getState()
-      .messages.some(
+      .messages.find(
         (message) =>
           message.id === targetMessageId && message.role === "assistant"
       )
-    if (!targetExists) {
+    if (!targetMessage) {
       setInterruptedAssistantMessageId(null)
       return
     }

@@ -263,6 +263,48 @@ describe("normalizeConversationMessages", () => {
     ])
   })
 
+  it("reconstructs execution lifecycle ui block from meta_info.execution_tree when blocks are absent", () => {
+    const messages = [
+      {
+        role: "assistant",
+        content: "",
+        turn_index: 17,
+        meta_info: {
+          execution_tree: {
+            execution_id: "exec-1",
+            execution_kind: "workflow",
+            target: {
+              name: "Research Worker",
+              workflow_run_id: "run-123",
+            },
+          },
+        },
+      },
+    ]
+
+    const [message] = normalizeConversationMessages(
+      messages as unknown as Parameters<typeof normalizeConversationMessages>[0],
+      {
+        includeRoles: ["assistant"],
+      }
+    )
+
+    expect(message?.blocks).toEqual([
+      expect.objectContaining({
+        type: "ui",
+        viewType: "execution.lifecycle",
+        title: "Delegated Execution · Research Worker",
+        payload: expect.objectContaining({
+          execution_id: "exec-1",
+          execution_kind: "workflow",
+        }),
+        metadata: expect.objectContaining({
+          workflow_run_id: "run-123",
+        }),
+      }),
+    ])
+  })
+
   it("uses backend created_at as message createdAt", () => {
     const createdAtIso = "2026-02-01T10:20:30.000Z"
     const [message] = normalizeConversationMessages(

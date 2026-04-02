@@ -204,6 +204,59 @@ pub struct LocalConversationCompareFinalizeResponse {
     pub message: LocalConversationHistoryMessage,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalConversationExecutionRoot {
+    pub root_execution_id: String,
+    pub session_id: String,
+    pub message_id: String,
+    pub turn_index: i64,
+    pub schema_version: i64,
+    pub execution_id: String,
+    pub execution_kind: String,
+    pub execution_status: String,
+    pub terminal_status: String,
+    pub target_id: Option<String>,
+    pub target_name: Option<String>,
+    pub target_invocation_kind: Option<String>,
+    pub target_worker_ref: Option<String>,
+    pub target_workflow_run_id: Option<String>,
+    pub selection: Option<Value>,
+    pub available_actions: Option<Value>,
+    pub summary: Option<String>,
+    pub error: Option<String>,
+    pub result_payload: Option<Value>,
+    pub raw_json: Option<Value>,
+    pub started_at_ms: Option<i64>,
+    pub completed_at_ms: Option<i64>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalConversationExecutionChild {
+    pub id: String,
+    pub root_execution_id: String,
+    pub session_id: String,
+    pub message_id: String,
+    pub phase_id: Option<String>,
+    pub step_type: Option<String>,
+    pub title: String,
+    pub status: String,
+    pub worker_ref: Option<String>,
+    pub summary: Option<String>,
+    pub error: Option<String>,
+    pub available_actions: Option<Value>,
+    pub raw_json: Option<Value>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalConversationExecutionTreeResponse {
+    pub root: LocalConversationExecutionRoot,
+    pub children: Vec<LocalConversationExecutionChild>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::LocalConversationStatus;

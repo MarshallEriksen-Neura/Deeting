@@ -46,6 +46,123 @@ export const ConversationWindowSchema = z.object({
 export type ConversationMessage = z.infer<typeof ConversationMessageSchema>
 export type ConversationWindow = z.infer<typeof ConversationWindowSchema>
 
+export const ConversationExecutionRootSchema = z.object({
+  root_execution_id: z.string(),
+  session_id: z.string(),
+  message_id: z.string(),
+  turn_index: z.number().int(),
+  schema_version: z.number().int(),
+  execution_id: z.string(),
+  execution_kind: z.string(),
+  execution_status: z.string(),
+  terminal_status: z.string(),
+  target_id: z.string().nullable().optional(),
+  target_name: z.string().nullable().optional(),
+  target_invocation_kind: z.string().nullable().optional(),
+  target_worker_ref: z.string().nullable().optional(),
+  target_workflow_run_id: z.string().nullable().optional(),
+  selection: z.record(z.string(), z.any()).nullable().optional(),
+  available_actions: z.any().nullable().optional(),
+  summary: z.string().nullable().optional(),
+  error: z.string().nullable().optional(),
+  result_payload: z.record(z.string(), z.any()).nullable().optional(),
+  raw_json: z.record(z.string(), z.any()).nullable().optional(),
+  started_at_ms: z.number().int().nullable().optional(),
+  completed_at_ms: z.number().int().nullable().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
+})
+
+export const ConversationExecutionChildSchema = z.object({
+  id: z.string(),
+  root_execution_id: z.string(),
+  session_id: z.string(),
+  message_id: z.string(),
+  phase_id: z.string().nullable().optional(),
+  step_type: z.string().nullable().optional(),
+  title: z.string(),
+  status: z.string(),
+  worker_ref: z.string().nullable().optional(),
+  summary: z.string().nullable().optional(),
+  error: z.string().nullable().optional(),
+  available_actions: z.any().nullable().optional(),
+  raw_json: z.record(z.string(), z.any()).nullable().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
+})
+
+export const ConversationExecutionTreeSchema = z.object({
+  root: ConversationExecutionRootSchema,
+  children: z.array(ConversationExecutionChildSchema).default([]),
+})
+
+export type ConversationExecutionRoot = z.infer<typeof ConversationExecutionRootSchema>
+export type ConversationExecutionChild = z.infer<typeof ConversationExecutionChildSchema>
+export type ConversationExecutionTree = z.infer<typeof ConversationExecutionTreeSchema>
+
+function buildExecutionLifecyclePayloadFromPersistedTreeRecord(
+  tree: ConversationExecutionTree
+): Record<string, unknown> {
+  return {
+    schema_version: tree.root.schema_version,
+    root_execution_id: tree.root.root_execution_id,
+    execution_id: tree.root.execution_id,
+    execution_kind: tree.root.execution_kind,
+    execution_status: tree.root.execution_status,
+    terminal_status: tree.root.terminal_status,
+    persisted_snapshot: true,
+    target: {
+      id: tree.root.target_id ?? undefined,
+      name: tree.root.target_name ?? undefined,
+      invocation_kind: tree.root.target_invocation_kind ?? undefined,
+      worker_ref: tree.root.target_worker_ref ?? undefined,
+      workflow_run_id: tree.root.target_workflow_run_id ?? undefined,
+    },
+    selection:
+      tree.root.selection && typeof tree.root.selection === "object"
+        ? {
+            explicit:
+              typeof tree.root.selection.explicit === "boolean"
+                ? tree.root.selection.explicit
+                : undefined,
+            score:
+              typeof tree.root.selection.score === "number"
+                ? tree.root.selection.score
+                : null,
+            reason_codes: Array.isArray(tree.root.selection.reason_codes)
+              ? (tree.root.selection.reason_codes as string[])
+              : undefined,
+            reason_text:
+              typeof tree.root.selection.reason_text === "string"
+                ? tree.root.selection.reason_text
+                : null,
+          }
+        : undefined,
+    available_actions: Array.isArray(tree.root.available_actions)
+      ? tree.root.available_actions
+      : [],
+    summary: tree.root.summary ?? undefined,
+    error: tree.root.error ?? undefined,
+    result_payload:
+      tree.root.result_payload && typeof tree.root.result_payload === "object"
+        ? tree.root.result_payload
+        : null,
+    children: tree.children.map((child) => ({
+      id: child.id,
+      phase_id: child.phase_id ?? undefined,
+      step_type: child.step_type ?? undefined,
+      title: child.title,
+      status: child.status,
+      worker_ref: child.worker_ref ?? undefined,
+      summary: child.summary ?? undefined,
+      error: child.error ?? undefined,
+      available_actions: Array.isArray(child.available_actions)
+        ? child.available_actions
+        : [],
+    })),
+  }
+}
+
 export async function fetchConversationWindow(sessionId: string): Promise<ConversationWindow> {
   if (isTauriRuntime()) {
     try {
@@ -98,6 +215,32 @@ type PendingToolApprovalSnapshot = {
   call_id?: string
   execution_token?: string
   session_id?: string
+}
+
+export async function getConversationExecutionTree(
+  rootExecutionId: string
+): Promise<ConversationExecutionTree> {
+  if (!isTauriRuntime()) {
+    throw new Error("Conversation execution tree is only available in Tauri runtime")
+  }
+  const data = await invokeTauri<ConversationExecutionTree>(
+    "get_local_conversation_execution_tree",
+    { rootExecutionId }
+  )
+  return ConversationExecutionTreeSchema.parse(data)
+}
+
+export async function listConversationExecutionRoots(
+  sessionId: string
+): Promise<ConversationExecutionRoot[]> {
+  if (!isTauriRuntime()) {
+    throw new Error("Conversation execution roots are only available in Tauri runtime")
+  }
+  const data = await invokeTauri<ConversationExecutionRoot[]>(
+    "list_local_conversation_execution_roots",
+    { sessionId }
+  )
+  return z.array(ConversationExecutionRootSchema).parse(data)
 }
 
 const isConversationMessageLike = (value: unknown): value is ConversationMessage =>
@@ -154,6 +297,122 @@ const asStringArray = (value: unknown): string[] | undefined => {
 const asRecord = (value: unknown): Record<string, unknown> | null => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null
   return value as Record<string, unknown>
+}
+
+const extractRootExecutionIdFromLifecycleBlock = (block: unknown): string | null => {
+  const blockRecord = asRecord(block)
+  if (!blockRecord) return null
+  if (asTrimmedString(blockRecord.type) !== "ui") return null
+  if (asTrimmedString(blockRecord.viewType) !== "execution.lifecycle") return null
+  const payload = asRecord(blockRecord.payload)
+  return asTrimmedString(payload?.root_execution_id)
+}
+
+const extractRootExecutionIdFromConversationMessage = (
+  message: ConversationMessage
+): string | null => {
+  const meta = asRecord(message.meta_info)
+  const blocks = Array.isArray(meta?.blocks) ? meta.blocks : []
+
+  for (const block of blocks) {
+    const rootExecutionId = extractRootExecutionIdFromLifecycleBlock(block)
+    if (rootExecutionId) {
+      return rootExecutionId
+    }
+  }
+
+  return asTrimmedString(asRecord(meta?.execution_tree)?.root_execution_id)
+}
+
+const applyPersistedExecutionTreeToConversationMessage = (
+  message: ConversationMessage,
+  executionTree: Record<string, unknown>
+): ConversationMessage => {
+  const meta = asRecord(message.meta_info) ?? {}
+  const nextMetaInfo: Record<string, unknown> = {
+    ...meta,
+    execution_tree: executionTree,
+  }
+
+  const rootExecutionId = asTrimmedString(executionTree.root_execution_id)
+  const existingBlocks = Array.isArray(meta.blocks) ? [...meta.blocks] : []
+  const nextExecutionBlock = {
+    ...(existingBlocks.find((block) => extractRootExecutionIdFromLifecycleBlock(block) === rootExecutionId)
+      ? asRecord(existingBlocks.find((block) => extractRootExecutionIdFromLifecycleBlock(block) === rootExecutionId)) ?? {}
+      : {}),
+    type: "ui",
+    viewType: "execution.lifecycle",
+    payload: executionTree,
+  }
+
+  if (existingBlocks.length === 0) {
+    nextMetaInfo.blocks = [nextExecutionBlock]
+  } else {
+    const existingIndex = existingBlocks.findIndex((block) => {
+      const blockRecord = asRecord(block)
+      if (!blockRecord) return false
+      if (asTrimmedString(blockRecord.type) !== "ui") return false
+      if (asTrimmedString(blockRecord.viewType) !== "execution.lifecycle") return false
+      const blockRootExecutionId = extractRootExecutionIdFromLifecycleBlock(blockRecord)
+      return blockRootExecutionId === rootExecutionId || !blockRootExecutionId
+    })
+
+    if (existingIndex >= 0) {
+      existingBlocks[existingIndex] = {
+        ...(asRecord(existingBlocks[existingIndex]) ?? {}),
+        ...nextExecutionBlock,
+      }
+    } else {
+      existingBlocks.push(nextExecutionBlock)
+    }
+    nextMetaInfo.blocks = existingBlocks
+  }
+
+  return {
+    ...message,
+    meta_info: nextMetaInfo,
+  }
+}
+
+async function hydratePersistedExecutionTreesInHistory(
+  response: ConversationHistoryResponse
+): Promise<ConversationHistoryResponse> {
+  if (response.messages.length === 0) return response
+
+  const rootIds = Array.from(
+    new Set(
+      response.messages
+        .map((message) => extractRootExecutionIdFromConversationMessage(message))
+        .filter((value): value is string => typeof value === "string" && value.length > 0)
+    )
+  )
+  if (rootIds.length === 0) return response
+
+  const persistedTrees = new Map<string, Record<string, unknown>>()
+  const settled = await Promise.allSettled(
+    rootIds.map(async (rootExecutionId) => {
+      const tree = await getConversationExecutionTree(rootExecutionId)
+      return [rootExecutionId, buildExecutionLifecyclePayloadFromPersistedTreeRecord(tree)] as const
+    })
+  )
+
+  for (const result of settled) {
+    if (result.status !== "fulfilled") continue
+    persistedTrees.set(result.value[0], result.value[1])
+  }
+
+  if (persistedTrees.size === 0) return response
+
+  return {
+    ...response,
+    messages: response.messages.map((message) => {
+      const rootExecutionId = extractRootExecutionIdFromConversationMessage(message)
+      if (!rootExecutionId) return message
+      const executionTree = persistedTrees.get(rootExecutionId)
+      if (!executionTree) return message
+      return applyPersistedExecutionTreeToConversationMessage(message, executionTree)
+    }),
+  }
 }
 
 const collectHistoryToolCallIds = (messages: ConversationMessage[]) => {
@@ -321,7 +580,12 @@ async function listPendingLocalApprovals(
 
 export async function fetchConversationHistory(
   sessionId: string,
-  options: { cursor?: number; limit?: number; includePendingApprovals?: boolean } = {}
+  options: {
+    cursor?: number
+    limit?: number
+    includePendingApprovals?: boolean
+    includePersistedExecutionTrees?: boolean
+  } = {}
 ): Promise<ConversationHistoryResponse> {
   if (isTauriRuntime()) {
     try {
@@ -337,12 +601,15 @@ export async function fetchConversationHistory(
       )
       const normalized = normalizeConversationHistoryPayload(sessionId, data)
       const parsed = ConversationHistoryResponseSchema.safeParse(data)
-      const baseResponse = parsed.success ? parsed.data : normalized
-      if (options.cursor != null || options.includePendingApprovals === false) {
-        return baseResponse
+      let response = parsed.success ? parsed.data : normalized
+      if (options.cursor == null && options.includePendingApprovals !== false) {
+        const pendingApprovals = await listPendingLocalApprovals(sessionId)
+        response = mergePendingApprovalSnapshotsIntoHistory(response, pendingApprovals)
       }
-      const pendingApprovals = await listPendingLocalApprovals(sessionId)
-      return mergePendingApprovalSnapshotsIntoHistory(baseResponse, pendingApprovals)
+      if (options.includePersistedExecutionTrees !== false) {
+        response = await hydratePersistedExecutionTreesInHistory(response)
+      }
+      return response
     } catch {
       return { session_id: sessionId, messages: [], next_cursor: null, has_more: false }
     }
@@ -573,6 +840,7 @@ export async function deleteConversationMessage(
       const history = await fetchConversationHistory(sessionId, {
         limit: 500,
         includePendingApprovals: false,
+        includePersistedExecutionTrees: false,
       })
       const targetMessages = (history.messages ?? []).filter(
         (message) => message.turn_index === turnIndex
@@ -650,6 +918,7 @@ async function cleanupLocalAssetsForConversation(sessionId: string): Promise<voi
     const history = await fetchConversationHistory(sessionId, {
       limit: 500,
       includePendingApprovals: false,
+      includePersistedExecutionTrees: false,
     })
     const sha256Set = new Set<string>()
     for (const msg of history.messages ?? []) {

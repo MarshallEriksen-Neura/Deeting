@@ -12,6 +12,7 @@ import type {
   RegenerateProposalRequest,
   RerunPhaseRequest,
   UpdateProposalRequest,
+  WorkflowPhaseContext,
   WorkflowRun,
   WorkflowRunDetail,
 } from "./types"
@@ -35,6 +36,16 @@ export async function getWorkflowRunDetail(runId: string): Promise<WorkflowRunDe
 
 export async function getWorkflowRunStatus(runId: string): Promise<WorkflowRunDetail> {
   return invoke<WorkflowRunDetail>("get_workflow_run_status", { runId })
+}
+
+export async function getWorkflowPhaseContext(
+  runId: string,
+  phaseId: string,
+): Promise<WorkflowPhaseContext> {
+  return invoke<WorkflowPhaseContext>("get_workflow_phase_context", {
+    runId,
+    phaseId,
+  })
 }
 
 export async function generateWorkflowProposal(

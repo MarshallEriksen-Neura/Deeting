@@ -3,8 +3,13 @@
 import { act, renderHook, waitFor } from "@testing-library/react"
 import {
   cancelChatCompletion,
+  finalizeDesktopLocalCompare,
   streamChatCompletion,
+  streamDesktopLocalChatCompletion,
 } from "@/lib/api/chat"
+import {
+  fetchConversationHistory,
+} from "@/lib/api/conversations"
 import { useChatMessagingService } from "@/hooks/chat/use-chat-messaging-service"
 import { useChatStore } from "@/store/chat-store"
 
@@ -14,6 +19,10 @@ jest.mock("@/hooks/use-i18n", () => ({
 
 jest.mock("@/lib/api/custom-task-agents", () => ({
   listCustomTaskAgents: jest.fn().mockResolvedValue([]),
+}))
+
+jest.mock("@/lib/api/conversations", () => ({
+  fetchConversationHistory: jest.fn(),
 }))
 
 jest.mock("@/lib/api/chat", () => ({
@@ -36,14 +45,29 @@ function createDeferred<T>() {
 
 const mockStreamChatCompletion =
   streamChatCompletion as jest.MockedFunction<typeof streamChatCompletion>
+const mockStreamDesktopLocalChatCompletion =
+  streamDesktopLocalChatCompletion as jest.MockedFunction<
+    typeof streamDesktopLocalChatCompletion
+  >
 const mockCancelChatCompletion =
   cancelChatCompletion as jest.MockedFunction<typeof cancelChatCompletion>
+const mockFinalizeDesktopLocalCompare =
+  finalizeDesktopLocalCompare as jest.MockedFunction<typeof finalizeDesktopLocalCompare>
+const mockFetchConversationHistory =
+  fetchConversationHistory as jest.MockedFunction<typeof fetchConversationHistory>
+const windowWithTauri = window as Window & {
+  __TAURI__?: unknown
+  __TAURI_INTERNALS__?: unknown
+}
 
 describe("useChatMessagingService pending takeover orchestration", () => {
   beforeEach(() => {
     process.env.NEXT_PUBLIC_IS_TAURI = "false"
     mockStreamChatCompletion.mockReset()
+    mockStreamDesktopLocalChatCompletion.mockReset()
     mockCancelChatCompletion.mockReset()
+    mockFinalizeDesktopLocalCompare.mockReset()
+    mockFetchConversationHistory.mockReset()
     useChatStore.getState().resetSession()
     useChatStore.setState({
       models: [{ id: "model-1", provider_model_id: "model-1" }],
@@ -278,5 +302,258 @@ describe("useChatMessagingService pending takeover orchestration", () => {
         selectedKnowledgeFileIds: ["doc-4"],
       })
     )
+  })
+
+  it("preserves execution_tree when finalizing a compare winner", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    useChatStore.setState({
+      messages: [
+        {
+          id: "assistant-compare-finalize",
+          role: "assistant",
+          content: "baseline",
+          createdAt: 1,
+          metaInfo: {
+            execution_tree: {
+              schema_version: 1,
+              root_execution_id: "exec-1",
+              execution_id: "exec-1",
+            },
+          },
+          blocks: [
+            {
+              id: "exec-ui-1",
+              type: "ui",
+              viewType: "execution.lifecycle",
+              payload: {
+                schema_version: 1,
+                root_execution_id: "exec-1",
+                execution_id: "exec-1",
+              },
+            } as any,
+          ],
+        },
+      ],
+      compareByMessageId: {
+        "assistant-compare-finalize": {
+          messageId: "assistant-compare-finalize",
+          baselineModelKey: "model-a",
+          activeModelKey: "model-b",
+          isFinalizing: false,
+          candidates: {
+            "model-a": {
+              modelKey: "model-a",
+              modelId: "model-a",
+              content: "baseline",
+              blocks: [],
+              loading: false,
+              baseline: true,
+            },
+            "model-b": {
+              modelKey: "model-b",
+              modelId: "model-b",
+              providerModelId: "model-b",
+              content: "candidate",
+              blocks: [],
+              loading: false,
+              baseline: false,
+            },
+          },
+        },
+      },
+    })
+
+    mockFinalizeDesktopLocalCompare.mockResolvedValue({
+      session_id: "session-1",
+      replaced_turn_index: 1,
+      message: {
+        role: "assistant",
+        content: "candidate",
+        turn_index: 2,
+        meta_info: {},
+      },
+    } as any)
+
+    const { result } = renderHook(() => useChatMessagingService())
+
+    await act(async () => {
+      await result.current.finalizeCompareWinner("assistant-compare-finalize", "model-b")
+    })
+
+    const updated = useChatStore
+      .getState()
+      .messages.find((message) => message.id === "assistant-compare-finalize")
+
+    expect(updated?.metaInfo?.execution_tree).toMatchObject({
+      root_execution_id: "exec-1",
+      execution_id: "exec-1",
+    })
+  })
+
+  it("sends the current root_execution_id when regenerating an assistant turn", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI_INTERNALS__ = {}
+    useChatStore.setState({
+      messages: [
+        {
+          id: "assistant-regen-1",
+          role: "assistant",
+          content: "baseline",
+          createdAt: 1,
+          metaInfo: {
+            execution_tree: {
+              schema_version: 1,
+              root_execution_id: "exec-root-regen",
+              execution_id: "exec-root-regen",
+            },
+          },
+        },
+      ],
+    })
+    mockStreamChatCompletion.mockResolvedValueOnce("")
+    mockStreamDesktopLocalChatCompletion.mockResolvedValueOnce("")
+
+    const { result } = renderHook(() => useChatMessagingService())
+
+    await act(async () => {
+      await result.current.regenerateMessage("assistant-regen-1")
+    })
+
+    const totalStreamCalls =
+      mockStreamDesktopLocalChatCompletion.mock.calls.length +
+      mockStreamChatCompletion.mock.calls.length
+    expect(totalStreamCalls).toBe(1)
+    const payload =
+      mockStreamDesktopLocalChatCompletion.mock.calls[0]?.[0] ??
+      mockStreamChatCompletion.mock.calls[0]?.[0]
+    expect(payload?.metadata).toMatchObject({
+      execution: {
+        root_execution_id: "exec-root-regen",
+      },
+    })
+    delete windowWithTauri.__TAURI_INTERNALS__
+  })
+
+  it("keeps the same root_execution_id when continuing interrupted generation", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI_INTERNALS__ = {}
+    const firstRequest = createDeferred<string>()
+    mockStreamDesktopLocalChatCompletion.mockImplementationOnce(async (_payload, _handlers, control) => {
+      control?.onCancel?.(() => {
+        firstRequest.resolve("")
+      })
+      return firstRequest.promise
+    })
+    mockStreamDesktopLocalChatCompletion.mockResolvedValueOnce("")
+    mockCancelChatCompletion.mockResolvedValue({
+      request_id: "request-continue-1",
+      status: "cancelled",
+    })
+
+    useChatStore.setState({
+      input: "initial prompt",
+      isLoading: false,
+    })
+
+    const { result } = renderHook(() => useChatMessagingService())
+
+    act(() => {
+      void result.current.sendMessage()
+    })
+
+    await waitFor(() => {
+      expect(useChatStore.getState().isLoading).toBe(true)
+    })
+
+    const assistantMessage = useChatStore
+      .getState()
+      .messages.find((message) => message.role === "assistant")
+    expect(assistantMessage?.id).toBeTruthy()
+
+    act(() => {
+      useChatStore.getState().mergeMessageMeta(assistantMessage!.id, {
+        execution_tree: {
+          schema_version: 1,
+          root_execution_id: "exec-root-continue",
+          execution_id: "exec-root-continue",
+        },
+      })
+    })
+
+    await act(async () => {
+      await result.current.cancelActiveRequest()
+    })
+
+    await act(async () => {
+      await result.current.continueInterruptedGeneration()
+    })
+
+    const totalStreamCalls =
+      mockStreamDesktopLocalChatCompletion.mock.calls.length +
+      mockStreamChatCompletion.mock.calls.length
+    expect(totalStreamCalls).toBe(2)
+    const secondPayload =
+      mockStreamDesktopLocalChatCompletion.mock.calls[1]?.[0] ??
+      mockStreamChatCompletion.mock.calls[1]?.[0]
+    expect(secondPayload?.metadata).toMatchObject({
+      execution: {
+        root_execution_id: "exec-root-continue",
+      },
+    })
+    delete windowWithTauri.__TAURI_INTERNALS__
+  })
+
+  it("uses persisted execution trees already reconciled in fetched history", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI_INTERNALS__ = {}
+    mockFetchConversationHistory.mockResolvedValue({
+      session_id: "session-1",
+      messages: [
+        {
+          role: "assistant",
+          content: "",
+          turn_index: 1,
+          meta_info: {
+            execution_tree: {
+              schema_version: 1,
+              root_execution_id: "exec-root-history",
+              execution_id: "exec-root-history",
+              execution_status: "integrated",
+              persisted_snapshot: true,
+              target: {
+                name: "Hydrated Worker",
+                workflow_run_id: "run-hydrated",
+              },
+            },
+          },
+        },
+      ],
+      next_cursor: null,
+      has_more: false,
+    } as any)
+
+    const { result } = renderHook(() => useChatMessagingService())
+
+    await act(async () => {
+      await result.current.loadHistoryBySession("session-1")
+    })
+
+    const message = useChatStore.getState().messages[0]
+    expect(message?.metaInfo?.execution_tree).toMatchObject({
+      execution_status: "integrated",
+      persisted_snapshot: true,
+      target: expect.objectContaining({
+        name: "Hydrated Worker",
+        workflow_run_id: "run-hydrated",
+      }),
+    })
+    expect(message?.blocks?.[0]).toMatchObject({
+      type: "ui",
+      viewType: "execution.lifecycle",
+      payload: expect.objectContaining({
+        persisted_snapshot: true,
+      }),
+    })
+    delete windowWithTauri.__TAURI_INTERNALS__
   })
 })

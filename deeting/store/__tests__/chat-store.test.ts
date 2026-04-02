@@ -284,6 +284,60 @@ describe("useChatStore selected assistant normalization", () => {
     expect(message?.blocks?.filter((block) => block.type === "text")).toHaveLength(1)
   })
 
+  it("appendMessageBlocks should replace matching execution lifecycle blocks by root_execution_id", () => {
+    useChatStore.setState({
+      messages: [
+        {
+          id: "assistant-exec-1",
+          role: "assistant",
+          content: "",
+          createdAt: 1,
+          blocks: [
+            {
+              id: "exec-ui-old",
+              type: "ui",
+              viewType: "execution.lifecycle",
+              payload: {
+                schema_version: 1,
+                root_execution_id: "exec-root-1",
+                execution_id: "exec-root-1",
+                execution_status: "running",
+              },
+            } as MessageBlock,
+          ],
+        },
+      ],
+    })
+
+    useChatStore.getState().appendMessageBlocks("assistant-exec-1", [
+      {
+        id: "exec-ui-new",
+        type: "ui",
+        viewType: "execution.lifecycle",
+        payload: {
+          schema_version: 1,
+          root_execution_id: "exec-root-1",
+          execution_id: "exec-root-1",
+          execution_status: "integrated",
+        },
+      } as MessageBlock,
+    ])
+
+    const message = useChatStore.getState().messages[0]
+    const executionBlocks =
+      message?.blocks?.filter(
+        (block) => block.type === "ui" && block.viewType === "execution.lifecycle"
+      ) ?? []
+
+    expect(executionBlocks).toHaveLength(1)
+    expect(executionBlocks[0]).toMatchObject({
+      id: "exec-ui-old",
+      payload: expect.objectContaining({
+        execution_status: "integrated",
+      }),
+    })
+  })
+
   it("upsertMessageToolResult should replace the matching tool result by callId", () => {
     useChatStore.setState({
       messages: [

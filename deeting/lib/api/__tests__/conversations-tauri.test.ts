@@ -229,6 +229,107 @@ describe("conversation tauri apis", () => {
     })
   })
 
+  it("reconciles execution lifecycle history blocks against the latest persisted execution tree", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke
+      .mockResolvedValueOnce({
+        session_id: "session-local-history-exec",
+        messages: [
+          {
+            role: "assistant",
+            content: "",
+            turn_index: 1,
+            meta_info: {
+              execution_tree: {
+                schema_version: 1,
+                root_execution_id: "exec-root-history",
+                execution_id: "exec-root-history",
+                execution_status: "running",
+              },
+              blocks: [
+                {
+                  type: "ui",
+                  viewType: "execution.lifecycle",
+                  payload: {
+                    schema_version: 1,
+                    root_execution_id: "exec-root-history",
+                    execution_id: "exec-root-history",
+                    execution_status: "running",
+                  },
+                },
+              ],
+            },
+          },
+        ],
+        next_cursor: null,
+        has_more: false,
+      } as unknown)
+      .mockResolvedValueOnce({
+        root: {
+          root_execution_id: "exec-root-history",
+          session_id: "session-local-history-exec",
+          message_id: "msg-1",
+          turn_index: 1,
+          schema_version: 1,
+          execution_id: "exec-root-history",
+          execution_kind: "workflow",
+          execution_status: "integrated",
+          terminal_status: "succeeded",
+          target_id: null,
+          target_name: "Persisted Worker",
+          target_invocation_kind: "chat",
+          target_worker_ref: null,
+          target_workflow_run_id: "run-persisted",
+          selection: null,
+          available_actions: [{ kind: "open" }],
+          summary: "Hydrated from persistence",
+          error: null,
+          result_payload: null,
+          raw_json: null,
+          started_at_ms: null,
+          completed_at_ms: null,
+          created_at: "2026-03-30T00:00:00Z",
+          updated_at: "2026-03-30T00:00:01Z",
+        },
+        children: [],
+      } as unknown)
+
+    const result = await fetchConversationHistory("session-local-history-exec", {
+      includePendingApprovals: false,
+    })
+
+    expect(result.messages[0]).toMatchObject({
+      meta_info: {
+        execution_tree: expect.objectContaining({
+          root_execution_id: "exec-root-history",
+          execution_status: "integrated",
+          persisted_snapshot: true,
+          target: expect.objectContaining({
+            name: "Persisted Worker",
+            workflow_run_id: "run-persisted",
+          }),
+        }),
+        blocks: [
+          expect.objectContaining({
+            type: "ui",
+            viewType: "execution.lifecycle",
+            payload: expect.objectContaining({
+              execution_status: "integrated",
+              persisted_snapshot: true,
+            }),
+          }),
+        ],
+      },
+    })
+    expect(mockInvoke).toHaveBeenNthCalledWith(1, "list_local_conversation_history", {
+      query: { session_id: "session-local-history-exec", cursor: null, limit: null },
+    })
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, "get_local_conversation_execution_tree", {
+      rootExecutionId: "exec-root-history",
+    })
+  })
+
   it("falls back to web conversation sessions outside tauri runtime", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "false"
     mockRequest.mockResolvedValue({

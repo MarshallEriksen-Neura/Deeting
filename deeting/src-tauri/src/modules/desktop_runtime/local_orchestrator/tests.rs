@@ -550,6 +550,40 @@ fn derive_local_finish_reason_uses_error_for_synthesized_failure_text() {
 }
 
 #[test]
+fn build_assistant_meta_persists_execution_tree_summary() {
+    let meta = build_assistant_meta(
+        vec![json!({ "type": "text", "content": "done" })],
+        "model-a",
+        "provider-model-a",
+        Some(json!({ "latency_ms": 10 })),
+        Some(json!({
+            "execution_id": "exec-1",
+            "execution_kind": "workflow",
+            "workflow_run_id": "run-1",
+        })),
+        AssistantMetaMode::Canonical,
+    )
+    .expect("assistant meta");
+
+    let object = meta.as_object().expect("meta object");
+    assert!(object.contains_key("blocks"));
+    assert_eq!(
+        object
+            .get("execution_tree")
+            .and_then(|value| value.get("execution_id"))
+            .and_then(Value::as_str),
+        Some("exec-1")
+    );
+    assert_eq!(
+        object
+            .get("execution_tree")
+            .and_then(|value| value.get("workflow_run_id"))
+            .and_then(Value::as_str),
+        Some("run-1")
+    );
+}
+
+#[test]
 fn select_custom_task_agent_candidate_prefers_image_agent_for_image_query() {
     let profiles = vec![
         CustomTaskAgentProfile {

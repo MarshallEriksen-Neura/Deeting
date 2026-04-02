@@ -275,6 +275,7 @@ pub struct LocalOrchestratorInput {
     pub model: String,
     pub provider_model_id: Option<String>,
     pub explicit_task_agent_id: Option<String>,
+    pub root_execution_id: Option<String>,
     pub session_id: String,
     pub capability_id: Option<String>,
     pub regenerate: bool,
@@ -1859,6 +1860,7 @@ pub async fn execute_local_orchestrated_chat(
             session_id: session_id.clone(),
             capability_id: capability_id.clone(),
             explicit_task_agent_id: input.explicit_task_agent_id.clone(),
+            root_execution_id: input.root_execution_id.clone(),
             messages: ctx.messages.clone(),
             execution_policy: execution_policy.clone(),
             temperature: input.temperature,
@@ -1872,7 +1874,7 @@ pub async fn execute_local_orchestrated_chat(
         },
     )
     .await?;
-    let delegated_worker = execution_outcome.delegated_worker;
+    let delegated_execution = execution_outcome.delegated_execution;
     let response_json = execution_outcome.response_json;
 
     let mut response_text =
@@ -1902,11 +1904,81 @@ pub async fn execute_local_orchestrated_chat(
         .get("tool_trace_streamed")
         .and_then(|value| value.as_bool())
         .unwrap_or(false);
-    if let Some(execution) = delegated_worker.as_ref() {
+    if let Some(execution) = delegated_execution.as_ref() {
         if !execution.trace_blocks.is_empty() {
             ctx.emit_blocks(execution.trace_blocks.clone());
             assistant_blocks.extend(execution.trace_blocks.clone());
         }
+        /* legacy execution.lifecycle block builder retained temporarily for diff safety
+        let _execution_block = json!({
+            "type": "ui",
+            "viewType": "execution.lifecycle",
+            "title": format!("Delegated Execution · {}", execution.record.target.name),
+            "payload": {
+                "execution_id": execution.record.execution_id,
+                "execution_kind": execution.record.kind.as_str(),
+                "execution_status": "integrated",
+                "terminal_status": execution.record.status.as_str(),
+                "target": {
+                    "id": execution.record.target.id,
+                    "name": execution.record.target.name,
+                    "invocation_kind": execution.record.target.invocation_kind,
+                    "worker_ref": execution.record.target.worker_ref,
+                    "workflow_run_id": execution.record.target.workflow_run_id,
+                },
+                "selection": {
+                    "explicit": execution.record.selection.explicit,
+                    "score": execution.record.selection.score,
+                    "reason_codes": execution.record.selection.reason_codes,
+                    "reason_text": execution.record.selection.reason_text,
+                },
+                "available_actions": execution
+                    .record
+                    .available_actions
+                    .iter()
+                    .map(|action| json!({ "kind": action.kind }))
+                    .collect::<Vec<_>>(),
+                "summary": execution.record.summary,
+                "error": execution.record.error,
+                "started_at_ms": execution.record.started_at_ms,
+                "completed_at_ms": execution.record.completed_at_ms,
+                "children": execution
+                    .record
+                    .children
+                    .iter()
+                    .map(|child| {
+                        json!({
+                            "id": child.id,
+                            "phase_id": child.phase_id,
+                            "step_type": child.step_type,
+                            "title": child.title,
+                            "status": child.status,
+                            "worker_ref": child.worker_ref,
+                            "summary": child.summary,
+                            "error": child.error,
+                            "available_actions": child
+                                .available_actions
+                                .iter()
+                                .map(|action| json!({ "kind": action.kind }))
+                                .collect::<Vec<_>>(),
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+                "result_payload": execution.record.result_payload,
+            },
+            "metadata": {
+                "execution_id": execution.record.execution_id,
+                "execution_kind": execution.record.kind.as_str(),
+                "workflow_run_id": execution.record.target.workflow_run_id,
+                "worker_ref": execution.record.target.worker_ref,
+            }
+        });
+        */
+        let execution_block = execution.build_ui_block(
+            crate::modules::desktop_runtime::runtime::execution_plane::DelegatedExecutionStatus::Integrated,
+        );
+        ctx.emit_blocks(vec![execution_block.clone()]);
+        assistant_blocks.push(execution_block);
     }
     if let Some(tool_trace_blocks) = response_json
         .get("tool_trace_blocks")
@@ -1942,6 +2014,19 @@ pub async fn execute_local_orchestrated_chat(
     if !render_resolution.blocks.is_empty() {
         ctx.emit_blocks(render_resolution.blocks.clone());
         assistant_blocks.extend(render_resolution.blocks);
+    }
+    if let Some(execution) = delegated_execution.as_ref() {
+        ctx.emit_status(
+            "evolve",
+            Some("worker_delegation"),
+            "success",
+            "delegation.integrated",
+            Some(
+                execution.record.status_meta_with_status(
+                    crate::modules::desktop_runtime::runtime::execution_plane::DelegatedExecutionStatus::Integrated,
+                ),
+            ),
+        );
     }
 
     let total_latency_ms = ctx.started_at.elapsed().as_millis() as i64;
@@ -1980,6 +2065,11 @@ pub async fn execute_local_orchestrated_chat(
         &model_id,
         &provider_model_id,
         Some(runtime_metrics_value),
+        delegated_execution.as_ref().map(|execution| {
+            execution.record.status_meta_with_status(
+                crate::modules::desktop_runtime::runtime::execution_plane::DelegatedExecutionStatus::Integrated,
+            )
+        }),
         if input.compare_only {
             AssistantMetaMode::CompareCandidate
         } else {
@@ -2204,6 +2294,7 @@ fn build_assistant_meta(
     model_id: &str,
     provider_model_id: &str,
     runtime_metrics: Option<Value>,
+    execution_tree: Option<Value>,
     mode: AssistantMetaMode,
 ) -> Option<Value> {
     let mut meta = serde_json::Map::new();
@@ -2217,6 +2308,9 @@ fn build_assistant_meta(
     );
     if let Some(runtime_metrics) = runtime_metrics {
         meta.insert("runtime_metrics".to_string(), runtime_metrics);
+    }
+    if let Some(execution_tree) = execution_tree {
+        meta.insert("execution_tree".to_string(), execution_tree);
     }
     if matches!(mode, AssistantMetaMode::CompareCandidate) {
         meta.insert("compare_candidate".to_string(), Value::Bool(true));

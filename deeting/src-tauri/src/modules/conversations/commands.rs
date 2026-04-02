@@ -5,6 +5,7 @@ use mcp_session::conversation::{
     CreateConversationMessageRequest, LocalConversationArchiveResponse,
     LocalConversationClearResponse, LocalConversationCreateRequest,
     LocalConversationCreateResponse, LocalConversationDeleteResponse,
+    LocalConversationExecutionRoot, LocalConversationExecutionTreeResponse,
     LocalConversationHistoryMessage, LocalConversationHistoryQuery,
     LocalConversationHistoryResponse, LocalConversationRenameRequest,
     LocalConversationRenameResponse, LocalConversationSessionPage, LocalConversationSessionsQuery,
@@ -281,6 +282,33 @@ pub async fn append_local_conversation_message(
         .mcp
         .store
         .append_local_conversation_message(payload)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn get_local_conversation_execution_tree(
+    state: State<'_, AppState>,
+    root_execution_id: String,
+) -> Result<LocalConversationExecutionTreeResponse, String> {
+    state
+        .mcp
+        .store
+        .get_local_conversation_execution_tree(&root_execution_id)
+        .await
+        .map_err(to_string)?
+        .ok_or_else(|| "conversation execution tree not found".to_string())
+}
+
+#[tauri::command]
+pub async fn list_local_conversation_execution_roots(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<Vec<LocalConversationExecutionRoot>, String> {
+    state
+        .mcp
+        .store
+        .list_local_conversation_execution_roots(&session_id)
         .await
         .map_err(to_string)
 }

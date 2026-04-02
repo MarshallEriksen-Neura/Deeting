@@ -89,6 +89,16 @@ pub fn extract_selected_knowledge_file_ids(metadata: Option<&Value>) -> Vec<Stri
     ids
 }
 
+pub fn extract_root_execution_id(metadata: Option<&Value>) -> Option<String> {
+    let metadata = metadata?;
+    normalize_optional_string(
+        metadata
+            .get("execution")
+            .and_then(|value| value.get("root_execution_id"))
+            .and_then(Value::as_str),
+    )
+}
+
 pub fn build_stream_error_payload(
     error_code: &str,
     message: impl Into<String>,
@@ -139,5 +149,15 @@ mod tests {
             "selected_doc_ids": ["b", "c"]
         })));
         assert_eq!(ids, vec!["a".to_string(), "b".to_string(), "c".to_string()]);
+    }
+
+    #[test]
+    fn extract_root_execution_id_reads_execution_metadata() {
+        let root_execution_id = extract_root_execution_id(Some(&json!({
+            "execution": {
+                "root_execution_id": "exec-root-1"
+            }
+        })));
+        assert_eq!(root_execution_id.as_deref(), Some("exec-root-1"));
     }
 }

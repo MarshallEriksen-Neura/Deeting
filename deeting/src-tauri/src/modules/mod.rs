@@ -7,6 +7,7 @@ pub mod browser_agent;
 pub mod capability_control_plane;
 pub mod chat_assets;
 pub mod code_mode;
+pub mod conversation;
 pub mod conversations;
 pub mod custom_task_agents;
 pub mod desktop_config;

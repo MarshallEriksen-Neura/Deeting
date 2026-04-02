@@ -123,6 +123,14 @@ export interface WorkflowRunDetail {
   events: WorkflowEvent[]
 }
 
+export interface WorkflowPhaseContext {
+  run_id: string
+  phase_id: string
+  phase_title: string
+  context_md: string | null
+  context_json: Record<string, unknown> | null
+}
+
 // --- Snapshot Models ---
 
 export interface ExecutionSnapshot {

@@ -1,5 +1,6 @@
 import type { ChatAttachment } from "@/lib/chat/message-content"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
+import type { ExecutionLifecyclePayload } from "@/lib/execution-tree/types"
 
 export type MessageRole = "user" | "assistant" | "system"
 
@@ -27,6 +28,7 @@ export type MessageMetaInfo = {
   image_url?: unknown
   audio?: unknown
   modalities?: unknown
+  execution_tree?: ExecutionLifecyclePayload
   [key: string]: unknown
 }
 

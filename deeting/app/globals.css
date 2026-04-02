@@ -100,6 +100,13 @@
   --scrollbar-thumb: color-mix(in oklch, var(--foreground) 22%, transparent);
   --scrollbar-thumb-hover: color-mix(in oklch, var(--foreground) 32%, transparent);
   --scrollbar-thumb-active: color-mix(in oklch, var(--foreground) 42%, transparent);
+
+  /* Island — warm gold floating capsule */
+  --island-shell-bg: color-mix(in oklch, var(--surface) 78%, #f5efe6 22%);
+  --island-shell-border: color-mix(in oklch, var(--border) 60%, #d4b896 40%);
+  --island-gold-stroke: #c9a96e;
+  --island-gold-stroke-soft: rgba(201, 169, 110, 0.35);
+  --island-seed-glow: rgba(201, 169, 110, 0.18);
 }
 
 /* ============================================
@@ -123,6 +130,13 @@ html.dark {
   --chat-user-bubble-fg: color-mix(in oklch, white 90%, #ead7c1 10%);
   --chat-user-bubble-muted-fg: color-mix(in oklch, white 62%, transparent);
   --chat-user-bubble-attachment-bg: color-mix(in oklch, var(--surface) 78%, #cbb299 22%);
+
+  /* Island — warm gold floating capsule (dark) */
+  --island-shell-bg: color-mix(in oklch, var(--surface) 72%, #2a2318 28%);
+  --island-shell-border: color-mix(in oklch, var(--border) 55%, #8b7355 45%);
+  --island-gold-stroke: #d4b896;
+  --island-gold-stroke-soft: rgba(212, 184, 150, 0.25);
+  --island-seed-glow: rgba(212, 184, 150, 0.12);
 }
 
 @theme inline {
@@ -169,6 +183,9 @@ html.dark {
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
+  --color-island-shell-bg: var(--island-shell-bg);
+  --color-island-shell-border: var(--island-shell-border);
+  --color-island-gold: var(--island-gold-stroke);
 }
 
 body {
@@ -444,6 +461,12 @@ a:focus-visible {
 
 .glass-breathe {
   animation: ios-breathe 3s ease-in-out infinite;
+}
+
+/* Island 呼吸脉冲 */
+@keyframes island-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 var(--island-seed-glow); }
+  50% { box-shadow: 0 0 12px 4px var(--island-seed-glow); }
 }
 
 /* iOS 风格的涟漪效果 */

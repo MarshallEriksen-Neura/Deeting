@@ -1,6 +1,10 @@
 import type { MessageBlock } from "@/lib/chat/message-protocol"
 import { extractWorkflowRunIdFromBlocks } from "@/hooks/chat/use-chat-messaging-service"
 
+jest.mock("@/hooks/use-i18n", () => ({
+  useI18n: () => (_key: string) => "chat",
+}))
+
 describe("extractWorkflowRunIdFromBlocks", () => {
   it("returns the workflow run id from a delegated workflow tool result", () => {
     const blocks: MessageBlock[] = [
@@ -34,6 +38,24 @@ describe("extractWorkflowRunIdFromBlocks", () => {
     ]
 
     expect(extractWorkflowRunIdFromBlocks(blocks)).toBe("run-456")
+  })
+
+  it("reads the workflow run id from delegated execution lifecycle metadata", () => {
+    const blocks: MessageBlock[] = [
+      {
+        id: "ui-exec-1",
+        type: "ui",
+        viewType: "execution.lifecycle",
+        payload: {
+          execution_id: "exec-1",
+        },
+        metadata: {
+          workflow_run_id: "run-789",
+        },
+      },
+    ]
+
+    expect(extractWorkflowRunIdFromBlocks(blocks)).toBe("run-789")
   })
 
   it("ignores blocks without a usable workflow run id", () => {

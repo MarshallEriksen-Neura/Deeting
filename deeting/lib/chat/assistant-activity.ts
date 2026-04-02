@@ -1,4 +1,5 @@
 import type { MessageBlock, ToolResultBlock } from "@/lib/chat/message-protocol"
+import { extractExecutionTreeFromMessage, extractRootExecutionIdFromExecutionTree } from "@/lib/chat/execution-tree"
 
 export type AssistantActivityState = {
   isActive: boolean
@@ -84,6 +85,45 @@ export function deriveAssistantActivityState(
       statusMeta: {
         ...(toolName ? { tool_name: toolName } : {}),
         ...(callId ? { call_id: callId } : {}),
+      },
+    }
+  }
+
+  const executionTree = extractExecutionTreeFromMessage({
+    blocks: safeBlocks,
+    metaInfo: undefined,
+  })
+  const executionStatus =
+    typeof executionTree?.execution_status === "string"
+      ? executionTree.execution_status.trim().toLowerCase()
+      : ""
+  if (
+    executionStatus === "selected" ||
+    executionStatus === "launching" ||
+    executionStatus === "running"
+  ) {
+    const target =
+      executionTree && typeof executionTree.target === "object" && executionTree.target !== null
+        ? (executionTree.target as Record<string, unknown>)
+        : null
+    const targetName =
+      typeof target?.name === "string" && target.name.trim().length > 0
+        ? target.name.trim()
+        : ""
+    const executionKind =
+      typeof executionTree?.execution_kind === "string"
+        ? executionTree.execution_kind.trim()
+        : ""
+    const rootExecutionId = extractRootExecutionIdFromExecutionTree(executionTree)
+    return {
+      isActive: true,
+      statusStage: "render",
+      statusCode: "execution.running",
+      statusMeta: {
+        ...(targetName ? { target_name: targetName } : {}),
+        ...(executionKind ? { execution_kind: executionKind } : {}),
+        ...(rootExecutionId ? { root_execution_id: rootExecutionId } : {}),
+        execution_status: executionStatus,
       },
     }
   }

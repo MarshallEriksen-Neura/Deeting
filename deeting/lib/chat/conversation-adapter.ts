@@ -2,6 +2,7 @@ import { parseMessageContent } from "@/lib/chat/message-content"
 import type { ConversationMessage } from "@/lib/api/conversations"
 import type { Message, MessageMetaInfo, ToolCall } from "@/lib/chat/message-types"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
+import { buildExecutionLifecycleBlock } from "@/lib/chat/execution-tree"
 
 const DEFAULT_ROLES = ["user", "assistant"] as const
 
@@ -72,6 +73,23 @@ const extractAssistantTextFromBlocks = (blocks: MessageBlock[]): string =>
     if (typeof block.content !== "string") return acc
     return `${acc}${block.content}`
   }, "")
+
+const buildExecutionLifecycleFallbackBlock = (
+  metaInfo: MessageMetaInfo | undefined,
+  messageId: string,
+): MessageBlock | null => {
+  const executionTree =
+    metaInfo && typeof metaInfo.execution_tree === "object" && metaInfo.execution_tree !== null
+      ? (metaInfo.execution_tree as Record<string, unknown>)
+      : null
+  if (!executionTree) return null
+
+  return buildExecutionLifecycleBlock(executionTree, {
+    id: `${messageId}-execution-tree`,
+    displayMode: "widget",
+    streamState: "completed",
+  })
+}
 
 const normalizeBlocks = (blocks: MessageBlock[], messageId: string): MessageBlock[] => {
   return blocks.map((block, index) => {
@@ -265,7 +283,10 @@ export function normalizeConversationMessages(
     const messageId = `${options.idPrefix ?? "conv"}-${msg.turn_index ?? index}`
     const assistantBlocks = isBlockArray(metaInfo?.blocks)
       ? interleaveToolBlocks(normalizeBlocks(metaInfo.blocks, messageId))
-      : []
+      : (() => {
+          const fallback = buildExecutionLifecycleFallbackBlock(metaInfo, messageId)
+          return fallback ? [fallback] : []
+        })()
     const resolvedAssistantBlocks =
       assistantBlocks.length > 0 && hasRenderableBlocks(assistantBlocks)
         ? assistantBlocks

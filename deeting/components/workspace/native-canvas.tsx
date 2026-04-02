@@ -5,6 +5,7 @@ import { useI18n } from "@/hooks/use-i18n"
 import PageInspectionResultPanel from "@/components/inspection/page-inspection-result-panel"
 import type { NativeCanvasView } from "@/store/workspace-store"
 import { WorkflowRuntime } from "@/components/workflow/workflow-runtime"
+import ViewBlock from "@/components/views/view-block"
 
 export function NativeCanvasRenderer({
   view,
@@ -19,6 +20,8 @@ export function NativeCanvasRenderer({
       <WorkflowRuntime
         initialGoal={view.content.goal as string | undefined}
         initialRunId={view.content.runId as string | undefined}
+        initialPhaseId={view.content.phaseId as string | undefined}
+        initialContextPhaseId={view.content.contextPhaseId as string | undefined}
       />
     )
   }
@@ -27,6 +30,19 @@ export function NativeCanvasRenderer({
     return (
       <div className="h-full w-full p-6">
         <PageInspectionResultPanel result={view.content.result as any} />
+      </div>
+    )
+  }
+
+  if (typeof view.content?.viewType === "string" && view.content?.payload) {
+    return (
+      <div className="h-full w-full p-6">
+        <ViewBlock
+          viewType={view.content.viewType as string}
+          payload={view.content.payload}
+          title={view.content.title as string | undefined}
+          metadata={view.content.metadata as Record<string, unknown> | undefined}
+        />
       </div>
     )
   }

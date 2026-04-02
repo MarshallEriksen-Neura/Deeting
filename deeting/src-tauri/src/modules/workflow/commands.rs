@@ -7,7 +7,7 @@ use super::store;
 use super::types::{
     ApproveWorkflowRequest, CompileResult, CreateWorkflowRunRequest, EditRemainingPhasesRequest,
     GenerateProposalRequest, QuickWorkflowRequest, QuickWorkflowResult, RegenerateProposalRequest,
-    RerunPhaseRequest, UpdateProposalRequest, WorkflowRun, WorkflowRunDetail,
+    RerunPhaseRequest, UpdateProposalRequest, WorkflowPhaseContext, WorkflowRun, WorkflowRunDetail,
 };
 
 #[tauri::command]
@@ -139,6 +139,16 @@ pub async fn get_workflow_run_status(
     run_id: String,
 ) -> Result<WorkflowRunDetail, String> {
     service::get_workflow_run_status(state.inner(), &run_id).await
+}
+
+#[tauri::command]
+pub async fn get_workflow_phase_context(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    run_id: String,
+    phase_id: String,
+) -> Result<WorkflowPhaseContext, String> {
+    service::get_workflow_phase_context(&app, state.inner(), &run_id, &phase_id).await
 }
 
 #[tauri::command]

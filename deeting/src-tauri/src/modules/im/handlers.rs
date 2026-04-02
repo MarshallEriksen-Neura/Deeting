@@ -1,19 +1,12 @@
 use serde_json::Value;
 use tauri::AppHandle;
 
+use crate::modules::conversation::service as conversation;
+use crate::modules::conversation::types::ToolApprovalPayload;
 use crate::modules::im::{CardActionResponse, MessageContent, ToastResponse, ToastType};
 use crate::state::AppState;
 
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct ToolApprovalPayload {
-    pub approval_token: String,
-    pub call_id: Option<String>,
-    pub tool_name: String,
-    pub description: Option<String>,
-    pub risk_level: Option<String>,
-    pub risk_reasons: Vec<String>,
-    pub arguments: Option<Value>,
-}
+pub(crate) use crate::modules::conversation::service::build_text_approval_prompt;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ImCardActionOutcome {
@@ -27,15 +20,6 @@ pub(crate) struct LocalChatReplyOutcome {
     pub approval_request: Option<ToolApprovalPayload>,
 }
 
-fn action_string(value: &Value, key: &str) -> Option<String> {
-    value
-        .get(key)
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-}
-
 fn toast_response(message: &str, toast_type: ToastType) -> CardActionResponse {
     CardActionResponse {
         toast: Some(ToastResponse {
@@ -44,112 +28,6 @@ fn toast_response(message: &str, toast_type: ToastType) -> CardActionResponse {
         }),
         update_card: None,
     }
-}
-
-fn normalized_action(action_event: &str, action_value: &Value) -> String {
-    let trimmed = action_event.trim();
-    if trimmed.is_empty() {
-        action_string(action_value, "event").unwrap_or_default()
-    } else {
-        trimmed.to_string()
-    }
-}
-
-fn extract_local_chat_response(response: &Value) -> Option<&serde_json::Map<String, Value>> {
-    response
-        .get("choices")
-        .and_then(Value::as_array)
-        .and_then(|choices| choices.first())
-        .and_then(|choice| choice.get("message"))
-        .and_then(Value::as_object)
-}
-
-fn extract_local_chat_reply_text(response: &Value) -> Option<String> {
-    extract_local_chat_response(response)
-        .and_then(|message| message.get("content"))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-}
-
-fn extract_tool_approval_payload_from_block(block: &Value) -> Option<ToolApprovalPayload> {
-    if block.get("type").and_then(Value::as_str) != Some("tool_result") {
-        return None;
-    }
-
-    let result = block.get("result")?;
-    if result.get("status").and_then(Value::as_str) != Some("REQUIRES_APPROVAL") {
-        return None;
-    }
-
-    let approval_token = result
-        .get("approval_token")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)?;
-    let tool_name = result
-        .get("tool_name")
-        .and_then(Value::as_str)
-        .or_else(|| block.get("toolName").and_then(Value::as_str))
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)?;
-
-    let risk_reasons = result
-        .get("risk_reasons")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_string)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-
-    Some(ToolApprovalPayload {
-        approval_token,
-        call_id: block
-            .get("callId")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string),
-        tool_name,
-        description: result
-            .get("description")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string),
-        risk_level: result
-            .get("risk_level")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string),
-        risk_reasons,
-        arguments: result.get("arguments").cloned(),
-    })
-}
-
-fn latest_tool_approval_payload(response: &Value) -> Option<ToolApprovalPayload> {
-    let blocks = extract_local_chat_response(response)?
-        .get("meta_info")
-        .and_then(|value| value.get("blocks"))
-        .and_then(Value::as_array)?;
-
-    for block in blocks.iter().rev() {
-        if let Some(payload) = extract_tool_approval_payload_from_block(block) {
-            return Some(payload);
-        }
-    }
-
-    None
 }
 
 fn compact_json_preview(value: &Value, max_chars: usize) -> Option<String> {
@@ -276,34 +154,6 @@ fn build_tool_approval_card(payload: &ToolApprovalPayload) -> Value {
     })
 }
 
-pub(crate) fn build_text_approval_prompt(payload: &ToolApprovalPayload) -> String {
-    let mut lines = vec![
-        format!("审批请求：工具 `{}` 需要确认。", payload.tool_name),
-        payload
-            .description
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or("该操作需要人工确认后才能继续执行。")
-            .to_string(),
-    ];
-
-    if let Some(risk_level) = payload
-        .risk_level
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        lines.push(format!("风险等级：{risk_level}"));
-    }
-
-    if !payload.risk_reasons.is_empty() {
-        lines.push(format!("风险原因：{}", payload.risk_reasons.join("；")));
-    }
-
-    lines.push("回复 `1` 确认执行，回复 `0` 拒绝执行。".to_string());
-    lines.join("\n")
-}
-
 fn build_tool_approval_result_card(tool_name: &str, status: &str, detail: &str) -> Value {
     let (title, template) = match status {
         "approved" => ("已批准并继续执行", "green"),
@@ -328,8 +178,10 @@ fn build_tool_approval_result_card(tool_name: &str, status: &str, detail: &str) 
     })
 }
 
+// ─── IM Wrappers over shared conversation service ───────────────────────────
+
 pub(crate) fn extract_local_chat_reply_outcome(response: &Value) -> Option<LocalChatReplyOutcome> {
-    if let Some(payload) = latest_tool_approval_payload(response) {
+    if let Some(payload) = conversation::extract_approval_payload(response) {
         return Some(LocalChatReplyOutcome {
             content: MessageContent::Card {
                 card: build_tool_approval_card(&payload),
@@ -338,7 +190,7 @@ pub(crate) fn extract_local_chat_reply_outcome(response: &Value) -> Option<Local
         });
     }
 
-    extract_local_chat_reply_text(response).map(|text| LocalChatReplyOutcome {
+    conversation::extract_reply_text(response).map(|text| LocalChatReplyOutcome {
         content: MessageContent::Text { text },
         approval_request: None,
     })
@@ -348,120 +200,11 @@ pub(crate) fn extract_local_chat_reply_content(response: &Value) -> Option<Messa
     extract_local_chat_reply_outcome(response).map(|outcome| outcome.content)
 }
 
-pub(crate) fn extract_follow_up_messages_from_approval_result(
-    result: &Value,
-) -> Vec<MessageContent> {
-    let status = result
-        .get("status")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .unwrap_or_default();
-    if status != "LOCAL_CHAT_RESUMED" && status != "LOCAL_CHAT_RESUME_FAILED" {
-        return Vec::new();
-    }
-
-    let mut messages = result
-        .get("continuation_blocks")
-        .and_then(Value::as_array)
-        .map(|blocks| {
-            blocks
-                .iter()
-                .filter_map(|block| {
-                    if block.get("type").and_then(Value::as_str) != Some("text") {
-                        return None;
-                    }
-                    block
-                        .get("content")
-                        .and_then(Value::as_str)
-                        .map(str::trim)
-                        .filter(|value| !value.is_empty())
-                        .map(|text| MessageContent::Text {
-                            text: text.to_string(),
-                        })
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-
-    if messages.is_empty() {
-        if let Some(error) = result
-            .get("error")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        {
-            messages.push(MessageContent::Text {
-                text: format!("审批已处理，但后续执行失败：{error}"),
-            });
-        }
-    }
-
-    messages
-}
-
-async fn execute_local_chat_response(
-    app_state: &AppState,
-    app_handle: &AppHandle,
-    text: &str,
-    session_id: &str,
-) -> Result<Option<Value>, String> {
-    use crate::modules::desktop_runtime::local_orchestrator::{
-        execute_local_orchestrated_chat, LocalOrchestratorInput,
-    };
-
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        return Ok(None);
-    }
-
-    let secretary = app_state
-        .providers
-        .store
-        .get_or_create_user_secretary()
-        .await
-        .map_err(|err| err.to_string())?;
-
-    let model_reference = secretary
-        .model_name
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("gpt-4o-mini")
-        .to_string();
-    let provider_model_id = secretary
-        .provider_model_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string);
-
-    let input = LocalOrchestratorInput {
-        model: model_reference,
-        provider_model_id,
-        explicit_task_agent_id: None,
-        session_id: session_id.trim().to_string(),
-        capability_id: None,
-        regenerate: false,
-        compare_only: false,
-        user_content: Some(trimmed.to_string()),
-        temperature: Some(0.2),
-        max_tokens: Some(512),
-        request_id: None,
-        stream: false,
-        status_stream: false,
-        selected_knowledge_file_ids: Vec::new(),
-    };
-
-    let response = execute_local_orchestrated_chat(
-        app_handle,
-        app_state,
-        input,
-        uuid::Uuid::new_v4().to_string(),
-        None,
-    )
-    .await?;
-
-    Ok(Some(response))
+fn follow_up_texts_to_messages(texts: Vec<String>) -> Vec<MessageContent> {
+    texts
+        .into_iter()
+        .map(|text| MessageContent::Text { text })
+        .collect()
 }
 
 pub(crate) async fn generate_local_chat_reply_content(
@@ -471,7 +214,7 @@ pub(crate) async fn generate_local_chat_reply_content(
     session_id: &str,
 ) -> Result<Option<MessageContent>, String> {
     let Some(response) =
-        execute_local_chat_response(app_state, app_handle, text, session_id).await?
+        conversation::execute_text_chat_raw(app_state, app_handle, text, session_id).await?
     else {
         return Ok(None);
     };
@@ -486,7 +229,7 @@ pub(crate) async fn generate_local_chat_reply_outcome(
     session_id: &str,
 ) -> Result<Option<LocalChatReplyOutcome>, String> {
     let Some(response) =
-        execute_local_chat_response(app_state, app_handle, text, session_id).await?
+        conversation::execute_text_chat_raw(app_state, app_handle, text, session_id).await?
     else {
         return Ok(None);
     };
@@ -500,50 +243,26 @@ pub(crate) async fn build_direct_card_action_outcome(
     action_event: &str,
     action_value: &Value,
 ) -> Result<ImCardActionOutcome, String> {
-    use crate::modules::desktop_runtime::runtime::resume_suspended_local_chat_after_approval;
-    use crate::modules::mcp::commands::runtime::{
-        approve_mcp_tool_inner_with_context, reject_mcp_tool_inner,
-    };
+    let normalized = conversation::normalized_action(action_event, action_value);
 
-    let normalized_action = normalized_action(action_event, action_value);
-
-    match normalized_action.as_str() {
+    match normalized.as_str() {
         "approve_tool" => {
-            let approval_token = action_string(action_value, "approval_token")
+            let approval_token = conversation::action_string(action_value, "approval_token")
                 .ok_or_else(|| "缺少审批 token".to_string())?;
-            let call_id = action_string(action_value, "call_id");
-            let tool_name =
-                action_string(action_value, "tool_name").unwrap_or_else(|| "工具调用".to_string());
-            let approval_context =
-                app_state
-                    .mcp
-                    .build_approval_context(call_id.as_deref(), None, None);
+            let call_id = conversation::action_string(action_value, "call_id");
+            let tool_name = conversation::action_string(action_value, "tool_name")
+                .unwrap_or_else(|| "工具调用".to_string());
 
-            let approved = approve_mcp_tool_inner_with_context(
-                &approval_context,
-                Some(&app_state.mcp),
-                app_state.mcp.store.as_ref(),
-                app_state.mcp.approvals.pending_tool_calls.as_ref(),
-                &approval_token,
-            )
-            .await?;
-
-            let resumed = resume_suspended_local_chat_after_approval(
+            let result = conversation::approve_tool(
                 app_handle,
                 app_state,
                 &approval_token,
-                &approved,
+                call_id.as_deref(),
+                &tool_name,
             )
             .await?;
-            let mut follow_up_messages = resumed
-                .as_ref()
-                .map(extract_follow_up_messages_from_approval_result)
-                .unwrap_or_default();
-            if follow_up_messages.is_empty() {
-                follow_up_messages.push(MessageContent::Text {
-                    text: format!("已批准 `{}`，当前流程继续执行。", tool_name),
-                });
-            }
+
+            let follow_up_messages = follow_up_texts_to_messages(result.follow_up_texts);
 
             Ok(ImCardActionOutcome {
                 callback_response: CardActionResponse {
@@ -552,7 +271,7 @@ pub(crate) async fn build_direct_card_action_outcome(
                         content: "审批已通过，正在继续执行。".to_string(),
                     }),
                     update_card: Some(build_tool_approval_result_card(
-                        tool_name.as_str(),
+                        &tool_name,
                         "approved",
                         "该操作已批准，桌面端正在继续执行后续流程。",
                     )),
@@ -561,22 +280,15 @@ pub(crate) async fn build_direct_card_action_outcome(
             })
         }
         "reject_tool" => {
-            let approval_token = action_string(action_value, "approval_token")
+            let approval_token = conversation::action_string(action_value, "approval_token")
                 .ok_or_else(|| "缺少审批 token".to_string())?;
-            let tool_name =
-                action_string(action_value, "tool_name").unwrap_or_else(|| "工具调用".to_string());
-            reject_mcp_tool_inner(
-                app_state.mcp.approvals.pending_tool_calls.as_ref(),
-                &approval_token,
-            )
-            .await;
-            app_state
-                .mcp
-                .approvals
-                .suspended_local_chat_executions
-                .write()
-                .await
-                .remove(&approval_token);
+            let tool_name = conversation::action_string(action_value, "tool_name")
+                .unwrap_or_else(|| "工具调用".to_string());
+
+            let result =
+                conversation::reject_tool(app_state, &approval_token, &tool_name).await?;
+
+            let follow_up_messages = follow_up_texts_to_messages(result.follow_up_texts);
 
             Ok(ImCardActionOutcome {
                 callback_response: CardActionResponse {
@@ -585,14 +297,12 @@ pub(crate) async fn build_direct_card_action_outcome(
                         content: "已拒绝本次工具执行。".to_string(),
                     }),
                     update_card: Some(build_tool_approval_result_card(
-                        tool_name.as_str(),
+                        &tool_name,
                         "rejected",
                         "本次审批已拒绝，当前工具调用不会继续执行。",
                     )),
                 },
-                follow_up_messages: vec![MessageContent::Text {
-                    text: format!("已取消 `{}` 的执行。", tool_name),
-                }],
+                follow_up_messages,
             })
         }
         _ => Ok(ImCardActionOutcome {
@@ -611,16 +321,12 @@ pub(crate) async fn build_card_action_response(
     use crate::modules::monitor::types::LocalMonitorTaskIdRequest;
     use mcp_session::admin::LocalTraceFeedbackRequest;
 
-    let normalized_action = normalized_action(action_event, action_value);
+    let normalized = conversation::normalized_action(action_event, action_value);
 
-    let response = match normalized_action.as_str() {
+    let response = match normalized.as_str() {
         "useful" | "useless" => {
-            let score = if normalized_action == "useful" {
-                1.0
-            } else {
-                0.0
-            };
-            if let Some(trace_id) = action_string(action_value, "trace_id") {
+            let score = if normalized == "useful" { 1.0 } else { 0.0 };
+            if let Some(trace_id) = conversation::action_string(action_value, "trace_id") {
                 app_state
                     .mcp
                     .store
@@ -628,14 +334,14 @@ pub(crate) async fn build_card_action_response(
                         trace_id,
                         score,
                         comment: None,
-                        tags: Some(vec!["feishu".to_string(), normalized_action.clone()]),
+                        tags: Some(vec!["feishu".to_string(), normalized.clone()]),
                     })
                     .await
                     .map_err(|err| err.to_string())?;
                 toast_response("感谢反馈，已记录本地 trace 反馈。", ToastType::Success)
             } else if let (Some(task_id), Some(log_id)) = (
-                action_string(action_value, "monitor_task_id"),
-                action_string(action_value, "log_id"),
+                conversation::action_string(action_value, "monitor_task_id"),
+                conversation::action_string(action_value, "log_id"),
             ) {
                 app_state
                     .monitor
@@ -647,7 +353,7 @@ pub(crate) async fn build_card_action_response(
             }
         }
         "pause" => {
-            if let Some(task_id) = action_string(action_value, "monitor_task_id") {
+            if let Some(task_id) = conversation::action_string(action_value, "monitor_task_id") {
                 let result = app_state
                     .monitor
                     .pause_task(LocalMonitorTaskIdRequest { task_id })
@@ -658,12 +364,14 @@ pub(crate) async fn build_card_action_response(
             }
         }
         "dialogue" => {
-            if let Some(dialogue_url) = action_string(action_value, "dialogue_url") {
+            if let Some(dialogue_url) = conversation::action_string(action_value, "dialogue_url") {
                 toast_response(
                     format!("请在桌面端打开对话入口：{}", dialogue_url).as_str(),
                     ToastType::Success,
                 )
-            } else if let Some(assistant_id) = action_string(action_value, "assistant_id") {
+            } else if let Some(assistant_id) =
+                conversation::action_string(action_value, "assistant_id")
+            {
                 toast_response(
                     format!("请在桌面端打开助手对话（assistant_id={}）。", assistant_id).as_str(),
                     ToastType::Success,
@@ -782,7 +490,7 @@ mod tests {
 
     #[test]
     fn build_text_approval_prompt_includes_numeric_choices() {
-        let prompt = build_text_approval_prompt(&ToolApprovalPayload {
+        let prompt = conversation::build_text_approval_prompt(&ToolApprovalPayload {
             approval_token: "approval-1".to_string(),
             call_id: Some("call-1".to_string()),
             tool_name: "shell.exec".to_string(),
@@ -798,8 +506,8 @@ mod tests {
     }
 
     #[test]
-    fn extract_follow_up_messages_from_local_chat_resumed_payload_returns_text_blocks() {
-        let messages = extract_follow_up_messages_from_approval_result(&serde_json::json!({
+    fn extract_follow_up_texts_from_local_chat_resumed_payload() {
+        let texts = conversation::extract_follow_up_texts(&serde_json::json!({
             "status": "LOCAL_CHAT_RESUMED",
             "approved_tool_result": {
                 "ok": true
@@ -819,11 +527,6 @@ mod tests {
             ]
         }));
 
-        assert_eq!(
-            messages,
-            vec![crate::modules::im::MessageContent::Text {
-                text: "命令已经执行完毕。".to_string()
-            }]
-        );
+        assert_eq!(texts, vec!["命令已经执行完毕。".to_string()]);
     }
 }

@@ -1,4 +1,4 @@
-use sqlx::{sqlite::SqliteRow, Row};
+use sqlx::{sqlite::SqliteRow, Row, Sqlite};
 use uuid::Uuid;
 
 use crate::modules::mcp::error::McpError;
@@ -76,6 +76,306 @@ fn trim_local_active_window_rows(rows: Vec<SqliteRow>) -> Vec<SqliteRow> {
 
     selected_rows.reverse();
     selected_rows
+}
+
+fn conversation_json_text(value: Option<&Value>) -> Result<Option<String>, McpError> {
+    value
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|err| McpError::Storage(err.to_string()))
+}
+
+fn parse_optional_json_text(value: Option<String>) -> Result<Option<Value>, McpError> {
+    match value {
+        Some(text) if !text.trim().is_empty() => serde_json::from_str(&text)
+            .map(Some)
+            .map_err(|err| McpError::Storage(err.to_string())),
+        _ => Ok(None),
+    }
+}
+
+fn extract_execution_tree(meta_info: Option<&Value>) -> Option<&serde_json::Map<String, Value>> {
+    meta_info
+        .and_then(|value| value.get("execution_tree"))
+        .and_then(Value::as_object)
+}
+
+async fn sync_conversation_execution_tree_tx(
+    tx: &mut sqlx::Transaction<'_, Sqlite>,
+    session_id: &str,
+    message_id: &str,
+    turn_index: i64,
+    meta_info: Option<&Value>,
+    now: &str,
+) -> Result<(), McpError> {
+    let Some(tree) = extract_execution_tree(meta_info) else {
+        return Ok(());
+    };
+
+    let root_execution_id = tree
+        .get("root_execution_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            tree.get("execution_id")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+        })
+        .ok_or_else(|| McpError::validation("execution_tree.root_execution_id is required"))?
+        .to_string();
+
+    let execution_id = tree
+        .get("execution_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(root_execution_id.as_str())
+        .to_string();
+    let execution_kind = tree
+        .get("execution_kind")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("unknown")
+        .to_string();
+    let execution_status = tree
+        .get("execution_status")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("unknown")
+        .to_string();
+    let terminal_status = tree
+        .get("terminal_status")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(execution_status.as_str())
+        .to_string();
+    let target = tree.get("target").and_then(Value::as_object);
+    let selection = conversation_json_text(tree.get("selection"))?;
+    let available_actions = conversation_json_text(tree.get("available_actions"))?;
+    let result_payload = conversation_json_text(tree.get("result_payload"))?;
+    let raw_json = conversation_json_text(Some(&Value::Object(tree.clone())))?;
+    let schema_version = tree
+        .get("schema_version")
+        .and_then(Value::as_i64)
+        .unwrap_or(1);
+    let summary = tree
+        .get("summary")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let error = tree
+        .get("error")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let started_at_ms = tree.get("started_at_ms").and_then(Value::as_i64);
+    let completed_at_ms = tree.get("completed_at_ms").and_then(Value::as_i64);
+
+    sqlx::query(
+        r#"
+        INSERT INTO conversation_execution_root (
+          root_execution_id, session_id, message_id, turn_index, schema_version,
+          execution_id, execution_kind, execution_status, terminal_status,
+          target_id, target_name, target_invocation_kind, target_worker_ref, target_workflow_run_id,
+          selection_json, available_actions_json, summary, error, result_payload_json, raw_json,
+          started_at_ms, completed_at_ms, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(root_execution_id) DO UPDATE SET
+          session_id = excluded.session_id,
+          message_id = excluded.message_id,
+          turn_index = excluded.turn_index,
+          schema_version = excluded.schema_version,
+          execution_id = excluded.execution_id,
+          execution_kind = excluded.execution_kind,
+          execution_status = excluded.execution_status,
+          terminal_status = excluded.terminal_status,
+          target_id = excluded.target_id,
+          target_name = excluded.target_name,
+          target_invocation_kind = excluded.target_invocation_kind,
+          target_worker_ref = excluded.target_worker_ref,
+          target_workflow_run_id = excluded.target_workflow_run_id,
+          selection_json = excluded.selection_json,
+          available_actions_json = excluded.available_actions_json,
+          summary = excluded.summary,
+          error = excluded.error,
+          result_payload_json = excluded.result_payload_json,
+          raw_json = excluded.raw_json,
+          started_at_ms = excluded.started_at_ms,
+          completed_at_ms = excluded.completed_at_ms,
+          updated_at = excluded.updated_at;
+        "#,
+    )
+    .bind(&root_execution_id)
+    .bind(session_id)
+    .bind(message_id)
+    .bind(turn_index)
+    .bind(schema_version)
+    .bind(&execution_id)
+    .bind(&execution_kind)
+    .bind(&execution_status)
+    .bind(&terminal_status)
+    .bind(
+        target
+            .and_then(|value| value.get("id"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty()),
+    )
+    .bind(
+        target
+            .and_then(|value| value.get("name"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty()),
+    )
+    .bind(
+        target
+            .and_then(|value| value.get("invocation_kind"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty()),
+    )
+    .bind(
+        target
+            .and_then(|value| value.get("worker_ref"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty()),
+    )
+    .bind(
+        target
+            .and_then(|value| value.get("workflow_run_id"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty()),
+    )
+    .bind(selection)
+    .bind(available_actions)
+    .bind(summary)
+    .bind(error)
+    .bind(result_payload)
+    .bind(raw_json)
+    .bind(started_at_ms)
+    .bind(completed_at_ms)
+    .bind(now)
+    .bind(now)
+    .execute(&mut **tx)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+
+    sqlx::query(
+        r#"
+        DELETE FROM conversation_execution_child
+        WHERE root_execution_id = ?;
+        "#,
+    )
+    .bind(&root_execution_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+
+    let children = tree
+        .get("children")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    for (index, child) in children.into_iter().enumerate() {
+        let Some(child_object) = child.as_object() else {
+            continue;
+        };
+        let child_id = child_object
+            .get("id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("{}:child-{}", root_execution_id, index + 1));
+        let available_actions = conversation_json_text(child_object.get("available_actions"))?;
+        let raw_json = conversation_json_text(Some(&Value::Object(child_object.clone())))?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO conversation_execution_child (
+              id, root_execution_id, session_id, message_id, phase_id, step_type,
+              title, status, worker_ref, summary, error, available_actions_json, raw_json,
+              created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            "#,
+        )
+        .bind(&child_id)
+        .bind(&root_execution_id)
+        .bind(session_id)
+        .bind(message_id)
+        .bind(
+            child_object
+                .get("phase_id")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty()),
+        )
+        .bind(
+            child_object
+                .get("step_type")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty()),
+        )
+        .bind(
+            child_object
+                .get("title")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("Execution Child"),
+        )
+        .bind(
+            child_object
+                .get("status")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("unknown"),
+        )
+        .bind(
+            child_object
+                .get("worker_ref")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty()),
+        )
+        .bind(
+            child_object
+                .get("summary")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty()),
+        )
+        .bind(
+            child_object
+                .get("error")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty()),
+        )
+        .bind(available_actions)
+        .bind(raw_json)
+        .bind(now)
+        .bind(now)
+        .execute(&mut **tx)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+    }
+
+    Ok(())
 }
 
 pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), McpError> {
@@ -159,6 +459,65 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
 
     sqlx::query(
         r#"
+        CREATE TABLE IF NOT EXISTS conversation_execution_root (
+          root_execution_id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL REFERENCES conversation_session(id) ON DELETE CASCADE,
+          message_id TEXT NOT NULL REFERENCES conversation_message(id) ON DELETE CASCADE,
+          turn_index INTEGER NOT NULL,
+          schema_version INTEGER NOT NULL DEFAULT 1,
+          execution_id TEXT NOT NULL,
+          execution_kind TEXT NOT NULL,
+          execution_status TEXT NOT NULL,
+          terminal_status TEXT NOT NULL,
+          target_id TEXT,
+          target_name TEXT,
+          target_invocation_kind TEXT,
+          target_worker_ref TEXT,
+          target_workflow_run_id TEXT,
+          selection_json TEXT,
+          available_actions_json TEXT,
+          summary TEXT,
+          error TEXT,
+          result_payload_json TEXT,
+          raw_json TEXT,
+          started_at_ms INTEGER,
+          completed_at_ms INTEGER,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        "#,
+    )
+    .execute(&store.pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS conversation_execution_child (
+          id TEXT PRIMARY KEY,
+          root_execution_id TEXT NOT NULL REFERENCES conversation_execution_root(root_execution_id) ON DELETE CASCADE,
+          session_id TEXT NOT NULL REFERENCES conversation_session(id) ON DELETE CASCADE,
+          message_id TEXT NOT NULL REFERENCES conversation_message(id) ON DELETE CASCADE,
+          phase_id TEXT,
+          step_type TEXT,
+          title TEXT NOT NULL,
+          status TEXT NOT NULL,
+          worker_ref TEXT,
+          summary TEXT,
+          error TEXT,
+          available_actions_json TEXT,
+          raw_json TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        "#,
+    )
+    .execute(&store.pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+
+    sqlx::query(
+        r#"
         CREATE TABLE IF NOT EXISTS conversation_summary_job (
           id TEXT PRIMARY KEY,
           session_id TEXT NOT NULL REFERENCES conversation_session(id) ON DELETE CASCADE,
@@ -226,6 +585,56 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
         r#"
         CREATE INDEX IF NOT EXISTS idx_conversation_session_status_last_active
         ON conversation_session(status, last_active_at DESC);
+        "#,
+    )
+    .execute(&store.pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_conversation_execution_root_session_turn
+        ON conversation_execution_root(session_id, turn_index DESC);
+        "#,
+    )
+    .execute(&store.pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_conversation_execution_root_message_id
+        ON conversation_execution_root(message_id);
+        "#,
+    )
+    .execute(&store.pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_conversation_execution_root_workflow_run
+        ON conversation_execution_root(target_workflow_run_id);
+        "#,
+    )
+    .execute(&store.pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_conversation_execution_child_root
+        ON conversation_execution_child(root_execution_id);
+        "#,
+    )
+    .execute(&store.pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_conversation_execution_child_session
+        ON conversation_execution_child(session_id);
         "#,
     )
     .execute(&store.pool)
@@ -2461,6 +2870,19 @@ impl McpStore {
         .await
         .map_err(|err| storage_step_error("update_session_counters", err))?;
 
+        if role.eq_ignore_ascii_case("assistant") {
+            sync_conversation_execution_tree_tx(
+                &mut tx,
+                &session_id,
+                &message_id,
+                next_turn,
+                payload.meta_info.as_ref(),
+                &now,
+            )
+            .await
+            .map_err(|err| storage_step_error("sync_execution_tree", err))?;
+        }
+
         tx.commit()
             .await
             .map_err(|err| storage_step_error("commit_tx", err))?;
@@ -2494,6 +2916,164 @@ impl McpStore {
             name,
             meta_info: payload.meta_info,
         })
+    }
+
+    pub async fn get_local_conversation_execution_tree(
+        &self,
+        root_execution_id: &str,
+    ) -> Result<Option<LocalConversationExecutionTreeResponse>, McpError> {
+        let normalized_root_execution_id = root_execution_id.trim().to_string();
+        if normalized_root_execution_id.is_empty() {
+            return Err(McpError::validation("root_execution_id is required"));
+        }
+
+        let root_row = sqlx::query(
+            r#"
+            SELECT
+              root_execution_id, session_id, message_id, turn_index, schema_version,
+              execution_id, execution_kind, execution_status, terminal_status,
+              target_id, target_name, target_invocation_kind, target_worker_ref, target_workflow_run_id,
+              selection_json, available_actions_json, summary, error, result_payload_json, raw_json,
+              started_at_ms, completed_at_ms, created_at, updated_at
+            FROM conversation_execution_root
+            WHERE root_execution_id = ?
+            LIMIT 1;
+            "#,
+        )
+        .bind(&normalized_root_execution_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let Some(root_row) = root_row else {
+            return Ok(None);
+        };
+
+        let root = LocalConversationExecutionRoot {
+            root_execution_id: root_row.try_get("root_execution_id")?,
+            session_id: root_row.try_get("session_id")?,
+            message_id: root_row.try_get("message_id")?,
+            turn_index: root_row.try_get("turn_index")?,
+            schema_version: root_row.try_get("schema_version").unwrap_or(1),
+            execution_id: root_row.try_get("execution_id")?,
+            execution_kind: root_row.try_get("execution_kind")?,
+            execution_status: root_row.try_get("execution_status")?,
+            terminal_status: root_row.try_get("terminal_status")?,
+            target_id: root_row.try_get("target_id")?,
+            target_name: root_row.try_get("target_name")?,
+            target_invocation_kind: root_row.try_get("target_invocation_kind")?,
+            target_worker_ref: root_row.try_get("target_worker_ref")?,
+            target_workflow_run_id: root_row.try_get("target_workflow_run_id")?,
+            selection: parse_optional_json_text(root_row.try_get("selection_json")?)?,
+            available_actions: parse_optional_json_text(root_row.try_get("available_actions_json")?)?,
+            summary: root_row.try_get("summary")?,
+            error: root_row.try_get("error")?,
+            result_payload: parse_optional_json_text(root_row.try_get("result_payload_json")?)?,
+            raw_json: parse_optional_json_text(root_row.try_get("raw_json")?)?,
+            started_at_ms: root_row.try_get("started_at_ms")?,
+            completed_at_ms: root_row.try_get("completed_at_ms")?,
+            created_at: root_row.try_get("created_at")?,
+            updated_at: root_row.try_get("updated_at")?,
+        };
+
+        let child_rows = sqlx::query(
+            r#"
+            SELECT
+              id, root_execution_id, session_id, message_id, phase_id, step_type,
+              title, status, worker_ref, summary, error, available_actions_json, raw_json,
+              created_at, updated_at
+            FROM conversation_execution_child
+            WHERE root_execution_id = ?
+            ORDER BY created_at ASC, id ASC;
+            "#,
+        )
+        .bind(&normalized_root_execution_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let mut children = Vec::with_capacity(child_rows.len());
+        for row in child_rows {
+            children.push(LocalConversationExecutionChild {
+                id: row.try_get("id")?,
+                root_execution_id: row.try_get("root_execution_id")?,
+                session_id: row.try_get("session_id")?,
+                message_id: row.try_get("message_id")?,
+                phase_id: row.try_get("phase_id")?,
+                step_type: row.try_get("step_type")?,
+                title: row.try_get("title")?,
+                status: row.try_get("status")?,
+                worker_ref: row.try_get("worker_ref")?,
+                summary: row.try_get("summary")?,
+                error: row.try_get("error")?,
+                available_actions: parse_optional_json_text(row.try_get("available_actions_json")?)?,
+                raw_json: parse_optional_json_text(row.try_get("raw_json")?)?,
+                created_at: row.try_get("created_at")?,
+                updated_at: row.try_get("updated_at")?,
+            });
+        }
+
+        Ok(Some(LocalConversationExecutionTreeResponse { root, children }))
+    }
+
+    pub async fn list_local_conversation_execution_roots(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<LocalConversationExecutionRoot>, McpError> {
+        let normalized_session_id = session_id.trim().to_string();
+        if normalized_session_id.is_empty() {
+            return Err(McpError::validation("session_id is required"));
+        }
+
+        let rows = sqlx::query(
+            r#"
+            SELECT
+              root_execution_id, session_id, message_id, turn_index, schema_version,
+              execution_id, execution_kind, execution_status, terminal_status,
+              target_id, target_name, target_invocation_kind, target_worker_ref, target_workflow_run_id,
+              selection_json, available_actions_json, summary, error, result_payload_json, raw_json,
+              started_at_ms, completed_at_ms, created_at, updated_at
+            FROM conversation_execution_root
+            WHERE session_id = ?
+            ORDER BY turn_index DESC, updated_at DESC;
+            "#,
+        )
+        .bind(&normalized_session_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let mut roots = Vec::with_capacity(rows.len());
+        for row in rows {
+            roots.push(LocalConversationExecutionRoot {
+                root_execution_id: row.try_get("root_execution_id")?,
+                session_id: row.try_get("session_id")?,
+                message_id: row.try_get("message_id")?,
+                turn_index: row.try_get("turn_index")?,
+                schema_version: row.try_get("schema_version").unwrap_or(1),
+                execution_id: row.try_get("execution_id")?,
+                execution_kind: row.try_get("execution_kind")?,
+                execution_status: row.try_get("execution_status")?,
+                terminal_status: row.try_get("terminal_status")?,
+                target_id: row.try_get("target_id")?,
+                target_name: row.try_get("target_name")?,
+                target_invocation_kind: row.try_get("target_invocation_kind")?,
+                target_worker_ref: row.try_get("target_worker_ref")?,
+                target_workflow_run_id: row.try_get("target_workflow_run_id")?,
+                selection: parse_optional_json_text(row.try_get("selection_json")?)?,
+                available_actions: parse_optional_json_text(row.try_get("available_actions_json")?)?,
+                summary: row.try_get("summary")?,
+                error: row.try_get("error")?,
+                result_payload: parse_optional_json_text(row.try_get("result_payload_json")?)?,
+                raw_json: parse_optional_json_text(row.try_get("raw_json")?)?,
+                started_at_ms: row.try_get("started_at_ms")?,
+                completed_at_ms: row.try_get("completed_at_ms")?,
+                created_at: row.try_get("created_at")?,
+                updated_at: row.try_get("updated_at")?,
+            });
+        }
+
+        Ok(roots)
     }
 
     /// Returns the latest summary text for a conversation session, or None if no summary exists.
@@ -4000,6 +4580,7 @@ impl McpStore {
 #[cfg(test)]
 mod tests {
     use super::{McpStore, CHAT_HISTORY_RETENTION_CONFIG_KEY};
+    use mcp_session::conversation::{CreateConversationMessageRequest, LocalConversationCreateRequest};
     use sqlx::Row;
     use uuid::Uuid;
 
@@ -4113,5 +4694,71 @@ mod tests {
                 .await
                 .expect("count remaining expired messages");
         assert_eq!(remaining_message_count, 0);
+    }
+
+    #[tokio::test]
+    async fn append_message_syncs_execution_tree_into_execution_tables() {
+        let store = create_test_store("execution-tree-sync").await;
+        let created = store
+            .create_local_conversation(LocalConversationCreateRequest {
+                assistant_id: None,
+                title: Some("Execution Tree".to_string()),
+            })
+            .await
+            .expect("create conversation");
+
+        store
+            .append_local_conversation_message(CreateConversationMessageRequest {
+                session_id: created.session_id.clone(),
+                role: "assistant".to_string(),
+                content: "delegated result".to_string(),
+                name: None,
+                meta_info: Some(serde_json::json!({
+                    "execution_tree": {
+                        "schema_version": 1,
+                        "root_execution_id": "exec-root-1",
+                        "execution_id": "exec-root-1",
+                        "execution_kind": "workflow",
+                        "execution_status": "integrated",
+                        "terminal_status": "succeeded",
+                        "target": {
+                            "id": "worker-1",
+                            "name": "Research Worker",
+                            "workflow_run_id": "run-123",
+                        },
+                        "children": [
+                            {
+                                "id": "step-1",
+                                "phase_id": "phase-1",
+                                "step_type": "worker_call",
+                                "title": "Execute",
+                                "status": "succeeded",
+                                "available_actions": [{ "kind": "open" }]
+                            }
+                        ]
+                    }
+                })),
+                is_truncated: Some(false),
+                parent_message_id: None,
+            })
+            .await
+            .expect("append assistant message");
+
+        let execution_tree = store
+            .get_local_conversation_execution_tree("exec-root-1")
+            .await
+            .expect("query execution tree")
+            .expect("execution tree exists");
+
+        assert_eq!(execution_tree.root.root_execution_id, "exec-root-1");
+        assert_eq!(execution_tree.root.session_id, created.session_id);
+        assert_eq!(execution_tree.root.execution_kind, "workflow");
+        assert_eq!(
+            execution_tree.root.target_workflow_run_id.as_deref(),
+            Some("run-123")
+        );
+        assert_eq!(execution_tree.children.len(), 1);
+        assert_eq!(execution_tree.children[0].id, "step-1");
+        assert_eq!(execution_tree.children[0].phase_id.as_deref(), Some("phase-1"));
     }
 }
