@@ -14,21 +14,26 @@ const isTauriRuntime = () => {
 export function TitleBar() {
   const [isMaximized, setIsMaximized] = useState(false);
   const [isTauri, setIsTauri] = useState(false);
+  const [isIslandWindow, setIsIslandWindow] = useState(false);
 
   useEffect(() => {
     setIsTauri(isTauriRuntime());
+    if (isTauriRuntime()) {
+      import("@tauri-apps/api/window").then(({ getCurrentWindow }) => {
+        setIsIslandWindow(getCurrentWindow().label === "island");
+      }).catch(() => {});
+    }
   }, []);
 
-  // 只在 Tauri 桌面端显示自定义标题栏
-  if (!isTauri) return null;
+  // 只在 Tauri 桌面端显示自定义标题栏；Island 窗口不需要标题栏
+  if (!isTauri || isIslandWindow) return null;
 
   const handleMinimize = async () => {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("hide_main_show_island");
+      await invoke("minimize_main_hide_island");
     } catch (error) {
       console.error("Failed to minimize window:", error);
-      // Fallback: plain minimize
       try {
         const { getCurrentWindow } = await import("@tauri-apps/api/window");
         await getCurrentWindow().minimize();

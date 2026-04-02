@@ -2,6 +2,10 @@ import React from "react"
 import { render, screen } from "@testing-library/react"
 import { SettingsNav } from "../settings-nav"
 
+function setNodeEnv(value: string | undefined) {
+  Reflect.set(process.env, "NODE_ENV", value)
+}
+
 jest.mock("@/hooks/use-i18n", () => ({
   useI18n: () => (key: string) => key,
 }))
@@ -12,7 +16,7 @@ describe("SettingsNav browser section visibility", () => {
     process.env.NEXT_PUBLIC_ENABLE_BROWSER_AGENT_PANEL
 
   afterEach(() => {
-    process.env.NODE_ENV = originalNodeEnv
+    setNodeEnv(originalNodeEnv)
     if (originalBrowserPanelFlag === undefined) {
       delete process.env.NEXT_PUBLIC_ENABLE_BROWSER_AGENT_PANEL
     } else {
@@ -22,7 +26,7 @@ describe("SettingsNav browser section visibility", () => {
   })
 
   it("hides the browser nav item in production when the panel flag is off", () => {
-    process.env.NODE_ENV = "production"
+    setNodeEnv("production")
     delete process.env.NEXT_PUBLIC_ENABLE_BROWSER_AGENT_PANEL
 
     render(
@@ -37,7 +41,7 @@ describe("SettingsNav browser section visibility", () => {
   })
 
   it("shows the browser nav item in production when the panel flag is on", () => {
-    process.env.NODE_ENV = "production"
+    setNodeEnv("production")
     process.env.NEXT_PUBLIC_ENABLE_BROWSER_AGENT_PANEL = "true"
 
     render(

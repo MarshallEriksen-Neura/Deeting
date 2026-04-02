@@ -12,8 +12,20 @@ export default async function IslandLayout({
   setRequestLocale(locale);
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-transparent">
-      {children}
-    </div>
+    <>
+      {/* Override root layout body styles so the Tauri transparent window
+          actually shows through — body background and padding must be removed. */}
+      <style>{`
+        html, body {
+          background: transparent !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          overflow: hidden !important;
+        }
+      `}</style>
+      <div className="fixed inset-0 z-[9999] overflow-hidden">
+        {children}
+      </div>
+    </>
   );
 }

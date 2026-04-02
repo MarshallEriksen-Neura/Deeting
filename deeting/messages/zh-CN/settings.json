@@ -357,6 +357,30 @@
       "desktopProxyUpdated": "桌面网络代理配置已更新",
       "desktopScoutUpdated": "桌面 Scout 配置已更新",
       "desktopObjectStorageUpdated": "桌面对象存储配置已更新"
+    },
+    "window": {
+      "title": "桌面窗口行为",
+      "description": "控制桌面端在最小化或关闭时的行为。",
+      "minimizeLabel": "最小化按钮",
+      "minimizeValue": "正常最小化",
+      "minimizeHelp": "现在点击最小化只会正常最小化主窗口，不会自动显示灵动岛。",
+      "closeActionLabel": "关闭主窗口时",
+      "closeActionHelp": "作用于当前设备上的关闭按钮和其他关闭窗口动作。",
+      "closeAction": {
+        "showIsland": "显示灵动岛",
+        "minimize": "最小化到任务栏",
+        "quit": "退出应用"
+      },
+      "closeActionDesc": {
+        "showIsland": "隐藏主窗口，通过灵动岛继续使用 Deeting。",
+        "minimize": "正常最小化主窗口，同时保持灵动岛隐藏。",
+        "quit": "完全退出 Deeting。"
+      },
+      "save": "保存",
+      "saving": "保存中...",
+      "saveSuccess": "桌面窗口行为已保存",
+      "saveFailed": "桌面窗口行为保存失败",
+      "footerHint": "仅当前桌面设备生效，设置会本地持久化。"
     }
   }
 }

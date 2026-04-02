@@ -23,6 +23,14 @@ export const DeferredDesktopVersionManagementCard = dynamic(
   { ssr: false }
 )
 
+export const DeferredDesktopWindowSettingsCard = dynamic(
+  () =>
+    import("./desktop-window-settings-card").then(
+      (mod) => mod.DesktopWindowSettingsCard
+    ),
+  { ssr: false }
+)
+
 export const DeferredDesktopBrowserAgentPanelCard = dynamic(
   () =>
     import("./desktop-browser-agent-panel-card").then(

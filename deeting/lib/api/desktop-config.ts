@@ -16,6 +16,7 @@ export const DESKTOP_CONFIG_KEYS = {
   personaPrompt: "chat.persona_prompt",
   chatHistoryRetentionDays: "chat.history_retention_days",
   workerWorkflowRouting: "workflow.route_worker_through_workflow",
+  desktopWindowCloseAction: "desktop.window.close_action",
   /** Persisted after login so desktop can call credits proxy with Authorization. */
   authToken: "auth.token",
   desktopProxyMode: "network.proxy.mode",
@@ -24,11 +25,15 @@ export const DESKTOP_CONFIG_KEYS = {
 } as const;
 
 export type DesktopProxyMode = "none" | "system" | "custom";
+export type DesktopWindowCloseAction = "show_island" | "minimize" | "quit";
 
 export interface DesktopNetworkProxySettings {
   mode: DesktopProxyMode;
   url: string;
 }
+
+export const DEFAULT_DESKTOP_WINDOW_CLOSE_ACTION: DesktopWindowCloseAction =
+  "show_island";
 
 export function normalizeDesktopProxyMode(
   value: string | null | undefined,
@@ -41,6 +46,47 @@ export function normalizeDesktopProxyMode(
     default:
       return "system";
   }
+}
+
+export function normalizeDesktopWindowCloseAction(
+  value: string | null | undefined,
+): DesktopWindowCloseAction {
+  switch (value?.trim().toLowerCase()) {
+    case "minimize":
+      return "minimize";
+    case "quit":
+      return "quit";
+    default:
+      return "show_island";
+  }
+}
+
+export async function getDesktopWindowCloseActionPreference(): Promise<DesktopWindowCloseAction | null> {
+  if (!isTauriRuntime()) return null;
+  const value = await getDesktopConfig(
+    DESKTOP_CONFIG_KEYS.desktopWindowCloseAction,
+  );
+  if (!value?.trim()) {
+    return null;
+  }
+  return normalizeDesktopWindowCloseAction(value);
+}
+
+export async function getDesktopWindowCloseAction(): Promise<DesktopWindowCloseAction> {
+  return (
+    (await getDesktopWindowCloseActionPreference()) ??
+    DEFAULT_DESKTOP_WINDOW_CLOSE_ACTION
+  );
+}
+
+export async function setDesktopWindowCloseAction(
+  value: DesktopWindowCloseAction,
+): Promise<void> {
+  if (!isTauriRuntime()) return;
+  await setDesktopConfig(
+    DESKTOP_CONFIG_KEYS.desktopWindowCloseAction,
+    normalizeDesktopWindowCloseAction(value),
+  );
 }
 
 export async function getDesktopNetworkProxySettings(): Promise<DesktopNetworkProxySettings> {

@@ -200,7 +200,7 @@ async function ensureSessionId() {
 }
 
 export const useIslandStore = create<IslandState>((set) => ({
-  mode: "collapsed",
+  mode: "hidden",
   statusLabel: "Idle",
   summaryText: DEFAULT_SUMMARY,
   lastReplyText: DEFAULT_LAST_REPLY,

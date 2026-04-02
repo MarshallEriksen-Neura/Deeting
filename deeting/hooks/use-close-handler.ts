@@ -1,37 +1,66 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import {
+  type DesktopWindowCloseAction,
+  getDesktopConfig,
+  setDesktopWindowCloseAction,
+  DESKTOP_CONFIG_KEYS,
+  normalizeDesktopWindowCloseAction,
+} from "@/lib/api/desktop-config";
 import { usePlatform } from "@/lib/platform/provider";
 
-const STORAGE_KEY = "deeting-close-action";
+const LEGACY_STORAGE_KEY = "deeting-close-action";
 const isTauri = process.env.NEXT_PUBLIC_IS_TAURI === "true";
-
-type CloseAction = "minimize" | "quit";
 
 export function useCloseHandler() {
   const [showDialog, setShowDialog] = useState(false);
   const { app } = usePlatform();
 
-  const executeAction = useCallback(async (action: CloseAction) => {
+  const executeAction = useCallback(async (action: DesktopWindowCloseAction) => {
     if (!isTauri || typeof window === "undefined") return;
     try {
-      if (action === "minimize") {
-        await app.minimize();
-      } else {
-        await app.quit();
+      switch (action) {
+        case "show_island": {
+          const { invoke } = await import("@tauri-apps/api/core");
+          await invoke("hide_main_show_island");
+          break;
+        }
+        case "minimize":
+          await app.minimize();
+          break;
+        default:
+          await app.quit();
       }
     } catch (err) {
       console.error("close action failed:", err);
     }
   }, [app]);
 
+  const loadSavedAction = useCallback(async (): Promise<DesktopWindowCloseAction | null> => {
+    const saved = await getDesktopConfig(DESKTOP_CONFIG_KEYS.desktopWindowCloseAction);
+    if (saved?.trim()) {
+      return normalizeDesktopWindowCloseAction(saved);
+    }
+
+    const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (legacy === "minimize" || legacy === "quit") {
+      await setDesktopWindowCloseAction(legacy);
+      localStorage.removeItem(LEGACY_STORAGE_KEY);
+      return legacy;
+    }
+
+    return null;
+  }, []);
+
   const handleChoose = useCallback(
-    (action: CloseAction, remember: boolean) => {
+    (action: DesktopWindowCloseAction, remember: boolean) => {
       setShowDialog(false);
-      if (remember) {
-        localStorage.setItem(STORAGE_KEY, action);
+      if (remember && typeof window !== "undefined") {
+        void setDesktopWindowCloseAction(action);
+        localStorage.removeItem(LEGACY_STORAGE_KEY);
       }
-      executeAction(action);
+      void executeAction(action);
     },
     [executeAction]
   );
@@ -44,19 +73,21 @@ export function useCloseHandler() {
     (async () => {
       const { listen } = await import("@tauri-apps/api/event");
       unlisten = await listen("close-requested", () => {
-        const saved = localStorage.getItem(STORAGE_KEY) as CloseAction | null;
-        if (saved) {
-          executeAction(saved);
-        } else {
+        void (async () => {
+          const saved = await loadSavedAction();
+          if (saved) {
+            await executeAction(saved);
+            return;
+          }
           setShowDialog(true);
-        }
+        })();
       });
     })();
 
     return () => {
       unlisten?.();
     };
-  }, [executeAction]);
+  }, [executeAction, loadSavedAction]);
 
   return { showDialog, handleChoose };
 }

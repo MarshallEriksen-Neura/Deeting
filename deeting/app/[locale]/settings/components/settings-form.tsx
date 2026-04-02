@@ -49,6 +49,7 @@ import {
   DeferredDesktopSandboxSettingsCard,
   DeferredDesktopScoutSettingsCard,
   DeferredDesktopVersionManagementCard,
+  DeferredDesktopWindowSettingsCard,
 } from "./settings-lazy";
 
 function findSelectedSecretaryModel(
@@ -699,6 +700,7 @@ export function SettingsForm({
           {activeSection === "agent" && (
             <div className="flex flex-col gap-5">
               <DeferredDesktopVersionManagementCard isTauriRuntime={isTauriRuntime} />
+              <DeferredDesktopWindowSettingsCard isTauriRuntime={isTauriRuntime} />
               <DeferredAgentSettingsCard isTauriRuntime={isTauriRuntime} />
               <DeferredDesktopSandboxSettingsCard isTauriRuntime={isTauriRuntime} />
             </div>

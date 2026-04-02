@@ -76,8 +76,9 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
   },
 
   syncFromEvent: (payload) => {
+    // Don't sync `mode` — the island window manages its own display mode
+    // independently of the main window's IslandShell.
     set({
-      mode: payload.mode,
       statusLabel: payload.statusLabel,
       summaryText: payload.summaryText,
       lastReplyText: payload.lastReplyText,

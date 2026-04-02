@@ -31,6 +31,18 @@ pub async fn hide_main_show_island(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// 最小化主窗口，并确保 Island 窗口隐藏。
+#[tauri::command]
+pub async fn minimize_main_hide_island(app: AppHandle) -> Result<(), String> {
+    if let Some(island) = app.get_webview_window("island") {
+        island.hide().map_err(|e| e.to_string())?;
+    }
+    if let Some(main) = app.get_webview_window("main") {
+        main.minimize().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// 还原主窗口，隐藏 Island 窗口。
 #[tauri::command]
 pub async fn show_main_hide_island(app: AppHandle) -> Result<(), String> {

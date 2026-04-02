@@ -50,9 +50,11 @@ export function IslandShell() {
   }, [chatSnapshot, hydrateFromChat]);
 
   // Emit state sync to Island window (debounced)
-  const syncTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    clearTimeout(syncTimerRef.current);
+    if (syncTimerRef.current !== null) {
+      clearTimeout(syncTimerRef.current);
+    }
     syncTimerRef.current = setTimeout(async () => {
       try {
         const { emit } = await import("@tauri-apps/api/event");
@@ -71,7 +73,11 @@ export function IslandShell() {
         // emit may fail in non-Tauri env
       }
     }, 100);
-    return () => clearTimeout(syncTimerRef.current);
+    return () => {
+      if (syncTimerRef.current !== null) {
+        clearTimeout(syncTimerRef.current);
+      }
+    };
   }, [storeValues, chatSnapshot.sessionId]);
 
   // Listen for action-completed from Island window → re-sync chat

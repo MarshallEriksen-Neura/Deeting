@@ -1,4 +1,4 @@
-import type { MessageBlock } from "@/lib/chat/message-protocol"
+import type { MessageBlock, UIBlock } from "@/lib/chat/message-protocol"
 import type { Message, MessageMetaInfo } from "@/lib/chat/message-types"
 import type { ExecutionLifecyclePayload } from "@/lib/execution-tree/types"
 
@@ -108,7 +108,7 @@ export function buildExecutionLifecycleBlock(
     displayMode?: "bubble" | "widget" | "canvas"
     streamState?: "streaming" | "completed"
   }
-): MessageBlock {
+): UIBlock {
   const target = asRecord(executionTree.target)
   const targetName =
     typeof target?.name === "string" && target.name.trim().length > 0
@@ -132,7 +132,7 @@ export function buildExecutionLifecycleBlock(
     metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
     displayMode: options.displayMode ?? "widget",
     streamState: options.streamState ?? "completed",
-  } as MessageBlock
+  }
 }
 
 export function buildExecutionLifecycleBlocksFromMessage(
@@ -184,6 +184,9 @@ export function applyPersistedExecutionTreeToMessage(
             return [...existingBlocks, executionBlock]
           }
           const existing = existingBlocks[existingIndex]
+          if (!existing || existing.type !== "ui") {
+            return [...existingBlocks, executionBlock]
+          }
           existingBlocks[existingIndex] = {
             ...existing,
             ...executionBlock,

@@ -25,8 +25,9 @@
     },
     "desktopClose": {
       "title": "Close Window",
-      "description": "Would you like to hide Deeting to the system tray or quit the application?",
+      "description": "Choose what Deeting should do when you close the main window.",
       "remember": "Remember my choice",
+      "showIsland": "Show Island",
       "minimize": "Hide to Tray",
       "quit": "Quit"
     },

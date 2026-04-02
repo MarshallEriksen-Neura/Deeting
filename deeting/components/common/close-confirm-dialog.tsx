@@ -4,19 +4,19 @@ import { useState } from "react";
 import { useTranslations } from "next-intl";
 import {
   AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import type { DesktopWindowCloseAction } from "@/lib/api/desktop-config";
 
 interface CloseConfirmDialogProps {
   open: boolean;
-  onChoose: (action: "minimize" | "quit", remember: boolean) => void;
+  onChoose: (action: DesktopWindowCloseAction, remember: boolean) => void;
 }
 
 export function CloseConfirmDialog({ open, onChoose }: CloseConfirmDialogProps) {
@@ -40,11 +40,24 @@ export function CloseConfirmDialog({ open, onChoose }: CloseConfirmDialogProps) 
             {t("remember")}
           </label>
         </div>
-        <AlertDialogFooter>
-          <AlertDialogCancel onClick={() => onChoose("minimize", remember)}>{t("minimize")}</AlertDialogCancel>
-          <AlertDialogAction onClick={() => onChoose("quit", remember)}>
+        <AlertDialogFooter className="sm:grid sm:grid-cols-3">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onChoose("show_island", remember)}
+          >
+            {t("showIsland")}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onChoose("minimize", remember)}
+          >
+            {t("minimize")}
+          </Button>
+          <Button type="button" onClick={() => onChoose("quit", remember)}>
             {t("quit")}
-          </AlertDialogAction>
+          </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

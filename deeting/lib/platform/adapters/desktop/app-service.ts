@@ -20,14 +20,12 @@ export const desktopAppService: IAppService = {
   minimize: async () => {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      // Hide main window and show Island capsule
-      await invoke("hide_main_show_island");
+      await invoke("minimize_main_hide_island");
     } catch (err) {
-      console.error("Desktop: hide-to-island failed", err);
-      // Fallback: plain hide to tray
+      console.error("Desktop: minimize failed", err);
       try {
         const { getCurrentWindow } = await import("@tauri-apps/api/window");
-        await getCurrentWindow().hide();
+        await getCurrentWindow().minimize();
       } catch {
         // ignore
       }

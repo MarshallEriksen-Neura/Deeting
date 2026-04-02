@@ -2,6 +2,10 @@ import React from "react"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { SettingsForm } from "../settings-form"
 
+function setNodeEnv(value: string | undefined) {
+  Reflect.set(process.env, "NODE_ENV", value)
+}
+
 const mockGetDesktopNetworkProxySettings = jest.fn(async () => ({
   mode: "system" as const,
   url: "",
@@ -72,6 +76,7 @@ jest.mock("../settings-lazy", () => ({
   ),
   DeferredDesktopSandboxSettingsCard: () => null,
   DeferredDesktopVersionManagementCard: () => null,
+  DeferredDesktopWindowSettingsCard: () => null,
   DeferredDesktopObjectStorageSettingsCard: () => null,
   DeferredDesktopNetworkSettingsCard: () => null,
   DeferredDesktopScoutSettingsCard: () => null,
@@ -114,7 +119,7 @@ describe("SettingsForm desktop config loading", () => {
     mockGetDesktopNetworkProxySettings.mockClear()
     mockGetDesktopScoutBaseUrl.mockClear()
     mockFetchDesktopObjectStorageConfig.mockClear()
-    process.env.NODE_ENV = originalNodeEnv
+    setNodeEnv(originalNodeEnv)
     if (originalBrowserPanelFlag === undefined) {
       delete process.env.NEXT_PUBLIC_ENABLE_BROWSER_AGENT_PANEL
     } else {
@@ -158,7 +163,7 @@ describe("SettingsForm desktop config loading", () => {
   })
 
   it("does not render the browser section in production when the panel flag is off", () => {
-    process.env.NODE_ENV = "production"
+    setNodeEnv("production")
     delete process.env.NEXT_PUBLIC_ENABLE_BROWSER_AGENT_PANEL
 
     render(<SettingsForm isAuthenticated isTauriRuntime />)
@@ -168,7 +173,7 @@ describe("SettingsForm desktop config loading", () => {
   })
 
   it("still renders the browser section in production when the panel flag is on", () => {
-    process.env.NODE_ENV = "production"
+    setNodeEnv("production")
     process.env.NEXT_PUBLIC_ENABLE_BROWSER_AGENT_PANEL = "true"
 
     render(<SettingsForm isAuthenticated isTauriRuntime />)

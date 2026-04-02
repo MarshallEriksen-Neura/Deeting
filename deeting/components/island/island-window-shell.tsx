@@ -73,10 +73,11 @@ export function IslandWindowShell() {
   // Position management: restore saved position or default to bottom-right
   useEffect(() => {
     let unlistenMoved: (() => void) | undefined;
+    let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
     (async () => {
       const { invoke } = await import("@tauri-apps/api/core");
-      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      const { getCurrentWindow, primaryMonitor } = await import("@tauri-apps/api/window");
 
       const saved = localStorage.getItem("island-position");
       if (saved) {
@@ -89,7 +90,7 @@ export function IslandWindowShell() {
       } else {
         // Default: bottom-right of primary monitor
         try {
-          const monitor = await getCurrentWindow().currentMonitor();
+          const monitor = await primaryMonitor();
           if (monitor) {
             const x = monitor.size.width / monitor.scaleFactor - 400;
             const y = monitor.size.height / monitor.scaleFactor - 150;
@@ -101,9 +102,10 @@ export function IslandWindowShell() {
       }
 
       // Persist position after drag (debounced)
-      let saveTimeout: ReturnType<typeof setTimeout>;
       unlistenMoved = await getCurrentWindow().onMoved(({ payload }) => {
-        clearTimeout(saveTimeout);
+        if (saveTimeout !== null) {
+          clearTimeout(saveTimeout);
+        }
         saveTimeout = setTimeout(() => {
           localStorage.setItem(
             "island-position",
@@ -114,6 +116,9 @@ export function IslandWindowShell() {
     })();
 
     return () => {
+      if (saveTimeout !== null) {
+        clearTimeout(saveTimeout);
+      }
       unlistenMoved?.();
     };
   }, []);

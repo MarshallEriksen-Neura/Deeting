@@ -25,10 +25,11 @@
     },
     "desktopClose": {
       "title": "关闭窗口",
-      "description": "你希望将 Deeting 隐藏到系统托盘，还是直接退出应用？",
+      "description": "关闭主窗口时，你希望 Deeting 如何处理？",
       "remember": "记住我的选择",
       "minimize": "隐藏到托盘",
-      "quit": "退出"
+      "quit": "退出",
+      "showIsland": "显示灵动岛"
     },
     "globalError": {
       "title": "系统出现波动",

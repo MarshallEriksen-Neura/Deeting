@@ -245,6 +245,30 @@
         }
       }
     },
+    "window": {
+      "title": "Desktop Window Behavior",
+      "description": "Control what happens when you minimize or close the desktop app.",
+      "minimizeLabel": "Minimize button",
+      "minimizeValue": "Normal minimize",
+      "minimizeHelp": "Minimizing the desktop window now keeps the Island hidden and performs a standard window minimize.",
+      "closeActionLabel": "When closing the main window",
+      "closeActionHelp": "Applies to the desktop close button and other close-window actions on this device.",
+      "closeAction": {
+        "showIsland": "Show Island",
+        "minimize": "Minimize to taskbar",
+        "quit": "Quit app"
+      },
+      "closeActionDesc": {
+        "showIsland": "Hide the main window and keep Deeting available through the Island window.",
+        "minimize": "Minimize the main window normally and keep the Island hidden.",
+        "quit": "Exit Deeting completely."
+      },
+      "save": "Save",
+      "saving": "Saving...",
+      "saveSuccess": "Desktop window behavior saved",
+      "saveFailed": "Failed to save desktop window behavior",
+      "footerHint": "Desktop only. This preference is stored locally on the current device."
+    },
     "version": {
       "title": "Version Management",
       "description": "View the current desktop version and trigger the built-in updater manually.",

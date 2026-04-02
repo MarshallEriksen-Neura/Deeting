@@ -54,6 +54,7 @@ function upsertToolBlock(next: MessageBlock[], block: MessageBlock): boolean {
 }
 
 function upsertExecutionLifecycleBlock(next: MessageBlock[], block: MessageBlock): boolean {
+  if (block.type !== "ui") return false
   const rootExecutionId = extractRootExecutionIdFromBlock(block)
   if (!rootExecutionId) return false
 
@@ -63,6 +64,7 @@ function upsertExecutionLifecycleBlock(next: MessageBlock[], block: MessageBlock
   if (existingIndex < 0) return false
 
   const existing = next[existingIndex]
+  if (!existing || existing.type !== "ui") return false
   next[existingIndex] = {
     ...existing,
     ...block,
