@@ -14,6 +14,7 @@ pub mod desktop_config;
 pub mod desktop_runtime;
 pub mod execution;
 pub mod im;
+pub mod island_window;
 pub mod image_generation;
 pub mod knowledge;
 pub mod mcp;

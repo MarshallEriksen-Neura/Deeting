@@ -24,10 +24,17 @@ export function TitleBar() {
 
   const handleMinimize = async () => {
     try {
-      const { getCurrentWindow } = await import("@tauri-apps/api/window");
-      await getCurrentWindow().minimize();
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("hide_main_show_island");
     } catch (error) {
       console.error("Failed to minimize window:", error);
+      // Fallback: plain minimize
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        await getCurrentWindow().minimize();
+      } catch {
+        // ignore
+      }
     }
   };
 

@@ -341,6 +341,11 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     // Setup Tray
     crate::tray::setup_tray(app)?;
 
+    // Create Island window (hidden, pre-warmed)
+    if let Err(e) = crate::modules::island_window::create_island_window(app.handle()) {
+        log::warn!("Failed to create island window: {e}");
+    }
+
     // Setup Global Shortcuts
     setup_shortcuts(app)?;
 
@@ -469,6 +474,9 @@ fn setup_shortcuts(app: &App) -> Result<(), Box<dyn std::error::Error>> {
                 let _ = w.unminimize();
                 let _ = w.show();
                 let _ = w.set_focus();
+            }
+            if let Some(island) = app.get_webview_window("island") {
+                let _ = island.hide();
             }
         }
     }) {

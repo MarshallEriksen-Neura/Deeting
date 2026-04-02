@@ -1,4 +1,4 @@
-import { resolveMessageAttachments } from "@/hooks/chat/use-chat-messaging-service"
+import { resolveMessageAttachments } from "@/lib/chat/history-loader"
 import { prepareDesktopObjectStorageRead } from "@/lib/api/desktop-object-storage"
 import { signAssets } from "@/lib/api/media-assets"
 

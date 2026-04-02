@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useMemo } from "react"
+import { useMemo } from "react"
 import useSWR from "swr"
 
 import {
@@ -9,7 +9,6 @@ import {
   type AssistantInstallPage,
 } from "@/lib/api/assistants"
 import { fetchChatModels, type ModelInfo, type ModelGroup } from "@/lib/api/models"
-import { fetchConversationHistory } from "@/lib/api/conversations"
 import { useAuthStore } from "@/store/auth-store"
 
 const INSTALLS_QUERY_KEY = "/api/v1/assistants/installs"
@@ -136,11 +135,6 @@ export function useChatService({
   }, [modelGroups])
 
   const isLoadingModels = isLoadingAllModels
-
-  const loadHistory = useCallback(async (sessionId: string) => {
-    return fetchConversationHistory(sessionId, { limit: 30 })
-  }, [])
-
   return {
     assistant,
     assistants,
@@ -148,7 +142,6 @@ export function useChatService({
     modelGroups,
     isLoadingAssistants,
     isLoadingModels,
-    loadHistory,
     removeAssistantOptimistic,
   }
 }

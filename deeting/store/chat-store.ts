@@ -5,8 +5,7 @@ import { persist, createJSONStorage } from "zustand/middleware"
 import type { ChatImageAttachment } from "@/lib/chat/message-content"
 import type { Message, MessageRole } from "@/lib/chat/message-types"
 import type { ModelInfo } from "@/lib/api/models"
-import { normalizeConversationMessages } from "@/lib/chat/conversation-adapter"
-import { fetchConversationHistory } from "@/lib/api/conversations"
+import { loadConversationHistoryPage } from "@/lib/chat/history-loader"
 import type { MessageBlock, ToolResultBlock } from "@/lib/chat/message-protocol"
 import {
   appendMessageBlocks as appendNormalizedMessageBlocks,
@@ -14,6 +13,7 @@ import {
   replaceMessageBlocks,
   upsertToolResultBlock,
 } from "@/lib/chat/message-blocks"
+import { isTauriRuntime as detectTauriRuntime } from "@/lib/runtime/tauri"
 
 // ============== 类型定义 ==============
 
@@ -131,6 +131,20 @@ function isStatusMetaEqual(
   const rightKeys = Object.keys(right)
   if (leftKeys.length !== rightKeys.length) return false
   return leftKeys.every((key) => Object.is(left[key], right[key]))
+}
+
+async function readConversationHistoryState(sessionId: string) {
+  const page = await loadConversationHistoryPage(sessionId, {
+    limit: 30,
+    idPrefix: sessionId,
+    isTauriRuntime: detectTauriRuntime(),
+  })
+
+  return {
+    messages: page.messages,
+    historyCursor: page.nextCursor,
+    historyHasMore: page.hasMore,
+  }
 }
 
 // ============== Store 接口 ==============
@@ -323,12 +337,10 @@ export const useChatStore = create<ChatStore>()(
 
           if (sessionId && shouldReset) {
             try {
-              const response = await fetchConversationHistory(sessionId, { limit: 30 })
-              messages = normalizeConversationMessages(response.messages || [], {
-                idPrefix: sessionId,
-              })
-              historyCursor = response.next_cursor ?? null
-              historyHasMore = Boolean(response.has_more)
+              const historyState = await readConversationHistoryState(sessionId)
+              messages = historyState.messages
+              historyCursor = historyState.historyCursor
+              historyHasMore = historyState.historyHasMore
             } catch (error) {
               console.error("Failed to load history:", error)
               messages = []
@@ -405,12 +417,10 @@ export const useChatStore = create<ChatStore>()(
 
           if (sessionId && shouldReset) {
             try {
-              const response = await fetchConversationHistory(sessionId, { limit: 30 })
-              messages = normalizeConversationMessages(response.messages || [], {
-                idPrefix: sessionId,
-              })
-              historyCursor = response.next_cursor ?? null
-              historyHasMore = Boolean(response.has_more)
+              const historyState = await readConversationHistoryState(sessionId)
+              messages = historyState.messages
+              historyCursor = historyState.historyCursor
+              historyHasMore = historyState.historyHasMore
             } catch (error) {
               console.error("Failed to load history:", error)
               messages = []
@@ -823,16 +833,13 @@ export const useChatStore = create<ChatStore>()(
         set({ isLoading: true, sessionId })
 
         try {
-          const response = await fetchConversationHistory(sessionId, { limit: 30 })
-          const mapped = normalizeConversationMessages(response.messages || [], {
-            idPrefix: sessionId,
-          })
+          const historyState = await readConversationHistoryState(sessionId)
 
           set({
-            messages: mapped,
+            messages: historyState.messages,
             compareByMessageId: {},
-            historyCursor: response.next_cursor ?? null,
-            historyHasMore: Boolean(response.has_more),
+            historyCursor: historyState.historyCursor,
+            historyHasMore: historyState.historyHasMore,
           })
         } catch (error) {
           console.error("Failed to load history:", error)

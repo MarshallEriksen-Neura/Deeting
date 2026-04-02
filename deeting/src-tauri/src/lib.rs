@@ -24,6 +24,9 @@ pub fn run() {
                         let _ = window.show();
                         let _ = window.set_focus();
                     }
+                    if let Some(island) = app.get_webview_window("island") {
+                        let _ = island.hide();
+                    }
                 })
                 .build(),
         )

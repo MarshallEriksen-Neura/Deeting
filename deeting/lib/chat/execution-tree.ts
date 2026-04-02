@@ -67,6 +67,12 @@ export function extractRootExecutionIdFromExecutionTree(
   return asTrimmedString(executionTree.root_execution_id)
 }
 
+export function extractRootExecutionIdFromMessage(
+  message: Pick<Message, "blocks" | "metaInfo">
+): string | null {
+  return extractRootExecutionIdFromExecutionTree(extractExecutionTreeFromMessage(message))
+}
+
 export function extractExecutionTreeSchemaVersion(
   executionTree: Record<string, unknown> | null
 ): number | null {

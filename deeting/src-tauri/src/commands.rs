@@ -241,6 +241,11 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::chat_assets::commands::save_local_chat_asset,
         crate::modules::chat_assets::commands::read_local_chat_asset,
         crate::modules::chat_assets::commands::delete_local_chat_asset,
-        crate::modules::chat_assets::commands::cleanup_conversation_chat_assets
+        crate::modules::chat_assets::commands::cleanup_conversation_chat_assets,
+        // Island Window Commands
+        crate::modules::island_window::hide_main_show_island,
+        crate::modules::island_window::show_main_hide_island,
+        crate::modules::island_window::set_island_size,
+        crate::modules::island_window::set_island_position
     ]
 }

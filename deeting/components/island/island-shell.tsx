@@ -1,16 +1,37 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useShallow } from "zustand/react/shallow";
 import { useIslandStore } from "./island-store";
 import { IslandCollapsedView } from "./island-collapsed-view";
 import { IslandExpandedView } from "./island-expanded-view";
+import { IslandProvider } from "./island-context";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/store/chat-store";
 
 export function IslandShell() {
-  const mode = useIslandStore((s) => s.mode);
+  const storeValues = useIslandStore(
+    useShallow((s) => ({
+      mode: s.mode,
+      statusLabel: s.statusLabel,
+      summaryText: s.summaryText,
+      lastReplyText: s.lastReplyText,
+      pendingApproval: s.pendingApproval,
+      isBusy: s.isBusy,
+      errorMessage: s.errorMessage,
+      expand: s.expand,
+      collapse: s.collapse,
+      hide: s.hide,
+      toggleExpand: s.toggleExpand,
+      restoreWorkspace: s.restoreWorkspace,
+      sendQuickReply: s.sendQuickReply,
+      approvePendingApproval: s.approvePendingApproval,
+      rejectPendingApproval: s.rejectPendingApproval,
+    }))
+  );
+
+  const { mode } = storeValues;
   const hydrateFromChat = useIslandStore((s) => s.hydrateFromChat);
   const chatSnapshot = useChatStore(
     useShallow((state) => ({
@@ -28,54 +49,113 @@ export function IslandShell() {
     hydrateFromChat(chatSnapshot);
   }, [chatSnapshot, hydrateFromChat]);
 
+  // Emit state sync to Island window (debounced)
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => {
+    clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(async () => {
+      try {
+        const { emit } = await import("@tauri-apps/api/event");
+        const state = useIslandStore.getState();
+        await emit("island:state-sync", {
+          mode: state.mode,
+          statusLabel: state.statusLabel,
+          summaryText: state.summaryText,
+          lastReplyText: state.lastReplyText,
+          pendingApproval: state.pendingApproval,
+          isBusy: state.isBusy,
+          errorMessage: state.errorMessage,
+          sessionId: chatSnapshot.sessionId,
+        });
+      } catch {
+        // emit may fail in non-Tauri env
+      }
+    }, 100);
+    return () => clearTimeout(syncTimerRef.current);
+  }, [storeValues, chatSnapshot.sessionId]);
+
+  // Listen for action-completed from Island window → re-sync chat
+  const resyncChat = useCallback(async () => {
+    const sessionId = useChatStore.getState().sessionId;
+    if (!sessionId) return;
+    try {
+      const { fetchConversationHistory } = await import("@/lib/api/conversations");
+      const { normalizeConversationMessages } = await import("@/lib/chat/conversation-adapter");
+      const history = await fetchConversationHistory(sessionId, { limit: 200 });
+      const normalized = normalizeConversationMessages(history.messages ?? []);
+      useChatStore.getState().setMessages(normalized);
+    } catch {
+      // ignore sync errors
+    }
+  }, []);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    (async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        unlisten = await listen("island:action-completed", () => {
+          resyncChat();
+        });
+      } catch {
+        // non-Tauri env
+      }
+    })();
+    return () => {
+      unlisten?.();
+    };
+  }, [resyncChat]);
+
   if (mode === "hidden") return null;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: -30, scale: 0.85 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: -30, scale: 0.85 }}
-      transition={{ type: "spring", damping: 24, stiffness: 260 }}
-      className={cn(
-        "fixed top-4 left-1/2 -translate-x-1/2 z-[70]",
-        "transition-[width] duration-300 ease-out",
-        mode === "expanded" ? "w-[580px]" : "w-[360px]"
-      )}
-    >
+    <IslandProvider value={storeValues}>
       <motion.div
-        layout
+        initial={{ opacity: 0, y: -30, scale: 0.85 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: -30, scale: 0.85 }}
+        transition={{ type: "spring", damping: 24, stiffness: 260 }}
         className={cn(
-          "rounded-[1.75rem] overflow-hidden",
-          "border border-[var(--island-shell-border)]",
-          "bg-[var(--island-shell-bg)] backdrop-blur-2xl",
-          "shadow-[0_0_0_1px_var(--island-gold-stroke-soft),0_12px_36px_-16px_rgba(0,0,0,0.18)]",
-          "ring-1 ring-[var(--island-gold-stroke-soft)]"
+          "fixed top-4 left-1/2 -translate-x-1/2 z-[70]",
+          "transition-[width] duration-300 ease-out",
+          mode === "expanded" ? "w-[580px]" : "w-[360px]"
         )}
       >
-        <AnimatePresence mode="wait">
-          {mode === "collapsed" ? (
-            <motion.div
-              key="collapsed"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.15 }}
-            >
-              <IslandCollapsedView />
-            </motion.div>
-          ) : (
-            <motion.div
-              key="expanded"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.15 }}
-            >
-              <IslandExpandedView />
-            </motion.div>
+        <motion.div
+          layout
+          className={cn(
+            "rounded-[1.75rem] overflow-hidden",
+            "border border-[var(--island-shell-border)]",
+            "bg-[var(--island-shell-bg)] backdrop-blur-2xl",
+            "shadow-[0_0_0_1px_var(--island-gold-stroke-soft),0_12px_36px_-16px_rgba(0,0,0,0.18)]",
+            "ring-1 ring-[var(--island-gold-stroke-soft)]"
           )}
-        </AnimatePresence>
+        >
+          <AnimatePresence mode="wait">
+            {mode === "collapsed" ? (
+              <motion.div
+                key="collapsed"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+              >
+                <IslandCollapsedView />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="expanded"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+              >
+                <IslandExpandedView />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
       </motion.div>
-    </motion.div>
+    </IslandProvider>
   );
 }

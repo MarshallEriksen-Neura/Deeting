@@ -1,21 +1,14 @@
 "use client";
 
 import { ChevronDown } from "lucide-react";
-import { useShallow } from "zustand/react/shallow";
 
 import { cn } from "@/lib/utils";
 
 import { IslandSeedLogo } from "./island-seed-logo";
-import { useIslandStore } from "./island-store";
+import { useIslandContext } from "./island-context";
 
 export function IslandCollapsedView() {
-  const { statusLabel, summaryText, expand } = useIslandStore(
-    useShallow((state) => ({
-      statusLabel: state.statusLabel,
-      summaryText: state.summaryText,
-      expand: state.expand,
-    }))
-  );
+  const { statusLabel, summaryText, expand } = useIslandContext();
 
   const isActive = statusLabel === "Working..." || statusLabel === "Pending approval";
 

@@ -2,14 +2,13 @@
 
 import { ChevronUp, Maximize2 } from "lucide-react";
 import { motion } from "framer-motion";
-import { useShallow } from "zustand/react/shallow";
 
 import { cn } from "@/lib/utils";
 
 import { IslandApprovalCard } from "./island-approval-card";
 import { IslandQuickReply } from "./island-quick-reply";
 import { IslandSeedLogo } from "./island-seed-logo";
-import { useIslandStore } from "./island-store";
+import { useIslandContext } from "./island-context";
 
 export function IslandExpandedView() {
   const {
@@ -23,20 +22,7 @@ export function IslandExpandedView() {
     approvePendingApproval,
     rejectPendingApproval,
     restoreWorkspace,
-  } = useIslandStore(
-    useShallow((state) => ({
-      statusLabel: state.statusLabel,
-      lastReplyText: state.lastReplyText,
-      pendingApproval: state.pendingApproval,
-      isBusy: state.isBusy,
-      errorMessage: state.errorMessage,
-      collapse: state.collapse,
-      sendQuickReply: state.sendQuickReply,
-      approvePendingApproval: state.approvePendingApproval,
-      rejectPendingApproval: state.rejectPendingApproval,
-      restoreWorkspace: state.restoreWorkspace,
-    }))
-  );
+  } = useIslandContext();
 
   const isActive = statusLabel === "Working..." || statusLabel === "Pending approval";
 

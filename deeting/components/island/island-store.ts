@@ -7,14 +7,15 @@ import {
   executeIslandTextConversation,
   rejectIslandTool,
 } from "@/lib/api/island";
-import { createConversation, fetchConversationHistory } from "@/lib/api/conversations";
+import { createConversation } from "@/lib/api/conversations";
 import { deriveAssistantActivityState } from "@/lib/chat/assistant-activity";
-import { normalizeConversationMessages } from "@/lib/chat/conversation-adapter";
+import { loadConversationHistoryPage } from "@/lib/chat/history-loader";
 import { extractAssistantTextFromBlocks } from "@/lib/chat/message-blocks";
 import { findLatestMessageToolApproval } from "@/lib/chat/tool-approval";
 import type { Message } from "@/lib/chat/message-types";
 import type { ChatAssistant } from "@/store/chat-store";
 import { useChatStore } from "@/store/chat-store";
+import { isTauriRuntime as detectTauriRuntime } from "@/lib/runtime/tauri";
 
 export interface IslandApproval {
   id: string;
@@ -176,12 +177,13 @@ function getChatSnapshot(): IslandChatSnapshot {
 }
 
 async function syncChatHistory(sessionId: string) {
-  const history = await fetchConversationHistory(sessionId, {
+  const history = await loadConversationHistoryPage(sessionId, {
     limit: 200,
+    idPrefix: sessionId,
+    isTauriRuntime: detectTauriRuntime(),
   });
-  const normalized = normalizeConversationMessages(history.messages ?? []);
-  useChatStore.getState().setMessages(normalized);
-  return normalized;
+  useChatStore.getState().setMessages(history.messages);
+  return history.messages;
 }
 
 async function ensureSessionId() {

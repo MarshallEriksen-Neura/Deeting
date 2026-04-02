@@ -11,6 +11,10 @@ import {
 } from "@/lib/api/chat"
 import { buildMessageContent, resolveLocalAssetUrlsInContent } from "@/lib/chat/message-content"
 import { normalizeConversationMessages } from "@/lib/chat/conversation-adapter"
+import {
+  loadConversationHistoryPage,
+  resolveMessageAttachments,
+} from "@/lib/chat/history-loader"
 import { createRequestId } from "@/lib/chat/request-id"
 import { useI18n } from "@/hooks/use-i18n"
 
@@ -29,12 +33,7 @@ export function resolveChatRequestContext({
   return { assistantId: selectedAssistantId, sessionStorageKey: WEB_SESSION_STORAGE_KEY }
 }
 import { resolveSessionIdFromBrowser } from "@/lib/chat/session-storage"
-import {
-  fetchConversationHistory,
-} from "@/lib/api/conversations"
 import type { ConversationMessage } from "@/lib/api/conversations"
-import { prepareDesktopObjectStorageRead } from "@/lib/api/desktop-object-storage"
-import { signAssets } from "@/lib/api/media-assets"
 import {
   useChatStore,
   type CompareCandidate,
@@ -169,10 +168,6 @@ function resolveExecutionRootForFollowup(message: Message | undefined | null) {
 
 function resolveRequestedMaxTokens(value: number | null | undefined) {
   return typeof value === "number" && value > 0 ? value : undefined
-}
-
-function mapConversationMessages(rawMessages: Array<{ role?: string; content?: unknown; turn_index?: number | null }>) {
-  return normalizeConversationMessages(rawMessages as ConversationMessage[], { idPrefix: "conv" })
 }
 
 function isValidBlock(block: unknown): block is MessageBlock {
@@ -420,123 +415,6 @@ function getAssistantBlocksForCandidate(message: Message): MessageBlock[] {
   return []
 }
 
-async function resolveLocalChatAsset(
-  sha256: string,
-  contentType: string
-): Promise<string | null> {
-  try {
-    const { invoke } = await import("@tauri-apps/api/core")
-    const result = await invoke<{ data_url: string }>("read_local_chat_asset", {
-      payload: { sha256, content_type: contentType },
-    })
-    return result.data_url
-  } catch {
-    return null
-  }
-}
-
-async function resolveDesktopObjectStorageAssetUrls(objectKeys: string[]) {
-  if (!objectKeys.length) {
-    return new Map<string, string>()
-  }
-
-  const settled = await Promise.allSettled(
-    objectKeys.map(async (objectKey) => {
-      const ticket = await prepareDesktopObjectStorageRead({
-        object_key: objectKey,
-        expires_seconds: 900,
-      })
-      return [objectKey, ticket.asset_url] as const
-    })
-  )
-
-  const urlMap = new Map<string, string>()
-  const unresolved: string[] = []
-  settled.forEach((result, index) => {
-    const objectKey = objectKeys[index]
-    if (result.status === "fulfilled") {
-      urlMap.set(result.value[0], result.value[1])
-      return
-    }
-    unresolved.push(objectKey)
-  })
-
-  if (unresolved.length) {
-    const signedResult = await signAssets(unresolved).catch(() => ({
-      assets: [] as { object_key: string; asset_url: string }[],
-    }))
-    signedResult.assets.forEach((item) => {
-      urlMap.set(item.object_key, item.asset_url)
-    })
-  }
-
-  return urlMap
-}
-
-export const resolveMessageAttachments = async (messages: Message[], isTauri = false) => {
-  const objectKeys = new Set<string>()
-  const localAssets: { msgIdx: number; attIdx: number; sha256: string; type: string }[] = []
-
-  messages.forEach((message, msgIdx) => {
-    message.attachments?.forEach((attachment, attIdx) => {
-      if (
-        isTauri &&
-        attachment.source === "local" &&
-        attachment.sha256 &&
-        (!attachment.url || attachment.url.startsWith("local-asset://"))
-      ) {
-        localAssets.push({
-          msgIdx,
-          attIdx,
-          sha256: attachment.sha256,
-          type: attachment.type || "image/png",
-        })
-        return
-      }
-      const key = attachment.objectKey
-      if (!key) return
-      if (!attachment.url || attachment.url.startsWith("asset://")) {
-        objectKeys.add(key)
-      }
-    })
-  })
-
-  if (!objectKeys.size && !localAssets.length) return messages
-
-  const [urlMap, ...localResults] = await Promise.all([
-    objectKeys.size
-      ? isTauri
-        ? resolveDesktopObjectStorageAssetUrls(Array.from(objectKeys))
-        : signAssets(Array.from(objectKeys))
-            .then(
-              (result) => new Map(result.assets.map((item) => [item.object_key, item.asset_url]))
-            )
-            .catch(() => new Map<string, string>())
-      : Promise.resolve(new Map<string, string>()),
-    ...localAssets.map((la) => resolveLocalChatAsset(la.sha256, la.type)),
-  ])
-
-  const localUrlMap = new Map<string, string>()
-  localAssets.forEach((la, i) => {
-    const dataUrl = localResults[i]
-    if (dataUrl) localUrlMap.set(la.sha256, dataUrl)
-  })
-
-  return messages.map((message) => {
-    if (!message.attachments?.length) return message
-    const attachments = message.attachments.map((attachment) => {
-      if (attachment.source === "local" && attachment.sha256 && localUrlMap.has(attachment.sha256)) {
-        return { ...attachment, url: localUrlMap.get(attachment.sha256)! }
-      }
-      if (!attachment.objectKey) return attachment
-      const url = urlMap.get(attachment.objectKey)
-      if (!url) return attachment
-      return { ...attachment, url }
-    })
-    return { ...message, attachments }
-  })
-}
-
 export function useChatMessagingService() {
   const t = useI18n("chat")
   const cancelRef = useRef<(() => void) | null>(null)
@@ -626,34 +504,8 @@ export function useChatMessagingService() {
 
   const loadHistoryBySession = useCallback(async (sessionId: string) => {
     if (!sessionId) return
-    setHistoryState({ loading: true })
-    try {
-      const windowState = await fetchConversationHistory(sessionId, { limit: 30 })
-      const mapped = mapConversationMessages(windowState.messages ?? [])
-      let resolved = mapped
-      try {
-        resolved = await resolveMessageAttachments(mapped, isTauriRuntime)
-      } catch (error) {
-        console.warn("resolve_attachments_failed", error)
-        if (!isTauriRuntime) {
-          setErrorMessage("i18n:input.image.errorSign")
-        }
-        resolved = mapped
-      }
-      setMessages(resolved)
-      setSessionId(sessionId)
-      setHistoryState({
-        cursor: windowState.next_cursor ?? null,
-        hasMore: Boolean(windowState.has_more),
-      })
-    } catch {
-      setMessages([])
-      setSessionId(null)
-      setHistoryState({ cursor: null, hasMore: false })
-    } finally {
-      setHistoryState({ loading: false })
-    }
-  }, [isTauriRuntime, setMessages, setSessionId, setErrorMessage, setHistoryState])
+    await useChatStore.getState().loadHistory(sessionId)
+  }, [])
 
   const resetSession = useCallback(() => {
     setMessages([])
@@ -676,26 +528,21 @@ export function useChatMessagingService() {
 
     setHistoryState({ loading: true })
     try {
-      const windowState = await fetchConversationHistory(sessionId, {
+      const page = await loadConversationHistoryPage(sessionId, {
         cursor: historyCursor ?? undefined,
         limit: 30,
+        isTauriRuntime,
+        onAttachmentResolutionError: () => {
+          if (!isTauriRuntime) {
+            setErrorMessage("i18n:input.image.errorSign")
+          }
+        },
       })
-      const mapped = mapConversationMessages(windowState.messages ?? [])
-      let resolved = mapped
-      try {
-        resolved = await resolveMessageAttachments(mapped, isTauriRuntime)
-      } catch (error) {
-        console.warn("resolve_attachments_failed", error)
-        if (!isTauriRuntime) {
-          setErrorMessage("i18n:input.image.errorSign")
-        }
-        resolved = mapped
-      }
       const currentMessages = useChatStore.getState().messages
-      setMessages([...resolved, ...currentMessages])
+      setMessages([...page.messages, ...currentMessages])
       setHistoryState({
-        cursor: windowState.next_cursor ?? null,
-        hasMore: Boolean(windowState.has_more),
+        cursor: page.nextCursor,
+        hasMore: page.hasMore,
       })
     } catch {
       setHistoryState({ hasMore: false })

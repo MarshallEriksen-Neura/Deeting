@@ -394,6 +394,21 @@ describe("useChatMessagingService pending takeover orchestration", () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI_INTERNALS__ = {}
     useChatStore.setState({
+      models: [
+        {
+          id: "model-local",
+          provider_model_id: "model-local",
+          request_route: "local_invoke",
+          runtime_source: "desktop_local",
+        } as any,
+      ],
+      config: {
+        model: "model-local",
+        temperature: 0.7,
+        topP: 1,
+        maxTokens: null,
+      },
+      sessionId: "session-1",
       messages: [
         {
           id: "assistant-regen-1",
@@ -451,6 +466,21 @@ describe("useChatMessagingService pending takeover orchestration", () => {
     })
 
     useChatStore.setState({
+      models: [
+        {
+          id: "model-local",
+          provider_model_id: "model-local",
+          request_route: "local_invoke",
+          runtime_source: "desktop_local",
+        } as any,
+      ],
+      config: {
+        model: "model-local",
+        temperature: 0.7,
+        topP: 1,
+        maxTokens: null,
+      },
+      sessionId: "session-1",
       input: "initial prompt",
       isLoading: false,
     })
