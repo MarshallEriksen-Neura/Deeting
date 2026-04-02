@@ -1,7 +1,7 @@
 "use client"
 
 import type { ElementType } from "react"
-import { Boxes, Bot, Database, Globe, Server } from "lucide-react"
+import { AppWindow, Boxes, Bot, Database, Globe, Rocket, Server } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/hooks/use-i18n"
 import { isBrowserAgentPanelEnabled } from "./browser-agent-panel-flags"
@@ -12,6 +12,8 @@ export type SettingsSection =
   | "agent"
   | "browser"
   | "relay"
+  | "window"
+  | "version"
 
 export interface NavItem {
   id: SettingsSection
@@ -25,6 +27,8 @@ const NAV_ITEMS: NavItem[] = [
   { id: "agent", icon: Bot, desktopOnly: true },
   { id: "browser", icon: Globe, desktopOnly: true },
   { id: "relay", icon: Server, desktopOnly: true },
+  { id: "window", icon: AppWindow, desktopOnly: true },
+  { id: "version", icon: Rocket, desktopOnly: true },
 ]
 
 interface SettingsNavProps {

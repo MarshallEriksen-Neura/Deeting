@@ -87,7 +87,14 @@ jest.mock("../settings-nav", () => ({
     onSectionChange,
   }: {
     onSectionChange: (
-      section: "models" | "storage" | "agent" | "browser" | "relay"
+      section:
+        | "models"
+        | "storage"
+        | "agent"
+        | "browser"
+        | "relay"
+        | "window"
+        | "version"
     ) => void
   }) => (
     <div>
@@ -105,6 +112,12 @@ jest.mock("../settings-nav", () => ({
       </button>
       <button type="button" onClick={() => onSectionChange("relay")}>
         relay
+      </button>
+      <button type="button" onClick={() => onSectionChange("window")}>
+        window
+      </button>
+      <button type="button" onClick={() => onSectionChange("version")}>
+        version
       </button>
     </div>
   ),

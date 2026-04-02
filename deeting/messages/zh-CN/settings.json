@@ -335,7 +335,11 @@
       "browser": "Browser",
       "browserDesc": "浏览器调试与桥接",
       "relay": "网络与本地服务",
-      "relayDesc": "桌面代理、Scout 等本地配置"
+      "relayDesc": "桌面代理、Scout 等本地配置",
+      "window": "窗口",
+      "windowDesc": "桌面关闭与最小化行为",
+      "version": "版本",
+      "versionDesc": "桌面构建与更新状态"
     },
     "actions": {
       "hint": "云端、桌面与个人设置互不影响，请按需保存。",

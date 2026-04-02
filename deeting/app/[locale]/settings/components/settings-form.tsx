@@ -699,10 +699,22 @@ export function SettingsForm({
           {/* Agent section */}
           {activeSection === "agent" && (
             <div className="flex flex-col gap-5">
-              <DeferredDesktopVersionManagementCard isTauriRuntime={isTauriRuntime} />
-              <DeferredDesktopWindowSettingsCard isTauriRuntime={isTauriRuntime} />
               <DeferredAgentSettingsCard isTauriRuntime={isTauriRuntime} />
               <DeferredDesktopSandboxSettingsCard isTauriRuntime={isTauriRuntime} />
+            </div>
+          )}
+
+          {/* Window section */}
+          {activeSection === "window" && (
+            <div className="flex flex-col gap-5">
+              <DeferredDesktopWindowSettingsCard isTauriRuntime={isTauriRuntime} />
+            </div>
+          )}
+
+          {/* Version section */}
+          {activeSection === "version" && (
+            <div className="flex flex-col gap-5">
+              <DeferredDesktopVersionManagementCard isTauriRuntime={isTauriRuntime} />
             </div>
           )}
 
@@ -741,6 +753,8 @@ export function SettingsForm({
           )}
 
           {activeSection !== "agent" &&
+            activeSection !== "window" &&
+            activeSection !== "version" &&
             (activeSection !== "browser" || !isBrowserSectionVisible) && (
             <SettingsFormActions
               canSave={canSave}

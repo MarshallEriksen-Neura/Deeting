@@ -359,7 +359,11 @@
       "browser": "Browser",
       "browserDesc": "Browser debug and bridge",
       "relay": "Network & Services",
-      "relayDesc": "Desktop proxy, Scout, and other local-only settings"
+      "relayDesc": "Desktop proxy, Scout, and other local-only settings",
+      "window": "Window",
+      "windowDesc": "Desktop close and minimize behavior",
+      "version": "Version",
+      "versionDesc": "Desktop build and updater status"
     },
     "actions": {
       "hint": "Cloud, desktop, and personal settings are independent. Save as needed.",
