@@ -732,20 +732,25 @@ fn inject_tools(body: &mut Value, tools: Option<&Value>, engine: &str) {
 
 fn sanitize_tool_definition_for_provider_compat(mut tool: Value) -> Value {
     if let Some(schema) = tool.get_mut("input_schema") {
-        normalize_schema_array_items_in_place(schema);
+        normalize_schema_for_provider_compat_in_place(schema);
     }
     if let Some(schema) = tool.get_mut("parameters") {
-        normalize_schema_array_items_in_place(schema);
+        normalize_schema_for_provider_compat_in_place(schema);
     }
     if let Some(function) = tool.get_mut("function").and_then(Value::as_object_mut) {
         if let Some(schema) = function.get_mut("input_schema") {
-            normalize_schema_array_items_in_place(schema);
+            normalize_schema_for_provider_compat_in_place(schema);
         }
         if let Some(schema) = function.get_mut("parameters") {
-            normalize_schema_array_items_in_place(schema);
+            normalize_schema_for_provider_compat_in_place(schema);
         }
     }
     tool
+}
+
+fn normalize_schema_for_provider_compat_in_place(value: &mut Value) {
+    normalize_schema_array_items_in_place(value);
+    normalize_root_schema_for_provider_compat(value);
 }
 
 fn normalize_schema_array_items_in_place(value: &mut Value) {
@@ -794,6 +799,64 @@ fn normalize_schema_array_items_in_place(value: &mut Value) {
         }
         _ => {}
     }
+}
+
+fn normalize_root_schema_for_provider_compat(value: &mut Value) {
+    let Value::Object(map) = value else {
+        return;
+    };
+
+    let required_alternatives = extract_top_level_required_alternatives(map);
+    if !required_alternatives.is_empty() {
+        let addition = format!(
+            "Provide at least one of: {}.",
+            required_alternatives.join(", ")
+        );
+        match map.get_mut("description") {
+            Some(Value::String(existing)) if !existing.trim().is_empty() => {
+                if !existing.contains(&addition) {
+                    existing.push(' ');
+                    existing.push_str(&addition);
+                }
+            }
+            _ => {
+                map.insert("description".to_string(), Value::String(addition));
+            }
+        }
+    }
+
+    if map.get("type").and_then(Value::as_str) != Some("object") {
+        map.insert("type".to_string(), Value::String("object".to_string()));
+    }
+
+    for key in ["oneOf", "anyOf", "allOf", "enum", "not"] {
+        map.remove(key);
+    }
+}
+
+fn extract_top_level_required_alternatives(map: &serde_json::Map<String, Value>) -> Vec<String> {
+    let mut alternatives = Vec::new();
+    for key in ["oneOf", "anyOf", "allOf"] {
+        let Some(Value::Array(items)) = map.get(key) else {
+            continue;
+        };
+        for item in items {
+            let Some(required) = item.get("required").and_then(Value::as_array) else {
+                continue;
+            };
+            let names = required
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|name| !name.is_empty());
+            for name in names {
+                if !alternatives.iter().any(|existing| existing == name) {
+                    alternatives.push(name.to_string());
+                }
+            }
+        }
+    }
+    alternatives
 }
 
 fn apply_request_builder(config: &Value, rendered_body: Value, context: &Value) -> Value {
@@ -2640,6 +2703,60 @@ mod tests {
             prepared.body["tools"][0]["function"]["parameters"]["properties"]["input"]["oneOf"][0]
                 ["items"],
             json!({})
+        );
+    }
+
+    #[test]
+    fn prepare_provider_request_strips_top_level_schema_combinators() {
+        let preset = mock_preset();
+        let instance = mock_instance(json!({ "protocol": "openai", "auto_append_v1": true }));
+        let model = mock_model(&["chat"]);
+
+        let prepared = prepare_provider_request(
+            Some(&preset),
+            &instance,
+            &model,
+            Some("sk-test"),
+            "chat",
+            json!({
+                "model": "gpt-4o-mini",
+                "messages": [{ "role": "user", "content": "hi" }],
+                "stream": false,
+            }),
+            Some(&json!({
+                "tools": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "shell_execute",
+                            "description": "Execute shell commands",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {
+                                    "command": { "type": "string" },
+                                    "program": { "type": "string" },
+                                    "script": { "type": "string" }
+                                },
+                                "anyOf": [
+                                    { "required": ["command"] },
+                                    { "required": ["program"] },
+                                    { "required": ["script"] }
+                                ]
+                            }
+                        }
+                    }
+                ]
+            })),
+            None,
+        )
+        .expect("prepare request with sanitized top-level combinator");
+
+        let parameters = &prepared.body["tools"][0]["function"]["parameters"];
+        assert_eq!(parameters["type"], json!("object"));
+        assert!(parameters.get("anyOf").is_none());
+        assert_eq!(
+            parameters["description"],
+            json!("Provide at least one of: command, program, script.")
         );
     }
 

@@ -61,7 +61,6 @@ export function TaskAgentsClient() {
     taskAgentModelSelectValue,
     selectedTaskAgentModelOption,
     unknownTaskAgentModelLabel,
-    unknownTaskAgentModelValue,
 
     // Filters
     searchQuery,
@@ -216,7 +215,6 @@ export function TaskAgentsClient() {
                     taskAgentModelSelectValue={taskAgentModelSelectValue}
                     selectedTaskAgentModelOption={selectedTaskAgentModelOption}
                     unknownTaskAgentModelLabel={unknownTaskAgentModelLabel}
-                    unknownTaskAgentModelValue={unknownTaskAgentModelValue}
                     isLoadingModels={isLoadingModels}
                     modelGroups={modelGroups}
                     updateDraft={updateDraft}
@@ -232,7 +230,6 @@ export function TaskAgentsClient() {
                     taskAgentModelSelectValue={taskAgentModelSelectValue}
                     selectedTaskAgentModelOption={selectedTaskAgentModelOption}
                     unknownTaskAgentModelLabel={unknownTaskAgentModelLabel}
-                    unknownTaskAgentModelValue={unknownTaskAgentModelValue}
                     isLoadingModels={isLoadingModels}
                     modelGroups={modelGroups}
                     updateDraft={updateDraft}
@@ -249,7 +246,6 @@ export function TaskAgentsClient() {
                     taskAgentModelSelectValue={taskAgentModelSelectValue}
                     selectedTaskAgentModelOption={selectedTaskAgentModelOption}
                     unknownTaskAgentModelLabel={unknownTaskAgentModelLabel}
-                    unknownTaskAgentModelValue={unknownTaskAgentModelValue}
                     isLoadingModels={isLoadingModels}
                     modelGroups={modelGroups}
                     bindingCatalog={bindingCatalog}

@@ -94,6 +94,7 @@ fn render_skill_recipe_prompt(recipes: &[Value]) -> Option<String> {
         "## Installed Skills".to_string(),
         "These are installed skill bundles. Recipe entries are supporting guidance only; the current request allowlist plus `search_sdk` capability results are the source of truth for what is executable right now.".to_string(),
         "Read the recipe details when helpful, but if `search_sdk` surfaces a callable direct capability for this request you may call it directly.".to_string(),
+        "If a recipe documents a CLI or terminal workflow and `search_sdk` exposes a callable host command tool such as `shell_execute`, use that executable path instead of treating the missing dedicated skill action as a blocker.".to_string(),
         "Do not stop at recipe guidance, refusal, or manual handoff until `search_sdk` has verified the executable capability set for this request.".to_string(),
     ];
 

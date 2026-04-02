@@ -396,7 +396,7 @@ fn build_search_result_payload(
             "programmatic_path": "execute_code_plan",
             "direct_callable_capability_count": direct_callable_capability_count,
         },
-        "usage_hint": "优先从 capability_groups.skill_tools 与 capability_groups.user_mcp_tools 中选择 direct host 能力直接调用；recipe_groups.skills 表示 skill bundle 的指导性入口，本身不是可直接执行的 tool。只有在需要多步程序逻辑、循环、条件分支或结果聚合时，才进入 orchestration_primitives 里的 execute_code_plan。",
+        "usage_hint": "Prefer direct host capabilities from capability_groups.skill_tools, capability_groups.user_mcp_tools, and capability_groups.core_tools. recipe_groups.skills are guidance-only skill bundles, not callable tools by themselves. If a recipe describes a CLI or terminal workflow and shell_execute is callable, execute that workflow through shell_execute instead of failing for lack of a dedicated skill action. Use execute_code_plan only for multi-step program logic, loops, branching, or result aggregation.",
         "availability": {
             "enabled_assistant_count": enabled_assistant_count,
             "read_path_mode": read_path_mode,

@@ -4,21 +4,13 @@ import {
   Search,
 } from "lucide-react"
 
+import type { ModelGroup } from "@/lib/api/models"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
@@ -27,14 +19,13 @@ import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import type { CustomTaskAgentBindingCatalog } from "@/lib/api/custom-task-agents"
 import { TaskAgentSectionHeader } from "./task-agent-section-header"
+import { TaskAgentModelPickerField } from "./task-agent-model-picker-field"
 import type {
   DraftPayload,
   PreviewDraft,
   TaskAgentDraft,
   TaskAgentModelOption,
 } from "./task-agent-editor-types"
-
-const DEFAULT_TASK_AGENT_MODEL_VALUE = "__task_agent_model_default__"
 
 function statusToneClass(status: string): string {
   switch (status) {
@@ -66,18 +57,8 @@ type ChatTaskAgentEditorProps = {
   taskAgentModelSelectValue: string
   selectedTaskAgentModelOption: TaskAgentModelOption | null
   unknownTaskAgentModelLabel: string
-  unknownTaskAgentModelValue: string | null
   isLoadingModels: boolean
-  modelGroups: Array<{
-    instance_id: string
-    instance_name: string
-    provider?: string | null
-    models: Array<{
-      id: string
-      provider_model_id?: string | null
-      owned_by?: string | null
-    }>
-  }>
+  modelGroups: ModelGroup[]
   bindingCatalog: CustomTaskAgentBindingCatalog
   bindingsLoading: boolean
   filteredBindingTools: CustomTaskAgentBindingCatalog["mcp_tools"]
@@ -124,7 +105,6 @@ export function ChatTaskAgentEditor({
   taskAgentModelSelectValue,
   selectedTaskAgentModelOption,
   unknownTaskAgentModelLabel,
-  unknownTaskAgentModelValue,
   isLoadingModels,
   modelGroups,
   bindingCatalog,
@@ -221,56 +201,15 @@ export function ChatTaskAgentEditor({
         />
 
         <div className="grid gap-5 lg:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="task-agent-model">{t("editor.fields.model")}</Label>
-            <Select
-              value={taskAgentModelSelectValue}
-              onValueChange={handleTaskAgentModelChange}
-              disabled={isLoadingModels}
-            >
-              <SelectTrigger id="task-agent-model">
-                <SelectValue placeholder={t("editor.placeholders.model")}>
-                  {selectedTaskAgentModelOption ? (
-                    <span className="truncate">{selectedTaskAgentModelOption.modelId}</span>
-                  ) : unknownTaskAgentModelLabel ? (
-                    <span className="truncate">{unknownTaskAgentModelLabel}</span>
-                  ) : undefined}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={DEFAULT_TASK_AGENT_MODEL_VALUE}>
-                  {t("editor.placeholders.model")}
-                </SelectItem>
-                {unknownTaskAgentModelValue ? (
-                  <SelectItem value={unknownTaskAgentModelValue}>
-                    {unknownTaskAgentModelLabel}
-                  </SelectItem>
-                ) : null}
-                {modelGroups.map((group) => (
-                  <SelectGroup key={group.instance_id}>
-                    <SelectLabel className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                      {group.instance_name}
-                    </SelectLabel>
-                    {group.models.map((model) => {
-                      const optionValue = `${group.instance_id}::${model.provider_model_id ?? model.id}`
-                      return (
-                        <SelectItem key={optionValue} value={optionValue}>
-                          <div className="flex flex-col">
-                            <span className="text-xs font-medium text-foreground">
-                              {model.id}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground">
-                              {group.provider || model.owned_by || "provider"}
-                            </span>
-                          </div>
-                        </SelectItem>
-                      )
-                    })}
-                  </SelectGroup>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <TaskAgentModelPickerField
+            t={t}
+            taskAgentModelSelectValue={taskAgentModelSelectValue}
+            selectedTaskAgentModelOption={selectedTaskAgentModelOption}
+            unknownTaskAgentModelLabel={unknownTaskAgentModelLabel}
+            isLoadingModels={isLoadingModels}
+            modelGroups={modelGroups}
+            onValueChange={handleTaskAgentModelChange}
+          />
           <div className="space-y-2">
             <Label htmlFor="task-agent-provider-model-id">
               {t("editor.fields.providerModelId")}

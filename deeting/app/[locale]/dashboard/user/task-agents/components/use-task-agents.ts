@@ -684,7 +684,6 @@ export function useTaskAgents(t: Translation) {
     taskAgentModelSelectValue,
     selectedTaskAgentModelOption,
     unknownTaskAgentModelLabel,
-    unknownTaskAgentModelValue,
 
     // Filters
     searchQuery,

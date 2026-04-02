@@ -681,6 +681,8 @@ fn build_initial_messages(
         "Guidance skills are documentation-only context. Read them, but do not treat them as directly callable tools.",
         "Callable MCP tools and callable skill actions are separate execution lanes.",
         "Use only the callable MCP tools and callable skill actions explicitly bound to this custom task agent.",
+        "If a guidance skill describes a CLI or terminal workflow, and one of your bound callable MCP tools can execute host commands, translate the documented workflow into that callable tool instead of blocking on the absence of a dedicated skill action.",
+        "Do not require a bespoke skill action name when the delegated task can be completed through a bound shell or host-execution tool.",
         "Do not perform extra search, search_sdk, route planning, or orchestration on your own.",
         "If you are blocked, explain the blocker briefly and stop.",
         "",
@@ -829,7 +831,10 @@ fn merge_tts_extra_params(speed: Option<f64>, extra_params: Option<Value>) -> Op
 
 #[cfg(test)]
 mod tests {
-    use super::validate_image_generation_detail;
+    use super::{build_initial_messages, validate_image_generation_detail};
+    use crate::modules::custom_task_agents::types::{
+        CustomTaskAgentInvocationKind, CustomTaskAgentProfile,
+    };
     use crate::modules::image_generation::types::LocalImageGenerationTaskDetail;
 
     fn make_detail(
@@ -869,5 +874,43 @@ mod tests {
 
         assert_eq!(error.code.as_deref(), Some("bad_response_status_code"));
         assert_eq!(error.message, "upstream returned 404");
+    }
+
+    #[test]
+    fn build_initial_messages_allows_cli_guidance_to_use_bound_shell_tools() {
+        let profile = CustomTaskAgentProfile {
+            id: "agent-1".to_string(),
+            name: "CLI helper".to_string(),
+            description: Some("Runs terminal-oriented delegated tasks".to_string()),
+            task_prompt: "Complete the delegated task.".to_string(),
+            invocation_kind: CustomTaskAgentInvocationKind::Chat,
+            preferred_for_image_generation: false,
+            model_config: None,
+            callable_mcp_tool_ids: vec!["tool.shell_execute".to_string()],
+            guidance_skill_ids: vec!["skill.cli-docs".to_string()],
+            callable_skill_action_refs: vec![],
+            tags: vec![],
+            discoverable: true,
+            is_enabled: true,
+            is_deleted: false,
+            created_at: "2026-04-02T00:00:00Z".to_string(),
+            updated_at: "2026-04-02T00:00:00Z".to_string(),
+        };
+
+        let messages = build_initial_messages(
+            &profile,
+            "Check whether a CLI tool is installed.",
+            "## Guidance Skill skill.cli-docs\nDocs: use the CLI in a terminal.",
+        );
+        let system = messages
+            .first()
+            .map(|message| message.content.clone())
+            .unwrap_or_default();
+
+        assert!(system.contains("Guidance skills are documentation-only context"));
+        assert!(system.contains("CLI or terminal workflow"));
+        assert!(system.contains("bound callable MCP tools can execute host commands"));
+        assert!(system.contains("absence of a dedicated skill action"));
+        assert!(system.contains("bound shell or host-execution tool"));
     }
 }

@@ -158,6 +158,15 @@
         "helper": "保存时，上方基础模型字段会覆盖 JSON 中同名的配置项。",
         "invalidJson": "模型配置 JSON 必须是合法的对象。"
       },
+      "modelPicker": {
+        "loading": "正在加载模型...",
+        "searchPlaceholder": "按模型 ID、提供商或路由搜索...",
+        "empty": "当前暂无可用模型。",
+        "noResults": "没有匹配的模型。",
+        "helper": "模型很多时可先搜索筛选；如需高级路由，右侧 Provider Model ID 仍可单独编辑。",
+        "currentUnlistedHint": "当前已保存的模型不在可选列表中，可能已下线或暂不可用。",
+        "useDefault": "恢复 default"
+      },
       "imageConfig": {
         "title": "图片默认参数",
         "description": "为这个任务智能体设置每次出图都会复用的默认参数。",

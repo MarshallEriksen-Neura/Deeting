@@ -231,6 +231,9 @@ fn render_skill_recipe_prompt_defers_execution_truth_to_search_sdk() {
     assert!(prompt.contains("Planner"));
     assert!(prompt.contains("source of truth"));
     assert!(prompt.contains("callable direct capability"));
+    assert!(prompt.contains("CLI or terminal workflow"));
+    assert!(prompt.contains("`shell_execute`"));
+    assert!(prompt.contains("missing dedicated skill action"));
     assert!(prompt.contains("manual handoff"));
     assert!(prompt.contains("read_skill_docs"));
     assert!(prompt.contains("SKILL.md"));

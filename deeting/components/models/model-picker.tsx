@@ -29,6 +29,7 @@ interface ModelPickerProps {
   onChange: (value: string) => void
   modelGroups: ModelPickerGroup[]
   valueField?: ModelPickerValueField
+  resolveValue?: (group: ModelPickerGroup, model: ModelPickerModel) => string
   title?: string
   subtitle?: string
   searchPlaceholder: string
@@ -45,6 +46,7 @@ export function ModelPicker({
   onChange,
   modelGroups,
   valueField = "provider_model_id",
+  resolveValue,
   title,
   subtitle,
   searchPlaceholder,
@@ -57,7 +59,8 @@ export function ModelPicker({
 }: ModelPickerProps) {
   const [query, setQuery] = useState("")
 
-  const resolveModelValue = (model: ModelPickerModel) => {
+  const resolveModelValue = (group: ModelPickerGroup, model: ModelPickerModel) => {
+    if (resolveValue) return resolveValue(group, model)
     if (valueField === "id") return model.id
     return model.provider_model_id ?? model.id
   }
@@ -168,7 +171,7 @@ export function ModelPicker({
                   </div>
                   <div className="flex flex-col gap-1.5 px-2 pb-2">
                     {group.models.map((model) => {
-                      const modelValue = resolveModelValue(model)
+                      const modelValue = resolveModelValue(group, model)
                       const isActive =
                         value === modelValue ||
                         value === model.id ||

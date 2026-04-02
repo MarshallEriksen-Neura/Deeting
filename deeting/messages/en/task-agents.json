@@ -158,6 +158,15 @@
         "helper": "Basic model fields above override overlapping keys inside the JSON block when you save.",
         "invalidJson": "Model config JSON must be a valid object."
       },
+      "modelPicker": {
+        "loading": "Loading models...",
+        "searchPlaceholder": "Search models by id, provider, or route...",
+        "empty": "No models available right now.",
+        "noResults": "No models match your search.",
+        "helper": "Use search to narrow large model lists, or keep Provider Model ID editable for advanced routing.",
+        "currentUnlistedHint": "The currently saved model is not in the available list. It may be offline or temporarily unavailable.",
+        "useDefault": "Use default"
+      },
       "imageConfig": {
         "title": "Image Defaults",
         "description": "Set the default image-generation parameters this task agent should reuse for every run.",

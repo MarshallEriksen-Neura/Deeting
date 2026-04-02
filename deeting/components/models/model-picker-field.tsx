@@ -18,12 +18,23 @@ type SelectedModel = {
 
 const findSelectedModel = (
   value: string | undefined,
-  groups: ModelGroup[]
+  groups: ModelGroup[],
+  resolveValue?: (
+    group: ModelGroup,
+    model: ModelGroup["models"][number],
+  ) => string,
 ): SelectedModel | null => {
   if (!value) return null
   for (const group of groups) {
     for (const model of group.models) {
-      if (model.id === value || model.provider_model_id === value) {
+      const modelValue = resolveValue
+        ? resolveValue(group, model)
+        : model.provider_model_id ?? model.id
+      if (
+        modelValue === value ||
+        model.id === value ||
+        model.provider_model_id === value
+      ) {
         return { model, group }
       }
     }
@@ -46,6 +57,7 @@ export function ModelPickerField({
   emptyText,
   noResultsText,
   modelGroups,
+  resolveValue,
 }: {
   id: string
   label: string
@@ -61,6 +73,10 @@ export function ModelPickerField({
   emptyText: string
   noResultsText: string
   modelGroups: ModelGroup[]
+  resolveValue?: (
+    group: ModelGroup,
+    model: ModelGroup["models"][number],
+  ) => string
 }) {
   const [isOpen, setIsOpen] = useState(false)
 
@@ -79,7 +95,7 @@ export function ModelPickerField({
   )
 
   const selectedValue = value.trim()
-  const selectedModel = findSelectedModel(selectedValue, modelGroups)
+  const selectedModel = findSelectedModel(selectedValue, modelGroups, resolveValue)
   const visual = resolveModelVisual(
     selectedModel
       ? {
@@ -175,6 +191,7 @@ export function ModelPickerField({
                 setIsOpen(false)
               }}
               modelGroups={pickerModelGroups}
+              resolveValue={resolveValue}
               title={label}
               subtitle={placeholder}
               searchPlaceholder={searchPlaceholder}
