@@ -9,8 +9,8 @@ use crate::modules::workflow::types::{
     ApprovalAction, ApproveWorkflowRequest, CompileResult, CreateWorkflowEventRequest,
     CreateWorkflowRunRequest, EditRemainingPhasesRequest, ExecutionSnapshot,
     GenerateProposalRequest, QuickWorkflowRequest, QuickWorkflowResult, RegenerateProposalRequest,
-    RerunPhaseRequest, UpdateProposalRequest, WorkflowPhaseContext, WorkflowRun,
-    WorkflowRunDetail, WorkflowRunStatus, WorkflowStepStatus,
+    RerunPhaseRequest, UpdateProposalRequest, WorkflowPhaseContext, WorkflowRun, WorkflowRunDetail,
+    WorkflowRunStatus, WorkflowStepStatus,
 };
 use crate::state::AppState;
 use tauri::Manager;

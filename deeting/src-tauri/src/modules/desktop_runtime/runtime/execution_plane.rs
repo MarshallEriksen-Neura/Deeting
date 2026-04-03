@@ -158,9 +158,7 @@ impl DelegatedExecutionRecord {
     }
 }
 
-fn serialize_execution_actions(
-    actions: &[DelegatedExecutionAction],
-) -> Vec<serde_json::Value> {
+fn serialize_execution_actions(actions: &[DelegatedExecutionAction]) -> Vec<serde_json::Value> {
     actions
         .iter()
         .map(|action| json!({ "kind": action.kind }))
@@ -201,10 +199,10 @@ impl DelegatedExecutionSession {
             "type": "ui",
             "viewType": "execution.lifecycle",
             "title": format!("Delegated Execution · {}", self.record.target.name),
-	            "payload": {
-	                "schema_version": EXECUTION_TREE_SCHEMA_VERSION,
-	                "root_execution_id": self.record.execution_id,
-	                "execution_id": self.record.execution_id,
+                "payload": {
+                    "schema_version": EXECUTION_TREE_SCHEMA_VERSION,
+                    "root_execution_id": self.record.execution_id,
+                    "execution_id": self.record.execution_id,
                 "execution_kind": self.record.kind.as_str(),
                 "execution_status": status.as_str(),
                 "terminal_status": self.record.status.as_str(),

@@ -7,13 +7,15 @@ import {
   executeIslandTextConversation,
   rejectIslandTool,
 } from "@/lib/api/island";
-import type { IslandApproval, IslandMode } from "./island-store";
+import type { IslandApproval, IslandMode, IslandRecentMessage } from "./island-store";
 
 interface IslandWindowState {
   mode: IslandMode;
   statusLabel: string;
   summaryText: string;
   lastReplyText: string;
+  lastReplyAt: number | null;
+  recentMessages: IslandRecentMessage[];
   pendingApproval: IslandApproval | null;
   isBusy: boolean;
   errorMessage: string | null;
@@ -35,6 +37,8 @@ export interface IslandSyncPayload {
   statusLabel: string;
   summaryText: string;
   lastReplyText: string;
+  lastReplyAt: number | null;
+  recentMessages: IslandRecentMessage[];
   pendingApproval: IslandApproval | null;
   isBusy: boolean;
   errorMessage: string | null;
@@ -51,6 +55,8 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
   statusLabel: "Idle",
   summaryText: "Connecting to workspace...",
   lastReplyText: "No replies yet.",
+  lastReplyAt: null,
+  recentMessages: [],
   pendingApproval: null,
   isBusy: false,
   errorMessage: null,
@@ -82,6 +88,8 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
       statusLabel: payload.statusLabel,
       summaryText: payload.summaryText,
       lastReplyText: payload.lastReplyText,
+      lastReplyAt: payload.lastReplyAt,
+      recentMessages: payload.recentMessages,
       pendingApproval: payload.pendingApproval,
       isBusy: payload.isBusy,
       errorMessage: payload.errorMessage,

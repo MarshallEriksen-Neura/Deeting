@@ -56,6 +56,11 @@ export type ModelListResponse = z.infer<typeof ModelListResponseSchema>
 export type ModelGroup = ModelListResponse["instances"][number]
 export type AvailableModelsResponse = z.infer<typeof AvailableModelsResponseSchema>
 
+type ChatSelectableModel = Pick<
+  ModelInfo,
+  "id" | "provider_model_id" | "request_route" | "runtime_source"
+>
+
 type LocalProviderInstance = {
   id: string
   preset_slug?: string
@@ -113,6 +118,27 @@ const markModelRoute = (
     })),
   })),
 })
+
+export function isDesktopLocalModel(model?: Pick<ModelInfo, "request_route" | "runtime_source"> | null) {
+  if (!model) return false
+  return model.request_route === "local_invoke" || model.runtime_source === "desktop_local"
+}
+
+export function resolveChatModelSelectionValue(model: ChatSelectableModel): string {
+  return isDesktopLocalModel(model) ? model.id : model.provider_model_id ?? model.id
+}
+
+export function matchesChatModelSelectionValue(
+  model: ChatSelectableModel,
+  value?: string | null
+): boolean {
+  if (!value) return false
+  return (
+    resolveChatModelSelectionValue(model) === value ||
+    model.id === value ||
+    model.provider_model_id === value
+  )
+}
 
 export function invalidateDesktopLocalModelsCache() {
   desktopLocalModelInventoryCache = null

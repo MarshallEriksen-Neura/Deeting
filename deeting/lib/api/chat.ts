@@ -10,6 +10,7 @@ export type ChatMessage = {
 
 export type ChatCompletionRequest = {
   model: string
+  model_selection_mode?: "pool" | "exact_provider"
   messages: ChatMessage[]
   stream?: boolean
   status_stream?: boolean

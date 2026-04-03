@@ -398,6 +398,9 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
           last_summary_generated_at TEXT,
           last_model_id TEXT,
           last_provider_model_id TEXT,
+          pinned_model_key TEXT,
+          pinned_provider_model_id TEXT,
+          pinned_binding_source TEXT,
           first_message_at TEXT,
           last_active_at TEXT NOT NULL,
           created_at TEXT NOT NULL,
@@ -773,6 +776,27 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
             "conversation_session",
             "last_provider_model_id",
             "ALTER TABLE conversation_session ADD COLUMN last_provider_model_id TEXT;",
+        )
+        .await?;
+    store
+        .ensure_column(
+            "conversation_session",
+            "pinned_model_key",
+            "ALTER TABLE conversation_session ADD COLUMN pinned_model_key TEXT;",
+        )
+        .await?;
+    store
+        .ensure_column(
+            "conversation_session",
+            "pinned_provider_model_id",
+            "ALTER TABLE conversation_session ADD COLUMN pinned_provider_model_id TEXT;",
+        )
+        .await?;
+    store
+        .ensure_column(
+            "conversation_session",
+            "pinned_binding_source",
+            "ALTER TABLE conversation_session ADD COLUMN pinned_binding_source TEXT;",
         )
         .await?;
 
@@ -2058,6 +2082,58 @@ impl McpStore {
         Ok(())
     }
 
+    pub async fn update_local_conversation_model_binding(
+        &self,
+        session_id: &str,
+        pinned_model_key: Option<&str>,
+        pinned_provider_model_id: Option<&str>,
+        pinned_binding_source: Option<&str>,
+    ) -> Result<(), McpError> {
+        let normalized_session_id = session_id.trim().to_string();
+        if normalized_session_id.is_empty() {
+            return Err(McpError::validation("session_id is required"));
+        }
+
+        let normalize_optional = |value: Option<&str>| {
+            value.and_then(|value| {
+                let trimmed = value.trim().to_string();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed)
+                }
+            })
+        };
+
+        let now = now_rfc3339()?;
+        let result = sqlx::query(
+            r#"
+            UPDATE conversation_session
+            SET pinned_model_key = ?,
+                pinned_provider_model_id = ?,
+                pinned_binding_source = ?,
+                updated_at = ?
+            WHERE id = ?;
+            "#,
+        )
+        .bind(normalize_optional(pinned_model_key))
+        .bind(normalize_optional(pinned_provider_model_id))
+        .bind(normalize_optional(pinned_binding_source))
+        .bind(&now)
+        .bind(&normalized_session_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        if result.rows_affected() == 0 {
+            return Err(McpError::NotFound(
+                "conversation session not found".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
     pub async fn get_local_conversation_title_context(
         &self,
         session_id: &str,
@@ -2573,6 +2649,7 @@ impl McpStore {
               assistant_id, title, status, message_count, total_tokens, last_summary_version,
               summarizing, summary_job_id, last_summary_generated_at,
               last_model_id, last_provider_model_id,
+              pinned_model_key, pinned_provider_model_id, pinned_binding_source,
               first_message_at, last_active_at, created_at, updated_at
             FROM conversation_session
             WHERE id = ?
@@ -2671,6 +2748,9 @@ impl McpStore {
             "last_summary_generated_at": session_row.try_get::<Option<String>, _>("last_summary_generated_at").ok().flatten(),
             "last_model_id": session_row.try_get::<Option<String>, _>("last_model_id").ok().flatten(),
             "last_provider_model_id": session_row.try_get::<Option<String>, _>("last_provider_model_id").ok().flatten(),
+            "pinned_model_key": session_row.try_get::<Option<String>, _>("pinned_model_key").ok().flatten(),
+            "pinned_provider_model_id": session_row.try_get::<Option<String>, _>("pinned_provider_model_id").ok().flatten(),
+            "pinned_binding_source": session_row.try_get::<Option<String>, _>("pinned_binding_source").ok().flatten(),
             "first_message_at": session_row.try_get::<Option<String>, _>("first_message_at").ok().flatten(),
             "last_active_at": session_row.try_get::<Option<String>, _>("last_active_at").ok().flatten(),
             "created_at": session_row.try_get::<Option<String>, _>("created_at").ok().flatten(),
@@ -2965,7 +3045,9 @@ impl McpStore {
             target_worker_ref: root_row.try_get("target_worker_ref")?,
             target_workflow_run_id: root_row.try_get("target_workflow_run_id")?,
             selection: parse_optional_json_text(root_row.try_get("selection_json")?)?,
-            available_actions: parse_optional_json_text(root_row.try_get("available_actions_json")?)?,
+            available_actions: parse_optional_json_text(
+                root_row.try_get("available_actions_json")?,
+            )?,
             summary: root_row.try_get("summary")?,
             error: root_row.try_get("error")?,
             result_payload: parse_optional_json_text(root_row.try_get("result_payload_json")?)?,
@@ -3006,14 +3088,19 @@ impl McpStore {
                 worker_ref: row.try_get("worker_ref")?,
                 summary: row.try_get("summary")?,
                 error: row.try_get("error")?,
-                available_actions: parse_optional_json_text(row.try_get("available_actions_json")?)?,
+                available_actions: parse_optional_json_text(
+                    row.try_get("available_actions_json")?,
+                )?,
                 raw_json: parse_optional_json_text(row.try_get("raw_json")?)?,
                 created_at: row.try_get("created_at")?,
                 updated_at: row.try_get("updated_at")?,
             });
         }
 
-        Ok(Some(LocalConversationExecutionTreeResponse { root, children }))
+        Ok(Some(LocalConversationExecutionTreeResponse {
+            root,
+            children,
+        }))
     }
 
     pub async fn list_local_conversation_execution_roots(
@@ -3061,7 +3148,9 @@ impl McpStore {
                 target_worker_ref: row.try_get("target_worker_ref")?,
                 target_workflow_run_id: row.try_get("target_workflow_run_id")?,
                 selection: parse_optional_json_text(row.try_get("selection_json")?)?,
-                available_actions: parse_optional_json_text(row.try_get("available_actions_json")?)?,
+                available_actions: parse_optional_json_text(
+                    row.try_get("available_actions_json")?,
+                )?,
                 summary: row.try_get("summary")?,
                 error: row.try_get("error")?,
                 result_payload: parse_optional_json_text(row.try_get("result_payload_json")?)?,
@@ -4465,6 +4554,7 @@ impl McpStore {
               id, title, status, message_count, total_tokens, last_summary_version,
               summarizing, summary_job_id, last_summary_generated_at,
               last_model_id, last_provider_model_id,
+              pinned_model_key, pinned_provider_model_id, pinned_binding_source,
               first_message_at, last_active_at, created_at, updated_at
             FROM conversation_session
             WHERE id = ?
@@ -4562,6 +4652,9 @@ impl McpStore {
             "last_summary_generated_at": session_row.try_get::<Option<String>, _>("last_summary_generated_at").ok().flatten(),
             "last_model_id": session_row.try_get::<Option<String>, _>("last_model_id").ok().flatten(),
             "last_provider_model_id": session_row.try_get::<Option<String>, _>("last_provider_model_id").ok().flatten(),
+            "pinned_model_key": session_row.try_get::<Option<String>, _>("pinned_model_key").ok().flatten(),
+            "pinned_provider_model_id": session_row.try_get::<Option<String>, _>("pinned_provider_model_id").ok().flatten(),
+            "pinned_binding_source": session_row.try_get::<Option<String>, _>("pinned_binding_source").ok().flatten(),
             "first_message_at": session_row.try_get::<Option<String>, _>("first_message_at").ok().flatten(),
             "last_active_at": session_row.try_get::<Option<String>, _>("last_active_at").ok().flatten(),
             "created_at": session_row.try_get::<Option<String>, _>("created_at").ok().flatten(),
@@ -4580,7 +4673,9 @@ impl McpStore {
 #[cfg(test)]
 mod tests {
     use super::{McpStore, CHAT_HISTORY_RETENTION_CONFIG_KEY};
-    use mcp_session::conversation::{CreateConversationMessageRequest, LocalConversationCreateRequest};
+    use mcp_session::conversation::{
+        CreateConversationMessageRequest, LocalConversationCreateRequest,
+    };
     use sqlx::Row;
     use uuid::Uuid;
 
@@ -4759,6 +4854,9 @@ mod tests {
         );
         assert_eq!(execution_tree.children.len(), 1);
         assert_eq!(execution_tree.children[0].id, "step-1");
-        assert_eq!(execution_tree.children[0].phase_id.as_deref(), Some("phase-1"));
+        assert_eq!(
+            execution_tree.children[0].phase_id.as_deref(),
+            Some("phase-1")
+        );
     }
 }

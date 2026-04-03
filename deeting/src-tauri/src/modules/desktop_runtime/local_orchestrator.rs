@@ -23,7 +23,6 @@ use crate::modules::desktop_runtime::runtime::prompt_plan::{
     render_local_router_base_prompt, render_local_runtime_system_prompt,
     router_prompt_default_local_context, router_prompt_response_language_for_locale_pref,
 };
-use crate::modules::desktop_runtime::runtime::resolve_local_model_connection;
 #[cfg(test)]
 use crate::modules::desktop_runtime::runtime::route_selector::{
     select_local_route, LocalRouteKind,
@@ -33,6 +32,7 @@ use crate::modules::desktop_runtime::runtime::{
     build_local_control_plane_result, build_local_control_plane_status_meta,
     build_local_execution_policy, build_runtime_discovery_bundle_with_runtime,
     maybe_override_route_with_custom_task_agent, render_local_route_prompt,
+    resolve_local_model_pool_connection, resolve_provider_model_connection,
     run_local_execution_plane, select_local_route_with_evidence, LocalControlPlaneResult,
     LocalExecutionPolicy, LocalExecutionRequest, LocalRouteDecision, RuntimeDiscoveryBundle,
 };
@@ -273,6 +273,7 @@ fn build_desktop_local_chat_engine(
 #[derive(Debug, Clone)]
 pub struct LocalOrchestratorInput {
     pub model: String,
+    pub model_selection_mode: Option<String>,
     pub provider_model_id: Option<String>,
     pub explicit_task_agent_id: Option<String>,
     pub root_execution_id: Option<String>,
@@ -287,6 +288,81 @@ pub struct LocalOrchestratorInput {
     pub stream: bool,
     pub status_stream: bool,
     pub selected_knowledge_file_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LocalModelSelectionMode {
+    Pool,
+    ExactProvider,
+}
+
+impl LocalModelSelectionMode {
+    fn from_input(raw: Option<&str>, compare_only: bool) -> Self {
+        if compare_only {
+            return Self::ExactProvider;
+        }
+
+        match raw
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_ascii_lowercase())
+            .as_deref()
+        {
+            Some("exact_provider") => Self::ExactProvider,
+            _ => Self::Pool,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Pool => "pool",
+            Self::ExactProvider => "exact_provider",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct LocalConversationModelBinding {
+    pinned_model_key: Option<String>,
+    pinned_provider_model_id: Option<String>,
+    pinned_binding_source: Option<String>,
+}
+
+fn extract_local_conversation_model_binding(
+    meta: Option<&serde_json::Value>,
+) -> Option<LocalConversationModelBinding> {
+    let meta = meta?.as_object()?;
+    let pinned_model_key = meta
+        .get("pinned_model_key")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let pinned_provider_model_id = meta
+        .get("pinned_provider_model_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let pinned_binding_source = meta
+        .get("pinned_binding_source")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+
+    if pinned_model_key.is_none()
+        && pinned_provider_model_id.is_none()
+        && pinned_binding_source.is_none()
+    {
+        None
+    } else {
+        Some(LocalConversationModelBinding {
+            pinned_model_key,
+            pinned_provider_model_id,
+            pinned_binding_source,
+        })
+    }
 }
 
 struct LocalWorkflowContext {
@@ -1696,7 +1772,8 @@ pub async fn execute_local_orchestrated_chat(
     ensure_required_local_models_configured(app_state).await?;
 
     let store = &app_state.mcp.store;
-    let (capability_id, summary_text, messages) = if input.compare_only {
+    let (capability_id, summary_text, messages, conversation_model_binding) = if input.compare_only
+    {
         let runtime_window = store
             .load_local_conversation_runtime_window(&session_id)
             .await
@@ -1707,7 +1784,7 @@ pub async fn execute_local_orchestrated_chat(
             .or(runtime_window.assistant_id.clone());
         let summary_text = extract_summary_text(runtime_window.summary.as_ref());
         let messages = build_compare_only_messages(runtime_window.messages)?;
-        (capability_id, summary_text, messages)
+        (capability_id, summary_text, messages, None)
     } else if input.regenerate {
         let regenerate_ctx = store
             .prepare_local_conversation_regenerate(&session_id)
@@ -1723,12 +1800,19 @@ pub async fn execute_local_orchestrated_chat(
             .or(regenerate_ctx.assistant_id)
             .or(runtime_window.assistant_id.clone());
         let summary_text = extract_summary_text(runtime_window.summary.as_ref());
+        let conversation_model_binding =
+            extract_local_conversation_model_binding(runtime_window.meta.as_ref());
         let messages = runtime_window
             .messages
             .into_iter()
             .map(convert_history_message_to_chat_input)
             .collect();
-        (capability_id, summary_text, messages)
+        (
+            capability_id,
+            summary_text,
+            messages,
+            conversation_model_binding,
+        )
     } else {
         let user_content = input
             .user_content
@@ -1774,12 +1858,19 @@ pub async fn execute_local_orchestrated_chat(
             .clone()
             .or(runtime_window.assistant_id.clone());
         let summary_text = extract_summary_text(runtime_window.summary.as_ref());
+        let conversation_model_binding =
+            extract_local_conversation_model_binding(runtime_window.meta.as_ref());
         let messages = runtime_window
             .messages
             .into_iter()
             .map(convert_history_message_to_chat_input)
             .collect();
-        (capability_id, summary_text, messages)
+        (
+            capability_id,
+            summary_text,
+            messages,
+            conversation_model_binding,
+        )
     };
 
     let mut ctx = LocalWorkflowContext::new(
@@ -1804,9 +1895,35 @@ pub async fn execute_local_orchestrated_chat(
         })),
     );
 
-    let model_connection =
-        resolve_local_model_connection(app_state, &input.model, input.provider_model_id.as_deref())
-            .await?;
+    let selection_mode = LocalModelSelectionMode::from_input(
+        input.model_selection_mode.as_deref(),
+        input.compare_only,
+    );
+    let has_existing_binding = conversation_model_binding
+        .as_ref()
+        .and_then(|binding| binding.pinned_provider_model_id.as_ref())
+        .is_some();
+    let model_connection = match selection_mode {
+        LocalModelSelectionMode::ExactProvider => {
+            resolve_provider_model_connection(
+                app_state,
+                input.provider_model_id.as_deref().ok_or_else(|| {
+                    "provider_model_id is required for exact provider routing".to_string()
+                })?,
+            )
+            .await?
+        }
+        LocalModelSelectionMode::Pool => {
+            if let Some(pinned_provider_model_id) = conversation_model_binding
+                .as_ref()
+                .and_then(|binding| binding.pinned_provider_model_id.as_deref())
+            {
+                resolve_provider_model_connection(app_state, pinned_provider_model_id).await?
+            } else {
+                resolve_local_model_pool_connection(app_state, &input.model).await?
+            }
+        }
+    };
     let provider_model_id = model_connection.provider_model_id.clone();
     let model_id = model_connection.model_id.clone();
     if !input.compare_only {
@@ -1824,6 +1941,27 @@ pub async fn execute_local_orchestrated_chat(
                 err
             );
         }
+        if matches!(selection_mode, LocalModelSelectionMode::Pool) && !has_existing_binding {
+            let pinned_model_key = model_connection
+                .logical_model_key
+                .as_deref()
+                .unwrap_or_else(|| input.model.as_str());
+            if let Err(err) = store
+                .update_local_conversation_model_binding(
+                    &session_id,
+                    Some(pinned_model_key),
+                    Some(provider_model_id.as_str()),
+                    Some("pool_selection"),
+                )
+                .await
+            {
+                log::warn!(
+                    "update_local_conversation_model_binding failed session={} err={}",
+                    session_id,
+                    err
+                );
+            }
+        }
     }
     ctx.emit_status(
         "remember",
@@ -1833,6 +1971,19 @@ pub async fn execute_local_orchestrated_chat(
         Some(json!({
             "provider_model_id": provider_model_id,
             "model_id": model_id,
+            "logical_model_key": model_connection.logical_model_key,
+            "model_selection_mode": selection_mode.as_str(),
+            "pinned_model_key": conversation_model_binding
+                .as_ref()
+                .and_then(|binding| binding.pinned_model_key.clone()),
+            "sticky_reused": conversation_model_binding
+                .as_ref()
+                .and_then(|binding| binding.pinned_provider_model_id.as_deref())
+                .map(|value| value == provider_model_id.as_str())
+                .unwrap_or(false),
+            "pinned_binding_source": conversation_model_binding
+                .as_ref()
+                .and_then(|binding| binding.pinned_binding_source.clone()),
             "candidates": 1,
         })),
     );

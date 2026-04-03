@@ -4,6 +4,7 @@ use serde_json::{json, Value};
 #[derive(Deserialize, Debug, Clone)]
 pub struct LocalChatCompletionRequest {
     pub model: String,
+    pub model_selection_mode: Option<String>,
     pub messages: Vec<Value>,
     pub stream: Option<bool>,
     pub status_stream: Option<bool>,

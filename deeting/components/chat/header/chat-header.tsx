@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
-import type { ModelGroup } from "@/lib/api/models"
+import { resolveChatModelSelectionValue, type ModelGroup } from "@/lib/api/models"
 import type { ChatAssistant } from "@/store/chat-store"
 import { useI18n } from "@/hooks/use-i18n"
 
@@ -106,7 +106,7 @@ export const ChatHeader = React.memo<ChatHeaderProps>(function ChatHeader({
                     {group.instance_name}
                   </SelectLabel>
                   {group.models.map((model) => {
-                    const modelValue = model.provider_model_id ?? model.id
+                    const modelValue = resolveChatModelSelectionValue(model)
                     return (
                       <SelectItem key={modelValue} value={modelValue}>
                         <div className="flex flex-col">

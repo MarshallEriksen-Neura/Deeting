@@ -3352,6 +3352,62 @@ for raw_line in sys.stdin:
     }
 
     #[tokio::test]
+    async fn conversation_model_binding_roundtrips_in_runtime_window_meta() {
+        let store = create_test_store("conversation-model-binding").await;
+        let session = store
+            .create_local_conversation(LocalConversationCreateRequest {
+                assistant_id: None,
+                title: None,
+            })
+            .await
+            .expect("create conversation");
+
+        store
+            .update_local_conversation_model_binding(
+                &session.session_id,
+                Some("qwen-3-32b"),
+                Some("22222222-2222-2222-2222-222222222222"),
+                Some("pool_selection"),
+            )
+            .await
+            .expect("update conversation model binding");
+
+        store
+            .append_local_conversation_message(CreateConversationMessageRequest {
+                session_id: session.session_id.clone(),
+                role: "user".to_string(),
+                content: "请继续这个会话".to_string(),
+                name: None,
+                meta_info: None,
+                is_truncated: Some(false),
+                parent_message_id: None,
+            })
+            .await
+            .expect("append user message");
+
+        let window = store
+            .load_local_conversation_runtime_window(&session.session_id)
+            .await
+            .expect("load runtime window");
+        let meta = window.meta.expect("meta exists");
+
+        assert_eq!(
+            meta.get("pinned_model_key").and_then(|value| value.as_str()),
+            Some("qwen-3-32b")
+        );
+        assert_eq!(
+            meta.get("pinned_provider_model_id")
+                .and_then(|value| value.as_str()),
+            Some("22222222-2222-2222-2222-222222222222")
+        );
+        assert_eq!(
+            meta.get("pinned_binding_source")
+                .and_then(|value| value.as_str()),
+            Some("pool_selection")
+        );
+    }
+
+    #[tokio::test]
     async fn finalize_local_compare_winner_replaces_latest_assistant_message() {
         let store = create_test_store("compare-finalize-replace").await;
         let session = store

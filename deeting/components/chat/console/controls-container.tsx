@@ -26,6 +26,7 @@ import { listLocalUserDocuments } from '@/lib/api/knowledge';
 import type { KnowledgeFile } from '@/types/knowledge';
 import { listCustomTaskAgents, type CustomTaskAgentProfile } from '@/lib/api/custom-task-agents';
 import { DESKTOP_CONFIG_KEYS, getDesktopConfig, setDesktopConfig } from '@/lib/api/desktop-config';
+import { matchesChatModelSelectionValue } from '@/lib/api/models';
 import { resolveLeadingTaskAgentMention } from '@/hooks/chat/task-agent-mention';
 import { useBrowserModeStore } from '@/store/browser-mode-store';
 import { useWorkspaceStore } from '@/store/workspace-store';
@@ -160,7 +161,7 @@ function ControlsContainer() {
   );
   const selectedModel = useMemo(
     () =>
-      models.find((model) => model.provider_model_id === config.model || model.id === config.model) ??
+      models.find((model) => matchesChatModelSelectionValue(model, config.model)) ??
       models[0],
     [models, config.model]
   );

@@ -17,6 +17,12 @@ import type { ChatAssistant } from "@/store/chat-store";
 import { useChatStore } from "@/store/chat-store";
 import { isTauriRuntime as detectTauriRuntime } from "@/lib/runtime/tauri";
 
+export interface IslandRecentMessage {
+  role: "user" | "assistant";
+  content: string;
+  createdAt: number;
+}
+
 export interface IslandApproval {
   id: string;
   title: string;
@@ -43,6 +49,8 @@ interface IslandState {
   statusLabel: string;
   summaryText: string;
   lastReplyText: string;
+  lastReplyAt: number | null;
+  recentMessages: IslandRecentMessage[];
   pendingApproval: IslandApproval | null;
   isBusy: boolean;
   errorMessage: string | null;
@@ -145,6 +153,27 @@ function deriveLastReplyText(messages: Message[]): string {
   return preview ? truncate(preview, 220) : DEFAULT_LAST_REPLY;
 }
 
+function deriveRecentMessages(messages: Message[]): IslandRecentMessage[] {
+  const recent: IslandRecentMessage[] = [];
+  for (let i = messages.length - 1; i >= 0 && recent.length < 3; i -= 1) {
+    const msg = messages[i];
+    if (msg.role === "system") continue;
+    const preview =
+      msg.role === "assistant"
+        ? messagePreview(msg)
+        : typeof msg.content === "string"
+          ? msg.content.trim()
+          : null;
+    if (!preview) continue;
+    recent.unshift({
+      role: msg.role as "user" | "assistant",
+      content: truncate(preview, 80),
+      createdAt: msg.createdAt,
+    });
+  }
+  return recent;
+}
+
 function deriveStatusLabel(
   snapshot: IslandChatSnapshot,
   pendingApproval: IslandApproval | null
@@ -204,6 +233,8 @@ export const useIslandStore = create<IslandState>((set) => ({
   statusLabel: "Idle",
   summaryText: DEFAULT_SUMMARY,
   lastReplyText: DEFAULT_LAST_REPLY,
+  lastReplyAt: null,
+  recentMessages: [],
   pendingApproval: null,
   isBusy: false,
   errorMessage: null,
@@ -217,11 +248,14 @@ export const useIslandStore = create<IslandState>((set) => ({
     })),
   restoreWorkspace: () => set({ mode: "hidden" }),
   hydrateFromChat: (snapshot) => {
+    const latestAssistant = findLatestAssistantMessage(snapshot.messages);
     const pendingApproval = derivePendingApproval(snapshot.messages);
     set({
       statusLabel: deriveStatusLabel(snapshot, pendingApproval),
       summaryText: deriveSummaryText(snapshot.messages, snapshot.selectedAssistant),
       lastReplyText: deriveLastReplyText(snapshot.messages),
+      lastReplyAt: latestAssistant?.createdAt ?? null,
+      recentMessages: deriveRecentMessages(snapshot.messages),
       pendingApproval,
       errorMessage: snapshot.errorMessage,
     });

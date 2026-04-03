@@ -2023,6 +2023,7 @@ mod tests {
         let model_connection = LocalModelConnection {
             model_id: "deeting-os".to_string(),
             provider_model_id: "deepseek-v3.1".to_string(),
+            logical_model_key: Some("deeting-os".to_string()),
             protocol_family: "openai_chat".to_string(),
         };
 

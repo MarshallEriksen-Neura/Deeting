@@ -1,13 +1,15 @@
 "use client";
 
 import { createContext, useContext } from "react";
-import type { IslandApproval, IslandMode } from "./island-store";
+import type { IslandApproval, IslandMode, IslandRecentMessage } from "./island-store";
 
 export interface IslandContextValue {
   mode: IslandMode;
   statusLabel: string;
   summaryText: string;
   lastReplyText: string;
+  lastReplyAt: number | null;
+  recentMessages: IslandRecentMessage[];
   pendingApproval: IslandApproval | null;
   isBusy: boolean;
   errorMessage: string | null;

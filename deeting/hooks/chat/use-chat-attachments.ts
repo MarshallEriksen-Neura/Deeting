@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useMemo, useState } from "react"
+import { matchesChatModelSelectionValue } from "@/lib/api/models"
 import { useChatStore } from "@/store/chat-store"
 import {
   buildChatAttachments,
@@ -24,9 +25,7 @@ export function useChatAttachments() {
 
   const selectedModel = useMemo(
     () =>
-      models.find(
-        (model) => model.provider_model_id === config.model || model.id === config.model
-      ) ?? models[0],
+      models.find((model) => matchesChatModelSelectionValue(model, config.model)) ?? models[0],
     [models, config.model]
   )
 

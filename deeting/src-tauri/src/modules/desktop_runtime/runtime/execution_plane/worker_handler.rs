@@ -1,8 +1,8 @@
 use super::{
     run_policy_scoped_chat_completion, DelegatedExecutionAction, DelegatedExecutionChildRecord,
     DelegatedExecutionKind, DelegatedExecutionRecord, DelegatedExecutionSelection,
-    DelegatedExecutionSession, DelegatedExecutionStatus, DelegatedExecutionTarget, LocalExecutionOutcome,
-    LocalExecutionRequest,
+    DelegatedExecutionSession, DelegatedExecutionStatus, DelegatedExecutionTarget,
+    LocalExecutionOutcome, LocalExecutionRequest,
 };
 use crate::modules::audio::result_blocks::build_audio_result_block;
 use crate::modules::chat_assets::resolve_chat_assets_dir;
@@ -805,18 +805,16 @@ fn build_workflow_delegated_execution_session(
             let child_records = result
                 .steps
                 .iter()
-                .map(|step| {
-                    DelegatedExecutionChildRecord {
-                        id: step.id.clone(),
-                        phase_id: Some(step.phase_id.clone()),
-                        step_type: Some(step.step_type.as_str().to_string()),
-                        title: step.title.clone(),
-                        status: step.status.as_str().to_string(),
-                        worker_ref: step.worker_ref.clone(),
-                        summary: step.worker_trace_summary.clone(),
-                        error: step.error.clone(),
-                        available_actions: workflow_child_actions(step.status.as_str()),
-                    }
+                .map(|step| DelegatedExecutionChildRecord {
+                    id: step.id.clone(),
+                    phase_id: Some(step.phase_id.clone()),
+                    step_type: Some(step.step_type.as_str().to_string()),
+                    title: step.title.clone(),
+                    status: step.status.as_str().to_string(),
+                    worker_ref: step.worker_ref.clone(),
+                    summary: step.worker_trace_summary.clone(),
+                    error: step.error.clone(),
+                    available_actions: workflow_child_actions(step.status.as_str()),
                 })
                 .collect::<Vec<_>>();
             let step_statuses = child_records
@@ -913,8 +911,12 @@ fn build_workflow_delegated_execution_session(
                         .and_then(summarize_content)
                         .or_else(|| Some(format!("workflow {}", workflow_status))),
                     result_payload: Some(payload.clone()),
-                    error: (!result.succeeded)
-                        .then(|| format!("workflow execution finished with status {}", workflow_status)),
+                    error: (!result.succeeded).then(|| {
+                        format!(
+                            "workflow execution finished with status {}",
+                            workflow_status
+                        )
+                    }),
                     started_at_ms,
                     completed_at_ms: Some(chrono::Utc::now().timestamp_millis()),
                 },

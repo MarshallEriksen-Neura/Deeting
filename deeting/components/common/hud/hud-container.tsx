@@ -12,6 +12,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { useChatService } from '@/hooks/use-chat-service';
 import { useI18n } from '@/hooks/use-i18n';
 import { isTauriRuntime as detectTauriRuntime } from '@/lib/runtime/tauri';
+import { resolveChatModelSelectionValue } from '@/lib/api/models';
 import { resolveModelVisual } from '@/components/models/model-visual';
 import { resolveStatusDetail } from '@/lib/chat/status-detail';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -143,7 +144,7 @@ export default function HUD() {
     if (!models.length) return;
     const exists = models.some((model) => model.id === config.model || model.provider_model_id === config.model);
     if (!exists) {
-      setConfig({ model: models[0].provider_model_id ?? models[0].id });
+      setConfig({ model: resolveChatModelSelectionValue(models[0]) });
     }
   }, [config.model, models, setConfig]);
 

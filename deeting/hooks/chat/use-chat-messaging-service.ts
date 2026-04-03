@@ -17,6 +17,10 @@ import {
 } from "@/lib/chat/history-loader"
 import { createRequestId } from "@/lib/chat/request-id"
 import { useI18n } from "@/hooks/use-i18n"
+import {
+  isDesktopLocalModel,
+  matchesChatModelSelectionValue,
+} from "@/lib/api/models"
 
 const WEB_SESSION_STORAGE_KEY = "deeting-chat-session:router"
 
@@ -381,11 +385,6 @@ export function extractWorkflowRunIdFromBlocks(blocks: MessageBlock[]): string |
   }
 
   return null
-}
-
-function isDesktopLocalModel(model?: { request_route?: string; runtime_source?: string }) {
-  if (!model) return false
-  return model.request_route === "local_invoke" || model.runtime_source === "desktop_local"
 }
 
 export function buildStatusRepeatKey(stage: string | null, code: string | null) {
@@ -840,7 +839,7 @@ export function useChatMessagingService() {
     const currentMessages = useChatStore.getState().messages
     let dispatchedToConversation = false
     const selectedModel =
-      models.find((model) => model.provider_model_id === config.model || model.id === config.model) ??
+      models.find((model) => matchesChatModelSelectionValue(model, config.model)) ??
       models[0]
     const preferLocalRoute =
       isTauriRuntime && (selectedModel?.request_route ?? "local_invoke") === "local_invoke"
@@ -938,7 +937,12 @@ export function useChatMessagingService() {
       )
       const payload = {
         model: selectedModel.id,
-        provider_model_id: selectedModel.provider_model_id ?? undefined,
+        model_selection_mode:
+          preferLocalRoute && isDesktopLocalModel(selectedModel) ? "pool" : undefined,
+        provider_model_id:
+          preferLocalRoute && isDesktopLocalModel(selectedModel)
+            ? undefined
+            : selectedModel.provider_model_id ?? undefined,
         explicit_task_agent_id: explicitTaskAgentId,
         messages: requestMessages,
         temperature: config.temperature,
@@ -1124,7 +1128,7 @@ export function useChatMessagingService() {
     const targetMessage = currentMessages[targetIndex]
 
     const selectedModel =
-      models.find((model) => model.provider_model_id === config.model || model.id === config.model) ??
+      models.find((model) => matchesChatModelSelectionValue(model, config.model)) ??
       models[0]
     const preferLocalRoute =
       isTauriRuntime && (selectedModel?.request_route ?? "local_invoke") === "local_invoke"
@@ -1166,7 +1170,12 @@ export function useChatMessagingService() {
       )
       const payload = {
         model: selectedModel.id,
-        provider_model_id: selectedModel.provider_model_id ?? undefined,
+        model_selection_mode:
+          preferLocalRoute && isDesktopLocalModel(selectedModel) ? "pool" : undefined,
+        provider_model_id:
+          preferLocalRoute && isDesktopLocalModel(selectedModel)
+            ? undefined
+            : selectedModel.provider_model_id ?? undefined,
         messages: requestMessages,
         temperature: config.temperature,
         max_tokens: resolveRequestedMaxTokens(config.maxTokens),
@@ -1360,6 +1369,7 @@ export function useChatMessagingService() {
       await runStreamedRequest({
         payload: {
           model: selectedCompareModel.id,
+          model_selection_mode: "exact_provider",
           provider_model_id: selectedCompareModel.provider_model_id ?? undefined,
           messages: requestMessages,
           temperature: config.temperature,

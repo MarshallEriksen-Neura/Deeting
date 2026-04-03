@@ -27,6 +27,7 @@ pub(crate) use capability_contract::CapabilityExecutionContract;
 pub(crate) use chat_completion::normalize_chat_completion_response;
 pub(crate) use chat_completion::{
     request_provider_chat_completion, resolve_local_model_connection,
+    resolve_local_model_pool_connection, resolve_provider_model_connection,
 };
 #[cfg(test)]
 pub(crate) use code_mode_catalog::{

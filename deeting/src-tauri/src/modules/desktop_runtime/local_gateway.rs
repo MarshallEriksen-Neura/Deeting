@@ -28,9 +28,8 @@ use mcp_session::conversation::{
 };
 use mcp_transport::gateway::{
     build_stream_error_payload, extract_root_execution_id, extract_selected_knowledge_file_ids,
-    normalize_optional_string,
-    GatewayHealthResponse, LocalChatCancelResponse, LocalChatCompletionRequest,
-    LocalCompareFinalizeErrorResponse,
+    normalize_optional_string, GatewayHealthResponse, LocalChatCancelResponse,
+    LocalChatCompletionRequest, LocalCompareFinalizeErrorResponse,
 };
 
 pub struct LocalGatewayState {
@@ -400,6 +399,7 @@ fn map_request_to_orchestrator_input(
 
     Ok(LocalOrchestratorInput {
         model: payload.model,
+        model_selection_mode: normalize_optional_string(payload.model_selection_mode.as_deref()),
         provider_model_id: normalize_optional_string(payload.provider_model_id.as_deref()),
         explicit_task_agent_id: normalize_optional_string(
             payload.explicit_task_agent_id.as_deref(),

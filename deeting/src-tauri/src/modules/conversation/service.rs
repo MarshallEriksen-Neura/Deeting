@@ -180,6 +180,7 @@ pub async fn execute_text_chat_raw(
 
     let input = LocalOrchestratorInput {
         model: model_reference,
+        model_selection_mode: Some("pool".to_string()),
         provider_model_id,
         explicit_task_agent_id: None,
         root_execution_id: None,
@@ -312,10 +313,7 @@ pub async fn approve_tool(
     use crate::modules::desktop_runtime::runtime::resume_suspended_local_chat_after_approval;
     use crate::modules::mcp::commands::runtime::approve_mcp_tool_inner_with_context;
 
-    let approval_context =
-        app_state
-            .mcp
-            .build_approval_context(call_id, None, None);
+    let approval_context = app_state.mcp.build_approval_context(call_id, None, None);
 
     let approved = approve_mcp_tool_inner_with_context(
         &approval_context,

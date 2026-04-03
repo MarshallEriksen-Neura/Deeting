@@ -111,6 +111,46 @@ describe("useChatMessagingService pending takeover orchestration", () => {
     )
   })
 
+  it("uses pool selection for desktop local chat requests", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI_INTERNALS__ = {}
+    mockStreamDesktopLocalChatCompletion.mockResolvedValueOnce("")
+
+    useChatStore.setState({
+      models: [
+        {
+          id: "qwen-local",
+          provider_model_id: "provider-local-1",
+          request_route: "local_invoke",
+          runtime_source: "desktop_local",
+        } as any,
+      ],
+      config: {
+        model: "qwen-local",
+        temperature: 0.7,
+        topP: 1,
+        maxTokens: null,
+      },
+      sessionId: "session-local-1",
+      input: "hello desktop",
+      isLoading: false,
+    })
+
+    const { result } = renderHook(() => useChatMessagingService())
+
+    await act(async () => {
+      await result.current.sendMessage()
+    })
+
+    expect(mockStreamDesktopLocalChatCompletion).toHaveBeenCalledTimes(1)
+    const payload = mockStreamDesktopLocalChatCompletion.mock.calls[0]?.[0]
+    expect(payload?.model).toBe("qwen-local")
+    expect(payload?.model_selection_mode).toBe("pool")
+    expect(payload?.provider_model_id).toBeUndefined()
+
+    delete windowWithTauri.__TAURI_INTERNALS__
+  })
+
   it("cancels the active request and sends the pending takeover draft", async () => {
     const firstRequest = createDeferred<string>()
     mockStreamChatCompletion.mockImplementationOnce(async (_payload, _handlers, control) => {

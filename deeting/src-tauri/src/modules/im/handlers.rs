@@ -285,8 +285,7 @@ pub(crate) async fn build_direct_card_action_outcome(
             let tool_name = conversation::action_string(action_value, "tool_name")
                 .unwrap_or_else(|| "工具调用".to_string());
 
-            let result =
-                conversation::reject_tool(app_state, &approval_token, &tool_name).await?;
+            let result = conversation::reject_tool(app_state, &approval_token, &tool_name).await?;
 
             let follow_up_messages = follow_up_texts_to_messages(result.follow_up_texts);
 

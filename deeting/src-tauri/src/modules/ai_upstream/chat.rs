@@ -122,6 +122,128 @@ fn inject_runtime_metrics(
     }
 }
 
+fn normalize_model_pool_key(
+    model: &crate::modules::providers::types::ProviderModel,
+) -> Option<String> {
+    model
+        .unified_model_id
+        .clone()
+        .or_else(|| (!model.model_id.trim().is_empty()).then(|| model.model_id.clone()))
+}
+
+fn model_matches_requested(
+    model: &crate::modules::providers::types::ProviderModel,
+    requested: &str,
+) -> bool {
+    if requested.is_empty() {
+        return false;
+    }
+
+    model.model_id.eq_ignore_ascii_case(requested)
+        || model.id.to_string().eq_ignore_ascii_case(requested)
+        || model
+            .unified_model_id
+            .as_deref()
+            .map(|value| value.eq_ignore_ascii_case(requested))
+            .unwrap_or(false)
+        || model
+            .display_name
+            .as_deref()
+            .map(|value| value.eq_ignore_ascii_case(requested))
+            .unwrap_or(false)
+}
+
+pub(crate) async fn resolve_provider_model_connection(
+    app_state: &AppState,
+    provider_model_id: &str,
+) -> Result<LocalModelConnection, String> {
+    let provider_model_id = provider_model_id.trim();
+    if provider_model_id.is_empty() {
+        return Err("provider model id is required".to_string());
+    }
+
+    let model_uuid = Uuid::parse_str(provider_model_id).map_err(to_string)?;
+    let model = app_state
+        .providers
+        .store
+        .get_model(&model_uuid)
+        .await
+        .map_err(to_string)?
+        .ok_or_else(|| "provider model not found".to_string())?;
+    Ok(LocalModelConnection {
+        provider_model_id: model.id.to_string(),
+        model_id: model.model_id.clone(),
+        logical_model_key: normalize_model_pool_key(&model),
+        protocol_family: infer_protocol_family(
+            app_state
+                .providers
+                .store
+                .get_instance_connection(&model.instance_id.to_string())
+                .await
+                .map_err(to_string)?
+                .ok_or_else(|| "provider instance connection not found".to_string())?
+                .protocol
+                .as_deref()
+                .unwrap_or("openai"),
+            model.upstream_path.as_str(),
+        )
+        .to_string(),
+    })
+}
+
+pub(crate) async fn resolve_local_model_pool_connection(
+    app_state: &AppState,
+    requested_model: &str,
+) -> Result<LocalModelConnection, String> {
+    let models = app_state
+        .providers
+        .store
+        .list_active_models()
+        .await
+        .map_err(to_string)?;
+    if models.is_empty() {
+        return Err("no active provider model configured".to_string());
+    }
+
+    let requested = requested_model.trim().to_lowercase();
+    if requested.is_empty() {
+        return Err("model pool key is required".to_string());
+    }
+
+    let candidate_models: Vec<_> = models
+        .into_iter()
+        .filter(|model| model_matches_requested(model, &requested))
+        .collect();
+    if candidate_models.is_empty() {
+        return Err(format!("requested model pool not found: {requested_model}"));
+    }
+
+    let selected = if candidate_models.len() == 1 {
+        candidate_models[0].clone()
+    } else {
+        select_model_by_bandit(app_state, &candidate_models).await
+    };
+    Ok(LocalModelConnection {
+        provider_model_id: selected.id.to_string(),
+        model_id: selected.model_id.clone(),
+        logical_model_key: normalize_model_pool_key(&selected),
+        protocol_family: infer_protocol_family(
+            app_state
+                .providers
+                .store
+                .get_instance_connection(&selected.instance_id.to_string())
+                .await
+                .map_err(to_string)?
+                .ok_or_else(|| "provider instance connection not found".to_string())?
+                .protocol
+                .as_deref()
+                .unwrap_or("openai"),
+            selected.upstream_path.as_str(),
+        )
+        .to_string(),
+    })
+}
+
 pub(crate) async fn resolve_local_model_connection(
     app_state: &AppState,
     requested_model: &str,
@@ -130,32 +252,7 @@ pub(crate) async fn resolve_local_model_connection(
     if let Some(provider_model_id) = requested_provider_model_id {
         let provider_model_id = provider_model_id.trim();
         if !provider_model_id.is_empty() {
-            let model_uuid = Uuid::parse_str(provider_model_id).map_err(to_string)?;
-            let model = app_state
-                .providers
-                .store
-                .get_model(&model_uuid)
-                .await
-                .map_err(to_string)?
-                .ok_or_else(|| "provider model not found".to_string())?;
-            return Ok(LocalModelConnection {
-                provider_model_id: model.id.to_string(),
-                model_id: model.model_id,
-                protocol_family: infer_protocol_family(
-                    app_state
-                        .providers
-                        .store
-                        .get_instance_connection(&model.instance_id.to_string())
-                        .await
-                        .map_err(to_string)?
-                        .ok_or_else(|| "provider instance connection not found".to_string())?
-                        .protocol
-                        .as_deref()
-                        .unwrap_or("openai"),
-                    model.upstream_path.as_str(),
-                )
-                .to_string(),
-            });
+            return resolve_provider_model_connection(app_state, provider_model_id).await;
         }
     }
 
@@ -169,26 +266,14 @@ pub(crate) async fn resolve_local_model_connection(
         return Err("no active provider model configured".to_string());
     }
     let requested = requested_model.trim().to_lowercase();
-    let exact_match = models.iter().find(|model| {
-        if requested.is_empty() {
-            return false;
-        }
-        model.model_id.eq_ignore_ascii_case(&requested)
-            || model
-                .unified_model_id
-                .as_deref()
-                .map(|value| value.eq_ignore_ascii_case(&requested))
-                .unwrap_or(false)
-            || model
-                .display_name
-                .as_deref()
-                .map(|value| value.eq_ignore_ascii_case(&requested))
-                .unwrap_or(false)
-    });
+    let exact_match = models
+        .iter()
+        .find(|model| model_matches_requested(model, &requested));
     if let Some(matched) = exact_match {
         return Ok(LocalModelConnection {
             provider_model_id: matched.id.to_string(),
             model_id: matched.model_id.clone(),
+            logical_model_key: normalize_model_pool_key(matched),
             protocol_family: infer_protocol_family(
                 app_state
                     .providers
@@ -210,6 +295,7 @@ pub(crate) async fn resolve_local_model_connection(
     Ok(LocalModelConnection {
         provider_model_id: selected.id.to_string(),
         model_id: selected.model_id.clone(),
+        logical_model_key: normalize_model_pool_key(&selected),
         protocol_family: infer_protocol_family(
             app_state
                 .providers

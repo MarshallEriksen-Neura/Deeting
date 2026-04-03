@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/hooks/use-i18n"
 import { useChatStore } from "@/store/chat-store"
+import { matchesChatModelSelectionValue } from "@/lib/api/models"
 import { AttachmentPreview } from "./attachment-preview"
 import type { ChatAttachment } from "@/lib/chat/message-content"
 import {
@@ -115,8 +116,7 @@ export const ChatInput = React.memo<ChatInputProps>(
     const selectedModel = React.useMemo(
       () =>
         models.find(
-          (model) =>
-            model.provider_model_id === config.model || model.id === config.model
+          (model) => matchesChatModelSelectionValue(model, config.model)
         ) ?? models[0],
       [models, config.model]
     )

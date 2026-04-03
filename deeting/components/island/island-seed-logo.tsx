@@ -17,7 +17,9 @@ export function IslandSeedLogo({
     <div
       className={cn(
         "relative flex items-center justify-center shrink-0",
-        isActive && "animate-[island-breathe_3s_ease-in-out_infinite]",
+        isActive
+          ? "animate-[island-breathe_3s_ease-in-out_infinite]"
+          : "animate-[island-seed-sway_4s_ease-in-out_infinite]",
         className
       )}
       style={{ width: size, height: size }}
