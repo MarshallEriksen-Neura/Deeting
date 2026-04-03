@@ -387,9 +387,10 @@ export const useIslandStore = create<IslandState>((set) => ({
             "type" in data &&
             (data as { type?: string }).type === "error"
           ) {
+            const message = (data as { message?: unknown }).message;
             streamErrorMessage =
-              typeof (data as { message?: unknown }).message === "string"
-                ? (data as { message: string }).message
+              typeof message === "string"
+                ? message
                 : "Island send failed";
           }
         },
