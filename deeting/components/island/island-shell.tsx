@@ -137,8 +137,7 @@ export function IslandShell() {
             "relative rounded-[1.75rem] overflow-hidden",
             "border border-island-shell-border",
             "bg-island-shell-bg backdrop-blur-2xl",
-            "shadow-[0_0_0_1px_var(--island-gold-stroke-soft),0_12px_36px_-16px_rgba(0,0,0,0.18)]",
-            "ring-1 ring-[var(--island-gold-stroke-soft)]"
+            "shadow-[0_12px_36px_-16px_rgba(0,0,0,0.18)]"
           )}
         >
           <AnimatePresence>

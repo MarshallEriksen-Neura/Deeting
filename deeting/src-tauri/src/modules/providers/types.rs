@@ -115,6 +115,50 @@ pub struct LocalProviderHealth {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct LocalModelPoolSessionBinding {
+    pub session_id: String,
+    pub title: Option<String>,
+    pub pinned_provider_model_id: String,
+    pub last_active_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct LocalModelPoolMemberStatus {
+    pub provider_model_id: String,
+    pub instance_id: String,
+    pub instance_name: String,
+    pub provider: Option<String>,
+    pub model_id: String,
+    pub unified_model_id: Option<String>,
+    pub display_name: Option<String>,
+    pub status: String,
+    pub success_rate: Option<f64>,
+    pub avg_latency_ms: Option<f64>,
+    pub total_trials: i64,
+    pub successes: i64,
+    pub failures: i64,
+    pub cooldown_until: Option<String>,
+    pub is_pinned: bool,
+    pub pinned_session_count: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct LocalModelPoolStatus {
+    pub pool_key: String,
+    pub display_name: String,
+    pub provider_count: i64,
+    pub active_provider_count: i64,
+    pub cooling_down_count: i64,
+    pub active_session_count: i64,
+    pub health_score: i64,
+    pub success_rate: Option<f64>,
+    pub avg_latency_ms: Option<f64>,
+    pub members: Vec<LocalModelPoolMemberStatus>,
+    pub bindings: Vec<LocalModelPoolSessionBinding>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UserSecretary {
     pub id: String,
     pub user_id: String,

@@ -76,6 +76,12 @@ export const userNavigation: NavGroup[] = [
         icon: "cpu",
       },
       {
+        id: "model-pools",
+        label: "nav.modelPools",
+        href: "/dashboard/user/model-pools",
+        icon: "activity",
+      },
+      {
         id: "task-agents",
         label: "nav.taskAgents",
         href: "/dashboard/user/task-agents",

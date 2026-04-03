@@ -1,0 +1,44 @@
+{
+  "model-pools": {
+    "title": "模型池状态",
+    "subtitle": "查看桌面端本地模型池健康度、会话粘性绑定，以及池内各 provider 的当前可用性。",
+    "desktopOnlyTitle": "仅桌面本地可用",
+    "desktopOnlyDescription": "模型池状态当前基于桌面端本地 provider 注册表、本地 bandit 状态和本地会话绑定聚合而成。",
+    "loading": "正在加载模型池状态...",
+    "errorTitle": "模型池状态加载失败",
+    "emptyTitle": "暂时还没有模型池",
+    "emptyDescription": "请先添加或同步本地 provider 模型。至少存在一个活跃本地模型后，这里才会出现模型池。",
+    "metrics": {
+      "pools": "模型池",
+      "sessions": "已绑定会话",
+      "cooling": "冷却中 Provider",
+      "health": "平均健康度"
+    },
+    "sections": {
+      "overview": "模型池总览",
+      "bindings": "当前绑定",
+      "members": "池内成员"
+    },
+    "labels": {
+      "providers": "{count} 个 provider",
+      "sessions": "{count} 个会话",
+      "cooling": "{count} 个冷却中",
+      "latency": "平均延迟",
+      "success": "成功率",
+      "unknown": "未知",
+      "none": "无",
+      "battery": "池电量",
+      "pinned": "当前已绑定",
+      "status": "状态",
+      "poolKey": "池键",
+      "boundProvider": "绑定 Provider",
+      "updatedAt": "更新时间"
+    },
+    "status": {
+      "active": "活跃",
+      "ready": "就绪",
+      "cooldown": "冷却中",
+      "idle": "空闲"
+    }
+  }
+}

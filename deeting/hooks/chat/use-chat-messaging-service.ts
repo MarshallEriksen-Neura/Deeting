@@ -843,6 +843,8 @@ export function useChatMessagingService() {
       models[0]
     const preferLocalRoute =
       isTauriRuntime && (selectedModel?.request_route ?? "local_invoke") === "local_invoke"
+    const modelSelectionMode =
+      preferLocalRoute && isDesktopLocalModel(selectedModel) ? ("pool" as const) : undefined
     const selectedAssistantForRequest = selectedAssistant
     if (!selectedModel) return false
 
@@ -937,8 +939,7 @@ export function useChatMessagingService() {
       )
       const payload = {
         model: selectedModel.id,
-        model_selection_mode:
-          preferLocalRoute && isDesktopLocalModel(selectedModel) ? "pool" : undefined,
+        model_selection_mode: modelSelectionMode,
         provider_model_id:
           preferLocalRoute && isDesktopLocalModel(selectedModel)
             ? undefined
@@ -1132,6 +1133,8 @@ export function useChatMessagingService() {
       models[0]
     const preferLocalRoute =
       isTauriRuntime && (selectedModel?.request_route ?? "local_invoke") === "local_invoke"
+    const modelSelectionMode =
+      preferLocalRoute && isDesktopLocalModel(selectedModel) ? ("pool" as const) : undefined
     const selectedAssistantForRequest = selectedAssistant
     if (!selectedModel) return
 
@@ -1170,8 +1173,7 @@ export function useChatMessagingService() {
       )
       const payload = {
         model: selectedModel.id,
-        model_selection_mode:
-          preferLocalRoute && isDesktopLocalModel(selectedModel) ? "pool" : undefined,
+        model_selection_mode: modelSelectionMode,
         provider_model_id:
           preferLocalRoute && isDesktopLocalModel(selectedModel)
             ? undefined

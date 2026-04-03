@@ -1,6 +1,8 @@
+use std::collections::HashMap;
 use std::time::Instant;
 
 use serde_json::Value;
+use sqlx::Row;
 use tauri::State;
 use uuid::Uuid;
 
@@ -8,7 +10,8 @@ use crate::modules::providers::types::{
     BanditArmState, BanditFeedbackRequest, CreateInstanceRequest, DesktopObjectStorageConfig,
     DesktopObjectStorageConfigUpdateRequest, DesktopObjectStorageReadRequest,
     DesktopObjectStorageReadTicket, DesktopObjectStorageUploadRequest,
-    DesktopObjectStorageUploadTicket, LocalProviderHealth, ProviderInstance, ProviderModel,
+    DesktopObjectStorageUploadTicket, LocalModelPoolMemberStatus, LocalModelPoolSessionBinding,
+    LocalModelPoolStatus, LocalProviderHealth, ProviderInstance, ProviderModel,
     ProviderModelTestRequest, ProviderModelTestResponse, ProviderModelUpdateRequest,
     ProviderModelsQuickAddRequest, ProviderPreset, ProviderVerifyRequest, ProviderVerifyResponse,
     UpdateInstanceRequest, UserEmbeddingConfig, UserEmbeddingConfigUpdateRequest, UserSecretary,
@@ -32,6 +35,319 @@ fn provider_latency_from_meta(meta: &Value) -> i64 {
     }
 
     0
+}
+
+fn now_rfc3339() -> String {
+    time::OffsetDateTime::now_utc()
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap_or_default()
+}
+
+fn normalize_pool_key(model: &ProviderModel) -> String {
+    model
+        .unified_model_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| model.model_id.trim())
+        .to_string()
+}
+
+fn compute_health_score(
+    provider_count: i64,
+    active_provider_count: i64,
+    success_rate: Option<f64>,
+    avg_latency_ms: Option<f64>,
+) -> i64 {
+    if provider_count <= 0 {
+        return 0;
+    }
+
+    let availability = (active_provider_count as f64 / provider_count as f64).clamp(0.0, 1.0);
+    let success = success_rate.unwrap_or(0.65).clamp(0.0, 1.0);
+    let latency = match avg_latency_ms.unwrap_or(1200.0) {
+        value if value <= 600.0 => 1.0,
+        value if value <= 1200.0 => 0.82,
+        value if value <= 2400.0 => 0.58,
+        value if value <= 4000.0 => 0.35,
+        _ => 0.2,
+    };
+
+    ((availability * 0.5 + success * 0.35 + latency * 0.15) * 100.0).round() as i64
+}
+
+#[tauri::command]
+pub async fn list_local_model_pools_status(
+    state: State<'_, AppState>,
+) -> Result<Vec<LocalModelPoolStatus>, String> {
+    use crate::modules::providers::store::BANDIT_DEFAULT_SCENE;
+
+    let instances = state
+        .providers
+        .store
+        .list_instances()
+        .await
+        .map_err(|e| e.to_string())?;
+    let instance_map: HashMap<String, ProviderInstance> = instances
+        .into_iter()
+        .map(|instance| (instance.id.to_string(), instance))
+        .collect();
+
+    let models = state
+        .providers
+        .store
+        .list_active_models()
+        .await
+        .map_err(|e| e.to_string())?;
+    let models_by_provider_id: HashMap<String, ProviderModel> = models
+        .iter()
+        .cloned()
+        .map(|model| (model.id.to_string(), model))
+        .collect();
+
+    let arm_states = state
+        .providers
+        .store
+        .list_bandit_arm_states(Some(BANDIT_DEFAULT_SCENE.to_string()))
+        .await
+        .map_err(|e| e.to_string())?;
+    let arm_map: HashMap<String, BanditArmState> = arm_states
+        .into_iter()
+        .filter_map(|state| state.arm_id.clone().map(|arm_id| (arm_id, state)))
+        .collect();
+
+    let session_rows = sqlx::query(
+        r#"
+        SELECT
+          id,
+          title,
+          pinned_model_key,
+          pinned_provider_model_id,
+          last_active_at,
+          updated_at
+        FROM conversation_session
+        WHERE pinned_provider_model_id IS NOT NULL
+        ORDER BY COALESCE(last_active_at, updated_at, created_at) DESC;
+        "#,
+    )
+    .fetch_all(&state.mcp.store.pool)
+    .await
+    .map_err(|err| err.to_string())?;
+
+    let mut bindings_by_pool: HashMap<String, Vec<LocalModelPoolSessionBinding>> = HashMap::new();
+    let mut pinned_counts: HashMap<String, i64> = HashMap::new();
+    for row in session_rows {
+        let Some(pinned_provider_model_id) = row
+            .try_get::<Option<String>, _>("pinned_provider_model_id")
+            .map_err(|err| err.to_string())?
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+
+        let pool_key = row
+            .try_get::<Option<String>, _>("pinned_model_key")
+            .map_err(|err| err.to_string())?
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .or_else(|| {
+                models_by_provider_id
+                    .get(&pinned_provider_model_id)
+                    .map(normalize_pool_key)
+            });
+        let Some(pool_key) = pool_key else {
+            continue;
+        };
+
+        *pinned_counts
+            .entry(pinned_provider_model_id.clone())
+            .or_insert(0) += 1;
+        bindings_by_pool
+            .entry(pool_key)
+            .or_default()
+            .push(LocalModelPoolSessionBinding {
+                session_id: row
+                    .try_get::<String, _>("id")
+                    .map_err(|err| err.to_string())?,
+                title: row
+                    .try_get::<Option<String>, _>("title")
+                    .map_err(|err| err.to_string())?,
+                pinned_provider_model_id,
+                last_active_at: row
+                    .try_get::<Option<String>, _>("last_active_at")
+                    .map_err(|err| err.to_string())?,
+                updated_at: row
+                    .try_get::<Option<String>, _>("updated_at")
+                    .map_err(|err| err.to_string())?,
+            });
+    }
+
+    let current_time = now_rfc3339();
+    let mut grouped_models: HashMap<String, Vec<ProviderModel>> = HashMap::new();
+    for model in models {
+        grouped_models
+            .entry(normalize_pool_key(&model))
+            .or_default()
+            .push(model);
+    }
+
+    let mut pools = grouped_models
+        .into_iter()
+        .map(|(pool_key, pool_models)| {
+            let mut total_trials = 0_i64;
+            let mut total_successes = 0_i64;
+            let mut total_failures = 0_i64;
+            let mut latency_sum = 0.0_f64;
+            let mut latency_count = 0_i64;
+            let mut cooling_down_count = 0_i64;
+
+            let mut members = pool_models
+                .iter()
+                .map(|model| {
+                    let arm = arm_map.get(&model.id.to_string());
+                    let is_cooling_down = arm
+                        .and_then(|state| state.cooldown_until.as_deref())
+                        .map(|until| until > current_time.as_str())
+                        .unwrap_or(false);
+                    if is_cooling_down {
+                        cooling_down_count += 1;
+                    }
+
+                    let total_trials_for_model = arm.map(|state| state.total_trials).unwrap_or(0);
+                    let successes = arm.map(|state| state.successes).unwrap_or(0);
+                    let failures = arm.map(|state| state.failures).unwrap_or(0);
+                    total_trials += total_trials_for_model;
+                    total_successes += successes;
+                    total_failures += failures;
+
+                    let avg_latency_ms = if let Some(state) = arm {
+                        if state.total_trials > 0 && state.total_latency_ms > 0 {
+                            let value = state.total_latency_ms as f64 / state.total_trials as f64;
+                            latency_sum += value;
+                            latency_count += 1;
+                            Some(value)
+                        } else {
+                            let fallback = provider_latency_from_meta(&model.extra_meta);
+                            if fallback > 0 {
+                                let value = fallback as f64;
+                                latency_sum += value;
+                                latency_count += 1;
+                                Some(value)
+                            } else {
+                                None
+                            }
+                        }
+                    } else {
+                        let fallback = provider_latency_from_meta(&model.extra_meta);
+                        if fallback > 0 {
+                            let value = fallback as f64;
+                            latency_sum += value;
+                            latency_count += 1;
+                            Some(value)
+                        } else {
+                            None
+                        }
+                    };
+
+                    let pinned_session_count = pinned_counts
+                        .get(&model.id.to_string())
+                        .copied()
+                        .unwrap_or(0);
+                    let instance = instance_map.get(&model.instance_id.to_string());
+                    let success_rate = if total_trials_for_model > 0 {
+                        Some(successes as f64 / total_trials_for_model as f64)
+                    } else {
+                        None
+                    };
+
+                    LocalModelPoolMemberStatus {
+                        provider_model_id: model.id.to_string(),
+                        instance_id: model.instance_id.to_string(),
+                        instance_name: instance
+                            .map(|item| item.name.clone())
+                            .filter(|value| !value.trim().is_empty())
+                            .unwrap_or_else(|| "Local Provider".to_string()),
+                        provider: instance.map(|item| item.preset_slug.clone()),
+                        model_id: model.model_id.clone(),
+                        unified_model_id: model.unified_model_id.clone(),
+                        display_name: model.display_name.clone(),
+                        status: if is_cooling_down {
+                            "cooldown".to_string()
+                        } else if pinned_session_count > 0 {
+                            "active".to_string()
+                        } else if total_trials_for_model > 0 {
+                            "ready".to_string()
+                        } else {
+                            "idle".to_string()
+                        },
+                        success_rate,
+                        avg_latency_ms,
+                        total_trials: total_trials_for_model,
+                        successes,
+                        failures,
+                        cooldown_until: arm.and_then(|state| state.cooldown_until.clone()),
+                        is_pinned: pinned_session_count > 0,
+                        pinned_session_count,
+                    }
+                })
+                .collect::<Vec<_>>();
+
+            members.sort_by(|left, right| {
+                right
+                    .pinned_session_count
+                    .cmp(&left.pinned_session_count)
+                    .then_with(|| left.instance_name.cmp(&right.instance_name))
+            });
+
+            let bindings = bindings_by_pool.remove(&pool_key).unwrap_or_default();
+            let provider_count = members.len() as i64;
+            let active_provider_count = provider_count.saturating_sub(cooling_down_count);
+            let success_rate = if total_trials > 0 {
+                Some(total_successes as f64 / total_trials as f64)
+            } else {
+                None
+            };
+            let avg_latency_ms = if latency_count > 0 {
+                Some(latency_sum / latency_count as f64)
+            } else {
+                None
+            };
+            let display_name = members
+                .iter()
+                .find_map(|member| member.display_name.clone())
+                .unwrap_or_else(|| pool_key.clone());
+
+            LocalModelPoolStatus {
+                health_score: compute_health_score(
+                    provider_count,
+                    active_provider_count,
+                    success_rate,
+                    avg_latency_ms,
+                ),
+                pool_key,
+                display_name,
+                provider_count,
+                active_provider_count,
+                cooling_down_count,
+                active_session_count: bindings.len() as i64,
+                success_rate,
+                avg_latency_ms,
+                members,
+                bindings,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    pools.sort_by(|left, right| {
+        right
+            .active_session_count
+            .cmp(&left.active_session_count)
+            .then_with(|| right.health_score.cmp(&left.health_score))
+            .then_with(|| left.display_name.cmp(&right.display_name))
+    });
+
+    Ok(pools)
 }
 
 #[tauri::command]

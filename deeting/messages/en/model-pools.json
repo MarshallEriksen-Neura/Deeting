@@ -1,0 +1,44 @@
+{
+  "model-pools": {
+    "title": "Model Pool Status",
+    "subtitle": "Inspect desktop-local pool health, sticky bindings, and per-provider readiness before routing decisions drift.",
+    "desktopOnlyTitle": "Desktop local only",
+    "desktopOnlyDescription": "Model pool status is derived from the desktop local provider registry, local bandit state, and local conversation bindings.",
+    "loading": "Loading pool status...",
+    "errorTitle": "Failed to load pool status",
+    "emptyTitle": "No model pools yet",
+    "emptyDescription": "Add or sync local provider models first. Pools appear when at least one active local model is available.",
+    "metrics": {
+      "pools": "Pools",
+      "sessions": "Pinned Sessions",
+      "cooling": "Cooling Providers",
+      "health": "Average Health"
+    },
+    "sections": {
+      "overview": "Pool Overview",
+      "bindings": "Active Bindings",
+      "members": "Pool Members"
+    },
+    "labels": {
+      "providers": "{count} providers",
+      "sessions": "{count} sessions",
+      "cooling": "{count} cooling",
+      "latency": "Avg latency",
+      "success": "Success",
+      "unknown": "Unknown",
+      "none": "None",
+      "battery": "Pool battery",
+      "pinned": "Pinned now",
+      "status": "Status",
+      "poolKey": "Pool key",
+      "boundProvider": "Pinned provider",
+      "updatedAt": "Updated"
+    },
+    "status": {
+      "active": "Active",
+      "ready": "Ready",
+      "cooldown": "Cooling",
+      "idle": "Idle"
+    }
+  }
+}

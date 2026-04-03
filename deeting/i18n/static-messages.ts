@@ -7,6 +7,7 @@ const namespaces = [
   "api-keys",
   "providers",
   "models",
+  "model-pools",
   "logs",
   "dashboard",
   "credits",

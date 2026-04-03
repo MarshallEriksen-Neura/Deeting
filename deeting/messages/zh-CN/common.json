@@ -106,6 +106,7 @@
       "pluginMarket": "插件市场",
       "configuration": "配置",
       "providers": "模型服务",
+      "modelPools": "模型池状态",
       "taskAgents": "任务智能体",
       "apiKeys": "API 密钥",
       "credits": "积分流水",

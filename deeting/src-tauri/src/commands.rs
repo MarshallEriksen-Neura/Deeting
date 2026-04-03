@@ -168,6 +168,7 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::providers::commands::update_local_provider_model,
         crate::modules::providers::commands::test_local_provider_model,
         crate::modules::providers::commands::sync_platform_models,
+        crate::modules::providers::commands::list_local_model_pools_status,
         crate::modules::providers::commands::get_local_bandit_arm_state,
         crate::modules::providers::commands::list_local_bandit_arm_states,
         crate::modules::providers::commands::record_local_bandit_feedback,

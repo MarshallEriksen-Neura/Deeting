@@ -14,6 +14,7 @@ const DASHBOARD_MESSAGE_NAMESPACES: readonly StaticMessageNamespace[] = [
   "task-agents",
   "providers",
   "models",
+  "model-pools",
   "logs",
   "knowledge",
 ]
