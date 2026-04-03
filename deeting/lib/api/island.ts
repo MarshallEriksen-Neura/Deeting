@@ -1,3 +1,4 @@
+import { streamChatCompletion, streamDesktopLocalChatCompletion } from "@/lib/api/chat"
 import { z } from "zod"
 
 import { handleModelConfigRequiredError } from "@/lib/model-config-required"
@@ -43,6 +44,40 @@ export const IslandApprovalActionResultSchema = z.object({
 export type IslandToolApproval = z.infer<typeof IslandToolApprovalSchema>
 export type IslandTextConversationReply = z.infer<typeof IslandTextConversationReplySchema>
 export type IslandApprovalActionResult = z.infer<typeof IslandApprovalActionResultSchema>
+
+export interface IslandChatRequestConfig {
+  model: string
+  model_selection_mode?: "pool" | "exact_provider"
+  provider_model_id?: string
+  useDesktopLocalGateway: boolean
+}
+
+export async function streamIslandTextConversation(
+  sessionId: string,
+  text: string,
+  requestConfig: IslandChatRequestConfig,
+  handlers: {
+    onDelta?: (delta: string, snapshot: string) => void
+    onMessage?: (data: unknown) => void
+  } = {}
+): Promise<string> {
+  const streamFn = requestConfig.useDesktopLocalGateway
+    ? streamDesktopLocalChatCompletion
+    : streamChatCompletion
+
+  return streamFn(
+    {
+      model: requestConfig.model,
+      model_selection_mode: requestConfig.model_selection_mode,
+      provider_model_id: requestConfig.provider_model_id,
+      session_id: sessionId,
+      messages: [{ role: "user", content: text }],
+      stream: true,
+      status_stream: true,
+    },
+    handlers
+  )
+}
 
 export async function executeIslandTextConversation(
   sessionId: string,

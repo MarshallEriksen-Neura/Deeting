@@ -9,7 +9,7 @@ use tauri::window::Color;
 pub fn create_island_window(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     WebviewWindowBuilder::new(app, "island", WebviewUrl::App("island".into()))
         .title("Deeting Island")
-        .inner_size(380.0, 88.0)
+        .inner_size(344.0, 60.0)
         .decorations(false)
         .transparent(true)
         .background_color(Color(0, 0, 0, 0))

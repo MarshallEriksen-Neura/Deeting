@@ -2,6 +2,7 @@
 
 import { createContext, useContext } from "react";
 import type { IslandApproval, IslandMode, IslandRecentMessage } from "./island-store";
+import type { IslandStatusStep } from "./island-runtime-status";
 
 export interface IslandContextValue {
   mode: IslandMode;
@@ -13,6 +14,10 @@ export interface IslandContextValue {
   pendingApproval: IslandApproval | null;
   isBusy: boolean;
   errorMessage: string | null;
+  statusStage: string | null;
+  statusCode: string | null;
+  statusMeta: Record<string, unknown> | null;
+  stageHistory: IslandStatusStep[];
 
   expand: () => void;
   collapse: () => void;

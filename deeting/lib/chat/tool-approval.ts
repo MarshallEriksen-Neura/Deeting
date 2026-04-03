@@ -238,6 +238,48 @@ export function findLatestMessageToolApproval(
   return null
 }
 
+function isApprovalToolResultBlock(
+  block: MessageBlock | null | undefined
+): block is ToolResultBlock {
+  if (!block || block.type !== "tool_result") return false
+  if (typeof block.status === "string" && block.status.trim().toLowerCase() === "requires_approval") {
+    return true
+  }
+  return extractToolApprovalPayload(block.result) !== null
+}
+
+export function findLatestUnresolvedToolApproval(
+  messages: Message[]
+): BridgeToolPendingApproval | null {
+  const resolvedCallIds = new Set<string>()
+
+  for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+    const message = messages[messageIndex]
+    if (message.role !== "assistant" || !Array.isArray(message.blocks)) continue
+
+    for (let blockIndex = message.blocks.length - 1; blockIndex >= 0; blockIndex -= 1) {
+      const block = message.blocks[blockIndex]
+      if (block.type !== "tool_result") continue
+
+      const callId = asTrimmedString(block.callId)
+      if (!callId) continue
+
+      if (isApprovalToolResultBlock(block)) {
+        if (resolvedCallIds.has(callId)) continue
+        const approval = buildBridgeToolApprovalFromMessageBlock(block, {
+          messageId: message.id,
+        })
+        if (approval) return approval
+        continue
+      }
+
+      resolvedCallIds.add(callId)
+    }
+  }
+
+  return null
+}
+
 export function enqueueBridgeToolApproval(approval: BridgeToolPendingApproval): boolean {
   const current = useBridgeApprovalStore.getState().pending
   if (current?.approval_token === approval.approval_token) {

@@ -1,28 +1,92 @@
+import * as React from "react"
 import { fireEvent, render, screen } from "@testing-library/react"
 
+import type { Message } from "@/lib/chat/message-types"
 import { useChatStore } from "@/store/chat-store"
 
 import { IslandShell } from "../island-shell"
 import { useIslandStore } from "../island-store"
 
 jest.mock("framer-motion", () => {
-  const React = require("react")
+  type MockMotionDivProps = React.ComponentPropsWithoutRef<"div"> & Record<string, unknown>
+  type MockMotionButtonProps = React.ComponentPropsWithoutRef<"button"> & Record<string, unknown>
+  type MockMotionSpanProps = React.ComponentPropsWithoutRef<"span"> & Record<string, unknown>
+  const MOTION_KEYS = new Set([
+    "layout",
+    "whileHover",
+    "whileTap",
+    "animate",
+    "initial",
+    "exit",
+    "transition",
+    "variants",
+  ])
+
+  function stripMotionProps<T extends Record<string, unknown>>(props: T) {
+    return Object.fromEntries(
+      Object.entries(props).filter(([key]) => !MOTION_KEYS.has(key))
+    ) as Omit<T, keyof typeof MOTION_KEYS>
+  }
+
+  const MotionDiv = React.forwardRef<HTMLDivElement, MockMotionDivProps>(function MotionDiv(
+    { children, ...props },
+    ref
+  ) {
+    return (
+      <div ref={ref} {...stripMotionProps(props)}>
+        {children}
+      </div>
+    )
+  })
+
+  const MotionButton = React.forwardRef<HTMLButtonElement, MockMotionButtonProps>(
+    function MotionButton({ children, ...props }, ref) {
+      return (
+        <button ref={ref} {...stripMotionProps(props)}>
+          {children}
+        </button>
+      )
+    }
+  )
+
+  const MotionSpan = React.forwardRef<HTMLSpanElement, MockMotionSpanProps>(function MotionSpan(
+    { children, ...props },
+    ref
+  ) {
+    return (
+      <span ref={ref} {...stripMotionProps(props)}>
+        {children}
+      </span>
+    )
+  })
+
   return {
     motion: {
-      div: React.forwardRef(
-        ({ children, layout, ...props }: any, ref: any) => (
-          <div ref={ref} {...props}>
-            {children}
-          </div>
-        )
-      ),
+      div: MotionDiv,
+      button: MotionButton,
+      span: MotionSpan,
     },
-    AnimatePresence: ({ children }: any) => <>{children}</>,
+    AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   }
 })
 
+jest.mock("next-intl", () => ({
+  useLocale: () => "en",
+}))
+
+jest.mock("@/components/chat/markdown-viewer", () => ({
+  MarkdownViewer: ({ content }: { content: string }) => <div>{content}</div>,
+}))
+
 jest.mock("@/lib/utils", () => ({
-  cn: (...args: any[]) => args.filter(Boolean).join(" "),
+  cn: (...args: Array<string | false | null | undefined>) => args.filter(Boolean).join(" "),
+}))
+
+jest.mock("@/hooks/use-i18n", () => ({
+  useI18n:
+    () =>
+    (key: string, values?: Record<string, unknown>) =>
+      values ? `${key}:${JSON.stringify(values)}` : key,
 }))
 
 function seedChatState(includeApproval = false) {
@@ -67,11 +131,11 @@ function seedChatState(includeApproval = false) {
               role: "assistant",
               content: "",
               createdAt: 3,
-              blocks: assistantMessageBlocks as any,
+              blocks: assistantMessageBlocks as Message["blocks"],
             },
           ]
         : []),
-    ] as any,
+    ] as unknown as Message[],
     isLoading: false,
     globalLoading: false,
     statusCode: null,
@@ -102,7 +166,10 @@ describe("IslandShell", () => {
   it("expands when collapsed view is clicked", () => {
     render(<IslandShell />)
     fireEvent.click(screen.getByText("Ready"))
-    expect(screen.getByText("Latest reply")).toBeInTheDocument()
+    expect(screen.queryByText("Latest reply")).not.toBeInTheDocument()
+    expect(screen.getByText("You")).toBeInTheDocument()
+    expect(screen.getByText("Deeting")).toBeInTheDocument()
+    expect(screen.getByText("Q3 planning draft")).toBeInTheDocument()
     expect(
       screen.getByText(/Updated the roadmap based on your latest feedback/)
     ).toBeInTheDocument()
@@ -124,6 +191,20 @@ describe("IslandShell", () => {
     expect(screen.getByPlaceholderText("Quick reply…")).toBeInTheDocument()
   })
 
+  it("shows live progress detail when chat status is active", () => {
+    useChatStore.setState({
+      statusStage: "remember",
+      statusCode: "context.loaded",
+      statusMeta: { count: 3, has_summary: true },
+    })
+    useIslandStore.setState({ mode: "expanded" })
+    render(<IslandShell />)
+    expect(screen.getByText("Live progress")).toBeInTheDocument()
+    expect(
+      screen.getByText('status.detail.contextLoadedWithSummary:{"count":3}')
+    ).toBeInTheDocument()
+  })
+
   it("collapses back when collapse button is clicked", () => {
     useIslandStore.setState({ mode: "expanded" })
     render(<IslandShell />)
@@ -142,6 +223,32 @@ describe("IslandShell", () => {
     useIslandStore.setState({ mode: "expanded" })
     render(<IslandShell />)
     expect(screen.queryByText("Approval required")).not.toBeInTheDocument()
-    expect(screen.getByText("Latest reply")).toBeInTheDocument()
+    expect(screen.getByText("Q3 planning draft")).toBeInTheDocument()
+  })
+
+  it("keeps expanded transcript message text instead of truncating it to a short preview", () => {
+    const longAssistantReply =
+      "This is a much longer island reply that should remain visible in the expanded transcript instead of being reduced to a tiny recent preview line for the user."
+    useChatStore.setState({
+      messages: [
+        {
+          id: "user-1",
+          role: "user",
+          content: "Please explain the tradeoffs in detail.",
+          createdAt: 1,
+        },
+        {
+          id: "assistant-1",
+          role: "assistant",
+          content: longAssistantReply,
+          createdAt: 2,
+        },
+      ] as unknown as Message[],
+    })
+
+    useIslandStore.setState({ mode: "expanded" })
+    render(<IslandShell />)
+
+    expect(screen.getByText(longAssistantReply)).toBeInTheDocument()
   })
 })

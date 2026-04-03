@@ -1,7 +1,7 @@
 {
   "model-pools": {
     "title": "Model Pool Status",
-    "subtitle": "Inspect desktop-local pool health, sticky bindings, and per-provider readiness before routing decisions drift.",
+    "subtitle": "Inspect desktop-local pools, sticky bindings, and provider readiness in one place.",
     "desktopOnlyTitle": "Desktop local only",
     "desktopOnlyDescription": "Model pool status is derived from the desktop local provider registry, local bandit state, and local conversation bindings.",
     "loading": "Loading pool status...",
@@ -15,24 +15,46 @@
       "health": "Average Health"
     },
     "sections": {
-      "overview": "Pool Overview",
-      "bindings": "Active Bindings",
-      "members": "Pool Members"
+      "focus": "Selected Pool",
+      "directory": "Pool Directory",
+      "members": "Pool Members",
+      "bindings": "Sticky Bindings"
+    },
+    "descriptions": {
+      "focus": "Health, capacity, and readiness for the pool currently in focus.",
+      "directory": "Pick a pool to inspect its providers and pinned sessions.",
+      "members": "Providers currently participating in the selected pool.",
+      "bindings": "Sessions that are currently pinned to a specific provider model."
     },
     "labels": {
       "providers": "{count} providers",
       "sessions": "{count} sessions",
       "cooling": "{count} cooling",
       "latency": "Avg latency",
-      "success": "Success",
+      "success": "Success rate",
       "unknown": "Unknown",
       "none": "None",
       "battery": "Pool battery",
-      "pinned": "Pinned now",
+      "pinned": "Pinned",
       "status": "Status",
       "poolKey": "Pool key",
       "boundProvider": "Pinned provider",
-      "updatedAt": "Updated"
+      "updatedAt": "Updated",
+      "activeProviders": "Active providers",
+      "readyMembers": "Ready members",
+      "healthScore": "Health score",
+      "trials": "Trials",
+      "pinnedSessions": "Pinned sessions",
+      "lastActive": "Last active",
+      "memberModel": "Model"
+    },
+    "badges": {
+      "selected": "Selected",
+      "desktopLocal": "Desktop-local"
+    },
+    "empty": {
+      "members": "No providers are currently attached to this pool.",
+      "bindings": "No sessions are pinned to this pool right now."
     },
     "status": {
       "active": "Active",

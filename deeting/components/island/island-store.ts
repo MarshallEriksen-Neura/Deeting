@@ -4,18 +4,22 @@ import { create } from "zustand";
 
 import {
   approveIslandTool,
-  executeIslandTextConversation,
   rejectIslandTool,
+  streamIslandTextConversation,
 } from "@/lib/api/island";
 import { createConversation } from "@/lib/api/conversations";
-import { deriveAssistantActivityState } from "@/lib/chat/assistant-activity";
 import { loadConversationHistoryPage } from "@/lib/chat/history-loader";
 import { extractAssistantTextFromBlocks } from "@/lib/chat/message-blocks";
-import { findLatestMessageToolApproval } from "@/lib/chat/tool-approval";
+import { findLatestUnresolvedToolApproval } from "@/lib/chat/tool-approval";
 import type { Message } from "@/lib/chat/message-types";
 import type { ChatAssistant } from "@/store/chat-store";
 import { useChatStore } from "@/store/chat-store";
 import { isTauriRuntime as detectTauriRuntime } from "@/lib/runtime/tauri";
+import { resolveIslandChatRequestConfig } from "./island-chat-request";
+import {
+  type IslandStatusStep,
+  resolveIslandRuntimeStatus,
+} from "./island-runtime-status";
 
 export interface IslandRecentMessage {
   role: "user" | "assistant";
@@ -40,7 +44,9 @@ type IslandChatSnapshot = {
   messages: Message[];
   isLoading: boolean;
   globalLoading: boolean;
+  statusStage: string | null;
   statusCode: string | null;
+  statusMeta: Record<string, unknown> | null;
   errorMessage: string | null;
 };
 
@@ -54,6 +60,10 @@ interface IslandState {
   pendingApproval: IslandApproval | null;
   isBusy: boolean;
   errorMessage: string | null;
+  statusStage: string | null;
+  statusCode: string | null;
+  statusMeta: Record<string, unknown> | null;
+  stageHistory: IslandStatusStep[];
 
   expand: () => void;
   collapse: () => void;
@@ -68,6 +78,7 @@ interface IslandState {
 
 const DEFAULT_LAST_REPLY = "No replies yet.";
 const DEFAULT_SUMMARY = "Open a conversation to keep Deeting nearby.";
+const ISLAND_TRANSCRIPT_MAX_MESSAGES = 8;
 
 function truncate(value: string, maxChars: number) {
   if (value.length <= maxChars) return value;
@@ -105,25 +116,17 @@ function findLatestUserMessage(messages: Message[]) {
 }
 
 function derivePendingApproval(messages: Message[]): IslandApproval | null {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (!Array.isArray(message.blocks) || message.blocks.length === 0) continue;
-    const approval = findLatestMessageToolApproval(message.blocks, {
-      messageId: message.id,
-    });
-    if (!approval) continue;
+  const approval = findLatestUnresolvedToolApproval(messages);
+  if (!approval) return null;
 
-    return {
-      id: approval.approval_token,
-      title: approval.tool_name,
-      desc: approval.description ?? "Approval is required before the task can continue.",
-      approvalToken: approval.approval_token,
-      toolName: approval.tool_name,
-      callId: approval.meta.call_id,
-    };
-  }
-
-  return null;
+  return {
+    id: approval.approval_token,
+    title: approval.tool_name,
+    desc: approval.description ?? "Approval is required before the task can continue.",
+    approvalToken: approval.approval_token,
+    toolName: approval.tool_name,
+    callId: approval.meta.call_id,
+  };
 }
 
 function deriveSummaryText(
@@ -155,7 +158,7 @@ function deriveLastReplyText(messages: Message[]): string {
 
 function deriveRecentMessages(messages: Message[]): IslandRecentMessage[] {
   const recent: IslandRecentMessage[] = [];
-  for (let i = messages.length - 1; i >= 0 && recent.length < 3; i -= 1) {
+  for (let i = messages.length - 1; i >= 0 && recent.length < ISLAND_TRANSCRIPT_MAX_MESSAGES; i -= 1) {
     const msg = messages[i];
     if (msg.role === "system") continue;
     const preview =
@@ -167,26 +170,55 @@ function deriveRecentMessages(messages: Message[]): IslandRecentMessage[] {
     if (!preview) continue;
     recent.unshift({
       role: msg.role as "user" | "assistant",
-      content: truncate(preview, 80),
+      content: preview,
       createdAt: msg.createdAt,
     });
   }
   return recent;
 }
 
-function deriveStatusLabel(
-  snapshot: IslandChatSnapshot,
-  pendingApproval: IslandApproval | null
-): string {
+function buildOptimisticRecentMessages(
+  recentMessages: IslandRecentMessage[],
+  content: string
+) {
+  const optimisticMessage: IslandRecentMessage = {
+    role: "user",
+    content,
+    createdAt: Date.now(),
+  };
+  return [...recentMessages, optimisticMessage].slice(-ISLAND_TRANSCRIPT_MAX_MESSAGES);
+}
+
+function upsertStreamingAssistantPreview(
+  recentMessages: IslandRecentMessage[],
+  content: string
+) {
+  const preview = truncate(content.trim(), 220);
+  if (!preview) {
+    return recentMessages;
+  }
+
+  const nextMessages = [...recentMessages];
+  const nextAssistant: IslandRecentMessage = {
+    role: "assistant",
+    content: preview,
+    createdAt: Date.now(),
+  };
+
+  if (nextMessages.at(-1)?.role === "assistant") {
+    nextMessages[nextMessages.length - 1] = nextAssistant;
+  } else {
+    nextMessages.push(nextAssistant);
+  }
+
+  return nextMessages.slice(-ISLAND_TRANSCRIPT_MAX_MESSAGES);
+}
+
+function deriveStatusLabel(snapshot: IslandChatSnapshot, pendingApproval: IslandApproval | null): string {
   if (pendingApproval) return "Pending approval";
   if (snapshot.errorMessage) return "Needs attention";
   if (snapshot.globalLoading || snapshot.isLoading) return "Working...";
-
-  const latestAssistant = findLatestAssistantMessage(snapshot.messages);
-  const activity = deriveAssistantActivityState(latestAssistant?.blocks);
-
-  if (activity.statusCode === "approval.required") return "Pending approval";
-  if (activity.isActive) return "Working...";
+  if (snapshot.statusCode) return "Working...";
   if (snapshot.statusCode) return "Working...";
   if (snapshot.messages.length > 0) return "Ready";
   return "Idle";
@@ -200,7 +232,9 @@ function getChatSnapshot(): IslandChatSnapshot {
     messages: chatState.messages,
     isLoading: chatState.isLoading,
     globalLoading: chatState.globalLoading,
+    statusStage: chatState.statusStage,
     statusCode: chatState.statusCode,
+    statusMeta: chatState.statusMeta,
     errorMessage: chatState.errorMessage,
   };
 }
@@ -228,6 +262,15 @@ async function ensureSessionId() {
   return created.session_id;
 }
 
+function resolveCurrentIslandChatRequest() {
+  const chatState = useChatStore.getState();
+  return resolveIslandChatRequestConfig({
+    configModel: chatState.config.model,
+    models: chatState.models,
+    isTauriRuntime: detectTauriRuntime(),
+  });
+}
+
 export const useIslandStore = create<IslandState>((set) => ({
   mode: "hidden",
   statusLabel: "Idle",
@@ -238,6 +281,10 @@ export const useIslandStore = create<IslandState>((set) => ({
   pendingApproval: null,
   isBusy: false,
   errorMessage: null,
+  statusStage: null,
+  statusCode: null,
+  statusMeta: null,
+  stageHistory: [],
 
   expand: () => set({ mode: "expanded" }),
   collapse: () => set({ mode: "collapsed" }),
@@ -250,7 +297,9 @@ export const useIslandStore = create<IslandState>((set) => ({
   hydrateFromChat: (snapshot) => {
     const latestAssistant = findLatestAssistantMessage(snapshot.messages);
     const pendingApproval = derivePendingApproval(snapshot.messages);
-    set({
+    set((state) => {
+      const runtimeStatus = resolveIslandRuntimeStatus(snapshot, pendingApproval, state.stageHistory);
+      return {
       statusLabel: deriveStatusLabel(snapshot, pendingApproval),
       summaryText: deriveSummaryText(snapshot.messages, snapshot.selectedAssistant),
       lastReplyText: deriveLastReplyText(snapshot.messages),
@@ -258,21 +307,113 @@ export const useIslandStore = create<IslandState>((set) => ({
       recentMessages: deriveRecentMessages(snapshot.messages),
       pendingApproval,
       errorMessage: snapshot.errorMessage,
+      statusStage: runtimeStatus.statusStage,
+      statusCode: runtimeStatus.statusCode,
+      statusMeta: runtimeStatus.statusMeta,
+      stageHistory: runtimeStatus.stageHistory,
+    };
     });
   },
   sendQuickReply: async (text) => {
     const trimmed = text.trim();
     if (!trimmed) return;
 
-    set({ isBusy: true, errorMessage: null });
+    const previousState = useIslandStore.getState();
+    const requestConfig = resolveCurrentIslandChatRequest();
+    if (!requestConfig) {
+      set({ errorMessage: "No chat model selected" });
+      return;
+    }
+
+    let streamErrorMessage: string | null = null;
+    set({
+      isBusy: true,
+      errorMessage: null,
+      statusLabel: "Working...",
+      summaryText: truncate(trimmed, 52),
+      recentMessages: buildOptimisticRecentMessages(previousState.recentMessages, trimmed),
+      pendingApproval: null,
+      statusStage: "listen",
+      statusCode: null,
+      statusMeta: null,
+      stageHistory: [],
+    });
     try {
       const sessionId = await ensureSessionId();
-      await executeIslandTextConversation(sessionId, trimmed);
+      await streamIslandTextConversation(sessionId, trimmed, requestConfig, {
+        onDelta: (_delta, snapshot) => {
+          set((state) => ({
+            statusLabel: "Working...",
+            lastReplyText: truncate(snapshot, 220),
+            lastReplyAt: Date.now(),
+            recentMessages: upsertStreamingAssistantPreview(state.recentMessages, snapshot),
+          }));
+        },
+        onMessage: (data) => {
+          if (
+            data &&
+            typeof data === "object" &&
+            "type" in data &&
+            (data as { type?: string }).type === "status"
+          ) {
+            const streamStatus = data as {
+              stage?: string | null;
+              code?: string | null;
+              meta?: Record<string, unknown> | null;
+            };
+            set((state) => {
+              const runtimeStatus = resolveIslandRuntimeStatus(
+                {
+                  ...getChatSnapshot(),
+                  statusStage: streamStatus.stage ?? null,
+                  statusCode: streamStatus.code ?? null,
+                  statusMeta: streamStatus.meta ?? null,
+                },
+                state.pendingApproval,
+                state.stageHistory
+              );
+              return {
+                statusStage: runtimeStatus.statusStage,
+                statusCode: runtimeStatus.statusCode,
+                statusMeta: runtimeStatus.statusMeta,
+                stageHistory: runtimeStatus.stageHistory,
+              };
+            });
+            return;
+          }
+          if (
+            data &&
+            typeof data === "object" &&
+            "type" in data &&
+            (data as { type?: string }).type === "error"
+          ) {
+            streamErrorMessage =
+              typeof (data as { message?: unknown }).message === "string"
+                ? (data as { message: string }).message
+                : "Island send failed";
+          }
+        },
+      });
+      if (streamErrorMessage) {
+        throw new Error(streamErrorMessage);
+      }
       await syncChatHistory(sessionId);
       useIslandStore.getState().hydrateFromChat(getChatSnapshot());
     } catch (error) {
       const message = error instanceof Error ? error.message : "Island send failed";
-      set({ errorMessage: message });
+      set({
+        statusLabel: previousState.statusLabel,
+        summaryText: previousState.summaryText,
+        lastReplyText: previousState.lastReplyText,
+        lastReplyAt: previousState.lastReplyAt,
+        recentMessages: previousState.recentMessages,
+        pendingApproval: previousState.pendingApproval,
+        errorMessage: message,
+        statusStage: previousState.statusStage,
+        statusCode: previousState.statusCode,
+        statusMeta: previousState.statusMeta,
+        stageHistory: previousState.stageHistory,
+      });
     } finally {
       set({ isBusy: false });
     }

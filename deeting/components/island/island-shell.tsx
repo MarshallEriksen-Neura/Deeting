@@ -7,8 +7,14 @@ import { useIslandStore } from "./island-store";
 import { IslandCollapsedView } from "./island-collapsed-view";
 import { IslandExpandedView } from "./island-expanded-view";
 import { IslandProvider } from "./island-context";
+import { resolveIslandChatRequestConfig } from "./island-chat-request";
 import { cn } from "@/lib/utils";
+import { isTauriRuntime as detectTauriRuntime } from "@/lib/runtime/tauri";
 import { useChatStore } from "@/store/chat-store";
+
+type IslandActionCompletedPayload = {
+  sessionId?: string | null;
+};
 
 export function IslandShell() {
   const storeValues = useIslandStore(
@@ -22,6 +28,10 @@ export function IslandShell() {
       pendingApproval: s.pendingApproval,
       isBusy: s.isBusy,
       errorMessage: s.errorMessage,
+      statusStage: s.statusStage,
+      statusCode: s.statusCode,
+      statusMeta: s.statusMeta,
+      stageHistory: s.stageHistory,
       expand: s.expand,
       collapse: s.collapse,
       hide: s.hide,
@@ -38,11 +48,16 @@ export function IslandShell() {
   const chatSnapshot = useChatStore(
     useShallow((state) => ({
       sessionId: state.sessionId,
+      selectedAssistantId: state.selectedAssistantId,
       selectedAssistant: state.selectedAssistant,
+      config: state.config,
+      models: state.models,
       messages: state.messages,
       isLoading: state.isLoading,
       globalLoading: state.globalLoading,
+      statusStage: state.statusStage,
       statusCode: state.statusCode,
+      statusMeta: state.statusMeta,
       errorMessage: state.errorMessage,
     }))
   );
@@ -50,6 +65,12 @@ export function IslandShell() {
   useEffect(() => {
     hydrateFromChat(chatSnapshot);
   }, [chatSnapshot, hydrateFromChat]);
+
+  const chatRequestConfig = resolveIslandChatRequestConfig({
+    configModel: chatSnapshot.config.model,
+    models: chatSnapshot.models,
+    isTauriRuntime: detectTauriRuntime(),
+  });
 
   // Emit state sync to Island window (debounced)
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -71,7 +92,13 @@ export function IslandShell() {
           pendingApproval: state.pendingApproval,
           isBusy: state.isBusy,
           errorMessage: state.errorMessage,
+          statusStage: state.statusStage,
+          statusCode: state.statusCode,
+          statusMeta: state.statusMeta,
+          stageHistory: state.stageHistory,
           sessionId: chatSnapshot.sessionId,
+          selectedAssistantId: chatSnapshot.selectedAssistantId,
+          chatRequestConfig,
         });
       } catch {
         // emit may fail in non-Tauri env
@@ -82,13 +109,19 @@ export function IslandShell() {
         clearTimeout(syncTimerRef.current);
       }
     };
-  }, [storeValues, chatSnapshot.sessionId]);
+  }, [chatRequestConfig, storeValues, chatSnapshot.sessionId, chatSnapshot.selectedAssistantId]);
 
   // Listen for action-completed from Island window → re-sync chat
-  const resyncChat = useCallback(async () => {
-    const sessionId = useChatStore.getState().sessionId;
+  const resyncChat = useCallback(async (payload?: IslandActionCompletedPayload) => {
+    const sessionId =
+      typeof payload?.sessionId === "string" && payload.sessionId.trim().length > 0
+        ? payload.sessionId.trim()
+        : useChatStore.getState().sessionId;
     if (!sessionId) return;
     try {
+      if (useChatStore.getState().sessionId !== sessionId) {
+        useChatStore.getState().setSessionId(sessionId);
+      }
       const { fetchConversationHistory } = await import("@/lib/api/conversations");
       const { normalizeConversationMessages } = await import("@/lib/chat/conversation-adapter");
       const history = await fetchConversationHistory(sessionId, { limit: 200 });
@@ -104,8 +137,8 @@ export function IslandShell() {
     (async () => {
       try {
         const { listen } = await import("@tauri-apps/api/event");
-        unlisten = await listen("island:action-completed", () => {
-          resyncChat();
+        unlisten = await listen<IslandActionCompletedPayload>("island:action-completed", (event) => {
+          resyncChat(event.payload);
         });
       } catch {
         // non-Tauri env

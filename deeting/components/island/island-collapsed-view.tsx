@@ -10,6 +10,7 @@ import { useLocale } from "next-intl";
 import { cn } from "@/lib/utils";
 
 import { IslandSeedLogo } from "./island-seed-logo";
+import { IslandStatusTimeline } from "./island-status-timeline";
 import { useIslandContext } from "./island-context";
 
 function TypingDots() {
@@ -32,8 +33,24 @@ function TypingDots() {
   );
 }
 
-export function IslandCollapsedView() {
-  const { statusLabel, summaryText, lastReplyAt, isBusy, expand } = useIslandContext();
+export function IslandCollapsedView({
+  dragRegion = false,
+  compact = false,
+}: {
+  dragRegion?: boolean;
+  compact?: boolean;
+} = {}) {
+  const {
+    statusLabel,
+    summaryText,
+    lastReplyAt,
+    isBusy,
+    statusStage,
+    statusCode,
+    statusMeta,
+    stageHistory,
+    expand,
+  } = useIslandContext();
 
   const isActive = statusLabel === "Working..." || statusLabel === "Pending approval";
 
@@ -53,15 +70,19 @@ export function IslandCollapsedView() {
 
   return (
     <motion.div
+      data-tauri-drag-region={dragRegion ? "true" : undefined}
       onClick={expand}
-      className="flex items-center gap-3 px-4 py-2.5 cursor-pointer select-none"
+      className={cn(
+        "flex items-center cursor-pointer select-none",
+        compact ? "h-full gap-2.5 px-3.5 py-2" : "gap-3 px-4 py-2.5"
+      )}
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
       transition={{ type: "spring", stiffness: 400, damping: 25 }}
     >
       <IslandSeedLogo size={20} isActive={isActive} />
 
-      <div className="flex items-center gap-1.5">
+      <div className={cn("flex items-center", compact ? "gap-1" : "gap-1.5")}>
         <div className="relative flex h-2 w-2">
           <span
             className={cn(
@@ -84,10 +105,26 @@ export function IslandCollapsedView() {
       <span className="h-3.5 w-px bg-island-shell-border/50" />
 
       {isBusy ? (
-        <TypingDots />
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <TypingDots />
+          <IslandStatusTimeline
+            compact
+            statusLabel={statusLabel}
+            statusStage={statusStage}
+            statusCode={statusCode}
+            statusMeta={statusMeta}
+            stageHistory={stageHistory}
+            isBusy={isBusy}
+          />
+        </div>
       ) : (
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <span className="text-[12px] font-medium text-foreground/60 truncate max-w-[140px]">
+          <span
+            className={cn(
+              "text-[12px] font-medium text-foreground/60 truncate",
+              compact ? "max-w-[112px]" : "max-w-[140px]"
+            )}
+          >
             {summaryText}
           </span>
           {relativeTime && (

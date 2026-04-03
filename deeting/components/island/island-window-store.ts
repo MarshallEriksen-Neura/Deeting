@@ -4,10 +4,23 @@ import { create } from "zustand";
 
 import {
   approveIslandTool,
-  executeIslandTextConversation,
   rejectIslandTool,
+  streamIslandTextConversation,
+  type IslandChatRequestConfig,
 } from "@/lib/api/island";
+import { createConversation } from "@/lib/api/conversations";
+import { loadConversationHistoryPage } from "@/lib/chat/history-loader";
+import { isTauriRuntime as detectTauriRuntime } from "@/lib/runtime/tauri";
+
 import type { IslandApproval, IslandMode, IslandRecentMessage } from "./island-store";
+import {
+  buildIslandWindowDerivedState,
+  truncateIslandText,
+} from "./island-window-derived-state";
+import {
+  type IslandStatusStep,
+  resolveIslandRuntimeStatus,
+} from "./island-runtime-status";
 
 interface IslandWindowState {
   mode: IslandMode;
@@ -20,6 +33,13 @@ interface IslandWindowState {
   isBusy: boolean;
   errorMessage: string | null;
   sessionId: string | null;
+  selectedAssistantId: string | null;
+  chatRequestConfig: IslandChatRequestConfig | null;
+  statusStage: string | null;
+  statusCode: string | null;
+  statusMeta: Record<string, unknown> | null;
+  stageHistory: IslandStatusStep[];
+  suspendRemoteSync: boolean;
 
   expand: () => void;
   collapse: () => void;
@@ -43,11 +63,89 @@ export interface IslandSyncPayload {
   isBusy: boolean;
   errorMessage: string | null;
   sessionId: string | null;
+  selectedAssistantId: string | null;
+  chatRequestConfig?: IslandChatRequestConfig | null;
+  statusStage?: string | null;
+  statusCode?: string | null;
+  statusMeta?: Record<string, unknown> | null;
+  stageHistory?: IslandStatusStep[];
 }
 
-async function emitActionCompleted() {
+type IslandActionCompletedPayload = {
+  sessionId: string | null;
+};
+
+async function emitActionCompleted(payload: IslandActionCompletedPayload) {
   const { emit } = await import("@tauri-apps/api/event");
-  await emit("island:action-completed", {});
+  await emit("island:action-completed", payload);
+}
+
+function buildOptimisticRecentMessages(
+  recentMessages: IslandRecentMessage[],
+  content: string
+) {
+  const optimisticMessage: IslandRecentMessage = {
+    role: "user",
+    content,
+    createdAt: Date.now(),
+  };
+  return [...recentMessages, optimisticMessage].slice(-8);
+}
+
+function upsertStreamingAssistantPreview(
+  recentMessages: IslandRecentMessage[],
+  content: string
+) {
+  const preview = truncateIslandText(content.trim(), 220);
+  if (!preview) {
+    return recentMessages;
+  }
+
+  const nextMessages = [...recentMessages];
+  const nextAssistant: IslandRecentMessage = {
+    role: "assistant",
+    content: preview,
+    createdAt: Date.now(),
+  };
+
+  if (nextMessages.at(-1)?.role === "assistant") {
+    nextMessages[nextMessages.length - 1] = nextAssistant;
+  } else {
+    nextMessages.push(nextAssistant);
+  }
+
+  return nextMessages.slice(-8);
+}
+
+async function loadIslandWindowStateFromHistory(sessionId: string) {
+  const history = await loadConversationHistoryPage(sessionId, {
+    limit: 200,
+    idPrefix: sessionId,
+    isTauriRuntime: detectTauriRuntime(),
+  });
+
+  return buildIslandWindowDerivedState({
+    selectedAssistant: null,
+    messages: history.messages,
+    isLoading: false,
+    globalLoading: false,
+    statusCode: null,
+    errorMessage: null,
+  });
+}
+
+async function ensureSessionId(
+  sessionId: string | null,
+  selectedAssistantId: string | null
+) {
+  if (sessionId) {
+    return sessionId;
+  }
+
+  const created = await createConversation({
+    assistant_id: selectedAssistantId ?? undefined,
+  });
+  return created.session_id;
 }
 
 export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
@@ -61,6 +159,13 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
   isBusy: false,
   errorMessage: null,
   sessionId: null,
+  selectedAssistantId: null,
+  chatRequestConfig: null,
+  statusStage: null,
+  statusCode: null,
+  statusMeta: null,
+  stageHistory: [],
+  suspendRemoteSync: false,
 
   expand: () => set({ mode: "expanded" }),
   collapse: () => set({ mode: "collapsed" }),
@@ -82,8 +187,19 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
   },
 
   syncFromEvent: (payload) => {
-    // Don't sync `mode` — the island window manages its own display mode
-    // independently of the main window's IslandShell.
+    if (get().suspendRemoteSync) {
+      set((state) => ({
+        sessionId: payload.sessionId ?? state.sessionId,
+        selectedAssistantId: payload.selectedAssistantId ?? state.selectedAssistantId,
+        chatRequestConfig: payload.chatRequestConfig ?? state.chatRequestConfig,
+        statusStage: payload.statusStage ?? state.statusStage,
+        statusCode: payload.statusCode ?? state.statusCode,
+        statusMeta: payload.statusMeta ?? state.statusMeta,
+        stageHistory: payload.stageHistory ?? state.stageHistory,
+      }));
+      return;
+    }
+
     set({
       statusLabel: payload.statusLabel,
       summaryText: payload.summaryText,
@@ -94,6 +210,12 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
       isBusy: payload.isBusy,
       errorMessage: payload.errorMessage,
       sessionId: payload.sessionId,
+      selectedAssistantId: payload.selectedAssistantId,
+      chatRequestConfig: payload.chatRequestConfig ?? null,
+      statusStage: payload.statusStage ?? null,
+      statusCode: payload.statusCode ?? null,
+      statusMeta: payload.statusMeta ?? null,
+      stageHistory: payload.stageHistory ?? [],
     });
   },
 
@@ -101,22 +223,128 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
     const trimmed = text.trim();
     if (!trimmed) return;
 
-    const sessionId = get().sessionId;
-    if (!sessionId) {
-      set({ errorMessage: "No active session" });
+    const previousState = get();
+    const requestConfig = previousState.chatRequestConfig;
+    if (!requestConfig) {
+      set({ errorMessage: "No chat model selected" });
       return;
     }
 
-    set({ isBusy: true, errorMessage: null });
+    let streamErrorMessage: string | null = null;
+    set({
+      isBusy: true,
+      errorMessage: null,
+      suspendRemoteSync: true,
+      statusLabel: "Working...",
+      summaryText: truncateIslandText(trimmed, 52),
+      recentMessages: buildOptimisticRecentMessages(previousState.recentMessages, trimmed),
+      pendingApproval: null,
+      statusStage: "listen",
+      statusCode: null,
+      statusMeta: null,
+      stageHistory: [],
+    });
+
     try {
-      await executeIslandTextConversation(sessionId, trimmed);
-      await emitActionCompleted();
+      const sessionId = await ensureSessionId(
+        previousState.sessionId,
+        previousState.selectedAssistantId
+      );
+      await streamIslandTextConversation(sessionId, trimmed, requestConfig, {
+        onDelta: (_delta, snapshot) => {
+          set((state) => ({
+            statusLabel: "Working...",
+            lastReplyText: truncateIslandText(snapshot, 220),
+            lastReplyAt: Date.now(),
+            recentMessages: upsertStreamingAssistantPreview(state.recentMessages, snapshot),
+          }));
+        },
+        onMessage: (data) => {
+          if (
+            data &&
+            typeof data === "object" &&
+            "type" in data &&
+            (data as { type?: string }).type === "status"
+          ) {
+            const streamStatus = data as {
+              stage?: string | null;
+              code?: string | null;
+              meta?: Record<string, unknown> | null;
+            };
+            set((state) => {
+              const runtimeStatus = resolveIslandRuntimeStatus(
+                {
+                  selectedAssistant: null,
+                  messages: [],
+                  isLoading: true,
+                  globalLoading: false,
+                  statusStage: streamStatus.stage ?? null,
+                  statusCode: streamStatus.code ?? null,
+                  statusMeta: streamStatus.meta ?? null,
+                  errorMessage: null,
+                },
+                state.pendingApproval,
+                state.stageHistory
+              );
+              return {
+                statusStage: runtimeStatus.statusStage,
+                statusCode: runtimeStatus.statusCode,
+                statusMeta: runtimeStatus.statusMeta,
+                stageHistory: runtimeStatus.stageHistory,
+              };
+            });
+            return;
+          }
+          if (
+            data &&
+            typeof data === "object" &&
+            "type" in data &&
+            (data as { type?: string }).type === "error"
+          ) {
+            streamErrorMessage =
+              typeof (data as { message?: unknown }).message === "string"
+                ? (data as { message: string }).message
+                : "Island send failed";
+          }
+        },
+      });
+      if (streamErrorMessage) {
+        throw new Error(streamErrorMessage);
+      }
+      const nextState = await loadIslandWindowStateFromHistory(sessionId);
+      set({
+        ...nextState,
+        sessionId,
+        selectedAssistantId: previousState.selectedAssistantId,
+        chatRequestConfig: previousState.chatRequestConfig,
+        statusStage: previousState.statusStage,
+        statusCode: previousState.statusCode,
+        statusMeta: previousState.statusMeta,
+        stageHistory: previousState.stageHistory,
+        isBusy: false,
+        suspendRemoteSync: false,
+      });
+      await emitActionCompleted({ sessionId });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Island send failed";
-      set({ errorMessage: message });
-    } finally {
-      set({ isBusy: false });
+      set({
+        statusLabel: previousState.statusLabel,
+        summaryText: previousState.summaryText,
+        lastReplyText: previousState.lastReplyText,
+        lastReplyAt: previousState.lastReplyAt,
+        recentMessages: previousState.recentMessages,
+        pendingApproval: previousState.pendingApproval,
+        errorMessage: message,
+        selectedAssistantId: previousState.selectedAssistantId,
+        chatRequestConfig: previousState.chatRequestConfig,
+        statusStage: previousState.statusStage,
+        statusCode: previousState.statusCode,
+        statusMeta: previousState.statusMeta,
+        stageHistory: previousState.stageHistory,
+        isBusy: false,
+        suspendRemoteSync: false,
+      });
     }
   },
 
@@ -124,20 +352,46 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
     const approval = get().pendingApproval;
     if (!approval) return;
 
-    set({ isBusy: true, errorMessage: null });
+    const sessionId = get().sessionId;
+    if (!sessionId) {
+      set({ errorMessage: "No active session" });
+      return;
+    }
+
+    const previousState = get();
+    set({ isBusy: true, errorMessage: null, suspendRemoteSync: true });
     try {
       await approveIslandTool(
         approval.approvalToken,
         approval.toolName,
         approval.callId
       );
-      await emitActionCompleted();
+      const nextState = await loadIslandWindowStateFromHistory(sessionId);
+      set({
+        ...nextState,
+        sessionId,
+        selectedAssistantId: previousState.selectedAssistantId,
+        chatRequestConfig: previousState.chatRequestConfig,
+        isBusy: false,
+        suspendRemoteSync: false,
+      });
+      await emitActionCompleted({ sessionId });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Island approval failed";
-      set({ errorMessage: message });
-    } finally {
-      set({ isBusy: false });
+      set({
+        statusLabel: previousState.statusLabel,
+        summaryText: previousState.summaryText,
+        lastReplyText: previousState.lastReplyText,
+        lastReplyAt: previousState.lastReplyAt,
+        recentMessages: previousState.recentMessages,
+        pendingApproval: previousState.pendingApproval,
+        errorMessage: message,
+        selectedAssistantId: previousState.selectedAssistantId,
+        chatRequestConfig: previousState.chatRequestConfig,
+        isBusy: false,
+        suspendRemoteSync: false,
+      });
     }
   },
 
@@ -145,16 +399,42 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
     const approval = get().pendingApproval;
     if (!approval) return;
 
-    set({ isBusy: true, errorMessage: null });
+    const sessionId = get().sessionId;
+    if (!sessionId) {
+      set({ errorMessage: "No active session" });
+      return;
+    }
+
+    const previousState = get();
+    set({ isBusy: true, errorMessage: null, suspendRemoteSync: true });
     try {
       await rejectIslandTool(approval.approvalToken, approval.toolName);
-      await emitActionCompleted();
+      const nextState = await loadIslandWindowStateFromHistory(sessionId);
+      set({
+        ...nextState,
+        sessionId,
+        selectedAssistantId: previousState.selectedAssistantId,
+        chatRequestConfig: previousState.chatRequestConfig,
+        isBusy: false,
+        suspendRemoteSync: false,
+      });
+      await emitActionCompleted({ sessionId });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Island rejection failed";
-      set({ errorMessage: message });
-    } finally {
-      set({ isBusy: false });
+      set({
+        statusLabel: previousState.statusLabel,
+        summaryText: previousState.summaryText,
+        lastReplyText: previousState.lastReplyText,
+        lastReplyAt: previousState.lastReplyAt,
+        recentMessages: previousState.recentMessages,
+        pendingApproval: previousState.pendingApproval,
+        errorMessage: message,
+        selectedAssistantId: previousState.selectedAssistantId,
+        chatRequestConfig: previousState.chatRequestConfig,
+        isBusy: false,
+        suspendRemoteSync: false,
+      });
     }
   },
 }));

@@ -5,10 +5,12 @@ import { motion, type Variants } from "framer-motion";
 
 import { cn } from "@/lib/utils";
 import { MarkdownViewer } from "@/components/chat/markdown-viewer";
+import type { IslandRecentMessage } from "./island-store";
 
 import { IslandApprovalCard } from "./island-approval-card";
 import { IslandQuickReply } from "./island-quick-reply";
 import { IslandSeedLogo } from "./island-seed-logo";
+import { IslandStatusTimeline } from "./island-status-timeline";
 import { useIslandContext } from "./island-context";
 
 const containerVariants: Variants = {
@@ -24,14 +26,62 @@ const itemVariants: Variants = {
   },
 };
 
-export function IslandExpandedView() {
+function IslandTranscriptMessage({ message }: { message: IslandRecentMessage }) {
+  const isUser = message.role === "user";
+
+  return (
+    <div className={cn("flex w-full", isUser ? "justify-end" : "justify-start")}>
+      <div
+        className={cn(
+          "max-w-[88%] rounded-[18px] border px-3 py-2 shadow-sm",
+          isUser
+            ? "border-island-gold/25 bg-island-gold/12 text-foreground"
+            : "border-island-shell-border/60 bg-background/65 text-foreground/85"
+        )}
+      >
+        <div
+          className={cn(
+            "mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em]",
+            isUser ? "text-island-gold/90" : "text-foreground/40"
+          )}
+        >
+          {isUser ? (
+            <User className="h-3 w-3 shrink-0" />
+          ) : (
+            <Bot className="h-3 w-3 shrink-0 text-island-gold/70" />
+          )}
+          <span>{isUser ? "You" : "Deeting"}</span>
+        </div>
+        {isUser ? (
+          <p className="whitespace-pre-wrap break-words text-[12px] leading-5">{message.content}</p>
+        ) : (
+          <div className="break-words text-[12px] leading-5">
+            <MarkdownViewer
+              content={message.content}
+              className="chat-markdown chat-markdown-assistant text-[12px] leading-5"
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function IslandExpandedView({
+  headerDragRegion = false,
+}: {
+  headerDragRegion?: boolean;
+} = {}) {
   const {
     statusLabel,
-    lastReplyText,
     recentMessages,
     pendingApproval,
     isBusy,
     errorMessage,
+    statusStage,
+    statusCode,
+    statusMeta,
+    stageHistory,
     collapse,
     sendQuickReply,
     approvePendingApproval,
@@ -40,19 +90,23 @@ export function IslandExpandedView() {
   } = useIslandContext();
 
   const isActive = statusLabel === "Working..." || statusLabel === "Pending approval";
+  const hasConversation = recentMessages.length > 0;
 
   return (
     <motion.div
       initial={{ opacity: 0, height: 0 }}
-      animate={{ opacity: 1, height: "auto" }}
+      animate={{ opacity: 1, height: "100%" }}
       exit={{ opacity: 0, height: 0 }}
       transition={{ type: "spring", damping: 22, stiffness: 280 }}
-      className="overflow-hidden"
+      className="flex flex-col h-full overflow-hidden"
     >
+      {/* Header - Pinned at top */}
       <motion.div
+        data-tauri-drag-region={headerDragRegion ? "true" : undefined}
         variants={containerVariants}
         initial="hidden"
         animate="visible"
+        className="shrink-0"
       >
         <motion.div variants={itemVariants} className="flex items-center justify-between px-4 py-2.5">
           <div className="flex items-center gap-2.5">
@@ -84,51 +138,46 @@ export function IslandExpandedView() {
             <ChevronUp className="w-3.5 h-3.5 text-island-gold" />
           </button>
         </motion.div>
+      </motion.div>
 
-        <div className="border-t border-island-shell-border/50" />
+      <div className="border-t border-island-shell-border/50 shrink-0" />
 
+      {/* Main Content Area - Scrollable */}
+      <motion.div
+        variants={containerVariants}
+        initial="hidden"
+        animate="visible"
+        className="min-h-0 flex-1 overflow-y-auto island-content-scrollbar"
+      >
         <motion.div variants={itemVariants} className="px-4 py-3">
-          <p className="text-[10px] uppercase tracking-[0.1em] font-semibold text-foreground/40 mb-1.5">
-            Latest reply
-          </p>
-          {lastReplyText === "No replies yet." ? (
+          <div className="mb-3">
+            <IslandStatusTimeline
+              statusLabel={statusLabel}
+              statusStage={statusStage}
+              statusCode={statusCode}
+              statusMeta={statusMeta}
+              stageHistory={stageHistory}
+              isBusy={isBusy}
+            />
+          </div>
+          {hasConversation ? (
+            <div className="space-y-3">
+              {recentMessages.map((message, index) => (
+                <IslandTranscriptMessage
+                  key={`${message.role}-${message.createdAt}-${index}`}
+                  message={message}
+                />
+              ))}
+            </div>
+          ) : (
             <div className="flex flex-col items-center justify-center py-3 gap-2">
               <IslandSeedLogo size={32} isActive={false} />
               <p className="text-[12px] text-foreground/40 text-center">
                 Deeting is ready to help. Send a message to get started.
               </p>
             </div>
-          ) : (
-            <div className="island-compact-markdown text-foreground/80">
-              <MarkdownViewer content={lastReplyText} />
-            </div>
           )}
         </motion.div>
-
-        {recentMessages.length > 1 && (
-          <>
-            <div className="border-t border-island-shell-border/50" />
-            <motion.div variants={itemVariants} className="px-4 py-2.5">
-              <p className="text-[10px] uppercase tracking-[0.1em] font-semibold text-foreground/40 mb-1.5">
-                Recent
-              </p>
-              <div className="space-y-1.5">
-                {recentMessages.map((msg, i) => (
-                  <div key={i} className="flex items-start gap-2">
-                    {msg.role === "user" ? (
-                      <User className="w-3 h-3 mt-0.5 text-foreground/30 shrink-0" />
-                    ) : (
-                      <Bot className="w-3 h-3 mt-0.5 text-island-gold/60 shrink-0" />
-                    )}
-                    <span className="text-[11px] leading-snug text-foreground/55 truncate">
-                      {msg.content}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          </>
-        )}
 
         {pendingApproval ? (
           <>
@@ -148,12 +197,6 @@ export function IslandExpandedView() {
           </>
         ) : null}
 
-        <div className="border-t border-island-shell-border/50" />
-
-        <motion.div variants={itemVariants} className="px-4 py-3">
-          <IslandQuickReply onSend={sendQuickReply} disabled={isBusy} />
-        </motion.div>
-
         {errorMessage ? (
           <>
             <div className="border-t border-island-shell-border/50" />
@@ -162,6 +205,20 @@ export function IslandExpandedView() {
             </motion.div>
           </>
         ) : null}
+      </motion.div>
+
+      {/* Footer Area - Pinned at bottom */}
+      <motion.div
+        variants={containerVariants}
+        initial="hidden"
+        animate="visible"
+        className="shrink-0"
+      >
+        <div className="border-t border-island-shell-border/50" />
+
+        <motion.div variants={itemVariants} className="px-4 py-3">
+          <IslandQuickReply onSend={sendQuickReply} disabled={isBusy} />
+        </motion.div>
 
         <div className="border-t border-island-shell-border/50" />
 

@@ -14,8 +14,8 @@ import {
   type IslandSyncPayload,
 } from "./island-window-store";
 
-const COLLAPSED_SIZE = { width: 380, height: 88 };
-const EXPANDED_SIZE = { width: 580, height: 400 };
+const COLLAPSED_SIZE = { width: 344, height: 60 };
+const EXPANDED_SIZE = { width: 580, height: 560 };
 
 /* ── Edge-snap constants ── */
 const SNAP_THRESHOLD = 24;
@@ -254,10 +254,7 @@ export function IslandWindowShell() {
 
   return (
     <IslandProvider value={store}>
-      <div
-        data-tauri-drag-region
-        className="w-full h-full"
-      >
+      <div className="w-full h-full">
         <motion.div
           initial={{ opacity: 0, scale: 0.85 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -268,7 +265,7 @@ export function IslandWindowShell() {
           <motion.div
             layout
             className={cn(
-              "relative rounded-[1.75rem] overflow-hidden w-full h-full",
+              "relative rounded-[1.75rem] overflow-hidden w-full h-full min-h-0",
               "border border-island-shell-border",
               "bg-island-shell-bg backdrop-blur-2xl",
               "shadow-[0_12px_36px_-16px_rgba(0,0,0,0.18)]"
@@ -303,8 +300,9 @@ export function IslandWindowShell() {
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.15 }}
+                  className="h-full"
                 >
-                  <IslandCollapsedView />
+                  <IslandCollapsedView dragRegion compact />
                 </motion.div>
               ) : (
                 <motion.div
@@ -313,8 +311,9 @@ export function IslandWindowShell() {
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.15 }}
+                  className="h-full min-h-0"
                 >
-                  <IslandExpandedView />
+                  <IslandExpandedView headerDragRegion />
                 </motion.div>
               )}
             </AnimatePresence>

@@ -1,9 +1,9 @@
 {
   "model-pools": {
     "title": "模型池状态",
-    "subtitle": "查看桌面端本地模型池健康度、会话粘性绑定，以及池内各 provider 的当前可用性。",
+    "subtitle": "在一个页面里查看桌面端本地模型池、会话粘性绑定和 provider 就绪情况。",
     "desktopOnlyTitle": "仅桌面本地可用",
-    "desktopOnlyDescription": "模型池状态当前基于桌面端本地 provider 注册表、本地 bandit 状态和本地会话绑定聚合而成。",
+    "desktopOnlyDescription": "模型池状态基于桌面端本地 provider 注册表、本地 bandit 状态和本地会话绑定聚合而成。",
     "loading": "正在加载模型池状态...",
     "errorTitle": "模型池状态加载失败",
     "emptyTitle": "暂时还没有模型池",
@@ -15,9 +15,16 @@
       "health": "平均健康度"
     },
     "sections": {
-      "overview": "模型池总览",
-      "bindings": "当前绑定",
-      "members": "池内成员"
+      "focus": "当前选中模型池",
+      "directory": "模型池目录",
+      "members": "池内成员",
+      "bindings": "粘性绑定"
+    },
+    "descriptions": {
+      "focus": "查看当前选中模型池的健康度、容量和路由就绪情况。",
+      "directory": "切换模型池，检查对应的 provider 和会话绑定。",
+      "members": "当前参与这个模型池的 provider 列表。",
+      "bindings": "当前固定绑定到某个 provider model 的会话。"
     },
     "labels": {
       "providers": "{count} 个 provider",
@@ -28,11 +35,26 @@
       "unknown": "未知",
       "none": "无",
       "battery": "池电量",
-      "pinned": "当前已绑定",
+      "pinned": "已绑定",
       "status": "状态",
       "poolKey": "池键",
       "boundProvider": "绑定 Provider",
-      "updatedAt": "更新时间"
+      "updatedAt": "更新时间",
+      "activeProviders": "活跃 provider",
+      "readyMembers": "就绪成员",
+      "healthScore": "健康分",
+      "trials": "试验次数",
+      "pinnedSessions": "绑定会话数",
+      "lastActive": "最后活跃",
+      "memberModel": "模型"
+    },
+    "badges": {
+      "selected": "当前选中",
+      "desktopLocal": "桌面本地"
+    },
+    "empty": {
+      "members": "这个模型池当前还没有可用 provider。",
+      "bindings": "这个模型池当前还没有固定绑定会话。"
     },
     "status": {
       "active": "活跃",
