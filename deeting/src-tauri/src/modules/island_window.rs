@@ -2,8 +2,8 @@
 //!
 //! 提供 Island 窗口的创建、显示/隐藏切换、尺寸与位置控制。
 
-use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri::window::Color;
+use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// 在应用启动时预创建 Island 窗口（隐藏状态）。
 pub fn create_island_window(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {

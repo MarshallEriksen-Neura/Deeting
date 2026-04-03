@@ -10,6 +10,7 @@
     "beforeBuildCommand": "node ./scripts/build-desktop-web.mjs"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "Deeting",
