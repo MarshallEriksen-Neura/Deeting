@@ -95,6 +95,27 @@ type ShellExecutionInsight = {
   warnings: string[];
 };
 
+type ToolSubjectKind = "search" | "url" | "file" | "command" | "generic";
+
+type ToolSubjectHint = {
+  kind: ToolSubjectKind;
+  value: string;
+  count?: number;
+};
+
+type ResultCountHint = {
+  count: number;
+  noun:
+    | "result"
+    | "row"
+    | "document"
+    | "file"
+    | "page"
+    | "item"
+    | "match"
+    | "record";
+};
+
 function toRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object") return null;
   return value as Record<string, unknown>;
@@ -388,10 +409,10 @@ function summarizeToolCalls(parts: MessageBlock[]) {
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, 3)
     .map(([name, count]) => {
-      const display = humanizeToolName(name);
+      const display = sharedHumanizeToolName(name) ?? name;
       return count > 1 ? `${display}×${count}` : display;
     });
-  const allInternal = toolNames.every((n) => isInternalTool(n));
+  const allInternal = toolNames.every((n) => sharedIsInternalTool(n));
   return {
     totalCalls: toolNames.length,
     highlights: sorted.join(" · "),
@@ -625,7 +646,7 @@ function resolveToolActionPreview(
   args?: string,
   status?: string,
 ): string | null {
-  const title = humanizeToolName(name);
+  const title = sharedHumanizeToolName(name) ?? "Tool";
   const normalizedStatus = (status ?? "").trim().toLowerCase();
   if (normalizedStatus === "requires_approval") {
     return `Waiting for approval to continue with ${title}`;
@@ -717,7 +738,7 @@ function resolveToolResultPreview(
   uiBlocks: MessageUIBlock[] = [],
   isPendingApproval = false,
 ): string | null {
-  const title = humanizeToolName(name);
+  const title = sharedHumanizeToolName(name) ?? "Tool";
   if (isPendingApproval) {
     return `Waiting for approval to continue with ${title}`;
   }

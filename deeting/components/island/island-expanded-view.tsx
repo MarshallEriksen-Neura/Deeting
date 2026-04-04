@@ -260,7 +260,7 @@ export function IslandExpandedView({
               requestLabel={t("island.requestLabel")}
             />
           ) : null}
-          {isApprovalFocused ? (
+          {pendingApproval ? (
             <motion.div variants={itemVariants}>
               <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground/40">
                 {t("island.approvalTitle")}

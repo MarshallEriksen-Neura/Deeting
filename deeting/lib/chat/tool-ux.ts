@@ -3,6 +3,9 @@ import type {
   ToolResultBlock as MessageToolResultBlock,
   UIBlock as MessageUIBlock,
 } from "@/lib/chat/message-protocol";
+import type { useI18n } from "@/hooks/use-i18n";
+
+type Translator = ReturnType<typeof useI18n>;
 
 const INTERNAL_TOOL_NAMES = new Set([
   "search_sdk",
@@ -559,7 +562,7 @@ export function resolveToolPreview({
 export function resolveToolStatusDetail(
   statusCode: string | null,
   statusMeta: Record<string, unknown> | null,
-  translate?: (key: string, values?: Record<string, unknown>) => string,
+  translate?: Translator,
 ): string | null {
   const toolName = humanizeToolName(
     typeof statusMeta?.tool_name === "string" ? statusMeta.tool_name : null,

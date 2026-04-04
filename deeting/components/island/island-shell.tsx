@@ -65,8 +65,8 @@ export function IslandShell() {
   const [completionFlash, setCompletionFlash] = useState(false);
   const [collapsedHighlight, setCollapsedHighlight] = useState<{
     tone: "success" | "pending";
-    label: string;
-    detail?: string | null;
+    labelKey: string;
+    detailKey?: string | null;
   } | null>(null);
   const hydrateFromChat = useIslandStore((s) => s.hydrateFromChat);
   const chatSnapshot = useChatStore(
