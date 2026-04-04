@@ -111,7 +111,7 @@ describe("useChatMessagingService pending takeover orchestration", () => {
     )
   })
 
-  it("uses pool selection for desktop local chat requests", async () => {
+  it("uses pool selection plus preferred provider member for desktop local chat requests", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI_INTERNALS__ = {}
     mockStreamDesktopLocalChatCompletion.mockResolvedValueOnce("")
@@ -146,7 +146,7 @@ describe("useChatMessagingService pending takeover orchestration", () => {
     const payload = mockStreamDesktopLocalChatCompletion.mock.calls[0]?.[0]
     expect(payload?.model).toBe("qwen-local")
     expect(payload?.model_selection_mode).toBe("pool")
-    expect(payload?.provider_model_id).toBeUndefined()
+    expect(payload?.provider_model_id).toBe("provider-local-1")
 
     delete windowWithTauri.__TAURI_INTERNALS__
   })

@@ -8,7 +8,7 @@ use super::{
     resolve_dynamic_direct_capability_tool_name, resolve_local_capability_activation_state,
     search_feedback::search_feedback_context_from_tool_call_meta, CapabilityExecutionContract,
     LocalCapabilityActivationState, LocalExecutionPolicy,
-    LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION, LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
+    LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
 };
 use crate::modules::desktop_config::{parse_max_agentic_rounds, MAX_AGENTIC_ROUNDS_CONFIG_KEY};
 use crate::modules::mcp::commands::common_impl::to_string;
@@ -1404,19 +1404,16 @@ async fn maybe_handle_local_code_mode_tool_calls(
                 }
                 Err(err) => {
                     let error = err.to_string();
-                    let meta = build_local_tool_call_install_gate_error_meta(
+                    synthesized = true;
+                    push_local_tool_call_error_meta(
+                        &mut tool_call_meta,
+                        &mut results,
+                        realtime_emitter,
                         call.id.as_deref(),
                         &tool_name,
-                        &error,
+                        "LOCAL_TOOL_EXECUTION_FAILED",
+                        error,
                     );
-                    let mut streamed_blocks = Vec::new();
-                    append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
-                    realtime_emitter.emit_blocks(streamed_blocks);
-                    tool_call_meta.push(meta);
-                    results.push(format!(
-                        "Tool call '{}' failed [{}]: {}",
-                        tool_name, LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE, error
-                    ));
                 }
             }
         }

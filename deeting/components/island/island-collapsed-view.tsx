@@ -1,14 +1,16 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ChevronDown } from "lucide-react";
+import { CheckCheck, ChevronDown } from "lucide-react";
 import { motion } from "framer-motion";
 import { formatDistanceToNow } from "date-fns";
 import { zhCN, enUS } from "date-fns/locale";
 import { useLocale } from "next-intl";
 
+import { useI18n } from "@/hooks/use-i18n";
 import { cn } from "@/lib/utils";
 
+import { resolveIslandStatusLabelKey } from "./island-labels";
 import { IslandSeedLogo } from "./island-seed-logo";
 import { IslandStatusTimeline } from "./island-status-timeline";
 import { useIslandContext } from "./island-context";
@@ -49,16 +51,31 @@ export function IslandCollapsedView({
     statusCode,
     statusMeta,
     stageHistory,
+    collapsedHighlight,
     expand,
   } = useIslandContext();
+  const t = useI18n("chat");
 
-  const isActive = statusLabel === "Working..." || statusLabel === "Pending approval";
+  const isActive =
+    statusLabel === "Working..." || statusLabel === "Pending approval";
 
   const locale = useLocale();
   const dateFnsLocale = locale === "zh-CN" ? zhCN : enUS;
   const relativeTime = lastReplyAt
-    ? formatDistanceToNow(lastReplyAt, { addSuffix: true, locale: dateFnsLocale })
+    ? formatDistanceToNow(lastReplyAt, {
+        addSuffix: true,
+        locale: dateFnsLocale,
+      })
     : null;
+  const effectiveStatusLabel = collapsedHighlight?.labelKey
+    ? t(collapsedHighlight.labelKey)
+    : resolveIslandStatusLabelKey(statusLabel)
+      ? t(resolveIslandStatusLabelKey(statusLabel) as string)
+      : statusLabel;
+  const effectiveSummary = collapsedHighlight?.detailKey
+    ? t(collapsedHighlight.detailKey)
+    : summaryText;
+  const showBusyTrack = isBusy && !collapsedHighlight;
 
   // Re-render every 30s to keep relative time fresh
   const [, setTick] = useState(0);
@@ -73,39 +90,58 @@ export function IslandCollapsedView({
       data-tauri-drag-region={dragRegion ? "true" : undefined}
       onClick={expand}
       className={cn(
-        "flex items-center cursor-pointer select-none",
-        compact ? "h-full gap-2.5 px-3.5 py-2" : "gap-3 px-4 py-2.5"
+        "flex items-center cursor-pointer select-none rounded-[999px]",
+        "border border-white/40 bg-[linear-gradient(180deg,rgba(255,255,255,0.82),rgba(245,239,230,0.62))]",
+        "shadow-[0_16px_36px_-26px_rgba(0,0,0,0.34)]",
+        "dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(46,38,28,0.96),rgba(23,20,18,0.94))]",
+        compact ? "h-full gap-2 px-2.5 py-1.5" : "gap-2.5 px-3 py-2",
       )}
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
       transition={{ type: "spring", stiffness: 400, damping: 25 }}
     >
-      <IslandSeedLogo size={20} isActive={isActive} />
+      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/58 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] dark:bg-white/6">
+        <IslandSeedLogo size={18} isActive={isActive} />
+      </div>
 
-      <div className={cn("flex items-center", compact ? "gap-1" : "gap-1.5")}>
-        <div className="relative flex h-2 w-2">
-          <span
-            className={cn(
-              "absolute inline-flex h-full w-full rounded-full opacity-75",
-              isActive ? "animate-ping bg-amber-400" : "bg-emerald-400"
-            )}
-          />
-          <span
-            className={cn(
-              "relative inline-flex rounded-full h-2 w-2",
-              isActive ? "bg-amber-400" : "bg-emerald-400"
-            )}
-          />
-        </div>
-        <span className="text-[11px] font-medium text-foreground/70">
-          {statusLabel}
+      <div
+        className={cn(
+          "flex items-center rounded-full bg-white/46 px-2.5 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.56)] dark:bg-white/6",
+          compact ? "gap-1" : "gap-1.5",
+        )}
+      >
+        {collapsedHighlight?.tone === "success" ? (
+          <CheckCheck className="h-3.5 w-3.5 text-emerald-500" />
+        ) : (
+          <div className="relative flex h-2 w-2">
+            <span
+              className={cn(
+                "absolute inline-flex h-full w-full rounded-full opacity-75",
+                isActive ? "animate-ping bg-amber-400" : "bg-emerald-400",
+              )}
+            />
+            <span
+              className={cn(
+                "relative inline-flex rounded-full h-2 w-2",
+                isActive ? "bg-amber-400" : "bg-emerald-400",
+              )}
+            />
+          </div>
+        )}
+        <span
+          className={cn(
+            "text-[11px] font-medium",
+            collapsedHighlight?.tone === "success"
+              ? "text-emerald-700 dark:text-emerald-300"
+              : "text-foreground/70",
+          )}
+        >
+          {effectiveStatusLabel}
         </span>
       </div>
 
-      <span className="h-3.5 w-px bg-island-shell-border/50" />
-
-      {isBusy ? (
-        <div className="flex min-w-0 flex-1 items-center gap-2">
+      {showBusyTrack ? (
+        <div className="flex min-w-0 flex-1 items-center gap-2 rounded-full bg-white/36 px-2.5 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.52)] dark:bg-white/5">
           <TypingDots />
           <IslandStatusTimeline
             compact
@@ -118,16 +154,16 @@ export function IslandCollapsedView({
           />
         </div>
       ) : (
-        <div className="flex items-center gap-2 min-w-0 flex-1">
+        <div className="flex min-w-0 flex-1 items-center gap-2 rounded-full bg-white/36 px-2.5 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.52)] dark:bg-white/5">
           <span
             className={cn(
               "text-[12px] font-medium text-foreground/60 truncate",
-              compact ? "max-w-[112px]" : "max-w-[140px]"
+              compact ? "max-w-[112px]" : "max-w-[140px]",
             )}
           >
-            {summaryText}
+            {effectiveSummary}
           </span>
-          {relativeTime && (
+          {relativeTime && !collapsedHighlight && (
             <span className="text-[10px] text-foreground/35 shrink-0 tabular-nums">
               {relativeTime}
             </span>
@@ -135,7 +171,9 @@ export function IslandCollapsedView({
         </div>
       )}
 
-      <ChevronDown className="w-3.5 h-3.5 text-island-gold ml-auto shrink-0 transition-transform" />
+      <div className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/52 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] dark:bg-white/6">
+        <ChevronDown className="h-3.5 w-3.5 text-island-gold transition-transform" />
+      </div>
     </motion.div>
   );
 }

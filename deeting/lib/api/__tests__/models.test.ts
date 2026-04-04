@@ -1,4 +1,9 @@
-import { fetchChatModels, invalidateDesktopLocalModelsCache } from "@/lib/api/models"
+import {
+  fetchChatModels,
+  invalidateDesktopLocalModelsCache,
+  matchesChatModelSelectionValue,
+  resolveChatModelSelectionValue,
+} from "@/lib/api/models"
 import { request } from "@/lib/http"
 import { invoke } from "@tauri-apps/api/core"
 
@@ -306,5 +311,18 @@ describe("models api", () => {
     expect(mockInvoke).toHaveBeenNthCalledWith(2, "list_local_provider_models", {
       instanceId: "inst-local-shared",
     })
+  })
+
+  it("uses provider_model_id as the stable chat selection value for desktop local models", () => {
+    const model = {
+      id: "qwen-max",
+      provider_model_id: "provider-model-local-2",
+      request_route: "local_invoke" as const,
+      runtime_source: "desktop_local" as const,
+    }
+
+    expect(resolveChatModelSelectionValue(model)).toBe("provider-model-local-2")
+    expect(matchesChatModelSelectionValue(model, "provider-model-local-2")).toBe(true)
+    expect(matchesChatModelSelectionValue(model, "qwen-max")).toBe(true)
   })
 })

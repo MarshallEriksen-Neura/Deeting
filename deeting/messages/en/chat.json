@@ -372,6 +372,46 @@
       "expand": "Show details",
       "collapse": "Collapse"
     },
+    "island": {
+      "liveProgress": "Live progress",
+      "requestLabel": "Request",
+      "responseTitle": "In-island response",
+      "keepNearby": "Keep the island nearby for long tasks, translation, approvals, and quick follow-ups.",
+      "approvalEmpty": "Paused here for your decision. Approve or reject without leaving the island.",
+      "approvalTitle": "Approval required",
+      "attentionTitle": "Attention",
+      "continueHere": "Continue here",
+      "quickReplyPlaceholder": "Reply from the island...",
+      "modeTitle": "Island mode",
+      "modeDescription": "Approve, continue, translate, or send a short follow-up without leaving the capsule.",
+      "workspaceTitle": "Workspace",
+      "workspaceDescription": "Reopen the full canvas only when you need broader context or longer edits.",
+      "decisionTitle": "Decision point",
+      "decisionDescription": "The task is paused right here. Approve now, reject it, or keep a short note in the island before moving on.",
+      "hints": {
+        "pending": "A decision is waiting. Approve or reject directly from the island.",
+        "active": "Stay in flow without opening the full workspace",
+        "idle": "Keep lightweight tasks inside the island"
+      },
+      "badges": {
+        "live": "Live",
+        "latest": "Latest"
+      },
+      "status": {
+        "idle": "Idle",
+        "ready": "Ready",
+        "working": "Working",
+        "pendingApproval": "Pending approval",
+        "needsAttention": "Needs attention",
+        "completed": "Completed"
+      },
+      "toolStatus": {
+        "pendingApproval": "Waiting for approval to continue with {name}",
+        "running": "Running {name}",
+        "using": "Using {name}"
+      },
+      "completedDetail": "Task finished. The island is ready when you need it again."
+    },
     "approvalDialog": {
       "title": "Approval required",
       "description": "The AI is requesting permission to run a high-risk tool on your local system.",

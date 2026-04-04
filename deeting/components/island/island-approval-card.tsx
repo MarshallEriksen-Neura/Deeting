@@ -5,6 +5,8 @@ import { Check, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 import { GlassButton } from "@/components/ui/glass-button";
+import { useI18n } from "@/hooks/use-i18n";
+import { humanizeToolName } from "@/lib/chat/tool-ux";
 import { cn } from "@/lib/utils";
 
 interface IslandApprovalCardProps {
@@ -22,7 +24,11 @@ export function IslandApprovalCard({
   onReject,
   disabled = false,
 }: IslandApprovalCardProps) {
-  const [feedback, setFeedback] = useState<"approved" | "rejected" | null>(null);
+  const [feedback, setFeedback] = useState<"approved" | "rejected" | null>(
+    null,
+  );
+  const t = useI18n("chat");
+  const displayTitle = humanizeToolName(title) ?? title;
 
   const handleApprove = () => {
     setFeedback("approved");
@@ -36,38 +42,41 @@ export function IslandApprovalCard({
   return (
     <div
       className={cn(
-        "rounded-xl p-3",
-        "bg-white/50 dark:bg-white/5",
-        "border border-island-shell-border/40",
-        "shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]"
+        "rounded-[24px] p-3.5",
+        "border border-white/45 bg-[linear-gradient(180deg,rgba(255,255,255,0.84),rgba(244,239,233,0.66))]",
+        "shadow-[0_18px_40px_-30px_rgba(0,0,0,0.34)]",
+        "dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(54,44,30,0.92),rgba(24,21,18,0.96))]",
       )}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-[12px] font-semibold text-foreground truncate">
-            {title}
+          <div className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-island-gold/80">
+            <span>{t("island.approvalTitle")}</span>
+          </div>
+          <p className="truncate text-[13px] font-semibold text-foreground">
+            {displayTitle}
           </p>
-          <p className="text-[11px] text-foreground/50 mt-0.5 line-clamp-1">
+          <p className="mt-1 line-clamp-2 text-[11px] leading-5 text-foreground/56">
             {desc}
           </p>
         </div>
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex shrink-0 items-center gap-1.5">
           <GlassButton
             size="sm"
             variant="ghost"
             onClick={handleReject}
             disabled={disabled}
-            className="text-[11px] px-2.5 py-1 h-auto rounded-lg"
+            className="h-auto rounded-full border-white/30 bg-white/34 px-3 py-1.5 text-[11px] shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]"
           >
-            Reject
+            {t("approvalDialog.actions.reject")}
           </GlassButton>
           <GlassButton
             size="sm"
             onClick={handleApprove}
             disabled={disabled}
-            className="text-[11px] px-2.5 py-1 h-auto rounded-lg"
+            className="h-auto rounded-full bg-island-gold/18 px-3 py-1.5 text-[11px] text-foreground shadow-[0_10px_22px_-18px_rgba(0,0,0,0.3)]"
           >
-            Approve
+            {t("approvalDialog.actions.approve")}
           </GlassButton>
         </div>
       </div>

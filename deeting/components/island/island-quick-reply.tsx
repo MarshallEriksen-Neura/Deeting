@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { SendHorizontal } from "lucide-react";
 import { motion } from "framer-motion";
 
+import { useI18n } from "@/hooks/use-i18n";
 import { cn } from "@/lib/utils";
 
 interface IslandQuickReplyProps {
@@ -14,11 +15,13 @@ interface IslandQuickReplyProps {
 
 export function IslandQuickReply({
   onSend,
-  placeholder = "Quick reply…",
+  placeholder,
   disabled = false,
 }: IslandQuickReplyProps) {
+  const t = useI18n("chat");
   const [value, setValue] = useState("");
   const [justSent, setJustSent] = useState(false);
+  const resolvedPlaceholder = placeholder ?? t("island.quickReplyPlaceholder");
 
   const handleSubmit = useCallback(
     async (event: React.FormEvent) => {
@@ -30,7 +33,7 @@ export function IslandQuickReply({
       setJustSent(true);
       setTimeout(() => setJustSent(false), 400);
     },
-    [value, onSend, disabled]
+    [value, onSend, disabled],
   );
 
   return (
@@ -39,32 +42,33 @@ export function IslandQuickReply({
         type="text"
         value={value}
         onChange={(event) => setValue(event.target.value)}
-        placeholder={placeholder}
+        placeholder={resolvedPlaceholder}
         disabled={disabled}
         className={cn(
-          "flex-1 h-8 px-3 text-[12px] rounded-full outline-none",
-          "bg-white/60 dark:bg-white/8",
-          "border border-island-shell-border/40",
-          "text-foreground placeholder:text-foreground/30",
-          "focus:border-island-gold/60 focus:ring-1 focus:ring-[var(--island-gold-stroke-soft)]",
-          "disabled:opacity-60 disabled:cursor-not-allowed",
-          "transition-colors"
+          "h-10 flex-1 rounded-full px-4 text-[12px] outline-none",
+          "border border-white/40 bg-white/62 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]",
+          "text-foreground placeholder:text-foreground/34",
+          "focus:border-island-gold/55 focus:ring-1 focus:ring-[var(--island-gold-stroke-soft)]",
+          "dark:border-white/10 dark:bg-white/6",
+          "disabled:cursor-not-allowed disabled:opacity-60",
+          "transition-colors",
         )}
       />
       <motion.button
         type="submit"
         disabled={disabled || !value.trim()}
-        animate={justSent ? { scale: [1, 1.2, 1] } : {}}
+        animate={justSent ? { scale: [1, 1.14, 1] } : {}}
         transition={{ duration: 0.3, ease: "easeOut" }}
         className={cn(
-          "flex items-center justify-center w-8 h-8 rounded-full shrink-0",
-          "bg-island-gold/15 text-island-gold",
-          "hover:bg-island-gold/25",
-          "disabled:opacity-30 disabled:cursor-not-allowed",
-          "transition-colors"
+          "flex h-10 w-10 shrink-0 items-center justify-center rounded-full",
+          "bg-[linear-gradient(180deg,rgba(229,216,197,0.76),rgba(245,239,230,0.52))] text-island-gold",
+          "shadow-[0_12px_24px_-18px_rgba(0,0,0,0.35)] hover:scale-[1.02]",
+          "dark:bg-[linear-gradient(180deg,rgba(60,47,32,0.82),rgba(30,25,21,0.96))]",
+          "disabled:cursor-not-allowed disabled:opacity-30",
+          "transition-colors",
         )}
       >
-        <SendHorizontal className="w-3.5 h-3.5" />
+        <SendHorizontal className="h-3.5 w-3.5" />
       </motion.button>
     </form>
   );

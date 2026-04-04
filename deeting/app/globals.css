@@ -11,8 +11,11 @@
    ============================================ */
 @font-face {
   font-family: "AlibabaPuHuiTi";
-  src: url("/fonts/AlibabaPuHuiTi-3/AlibabaPuHuiTi-3-35-Thin/AlibabaPuHuiTi-3-35-Thin.woff2") format("woff2"),
-       url("/fonts/AlibabaPuHuiTi-3/AlibabaPuHuiTi-3-35-Thin/AlibabaPuHuiTi-3-35-Thin.woff") format("woff");
+  src:
+    url("/fonts/AlibabaPuHuiTi-3/AlibabaPuHuiTi-3-35-Thin/AlibabaPuHuiTi-3-35-Thin.woff2")
+      format("woff2"),
+    url("/fonts/AlibabaPuHuiTi-3/AlibabaPuHuiTi-3-35-Thin/AlibabaPuHuiTi-3-35-Thin.woff")
+      format("woff");
   font-weight: 100;
   font-style: normal;
   font-display: swap;
@@ -20,8 +23,11 @@
 
 @font-face {
   font-family: "AlibabaPuHuiTi";
-  src: url("/fonts/AlibabaPuHuiTi-3/AlibabaPuHuiTi-3-55-Regular/AlibabaPuHuiTi-3-55-Regular.woff2") format("woff2"),
-       url("/fonts/AlibabaPuHuiTi-3/AlibabaPuHuiTi-3-55-Regular/AlibabaPuHuiTi-3-55-Regular.woff") format("woff");
+  src:
+    url("/fonts/AlibabaPuHuiTi-3/AlibabaPuHuiTi-3-55-Regular/AlibabaPuHuiTi-3-55-Regular.woff2")
+      format("woff2"),
+    url("/fonts/AlibabaPuHuiTi-3/AlibabaPuHuiTi-3-55-Regular/AlibabaPuHuiTi-3-55-Regular.woff")
+      format("woff");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -29,8 +35,11 @@
 
 @font-face {
   font-family: "AlibabaPuHuiTi";
-  src: url("/fonts/AlibabaPuHuiTi-3/AlibabaPuHuiTi-3-65-Medium/AlibabaPuHuiTi-3-65-Medium.woff2") format("woff2"),
-       url("/fonts/AlibabaPuHuiTi-3/AlibabaPuHuiTi-3-65-Medium/AlibabaPuHuiTi-3-65-Medium.woff") format("woff");
+  src:
+    url("/fonts/AlibabaPuHuiTi-3/AlibabaPuHuiTi-3-65-Medium/AlibabaPuHuiTi-3-65-Medium.woff2")
+      format("woff2"),
+    url("/fonts/AlibabaPuHuiTi-3/AlibabaPuHuiTi-3-65-Medium/AlibabaPuHuiTi-3-65-Medium.woff")
+      format("woff");
   font-weight: 500;
   font-style: normal;
   font-display: swap;
@@ -38,8 +47,11 @@
 
 @font-face {
   font-family: "AlibabaPuHuiTi";
-  src: url("/fonts/AlibabaPuHuiTi-3/AlibabaPuHuiTi-3-85-Bold/AlibabaPuHuiTi-3-85-Bold.woff2") format("woff2"),
-       url("/fonts/AlibabaPuHuiTi-3/AlibabaPuHuiTi-3-85-Bold/AlibabaPuHuiTi-3-85-Bold.woff") format("woff");
+  src:
+    url("/fonts/AlibabaPuHuiTi-3/AlibabaPuHuiTi-3-85-Bold/AlibabaPuHuiTi-3-85-Bold.woff2")
+      format("woff2"),
+    url("/fonts/AlibabaPuHuiTi-3/AlibabaPuHuiTi-3-85-Bold/AlibabaPuHuiTi-3-85-Bold.woff")
+      format("woff");
   font-weight: 700;
   font-style: normal;
   font-display: swap;
@@ -89,17 +101,29 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
-  --chat-user-bubble-bg: color-mix(in oklch, var(--surface) 93%, #efe2cf 7%);
-  --chat-user-bubble-border: color-mix(in oklch, var(--border) 72%, #d8c8b4 28%);
-  --chat-user-bubble-fg: color-mix(in oklch, var(--foreground) 92%, #6d5846 8%);
-  --chat-user-bubble-muted-fg: color-mix(in oklch, var(--foreground) 52%, transparent);
-  --chat-user-bubble-attachment-bg: color-mix(in oklch, var(--surface) 88%, #eadbc8 12%);
+  --chat-user-bubble-bg: linear-gradient(
+    135deg,
+    rgba(220, 217, 255, 0.97) 0%,
+    rgba(199, 212, 255, 0.97) 100%
+  );
+  --chat-user-bubble-border: rgba(255, 255, 255, 0.5);
+  --chat-user-bubble-fg: rgba(255, 255, 255, 0.97);
+  --chat-user-bubble-muted-fg: color-mix(in srgb, #6b7280 88%, transparent);
+  --chat-user-bubble-attachment-bg: rgba(255, 255, 255, 0.16);
 
   /* Global scrollbar palette (light by default) */
   --scrollbar-track: color-mix(in oklch, var(--surface) 88%, transparent);
   --scrollbar-thumb: color-mix(in oklch, var(--foreground) 22%, transparent);
-  --scrollbar-thumb-hover: color-mix(in oklch, var(--foreground) 32%, transparent);
-  --scrollbar-thumb-active: color-mix(in oklch, var(--foreground) 42%, transparent);
+  --scrollbar-thumb-hover: color-mix(
+    in oklch,
+    var(--foreground) 32%,
+    transparent
+  );
+  --scrollbar-thumb-active: color-mix(
+    in oklch,
+    var(--foreground) 42%,
+    transparent
+  );
 
   /* Island — warm gold floating capsule */
   --island-shell-bg: color-mix(in oklch, var(--surface) 78%, #f5efe6 22%);
@@ -126,11 +150,19 @@ html.dark {
   --primary-soft: #a6b0ff;
   --teal-accent: #21c9c3;
   --gradient: linear-gradient(135deg, #8b7bff 0%, #5ec8ff 55%, #a6e1ff 100%);
-  --chat-user-bubble-bg: color-mix(in oklch, var(--surface) 86%, #d6c0a6 14%);
-  --chat-user-bubble-border: color-mix(in oklch, var(--border) 70%, #cbb299 30%);
-  --chat-user-bubble-fg: color-mix(in oklch, white 90%, #ead7c1 10%);
-  --chat-user-bubble-muted-fg: color-mix(in oklch, white 62%, transparent);
-  --chat-user-bubble-attachment-bg: color-mix(in oklch, var(--surface) 78%, #cbb299 22%);
+  --chat-user-bubble-bg: linear-gradient(
+    135deg,
+    rgba(115, 130, 210, 0.9) 0%,
+    rgba(95, 113, 190, 0.9) 100%
+  );
+  --chat-user-bubble-border: rgba(215, 225, 255, 0.18);
+  --chat-user-bubble-fg: rgba(247, 250, 255, 0.97);
+  --chat-user-bubble-muted-fg: color-mix(
+    in srgb,
+    rgba(232, 235, 255, 0.78) 92%,
+    transparent
+  );
+  --chat-user-bubble-attachment-bg: rgba(255, 255, 255, 0.12);
 
   /* Island — warm gold floating capsule (dark) */
   --island-shell-bg: color-mix(in oklch, var(--surface) 72%, #2a2318 28%);
@@ -191,35 +223,84 @@ html.dark {
 }
 
 body {
-  font-family: "AlibabaPuHuiTi", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  transition: background-color 0.3s ease-out, color 0.3s ease-out;
+  font-family:
+    "AlibabaPuHuiTi",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    "Helvetica Neue",
+    Arial,
+    sans-serif;
+  transition:
+    background-color 0.3s ease-out,
+    color 0.3s ease-out;
 }
 
 .chat-user-bubble {
-  background: var(--chat-user-bubble-bg);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.28) 0%,
+      rgba(255, 255, 255, 0) 44%
+    ),
+    var(--chat-user-bubble-bg);
   border-color: var(--chat-user-bubble-border);
   color: var(--chat-user-bubble-fg);
-  backdrop-filter: blur(18px) saturate(1.02);
-  -webkit-backdrop-filter: blur(18px) saturate(1.02);
+  backdrop-filter: blur(18px) saturate(1.08);
+  -webkit-backdrop-filter: blur(18px) saturate(1.08);
+  text-shadow: 0 1px 1px rgba(90, 103, 177, 0.12);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.45),
-    0 10px 24px -22px rgba(110, 86, 61, 0.28),
-    0 2px 6px -4px rgba(110, 86, 61, 0.16);
+    inset 0 1px 0 rgba(255, 255, 255, 0.54),
+    0 10px 24px -22px rgba(129, 143, 214, 0.48),
+    0 3px 8px -7px rgba(108, 122, 194, 0.24);
 }
 
 .chat-user-bubble .chat-markdown-user {
-  --chat-link-color: color-mix(in oklch, var(--primary) 56%, #725c48 44%);
+  --chat-link-color: color-mix(in srgb, white 78%, var(--primary) 22%);
   --fgColor-default: var(--chat-user-bubble-fg);
   --fgColor-muted: var(--chat-user-bubble-muted-fg);
   --fgColor-accent: var(--chat-link-color);
-  --bgColor-muted: color-mix(in oklch, var(--chat-user-bubble-fg) 8%, transparent);
-  --borderColor-default: color-mix(in oklch, var(--chat-user-bubble-fg) 16%, transparent);
-  --color-prettylights-syntax-comment: color-mix(in oklch, var(--chat-user-bubble-fg) 62%, transparent);
+  --bgColor-muted: color-mix(in srgb, white 14%, transparent);
+  --borderColor-default: color-mix(in srgb, white 20%, transparent);
+  --color-prettylights-syntax-comment: color-mix(
+    in srgb,
+    var(--chat-user-bubble-fg) 66%,
+    transparent
+  );
   --color-prettylights-syntax-constant: var(--chat-user-bubble-fg);
-  --color-prettylights-syntax-entity: color-mix(in oklch, var(--chat-link-color) 82%, var(--chat-user-bubble-fg) 18%);
-  --color-prettylights-syntax-keyword: color-mix(in oklch, var(--chat-link-color) 64%, var(--chat-user-bubble-fg) 36%);
-  --color-prettylights-syntax-string: color-mix(in oklch, var(--chat-user-bubble-fg) 88%, var(--chat-link-color) 12%);
-  --color-prettylights-syntax-variable: color-mix(in oklch, var(--chat-user-bubble-fg) 82%, var(--chat-link-color) 18%);
+  --color-prettylights-syntax-entity: color-mix(
+    in srgb,
+    var(--chat-link-color) 82%,
+    var(--chat-user-bubble-fg) 18%
+  );
+  --color-prettylights-syntax-keyword: color-mix(
+    in srgb,
+    var(--chat-link-color) 64%,
+    var(--chat-user-bubble-fg) 36%
+  );
+  --color-prettylights-syntax-string: color-mix(
+    in srgb,
+    var(--chat-user-bubble-fg) 88%,
+    var(--chat-link-color) 12%
+  );
+  --color-prettylights-syntax-variable: color-mix(
+    in srgb,
+    var(--chat-user-bubble-fg) 82%,
+    var(--chat-link-color) 18%
+  );
+}
+
+.chat-user-bubble
+  .chat-markdown-user
+  :where(p, ul, ol, blockquote, pre, table):first-child {
+  margin-top: 0;
+}
+
+.chat-user-bubble
+  .chat-markdown-user
+  :where(p, ul, ol, blockquote, pre, table):last-child {
+  margin-bottom: 0;
 }
 
 .chat-user-bubble-meta {
@@ -248,16 +329,26 @@ html:not(.dark) body::before {
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(1200px at 15% 20%, rgba(124, 109, 255, 0.08), transparent 55%),
-    radial-gradient(900px at 85% 10%, rgba(33, 201, 195, 0.08), transparent 60%),
-    radial-gradient(1000px at 50% 80%, rgba(166, 176, 255, 0.06), transparent 50%),
+    radial-gradient(
+      1200px at 15% 20%,
+      rgba(124, 109, 255, 0.08),
+      transparent 55%
+    ),
+    radial-gradient(
+      900px at 85% 10%,
+      rgba(33, 201, 195, 0.08),
+      transparent 60%
+    ),
+    radial-gradient(
+      1000px at 50% 80%,
+      rgba(166, 176, 255, 0.06),
+      transparent 50%
+    ),
     rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(8px) saturate(1.04);
   -webkit-backdrop-filter: blur(8px) saturate(1.04);
   z-index: 0;
 }
-
-
 
 /* ============================================
    Header Component Styles - Digital Ink Theme
@@ -312,7 +403,8 @@ header[data-slot="header"] {
 
 /* Notification dot pulse animation */
 @keyframes glow-pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 0.6;
     transform: scale(1);
   }
@@ -413,21 +505,46 @@ a:focus-visible {
 }
 
 /* 错开入场动画 */
-.stagger-1 { animation-delay: 0ms; }
-.stagger-2 { animation-delay: 50ms; }
-.stagger-3 { animation-delay: 100ms; }
-.stagger-4 { animation-delay: 150ms; }
-.stagger-5 { animation-delay: 200ms; }
-.stagger-6 { animation-delay: 250ms; }
-.stagger-7 { animation-delay: 300ms; }
-.stagger-8 { animation-delay: 350ms; }
-.stagger-9 { animation-delay: 400ms; }
-.stagger-10 { animation-delay: 450ms; }
+.stagger-1 {
+  animation-delay: 0ms;
+}
+.stagger-2 {
+  animation-delay: 50ms;
+}
+.stagger-3 {
+  animation-delay: 100ms;
+}
+.stagger-4 {
+  animation-delay: 150ms;
+}
+.stagger-5 {
+  animation-delay: 200ms;
+}
+.stagger-6 {
+  animation-delay: 250ms;
+}
+.stagger-7 {
+  animation-delay: 300ms;
+}
+.stagger-8 {
+  animation-delay: 350ms;
+}
+.stagger-9 {
+  animation-delay: 400ms;
+}
+.stagger-10 {
+  animation-delay: 450ms;
+}
 
 /* Terminal cursor blink */
 @keyframes terminal-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
 }
 
 /* iOS 风格的微光效果 */
@@ -453,7 +570,8 @@ a:focus-visible {
 
 /* iOS 风格的呼吸光效 */
 @keyframes ios-breathe {
-  0%, 100% {
+  0%,
+  100% {
     box-shadow: 0 0 20px -5px rgba(124, 109, 255, 0.3);
   }
   50% {
@@ -467,15 +585,27 @@ a:focus-visible {
 
 /* Island 呼吸脉冲 */
 @keyframes island-breathe {
-  0%, 100% { box-shadow: 0 0 0 0 var(--island-seed-glow); }
-  50% { box-shadow: 0 0 12px 4px var(--island-seed-glow); }
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 var(--island-seed-glow);
+  }
+  50% {
+    box-shadow: 0 0 12px 4px var(--island-seed-glow);
+  }
 }
 
 /* Island 种子轻摇（闲置态） */
 @keyframes island-seed-sway {
-  0%, 100% { transform: translateY(0) rotate(0deg); }
-  25%      { transform: translateY(-1.5px) rotate(-2deg); }
-  75%      { transform: translateY(1px) rotate(1.5deg); }
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-1.5px) rotate(-2deg);
+  }
+  75% {
+    transform: translateY(1px) rotate(1.5deg);
+  }
 }
 
 /* Island 活跃态流光边框 */
@@ -486,8 +616,12 @@ a:focus-visible {
 }
 
 @keyframes island-glow-rotate {
-  from { --island-glow-angle: 0deg; }
-  to   { --island-glow-angle: 360deg; }
+  from {
+    --island-glow-angle: 0deg;
+  }
+  to {
+    --island-glow-angle: 360deg;
+  }
 }
 
 .island-active-glow {
@@ -512,10 +646,87 @@ a:focus-visible {
   pointer-events: none;
 }
 
+@keyframes island-approval-pulse {
+  0% {
+    opacity: 0;
+    transform: scale(0.96);
+    box-shadow: 0 0 0 0 rgba(212, 184, 150, 0);
+  }
+  28% {
+    opacity: 0.95;
+    transform: scale(1.015);
+    box-shadow: 0 0 0 14px rgba(212, 184, 150, 0.18);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.035);
+    box-shadow: 0 0 0 24px rgba(212, 184, 150, 0);
+  }
+}
+
+.island-approval-glow {
+  position: absolute;
+  inset: 2px;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      circle at 50% 18%,
+      rgba(255, 245, 225, 0.85),
+      transparent 38%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(229, 216, 197, 0.26),
+      rgba(229, 216, 197, 0.04)
+    );
+  animation: island-approval-pulse 0.95s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+  z-index: 5;
+}
+
+@keyframes island-complete-flash {
+  0% {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  22% {
+    opacity: 0.92;
+    transform: scale(1.012);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.03);
+  }
+}
+
+.island-complete-glow {
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      circle at 50% 26%,
+      rgba(255, 255, 255, 0.7),
+      transparent 32%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(125, 211, 161, 0.32),
+      rgba(125, 211, 161, 0.06)
+    );
+  animation: island-complete-flash 1.05s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  z-index: 5;
+}
+
 /* Island 边缘吸附闪光 */
 @keyframes island-snap-flash {
-  0%   { opacity: 0.8; }
-  100% { opacity: 0; }
+  0% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 .island-snap-glow {
   position: absolute;
@@ -524,10 +735,26 @@ a:focus-visible {
   border-radius: 1.75rem;
   animation: island-snap-flash 0.45s ease-out forwards;
 }
-.island-snap-glow[data-edge="left"]   { inset: 4px auto 4px -1.5px; width: 4px; background: linear-gradient(to right, var(--island-snap-glow), transparent); }
-.island-snap-glow[data-edge="right"]  { inset: 4px -1.5px 4px auto; width: 4px; background: linear-gradient(to left, var(--island-snap-glow), transparent); }
-.island-snap-glow[data-edge="top"]    { inset: -1.5px 4px auto 4px; height: 4px; background: linear-gradient(to bottom, var(--island-snap-glow), transparent); }
-.island-snap-glow[data-edge="bottom"] { inset: auto 4px -1.5px 4px; height: 4px; background: linear-gradient(to top, var(--island-snap-glow), transparent); }
+.island-snap-glow[data-edge="left"] {
+  inset: 4px auto 4px -1.5px;
+  width: 4px;
+  background: linear-gradient(to right, var(--island-snap-glow), transparent);
+}
+.island-snap-glow[data-edge="right"] {
+  inset: 4px -1.5px 4px auto;
+  width: 4px;
+  background: linear-gradient(to left, var(--island-snap-glow), transparent);
+}
+.island-snap-glow[data-edge="top"] {
+  inset: -1.5px 4px auto 4px;
+  height: 4px;
+  background: linear-gradient(to bottom, var(--island-snap-glow), transparent);
+}
+.island-snap-glow[data-edge="bottom"] {
+  inset: auto 4px -1.5px 4px;
+  height: 4px;
+  background: linear-gradient(to top, var(--island-snap-glow), transparent);
+}
 
 .island-content-scrollbar {
   scrollbar-width: thin;
@@ -573,7 +800,11 @@ a:focus-visible {
   content: "";
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.2) 0%, transparent 70%);
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 0.2) 0%,
+    transparent 70%
+  );
   transform: scale(0);
   opacity: 0;
   pointer-events: none;
@@ -590,8 +821,9 @@ html:not(.dark) [data-slot="glass-card"] {
 }
 
 html:not(.dark) [data-slot="glass-button"][data-variant="secondary"] {
-  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.08),
-              inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  box-shadow:
+    0 2px 8px -2px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
 /* ============================================
@@ -789,7 +1021,8 @@ html:not(.dark) [data-tauri-drag-region] {
   }
 
   @keyframes float {
-    0%, 100% {
+    0%,
+    100% {
       transform: translate(0px, 0px) rotate(0deg);
     }
     25% {

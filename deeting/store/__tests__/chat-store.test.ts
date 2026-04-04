@@ -3,6 +3,7 @@ import type { MessageBlock } from "@/lib/chat/message-protocol"
 
 describe("useChatStore selected assistant normalization", () => {
   const resetStore = () => {
+    localStorage.clear()
     sessionStorage.clear()
     useChatStore.getState().resetSession()
   }

@@ -2,6 +2,8 @@ import React from "react"
 import { render, screen } from "@testing-library/react"
 import { MessageItem } from "@/components/chat/messages/message-item"
 
+type MessageRecord = React.ComponentProps<typeof MessageItem>["message"]
+
 jest.mock("next/dynamic", () => ({
   __esModule: true,
   default: () => () => null,
@@ -60,7 +62,7 @@ describe("MessageItem runtime metrics visibility", () => {
         orchestrator_latency_ms: 700,
       },
     },
-  } as any
+  } as MessageRecord
 
   it("hides runtime metrics while the assistant message is still active for approval", () => {
     const { rerender } = render(
@@ -89,5 +91,35 @@ describe("MessageItem runtime metrics visibility", () => {
     expect(screen.getByText(/status\.metrics\.total:2\.40s/)).toBeInTheDocument()
     expect(screen.getByText(/status\.metrics\.upstream:1\.70s/)).toBeInTheDocument()
     expect(screen.getByText(/status\.metrics\.local:700ms/)).toBeInTheDocument()
+  })
+})
+
+describe("MessageItem user bubble layout", () => {
+  it("renders the user timestamp outside the capsule bubble", () => {
+    const userMessage = {
+      id: "user-1",
+      role: "user",
+      content: "Hi! Can you tell me about the new iOS 26 features?",
+      createdAt: "2026-04-04T14:31:00.000Z",
+      fromHistory: false,
+      attachments: [],
+      blocks: [],
+      metaInfo: {},
+    } as MessageRecord
+
+    render(<MessageItem message={userMessage} />)
+
+    const bubble = screen.getByText(userMessage.content).closest(".chat-user-bubble")
+    expect(bubble).not.toBeNull()
+
+    const timestamp = screen.getByText(
+      new Date(userMessage.createdAt).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    )
+
+    expect(timestamp).toHaveClass("chat-user-bubble-meta")
+    expect(bubble).not.toContainElement(timestamp)
   })
 })

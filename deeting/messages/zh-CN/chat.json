@@ -372,6 +372,46 @@
       "expand": "展开详情",
       "collapse": "收起"
     },
+    "island": {
+      "liveProgress": "实时进度",
+      "requestLabel": "当前请求",
+      "responseTitle": "灵动岛回复",
+      "keepNearby": "把灵动岛留在手边，适合长任务、翻译、审批和随时继续。",
+      "approvalEmpty": "任务正在这里等待你的决定，无需离开灵动岛即可批准或拒绝。",
+      "approvalTitle": "等待审批",
+      "attentionTitle": "请注意",
+      "continueHere": "继续处理",
+      "quickReplyPlaceholder": "直接在灵动岛继续...",
+      "modeTitle": "灵动岛模式",
+      "modeDescription": "你可以直接在这里审批、继续、翻译，或发送一句短回复，不必重新打开完整面板。",
+      "workspaceTitle": "工作区",
+      "workspaceDescription": "只有当你需要更完整的上下文或更长的编辑时，再回到完整工作区。",
+      "decisionTitle": "等待你的决定",
+      "decisionDescription": "当前任务暂停在这里。你可以立刻批准、拒绝，或者先在灵动岛补一句说明再继续。",
+      "hints": {
+        "pending": "有一个决定正在等待你，直接在灵动岛里批准或拒绝即可。",
+        "active": "保持节奏，不必为了短操作重新打开完整工作区。",
+        "idle": "轻量任务尽量留在灵动岛内完成。"
+      },
+      "badges": {
+        "live": "进行中",
+        "latest": "最新"
+      },
+      "status": {
+        "idle": "空闲",
+        "ready": "就绪",
+        "working": "处理中",
+        "pendingApproval": "等待审批",
+        "needsAttention": "需要处理",
+        "completed": "已完成"
+      },
+      "toolStatus": {
+        "pendingApproval": "正在等待你批准 {name}",
+        "running": "正在执行 {name}",
+        "using": "正在使用 {name}"
+      },
+      "completedDetail": "任务已经完成。灵动岛会先保留这个状态，方便你确认结果。"
+    },
     "approvalDialog": {
       "title": "审批确认",
       "description": "当前 AI 正请求在你的本地环境执行一个高风险工具。",

@@ -18,6 +18,13 @@ export interface IslandContextValue {
   statusCode: string | null;
   statusMeta: Record<string, unknown> | null;
   stageHistory: IslandStatusStep[];
+  collapsedHighlight:
+    | {
+        tone: "success" | "pending";
+        labelKey: string;
+        detailKey?: string | null;
+      }
+    | null;
 
   expand: () => void;
   collapse: () => void;

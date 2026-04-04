@@ -14,8 +14,11 @@ import {
   type IslandSyncPayload,
 } from "./island-window-store";
 
-const COLLAPSED_SIZE = { width: 344, height: 60 };
-const EXPANDED_SIZE = { width: 580, height: 560 };
+const COLLAPSED_SIZE = { width: 372, height: 64 };
+const EXPANDED_SIZE = { width: 592, height: 548 };
+const APPROVAL_FOCUSED_SIZE = { width: 592, height: 464 };
+const AUTO_COLLAPSE_DELAY_MS = 1800;
+const COMPLETED_BADGE_DURATION_MS = 2600;
 
 /* ── Edge-snap constants ── */
 const SNAP_THRESHOLD = 24;
@@ -23,20 +26,33 @@ const SNAP_MARGIN = 10;
 const DRAG_IDLE_MS = 150;
 const SNAP_ANIM_MS = 200;
 
-type SnapEdges = { left: boolean; right: boolean; top: boolean; bottom: boolean };
+type SnapEdges = {
+  left: boolean;
+  right: boolean;
+  top: boolean;
+  bottom: boolean;
+};
 
 function computeSnap(
   pos: { x: number; y: number },
   winSize: { width: number; height: number },
   screenSize: { width: number; height: number },
 ): { snapped: { x: number; y: number }; edges: SnapEdges } {
-  const edges: SnapEdges = { left: false, right: false, top: false, bottom: false };
+  const edges: SnapEdges = {
+    left: false,
+    right: false,
+    top: false,
+    bottom: false,
+  };
   let { x, y } = pos;
 
   if (x <= SNAP_THRESHOLD + SNAP_MARGIN) {
     x = SNAP_MARGIN;
     edges.left = true;
-  } else if (x + winSize.width >= screenSize.width - SNAP_THRESHOLD - SNAP_MARGIN) {
+  } else if (
+    x + winSize.width >=
+    screenSize.width - SNAP_THRESHOLD - SNAP_MARGIN
+  ) {
     x = screenSize.width - winSize.width - SNAP_MARGIN;
     edges.right = true;
   }
@@ -44,7 +60,10 @@ function computeSnap(
   if (y <= SNAP_THRESHOLD + SNAP_MARGIN) {
     y = SNAP_MARGIN;
     edges.top = true;
-  } else if (y + winSize.height >= screenSize.height - SNAP_THRESHOLD - SNAP_MARGIN) {
+  } else if (
+    y + winSize.height >=
+    screenSize.height - SNAP_THRESHOLD - SNAP_MARGIN
+  ) {
     y = screenSize.height - winSize.height - SNAP_MARGIN;
     edges.bottom = true;
   }
@@ -79,7 +98,9 @@ function animatePosition(
   }
 
   requestAnimationFrame(tick);
-  return () => { cancelled = true; };
+  return () => {
+    cancelled = true;
+  };
 }
 
 export function IslandWindowShell() {
@@ -106,11 +127,138 @@ export function IslandWindowShell() {
       sendQuickReply: s.sendQuickReply,
       approvePendingApproval: s.approvePendingApproval,
       rejectPendingApproval: s.rejectPendingApproval,
-    }))
+    })),
   );
 
   const syncFromEvent = useIslandWindowStore((s) => s.syncFromEvent);
   const mode = store.mode;
+  const autoCollapseTimerRef = React.useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const approvalFlashTimerRef = React.useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const completionFlashTimerRef = React.useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const collapsedHighlightTimerRef = React.useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const previousActiveRef = React.useRef(false);
+  const previousPendingApprovalRef = React.useRef(false);
+  const [approvalFlash, setApprovalFlash] = useState(false);
+  const [completionFlash, setCompletionFlash] = useState(false);
+  const [collapsedHighlight, setCollapsedHighlight] = useState<{
+    tone: "success" | "pending";
+    label: string;
+    detail?: string | null;
+  } | null>(null);
+
+  const hasPendingApproval = Boolean(store.pendingApproval);
+  const isTaskActive =
+    store.isBusy ||
+    hasPendingApproval ||
+    Boolean(store.statusCode) ||
+    store.statusLabel === "Working..." ||
+    store.statusLabel === "Pending approval";
+
+  useEffect(() => {
+    const pendingApprovalJustAppeared =
+      hasPendingApproval && !previousPendingApprovalRef.current;
+
+    if (pendingApprovalJustAppeared && mode === "collapsed") {
+      store.expand();
+    }
+    if (pendingApprovalJustAppeared) {
+      if (collapsedHighlightTimerRef.current !== null) {
+        clearTimeout(collapsedHighlightTimerRef.current);
+        collapsedHighlightTimerRef.current = null;
+      }
+      setCollapsedHighlight(null);
+      if (approvalFlashTimerRef.current !== null) {
+        clearTimeout(approvalFlashTimerRef.current);
+      }
+      setApprovalFlash(true);
+      approvalFlashTimerRef.current = setTimeout(() => {
+        setApprovalFlash(false);
+        approvalFlashTimerRef.current = null;
+      }, 950);
+    }
+
+    if (
+      autoCollapseTimerRef.current !== null &&
+      (isTaskActive || mode !== "expanded")
+    ) {
+      clearTimeout(autoCollapseTimerRef.current);
+      autoCollapseTimerRef.current = null;
+    }
+
+    const taskJustCompleted =
+      previousActiveRef.current &&
+      !isTaskActive &&
+      mode === "expanded" &&
+      !store.errorMessage;
+
+    if (taskJustCompleted) {
+      if (completionFlashTimerRef.current !== null) {
+        clearTimeout(completionFlashTimerRef.current);
+      }
+      setCompletionFlash(true);
+      completionFlashTimerRef.current = setTimeout(() => {
+        setCompletionFlash(false);
+        completionFlashTimerRef.current = null;
+      }, 1100);
+
+      autoCollapseTimerRef.current = setTimeout(() => {
+        const state = useIslandWindowStore.getState();
+        if (
+          state.mode === "expanded" &&
+          !state.isBusy &&
+          !state.pendingApproval &&
+          !state.errorMessage
+        ) {
+          state.collapse();
+          if (collapsedHighlightTimerRef.current !== null) {
+            clearTimeout(collapsedHighlightTimerRef.current);
+          }
+          setCollapsedHighlight({
+            tone: "success",
+            labelKey: "island.status.completed",
+            detailKey: "island.completedDetail",
+          });
+          collapsedHighlightTimerRef.current = setTimeout(() => {
+            setCollapsedHighlight(null);
+            collapsedHighlightTimerRef.current = null;
+          }, COMPLETED_BADGE_DURATION_MS);
+        }
+        autoCollapseTimerRef.current = null;
+      }, AUTO_COLLAPSE_DELAY_MS);
+    }
+
+    previousActiveRef.current = isTaskActive;
+    previousPendingApprovalRef.current = hasPendingApproval;
+
+    return () => {
+      if (
+        autoCollapseTimerRef.current !== null &&
+        (isTaskActive || mode !== "expanded")
+      ) {
+        clearTimeout(autoCollapseTimerRef.current);
+        autoCollapseTimerRef.current = null;
+      }
+      if (
+        !pendingApprovalJustAppeared &&
+        approvalFlashTimerRef.current !== null
+      ) {
+        clearTimeout(approvalFlashTimerRef.current);
+        approvalFlashTimerRef.current = null;
+      }
+      if (collapsedHighlightTimerRef.current !== null && isTaskActive) {
+        clearTimeout(collapsedHighlightTimerRef.current);
+        collapsedHighlightTimerRef.current = null;
+      }
+    };
+  }, [hasPendingApproval, isTaskActive, mode, store]);
 
   // Listen for state sync events from main window
   useEffect(() => {
@@ -122,7 +270,7 @@ export function IslandWindowShell() {
         "island:state-sync",
         (event) => {
           syncFromEvent(event.payload);
-        }
+        },
       );
     })();
 
@@ -136,10 +284,14 @@ export function IslandWindowShell() {
     (async () => {
       const { invoke } = await import("@tauri-apps/api/core");
       const size =
-        mode === "expanded" ? EXPANDED_SIZE : COLLAPSED_SIZE;
+        mode === "expanded"
+          ? hasPendingApproval
+            ? APPROVAL_FOCUSED_SIZE
+            : EXPANDED_SIZE
+          : COLLAPSED_SIZE;
       await invoke("set_island_size", size);
     })();
-  }, [mode]);
+  }, [hasPendingApproval, mode]);
 
   // Position management: restore saved position, snap to edges after drag
   const positionInitRef = React.useRef(false);
@@ -153,7 +305,8 @@ export function IslandWindowShell() {
 
     (async () => {
       const { invoke } = await import("@tauri-apps/api/core");
-      const { getCurrentWindow, currentMonitor, primaryMonitor } = await import("@tauri-apps/api/window");
+      const { getCurrentWindow, currentMonitor, primaryMonitor } =
+        await import("@tauri-apps/api/window");
 
       // Restore saved position (only on first mount)
       if (!positionInitRef.current) {
@@ -186,7 +339,10 @@ export function IslandWindowShell() {
         if (Date.now() < selfMoveUntil) return;
 
         // Cancel any in-flight snap animation (user started dragging again)
-        if (cancelAnim) { cancelAnim(); cancelAnim = null; }
+        if (cancelAnim) {
+          cancelAnim();
+          cancelAnim = null;
+        }
 
         // Debounce: detect drag-end when onMoved stops for DRAG_IDLE_MS
         if (dragIdleTimer !== null) clearTimeout(dragIdleTimer);
@@ -195,7 +351,10 @@ export function IslandWindowShell() {
             const mon = await currentMonitor();
             if (!mon) {
               // No monitor info — just save raw position
-              localStorage.setItem("island-position", JSON.stringify({ x: payload.x, y: payload.y }));
+              localStorage.setItem(
+                "island-position",
+                JSON.stringify({ x: payload.x, y: payload.y }),
+              );
               return;
             }
             const sf = mon.scaleFactor;
@@ -205,31 +364,46 @@ export function IslandWindowShell() {
               height: mon.size.height / sf,
             };
 
-            const { snapped, edges } = computeSnap(logicalPos, winSize, screenLogical);
-            const didSnap = edges.left || edges.right || edges.top || edges.bottom;
+            const { snapped, edges } = computeSnap(
+              logicalPos,
+              winSize,
+              screenLogical,
+            );
+            const didSnap =
+              edges.left || edges.right || edges.top || edges.bottom;
 
             if (didSnap) {
               selfMoveUntil = Date.now() + SNAP_ANIM_MS + 100;
 
               window.dispatchEvent(
-                new CustomEvent("island:snap", { detail: edges })
+                new CustomEvent("island:snap", { detail: edges }),
               );
 
               cancelAnim = animatePosition(
                 logicalPos,
                 snapped,
                 invoke,
-                () => { selfMoveUntil = Date.now() + SNAP_ANIM_MS + 100; },
-                () => { cancelAnim = null; },
+                () => {
+                  selfMoveUntil = Date.now() + SNAP_ANIM_MS + 100;
+                },
+                () => {
+                  cancelAnim = null;
+                },
               );
 
               localStorage.setItem("island-position", JSON.stringify(snapped));
             } else {
-              localStorage.setItem("island-position", JSON.stringify(logicalPos));
+              localStorage.setItem(
+                "island-position",
+                JSON.stringify(logicalPos),
+              );
             }
           } catch {
             // monitor query failed; save raw position
-            localStorage.setItem("island-position", JSON.stringify({ x: payload.x, y: payload.y }));
+            localStorage.setItem(
+              "island-position",
+              JSON.stringify({ x: payload.x, y: payload.y }),
+            );
           }
         }, DRAG_IDLE_MS);
       });
@@ -257,22 +431,42 @@ export function IslandWindowShell() {
   if (mode === "hidden") return null;
 
   return (
-    <IslandProvider value={store}>
+    <IslandProvider value={{ ...store, collapsedHighlight }}>
       <div className="w-full h-full">
         <motion.div
           initial={{ opacity: 0, scale: 0.85 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.85 }}
           transition={{ type: "spring", damping: 24, stiffness: 260 }}
+          style={{ transformOrigin: "top center" }}
           className="w-full h-full"
         >
           <motion.div
             layout
+            transition={{ type: "spring", damping: 26, stiffness: 260 }}
+            animate={{
+              borderRadius: mode === "expanded" ? 34 : 999,
+              scale: approvalFlash ? 1.018 : completionFlash ? 1.01 : 1,
+              boxShadow:
+                mode === "expanded"
+                  ? completionFlash
+                    ? "0 28px 62px -26px rgba(16,185,129,0.3)"
+                    : approvalFlash
+                      ? "0 26px 58px -24px rgba(212,184,150,0.36)"
+                      : "0 24px 56px -30px rgba(0,0,0,0.34)"
+                  : approvalFlash
+                    ? "0 22px 44px -22px rgba(212,184,150,0.38)"
+                    : completionFlash
+                      ? "0 22px 46px -24px rgba(16,185,129,0.3)"
+                      : "0 18px 40px -26px rgba(0,0,0,0.38)",
+            }}
             className={cn(
-              "relative rounded-[1.75rem] overflow-hidden w-full h-full min-h-0",
+              "relative w-full h-full min-h-0 overflow-hidden",
               "border border-island-shell-border",
               "bg-island-shell-bg backdrop-blur-2xl",
-              "shadow-[0_12px_36px_-16px_rgba(0,0,0,0.18)]"
+              mode === "expanded"
+                ? "ring-1 ring-white/20"
+                : "ring-1 ring-white/30",
             )}
           >
             <AnimatePresence>
@@ -288,12 +482,44 @@ export function IslandWindowShell() {
                 />
               )}
             </AnimatePresence>
+            <AnimatePresence>
+              {approvalFlash ? (
+                <motion.div
+                  key="approval-flash"
+                  className="island-approval-glow"
+                  aria-hidden="true"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                />
+              ) : null}
+              {completionFlash ? (
+                <motion.div
+                  key="completion-flash"
+                  className="island-complete-glow"
+                  aria-hidden="true"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                />
+              ) : null}
+            </AnimatePresence>
             {snapEdges && (
               <>
-                {snapEdges.left   && <div className="island-snap-glow" data-edge="left" />}
-                {snapEdges.right  && <div className="island-snap-glow" data-edge="right" />}
-                {snapEdges.top    && <div className="island-snap-glow" data-edge="top" />}
-                {snapEdges.bottom && <div className="island-snap-glow" data-edge="bottom" />}
+                {snapEdges.left && (
+                  <div className="island-snap-glow" data-edge="left" />
+                )}
+                {snapEdges.right && (
+                  <div className="island-snap-glow" data-edge="right" />
+                )}
+                {snapEdges.top && (
+                  <div className="island-snap-glow" data-edge="top" />
+                )}
+                {snapEdges.bottom && (
+                  <div className="island-snap-glow" data-edge="bottom" />
+                )}
               </>
             )}
             <AnimatePresence mode="wait">

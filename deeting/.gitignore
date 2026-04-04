@@ -9,7 +9,12 @@
 !.yarn/plugins
 !.yarn/releases
 !.yarn/versions
+.firecrawl/
 target-*/
+
+target_*
+
+
 
 # testing
 /coverage

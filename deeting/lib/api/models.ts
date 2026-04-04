@@ -125,7 +125,7 @@ export function isDesktopLocalModel(model?: Pick<ModelInfo, "request_route" | "r
 }
 
 export function resolveChatModelSelectionValue(model: ChatSelectableModel): string {
-  return isDesktopLocalModel(model) ? model.id : model.provider_model_id ?? model.id
+  return model.provider_model_id ?? model.id
 }
 
 export function matchesChatModelSelectionValue(

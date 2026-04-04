@@ -38,6 +38,9 @@ interface ChatConfig {
 const LEGACY_DEFAULT_CHAT_MAX_TOKENS = 2048
 const PREVIOUS_DEFAULT_CHAT_MAX_TOKENS = 8192
 
+const resolveChatPersistStorage = () =>
+  detectTauriRuntime() ? localStorage : sessionStorage
+
 export interface CompareCandidate {
   modelKey: string
   modelId: string
@@ -933,7 +936,7 @@ export const useChatStore = create<ChatStore>()(
     }),
     {
       name: "deeting-chat-store",
-      storage: createJSONStorage(() => sessionStorage),
+      storage: createJSONStorage(resolveChatPersistStorage),
       partialize: (state) => ({
         // 只持久化配置，不持久化会话数据
         config: state.config,

@@ -1,6 +1,6 @@
 "use client"
 
-import { isValidElement, useEffect, useMemo, useState } from "react"
+import { isValidElement, useMemo, useState } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import remarkBreaks from "remark-breaks"
@@ -56,11 +56,8 @@ function SvgCodeBlock({
   const t = useI18n("chat")
   const rawText = useMemo(() => extractTextFromNode(children).trim(), [children])
   const previewSrc = useMemo(() => buildSvgDataUri(rawText), [rawText])
-  const [previewFailed, setPreviewFailed] = useState(false)
-
-  useEffect(() => {
-    setPreviewFailed(false)
-  }, [previewSrc])
+  const [failedPreviewSrc, setFailedPreviewSrc] = useState<string | null>(null)
+  const previewFailed = failedPreviewSrc === previewSrc
 
   return (
     <div className="space-y-3">
@@ -78,7 +75,7 @@ function SvgCodeBlock({
               src={previewSrc}
               alt={t("codeBlock.svgPreviewAlt")}
               className="max-h-80 max-w-full rounded-md border border-border/70 bg-white shadow-sm"
-              onError={() => setPreviewFailed(true)}
+              onError={() => setFailedPreviewSrc(previewSrc)}
             />
           )}
         </div>
@@ -122,7 +119,7 @@ export function MarkdownViewer({
               href={href}
               target="_blank"
               rel="noreferrer"
-              className="text-primary underline underline-offset-4"
+              className="underline underline-offset-4"
             >
               {children}
             </a>

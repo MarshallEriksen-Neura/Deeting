@@ -21,17 +21,17 @@
 }
 
 .user {
-  --md-link-color: color-mix(in oklch, var(--primary) 56%, #725c48 44%);
+  --md-link-color: color-mix(in srgb, var(--chat-user-bubble-fg) 84%, #dbe7ff 16%);
   --md-fg: var(--chat-user-bubble-fg);
   --md-fg-muted: var(--chat-user-bubble-muted-fg);
-  --md-bg-muted: color-mix(in oklch, var(--chat-user-bubble-fg) 8%, transparent);
-  --md-border: color-mix(in oklch, var(--chat-user-bubble-fg) 16%, transparent);
-  --md-token-comment: color-mix(in oklch, var(--chat-user-bubble-fg) 62%, transparent);
+  --md-bg-muted: color-mix(in srgb, var(--chat-user-bubble-fg) 8%, transparent);
+  --md-border: color-mix(in srgb, var(--chat-user-bubble-fg) 16%, transparent);
+  --md-token-comment: color-mix(in srgb, var(--chat-user-bubble-fg) 62%, transparent);
   --md-token-constant: var(--chat-user-bubble-fg);
-  --md-token-entity: color-mix(in oklch, var(--md-link-color) 82%, var(--chat-user-bubble-fg) 18%);
-  --md-token-keyword: color-mix(in oklch, var(--md-link-color) 64%, var(--chat-user-bubble-fg) 36%);
-  --md-token-string: color-mix(in oklch, var(--chat-user-bubble-fg) 88%, var(--md-link-color) 12%);
-  --md-token-variable: color-mix(in oklch, var(--chat-user-bubble-fg) 82%, var(--md-link-color) 18%);
+  --md-token-entity: color-mix(in srgb, var(--md-link-color) 82%, var(--chat-user-bubble-fg) 18%);
+  --md-token-keyword: color-mix(in srgb, var(--md-link-color) 64%, var(--chat-user-bubble-fg) 36%);
+  --md-token-string: color-mix(in srgb, var(--chat-user-bubble-fg) 88%, var(--md-link-color) 12%);
+  --md-token-variable: color-mix(in srgb, var(--chat-user-bubble-fg) 82%, var(--md-link-color) 18%);
 }
 
 .markdown :where(a) {

@@ -365,6 +365,56 @@ fn extract_local_conversation_model_binding(
     }
 }
 
+fn reusable_pinned_provider_model_id<'a>(
+    binding: Option<&'a LocalConversationModelBinding>,
+    requested_model: &str,
+) -> Option<&'a str> {
+    let binding = binding?;
+    let pinned_provider_model_id = binding
+        .pinned_provider_model_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+    let requested_model = requested_model.trim();
+    if requested_model.is_empty() {
+        return Some(pinned_provider_model_id);
+    }
+
+    let matches_requested_pool = binding
+        .pinned_model_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.eq_ignore_ascii_case(requested_model))
+        .unwrap_or(false);
+    let matches_requested_provider = pinned_provider_model_id.eq_ignore_ascii_case(requested_model);
+    if matches_requested_pool || matches_requested_provider {
+        Some(pinned_provider_model_id)
+    } else {
+        None
+    }
+}
+
+fn pool_request_matches_model_connection(
+    requested_model: &str,
+    connection: &crate::modules::ai_upstream::types::LocalModelConnection,
+) -> bool {
+    let requested_model = requested_model.trim();
+    if requested_model.is_empty() {
+        return true;
+    }
+
+    connection
+        .provider_model_id
+        .eq_ignore_ascii_case(requested_model)
+        || connection.model_id.eq_ignore_ascii_case(requested_model)
+        || connection
+            .logical_model_key
+            .as_deref()
+            .map(|value| value.eq_ignore_ascii_case(requested_model))
+            .unwrap_or(false)
+}
+
 struct LocalWorkflowContext {
     app_state: AppState,
     trace_id: String,
@@ -1899,10 +1949,16 @@ pub async fn execute_local_orchestrated_chat(
         input.model_selection_mode.as_deref(),
         input.compare_only,
     );
-    let has_existing_binding = conversation_model_binding
-        .as_ref()
-        .and_then(|binding| binding.pinned_provider_model_id.as_ref())
-        .is_some();
+    let explicit_pool_provider_model_id = matches!(selection_mode, LocalModelSelectionMode::Pool)
+        .then(|| input.provider_model_id.as_deref())
+        .flatten()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let reused_pinned_provider_model_id = matches!(selection_mode, LocalModelSelectionMode::Pool)
+        .then(|| {
+            reusable_pinned_provider_model_id(conversation_model_binding.as_ref(), &input.model)
+        })
+        .flatten();
     let model_connection = match selection_mode {
         LocalModelSelectionMode::ExactProvider => {
             resolve_provider_model_connection(
@@ -1914,10 +1970,18 @@ pub async fn execute_local_orchestrated_chat(
             .await?
         }
         LocalModelSelectionMode::Pool => {
-            if let Some(pinned_provider_model_id) = conversation_model_binding
-                .as_ref()
-                .and_then(|binding| binding.pinned_provider_model_id.as_deref())
-            {
+            if let Some(explicit_provider_model_id) = explicit_pool_provider_model_id {
+                let explicit_connection =
+                    resolve_provider_model_connection(app_state, explicit_provider_model_id)
+                        .await?;
+                if pool_request_matches_model_connection(&input.model, &explicit_connection) {
+                    explicit_connection
+                } else if let Some(pinned_provider_model_id) = reused_pinned_provider_model_id {
+                    resolve_provider_model_connection(app_state, pinned_provider_model_id).await?
+                } else {
+                    resolve_local_model_pool_connection(app_state, &input.model).await?
+                }
+            } else if let Some(pinned_provider_model_id) = reused_pinned_provider_model_id {
                 resolve_provider_model_connection(app_state, pinned_provider_model_id).await?
             } else {
                 resolve_local_model_pool_connection(app_state, &input.model).await?
@@ -1941,7 +2005,10 @@ pub async fn execute_local_orchestrated_chat(
                 err
             );
         }
-        if matches!(selection_mode, LocalModelSelectionMode::Pool) && !has_existing_binding {
+        if matches!(selection_mode, LocalModelSelectionMode::Pool)
+            && (explicit_pool_provider_model_id.is_some()
+                || reused_pinned_provider_model_id.is_none())
+        {
             let pinned_model_key = model_connection
                 .logical_model_key
                 .as_deref()
@@ -1951,7 +2018,11 @@ pub async fn execute_local_orchestrated_chat(
                     &session_id,
                     Some(pinned_model_key),
                     Some(provider_model_id.as_str()),
-                    Some("pool_selection"),
+                    Some(if explicit_pool_provider_model_id.is_some() {
+                        "user_selected_pool_member"
+                    } else {
+                        "pool_selection"
+                    }),
                 )
                 .await
             {
@@ -1978,9 +2049,10 @@ pub async fn execute_local_orchestrated_chat(
                 .and_then(|binding| binding.pinned_model_key.clone()),
             "sticky_reused": conversation_model_binding
                 .as_ref()
-                .and_then(|binding| binding.pinned_provider_model_id.as_deref())
+                .and_then(|_| reused_pinned_provider_model_id)
                 .map(|value| value == provider_model_id.as_str())
                 .unwrap_or(false),
+            "explicit_pool_member_requested": explicit_pool_provider_model_id.is_some(),
             "pinned_binding_source": conversation_model_binding
                 .as_ref()
                 .and_then(|binding| binding.pinned_binding_source.clone()),

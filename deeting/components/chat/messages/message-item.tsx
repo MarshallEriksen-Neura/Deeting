@@ -114,6 +114,7 @@ export const MessageItem = React.memo<MessageItemProps>(
     )
     const models = useChatStore((state) => state.models)
     const [compareDialogOpen, setCompareDialogOpen] = React.useState(false)
+    const messageMetaInfo = message.metaInfo as Record<string, unknown> | undefined
 
     // 判断是否为最后一条助手消息（用于 reveal 动画）
     // 无论 stream 是否开启，只要是最新的非历史助手消息就启用打字机效果
@@ -129,7 +130,7 @@ export const MessageItem = React.memo<MessageItemProps>(
     const activeCompareCandidate = compareState?.candidates[compareState.activeModelKey] ?? null
     const runtimeMetricsSummary = React.useMemo(() => {
       if (message.role !== "assistant") return null
-      const metrics = extractRuntimeMetrics(message.metaInfo as Record<string, unknown> | undefined)
+      const metrics = extractRuntimeMetrics(messageMetaInfo)
       if (!metrics) return null
       const parts: string[] = []
       if (metrics.totalLatencyMs !== null) {
@@ -142,7 +143,7 @@ export const MessageItem = React.memo<MessageItemProps>(
         parts.push(t("status.metrics.local", { value: formatLatencyValue(metrics.localLatencyMs) }))
       }
       return parts.length > 0 ? parts.join(" · ") : null
-    }, [message.metaInfo, message.role, t])
+    }, [message.role, messageMetaInfo, t])
     const assistantCopyContent = React.useMemo(() => {
       if (activeCompareCandidate) {
         return activeCompareCandidate.content
@@ -167,23 +168,23 @@ export const MessageItem = React.memo<MessageItemProps>(
     const userDisplayContent = React.useMemo(() => {
       if (message.role !== "user") return message.content
       const displayContent =
-        typeof message.metaInfo?.display_content === "string"
-          ? message.metaInfo.display_content.trim()
+        typeof messageMetaInfo?.display_content === "string"
+          ? messageMetaInfo.display_content.trim()
           : ""
       return displayContent || message.content
-    }, [message.content, message.metaInfo?.display_content, message.role])
+    }, [message.content, messageMetaInfo, message.role])
     const excludedModelKeys = React.useMemo(() => {
       if (compareState) {
         return Object.keys(compareState.candidates)
       }
       const modelKey =
-        typeof message.metaInfo?.provider_model_id === "string"
-          ? message.metaInfo.provider_model_id
-          : typeof message.metaInfo?.model_id === "string"
-            ? message.metaInfo.model_id
+        typeof messageMetaInfo?.provider_model_id === "string"
+          ? messageMetaInfo.provider_model_id
+          : typeof messageMetaInfo?.model_id === "string"
+            ? messageMetaInfo.model_id
             : null
       return modelKey ? [modelKey] : []
-    }, [compareState, message.metaInfo?.model_id, message.metaInfo?.provider_model_id])
+    }, [compareState, messageMetaInfo])
 
     return (
       <div
@@ -231,8 +232,8 @@ export const MessageItem = React.memo<MessageItemProps>(
                   onCopy={onCopy}
                   onCompare={() => setCompareDialogOpen(true)}
                   canCompare={canCompare}
-                  liked={message.metaInfo?.feedback_score === 1}
-                  disliked={message.metaInfo?.feedback_score === -1}
+                  liked={messageMetaInfo?.feedback_score === 1}
+                  disliked={messageMetaInfo?.feedback_score === -1}
                   disabled={isActive || compareState?.isFinalizing}
                 />
               )}
@@ -261,21 +262,23 @@ export const MessageItem = React.memo<MessageItemProps>(
             ) : null}
           </div>
         ) : (
-          <div className="chat-user-bubble relative min-w-0 max-w-[85%] rounded-2xl rounded-tr-none border px-5 py-3.5 text-[15px] leading-relaxed tracking-wide">
-            {message.attachments?.length ? (
-              <div className="mb-3">
-                <MessageAttachments
-                  attachments={message.attachments}
-                  variant="user"
-                  alt={imageAlt}
-                />
-              </div>
-            ) : null}
-            <MarkdownViewer
-              content={userDisplayContent}
-              className="chat-markdown chat-markdown-user"
-            />
-            <div className="chat-user-bubble-meta mt-1 text-right text-[10px]">
+          <div className="flex min-w-0 max-w-[min(82%,48rem)] flex-col items-end gap-1.5">
+            <div className="chat-user-bubble relative min-w-[9.75rem] max-w-full rounded-[32px] border px-5 py-3 text-[15px] font-normal leading-[1.48] tracking-normal">
+              {message.attachments?.length ? (
+                <div className="mb-3">
+                  <MessageAttachments
+                    attachments={message.attachments}
+                    variant="user"
+                    alt={imageAlt}
+                  />
+                </div>
+              ) : null}
+              <MarkdownViewer
+                content={userDisplayContent}
+                className="chat-markdown chat-markdown-user"
+              />
+            </div>
+            <div className="chat-user-bubble-meta px-1 text-right text-[11px]">
               {new Date(message.createdAt).toLocaleTimeString([], {
                 hour: "2-digit",
                 minute: "2-digit",

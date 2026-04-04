@@ -941,9 +941,7 @@ export function useChatMessagingService() {
         model: selectedModel.id,
         model_selection_mode: modelSelectionMode,
         provider_model_id:
-          preferLocalRoute && isDesktopLocalModel(selectedModel)
-            ? undefined
-            : selectedModel.provider_model_id ?? undefined,
+          selectedModel.provider_model_id ?? undefined,
         explicit_task_agent_id: explicitTaskAgentId,
         messages: requestMessages,
         temperature: config.temperature,
@@ -1175,9 +1173,7 @@ export function useChatMessagingService() {
         model: selectedModel.id,
         model_selection_mode: modelSelectionMode,
         provider_model_id:
-          preferLocalRoute && isDesktopLocalModel(selectedModel)
-            ? undefined
-            : selectedModel.provider_model_id ?? undefined,
+          selectedModel.provider_model_id ?? undefined,
         messages: requestMessages,
         temperature: config.temperature,
         max_tokens: resolveRequestedMaxTokens(config.maxTokens),

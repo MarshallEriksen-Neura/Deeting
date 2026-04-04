@@ -264,6 +264,48 @@ fn desktop_local_chat_engine_includes_route_selection_before_recipe_and_template
 }
 
 #[test]
+fn reusable_pinned_provider_model_id_requires_requested_pool_match() {
+    let binding = LocalConversationModelBinding {
+        pinned_model_key: Some("qwen-max".to_string()),
+        pinned_provider_model_id: Some("provider-model-a".to_string()),
+        pinned_binding_source: Some("pool_selection".to_string()),
+    };
+
+    assert_eq!(
+        reusable_pinned_provider_model_id(Some(&binding), "qwen-max"),
+        Some("provider-model-a")
+    );
+    assert_eq!(
+        reusable_pinned_provider_model_id(Some(&binding), "provider-model-a"),
+        Some("provider-model-a")
+    );
+    assert_eq!(
+        reusable_pinned_provider_model_id(Some(&binding), "deepseek-v3"),
+        None
+    );
+}
+
+#[test]
+fn pool_request_matches_model_connection_checks_pool_key_model_id_and_provider_member() {
+    let connection = crate::modules::ai_upstream::types::LocalModelConnection {
+        provider_model_id: "provider-model-a".to_string(),
+        model_id: "gpt-4o".to_string(),
+        logical_model_key: Some("gpt-4o".to_string()),
+        protocol_family: "openai".to_string(),
+    };
+
+    assert!(pool_request_matches_model_connection("gpt-4o", &connection));
+    assert!(pool_request_matches_model_connection(
+        "provider-model-a",
+        &connection
+    ));
+    assert!(!pool_request_matches_model_connection(
+        "deepseek-v1",
+        &connection
+    ));
+}
+
+#[test]
 fn parse_router_prompt_local_context_parses_date_and_timezone() {
     let ctx = parse_router_prompt_local_context("2026-03-08|Asia/Shanghai\n")
         .expect("local context should parse");

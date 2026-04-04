@@ -1,16 +1,19 @@
-import * as React from "react"
-import { fireEvent, render, screen } from "@testing-library/react"
+import * as React from "react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 
-import type { Message } from "@/lib/chat/message-types"
-import { useChatStore } from "@/store/chat-store"
+import type { Message } from "@/lib/chat/message-types";
+import { useChatStore } from "@/store/chat-store";
 
-import { IslandShell } from "../island-shell"
-import { useIslandStore } from "../island-store"
+import { IslandShell } from "../island-shell";
+import { useIslandStore } from "../island-store";
 
 jest.mock("framer-motion", () => {
-  type MockMotionDivProps = React.ComponentPropsWithoutRef<"div"> & Record<string, unknown>
-  type MockMotionButtonProps = React.ComponentPropsWithoutRef<"button"> & Record<string, unknown>
-  type MockMotionSpanProps = React.ComponentPropsWithoutRef<"span"> & Record<string, unknown>
+  type MockMotionDivProps = React.ComponentPropsWithoutRef<"div"> &
+    Record<string, unknown>;
+  type MockMotionButtonProps = React.ComponentPropsWithoutRef<"button"> &
+    Record<string, unknown>;
+  type MockMotionSpanProps = React.ComponentPropsWithoutRef<"span"> &
+    Record<string, unknown>;
   const MOTION_KEYS = new Set([
     "layout",
     "whileHover",
@@ -20,45 +23,44 @@ jest.mock("framer-motion", () => {
     "exit",
     "transition",
     "variants",
-  ])
+  ]);
 
   function stripMotionProps<T extends Record<string, unknown>>(props: T) {
     return Object.fromEntries(
-      Object.entries(props).filter(([key]) => !MOTION_KEYS.has(key))
-    ) as Omit<T, keyof typeof MOTION_KEYS>
+      Object.entries(props).filter(([key]) => !MOTION_KEYS.has(key)),
+    ) as Omit<T, keyof typeof MOTION_KEYS>;
   }
 
-  const MotionDiv = React.forwardRef<HTMLDivElement, MockMotionDivProps>(function MotionDiv(
-    { children, ...props },
-    ref
-  ) {
-    return (
-      <div ref={ref} {...stripMotionProps(props)}>
-        {children}
-      </div>
-    )
-  })
-
-  const MotionButton = React.forwardRef<HTMLButtonElement, MockMotionButtonProps>(
-    function MotionButton({ children, ...props }, ref) {
+  const MotionDiv = React.forwardRef<HTMLDivElement, MockMotionDivProps>(
+    function MotionDiv({ children, ...props }, ref) {
       return (
-        <button ref={ref} {...stripMotionProps(props)}>
+        <div ref={ref} {...stripMotionProps(props)}>
           {children}
-        </button>
-      )
-    }
-  )
+        </div>
+      );
+    },
+  );
 
-  const MotionSpan = React.forwardRef<HTMLSpanElement, MockMotionSpanProps>(function MotionSpan(
-    { children, ...props },
-    ref
-  ) {
+  const MotionButton = React.forwardRef<
+    HTMLButtonElement,
+    MockMotionButtonProps
+  >(function MotionButton({ children, ...props }, ref) {
     return (
-      <span ref={ref} {...stripMotionProps(props)}>
+      <button ref={ref} {...stripMotionProps(props)}>
         {children}
-      </span>
-    )
-  })
+      </button>
+    );
+  });
+
+  const MotionSpan = React.forwardRef<HTMLSpanElement, MockMotionSpanProps>(
+    function MotionSpan({ children, ...props }, ref) {
+      return (
+        <span ref={ref} {...stripMotionProps(props)}>
+          {children}
+        </span>
+      );
+    },
+  );
 
   return {
     motion: {
@@ -66,28 +68,29 @@ jest.mock("framer-motion", () => {
       button: MotionButton,
       span: MotionSpan,
     },
-    AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  }
-})
+    AnimatePresence: ({ children }: { children: React.ReactNode }) => (
+      <>{children}</>
+    ),
+  };
+});
 
 jest.mock("next-intl", () => ({
   useLocale: () => "en",
-}))
+}));
 
 jest.mock("@/components/chat/markdown-viewer", () => ({
   MarkdownViewer: ({ content }: { content: string }) => <div>{content}</div>,
-}))
+}));
 
 jest.mock("@/lib/utils", () => ({
-  cn: (...args: Array<string | false | null | undefined>) => args.filter(Boolean).join(" "),
-}))
+  cn: (...args: Array<string | false | null | undefined>) =>
+    args.filter(Boolean).join(" "),
+}));
 
 jest.mock("@/hooks/use-i18n", () => ({
-  useI18n:
-    () =>
-    (key: string, values?: Record<string, unknown>) =>
-      values ? `${key}:${JSON.stringify(values)}` : key,
-}))
+  useI18n: () => (key: string, values?: Record<string, unknown>) =>
+    values ? `${key}:${JSON.stringify(values)}` : key,
+}));
 
 function seedChatState(includeApproval = false) {
   const assistantMessageBlocks = includeApproval
@@ -106,11 +109,16 @@ function seedChatState(includeApproval = false) {
           },
         },
       ]
-    : undefined
+    : undefined;
 
   useChatStore.setState({
     sessionId: "session-1",
-    selectedAssistant: { id: "assistant-1", name: "Planner", desc: "", color: "#000" },
+    selectedAssistant: {
+      id: "assistant-1",
+      name: "Planner",
+      desc: "",
+      color: "#000",
+    },
     messages: [
       {
         id: "user-1",
@@ -140,95 +148,177 @@ function seedChatState(includeApproval = false) {
     globalLoading: false,
     statusCode: null,
     errorMessage: null,
-  })
+  });
 }
 
 describe("IslandShell", () => {
   beforeEach(() => {
-    seedChatState(false)
+    seedChatState(false);
     useIslandStore.setState({
       mode: "collapsed",
       statusLabel: "Idle",
       summaryText: "",
       lastReplyText: "",
+      recentMessages: [],
       pendingApproval: null,
       isBusy: false,
       errorMessage: null,
-    })
-  })
+      statusStage: null,
+      statusCode: null,
+      statusMeta: null,
+      stageHistory: [],
+    });
+  });
 
   it("renders collapsed view from chat state", () => {
-    render(<IslandShell />)
-    expect(screen.getByText("Ready")).toBeInTheDocument()
-    expect(screen.getByText("Q3 planning draft")).toBeInTheDocument()
-  })
+    render(<IslandShell />);
+    expect(screen.getByText("island.status.ready")).toBeInTheDocument();
+    expect(screen.getByText("Q3 planning draft")).toBeInTheDocument();
+  });
 
-  it("expands when collapsed view is clicked", () => {
-    render(<IslandShell />)
-    fireEvent.click(screen.getByText("Ready"))
-    expect(screen.queryByText("Latest reply")).not.toBeInTheDocument()
-    expect(screen.getByText("You")).toBeInTheDocument()
-    expect(screen.getByText("Deeting")).toBeInTheDocument()
-    expect(screen.getByText("Q3 planning draft")).toBeInTheDocument()
+  it("expands into a task-oriented island layout", () => {
+    render(<IslandShell />);
+    fireEvent.click(screen.getByText("island.status.ready"));
+
+    expect(screen.getByText("island.requestLabel")).toBeInTheDocument();
+    expect(screen.getByText("island.responseTitle")).toBeInTheDocument();
+    expect(screen.getByText("Q3 planning draft")).toBeInTheDocument();
     expect(
-      screen.getByText(/Updated the roadmap based on your latest feedback/)
-    ).toBeInTheDocument()
-  })
+      screen.getByText(/Updated the roadmap based on your latest feedback/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("island.continueHere")).toBeInTheDocument();
+  });
 
   it("shows approval card when chat state contains a pending approval", () => {
-    seedChatState(true)
-    useIslandStore.setState({ mode: "expanded" })
-    render(<IslandShell />)
-    expect(screen.getByText("Approval required")).toBeInTheDocument()
-    expect(screen.getByText("shell.exec")).toBeInTheDocument()
-    expect(screen.getByText("Approve")).toBeInTheDocument()
-    expect(screen.getByText("Reject")).toBeInTheDocument()
-  })
+    seedChatState(true);
+    useIslandStore.setState({ mode: "expanded" });
+    render(<IslandShell />);
+    expect(screen.getAllByText("island.approvalTitle").length).toBeGreaterThan(0);
+    expect(screen.getByText("Shell Execute")).toBeInTheDocument();
+    expect(screen.getByText("approvalDialog.actions.approve")).toBeInTheDocument();
+    expect(screen.getByText("approvalDialog.actions.reject")).toBeInTheDocument();
+  });
+
+  it("auto-expands when approval arrives while collapsed", async () => {
+    render(<IslandShell />);
+
+    act(() => {
+      seedChatState(true);
+    });
+
+    expect(await screen.findAllByText("island.approvalTitle")).toHaveLength(2);
+    expect(useIslandStore.getState().mode).toBe("expanded");
+  });
 
   it("shows quick reply input in expanded view", () => {
-    useIslandStore.setState({ mode: "expanded" })
-    render(<IslandShell />)
-    expect(screen.getByPlaceholderText("Quick reply…")).toBeInTheDocument()
-  })
+    useIslandStore.setState({ mode: "expanded" });
+    render(<IslandShell />);
+    expect(
+      screen.getByPlaceholderText("island.quickReplyPlaceholder"),
+    ).toBeInTheDocument();
+  });
+
+  it("hides live progress when the island is idle", () => {
+    useIslandStore.setState({ mode: "expanded" });
+    render(<IslandShell />);
+    expect(screen.queryByText("island.liveProgress")).not.toBeInTheDocument();
+    expect(screen.queryByText("status.flow.listen")).not.toBeInTheDocument();
+  });
 
   it("shows live progress detail when chat status is active", () => {
     useChatStore.setState({
       statusStage: "remember",
       statusCode: "context.loaded",
       statusMeta: { count: 3, has_summary: true },
-    })
-    useIslandStore.setState({ mode: "expanded" })
-    render(<IslandShell />)
-    expect(screen.getByText("Live progress")).toBeInTheDocument()
+    });
+    useIslandStore.setState({ mode: "expanded" });
+    render(<IslandShell />);
+    expect(screen.getByText("island.liveProgress")).toBeInTheDocument();
+    expect(screen.getByText("status.flow.listen")).toBeInTheDocument();
+    expect(screen.getByText("status.flow.remember")).toBeInTheDocument();
+    expect(screen.queryByText("status.flow.evolve")).not.toBeInTheDocument();
+    expect(screen.queryByText("status.flow.render")).not.toBeInTheDocument();
     expect(
-      screen.getByText('status.detail.contextLoadedWithSummary:{"count":3}')
-    ).toBeInTheDocument()
-  })
+      screen.getByText('status.detail.contextLoadedWithSummary:{"count":3}'),
+    ).toBeInTheDocument();
+  });
+
+  it("humanizes running tool activity inside island progress", () => {
+    useChatStore.setState({
+      statusStage: "render",
+      statusCode: "approval.executing",
+      statusMeta: { tool_name: "firecrawl_search" },
+    });
+    useIslandStore.setState({ mode: "expanded" });
+    render(<IslandShell />);
+
+    expect(screen.getByText("status.flow.render")).toBeInTheDocument();
+    expect(
+      screen.getByText('island.toolStatus.running:{"name":"Firecrawl Search"}'),
+    ).toBeInTheDocument();
+  });
+
+  it("auto-collapses after a task completes", () => {
+    jest.useFakeTimers();
+
+    useChatStore.setState({
+      statusStage: "render",
+      statusCode: "approval.executing",
+      statusMeta: { tool_name: "firecrawl_search" },
+    });
+    useIslandStore.setState({ mode: "expanded" });
+
+    render(<IslandShell />);
+
+    act(() => {
+      useChatStore.setState({
+        statusStage: null,
+        statusCode: null,
+        statusMeta: null,
+      });
+    });
+
+    act(() => {
+      jest.advanceTimersByTime(1800);
+    });
+
+    expect(useIslandStore.getState().mode).toBe("collapsed");
+
+    expect(screen.getByText("island.status.completed")).toBeInTheDocument();
+    expect(screen.getByText("island.completedDetail")).toBeInTheDocument();
+
+    act(() => {
+      jest.advanceTimersByTime(2600);
+    });
+
+    expect(screen.queryByText("island.status.completed")).not.toBeInTheDocument();
+    jest.useRealTimers();
+  });
 
   it("collapses back when collapse button is clicked", () => {
-    useIslandStore.setState({ mode: "expanded" })
-    render(<IslandShell />)
-    const allButtons = screen.getAllByRole("button")
-    fireEvent.click(allButtons[0])
-    expect(screen.getByText("Q3 planning draft")).toBeInTheDocument()
-  })
+    useIslandStore.setState({ mode: "expanded" });
+    render(<IslandShell />);
+    const allButtons = screen.getAllByRole("button");
+    fireEvent.click(allButtons[0]);
+    expect(screen.getByText("Q3 planning draft")).toBeInTheDocument();
+  });
 
   it("renders nothing when mode is hidden", () => {
-    useIslandStore.setState({ mode: "hidden" })
-    const { container } = render(<IslandShell />)
-    expect(container.firstChild).toBeNull()
-  })
+    useIslandStore.setState({ mode: "hidden" });
+    const { container } = render(<IslandShell />);
+    expect(container.firstChild).toBeNull();
+  });
 
   it("hides approval card when no approval is pending", () => {
-    useIslandStore.setState({ mode: "expanded" })
-    render(<IslandShell />)
-    expect(screen.queryByText("Approval required")).not.toBeInTheDocument()
-    expect(screen.getByText("Q3 planning draft")).toBeInTheDocument()
-  })
+    useIslandStore.setState({ mode: "expanded" });
+    render(<IslandShell />);
+    expect(screen.queryByText("Approval required")).not.toBeInTheDocument();
+    expect(screen.getByText("Q3 planning draft")).toBeInTheDocument();
+  });
 
-  it("keeps expanded transcript message text instead of truncating it to a short preview", () => {
+  it("keeps the latest assistant text visible in the main response panel", () => {
     const longAssistantReply =
-      "This is a much longer island reply that should remain visible in the expanded transcript instead of being reduced to a tiny recent preview line for the user."
+      "This is a much longer island reply that should remain visible inside the main response panel instead of being reduced to a tiny transcript bubble.";
     useChatStore.setState({
       messages: [
         {
@@ -244,11 +334,11 @@ describe("IslandShell", () => {
           createdAt: 2,
         },
       ] as unknown as Message[],
-    })
+    });
 
-    useIslandStore.setState({ mode: "expanded" })
-    render(<IslandShell />)
+    useIslandStore.setState({ mode: "expanded" });
+    render(<IslandShell />);
 
-    expect(screen.getByText(longAssistantReply)).toBeInTheDocument()
-  })
-})
+    expect(screen.getByText(longAssistantReply)).toBeInTheDocument();
+  });
+});

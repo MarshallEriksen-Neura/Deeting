@@ -27,15 +27,18 @@ export function resolveIslandChatRequestConfig({
 
   const useDesktopLocalGateway =
     isTauriRuntime && (selectedModel.request_route ?? "local_invoke") === "local_invoke";
+  const isDesktopLocalSelection =
+    useDesktopLocalGateway && isDesktopLocalModel(selectedModel);
+  const localProviderModelId = isDesktopLocalSelection
+    ? selectedModel.provider_model_id?.trim() || undefined
+    : undefined;
 
   return {
     model: selectedModel.id,
-    model_selection_mode:
-      useDesktopLocalGateway && isDesktopLocalModel(selectedModel) ? "pool" : undefined,
-    provider_model_id:
-      useDesktopLocalGateway && isDesktopLocalModel(selectedModel)
-        ? undefined
-        : selectedModel.provider_model_id ?? undefined,
+    model_selection_mode: isDesktopLocalSelection ? "pool" : undefined,
+    provider_model_id: isDesktopLocalSelection
+      ? localProviderModelId
+      : selectedModel.provider_model_id ?? undefined,
     useDesktopLocalGateway,
   };
 }

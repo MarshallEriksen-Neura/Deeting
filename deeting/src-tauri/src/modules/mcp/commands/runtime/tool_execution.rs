@@ -12,7 +12,9 @@ use crate::modules::skill_runtime::{
     execute_local_mcp_tool, execute_skill_binding, resolve_local_tool_env,
     resolve_skill_binding_by_ref, skill_binding_fingerprint,
 };
+use futures_util::FutureExt;
 use mcp_storage::types::LocalSkillToolBindingSnapshot;
+use std::{any::Any, future::Future, panic::AssertUnwindSafe};
 
 fn summarize_tool_arguments(arguments: &Value) -> Value {
     match arguments {
@@ -71,6 +73,44 @@ fn should_record_tool_execution_result(result: &Value) -> bool {
             false
         }
         _ => true,
+    }
+}
+
+fn format_tool_execution_panic(payload: Box<dyn Any + Send>) -> String {
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        return (*message).to_string();
+    }
+    if let Some(message) = payload.downcast_ref::<String>() {
+        return message.clone();
+    }
+    "unknown panic payload".to_string()
+}
+
+async fn guard_tool_execution_future<T, F>(
+    tool_name: &str,
+    stage: &str,
+    future: F,
+) -> Result<T, String>
+where
+    F: Future<Output = Result<T, String>>,
+{
+    match AssertUnwindSafe(future).catch_unwind().await {
+        Ok(result) => result,
+        Err(payload) => {
+            let panic_message = format_tool_execution_panic(payload);
+            log::error!(
+                "tool_execution_panic {}",
+                serde_json::json!({
+                    "tool_name": tool_name,
+                    "stage": stage,
+                    "panic": panic_message,
+                })
+            );
+            Err(format!(
+                "{} for '{}' panicked: {}",
+                stage, tool_name, panic_message
+            ))
+        }
     }
 }
 
@@ -1174,7 +1214,12 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_tool_ref(
                 "approved_by_grant": approved_by_grant,
             }),
         );
-        let result = execute_skill_binding(store, &binding, &arguments).await?;
+        let result = guard_tool_execution_future(
+            &binding.callable_name,
+            "skill binding execution",
+            execute_skill_binding(store, &binding, &arguments),
+        )
+        .await?;
         record_successful_tool_execution(
             store,
             approval_context.session_id.as_deref(),
@@ -1186,13 +1231,17 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_tool_ref(
     }
     log_skill_binding_lookup_miss(tool_id.as_deref(), tool_name.as_deref());
 
-    if let Some(result) = execute_or_queue_core_tool_call_with_tool_ref(
-        approval_context,
-        runtime_state,
-        pending_tool_calls,
-        tool_id.as_deref(),
-        tool_name.as_deref(),
-        arguments.clone(),
+    if let Some(result) = guard_tool_execution_future(
+        tool_name.as_deref().unwrap_or("<unnamed_tool>"),
+        "core tool execution",
+        execute_or_queue_core_tool_call_with_tool_ref(
+            approval_context,
+            runtime_state,
+            pending_tool_calls,
+            tool_id.as_deref(),
+            tool_name.as_deref(),
+            arguments.clone(),
+        ),
     )
     .await?
     {
@@ -1289,7 +1338,12 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_tool_ref(
             }));
         }
     }
-    let result = execute_mcp_tool(runtime_state, store, &tool, &arguments).await?;
+    let result = guard_tool_execution_future(
+        &tool.name,
+        "MCP tool execution",
+        execute_mcp_tool(runtime_state, store, &tool, &arguments),
+    )
+    .await?;
     record_successful_tool_execution(
         store,
         approval_context.session_id.as_deref(),
@@ -1363,7 +1417,12 @@ pub(crate) async fn approve_mcp_tool_inner_with_context(
         {
             return Err("pending tool call already consumed".to_string());
         }
-        let result = execute_skill_binding(store, &binding, &pending.arguments).await?;
+        let result = guard_tool_execution_future(
+            &binding.callable_name,
+            "skill binding approval execution",
+            execute_skill_binding(store, &binding, &pending.arguments),
+        )
+        .await?;
         record_successful_tool_execution(
             store,
             pending.session_id.as_deref(),
@@ -1386,14 +1445,18 @@ pub(crate) async fn approve_mcp_tool_inner_with_context(
         return Ok(result);
     }
 
-    if let Some(result) = execute_core_tool_call_with_tool_ref_internal(
-        approval_context,
-        runtime_state,
-        pending_tool_calls,
-        pending.tool_id.as_deref(),
-        Some(pending.tool_name.as_str()),
-        pending.arguments.clone(),
-        true,
+    if let Some(result) = guard_tool_execution_future(
+        pending.tool_name.as_str(),
+        "core tool approval execution",
+        execute_core_tool_call_with_tool_ref_internal(
+            approval_context,
+            runtime_state,
+            pending_tool_calls,
+            pending.tool_id.as_deref(),
+            Some(pending.tool_name.as_str()),
+            pending.arguments.clone(),
+            true,
+        ),
     )
     .await?
     {
@@ -1440,7 +1503,12 @@ pub(crate) async fn approve_mcp_tool_inner_with_context(
     {
         return Err("pending tool call already consumed".to_string());
     }
-    let result = execute_mcp_tool(runtime_state, store, &tool, &pending.arguments).await?;
+    let result = guard_tool_execution_future(
+        &tool.name,
+        "MCP tool approval execution",
+        execute_mcp_tool(runtime_state, store, &tool, &pending.arguments),
+    )
+    .await?;
     record_successful_tool_execution(store, pending.session_id.as_deref(), &tool.name, &result)
         .await;
     if let (Some(runtime), Some(key)) = (runtime_state, pending.approval_grant_key.as_deref()) {
@@ -1469,7 +1537,10 @@ pub(crate) async fn reject_mcp_tool_inner(
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_browser_retry_recovered_approval_request, resolve_core_tool_name};
+    use super::{
+        extract_browser_retry_recovered_approval_request, format_tool_execution_panic,
+        guard_tool_execution_future, resolve_core_tool_name,
+    };
     use crate::modules::capability_control_plane::{
         resolve_official_skill_host_tool_route, OfficialSkillHostToolRoute,
     };
@@ -1674,5 +1745,34 @@ mod tests {
             resolve_official_skill_host_tool_route("monitor.list"),
             OfficialSkillHostToolRoute::DesktopCapability
         );
+    }
+
+    #[test]
+    fn format_tool_execution_panic_extracts_string_payloads() {
+        assert_eq!(
+            format_tool_execution_panic(Box::new("stdio bridge exploded")),
+            "stdio bridge exploded"
+        );
+        assert_eq!(
+            format_tool_execution_panic(Box::new(String::from("rmcp call failed"))),
+            "rmcp call failed"
+        );
+    }
+
+    #[tokio::test]
+    async fn guard_tool_execution_future_converts_panics_into_errors() {
+        let err = guard_tool_execution_future::<serde_json::Value, _>(
+            "mock_stdio",
+            "MCP tool execution",
+            async { panic!("mock MCP panic") },
+        )
+        .await
+        .expect_err("panic should become ordinary error");
+
+        assert!(
+            err.contains("MCP tool execution for 'mock_stdio' panicked"),
+            "{err}"
+        );
+        assert!(err.contains("mock MCP panic"), "{err}");
     }
 }
