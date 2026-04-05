@@ -1,0 +1,105 @@
+{
+  "approvalRules": {
+    "title": "Approval Control Center",
+    "subtitle": "Review explicit allow and block rules, inspect what the medium profile has learned, and reset local approval state when behavior drifts.",
+    "backToSettings": "Back to Settings",
+    "desktopOnly": "Desktop local only",
+    "sections": {
+      "rules": "Explicit Rules",
+      "learning": "Learning Signals",
+      "danger": "Danger Zone"
+    },
+    "filters": {
+      "all": "All rules",
+      "allow": "Allow rules",
+      "deny": "Block rules",
+      "searchPlaceholder": "Search tool, class, or label..."
+    },
+    "empty": {
+      "rules": "No stored approval rules yet.",
+      "learning": "No learning signals yet. Medium mode starts learning after real approvals."
+    },
+    "actions": {
+      "removeRule": "Remove rule",
+      "clearAllows": "Clear allow rules",
+      "clearAll": "Clear all rules",
+      "resetLearning": "Reset learning data"
+    },
+    "meta": {
+      "created": "Created",
+      "updated": "Updated",
+      "expires": "Expires",
+      "never": "No expiry",
+      "approvals": "Approvals",
+      "rejections": "Rejections",
+      "halfLife": "Half-life {days}d"
+    },
+    "source": {
+      "explicitAllow": "Explicit allow",
+      "autoPromoted": "Auto-promoted",
+      "explicitDeny": "Explicit block",
+      "observed": "Observed only"
+    },
+    "summary": {
+      "active": "Active rules",
+      "allow": "Allow",
+      "deny": "Block",
+      "learning": "Learning groups"
+    },
+    "learning": {
+      "description": "Medium mode records one-off approvals, auto-promotes stable patterns, and slows down trust when approval history gets old.",
+      "status": {
+        "autoPromoted": "Auto-promoted",
+        "stable": "Stable explicit rule",
+        "learning": "Learning",
+        "normal": "Ask again"
+      }
+    },
+    "danger": {
+      "description": "Use these resets when rules feel wrong or medium mode learned the wrong pattern.",
+      "clearAllowsHelp": "Delete all allow-side rules. Future matching operations will ask again.",
+      "clearAllHelp": "Delete all allow and block rules. This resets the local approval policy state.",
+      "resetLearningHelp": "Remove observed and auto-promoted learning rows while keeping explicit block rules."
+    },
+    "classes": {
+      "operation": {
+        "network_read": "Network read",
+        "filesystem_read": "Filesystem read",
+        "filesystem_write": "Filesystem write",
+        "process_exec": "Process execution",
+        "unknown": "Unknown operation"
+      },
+      "target": {
+        "public_internet": "Public internet",
+        "private_network": "Private network",
+        "localhost": "Localhost",
+        "host": "Host machine",
+        "sensitive_path": "Sensitive path",
+        "unknown": "Unknown target"
+      },
+      "boundary": {
+        "soft_boundary": "Soft boundary",
+        "hard_boundary": "Hard boundary",
+        "none": "No boundary"
+      }
+    },
+    "confirm": {
+      "clearAllowsTitle": "Clear all allow rules?",
+      "clearAllowsBody": "Stored allow rules and learned allow-side signals will be removed. Matching operations will ask again.",
+      "clearAllTitle": "Clear every approval rule?",
+      "clearAllBody": "This removes all allow and block rules plus learning state for approval decisions.",
+      "resetLearningTitle": "Reset learned approval signals?",
+      "resetLearningBody": "Observed approvals and auto-promoted allow rules will be deleted. Explicit block rules stay in place.",
+      "cancel": "Cancel",
+      "confirm": "Confirm"
+    },
+    "toast": {
+      "ruleRemoved": "Rule removed",
+      "clearAllows": "Allow rules cleared",
+      "clearAll": "All approval rules cleared",
+      "resetLearning": "Learning data reset",
+      "loadFailed": "Failed to load approval controls",
+      "actionFailed": "Action failed"
+    }
+  }
+}

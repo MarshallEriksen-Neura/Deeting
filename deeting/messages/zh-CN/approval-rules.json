@@ -1,0 +1,105 @@
+{
+  "approvalRules": {
+    "title": "审批控制中心",
+    "subtitle": "查看显式允许与阻止规则，理解中等级别学到了什么，并在行为漂移时重置本地审批状态。",
+    "backToSettings": "返回设置",
+    "desktopOnly": "仅桌面本地",
+    "sections": {
+      "rules": "显式规则",
+      "learning": "学习信号",
+      "danger": "危险操作"
+    },
+    "filters": {
+      "all": "全部规则",
+      "allow": "允许规则",
+      "deny": "阻止规则",
+      "searchPlaceholder": "搜索工具、分类或描述..."
+    },
+    "empty": {
+      "rules": "当前还没有保存的审批规则。",
+      "learning": "当前还没有学习信号。中等级别会在真实审批后逐步积累。"
+    },
+    "actions": {
+      "removeRule": "撤销规则",
+      "clearAllows": "清除允许规则",
+      "clearAll": "清除全部规则",
+      "resetLearning": "重置学习数据"
+    },
+    "meta": {
+      "created": "创建时间",
+      "updated": "最近更新",
+      "expires": "过期时间",
+      "never": "不过期",
+      "approvals": "批准次数",
+      "rejections": "拒绝次数",
+      "halfLife": "半衰期 {days} 天"
+    },
+    "source": {
+      "explicitAllow": "显式允许",
+      "autoPromoted": "自动晋升",
+      "explicitDeny": "显式阻止",
+      "observed": "仅观察"
+    },
+    "summary": {
+      "active": "生效规则",
+      "allow": "允许",
+      "deny": "阻止",
+      "learning": "学习分组"
+    },
+    "learning": {
+      "description": "中等级别会记录一次性批准，自动晋升稳定模式，并在批准历史变旧后逐步降低信任度。",
+      "status": {
+        "autoPromoted": "已自动晋升",
+        "stable": "稳定显式规则",
+        "learning": "学习中",
+        "normal": "继续询问"
+      }
+    },
+    "danger": {
+      "description": "当规则明显学错或行为不符合预期时，用这里的重置操作回到可控状态。",
+      "clearAllowsHelp": "删除所有允许侧规则。后续匹配的操作会重新询问。",
+      "clearAllHelp": "删除全部允许和阻止规则，同时清空本地审批策略状态。",
+      "resetLearningHelp": "删除观察型和自动晋升型学习记录，同时保留显式阻止规则。"
+    },
+    "classes": {
+      "operation": {
+        "network_read": "网络读取",
+        "filesystem_read": "文件读取",
+        "filesystem_write": "文件写入",
+        "process_exec": "进程执行",
+        "unknown": "未知操作"
+      },
+      "target": {
+        "public_internet": "公网目标",
+        "private_network": "内网目标",
+        "localhost": "本机服务",
+        "host": "宿主机",
+        "sensitive_path": "敏感路径",
+        "unknown": "未知目标"
+      },
+      "boundary": {
+        "soft_boundary": "软边界",
+        "hard_boundary": "硬边界",
+        "none": "无边界"
+      }
+    },
+    "confirm": {
+      "clearAllowsTitle": "清除所有允许规则？",
+      "clearAllowsBody": "保存的允许规则和允许侧学习信号都会被删除，后续同类操作会重新询问。",
+      "clearAllTitle": "清除全部审批规则？",
+      "clearAllBody": "这会删除所有允许规则、阻止规则以及学习状态。",
+      "resetLearningTitle": "重置学习信号？",
+      "resetLearningBody": "观察型批准与自动晋升的允许规则会被清除，显式阻止规则会保留。",
+      "cancel": "取消",
+      "confirm": "确认"
+    },
+    "toast": {
+      "ruleRemoved": "规则已撤销",
+      "clearAllows": "允许规则已清除",
+      "clearAll": "全部审批规则已清除",
+      "resetLearning": "学习数据已重置",
+      "loadFailed": "加载审批控制失败",
+      "actionFailed": "操作失败"
+    }
+  }
+}

@@ -5,7 +5,9 @@ use super::{
     },
     support::*,
 };
+use crate::modules::mcp::commands::common_impl::to_string;
 use crate::modules::desktop_runtime::runtime::resume_suspended_local_chat_after_approval;
+use crate::modules::mcp::policy::PersistedApprovalAction;
 
 fn parse_approve_persist_mode(value: Option<String>) -> ApprovePersistMode {
     match value
@@ -86,6 +88,140 @@ pub(crate) async fn list_pending_mcp_approvals_inner(
     });
 
     approvals
+}
+
+fn build_tool_approval_rule_label(
+    action: PersistedApprovalAction,
+    operation_class: &str,
+    target_class: &str,
+    boundary_class: &str,
+) -> String {
+    (match action {
+        PersistedApprovalAction::AllowOnce => {
+            format!("Observed {} on {}", operation_class, target_class)
+        }
+        PersistedApprovalAction::AllowAlways => {
+            format!("Always allow {} on {}", operation_class, target_class)
+        }
+        PersistedApprovalAction::DenyAlways => {
+            format!("Always block {} on {}", operation_class, target_class)
+        }
+    }) + &format!(" ({boundary_class})")
+}
+
+#[tauri::command]
+pub async fn list_tool_approval_rules(
+    state: State<'_, AppState>,
+) -> Result<Vec<Value>, String> {
+    let rows = state
+        .mcp
+        .store
+        .list_tool_approval_rules()
+        .await
+        .map_err(to_string)?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let mut parts = row.key.split('|');
+            let _tool_fingerprint = parts.next();
+            let operation_class = parts.next().unwrap_or("unknown").to_string();
+            let target_class = parts.next().unwrap_or("unknown").to_string();
+            let boundary_class = parts.next().unwrap_or("unknown").to_string();
+            serde_json::json!({
+                "key": row.key,
+                "action": row.action.as_str(),
+                "tool_name": row.tool_name,
+                "tool_fingerprint": row.tool_fingerprint,
+                "risk_level": row.risk_level,
+                "auto_promoted": row.auto_promoted,
+                "created_at_unix_ms": row.created_at_unix_ms,
+                "updated_at_unix_ms": row.updated_at_unix_ms,
+                "expires_at_unix_ms": row.expires_at_unix_ms,
+                "approve_count": row.approve_count,
+                "reject_count": row.reject_count,
+                "last_approved_at_unix_ms": row.last_approved_at_unix_ms,
+                "last_rejected_at_unix_ms": row.last_rejected_at_unix_ms,
+                "half_life_days": row.half_life_days,
+                "operation_class": operation_class,
+                "target_class": target_class,
+                "boundary_class": boundary_class,
+                "display_label": build_tool_approval_rule_label(
+                    row.action,
+                    &operation_class,
+                    &target_class,
+                    &boundary_class,
+                ),
+            })
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub async fn delete_tool_approval_rule(
+    state: State<'_, AppState>,
+    key: String,
+) -> Result<bool, String> {
+    state
+        .mcp
+        .store
+        .delete_tool_approval_rule(&key)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn clear_tool_approval_rules(
+    state: State<'_, AppState>,
+    mode: Option<String>,
+) -> Result<u64, String> {
+    state
+        .mcp
+        .store
+        .clear_tool_approval_rules(mode.as_deref())
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn reset_tool_approval_learning(
+    state: State<'_, AppState>,
+) -> Result<u64, String> {
+    state
+        .mcp
+        .store
+        .reset_tool_approval_learning()
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn get_tool_approval_learning_summary(
+    state: State<'_, AppState>,
+) -> Result<Vec<Value>, String> {
+    let rows = state
+        .mcp
+        .store
+        .get_tool_approval_learning_summary()
+        .await
+        .map_err(to_string)?;
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            serde_json::json!({
+                "operation_class": row.operation_class,
+                "target_class": row.target_class,
+                "boundary_class": row.boundary_class,
+                "observed_approvals": row.observed_approvals,
+                "observed_rejections": row.observed_rejections,
+                "auto_promoted_rules": row.auto_promoted_rules,
+                "explicit_allow_rules": row.explicit_allow_rules,
+                "explicit_deny_rules": row.explicit_deny_rules,
+                "last_approved_at_unix_ms": row.last_approved_at_unix_ms,
+                "last_rejected_at_unix_ms": row.last_rejected_at_unix_ms,
+            })
+        })
+        .collect())
 }
 
 #[tauri::command]

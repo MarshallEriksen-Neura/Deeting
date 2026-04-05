@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { Bot, ShieldCheck } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -242,6 +243,13 @@ export function AgentSettingsCard({ isTauriRuntime }: AgentSettingsCardProps) {
               {t("agent.approvalPolicyLowWarning")}
             </p>
           ) : null}
+          <div className="pt-1">
+            <GlassButton asChild type="button" size="sm" variant="secondary">
+              <Link href="/settings/approval-rules">
+                {t("agent.manageApprovalRules")}
+              </Link>
+            </GlassButton>
+          </div>
         </div>
 
         <div className="space-y-2">

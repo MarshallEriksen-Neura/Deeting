@@ -187,6 +187,7 @@
       "approvalPolicyHelp": "High always asks. Medium is recommended and can remember allow or block decisions. Low disables most local approval gates.",
       "approvalPolicyRecommended": "Recommended: Medium keeps the approval boundary while letting explicit allow and block rules persist.",
       "approvalPolicyLowWarning": "Danger: Low turns off most local approval and risk blocking. Use it only when you fully trust this environment and the current workflows.",
+      "manageApprovalRules": "Manage approval rules",
       "maxRoundsLabel": "Max tool execution rounds",
       "maxRoundsRange": "Range: {min}–{max}",
       "maxRoundsHelp": "Maximum number of agentic tool-call rounds per request. If the agent exceeds this limit it will stop and return the last response.",

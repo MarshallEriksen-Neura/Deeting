@@ -72,6 +72,20 @@ pub struct ToolApprovalRuleRow {
     pub half_life_days: i64,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ToolApprovalLearningSummaryRow {
+    pub operation_class: String,
+    pub target_class: String,
+    pub boundary_class: String,
+    pub observed_approvals: i64,
+    pub observed_rejections: i64,
+    pub auto_promoted_rules: i64,
+    pub explicit_allow_rules: i64,
+    pub explicit_deny_rules: i64,
+    pub last_approved_at_unix_ms: Option<i64>,
+    pub last_rejected_at_unix_ms: Option<i64>,
+}
+
 pub struct McpStore {
     pub(crate) pool: SqlitePool,
     /// Single-connection pool dedicated to write transactions.
@@ -799,6 +813,203 @@ impl McpStore {
             })
         })
         .transpose()
+    }
+
+    pub async fn list_tool_approval_rules(
+        &self,
+    ) -> Result<Vec<ToolApprovalRuleRow>, McpError> {
+        let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+        sqlx::query(
+            r#"
+            DELETE FROM tool_approval_rules
+            WHERE expires_at_unix_ms IS NOT NULL
+              AND expires_at_unix_ms <= ?
+            "#,
+        )
+        .bind(now as i64)
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let rows = sqlx::query(
+            r#"
+            SELECT
+              key, action, tool_name, tool_fingerprint, risk_level, auto_promoted,
+              created_at_unix_ms, updated_at_unix_ms, expires_at_unix_ms,
+              approve_count, reject_count, last_approved_at_unix_ms, last_rejected_at_unix_ms,
+              half_life_days
+            FROM tool_approval_rules
+            ORDER BY updated_at_unix_ms DESC, key ASC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        rows.into_iter()
+            .map(|row| {
+                let action_text = row
+                    .try_get::<String, _>("action")
+                    .map_err(|err| McpError::Storage(err.to_string()))?;
+                let action = PersistedApprovalAction::from_str(&action_text)
+                    .ok_or_else(|| McpError::Storage(format!("unknown approval action: {action_text}")))?;
+                Ok(ToolApprovalRuleRow {
+                    key: row.try_get("key").map_err(|err| McpError::Storage(err.to_string()))?,
+                    action,
+                    tool_name: row
+                        .try_get("tool_name")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    tool_fingerprint: row
+                        .try_get("tool_fingerprint")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    risk_level: row.try_get::<Option<String>, _>("risk_level").ok().flatten(),
+                    auto_promoted: row
+                        .try_get::<i64, _>("auto_promoted")
+                        .map(|value| value != 0)
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    created_at_unix_ms: row
+                        .try_get("created_at_unix_ms")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    updated_at_unix_ms: row
+                        .try_get("updated_at_unix_ms")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    expires_at_unix_ms: row.try_get("expires_at_unix_ms").map_err(|err| McpError::Storage(err.to_string()))?,
+                    approve_count: row
+                        .try_get("approve_count")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    reject_count: row
+                        .try_get("reject_count")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    last_approved_at_unix_ms: row
+                        .try_get("last_approved_at_unix_ms")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    last_rejected_at_unix_ms: row
+                        .try_get("last_rejected_at_unix_ms")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    half_life_days: row
+                        .try_get("half_life_days")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                })
+            })
+            .collect()
+    }
+
+    pub async fn delete_tool_approval_rule(&self, key: &str) -> Result<bool, McpError> {
+        let normalized_key = key.trim();
+        if normalized_key.is_empty() {
+            return Ok(false);
+        }
+        let result = sqlx::query("DELETE FROM tool_approval_rules WHERE key = ?")
+            .bind(normalized_key)
+            .execute(&self.write_pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    pub async fn clear_tool_approval_rules(
+        &self,
+        mode: Option<&str>,
+    ) -> Result<u64, McpError> {
+        let normalized_mode = mode
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("all");
+        let result = match normalized_mode {
+            "allow" => {
+                sqlx::query(
+                    "DELETE FROM tool_approval_rules WHERE action IN (?, ?)",
+                )
+                .bind(PersistedApprovalAction::AllowOnce.as_str())
+                .bind(PersistedApprovalAction::AllowAlways.as_str())
+                .execute(&self.write_pool)
+                .await
+            }
+            _ => {
+                sqlx::query("DELETE FROM tool_approval_rules")
+                    .execute(&self.write_pool)
+                    .await
+            }
+        }
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        Ok(result.rows_affected())
+    }
+
+    pub async fn reset_tool_approval_learning(&self) -> Result<u64, McpError> {
+        let result = sqlx::query(
+            r#"
+            DELETE FROM tool_approval_rules
+            WHERE action = ?
+               OR auto_promoted = 1
+            "#,
+        )
+        .bind(PersistedApprovalAction::AllowOnce.as_str())
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        Ok(result.rows_affected())
+    }
+
+    pub async fn get_tool_approval_learning_summary(
+        &self,
+    ) -> Result<Vec<ToolApprovalLearningSummaryRow>, McpError> {
+        let rows = sqlx::query(
+            r#"
+            SELECT
+              SUBSTR(key, INSTR(key, '|') + 1) AS suffix,
+              SUM(CASE WHEN action = 'allow_once' THEN approve_count ELSE 0 END) AS observed_approvals,
+              SUM(CASE WHEN action = 'deny_always' THEN reject_count ELSE 0 END) AS observed_rejections,
+              SUM(CASE WHEN auto_promoted = 1 THEN 1 ELSE 0 END) AS auto_promoted_rules,
+              SUM(CASE WHEN action = 'allow_always' AND auto_promoted = 0 THEN 1 ELSE 0 END) AS explicit_allow_rules,
+              SUM(CASE WHEN action = 'deny_always' THEN 1 ELSE 0 END) AS explicit_deny_rules,
+              MAX(last_approved_at_unix_ms) AS last_approved_at_unix_ms,
+              MAX(last_rejected_at_unix_ms) AS last_rejected_at_unix_ms
+            FROM tool_approval_rules
+            GROUP BY suffix
+            ORDER BY observed_approvals DESC, explicit_deny_rules DESC, suffix ASC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        rows.into_iter()
+            .map(|row| {
+                let suffix = row
+                    .try_get::<String, _>("suffix")
+                    .map_err(|err| McpError::Storage(err.to_string()))?;
+                let mut parts = suffix.split('|');
+                let operation_class = parts.next().unwrap_or("unknown").to_string();
+                let target_class = parts.next().unwrap_or("unknown").to_string();
+                let boundary_class = parts.next().unwrap_or("unknown").to_string();
+                Ok(ToolApprovalLearningSummaryRow {
+                    operation_class,
+                    target_class,
+                    boundary_class,
+                    observed_approvals: row
+                        .try_get::<i64, _>("observed_approvals")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    observed_rejections: row
+                        .try_get::<i64, _>("observed_rejections")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    auto_promoted_rules: row
+                        .try_get::<i64, _>("auto_promoted_rules")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    explicit_allow_rules: row
+                        .try_get::<i64, _>("explicit_allow_rules")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    explicit_deny_rules: row
+                        .try_get::<i64, _>("explicit_deny_rules")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    last_approved_at_unix_ms: row
+                        .try_get::<Option<i64>, _>("last_approved_at_unix_ms")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    last_rejected_at_unix_ms: row
+                        .try_get::<Option<i64>, _>("last_rejected_at_unix_ms")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                })
+            })
+            .collect()
     }
 
     pub async fn upsert_tool_query_affinity(
