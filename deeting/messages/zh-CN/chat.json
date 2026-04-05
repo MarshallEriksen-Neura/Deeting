@@ -288,6 +288,23 @@
       "imageAgentUpstreamInputLimitExceeded": "当前选中的图片模型不支持这么多输入图片。",
       "imageAgentInputResolutionFailed": "本次请求中的一张或多张图片暂时无法处理。"
     },
+    "approvalDialog": {
+      "title": "审批确认",
+      "description": "当前 AI 正请求在本地执行一个高风险工具。",
+      "toolLabel": "工具",
+      "argumentsLabel": "参数",
+      "summaryLabel": "说明",
+      "recoveryLabel": "恢复后重新确认",
+      "recoveryFallback": "已恢复目标，需要重新确认后才能继续。",
+      "recoveryAttempts": "恢复尝试次数 {count}",
+      "warningTitle": "执行前请确认",
+      "warning": "该操作可能修改文件或执行系统命令，仅在你信任当前会话时才允许。",
+      "actions": {
+        "reject": "拒绝",
+        "approve": "批准执行",
+        "approving": "执行中..."
+      }
+    },
     "routing": {
     "auto": "自动路由",
     "autoDesc": "系统智能选择助手",
