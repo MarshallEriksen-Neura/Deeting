@@ -1,5 +1,5 @@
 {
-  "approvalRules": {
+  "approval-rules": {
     "title": "审批控制中心",
     "subtitle": "查看显式允许与阻止规则，理解中等级别学到了什么，并在行为漂移时重置本地审批状态。",
     "backToSettings": "返回设置",

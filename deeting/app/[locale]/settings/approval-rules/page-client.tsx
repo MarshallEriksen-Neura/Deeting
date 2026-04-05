@@ -88,7 +88,7 @@ function RuleChip({
 }
 
 export function ApprovalRulesClient() {
-  const t = useTranslations("approvalRules")
+  const t = useTranslations("approval-rules")
   const [rules, setRules] = React.useState<ToolApprovalRule[]>([])
   const [summaryRows, setSummaryRows] = React.useState<ToolApprovalLearningSummaryRow[]>([])
   const [filter, setFilter] = React.useState<RuleFilter>("all")

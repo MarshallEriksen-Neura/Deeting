@@ -1,5 +1,5 @@
 {
-  "approvalRules": {
+  "approval-rules": {
     "title": "Approval Control Center",
     "subtitle": "Review explicit allow and block rules, inspect what the medium profile has learned, and reset local approval state when behavior drifts.",
     "backToSettings": "Back to Settings",
