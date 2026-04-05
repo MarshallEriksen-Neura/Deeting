@@ -114,6 +114,7 @@ impl McpRuntimeState {
         risk_level: Option<String>,
         risk_reasons: Vec<String>,
         tool_fingerprint: String,
+        policy_rule_key: Option<String>,
         approval_grant_key: Option<String>,
         approval_context: ToolApprovalContext,
     ) -> PendingToolCall {
@@ -125,6 +126,7 @@ impl McpRuntimeState {
             risk_level,
             risk_reasons,
             tool_fingerprint,
+            policy_rule_key,
             approval_grant_key,
             approval_context,
         )

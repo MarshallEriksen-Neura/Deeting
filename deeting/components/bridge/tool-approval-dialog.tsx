@@ -37,12 +37,14 @@ export function ToolApprovalDialog() {
   const setMessageBlocks = useChatStore((state) => state.setMessageBlocks)
   const upsertMessageToolResult = useChatStore((state) => state.upsertMessageToolResult)
   const appendMessageBlocks = useChatStore((state) => state.appendMessageBlocks)
-  const [loading, setLoading] = useState(false)
+  const [loadingAction, setLoadingAction] = useState<
+    "allow_once" | "allow_always" | "deny_always" | null
+  >(null)
   const t = useTranslations("chat.approvalDialog")
   const approvalToken = pending?.approval_token ?? null
 
   useEffect(() => {
-    setLoading(false)
+    setLoadingAction(null)
   }, [approvalToken])
 
   if (!pending) return null
@@ -54,7 +56,6 @@ export function ToolApprovalDialog() {
     return findMessageIdForToolCall(useChatStore.getState().messages, approval.meta.call_id)
   }
 
-  const rejectedErrorMessage = t("result.userRejected")
   const formattedArguments = JSON.stringify(pending.arguments, null, 2)
 
   const applyOptimisticExecutionState = (approval: typeof pending) => {
@@ -72,10 +73,14 @@ export function ToolApprovalDialog() {
     }
   }
 
-  const executeApprovedTool = async (approval: typeof pending) => {
+  const executeApprovedTool = async (
+    approval: typeof pending,
+    approvalMode: "allow_once" | "allow_always"
+  ) => {
     try {
       const result = await invoke(DESKTOP_MCP_COMMANDS.approveTool, {
         approvalToken: approval.approval_token,
+        approvalMode,
         callId: approval.meta.call_id,
         executionToken: approval.meta.execution_token,
       })
@@ -147,39 +152,51 @@ export function ToolApprovalDialog() {
     }
   }
 
-  const handleApprove = () => {
+  const handleApprove = (approvalMode: "allow_once" | "allow_always") => {
     const approval = pending
     if (!approval) return
 
-    setLoading(true)
+    setLoadingAction(approvalMode)
     applyOptimisticExecutionState(approval)
     announceBridgeApprovalExecution(approval)
     if (resolveApprovalMessageId(approval)) {
-      toast.success(t("toast.approvedPending", { toolName: approval.tool_name }))
+      toast.success(
+        t(
+          approvalMode === "allow_always"
+            ? "toast.approvedAlwaysPending"
+            : "toast.approvedPending",
+          { toolName: approval.tool_name }
+        )
+      )
     }
     clear()
-    void executeApprovedTool(approval)
+    void executeApprovedTool(approval, approvalMode)
   }
 
-  const handleReject = async () => {
+  const handleRejectAlways = async () => {
     const approval = pending
     if (!approval) return
 
     try {
+      setLoadingAction("deny_always")
       await invoke(DESKTOP_MCP_COMMANDS.rejectTool, {
         approvalToken: approval.approval_token,
+        rejectMode: "deny_always",
       })
 
       const messageId = resolveApprovalMessageId(approval)
       if (messageId) {
-        const rejectedBlock = createRejectedToolResultBlock(approval, rejectedErrorMessage)
+        const rejectedBlock = createRejectedToolResultBlock(
+          approval,
+          t("result.userDeniedAlways")
+        )
         if (rejectedBlock) {
           upsertMessageToolResult(messageId, rejectedBlock)
         }
       }
 
       clear()
-      toast.info(t("toast.rejected"))
+      toast.info(t("toast.deniedAlways"))
 
       if (approval.meta.execution_token) {
         try {
@@ -187,7 +204,7 @@ export function ToolApprovalDialog() {
             tool_name: approval.tool_name,
             arguments: {
               call_id: approval.meta.call_id,
-              result: { error: rejectedErrorMessage },
+              result: { error: t("result.userDeniedAlways") },
               ok: false,
             },
             execution_token: approval.meta.execution_token,
@@ -393,8 +410,8 @@ export function ToolApprovalDialog() {
 
         <AlertDialogFooter className="gap-2.5 border-t border-white/[0.06] pt-4">
           <AlertDialogCancel
-            onClick={handleReject}
-            disabled={loading}
+            onClick={handleRejectAlways}
+            disabled={loadingAction !== null}
             className={[
               "h-10 rounded-xl px-5",
               "bg-[var(--surface)]/50 backdrop-blur-sm",
@@ -406,14 +423,16 @@ export function ToolApprovalDialog() {
               "active:scale-[0.97]",
             ].join(" ")}
           >
-            {t("actions.reject")}
+            {loadingAction === "deny_always"
+              ? t("actions.blocking")
+              : t("actions.denyAlways")}
           </AlertDialogCancel>
           <AlertDialogAction
             onClick={(e) => {
               e.preventDefault()
-              handleApprove()
+              handleApprove("allow_once")
             }}
-            disabled={loading}
+            disabled={loadingAction !== null}
             className={[
               "h-10 rounded-xl px-5",
               "bg-gradient-to-b from-red-500 to-red-600",
@@ -427,10 +446,38 @@ export function ToolApprovalDialog() {
               "disabled:opacity-40",
             ].join(" ")}
           >
-            {loading ? (
+            {loadingAction === "allow_once" ? (
               <Loader2 className="mr-2 size-4 animate-spin" />
             ) : null}
-            {loading ? t("actions.approving") : t("actions.approve")}
+            {loadingAction === "allow_once"
+              ? t("actions.approving")
+              : t("actions.approveOnce")}
+          </AlertDialogAction>
+          <AlertDialogAction
+            onClick={(e) => {
+              e.preventDefault()
+              handleApprove("allow_always")
+            }}
+            disabled={loadingAction !== null}
+            className={[
+              "h-10 rounded-xl px-5",
+              "bg-gradient-to-b from-amber-500 to-amber-600",
+              "text-sm font-medium text-white",
+              "shadow-[0_2px_8px_-2px_rgba(245,158,11,0.45),inset_0_1px_0_rgba(255,255,255,0.15)]",
+              "hover:shadow-[0_4px_16px_-2px_rgba(245,158,11,0.55)]",
+              "hover:brightness-110",
+              "border border-white/10",
+              "transition-all duration-200",
+              "active:scale-[0.97]",
+              "disabled:opacity-40",
+            ].join(" ")}
+          >
+            {loadingAction === "allow_always" ? (
+              <Loader2 className="mr-2 size-4 animate-spin" />
+            ) : null}
+            {loadingAction === "allow_always"
+              ? t("actions.approving")
+              : t("actions.approveAlways")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

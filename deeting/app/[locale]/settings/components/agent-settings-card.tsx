@@ -12,6 +12,8 @@ import {
   getDesktopConfig,
   setDesktopConfig,
   DESKTOP_CONFIG_KEYS,
+  normalizeDesktopApprovalPolicyLevel,
+  type DesktopApprovalPolicyLevel,
 } from "@/lib/api/desktop-config"
 
 const DEFAULT_MAX_ROUNDS = 10
@@ -54,6 +56,10 @@ export function AgentSettingsCard({ isTauriRuntime }: AgentSettingsCardProps) {
   )
   const [savedChatHistoryRetentionDays, setSavedChatHistoryRetentionDays] =
     React.useState(DEFAULT_CHAT_HISTORY_RETENTION_DAYS)
+  const [approvalPolicyLevel, setApprovalPolicyLevel] =
+    React.useState<DesktopApprovalPolicyLevel>("medium")
+  const [savedApprovalPolicyLevel, setSavedApprovalPolicyLevel] =
+    React.useState<DesktopApprovalPolicyLevel>("medium")
   const [isLoading, setIsLoading] = React.useState(true)
   const [isSaving, setIsSaving] = React.useState(false)
 
@@ -64,8 +70,9 @@ export function AgentSettingsCard({ isTauriRuntime }: AgentSettingsCardProps) {
       getDesktopConfig(DESKTOP_CONFIG_KEYS.maxAgenticRounds),
       getDesktopConfig(DESKTOP_CONFIG_KEYS.personaPrompt),
       getDesktopConfig(DESKTOP_CONFIG_KEYS.chatHistoryRetentionDays),
+      getDesktopConfig(DESKTOP_CONFIG_KEYS.approvalPolicyLevel),
     ])
-      .then(([value, personaValue, retentionValue]) => {
+      .then(([value, personaValue, retentionValue, approvalPolicyValue]) => {
         if (cancelled) return
         const parsed = value ? String(parseInt(value, 10) || DEFAULT_MAX_ROUNDS) : String(DEFAULT_MAX_ROUNDS)
         setMaxRounds(parsed)
@@ -77,6 +84,10 @@ export function AgentSettingsCard({ isTauriRuntime }: AgentSettingsCardProps) {
           normalizeChatHistoryRetentionDays(retentionValue)
         setChatHistoryRetentionDays(nextChatHistoryRetentionDays)
         setSavedChatHistoryRetentionDays(nextChatHistoryRetentionDays)
+        const nextApprovalPolicyLevel =
+          normalizeDesktopApprovalPolicyLevel(approvalPolicyValue)
+        setApprovalPolicyLevel(nextApprovalPolicyLevel)
+        setSavedApprovalPolicyLevel(nextApprovalPolicyLevel)
       })
       .catch(() => {})
       .finally(() => {
@@ -90,7 +101,8 @@ export function AgentSettingsCard({ isTauriRuntime }: AgentSettingsCardProps) {
   const hasChanges =
     maxRounds !== savedValue ||
     personaPrompt !== savedPersonaPrompt ||
-    chatHistoryRetentionDays !== savedChatHistoryRetentionDays
+    chatHistoryRetentionDays !== savedChatHistoryRetentionDays ||
+    approvalPolicyLevel !== savedApprovalPolicyLevel
 
   const handleSave = async () => {
     const parsed = parseInt(maxRounds, 10)
@@ -102,12 +114,18 @@ export function AgentSettingsCard({ isTauriRuntime }: AgentSettingsCardProps) {
     try {
       const normalizedChatHistoryRetentionDays =
         normalizeChatHistoryRetentionDays(chatHistoryRetentionDays)
+      const normalizedApprovalPolicyLevel =
+        normalizeDesktopApprovalPolicyLevel(approvalPolicyLevel)
       await Promise.all([
         setDesktopConfig(DESKTOP_CONFIG_KEYS.maxAgenticRounds, String(parsed)),
         setDesktopConfig(DESKTOP_CONFIG_KEYS.personaPrompt, personaPrompt.trim()),
         setDesktopConfig(
           DESKTOP_CONFIG_KEYS.chatHistoryRetentionDays,
           normalizedChatHistoryRetentionDays
+        ),
+        setDesktopConfig(
+          DESKTOP_CONFIG_KEYS.approvalPolicyLevel,
+          normalizedApprovalPolicyLevel
         ),
       ])
       setSavedValue(String(parsed))
@@ -116,6 +134,8 @@ export function AgentSettingsCard({ isTauriRuntime }: AgentSettingsCardProps) {
       setPersonaPrompt(personaPrompt.trim())
       setSavedChatHistoryRetentionDays(normalizedChatHistoryRetentionDays)
       setChatHistoryRetentionDays(normalizedChatHistoryRetentionDays)
+      setSavedApprovalPolicyLevel(normalizedApprovalPolicyLevel)
+      setApprovalPolicyLevel(normalizedApprovalPolicyLevel)
       toast.success(t("agent.saveSuccess"))
     } catch {
       toast.error(t("agent.saveFailed"))
@@ -188,6 +208,40 @@ export function AgentSettingsCard({ isTauriRuntime }: AgentSettingsCardProps) {
           <p className="text-xs text-muted-foreground">
             {t("agent.personaPromptHelp")}
           </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="approval-policy-level" className="text-xs font-medium">
+            {t("agent.approvalPolicyLabel")}
+          </Label>
+          <select
+            id="approval-policy-level"
+            value={approvalPolicyLevel}
+            onChange={(event) =>
+              setApprovalPolicyLevel(
+                normalizeDesktopApprovalPolicyLevel(event.target.value)
+              )
+            }
+            disabled={isLoading || isSaving}
+            className="border-input bg-background text-foreground focus-visible:border-ring focus-visible:ring-ring/50 h-10 w-full rounded-xl border px-3 py-2 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-background/50"
+          >
+            <option value="high">{t("agent.approvalPolicyHigh")}</option>
+            <option value="medium">{t("agent.approvalPolicyMedium")}</option>
+            <option value="low">{t("agent.approvalPolicyLow")}</option>
+          </select>
+          <p className="text-xs text-muted-foreground">
+            {t("agent.approvalPolicyHelp")}
+          </p>
+          {approvalPolicyLevel === "medium" ? (
+            <p className="text-xs text-emerald-600 dark:text-emerald-400">
+              {t("agent.approvalPolicyRecommended")}
+            </p>
+          ) : null}
+          {approvalPolicyLevel === "low" ? (
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              {t("agent.approvalPolicyLowWarning")}
+            </p>
+          ) : null}
         </div>
 
         <div className="space-y-2">

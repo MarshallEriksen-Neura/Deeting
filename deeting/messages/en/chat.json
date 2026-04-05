@@ -424,8 +424,10 @@
       "warningTitle": "Review before continuing",
       "warning": "This action may modify files or execute system commands. Only allow it if you trust the current conversation and this specific request.",
       "actions": {
-        "reject": "Deny",
-        "approve": "Allow execution",
+        "denyAlways": "Always block",
+        "blocking": "Blocking...",
+        "approveOnce": "Allow once",
+        "approveAlways": "Always allow",
         "approving": "Running..."
       },
       "risk": {
@@ -436,12 +438,15 @@
       },
       "toast": {
         "approvedPending": "Approved. Running {toolName} locally",
+        "approvedAlwaysPending": "Approved and remembered. Running {toolName} locally",
         "approved": "Tool {toolName} executed successfully",
         "rejected": "Tool execution cancelled",
+        "deniedAlways": "Future runs of this operation will now be blocked",
         "executionFailed": "Execution failed: {message}"
       },
       "result": {
-        "userRejected": "User rejected tool execution"
+        "userRejected": "User rejected tool execution",
+        "userDeniedAlways": "User blocked this operation for future runs"
       }
     },
     "voice": {

@@ -46,6 +46,15 @@ describe("tool semantics toggle action intent", () => {
     expect(getMcpToggleActionIntent({ recommendedAction: "enable_skill" }, true, "desktop")).toBe("enable_skill")
   })
 
+  it("allows desktop restart for errored local tools instead of trapping them in review", () => {
+    expect(
+      getMcpToggleActionIntent({ recommendedAction: "review", status: "error" }, true, "desktop")
+    ).toBe("start_tool")
+    expect(
+      getMcpToggleActionIntent({ recommendedAction: "review", status: "crashed" }, true, "desktop")
+    ).toBe("start_tool")
+  })
+
   it("falls back to start_tool for desktop enable flows", () => {
     expect(getMcpToggleActionIntent({ recommendedAction: "start_tool" }, true, "desktop")).toBe("start_tool")
     expect(getMcpToggleActionIntent({}, true, "desktop")).toBe("start_tool")

@@ -1,8 +1,37 @@
 use super::{
-    runtime::{approve_mcp_tool_inner_with_context, reject_mcp_tool_inner},
+    runtime::{
+        approve_mcp_tool_inner_with_context_and_mode, reject_mcp_tool_inner_with_mode,
+        ApprovePersistMode, RejectPersistMode,
+    },
     support::*,
 };
 use crate::modules::desktop_runtime::runtime::resume_suspended_local_chat_after_approval;
+
+fn parse_approve_persist_mode(value: Option<String>) -> ApprovePersistMode {
+    match value
+        .as_deref()
+        .map(str::trim)
+        .filter(|candidate| !candidate.is_empty())
+        .map(|candidate| candidate.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("allow_always") => ApprovePersistMode::AllowAlways,
+        _ => ApprovePersistMode::AllowOnce,
+    }
+}
+
+fn parse_reject_persist_mode(value: Option<String>) -> RejectPersistMode {
+    match value
+        .as_deref()
+        .map(str::trim)
+        .filter(|candidate| !candidate.is_empty())
+        .map(|candidate| candidate.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("deny_always") => RejectPersistMode::DenyAlways,
+        _ => RejectPersistMode::RejectOnce,
+    }
+}
 
 pub(crate) async fn list_pending_mcp_approvals_inner(
     pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
@@ -78,6 +107,8 @@ pub async fn approve_mcp_tool(
     state: State<'_, AppState>,
     approval_token: Option<String>,
     #[allow(non_snake_case)] approvalToken: Option<String>,
+    approval_mode: Option<String>,
+    #[allow(non_snake_case)] approvalMode: Option<String>,
     call_id: Option<String>,
     #[allow(non_snake_case)] callId: Option<String>,
     execution_token: Option<String>,
@@ -93,13 +124,15 @@ pub async fn approve_mcp_tool(
         execution_token.or(executionToken).as_deref(),
         None,
     );
+    let persist_mode = parse_approve_persist_mode(approval_mode.or(approvalMode));
 
-    let approved = approve_mcp_tool_inner_with_context(
+    let approved = approve_mcp_tool_inner_with_context_and_mode(
         &approval_context,
         Some(&state.mcp),
         state.mcp.store.as_ref(),
         state.mcp.approvals.pending_tool_calls.as_ref(),
         &token,
+        persist_mode,
     )
     .await?;
 
@@ -117,13 +150,21 @@ pub async fn reject_mcp_tool(
     state: State<'_, AppState>,
     approval_token: Option<String>,
     #[allow(non_snake_case)] approvalToken: Option<String>,
+    reject_mode: Option<String>,
+    #[allow(non_snake_case)] rejectMode: Option<String>,
 ) -> Result<(), String> {
     let token = approval_token
         .or(approvalToken)
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "approval token is required".to_string())?;
-    reject_mcp_tool_inner(state.mcp.approvals.pending_tool_calls.as_ref(), &token).await;
+    reject_mcp_tool_inner_with_mode(
+        Some(state.mcp.store.as_ref()),
+        state.mcp.approvals.pending_tool_calls.as_ref(),
+        &token,
+        parse_reject_persist_mode(reject_mode.or(rejectMode)),
+    )
+    .await?;
     state
         .mcp
         .approvals

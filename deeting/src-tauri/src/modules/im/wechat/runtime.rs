@@ -1,10 +1,15 @@
-use log::info;
+use std::time::Duration;
+
+use log::{info, warn};
 
 use crate::modules::im::text_runtime::TextImConversationRuntime;
 use crate::modules::im::ImConnectionProfile;
 use crate::state::AppState;
 
 use super::types::{WECHAT_ITEM_TYPE_TEXT, WECHAT_MESSAGE_TYPE_USER};
+
+const WECHAT_RUNTIME_RETRY_DELAY: Duration = Duration::from_secs(5);
+const WECHAT_SESSION_EXPIRED_RETRY_DELAY: Duration = Duration::from_secs(30);
 
 pub async fn run_wechat_direct_profile_worker(
     app_state: AppState,
@@ -18,21 +23,37 @@ pub async fn run_wechat_direct_profile_worker(
     let mut text_runtime = TextImConversationRuntime::default();
 
     loop {
-        let response = app_state
+        let response = match app_state
             .wechat
             .get_updates(
                 account.base_url.as_str(),
                 account.token.as_str(),
                 account.cursor.as_str(),
             )
-            .await?;
+            .await
+        {
+            Ok(response) => response,
+            Err(err) => {
+                warn!(
+                    "wechat_runtime_get_updates_failed profile={} err={}",
+                    profile.id, err
+                );
+                app_state
+                    .wechat
+                    .set_last_error(Some(format!("微信消息轮询失败：{err}")))
+                    .await;
+                tokio::time::sleep(WECHAT_RUNTIME_RETRY_DELAY).await;
+                continue;
+            }
+        };
+        let mut had_runtime_error = false;
 
         if response.errcode == Some(-14) {
             app_state
                 .wechat
                 .set_last_error(Some("微信会话已过期，请重新连接。".to_string()))
                 .await;
-            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            tokio::time::sleep(WECHAT_SESSION_EXPIRED_RETRY_DELAY).await;
             continue;
         }
 
@@ -44,7 +65,17 @@ pub async fn run_wechat_direct_profile_worker(
         {
             if cursor != account.cursor {
                 account.cursor = cursor.to_string();
-                app_state.wechat.update_cursor(cursor).await?;
+                if let Err(err) = app_state.wechat.update_cursor(cursor).await {
+                    had_runtime_error = true;
+                    warn!(
+                        "wechat_runtime_update_cursor_failed profile={} cursor={} err={}",
+                        profile.id, cursor, err
+                    );
+                    app_state
+                        .wechat
+                        .set_last_error(Some(format!("微信游标更新失败：{err}")))
+                        .await;
+                }
             }
         }
 
@@ -75,27 +106,73 @@ pub async fn run_wechat_direct_profile_worker(
             if text.is_empty() {
                 continue;
             }
-            let context_token = message
+
+            let incoming_context_token = message
                 .context_token
                 .as_deref()
                 .map(str::trim)
                 .unwrap_or_default()
                 .to_string();
-            if !context_token.is_empty() {
-                app_state
+            if !incoming_context_token.is_empty() {
+                if let Err(err) = app_state
                     .wechat
-                    .update_context_token(contact_id, context_token.as_str())
-                    .await?;
+                    .update_context_token(contact_id, incoming_context_token.as_str())
+                    .await
+                {
+                    had_runtime_error = true;
+                    warn!(
+                        "wechat_runtime_update_context_token_failed profile={} contact_id={} err={}",
+                        profile.id, contact_id, err
+                    );
+                    app_state
+                        .wechat
+                        .set_last_error(Some(format!("微信会话上下文保存失败：{err}")))
+                        .await;
+                }
             }
+
+            let reply_context_token = match resolve_reply_context_token(
+                &app_state,
+                contact_id,
+                incoming_context_token.as_str(),
+            )
+            .await
+            {
+                Ok(token) => token,
+                Err(err) => {
+                    had_runtime_error = true;
+                    warn!(
+                        "wechat_runtime_load_context_token_failed profile={} contact_id={} err={}",
+                        profile.id, contact_id, err
+                    );
+                    app_state
+                        .wechat
+                        .set_last_error(Some(format!("微信会话上下文读取失败：{err}")))
+                        .await;
+                    continue;
+                }
+            };
 
             match app_state
                 .wechat
                 .ensure_allowed_or_create_pairing(contact_id)
-                .await?
+                .await
             {
-                Ok(()) => {}
-                Err(code) => {
-                    send_text(
+                Err(err) => {
+                    had_runtime_error = true;
+                    warn!(
+                        "wechat_runtime_pairing_lookup_failed profile={} contact_id={} err={}",
+                        profile.id, contact_id, err
+                    );
+                    app_state
+                        .wechat
+                        .set_last_error(Some(format!("微信联系人配对状态读取失败：{err}")))
+                        .await;
+                    continue;
+                }
+                Ok(Ok(())) => {}
+                Ok(Err(code)) => {
+                    if let Err(err) = send_text(
                         &app_state,
                         &account.base_url,
                         &account.token,
@@ -105,14 +182,25 @@ pub async fn run_wechat_direct_profile_worker(
                             code
                         )
                         .as_str(),
-                        context_token.as_str(),
+                        reply_context_token.as_str(),
                     )
-                    .await?;
+                    .await
+                    {
+                        had_runtime_error = true;
+                        warn!(
+                            "wechat_runtime_send_pairing_code_failed profile={} contact_id={} err={}",
+                            profile.id, contact_id, err
+                        );
+                        app_state
+                            .wechat
+                            .set_last_error(Some(format!("微信配对提示发送失败：{err}")))
+                            .await;
+                    }
                     continue;
                 }
             }
 
-            text_runtime
+            if let Err(err) = text_runtime
                 .handle_incoming_text(
                     &app_state,
                     &app_handle,
@@ -124,7 +212,7 @@ pub async fn run_wechat_direct_profile_worker(
                         let app_state = app_state.clone();
                         let base_url = account.base_url.clone();
                         let token = account.token.clone();
-                        let context_token = context_token.clone();
+                        let context_token = reply_context_token.clone();
                         let contact_id = contact_id.to_string();
                         let text = reply_text;
                         async move {
@@ -140,12 +228,63 @@ pub async fn run_wechat_direct_profile_worker(
                         }
                     },
                 )
-                .await?;
+                .await
+            {
+                had_runtime_error = true;
+                warn!(
+                    "wechat_runtime_handle_incoming_text_failed profile={} contact_id={} err={}",
+                    profile.id, contact_id, err
+                );
+                app_state
+                    .wechat
+                    .set_last_error(Some(format!("微信消息处理失败：{err}")))
+                    .await;
+            }
         }
 
-        app_state.wechat.clear_last_error().await;
+        if had_runtime_error {
+            tokio::time::sleep(WECHAT_RUNTIME_RETRY_DELAY).await;
+        } else {
+            app_state.wechat.clear_last_error().await;
+        }
         info!("wechat_runtime_tick profile={}", profile.id);
     }
+}
+
+async fn resolve_reply_context_token(
+    app_state: &AppState,
+    contact_id: &str,
+    incoming_context_token: &str,
+) -> Result<String, String> {
+    let incoming = incoming_context_token.trim();
+    if !incoming.is_empty() {
+        return Ok(incoming.to_string());
+    }
+
+    Ok(select_context_token(
+        incoming,
+        app_state
+            .wechat
+            .context_token_for_contact(contact_id)
+            .await?
+            .as_deref(),
+    ))
+}
+
+fn select_context_token(
+    incoming_context_token: &str,
+    stored_context_token: Option<&str>,
+) -> String {
+    let incoming = incoming_context_token.trim();
+    if !incoming.is_empty() {
+        return incoming.to_string();
+    }
+
+    stored_context_token
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_default()
 }
 
 async fn send_text(
@@ -181,10 +320,28 @@ fn markdown_to_plain_text(input: &str) -> String {
 mod tests {
     use crate::modules::im::text_runtime::parse_text_approval_command;
 
+    use super::select_context_token;
+
     #[test]
     fn parse_text_approval_command_accepts_numeric_choices() {
         assert_eq!(parse_text_approval_command("1"), Some(true));
         assert_eq!(parse_text_approval_command("0"), Some(false));
         assert_eq!(parse_text_approval_command(" yes "), None);
+    }
+
+    #[test]
+    fn select_context_token_prefers_incoming_value() {
+        assert_eq!(
+            select_context_token("ctx-live", Some("ctx-stored")),
+            "ctx-live".to_string()
+        );
+    }
+
+    #[test]
+    fn select_context_token_falls_back_to_stored_value() {
+        assert_eq!(
+            select_context_token("   ", Some("ctx-stored")),
+            "ctx-stored".to_string()
+        );
     }
 }

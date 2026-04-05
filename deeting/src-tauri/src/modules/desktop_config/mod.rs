@@ -5,6 +5,7 @@ pub(crate) mod store_init;
 
 pub(crate) const MAX_AGENTIC_ROUNDS_CONFIG_KEY: &str = "max_agentic_rounds";
 pub(crate) const DEFAULT_MAX_AGENTIC_ROUNDS: usize = 10;
+pub(crate) const APPROVAL_POLICY_LEVEL_CONFIG_KEY: &str = "chat.approval_policy_level";
 pub(crate) const DESKTOP_NETWORK_PROXY_MODE_CONFIG_KEY: &str = "network.proxy.mode";
 pub(crate) const DESKTOP_NETWORK_PROXY_URL_CONFIG_KEY: &str = "network.proxy.url";
 
@@ -17,6 +18,16 @@ pub(crate) enum DesktopNetworkProxyMode {
 
 pub(crate) const DEFAULT_DESKTOP_NETWORK_PROXY_MODE: DesktopNetworkProxyMode =
     DesktopNetworkProxyMode::System;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DesktopApprovalPolicyLevel {
+    High,
+    Medium,
+    Low,
+}
+
+pub(crate) const DEFAULT_APPROVAL_POLICY_LEVEL: DesktopApprovalPolicyLevel =
+    DesktopApprovalPolicyLevel::Medium;
 
 pub(crate) fn parse_max_agentic_rounds(raw: Option<&str>) -> usize {
     raw.and_then(|value| value.trim().parse::<usize>().ok())
@@ -37,13 +48,27 @@ pub(crate) fn parse_desktop_network_proxy_mode(raw: Option<&str>) -> DesktopNetw
     }
 }
 
+pub(crate) fn parse_approval_policy_level(raw: Option<&str>) -> DesktopApprovalPolicyLevel {
+    match raw
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("high") => DesktopApprovalPolicyLevel::High,
+        Some("low") => DesktopApprovalPolicyLevel::Low,
+        _ => DEFAULT_APPROVAL_POLICY_LEVEL,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_desktop_network_proxy_mode, parse_max_agentic_rounds, DesktopNetworkProxyMode,
-        DEFAULT_DESKTOP_NETWORK_PROXY_MODE, DEFAULT_MAX_AGENTIC_ROUNDS,
-        DESKTOP_NETWORK_PROXY_MODE_CONFIG_KEY, DESKTOP_NETWORK_PROXY_URL_CONFIG_KEY,
-        MAX_AGENTIC_ROUNDS_CONFIG_KEY,
+        parse_approval_policy_level, parse_desktop_network_proxy_mode, parse_max_agentic_rounds,
+        DesktopApprovalPolicyLevel, DesktopNetworkProxyMode, APPROVAL_POLICY_LEVEL_CONFIG_KEY,
+        DEFAULT_APPROVAL_POLICY_LEVEL, DEFAULT_DESKTOP_NETWORK_PROXY_MODE,
+        DEFAULT_MAX_AGENTIC_ROUNDS, DESKTOP_NETWORK_PROXY_MODE_CONFIG_KEY,
+        DESKTOP_NETWORK_PROXY_URL_CONFIG_KEY, MAX_AGENTIC_ROUNDS_CONFIG_KEY,
     };
 
     #[test]
@@ -101,6 +126,42 @@ mod tests {
         assert_eq!(
             parse_desktop_network_proxy_mode(Some("system")),
             DesktopNetworkProxyMode::System
+        );
+    }
+
+    #[test]
+    fn parse_approval_policy_level_defaults_to_medium() {
+        assert_eq!(
+            parse_approval_policy_level(None),
+            DEFAULT_APPROVAL_POLICY_LEVEL
+        );
+        assert_eq!(
+            parse_approval_policy_level(Some("")),
+            DEFAULT_APPROVAL_POLICY_LEVEL
+        );
+        assert_eq!(
+            parse_approval_policy_level(Some("unknown")),
+            DEFAULT_APPROVAL_POLICY_LEVEL
+        );
+        assert_eq!(
+            APPROVAL_POLICY_LEVEL_CONFIG_KEY,
+            "chat.approval_policy_level"
+        );
+    }
+
+    #[test]
+    fn parse_approval_policy_level_accepts_known_values() {
+        assert_eq!(
+            parse_approval_policy_level(Some("high")),
+            DesktopApprovalPolicyLevel::High
+        );
+        assert_eq!(
+            parse_approval_policy_level(Some(" medium ")),
+            DesktopApprovalPolicyLevel::Medium
+        );
+        assert_eq!(
+            parse_approval_policy_level(Some("LOW")),
+            DesktopApprovalPolicyLevel::Low
         );
     }
 }

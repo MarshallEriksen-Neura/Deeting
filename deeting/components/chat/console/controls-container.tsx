@@ -509,82 +509,86 @@ function ControlsContainer() {
 
   return (
     <div className="flex flex-col gap-2 p-2 relative rounded-2xl border border-slate-200/70 dark:border-white/10 bg-white/90 dark:bg-[#0a0a0a]/90 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.2)] backdrop-blur-xl">
-      <TakeoverPendingBar
-        pendingTakeover={pendingTakeover}
-        requestedAction={pendingTakeoverRequestedAction}
-        onImmediateStop={() => void stopAndSendPendingTakeover()}
-        onSendAfterStep={() => void markPendingTakeoverForDeferredSend()}
-        onCancel={() => void cancelPendingTakeover()}
-      />
       <BrowserModeConfirmationBar />
 
       {/* 1. Main Input Area */}
-      <div className="flex items-center rounded-2xl bg-slate-100/80 dark:bg-white/5 px-3 py-2">
-        <Input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-          className="min-h-[44px] w-full bg-transparent border-0 shadow-none text-slate-800 dark:text-white/80 placeholder:text-slate-500 dark:placeholder:text-white/30 text-[15px] font-normal focus-visible:ring-0 focus-visible:border-transparent"
-          placeholder={t("controls.placeholder")}
-          aria-label={t("controls.placeholder")}
-          autoFocus
-          onFocus={handleInputFocus}
-        />
-        <Popover open={isParamsOpen} onOpenChange={handleParamsOpenChange}>
-          <PopoverTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label={`${t("hud.temperature")} / ${t("hud.topP")}`}
-              title={`${t("hud.temperature")} / ${t("hud.topP")}`}
-              className={`min-h-[44px] min-w-[44px] size-10 rounded-full bg-white/70 dark:bg-white/10 text-slate-600 dark:text-white/70 hover:bg-white/90 dark:hover:bg-white/20 cursor-pointer ${isParamsOpen ? "ring-2 ring-indigo-500/30" : ""}`}
+      <div className="relative pt-0.5">
+        <div className="pointer-events-none absolute bottom-full left-0 z-20 mb-2">
+          <TakeoverPendingBar
+            pendingTakeover={pendingTakeover}
+            requestedAction={pendingTakeoverRequestedAction}
+            onImmediateStop={() => void stopAndSendPendingTakeover()}
+            onSendAfterStep={() => void markPendingTakeoverForDeferredSend()}
+            onCancel={() => void cancelPendingTakeover()}
+          />
+        </div>
+        <div className="flex items-center rounded-2xl bg-slate-100/80 dark:bg-white/5 px-3 py-2">
+          <Input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+            className="min-h-[44px] w-full bg-transparent border-0 shadow-none text-slate-800 dark:text-white/80 placeholder:text-slate-500 dark:placeholder:text-white/30 text-[15px] font-normal focus-visible:ring-0 focus-visible:border-transparent"
+            placeholder={t("controls.placeholder")}
+            aria-label={t("controls.placeholder")}
+            autoFocus
+            onFocus={handleInputFocus}
+          />
+          <Popover open={isParamsOpen} onOpenChange={handleParamsOpenChange}>
+            <PopoverTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label={`${t("hud.temperature")} / ${t("hud.topP")}`}
+                title={`${t("hud.temperature")} / ${t("hud.topP")}`}
+                className={`min-h-[44px] min-w-[44px] size-10 rounded-full bg-white/70 dark:bg-white/10 text-slate-600 dark:text-white/70 hover:bg-white/90 dark:hover:bg-white/20 cursor-pointer ${isParamsOpen ? "ring-2 ring-indigo-500/30" : ""}`}
+              >
+                <Sliders className="w-5 h-5" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              side="top"
+              align="end"
+              className="w-72 rounded-2xl border border-slate-200/70 dark:border-white/10 bg-white/95 dark:bg-[#0a0a0a]/95 shadow-2xl backdrop-blur-2xl"
             >
-              <Sliders className="w-5 h-5" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent
-            side="top"
-            align="end"
-            className="w-72 rounded-2xl border border-slate-200/70 dark:border-white/10 bg-white/95 dark:bg-[#0a0a0a]/95 shadow-2xl backdrop-blur-2xl"
-          >
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <div className="flex justify-between items-center px-1">
-                  <label className="text-[11px] font-bold text-slate-600 dark:text-white/50 flex items-center gap-1.5">
-                    {t("hud.temperature")}
-                  </label>
-                  <span className="text-[11px] font-mono font-bold">{config.temperature}</span>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center px-1">
+                    <label className="text-[11px] font-bold text-slate-600 dark:text-white/50 flex items-center gap-1.5">
+                      {t("hud.temperature")}
+                    </label>
+                    <span className="text-[11px] font-mono font-bold">{config.temperature}</span>
+                  </div>
+                  <Slider
+                    value={[config.temperature]}
+                    min={0}
+                    max={2}
+                    step={0.1}
+                    aria-label={t("hud.temperature")}
+                    onValueChange={handleTemperatureChange}
+                  />
                 </div>
-                <Slider
-                  value={[config.temperature]}
-                  min={0}
-                  max={2}
-                  step={0.1}
-                  aria-label={t("hud.temperature")}
-                  onValueChange={handleTemperatureChange}
-                />
-              </div>
-              <div className="space-y-2">
-                <div className="flex justify-between items-center px-1">
-                  <label className="text-[11px] font-bold text-slate-600 dark:text-white/50 flex items-center gap-1.5">
-                    {t("hud.topP")}
-                  </label>
-                  <span className="text-[11px] font-mono font-bold">{config.topP}</span>
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center px-1">
+                    <label className="text-[11px] font-bold text-slate-600 dark:text-white/50 flex items-center gap-1.5">
+                      {t("hud.topP")}
+                    </label>
+                    <span className="text-[11px] font-mono font-bold">{config.topP}</span>
+                  </div>
+                  <Slider
+                    value={[config.topP]}
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    aria-label={t("hud.topP")}
+                    onValueChange={handleTopPChange}
+                  />
                 </div>
-                <Slider
-                  value={[config.topP]}
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  aria-label={t("hud.topP")}
-                  onValueChange={handleTopPChange}
-                />
               </div>
-            </div>
-          </PopoverContent>
-        </Popover>
+            </PopoverContent>
+          </Popover>
+        </div>
       </div>
 
       {attachments.length > 0 ? (

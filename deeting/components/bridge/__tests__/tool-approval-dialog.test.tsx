@@ -147,13 +147,14 @@ describe("ToolApprovalDialog", () => {
 
     render(<ToolApprovalDialog />)
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "批准执行" }))
+      fireEvent.click(screen.getByRole("button", { name: "actions.approveOnce" }))
       await Promise.resolve()
     })
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("approve_mcp_tool", {
         approvalToken: "approval-1",
+        approvalMode: "allow_once",
         callId: "call-1",
         executionToken: "exec-1",
       })
@@ -193,13 +194,14 @@ describe("ToolApprovalDialog", () => {
 
     render(<ToolApprovalDialog />)
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "批准执行" }))
+      fireEvent.click(screen.getByRole("button", { name: "actions.approveOnce" }))
       await Promise.resolve()
     })
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("approve_mcp_tool", {
         approvalToken: "approval-bridge-pending-1",
+        approvalMode: "allow_once",
         callId: "call-bridge-pending-1",
         executionToken: "exec-bridge-pending-1",
       })
@@ -243,7 +245,7 @@ describe("ToolApprovalDialog", () => {
     })
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "批准执行" }))
+      fireEvent.click(screen.getByRole("button", { name: "actions.approveOnce" }))
       await Promise.resolve()
     })
 
@@ -264,7 +266,7 @@ describe("ToolApprovalDialog", () => {
       )
     })
 
-    const secondApproveButton = screen.getByRole("button", { name: "批准执行" })
+    const secondApproveButton = screen.getByRole("button", { name: "actions.approveOnce" })
     expect(secondApproveButton).not.toBeDisabled()
 
     fireEvent.click(secondApproveButton)
@@ -272,6 +274,7 @@ describe("ToolApprovalDialog", () => {
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenNthCalledWith(2, "approve_mcp_tool", {
         approvalToken: "approval-seq-2",
+        approvalMode: "allow_once",
         callId: "call-seq-2",
         executionToken: undefined,
       })
@@ -335,7 +338,7 @@ describe("ToolApprovalDialog", () => {
 
     render(<ToolApprovalDialog />)
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "批准执行" }))
+      fireEvent.click(screen.getByRole("button", { name: "actions.approveOnce" }))
       await Promise.resolve()
     })
 
@@ -367,6 +370,7 @@ describe("ToolApprovalDialog", () => {
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("approve_mcp_tool", {
         approvalToken: "approval-local-running-1",
+        approvalMode: "allow_once",
         callId: "call-local-running-1",
         executionToken: undefined,
       })
@@ -474,13 +478,14 @@ describe("ToolApprovalDialog", () => {
 
     render(<ToolApprovalDialog />)
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "拒绝" }))
+      fireEvent.click(screen.getByRole("button", { name: "actions.denyAlways" }))
       await Promise.resolve()
     })
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("reject_mcp_tool", {
         approvalToken: "approval-3",
+        rejectMode: "deny_always",
       })
     })
 
@@ -488,12 +493,12 @@ describe("ToolApprovalDialog", () => {
       tool_name: "write_file",
       arguments: {
         call_id: "call-3",
-        result: { error: "用户已拒绝工具执行" },
+        result: { error: "result.userDeniedAlways" },
         ok: false,
       },
       execution_token: "exec-3",
     })
-    expect(toast.info).toHaveBeenCalledWith("已取消工具执行")
+    expect(toast.info).toHaveBeenCalledWith("toast.deniedAlways")
   })
 
   it("writes approved local-chat tool results back into the matching assistant message", async () => {
@@ -549,13 +554,14 @@ describe("ToolApprovalDialog", () => {
 
     render(<ToolApprovalDialog />)
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "批准执行" }))
+      fireEvent.click(screen.getByRole("button", { name: "actions.approveOnce" }))
       await Promise.resolve()
     })
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("approve_mcp_tool", {
         approvalToken: "approval-local-1",
+        approvalMode: "allow_once",
         callId: "call-local-1",
         executionToken: undefined,
       })
@@ -632,13 +638,14 @@ describe("ToolApprovalDialog", () => {
 
     render(<ToolApprovalDialog />)
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "批准执行" }))
+      fireEvent.click(screen.getByRole("button", { name: "actions.approveOnce" }))
       await Promise.resolve()
     })
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("approve_mcp_tool", {
         approvalToken: "approval-refresh-1",
+        approvalMode: "allow_once",
         callId: "call-refresh-1",
         executionToken: undefined,
       })

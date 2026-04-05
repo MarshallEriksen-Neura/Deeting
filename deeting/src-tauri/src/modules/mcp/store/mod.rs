@@ -10,6 +10,7 @@ use crate::modules::conversations::store::init_conversation_tables;
 use crate::modules::desktop_config::store_init::init_desktop_config_table;
 use crate::modules::mcp::commands::runtime::capability_registry_cache::CapabilityRegistryBaseCache;
 use crate::modules::mcp::error::McpError;
+use crate::modules::mcp::policy::PersistedApprovalAction;
 use crate::modules::providers::store::secret_store::SecretStore;
 use crate::modules::render_runtime::store::init_render_runtime_tables;
 use crate::modules::skills::store_init::init_skill_tables;
@@ -51,6 +52,24 @@ pub struct AssetQueryAffinityRow {
     pub asset_id: String,
     pub success_count: i64,
     pub last_matched_at_unix_ms: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ToolApprovalRuleRow {
+    pub key: String,
+    pub action: PersistedApprovalAction,
+    pub tool_name: String,
+    pub tool_fingerprint: String,
+    pub risk_level: Option<String>,
+    pub auto_promoted: bool,
+    pub created_at_unix_ms: i64,
+    pub updated_at_unix_ms: i64,
+    pub expires_at_unix_ms: Option<i64>,
+    pub approve_count: i64,
+    pub reject_count: i64,
+    pub last_approved_at_unix_ms: Option<i64>,
+    pub last_rejected_at_unix_ms: Option<i64>,
+    pub half_life_days: i64,
 }
 
 pub struct McpStore {
@@ -315,6 +334,54 @@ impl McpStore {
 
         sqlx::query(
             r#"
+            CREATE TABLE IF NOT EXISTS tool_approval_rules (
+              key TEXT PRIMARY KEY,
+              action TEXT NOT NULL,
+              tool_name TEXT NOT NULL,
+              tool_fingerprint TEXT NOT NULL,
+              risk_level TEXT,
+              auto_promoted INTEGER NOT NULL DEFAULT 0,
+              created_at_unix_ms INTEGER NOT NULL,
+              updated_at_unix_ms INTEGER NOT NULL,
+              expires_at_unix_ms INTEGER,
+              approve_count INTEGER NOT NULL DEFAULT 0,
+              reject_count INTEGER NOT NULL DEFAULT 0,
+              last_approved_at_unix_ms INTEGER,
+              last_rejected_at_unix_ms INTEGER,
+              half_life_days INTEGER NOT NULL DEFAULT 7
+            );
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        for statement in [
+            "ALTER TABLE tool_approval_rules ADD COLUMN auto_promoted INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE tool_approval_rules ADD COLUMN last_approved_at_unix_ms INTEGER",
+            "ALTER TABLE tool_approval_rules ADD COLUMN last_rejected_at_unix_ms INTEGER",
+            "ALTER TABLE tool_approval_rules ADD COLUMN half_life_days INTEGER NOT NULL DEFAULT 7",
+        ] {
+            if let Err(err) = sqlx::query(statement).execute(&self.write_pool).await {
+                let text = err.to_string();
+                if !text.contains("duplicate column name") {
+                    return Err(McpError::Storage(text));
+                }
+            }
+        }
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_tool_approval_rules_updated_at
+            ON tool_approval_rules(updated_at_unix_ms DESC);
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
             CREATE INDEX IF NOT EXISTS idx_tool_execution_history_tool_name_created_at
             ON tool_execution_history(tool_name, created_at_unix_ms DESC);
             "#,
@@ -544,6 +611,194 @@ impl McpStore {
                 })
             })
             .collect()
+    }
+
+    pub async fn upsert_tool_approval_rule(
+        &self,
+        key: &str,
+        action: PersistedApprovalAction,
+        tool_name: &str,
+        tool_fingerprint: &str,
+        risk_level: Option<&str>,
+    ) -> Result<(), McpError> {
+        let normalized_key = key.trim();
+        let normalized_tool_name = tool_name.trim();
+        let normalized_tool_fingerprint = tool_fingerprint.trim();
+        if normalized_key.is_empty()
+            || normalized_tool_name.is_empty()
+            || normalized_tool_fingerprint.is_empty()
+        {
+            return Ok(());
+        }
+        let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+        let approve_delta = i64::from(matches!(
+            action,
+            PersistedApprovalAction::AllowOnce | PersistedApprovalAction::AllowAlways
+        ));
+        let reject_delta = i64::from(matches!(action, PersistedApprovalAction::DenyAlways));
+        let last_approved_at_unix_ms = if approve_delta > 0 { Some(now as i64) } else { None };
+        let last_rejected_at_unix_ms = if reject_delta > 0 { Some(now as i64) } else { None };
+        let default_expiry_days = match action {
+            PersistedApprovalAction::AllowOnce => 7_i64,
+            PersistedApprovalAction::AllowAlways => 14_i64,
+            PersistedApprovalAction::DenyAlways => 30_i64,
+        };
+        let expires_at_unix_ms = now as i64 + default_expiry_days * 24 * 60 * 60 * 1000;
+        let auto_promoted = i64::from(matches!(action, PersistedApprovalAction::AllowAlways));
+        sqlx::query(
+            r#"
+            INSERT INTO tool_approval_rules (
+              key, action, tool_name, tool_fingerprint, risk_level,
+              auto_promoted, created_at_unix_ms, updated_at_unix_ms, expires_at_unix_ms,
+              approve_count, reject_count, last_approved_at_unix_ms, last_rejected_at_unix_ms,
+              half_life_days
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 7)
+            ON CONFLICT(key) DO UPDATE SET
+              action = excluded.action,
+              tool_name = excluded.tool_name,
+              tool_fingerprint = excluded.tool_fingerprint,
+              risk_level = excluded.risk_level,
+              auto_promoted = excluded.auto_promoted,
+              updated_at_unix_ms = excluded.updated_at_unix_ms,
+              expires_at_unix_ms = excluded.expires_at_unix_ms,
+              approve_count = tool_approval_rules.approve_count + excluded.approve_count,
+              reject_count = tool_approval_rules.reject_count + excluded.reject_count,
+              last_approved_at_unix_ms = COALESCE(excluded.last_approved_at_unix_ms, tool_approval_rules.last_approved_at_unix_ms),
+              last_rejected_at_unix_ms = COALESCE(excluded.last_rejected_at_unix_ms, tool_approval_rules.last_rejected_at_unix_ms)
+            "#,
+        )
+        .bind(normalized_key)
+        .bind(action.as_str())
+        .bind(normalized_tool_name)
+        .bind(normalized_tool_fingerprint)
+        .bind(risk_level.map(str::trim).filter(|value| !value.is_empty()))
+        .bind(auto_promoted)
+        .bind(now as i64)
+        .bind(now as i64)
+        .bind(expires_at_unix_ms)
+        .bind(approve_delta)
+        .bind(reject_delta)
+        .bind(last_approved_at_unix_ms)
+        .bind(last_rejected_at_unix_ms)
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        Ok(())
+    }
+
+    pub async fn promote_tool_approval_rule_to_allow_always(
+        &self,
+        key: &str,
+        ttl_days: i64,
+    ) -> Result<(), McpError> {
+        let normalized_key = key.trim();
+        if normalized_key.is_empty() {
+            return Ok(());
+        }
+        let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+        let ttl_ms = ttl_days.max(1) * 24 * 60 * 60 * 1000;
+        sqlx::query(
+            r#"
+            UPDATE tool_approval_rules
+            SET action = ?, auto_promoted = 1, updated_at_unix_ms = ?, expires_at_unix_ms = ?
+            WHERE key = ?
+            "#,
+        )
+        .bind(PersistedApprovalAction::AllowAlways.as_str())
+        .bind(now as i64)
+        .bind(now as i64 + ttl_ms)
+        .bind(normalized_key)
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        Ok(())
+    }
+
+    pub async fn get_tool_approval_rule(
+        &self,
+        key: &str,
+    ) -> Result<Option<ToolApprovalRuleRow>, McpError> {
+        let normalized_key = key.trim();
+        if normalized_key.is_empty() {
+            return Ok(None);
+        }
+        let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+        sqlx::query(
+            r#"
+            DELETE FROM tool_approval_rules
+            WHERE expires_at_unix_ms IS NOT NULL
+              AND expires_at_unix_ms <= ?
+            "#,
+        )
+        .bind(now as i64)
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let row = sqlx::query(
+            r#"
+            SELECT
+              key, action, tool_name, tool_fingerprint, risk_level,
+              auto_promoted, created_at_unix_ms, updated_at_unix_ms, expires_at_unix_ms,
+              approve_count, reject_count, last_approved_at_unix_ms, last_rejected_at_unix_ms,
+              half_life_days
+            FROM tool_approval_rules
+            WHERE key = ?
+            LIMIT 1
+            "#,
+        )
+        .bind(normalized_key)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        row.map(|row| {
+            let action_text = row
+                .try_get::<String, _>("action")
+                .map_err(|err| McpError::Storage(err.to_string()))?;
+            let action = PersistedApprovalAction::from_str(&action_text)
+                .ok_or_else(|| McpError::Storage(format!("unknown approval action: {action_text}")))?;
+            Ok(ToolApprovalRuleRow {
+                key: row
+                    .try_get::<String, _>("key")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                action,
+                tool_name: row
+                    .try_get::<String, _>("tool_name")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                tool_fingerprint: row
+                    .try_get::<String, _>("tool_fingerprint")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                risk_level: row.try_get::<Option<String>, _>("risk_level").ok().flatten(),
+                auto_promoted: row
+                    .try_get::<i64, _>("auto_promoted")
+                    .map(|value| value != 0)
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                created_at_unix_ms: row
+                    .try_get::<i64, _>("created_at_unix_ms")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                updated_at_unix_ms: row
+                    .try_get::<i64, _>("updated_at_unix_ms")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                expires_at_unix_ms: row.try_get::<Option<i64>, _>("expires_at_unix_ms").ok().flatten(),
+                approve_count: row
+                    .try_get::<i64, _>("approve_count")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                reject_count: row
+                    .try_get::<i64, _>("reject_count")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                last_approved_at_unix_ms: row
+                    .try_get::<Option<i64>, _>("last_approved_at_unix_ms")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                last_rejected_at_unix_ms: row
+                    .try_get::<Option<i64>, _>("last_rejected_at_unix_ms")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                half_life_days: row
+                    .try_get::<i64, _>("half_life_days")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+            })
+        })
+        .transpose()
     }
 
     pub async fn upsert_tool_query_affinity(

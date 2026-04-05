@@ -15,6 +15,7 @@ export const DESKTOP_CONFIG_KEYS = {
   maxAgenticRounds: "max_agentic_rounds",
   personaPrompt: "chat.persona_prompt",
   chatHistoryRetentionDays: "chat.history_retention_days",
+  approvalPolicyLevel: "chat.approval_policy_level",
   workerWorkflowRouting: "workflow.route_worker_through_workflow",
   desktopWindowCloseAction: "desktop.window.close_action",
   /** Persisted after login so desktop can call credits proxy with Authorization. */
@@ -26,6 +27,7 @@ export const DESKTOP_CONFIG_KEYS = {
 
 export type DesktopProxyMode = "none" | "system" | "custom";
 export type DesktopWindowCloseAction = "show_island" | "minimize" | "quit";
+export type DesktopApprovalPolicyLevel = "high" | "medium" | "low";
 
 export interface DesktopNetworkProxySettings {
   mode: DesktopProxyMode;
@@ -58,6 +60,19 @@ export function normalizeDesktopWindowCloseAction(
       return "quit";
     default:
       return "show_island";
+  }
+}
+
+export function normalizeDesktopApprovalPolicyLevel(
+  value: string | null | undefined,
+): DesktopApprovalPolicyLevel {
+  switch (value?.trim().toLowerCase()) {
+    case "high":
+      return "high";
+    case "low":
+      return "low";
+    default:
+      return "medium";
   }
 }
 

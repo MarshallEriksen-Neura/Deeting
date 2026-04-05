@@ -95,9 +95,17 @@ impl ToolRiskAssessment {
         if !self.grant_eligible() {
             return None;
         }
+        self.policy_rule_key(tool_fingerprint)
+    }
+
+    pub fn policy_rule_key(&self, tool_fingerprint: &str) -> Option<String> {
+        let normalized_fingerprint = tool_fingerprint.trim();
+        if normalized_fingerprint.is_empty() {
+            return None;
+        }
         Some(format!(
             "{}|{}|{}|{}",
-            tool_fingerprint.trim(),
+            normalized_fingerprint,
             self.operation_class.as_str(),
             self.target_class.as_str(),
             self.boundary_class.as_str(),

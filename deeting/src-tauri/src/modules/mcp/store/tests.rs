@@ -718,6 +718,75 @@ async fn list_tool_execution_affinity_rows_orders_newer_tool_usage_first() {
 }
 
 #[tokio::test]
+async fn upsert_tool_approval_rule_tracks_observation_fields() {
+    let store = create_test_store("tool-approval-rule-observation").await;
+    store.init().await.expect("init store");
+
+    store
+        .upsert_tool_approval_rule(
+            "rule-1",
+            crate::modules::mcp::policy::PersistedApprovalAction::AllowOnce,
+            "browser_open_tab",
+            "fingerprint-1",
+            Some("MEDIUM"),
+        )
+        .await
+        .expect("upsert approval observation");
+
+    let row = store
+        .get_tool_approval_rule("rule-1")
+        .await
+        .expect("read approval rule")
+        .expect("approval rule exists");
+
+    assert_eq!(
+        row.action,
+        crate::modules::mcp::policy::PersistedApprovalAction::AllowOnce
+    );
+    assert_eq!(row.approve_count, 1);
+    assert_eq!(row.reject_count, 0);
+    assert_eq!(row.risk_level.as_deref(), Some("MEDIUM"));
+    assert!(row.last_approved_at_unix_ms.is_some());
+    assert!(!row.auto_promoted);
+    assert_eq!(row.half_life_days, 7);
+}
+
+#[tokio::test]
+async fn promote_tool_approval_rule_to_allow_always_marks_auto_promoted() {
+    let store = create_test_store("tool-approval-rule-promote").await;
+    store.init().await.expect("init store");
+
+    store
+        .upsert_tool_approval_rule(
+            "rule-2",
+            crate::modules::mcp::policy::PersistedApprovalAction::AllowOnce,
+            "browser_open_tab",
+            "fingerprint-2",
+            Some("MEDIUM"),
+        )
+        .await
+        .expect("seed approval rule");
+
+    store
+        .promote_tool_approval_rule_to_allow_always("rule-2", 14)
+        .await
+        .expect("promote approval rule");
+
+    let row = store
+        .get_tool_approval_rule("rule-2")
+        .await
+        .expect("read approval rule")
+        .expect("approval rule exists");
+
+    assert_eq!(
+        row.action,
+        crate::modules::mcp::policy::PersistedApprovalAction::AllowAlways
+    );
+    assert!(row.auto_promoted);
+    assert!(row.expires_at_unix_ms.is_some());
+}
+
+#[tokio::test]
 async fn upsert_tool_query_affinity_accumulates_success_count() {
     let store = create_test_store("tool-query-affinity").await;
     store.init().await.expect("init store");

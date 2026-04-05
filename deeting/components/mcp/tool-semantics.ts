@@ -53,6 +53,9 @@ const getInstallRequired = (tool: McpUiToolLike) => tool.installRequired ?? tool
 
 const getIndexStatus = (tool: McpUiToolLike) => tool.indexStatus ?? tool.index_status
 
+const shouldAllowDesktopRecoveryStart = (tool: McpUiToolLike) =>
+  tool.status === "error" || tool.status === "crashed"
+
 const getSharedActionIntent = (tool: McpUiToolLike): McpSharedActionIntent | null => {
   if (getInstallRequired(tool)) {
     return "blocked_install"
@@ -126,6 +129,10 @@ export const getMcpToggleActionIntent = (
 
   if (!enabled) {
     return "stop_tool"
+  }
+
+  if (platform === "desktop" && shouldAllowDesktopRecoveryStart(tool)) {
+    return "start_tool"
   }
 
   const sharedIntent = getSharedActionIntent(tool)

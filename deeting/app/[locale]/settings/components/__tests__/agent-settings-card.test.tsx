@@ -17,6 +17,17 @@ jest.mock("@/lib/api/desktop-config", () => ({
     maxAgenticRounds: "max_agentic_rounds",
     personaPrompt: "chat.persona_prompt",
     chatHistoryRetentionDays: "chat.history_retention_days",
+    approvalPolicyLevel: "chat.approval_policy_level",
+  },
+  normalizeDesktopApprovalPolicyLevel: (value: string | null | undefined) => {
+    switch ((value ?? "").trim().toLowerCase()) {
+      case "high":
+        return "high"
+      case "low":
+        return "low"
+      default:
+        return "medium"
+    }
   },
   getDesktopConfig: (...args: unknown[]) => mockGetDesktopConfig(...args),
   setDesktopConfig: (...args: unknown[]) => mockSetDesktopConfig(...args),
@@ -40,6 +51,7 @@ describe("AgentSettingsCard", () => {
       if (key === "max_agentic_rounds") return "12"
       if (key === "chat.persona_prompt") return "Stay practical."
       if (key === "chat.history_retention_days") return "30"
+      if (key === "chat.approval_policy_level") return "medium"
       return null
     })
     mockSetDesktopConfig.mockResolvedValue(undefined)
@@ -73,5 +85,27 @@ describe("AgentSettingsCard", () => {
     })
 
     expect(mockToastSuccess).toHaveBeenCalledWith("agent.saveSuccess")
+  })
+
+  it("loads and saves desktop approval policy level", async () => {
+    render(<AgentSettingsCard isTauriRuntime />)
+
+    const policySelect = await screen.findByLabelText("agent.approvalPolicyLabel")
+    expect(policySelect).toHaveValue("medium")
+
+    fireEvent.change(policySelect, { target: { value: "low" } })
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "agent.save",
+      })
+    )
+
+    await waitFor(() => {
+      expect(mockSetDesktopConfig).toHaveBeenCalledWith(
+        "chat.approval_policy_level",
+        "low"
+      )
+    })
   })
 })

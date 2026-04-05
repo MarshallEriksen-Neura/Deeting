@@ -20,6 +20,7 @@ pub struct PendingToolCall {
     pub risk_level: Option<String>,
     pub risk_reasons: Vec<String>,
     pub tool_fingerprint: String,
+    pub policy_rule_key: Option<String>,
     pub approval_grant_key: Option<String>,
     pub created_at_unix_ms: i128,
     pub expires_at_unix_ms: i128,
@@ -142,6 +143,7 @@ pub fn build_pending_tool_call(
     risk_level: Option<String>,
     risk_reasons: Vec<String>,
     tool_fingerprint: String,
+    policy_rule_key: Option<String>,
     approval_grant_key: Option<String>,
     approval_context: ToolApprovalContext,
 ) -> PendingToolCall {
@@ -157,6 +159,7 @@ pub fn build_pending_tool_call(
         risk_level,
         risk_reasons,
         tool_fingerprint,
+        policy_rule_key,
         approval_grant_key,
         created_at_unix_ms: created_at,
         expires_at_unix_ms: created_at + pending_tool_call_ttl_ms(),

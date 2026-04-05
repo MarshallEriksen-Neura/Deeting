@@ -14,20 +14,110 @@ pub enum ApprovalDecision {
     Deny,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ApprovalPolicyLevel {
+    High,
+    Medium,
+    Low,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PersistedApprovalAction {
+    AllowOnce,
+    AllowAlways,
+    DenyAlways,
+}
+
+impl PersistedApprovalAction {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::AllowOnce => "allow_once",
+            Self::AllowAlways => "allow_always",
+            Self::DenyAlways => "deny_always",
+        }
+    }
+
+    pub fn from_str(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "allow_once" => Some(Self::AllowOnce),
+            "allow_always" => Some(Self::AllowAlways),
+            "deny_always" => Some(Self::DenyAlways),
+            _ => None,
+        }
+    }
+}
+
 pub fn resolve_approval_decision(
     risk: &ToolRiskAssessment,
     approved_by_session_grant: bool,
+    policy_level: ApprovalPolicyLevel,
+    persisted_action: Option<PersistedApprovalAction>,
 ) -> ApprovalDecision {
-    if risk.risk_level == "CRITICAL"
+    if matches!(persisted_action, Some(PersistedApprovalAction::DenyAlways)) {
+        ApprovalDecision::Deny
+    } else if matches!(persisted_action, Some(PersistedApprovalAction::AllowAlways))
+        && policy_level != ApprovalPolicyLevel::High
+    {
+        ApprovalDecision::Allow
+    } else if risk.risk_level == "CRITICAL"
         && risk.boundary_class == ApprovalBoundaryClass::HardBoundary
         && risk.operation_class == RiskOperationClass::ProcessExec
     {
-        ApprovalDecision::Deny
-    } else if risk.requires_approval && !approved_by_session_grant {
-        ApprovalDecision::RequireApproval
+        match policy_level {
+            ApprovalPolicyLevel::Low => ApprovalDecision::Allow,
+            ApprovalPolicyLevel::High | ApprovalPolicyLevel::Medium => ApprovalDecision::Deny,
+        }
     } else {
-        ApprovalDecision::Allow
+        match policy_level {
+            ApprovalPolicyLevel::Low => ApprovalDecision::Allow,
+            ApprovalPolicyLevel::High => {
+                if risk.requires_approval {
+                    ApprovalDecision::RequireApproval
+                } else {
+                    ApprovalDecision::Allow
+                }
+            }
+            ApprovalPolicyLevel::Medium => {
+                if risk.requires_approval && !approved_by_session_grant {
+                    ApprovalDecision::RequireApproval
+                } else {
+                    ApprovalDecision::Allow
+                }
+            }
+        }
     }
+}
+
+pub fn calculate_medium_rule_confidence(
+    last_approved_at_unix_ms: Option<i64>,
+    half_life_days: i64,
+    now_unix_ms: i64,
+) -> f32 {
+    let Some(last_approved_at_unix_ms) = last_approved_at_unix_ms else {
+        return 0.0;
+    };
+    let age_days =
+        ((now_unix_ms - last_approved_at_unix_ms).max(0) as f32) / (24.0 * 60.0 * 60.0 * 1000.0);
+    if age_days <= 3.0 {
+        1.0
+    } else {
+        let half_life = half_life_days.max(1) as f32;
+        2_f32.powf(-((age_days - 3.0) / half_life))
+    }
+}
+
+pub fn should_auto_promote_medium_rule(
+    approve_count: i64,
+    reject_count: i64,
+    created_at_unix_ms: i64,
+    last_rejected_at_unix_ms: Option<i64>,
+    now_unix_ms: i64,
+) -> bool {
+    let window_ms = 7_i64 * 24 * 60 * 60 * 1000;
+    approve_count >= 3
+        && reject_count == 0
+        && now_unix_ms.saturating_sub(created_at_unix_ms) <= window_ms
+        && last_rejected_at_unix_ms.is_none()
 }
 
 pub enum PolicyTargetRef<'a> {
@@ -88,20 +178,89 @@ mod tests {
 
     #[test]
     fn resolve_approval_decision_requires_approval_without_grant() {
-        let decision = resolve_approval_decision(&high_risk(), false);
+        let decision = resolve_approval_decision(&high_risk(), false, ApprovalPolicyLevel::Medium, None);
         assert_eq!(decision, ApprovalDecision::RequireApproval);
     }
 
     #[test]
     fn resolve_approval_decision_allows_when_grant_exists() {
-        let decision = resolve_approval_decision(&high_risk(), true);
+        let decision = resolve_approval_decision(&high_risk(), true, ApprovalPolicyLevel::Medium, None);
         assert_eq!(decision, ApprovalDecision::Allow);
     }
 
     #[test]
     fn resolve_approval_decision_denies_critical_process_exec() {
-        let decision = resolve_approval_decision(&critical_process_exec(), false);
+        let decision = resolve_approval_decision(
+            &critical_process_exec(),
+            false,
+            ApprovalPolicyLevel::Medium,
+            None,
+        );
         assert_eq!(decision, ApprovalDecision::Deny);
+    }
+
+    #[test]
+    fn resolve_approval_decision_high_ignores_session_grant() {
+        let decision = resolve_approval_decision(&high_risk(), true, ApprovalPolicyLevel::High, None);
+        assert_eq!(decision, ApprovalDecision::RequireApproval);
+    }
+
+    #[test]
+    fn resolve_approval_decision_low_overrides_risk_gate() {
+        let decision = resolve_approval_decision(
+            &critical_process_exec(),
+            false,
+            ApprovalPolicyLevel::Low,
+            None,
+        );
+        assert_eq!(decision, ApprovalDecision::Allow);
+    }
+
+    #[test]
+    fn resolve_approval_decision_persisted_allow_overrides_medium() {
+        let decision = resolve_approval_decision(
+            &critical_process_exec(),
+            false,
+            ApprovalPolicyLevel::Medium,
+            Some(PersistedApprovalAction::AllowAlways),
+        );
+        assert_eq!(decision, ApprovalDecision::Allow);
+    }
+
+    #[test]
+    fn resolve_approval_decision_persisted_deny_wins() {
+        let decision = resolve_approval_decision(
+            &high_risk(),
+            true,
+            ApprovalPolicyLevel::Low,
+            Some(PersistedApprovalAction::DenyAlways),
+        );
+        assert_eq!(decision, ApprovalDecision::Deny);
+    }
+
+    #[test]
+    fn calculate_medium_rule_confidence_keeps_recent_rules_strong() {
+        let now = 10_i64 * 24 * 60 * 60 * 1000;
+        let recent = calculate_medium_rule_confidence(Some(now - 2_i64 * 24 * 60 * 60 * 1000), 7, now);
+        assert!((recent - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn calculate_medium_rule_confidence_decays_after_strong_window() {
+        let now = 20_i64 * 24 * 60 * 60 * 1000;
+        let decayed =
+            calculate_medium_rule_confidence(Some(now - 10_i64 * 24 * 60 * 60 * 1000), 7, now);
+        assert!(decayed < 1.0);
+        assert!(decayed > 0.0);
+    }
+
+    #[test]
+    fn should_auto_promote_medium_rule_requires_repeat_approval_without_rejection() {
+        let now = 5_i64 * 24 * 60 * 60 * 1000;
+        assert!(should_auto_promote_medium_rule(3, 0, 0, None, now));
+        assert!(!should_auto_promote_medium_rule(2, 0, 0, None, now));
+        assert!(!should_auto_promote_medium_rule(3, 1, 0, None, now));
+        assert!(!should_auto_promote_medium_rule(3, 0, 0, Some(1), now));
     }
 
     #[test]

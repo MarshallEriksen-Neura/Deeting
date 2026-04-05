@@ -424,8 +424,10 @@
       "warningTitle": "执行前请确认",
       "warning": "该操作可能修改文件或执行系统命令。仅在你信任当前会话和本次操作时才允许执行。",
       "actions": {
-        "reject": "拒绝",
-        "approve": "批准执行",
+        "denyAlways": "始终拒绝",
+        "blocking": "正在阻止...",
+        "approveOnce": "允许一次",
+        "approveAlways": "始终允许",
         "approving": "执行中..."
       },
       "risk": {
@@ -436,12 +438,15 @@
       },
       "toast": {
         "approvedPending": "已批准，正在执行 {toolName}",
+        "approvedAlwaysPending": "已批准并记住，正在执行 {toolName}",
         "approved": "工具 {toolName} 已执行",
         "rejected": "已取消工具执行",
+        "deniedAlways": "后续同类操作将被自动阻止",
         "executionFailed": "执行失败：{message}"
       },
       "result": {
-        "userRejected": "用户已拒绝工具执行"
+        "userRejected": "用户已拒绝工具执行",
+        "userDeniedAlways": "用户已将该操作加入阻止规则"
       }
     },
     "voice": {
