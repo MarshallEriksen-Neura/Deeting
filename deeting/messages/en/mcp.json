@@ -136,6 +136,7 @@
       "name": "Name",
       "transport": "Transport",
       "command": "Command",
+      "sseUrl": "SSE Endpoint",
       "args": "Arguments",
       "env": "Environment Variables",
       "json": "MCP Configuration JSON"
@@ -143,12 +144,19 @@
     "placeholders": {
       "name": "e.g. My Local Tool",
       "command": "e.g. npx, python, docker",
+      "sseUrl": "https://example.com/sse",
       "args": "e.g. -y @modelcontextprotocol/server-filesystem",
       "env": "KEY=VALUE",
       "json": "{\n  \"mcpServers\": {\n    \"filesystem\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@modelcontextprotocol/server-filesystem\", \"/Users/me/Desktop\"]\n    }\n  }\n}"
     },
     "errors": {
-      "invalidConfig": "Invalid JSON config. Please check the mcpServers format."
+      "invalidConfig": "Invalid JSON config. Please check the mcpServers format.",
+      "jsonSyntax": "JSON syntax error",
+      "missingMcpServers": "The JSON must contain an object-valued mcpServers field.",
+      "emptyMcpServers": "mcpServers is empty. Add at least one server entry.",
+      "serverConfigNotObject": "Server '{name}' must use an object config.",
+      "missingRemoteUrl": "Server '{name}' is marked as SSE but is missing a url or sse_url field.",
+      "missingCommandOrUrl": "Server '{name}' must provide either a command for stdio or a url/sse_url for SSE."
     },
     "save": "Save Server",
     "saving": "Adding...",

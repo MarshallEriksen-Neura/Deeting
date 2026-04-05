@@ -6,8 +6,14 @@ import {
 
 describe("registry import", () => {
   it("returns invalid when mcpServers is missing or empty", () => {
-    expect(parseMcpRegistryImportConfig({})).toEqual({ kind: "invalid" })
-    expect(parseMcpRegistryImportConfig({ mcpServers: {} })).toEqual({ kind: "invalid" })
+    expect(parseMcpRegistryImportConfig({})).toEqual({
+      kind: "invalid",
+      reasonKey: "addServer.errors.missingMcpServers",
+    })
+    expect(parseMcpRegistryImportConfig({ mcpServers: {} })).toEqual({
+      kind: "invalid",
+      reasonKey: "addServer.errors.emptyMcpServers",
+    })
   })
 
   it("builds sse and stdio server create requests", () => {
@@ -61,6 +67,28 @@ describe("registry import", () => {
           is_enabled: true,
         },
       ],
+    })
+  })
+
+  it("returns the first detailed validation reason when no importable servers exist", () => {
+    expect(parseMcpRegistryImportConfig({
+      mcpServers: {
+        tavily: { type: "sse" },
+      },
+    })).toEqual({
+      kind: "invalid",
+      reasonKey: "addServer.errors.missingRemoteUrl",
+      values: { name: "tavily" },
+    })
+
+    expect(parseMcpRegistryImportConfig({
+      mcpServers: {
+        broken: "nope",
+      },
+    })).toEqual({
+      kind: "invalid",
+      reasonKey: "addServer.errors.serverConfigNotObject",
+      values: { name: "broken" },
     })
   })
 

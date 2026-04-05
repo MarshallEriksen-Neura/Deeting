@@ -136,6 +136,7 @@
       "name": "名称",
       "transport": "传输方式",
       "command": "命令",
+      "sseUrl": "SSE 地址",
       "args": "参数",
       "env": "环境变量",
       "json": "MCP 配置 JSON"
@@ -143,12 +144,19 @@
     "placeholders": {
       "name": "例如：本地工具",
       "command": "例如：npx、python、docker",
+      "sseUrl": "https://example.com/sse",
       "args": "例如：-y @modelcontextprotocol/server-filesystem",
       "env": "KEY=VALUE",
       "json": "{\n  \"mcpServers\": {\n    \"filesystem\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@modelcontextprotocol/server-filesystem\", \"/Users/me/Desktop\"]\n    }\n  }\n}"
     },
     "errors": {
-      "invalidConfig": "JSON 配置不合法，请检查 mcpServers 格式。"
+      "invalidConfig": "JSON 配置不合法，请检查 mcpServers 格式。",
+      "jsonSyntax": "JSON 语法错误",
+      "missingMcpServers": "JSON 必须包含对象类型的 mcpServers 字段。",
+      "emptyMcpServers": "mcpServers 为空，至少需要一个服务条目。",
+      "serverConfigNotObject": "服务 {name} 的配置必须是 JSON 对象。",
+      "missingRemoteUrl": "服务 {name} 被标记为 SSE，但缺少 url 或 sse_url 字段。",
+      "missingCommandOrUrl": "服务 {name} 必须提供 stdio 的 command，或 SSE 的 url/sse_url。"
     },
     "save": "保存服务",
     "saving": "正在添加...",

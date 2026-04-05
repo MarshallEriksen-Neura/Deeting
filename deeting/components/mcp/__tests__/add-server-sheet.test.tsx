@@ -27,14 +27,14 @@ jest.mock("@/components/ui/glass-button", () => ({
   ),
 }))
 
-jest.mock("@/components/ui/sheet", () => ({
-  Sheet: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  SheetContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  SheetDescription: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  SheetFooter: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  SheetHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  SheetTitle: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  SheetTrigger: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+jest.mock("@/components/ui/dialog", () => ({
+  Dialog: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DialogDescription: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DialogFooter: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DialogHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DialogTitle: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DialogTrigger: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }))
 
 jest.mock("@/components/ui/tabs", () => ({
@@ -52,6 +52,16 @@ const fillWizardFields = () => {
   })
   fireEvent.change(screen.getByPlaceholderText("addServer.placeholders.command"), {
     target: { value: "npx" },
+  })
+}
+
+const fillSseWizardFields = () => {
+  fireEvent.change(screen.getByPlaceholderText("addServer.placeholders.name"), {
+    target: { value: "tavily" },
+  })
+  fireEvent.click(screen.getByRole("button", { name: "addServer.transport.sse" }))
+  fireEvent.change(screen.getByPlaceholderText("addServer.placeholders.sseUrl"), {
+    target: { value: "https://example.com/sse" },
   })
 }
 
@@ -117,5 +127,29 @@ describe("AddServerSheet", () => {
     expect(onOpenChange).not.toHaveBeenCalled()
     expect(screen.getByRole("button", { name: "addServer.save" })).toBeEnabled()
     expect(screen.queryByText("addServer.pendingHint")).not.toBeInTheDocument()
+  })
+
+  it("builds an SSE config when the SSE transport is selected", async () => {
+    const onCreate = jest.fn().mockResolvedValue(true)
+    const onOpenChange = jest.fn()
+
+    render(<AddServerSheet open onOpenChange={onOpenChange} onCreate={onCreate} />)
+
+    fillSseWizardFields()
+    fireEvent.click(screen.getByRole("button", { name: "addServer.save" }))
+
+    await waitFor(() => {
+      expect(onCreate).toHaveBeenCalledWith({
+        config: {
+          mcpServers: {
+            tavily: {
+              type: "sse",
+              url: "https://example.com/sse",
+              sse_url: "https://example.com/sse",
+            },
+          },
+        },
+      })
+    })
   })
 })

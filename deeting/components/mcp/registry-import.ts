@@ -31,12 +31,34 @@ interface UseMcpRegistryImportActionOptions {
 }
 
 type McpRegistryImportParseResult =
-  | { kind: "invalid" }
+  | {
+      kind: "invalid"
+      reasonKey:
+        | "addServer.errors.missingMcpServers"
+        | "addServer.errors.emptyMcpServers"
+        | "addServer.errors.serverConfigNotObject"
+        | "addServer.errors.missingRemoteUrl"
+        | "addServer.errors.missingCommandOrUrl"
+      values?: Record<string, string | number>
+    }
   | { kind: "ok"; requests: McpServerCreateRequest[] }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return !!value && typeof value === "object" && !Array.isArray(value)
 }
+
+const buildInvalidImportConfigResult = (
+  reasonKey: McpRegistryImportParseResult extends infer T
+    ? T extends { kind: "invalid"; reasonKey: infer K }
+      ? K
+      : never
+    : never,
+  values?: Record<string, string | number>
+): Extract<McpRegistryImportParseResult, { kind: "invalid" }> => ({
+  kind: "invalid",
+  reasonKey,
+  values,
+})
 
 const toImportRequest = (name: string, config: unknown): McpServerCreateRequest | null => {
   if (!isRecord(config)) return null
@@ -89,15 +111,49 @@ export const parseMcpRegistryImportConfig = (
 ): McpRegistryImportParseResult => {
   const rawServers = config.mcpServers
   if (!isRecord(rawServers)) {
-    return { kind: "invalid" }
+    return buildInvalidImportConfigResult("addServer.errors.missingMcpServers")
   }
 
-  const requests = Object.entries(rawServers)
-    .map(([name, serverConfig]) => toImportRequest(name, serverConfig))
-    .filter((request): request is McpServerCreateRequest => request !== null)
+  const serverEntries = Object.entries(rawServers)
+  if (serverEntries.length === 0) {
+    return buildInvalidImportConfigResult("addServer.errors.emptyMcpServers")
+  }
+
+  let firstInvalid: Extract<McpRegistryImportParseResult, { kind: "invalid" }> | null = null
+
+  const requests = serverEntries.reduce<McpServerCreateRequest[]>((acc, [name, serverConfig]) => {
+    const request = toImportRequest(name, serverConfig)
+    if (request) {
+      acc.push(request)
+      return acc
+    }
+
+    if (!firstInvalid) {
+      if (!isRecord(serverConfig)) {
+        firstInvalid = buildInvalidImportConfigResult("addServer.errors.serverConfigNotObject", {
+          name,
+        })
+        return acc
+      }
+
+      const type = typeof serverConfig.type === "string" ? serverConfig.type.toLowerCase() : ""
+      if (type === "sse" || type === "streamable-http" || type === "streamable_http") {
+        firstInvalid = buildInvalidImportConfigResult("addServer.errors.missingRemoteUrl", {
+          name,
+        })
+        return acc
+      }
+
+      firstInvalid = buildInvalidImportConfigResult("addServer.errors.missingCommandOrUrl", {
+        name,
+      })
+    }
+
+    return acc
+  }, [])
 
   if (requests.length === 0) {
-    return { kind: "invalid" }
+    return firstInvalid ?? buildInvalidImportConfigResult("addServer.errors.emptyMcpServers")
   }
 
   return { kind: "ok", requests }
@@ -139,7 +195,10 @@ export function useMcpRegistryImportAction({
     if (!isTauri) {
       const parsed = parseMcpRegistryImportConfig(payload.config)
       if (parsed.kind !== "ok") {
-        addNotification(getMcpRegistryNotification(t, "invalid_config"))
+        addNotification({
+          ...getMcpRegistryNotification(t, "invalid_config"),
+          description: t(parsed.reasonKey, parsed.values),
+        })
         return false
       }
 
