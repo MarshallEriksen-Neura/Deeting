@@ -656,9 +656,7 @@ export function useTaskAgents(t: Translation) {
   }, [previewDraft, selectedAgent, t])
 
   const handlePreviewClaudeImport = React.useCallback(async (payload?: {
-    source_path?: string | null
-    repo_url?: string | null
-    revision?: string | null
+    files?: File[]
   }) => {
     try {
       setIsImportPreviewing(true)
@@ -677,9 +675,7 @@ export function useTaskAgents(t: Translation) {
   }, [t])
 
   const handleImportClaudeAgents = React.useCallback(async (payload?: {
-    source_path?: string | null
-    repo_url?: string | null
-    revision?: string | null
+    files?: File[]
   }) => {
     try {
       setIsImporting(true)

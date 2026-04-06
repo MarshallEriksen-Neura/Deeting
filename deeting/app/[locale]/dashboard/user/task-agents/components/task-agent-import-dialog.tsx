@@ -27,16 +27,8 @@ interface TaskAgentImportDialogProps {
   isImporting: boolean
   preview: ClaudeAgentImportPreviewResponse | null
   error: string | null
-  onPreview: (payload?: {
-    source_path?: string | null
-    repo_url?: string | null
-    revision?: string | null
-  }) => Promise<unknown>
-  onImport: (payload?: {
-    source_path?: string | null
-    repo_url?: string | null
-    revision?: string | null
-  }) => Promise<unknown>
+  onPreview: (payload?: { files?: File[] }) => Promise<unknown>
+  onImport: (payload?: { files?: File[] }) => Promise<unknown>
 }
 
 export function TaskAgentImportDialog({
@@ -50,34 +42,27 @@ export function TaskAgentImportDialog({
   onPreview,
   onImport,
 }: TaskAgentImportDialogProps) {
-  const [sourcePath, setSourcePath] = React.useState("")
-  const [repoUrl, setRepoUrl] = React.useState("")
-  const [revision, setRevision] = React.useState("")
+  const [files, setFiles] = React.useState<File[]>([])
 
   React.useEffect(() => {
     if (!open) {
-      setSourcePath("")
-      setRepoUrl("")
-      setRevision("")
+      setFiles([])
     }
   }, [open])
 
   const handlePreview = React.useCallback(async () => {
-    await onPreview({
-      source_path: sourcePath,
-      repo_url: repoUrl,
-      revision,
-    })
-  }, [onPreview, repoUrl, revision, sourcePath])
+    await onPreview({ files })
+  }, [files, onPreview])
 
   const handleImport = React.useCallback(async () => {
-    await onImport({
-      source_path: sourcePath,
-      repo_url: repoUrl,
-      revision,
-    })
+    await onImport({ files })
     onOpenChange(false)
-  }, [onImport, onOpenChange, repoUrl, revision, sourcePath])
+  }, [files, onImport, onOpenChange])
+
+  const selectedFileNames = React.useMemo(
+    () => files.map((file) => file.name).join(", "),
+    [files],
+  )
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -89,39 +74,22 @@ export function TaskAgentImportDialog({
 
         <div className="space-y-4 py-2">
           <div className="space-y-2">
-            <Label htmlFor="claude-agent-source-path">{t("importDialog.sourcePathLabel")}</Label>
+            <Label htmlFor="claude-agent-upload-files">{t("importDialog.fileLabel")}</Label>
             <Input
-              id="claude-agent-source-path"
-              value={sourcePath}
-              onChange={(event) => setSourcePath(event.target.value)}
-              placeholder={t("importDialog.sourcePathPlaceholder")}
+              id="claude-agent-upload-files"
+              type="file"
+              accept=".md,.mdx,text/markdown,text/plain"
+              multiple
+              onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
             />
             <p className="text-xs text-muted-foreground">
-              {t("importDialog.sourcePathHint")}
+              {files.length
+                ? t("importDialog.filesSelected", { count: files.length })
+                : t("importDialog.fileHint")}
             </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="claude-agent-repo-url">{t("importDialog.repoUrlLabel")}</Label>
-            <Input
-              id="claude-agent-repo-url"
-              value={repoUrl}
-              onChange={(event) => setRepoUrl(event.target.value)}
-              placeholder={t("importDialog.repoUrlPlaceholder")}
-            />
-            <p className="text-xs text-muted-foreground">
-              {t("importDialog.repoUrlHint")}
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="claude-agent-revision">{t("importDialog.revisionLabel")}</Label>
-            <Input
-              id="claude-agent-revision"
-              value={revision}
-              onChange={(event) => setRevision(event.target.value)}
-              placeholder={t("importDialog.revisionPlaceholder")}
-            />
+            {selectedFileNames ? (
+              <p className="text-xs text-muted-foreground">{selectedFileNames}</p>
+            ) : null}
           </div>
 
           <div className="rounded-2xl border border-border/60 bg-background/80 p-4">
@@ -138,7 +106,7 @@ export function TaskAgentImportDialog({
                 type="button"
                 variant="outline"
                 onClick={handlePreview}
-                disabled={isPreviewing}
+                disabled={isPreviewing || files.length === 0}
               >
                 {isPreviewing && <Loader2 className="mr-2 size-4 animate-spin" />}
                 {isPreviewing ? t("importDialog.previewing") : t("importDialog.previewAction")}

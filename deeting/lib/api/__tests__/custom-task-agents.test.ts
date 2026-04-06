@@ -1,7 +1,9 @@
 import {
   deleteCustomTaskAgent,
   getCustomTaskAgent,
+  importClaudeAgents,
   previewCustomTaskAgent,
+  previewClaudeAgentImport,
   updateCustomTaskAgent,
 } from "@/lib/api/custom-task-agents"
 import { invoke } from "@tauri-apps/api/core"
@@ -103,6 +105,50 @@ describe("custom task agent api", () => {
         temperature: null,
         max_tokens: null,
         max_rounds: null,
+      },
+    })
+  })
+
+  it("serializes uploaded markdown files for Claude import preview and import", async () => {
+    mockInvoke
+      .mockResolvedValueOnce({
+        root_path: "uploaded-files",
+        items: [],
+      } as unknown)
+      .mockResolvedValueOnce({
+        root_path: "uploaded-files",
+        created_count: 1,
+        updated_count: 0,
+        profiles: [taskAgentProfile],
+      } as unknown)
+
+    const file = new File(["---\nname: Planner\n---\n\nPlan work.\n"], "planner.md", {
+      type: "text/markdown",
+    })
+
+    await previewClaudeAgentImport({ files: [file] })
+    await importClaudeAgents({ files: [file] })
+
+    expect(mockInvoke).toHaveBeenNthCalledWith(1, "preview_claude_agent_import", {
+      payload: {
+        documents: [
+          {
+            filename: "planner.md",
+            relative_path: "planner.md",
+            content: "---\nname: Planner\n---\n\nPlan work.\n",
+          },
+        ],
+      },
+    })
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, "import_claude_agents", {
+      payload: {
+        documents: [
+          {
+            filename: "planner.md",
+            relative_path: "planner.md",
+            content: "---\nname: Planner\n---\n\nPlan work.\n",
+          },
+        ],
       },
     })
   })

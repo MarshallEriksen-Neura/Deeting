@@ -299,10 +299,10 @@ describe("TaskAgentsClient", () => {
     jest.clearAllMocks()
     mockSupportsLocalCustomTaskAgents.mockReturnValue(true)
     mockPreviewClaudeAgentImport.mockResolvedValue({
-      root_path: "C:/Users/test/.claude/agents",
+      root_path: "uploaded-files",
       items: [
         {
-          source_path: "C:/Users/test/.claude/agents/engineering/frontend.md",
+          source_path: "upload://engineering/frontend.md",
           relative_path: "engineering/frontend.md",
           name: "Frontend Developer",
           description: "Builds UI",
@@ -316,7 +316,7 @@ describe("TaskAgentsClient", () => {
       ],
     })
     mockImportClaudeAgents.mockResolvedValue({
-      root_path: "C:/Users/test/.claude/agents",
+      root_path: "uploaded-files",
       created_count: 1,
       updated_count: 0,
       profiles: [agents[0]],
@@ -646,17 +646,20 @@ describe("TaskAgentsClient", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "actions.importClaude" }))
 
-    fireEvent.change(screen.getByLabelText("importDialog.sourcePathLabel"), {
-      target: { value: "C:/Users/test/.claude/agents" },
+    const file = new File(
+      ["---\nname: Frontend Developer\ndescription: Builds UI\n---\n\nShip the UI.\n"],
+      "frontend.md",
+      { type: "text/markdown" },
+    )
+    fireEvent.change(screen.getByLabelText("importDialog.fileLabel"), {
+      target: { files: [file] },
     })
 
     fireEvent.click(screen.getByRole("button", { name: "importDialog.previewAction" }))
 
     await waitFor(() => {
       expect(mockPreviewClaudeAgentImport).toHaveBeenCalledWith({
-        source_path: "C:/Users/test/.claude/agents",
-        repo_url: "",
-        revision: "",
+        files: [file],
       })
     })
 
@@ -672,19 +675,17 @@ describe("TaskAgentsClient", () => {
 
     await waitFor(() => {
       expect(mockImportClaudeAgents).toHaveBeenCalledWith({
-        source_path: "C:/Users/test/.claude/agents",
-        repo_url: "",
-        revision: "",
+        files: [file],
       })
     })
   })
 
   it("shows a prompt-only hint when import preview has no default bindings", async () => {
     mockPreviewClaudeAgentImport.mockResolvedValueOnce({
-      root_path: "C:/tmp/agency-agents",
+      root_path: "uploaded-files",
       items: [
         {
-          source_path: "C:/tmp/agency-agents/strategy/pm.md",
+          source_path: "upload://strategy/pm.md",
           relative_path: "strategy/pm.md",
           name: "Product Strategist",
           description: "Shapes product thinking",
@@ -701,8 +702,13 @@ describe("TaskAgentsClient", () => {
     render(<TaskAgentsClient />)
 
     fireEvent.click(screen.getByRole("button", { name: "actions.importClaude" }))
-    fireEvent.change(screen.getByLabelText("importDialog.repoUrlLabel"), {
-      target: { value: "https://github.com/org/agency-agents" },
+    const file = new File(
+      ["---\nname: Product Strategist\ndescription: Shapes product thinking\n---\n\nThink.\n"],
+      "pm.md",
+      { type: "text/markdown" },
+    )
+    fireEvent.change(screen.getByLabelText("importDialog.fileLabel"), {
+      target: { files: [file] },
     })
     fireEvent.click(screen.getByRole("button", { name: "importDialog.previewAction" }))
 

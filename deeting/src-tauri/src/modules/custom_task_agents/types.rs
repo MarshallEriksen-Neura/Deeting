@@ -186,11 +186,7 @@ pub struct CustomTaskAgentBindingCatalogResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreviewClaudeAgentImportRequest {
     #[serde(default)]
-    pub source_path: Option<String>,
-    #[serde(default)]
-    pub repo_url: Option<String>,
-    #[serde(default)]
-    pub revision: Option<String>,
+    pub documents: Vec<UploadedClaudeAgentDocument>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -221,11 +217,7 @@ pub struct ClaudeAgentImportPreviewResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImportClaudeAgentsRequest {
     #[serde(default)]
-    pub source_path: Option<String>,
-    #[serde(default)]
-    pub repo_url: Option<String>,
-    #[serde(default)]
-    pub revision: Option<String>,
+    pub documents: Vec<UploadedClaudeAgentDocument>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -235,4 +227,12 @@ pub struct ImportClaudeAgentsResponse {
     pub updated_count: usize,
     #[serde(default)]
     pub profiles: Vec<CustomTaskAgentProfile>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UploadedClaudeAgentDocument {
+    pub filename: String,
+    #[serde(default)]
+    pub relative_path: Option<String>,
+    pub content: String,
 }

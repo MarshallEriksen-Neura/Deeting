@@ -161,13 +161,7 @@ pub async fn preview_claude_agent_import(
     state: State<'_, AppState>,
     payload: PreviewClaudeAgentImportRequest,
 ) -> Result<ClaudeAgentImportPreviewResponse, String> {
-    preview_claude_agents_import_inner(
-        state.mcp.store.as_ref(),
-        payload.source_path.as_deref(),
-        payload.repo_url.as_deref(),
-        payload.revision.as_deref(),
-    )
-    .await
+    preview_claude_agents_import_inner(state.mcp.store.as_ref(), &payload.documents).await
 }
 
 #[tauri::command]
@@ -175,13 +169,7 @@ pub async fn import_claude_agents(
     state: State<'_, AppState>,
     payload: ImportClaudeAgentsRequest,
 ) -> Result<ImportClaudeAgentsResponse, String> {
-    let response = import_claude_agents_inner(
-        state.mcp.store.as_ref(),
-        payload.source_path.as_deref(),
-        payload.repo_url.as_deref(),
-        payload.revision.as_deref(),
-    )
-    .await?;
+    let response = import_claude_agents_inner(state.mcp.store.as_ref(), &payload.documents).await?;
     for profile in &response.profiles {
         sync_custom_task_agent_index(state.inner(), profile).await?;
     }

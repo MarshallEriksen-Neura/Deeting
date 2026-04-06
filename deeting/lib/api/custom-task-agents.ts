@@ -161,6 +161,12 @@ export type ImportClaudeAgentsResponse = z.infer<
   typeof ImportClaudeAgentsResponseSchema
 >
 
+export interface UploadedClaudeAgentDocument {
+  filename: string
+  relative_path?: string | null
+  content: string
+}
+
 export interface UpsertCustomTaskAgentPayload {
   name: string
   description?: string | null
@@ -276,31 +282,59 @@ export async function reindexCustomTaskAgents(): Promise<void> {
   await invokeTauri<void>("reindex_custom_task_agents")
 }
 
+async function readUploadedClaudeAgentDocuments(
+  files: File[],
+): Promise<UploadedClaudeAgentDocument[]> {
+  const documents = await Promise.all(
+    files.map(async (file) => {
+      const relativePath =
+        "webkitRelativePath" in file && typeof file.webkitRelativePath === "string"
+          ? file.webkitRelativePath.trim()
+          : ""
+      const content =
+        typeof file.text === "function"
+          ? await file.text()
+          : await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader()
+              reader.onload = () =>
+                resolve(typeof reader.result === "string" ? reader.result : "")
+              reader.onerror = () =>
+                reject(reader.error ?? new Error("failed to read import file"))
+              reader.readAsText(file)
+            })
+      return {
+        filename: file.name,
+        relative_path: relativePath || file.name,
+        content,
+      }
+    }),
+  )
+  return documents
+}
+
 export async function previewClaudeAgentImport(payload?: {
-  source_path?: string | null
-  repo_url?: string | null
-  revision?: string | null
+  files?: File[]
 }): Promise<ClaudeAgentImportPreviewResponse> {
+  const documents = payload?.files?.length
+    ? await readUploadedClaudeAgentDocuments(payload.files)
+    : []
   const data = await invokeTauri<unknown>("preview_claude_agent_import", {
     payload: {
-      source_path: payload?.source_path?.trim() || null,
-      repo_url: payload?.repo_url?.trim() || null,
-      revision: payload?.revision?.trim() || null,
+      documents,
     },
   })
   return ClaudeAgentImportPreviewResponseSchema.parse(data)
 }
 
 export async function importClaudeAgents(payload?: {
-  source_path?: string | null
-  repo_url?: string | null
-  revision?: string | null
+  files?: File[]
 }): Promise<ImportClaudeAgentsResponse> {
+  const documents = payload?.files?.length
+    ? await readUploadedClaudeAgentDocuments(payload.files)
+    : []
   const data = await invokeTauri<unknown>("import_claude_agents", {
     payload: {
-      source_path: payload?.source_path?.trim() || null,
-      repo_url: payload?.repo_url?.trim() || null,
-      revision: payload?.revision?.trim() || null,
+      documents,
     },
   })
   return ImportClaudeAgentsResponseSchema.parse(data)
