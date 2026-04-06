@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
 import { Bot, ShieldCheck } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -44,9 +43,13 @@ function normalizeChatHistoryRetentionDays(value: string | null | undefined): st
 
 interface AgentSettingsCardProps {
   isTauriRuntime: boolean
+  onManageApprovalRules?: () => void
 }
 
-export function AgentSettingsCard({ isTauriRuntime }: AgentSettingsCardProps) {
+export function AgentSettingsCard({
+  isTauriRuntime,
+  onManageApprovalRules,
+}: AgentSettingsCardProps) {
   const t = useI18n("settings")
   const [maxRounds, setMaxRounds] = React.useState<string>(String(DEFAULT_MAX_ROUNDS))
   const [savedValue, setSavedValue] = React.useState<string>(String(DEFAULT_MAX_ROUNDS))
@@ -244,10 +247,13 @@ export function AgentSettingsCard({ isTauriRuntime }: AgentSettingsCardProps) {
             </p>
           ) : null}
           <div className="pt-1">
-            <GlassButton asChild type="button" size="sm" variant="secondary">
-              <Link href="/settings/approval-rules">
-                {t("agent.manageApprovalRules")}
-              </Link>
+            <GlassButton
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={onManageApprovalRules}
+            >
+              {t("agent.manageApprovalRules")}
             </GlassButton>
           </div>
         </div>

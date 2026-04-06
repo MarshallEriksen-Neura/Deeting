@@ -364,6 +364,8 @@
       "storageDesc": "Desktop OSS buckets",
       "agent": "Agent",
       "agentDesc": "Local execution and sandbox",
+      "approvalRules": "Approval Rules",
+      "approvalRulesDesc": "Desktop approval policy and learning rules",
       "browser": "Browser",
       "browserDesc": "Browser debug and bridge",
       "relay": "Network & Services",

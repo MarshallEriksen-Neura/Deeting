@@ -108,4 +108,21 @@ describe("AgentSettingsCard", () => {
       )
     })
   })
+
+  it("switches to approval rules management through the provided callback", async () => {
+    const onManageApprovalRules = jest.fn()
+
+    render(
+      <AgentSettingsCard
+        isTauriRuntime
+        onManageApprovalRules={onManageApprovalRules}
+      />
+    )
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "agent.manageApprovalRules" })
+    )
+
+    expect(onManageApprovalRules).toHaveBeenCalledTimes(1)
+  })
 })

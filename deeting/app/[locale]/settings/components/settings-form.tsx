@@ -42,6 +42,7 @@ import { SettingsNav, type SettingsSection } from "./settings-nav";
 import { type ModelGroup, type SettingsFormValues } from "../types";
 import { isBrowserAgentPanelEnabled } from "./browser-agent-panel-flags";
 import {
+  DeferredApprovalRulesPanel,
   DeferredAgentSettingsCard,
   DeferredDesktopBrowserAgentPanelCard,
   DeferredDesktopNetworkSettingsCard,
@@ -70,6 +71,7 @@ function findSelectedSecretaryModel(
 interface SettingsFormProps {
   isAuthenticated: boolean;
   isTauriRuntime: boolean;
+  initialSection?: SettingsSection;
 }
 
 function applyFormValues(
@@ -90,11 +92,12 @@ function applyFormValues(
 export function SettingsForm({
   isAuthenticated,
   isTauriRuntime,
+  initialSection = "models",
 }: SettingsFormProps) {
   const t = useI18n("settings");
   const isBrowserSectionVisible = isBrowserAgentPanelEnabled();
   const [activeSection, setActiveSection] =
-    React.useState<SettingsSection>("models");
+    React.useState<SettingsSection>(initialSection);
   const {
     data: secretarySetting,
     isLoading: isLoadingSecretary,
@@ -134,6 +137,10 @@ export function SettingsForm({
     React.useState(false);
   const [hasLoadedDesktopStorageSettings, setHasLoadedDesktopStorageSettings] =
     React.useState(false);
+
+  React.useEffect(() => {
+    setActiveSection(initialSection)
+  }, [initialSection])
 
   const form = useForm<SettingsFormValues>({
     defaultValues: {
@@ -699,8 +706,17 @@ export function SettingsForm({
           {/* Agent section */}
           {activeSection === "agent" && (
             <div className="flex flex-col gap-5">
-              <DeferredAgentSettingsCard isTauriRuntime={isTauriRuntime} />
+              <DeferredAgentSettingsCard
+                isTauriRuntime={isTauriRuntime}
+                onManageApprovalRules={() => setActiveSection("approvalRules")}
+              />
               <DeferredDesktopSandboxSettingsCard isTauriRuntime={isTauriRuntime} />
+            </div>
+          )}
+
+          {activeSection === "approvalRules" && (
+            <div className="flex flex-col gap-5">
+              <DeferredApprovalRulesPanel embedded />
             </div>
           )}
 
@@ -753,6 +769,7 @@ export function SettingsForm({
           )}
 
           {activeSection !== "agent" &&
+            activeSection !== "approvalRules" &&
             activeSection !== "window" &&
             activeSection !== "version" &&
             (activeSection !== "browser" || !isBrowserSectionVisible) && (

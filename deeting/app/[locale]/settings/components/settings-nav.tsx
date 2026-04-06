@@ -1,7 +1,16 @@
 "use client"
 
 import type { ElementType } from "react"
-import { AppWindow, Boxes, Bot, Database, Globe, Rocket, Server } from "lucide-react"
+import {
+  AppWindow,
+  Boxes,
+  Bot,
+  Database,
+  Globe,
+  Rocket,
+  Server,
+  ShieldCheck,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/hooks/use-i18n"
 import { isBrowserAgentPanelEnabled } from "./browser-agent-panel-flags"
@@ -10,6 +19,7 @@ export type SettingsSection =
   | "models"
   | "storage"
   | "agent"
+  | "approvalRules"
   | "browser"
   | "relay"
   | "window"
@@ -25,11 +35,32 @@ const NAV_ITEMS: NavItem[] = [
   { id: "models", icon: Boxes, desktopOnly: false },
   { id: "storage", icon: Database, desktopOnly: true },
   { id: "agent", icon: Bot, desktopOnly: true },
+  { id: "approvalRules", icon: ShieldCheck, desktopOnly: true },
   { id: "browser", icon: Globe, desktopOnly: true },
   { id: "relay", icon: Server, desktopOnly: true },
   { id: "window", icon: AppWindow, desktopOnly: true },
   { id: "version", icon: Rocket, desktopOnly: true },
 ]
+
+const SETTINGS_SECTIONS = new Set<SettingsSection>([
+  "models",
+  "storage",
+  "agent",
+  "approvalRules",
+  "browser",
+  "relay",
+  "window",
+  "version",
+])
+
+export function normalizeSettingsSection(
+  value: string | null | undefined
+): SettingsSection {
+  if (value && SETTINGS_SECTIONS.has(value as SettingsSection)) {
+    return value as SettingsSection
+  }
+  return "models"
+}
 
 interface SettingsNavProps {
   activeSection: SettingsSection
@@ -44,6 +75,20 @@ export function SettingsNav({
 }: SettingsNavProps) {
   const t = useI18n("settings")
   const isBrowserSectionVisible = isBrowserAgentPanelEnabled()
+  const getNavLabel = (section: SettingsSection) => {
+    const key = `nav.${section}`
+    const translated = t(key)
+    if (translated !== key) return translated
+    if (section === "approvalRules") return "审批规则"
+    return translated
+  }
+  const getNavDescription = (section: SettingsSection) => {
+    const key = `nav.${section}Desc`
+    const translated = t(key)
+    if (translated !== key) return translated
+    if (section === "approvalRules") return "本地审批策略与学习规则"
+    return translated
+  }
 
   const visibleItems = NAV_ITEMS.filter(
     (item) =>
@@ -84,9 +129,9 @@ export function SettingsNav({
                 <Icon className="h-4 w-4" />
               </span>
               <span className="flex flex-col leading-tight">
-                <span className="font-medium">{t(`nav.${item.id}`)}</span>
+                <span className="font-medium">{getNavLabel(item.id)}</span>
                 <span className="mt-0.5 text-[11px] text-muted-foreground/80">
-                  {t(`nav.${item.id}Desc`)}
+                  {getNavDescription(item.id)}
                 </span>
               </span>
             </button>
@@ -112,7 +157,7 @@ export function SettingsNav({
               )}
             >
               <Icon className={cn("h-3.5 w-3.5", isActive && "text-primary")} />
-              <span>{t(`nav.${item.id}`)}</span>
+              <span>{getNavLabel(item.id)}</span>
             </button>
           )
         })}

@@ -1,11 +1,13 @@
 "use client"
 
 import dynamic from "next/dynamic"
+import { useSearchParams } from "next/navigation"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useI18n } from "@/hooks/use-i18n"
 import { useUserProfile } from "@/hooks/use-user"
 import { SettingsHeader } from "./settings-header"
 import { SettingsAlerts } from "./settings-alerts"
+import { normalizeSettingsSection } from "./settings-nav"
 
 const SettingsForm = dynamic(
   () => import("./settings-form").then((mod) => mod.SettingsForm),
@@ -17,7 +19,9 @@ const SettingsForm = dynamic(
 export function SettingsClient() {
   const t = useI18n("settings")
   const isTauri = process.env.NEXT_PUBLIC_IS_TAURI === "true"
+  const searchParams = useSearchParams()
   const { profile, isLoading: isLoadingProfile, isAuthenticated } = useUserProfile()
+  const initialSection = normalizeSettingsSection(searchParams.get("section"))
 
   const isAdmin = Boolean(profile?.is_superuser)
   const roleLabel = !isAuthenticated
@@ -40,6 +44,7 @@ export function SettingsClient() {
       <SettingsForm
         isAuthenticated={isAuthenticated}
         isTauriRuntime={isTauri}
+        initialSection={initialSection}
       />
     </main>
   )

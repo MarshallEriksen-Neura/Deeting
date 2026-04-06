@@ -22,7 +22,7 @@ export default async function SettingsPage({
   return (
     <DesktopRouteMessagesProvider
       locale={locale}
-      namespaces={["common", "settings"]}
+      namespaces={["common", "settings", "approval-rules"]}
     >
       <SettingsClient />
     </DesktopRouteMessagesProvider>

@@ -10,7 +10,6 @@ import {
   BrainCircuit,
   Filter,
   Loader2,
-  Radar,
   ShieldCheck,
   ShieldOff,
   Sparkles,
@@ -42,6 +41,10 @@ import { Container } from "@/components/ui/container"
 
 type RuleFilter = "all" | "allow" | "deny"
 type ConfirmAction = null | "clear-all" | "clear-allow" | "reset-learning"
+
+interface ApprovalRulesClientProps {
+  embedded?: boolean
+}
 
 function formatDate(value?: number | null) {
   if (!value) return "—"
@@ -87,7 +90,9 @@ function RuleChip({
   )
 }
 
-export function ApprovalRulesClient() {
+export function ApprovalRulesClient({
+  embedded = false,
+}: ApprovalRulesClientProps) {
   const t = useTranslations("approval-rules")
   const [rules, setRules] = React.useState<ToolApprovalRule[]>([])
   const [summaryRows, setSummaryRows] = React.useState<ToolApprovalLearningSummaryRow[]>([])
@@ -187,20 +192,22 @@ export function ApprovalRulesClient() {
     learning: summaryRows.length,
   }
 
-  return (
-    <Container as="main" gutter="md" size="full" className="py-6 md:py-8 !mx-0 !max-w-none">
+  const content = (
+    <>
       <div className="relative overflow-hidden rounded-[32px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.12),transparent_34%),radial-gradient(circle_at_80%_20%,rgba(14,165,233,0.12),transparent_30%),linear-gradient(180deg,rgba(255,255,255,0.92),rgba(249,250,251,0.88))] p-6 shadow-[0_30px_80px_-32px_rgba(15,23,42,0.35)] dark:bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.14),transparent_34%),radial-gradient(circle_at_80%_20%,rgba(14,165,233,0.14),transparent_30%),linear-gradient(180deg,rgba(10,10,15,0.96),rgba(8,8,12,0.96))]">
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,transparent_0%,rgba(255,255,255,0.08)_48%,transparent_100%)] dark:bg-[linear-gradient(135deg,transparent_0%,rgba(255,255,255,0.04)_48%,transparent_100%)]" />
 
         <div className="relative flex flex-col gap-8">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl space-y-4">
-              <GlassButton asChild variant="secondary" size="sm">
-                <Link href="/settings">
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  {t("backToSettings")}
-                </Link>
-              </GlassButton>
+              {!embedded ? (
+                <GlassButton asChild variant="secondary" size="sm">
+                  <Link href="/settings">
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    {t("backToSettings")}
+                  </Link>
+                </GlassButton>
+              ) : null}
               <div className="space-y-3">
                 <div className="flex items-center gap-3">
                   <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,rgba(245,158,11,0.16),rgba(14,165,233,0.18))] text-amber-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] dark:text-amber-300">
@@ -570,6 +577,16 @@ export function ApprovalRulesClient() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </>
+  )
+
+  if (embedded) {
+    return <div className="space-y-5">{content}</div>
+  }
+
+  return (
+    <Container as="main" gutter="md" size="full" className="py-6 md:py-8 !mx-0 !max-w-none">
+      {content}
     </Container>
   )
 }

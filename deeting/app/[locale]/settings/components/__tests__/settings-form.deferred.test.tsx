@@ -5,6 +5,7 @@ describe("SettingsForm deferred sections", () => {
 
   it("does not eagerly import non-model settings sections on initial module load", () => {
     let agentCardLoads = 0
+    let approvalRulesLoads = 0
     let browserPanelLoads = 0
     let sandboxCardLoads = 0
     let storageCardLoads = 0
@@ -87,6 +88,10 @@ describe("SettingsForm deferred sections", () => {
         agentCardLoads += 1
         return { AgentSettingsCard: () => null }
       })
+      jest.doMock("../../approval-rules/page-client", () => {
+        approvalRulesLoads += 1
+        return { ApprovalRulesClient: () => null }
+      })
       jest.doMock("../desktop-sandbox-settings-card", () => {
         sandboxCardLoads += 1
         return { DesktopSandboxSettingsCard: () => null }
@@ -113,6 +118,7 @@ describe("SettingsForm deferred sections", () => {
     })
 
     expect(agentCardLoads).toBe(0)
+    expect(approvalRulesLoads).toBe(0)
     expect(browserPanelLoads).toBe(0)
     expect(sandboxCardLoads).toBe(0)
     expect(storageCardLoads).toBe(0)

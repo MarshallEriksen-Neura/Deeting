@@ -63,6 +63,14 @@ export const DeferredDesktopScoutSettingsCard = dynamic(
   { ssr: false }
 )
 
+export const DeferredApprovalRulesPanel = dynamic(
+  () =>
+    import("../approval-rules/page-client").then(
+      (mod) => mod.ApprovalRulesClient
+    ),
+  { ssr: false }
+)
+
 export const DeferredSettingsModelPicker = dynamic(
   () => import("@/components/models/model-picker").then((mod) => mod.ModelPicker),
   { ssr: false }

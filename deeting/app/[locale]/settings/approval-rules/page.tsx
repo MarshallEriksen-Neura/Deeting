@@ -1,8 +1,7 @@
+import { redirect } from "next/navigation"
 import { setRequestLocale } from "next-intl/server"
-import { NextIntlClientProvider } from "next-intl"
 
-import { loadStaticLocaleMessages } from "@/i18n/static-messages"
-import { ApprovalRulesClient } from "./page-client"
+import { routing } from "@/i18n/routing"
 
 export default async function ApprovalRulesPage({
   params,
@@ -11,13 +10,7 @@ export default async function ApprovalRulesPage({
 }) {
   const { locale } = await params
   setRequestLocale(locale)
-  const messages = await loadStaticLocaleMessages(locale, {
-    namespaces: ["common", "approval-rules"],
-  })
-
-  return (
-    <NextIntlClientProvider locale={locale} messages={messages}>
-      <ApprovalRulesClient />
-    </NextIntlClientProvider>
-  )
+  const basePath =
+    locale === routing.defaultLocale ? "/settings" : `/${locale}/settings`
+  redirect(`${basePath}?section=approvalRules`)
 }
