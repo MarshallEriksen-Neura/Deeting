@@ -72,8 +72,6 @@ export function IslandShell() {
   const chatSnapshot = useChatStore(
     useShallow((state) => ({
       sessionId: state.sessionId,
-      selectedAssistantId: state.selectedAssistantId,
-      selectedAssistant: state.selectedAssistant,
       config: state.config,
       models: state.models,
       messages: state.messages,
@@ -229,7 +227,6 @@ export function IslandShell() {
           statusMeta: state.statusMeta,
           stageHistory: state.stageHistory,
           sessionId: chatSnapshot.sessionId,
-          selectedAssistantId: chatSnapshot.selectedAssistantId,
           chatRequestConfig,
         });
       } catch {
@@ -245,7 +242,6 @@ export function IslandShell() {
     chatRequestConfig,
     storeValues,
     chatSnapshot.sessionId,
-    chatSnapshot.selectedAssistantId,
   ]);
 
   // Listen for action-completed from Island window → re-sync chat

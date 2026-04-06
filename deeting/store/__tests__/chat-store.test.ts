@@ -1,7 +1,7 @@
-import { useChatStore, type ChatAssistant } from "../chat-store"
+import { useChatStore } from "../chat-store"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
 
-describe("useChatStore selected assistant normalization", () => {
+describe("useChatStore session state", () => {
   const resetStore = () => {
     localStorage.clear()
     sessionStorage.clear()
@@ -12,45 +12,15 @@ describe("useChatStore selected assistant normalization", () => {
     resetStore()
   })
 
-  it("switchSelectedAssistant should normalize object id to string", () => {
-    useChatStore.getState().switchSelectedAssistant({ id: "agent-123" } as unknown as string, null)
+  it("initSession initializes an empty session without assistant identity", async () => {
+    await useChatStore.getState().initSession(null)
 
-    expect(useChatStore.getState().selectedAssistantId).toBe("agent-123")
-  })
-
-  it("switchSelectedAssistant should ignore invalid id values", () => {
-    useChatStore.getState().switchSelectedAssistant({ name: "bad" } as unknown as string, null)
-
-    expect(useChatStore.getState().selectedAssistantId).toBeNull()
-  })
-
-  it("initSession should normalize object id when local agent is provided", async () => {
-    const localAgent: ChatAssistant = {
-      id: "agent-456",
-      name: "Agent",
-      desc: "",
-      color: "from-indigo-500 to-purple-500",
-    }
-
-    await useChatStore
-      .getState()
-      .initSession({ id: "agent-456" } as unknown as string, null, localAgent)
-
-    expect(useChatStore.getState().selectedAssistantId).toBe("agent-456")
-    expect(useChatStore.getState().selectedAssistant?.id).toBe("agent-456")
+    expect(useChatStore.getState().sessionId).toBeNull()
+    expect(useChatStore.getState().initialized).toBe(true)
   })
 
   it("initSession should clear messages when sessionId is removed", async () => {
-    const localAgent: ChatAssistant = {
-      id: "agent-789",
-      name: "Agent",
-      desc: "",
-      color: "from-indigo-500 to-purple-500",
-    }
-
     useChatStore.setState({
-      selectedAssistantId: "agent-789",
-      selectedAssistant: localAgent,
       sessionId: "session-1",
       initialized: true,
       messages: [
@@ -64,21 +34,19 @@ describe("useChatStore selected assistant normalization", () => {
       ],
     })
 
-    await useChatStore.getState().initSession("agent-789", null, localAgent)
+    await useChatStore.getState().initSession(null)
 
     expect(useChatStore.getState().sessionId).toBeNull()
     expect(useChatStore.getState().messages).toHaveLength(0)
   })
 
-  it("initSession should allow empty selectedAssistantId on web", async () => {
+  it("initSession should allow empty session on web", async () => {
     sessionStorage.clear()
     useChatStore.getState().resetSession()
 
-    await useChatStore.getState().initSession("", null, null)
+    await useChatStore.getState().initSession(null)
 
     expect(useChatStore.getState().initialized).toBe(true)
-    expect(useChatStore.getState().selectedAssistantId).toBeNull()
-    expect(useChatStore.getState().selectedAssistant).toBeNull()
     expect(useChatStore.getState().isLoading).toBe(false)
   })
 

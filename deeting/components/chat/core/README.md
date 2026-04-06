@@ -97,7 +97,7 @@ ChatLayout 负责聊天界面的整体布局结构，包括：
 import { ChatLayout } from "@/components/chat/core"
 
 function ChatPage() {
-  const { agent, isLoading } = useChatAgent(agentId)
+  // Chat no longer depends on assistant identity selection in the active runtime.
   
   return (
     <ChatLayout agent={agent} isLoadingAssistants={isLoading}>
@@ -580,9 +580,8 @@ A: 根据组件的职责：
 - `@/store/chat-session-store.ts` - 会话 Store
 
 ### Hooks
-- `@/hooks/use-chat-service.ts` - 云端服务（SWR）
-- `@/hooks/chat/use-chat-agent.ts` - 代理管理
-- `@/hooks/chat/use-chat-session.ts` - 会话管理
+- `@/hooks/use-chat-models.ts` - 聊天模型加载
+- `@/hooks/chat/use-chat-messaging-service.ts` - 聊天发送与流式运行时
 - `@/hooks/chat/use-chat-history.ts` - 历史记录管理
 
 ## 更新日志

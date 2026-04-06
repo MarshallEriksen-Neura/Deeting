@@ -30,6 +30,11 @@ pub(crate) async fn ensure_schema(store: &McpStore) -> Result<(), McpError> {
           discoverable INTEGER NOT NULL DEFAULT 1,
           is_enabled INTEGER NOT NULL DEFAULT 1,
           is_deleted INTEGER NOT NULL DEFAULT 0,
+          source_kind TEXT,
+          source_path TEXT,
+          source_repo TEXT,
+          source_ref TEXT,
+          source_hash TEXT,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
         );
@@ -53,6 +58,11 @@ pub(crate) async fn ensure_schema(store: &McpStore) -> Result<(), McpError> {
         "INTEGER NOT NULL DEFAULT 0",
     )
     .await?;
+    ensure_column(store, "source_kind", "TEXT").await?;
+    ensure_column(store, "source_path", "TEXT").await?;
+    ensure_column(store, "source_repo", "TEXT").await?;
+    ensure_column(store, "source_ref", "TEXT").await?;
+    ensure_column(store, "source_hash", "TEXT").await?;
 
     sqlx::query(&format!(
         "CREATE INDEX IF NOT EXISTS idx_{TABLE_NAME}_discoverable ON {TABLE_NAME}(discoverable);"
@@ -86,7 +96,8 @@ pub(crate) async fn list_custom_task_agents(
         r#"
         SELECT id, name, description, task_prompt, invocation_kind, preferred_for_image_generation, model_config,
                callable_mcp_tool_ids, guidance_skill_ids, callable_skill_action_refs, tags,
-               discoverable, is_enabled, is_deleted, created_at, updated_at
+               discoverable, is_enabled, is_deleted, source_kind, source_path, source_repo, source_ref, source_hash,
+               created_at, updated_at
         FROM {TABLE_NAME}
         WHERE is_deleted = 0
         ORDER BY updated_at DESC, created_at DESC;
@@ -114,7 +125,8 @@ pub(crate) async fn get_custom_task_agent(
         r#"
         SELECT id, name, description, task_prompt, invocation_kind, preferred_for_image_generation, model_config,
                callable_mcp_tool_ids, guidance_skill_ids, callable_skill_action_refs, tags,
-               discoverable, is_enabled, is_deleted, created_at, updated_at
+               discoverable, is_enabled, is_deleted, source_kind, source_path, source_repo, source_ref, source_hash,
+               created_at, updated_at
         FROM {TABLE_NAME}
         WHERE id = ? AND is_deleted = 0;
         "#
@@ -154,8 +166,9 @@ pub(crate) async fn create_custom_task_agent(
         r#"
         INSERT INTO {TABLE_NAME}
           (id, name, description, task_prompt, invocation_kind, preferred_for_image_generation, model_config, callable_mcp_tool_ids,
-           guidance_skill_ids, callable_skill_action_refs, tags, discoverable, is_enabled, is_deleted, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?);
+           guidance_skill_ids, callable_skill_action_refs, tags, discoverable, is_enabled, is_deleted,
+           source_kind, source_path, source_repo, source_ref, source_hash, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?);
         "#
     ))
     .bind(&id)
@@ -179,6 +192,11 @@ pub(crate) async fn create_custom_task_agent(
     } else {
         0
     })
+    .bind(payload.source_kind.as_deref())
+    .bind(payload.source_path.as_deref())
+    .bind(payload.source_repo.as_deref())
+    .bind(payload.source_ref.as_deref())
+    .bind(payload.source_hash.as_deref())
     .bind(&now)
     .bind(&now)
     .execute(&store.pool)
@@ -200,6 +218,11 @@ pub(crate) async fn create_custom_task_agent(
         discoverable: payload.discoverable.unwrap_or(true),
         is_enabled: payload.is_enabled.unwrap_or(true),
         is_deleted: false,
+        source_kind: payload.source_kind,
+        source_path: payload.source_path,
+        source_repo: payload.source_repo,
+        source_ref: payload.source_ref,
+        source_hash: payload.source_hash,
         created_at: now.clone(),
         updated_at: now,
     })
@@ -258,6 +281,11 @@ pub(crate) async fn update_custom_task_agent(
     let tags = normalize_string_list(payload.tags.unwrap_or(existing.tags.clone()));
     let discoverable = payload.discoverable.unwrap_or(existing.discoverable);
     let is_enabled = payload.is_enabled.unwrap_or(existing.is_enabled);
+    let source_kind = payload.source_kind.or(existing.source_kind.clone());
+    let source_path = payload.source_path.or(existing.source_path.clone());
+    let source_repo = payload.source_repo.or(existing.source_repo.clone());
+    let source_ref = payload.source_ref.or(existing.source_ref.clone());
+    let source_hash = payload.source_hash.or(existing.source_hash.clone());
     let now = now_rfc3339()?;
 
     sqlx::query(&format!(
@@ -265,7 +293,7 @@ pub(crate) async fn update_custom_task_agent(
         UPDATE {TABLE_NAME}
         SET name = ?, description = ?, task_prompt = ?, invocation_kind = ?, preferred_for_image_generation = ?, model_config = ?,
             callable_mcp_tool_ids = ?, guidance_skill_ids = ?, callable_skill_action_refs = ?,
-            tags = ?, discoverable = ?, is_enabled = ?, updated_at = ?
+            tags = ?, discoverable = ?, is_enabled = ?, source_kind = ?, source_path = ?, source_repo = ?, source_ref = ?, source_hash = ?, updated_at = ?
         WHERE id = ? AND is_deleted = 0;
         "#
     ))
@@ -281,6 +309,11 @@ pub(crate) async fn update_custom_task_agent(
     .bind(serialize_json(&Some(tags.clone()))?)
     .bind(if discoverable { 1 } else { 0 })
     .bind(if is_enabled { 1 } else { 0 })
+    .bind(source_kind.as_deref())
+    .bind(source_path.as_deref())
+    .bind(source_repo.as_deref())
+    .bind(source_ref.as_deref())
+    .bind(source_hash.as_deref())
     .bind(&now)
     .bind(id.trim())
     .execute(&store.pool)
@@ -302,6 +335,11 @@ pub(crate) async fn update_custom_task_agent(
         discoverable,
         is_enabled,
         is_deleted: false,
+        source_kind,
+        source_path,
+        source_repo,
+        source_ref,
+        source_hash,
         created_at: existing.created_at,
         updated_at: now,
     })
@@ -383,6 +421,21 @@ fn row_to_profile(row: &SqliteRow) -> Result<CustomTaskAgentProfile, McpError> {
             .try_get::<i64, _>("is_deleted")
             .map_err(|err| McpError::Storage(err.to_string()))?
             != 0,
+        source_kind: row
+            .try_get("source_kind")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        source_path: row
+            .try_get("source_path")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        source_repo: row
+            .try_get("source_repo")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        source_ref: row
+            .try_get("source_ref")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        source_hash: row
+            .try_get("source_hash")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
         created_at: row
             .try_get("created_at")
             .map_err(|err| McpError::Storage(err.to_string()))?,
@@ -601,6 +654,11 @@ mod tests {
             discoverable: true,
             is_enabled: true,
             is_deleted: false,
+            source_kind: None,
+            source_path: None,
+            source_repo: None,
+            source_ref: None,
+            source_hash: None,
             created_at: "2026-03-12T00:00:00Z".to_string(),
             updated_at: "2026-03-12T00:00:00Z".to_string(),
         };

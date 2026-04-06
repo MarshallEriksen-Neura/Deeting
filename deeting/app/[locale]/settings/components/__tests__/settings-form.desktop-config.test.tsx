@@ -35,8 +35,8 @@ jest.mock("@/i18n/routing", () => ({
   useRouter: () => ({ push: jest.fn() }),
 }))
 
-jest.mock("@/hooks/use-chat-service", () => ({
-  useChatService: () => ({ modelGroups: [], isLoadingModels: false }),
+jest.mock("@/hooks/use-chat-models", () => ({
+  useChatModels: () => ({ modelGroups: [], isLoadingModels: false }),
 }))
 
 jest.mock("@/lib/swr/use-embedding-settings", () => ({

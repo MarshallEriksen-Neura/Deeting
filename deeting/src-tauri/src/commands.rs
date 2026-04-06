@@ -148,6 +148,8 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::custom_task_agents::commands::delete_custom_task_agent,
         crate::modules::custom_task_agents::commands::preview_custom_task_agent,
         crate::modules::custom_task_agents::commands::reindex_custom_task_agents,
+        crate::modules::custom_task_agents::commands::preview_claude_agent_import,
+        crate::modules::custom_task_agents::commands::import_claude_agents,
         // Provider Commands
         crate::modules::providers::commands::list_local_provider_presets,
         crate::modules::providers::commands::get_local_user_secretary,

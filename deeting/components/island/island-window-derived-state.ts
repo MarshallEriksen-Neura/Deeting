@@ -4,7 +4,6 @@ import { deriveAssistantActivityState } from "@/lib/chat/assistant-activity";
 import { extractAssistantTextFromBlocks } from "@/lib/chat/message-blocks";
 import type { Message } from "@/lib/chat/message-types";
 import { findLatestUnresolvedToolApproval } from "@/lib/chat/tool-approval";
-import type { ChatAssistant } from "@/store/chat-store";
 
 import type { IslandApproval, IslandRecentMessage } from "./island-store";
 
@@ -13,7 +12,6 @@ const DEFAULT_SUMMARY = "Open a conversation to keep Deeting nearby.";
 const ISLAND_TRANSCRIPT_MAX_MESSAGES = 8;
 
 type IslandChatSnapshotLike = {
-  selectedAssistant: ChatAssistant | null;
   messages: Message[];
   isLoading: boolean;
   globalLoading: boolean;
@@ -80,7 +78,7 @@ function derivePendingApproval(messages: Message[]): IslandApproval | null {
   };
 }
 
-function deriveSummaryText(messages: Message[], selectedAssistant: ChatAssistant | null): string {
+function deriveSummaryText(messages: Message[]): string {
   const latestUser = findLatestUserMessage(messages);
   const latestUserPreview = latestUser
     ? typeof latestUser.content === "string"
@@ -89,10 +87,6 @@ function deriveSummaryText(messages: Message[], selectedAssistant: ChatAssistant
     : "";
   if (latestUserPreview.length > 0) {
     return truncateIslandText(latestUserPreview, 52);
-  }
-
-  if (selectedAssistant?.name) {
-    return `Chatting with ${selectedAssistant.name}`;
   }
 
   return DEFAULT_SUMMARY;
@@ -151,7 +145,7 @@ export function buildIslandWindowDerivedState(
 
   return {
     statusLabel: deriveStatusLabel(snapshot, pendingApproval),
-    summaryText: deriveSummaryText(snapshot.messages, snapshot.selectedAssistant),
+    summaryText: deriveSummaryText(snapshot.messages),
     lastReplyText: deriveLastReplyText(snapshot.messages),
     lastReplyAt: latestAssistant?.createdAt ?? null,
     recentMessages: deriveRecentMessages(snapshot.messages),

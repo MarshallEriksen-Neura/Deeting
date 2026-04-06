@@ -74,24 +74,6 @@ export interface PendingChatTakeover {
   updatedAt: number
 }
 
-const normalizeAssistantId = (value: unknown): string | null => {
-  if (typeof value === "string") {
-    const trimmed = value.trim()
-    return trimmed.length ? trimmed : null
-  }
-  if (value && typeof value === "object") {
-    const candidate = value as { id?: unknown; assistant_id?: unknown; assistantId?: unknown }
-    const rawId =
-      (typeof candidate.id === "string" && candidate.id) ||
-      (typeof candidate.assistant_id === "string" && candidate.assistant_id) ||
-      (typeof candidate.assistantId === "string" && candidate.assistantId) ||
-      ""
-    const trimmed = rawId.trim()
-    return trimmed.length ? trimmed : null
-  }
-  return null
-}
-
 function createMessageId() {
   const cryptoObj = typeof globalThis !== "undefined" ? globalThis.crypto : undefined
   if (cryptoObj?.randomUUID) {
@@ -155,8 +137,6 @@ async function readConversationHistoryState(sessionId: string) {
 interface ChatStore {
   // === 会话状态 ===
   sessionId: string | null
-  selectedAssistantId: string | null
-  selectedAssistant: ChatAssistant | null
   initialized: boolean // 新增：标记是否已初始化
   isLoading: boolean
   globalLoading: boolean
@@ -188,13 +168,10 @@ interface ChatStore {
   historyHasMore: boolean
 
   // === 核心 Action：初始化会话（一次性调用）===
-  initSession: (selectedAssistantId: string, sessionId: string | null, localAssistant?: ChatAssistant | null) => Promise<void>
+  initSession: (sessionId: string | null) => Promise<void>
 
   // === 同步 Actions ===
   setSessionId: (sessionId: string | null) => void
-  setSelectedAssistant: (assistant: ChatAssistant | null) => void
-  setSelectedAssistantId: (assistantId: string | null) => void
-  clearSelectedAssistantId: () => void
   setMessages: (messages: Message[]) => void
   addMessage: (role: MessageRole, content: string, attachments?: ChatImageAttachment[]) => void
   mergeMessageMeta: (id: string, patch: Record<string, unknown>) => void
@@ -238,7 +215,6 @@ interface ChatStore {
 
   // === 兼容性 Actions（逐步废弃）===
   loadHistory: (sessionId: string) => Promise<void>
-  switchSelectedAssistant: (assistantId: string, assistant: ChatAssistant | null) => void
   resetChat: () => void
   resetSession: () => void
 }
@@ -250,8 +226,6 @@ export const useChatStore = create<ChatStore>()(
     (set, get) => ({
       // === 会话状态初始值 ===
       sessionId: null,
-      selectedAssistantId: null,
-      selectedAssistant: null,
       initialized: false,
       isLoading: false,
       globalLoading: false,
@@ -298,85 +272,19 @@ export const useChatStore = create<ChatStore>()(
       //
       // 所有操作在一个函数内完成，没有循环依赖。
       // ============================================================
-      initSession: async (selectedAssistantId: string, sessionId: string | null, localAssistant?: ChatAssistant | null) => {
-        const normalizedAssistantId = normalizeAssistantId(selectedAssistantId)
+      initSession: async (sessionId: string | null) => {
         const state = get()
-        if (!normalizedAssistantId) {
-          if (state.initialized && state.selectedAssistantId === null && state.sessionId === sessionId) {
-            return
-          }
-
-          const isNewSession = state.sessionId !== sessionId
-          const shouldReset = isNewSession
-
-          set({
-            selectedAssistantId: null,
-            selectedAssistant: null,
-            sessionId,
-            initialized: true,
-            isLoading: true,
-            ...(shouldReset
-              ? {
-                  messages: [],
-                  input: "",
-                  attachments: [],
-                  selectedKnowledgeFileIds: [],
-                  pendingTakeover: null,
-                  pendingTakeoverRequestedAction: null,
-                  errorMessage: null,
-                  statusStage: null,
-                  statusCode: null,
-                  statusMeta: null,
-                  compareByMessageId: {},
-                  historyCursor: null,
-                  historyHasMore: false,
-                }
-              : {}),
-          })
-
-          let messages: Message[] = shouldReset ? [] : state.messages
-          let historyCursor: number | null = null
-          let historyHasMore = false
-
-          if (sessionId && shouldReset) {
-            try {
-              const historyState = await readConversationHistoryState(sessionId)
-              messages = historyState.messages
-              historyCursor = historyState.historyCursor
-              historyHasMore = historyState.historyHasMore
-            } catch (error) {
-              console.error("Failed to load history:", error)
-              messages = []
-            }
-          }
-
-          set({
-            messages,
-            compareByMessageId: {},
-            historyCursor,
-            historyHasMore,
-            isLoading: false,
-          })
+        if (state.initialized && state.sessionId === sessionId) {
           return
         }
 
-        // 防止重复初始化同一个 agent + session
-        if (state.initialized && state.selectedAssistantId === normalizedAssistantId && state.sessionId === sessionId) {
-          return
-        }
-
-        // 如果是新的 selectedAssistantId 或 sessionId，需要重置状态
-        const isNewAssistant = state.selectedAssistantId !== normalizedAssistantId
         const isNewSession = state.sessionId !== sessionId
-        const shouldReset = isNewAssistant || isNewSession
+        const shouldReset = isNewSession
 
-        // 先设置基础状态
         set({
-          selectedAssistantId: normalizedAssistantId,
           sessionId,
           initialized: true,
           isLoading: true,
-          // 如果是新 agent，清空消息
           ...(shouldReset ? {
             messages: [],
             input: "",
@@ -395,25 +303,6 @@ export const useChatStore = create<ChatStore>()(
         })
 
         try {
-          // Step 1: 获取 agent 数据
-          const selectedAssistant: ChatAssistant | null = localAssistant ?? null
-
-          // 之前会从 API 获取 assistant 列表，现已移除，因为 chat 页面不再支持切换 assistant
-          /*
-          if (!selectedAssistant) {
-            try {
-              const installPage = await fetchAssistantInstalls({ size: 100 })
-              const found = installPage.items.find((item) => item.assistant_id === normalizedAssistantId)
-              if (found) {
-                selectedAssistant = mapInstallToAssistant(found)
-              }
-            } catch (error) {
-              console.error("Failed to fetch assistant:", error)
-            }
-          }
-          */
-
-          // Step 2: 加载历史消息（如果有 sessionId 且是新 agent 或新 session）
           let messages: Message[] = shouldReset ? [] : state.messages
           let historyCursor: number | null = null
           let historyHasMore = false
@@ -430,9 +319,7 @@ export const useChatStore = create<ChatStore>()(
             }
           }
 
-          // Step 3: 一次性更新所有状态（避免多次触发渲染）
           set({
-            selectedAssistant,
             messages,
             compareByMessageId: {},
             historyCursor,
@@ -448,28 +335,6 @@ export const useChatStore = create<ChatStore>()(
 
       // === 同步 Actions ===
       setSessionId: (sessionId) => set({ sessionId }),
-
-      setSelectedAssistant: (assistant) => {
-        // 防止相同 agent 重复设置（避免无限循环）
-        const current = get().selectedAssistant
-        if (current?.id === assistant?.id) return
-        set({ selectedAssistant: assistant })
-      },
-
-      setSelectedAssistantId: (assistantId) => {
-        const normalized = normalizeAssistantId(assistantId)
-        set({
-          selectedAssistantId: normalized,
-        })
-      },
-
-      clearSelectedAssistantId: () =>
-        set({
-          selectedAssistantId: null,
-          selectedAssistant: null,
-          pendingTakeover: null,
-          pendingTakeoverRequestedAction: null,
-        }),
 
       setMessages: (messages) =>
         set((state) => ({
@@ -856,42 +721,6 @@ export const useChatStore = create<ChatStore>()(
         }
       },
 
-      switchSelectedAssistant: (assistantId: string, assistant: ChatAssistant | null) => {
-        const normalizedAssistantId = normalizeAssistantId(assistantId)
-        if (!normalizedAssistantId) {
-          console.warn("switchSelectedAssistant skipped due to invalid assistantId", assistantId)
-          return
-        }
-        const current = get()
-
-        if (current.selectedAssistantId === normalizedAssistantId) {
-          if (assistant && current.selectedAssistant?.id !== assistant.id) {
-            set({ selectedAssistant: assistant })
-          }
-          return
-        }
-
-        set({
-          selectedAssistantId: normalizedAssistantId,
-          selectedAssistant: assistant,
-          messages: [],
-          compareByMessageId: {},
-          input: "",
-          attachments: [],
-          selectedKnowledgeFileIds: [],
-          pendingTakeover: null,
-          pendingTakeoverRequestedAction: null,
-          initialized: false, // 重置初始化状态
-          sessionId: null,
-          errorMessage: null,
-          statusStage: null,
-          statusCode: null,
-          statusMeta: null,
-          historyCursor: null,
-          historyHasMore: false,
-        })
-      },
-
       resetChat: () =>
         set({
           messages: [],
@@ -914,8 +743,6 @@ export const useChatStore = create<ChatStore>()(
       resetSession: () =>
         set({
           sessionId: null,
-          selectedAssistantId: null,
-          selectedAssistant: null,
           messages: [],
           compareByMessageId: {},
           input: "",
@@ -975,9 +802,6 @@ export const useChatMessages = () => useChatStore((state) => state.messages)
 
 /** 获取加载状态 */
 export const useChatLoading = () => useChatStore((state) => state.isLoading)
-
-/** 获取当前 Agent */
-export const useChatAgent = () => useChatStore((state) => state.selectedAssistant)
 
 /** 获取状态信息 */
 export const useChatStatus = () =>

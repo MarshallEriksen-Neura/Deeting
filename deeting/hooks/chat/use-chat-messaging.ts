@@ -7,11 +7,10 @@ import { useI18n } from "@/hooks/use-i18n"
 import { createConversation } from "@/lib/api/conversations"
 
 interface UseChatMessagingProps {
-  agent?: { id: string; name: string }
   isTauriRuntime: boolean
 }
 
-export function useChatMessaging({ agent, isTauriRuntime }: UseChatMessagingProps) {
+export function useChatMessaging({ isTauriRuntime }: UseChatMessagingProps) {
   const t = useI18n("chat")
 
   const {
@@ -50,7 +49,7 @@ export function useChatMessaging({ agent, isTauriRuntime }: UseChatMessagingProp
       let localSessionId = sessionId
       if (!localSessionId) {
         try {
-          const created = await createConversation({ assistant_id: agent?.id ?? null })
+          const created = await createConversation({})
           if (created.session_id) {
             localSessionId = created.session_id
             setSessionId(created.session_id)
@@ -66,7 +65,6 @@ export function useChatMessaging({ agent, isTauriRuntime }: UseChatMessagingProp
     }
   }, [
     isTauriRuntime,
-    agent,
     input,
     attachments,
     config.model,

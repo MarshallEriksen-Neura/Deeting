@@ -50,7 +50,6 @@ describe("ChatContainer", () => {
     mockUseChatStore.mockImplementation((selector) =>
       selector({
         initSession: mockInitSession,
-        selectedAssistant: null,
         isLoading: true,
         initialized: true,
       })

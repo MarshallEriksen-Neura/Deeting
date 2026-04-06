@@ -10,7 +10,6 @@ use crate::route::{
 pub const SEARCH_SDK_TOOL_NAME: &str = "search_sdk";
 pub const GET_TOOL_SCHEMA_TOOL_NAME: &str = "get_tool_schema";
 pub const EXECUTE_CODE_PLAN_TOOL_NAME: &str = "execute_code_plan";
-pub const CONSULT_EXPERT_NETWORK_TOOL_NAME: &str = "consult_expert_network";
 pub const ATTACH_CAPABILITY_TOOL_NAME: &str = "attach_capability";
 pub const DETACH_CAPABILITY_TOOL_NAME: &str = "detach_capability";
 pub const SYS_SUBMIT_ONBOARDING_REQUEST_TOOL_NAME: &str = "sys_submit_onboarding_request";
@@ -203,7 +202,6 @@ pub fn full_execution_tool_names() -> Vec<String> {
         SEARCH_SDK_TOOL_NAME,
         GET_TOOL_SCHEMA_TOOL_NAME,
         EXECUTE_CODE_PLAN_TOOL_NAME,
-        CONSULT_EXPERT_NETWORK_TOOL_NAME,
         ATTACH_CAPABILITY_TOOL_NAME,
         DETACH_CAPABILITY_TOOL_NAME,
         SYS_SUBMIT_ONBOARDING_REQUEST_TOOL_NAME,

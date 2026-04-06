@@ -50,7 +50,7 @@ export default function ImagePage() {
 
 **依赖：**
 - `@/hooks/use-i18n` - 国际化
-- `@/hooks/use-chat-service` - 聊天服务
+- `@/hooks/use-chat-models` - 聊天模型
 - `@/store/image-generation-store` - 图像生成状态管理
 - `@/lib/swr/use-image-generation-tasks` - 任务数据获取
 - `@/components/ui/glass-card` - 玻璃卡片组件

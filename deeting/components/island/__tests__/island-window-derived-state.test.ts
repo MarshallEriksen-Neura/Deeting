@@ -3,7 +3,6 @@ import { buildIslandWindowDerivedState } from "../island-window-derived-state"
 describe("buildIslandWindowDerivedState", () => {
   it("does not surface a resolved historical approval as the current island pending approval", () => {
     const derived = buildIslandWindowDerivedState({
-      selectedAssistant: null,
       messages: [
         {
           id: "assistant-approval",

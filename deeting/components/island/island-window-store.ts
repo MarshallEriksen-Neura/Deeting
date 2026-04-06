@@ -33,7 +33,6 @@ interface IslandWindowState {
   isBusy: boolean;
   errorMessage: string | null;
   sessionId: string | null;
-  selectedAssistantId: string | null;
   chatRequestConfig: IslandChatRequestConfig | null;
   statusStage: string | null;
   statusCode: string | null;
@@ -63,7 +62,6 @@ export interface IslandSyncPayload {
   isBusy: boolean;
   errorMessage: string | null;
   sessionId: string | null;
-  selectedAssistantId: string | null;
   chatRequestConfig?: IslandChatRequestConfig | null;
   statusStage?: string | null;
   statusCode?: string | null;
@@ -125,7 +123,6 @@ async function loadIslandWindowStateFromHistory(sessionId: string) {
   });
 
   return buildIslandWindowDerivedState({
-    selectedAssistant: null,
     messages: history.messages,
     isLoading: false,
     globalLoading: false,
@@ -136,15 +133,12 @@ async function loadIslandWindowStateFromHistory(sessionId: string) {
 
 async function ensureSessionId(
   sessionId: string | null,
-  selectedAssistantId: string | null
 ) {
   if (sessionId) {
     return sessionId;
   }
 
-  const created = await createConversation({
-    assistant_id: selectedAssistantId ?? undefined,
-  });
+  const created = await createConversation({});
   return created.session_id;
 }
 
@@ -159,7 +153,6 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
   isBusy: false,
   errorMessage: null,
   sessionId: null,
-  selectedAssistantId: null,
   chatRequestConfig: null,
   statusStage: null,
   statusCode: null,
@@ -190,7 +183,6 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
     if (get().suspendRemoteSync) {
       set((state) => ({
         sessionId: payload.sessionId ?? state.sessionId,
-        selectedAssistantId: payload.selectedAssistantId ?? state.selectedAssistantId,
         chatRequestConfig: payload.chatRequestConfig ?? state.chatRequestConfig,
         statusStage: payload.statusStage ?? state.statusStage,
         statusCode: payload.statusCode ?? state.statusCode,
@@ -210,7 +202,6 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
       isBusy: payload.isBusy,
       errorMessage: payload.errorMessage,
       sessionId: payload.sessionId,
-      selectedAssistantId: payload.selectedAssistantId,
       chatRequestConfig: payload.chatRequestConfig ?? null,
       statusStage: payload.statusStage ?? null,
       statusCode: payload.statusCode ?? null,
@@ -246,10 +237,7 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
     });
 
     try {
-      const sessionId = await ensureSessionId(
-        previousState.sessionId,
-        previousState.selectedAssistantId
-      );
+      const sessionId = await ensureSessionId(previousState.sessionId);
       await streamIslandTextConversation(sessionId, trimmed, requestConfig, {
         onDelta: (_delta, snapshot) => {
           set((state) => ({
@@ -274,7 +262,6 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
             set((state) => {
               const runtimeStatus = resolveIslandRuntimeStatus(
                 {
-                  selectedAssistant: null,
                   messages: [],
                   isLoading: true,
                   globalLoading: false,
@@ -316,7 +303,6 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
       set({
         ...nextState,
         sessionId,
-        selectedAssistantId: previousState.selectedAssistantId,
         chatRequestConfig: previousState.chatRequestConfig,
         statusStage: previousState.statusStage,
         statusCode: previousState.statusCode,
@@ -337,7 +323,6 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
         recentMessages: previousState.recentMessages,
         pendingApproval: previousState.pendingApproval,
         errorMessage: message,
-        selectedAssistantId: previousState.selectedAssistantId,
         chatRequestConfig: previousState.chatRequestConfig,
         statusStage: previousState.statusStage,
         statusCode: previousState.statusCode,
@@ -371,7 +356,6 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
       set({
         ...nextState,
         sessionId,
-        selectedAssistantId: previousState.selectedAssistantId,
         chatRequestConfig: previousState.chatRequestConfig,
         isBusy: false,
         suspendRemoteSync: false,
@@ -388,7 +372,6 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
         recentMessages: previousState.recentMessages,
         pendingApproval: previousState.pendingApproval,
         errorMessage: message,
-        selectedAssistantId: previousState.selectedAssistantId,
         chatRequestConfig: previousState.chatRequestConfig,
         isBusy: false,
         suspendRemoteSync: false,
@@ -414,7 +397,6 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
       set({
         ...nextState,
         sessionId,
-        selectedAssistantId: previousState.selectedAssistantId,
         chatRequestConfig: previousState.chatRequestConfig,
         isBusy: false,
         suspendRemoteSync: false,
@@ -431,7 +413,6 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
         recentMessages: previousState.recentMessages,
         pendingApproval: previousState.pendingApproval,
         errorMessage: message,
-        selectedAssistantId: previousState.selectedAssistantId,
         chatRequestConfig: previousState.chatRequestConfig,
         isBusy: false,
         suspendRemoteSync: false,

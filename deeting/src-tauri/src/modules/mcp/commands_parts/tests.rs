@@ -1063,7 +1063,7 @@ for raw_line in sys.stdin:
 
         assert!(names.contains(&"search_sdk"));
         assert!(names.contains(&"get_tool_schema"));
-        assert!(names.contains(&"consult_expert_network"));
+        assert!(!names.contains(&"consult_expert_network"));
         assert!(names.contains(&"attach_capability"));
         assert!(names.contains(&"detach_capability"));
         assert!(names.contains(&"execute_code_plan"));

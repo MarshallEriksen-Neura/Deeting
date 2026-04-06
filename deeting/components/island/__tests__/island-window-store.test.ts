@@ -47,7 +47,6 @@ function resetStore() {
     isBusy: false,
     errorMessage: null,
     sessionId: "session-1",
-    selectedAssistantId: "assistant-1",
     chatRequestConfig: {
       model: "model-local-1",
       model_selection_mode: "pool",
@@ -108,7 +107,6 @@ describe("useIslandWindowStore", () => {
       isBusy: false,
       errorMessage: null,
       sessionId: "session-1",
-      selectedAssistantId: "assistant-1",
       chatRequestConfig: {
         model: "model-local-1",
         model_selection_mode: "pool",
@@ -130,7 +128,6 @@ describe("useIslandWindowStore", () => {
   it("creates a session before sending when island window starts blank", async () => {
     useIslandWindowStore.setState({
       sessionId: null,
-      selectedAssistantId: "assistant-new",
       recentMessages: [],
     })
     createConversation.mockResolvedValue({ session_id: "session-new", title: null })
@@ -157,9 +154,7 @@ describe("useIslandWindowStore", () => {
 
     await useIslandWindowStore.getState().sendQuickReply("hello")
 
-    expect(createConversation).toHaveBeenCalledWith({
-      assistant_id: "assistant-new",
-    })
+    expect(createConversation).toHaveBeenCalledWith({})
     expect(streamIslandTextConversation).toHaveBeenCalledWith(
       "session-new",
       "hello",

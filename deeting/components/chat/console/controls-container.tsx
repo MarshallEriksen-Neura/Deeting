@@ -75,7 +75,6 @@ function ControlsContainer() {
     selectedKnowledgeFileIds,
     setInput,
     setMessages,
-    selectedAssistant,
     models,
     config,
     setConfig,
@@ -96,7 +95,6 @@ function ControlsContainer() {
       selectedKnowledgeFileIds: state.selectedKnowledgeFileIds,
       setInput: state.setInput,
       setMessages: state.setMessages,
-      selectedAssistant: state.selectedAssistant,
       models: state.models,
       config: state.config,
       setConfig: state.setConfig,
@@ -128,9 +126,6 @@ function ControlsContainer() {
     hasInterruptedGeneration,
     continueInterruptedGeneration,
   } = useChatMessaging({
-    agent: !isTauriRuntime && selectedAssistant
-      ? { id: selectedAssistant.id, name: selectedAssistant.name }
-      : undefined,
     isTauriRuntime,
   });
 
@@ -733,22 +728,6 @@ function ControlsContainer() {
           >
              <MessageSquarePlus className="w-5 h-5" />
           </Button>
-
-          {isTauriRuntime ? null : (
-            <div className="min-h-[44px] h-11 rounded-full px-3 gap-2 bg-slate-100/80 dark:bg-white/5 flex items-center">
-              <span className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white shadow-sm bg-gradient-to-br ${selectedAssistant?.color ?? "from-slate-400 to-slate-600"}`}>
-                {(selectedAssistant?.name?.trim().slice(0, 1).toUpperCase() ?? "A")}
-              </span>
-              <div className="flex flex-col items-start leading-tight">
-                <span className="text-[10px] uppercase tracking-[0.12em] text-slate-500 dark:text-white/40">
-                  {t("routing.locked")}
-                </span>
-                <span className="text-[13px] font-semibold text-slate-700 dark:text-white/80 max-w-[120px] truncate">
-                  {selectedAssistant?.name ?? t("routing.locked")}
-                </span>
-              </div>
-            </div>
-          )}
 
           {isTauriRuntime ? (
             <Popover open={isKnowledgePickerOpen} onOpenChange={handleKnowledgePickerOpenChange}>

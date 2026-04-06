@@ -113,12 +113,6 @@ function seedChatState(includeApproval = false) {
 
   useChatStore.setState({
     sessionId: "session-1",
-    selectedAssistant: {
-      id: "assistant-1",
-      name: "Planner",
-      desc: "",
-      color: "#000",
-    },
     messages: [
       {
         id: "user-1",

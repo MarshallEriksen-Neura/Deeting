@@ -7,9 +7,9 @@ import { useEffect, useState, useMemo, useCallback, type ReactNode } from 'react
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from 'next-themes';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { useChatStore, type ChatAssistant } from '@/store/chat-store';
+import { useChatStore } from '@/store/chat-store';
 import { useShallow } from 'zustand/react/shallow';
-import { useChatService } from '@/hooks/use-chat-service';
+import { useChatModels } from '@/hooks/use-chat-models';
 import { useI18n } from '@/hooks/use-i18n';
 import { isTauriRuntime as detectTauriRuntime } from '@/lib/runtime/tauri';
 import { resolveChatModelSelectionValue } from '@/lib/api/models';
@@ -51,13 +51,8 @@ export default function HUD() {
   const {
     config,
     setConfig,
-    selectedAssistant,
     models,
-    selectedAssistantId,
-    setSelectedAssistant,
     setModels,
-    setSelectedAssistantId,
-    clearSelectedAssistantId,
     setMessages,
     clearAttachments,
     isLoading,
@@ -71,13 +66,8 @@ export default function HUD() {
     useShallow((state) => ({
       config: state.config,
       setConfig: state.setConfig,
-      selectedAssistant: state.selectedAssistant,
       models: state.models,
-      selectedAssistantId: state.selectedAssistantId,
-      setSelectedAssistant: state.setSelectedAssistant,
       setModels: state.setModels,
-      setSelectedAssistantId: state.setSelectedAssistantId,
-      clearSelectedAssistantId: state.clearSelectedAssistantId,
       setMessages: state.setMessages,
       clearAttachments: state.clearAttachments,
       isLoading: state.isLoading,
@@ -90,17 +80,9 @@ export default function HUD() {
     }))
   );
 
-  // 从 selectedAssistant 派生 assistant 模板列表
-  const assistantTemplates: ChatAssistant[] = selectedAssistant ? [selectedAssistant] : [];
-  const setAssistantTemplates = (nextTemplates: ChatAssistant[]) => {
-    if (nextTemplates.length > 0) setSelectedAssistant(nextTemplates[0]);
-  };
-  const setSelectedTemplateId = setSelectedAssistantId;
-
-  const { models: serviceModels, modelGroups: serviceModelGroups } = useChatService({
+  const { models: serviceModels, modelGroups: serviceModelGroups } = useChatModels({
     enabled: true,
     modelCapability: "chat",
-    fetchAssistants: false,
   });
 
   const isTauriRuntime = detectTauriRuntime();
@@ -134,13 +116,6 @@ export default function HUD() {
   }, [serviceModels, setModels]);
 
   useEffect(() => {
-    if (!isTauriRuntime) return;
-    if (!selectedAssistantId && assistantTemplates.length) {
-      setSelectedTemplateId(assistantTemplates[0].id);
-    }
-  }, [isTauriRuntime, selectedAssistantId, assistantTemplates, setSelectedTemplateId]);
-
-  useEffect(() => {
     if (!models.length) return;
     const exists = models.some((model) => model.id === config.model || model.provider_model_id === config.model);
     if (!exists) {
@@ -161,32 +136,21 @@ export default function HUD() {
   });
   const statusDetail = resolveStatusDetail(t, statusCode, statusMeta);
   
-  const activeTemplate = useMemo(() => 
-    assistantTemplates.find((template) => template.id === selectedAssistantId), 
-  [assistantTemplates, selectedAssistantId]);
-
   // 使用 useCallback 缓存事件处理函数
   const handleNewChat = useCallback(async () => {
      resetSession();
      setMessages([]);
      clearAttachments();
-     if (!isTauriRuntime) {
-       clearSelectedAssistantId();
-     }
-     const targetAssistantId = selectedAssistantId ?? assistantTemplates[0]?.id ?? undefined;
      setGlobalLoading(true);
      try {
-      const created = await createConversation(
-        isTauriRuntime ? { assistant_id: targetAssistantId ?? null } : {}
-      );
+      const created = await createConversation({});
        if (created.session_id) {
          setSessionId(created.session_id);
          if (typeof window !== "undefined") {
            const params = new URLSearchParams(searchParams?.toString());
           params.set("session", created.session_id);
           params.delete("agentId");
-          const basePath =
-            isTauriRuntime && targetAssistantId ? `/chat/${targetAssistantId}` : "/chat";
+          const basePath = "/chat";
            const query = params.toString();
            const nextUrl = query ? `${basePath}?${query}` : basePath;
            window.history.replaceState(null, "", nextUrl);
@@ -208,14 +172,10 @@ export default function HUD() {
     resetSession,
     setMessages,
     clearAttachments,
-    clearSelectedAssistantId,
     searchParams,
     pathname,
-    selectedAssistantId,
-    assistantTemplates,
     setSessionId,
     setGlobalLoading,
-    isTauriRuntime,
   ]);
 
   const handleToggleControlCenter = useCallback(() => {

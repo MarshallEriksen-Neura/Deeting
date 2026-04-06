@@ -39,8 +39,8 @@ describe("HUD deferred surfaces", () => {
       jest.doMock("@/hooks/use-i18n", () => ({
         useI18n: () => (key: string) => key,
       }))
-      jest.doMock("@/hooks/use-chat-service", () => ({
-        useChatService: () => ({
+      jest.doMock("@/hooks/use-chat-models", () => ({
+        useChatModels: () => ({
           models: [],
           modelGroups: [],
           isLoadingModels: false,
@@ -111,7 +111,7 @@ describe("HUD deferred surfaces", () => {
   })
 
   it("requests chat-capable models for the HUD selector", () => {
-    const useChatService = jest.fn(() => ({
+    const useChatModels = jest.fn(() => ({
       models: [],
       modelGroups: [],
       isLoadingModels: false,
@@ -162,8 +162,8 @@ describe("HUD deferred surfaces", () => {
       jest.doMock("@/hooks/use-i18n", () => ({
         useI18n: () => (key: string) => key,
       }))
-      jest.doMock("@/hooks/use-chat-service", () => ({
-        useChatService,
+      jest.doMock("@/hooks/use-chat-models", () => ({
+        useChatModels,
       }))
       jest.doMock("zustand/react/shallow", () => ({
         useShallow: (selector: unknown) => selector,
@@ -172,13 +172,8 @@ describe("HUD deferred surfaces", () => {
         useChatStore: () => ({
           config: { model: "" },
           setConfig: jest.fn(),
-          selectedAssistant: null,
           models: [],
-          selectedAssistantId: null,
-          setSelectedAssistant: jest.fn(),
           setModels: jest.fn(),
-          setSelectedAssistantId: jest.fn(),
-          clearSelectedAssistantId: jest.fn(),
           setMessages: jest.fn(),
           clearAttachments: jest.fn(),
           isLoading: false,
@@ -210,10 +205,9 @@ describe("HUD deferred surfaces", () => {
       HUD()
     })
 
-    expect(useChatService).toHaveBeenCalledWith(
+    expect(useChatModels).toHaveBeenCalledWith(
       expect.objectContaining({
         enabled: true,
-        fetchAssistants: false,
         modelCapability: "chat",
       })
     )

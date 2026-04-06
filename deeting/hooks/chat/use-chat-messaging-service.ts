@@ -26,15 +26,10 @@ const WEB_SESSION_STORAGE_KEY = "deeting-chat-session:router"
 
 export function resolveChatRequestContext({
   isTauriRuntime,
-  selectedAssistantId,
 }: {
   isTauriRuntime: boolean
-  selectedAssistantId?: string | null
 }) {
-  if (!selectedAssistantId || isTauriRuntime) {
-    return { assistantId: undefined, sessionStorageKey: WEB_SESSION_STORAGE_KEY }
-  }
-  return { assistantId: selectedAssistantId, sessionStorageKey: WEB_SESSION_STORAGE_KEY }
+  return { assistantId: undefined, sessionStorageKey: WEB_SESSION_STORAGE_KEY }
 }
 import { resolveSessionIdFromBrowser } from "@/lib/chat/session-storage"
 import type { ConversationMessage } from "@/lib/api/conversations"
@@ -437,8 +432,6 @@ export function useChatMessagingService() {
     messages,
     config,
     models,
-    selectedAssistant,
-    selectedAssistantId,
     streamEnabled,
     isLoading,
     statusCode,
@@ -845,12 +838,10 @@ export function useChatMessagingService() {
       isTauriRuntime && (selectedModel?.request_route ?? "local_invoke") === "local_invoke"
     const modelSelectionMode =
       preferLocalRoute && isDesktopLocalModel(selectedModel) ? ("pool" as const) : undefined
-    const selectedAssistantForRequest = selectedAssistant
     if (!selectedModel) return false
 
-    const { assistantId, sessionStorageKey } = resolveChatRequestContext({
+    const { sessionStorageKey } = resolveChatRequestContext({
       isTauriRuntime,
-      selectedAssistantId,
     })
 
     let effectiveInput = trimmedInput
@@ -935,7 +926,7 @@ export function useChatMessagingService() {
       // Local route: Rust orchestrator injects assistant persona; skip frontend prepend to avoid duplication.
       const requestMessages = buildChatMessages(
         [...currentMessages, outgoingUserMessage],
-        preferLocalRoute ? undefined : selectedAssistantForRequest?.systemPrompt,
+        undefined,
       )
       const payload = {
         model: selectedModel.id,
@@ -947,7 +938,6 @@ export function useChatMessagingService() {
         temperature: config.temperature,
         max_tokens: resolveRequestedMaxTokens(config.maxTokens),
         request_id: createRequestId(),
-        assistant_id: assistantId,
         session_id: resolvedSessionId ?? undefined,
         metadata: buildKnowledgeSelectionMetadata(draft.selectedKnowledgeFileIds),
       }
@@ -1011,8 +1001,6 @@ export function useChatMessagingService() {
     config,
     models,
     isTauriRuntime,
-    selectedAssistant,
-    selectedAssistantId,
     setMessages,
     mergeMessageMeta,
     appendMessageBlocks,
@@ -1133,12 +1121,10 @@ export function useChatMessagingService() {
       isTauriRuntime && (selectedModel?.request_route ?? "local_invoke") === "local_invoke"
     const modelSelectionMode =
       preferLocalRoute && isDesktopLocalModel(selectedModel) ? ("pool" as const) : undefined
-    const selectedAssistantForRequest = selectedAssistant
     if (!selectedModel) return
 
-    const { assistantId, sessionStorageKey } = resolveChatRequestContext({
+    const { sessionStorageKey } = resolveChatRequestContext({
       isTauriRuntime,
-      selectedAssistantId,
     })
 
     // 移除旧的 assistant 消息，插入新的空 assistant 占位
@@ -1167,7 +1153,7 @@ export function useChatMessagingService() {
 
       const requestMessages = buildChatMessages(
         messagesBeforeTarget,
-        preferLocalRoute ? undefined : selectedAssistantForRequest?.systemPrompt,
+        undefined,
       )
       const payload = {
         model: selectedModel.id,
@@ -1178,7 +1164,6 @@ export function useChatMessagingService() {
         temperature: config.temperature,
         max_tokens: resolveRequestedMaxTokens(config.maxTokens),
         request_id: createRequestId(),
-        assistant_id: assistantId,
         session_id: resolvedSessionId ?? undefined,
         regenerate: true,
         metadata: buildRequestMetadata(
@@ -1239,8 +1224,6 @@ export function useChatMessagingService() {
   }, [
     config,
     models,
-    selectedAssistant,
-    selectedAssistantId,
     selectedKnowledgeFileIds,
     cancelActiveRequest,
     setMessages,
@@ -1329,9 +1312,8 @@ export function useChatMessagingService() {
       return
     }
 
-    const { assistantId, sessionStorageKey } = resolveChatRequestContext({
+    const { sessionStorageKey } = resolveChatRequestContext({
       isTauriRuntime,
-      selectedAssistantId,
     })
     const resolvedSessionId = resolveCurrentSessionId(sessionStorageKey)
     if (!resolvedSessionId) {
@@ -1373,7 +1355,6 @@ export function useChatMessagingService() {
           temperature: config.temperature,
           max_tokens: resolveRequestedMaxTokens(config.maxTokens),
           request_id: createRequestId(),
-          assistant_id: assistantId,
           session_id: resolvedSessionId,
           compare_only: true,
           metadata: buildKnowledgeSelectionMetadata(selectedKnowledgeFileIds),
@@ -1473,7 +1454,6 @@ export function useChatMessagingService() {
     config,
     ensureCompareState,
     setCompareActiveCandidate,
-    selectedAssistantId,
     selectedKnowledgeFileIds,
     resolveCurrentSessionId,
     upsertCompareCandidate,
@@ -1494,7 +1474,6 @@ export function useChatMessagingService() {
 
     const { sessionStorageKey } = resolveChatRequestContext({
       isTauriRuntime,
-      selectedAssistantId,
     })
     const resolvedSessionId = resolveCurrentSessionId(sessionStorageKey)
     if (!resolvedSessionId) {
@@ -1560,7 +1539,6 @@ export function useChatMessagingService() {
 
     setCompareFinalizing(targetMessageId, false)
   }, [
-    selectedAssistantId,
     clearCompareState,
     isTauriRuntime,
     replaceAssistantMessage,

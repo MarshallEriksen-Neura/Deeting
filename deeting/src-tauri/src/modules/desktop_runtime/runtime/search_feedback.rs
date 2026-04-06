@@ -21,7 +21,6 @@ const SEARCH_META_TOOLS: &[&str] = &[
     "search_sdk",
     "get_tool_schema",
     "execute_code_plan",
-    "consult_expert_network",
     "attach_capability",
     "detach_capability",
 ];

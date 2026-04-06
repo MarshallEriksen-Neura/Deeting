@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useTranslations } from "next-intl"
-import { Plus, RefreshCw } from "lucide-react"
+import { Download, Plus, RefreshCw } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/ui/page-header/page-header"
@@ -21,11 +21,13 @@ import { ImageTaskAgentEditor } from "./image-task-agent-editor"
 import { VoiceTaskAgentEditor } from "./voice-task-agent-editor"
 import { TaskAgentPreviewPanel } from "./task-agent-preview-panel"
 import { TaskAgentTypeStarter } from "./task-agent-type-starter"
+import { TaskAgentImportDialog } from "./task-agent-import-dialog"
 
 type Translation = (key: string, values?: Record<string, string | number>) => string
 
 export function TaskAgentsClient() {
   const t = useTranslations("task-agents") as unknown as Translation
+  const [importDialogOpen, setImportDialogOpen] = React.useState(false)
   
   const {
     // Platform
@@ -83,10 +85,14 @@ export function TaskAgentsClient() {
     isSaving,
     isPreviewing,
     isReindexing,
+    isImportPreviewing,
+    isImporting,
     deleteDialogOpen,
     discardDialogOpen,
     previewResult,
     previewError,
+    claudeImportPreview,
+    claudeImportError,
 
     // Actions
     setSearchQuery,
@@ -110,6 +116,8 @@ export function TaskAgentsClient() {
     handleDelete,
     handleReindex,
     handleRunPreview,
+    handlePreviewClaudeImport,
+    handleImportClaudeAgents,
     handleDiscardConfirm,
     handleDiscardCancel,
   } = useTaskAgents(t)
@@ -130,6 +138,15 @@ export function TaskAgentsClient() {
         icon={BotIcon}
         actions={
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setImportDialogOpen(true)}
+              className="h-8 rounded-lg border-white/8 text-[12px]"
+            >
+              <Download className="mr-1.5 size-3.5" />
+              {t("actions.importClaude")}
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -291,6 +308,17 @@ export function TaskAgentsClient() {
         onDeleteConfirm={handleDelete}
         onDiscardConfirm={handleDiscardConfirm}
         onDiscardCancel={handleDiscardCancel}
+      />
+      <TaskAgentImportDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        t={t}
+        isPreviewing={isImportPreviewing}
+        isImporting={isImporting}
+        preview={claudeImportPreview}
+        error={claudeImportError}
+        onPreview={handlePreviewClaudeImport}
+        onImport={handleImportClaudeAgents}
       />
     </div>
   )

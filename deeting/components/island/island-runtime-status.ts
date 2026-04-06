@@ -1,7 +1,6 @@
 "use client";
 
 import { deriveAssistantActivityState } from "@/lib/chat/assistant-activity";
-import type { ChatAssistant } from "@/store/chat-store";
 
 import type { IslandApproval } from "./island-store";
 
@@ -24,7 +23,6 @@ export type IslandRuntimeStatus = {
 };
 
 type IslandChatSnapshotLike = {
-  selectedAssistant: ChatAssistant | null;
   messages: Message[];
   isLoading: boolean;
   globalLoading: boolean;

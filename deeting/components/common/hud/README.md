@@ -40,7 +40,7 @@ export default function ChatPage() {
 - `@/store/chat-state-store` - 聊天状态管理
 - `@/store/chat-session-store` - 会话状态管理
 - `@/store/image-generation-store` - 图像生成状态管理
-- `@/hooks/use-chat-service` - 聊天服务 Hook
+- `@/hooks/use-chat-models` - 聊天模型 Hook
 - `@/hooks/use-i18n` - 国际化 Hook
 - `@/components/models/model-picker` - 模型选择器
 - `@/components/ui/status-pill` - 状态指示器

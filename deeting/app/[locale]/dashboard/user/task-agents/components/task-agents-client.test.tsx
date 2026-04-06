@@ -3,6 +3,8 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 
 import { TaskAgentsClient } from "./task-agents-client"
 import {
+  importClaudeAgents,
+  previewClaudeAgentImport,
   supportsLocalCustomTaskAgents,
   updateCustomTaskAgent,
   type CustomTaskAgentProfile,
@@ -10,7 +12,7 @@ import {
 
 const mockMutate = jest.fn()
 const mockUseSWR = jest.fn()
-const mockUseChatService = jest.fn()
+const mockUseChatModels = jest.fn()
 const mockRouterPush = jest.fn()
 
 jest.mock("next-intl", () => ({
@@ -50,10 +52,12 @@ jest.mock("@/lib/api/custom-task-agents", () => ({
   deleteCustomTaskAgent: jest.fn(),
   previewCustomTaskAgent: jest.fn(),
   reindexCustomTaskAgents: jest.fn(),
+  previewClaudeAgentImport: jest.fn(),
+  importClaudeAgents: jest.fn(),
 }))
 
-jest.mock("@/hooks/use-chat-service", () => ({
-  useChatService: (...args: unknown[]) => mockUseChatService(...args),
+jest.mock("@/hooks/use-chat-models", () => ({
+  useChatModels: (...args: unknown[]) => mockUseChatModels(...args),
 }))
 
 jest.mock("@/components/ui/page-header/page-header", () => ({
@@ -123,6 +127,21 @@ jest.mock("@/components/ui/tabs", () => ({
 
 jest.mock("@/components/ui/badge", () => ({
   Badge: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
+}))
+
+jest.mock("@/components/ui/dialog", () => ({
+  Dialog: ({
+    open,
+    children,
+  }: {
+    open: boolean
+    children: React.ReactNode
+  }) => (open ? <div>{children}</div> : null),
+  DialogContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DialogDescription: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DialogFooter: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DialogHeader: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DialogTitle: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }))
 
 jest.mock("@/components/ui/switch", () => ({
@@ -214,6 +233,10 @@ const mockSupportsLocalCustomTaskAgents =
   supportsLocalCustomTaskAgents as jest.MockedFunction<
     typeof supportsLocalCustomTaskAgents
   >
+const mockPreviewClaudeAgentImport =
+  previewClaudeAgentImport as jest.MockedFunction<typeof previewClaudeAgentImport>
+const mockImportClaudeAgents =
+  importClaudeAgents as jest.MockedFunction<typeof importClaudeAgents>
 const mockUpdateCustomTaskAgent =
   updateCustomTaskAgent as jest.MockedFunction<typeof updateCustomTaskAgent>
 
@@ -233,6 +256,11 @@ const agents: CustomTaskAgentProfile[] = [
     discoverable: true,
     is_enabled: true,
     is_deleted: false,
+    source_kind: null,
+    source_path: null,
+    source_repo: null,
+    source_ref: null,
+    source_hash: null,
     created_at: "2026-03-12T00:00:00Z",
     updated_at: "2026-03-12T00:00:00Z",
   },
@@ -256,6 +284,11 @@ const agents: CustomTaskAgentProfile[] = [
     discoverable: true,
     is_enabled: true,
     is_deleted: false,
+    source_kind: null,
+    source_path: null,
+    source_repo: null,
+    source_ref: null,
+    source_hash: null,
     created_at: "2026-03-12T00:00:00Z",
     updated_at: "2026-03-12T00:00:00Z",
   },
@@ -265,8 +298,31 @@ describe("TaskAgentsClient", () => {
   beforeEach(() => {
     jest.clearAllMocks()
     mockSupportsLocalCustomTaskAgents.mockReturnValue(true)
+    mockPreviewClaudeAgentImport.mockResolvedValue({
+      root_path: "C:/Users/test/.claude/agents",
+      items: [
+        {
+          source_path: "C:/Users/test/.claude/agents/engineering/frontend.md",
+          relative_path: "engineering/frontend.md",
+          name: "Frontend Developer",
+          description: "Builds UI",
+          tags: ["engineering", "frontend", "claude-agent"],
+          inferred_mcp_tool_ids: ["tool.release"],
+          inferred_guidance_skill_ids: ["skill.alpha"],
+          exists: false,
+          existing_agent_id: null,
+          existing_agent_name: null,
+        },
+      ],
+    })
+    mockImportClaudeAgents.mockResolvedValue({
+      root_path: "C:/Users/test/.claude/agents",
+      created_count: 1,
+      updated_count: 0,
+      profiles: [agents[0]],
+    })
     mockUpdateCustomTaskAgent.mockResolvedValue(agents[0])
-    mockUseChatService.mockReturnValue({
+    mockUseChatModels.mockReturnValue({
       modelGroups: [
         {
           instance_id: "instance-1",
@@ -583,5 +639,74 @@ describe("TaskAgentsClient", () => {
         max_input_images: 1,
       },
     })
+  })
+
+  it("previews and imports Claude agents from the import dialog", async () => {
+    render(<TaskAgentsClient />)
+
+    fireEvent.click(screen.getByRole("button", { name: "actions.importClaude" }))
+
+    fireEvent.change(screen.getByLabelText("importDialog.sourcePathLabel"), {
+      target: { value: "C:/Users/test/.claude/agents" },
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "importDialog.previewAction" }))
+
+    await waitFor(() => {
+      expect(mockPreviewClaudeAgentImport).toHaveBeenCalledWith({
+        source_path: "C:/Users/test/.claude/agents",
+        repo_url: "",
+        revision: "",
+      })
+    })
+
+    expect(await screen.findByText("Frontend Developer")).not.toBeNull()
+    expect(
+      screen.getByText('importDialog.toolSummary:{"value":"tool.release"}'),
+    ).not.toBeNull()
+    expect(
+      screen.getByText('importDialog.skillSummary:{"value":"skill.alpha"}'),
+    ).not.toBeNull()
+
+    fireEvent.click(screen.getByRole("button", { name: "importDialog.importAction" }))
+
+    await waitFor(() => {
+      expect(mockImportClaudeAgents).toHaveBeenCalledWith({
+        source_path: "C:/Users/test/.claude/agents",
+        repo_url: "",
+        revision: "",
+      })
+    })
+  })
+
+  it("shows a prompt-only hint when import preview has no default bindings", async () => {
+    mockPreviewClaudeAgentImport.mockResolvedValueOnce({
+      root_path: "C:/tmp/agency-agents",
+      items: [
+        {
+          source_path: "C:/tmp/agency-agents/strategy/pm.md",
+          relative_path: "strategy/pm.md",
+          name: "Product Strategist",
+          description: "Shapes product thinking",
+          tags: ["strategy", "claude-agent"],
+          inferred_mcp_tool_ids: [],
+          inferred_guidance_skill_ids: [],
+          exists: false,
+          existing_agent_id: null,
+          existing_agent_name: null,
+        },
+      ],
+    })
+
+    render(<TaskAgentsClient />)
+
+    fireEvent.click(screen.getByRole("button", { name: "actions.importClaude" }))
+    fireEvent.change(screen.getByLabelText("importDialog.repoUrlLabel"), {
+      target: { value: "https://github.com/org/agency-agents" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "importDialog.previewAction" }))
+
+    expect(await screen.findByText("Product Strategist")).not.toBeNull()
+    expect(screen.getByText("importDialog.noBindings")).not.toBeNull()
   })
 })

@@ -122,19 +122,14 @@ describe("useChatStore pending takeover state", () => {
     expect(useChatStore.getState().pendingTakeover).toBeNull()
   })
 
-  it("clears pending takeover state when switching assistants", () => {
+  it("clears pending takeover state when resetting chat", () => {
     useChatStore.getState().setPendingTakeover({
       input: "queued follow-up",
       attachments: [],
       selectedKnowledgeFileIds: ["doc-3"],
     })
 
-    useChatStore.getState().switchSelectedAssistant("assistant-2", {
-      id: "assistant-2",
-      name: "Assistant Two",
-      desc: "",
-      color: "from-sky-500 to-cyan-500",
-    })
+    useChatStore.getState().resetChat()
 
     expect(useChatStore.getState().pendingTakeover).toBeNull()
   })

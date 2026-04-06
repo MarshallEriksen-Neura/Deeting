@@ -2,6 +2,10 @@ use tauri::{AppHandle, State};
 
 use crate::state::AppState;
 
+use super::import::{
+    import_claude_agents as import_claude_agents_inner,
+    preview_claude_agents_import as preview_claude_agents_import_inner,
+};
 use super::indexing::{
     index_custom_task_agent, index_custom_task_agents, remove_custom_task_agent_index,
 };
@@ -15,9 +19,11 @@ use super::store::{
     update_custom_task_agent as update_custom_task_agent_inner,
 };
 use super::types::{
-    CreateCustomTaskAgentRequest, CustomTaskAgentBindableGuidanceSkill,
+    ClaudeAgentImportPreviewResponse, CreateCustomTaskAgentRequest,
+    CustomTaskAgentBindableGuidanceSkill,
     CustomTaskAgentBindableMcpTool, CustomTaskAgentBindingCatalogResponse,
     CustomTaskAgentPreviewRequest, CustomTaskAgentPreviewResponse, CustomTaskAgentProfile,
+    ImportClaudeAgentsRequest, ImportClaudeAgentsResponse, PreviewClaudeAgentImportRequest,
     UpdateCustomTaskAgentRequest,
 };
 
@@ -148,6 +154,38 @@ pub async fn reindex_custom_task_agents(state: State<'_, AppState>) -> Result<()
         .map_err(|err| err.to_string())?;
     index_custom_task_agents(state.inner(), &profiles).await?;
     Ok(())
+}
+
+#[tauri::command]
+pub async fn preview_claude_agent_import(
+    state: State<'_, AppState>,
+    payload: PreviewClaudeAgentImportRequest,
+) -> Result<ClaudeAgentImportPreviewResponse, String> {
+    preview_claude_agents_import_inner(
+        state.mcp.store.as_ref(),
+        payload.source_path.as_deref(),
+        payload.repo_url.as_deref(),
+        payload.revision.as_deref(),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn import_claude_agents(
+    state: State<'_, AppState>,
+    payload: ImportClaudeAgentsRequest,
+) -> Result<ImportClaudeAgentsResponse, String> {
+    let response = import_claude_agents_inner(
+        state.mcp.store.as_ref(),
+        payload.source_path.as_deref(),
+        payload.repo_url.as_deref(),
+        payload.revision.as_deref(),
+    )
+    .await?;
+    for profile in &response.profiles {
+        sync_custom_task_agent_index(state.inner(), profile).await?;
+    }
+    Ok(response)
 }
 
 async fn sync_custom_task_agent_index(

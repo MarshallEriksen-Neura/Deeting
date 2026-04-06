@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { useI18n } from "@/hooks/use-i18n";
 import { useVideoGenerationStore } from "@/store/video-generation-store";
 import { useVideoGenerationTasks } from "@/lib/swr/use-video-generation-tasks";
-import { useChatService } from "@/hooks/use-chat-service";
+import { useChatModels } from "@/hooks/use-chat-models";
 import { createSessionId } from "@/lib/chat/session-id";
 import {
   createVideoGenerationTask,
@@ -48,7 +48,7 @@ export default function VideoDashboard() {
     motionBucketId,
   } = useVideoGenerationStore();
 
-  const { models } = useChatService({
+  const { models } = useChatModels({
     enabled: true,
     modelCapability: "video_generation",
   });

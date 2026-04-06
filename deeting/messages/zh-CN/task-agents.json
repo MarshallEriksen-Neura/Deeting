@@ -15,7 +15,8 @@
       "reindex": "重新索引",
       "reindexing": "重新索引中...",
       "runPreview": "运行预览",
-      "runningPreview": "预览运行中..."
+      "runningPreview": "预览运行中...",
+      "importClaude": "导入 Claude 智能体"
     },
     "stats": {
       "total": "智能体总数",
@@ -313,7 +314,36 @@
       "deleteFailed": "删除任务智能体失败",
       "reindexed": "任务智能体已重新索引",
       "reindexFailed": "重新索引任务智能体失败",
-      "previewFailed": "运行预览失败"
+      "previewFailed": "运行预览失败",
+      "importPreviewFailed": "Claude 智能体导入预览失败",
+      "importFailed": "Claude 智能体导入失败",
+      "imported": "Claude 智能体导入完成（新建 {created} 个，更新 {updated} 个）"
+    },
+    "importDialog": {
+      "title": "导入 Claude 智能体",
+      "description": "先预览 Claude agents 目录中的 markdown 智能体，再将它们导入为本地任务智能体。",
+      "sourcePathLabel": "来源路径",
+      "sourcePathPlaceholder": "留空时使用 ~/.claude/agents",
+      "sourcePathHint": "可以指向 Claude agents 目录，也可以指向单个 markdown 智能体文件。",
+      "previewTitle": "导入预览",
+      "previewRoot": "解析后的根目录：{value}",
+      "previewEmpty": "先运行预览，查看哪些 Claude 智能体可以导入。",
+      "previewAction": "预览导入",
+      "previewing": "预览中...",
+      "importAction": "导入智能体",
+      "importing": "导入中...",
+      "badges": {
+        "new": "新建",
+        "update": "更新"
+      },
+      "repoUrlLabel": "仓库地址",
+      "repoUrlPlaceholder": "https://github.com/org/agency-agents",
+      "repoUrlHint": "也可以直接从 GitHub 仓库导入。",
+      "revisionLabel": "版本",
+      "revisionPlaceholder": "可选分支或标签",
+      "toolSummary": "将自动绑定工具：{value}",
+      "skillSummary": "将自动绑定技能：{value}",
+      "noBindings": "未检测到安全默认绑定，此智能体将以纯提示词方式导入。"
     }
   }
 }

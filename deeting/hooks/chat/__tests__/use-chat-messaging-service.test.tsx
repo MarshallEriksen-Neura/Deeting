@@ -77,13 +77,6 @@ describe("useChatMessagingService pending takeover orchestration", () => {
         topP: 1,
         maxTokens: null,
       },
-      selectedAssistantId: "assistant-1",
-      selectedAssistant: {
-        id: "assistant-1",
-        name: "Assistant One",
-        desc: "",
-        color: "from-sky-500 to-cyan-500",
-      },
       sessionId: "session-1",
     })
   })

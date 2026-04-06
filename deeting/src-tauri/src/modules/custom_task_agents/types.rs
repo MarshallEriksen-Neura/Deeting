@@ -47,6 +47,16 @@ pub struct CustomTaskAgentProfile {
     pub discoverable: bool,
     pub is_enabled: bool,
     pub is_deleted: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_repo: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_hash: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -68,6 +78,11 @@ pub struct CreateCustomTaskAgentRequest {
     pub tags: Option<Vec<String>>,
     pub discoverable: Option<bool>,
     pub is_enabled: Option<bool>,
+    pub source_kind: Option<String>,
+    pub source_path: Option<String>,
+    pub source_repo: Option<String>,
+    pub source_ref: Option<String>,
+    pub source_hash: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -86,6 +101,11 @@ pub struct UpdateCustomTaskAgentRequest {
     pub tags: Option<Vec<String>>,
     pub discoverable: Option<bool>,
     pub is_enabled: Option<bool>,
+    pub source_kind: Option<String>,
+    pub source_path: Option<String>,
+    pub source_repo: Option<String>,
+    pub source_ref: Option<String>,
+    pub source_hash: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -161,4 +181,58 @@ pub struct CustomTaskAgentBindingCatalogResponse {
     pub guidance_skills: Vec<CustomTaskAgentBindableGuidanceSkill>,
     #[serde(default)]
     pub skill_actions: Vec<CustomTaskAgentBindableSkillAction>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PreviewClaudeAgentImportRequest {
+    #[serde(default)]
+    pub source_path: Option<String>,
+    #[serde(default)]
+    pub repo_url: Option<String>,
+    #[serde(default)]
+    pub revision: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClaudeAgentImportPreviewItem {
+    pub source_path: String,
+    pub relative_path: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub inferred_mcp_tool_ids: Vec<String>,
+    #[serde(default)]
+    pub inferred_guidance_skill_ids: Vec<String>,
+    pub exists: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub existing_agent_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub existing_agent_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClaudeAgentImportPreviewResponse {
+    pub root_path: String,
+    #[serde(default)]
+    pub items: Vec<ClaudeAgentImportPreviewItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportClaudeAgentsRequest {
+    #[serde(default)]
+    pub source_path: Option<String>,
+    #[serde(default)]
+    pub repo_url: Option<String>,
+    #[serde(default)]
+    pub revision: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportClaudeAgentsResponse {
+    pub root_path: String,
+    pub created_count: usize,
+    pub updated_count: usize,
+    #[serde(default)]
+    pub profiles: Vec<CustomTaskAgentProfile>,
 }

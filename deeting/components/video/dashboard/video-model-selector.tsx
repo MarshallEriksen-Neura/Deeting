@@ -3,7 +3,7 @@
 import { useMemo, useEffect } from "react";
 import { Film, ChevronDown, Loader2 } from "lucide-react";
 import { useI18n } from "@/hooks/use-i18n";
-import { useChatService } from "@/hooks/use-chat-service";
+import { useChatModels } from "@/hooks/use-chat-models";
 import { useVideoGenerationStore } from "@/store/video-generation-store";
 import {
   Select,
@@ -19,7 +19,7 @@ export function VideoModelSelector() {
   const t = useI18n("video");
   const { selectedModelId, setSelectedModelId } = useVideoGenerationStore();
 
-  const { models, modelGroups, isLoadingModels } = useChatService({
+  const { models, modelGroups, isLoadingModels } = useChatModels({
     enabled: true,
     modelCapability: "video_generation",
   });

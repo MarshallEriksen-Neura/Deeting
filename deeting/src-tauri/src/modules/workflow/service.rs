@@ -1319,6 +1319,11 @@ Goal: Produce a useful output
                 tags: None,
                 discoverable: Some(true),
                 is_enabled: Some(true),
+                source_kind: None,
+                source_path: None,
+                source_repo: None,
+                source_ref: None,
+                source_hash: None,
             },
         )
         .await

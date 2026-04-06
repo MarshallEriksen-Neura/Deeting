@@ -10,18 +10,22 @@ import {
   createCustomTaskAgent,
   deleteCustomTaskAgent,
   getCustomTaskAgentBindingCatalog,
+  importClaudeAgents,
   listCustomTaskAgents,
   previewCustomTaskAgent,
+  previewClaudeAgentImport,
   reindexCustomTaskAgents,
   supportsLocalCustomTaskAgents,
   updateCustomTaskAgent,
+  type ClaudeAgentImportPreviewResponse,
   type CustomTaskAgentBindingCatalog,
   type CustomTaskAgentInvocationKind,
   type CustomTaskAgentPreviewResponse,
   type CustomTaskAgentProfile,
+  type ImportClaudeAgentsResponse,
   type UpsertCustomTaskAgentPayload,
 } from "@/lib/api/custom-task-agents"
-import { useChatService } from "@/hooks/use-chat-service"
+import { useChatModels } from "@/hooks/use-chat-models"
 import {
   applyTaskAgentImageConfigToModelConfig,
   parseTaskAgentImageExtraParamsJson,
@@ -87,8 +91,12 @@ export function useTaskAgents(t: Translation) {
   const [isSaving, setIsSaving] = React.useState(false)
   const [isPreviewing, setIsPreviewing] = React.useState(false)
   const [isReindexing, setIsReindexing] = React.useState(false)
+  const [isImportPreviewing, setIsImportPreviewing] = React.useState(false)
+  const [isImporting, setIsImporting] = React.useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [discardDialogOpen, setDiscardDialogOpen] = React.useState(false)
+  const [claudeImportPreview, setClaudeImportPreview] = React.useState<ClaudeAgentImportPreviewResponse | null>(null)
+  const [claudeImportError, setClaudeImportError] = React.useState<string | null>(null)
   const pendingNavigationRef = React.useRef<(() => void) | null>(null)
   const hydratedSelectionRef = React.useRef<string | null>(null)
 
@@ -120,9 +128,8 @@ export function useTaskAgents(t: Translation) {
     { revalidateOnFocus: false, keepPreviousData: true },
   )
 
-  const { modelGroups, isLoadingModels } = useChatService({
+  const { modelGroups, isLoadingModels } = useChatModels({
     enabled: isDesktop,
-    fetchAssistants: false,
     modelCapability:
       draft.invocation_kind === "image_generation"
         ? "image_generation"
@@ -648,6 +655,67 @@ export function useTaskAgents(t: Translation) {
     }
   }, [previewDraft, selectedAgent, t])
 
+  const handlePreviewClaudeImport = React.useCallback(async (payload?: {
+    source_path?: string | null
+    repo_url?: string | null
+    revision?: string | null
+  }) => {
+    try {
+      setIsImportPreviewing(true)
+      setClaudeImportError(null)
+      const result = await previewClaudeAgentImport(payload)
+      setClaudeImportPreview(result)
+      return result
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("toast.importPreviewFailed")
+      setClaudeImportError(message)
+      toast.error(message)
+      throw error
+    } finally {
+      setIsImportPreviewing(false)
+    }
+  }, [t])
+
+  const handleImportClaudeAgents = React.useCallback(async (payload?: {
+    source_path?: string | null
+    repo_url?: string | null
+    revision?: string | null
+  }) => {
+    try {
+      setIsImporting(true)
+      setClaudeImportError(null)
+      const result: ImportClaudeAgentsResponse = await importClaudeAgents(payload)
+      await mutateAgents((current = []) => {
+        const byId = new Map(current.map((item) => [item.id, item]))
+        for (const profile of result.profiles) {
+          byId.set(profile.id, profile)
+        }
+        return Array.from(byId.values()).toSorted((left, right) =>
+          right.updated_at.localeCompare(left.updated_at),
+        )
+      }, { revalidate: false })
+      if (result.profiles[0]) {
+        setSelectedAgentId(result.profiles[0].id)
+        setCreateFlowStep("editor")
+      }
+      setClaudeImportPreview(null)
+      toast.success(
+        t("toast.imported", {
+          created: result.created_count,
+          updated: result.updated_count,
+        }),
+      )
+      return result
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("toast.importFailed")
+      setClaudeImportError(message)
+      toast.error(message)
+      throw error
+    } finally {
+      setIsImporting(false)
+    }
+  }, [mutateAgents, t])
+
   return {
     // Platform
     desktopSupport,
@@ -706,10 +774,14 @@ export function useTaskAgents(t: Translation) {
     isSaving,
     isPreviewing,
     isReindexing,
+    isImportPreviewing,
+    isImporting,
     deleteDialogOpen,
     discardDialogOpen,
     previewResult,
     previewError,
+    claudeImportPreview,
+    claudeImportError,
 
     // Actions
     setSearchQuery,
@@ -733,6 +805,8 @@ export function useTaskAgents(t: Translation) {
     handleDelete,
     handleReindex,
     handleRunPreview,
+    handlePreviewClaudeImport,
+    handleImportClaudeAgents,
     handleDiscardConfirm,
     handleDiscardCancel,
   }

@@ -42,9 +42,9 @@ describe("getRuntimeHeaderNavItems", () => {
     const hrefs = getRuntimeHeaderNavItems(defaultNavItems, true).map((item) => item.href)
 
     expect(hrefs).toContain("/chat")
-    expect(hrefs).toContain("/assistants")
     expect(hrefs).toContain("/mcp")
     expect(hrefs).toContain("/dashboard")
+    expect(hrefs).not.toContain("/assistants")
     expect(hrefs).not.toContain("/docs")
     expect(hrefs).not.toContain("/download")
   })

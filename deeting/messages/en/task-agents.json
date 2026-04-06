@@ -8,6 +8,7 @@
     },
     "actions": {
       "new": "New Agent",
+      "importClaude": "Import Claude Agents",
       "save": "Save",
       "saving": "Saving...",
       "create": "Create Agent",
@@ -283,6 +284,32 @@
       "toolTrace": "Tool Trace",
       "raw": "Raw Payload"
     },
+    "importDialog": {
+      "title": "Import Claude Agents",
+      "description": "Preview markdown agents from a Claude agents directory, then import them as local task agents.",
+      "sourcePathLabel": "Source Path",
+      "sourcePathPlaceholder": "Leave blank to use ~/.claude/agents",
+      "sourcePathHint": "You can point at a Claude agents folder or a single markdown agent file.",
+      "repoUrlLabel": "Repository URL",
+      "repoUrlPlaceholder": "https://github.com/org/agency-agents",
+      "repoUrlHint": "Alternatively import directly from a GitHub repository.",
+      "revisionLabel": "Revision",
+      "revisionPlaceholder": "Optional branch or tag",
+      "previewTitle": "Import Preview",
+      "previewRoot": "Resolved root: {value}",
+      "previewEmpty": "Run a preview to inspect which Claude agents can be imported.",
+      "toolSummary": "Auto-bind tools: {value}",
+      "skillSummary": "Auto-bind skills: {value}",
+      "noBindings": "No safe default bindings detected. This agent will import as prompt-only.",
+      "previewAction": "Preview Import",
+      "previewing": "Previewing...",
+      "importAction": "Import Agents",
+      "importing": "Importing...",
+      "badges": {
+        "new": "New",
+        "update": "Update"
+      }
+    },
     "debug": {
       "title": "Debug Snapshot",
       "description": "Review the exact local payload that will be persisted and the runtime inputs currently configured.",
@@ -313,7 +340,10 @@
       "deleteFailed": "Failed to delete task agent",
       "reindexed": "Task agents reindexed",
       "reindexFailed": "Failed to reindex task agents",
-      "previewFailed": "Failed to run preview"
+      "previewFailed": "Failed to run preview",
+      "importPreviewFailed": "Failed to preview Claude agent import",
+      "importFailed": "Failed to import Claude agents",
+      "imported": "Imported Claude agents ({created} created, {updated} updated)"
     }
   }
 }

@@ -171,6 +171,11 @@ mod tests {
             discoverable: true,
             is_enabled,
             is_deleted,
+            source_kind: None,
+            source_path: None,
+            source_repo: None,
+            source_ref: None,
+            source_hash: None,
             created_at: "2026-03-25T00:00:00Z".to_string(),
             updated_at: "2026-03-25T00:00:00Z".to_string(),
         }

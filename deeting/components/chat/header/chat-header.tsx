@@ -45,7 +45,7 @@ export const ChatHeader = React.memo<ChatHeaderProps>(function ChatHeader({
   const t = useI18n("chat")
 
   const handleBack = React.useCallback(() => {
-    router.push('/assistants')
+    router.push('/dashboard/user/task-agents')
   }, [router])
 
   const handleModelChange = React.useCallback((value: string) => {

@@ -1,7 +1,28 @@
-import { render, screen } from "@testing-library/react"
 import AssistantsPage from "@/app/[locale]/assistants/page"
 
-it("renders create assistant action", () => {
-  render(<AssistantsPage />)
-  expect(screen.getByText(/create/i)).toBeInTheDocument()
+const redirectMock = jest.fn()
+const setRequestLocaleMock = jest.fn()
+
+jest.mock("next/navigation", () => ({
+  redirect: (...args: unknown[]) => redirectMock(...args),
+}))
+
+jest.mock("next-intl/server", () => ({
+  setRequestLocale: (...args: unknown[]) => setRequestLocaleMock(...args),
+}))
+
+describe("AssistantsPage", () => {
+  beforeEach(() => {
+    redirectMock.mockClear()
+    setRequestLocaleMock.mockClear()
+  })
+
+  it("redirects assistant route to task agents", async () => {
+    await AssistantsPage({
+      params: Promise.resolve({ locale: "en" }),
+    })
+
+    expect(setRequestLocaleMock).toHaveBeenCalledWith("en")
+    expect(redirectMock).toHaveBeenCalledWith("/en/dashboard/user/task-agents")
+  })
 })

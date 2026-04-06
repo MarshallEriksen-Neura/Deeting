@@ -23,7 +23,7 @@ import {
   Bot,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { MonitorTask, MonitorTaskCreateInput } from "@/lib/api/monitors"
+import type { MonitorTask, MonitorTaskCreateInput, MonitorTaskUpdateInput } from "@/lib/api/monitors"
 import { createMonitorTask, updateMonitorTask } from "@/lib/api/monitors"
 import {
   listCustomTaskAgents,
@@ -90,7 +90,7 @@ export function MonitorCreateModal({
   // Form state
   const [title, setTitle] = useState("")
   const [objective, setObjective] = useState("")
-  const [assistantId, setAssistantId] = useState("")
+  const [taskAgentId, setTaskAgentId] = useState("")
   const [analysisMode, setAnalysisMode] = useState<"concise" | "deep" | "alert_first">("concise")
   const [cronPreset, setCronPreset] = useState("0 */6 * * *")
   const [customCron, setCustomCron] = useState("")
@@ -139,7 +139,7 @@ export function MonitorCreateModal({
     if (editTask) {
       setTitle(editTask.title)
       setObjective(editTask.objective)
-      setAssistantId(editTask.assistant_id ?? "")
+      setTaskAgentId(editTask.task_agent_id ?? editTask.assistant_id ?? "")
       setAnalysisMode(editTask.analysis_mode)
       const matchedPreset = CRON_PRESETS.find(
         (p) => p.value === editTask.cron_expr
@@ -156,7 +156,7 @@ export function MonitorCreateModal({
     } else {
       setTitle("")
       setObjective("")
-      setAssistantId("")
+      setTaskAgentId("")
       setAnalysisMode("concise")
       setCronPreset("0 */6 * * *")
       setCustomCron("")
@@ -167,25 +167,27 @@ export function MonitorCreateModal({
   const cronValue = cronPreset === "custom" ? customCron : cronPreset
 
   const handleSubmit = async () => {
-    if (!title.trim() || !objective.trim() || !assistantId.trim()) return
+    if (!title.trim() || !objective.trim() || !taskAgentId.trim()) return
     setSubmitting(true)
     try {
       if (isEdit) {
-        await updateMonitorTask(editTask.id, {
+        const payload: MonitorTaskUpdateInput = {
           title: title.trim(),
           objective: objective.trim(),
-          assistant_id: assistantId.trim(),
+          task_agent_id: taskAgentId.trim(),
           cron_expr: cronValue,
           analysis_mode: analysisMode,
           notify_config: selectedChannelIds.length
             ? { channel_ids: selectedChannelIds }
             : undefined,
-        })
+        }
+        await updateMonitorTask(editTask.id, payload)
       } else {
         const payload: MonitorTaskCreateInput = {
           title: title.trim(),
           objective: objective.trim(),
-          assistant_id: assistantId.trim(),
+          task_agent_id: taskAgentId.trim(),
+          assistant_id: taskAgentId.trim(),
           cron_expr: cronValue,
           analysis_mode: analysisMode,
           notify_config: selectedChannelIds.length
@@ -224,8 +226,8 @@ export function MonitorCreateModal({
             </label>
             {bindableTaskAgents.length > 0 ? (
               <select
-                value={assistantId}
-                onChange={(event) => setAssistantId(event.target.value)}
+                value={taskAgentId}
+                onChange={(event) => setTaskAgentId(event.target.value)}
                 className="w-full rounded-xl border border-white/10 bg-[var(--foreground)]/[0.03] px-3.5 py-2.5 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-[var(--primary)]/40 focus:ring-1 focus:ring-[var(--primary)]/20"
               >
                 <option value="">请选择一个聊天任务智能体</option>
@@ -434,11 +436,11 @@ export function MonitorCreateModal({
           <button
             onClick={handleSubmit}
             disabled={
-              submitting || !title.trim() || !objective.trim() || !assistantId.trim()
+              submitting || !title.trim() || !objective.trim() || !taskAgentId.trim()
             }
             className={cn(
               "flex items-center gap-2 rounded-xl bg-[var(--primary)] px-5 py-2 text-sm font-medium text-white shadow-lg shadow-[var(--primary)]/20 transition-all hover:shadow-xl hover:shadow-[var(--primary)]/30",
-              (submitting || !title.trim() || !objective.trim() || !assistantId.trim()) &&
+              (submitting || !title.trim() || !objective.trim() || !taskAgentId.trim()) &&
                 "opacity-50 pointer-events-none"
             )}
           >

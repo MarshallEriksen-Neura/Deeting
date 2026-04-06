@@ -123,28 +123,12 @@ fn build_local_execution_lane_aux_tools() -> Vec<serde_json::Value> {
         serde_json::json!({
             "type": "function",
             "function": {
-                "name": "consult_expert_network",
-                "description": "Search expert capabilities by intent query and return top candidates. This tool only searches and does not change reply personality by itself.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "intent_query": { "type": "string", "description": "The intent or task description to search for expert capabilities." },
-                        "k": { "type": "integer", "description": "Number of candidates to return.", "default": 3 },
-                        "confidence": { "type": "number", "description": "Model confidence in the routing decision (0-1).", "default": 0 }
-                    },
-                    "required": ["intent_query", "confidence"]
-                }
-            }
-        }),
-        serde_json::json!({
-            "type": "function",
-            "function": {
                 "name": "attach_capability",
                 "description": "Attach an expert capability explicitly for the current request-scoped agent loop. This augments domain capability without changing reply personality.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "capability_id": { "type": "string", "description": "Capability id returned by consult_expert_network." },
+                        "capability_id": { "type": "string", "description": "Capability id discovered from search_sdk or other capability lookup surfaces." },
                         "reason": { "type": "string", "description": "Optional reason for the capability attachment decision." }
                     },
                     "required": ["capability_id"]

@@ -242,10 +242,10 @@ export function MonitorTaskCard({
       </p>
 
       <div className="mb-4 flex flex-wrap gap-2">
-        {task.assistant_id ? (
+        {(task.task_agent_id ?? task.assistant_id) ? (
           <span className="inline-flex items-center gap-1 rounded-full bg-[var(--primary)]/10 px-2.5 py-1 text-[10px] font-medium text-[var(--primary)]">
             <Bot className="h-3 w-3" />
-            {task.assistant_name || task.assistant_id}
+            {task.task_agent_name || task.assistant_name || task.task_agent_id || task.assistant_id}
           </span>
         ) : null}
         <span
@@ -352,13 +352,13 @@ export function MonitorTaskCard({
             <Pencil className="h-3 w-3" />
             修复绑定
           </button>
-        ) : task.assistant_id ? (
+        ) : (task.task_agent_id ?? task.assistant_id) ? (
           <a
-            href={`/chat?assistant=${task.assistant_id}`}
+            href="/dashboard/user/task-agents"
             className="ml-auto flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs text-[var(--muted)] transition-colors hover:bg-[var(--foreground)]/5 hover:text-[var(--foreground)]"
           >
             <Bot className="h-3 w-3" />
-            寻猎者
+            管理智能体
           </a>
         ) : null}
       </div>

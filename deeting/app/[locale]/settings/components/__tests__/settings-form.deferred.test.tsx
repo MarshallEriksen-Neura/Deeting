@@ -57,8 +57,8 @@ describe("SettingsForm deferred sections", () => {
       jest.doMock("@/i18n/routing", () => ({
         useRouter: () => ({ push: jest.fn() }),
       }))
-      jest.doMock("@/hooks/use-chat-service", () => ({
-        useChatService: () => ({ modelGroups: [], isLoadingModels: false }),
+      jest.doMock("@/hooks/use-chat-models", () => ({
+        useChatModels: () => ({ modelGroups: [], isLoadingModels: false }),
       }))
       jest.doMock("@/lib/api/local-embedding-rebuild", () => ({
         LOCAL_EMBEDDING_REBUILD_PROGRESS_EVENT: "progress",

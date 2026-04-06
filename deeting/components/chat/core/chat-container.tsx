@@ -29,7 +29,6 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
 
   // 从 store 获取状态和 action
   const initSession = useChatStore((state) => state.initSession)
-  const selectedAssistant = useChatStore((state) => state.selectedAssistant)
   const initialized = useChatStore((state) => state.initialized)
 
   // 环境检测
@@ -48,13 +47,12 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
   // 唯一的 Effect：初始化会话
   // 只在 agentId 或 sessionId 变化时调用
   React.useEffect(() => {
-    const runtimeAgentId = isTauriRuntime ? "" : agentId
-    const initKey = `${runtimeAgentId}:${sessionId ?? ""}`
+    const initKey = `${sessionId ?? ""}`
     if (initCalledRef.current === initKey) return
 
     initCalledRef.current = initKey
-    void initSession(isTauriRuntime ? "" : agentId, sessionId, null)
-  }, [agentId, sessionId, isTauriRuntime, initSession])
+    void initSession(sessionId)
+  }, [sessionId, initSession])
 
   // 显示加载状态
   const showLoading = !initialized
@@ -62,11 +60,11 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
   return (
     <ChatErrorBoundary>
       <ChatLayout
-        agent={selectedAssistant ?? undefined}
+        agent={undefined}
         isLoadingAssistants={showLoading}
         allowMissingAgent
       >
-        <ChatContent agent={selectedAssistant ?? undefined} />
+        <ChatContent agent={undefined} />
       </ChatLayout>
     </ChatErrorBoundary>
   )

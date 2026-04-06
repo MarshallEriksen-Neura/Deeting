@@ -19,7 +19,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useI18n } from "@/hooks/use-i18n";
-import { useChatService } from "@/hooks/use-chat-service";
+import { useChatModels } from "@/hooks/use-chat-models";
 import { useRouter, type AppLocale } from "@/i18n/routing";
 import {
   LOCAL_EMBEDDING_REBUILD_PROGRESS_EVENT,
@@ -114,14 +114,14 @@ export function SettingsForm({
 
   // Fetch chat models for personal settings
   const { modelGroups: chatModelGroups, isLoadingModels: isLoadingChatModels } =
-    useChatService({
+    useChatModels({
       enabled: isAuthenticated,
       modelCapability: "chat",
     });
   const {
     modelGroups: embeddingModelGroups,
     isLoadingModels: isLoadingEmbeddingModels,
-  } = useChatService({
+  } = useChatModels({
     enabled: isAuthenticated,
     modelCapability: "embedding",
   });

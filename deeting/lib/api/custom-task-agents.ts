@@ -42,6 +42,11 @@ export const CustomTaskAgentProfileSchema = z.object({
   discoverable: z.boolean(),
   is_enabled: z.boolean(),
   is_deleted: z.boolean(),
+  source_kind: z.string().nullish(),
+  source_path: z.string().nullish(),
+  source_repo: z.string().nullish(),
+  source_ref: z.string().nullish(),
+  source_hash: z.string().nullish(),
   created_at: z.string(),
   updated_at: z.string(),
 })
@@ -100,6 +105,31 @@ export const CustomTaskAgentPreviewResponseSchema = z.object({
   raw: z.unknown().nullish(),
 })
 
+export const ClaudeAgentImportPreviewItemSchema = z.object({
+  source_path: z.string(),
+  relative_path: z.string(),
+  name: z.string(),
+  description: z.string().nullish(),
+  tags: z.array(z.string()).default([]),
+  inferred_mcp_tool_ids: z.array(z.string()).default([]),
+  inferred_guidance_skill_ids: z.array(z.string()).default([]),
+  exists: z.boolean(),
+  existing_agent_id: z.string().nullish(),
+  existing_agent_name: z.string().nullish(),
+})
+
+export const ClaudeAgentImportPreviewResponseSchema = z.object({
+  root_path: z.string(),
+  items: z.array(ClaudeAgentImportPreviewItemSchema).default([]),
+})
+
+export const ImportClaudeAgentsResponseSchema = z.object({
+  root_path: z.string(),
+  created_count: z.number(),
+  updated_count: z.number(),
+  profiles: z.array(CustomTaskAgentProfileSchema).default([]),
+})
+
 export type CustomTaskAgentInvocationKind = z.infer<
   typeof CustomTaskAgentInvocationKindSchema
 >
@@ -121,6 +151,15 @@ export type CustomTaskAgentBindingCatalog = z.infer<
 export type CustomTaskAgentPreviewResponse = z.infer<
   typeof CustomTaskAgentPreviewResponseSchema
 >
+export type ClaudeAgentImportPreviewItem = z.infer<
+  typeof ClaudeAgentImportPreviewItemSchema
+>
+export type ClaudeAgentImportPreviewResponse = z.infer<
+  typeof ClaudeAgentImportPreviewResponseSchema
+>
+export type ImportClaudeAgentsResponse = z.infer<
+  typeof ImportClaudeAgentsResponseSchema
+>
 
 export interface UpsertCustomTaskAgentPayload {
   name: string
@@ -138,6 +177,11 @@ export interface UpsertCustomTaskAgentPayload {
   tags?: string[]
   discoverable?: boolean
   is_enabled?: boolean
+  source_kind?: string | null
+  source_path?: string | null
+  source_repo?: string | null
+  source_ref?: string | null
+  source_hash?: string | null
 }
 
 export interface CustomTaskAgentPreviewPayload {
@@ -230,4 +274,34 @@ export async function previewCustomTaskAgent(
 
 export async function reindexCustomTaskAgents(): Promise<void> {
   await invokeTauri<void>("reindex_custom_task_agents")
+}
+
+export async function previewClaudeAgentImport(payload?: {
+  source_path?: string | null
+  repo_url?: string | null
+  revision?: string | null
+}): Promise<ClaudeAgentImportPreviewResponse> {
+  const data = await invokeTauri<unknown>("preview_claude_agent_import", {
+    payload: {
+      source_path: payload?.source_path?.trim() || null,
+      repo_url: payload?.repo_url?.trim() || null,
+      revision: payload?.revision?.trim() || null,
+    },
+  })
+  return ClaudeAgentImportPreviewResponseSchema.parse(data)
+}
+
+export async function importClaudeAgents(payload?: {
+  source_path?: string | null
+  repo_url?: string | null
+  revision?: string | null
+}): Promise<ImportClaudeAgentsResponse> {
+  const data = await invokeTauri<unknown>("import_claude_agents", {
+    payload: {
+      source_path: payload?.source_path?.trim() || null,
+      repo_url: payload?.repo_url?.trim() || null,
+      revision: payload?.revision?.trim() || null,
+    },
+  })
+  return ImportClaudeAgentsResponseSchema.parse(data)
 }

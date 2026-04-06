@@ -1,7 +1,6 @@
 use super::{
     append_streamable_local_tool_result_blocks, build_auto_code_mode_tool_feedback,
-    build_local_code_mode_entry_tools_with_allowlist, build_local_consult_expert_network_result,
-    build_local_sdk_search_result_bundle_with_feedback_runtime,
+    build_local_code_mode_entry_tools_with_allowlist, build_local_sdk_search_result_bundle_with_feedback_runtime,
     build_local_tool_call_install_gate_error_meta, build_local_tool_trace_blocks,
     execute_or_queue_mcp_tool_call_with_tool_ref, extract_chat_tool_calls,
     install_local_skill_from_onboarding_request, request_provider_chat_completion,
@@ -179,7 +178,6 @@ async fn record_query_affinity_from_tool_meta(
             "search_sdk"
                 | "get_tool_schema"
                 | "execute_code_plan"
-                | "consult_expert_network"
                 | "attach_capability"
                 | "detach_capability"
         ) {
@@ -1085,37 +1083,6 @@ async fn maybe_handle_local_code_mode_tool_calls(
                 "SDK Search Result for '{}':\n{}",
                 query,
                 serde_json::to_string_pretty(&search_res).unwrap()
-            ));
-        } else if tool_name == "consult_expert_network" {
-            realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call.id,"toolName":tool_name,"status":"running"})]);
-            let intent_query = call
-                .arguments
-                .get("intent_query")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let limit = call
-                .arguments
-                .get("k")
-                .and_then(|v| v.as_u64())
-                .map(|v| v as usize)
-                .unwrap_or(3);
-            let consult_res = build_local_consult_expert_network_result(
-                app_state,
-                intent_query,
-                limit,
-                active_capability.map(|v| v.capability_id.as_str()),
-            )
-            .await;
-            synthesized = true;
-            let meta = serde_json::json!({"id":call.id,"name":tool_name,"status":"success","result":consult_res});
-            let mut streamed_blocks = Vec::new();
-            append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
-            realtime_emitter.emit_blocks(streamed_blocks);
-            tool_call_meta.push(meta);
-            results.push(format!(
-                "Expert Capability Consult Result for '{}':\n{}",
-                intent_query,
-                serde_json::to_string_pretty(&consult_res).unwrap()
             ));
         } else if tool_name == "attach_capability" {
             realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call.id,"toolName":tool_name,"status":"running"})]);

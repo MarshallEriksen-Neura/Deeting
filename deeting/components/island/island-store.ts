@@ -12,7 +12,6 @@ import { loadConversationHistoryPage } from "@/lib/chat/history-loader";
 import { extractAssistantTextFromBlocks } from "@/lib/chat/message-blocks";
 import { findLatestUnresolvedToolApproval } from "@/lib/chat/tool-approval";
 import type { Message } from "@/lib/chat/message-types";
-import type { ChatAssistant } from "@/store/chat-store";
 import { useChatStore } from "@/store/chat-store";
 import { isTauriRuntime as detectTauriRuntime } from "@/lib/runtime/tauri";
 import { resolveIslandChatRequestConfig } from "./island-chat-request";
@@ -40,7 +39,6 @@ export type IslandMode = "collapsed" | "expanded" | "hidden";
 
 type IslandChatSnapshot = {
   sessionId: string | null;
-  selectedAssistant: ChatAssistant | null;
   messages: Message[];
   isLoading: boolean;
   globalLoading: boolean;
@@ -129,10 +127,7 @@ function derivePendingApproval(messages: Message[]): IslandApproval | null {
   };
 }
 
-function deriveSummaryText(
-  messages: Message[],
-  selectedAssistant: ChatAssistant | null
-): string {
+function deriveSummaryText(messages: Message[]): string {
   const latestUser = findLatestUserMessage(messages);
   const latestUserPreview = latestUser
     ? typeof latestUser.content === "string"
@@ -141,10 +136,6 @@ function deriveSummaryText(
     : "";
   if (latestUserPreview.length > 0) {
     return truncate(latestUserPreview, 52);
-  }
-
-  if (selectedAssistant?.name) {
-    return `Chatting with ${selectedAssistant.name}`;
   }
 
   return DEFAULT_SUMMARY;
@@ -228,7 +219,6 @@ function getChatSnapshot(): IslandChatSnapshot {
   const chatState = useChatStore.getState();
   return {
     sessionId: chatState.sessionId,
-    selectedAssistant: chatState.selectedAssistant,
     messages: chatState.messages,
     isLoading: chatState.isLoading,
     globalLoading: chatState.globalLoading,
@@ -256,7 +246,6 @@ async function ensureSessionId() {
   }
 
   const created = await createConversation({
-    assistant_id: chatState.selectedAssistantId ?? undefined,
   });
   useChatStore.getState().setSessionId(created.session_id);
   return created.session_id;
@@ -301,7 +290,7 @@ export const useIslandStore = create<IslandState>((set) => ({
       const runtimeStatus = resolveIslandRuntimeStatus(snapshot, pendingApproval, state.stageHistory);
       return {
       statusLabel: deriveStatusLabel(snapshot, pendingApproval),
-      summaryText: deriveSummaryText(snapshot.messages, snapshot.selectedAssistant),
+      summaryText: deriveSummaryText(snapshot.messages),
       lastReplyText: deriveLastReplyText(snapshot.messages),
       lastReplyAt: latestAssistant?.createdAt ?? null,
       recentMessages: deriveRecentMessages(snapshot.messages),

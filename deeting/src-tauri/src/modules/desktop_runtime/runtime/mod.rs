@@ -42,9 +42,7 @@ pub(crate) use code_mode_orchestration::{
     resume_suspended_local_chat_after_approval, run_local_chat_complete_with_auto_code_mode,
     SuspendedLocalChatExecution,
 };
-pub(crate) use consult::{
-    build_local_consult_expert_network_result, LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
-};
+pub(crate) use consult::LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION;
 pub(crate) use control_plane::{
     apply_desktop_execution_policy_overrides, build_default_local_execution_policy,
     build_local_control_plane_result, build_local_control_plane_status_meta,

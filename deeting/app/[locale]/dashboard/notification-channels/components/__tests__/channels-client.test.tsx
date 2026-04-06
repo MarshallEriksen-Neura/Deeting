@@ -30,8 +30,8 @@ jest.mock("@/lib/swr/use-notification-channels", () => ({
   }),
 }))
 
-jest.mock("@/hooks/use-chat-service", () => ({
-  useChatService: () => ({
+jest.mock("@/hooks/use-chat-models", () => ({
+  useChatModels: () => ({
     modelGroups: [],
     isLoadingModels: false,
   }),
