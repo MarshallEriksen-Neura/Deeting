@@ -135,6 +135,25 @@ export function stripPersistedImageAgentRuntimeFields(
   return next
 }
 
+function canonicalizeTaskAgentComparisonValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => canonicalizeTaskAgentComparisonValue(item))
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([, item]) => item !== undefined)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, canonicalizeTaskAgentComparisonValue(item)]),
+    )
+  }
+  return value
+}
+
+export function stableSerializeTaskAgentComparison(value: unknown): string {
+  return JSON.stringify(canonicalizeTaskAgentComparisonValue(value))
+}
+
 export function normalizePreviewNumber(
   value: string,
   parser: (next: string) => number,

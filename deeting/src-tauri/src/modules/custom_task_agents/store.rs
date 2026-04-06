@@ -168,7 +168,7 @@ pub(crate) async fn create_custom_task_agent(
           (id, name, description, task_prompt, invocation_kind, preferred_for_image_generation, model_config, callable_mcp_tool_ids,
            guidance_skill_ids, callable_skill_action_refs, tags, discoverable, is_enabled, is_deleted,
            source_kind, source_path, source_repo, source_ref, source_hash, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?);
         "#
     ))
     .bind(&id)

@@ -80,6 +80,9 @@ describe("SettingsForm deferred sections", () => {
       jest.doMock("../desktop-embedding-settings-card", () => ({
         DesktopEmbeddingSettingsCard: () => null,
       }))
+      jest.doMock("../desktop-multimodal-settings-card", () => ({
+        DesktopMultimodalSettingsCard: () => null,
+      }))
       jest.doMock("../personal-settings-card", () => ({
         PersonalSettingsCard: () => null,
       }))

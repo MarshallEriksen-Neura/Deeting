@@ -69,6 +69,10 @@ jest.mock("../desktop-embedding-settings-card", () => ({
   DesktopEmbeddingSettingsCard: () => null,
 }))
 
+jest.mock("../desktop-multimodal-settings-card", () => ({
+  DesktopMultimodalSettingsCard: () => null,
+}))
+
 jest.mock("../personal-settings-card", () => ({
   PersonalSettingsCard: () => null,
 }))

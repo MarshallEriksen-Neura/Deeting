@@ -52,6 +52,7 @@ import {
   normalizePreviewNumber,
   parseTagsInput,
   resolveSameOriginNavigationHref,
+  stableSerializeTaskAgentComparison,
   stripPersistedImageAgentRuntimeFields,
 } from "./task-agents-helpers"
 
@@ -347,45 +348,71 @@ export function useTaskAgents(t: Translation) {
 
   // ── Draft payload ────────────────────────────────────────────────────
 
+  const buildPayloadFromDraft = React.useCallback(
+    (
+      sourceDraft: TaskAgentDraft,
+      options?: {
+        modelConfig?: Record<string, unknown>
+        imageExtraParams?: Record<string, unknown> | null
+        voiceExtraParams?: Record<string, unknown> | null
+      },
+    ): UpsertCustomTaskAgentPayload => {
+      let modelConfig = { ...(options?.modelConfig ?? {}) }
+      const trimmedModel = sourceDraft.model.trim()
+      const trimmedPMI = sourceDraft.provider_model_id.trim()
+      const isImage = sourceDraft.invocation_kind === "image_generation"
+      const isVoice = sourceDraft.invocation_kind === "text_to_speech"
+
+      if (trimmedModel) { modelConfig.model = trimmedModel; delete modelConfig.model_name }
+      else { delete modelConfig.model; delete modelConfig.model_name }
+
+      if (trimmedPMI) modelConfig.provider_model_id = trimmedPMI
+      else delete modelConfig.provider_model_id
+
+      if (isImage) {
+        modelConfig = applyTaskAgentImageConfigToModelConfig(
+          modelConfig,
+          sourceDraft.image_config,
+          options?.imageExtraParams ?? null,
+        )
+        modelConfig = stripPersistedImageAgentRuntimeFields(modelConfig) ?? {}
+        delete modelConfig.text_to_speech
+      } else if (isVoice) {
+        modelConfig = applyTaskAgentVoiceConfigToModelConfig(
+          modelConfig,
+          sourceDraft.voice_config,
+          options?.voiceExtraParams ?? null,
+        )
+        delete modelConfig.image_generation
+      } else {
+        delete modelConfig.image_generation
+        delete modelConfig.text_to_speech
+      }
+
+      return {
+        name: sourceDraft.name.trim(),
+        description: sourceDraft.description.trim() || null,
+        task_prompt: isImage ? INTERNAL_IMAGE_AGENT_TASK_PROMPT : isVoice ? INTERNAL_TTS_AGENT_TASK_PROMPT : sourceDraft.task_prompt.trim(),
+        invocation_kind: sourceDraft.invocation_kind,
+        preferred_for_image_generation: sourceDraft.preferred_for_image_generation,
+        model_config: Object.keys(modelConfig).length > 0 ? modelConfig : null,
+        callable_mcp_tool_ids: [...sourceDraft.callable_mcp_tool_ids],
+        guidance_skill_ids: [...sourceDraft.guidance_skill_ids],
+        tags: parseTagsInput(sourceDraft.tags_input),
+        discoverable: sourceDraft.discoverable,
+        is_enabled: sourceDraft.is_enabled,
+      }
+    },
+    [],
+  )
+
   const draftPayload = React.useMemo<UpsertCustomTaskAgentPayload>(() => {
-    let modelConfig = { ...parsedModelConfig.value }
-    const trimmedModel = draft.model.trim()
-    const trimmedPMI = draft.provider_model_id.trim()
-    const isImage = draft.invocation_kind === "image_generation"
-    const isVoice = draft.invocation_kind === "text_to_speech"
-
-    if (trimmedModel) { modelConfig.model = trimmedModel; delete modelConfig.model_name }
-    else { delete modelConfig.model; delete modelConfig.model_name }
-
-    if (trimmedPMI) modelConfig.provider_model_id = trimmedPMI
-    else delete modelConfig.provider_model_id
-
-    if (isImage) {
-      modelConfig = applyTaskAgentImageConfigToModelConfig(modelConfig, draft.image_config, parsedImageExtraParams.value)
-      modelConfig = stripPersistedImageAgentRuntimeFields(modelConfig) ?? {}
-      delete modelConfig.text_to_speech
-    } else if (isVoice) {
-      modelConfig = applyTaskAgentVoiceConfigToModelConfig(modelConfig, draft.voice_config, parsedVoiceExtraParams.value)
-      delete modelConfig.image_generation
-    } else {
-      delete modelConfig.image_generation
-      delete modelConfig.text_to_speech
-    }
-
-    return {
-      name: draft.name.trim(),
-      description: draft.description.trim() || null,
-      task_prompt: isImage ? INTERNAL_IMAGE_AGENT_TASK_PROMPT : isVoice ? INTERNAL_TTS_AGENT_TASK_PROMPT : draft.task_prompt.trim(),
-      invocation_kind: draft.invocation_kind,
-      preferred_for_image_generation: draft.preferred_for_image_generation,
-      model_config: Object.keys(modelConfig).length > 0 ? modelConfig : null,
-      callable_mcp_tool_ids: [...draft.callable_mcp_tool_ids],
-      guidance_skill_ids: [...draft.guidance_skill_ids],
-      tags: parseTagsInput(draft.tags_input),
-      discoverable: draft.discoverable,
-      is_enabled: draft.is_enabled,
-    }
-  }, [draft, parsedImageExtraParams.value, parsedModelConfig.value, parsedVoiceExtraParams.value])
+    return buildPayloadFromDraft(draft, {
+      modelConfig: parsedModelConfig.value,
+      imageExtraParams: parsedImageExtraParams.value,
+      voiceExtraParams: parsedVoiceExtraParams.value,
+    })
+  }, [buildPayloadFromDraft, draft, parsedImageExtraParams.value, parsedModelConfig.value, parsedVoiceExtraParams.value])
 
   // ── Dirty tracking ──────────────────────────────────────────────────
 
@@ -401,22 +428,19 @@ export function useTaskAgents(t: Translation) {
 
   const comparableSelectedPayload = React.useMemo(() => {
     if (!selectedAgent) return null
-    const isImage = selectedAgent.invocation_kind === "image_generation"
-    const isVoice = selectedAgent.invocation_kind === "text_to_speech"
-    return {
-      name: selectedAgent.name.trim(),
-      description: selectedAgent.description?.trim() || null,
-      task_prompt: isImage ? INTERNAL_IMAGE_AGENT_TASK_PROMPT : isVoice ? INTERNAL_TTS_AGENT_TASK_PROMPT : selectedAgent.task_prompt.trim(),
-      invocation_kind: selectedAgent.invocation_kind,
-      preferred_for_image_generation: selectedAgent.preferred_for_image_generation,
-      model_config: isImage ? stripPersistedImageAgentRuntimeFields(selectedAgent.model_config ?? null) : (selectedAgent.model_config ?? null),
-      callable_mcp_tool_ids: selectedAgent.callable_mcp_tool_ids,
-      guidance_skill_ids: selectedAgent.guidance_skill_ids,
-      tags: selectedAgent.tags,
-      discoverable: selectedAgent.discoverable,
-      is_enabled: selectedAgent.is_enabled,
-    }
-  }, [selectedAgent])
+    const selectedDraft = buildDraftFromProfile(selectedAgent)
+    return buildPayloadFromDraft(selectedDraft, {
+      modelConfig: selectedDraft.model_config_json.trim()
+        ? (JSON.parse(selectedDraft.model_config_json) as Record<string, unknown>)
+        : {},
+      imageExtraParams: parseTaskAgentImageExtraParamsJson(
+        selectedDraft.image_config.extra_params_json,
+      ).value,
+      voiceExtraParams: parseTaskAgentVoiceExtraParamsJson(
+        selectedDraft.voice_config.extra_params_json,
+      ).value,
+    })
+  }, [buildPayloadFromDraft, selectedAgent])
 
   const hasUnsavedChanges = React.useMemo(() => {
     if (isStarterState) return false
@@ -435,7 +459,10 @@ export function useTaskAgents(t: Translation) {
       )
     }
     if (!comparableSelectedPayload) return false
-    return JSON.stringify(draftPayload) !== JSON.stringify(comparableSelectedPayload)
+    return (
+      stableSerializeTaskAgentComparison(draftPayload) !==
+      stableSerializeTaskAgentComparison(comparableSelectedPayload)
+    )
   }, [comparableSelectedPayload, draft, draftPayload, hasImageConfigValues, hasVoiceConfigValues, isStarterState, selectedAgentId])
 
   const saveDisabled =

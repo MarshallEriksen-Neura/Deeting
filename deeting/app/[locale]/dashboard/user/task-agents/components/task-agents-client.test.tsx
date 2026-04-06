@@ -429,6 +429,18 @@ describe("TaskAgentsClient", () => {
     expect(screen.getByDisplayValue("Changed Agent Name")).not.toBeNull()
   })
 
+  it("does not prompt when switching away from an unchanged image agent", async () => {
+    render(<TaskAgentsClient />)
+
+    fireEvent.click(await screen.findByRole("button", { name: /Agent Two/i }))
+    fireEvent.click(screen.getByRole("button", { name: /Agent One/i }))
+
+    await waitFor(() => {
+      expect(screen.queryByText("discardDialog.title")).toBeNull()
+    })
+    expect(screen.getByDisplayValue("Agent One")).not.toBeNull()
+  })
+
   it("does not register native beforeunload protection when there are unsaved changes", async () => {
     render(<TaskAgentsClient />)
 
@@ -525,9 +537,52 @@ describe("TaskAgentsClient", () => {
   })
 
   it("opens the type starter before creating a new agent", async () => {
-    render(<TaskAgentsClient />)
+    mockUseSWR.mockImplementation((key: string | null) => {
+      if (key === "local-custom-task-agents") {
+        return {
+          data: [],
+          error: undefined,
+          isLoading: false,
+          mutate: mockMutate,
+        }
+      }
 
-    fireEvent.click(screen.getByRole("button", { name: "actions.new" }))
+      if (key === "local-custom-task-agent-binding-catalog") {
+        return {
+          data: {
+            mcp_tools: [
+              {
+                id: "tool.release",
+                name: "Release Notes Tool",
+                description: "Draft release summaries",
+                status: "healthy",
+              },
+            ],
+            guidance_skills: [
+              {
+                skill_id: "skill.alpha",
+                installed_version: "1.0.0",
+                is_enabled: true,
+                runtime: "python",
+              },
+            ],
+            skill_actions: [],
+          },
+          error: undefined,
+          isLoading: false,
+          mutate: jest.fn(),
+        }
+      }
+
+      return {
+        data: undefined,
+        error: undefined,
+        isLoading: false,
+        mutate: jest.fn(),
+      }
+    })
+
+    render(<TaskAgentsClient />)
 
     expect((await screen.findAllByText("starter.title")).length).toBeGreaterThan(0)
     expect(screen.getByText("starter.chat.title")).not.toBeNull()
@@ -536,9 +591,39 @@ describe("TaskAgentsClient", () => {
   })
 
   it("hides bindings when creating an image agent from the starter", async () => {
+    mockUseSWR.mockImplementation((key: string | null) => {
+      if (key === "local-custom-task-agents") {
+        return {
+          data: [],
+          error: undefined,
+          isLoading: false,
+          mutate: mockMutate,
+        }
+      }
+
+      if (key === "local-custom-task-agent-binding-catalog") {
+        return {
+          data: {
+            mcp_tools: [],
+            guidance_skills: [],
+            skill_actions: [],
+          },
+          error: undefined,
+          isLoading: false,
+          mutate: jest.fn(),
+        }
+      }
+
+      return {
+        data: undefined,
+        error: undefined,
+        isLoading: false,
+        mutate: jest.fn(),
+      }
+    })
+
     render(<TaskAgentsClient />)
 
-    fireEvent.click(screen.getByRole("button", { name: "actions.new" }))
     fireEvent.click(await screen.findByRole("button", { name: "starter.image.cta" }))
 
     expect(await screen.findByText("editor.imageWorkspace.title")).not.toBeNull()
@@ -550,6 +635,13 @@ describe("TaskAgentsClient", () => {
     render(<TaskAgentsClient />)
 
     expect(screen.getByText("bindings.title")).not.toBeNull()
+  })
+
+  it("only shows the model picker in the model section", () => {
+    render(<TaskAgentsClient />)
+
+    expect(screen.queryByLabelText("editor.fields.providerModelId")).toBeNull()
+    expect(screen.queryByLabelText("editor.fields.modelConfigJson")).toBeNull()
   })
 
   it("marks chat task agent required fields in the editor", () => {

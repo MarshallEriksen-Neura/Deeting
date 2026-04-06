@@ -53,7 +53,6 @@ type ChatTaskAgentEditorProps = {
   draft: TaskAgentDraft
   previewDraft: PreviewDraft
   draftPayload: DraftPayload
-  parsedModelConfigError: string | null
   taskAgentModelSelectValue: string
   selectedTaskAgentModelOption: TaskAgentModelOption | null
   unknownTaskAgentModelLabel: string
@@ -101,7 +100,6 @@ export function ChatTaskAgentEditor({
   draft,
   previewDraft,
   draftPayload,
-  parsedModelConfigError,
   taskAgentModelSelectValue,
   selectedTaskAgentModelOption,
   unknownTaskAgentModelLabel,
@@ -197,10 +195,9 @@ export function ChatTaskAgentEditor({
 
         <TaskAgentSectionHeader
           title={t("editor.model.title")}
-          description={t("editor.model.description")}
         />
 
-        <div className="grid gap-5 lg:grid-cols-2">
+        <div className="grid gap-5">
           <TaskAgentModelPickerField
             t={t}
             taskAgentModelSelectValue={taskAgentModelSelectValue}
@@ -210,35 +207,6 @@ export function ChatTaskAgentEditor({
             modelGroups={modelGroups}
             onValueChange={handleTaskAgentModelChange}
           />
-          <div className="space-y-2">
-            <Label htmlFor="task-agent-provider-model-id">
-              {t("editor.fields.providerModelId")}
-            </Label>
-            <Input
-              id="task-agent-provider-model-id"
-              value={draft.provider_model_id}
-              onChange={(event) => updateDraft("provider_model_id", event.target.value)}
-              placeholder={t("editor.placeholders.providerModelId")}
-            />
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="task-agent-model-config">
-            {t("editor.fields.modelConfigJson")}
-          </Label>
-          <Textarea
-            id="task-agent-model-config"
-            value={draft.model_config_json}
-            onChange={(event) => updateDraft("model_config_json", event.target.value)}
-            rows={8}
-            placeholder={t.raw?.("editor.placeholders.modelConfigJson") ?? ""}
-            className="font-mono text-xs"
-          />
-          <p className="text-xs text-[var(--muted)]">{t("editor.modelConfig.helper")}</p>
-          {parsedModelConfigError ? (
-            <p className="text-xs text-red-300">{parsedModelConfigError}</p>
-          ) : null}
         </div>
 
         <Separator />
@@ -473,12 +441,6 @@ export function ChatTaskAgentEditor({
                 <dt className="text-[var(--muted)]">{t("editor.fields.model")}</dt>
                 <dd className="text-right text-[var(--foreground)]">
                   {draft.model.trim() || "default"}
-                </dd>
-              </div>
-              <div className="flex items-start justify-between gap-3">
-                <dt className="text-[var(--muted)]">{t("editor.fields.providerModelId")}</dt>
-                <dd className="text-right text-[var(--foreground)]">
-                  {draft.provider_model_id.trim() || "—"}
                 </dd>
               </div>
               <div className="flex items-start justify-between gap-3">

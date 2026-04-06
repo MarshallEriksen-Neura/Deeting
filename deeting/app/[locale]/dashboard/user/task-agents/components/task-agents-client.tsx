@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useTranslations } from "next-intl"
-import { Download, Plus, RefreshCw } from "lucide-react"
+import { Download, RefreshCw } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/ui/page-header/page-header"
@@ -54,7 +54,6 @@ export function TaskAgentsClient() {
     draft,
     previewDraft,
     draftPayload,
-    parsedModelConfig,
     parsedImageExtraParams,
     parsedVoiceExtraParams,
     saveDisabled,
@@ -108,7 +107,6 @@ export function TaskAgentsClient() {
     updateImageDraft,
     updateVoiceDraft,
     handleSelectAgent,
-    handleCreateNew,
     handleSelectNewAgentType,
     handleTaskAgentModelChange,
     toggleBinding,
@@ -158,10 +156,6 @@ export function TaskAgentsClient() {
                 className={cn("mr-1.5 size-3.5", isReindexing && "animate-spin")}
               />
               {isReindexing ? t("actions.reindexing") : t("actions.reindex")}
-            </Button>
-            <Button size="sm" onClick={handleCreateNew} className="h-8 rounded-lg text-[12px]">
-              <Plus className="mr-1.5 size-3.5" />
-              {t("actions.new")}
             </Button>
           </div>
         }
@@ -227,7 +221,6 @@ export function TaskAgentsClient() {
                     draft={draft}
                     previewDraft={previewDraft}
                     draftPayload={draftPayload}
-                    parsedModelConfigError={parsedModelConfig.error}
                     parsedImageExtraParamsError={parsedImageExtraParams.error}
                     taskAgentModelSelectValue={taskAgentModelSelectValue}
                     selectedTaskAgentModelOption={selectedTaskAgentModelOption}
@@ -242,7 +235,6 @@ export function TaskAgentsClient() {
                   <VoiceTaskAgentEditor
                     t={t}
                     draft={draft}
-                    parsedModelConfigError={parsedModelConfig.error}
                     parsedVoiceExtraParamsError={parsedVoiceExtraParams.error}
                     taskAgentModelSelectValue={taskAgentModelSelectValue}
                     selectedTaskAgentModelOption={selectedTaskAgentModelOption}
@@ -259,7 +251,6 @@ export function TaskAgentsClient() {
                     draft={draft}
                     previewDraft={previewDraft}
                     draftPayload={draftPayload}
-                    parsedModelConfigError={parsedModelConfig.error}
                     taskAgentModelSelectValue={taskAgentModelSelectValue}
                     selectedTaskAgentModelOption={selectedTaskAgentModelOption}
                     unknownTaskAgentModelLabel={unknownTaskAgentModelLabel}

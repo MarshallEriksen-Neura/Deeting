@@ -19,7 +19,6 @@ type Translation = (key: string, values?: Record<string, string | number>) => st
 type VoiceTaskAgentEditorProps = {
   t: Translation & { raw?: (key: string) => string }
   draft: TaskAgentDraft
-  parsedModelConfigError: string | null
   parsedVoiceExtraParamsError: string | null
   taskAgentModelSelectValue: string
   selectedTaskAgentModelOption: TaskAgentModelOption | null
@@ -40,7 +39,6 @@ type VoiceTaskAgentEditorProps = {
 export function VoiceTaskAgentEditor({
   t,
   draft,
-  parsedModelConfigError,
   parsedVoiceExtraParamsError,
   taskAgentModelSelectValue,
   selectedTaskAgentModelOption,
@@ -99,10 +97,9 @@ export function VoiceTaskAgentEditor({
 
       <TaskAgentSectionHeader
         title={t("editor.model.title")}
-        description={t("editor.model.description")}
       />
 
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid gap-5">
         <TaskAgentModelPickerField
           t={t}
           taskAgentModelSelectValue={taskAgentModelSelectValue}
@@ -112,17 +109,6 @@ export function VoiceTaskAgentEditor({
           modelGroups={modelGroups}
           onValueChange={handleTaskAgentModelChange}
         />
-        <div className="space-y-2">
-          <Label htmlFor="task-agent-provider-model-id">
-            {t("editor.fields.providerModelId")}
-          </Label>
-          <Input
-            id="task-agent-provider-model-id"
-            value={draft.provider_model_id}
-            onChange={(event) => updateDraft("provider_model_id", event.target.value)}
-            placeholder={t("editor.placeholders.providerModelId")}
-          />
-        </div>
       </div>
 
       <Separator />
@@ -182,21 +168,6 @@ export function VoiceTaskAgentEditor({
         ) : null}
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="task-agent-model-config">{t("editor.fields.modelConfigJson")}</Label>
-        <Textarea
-          id="task-agent-model-config"
-          value={draft.model_config_json}
-          onChange={(event) => updateDraft("model_config_json", event.target.value)}
-          rows={8}
-          placeholder={t.raw?.("editor.placeholders.modelConfigJson") ?? ""}
-          className="font-mono text-xs"
-        />
-        <p className="text-xs text-[var(--muted)]">{t("editor.modelConfig.helper")}</p>
-        {parsedModelConfigError ? (
-          <p className="text-xs text-red-300">{parsedModelConfigError}</p>
-        ) : null}
-      </div>
     </TabsContent>
   )
 }

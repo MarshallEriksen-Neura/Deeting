@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { HardDriveDownload, ShieldCheck, Lock, ChevronDown } from "lucide-react"
+import { ImageIcon, ShieldCheck, Lock, ChevronDown } from "lucide-react"
 import { Control } from "react-hook-form"
 import {
   FormControl,
@@ -19,13 +19,13 @@ import { useI18n } from "@/hooks/use-i18n"
 import { type SettingsFormValues, type ModelGroup } from "../types"
 import { DeferredSettingsModelPicker } from "./settings-lazy"
 
-interface DesktopEmbeddingSettingsCardProps {
+interface DesktopMultimodalSettingsCardProps {
   control: Control<SettingsFormValues>
   isTauriRuntime: boolean
   canEditDesktop: boolean
-  hasAvailableEmbeddingModels: boolean
-  embeddingModelGroups: ModelGroup[]
-  isLoadingEmbeddingModels?: boolean
+  hasAvailableModels: boolean
+  modelGroups: ModelGroup[]
+  isLoadingModels?: boolean
 }
 
 type SelectedModel = {
@@ -48,18 +48,18 @@ const findSelectedModel = (
   return null
 }
 
-export function DesktopEmbeddingSettingsCard({
+export function DesktopMultimodalSettingsCard({
   control,
   isTauriRuntime,
   canEditDesktop,
-  hasAvailableEmbeddingModels,
-  embeddingModelGroups,
-  isLoadingEmbeddingModels = false,
-}: DesktopEmbeddingSettingsCardProps) {
+  hasAvailableModels,
+  modelGroups,
+  isLoadingModels = false,
+}: DesktopMultimodalSettingsCardProps) {
   const t = useI18n("settings")
-  const [isEmbeddingPickerOpen, setIsEmbeddingPickerOpen] = useState(false)
-  const embeddingPickerModelGroups = useMemo(() =>
-    embeddingModelGroups.map((group) => ({
+  const [isPickerOpen, setIsPickerOpen] = useState(false)
+  const pickerModelGroups = useMemo(() =>
+    modelGroups.map((group) => ({
       ...group,
       models: group.models.map(
         (model): ModelPickerModel => ({
@@ -68,22 +68,21 @@ export function DesktopEmbeddingSettingsCard({
         })
       ),
     }))
-  , [embeddingModelGroups])
+  , [modelGroups])
 
   return (
     <div className="rounded-2xl border border-border/40 bg-card/50 transition-colors hover:bg-card/70 dark:bg-card/30 dark:hover:bg-card/40">
-      {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/30 px-6 py-5">
         <div className="flex items-start gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-600 dark:bg-violet-400/10 dark:text-violet-400">
-            <HardDriveDownload className="h-4.5 w-4.5" />
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 dark:bg-amber-400/10 dark:text-amber-400">
+            <ImageIcon className="h-4.5 w-4.5" />
           </div>
           <div>
             <h3 className="text-sm font-semibold text-foreground">
-              {t("desktop.title")}
+              {t("desktop.multimodalLabel")}
             </h3>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {t("desktop.description")}
+              {t("desktop.multimodalHelp")}
             </p>
           </div>
         </div>
@@ -101,7 +100,6 @@ export function DesktopEmbeddingSettingsCard({
         </div>
       </div>
 
-      {/* Content */}
       <div className="space-y-4 px-6 py-5">
         {!isTauriRuntime ? (
           <div className="rounded-xl border border-border/30 bg-muted/20 px-4 py-3 dark:bg-muted/10">
@@ -115,16 +113,16 @@ export function DesktopEmbeddingSettingsCard({
         ) : (
           <FormField
             control={control}
-            name="desktopEmbeddingProviderModelId"
+            name="desktopMultimodalProviderModelId"
             render={({ field }) => {
               const selectedValue = field.value?.trim()
-              const selectedModel = findSelectedModel(selectedValue, embeddingModelGroups)
-              const displayName = isLoadingEmbeddingModels
+              const selectedModel = findSelectedModel(selectedValue, modelGroups)
+              const displayName = isLoadingModels
                 ? t("personal.currentLoading")
                 : (selectedModel?.model.id ?? selectedValue) || t("personal.currentEmpty")
               const ownerText =
                 selectedModel?.model.owned_by || selectedModel?.group?.provider
-              const isDisabled = !canEditDesktop || !hasAvailableEmbeddingModels
+              const isDisabled = !canEditDesktop || !hasAvailableModels
               const visual = resolveModelVisual(
                 selectedModel
                   ? {
@@ -137,12 +135,12 @@ export function DesktopEmbeddingSettingsCard({
 
               return (
                 <FormItem>
-                  <FormLabel className="sr-only">{t("desktop.modelLabel")}</FormLabel>
+                  <FormLabel className="sr-only">{t("desktop.multimodalLabel")}</FormLabel>
                   <Popover
-                    open={isEmbeddingPickerOpen}
+                    open={isPickerOpen}
                     onOpenChange={(open) => {
                       if (isDisabled) return
-                      setIsEmbeddingPickerOpen(open)
+                      setIsPickerOpen(open)
                     }}
                   >
                     <PopoverTrigger asChild>
@@ -151,7 +149,7 @@ export function DesktopEmbeddingSettingsCard({
                           type="button"
                           className="flex w-full items-center justify-between rounded-xl border border-border/40 bg-background px-4 py-3 text-left transition-all hover:border-border/60 hover:bg-muted/20 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-background/50"
                           disabled={isDisabled}
-                          aria-expanded={isEmbeddingPickerOpen}
+                          aria-expanded={isPickerOpen}
                         >
                           <span className="flex min-w-0 items-center gap-3">
                             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted/40 dark:bg-muted/20">
@@ -159,7 +157,7 @@ export function DesktopEmbeddingSettingsCard({
                             </span>
                             <span className="flex min-w-0 flex-col leading-tight">
                               <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                                {t("desktop.modelLabel")}
+                                {t("desktop.multimodalLabel")}
                               </span>
                               <span className="truncate text-sm font-medium text-foreground">
                                 {displayName}
@@ -172,7 +170,7 @@ export function DesktopEmbeddingSettingsCard({
                             </span>
                           </span>
                           <ChevronDown
-                            className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 ${isEmbeddingPickerOpen ? "rotate-180" : ""}`}
+                            className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 ${isPickerOpen ? "rotate-180" : ""}`}
                           />
                         </button>
                       </FormControl>
@@ -183,17 +181,17 @@ export function DesktopEmbeddingSettingsCard({
                       side="bottom"
                       sideOffset={8}
                     >
-                      {isEmbeddingPickerOpen ? (
+                      {isPickerOpen ? (
                       <DeferredSettingsModelPicker
                         value={field.value}
                         onChange={(value) => {
                           field.onChange(value)
-                          setIsEmbeddingPickerOpen(false)
+                          setIsPickerOpen(false)
                         }}
-                        modelGroups={embeddingPickerModelGroups}
+                        modelGroups={pickerModelGroups}
                         valueField="provider_model_id"
-                        title={t("desktop.modelLabel")}
-                        subtitle={t("desktop.modelPlaceholder")}
+                        title={t("desktop.multimodalLabel")}
+                        subtitle={t("desktop.multimodalPlaceholder")}
                         searchPlaceholder={t("personal.modelSearchPlaceholder")}
                         emptyText={t("personal.emptyHint")}
                         noResultsText={t("personal.modelNoResults")}
@@ -204,7 +202,7 @@ export function DesktopEmbeddingSettingsCard({
                       ) : null}
                     </PopoverContent>
                   </Popover>
-                  <FormDescription>{t("desktop.modelHelp")}</FormDescription>
+                  <FormDescription>{t("desktop.multimodalHelp")}</FormDescription>
                 </FormItem>
               )
             }}
@@ -212,7 +210,6 @@ export function DesktopEmbeddingSettingsCard({
         )}
       </div>
 
-      {/* Footer */}
       <div className="flex items-center justify-end border-t border-border/30 px-6 py-3">
         <span className="text-[11px] text-muted-foreground/60">{t("desktop.scopeBadge")}</span>
       </div>
