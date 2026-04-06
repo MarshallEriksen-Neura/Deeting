@@ -4,16 +4,17 @@ import * as React from "react"
 
 import {
   fetchLocalSkillRuntimeStatuses,
-  isDesktopRuntime,
   type LocalSkillRuntimeStatus,
 } from "@/lib/api/plugin-market"
 
-export function useLocalSkillRuntimeStatuses() {
-  const isDesktop = isDesktopRuntime()
+export function useLocalSkillRuntimeStatuses(desktopSupport: boolean | null) {
+  const isDesktop = desktopSupport === true
   const [runtimeStatuses, setRuntimeStatuses] = React.useState<
     Record<string, LocalSkillRuntimeStatus>
   >({})
-  const [isLoadingRuntimeStatuses, setIsLoadingRuntimeStatuses] = React.useState(isDesktop)
+  const [isLoadingRuntimeStatuses, setIsLoadingRuntimeStatuses] = React.useState(
+    desktopSupport !== false
+  )
   const hasLoadedRuntimeStatusesRef = React.useRef(false)
   const hasInstallingRuntime = React.useMemo(
     () => Object.values(runtimeStatuses).some((item) => item.runtime_install_state === "installing"),
@@ -21,6 +22,10 @@ export function useLocalSkillRuntimeStatuses() {
   )
 
   const refreshRuntimeStatuses = React.useCallback(async () => {
+    if (desktopSupport === null) {
+      return
+    }
+
     if (!isDesktop) {
       hasLoadedRuntimeStatusesRef.current = true
       setIsLoadingRuntimeStatuses(false)
@@ -38,19 +43,22 @@ export function useLocalSkillRuntimeStatuses() {
       hasLoadedRuntimeStatusesRef.current = true
       setIsLoadingRuntimeStatuses(false)
     }
-  }, [isDesktop])
+  }, [desktopSupport, isDesktop])
 
   React.useEffect(() => {
+    if (desktopSupport === null) {
+      return
+    }
     void refreshRuntimeStatuses()
-  }, [refreshRuntimeStatuses])
+  }, [desktopSupport, refreshRuntimeStatuses])
 
   React.useEffect(() => {
-    if (!hasInstallingRuntime) return
+    if (!isDesktop || !hasInstallingRuntime) return
     const timer = window.setTimeout(() => {
       void refreshRuntimeStatuses()
     }, 2000)
     return () => window.clearTimeout(timer)
-  }, [hasInstallingRuntime, refreshRuntimeStatuses])
+  }, [hasInstallingRuntime, isDesktop, refreshRuntimeStatuses])
 
   return {
     runtimeStatuses,

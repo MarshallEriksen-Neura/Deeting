@@ -37,7 +37,8 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
   const t = useTranslations("plugins")
   const isMarketMode = mode === "market"
   const shouldLoadMarket = isMarketMode
-  const canManageLocalInstalls = isDesktopRuntime()
+  const [desktopSupport, setDesktopSupport] = React.useState<boolean | null>(null)
+  const canManageLocalInstalls = desktopSupport === true
   const [searchQuery, setSearchQuery] = React.useState("")
   const debouncedQuery = useDebounce(searchQuery, 300)
 
@@ -49,7 +50,7 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
     isLoadingRuntimeStatuses,
     hasInstallingRuntime,
     refreshRuntimeStatuses,
-  } = useLocalSkillRuntimeStatuses()
+  } = useLocalSkillRuntimeStatuses(desktopSupport)
 
   // Permission dialog state
   const [dialogOpen, setDialogOpen] = React.useState(false)
@@ -181,6 +182,10 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
   }, [refreshRuntimeStatuses, selectedRuntimePlugin, t])
 
   React.useEffect(() => {
+    setDesktopSupport(isDesktopRuntime())
+  }, [])
+
+  React.useEffect(() => {
     if (!hasInstallingRuntime) return
     void refreshPluginData()
   }, [hasInstallingRuntime, refreshPluginData])
@@ -219,7 +224,7 @@ export function PluginsClient({ mode = "installed" }: PluginsClientProps) {
 
   const isInitialLoading = shouldLoadMarket
     ? isLoading && plugins.length === 0
-    : isLoadingRuntimeStatuses && installedPlugins.length === 0
+    : desktopSupport === null || (isLoadingRuntimeStatuses && installedPlugins.length === 0)
   const pageTitle = isMarketMode ? t("page.market.title") : t("page.installed.title")
   const pageSubtitle = isMarketMode
     ? t("page.market.description")

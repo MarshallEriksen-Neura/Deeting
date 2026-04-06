@@ -16,14 +16,6 @@ const SmartRouterValueCard = dynamic(
   () => import("./components/smart-router-value-card").then((mod) => mod.SmartRouterValueCard),
   { loading: () => <DashboardPanelSkeleton className="h-[360px]" /> }
 )
-const ProviderHealthStatus = dynamic(
-  () => import("./components/provider-health-status").then((mod) => mod.ProviderHealthStatus),
-  { loading: () => <DashboardPanelSkeleton className="h-[320px]" /> }
-)
-const RecentErrorsList = dynamic(
-  () => import("./components/recent-errors-list").then((mod) => mod.RecentErrorsList),
-  { loading: () => <DashboardPanelSkeleton className="h-[320px]" /> }
-)
 const AssetSummaryCard = dynamic(
   () => import("./components/asset-summary-card").then((mod) => mod.AssetSummaryCard),
   { loading: () => <DashboardPanelSkeleton className="h-[280px]" /> }
@@ -48,11 +40,6 @@ export function DashboardClient() {
         <div className="lg:col-span-1">
           <SmartRouterValueCard stats={data?.smartRouterStats} isLoading={isLoading} />
         </div>
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <ProviderHealthStatus providers={data?.providerHealth} isLoading={isLoading} />
-        <RecentErrorsList errors={data?.recentErrors} isLoading={isLoading} />
       </div>
 
       <div className="mt-6">
