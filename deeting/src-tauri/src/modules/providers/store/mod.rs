@@ -209,11 +209,18 @@ impl ProviderStore {
                 id TEXT PRIMARY KEY,
                 user_id TEXT NOT NULL UNIQUE,
                 provider_model_id TEXT REFERENCES provider_models(id) ON DELETE SET NULL,
+                multimodal_provider_model_id TEXT REFERENCES provider_models(id) ON DELETE SET NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )",
         )
         .execute(&self.pool)
+        .await?;
+        self.ensure_column(
+            "user_embedding_config",
+            "multimodal_provider_model_id",
+            "ALTER TABLE user_embedding_config ADD COLUMN multimodal_provider_model_id TEXT REFERENCES provider_models(id) ON DELETE SET NULL",
+        )
         .await?;
 
         sqlx::query(

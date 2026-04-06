@@ -175,6 +175,7 @@ pub struct UserEmbeddingConfig {
     pub id: String,
     pub user_id: String,
     pub provider_model_id: Option<String>,
+    pub multimodal_provider_model_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -415,6 +416,8 @@ pub struct UserSecretaryUpdateRequest {
 pub struct UserEmbeddingConfigUpdateRequest {
     #[serde(default)]
     pub provider_model_id: Option<Option<String>>,
+    #[serde(default)]
+    pub multimodal_provider_model_id: Option<Option<String>>,
 }
 
 #[derive(Debug, Serialize)]

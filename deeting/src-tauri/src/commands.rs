@@ -37,6 +37,7 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::knowledge::commands::delete_local_knowledge_folder,
         crate::modules::knowledge::commands::list_local_user_documents,
         crate::modules::knowledge::commands::create_local_user_document,
+        crate::modules::knowledge::commands::extract_local_knowledge_image_text,
         crate::modules::knowledge::commands::get_local_user_document,
         crate::modules::knowledge::commands::get_local_user_document_download_url,
         crate::modules::knowledge::commands::update_local_user_document,

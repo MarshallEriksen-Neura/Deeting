@@ -125,6 +125,13 @@ export function SettingsForm({
     enabled: isAuthenticated,
     modelCapability: "embedding",
   });
+  const {
+    modelGroups: multimodalCandidateModelGroups,
+    isLoadingModels: isLoadingMultimodalModels,
+  } = useChatModels({
+    enabled: isAuthenticated,
+    modelCapability: "chat",
+  });
 
   const [isSaving, setIsSaving] = React.useState(false);
   const [hasPendingRebuild, setHasPendingRebuild] = React.useState(false);
@@ -149,6 +156,7 @@ export function SettingsForm({
     defaultValues: {
       secretaryModel: "",
       desktopEmbeddingProviderModelId: "",
+      desktopMultimodalProviderModelId: "",
       desktopProxyMode: "system",
       desktopProxyUrl: "",
       scoutBaseUrl: "",
@@ -170,6 +178,22 @@ export function SettingsForm({
   const canSave = isAuthenticated;
   const hasAvailableChatModels = chatModelGroups.length > 0;
   const hasAvailableEmbeddingModels = embeddingModelGroups.length > 0;
+  const multimodalModelGroups = React.useMemo<ModelGroup[]>(() => {
+    const filtered = multimodalCandidateModelGroups
+      .map((group) => ({
+        ...group,
+        models: group.models.filter((model) => {
+          const inputTypes = Array.isArray(model.input_types) ? model.input_types : [];
+          return inputTypes.some((value) => {
+            const normalized = String(value).trim().toLowerCase();
+            return normalized === "image" || normalized === "input_image" || normalized.startsWith("image/");
+          });
+        }),
+      }))
+      .filter((group) => group.models.length > 0);
+    return filtered.length > 0 ? filtered : multimodalCandidateModelGroups;
+  }, [multimodalCandidateModelGroups]);
+  const hasAvailableMultimodalModels = multimodalModelGroups.length > 0;
 
   React.useEffect(() => {
     if (!isAuthenticated) return;
@@ -182,6 +206,9 @@ export function SettingsForm({
         desktopEmbeddingProviderModelId: isTauriRuntime
           ? (userEmbeddingConfig?.provider_model_id ?? "")
           : "",
+        desktopMultimodalProviderModelId: isTauriRuntime
+          ? (userEmbeddingConfig?.multimodal_provider_model_id ?? "")
+          : "",
       });
   }, [
     form,
@@ -192,6 +219,7 @@ export function SettingsForm({
     secretarySetting?.provider_model_id,
     secretarySetting?.model_name,
     userEmbeddingConfig?.provider_model_id,
+    userEmbeddingConfig?.multimodal_provider_model_id,
   ]);
 
   React.useEffect(() => {
@@ -400,9 +428,17 @@ export function SettingsForm({
           values.desktopEmbeddingProviderModelId.trim();
         const currentProviderModelId =
           userEmbeddingConfig?.provider_model_id?.trim() ?? "";
-        if (nextProviderModelId !== currentProviderModelId) {
+        const nextMultimodalProviderModelId =
+          values.desktopMultimodalProviderModelId.trim();
+        const currentMultimodalProviderModelId =
+          userEmbeddingConfig?.multimodal_provider_model_id?.trim() ?? "";
+        if (
+          nextProviderModelId !== currentProviderModelId ||
+          nextMultimodalProviderModelId !== currentMultimodalProviderModelId
+        ) {
           await updateUserEmbeddingConfig({
             provider_model_id: nextProviderModelId || null,
+            multimodal_provider_model_id: nextMultimodalProviderModelId || null,
           });
           desktopEmbeddingChanged = true;
         }
@@ -583,9 +619,12 @@ export function SettingsForm({
                 control={form.control}
                 isTauriRuntime={isTauriRuntime}
                 canEditDesktop={canEditDesktop}
-                hasAvailableModels={hasAvailableEmbeddingModels}
-                modelGroups={embeddingModelGroups}
-                isLoadingModels={isLoadingEmbeddingModels}
+                hasAvailableEmbeddingModels={hasAvailableEmbeddingModels}
+                embeddingModelGroups={embeddingModelGroups}
+                isLoadingEmbeddingModels={isLoadingEmbeddingModels}
+                hasAvailableMultimodalModels={hasAvailableMultimodalModels}
+                multimodalModelGroups={multimodalModelGroups}
+                isLoadingMultimodalModels={isLoadingMultimodalModels}
               />
               <PersonalSettingsCard
                 control={form.control}

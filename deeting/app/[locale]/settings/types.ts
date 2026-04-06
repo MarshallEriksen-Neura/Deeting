@@ -3,6 +3,7 @@ import type { ModelGroup as ApiModelGroup } from "@/lib/api/models";
 export interface SettingsFormValues {
   secretaryModel: string;
   desktopEmbeddingProviderModelId: string;
+  desktopMultimodalProviderModelId: string;
   desktopProxyMode: "none" | "system" | "custom";
   desktopProxyUrl: string;
   scoutBaseUrl: string;

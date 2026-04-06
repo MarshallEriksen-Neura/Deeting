@@ -4,6 +4,7 @@ export const UserEmbeddingConfigSchema = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),
   provider_model_id: z.string().uuid().nullable().optional(),
+  multimodal_provider_model_id: z.string().uuid().nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),
 })
@@ -12,6 +13,7 @@ export type UserEmbeddingConfig = z.infer<typeof UserEmbeddingConfigSchema>
 
 export const UserEmbeddingConfigUpdateSchema = z.object({
   provider_model_id: z.string().uuid().nullable().optional(),
+  multimodal_provider_model_id: z.string().uuid().nullable().optional(),
 })
 
 export type UserEmbeddingConfigUpdate = z.infer<typeof UserEmbeddingConfigUpdateSchema>
@@ -46,6 +48,7 @@ export async function updateUserEmbeddingConfig(
   const data = await invokeTauri<UserEmbeddingConfig>("update_local_user_embedding_config", {
     payload: {
       provider_model_id: normalizedPayload.provider_model_id,
+      multimodal_provider_model_id: normalizedPayload.multimodal_provider_model_id,
     },
   })
   return UserEmbeddingConfigSchema.parse(data)

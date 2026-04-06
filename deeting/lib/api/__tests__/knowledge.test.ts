@@ -516,17 +516,35 @@ describe("knowledge api", () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
 
-    expect(getKnowledgeUploadFileTypes()).toEqual(["pdf", "txt", "docx", "md", "csv", "html", "json"])
-    expect(getKnowledgeUploadAccept()).toBe(".pdf,.txt,.docx,.md,.csv,.html,.json")
+    expect(getKnowledgeUploadFileTypes()).toEqual([
+      "pdf",
+      "txt",
+      "docx",
+      "md",
+      "csv",
+      "html",
+      "json",
+      "png",
+      "jpg",
+      "jpeg",
+      "webp",
+    ])
+    expect(getKnowledgeUploadAccept()).toBe(".pdf,.txt,.docx,.md,.csv,.html,.json,.png,.jpg,.jpeg,.webp")
     expect(getKnowledgeUploadMaxBytes()).toBeNull()
 
     const { accepted, rejected } = splitKnowledgeUploadFiles([
       { name: "notes.md" },
       { name: "sample1.docx" },
       { name: "paper.pdf" },
+      { name: "scan.png" },
     ])
 
-    expect(accepted).toEqual([{ name: "notes.md" }, { name: "sample1.docx" }, { name: "paper.pdf" }])
+    expect(accepted).toEqual([
+      { name: "notes.md" },
+      { name: "sample1.docx" },
+      { name: "paper.pdf" },
+      { name: "scan.png" },
+    ])
     expect(rejected).toEqual([])
   })
 
@@ -637,6 +655,63 @@ describe("knowledge api", () => {
       }),
     })
     expect(mockRequest).not.toHaveBeenCalled()
+    global.fetch = originalFetch
+  })
+
+  it("uploads local image file via multimodal extraction command", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    const originalFetch = global.fetch
+    global.fetch = jest.fn().mockResolvedValue({ ok: true } as Response)
+    mockInvoke
+      .mockResolvedValueOnce({
+        provider: "cloudflare_r2_s3",
+        object_key: "desktop/uploads/knowledge/scan.png",
+        upload_url: "https://example.r2.cloudflarestorage.com/upload",
+        method: "PUT",
+        headers: {},
+        asset_url: "https://cdn.example.com/knowledge/scan.png",
+        expires_at: "2026-03-10T00:15:00Z",
+      } as unknown)
+      .mockResolvedValueOnce({
+        raw_text: "Invoice 2026\nTotal 320",
+        vision_summary: null,
+      } as unknown)
+      .mockResolvedValueOnce({
+        id: "d-23",
+        name: "scan.png",
+        file_type: "png",
+        size: 4,
+        status: "indexed",
+        chunks: 2,
+        error_message: null,
+        folder_id: null,
+        created_at: "2026-03-03T00:00:00Z",
+        updated_at: "2026-03-03T00:00:01Z",
+      } as unknown)
+
+    const file = new File(["img"], "scan.png", { type: "image/png" })
+    const uploaded = await uploadFile(file)
+
+    expect(uploaded.id).toBe("d-23")
+    expect(uploaded.status).toBe("active")
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, "extract_local_knowledge_image_text", {
+      payload: {
+        filename: "scan.png",
+        object_key: "desktop/uploads/knowledge/scan.png",
+        asset_url: "https://cdn.example.com/knowledge/scan.png",
+      },
+    })
+    expect(mockInvoke).toHaveBeenNthCalledWith(3, "create_local_user_document", {
+      payload: expect.objectContaining({
+        filename: "scan.png",
+        status: "processing",
+        meta_info: expect.objectContaining({
+          file_type: "png",
+          raw_text: "Invoice 2026\nTotal 320",
+        }),
+      }),
+    })
     global.fetch = originalFetch
   })
 })

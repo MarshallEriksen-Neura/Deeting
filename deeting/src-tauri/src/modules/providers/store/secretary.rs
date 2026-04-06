@@ -101,11 +101,13 @@ impl ProviderStore {
         let id = Uuid::new_v4().to_string();
         let now = now_rfc3339()?;
         sqlx::query(
-            "INSERT INTO user_embedding_config (id, user_id, provider_model_id, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO user_embedding_config (
+                id, user_id, provider_model_id, multimodal_provider_model_id, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(&id)
         .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(None::<String>)
         .bind(None::<String>)
         .bind(&now)
         .bind(&now)
@@ -116,6 +118,7 @@ impl ProviderStore {
             id,
             user_id: LOCAL_DESKTOP_USER_ID.to_string(),
             provider_model_id: None,
+            multimodal_provider_model_id: None,
             created_at: now.clone(),
             updated_at: now,
         })
@@ -125,13 +128,21 @@ impl ProviderStore {
         &self,
         payload: UserEmbeddingConfigUpdateRequest,
     ) -> Result<UserEmbeddingConfig, ProviderError> {
+        let current = self.get_or_create_user_embedding_config().await?;
+        let provider_model_id = payload
+            .provider_model_id
+            .unwrap_or(current.provider_model_id);
+        let multimodal_provider_model_id = payload
+            .multimodal_provider_model_id
+            .unwrap_or(current.multimodal_provider_model_id);
         let now = now_rfc3339()?;
         sqlx::query(
             "UPDATE user_embedding_config
-             SET provider_model_id = ?, updated_at = ?
+             SET provider_model_id = ?, multimodal_provider_model_id = ?, updated_at = ?
              WHERE user_id = ?",
         )
-        .bind(&payload.provider_model_id)
+        .bind(&provider_model_id)
+        .bind(&multimodal_provider_model_id)
         .bind(&now)
         .bind(LOCAL_DESKTOP_USER_ID)
         .execute(&self.pool)

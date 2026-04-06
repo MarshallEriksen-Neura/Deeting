@@ -6,6 +6,7 @@ use crate::state::AppState;
 pub const MODEL_CONFIG_REQUIRED_PREFIX: &str = "MODEL_CONFIG_REQUIRED";
 pub const MODEL_CONFIG_SECRETARY: &str = "secretary";
 pub const MODEL_CONFIG_EMBEDDING: &str = "embedding";
+pub const MODEL_CONFIG_MULTIMODAL: &str = "multimodal";
 
 pub async fn ensure_required_local_models_configured(app_state: &AppState) -> Result<(), String> {
     let missing = collect_missing_required_local_models(app_state).await?;
@@ -22,6 +23,9 @@ pub fn format_model_config_required_error(missing: &[&str]) -> String {
     }
     if missing.iter().any(|value| *value == MODEL_CONFIG_EMBEDDING) {
         normalized.push(MODEL_CONFIG_EMBEDDING);
+    }
+    if missing.iter().any(|value| *value == MODEL_CONFIG_MULTIMODAL) {
+        normalized.push(MODEL_CONFIG_MULTIMODAL);
     }
     if normalized.is_empty() {
         normalized.extend(
@@ -167,6 +171,67 @@ fn matches_active_model_reference(models: &[ProviderModel], reference: &str) -> 
 fn matches_active_embedding_model(models: &[ProviderModel], provider_model_id: &str) -> bool {
     models.iter().any(|model| {
         model.id.to_string() == provider_model_id && has_embedding_capability(&model.capabilities)
+    })
+}
+
+pub async fn ensure_required_local_multimodal_model_configured(
+    app_state: &AppState,
+) -> Result<(), String> {
+    let active_models = app_state
+        .providers
+        .store
+        .list_active_models()
+        .await
+        .map_err(|err| err.to_string())?;
+    let embedding = app_state
+        .providers
+        .store
+        .get_or_create_user_embedding_config()
+        .await
+        .map_err(|err| err.to_string())?;
+
+    let provider_model_id = embedding
+        .multimodal_provider_model_id
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or_default();
+    if provider_model_id.is_empty() || !matches_active_multimodal_model(&active_models, provider_model_id) {
+        return Err(format_model_config_required_error(&[MODEL_CONFIG_MULTIMODAL]));
+    }
+    Ok(())
+}
+
+pub(crate) async fn resolve_local_multimodal_model_connection(
+    app_state: &AppState,
+) -> Result<LocalModelConnection, String> {
+    let embedding = app_state
+        .providers
+        .store
+        .get_or_create_user_embedding_config()
+        .await
+        .map_err(|err| err.to_string())?;
+    let provider_model_id = embedding
+        .multimodal_provider_model_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "multimodal model is not configured".to_string())?;
+
+    resolve_local_model_connection(app_state, "", Some(provider_model_id)).await
+}
+
+fn matches_active_multimodal_model(models: &[ProviderModel], provider_model_id: &str) -> bool {
+    models.iter().any(|model| {
+        if model.id.to_string() != provider_model_id {
+            return false;
+        }
+        model
+            .capabilities
+            .iter()
+            .any(|capability| {
+                capability.eq_ignore_ascii_case("chat")
+                    || capability.eq_ignore_ascii_case("vision")
+            })
     })
 }
 

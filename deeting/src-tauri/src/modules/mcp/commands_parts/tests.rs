@@ -219,6 +219,7 @@ mod tests {
             .update_user_embedding_config(
                 crate::modules::providers::types::UserEmbeddingConfigUpdateRequest {
                     provider_model_id: Some(Some(embedding_model.id.to_string())),
+                    multimodal_provider_model_id: None,
                 },
             )
             .await

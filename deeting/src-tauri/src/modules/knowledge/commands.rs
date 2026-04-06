@@ -1,10 +1,137 @@
 use tauri::State;
 
+use crate::modules::ai_upstream::request_provider_chat_completion;
 use crate::modules::knowledge::types::*;
+use crate::modules::providers::model_guard::{
+    ensure_required_local_multimodal_model_configured, resolve_local_multimodal_model_connection,
+};
+use crate::modules::providers::types::DesktopObjectStorageReadRequest;
 use crate::state::AppState;
+use mcp_core::types::LocalChatInputMessage;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 fn to_string<T: std::fmt::Display>(err: T) -> String {
     err.to_string()
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ExtractLocalKnowledgeImageTextRequest {
+    pub filename: String,
+    pub object_key: Option<String>,
+    pub asset_url: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LocalKnowledgeImageExtractionResult {
+    pub raw_text: String,
+    pub vision_summary: Option<String>,
+}
+
+fn extract_chat_response_text(response: &serde_json::Value) -> String {
+    response
+        .get("content")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+pub async fn extract_local_knowledge_image_text(
+    state: State<'_, AppState>,
+    payload: ExtractLocalKnowledgeImageTextRequest,
+) -> Result<LocalKnowledgeImageExtractionResult, String> {
+    ensure_required_local_multimodal_model_configured(state.inner()).await?;
+    let model_connection = resolve_local_multimodal_model_connection(state.inner()).await?;
+
+    let filename = payload.filename.trim();
+    if filename.is_empty() {
+        return Err("filename is required".to_string());
+    }
+
+    let asset_url = if let Some(value) = payload
+        .asset_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        value.to_string()
+    } else if let Some(object_key) = payload
+        .object_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        state
+            .providers
+            .store
+            .prepare_local_desktop_object_storage_read(DesktopObjectStorageReadRequest {
+                object_key: object_key.to_string(),
+                expires_seconds: Some(900),
+            })
+            .await
+            .map_err(to_string)?
+            .asset_url
+    } else {
+        return Err("knowledge image extraction requires asset_url or object_key".to_string());
+    };
+
+    let user_content = json!([
+        {
+            "type": "text",
+            "text": format!(
+                "Read the uploaded knowledge-base image named \"{}\". Extract all meaningful visible text in reading order. If the image contains a table, form, slide, chart, or UI screenshot, include a concise plain-text structural summary after the transcription. Return plain text only, with no markdown fences.",
+                filename
+            ),
+        },
+        {
+            "type": "image_url",
+            "image_url": {
+                "url": asset_url
+            }
+        }
+    ])
+    .to_string();
+
+    let response = request_provider_chat_completion(
+        state.inner(),
+        &model_connection.provider_model_id,
+        &model_connection.model_id,
+        vec![
+            LocalChatInputMessage {
+                role: "system".to_string(),
+                content: "You extract knowledge-base text from images. Keep the response concise, faithful to the image, and plain text only.".to_string(),
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
+            },
+            LocalChatInputMessage {
+                role: "user".to_string(),
+                content: user_content,
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
+            },
+        ],
+        None,
+        Some(0.1),
+        Some(2000),
+        None,
+        None,
+    )
+    .await?;
+
+    let raw_text = extract_chat_response_text(&response);
+    if raw_text.trim().is_empty() {
+        return Err("knowledge image extraction returned empty text".to_string());
+    }
+
+    Ok(LocalKnowledgeImageExtractionResult {
+        raw_text,
+        vision_summary: None,
+    })
 }
 
 #[tauri::command]

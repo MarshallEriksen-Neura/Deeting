@@ -1,7 +1,7 @@
 export const MODEL_CONFIG_REQUIRED_PREFIX = "MODEL_CONFIG_REQUIRED"
 export const MODEL_CONFIG_REQUIRED_EVENT = "deeting:model-config-required"
 
-export type MissingDesktopModelConfig = "secretary" | "embedding"
+export type MissingDesktopModelConfig = "secretary" | "embedding" | "multimodal"
 
 export interface ModelConfigRequiredDetail {
   missing: MissingDesktopModelConfig[]
@@ -31,7 +31,7 @@ function normalizeMissingConfigs(raw: string): MissingDesktopModelConfig[] {
 
   const normalized: MissingDesktopModelConfig[] = []
   for (const item of items) {
-    if (item === "secretary" || item === "embedding") {
+    if (item === "secretary" || item === "embedding" || item === "multimodal") {
       normalized.push(item)
     }
   }

@@ -110,6 +110,7 @@ pub fn row_to_user_embedding_config(row: &SqliteRow) -> Result<UserEmbeddingConf
         id: row.try_get("id")?,
         user_id: row.try_get("user_id")?,
         provider_model_id: row.try_get("provider_model_id")?,
+        multimodal_provider_model_id: row.try_get("multimodal_provider_model_id")?,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
     })

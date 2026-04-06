@@ -9,7 +9,19 @@
 export type FileStatus = "active" | "processing" | "failed"
 
 /** Supported file types for knowledge base upload */
-export type FileType = "pdf" | "txt" | "docx" | "md" | "csv" | "xlsx" | "html" | "json"
+export type FileType =
+  | "pdf"
+  | "txt"
+  | "docx"
+  | "md"
+  | "csv"
+  | "xlsx"
+  | "html"
+  | "json"
+  | "png"
+  | "jpg"
+  | "jpeg"
+  | "webp"
 
 /** A document in the knowledge base */
 export interface KnowledgeFile {

@@ -23,9 +23,12 @@ interface DesktopEmbeddingSettingsCardProps {
   control: Control<SettingsFormValues>
   isTauriRuntime: boolean
   canEditDesktop: boolean
-  hasAvailableModels: boolean
-  modelGroups: ModelGroup[]
-  isLoadingModels?: boolean
+  hasAvailableEmbeddingModels: boolean
+  embeddingModelGroups: ModelGroup[]
+  isLoadingEmbeddingModels?: boolean
+  hasAvailableMultimodalModels: boolean
+  multimodalModelGroups: ModelGroup[]
+  isLoadingMultimodalModels?: boolean
 }
 
 type SelectedModel = {
@@ -52,14 +55,18 @@ export function DesktopEmbeddingSettingsCard({
   control,
   isTauriRuntime,
   canEditDesktop,
-  hasAvailableModels,
-  modelGroups,
-  isLoadingModels = false,
+  hasAvailableEmbeddingModels,
+  embeddingModelGroups,
+  isLoadingEmbeddingModels = false,
+  hasAvailableMultimodalModels,
+  multimodalModelGroups,
+  isLoadingMultimodalModels = false,
 }: DesktopEmbeddingSettingsCardProps) {
   const t = useI18n("settings")
-  const [isPickerOpen, setIsPickerOpen] = useState(false)
-  const pickerModelGroups = useMemo(() =>
-    modelGroups.map((group) => ({
+  const [isEmbeddingPickerOpen, setIsEmbeddingPickerOpen] = useState(false)
+  const [isMultimodalPickerOpen, setIsMultimodalPickerOpen] = useState(false)
+  const embeddingPickerModelGroups = useMemo(() =>
+    embeddingModelGroups.map((group) => ({
       ...group,
       models: group.models.map(
         (model): ModelPickerModel => ({
@@ -68,7 +75,18 @@ export function DesktopEmbeddingSettingsCard({
         })
       ),
     }))
-  , [modelGroups])
+  , [embeddingModelGroups])
+  const multimodalPickerModelGroups = useMemo(() =>
+    multimodalModelGroups.map((group) => ({
+      ...group,
+      models: group.models.map(
+        (model): ModelPickerModel => ({
+          ...model,
+          provider_model_id: model.provider_model_id ?? undefined,
+        })
+      ),
+    }))
+  , [multimodalModelGroups])
 
   return (
     <div className="rounded-2xl border border-border/40 bg-card/50 transition-colors hover:bg-card/70 dark:bg-card/30 dark:hover:bg-card/40">
@@ -113,102 +131,200 @@ export function DesktopEmbeddingSettingsCard({
             </p>
           </div>
         ) : (
-          <FormField
-            control={control}
-            name="desktopEmbeddingProviderModelId"
-            render={({ field }) => {
-              const selectedValue = field.value?.trim()
-              const selectedModel = findSelectedModel(selectedValue, modelGroups)
-              const displayName = isLoadingModels
-                ? t("personal.currentLoading")
-                : (selectedModel?.model.id ?? selectedValue) || t("personal.currentEmpty")
-              const ownerText =
-                selectedModel?.model.owned_by || selectedModel?.group?.provider
-              const isDisabled = !canEditDesktop || !hasAvailableModels
-              const visual = resolveModelVisual(
-                selectedModel
-                  ? {
-                      ...selectedModel.model,
-                      provider_model_id: selectedModel.model.provider_model_id ?? undefined,
-                    }
-                  : undefined
-              )
-              const Icon = visual.icon
+          <div className="space-y-4">
+            <FormField
+              control={control}
+              name="desktopEmbeddingProviderModelId"
+              render={({ field }) => {
+                const selectedValue = field.value?.trim()
+                const selectedModel = findSelectedModel(selectedValue, embeddingModelGroups)
+                const displayName = isLoadingEmbeddingModels
+                  ? t("personal.currentLoading")
+                  : (selectedModel?.model.id ?? selectedValue) || t("personal.currentEmpty")
+                const ownerText =
+                  selectedModel?.model.owned_by || selectedModel?.group?.provider
+                const isDisabled = !canEditDesktop || !hasAvailableEmbeddingModels
+                const visual = resolveModelVisual(
+                  selectedModel
+                    ? {
+                        ...selectedModel.model,
+                        provider_model_id: selectedModel.model.provider_model_id ?? undefined,
+                      }
+                    : undefined
+                )
+                const Icon = visual.icon
 
-              return (
-                <FormItem>
-                  <FormLabel className="sr-only">{t("desktop.modelLabel")}</FormLabel>
-                  <Popover
-                    open={isPickerOpen}
-                    onOpenChange={(open) => {
-                      if (isDisabled) return
-                      setIsPickerOpen(open)
-                    }}
-                  >
-                    <PopoverTrigger asChild>
-                      <FormControl>
-                        <button
-                          type="button"
-                          className="flex w-full items-center justify-between rounded-xl border border-border/40 bg-background px-4 py-3 text-left transition-all hover:border-border/60 hover:bg-muted/20 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-background/50"
-                          disabled={isDisabled}
-                          aria-expanded={isPickerOpen}
-                        >
-                          <span className="flex min-w-0 items-center gap-3">
-                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted/40 dark:bg-muted/20">
-                              <Icon className={`h-4 w-4 ${visual.color}`} />
-                            </span>
-                            <span className="flex min-w-0 flex-col leading-tight">
-                              <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                                {t("desktop.modelLabel")}
-                              </span>
-                              <span className="truncate text-sm font-medium text-foreground">
-                                {displayName}
-                              </span>
-                              {ownerText ? (
-                                <span className="truncate text-[11px] text-muted-foreground">
-                                  {ownerText}
-                                </span>
-                              ) : null}
-                            </span>
-                          </span>
-                          <ChevronDown
-                            className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 ${isPickerOpen ? "rotate-180" : ""}`}
-                          />
-                        </button>
-                      </FormControl>
-                    </PopoverTrigger>
-                    <PopoverContent
-                      className="w-[min(520px,92vw)] p-0"
-                      align="start"
-                      side="bottom"
-                      sideOffset={8}
+                return (
+                  <FormItem>
+                    <FormLabel className="sr-only">{t("desktop.modelLabel")}</FormLabel>
+                    <Popover
+                      open={isEmbeddingPickerOpen}
+                      onOpenChange={(open) => {
+                        if (isDisabled) return
+                        setIsEmbeddingPickerOpen(open)
+                      }}
                     >
-                      {isPickerOpen ? (
-                      <DeferredSettingsModelPicker
-                        value={field.value}
-                        onChange={(value) => {
-                          field.onChange(value)
-                          setIsPickerOpen(false)
-                        }}
-                        modelGroups={pickerModelGroups}
-                        valueField="provider_model_id"
-                        title={t("desktop.modelLabel")}
-                        subtitle={t("desktop.modelPlaceholder")}
-                        searchPlaceholder={t("personal.modelSearchPlaceholder")}
-                        emptyText={t("personal.emptyHint")}
-                        noResultsText={t("personal.modelNoResults")}
-                        disabled={isDisabled}
-                        scrollAreaClassName="h-64 pr-1"
-                        className="rounded-xl border border-border/40"
-                      />
-                      ) : null}
-                    </PopoverContent>
-                  </Popover>
-                  <FormDescription>{t("desktop.modelHelp")}</FormDescription>
-                </FormItem>
-              )
-            }}
-          />
+                      <PopoverTrigger asChild>
+                        <FormControl>
+                          <button
+                            type="button"
+                            className="flex w-full items-center justify-between rounded-xl border border-border/40 bg-background px-4 py-3 text-left transition-all hover:border-border/60 hover:bg-muted/20 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-background/50"
+                            disabled={isDisabled}
+                            aria-expanded={isEmbeddingPickerOpen}
+                          >
+                            <span className="flex min-w-0 items-center gap-3">
+                              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted/40 dark:bg-muted/20">
+                                <Icon className={`h-4 w-4 ${visual.color}`} />
+                              </span>
+                              <span className="flex min-w-0 flex-col leading-tight">
+                                <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                                  {t("desktop.modelLabel")}
+                                </span>
+                                <span className="truncate text-sm font-medium text-foreground">
+                                  {displayName}
+                                </span>
+                                {ownerText ? (
+                                  <span className="truncate text-[11px] text-muted-foreground">
+                                    {ownerText}
+                                  </span>
+                                ) : null}
+                              </span>
+                            </span>
+                            <ChevronDown
+                              className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 ${isEmbeddingPickerOpen ? "rotate-180" : ""}`}
+                            />
+                          </button>
+                        </FormControl>
+                      </PopoverTrigger>
+                      <PopoverContent
+                        className="w-[min(520px,92vw)] p-0"
+                        align="start"
+                        side="bottom"
+                        sideOffset={8}
+                      >
+                        {isEmbeddingPickerOpen ? (
+                        <DeferredSettingsModelPicker
+                          value={field.value}
+                          onChange={(value) => {
+                            field.onChange(value)
+                            setIsEmbeddingPickerOpen(false)
+                          }}
+                          modelGroups={embeddingPickerModelGroups}
+                          valueField="provider_model_id"
+                          title={t("desktop.modelLabel")}
+                          subtitle={t("desktop.modelPlaceholder")}
+                          searchPlaceholder={t("personal.modelSearchPlaceholder")}
+                          emptyText={t("personal.emptyHint")}
+                          noResultsText={t("personal.modelNoResults")}
+                          disabled={isDisabled}
+                          scrollAreaClassName="h-64 pr-1"
+                          className="rounded-xl border border-border/40"
+                        />
+                        ) : null}
+                      </PopoverContent>
+                    </Popover>
+                    <FormDescription>{t("desktop.modelHelp")}</FormDescription>
+                  </FormItem>
+                )
+              }}
+            />
+            <FormField
+              control={control}
+              name="desktopMultimodalProviderModelId"
+              render={({ field }) => {
+                const selectedValue = field.value?.trim()
+                const selectedModel = findSelectedModel(selectedValue, multimodalModelGroups)
+                const displayName = isLoadingMultimodalModels
+                  ? t("personal.currentLoading")
+                  : (selectedModel?.model.id ?? selectedValue) || t("personal.currentEmpty")
+                const ownerText =
+                  selectedModel?.model.owned_by || selectedModel?.group?.provider
+                const isDisabled = !canEditDesktop || !hasAvailableMultimodalModels
+                const visual = resolveModelVisual(
+                  selectedModel
+                    ? {
+                        ...selectedModel.model,
+                        provider_model_id: selectedModel.model.provider_model_id ?? undefined,
+                      }
+                    : undefined
+                )
+                const Icon = visual.icon
+
+                return (
+                  <FormItem>
+                    <FormLabel className="sr-only">{t("desktop.multimodalLabel")}</FormLabel>
+                    <Popover
+                      open={isMultimodalPickerOpen}
+                      onOpenChange={(open) => {
+                        if (isDisabled) return
+                        setIsMultimodalPickerOpen(open)
+                      }}
+                    >
+                      <PopoverTrigger asChild>
+                        <FormControl>
+                          <button
+                            type="button"
+                            className="flex w-full items-center justify-between rounded-xl border border-border/40 bg-background px-4 py-3 text-left transition-all hover:border-border/60 hover:bg-muted/20 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-background/50"
+                            disabled={isDisabled}
+                            aria-expanded={isMultimodalPickerOpen}
+                          >
+                            <span className="flex min-w-0 items-center gap-3">
+                              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted/40 dark:bg-muted/20">
+                                <Icon className={`h-4 w-4 ${visual.color}`} />
+                              </span>
+                              <span className="flex min-w-0 flex-col leading-tight">
+                                <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                                  {t("desktop.multimodalLabel")}
+                                </span>
+                                <span className="truncate text-sm font-medium text-foreground">
+                                  {displayName}
+                                </span>
+                                {ownerText ? (
+                                  <span className="truncate text-[11px] text-muted-foreground">
+                                    {ownerText}
+                                  </span>
+                                ) : null}
+                              </span>
+                            </span>
+                            <ChevronDown
+                              className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 ${isMultimodalPickerOpen ? "rotate-180" : ""}`}
+                            />
+                          </button>
+                        </FormControl>
+                      </PopoverTrigger>
+                      <PopoverContent
+                        className="w-[min(520px,92vw)] p-0"
+                        align="start"
+                        side="bottom"
+                        sideOffset={8}
+                      >
+                        {isMultimodalPickerOpen ? (
+                        <DeferredSettingsModelPicker
+                          value={field.value}
+                          onChange={(value) => {
+                            field.onChange(value)
+                            setIsMultimodalPickerOpen(false)
+                          }}
+                          modelGroups={multimodalPickerModelGroups}
+                          valueField="provider_model_id"
+                          title={t("desktop.multimodalLabel")}
+                          subtitle={t("desktop.multimodalPlaceholder")}
+                          searchPlaceholder={t("personal.modelSearchPlaceholder")}
+                          emptyText={t("personal.emptyHint")}
+                          noResultsText={t("personal.modelNoResults")}
+                          disabled={isDisabled}
+                          scrollAreaClassName="h-64 pr-1"
+                          className="rounded-xl border border-border/40"
+                        />
+                        ) : null}
+                      </PopoverContent>
+                    </Popover>
+                    <FormDescription>{t("desktop.multimodalHelp")}</FormDescription>
+                  </FormItem>
+                )
+              }}
+            />
+          </div>
         )}
       </div>
 

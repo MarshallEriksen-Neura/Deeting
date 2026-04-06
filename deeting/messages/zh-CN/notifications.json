@@ -39,7 +39,8 @@
         "separator": "、",
         "requirements": {
           "secretary": "秘书模型（技术模型）",
-          "embedding": "桌面 Embedding 模型"
+          "embedding": "桌面 Embedding 模型",
+          "multimodal": "桌面图片解析多模态模型"
         }
       }
     },

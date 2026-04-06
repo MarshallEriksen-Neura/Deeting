@@ -39,7 +39,8 @@
         "separator": ", ",
         "requirements": {
           "secretary": "Secretary model (technical model)",
-          "embedding": "Desktop embedding model"
+          "embedding": "Desktop embedding model",
+          "multimodal": "Desktop multimodal image-reading model"
         }
       }
     },

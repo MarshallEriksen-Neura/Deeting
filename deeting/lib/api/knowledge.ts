@@ -1,5 +1,8 @@
 import { request, apiClient } from "@/lib/http"
-import { prepareDesktopObjectStorageUpload } from "@/lib/api/desktop-object-storage"
+import {
+  prepareDesktopObjectStorageRead,
+  prepareDesktopObjectStorageUpload,
+} from "@/lib/api/desktop-object-storage"
 import { handleModelConfigRequiredError } from "@/lib/model-config-required"
 import { extractDocxTextFromFile } from "@/lib/utils/docx"
 import { extractPdfTextFromFile } from "@/lib/utils/pdf"
@@ -23,12 +26,28 @@ const REMOTE_UPLOAD_FILE_TYPES: FileType[] = [
   "xlsx",
   "html",
   "json",
+  "png",
+  "jpg",
+  "jpeg",
+  "webp",
 ]
 
 function isRemoteUploadFileType(value: string): value is FileType {
   return REMOTE_UPLOAD_FILE_TYPES.includes(value as FileType)
 }
-const LOCAL_UPLOAD_FILE_TYPES: FileType[] = ["pdf", "txt", "docx", "md", "csv", "html", "json"]
+const LOCAL_UPLOAD_FILE_TYPES: FileType[] = [
+  "pdf",
+  "txt",
+  "docx",
+  "md",
+  "csv",
+  "html",
+  "json",
+  "png",
+  "jpg",
+  "jpeg",
+  "webp",
+]
 const LOCAL_PARSEABLE_FILE_TYPES = new Set<string>(LOCAL_UPLOAD_FILE_TYPES)
 const REMOTE_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
 const isTauriRuntime = () =>
@@ -148,6 +167,11 @@ interface LocalKnowledgeChunkListResponse {
   limit: number
 }
 
+interface LocalKnowledgeImageExtractionResult {
+  raw_text: string
+  vision_summary?: string | null
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Mappers (snake_case -> camelCase)                                         */
 /* -------------------------------------------------------------------------- */
@@ -225,6 +249,10 @@ function normalizeFileType(value: string): KnowledgeFile["type"] {
     case "xlsx":
     case "html":
     case "json":
+    case "png":
+    case "jpg":
+    case "jpeg":
+    case "webp":
       return normalized
     default:
       return "txt"
@@ -308,6 +336,37 @@ async function readLocalFileText(file: File, fileType: string): Promise<string> 
     reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "")
     reader.onerror = () => reject(reader.error ?? new Error("failed to read local file"))
     reader.readAsText(file)
+  })
+}
+
+function isImageKnowledgeFileType(fileType: string): boolean {
+  return fileType === "png" || fileType === "jpg" || fileType === "jpeg" || fileType === "webp"
+}
+
+async function extractLocalKnowledgeImageText(payload: {
+  filename: string
+  objectKey?: string | null
+  assetUrl?: string | null
+}): Promise<LocalKnowledgeImageExtractionResult> {
+  const assetUrl =
+    payload.assetUrl?.trim() ||
+    (
+      payload.objectKey?.trim()
+        ? (await prepareDesktopObjectStorageRead({
+            object_key: payload.objectKey.trim(),
+            expires_seconds: 900,
+          })).asset_url
+        : ""
+    )
+  if (!assetUrl) {
+    throw new Error("desktop knowledge image extraction requires an object storage read url")
+  }
+  return invokeTauri<LocalKnowledgeImageExtractionResult>("extract_local_knowledge_image_text", {
+    payload: {
+      filename: payload.filename,
+      object_key: payload.objectKey ?? null,
+      asset_url: assetUrl,
+    },
   })
 }
 
@@ -590,7 +649,21 @@ export async function uploadFile(
     onProgress?.(20)
     let rawText: string
     try {
-      rawText = await readLocalFileText(file, fileType)
+      if (isImageKnowledgeFileType(fileType)) {
+        const objectStorage = (uploadedObject?.metaInfo.object_storage ?? null) as
+          | { object_key?: unknown; asset_url?: unknown }
+          | null
+        const extracted = await extractLocalKnowledgeImageText({
+          filename: file.name,
+          objectKey:
+            typeof objectStorage?.object_key === "string" ? objectStorage.object_key : null,
+          assetUrl:
+            typeof objectStorage?.asset_url === "string" ? objectStorage.asset_url : null,
+        })
+        rawText = extracted.raw_text
+      } else {
+        rawText = await readLocalFileText(file, fileType)
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "本地离线文档解析失败"
       await createLocalUserDocument({
