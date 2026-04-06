@@ -118,6 +118,9 @@ fn render_local_runtime_system_prompt_adds_runtime_and_code_sections() {
     assert!(prompt.contains("search_sdk, shell_execute"));
     assert!(prompt.contains("## Execution Tool Protocol"));
     assert!(prompt.contains("execute_code_plan"));
+    assert!(prompt.contains("## User-Visible Tool Call Updates"));
+    assert!(prompt.contains("Before a user-visible tool call"));
+    assert!(prompt.contains("Do not repeat the same pre-tool note"));
 }
 
 #[test]
@@ -127,6 +130,23 @@ fn render_local_runtime_system_prompt_omits_optional_sections_when_not_requested
     assert!(prompt.contains("## Current Context"));
     assert!(!prompt.contains("## Runtime Capability Contract"));
     assert!(!prompt.contains("## Execution Tool Protocol"));
+    assert!(prompt.contains("## User-Visible Tool Call Updates"));
+}
+
+#[test]
+fn build_local_prompt_plan_always_includes_pre_tool_visibility_guidance() {
+    let rendered = build_local_prelude_messages(&PromptAssets::default(), None)
+        .first()
+        .map(|message| message.content.clone())
+        .unwrap_or_default();
+
+    assert!(rendered.contains("## User-Visible Tool Call Updates"));
+    assert!(rendered.contains(
+        "briefly state what you are about to check or do in one natural sentence"
+    ));
+    assert!(rendered.contains(
+        "Do not add a pre-tool note when you can answer directly without tools"
+    ));
 }
 
 #[test]

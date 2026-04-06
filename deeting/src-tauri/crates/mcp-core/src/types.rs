@@ -241,7 +241,8 @@ fn normalized_transport_kind(value: Option<&str>) -> Option<McpTransportKind> {
         Some(raw) if raw.eq_ignore_ascii_case("sse") => Some(McpTransportKind::Sse),
         Some(raw)
             if raw.eq_ignore_ascii_case("streamable-http")
-                || raw.eq_ignore_ascii_case("streamable_http") =>
+                || raw.eq_ignore_ascii_case("streamable_http")
+                || raw.eq_ignore_ascii_case("http") =>
         {
             Some(McpTransportKind::Sse)
         }
@@ -532,7 +533,7 @@ mod tests {
     }
 
     #[test]
-    fn tool_transport_kind_accepts_streamable_http_aliases() {
+    fn tool_transport_kind_accepts_remote_http_aliases() {
         let payload = McpToolConfigPayload {
             command: None,
             args: None,
@@ -549,6 +550,14 @@ mod tests {
 
         let payload = McpToolConfigPayload {
             transport_type: Some("streamable-http".to_string()),
+            ..payload
+        };
+
+        assert_eq!(payload.transport_kind(), McpTransportKind::Sse);
+        assert_eq!(payload.remote_sse_url(), Some("https://example.com/mcp"));
+
+        let payload = McpToolConfigPayload {
+            transport_type: Some("http".to_string()),
             ..payload
         };
 

@@ -20,6 +20,7 @@ describe("registry import", () => {
     expect(parseMcpRegistryImportConfig({
       mcpServers: {
         remoteA: { url: "https://example.com/sse", name: "Remote A" },
+        remoteB: { type: "http", url: "https://example.com/mcp", name: "Remote B" },
         localB: {
           command: "node",
           args: ["server.js", 42, "--watch"],
@@ -33,6 +34,13 @@ describe("registry import", () => {
           name: "Remote A",
           server_type: "sse",
           sse_url: "https://example.com/sse",
+          auth_type: "none",
+          is_enabled: true,
+        },
+        {
+          name: "Remote B",
+          server_type: "streamable-http",
+          sse_url: "https://example.com/mcp",
           auth_type: "none",
           is_enabled: true,
         },
@@ -73,7 +81,7 @@ describe("registry import", () => {
   it("returns the first detailed validation reason when no importable servers exist", () => {
     expect(parseMcpRegistryImportConfig({
       mcpServers: {
-        tavily: { type: "sse" },
+        tavily: { type: "http" },
       },
     })).toEqual({
       kind: "invalid",

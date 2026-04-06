@@ -60,6 +60,24 @@ const buildInvalidImportConfigResult = (
   values,
 })
 
+const normalizeRemoteServerType = (
+  type: unknown
+): "sse" | "streamable-http" | null => {
+  if (typeof type !== "string") return null
+
+  const normalized = type.trim().toLowerCase()
+  if (normalized === "sse") return "sse"
+  if (
+    normalized === "streamable-http" ||
+    normalized === "streamable_http" ||
+    normalized === "http"
+  ) {
+    return "streamable-http"
+  }
+
+  return null
+}
+
 const toImportRequest = (name: string, config: unknown): McpServerCreateRequest | null => {
   if (!isRecord(config)) return null
 
@@ -79,11 +97,12 @@ const toImportRequest = (name: string, config: unknown): McpServerCreateRequest 
         ? config.url
         : undefined
   const displayName = typeof config.name === "string" ? config.name : name
+  const remoteServerType = normalizeRemoteServerType(config.type)
 
   if (sseUrl) {
     return {
       name: displayName,
-      server_type: "sse",
+      server_type: remoteServerType ?? "sse",
       sse_url: sseUrl,
       auth_type: "none",
       is_enabled: true,
@@ -136,8 +155,7 @@ export const parseMcpRegistryImportConfig = (
         return acc
       }
 
-      const type = typeof serverConfig.type === "string" ? serverConfig.type.toLowerCase() : ""
-      if (type === "sse" || type === "streamable-http" || type === "streamable_http") {
+      if (normalizeRemoteServerType(serverConfig.type)) {
         firstInvalid = buildInvalidImportConfigResult("addServer.errors.missingRemoteUrl", {
           name,
         })

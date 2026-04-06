@@ -17,6 +17,14 @@ pub(crate) use mcp_runtime::prompt::{
     PromptPlan, RouterPromptLocalContext,
 };
 
+const PRE_TOOL_VISIBILITY_PROMPT: &str = concat!(
+    "Before a user-visible tool call, briefly state what you are about to check or do in one natural sentence when that helps the user follow the action.\n",
+    "Keep the pre-tool note short and specific.\n",
+    "Do not add a pre-tool note when you can answer directly without tools.\n",
+    "Do not repeat the same pre-tool note for every immediate sub-tool call in one continuous action.\n",
+    "Prefer emitting that note as the assistant's normal text content before the tool call rather than as a separate empty update."
+);
+
 fn query_router_prompt_local_context_from_system() -> Option<RouterPromptLocalContext> {
     #[cfg(target_os = "windows")]
     let output = {
@@ -79,6 +87,11 @@ pub(crate) fn render_local_runtime_system_prompt(
     {
         sections.push(format!("## Execution Tool Protocol\n{}", prompt));
     }
+
+    sections.push(format!(
+        "## User-Visible Tool Call Updates\n{}",
+        PRE_TOOL_VISIBILITY_PROMPT
+    ));
 
     sections.join("\n\n")
 }
