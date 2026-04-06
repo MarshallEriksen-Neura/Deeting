@@ -27,6 +27,14 @@ jest.mock("@/hooks/use-i18n", () => ({
   useI18n: () => (key: string) => key,
 }))
 
+jest.mock("next-intl", () => ({
+  useLocale: () => "zh-CN",
+}))
+
+jest.mock("@/i18n/routing", () => ({
+  useRouter: () => ({ push: jest.fn() }),
+}))
+
 jest.mock("@/hooks/use-chat-service", () => ({
   useChatService: () => ({ modelGroups: [], isLoadingModels: false }),
 }))
@@ -71,9 +79,6 @@ jest.mock("../settings-form-actions", () => ({
 
 jest.mock("../settings-lazy", () => ({
   DeferredAgentSettingsCard: () => null,
-  DeferredApprovalRulesPanel: () => (
-    <div data-testid="approval-rules-panel">approval rules panel</div>
-  ),
   DeferredDesktopBrowserAgentPanelCard: () => (
     <div data-testid="browser-agent-panel">browser panel</div>
   ),
@@ -94,7 +99,6 @@ jest.mock("../settings-nav", () => ({
         | "models"
         | "storage"
         | "agent"
-        | "approvalRules"
         | "browser"
         | "relay"
         | "window"
@@ -110,9 +114,6 @@ jest.mock("../settings-nav", () => ({
       </button>
       <button type="button" onClick={() => onSectionChange("agent")}>
         agent
-      </button>
-      <button type="button" onClick={() => onSectionChange("approvalRules")}>
-        approvalRules
       </button>
       <button type="button" onClick={() => onSectionChange("browser")}>
         browser
@@ -202,28 +203,4 @@ describe("SettingsForm desktop config loading", () => {
     expect(screen.getByTestId("browser-agent-panel")).toBeInTheDocument()
   })
 
-  it("shows approval rules only in the dedicated approval rules section", () => {
-    render(<SettingsForm isAuthenticated isTauriRuntime />)
-
-    expect(screen.queryByTestId("approval-rules-panel")).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole("button", { name: "agent" }))
-    expect(screen.queryByTestId("approval-rules-panel")).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole("button", { name: "approvalRules" }))
-    expect(screen.getByTestId("approval-rules-panel")).toBeInTheDocument()
-  })
-
-  it("opens the approval rules section immediately when initialSection is provided", () => {
-    render(
-      <SettingsForm
-        isAuthenticated
-        isTauriRuntime
-        initialSection="approvalRules"
-      />
-    )
-
-    expect(screen.getByTestId("approval-rules-panel")).toBeInTheDocument()
-    expect(screen.queryByTestId("browser-agent-panel")).not.toBeInTheDocument()
-  })
 })

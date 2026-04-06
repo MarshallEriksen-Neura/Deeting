@@ -16,6 +16,7 @@ const namespaces = [
   "notifications",
   "profile",
   "settings",
+  "approval-rules",
   "assistants",
   "mcp",
   "spec-agent",

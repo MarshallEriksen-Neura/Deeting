@@ -50,4 +50,20 @@ describe("getUserDashboardNavigation", () => {
     expect(matchesNavItem(providersItem!, "/dashboard/user/providers")).toBe(true)
     expect(matchesNavItem(providersItem!, "/dashboard/user/providers/market")).toBe(true)
   })
+
+  it("includes the dashboard security policy route", () => {
+    const items = getUserDashboardNavigation({ isDesktopRuntime: true }).flatMap(
+      (group) => group.items
+    )
+
+    expect(items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "security-policy",
+          href: "/dashboard/approval-rules",
+          label: "nav.securityPolicy",
+        }),
+      ])
+    )
+  })
 })

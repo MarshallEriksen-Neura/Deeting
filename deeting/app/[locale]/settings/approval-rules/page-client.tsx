@@ -1,12 +1,10 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
 import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 import {
   AlertTriangle,
-  ArrowLeft,
   BrainCircuit,
   Filter,
   Loader2,
@@ -41,10 +39,6 @@ import { Container } from "@/components/ui/container"
 
 type RuleFilter = "all" | "allow" | "deny"
 type ConfirmAction = null | "clear-all" | "clear-allow" | "reset-learning"
-
-interface ApprovalRulesClientProps {
-  embedded?: boolean
-}
 
 function formatDate(value?: number | null) {
   if (!value) return "—"
@@ -90,9 +84,7 @@ function RuleChip({
   )
 }
 
-export function ApprovalRulesClient({
-  embedded = false,
-}: ApprovalRulesClientProps) {
+export function ApprovalRulesClient() {
   const t = useTranslations("approval-rules")
   const [rules, setRules] = React.useState<ToolApprovalRule[]>([])
   const [summaryRows, setSummaryRows] = React.useState<ToolApprovalLearningSummaryRow[]>([])
@@ -200,14 +192,6 @@ export function ApprovalRulesClient({
         <div className="relative flex flex-col gap-8">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl space-y-4">
-              {!embedded ? (
-                <GlassButton asChild variant="secondary" size="sm">
-                  <Link href="/settings">
-                    <ArrowLeft className="mr-2 h-4 w-4" />
-                    {t("backToSettings")}
-                  </Link>
-                </GlassButton>
-              ) : null}
               <div className="space-y-3">
                 <div className="flex items-center gap-3">
                   <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,rgba(245,158,11,0.16),rgba(14,165,233,0.18))] text-amber-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] dark:text-amber-300">
@@ -579,10 +563,6 @@ export function ApprovalRulesClient({
       </AlertDialog>
     </>
   )
-
-  if (embedded) {
-    return <div className="space-y-5">{content}</div>
-  }
 
   return (
     <Container as="main" gutter="md" size="full" className="py-6 md:py-8 !mx-0 !max-w-none">

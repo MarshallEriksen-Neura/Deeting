@@ -55,15 +55,15 @@ describe("SettingsNav browser section visibility", () => {
     expect(screen.getAllByText("nav.browser")).not.toHaveLength(0)
   })
 
-  it("shows the approval rules nav item in desktop runtime", () => {
+  it("does not show the approval rules nav item in desktop runtime", () => {
     render(
       <SettingsNav
-        activeSection="approvalRules"
+        activeSection="agent"
         onSectionChange={jest.fn()}
         isTauriRuntime
       />
     )
 
-    expect(screen.getAllByText("审批规则")).not.toHaveLength(0)
+    expect(screen.queryByText("审批规则")).not.toBeInTheDocument()
   })
 })

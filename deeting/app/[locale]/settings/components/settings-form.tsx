@@ -4,6 +4,7 @@ import * as React from "react";
 import { useForm, type UseFormReturn } from "react-hook-form";
 import { toast } from "sonner";
 import { AlertTriangle, Wrench } from "lucide-react";
+import { useLocale } from "next-intl";
 import { Form } from "@/components/ui/form";
 import { Progress } from "@/components/ui/progress";
 import { GlassButton } from "@/components/ui/glass-button";
@@ -19,6 +20,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useI18n } from "@/hooks/use-i18n";
 import { useChatService } from "@/hooks/use-chat-service";
+import { useRouter, type AppLocale } from "@/i18n/routing";
 import {
   LOCAL_EMBEDDING_REBUILD_PROGRESS_EVENT,
   rebuildLocalEmbeddingAssets,
@@ -42,7 +44,6 @@ import { SettingsNav, type SettingsSection } from "./settings-nav";
 import { type ModelGroup, type SettingsFormValues } from "../types";
 import { isBrowserAgentPanelEnabled } from "./browser-agent-panel-flags";
 import {
-  DeferredApprovalRulesPanel,
   DeferredAgentSettingsCard,
   DeferredDesktopBrowserAgentPanelCard,
   DeferredDesktopNetworkSettingsCard,
@@ -94,6 +95,8 @@ export function SettingsForm({
   isTauriRuntime,
   initialSection = "models",
 }: SettingsFormProps) {
+  const locale = useLocale()
+  const router = useRouter()
   const t = useI18n("settings");
   const isBrowserSectionVisible = isBrowserAgentPanelEnabled();
   const [activeSection, setActiveSection] =
@@ -708,15 +711,13 @@ export function SettingsForm({
             <div className="flex flex-col gap-5">
               <DeferredAgentSettingsCard
                 isTauriRuntime={isTauriRuntime}
-                onManageApprovalRules={() => setActiveSection("approvalRules")}
+                onManageApprovalRules={() =>
+                  router.push("/dashboard/approval-rules", {
+                    locale: locale as AppLocale,
+                  })
+                }
               />
               <DeferredDesktopSandboxSettingsCard isTauriRuntime={isTauriRuntime} />
-            </div>
-          )}
-
-          {activeSection === "approvalRules" && (
-            <div className="flex flex-col gap-5">
-              <DeferredApprovalRulesPanel embedded />
             </div>
           )}
 
@@ -769,7 +770,6 @@ export function SettingsForm({
           )}
 
           {activeSection !== "agent" &&
-            activeSection !== "approvalRules" &&
             activeSection !== "window" &&
             activeSection !== "version" &&
             (activeSection !== "browser" || !isBrowserSectionVisible) && (

@@ -88,6 +88,12 @@ export const userNavigation: NavGroup[] = [
         icon: "bot",
       },
       {
+        id: "security-policy",
+        label: "nav.securityPolicy",
+        href: "/dashboard/approval-rules",
+        icon: "shield",
+      },
+      {
         id: "credits",
         label: "nav.credits",
         href: "/dashboard/credits",

@@ -9,7 +9,6 @@ import {
   Globe,
   Rocket,
   Server,
-  ShieldCheck,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/hooks/use-i18n"
@@ -19,7 +18,6 @@ export type SettingsSection =
   | "models"
   | "storage"
   | "agent"
-  | "approvalRules"
   | "browser"
   | "relay"
   | "window"
@@ -35,7 +33,6 @@ const NAV_ITEMS: NavItem[] = [
   { id: "models", icon: Boxes, desktopOnly: false },
   { id: "storage", icon: Database, desktopOnly: true },
   { id: "agent", icon: Bot, desktopOnly: true },
-  { id: "approvalRules", icon: ShieldCheck, desktopOnly: true },
   { id: "browser", icon: Globe, desktopOnly: true },
   { id: "relay", icon: Server, desktopOnly: true },
   { id: "window", icon: AppWindow, desktopOnly: true },
@@ -46,7 +43,6 @@ const SETTINGS_SECTIONS = new Set<SettingsSection>([
   "models",
   "storage",
   "agent",
-  "approvalRules",
   "browser",
   "relay",
   "window",
@@ -77,17 +73,11 @@ export function SettingsNav({
   const isBrowserSectionVisible = isBrowserAgentPanelEnabled()
   const getNavLabel = (section: SettingsSection) => {
     const key = `nav.${section}`
-    const translated = t(key)
-    if (translated !== key) return translated
-    if (section === "approvalRules") return "审批规则"
-    return translated
+    return t(key)
   }
   const getNavDescription = (section: SettingsSection) => {
     const key = `nav.${section}Desc`
-    const translated = t(key)
-    if (translated !== key) return translated
-    if (section === "approvalRules") return "本地审批策略与学习规则"
-    return translated
+    return t(key)
   }
 
   const visibleItems = NAV_ITEMS.filter(

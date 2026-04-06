@@ -108,6 +108,7 @@
       "providers": "模型服务",
       "modelPools": "模型池状态",
       "taskAgents": "任务智能体",
+      "securityPolicy": "安全策略",
       "apiKeys": "API 密钥",
       "credits": "积分流水",
       "monitoring": "监控",

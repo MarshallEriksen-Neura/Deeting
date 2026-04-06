@@ -15,6 +15,7 @@ const DASHBOARD_MESSAGE_NAMESPACES: readonly StaticMessageNamespace[] = [
   "providers",
   "models",
   "model-pools",
+  "approval-rules",
   "logs",
   "knowledge",
 ]

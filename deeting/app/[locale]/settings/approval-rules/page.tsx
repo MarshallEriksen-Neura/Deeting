@@ -11,6 +11,6 @@ export default async function ApprovalRulesPage({
   const { locale } = await params
   setRequestLocale(locale)
   const basePath =
-    locale === routing.defaultLocale ? "/settings" : `/${locale}/settings`
-  redirect(`${basePath}?section=approvalRules`)
+    locale === routing.defaultLocale ? "/dashboard" : `/${locale}/dashboard`
+  redirect(`${basePath}/approval-rules`)
 }
