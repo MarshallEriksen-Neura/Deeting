@@ -135,6 +135,9 @@ describe("conversation tauri apis", () => {
           arguments: { query: "tool replay" },
           call_id: "call-1",
           session_id: "session-local-history-1",
+          execution_graph_execution_id: "graph-exec-1",
+          execution_graph_gate_node_id: "approval_gate:call-1",
+          execution_graph_tool_node_id: "tool_call:call-1",
         },
       ] as unknown)
 
@@ -147,6 +150,21 @@ describe("conversation tauri apis", () => {
       turn_index: 2,
       meta_info: {
         pending_approval_snapshot: true,
+        execution_graph: {
+          execution_id: "graph-exec-1",
+          nodes: [
+            {
+              node_id: "tool_call:call-1",
+              node_type: "tool_call",
+              status: "waiting_approval",
+            },
+            {
+              node_id: "approval_gate:call-1",
+              node_type: "approval_gate",
+              status: "waiting_approval",
+            },
+          ],
+        },
         blocks: [
           {
             type: "tool_call",
@@ -162,6 +180,9 @@ describe("conversation tauri apis", () => {
             result: expect.objectContaining({
               status: "REQUIRES_APPROVAL",
               approval_token: "approval-1",
+              execution_graph_execution_id: "graph-exec-1",
+              execution_graph_gate_node_id: "approval_gate:call-1",
+              execution_graph_tool_node_id: "tool_call:call-1",
             }),
           },
         ],

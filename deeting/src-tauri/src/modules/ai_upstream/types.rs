@@ -1,4 +1,4 @@
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct LocalModelConnection {
     pub(crate) provider_model_id: String,
     pub(crate) model_id: String,

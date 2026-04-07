@@ -178,13 +178,15 @@ mod tests {
 
     #[test]
     fn resolve_approval_decision_requires_approval_without_grant() {
-        let decision = resolve_approval_decision(&high_risk(), false, ApprovalPolicyLevel::Medium, None);
+        let decision =
+            resolve_approval_decision(&high_risk(), false, ApprovalPolicyLevel::Medium, None);
         assert_eq!(decision, ApprovalDecision::RequireApproval);
     }
 
     #[test]
     fn resolve_approval_decision_allows_when_grant_exists() {
-        let decision = resolve_approval_decision(&high_risk(), true, ApprovalPolicyLevel::Medium, None);
+        let decision =
+            resolve_approval_decision(&high_risk(), true, ApprovalPolicyLevel::Medium, None);
         assert_eq!(decision, ApprovalDecision::Allow);
     }
 
@@ -201,7 +203,8 @@ mod tests {
 
     #[test]
     fn resolve_approval_decision_high_ignores_session_grant() {
-        let decision = resolve_approval_decision(&high_risk(), true, ApprovalPolicyLevel::High, None);
+        let decision =
+            resolve_approval_decision(&high_risk(), true, ApprovalPolicyLevel::High, None);
         assert_eq!(decision, ApprovalDecision::RequireApproval);
     }
 
@@ -241,7 +244,8 @@ mod tests {
     #[test]
     fn calculate_medium_rule_confidence_keeps_recent_rules_strong() {
         let now = 10_i64 * 24 * 60 * 60 * 1000;
-        let recent = calculate_medium_rule_confidence(Some(now - 2_i64 * 24 * 60 * 60 * 1000), 7, now);
+        let recent =
+            calculate_medium_rule_confidence(Some(now - 2_i64 * 24 * 60 * 60 * 1000), 7, now);
         assert!((recent - 1.0).abs() < f32::EPSILON);
     }
 

@@ -111,9 +111,13 @@ pub(crate) async fn import_claude_agents(
             continue;
         }
 
-        let defaults =
-            resolve_import_binding_defaults(store, &parsed.tags, &parsed.relative_path, &parsed.name)
-                .await?;
+        let defaults = resolve_import_binding_defaults(
+            store,
+            &parsed.tags,
+            &parsed.relative_path,
+            &parsed.name,
+        )
+        .await?;
         let created = create_custom_task_agent(
             store,
             CreateCustomTaskAgentRequest {
@@ -209,7 +213,9 @@ fn parse_uploaded_claude_agent_document(
     }))
 }
 
-fn normalize_uploaded_relative_path(document: &UploadedClaudeAgentDocument) -> Result<String, String> {
+fn normalize_uploaded_relative_path(
+    document: &UploadedClaudeAgentDocument,
+) -> Result<String, String> {
     let candidate = document
         .relative_path
         .as_deref()
@@ -311,7 +317,8 @@ fn normalized_paths_match(left: Option<&str>, right: &str) -> bool {
     let Some(left) = left else {
         return false;
     };
-    left.replace('\\', "/").eq_ignore_ascii_case(&right.replace('\\', "/"))
+    left.replace('\\', "/")
+        .eq_ignore_ascii_case(&right.replace('\\', "/"))
 }
 
 fn compute_sha256_hex(raw: &[u8]) -> String {
@@ -336,9 +343,14 @@ mod tests {
             Uuid::new_v4()
         ));
         let database_url = format!("sqlite:{}", db_path.to_string_lossy().replace('\\', "/"));
-        let store = McpStore::new(&database_url).await.expect("create test store");
+        let store = McpStore::new(&database_url)
+            .await
+            .expect("create test store");
         store.init().await.expect("init test store");
-        store.ensure_local_source().await.expect("ensure local source");
+        store
+            .ensure_local_source()
+            .await
+            .expect("ensure local source");
         store
     }
 
@@ -357,8 +369,14 @@ mod tests {
         )
         .expect("frontmatter");
 
-        assert_eq!(value.get("name").and_then(|value| value.as_str()), Some("Frontend Developer"));
-        assert_eq!(value.get("description").and_then(|value| value.as_str()), Some("Builds UI"));
+        assert_eq!(
+            value.get("name").and_then(|value| value.as_str()),
+            Some("Frontend Developer")
+        );
+        assert_eq!(
+            value.get("description").and_then(|value| value.as_str()),
+            Some("Builds UI")
+        );
     }
 
     #[test]
@@ -405,7 +423,10 @@ mod tests {
         .expect("first import");
         assert_eq!(first.created_count, 1);
         assert_eq!(first.updated_count, 0);
-        assert_eq!(first.profiles[0].source_kind.as_deref(), Some("claude_agent"));
+        assert_eq!(
+            first.profiles[0].source_kind.as_deref(),
+            Some("claude_agent")
+        );
 
         let second = import_claude_agents(
             &store,
@@ -418,7 +439,10 @@ mod tests {
         .expect("second import");
         assert_eq!(second.created_count, 0);
         assert_eq!(second.updated_count, 1);
-        assert_eq!(second.profiles[0].description.as_deref(), Some("Plans work better"));
+        assert_eq!(
+            second.profiles[0].description.as_deref(),
+            Some("Plans work better")
+        );
         assert!(second.profiles[0].task_prompt.contains("more detail"));
     }
 }

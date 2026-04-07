@@ -8,6 +8,7 @@ use crate::modules::asset_registry::store::init_asset_registry_tables;
 use crate::modules::assistants::store::init_assistant_tables;
 use crate::modules::conversations::store::init_conversation_tables;
 use crate::modules::desktop_config::store_init::init_desktop_config_table;
+use crate::modules::desktop_runtime::runtime::execution_graph_store::init_execution_graph_tables;
 use crate::modules::mcp::commands::runtime::capability_registry_cache::CapabilityRegistryBaseCache;
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::policy::PersistedApprovalAction;
@@ -552,6 +553,7 @@ impl McpStore {
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
         init_desktop_config_table(self).await?;
+        init_execution_graph_tables(self).await?;
         init_render_runtime_tables(self).await?;
         init_asset_registry_tables(self).await?;
 
@@ -650,8 +652,16 @@ impl McpStore {
             PersistedApprovalAction::AllowOnce | PersistedApprovalAction::AllowAlways
         ));
         let reject_delta = i64::from(matches!(action, PersistedApprovalAction::DenyAlways));
-        let last_approved_at_unix_ms = if approve_delta > 0 { Some(now as i64) } else { None };
-        let last_rejected_at_unix_ms = if reject_delta > 0 { Some(now as i64) } else { None };
+        let last_approved_at_unix_ms = if approve_delta > 0 {
+            Some(now as i64)
+        } else {
+            None
+        };
+        let last_rejected_at_unix_ms = if reject_delta > 0 {
+            Some(now as i64)
+        } else {
+            None
+        };
         let default_expiry_days = match action {
             PersistedApprovalAction::AllowOnce => 7_i64,
             PersistedApprovalAction::AllowAlways => 14_i64,
@@ -770,8 +780,9 @@ impl McpStore {
             let action_text = row
                 .try_get::<String, _>("action")
                 .map_err(|err| McpError::Storage(err.to_string()))?;
-            let action = PersistedApprovalAction::from_str(&action_text)
-                .ok_or_else(|| McpError::Storage(format!("unknown approval action: {action_text}")))?;
+            let action = PersistedApprovalAction::from_str(&action_text).ok_or_else(|| {
+                McpError::Storage(format!("unknown approval action: {action_text}"))
+            })?;
             Ok(ToolApprovalRuleRow {
                 key: row
                     .try_get::<String, _>("key")
@@ -783,7 +794,10 @@ impl McpStore {
                 tool_fingerprint: row
                     .try_get::<String, _>("tool_fingerprint")
                     .map_err(|err| McpError::Storage(err.to_string()))?,
-                risk_level: row.try_get::<Option<String>, _>("risk_level").ok().flatten(),
+                risk_level: row
+                    .try_get::<Option<String>, _>("risk_level")
+                    .ok()
+                    .flatten(),
                 auto_promoted: row
                     .try_get::<i64, _>("auto_promoted")
                     .map(|value| value != 0)
@@ -794,7 +808,10 @@ impl McpStore {
                 updated_at_unix_ms: row
                     .try_get::<i64, _>("updated_at_unix_ms")
                     .map_err(|err| McpError::Storage(err.to_string()))?,
-                expires_at_unix_ms: row.try_get::<Option<i64>, _>("expires_at_unix_ms").ok().flatten(),
+                expires_at_unix_ms: row
+                    .try_get::<Option<i64>, _>("expires_at_unix_ms")
+                    .ok()
+                    .flatten(),
                 approve_count: row
                     .try_get::<i64, _>("approve_count")
                     .map_err(|err| McpError::Storage(err.to_string()))?,
@@ -815,9 +832,7 @@ impl McpStore {
         .transpose()
     }
 
-    pub async fn list_tool_approval_rules(
-        &self,
-    ) -> Result<Vec<ToolApprovalRuleRow>, McpError> {
+    pub async fn list_tool_approval_rules(&self) -> Result<Vec<ToolApprovalRuleRow>, McpError> {
         let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
         sqlx::query(
             r#"
@@ -851,10 +866,13 @@ impl McpStore {
                 let action_text = row
                     .try_get::<String, _>("action")
                     .map_err(|err| McpError::Storage(err.to_string()))?;
-                let action = PersistedApprovalAction::from_str(&action_text)
-                    .ok_or_else(|| McpError::Storage(format!("unknown approval action: {action_text}")))?;
+                let action = PersistedApprovalAction::from_str(&action_text).ok_or_else(|| {
+                    McpError::Storage(format!("unknown approval action: {action_text}"))
+                })?;
                 Ok(ToolApprovalRuleRow {
-                    key: row.try_get("key").map_err(|err| McpError::Storage(err.to_string()))?,
+                    key: row
+                        .try_get("key")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
                     action,
                     tool_name: row
                         .try_get("tool_name")
@@ -862,7 +880,10 @@ impl McpStore {
                     tool_fingerprint: row
                         .try_get("tool_fingerprint")
                         .map_err(|err| McpError::Storage(err.to_string()))?,
-                    risk_level: row.try_get::<Option<String>, _>("risk_level").ok().flatten(),
+                    risk_level: row
+                        .try_get::<Option<String>, _>("risk_level")
+                        .ok()
+                        .flatten(),
                     auto_promoted: row
                         .try_get::<i64, _>("auto_promoted")
                         .map(|value| value != 0)
@@ -873,7 +894,9 @@ impl McpStore {
                     updated_at_unix_ms: row
                         .try_get("updated_at_unix_ms")
                         .map_err(|err| McpError::Storage(err.to_string()))?,
-                    expires_at_unix_ms: row.try_get("expires_at_unix_ms").map_err(|err| McpError::Storage(err.to_string()))?,
+                    expires_at_unix_ms: row
+                        .try_get("expires_at_unix_ms")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
                     approve_count: row
                         .try_get("approve_count")
                         .map_err(|err| McpError::Storage(err.to_string()))?,
@@ -907,23 +930,18 @@ impl McpStore {
         Ok(result.rows_affected() > 0)
     }
 
-    pub async fn clear_tool_approval_rules(
-        &self,
-        mode: Option<&str>,
-    ) -> Result<u64, McpError> {
+    pub async fn clear_tool_approval_rules(&self, mode: Option<&str>) -> Result<u64, McpError> {
         let normalized_mode = mode
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .unwrap_or("all");
         let result = match normalized_mode {
             "allow" => {
-                sqlx::query(
-                    "DELETE FROM tool_approval_rules WHERE action IN (?, ?)",
-                )
-                .bind(PersistedApprovalAction::AllowOnce.as_str())
-                .bind(PersistedApprovalAction::AllowAlways.as_str())
-                .execute(&self.write_pool)
-                .await
+                sqlx::query("DELETE FROM tool_approval_rules WHERE action IN (?, ?)")
+                    .bind(PersistedApprovalAction::AllowOnce.as_str())
+                    .bind(PersistedApprovalAction::AllowAlways.as_str())
+                    .execute(&self.write_pool)
+                    .await
             }
             _ => {
                 sqlx::query("DELETE FROM tool_approval_rules")

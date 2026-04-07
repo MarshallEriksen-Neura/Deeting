@@ -143,6 +143,7 @@ interface ChatStore {
 
   // === 消息状态 ===
   messages: Message[]
+  focusedMessageId: string | null
   compareByMessageId: Record<string, MessageCompareState>
 
   // === 输入状态 ===
@@ -173,6 +174,7 @@ interface ChatStore {
   // === 同步 Actions ===
   setSessionId: (sessionId: string | null) => void
   setMessages: (messages: Message[]) => void
+  focusMessage: (messageId: string | null) => void
   addMessage: (role: MessageRole, content: string, attachments?: ChatImageAttachment[]) => void
   mergeMessageMeta: (id: string, patch: Record<string, unknown>) => void
   setMessageBlocks: (id: string, blocks: MessageBlock[]) => void
@@ -232,6 +234,7 @@ export const useChatStore = create<ChatStore>()(
 
       // === 消息状态初始值 ===
       messages: [],
+      focusedMessageId: null,
       compareByMessageId: {},
 
       // === 输入状态初始值 ===
@@ -287,6 +290,7 @@ export const useChatStore = create<ChatStore>()(
           isLoading: true,
           ...(shouldReset ? {
             messages: [],
+            focusedMessageId: null,
             input: "",
             attachments: [],
             selectedKnowledgeFileIds: [],
@@ -339,8 +343,21 @@ export const useChatStore = create<ChatStore>()(
       setMessages: (messages) =>
         set((state) => ({
           messages,
+          focusedMessageId:
+            state.focusedMessageId &&
+            messages.some((message) => message.id === state.focusedMessageId)
+              ? state.focusedMessageId
+              : null,
           compareByMessageId: filterCompareStateByMessageIds(state.compareByMessageId, messages),
         })),
+
+      focusMessage: (messageId) =>
+        set({
+          focusedMessageId:
+            typeof messageId === "string" && messageId.trim().length > 0
+              ? messageId.trim()
+              : null,
+        }),
 
       addMessage: (role, content, attachments) => {
         const newMessage: Message = {
@@ -724,6 +741,7 @@ export const useChatStore = create<ChatStore>()(
       resetChat: () =>
         set({
           messages: [],
+          focusedMessageId: null,
           compareByMessageId: {},
           input: "",
           attachments: [],
@@ -744,6 +762,7 @@ export const useChatStore = create<ChatStore>()(
         set({
           sessionId: null,
           messages: [],
+          focusedMessageId: null,
           compareByMessageId: {},
           input: "",
           attachments: [],

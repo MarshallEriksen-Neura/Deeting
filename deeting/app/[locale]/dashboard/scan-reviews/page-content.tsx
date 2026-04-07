@@ -13,6 +13,7 @@ import {
 } from "@/components/admin"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { isTauriRuntime } from "@/lib/api/desktop-config"
 import {
   runScanReviewAction,
@@ -129,6 +130,7 @@ export function PageContent() {
   const [severityFilter, setSeverityFilter] = useState("")
   const [boundaryFilter, setBoundaryFilter] = useState("")
   const [operationFilter, setOperationFilter] = useState("")
+  const [activeTab, setActiveTab] = useState<"documents" | "findings">("documents")
 
   // ── Action feedback ──────────────────────────────────────
   const [feedback, setFeedback] = useState<string | null>(null)
@@ -528,7 +530,7 @@ export function PageContent() {
               if (key === "boundary") setBoundaryFilter(value)
               if (key === "operation") setOperationFilter(value)
             }}
-            filters={[
+            filters={activeTab === "findings" ? [
               {
                 key: "severity",
                 label: t("filters.severity"),
@@ -558,18 +560,20 @@ export function PageContent() {
                   { label: t("operation.unknown"), value: "unknown" },
                 ],
               },
-            ]}
+            ] : []}
             actions={
               <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void handleBatchFix()}
-                  disabled={batchRunning || actionableFindings.length === 0}
-                  className="cursor-pointer"
-                >
-                  {batchRunning ? t("actions.fixingAll") : t("actions.fixAll")}
-                </Button>
+                {activeTab === "findings" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void handleBatchFix()}
+                    disabled={batchRunning || actionableFindings.length === 0}
+                    className="cursor-pointer"
+                  >
+                    {batchRunning ? t("actions.fixingAll") : t("actions.fixAll")}
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"
@@ -591,38 +595,50 @@ export function PageContent() {
             <div>{t("summary.finishedAt")}: {formatDate(data.finished_at, locale)}</div>
             <div>{t("summary.findings")}: {data.summary.finding_count}</div>
           </div>
-          <div className="space-y-6">
-            <section className="space-y-3">
-              <h3 className="text-sm font-semibold">{t("table.documents.title")}</h3>
-              <AdminDataTable
-                columns={documentColumns}
-                data={documents}
-                emptyMessage={t("empty.noDocuments")}
-              />
-            </section>
-            <section className="space-y-3">
-              <h3 className="text-sm font-semibold">{t("table.findings.title")}</h3>
-              <AdminDataTable
-                columns={findingColumns}
-                data={findings}
-                emptyMessage={t("empty.noFindings")}
-                rowActions={hasFindingActions ? (row) => {
-                  if (!row.action) return null
-                  return (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void handleFindingAction(row)}
-                      disabled={batchRunning || actioningId === row.id}
-                      className="cursor-pointer"
-                    >
-                      {actioningId === row.id ? t("actions.running") : renderFindingActionLabel(row.action)}
-                    </Button>
-                  )
-                } : undefined}
-              />
-            </section>
-          </div>
+          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "documents" | "findings")} className="space-y-4">
+            <TabsList className="grid h-auto w-full max-w-md grid-cols-2 border border-[var(--muted)]/10 bg-[var(--muted)]/10 p-1">
+              <TabsTrigger value="documents" className="py-2">
+                {t("table.documents.title")} ({documents.length})
+              </TabsTrigger>
+              <TabsTrigger value="findings" className="py-2">
+                {t("table.findings.title")} ({findings.length})
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="documents" className="m-0">
+              <section className="space-y-3">
+                <h3 className="text-sm font-semibold">{t("table.documents.title")}</h3>
+                <AdminDataTable
+                  columns={documentColumns}
+                  data={documents}
+                  emptyMessage={t("empty.noDocuments")}
+                />
+              </section>
+            </TabsContent>
+            <TabsContent value="findings" className="m-0">
+              <section className="space-y-3">
+                <h3 className="text-sm font-semibold">{t("table.findings.title")}</h3>
+                <AdminDataTable
+                  columns={findingColumns}
+                  data={findings}
+                  emptyMessage={t("empty.noFindings")}
+                  rowActions={hasFindingActions ? (row) => {
+                    if (!row.action) return null
+                    return (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void handleFindingAction(row)}
+                        disabled={batchRunning || actioningId === row.id}
+                        className="cursor-pointer"
+                      >
+                        {actioningId === row.id ? t("actions.running") : renderFindingActionLabel(row.action)}
+                      </Button>
+                    )
+                  } : undefined}
+                />
+              </section>
+            </TabsContent>
+          </Tabs>
         </>
       )}
     </>

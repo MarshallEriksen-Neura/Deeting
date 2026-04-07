@@ -1,12 +1,17 @@
 use super::{
     append_streamable_local_tool_result_blocks, build_auto_code_mode_tool_feedback,
-    build_local_code_mode_entry_tools_with_allowlist, build_local_sdk_search_result_bundle_with_feedback_runtime,
-    build_local_tool_call_install_gate_error_meta, build_local_tool_trace_blocks,
+    build_local_code_mode_entry_tools_with_allowlist,
+    build_local_sdk_search_result_bundle_with_feedback_runtime, build_local_tool_trace_blocks,
+    delete_execution_graph_runtime_context,
     execute_or_queue_mcp_tool_call_with_tool_ref, extract_chat_tool_calls,
-    install_local_skill_from_onboarding_request, request_provider_chat_completion,
+    install_local_skill_from_onboarding_request, load_execution_graph_runtime_context,
+    load_execution_graph_snapshot, load_execution_graph_snapshot_by_approval_token,
+    persist_execution_graph_runtime_context,
+    persist_execution_graph_snapshot, project_execution_graph_blocks_from_value,
+    project_execution_graph_snapshot, request_provider_chat_completion,
     resolve_dynamic_direct_capability_tool_name, resolve_local_capability_activation_state,
     search_feedback::search_feedback_context_from_tool_call_meta, CapabilityExecutionContract,
-    LocalCapabilityActivationState, LocalExecutionPolicy,
+    GraphProjectionInput, LocalCapabilityActivationState, LocalExecutionPolicy,
     LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
 };
 use crate::modules::desktop_config::{parse_max_agentic_rounds, MAX_AGENTIC_ROUNDS_CONFIG_KEY};
@@ -15,12 +20,14 @@ use crate::modules::mcp::commands::common_impl::LocalModelConnection;
 use crate::modules::mcp::commands::support::*;
 use mcp_session::conversation::CreateConversationMessageRequest;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 struct RuntimeMetricsAccumulator {
     upstream_latency_ms: i64,
     upstream_calls: i64,
     ttft_ms: Option<i64>,
 }
+
+const LEGACY_SUSPENDED_COMPAT_WINDOW_MS: i128 = 5 * 60 * 1000;
 
 impl RuntimeMetricsAccumulator {
     fn observe_response(&mut self, response: &serde_json::Value) {
@@ -90,15 +97,12 @@ enum LocalToolCallProcessingOutcome {
         synthesized: bool,
         tool_call_meta: Vec<serde_json::Value>,
         results: Vec<String>,
-        capability_update: Option<LocalCapabilityActivationUpdate>,
     },
     Interrupted {
-        approval_token: String,
+        approval_tokens: Vec<String>,
         tool_call_meta: Vec<serde_json::Value>,
         results: Vec<String>,
         capability_update: Option<LocalCapabilityActivationUpdate>,
-        call_id: String,
-        tool_name: String,
     },
 }
 
@@ -109,11 +113,10 @@ struct LocalChatAutoCodeModeState {
     execution_policy: LocalExecutionPolicy,
     model_connection: LocalModelConnection,
     orchestrated_messages: Vec<LocalChatInputMessage>,
-    chat_ctx: LocalConversationChatContext,
+    session_id: String,
     temperature: Option<f32>,
     max_tokens: Option<u32>,
     active_capability: Option<LocalCapabilityActivationState>,
-    all_tool_call_meta: Vec<serde_json::Value>,
     runtime_metrics: RuntimeMetricsAccumulator,
     last_capability_snapshot: Option<serde_json::Value>,
     last_response: Option<serde_json::Value>,
@@ -122,7 +125,44 @@ struct LocalChatAutoCodeModeState {
 
 struct LocalChatAutoCodeModeOutput {
     response: serde_json::Value,
-    all_tool_call_meta: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct PersistedExecutionGraphRuntimeContext {
+    max_rounds: usize,
+    round: usize,
+    trace_id: String,
+    execution_policy: LocalExecutionPolicy,
+    model_connection: LocalModelConnection,
+    orchestrated_messages: Vec<LocalChatInputMessage>,
+    session_id: String,
+    temperature: Option<f32>,
+    max_tokens: Option<u32>,
+    active_capability: Option<LocalCapabilityActivationState>,
+    runtime_metrics: RuntimeMetricsAccumulator,
+    last_capability_snapshot: Option<serde_json::Value>,
+    last_response: Option<serde_json::Value>,
+}
+
+fn runtime_state_from_persisted_context(
+    context: PersistedExecutionGraphRuntimeContext,
+) -> LocalChatAutoCodeModeState {
+    LocalChatAutoCodeModeState {
+        max_rounds: context.max_rounds,
+        round: context.round,
+        trace_id: context.trace_id,
+        execution_policy: context.execution_policy,
+        model_connection: context.model_connection,
+        orchestrated_messages: context.orchestrated_messages,
+        session_id: context.session_id,
+        temperature: context.temperature,
+        max_tokens: context.max_tokens,
+        active_capability: context.active_capability,
+        runtime_metrics: context.runtime_metrics,
+        last_capability_snapshot: context.last_capability_snapshot,
+        last_response: context.last_response,
+        realtime_emitter: LocalRealtimeToolTraceEmitter::new(None, None, None),
+    }
 }
 
 fn enrich_response_with_tool_trace(
@@ -134,6 +174,13 @@ fn enrich_response_with_tool_trace(
     if !tool_call_meta.is_empty() {
         response["tool_trace_blocks"] =
             serde_json::Value::Array(build_local_tool_trace_blocks(tool_call_meta));
+    } else if response.get("tool_trace_blocks").is_none() {
+        if let Some(execution_graph) = response.get("execution_graph") {
+            let graph_blocks = project_execution_graph_blocks_from_value(execution_graph);
+            if !graph_blocks.is_empty() {
+                response["tool_trace_blocks"] = serde_json::Value::Array(graph_blocks);
+            }
+        }
     }
     if tool_trace_streamed {
         response["tool_trace_streamed"] = serde_json::json!(true);
@@ -201,6 +248,164 @@ fn tool_call_meta_matches_call_id(item: &serde_json::Value, call_id: &str) -> bo
         .is_some_and(|value| value == expected)
 }
 
+fn build_tool_call_meta_from_execution_graph(
+    execution_graph: &serde_json::Value,
+) -> Vec<serde_json::Value> {
+    let Some(nodes) = execution_graph
+        .get("nodes")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return Vec::new();
+    };
+
+    let mut items = Vec::new();
+    for node in nodes {
+        let is_tool_call = node
+            .get("node_type")
+            .and_then(serde_json::Value::as_str)
+            .map(|value| value == "tool_call")
+            .unwrap_or(false);
+        if !is_tool_call {
+            continue;
+        }
+
+        let call_id = node
+            .get("metadata")
+            .and_then(|value| value.get("call_id"))
+            .and_then(serde_json::Value::as_str)
+            .or_else(|| {
+                node.get("node_id")
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(|value| value.strip_prefix("tool_call:"))
+            })
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        if call_id.is_empty() {
+            continue;
+        }
+
+        let tool_name = node
+            .get("metadata")
+            .and_then(|value| value.get("tool_name"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("unknown_tool")
+            .to_string();
+        let status = match node
+            .get("status")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("success")
+        {
+            "waiting_approval" => "requires_approval",
+            "cancelled" => "error",
+            other => other,
+        };
+
+        let mut object = serde_json::Map::new();
+        object.insert("id".to_string(), serde_json::json!(call_id));
+        object.insert("name".to_string(), serde_json::json!(tool_name));
+        object.insert("status".to_string(), serde_json::json!(status));
+
+        if let Some(output_payload) = node.get("output_payload").cloned() {
+            if status == "error" {
+                if let Some(error) = output_payload.get("error").cloned() {
+                    object.insert("error".to_string(), error);
+                }
+                if let Some(error_code) = output_payload.get("error_code").cloned() {
+                    object.insert("error_code".to_string(), error_code);
+                }
+            }
+            object.insert("result".to_string(), output_payload);
+        }
+
+        items.push(serde_json::Value::Object(object));
+    }
+
+    items
+}
+
+fn build_effective_tool_call_meta(
+    response: &serde_json::Value,
+    tool_call_meta: &[serde_json::Value],
+) -> Vec<serde_json::Value> {
+    let graph_tool_call_meta = response
+        .get("execution_graph")
+        .map(build_tool_call_meta_from_execution_graph)
+        .unwrap_or_default();
+    let mut effective_tool_call_meta: Vec<serde_json::Value> = graph_tool_call_meta;
+    for item in tool_call_meta {
+        let Some(call_id) = item
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+        else {
+            continue;
+        };
+        let already_present = effective_tool_call_meta
+            .iter()
+            .any(|existing| tool_call_meta_matches_call_id(existing, &call_id));
+        if !already_present {
+            effective_tool_call_meta.push(item.clone());
+        }
+    }
+    effective_tool_call_meta
+}
+
+fn build_state_effective_tool_call_meta(
+    state: &LocalChatAutoCodeModeState,
+) -> Vec<serde_json::Value> {
+    state
+        .last_response
+        .as_ref()
+        .map(|response| build_effective_tool_call_meta(response, &[]))
+        .unwrap_or_default()
+}
+
+fn derive_pending_call_id_from_tool_call_meta(tool_call_meta: &[serde_json::Value]) -> String {
+    tool_call_meta
+        .iter()
+        .rev()
+        .find_map(|item| {
+            item.get("id")
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| "unknown-call".to_string())
+}
+
+fn canonicalize_tool_call_meta_via_graph(
+    session_id: &str,
+    execution_policy: &LocalExecutionPolicy,
+    response: &serde_json::Value,
+    tool_call_meta: &[serde_json::Value],
+) -> Vec<serde_json::Value> {
+    if tool_call_meta.is_empty() {
+        return Vec::new();
+    }
+    let tool_trace_blocks = build_local_tool_trace_blocks(tool_call_meta);
+    let graph = project_execution_graph_snapshot(GraphProjectionInput {
+        session_id: session_id.to_string(),
+        route: execution_policy.route.as_str().to_string(),
+        plane: execution_policy.plane.as_str().to_string(),
+        request_id: None,
+        root_execution_id: None,
+        response_content: response.get("content").cloned(),
+        tool_trace_blocks,
+        delegated_execution_tree: None,
+    })
+    .to_value();
+    let canonical = build_tool_call_meta_from_execution_graph(&graph);
+    if canonical.is_empty() {
+        tool_call_meta.to_vec()
+    } else {
+        canonical
+    }
+}
+
 fn push_local_tool_call_error_meta(
     tool_call_meta: &mut Vec<serde_json::Value>,
     results: &mut Vec<String>,
@@ -230,6 +435,330 @@ fn push_local_tool_call_error_meta(
     ));
 }
 
+fn attach_graph_metadata_to_pending_tool_meta(
+    tool_call_meta: &mut [serde_json::Value],
+    suspended: &SuspendedLocalChatExecution,
+) {
+    for item in tool_call_meta {
+        let Some(call_id) = item
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        let Some(object) = item.as_object_mut() else {
+            continue;
+        };
+        let result = object
+            .entry("result".to_string())
+            .or_insert_with(|| serde_json::json!({}));
+        let Some(result_object) = result.as_object_mut() else {
+            break;
+        };
+        if let Some(execution_id) = suspended.graph_execution_id() {
+            result_object.insert(
+                "execution_graph_execution_id".to_string(),
+                serde_json::json!(execution_id),
+            );
+        }
+        if let Some(gate_node_id) = suspended.approval_gate_node_id_for_call_id(&call_id) {
+            result_object.insert(
+                "execution_graph_gate_node_id".to_string(),
+                serde_json::json!(gate_node_id),
+            );
+        }
+        if let Some(tool_node_id) = suspended.tool_node_id_for_call_id(&call_id) {
+            result_object.insert(
+                "execution_graph_tool_node_id".to_string(),
+                serde_json::json!(tool_node_id),
+            );
+        }
+    }
+}
+
+fn append_execution_graph_event(
+    execution_graph: &mut serde_json::Value,
+    node_id: &str,
+    event_type: &str,
+    payload: serde_json::Value,
+) {
+    let Some(events) = execution_graph
+        .get_mut("events")
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return;
+    };
+    let next_index = events.len();
+    events.push(serde_json::json!({
+        "event_id": format!("event:resume:{next_index}"),
+        "node_id": node_id,
+        "event_type": event_type,
+        "payload": payload,
+    }));
+}
+
+fn update_execution_graph_node(
+    execution_graph: &mut serde_json::Value,
+    node_id: &str,
+    status: &str,
+    output_payload: Option<serde_json::Value>,
+) {
+    let Some(nodes) = execution_graph
+        .get_mut("nodes")
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return;
+    };
+    for node in nodes {
+        let matches = node
+            .get("node_id")
+            .and_then(serde_json::Value::as_str)
+            .map(|value| value == node_id)
+            .unwrap_or(false);
+        if !matches {
+            continue;
+        }
+        let Some(object) = node.as_object_mut() else {
+            break;
+        };
+        object.insert("status".to_string(), serde_json::json!(status));
+        if let Some(output_payload) = output_payload {
+            object.insert("output_payload".to_string(), output_payload);
+        }
+        break;
+    }
+}
+
+fn update_finalize_node_status(execution_graph: &mut serde_json::Value, status: &str) {
+    let Some(nodes) = execution_graph
+        .get_mut("nodes")
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return;
+    };
+    for node in nodes {
+        let is_finalize = node
+            .get("node_type")
+            .and_then(serde_json::Value::as_str)
+            .map(|value| value == "finalize")
+            .unwrap_or(false);
+        if !is_finalize {
+            continue;
+        }
+        if let Some(object) = node.as_object_mut() {
+            object.insert("status".to_string(), serde_json::json!(status));
+        }
+        break;
+    }
+}
+
+fn tool_node_id_from_graph_value(
+    execution_graph: &serde_json::Value,
+    call_id: Option<&str>,
+) -> String {
+    let normalized_call_id = call_id.map(str::trim).filter(|value| !value.is_empty());
+    execution_graph
+        .get("nodes")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|nodes| {
+            nodes.iter().find(|node| {
+                if node.get("node_type").and_then(serde_json::Value::as_str) != Some("tool_call") {
+                    return false;
+                }
+                match normalized_call_id {
+                    Some(expected) => node
+                        .get("metadata")
+                        .and_then(|value| value.get("call_id"))
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::trim)
+                        == Some(expected),
+                    None => true,
+                }
+            })
+        })
+        .and_then(|node| node.get("node_id"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("tool_call:unknown")
+        .to_string()
+}
+
+fn gate_node_id_from_graph_value(
+    execution_graph: &serde_json::Value,
+    call_id: Option<&str>,
+) -> String {
+    let normalized_call_id = call_id.map(str::trim).filter(|value| !value.is_empty());
+    execution_graph
+        .get("nodes")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|nodes| {
+            nodes.iter().find(|node| {
+                if node.get("node_type").and_then(serde_json::Value::as_str)
+                    != Some("approval_gate")
+                {
+                    return false;
+                }
+                match normalized_call_id {
+                    Some(expected) => node
+                        .get("metadata")
+                        .and_then(|value| value.get("call_id"))
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::trim)
+                        == Some(expected),
+                    None => true,
+                }
+            })
+        })
+        .and_then(|node| node.get("node_id"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("approval_gate:unknown")
+        .to_string()
+}
+
+fn apply_approved_tool_result_to_execution_graph(
+    suspended: &mut SuspendedLocalChatExecution,
+    call_id: Option<&str>,
+    tool_result: &serde_json::Value,
+) {
+    let gate_node_id = suspended
+        .approval_gate_node_id_for_call_id(call_id.unwrap_or(suspended.pending_call_id()))
+        .unwrap_or_else(|| suspended.pending_gate_node_id().to_string());
+    let tool_node_id = suspended
+        .tool_node_id_for_call_id(call_id.unwrap_or(suspended.pending_call_id()))
+        .unwrap_or_else(|| suspended.pending_tool_node_id().to_string());
+    update_execution_graph_node(
+        &mut suspended.execution_graph,
+        gate_node_id.as_str(),
+        "success",
+        Some(tool_result.clone()),
+    );
+    update_execution_graph_node(
+        &mut suspended.execution_graph,
+        tool_node_id.as_str(),
+        "success",
+        Some(tool_result.clone()),
+    );
+    update_finalize_node_status(&mut suspended.execution_graph, "pending");
+    append_execution_graph_event(
+        &mut suspended.execution_graph,
+        gate_node_id.as_str(),
+        "approval_gate.approved",
+        tool_result.clone(),
+    );
+    append_execution_graph_event(
+        &mut suspended.execution_graph,
+        tool_node_id.as_str(),
+        "tool_call.approved_result_applied",
+        tool_result.clone(),
+    );
+}
+
+pub(crate) fn apply_rejected_tool_result_to_execution_graph(
+    suspended: &mut SuspendedLocalChatExecution,
+    call_id: Option<&str>,
+    error_message: &str,
+) {
+    let execution_id = suspended.graph_execution_id().map(str::to_string);
+    apply_rejected_tool_result_to_execution_graph_value(
+        &mut suspended.execution_graph,
+        execution_id.as_deref(),
+        call_id,
+        error_message,
+    );
+}
+
+pub(crate) fn apply_rejected_tool_result_to_execution_graph_value(
+    execution_graph: &mut serde_json::Value,
+    execution_id: Option<&str>,
+    call_id: Option<&str>,
+    error_message: &str,
+) {
+    let gate_node_id = gate_node_id_from_graph_value(execution_graph, call_id);
+    let tool_node_id = tool_node_id_from_graph_value(execution_graph, call_id);
+    let rejection_payload = serde_json::json!({
+        "error": error_message,
+        "execution_graph_execution_id": execution_id,
+        "execution_graph_gate_node_id": gate_node_id,
+        "execution_graph_tool_node_id": tool_node_id,
+    });
+    update_execution_graph_node(
+        execution_graph,
+        gate_node_id.as_str(),
+        "cancelled",
+        Some(rejection_payload.clone()),
+    );
+    update_execution_graph_node(
+        execution_graph,
+        tool_node_id.as_str(),
+        "cancelled",
+        Some(rejection_payload.clone()),
+    );
+    update_finalize_node_status(execution_graph, "cancelled");
+    append_execution_graph_event(
+        execution_graph,
+        gate_node_id.as_str(),
+        "approval_gate.rejected",
+        rejection_payload.clone(),
+    );
+    append_execution_graph_event(
+        execution_graph,
+        tool_node_id.as_str(),
+        "tool_call.rejected",
+        rejection_payload,
+    );
+}
+
+fn legacy_suspended_fallback_allowed(legacy_created_at_unix_ms: Option<i128>) -> bool {
+    let Some(created_at_unix_ms) = legacy_created_at_unix_ms else {
+        return false;
+    };
+    let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+    now.saturating_sub(created_at_unix_ms) <= LEGACY_SUSPENDED_COMPAT_WINDOW_MS
+}
+
+async fn persist_suspended_execution_graph_runtime(
+    store: &crate::modules::mcp::store::McpStore,
+    suspended: &SuspendedLocalChatExecution,
+    source_kind: &str,
+    status: &str,
+) -> Result<(), String> {
+    persist_execution_graph_snapshot(
+        store,
+        suspended.execution_graph(),
+        suspended.session_id.as_str(),
+        source_kind,
+        None,
+        Some(status),
+    )
+    .await
+    .map_err(|err| err.to_string())?;
+
+    if let Some(execution_id) = suspended.graph_execution_id() {
+        persist_execution_graph_runtime_context(store, execution_id, &suspended.to_runtime_context_value())
+            .await
+            .map_err(|err| err.to_string())?;
+    }
+
+    Ok(())
+}
+
+async fn clear_execution_graph_runtime_context(
+    store: &crate::modules::mcp::store::McpStore,
+    execution_id: Option<&str>,
+) {
+    let Some(execution_id) = execution_id else {
+        return;
+    };
+    if let Err(err) = delete_execution_graph_runtime_context(store, execution_id).await {
+        log::warn!(
+            "delete_execution_graph_runtime_context failed execution_id={} err={}",
+            execution_id,
+            err
+        );
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct SuspendedLocalChatExecution {
     max_rounds: usize,
@@ -238,33 +767,40 @@ pub(crate) struct SuspendedLocalChatExecution {
     execution_policy: LocalExecutionPolicy,
     model_connection: LocalModelConnection,
     orchestrated_messages: Vec<LocalChatInputMessage>,
-    chat_ctx: LocalConversationChatContext,
+    session_id: String,
     temperature: Option<f32>,
     max_tokens: Option<u32>,
     active_capability: Option<LocalCapabilityActivationState>,
-    all_tool_call_meta: Vec<serde_json::Value>,
     runtime_metrics: RuntimeMetricsAccumulator,
     last_capability_snapshot: Option<serde_json::Value>,
     last_response: Option<serde_json::Value>,
-    pending_response: serde_json::Value,
-    pending_tool_call_meta: Vec<serde_json::Value>,
-    pending_results: Vec<String>,
-    pending_capability_update: Option<LocalCapabilityActivationUpdate>,
-    pending_call_id: String,
-    pending_tool_name: String,
-    existing_meta_count: usize,
+    execution_graph: serde_json::Value,
 }
 
 impl SuspendedLocalChatExecution {
     fn from_state(
         state: &LocalChatAutoCodeModeState,
-        pending_response: &serde_json::Value,
         pending_tool_call_meta: &[serde_json::Value],
-        pending_results: &[String],
-        pending_capability_update: Option<LocalCapabilityActivationUpdate>,
-        pending_call_id: String,
-        pending_tool_name: String,
+        _pending_results: &[String],
+        _pending_capability_update: Option<LocalCapabilityActivationUpdate>,
+        _pending_call_id: String,
+        _pending_tool_name: String,
     ) -> Self {
+        let tool_trace_blocks = build_local_tool_trace_blocks(pending_tool_call_meta);
+        let execution_graph = project_execution_graph_snapshot(GraphProjectionInput {
+            session_id: state.session_id.clone(),
+            route: state.execution_policy.route.as_str().to_string(),
+            plane: state.execution_policy.plane.as_str().to_string(),
+            request_id: None,
+            root_execution_id: None,
+            response_content: state
+                .last_response
+                .as_ref()
+                .and_then(|response| response.get("content").cloned()),
+            tool_trace_blocks,
+            delegated_execution_tree: None,
+        })
+        .to_value();
         Self {
             max_rounds: state.max_rounds,
             round: state.round,
@@ -272,21 +808,14 @@ impl SuspendedLocalChatExecution {
             execution_policy: state.execution_policy.clone(),
             model_connection: state.model_connection.clone(),
             orchestrated_messages: state.orchestrated_messages.clone(),
-            chat_ctx: state.chat_ctx.clone(),
+            session_id: state.session_id.clone(),
             temperature: state.temperature,
             max_tokens: state.max_tokens,
             active_capability: state.active_capability.clone(),
-            all_tool_call_meta: state.all_tool_call_meta.clone(),
             runtime_metrics: state.runtime_metrics.clone(),
             last_capability_snapshot: state.last_capability_snapshot.clone(),
             last_response: state.last_response.clone(),
-            pending_response: pending_response.clone(),
-            pending_tool_call_meta: pending_tool_call_meta.to_vec(),
-            pending_results: pending_results.to_vec(),
-            pending_capability_update,
-            pending_call_id,
-            pending_tool_name,
-            existing_meta_count: state.all_tool_call_meta.len() + pending_tool_call_meta.len(),
+            execution_graph,
         }
     }
 
@@ -298,11 +827,10 @@ impl SuspendedLocalChatExecution {
             execution_policy: self.execution_policy,
             model_connection: self.model_connection,
             orchestrated_messages: self.orchestrated_messages,
-            chat_ctx: self.chat_ctx,
+            session_id: self.session_id,
             temperature: self.temperature,
             max_tokens: self.max_tokens,
             active_capability: self.active_capability,
-            all_tool_call_meta: self.all_tool_call_meta,
             runtime_metrics: self.runtime_metrics,
             last_capability_snapshot: self.last_capability_snapshot,
             last_response: self.last_response,
@@ -312,6 +840,143 @@ impl SuspendedLocalChatExecution {
                 None,
             ),
         }
+    }
+
+    pub(crate) fn graph_execution_id(&self) -> Option<&str> {
+        self.execution_graph
+            .get("execution_id")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+    }
+
+    pub(crate) fn pending_tool_node_id(&self) -> &str {
+        self.execution_graph
+            .get("nodes")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|nodes| {
+                nodes.iter().find(|node| {
+                    node.get("node_type").and_then(serde_json::Value::as_str) == Some("tool_call")
+                })
+            })
+            .and_then(|node| node.get("node_id"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("tool_call:unknown")
+    }
+
+    pub(crate) fn tool_node_id_for_call_id(&self, call_id: &str) -> Option<String> {
+        let normalized_call_id = call_id.trim();
+        if normalized_call_id.is_empty() {
+            return None;
+        }
+        self.execution_graph
+            .get("nodes")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|nodes| {
+                nodes.iter().find(|node| {
+                    node.get("node_type").and_then(serde_json::Value::as_str) == Some("tool_call")
+                        && node
+                            .get("metadata")
+                            .and_then(|value| value.get("call_id"))
+                            .and_then(serde_json::Value::as_str)
+                            .map(str::trim)
+                            == Some(normalized_call_id)
+                })
+            })
+            .and_then(|node| node.get("node_id"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+    }
+
+    pub(crate) fn pending_gate_node_id(&self) -> &str {
+        self.execution_graph
+            .get("nodes")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|nodes| {
+                nodes.iter().find(|node| {
+                    node.get("node_type").and_then(serde_json::Value::as_str)
+                        == Some("approval_gate")
+                })
+            })
+            .and_then(|node| node.get("node_id"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("approval_gate:unknown")
+    }
+
+    pub(crate) fn approval_gate_node_id_for_call_id(&self, call_id: &str) -> Option<String> {
+        let normalized_call_id = call_id.trim();
+        if normalized_call_id.is_empty() {
+            return None;
+        }
+        self.execution_graph
+            .get("nodes")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|nodes| {
+                nodes.iter().find(|node| {
+                    node.get("node_type").and_then(serde_json::Value::as_str)
+                        == Some("approval_gate")
+                        && node
+                            .get("metadata")
+                            .and_then(|value| value.get("call_id"))
+                            .and_then(serde_json::Value::as_str)
+                            .map(str::trim)
+                            == Some(normalized_call_id)
+                })
+            })
+            .and_then(|node| node.get("node_id"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+    }
+
+    fn pending_call_id(&self) -> &str {
+        self.pending_tool_node_id()
+            .strip_prefix("tool_call:")
+            .unwrap_or(self.pending_tool_node_id())
+    }
+
+    pub(crate) fn execution_graph(&self) -> &serde_json::Value {
+        &self.execution_graph
+    }
+
+    fn pending_tool_call_meta(&self) -> Vec<serde_json::Value> {
+        build_tool_call_meta_from_execution_graph(&self.execution_graph)
+    }
+
+    fn pending_requires_approval_call_ids(&self) -> Vec<String> {
+        self.pending_tool_call_meta()
+            .into_iter()
+            .filter(|item| {
+                item.get("status")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|status| status.eq_ignore_ascii_case("requires_approval"))
+            })
+            .filter_map(|item| {
+                item.get("id")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+            })
+            .collect()
+    }
+
+    fn to_runtime_context_value(&self) -> serde_json::Value {
+        serde_json::to_value(PersistedExecutionGraphRuntimeContext {
+            max_rounds: self.max_rounds,
+            round: self.round,
+            trace_id: self.trace_id.clone(),
+            execution_policy: self.execution_policy.clone(),
+            model_connection: self.model_connection.clone(),
+            orchestrated_messages: self.orchestrated_messages.clone(),
+            session_id: self.session_id.clone(),
+            temperature: self.temperature,
+            max_tokens: self.max_tokens,
+            active_capability: self.active_capability.clone(),
+            runtime_metrics: self.runtime_metrics.clone(),
+            last_capability_snapshot: self.last_capability_snapshot.clone(),
+            last_response: self.last_response.clone(),
+        })
+        .unwrap_or_else(|_| serde_json::json!({}))
     }
 }
 
@@ -372,11 +1037,10 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
         execution_policy: execution_policy.clone(),
         model_connection: model_connection.clone(),
         orchestrated_messages,
-        chat_ctx: chat_ctx.clone(),
+        session_id: chat_ctx.session_id.clone(),
         temperature,
         max_tokens,
         active_capability: None,
-        all_tool_call_meta: Vec::new(),
         runtime_metrics: RuntimeMetricsAccumulator::default(),
         last_capability_snapshot: execution_policy.capability_snapshot.clone(),
         last_response: None,
@@ -405,7 +1069,7 @@ async fn continue_local_chat_complete_with_auto_code_mode(
     app_state: &AppState,
     mut state: LocalChatAutoCodeModeState,
 ) -> Result<LocalChatAutoCodeModeOutput, String> {
-    let session_id = state.chat_ctx.session_id.clone();
+    let session_id = state.session_id.clone();
     let provider_model_id = state.model_connection.provider_model_id.clone();
     let model_id = state.model_connection.model_id.clone();
 
@@ -416,17 +1080,17 @@ async fn continue_local_chat_complete_with_auto_code_mode(
                 "agentic loop exceeded {} rounds, returning last response",
                 state.max_rounds
             );
+            let effective_tool_call_meta = build_state_effective_tool_call_meta(&state);
             let fallback = state.last_response.unwrap_or_else(|| {
                 serde_json::json!({"content": "Tool execution reached the maximum number of rounds."})
             });
             return Ok(LocalChatAutoCodeModeOutput {
                 response: enrich_response_with_tool_trace(
                     fallback,
-                    &state.all_tool_call_meta,
+                    &effective_tool_call_meta,
                     state.realtime_emitter.emitted_any,
                     &state.runtime_metrics,
                 ),
-                all_tool_call_meta: state.all_tool_call_meta.clone(),
             });
         }
 
@@ -453,24 +1117,25 @@ async fn continue_local_chat_complete_with_auto_code_mode(
         state.runtime_metrics.observe_response(&response);
 
         if extract_chat_tool_calls(&response).is_empty() {
+            let effective_tool_call_meta = build_state_effective_tool_call_meta(&state);
             return Ok(LocalChatAutoCodeModeOutput {
                 response: enrich_response_with_tool_trace(
                     response,
-                    &state.all_tool_call_meta,
+                    &effective_tool_call_meta,
                     state.realtime_emitter.emitted_any,
                     &state.runtime_metrics,
                 ),
-                all_tool_call_meta: state.all_tool_call_meta.clone(),
             });
         }
 
+        let prior_tool_call_meta = build_state_effective_tool_call_meta(&state);
         state.last_response = Some(response.clone());
         match maybe_handle_local_code_mode_tool_calls(
             app,
             app_state,
             &response,
-            &state.all_tool_call_meta,
-            &state.chat_ctx,
+            &prior_tool_call_meta,
+            state.session_id.as_str(),
             &effective_allowed_tool_names,
             state.active_capability.as_ref(),
             &mut state.last_capability_snapshot,
@@ -482,17 +1147,22 @@ async fn continue_local_chat_complete_with_auto_code_mode(
                 synthesized,
                 tool_call_meta,
                 results,
-                capability_update,
             } => {
+                let canonical_tool_call_meta = canonicalize_tool_call_meta_via_graph(
+                    &session_id,
+                    &state.execution_policy,
+                    &response,
+                    &tool_call_meta,
+                );
                 record_query_affinity_from_tool_meta(
                     app_state.mcp.store.as_ref(),
                     state.last_capability_snapshot.as_ref(),
-                    &tool_call_meta,
+                    &canonical_tool_call_meta,
                 )
                 .await;
                 if !synthesized {
-                    let mut current_tool_call_meta = state.all_tool_call_meta.clone();
-                    current_tool_call_meta.extend(tool_call_meta);
+                    let mut current_tool_call_meta = build_state_effective_tool_call_meta(&state);
+                    current_tool_call_meta.extend(canonical_tool_call_meta.clone());
                     return Ok(LocalChatAutoCodeModeOutput {
                         response: enrich_response_with_tool_trace(
                             response,
@@ -500,7 +1170,6 @@ async fn continue_local_chat_complete_with_auto_code_mode(
                             state.realtime_emitter.emitted_any,
                             &state.runtime_metrics,
                         ),
-                        all_tool_call_meta: current_tool_call_meta,
                     });
                 }
                 finalize_tool_round(
@@ -509,19 +1178,21 @@ async fn continue_local_chat_complete_with_auto_code_mode(
                     &state.model_connection.protocol_family,
                     state.round,
                     &response,
-                    &tool_call_meta,
+                    &canonical_tool_call_meta,
                     &results,
-                    capability_update,
                 );
-                state.all_tool_call_meta.extend(tool_call_meta);
+                state.last_response = Some(enrich_response_with_tool_trace(
+                    response,
+                    &canonical_tool_call_meta,
+                    state.realtime_emitter.emitted_any,
+                    &state.runtime_metrics,
+                ));
             }
             LocalToolCallProcessingOutcome::Interrupted {
-                approval_token,
-                tool_call_meta,
+                approval_tokens,
+                mut tool_call_meta,
                 results,
                 capability_update,
-                call_id,
-                tool_name,
             } => {
                 record_query_affinity_from_tool_meta(
                     app_state.mcp.store.as_ref(),
@@ -531,23 +1202,66 @@ async fn continue_local_chat_complete_with_auto_code_mode(
                 .await;
                 let suspended = SuspendedLocalChatExecution::from_state(
                     &state,
-                    &response,
                     &tool_call_meta,
                     &results,
                     capability_update,
-                    call_id,
-                    tool_name,
+                    derive_pending_call_id_from_tool_call_meta(&tool_call_meta),
+                    String::new(),
                 );
-                app_state
-                    .mcp
-                    .approvals
-                    .suspended_local_chat_executions
-                    .write()
-                    .await
-                    .insert(approval_token, suspended);
+                attach_graph_metadata_to_pending_tool_meta(&mut tool_call_meta, &suspended);
+                {
+                    let mut pending_tool_calls =
+                        app_state.mcp.approvals.pending_tool_calls.write().await;
+                    for approval_token in &approval_tokens {
+                        let Some(pending) = pending_tool_calls.get_mut(approval_token) else {
+                            continue;
+                        };
+                        pending.execution_graph_execution_id =
+                            suspended.graph_execution_id().map(str::to_string);
+                        if let Some(call_id) = pending.call_id.as_deref() {
+                            pending.execution_graph_gate_node_id =
+                                suspended.approval_gate_node_id_for_call_id(call_id);
+                            pending.execution_graph_tool_node_id =
+                                suspended.tool_node_id_for_call_id(call_id);
+                        } else {
+                            pending.execution_graph_gate_node_id =
+                                Some(suspended.pending_gate_node_id().to_string());
+                            pending.execution_graph_tool_node_id =
+                                Some(suspended.pending_tool_node_id().to_string());
+                        }
+                    }
+                }
+                let mut persisted_graph_runtime = true;
+                if let Err(err) = persist_suspended_execution_graph_runtime(
+                    app_state.mcp.store.as_ref(),
+                    &suspended,
+                    "desktop_local_chat_waiting_approval",
+                    "waiting_approval",
+                )
+                .await
+                {
+                    log::warn!(
+                        "persist_suspended_execution_graph_runtime failed session={} err={}",
+                        state.session_id,
+                        err
+                    );
+                    persisted_graph_runtime = false;
+                }
+                if !persisted_graph_runtime {
+                    let mut suspended_local_chat_executions = app_state
+                        .mcp
+                        .approvals
+                        .suspended_local_chat_executions
+                        .write()
+                        .await;
+                    for approval_token in &approval_tokens {
+                        suspended_local_chat_executions
+                            .insert(approval_token.clone(), suspended.clone());
+                    }
+                }
 
-                let mut current_tool_call_meta = state.all_tool_call_meta.clone();
-                current_tool_call_meta.extend(tool_call_meta);
+                let mut current_tool_call_meta = build_state_effective_tool_call_meta(&state);
+                current_tool_call_meta.extend(suspended.pending_tool_call_meta());
                 let interrupted = serde_json::json!({ "content": "" });
                 return Ok(LocalChatAutoCodeModeOutput {
                     response: enrich_response_with_tool_trace(
@@ -556,7 +1270,6 @@ async fn continue_local_chat_complete_with_auto_code_mode(
                         state.realtime_emitter.emitted_any,
                         &state.runtime_metrics,
                     ),
-                    all_tool_call_meta: current_tool_call_meta,
                 });
             }
         }
@@ -571,9 +1284,12 @@ fn finalize_tool_round(
     response: &serde_json::Value,
     tool_call_meta: &[serde_json::Value],
     results: &[String],
-    capability_update: Option<LocalCapabilityActivationUpdate>,
 ) {
-    apply_capability_update(orchestrated_messages, active_capability, capability_update);
+    apply_capability_update(
+        orchestrated_messages,
+        active_capability,
+        derive_capability_update_from_tool_call_meta(tool_call_meta),
+    );
 
     if let Some(replay_messages) =
         build_structured_tool_replay_messages(protocol_family, response, tool_call_meta)
@@ -582,7 +1298,9 @@ fn finalize_tool_round(
         return;
     }
 
-    let tool_feedback = build_auto_code_mode_tool_feedback(round, tool_call_meta, results);
+    let effective_tool_call_meta = build_effective_tool_call_meta(response, tool_call_meta);
+    let tool_feedback =
+        build_auto_code_mode_tool_feedback(round, &effective_tool_call_meta, results);
     let assistant_content = response
         .get("content")
         .and_then(|v| v.as_str())
@@ -620,7 +1338,11 @@ fn build_structured_tool_replay_messages(
     }
 
     let tool_calls = extract_chat_tool_calls(response);
-    if tool_calls.is_empty() || tool_call_meta.is_empty() {
+    if tool_calls.is_empty() {
+        return None;
+    }
+    let effective_tool_call_meta = build_effective_tool_call_meta(response, tool_call_meta);
+    if effective_tool_call_meta.is_empty() {
         return None;
     }
 
@@ -636,7 +1358,7 @@ fn build_structured_tool_replay_messages(
             return None;
         };
 
-        let Some(meta) = tool_call_meta
+        let Some(meta) = effective_tool_call_meta
             .iter()
             .find(|item| tool_call_meta_matches_call_id(item, call_id))
         else {
@@ -794,6 +1516,91 @@ fn apply_capability_update(
     }
 }
 
+fn derive_capability_update_from_tool_call_meta(
+    tool_call_meta: &[serde_json::Value],
+) -> Option<LocalCapabilityActivationUpdate> {
+    for item in tool_call_meta.iter().rev() {
+        let result = item.get("result")?.as_object()?;
+        let transition = result.get("capability_transition")?.as_object()?;
+        let action = transition
+            .get("action")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())?;
+
+        match action {
+            "activated" => {
+                let capability_id = result
+                    .get("capability_id")
+                    .and_then(serde_json::Value::as_str)
+                    .or_else(|| {
+                        transition
+                            .get("capability_id")
+                            .and_then(serde_json::Value::as_str)
+                    })
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())?
+                    .to_string();
+                let capability_name = result
+                    .get("capability_name")
+                    .and_then(serde_json::Value::as_str)
+                    .or_else(|| {
+                        transition
+                            .get("capability_name")
+                            .and_then(serde_json::Value::as_str)
+                    })
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or("expert capability")
+                    .to_string();
+                let capability_summary = result
+                    .get("capability_summary")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::trim)
+                    .unwrap_or_default()
+                    .to_string();
+                return Some(LocalCapabilityActivationUpdate::Activate(
+                    LocalCapabilityActivationState {
+                        capability_id,
+                        capability_name,
+                        capability_summary,
+                    },
+                ));
+            }
+            "deactivated" => {
+                let capability_name = result
+                    .get("capability_name")
+                    .and_then(serde_json::Value::as_str)
+                    .or_else(|| {
+                        transition
+                            .get("capability_name")
+                            .and_then(serde_json::Value::as_str)
+                    })
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string);
+                let capability_id = result
+                    .get("capability_id")
+                    .and_then(serde_json::Value::as_str)
+                    .or_else(|| {
+                        transition
+                            .get("capability_id")
+                            .and_then(serde_json::Value::as_str)
+                    })
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string);
+                return Some(LocalCapabilityActivationUpdate::Deactivate {
+                    _capability_id: capability_id,
+                    capability_name,
+                });
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 struct LocalRealtimeToolTraceEmitter {
     tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
     trace_id: Option<String>,
@@ -876,7 +1683,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
     app_state: &AppState,
     chat_response: &serde_json::Value,
     prior_tool_call_meta: &[serde_json::Value],
-    chat_ctx: &LocalConversationChatContext,
+    session_id: &str,
     effective_allowed_tool_names: &[String],
     active_capability: Option<&LocalCapabilityActivationState>,
     last_capability_snapshot: &mut Option<serde_json::Value>,
@@ -888,13 +1695,13 @@ async fn maybe_handle_local_code_mode_tool_calls(
             synthesized: false,
             tool_call_meta: Vec::new(),
             results: Vec::new(),
-            capability_update: None,
         };
     }
     let mut tool_call_meta = Vec::new();
     let mut results = Vec::new();
     let mut synthesized = false;
     let mut capability_update = None;
+    let mut approval_tokens = Vec::new();
 
     for call in tool_calls {
         let requested_tool_name = call.name.trim().to_lowercase();
@@ -1001,7 +1808,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
                 app_state,
                 ExecuteLocalCodeModeRequest {
                     code: code.to_string(),
-                    session_id: Some(chat_ctx.session_id.clone()),
+                    session_id: Some(session_id.to_string()),
                     language: Some(language.to_string()),
                     execution_timeout,
                     dry_run: Some(dry_run),
@@ -1313,11 +2120,10 @@ async fn maybe_handle_local_code_mode_tool_calls(
         } else {
             synthesized = true;
             realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call.id,"toolName":tool_name,"status":"running"})]);
-            let approval_context = app_state.mcp.build_approval_context(
-                call.id.as_deref(),
-                None,
-                Some(chat_ctx.session_id.as_str()),
-            );
+            let approval_context =
+                app_state
+                    .mcp
+                    .build_approval_context(call.id.as_deref(), None, Some(session_id));
             match execute_or_queue_mcp_tool_call_with_tool_ref(
                 &approval_context,
                 Some(&app_state.mcp),
@@ -1356,14 +2162,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
                             .map(str::trim)
                             .filter(|value| !value.is_empty())
                         {
-                            return LocalToolCallProcessingOutcome::Interrupted {
-                                approval_token: approval_token.to_string(),
-                                tool_call_meta,
-                                results,
-                                capability_update,
-                                call_id: call.id.clone().unwrap_or_default(),
-                                tool_name,
-                            };
+                            approval_tokens.push(approval_token.to_string());
                         }
                     } else {
                         results.push(format!("Tool call '{}' executed successfully.", tool_name));
@@ -1407,41 +2206,28 @@ async fn maybe_handle_local_code_mode_tool_calls(
             );
         }
     }
-    LocalToolCallProcessingOutcome::Completed {
-        synthesized,
-        tool_call_meta,
-        results,
-        capability_update,
+    if approval_tokens.is_empty() {
+        LocalToolCallProcessingOutcome::Completed {
+            synthesized,
+            tool_call_meta,
+            results,
+        }
+    } else {
+        LocalToolCallProcessingOutcome::Interrupted {
+            approval_tokens,
+            tool_call_meta,
+            results,
+            capability_update,
+        }
     }
 }
 
 fn apply_approved_tool_result_to_suspended_round(
     suspended: &mut SuspendedLocalChatExecution,
+    call_id: Option<&str>,
     tool_result: &serde_json::Value,
 ) {
-    if let Some(last_result) = suspended.pending_results.last_mut() {
-        *last_result = format!(
-            "Tool call '{}' executed successfully.",
-            suspended.pending_tool_name
-        );
-    }
-    for item in &mut suspended.pending_tool_call_meta {
-        let matches_call_id = item
-            .get("id")
-            .and_then(serde_json::Value::as_str)
-            .map(|value| value == suspended.pending_call_id)
-            .unwrap_or(false);
-        if !matches_call_id {
-            continue;
-        }
-        if let Some(object) = item.as_object_mut() {
-            object.insert("status".to_string(), serde_json::json!("success"));
-            object.insert("result".to_string(), tool_result.clone());
-            object.remove("error");
-            object.remove("error_code");
-        }
-        break;
-    }
+    apply_approved_tool_result_to_execution_graph(suspended, call_id, tool_result);
 }
 
 fn build_local_chat_resume_continuation_blocks(
@@ -1449,7 +2235,10 @@ fn build_local_chat_resume_continuation_blocks(
     continuation_meta: &[serde_json::Value],
 ) -> Vec<serde_json::Value> {
     let mut blocks = if continuation_meta.is_empty() {
-        Vec::new()
+        resumed_response
+            .get("execution_graph")
+            .map(project_execution_graph_blocks_from_value)
+            .unwrap_or_default()
     } else {
         build_local_tool_trace_blocks(continuation_meta)
     };
@@ -1509,7 +2298,13 @@ fn build_persisted_resume_assistant_blocks(
         .get("tool_trace_blocks")
         .and_then(serde_json::Value::as_array)
         .cloned()
-        .unwrap_or_default();
+        .filter(|items| !items.is_empty())
+        .unwrap_or_else(|| {
+            resumed_response
+                .get("execution_graph")
+                .map(project_execution_graph_blocks_from_value)
+                .unwrap_or_default()
+        });
 
     let response_text = extract_resume_response_text(
         resumed_response
@@ -1546,7 +2341,40 @@ fn build_persisted_resume_assistant_meta(
     if let Some(runtime_metrics) = resumed_response.get("runtime_metrics").cloned() {
         meta.insert("runtime_metrics".to_string(), runtime_metrics);
     }
+    if let Some(execution_graph) = resumed_response.get("execution_graph").cloned() {
+        meta.insert("execution_graph".to_string(), execution_graph);
+    }
     serde_json::Value::Object(meta)
+}
+
+fn attach_execution_graph_to_response(
+    response: &mut serde_json::Value,
+    session_id: &str,
+    execution_policy: &LocalExecutionPolicy,
+    root_execution_id: Option<&str>,
+) {
+    if response.get("execution_graph").is_some() {
+        return;
+    }
+    let tool_trace_blocks = response
+        .get("tool_trace_blocks")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let execution_graph = project_execution_graph_snapshot(GraphProjectionInput {
+        session_id: session_id.to_string(),
+        route: execution_policy.route.as_str().to_string(),
+        plane: execution_policy.plane.as_str().to_string(),
+        request_id: None,
+        root_execution_id: root_execution_id.map(str::to_string),
+        response_content: response.get("content").cloned(),
+        tool_trace_blocks,
+        delegated_execution_tree: None,
+    })
+    .to_value();
+    if let Some(object) = response.as_object_mut() {
+        object.insert("execution_graph".to_string(), execution_graph);
+    }
 }
 
 async fn persist_resumed_local_chat_assistant_message(
@@ -1581,7 +2409,28 @@ async fn persist_resumed_local_chat_assistant_message(
                 "chat step=append_resumed_assistant_message session={} err={}",
                 session_id, err
             )
-        })
+        })?;
+
+    if let Some(execution_graph) = resumed_response.get("execution_graph") {
+        if let Err(err) = persist_execution_graph_snapshot(
+            app_state.mcp.store.as_ref(),
+            execution_graph,
+            session_id,
+            "desktop_local_chat_resume",
+            None,
+            Some("completed"),
+        )
+        .await
+        {
+            log::warn!(
+                "persist_execution_graph_snapshot failed session={} err={}",
+                session_id,
+                err
+            );
+        }
+    }
+
+    Ok(())
 }
 
 pub(crate) async fn resume_suspended_local_chat_after_approval(
@@ -1589,45 +2438,169 @@ pub(crate) async fn resume_suspended_local_chat_after_approval(
     app_state: &AppState,
     approval_token: &str,
     tool_result: &serde_json::Value,
+    call_id: Option<&str>,
+    execution_graph_execution_id: Option<&str>,
+    legacy_fallback_created_at_unix_ms: Option<i128>,
 ) -> Result<Option<serde_json::Value>, String> {
-    let mut suspended = app_state
-        .mcp
-        .approvals
-        .suspended_local_chat_executions
-        .write()
+    let persisted_execution_graph = if let Some(execution_id) = execution_graph_execution_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        load_execution_graph_snapshot(app_state.mcp.store.as_ref(), execution_id)
+            .await
+            .map_err(|err| err.to_string())?
+    } else {
+        None
+    };
+
+    let mut suspended = if let Some(execution_graph) = if let Some(graph) = persisted_execution_graph
+    {
+        Some(graph)
+    } else {
+        load_execution_graph_snapshot_by_approval_token(app_state.mcp.store.as_ref(), approval_token)
+            .await
+            .map_err(|err| err.to_string())?
+    } {
+        let Some(execution_id) = execution_graph
+            .get("execution_id")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            return Ok(None);
+        };
+        let Some(runtime_context) =
+            load_execution_graph_runtime_context(app_state.mcp.store.as_ref(), execution_id)
+                .await
+                .map_err(|err| err.to_string())?
+        else {
+            return Ok(None);
+        };
+        let persisted_context: PersistedExecutionGraphRuntimeContext =
+            serde_json::from_value(runtime_context).map_err(|err| err.to_string())?;
+        let state = runtime_state_from_persisted_context(persisted_context);
+        SuspendedLocalChatExecution {
+            max_rounds: state.max_rounds,
+            round: state.round,
+            trace_id: state.trace_id.clone(),
+            execution_policy: state.execution_policy.clone(),
+            model_connection: state.model_connection.clone(),
+            orchestrated_messages: state.orchestrated_messages.clone(),
+            session_id: state.session_id.clone(),
+            temperature: state.temperature,
+            max_tokens: state.max_tokens,
+            active_capability: state.active_capability.clone(),
+            runtime_metrics: state.runtime_metrics.clone(),
+            last_capability_snapshot: state.last_capability_snapshot.clone(),
+            last_response: state.last_response.clone(),
+            execution_graph,
+        }
+    } else if legacy_suspended_fallback_allowed(legacy_fallback_created_at_unix_ms) {
+        let mut suspended = app_state
+            .mcp
+            .approvals
+            .suspended_local_chat_executions
+            .write()
+            .await
+            .remove(approval_token);
+        let Some(suspended) = suspended.take() else {
+            return Ok(None);
+        };
+        if let Err(err) = persist_suspended_execution_graph_runtime(
+            app_state.mcp.store.as_ref(),
+            &suspended,
+            "desktop_local_chat_legacy_fallback",
+            "waiting_approval",
+        )
         .await
-        .remove(approval_token);
-    let Some(mut suspended) = suspended.take() else {
+        {
+            log::warn!(
+                "legacy suspended execution graph migration failed approval_token={} err={}",
+                approval_token,
+                err
+            );
+        }
+        suspended
+    } else {
         return Ok(None);
     };
 
-    apply_approved_tool_result_to_suspended_round(&mut suspended, tool_result);
+    apply_approved_tool_result_to_suspended_round(&mut suspended, call_id, tool_result);
 
-    let baseline_meta_count = suspended.existing_meta_count;
-    let pending_response = suspended.pending_response.clone();
-    let pending_tool_call_meta = suspended.pending_tool_call_meta.clone();
-    let pending_results = suspended.pending_results.clone();
-    let pending_capability_update = suspended.pending_capability_update.clone();
+    let pending_response = suspended
+        .last_response
+        .clone()
+        .unwrap_or_else(|| serde_json::json!({ "content": "" }));
+    let graph_pending_tool_call_meta = suspended.pending_tool_call_meta();
+    let pending_results = summarize_tool_call_meta_results(&graph_pending_tool_call_meta);
+    let root_execution_id = suspended
+        .execution_graph
+        .get("execution_id")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
+    let post_approval_graph = suspended.execution_graph.clone();
+
+    if let Err(err) = persist_suspended_execution_graph_runtime(
+        app_state.mcp.store.as_ref(),
+        &suspended,
+        "desktop_local_chat_approval_applied",
+        "active",
+    )
+    .await
+    {
+        log::warn!(
+            "persist approved execution graph failed approval_token={} err={}",
+            approval_token,
+            err
+        );
+    }
+
+    let remaining_pending_call_ids = suspended.pending_requires_approval_call_ids();
+    if !remaining_pending_call_ids.is_empty() {
+        return Ok(Some(serde_json::json!({
+            "status": "LOCAL_CHAT_WAITING_APPROVAL",
+            "approved_tool_result": tool_result,
+            "continuation_blocks": build_local_chat_resume_continuation_blocks(
+                &serde_json::json!({
+                    "execution_graph": suspended.execution_graph().clone(),
+                    "content": "",
+                }),
+                &suspended.pending_tool_call_meta(),
+            ),
+            "execution_graph": suspended.execution_graph().clone(),
+            "execution_graph_execution_id": root_execution_id,
+            "pending_call_ids": remaining_pending_call_ids,
+        })));
+    }
 
     let mut state = suspended.into_runtime_state();
-    let session_id = state.chat_ctx.session_id.clone();
+    let session_id = state.session_id.clone();
     let model_connection = state.model_connection.clone();
+    let execution_policy = state.execution_policy.clone();
     finalize_tool_round(
         &mut state.orchestrated_messages,
         &mut state.active_capability,
         &state.model_connection.protocol_family,
         state.round,
         &pending_response,
-        &pending_tool_call_meta,
+        &graph_pending_tool_call_meta,
         &pending_results,
-        pending_capability_update,
     );
-    state
-        .all_tool_call_meta
-        .extend(pending_tool_call_meta.clone());
+    state.last_response = Some(enrich_response_with_tool_trace(
+        pending_response,
+        &graph_pending_tool_call_meta,
+        false,
+        &state.runtime_metrics,
+    ));
 
     match continue_local_chat_complete_with_auto_code_mode(app, app_state, state).await {
-        Ok(output) => {
+        Ok(mut output) => {
+            attach_execution_graph_to_response(
+                &mut output.response,
+                &session_id,
+                &execution_policy,
+                root_execution_id.as_deref(),
+            );
             if let Err(err) = persist_resumed_local_chat_assistant_message(
                 app_state,
                 &session_id,
@@ -1638,23 +2611,56 @@ pub(crate) async fn resume_suspended_local_chat_after_approval(
             {
                 log::warn!("{err}");
             }
-            let continuation_meta = output
-                .all_tool_call_meta
-                .get(baseline_meta_count..)
-                .unwrap_or(&[]);
+            clear_execution_graph_runtime_context(
+                app_state.mcp.store.as_ref(),
+                root_execution_id.as_deref(),
+            )
+            .await;
+            let continuation_meta = build_effective_tool_call_meta(&output.response, &[]);
             Ok(Some(serde_json::json!({
                 "status": "LOCAL_CHAT_RESUMED",
                 "approved_tool_result": tool_result,
-                "continuation_blocks": build_local_chat_resume_continuation_blocks(&output.response, continuation_meta),
+                "continuation_blocks": build_local_chat_resume_continuation_blocks(&output.response, &continuation_meta),
+                "execution_graph": output.response.get("execution_graph").cloned(),
+                "execution_graph_execution_id": output
+                    .response
+                    .get("execution_graph")
+                    .and_then(|value| value.get("execution_id"))
+                    .cloned(),
                 "response": output.response,
             })))
         }
-        Err(err) => Ok(Some(serde_json::json!({
-            "status": "LOCAL_CHAT_RESUME_FAILED",
-            "approved_tool_result": tool_result,
-            "continuation_blocks": [],
-            "error": err,
-        }))),
+        Err(err) => {
+            if let Err(persist_err) = persist_execution_graph_snapshot(
+                app_state.mcp.store.as_ref(),
+                &post_approval_graph,
+                &session_id,
+                "desktop_local_chat_resume_failed",
+                None,
+                Some("failed"),
+            )
+            .await
+            {
+                log::warn!(
+                    "persist_execution_graph_snapshot failed session={} err={}",
+                    session_id,
+                    persist_err
+                );
+            }
+            clear_execution_graph_runtime_context(
+                app_state.mcp.store.as_ref(),
+                root_execution_id.as_deref(),
+            )
+            .await;
+            Ok(Some(serde_json::json!({
+                "status": "LOCAL_CHAT_RESUME_FAILED",
+                "approved_tool_result": tool_result,
+                "continuation_blocks": [],
+                "execution_graph": post_approval_graph,
+                "execution_graph_execution_id": root_execution_id,
+                "error": err,
+            })))
+        }
     }
 }
 
@@ -1682,6 +2688,49 @@ fn canonicalize_tool_name_for_allowed_list(
     }
 
     None
+}
+
+fn summarize_tool_call_meta_results(tool_call_meta: &[serde_json::Value]) -> Vec<String> {
+    tool_call_meta
+        .iter()
+        .map(|item| {
+            let tool_name = item
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown_tool");
+            let status = item
+                .get("status")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown");
+            if status.eq_ignore_ascii_case("requires_approval") {
+                return format!(
+                    "Tool call '{}' requires approval before execution.",
+                    tool_name
+                );
+            }
+            if status.eq_ignore_ascii_case("error") {
+                let error_code = item
+                    .get("error_code")
+                    .or_else(|| item.get("errorCode"))
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("UNKNOWN");
+                let error = item
+                    .get("error")
+                    .and_then(serde_json::Value::as_str)
+                    .or_else(|| {
+                        item.get("result")
+                            .and_then(|value| value.get("error"))
+                            .and_then(serde_json::Value::as_str)
+                    })
+                    .unwrap_or("tool call failed");
+                return format!(
+                    "Tool call '{}' failed [{}]: {}",
+                    tool_name, error_code, error
+                );
+            }
+            format!("Tool call '{}' executed successfully.", tool_name)
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -1845,6 +2894,56 @@ mod tests {
     }
 
     #[test]
+    fn structured_tool_replay_messages_fall_back_to_execution_graph_when_meta_missing() {
+        let response = serde_json::json!({
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call_123",
+                    "name": "search_sdk",
+                    "arguments": { "query": "tool replay" }
+                }
+            ],
+            "execution_graph": {
+                "schema_version": 1,
+                "execution_id": "graph-exec-1",
+                "session_id": "session-1",
+                "route": "direct",
+                "plane": "response_only",
+                "request_id": null,
+                "root_execution_id": null,
+                "nodes": [
+                    {
+                        "node_id": "tool_call:call_123",
+                        "node_type": "tool_call",
+                        "status": "success",
+                        "dependency_ids": [],
+                        "metadata": {
+                            "call_id": "call_123",
+                            "tool_name": "search_sdk"
+                        },
+                        "input_payload": null,
+                        "output_payload": {
+                            "structuredContent": {
+                                "ok": true
+                            }
+                        }
+                    }
+                ],
+                "events": [],
+                "metadata": {}
+            }
+        });
+
+        let replay = build_structured_tool_replay_messages("openai_responses", &response, &[])
+            .expect("graph replay");
+        assert_eq!(replay.len(), 2);
+        assert_eq!(replay[1].role, "tool");
+        assert_eq!(replay[1].tool_call_id.as_deref(), Some("call_123"));
+        assert!(replay[1].content.contains("\"structuredContent\""));
+    }
+
+    #[test]
     fn enrich_response_with_tool_trace_includes_error_result_blocks() {
         let response = serde_json::json!({
             "content": ""
@@ -1887,6 +2986,52 @@ mod tests {
             enriched.get("tool_trace_streamed"),
             Some(&serde_json::json!(true))
         );
+    }
+
+    #[test]
+    fn enrich_response_with_tool_trace_falls_back_to_execution_graph_blocks() {
+        let response = serde_json::json!({
+            "content": "",
+            "execution_graph": {
+                "schema_version": 1,
+                "execution_id": "graph-exec-1",
+                "session_id": "session-1",
+                "route": "direct",
+                "plane": "response_only",
+                "request_id": null,
+                "root_execution_id": null,
+                "nodes": [
+                    {
+                        "node_id": "tool_call:call-1",
+                        "node_type": "tool_call",
+                        "status": "success",
+                        "dependency_ids": [],
+                        "metadata": {
+                            "call_id": "call-1",
+                            "tool_name": "search_sdk"
+                        },
+                        "input_payload": null,
+                        "output_payload": {
+                            "ok": true
+                        }
+                    }
+                ],
+                "events": [],
+                "metadata": {}
+            }
+        });
+        let metrics = RuntimeMetricsAccumulator::default();
+
+        let enriched = enrich_response_with_tool_trace(response, &[], false, &metrics);
+        let blocks = enriched
+            .get("tool_trace_blocks")
+            .and_then(serde_json::Value::as_array)
+            .expect("tool trace blocks should be present");
+
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0]["type"], serde_json::json!("tool_call"));
+        assert_eq!(blocks[1]["type"], serde_json::json!("tool_result"));
+        assert_eq!(blocks[1]["result"]["ok"], serde_json::json!(true));
     }
 
     #[test]
@@ -1979,6 +3124,9 @@ mod tests {
         let response = serde_json::json!({
             "content": "Resumed after approval.",
             "tool_trace_blocks": [],
+            "execution_graph": {
+                "execution_id": "graph-exec-1"
+            },
             "runtime_metrics": {
                 "upstream_latency_ms": 1200,
                 "upstream_calls": 2
@@ -2003,8 +3151,129 @@ mod tests {
             serde_json::json!(1200)
         );
         assert_eq!(
+            meta["execution_graph"]["execution_id"],
+            serde_json::json!("graph-exec-1")
+        );
+        assert_eq!(
             meta["blocks"][0]["content"],
             serde_json::json!("Resumed after approval.")
         );
+    }
+
+    #[test]
+    fn build_persisted_resume_assistant_blocks_falls_back_to_execution_graph_blocks() {
+        let response = serde_json::json!({
+            "content": "",
+            "execution_graph": {
+                "schema_version": 1,
+                "execution_id": "graph-exec-1",
+                "session_id": "session-1",
+                "route": "direct",
+                "plane": "response_only",
+                "request_id": null,
+                "root_execution_id": null,
+                "nodes": [
+                    {
+                        "node_id": "tool_call:call-1",
+                        "node_type": "tool_call",
+                        "status": "waiting_approval",
+                        "dependency_ids": [],
+                        "metadata": {
+                            "call_id": "call-1",
+                            "tool_name": "browser_open_tab"
+                        },
+                        "input_payload": null,
+                        "output_payload": {
+                            "status": "REQUIRES_APPROVAL",
+                            "approval_token": "approval-1"
+                        }
+                    }
+                ],
+                "events": [],
+                "metadata": {}
+            }
+        });
+
+        let blocks = build_persisted_resume_assistant_blocks(&response);
+
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0]["type"], serde_json::json!("tool_call"));
+        assert_eq!(blocks[1]["type"], serde_json::json!("tool_result"));
+        assert_eq!(
+            blocks[1]["result"]["approval_token"],
+            serde_json::json!("approval-1")
+        );
+    }
+
+    #[test]
+    fn apply_rejected_tool_result_updates_graph_without_runtime_shell() {
+        let mut execution_graph = serde_json::json!({
+            "execution_id": "graph-reject-1",
+            "nodes": [
+                {
+                    "node_id": "approval_gate:call-1",
+                    "node_type": "approval_gate",
+                    "status": "waiting_approval",
+                    "dependency_ids": [],
+                    "metadata": { "approval_token": "approval-1" },
+                    "input_payload": null,
+                    "output_payload": null
+                },
+                {
+                    "node_id": "tool_call:call-1",
+                    "node_type": "tool_call",
+                    "status": "waiting_approval",
+                    "dependency_ids": [],
+                    "metadata": { "call_id": "call-1" },
+                    "input_payload": null,
+                    "output_payload": null
+                },
+                {
+                    "node_id": "finalize:call-1",
+                    "node_type": "finalize",
+                    "status": "pending",
+                    "dependency_ids": [],
+                    "metadata": {},
+                    "input_payload": null,
+                    "output_payload": null
+                }
+            ],
+            "events": []
+        });
+
+        apply_rejected_tool_result_to_execution_graph_value(
+            &mut execution_graph,
+            Some("graph-reject-1"),
+            "User rejected tool execution",
+        );
+
+        let nodes = execution_graph
+            .get("nodes")
+            .and_then(serde_json::Value::as_array)
+            .expect("nodes");
+        assert_eq!(
+            nodes[0].get("status").and_then(serde_json::Value::as_str),
+            Some("cancelled")
+        );
+        assert_eq!(
+            nodes[1].get("status").and_then(serde_json::Value::as_str),
+            Some("cancelled")
+        );
+        assert_eq!(
+            nodes[2].get("status").and_then(serde_json::Value::as_str),
+            Some("cancelled")
+        );
+        let events = execution_graph
+            .get("events")
+            .and_then(serde_json::Value::as_array)
+            .expect("events");
+        assert!(events.iter().any(|event| {
+            event.get("event_type").and_then(serde_json::Value::as_str)
+                == Some("approval_gate.rejected")
+        }));
+        assert!(events.iter().any(|event| {
+            event.get("event_type").and_then(serde_json::Value::as_str)
+                == Some("tool_call.rejected")
+        }));
     }
 }

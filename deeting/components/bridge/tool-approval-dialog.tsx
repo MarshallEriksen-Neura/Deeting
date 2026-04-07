@@ -23,6 +23,7 @@ import { DESKTOP_MCP_COMMANDS } from "@/lib/api/mcp-desktop"
 import { toast } from "sonner"
 import { Loader2, ShieldAlert, AlertTriangle, Terminal } from "lucide-react"
 import { useChatStore } from "@/store/chat-store"
+import { extractAssistantTextFromBlocks } from "@/lib/chat/message-blocks"
 import {
   createOptimisticApprovalExecutionBlocks,
   createApprovedToolResultBlock,
@@ -33,7 +34,9 @@ import {
 } from "@/lib/chat/tool-approval"
 
 export function ToolApprovalDialog() {
-  const { pending, clear } = useBridgeApprovalStore()
+  const { pending, queue, clear, focusPendingByToken } = useBridgeApprovalStore()
+  const messages = useChatStore((state) => state.messages)
+  const focusMessage = useChatStore((state) => state.focusMessage)
   const setMessageBlocks = useChatStore((state) => state.setMessageBlocks)
   const upsertMessageToolResult = useChatStore((state) => state.upsertMessageToolResult)
   const appendMessageBlocks = useChatStore((state) => state.appendMessageBlocks)
@@ -42,9 +45,18 @@ export function ToolApprovalDialog() {
   >(null)
   const t = useTranslations("chat.approvalDialog")
   const approvalToken = pending?.approval_token ?? null
+  const queueLength = queue.length
+  const remainingApprovals = Math.max(0, queueLength - 1)
+  const [showAllApprovals, setShowAllApprovals] = useState(false)
+  const upcomingApprovals = queue.slice(1, 4)
+  const allUpcomingApprovals = queue.slice(1)
 
   useEffect(() => {
     setLoadingAction(null)
+  }, [approvalToken])
+
+  useEffect(() => {
+    setShowAllApprovals(false)
   }, [approvalToken])
 
   if (!pending) return null
@@ -57,6 +69,24 @@ export function ToolApprovalDialog() {
   }
 
   const formattedArguments = JSON.stringify(pending.arguments, null, 2)
+
+  const approvalSourcePreview = (approval: typeof pending) => {
+    const messageId = resolveApprovalMessageId(approval)
+    if (!messageId) return t("queueItemSourceFallback")
+    const message = messages.find((candidate) => candidate.id === messageId)
+    if (!message) return t("queueItemSourceFallback")
+    const assistantPreview =
+      message.role === "assistant" ? extractAssistantTextFromBlocks(message.blocks).trim() : ""
+    const contentPreview = assistantPreview || message.content.trim()
+    if (contentPreview) {
+      return contentPreview.length > 48
+        ? `${contentPreview.slice(0, 47).trimEnd()}...`
+        : contentPreview
+    }
+    return t("queueItemSourceBound")
+  }
+
+  const approvalSourceMessageId = (approval: typeof pending) => resolveApprovalMessageId(approval)
 
   const applyOptimisticExecutionState = (approval: typeof pending) => {
     const messageId = resolveApprovalMessageId(approval)
@@ -83,6 +113,7 @@ export function ToolApprovalDialog() {
         approvalMode,
         callId: approval.meta.call_id,
         executionToken: approval.meta.execution_token,
+        executionGraphExecutionId: approval.meta.execution_graph_execution_id,
       })
 
       const messageId = resolveApprovalMessageId(approval)
@@ -182,6 +213,7 @@ export function ToolApprovalDialog() {
       await invoke(DESKTOP_MCP_COMMANDS.rejectTool, {
         approvalToken: approval.approval_token,
         rejectMode: "deny_always",
+        executionGraphExecutionId: approval.meta.execution_graph_execution_id,
       })
 
       const messageId = resolveApprovalMessageId(approval)
@@ -261,6 +293,84 @@ export function ToolApprovalDialog() {
           <AlertDialogDescription asChild>
             <div className="max-h-[60vh] space-y-3.5 overflow-y-auto pr-1 text-sm text-[var(--muted)]">
               <p className="leading-relaxed">{t("description")}</p>
+              {queueLength > 1 ? (
+                <div className="space-y-2 rounded-lg border border-amber-500/15 bg-amber-500/8 px-3 py-2 text-xs text-[var(--foreground)]/80">
+                  <div>{t("queueStatus", { current: 1, total: queueLength })}</div>
+                  <div className="flex flex-wrap gap-2">
+                    <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-medium text-[var(--foreground)]/80">
+                      {t("queueRemaining", { count: remainingApprovals })}
+                    </span>
+                    <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-medium text-[var(--foreground)]/80">
+                      {t("queueCurrentStatus")}
+                    </span>
+                  </div>
+                  {upcomingApprovals.length > 0 ? (
+                    <div className="space-y-1">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--muted)]/70">
+                        {t("queuePreviewLabel")}
+                      </div>
+                      <div className="space-y-1">
+                        {(showAllApprovals ? allUpcomingApprovals : upcomingApprovals).map((approval) => (
+                          <div
+                            key={approval.approval_token}
+                            className="rounded-md px-2 py-1.5 transition-colors hover:bg-white/5"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => focusPendingByToken(approval.approval_token)}
+                              className="block w-full text-left"
+                            >
+                              <div className="truncate font-mono text-[11px] text-[var(--foreground)]/85">
+                                {approval.tool_name}
+                              </div>
+                              {approval.description || approval.risk_level ? (
+                                <div className="mt-0.5 truncate text-[10px] text-[var(--muted)]/80">
+                                  {approval.risk_level
+                                    ? t("queueItemMeta", {
+                                        level: approval.risk_level,
+                                        summary: approval.description ?? t("queueItemNoSummary"),
+                                      })
+                                    : approval.description}
+                                </div>
+                              ) : null}
+                            </button>
+                            {approvalSourceMessageId(approval) ? (
+                              <button
+                                type="button"
+                                onClick={() => focusMessage(approvalSourceMessageId(approval) ?? null)}
+                                className="mt-0.5 truncate text-[10px] text-[var(--muted)]/65 hover:text-[var(--foreground)]/80"
+                              >
+                                {t("queueItemSource", {
+                                  source: approvalSourcePreview(approval),
+                                })}
+                              </button>
+                            ) : (
+                              <div className="mt-0.5 truncate text-[10px] text-[var(--muted)]/65">
+                                {t("queueItemSource", {
+                                  source: approvalSourcePreview(approval),
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      {allUpcomingApprovals.length > upcomingApprovals.length ? (
+                        <button
+                          type="button"
+                          onClick={() => setShowAllApprovals((value) => !value)}
+                          className="pt-1 text-[11px] font-medium text-amber-300/90 transition-colors hover:text-amber-200"
+                        >
+                          {showAllApprovals
+                            ? t("queuePreviewLess")
+                            : t("queuePreviewMore", {
+                                count: allUpcomingApprovals.length - upcomingApprovals.length,
+                              })}
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
 
               {/* Tool info panel -- frosted inner card */}
               <div
@@ -404,6 +514,35 @@ export function ToolApprovalDialog() {
                   </div>
                 </div>
               </div>
+
+              {(pending.meta.call_id ||
+                pending.meta.execution_graph_execution_id ||
+                pending.meta.message_id) ? (
+                <details className="rounded-xl border border-white/[0.06] bg-[var(--surface)]/30 p-3 text-xs text-[var(--muted)]">
+                  <summary className="cursor-pointer list-none font-medium text-[var(--foreground)]/75">
+                    {t("debug.title")}
+                  </summary>
+                  <div className="mt-3 space-y-2 font-mono text-[11px]">
+                    {pending.meta.call_id ? (
+                      <div className="truncate">
+                        {t("debug.callId", { value: pending.meta.call_id })}
+                      </div>
+                    ) : null}
+                    {pending.meta.execution_graph_execution_id ? (
+                      <div className="truncate">
+                        {t("debug.executionId", {
+                          value: pending.meta.execution_graph_execution_id,
+                        })}
+                      </div>
+                    ) : null}
+                    {pending.meta.message_id ? (
+                      <div className="truncate">
+                        {t("debug.messageId", { value: pending.meta.message_id })}
+                      </div>
+                    ) : null}
+                  </div>
+                </details>
+              ) : null}
             </div>
           </AlertDialogDescription>
         </AlertDialogHeader>

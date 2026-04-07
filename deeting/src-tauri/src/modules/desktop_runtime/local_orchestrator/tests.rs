@@ -141,12 +141,11 @@ fn build_local_prompt_plan_always_includes_pre_tool_visibility_guidance() {
         .unwrap_or_default();
 
     assert!(rendered.contains("## User-Visible Tool Call Updates"));
-    assert!(rendered.contains(
-        "briefly state what you are about to check or do in one natural sentence"
-    ));
-    assert!(rendered.contains(
-        "Do not add a pre-tool note when you can answer directly without tools"
-    ));
+    assert!(rendered
+        .contains("briefly state what you are about to check or do in one natural sentence"));
+    assert!(
+        rendered.contains("Do not add a pre-tool note when you can answer directly without tools")
+    );
 }
 
 #[test]
@@ -226,7 +225,7 @@ fn build_route_selection_status_meta_embeds_execution_policy() {
         meta.get("execution_policy")
             .and_then(|value| value.get("plane"))
             .and_then(Value::as_str),
-        Some("worker_reasoning")
+        Some("code_mode_orchestration")
     );
 }
 
@@ -619,6 +618,11 @@ fn build_assistant_meta_persists_execution_tree_summary() {
         "provider-model-a",
         Some(json!({ "latency_ms": 10 })),
         Some(json!({
+            "execution_id": "graph-exec-1",
+            "nodes": [],
+            "events": [],
+        })),
+        Some(json!({
             "execution_id": "exec-1",
             "execution_kind": "workflow",
             "workflow_run_id": "run-1",
@@ -629,6 +633,13 @@ fn build_assistant_meta_persists_execution_tree_summary() {
 
     let object = meta.as_object().expect("meta object");
     assert!(object.contains_key("blocks"));
+    assert_eq!(
+        object
+            .get("execution_graph")
+            .and_then(|value| value.get("execution_id"))
+            .and_then(Value::as_str),
+        Some("graph-exec-1")
+    );
     assert_eq!(
         object
             .get("execution_tree")

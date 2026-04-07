@@ -161,7 +161,10 @@ async fn resolve_tool_policy_inputs(
                     now_unix_ms as i64,
                 ) {
                     store
-                        .promote_tool_approval_rule_to_allow_always(key, MEDIUM_AUTO_PROMOTE_TTL_DAYS)
+                        .promote_tool_approval_rule_to_allow_always(
+                            key,
+                            MEDIUM_AUTO_PROMOTE_TTL_DAYS,
+                        )
                         .await
                         .map_err(|err| err.to_string())?;
                     Some(PersistedApprovalAction::AllowAlways)
@@ -438,6 +441,9 @@ async fn maybe_queue_core_tool_approval(
                     tool_fingerprint,
                     policy_rule_key,
                     approval_grant_key,
+                    execution_graph_execution_id: None,
+                    execution_graph_gate_node_id: None,
+                    execution_graph_tool_node_id: None,
                     created_at_unix_ms: now as i128,
                     expires_at_unix_ms: now as i128 + 5 * 60 * 1000,
                 }
@@ -1309,6 +1315,9 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_tool_ref(
                     tool_fingerprint,
                     policy_rule_key,
                     approval_grant_key,
+                    execution_graph_execution_id: None,
+                    execution_graph_gate_node_id: None,
+                    execution_graph_tool_node_id: None,
                     created_at_unix_ms: now as i128,
                     expires_at_unix_ms: now as i128 + 5 * 60 * 1000,
                 };
@@ -1436,6 +1445,9 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_tool_ref(
                     tool_fingerprint,
                     policy_rule_key,
                     approval_grant_key,
+                    execution_graph_execution_id: None,
+                    execution_graph_gate_node_id: None,
+                    execution_graph_tool_node_id: None,
                     created_at_unix_ms: now as i128,
                     expires_at_unix_ms: now as i128 + 5 * 60 * 1000,
                 }

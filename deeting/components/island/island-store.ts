@@ -10,7 +10,7 @@ import {
 import { createConversation } from "@/lib/api/conversations";
 import { loadConversationHistoryPage } from "@/lib/chat/history-loader";
 import { extractAssistantTextFromBlocks } from "@/lib/chat/message-blocks";
-import { findLatestUnresolvedToolApproval } from "@/lib/chat/tool-approval";
+import { findUnresolvedToolApprovals } from "@/lib/chat/tool-approval";
 import type { Message } from "@/lib/chat/message-types";
 import { useChatStore } from "@/store/chat-store";
 import { isTauriRuntime as detectTauriRuntime } from "@/lib/runtime/tauri";
@@ -114,7 +114,7 @@ function findLatestUserMessage(messages: Message[]) {
 }
 
 function derivePendingApproval(messages: Message[]): IslandApproval | null {
-  const approval = findLatestUnresolvedToolApproval(messages);
+  const approval = findUnresolvedToolApprovals(messages)[0];
   if (!approval) return null;
 
   return {

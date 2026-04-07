@@ -1,5 +1,6 @@
 use crate::modules::browser_agent::BrowserAgentState;
 use crate::modules::code_mode::CodeModeState;
+use crate::modules::desktop_runtime::runtime::migrate_execution_graph_runtime_bootstrap;
 use crate::modules::im::runtime::spawn_im_runtime_worker;
 use crate::modules::im::wechat::WechatState;
 use crate::modules::knowledge::KnowledgeState;
@@ -169,6 +170,12 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         let phase_started_at = Instant::now();
         store.init().await?;
         log_startup_phase("init_mcp_store", phase_started_at);
+        let phase_started_at = Instant::now();
+        migrate_execution_graph_runtime_bootstrap(store.as_ref()).await?;
+        log_startup_phase(
+            "migrate_execution_graph_runtime_bootstrap",
+            phase_started_at,
+        );
         let phase_started_at = Instant::now();
         store.ensure_local_source().await?;
         log_startup_phase("ensure_local_source", phase_started_at);

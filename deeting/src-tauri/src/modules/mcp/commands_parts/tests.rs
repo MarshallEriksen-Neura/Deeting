@@ -9,7 +9,8 @@ mod tests {
     use crate::modules::desktop_runtime::runtime::consult::build_local_consult_expert_network_result_with_runtime;
     use crate::modules::desktop_runtime::runtime::{
         build_auto_code_mode_tool_feedback, build_local_code_mode_entry_tools,
-        build_local_sdk_search_result_with_runtime, build_local_sdk_search_result_with_runtime_full,
+        build_local_sdk_search_result_with_runtime,
+        build_local_sdk_search_result_with_runtime_full,
         build_local_tool_call_install_gate_error_meta, build_local_tool_trace_blocks,
         extract_chat_tool_calls, normalize_chat_completion_response,
         LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
@@ -889,12 +890,10 @@ for raw_line in sys.stdin:
             .get(group)
             .and_then(|value| value.as_array())
             .map(|items| {
-                items
-                    .iter()
-                    .any(|item| match item {
-                        serde_json::Value::String(text) => text == name,
-                        _ => item["name"] == serde_json::json!(name),
-                    })
+                items.iter().any(|item| match item {
+                    serde_json::Value::String(text) => text == name,
+                    _ => item["name"] == serde_json::json!(name),
+                })
             })
             .unwrap_or(false)
     }
@@ -1393,7 +1392,9 @@ for raw_line in sys.stdin:
             .as_array()
             .expect("capabilities")
             .iter()
-            .find(|item| item.get("name").and_then(|value| value.as_str()) == Some("browser_open_tab"))
+            .find(|item| {
+                item.get("name").and_then(|value| value.as_str()) == Some("browser_open_tab")
+            })
             .expect("browser_open_tab capability");
         assert!(matched["match_reason"]
             .as_array()
@@ -1862,7 +1863,10 @@ for raw_line in sys.stdin:
             .iter()
             .find(|item| item == &&serde_json::json!("skill.openclaw_weather.fetch_weather"))
             .expect("script runner surfaced");
-        assert_eq!(matched, &serde_json::json!("skill.openclaw_weather.fetch_weather"));
+        assert_eq!(
+            matched,
+            &serde_json::json!("skill.openclaw_weather.fetch_weather")
+        );
 
         let full_search = build_local_sdk_search_result_with_runtime_full(
             &store,
@@ -3393,7 +3397,8 @@ for raw_line in sys.stdin:
         let meta = window.meta.expect("meta exists");
 
         assert_eq!(
-            meta.get("pinned_model_key").and_then(|value| value.as_str()),
+            meta.get("pinned_model_key")
+                .and_then(|value| value.as_str()),
             Some("qwen-3-32b")
         );
         assert_eq!(
@@ -3866,7 +3871,13 @@ for raw_line in sys.stdin:
                         risk_level: Some("MEDIUM".to_string()),
                         risk_reasons: vec!["Requires network access".to_string()],
                         tool_fingerprint: "fingerprint-1".to_string(),
+                        policy_rule_key: None,
                         approval_grant_key: None,
+                        execution_graph_execution_id: Some("graph-exec-1".to_string()),
+                        execution_graph_gate_node_id: Some(
+                            "approval_gate:call-session-1".to_string(),
+                        ),
+                        execution_graph_tool_node_id: Some("tool_call:call-session-1".to_string()),
                         created_at_unix_ms: now - 1_000,
                         expires_at_unix_ms: now + 60_000,
                     },
@@ -3884,7 +3895,11 @@ for raw_line in sys.stdin:
                         risk_level: Some("HIGH".to_string()),
                         risk_reasons: vec!["Writes local files".to_string()],
                         tool_fingerprint: "fingerprint-2".to_string(),
+                        policy_rule_key: None,
                         approval_grant_key: None,
+                        execution_graph_execution_id: None,
+                        execution_graph_gate_node_id: None,
+                        execution_graph_tool_node_id: None,
                         created_at_unix_ms: now - 500,
                         expires_at_unix_ms: now + 60_000,
                     },
@@ -3943,6 +3958,24 @@ for raw_line in sys.stdin:
                 .and_then(|value| value.get("url"))
                 .and_then(|value| value.as_str()),
             Some("https://example.com")
+        );
+        assert_eq!(
+            snapshot
+                .get("execution_graph_execution_id")
+                .and_then(|value| value.as_str()),
+            Some("graph-exec-1")
+        );
+        assert_eq!(
+            snapshot
+                .get("execution_graph_gate_node_id")
+                .and_then(|value| value.as_str()),
+            Some("approval_gate:call-session-1")
+        );
+        assert_eq!(
+            snapshot
+                .get("execution_graph_tool_node_id")
+                .and_then(|value| value.as_str()),
+            Some("tool_call:call-session-1")
         );
         assert!(
             snapshot

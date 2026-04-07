@@ -432,6 +432,23 @@
     "approvalDialog": {
       "title": "审批确认",
       "description": "当前 AI 正请求在你的本地环境执行一个高风险工具。",
+      "queueStatus": "第 {current} 个审批，共 {total} 个",
+      "queueRemaining": "处理完当前后还剩 {count} 个",
+      "queueCurrentStatus": "当前分支等待决策",
+      "queuePreviewLabel": "后续审批",
+      "queuePreviewMore": "再显示 {count} 个审批",
+      "queuePreviewLess": "收起后续审批",
+      "queueItemMeta": "{level} · {summary}",
+      "queueItemNoSummary": "暂无摘要",
+      "queueItemSource": "来源：{source}",
+      "queueItemSourceBound": "已绑定到当前聊天消息",
+      "queueItemSourceFallback": "暂无来源信息",
+      "debug": {
+        "title": "调试信息",
+        "callId": "call_id: {value}",
+        "executionId": "execution_id: {value}",
+        "messageId": "message_id: {value}"
+      },
       "toolLabel": "工具",
       "argumentsLabel": "参数",
       "summaryLabel": "说明",

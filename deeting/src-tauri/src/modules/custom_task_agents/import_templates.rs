@@ -27,21 +27,33 @@ pub(crate) async fn resolve_import_binding_defaults(
 
     let wants_engineering = contains_any(
         &text,
-        &["engineering", "developer", "backend", "frontend", "devops", "code", "cli", "terminal"],
+        &[
+            "engineering",
+            "developer",
+            "backend",
+            "frontend",
+            "devops",
+            "code",
+            "cli",
+            "terminal",
+        ],
     );
     let wants_browser = contains_any(
         &text,
-        &["browser", "web", "crawler", "scrape", "research", "search", "site"],
+        &[
+            "browser", "web", "crawler", "scrape", "research", "search", "site",
+        ],
     );
-    let wants_design = contains_any(
-        &text,
-        &["design", "image", "visual", "ux", "ui", "brand"],
-    );
+    let wants_design = contains_any(&text, &["design", "image", "visual", "ux", "ui", "brand"]);
 
     let mut result = ImportBindingDefaults::default();
 
     if wants_engineering {
-        try_bind_tool(&tools, &mut result.callable_mcp_tool_ids, &["shell_execute"]);
+        try_bind_tool(
+            &tools,
+            &mut result.callable_mcp_tool_ids,
+            &["shell_execute"],
+        );
     }
 
     if wants_browser {
@@ -51,7 +63,10 @@ pub(crate) async fn resolve_import_binding_defaults(
             &["browser_open_tab", "browser_click", "browser_type"],
         );
         try_bind_skill(
-            &skills.iter().map(|item| item.skill_id.as_str()).collect::<Vec<_>>(),
+            &skills
+                .iter()
+                .map(|item| item.skill_id.as_str())
+                .collect::<Vec<_>>(),
             &mut result.guidance_skill_ids,
             &["official.skills.crawler"],
         );
@@ -98,7 +113,10 @@ fn try_bind_tool(
 
 fn try_bind_skill(installed_skill_ids: &[&str], bound: &mut Vec<String>, desired_ids: &[&str]) {
     for desired in desired_ids {
-        if installed_skill_ids.iter().any(|installed| installed == desired) {
+        if installed_skill_ids
+            .iter()
+            .any(|installed| installed == desired)
+        {
             bound.push((*desired).to_string());
         }
     }

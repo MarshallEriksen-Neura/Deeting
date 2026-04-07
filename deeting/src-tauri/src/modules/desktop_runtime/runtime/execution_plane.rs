@@ -1,8 +1,12 @@
+mod code_mode_handler;
 mod direct_handler;
 mod worker_handler;
 
 use super::control_plane::LocalExecutionPlane;
-use super::{run_local_chat_complete_with_auto_code_mode, LocalExecutionPolicy};
+use super::{
+    project_execution_graph_snapshot, run_local_chat_complete_with_auto_code_mode,
+    GraphProjectionInput, LocalExecutionPolicy,
+};
 use crate::modules::ai_upstream::types::LocalModelConnection;
 use crate::state::AppState;
 use mcp_core::types::LocalChatInputMessage;
@@ -258,12 +262,14 @@ pub(crate) struct LocalExecutionRequest {
 #[derive(Debug, Clone)]
 pub(crate) struct LocalExecutionOutcome {
     pub(crate) delegated_execution: Option<DelegatedExecutionSession>,
+    pub(crate) execution_graph: Value,
     pub(crate) response_json: Value,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LocalExecutionHandlerKind {
     Direct,
+    CodeMode,
     Worker,
 }
 
@@ -271,6 +277,7 @@ impl LocalExecutionHandlerKind {
     fn from_policy(policy: &LocalExecutionPolicy) -> Self {
         match policy.plane {
             LocalExecutionPlane::ResponseOnly => Self::Direct,
+            LocalExecutionPlane::CodeModeOrchestration => Self::CodeMode,
             LocalExecutionPlane::WorkerReasoning => Self::Worker,
         }
     }
@@ -278,6 +285,7 @@ impl LocalExecutionHandlerKind {
     fn as_str(&self) -> &'static str {
         match self {
             Self::Direct => "direct_handler",
+            Self::CodeMode => "code_mode_handler",
             Self::Worker => "worker_handler",
         }
     }
@@ -306,6 +314,9 @@ where
     match handler {
         LocalExecutionHandlerKind::Direct => {
             direct_handler::run_direct_execution_handler(request, &mut emit_status).await
+        }
+        LocalExecutionHandlerKind::CodeMode => {
+            code_mode_handler::run_code_mode_execution_handler(request, &mut emit_status).await
         }
         LocalExecutionHandlerKind::Worker => {
             worker_handler::run_worker_execution_handler(request, &mut emit_status).await
@@ -351,9 +362,35 @@ where
         request.request_id.as_deref(),
     )
     .await?;
+    let delegated_execution_tree = delegated_execution.as_ref().map(|execution| {
+        execution
+            .record
+            .status_meta_with_status(DelegatedExecutionStatus::Integrated)
+    });
+    let tool_trace_blocks = response_json
+        .get("tool_trace_blocks")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let execution_graph = project_execution_graph_snapshot(GraphProjectionInput {
+        session_id: request.session_id.clone(),
+        route: request.execution_policy.route.as_str().to_string(),
+        plane: request.execution_policy.plane.as_str().to_string(),
+        request_id: request.request_id.clone(),
+        root_execution_id: request.root_execution_id.clone(),
+        response_content: response_json.get("content").cloned(),
+        tool_trace_blocks,
+        delegated_execution_tree,
+    })
+    .to_value();
+    let mut response_json = response_json;
+    if let Some(object) = response_json.as_object_mut() {
+        object.insert("execution_graph".to_string(), execution_graph.clone());
+    }
 
     Ok(LocalExecutionOutcome {
         delegated_execution,
+        execution_graph,
         response_json,
     })
 }
@@ -363,7 +400,7 @@ mod tests {
     use super::*;
     use crate::modules::desktop_runtime::runtime::route_selector::select_local_route;
     use crate::modules::desktop_runtime::runtime::{
-        build_default_local_execution_policy, build_local_execution_policy,
+        build_default_local_execution_policy, build_local_execution_policy, LocalExecutionPlane,
     };
     use serde_json::json;
 
@@ -395,7 +432,7 @@ mod tests {
     }
 
     #[test]
-    fn execution_handler_kind_maps_programmatic_worker_policy_to_worker_handler() {
+    fn execution_handler_kind_maps_programmatic_worker_policy_to_code_mode_handler() {
         let decision = select_local_route(
             "遍历所有 markdown files，抽标题、分类、去重后输出 JSON",
             &json!({
@@ -408,7 +445,19 @@ mod tests {
 
         assert_eq!(
             LocalExecutionHandlerKind::from_policy(&policy),
-            LocalExecutionHandlerKind::Worker
+            LocalExecutionHandlerKind::CodeMode
+        );
+    }
+
+    #[test]
+    fn execution_handler_kind_maps_code_mode_plane_to_code_mode_handler() {
+        let mut policy = build_default_local_execution_policy();
+        policy.plane = LocalExecutionPlane::CodeModeOrchestration;
+        policy.inject_execution_protocol = true;
+
+        assert_eq!(
+            LocalExecutionHandlerKind::from_policy(&policy),
+            LocalExecutionHandlerKind::CodeMode
         );
     }
 

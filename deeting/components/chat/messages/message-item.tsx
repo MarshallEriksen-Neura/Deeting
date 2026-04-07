@@ -109,6 +109,8 @@ export const MessageItem = React.memo<MessageItemProps>(
   }) => {
     const t = useI18n("chat")
     const imageAlt = t("input.image.alt")
+    const focusedMessageId = useChatStore((state) => state.focusedMessageId)
+    const focusMessage = useChatStore((state) => state.focusMessage)
     const compareState = useChatStore(
       React.useCallback((state) => state.compareByMessageId[message.id] ?? null, [message.id])
     )
@@ -185,11 +187,30 @@ export const MessageItem = React.memo<MessageItemProps>(
             : null
       return modelKey ? [modelKey] : []
     }, [compareState, messageMetaInfo])
+    const isFocusedMessage = focusedMessageId === message.id
+    const itemRef = React.useRef<HTMLDivElement | null>(null)
+
+    React.useEffect(() => {
+      if (!isFocusedMessage) return
+      itemRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      })
+      const timer = window.setTimeout(() => {
+        if (useChatStore.getState().focusedMessageId === message.id) {
+          focusMessage(null)
+        }
+      }, 2200)
+      return () => window.clearTimeout(timer)
+    }, [focusMessage, isFocusedMessage, message.id])
 
     return (
       <div
+        ref={itemRef}
+        data-message-id={message.id}
         className={cn(
-          "flex w-full min-w-0 gap-3 shrink-0",
+          "flex w-full min-w-0 gap-3 shrink-0 rounded-2xl transition-all duration-300",
+          isFocusedMessage && "bg-amber-500/10 ring-1 ring-amber-400/30 px-2 py-2 -mx-2",
           message.role === "user" ? "flex-row-reverse" : "flex-row"
         )}
       >

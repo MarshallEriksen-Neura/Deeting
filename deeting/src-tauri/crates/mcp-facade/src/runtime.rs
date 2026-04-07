@@ -22,6 +22,9 @@ pub struct PendingToolCall {
     pub tool_fingerprint: String,
     pub policy_rule_key: Option<String>,
     pub approval_grant_key: Option<String>,
+    pub execution_graph_execution_id: Option<String>,
+    pub execution_graph_gate_node_id: Option<String>,
+    pub execution_graph_tool_node_id: Option<String>,
     pub created_at_unix_ms: i128,
     pub expires_at_unix_ms: i128,
 }
@@ -161,6 +164,9 @@ pub fn build_pending_tool_call(
         tool_fingerprint,
         policy_rule_key,
         approval_grant_key,
+        execution_graph_execution_id: None,
+        execution_graph_gate_node_id: None,
+        execution_graph_tool_node_id: None,
         created_at_unix_ms: created_at,
         expires_at_unix_ms: created_at + pending_tool_call_ttl_ms(),
     }

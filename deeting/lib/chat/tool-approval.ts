@@ -20,6 +20,9 @@ type ToolApprovalPayload = {
   recovery_reason?: string
   attempts?: number
   expires_in_ms?: number
+  execution_graph_execution_id?: string
+  execution_graph_gate_node_id?: string
+  execution_graph_tool_node_id?: string
 }
 
 export type PendingToolApprovalSnapshot = {
@@ -38,6 +41,9 @@ export type PendingToolApprovalSnapshot = {
   call_id?: string
   execution_token?: string
   session_id?: string
+  execution_graph_execution_id?: string
+  execution_graph_gate_node_id?: string
+  execution_graph_tool_node_id?: string
 }
 
 type ToolApprovalContext = BridgeToolPendingApproval["meta"]
@@ -172,6 +178,12 @@ export function extractToolApprovalPayload(result: unknown): ToolApprovalPayload
       typeof payload.expires_in_ms === "number" && Number.isFinite(payload.expires_in_ms)
         ? payload.expires_in_ms
         : undefined,
+    execution_graph_execution_id:
+      asTrimmedString(payload.execution_graph_execution_id) ?? undefined,
+    execution_graph_gate_node_id:
+      asTrimmedString(payload.execution_graph_gate_node_id) ?? undefined,
+    execution_graph_tool_node_id:
+      asTrimmedString(payload.execution_graph_tool_node_id) ?? undefined,
   }
 }
 
@@ -203,7 +215,18 @@ export function buildBridgeToolApprovalFromResult(
     recovery_reason: payload.recovery_reason,
     attempts: payload.attempts,
     expires_in_ms: payload.expires_in_ms,
-    meta: fallback.meta,
+    meta: {
+      ...fallback.meta,
+      execution_graph_execution_id:
+        payload.execution_graph_execution_id ??
+        fallback.meta.execution_graph_execution_id,
+      execution_graph_gate_node_id:
+        payload.execution_graph_gate_node_id ??
+        fallback.meta.execution_graph_gate_node_id,
+      execution_graph_tool_node_id:
+        payload.execution_graph_tool_node_id ??
+        fallback.meta.execution_graph_tool_node_id,
+    },
   })
 }
 
@@ -248,10 +271,12 @@ function isApprovalToolResultBlock(
   return extractToolApprovalPayload(block.result) !== null
 }
 
-export function findLatestUnresolvedToolApproval(
+export function findUnresolvedToolApprovals(
   messages: Message[]
-): BridgeToolPendingApproval | null {
+): BridgeToolPendingApproval[] {
   const resolvedCallIds = new Set<string>()
+  const approvals: BridgeToolPendingApproval[] = []
+  const seenApprovalTokens = new Set<string>()
 
   for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
     const message = messages[messageIndex]
@@ -269,7 +294,10 @@ export function findLatestUnresolvedToolApproval(
         const approval = buildBridgeToolApprovalFromMessageBlock(block, {
           messageId: message.id,
         })
-        if (approval) return approval
+        if (approval && !seenApprovalTokens.has(approval.approval_token)) {
+          approvals.push(approval)
+          seenApprovalTokens.add(approval.approval_token)
+        }
         continue
       }
 
@@ -277,15 +305,21 @@ export function findLatestUnresolvedToolApproval(
     }
   }
 
-  return null
+  return approvals
+}
+
+export function findLatestUnresolvedToolApproval(
+  messages: Message[]
+): BridgeToolPendingApproval | null {
+  return findUnresolvedToolApprovals(messages)[0] ?? null
 }
 
 export function enqueueBridgeToolApproval(approval: BridgeToolPendingApproval): boolean {
-  const current = useBridgeApprovalStore.getState().pending
-  if (current?.approval_token === approval.approval_token) {
+  const state = useBridgeApprovalStore.getState()
+  if (state.queue.some((item) => item.approval_token === approval.approval_token)) {
     return false
   }
-  useBridgeApprovalStore.getState().setPending(approval)
+  state.enqueuePending(approval)
   return true
 }
 
@@ -342,6 +376,18 @@ export function buildBridgeToolApprovalFromPendingSnapshot(
       call_id: callId,
       execution_token: asTrimmedString(snapshot.execution_token) ?? undefined,
       message_id: fallback?.messageId,
+      execution_graph_execution_id:
+        payload.execution_graph_execution_id ??
+        asTrimmedString(snapshot.execution_graph_execution_id) ??
+        undefined,
+      execution_graph_gate_node_id:
+        payload.execution_graph_gate_node_id ??
+        asTrimmedString(snapshot.execution_graph_gate_node_id) ??
+        undefined,
+      execution_graph_tool_node_id:
+        payload.execution_graph_tool_node_id ??
+        asTrimmedString(snapshot.execution_graph_tool_node_id) ??
+        undefined,
     },
   })
 }
@@ -388,13 +434,36 @@ export function createApprovedToolResultBlock(
 ): ToolResultBlock | null {
   const callId = approval.meta.call_id?.trim()
   if (!callId) return null
+  const resultRecord = toRecord(result)
   return {
     id: `${callId}-approved`,
     type: "tool_result",
     callId,
     toolName: approval.tool_name,
     status: "success",
-    result,
+    result: resultRecord
+      ? {
+          ...resultRecord,
+          ...(approval.meta.execution_graph_execution_id
+            ? {
+                execution_graph_execution_id:
+                  approval.meta.execution_graph_execution_id,
+              }
+            : {}),
+          ...(approval.meta.execution_graph_gate_node_id
+            ? {
+                execution_graph_gate_node_id:
+                  approval.meta.execution_graph_gate_node_id,
+              }
+            : {}),
+          ...(approval.meta.execution_graph_tool_node_id
+            ? {
+                execution_graph_tool_node_id:
+                  approval.meta.execution_graph_tool_node_id,
+              }
+            : {}),
+        }
+      : result,
   }
 }
 
@@ -410,13 +479,35 @@ export function createRejectedToolResultBlock(
     callId,
     toolName: approval.tool_name,
     status: "error",
-    result: { error: errorMessage },
+    result: {
+      error: errorMessage,
+      ...(approval.meta.execution_graph_execution_id
+        ? {
+            execution_graph_execution_id:
+              approval.meta.execution_graph_execution_id,
+          }
+        : {}),
+      ...(approval.meta.execution_graph_gate_node_id
+        ? {
+            execution_graph_gate_node_id:
+              approval.meta.execution_graph_gate_node_id,
+          }
+        : {}),
+      ...(approval.meta.execution_graph_tool_node_id
+        ? {
+            execution_graph_tool_node_id:
+              approval.meta.execution_graph_tool_node_id,
+          }
+        : {}),
+    },
   }
 }
 
 export function extractLocalChatApprovalResume(result: unknown): {
   approved_tool_result: unknown
   continuation_blocks: MessageBlock[]
+  execution_graph?: Record<string, unknown>
+  execution_graph_execution_id?: string
   error?: string
 } | null {
   const payload = toRecord(result)
@@ -436,6 +527,9 @@ export function extractLocalChatApprovalResume(result: unknown): {
   return {
     approved_tool_result: payload.approved_tool_result,
     continuation_blocks: continuationBlocks,
+    execution_graph: toRecord(payload.execution_graph) ?? undefined,
+    execution_graph_execution_id:
+      asTrimmedString(payload.execution_graph_execution_id) ?? undefined,
     error: asTrimmedString(payload.error) ?? undefined,
   }
 }

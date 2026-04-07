@@ -215,6 +215,9 @@ type PendingToolApprovalSnapshot = {
   call_id?: string
   execution_token?: string
   session_id?: string
+  execution_graph_execution_id?: string
+  execution_graph_gate_node_id?: string
+  execution_graph_tool_node_id?: string
 }
 
 export async function getConversationExecutionTree(
@@ -461,8 +464,47 @@ const buildPendingApprovalResultPayload = (snapshot: PendingToolApprovalSnapshot
   ) {
     result.expires_in_ms = snapshot.expires_in_ms
   }
+  if (snapshot.execution_graph_execution_id) {
+    result.execution_graph_execution_id = snapshot.execution_graph_execution_id
+  }
+  if (snapshot.execution_graph_gate_node_id) {
+    result.execution_graph_gate_node_id = snapshot.execution_graph_gate_node_id
+  }
+  if (snapshot.execution_graph_tool_node_id) {
+    result.execution_graph_tool_node_id = snapshot.execution_graph_tool_node_id
+  }
 
   return result
+}
+
+const buildPendingApprovalExecutionGraph = (
+  snapshot: PendingToolApprovalSnapshot
+): Record<string, unknown> | null => {
+  const executionId = asTrimmedString(snapshot.execution_graph_execution_id)
+  if (!executionId) return null
+
+  const callId = asTrimmedString(snapshot.call_id) ?? "unknown-call"
+  const gateNodeId =
+    asTrimmedString(snapshot.execution_graph_gate_node_id) ??
+    `approval_gate:${callId}`
+  const toolNodeId =
+    asTrimmedString(snapshot.execution_graph_tool_node_id) ?? `tool_call:${callId}`
+
+  return {
+    execution_id: executionId,
+    nodes: [
+      {
+        node_id: toolNodeId,
+        node_type: "tool_call",
+        status: "waiting_approval",
+      },
+      {
+        node_id: gateNodeId,
+        node_type: "approval_gate",
+        status: "waiting_approval",
+      },
+    ],
+  }
 }
 
 const buildSyntheticPendingApprovalMessage = ({
@@ -495,6 +537,9 @@ const buildSyntheticPendingApprovalMessage = ({
     name: null,
     meta_info: {
       pending_approval_snapshot: true,
+      ...(buildPendingApprovalExecutionGraph(snapshot)
+        ? { execution_graph: buildPendingApprovalExecutionGraph(snapshot) }
+        : {}),
       blocks: [
         {
           type: "tool_call",

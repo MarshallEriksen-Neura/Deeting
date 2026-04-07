@@ -31,7 +31,8 @@ use crate::modules::desktop_runtime::runtime::{
     apply_desktop_execution_policy_overrides, build_default_local_execution_policy,
     build_local_control_plane_result, build_local_control_plane_status_meta,
     build_local_execution_policy, build_runtime_discovery_bundle_with_runtime,
-    maybe_override_route_with_custom_task_agent, render_local_route_prompt,
+    maybe_override_route_with_custom_task_agent, persist_execution_graph_snapshot,
+    project_execution_graph_blocks_from_value, render_local_route_prompt,
     resolve_local_model_pool_connection, resolve_provider_model_connection,
     run_local_execution_plane, select_local_route_with_evidence, LocalControlPlaneResult,
     LocalExecutionPolicy, LocalExecutionRequest, LocalRouteDecision, RuntimeDiscoveryBundle,
@@ -2098,6 +2099,7 @@ pub async fn execute_local_orchestrated_chat(
     )
     .await?;
     let delegated_execution = execution_outcome.delegated_execution;
+    let execution_graph = execution_outcome.execution_graph;
     let response_json = execution_outcome.response_json;
 
     let mut response_text =
@@ -2213,6 +2215,12 @@ pub async fn execute_local_orchestrated_chat(
             ctx.emit_blocks(trace_blocks.clone());
         }
         assistant_blocks.extend(trace_blocks);
+    } else if let Some(execution_graph) = response_json.get("execution_graph") {
+        let trace_blocks = project_execution_graph_blocks_from_value(execution_graph);
+        if !trace_blocks.is_empty() {
+            ctx.emit_blocks(trace_blocks.clone());
+            assistant_blocks.extend(trace_blocks);
+        }
     }
 
     if response_text.trim().is_empty() {
@@ -2288,6 +2296,7 @@ pub async fn execute_local_orchestrated_chat(
         &model_id,
         &provider_model_id,
         Some(runtime_metrics_value),
+        Some(execution_graph.clone()),
         delegated_execution.as_ref().map(|execution| {
             execution.record.status_meta_with_status(
                 crate::modules::desktop_runtime::runtime::execution_plane::DelegatedExecutionStatus::Integrated,
@@ -2317,6 +2326,22 @@ pub async fn execute_local_orchestrated_chat(
                     session_id, e
                 )
             })?;
+        if let Err(err) = persist_execution_graph_snapshot(
+            store.as_ref(),
+            &execution_graph,
+            &session_id,
+            "desktop_local_chat",
+            input.request_id.as_deref(),
+            Some("completed"),
+        )
+        .await
+        {
+            log::warn!(
+                "persist_execution_graph_snapshot failed session={} err={}",
+                session_id,
+                err
+            );
+        }
         if !latest_user_query.is_empty() {
             for asset_id in &rendered_asset_ids {
                 if let Err(err) = store
@@ -2517,6 +2542,7 @@ fn build_assistant_meta(
     model_id: &str,
     provider_model_id: &str,
     runtime_metrics: Option<Value>,
+    execution_graph: Option<Value>,
     execution_tree: Option<Value>,
     mode: AssistantMetaMode,
 ) -> Option<Value> {
@@ -2531,6 +2557,9 @@ fn build_assistant_meta(
     );
     if let Some(runtime_metrics) = runtime_metrics {
         meta.insert("runtime_metrics".to_string(), runtime_metrics);
+    }
+    if let Some(execution_graph) = execution_graph {
+        meta.insert("execution_graph".to_string(), execution_graph);
     }
     if let Some(execution_tree) = execution_tree {
         meta.insert("execution_tree".to_string(), execution_tree);

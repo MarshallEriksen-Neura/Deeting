@@ -18,6 +18,21 @@ jest.mock("next-intl", () => ({
     const messages: Record<string, string> = {
       "chat.approvalDialog.title": "审批确认",
       "chat.approvalDialog.description": "当前 AI 正请求在本地执行一个高风险工具。",
+      "chat.approvalDialog.queueStatus": "第 {current} 个审批，共 {total} 个",
+      "chat.approvalDialog.queueRemaining": "处理完当前后还剩 {count} 个",
+      "chat.approvalDialog.queueCurrentStatus": "当前分支等待决策",
+      "chat.approvalDialog.queuePreviewLabel": "后续审批",
+      "chat.approvalDialog.queuePreviewMore": "再显示 {count} 个审批",
+      "chat.approvalDialog.queuePreviewLess": "收起后续审批",
+      "chat.approvalDialog.queueItemMeta": "{level} · {summary}",
+      "chat.approvalDialog.queueItemNoSummary": "暂无摘要",
+      "chat.approvalDialog.queueItemSource": "来源：{source}",
+      "chat.approvalDialog.queueItemSourceBound": "已绑定到当前聊天消息",
+      "chat.approvalDialog.queueItemSourceFallback": "暂无来源信息",
+      "chat.approvalDialog.debug.title": "调试信息",
+      "chat.approvalDialog.debug.callId": "call_id: {value}",
+      "chat.approvalDialog.debug.executionId": "execution_id: {value}",
+      "chat.approvalDialog.debug.messageId": "message_id: {value}",
       "chat.approvalDialog.toolLabel": "工具",
       "chat.approvalDialog.argumentsLabel": "参数",
       "chat.approvalDialog.summaryLabel": "说明",
@@ -121,7 +136,7 @@ describe("ToolApprovalDialog", () => {
     mockBridgeCallTool.mockReset()
     jest.clearAllMocks()
     act(() => {
-      useBridgeApprovalStore.getState().clear()
+      useBridgeApprovalStore.getState().clearAll()
       useBridgeApprovalStore.getState().clearRecentApprovedExecution()
       useChatStore.getState().resetSession()
     })
@@ -457,8 +472,40 @@ describe("ToolApprovalDialog", () => {
     expect(screen.getByText("恢复尝试次数 2")).toBeInTheDocument()
   })
 
+  it("keeps runtime ids behind an expandable debug section", () => {
+    act(() => {
+      useBridgeApprovalStore.getState().setPending(
+        createBridgeToolApproval({
+          approval_token: "approval-debug-1",
+          tool_name: "write_file",
+          arguments: { path: "debug.txt" },
+          meta: {
+            call_id: "call-debug-1",
+            message_id: "assistant-debug-1",
+            execution_graph_execution_id: "graph-debug-1",
+          },
+        })
+      )
+    })
+
+    render(<ToolApprovalDialog />)
+
+    expect(screen.getByText("调试信息")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText("调试信息"))
+
+    expect(screen.getByText("call_id: call-debug-1")).toBeInTheDocument()
+    expect(screen.getByText("execution_id: graph-debug-1")).toBeInTheDocument()
+    expect(screen.getByText("message_id: assistant-debug-1")).toBeInTheDocument()
+  })
+
   it("uses translated rejection copy when the user denies execution", async () => {
-    mockInvoke.mockResolvedValueOnce(undefined as never)
+    mockInvoke.mockResolvedValueOnce({
+      status: "LOCAL_CHAT_REJECTED",
+      execution_graph_execution_id: "graph-exec-deny-1",
+      execution_graph_gate_node_id: "approval_gate:call-3",
+      execution_graph_tool_node_id: "tool_call:call-3",
+    } as never)
     mockBridgeCallTool.mockResolvedValueOnce({ ok: true } as never)
 
     act(() => {
@@ -471,6 +518,9 @@ describe("ToolApprovalDialog", () => {
             call_id: "call-3",
             execution_token: "exec-3",
             message_id: "assistant-reject-1",
+            execution_graph_execution_id: "graph-exec-deny-1",
+            execution_graph_gate_node_id: "approval_gate:call-3",
+            execution_graph_tool_node_id: "tool_call:call-3",
           },
         })
       )
@@ -486,6 +536,7 @@ describe("ToolApprovalDialog", () => {
       expect(mockInvoke).toHaveBeenCalledWith("reject_mcp_tool", {
         approvalToken: "approval-3",
         rejectMode: "deny_always",
+        executionGraphExecutionId: "graph-exec-deny-1",
       })
     })
 
@@ -501,11 +552,207 @@ describe("ToolApprovalDialog", () => {
     expect(toast.info).toHaveBeenCalledWith("toast.deniedAlways")
   })
 
+  it("advances to the next queued approval after the current approval is cleared", async () => {
+    mockInvoke.mockResolvedValueOnce({ ok: true } as unknown)
+
+    render(<ToolApprovalDialog />)
+
+    act(() => {
+      useChatStore.setState({
+        messages: [
+          {
+            id: "assistant-queue-2",
+            role: "assistant",
+            content: "Queued approval source context for the pending report update",
+            createdAt: 1,
+            blocks: [],
+          },
+        ],
+      })
+      useBridgeApprovalStore.getState().enqueuePending(
+        createBridgeToolApproval({
+          approval_token: "approval-queue-1",
+          tool_name: "write_file",
+          arguments: { path: "first.txt" },
+          meta: {
+            call_id: "call-queue-1",
+          },
+        })
+      )
+      useBridgeApprovalStore.getState().enqueuePending(
+        createBridgeToolApproval({
+          approval_token: "approval-queue-2",
+          tool_name: "edit_file",
+          arguments: { path: "second.txt" },
+          description: "Update the pending report file",
+          risk_level: "MEDIUM",
+          meta: {
+            call_id: "call-queue-2",
+            message_id: "assistant-queue-2",
+          },
+        })
+      )
+    })
+
+    expect(screen.getByText("第 1 个审批，共 2 个")).toBeInTheDocument()
+    expect(screen.getByText("处理完当前后还剩 1 个")).toBeInTheDocument()
+    expect(screen.getByText("当前分支等待决策")).toBeInTheDocument()
+    expect(screen.getByText("后续审批")).toBeInTheDocument()
+    expect(screen.getByText("edit_file")).toBeInTheDocument()
+    expect(screen.getByText("MEDIUM · Update the pending report file")).toBeInTheDocument()
+    expect(
+      screen.getByText("来源：Queued approval source context for the pending...")
+    ).toBeInTheDocument()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "actions.approveOnce" }))
+      await Promise.resolve()
+    })
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("approve_mcp_tool", {
+        approvalToken: "approval-queue-1",
+        approvalMode: "allow_once",
+        callId: "call-queue-1",
+        executionToken: undefined,
+        executionGraphExecutionId: undefined,
+      })
+    })
+
+    await waitFor(() => {
+      expect(useBridgeApprovalStore.getState().pending?.approval_token).toBe("approval-queue-2")
+    })
+  })
+
+  it("lets the user focus a queued approval before approving it", async () => {
+    mockInvoke.mockResolvedValueOnce({ ok: true } as unknown)
+
+    render(<ToolApprovalDialog />)
+
+    act(() => {
+      useBridgeApprovalStore.getState().enqueuePending(
+        createBridgeToolApproval({
+          approval_token: "approval-focus-1",
+          tool_name: "write_file",
+          arguments: { path: "first.txt" },
+          meta: {
+            call_id: "call-focus-1",
+          },
+        })
+      )
+      useBridgeApprovalStore.getState().enqueuePending(
+        createBridgeToolApproval({
+          approval_token: "approval-focus-2",
+          tool_name: "edit_file",
+          arguments: { path: "second.txt" },
+          meta: {
+            call_id: "call-focus-2",
+          },
+        })
+      )
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: /edit_file/ }))
+
+    expect(useBridgeApprovalStore.getState().pending?.approval_token).toBe("approval-focus-2")
+    expect(screen.getByText("edit_file")).toBeInTheDocument()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "actions.approveOnce" }))
+      await Promise.resolve()
+    })
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("approve_mcp_tool", {
+        approvalToken: "approval-focus-2",
+        approvalMode: "allow_once",
+        callId: "call-focus-2",
+        executionToken: undefined,
+        executionGraphExecutionId: undefined,
+      })
+    })
+  })
+
+  it("expands and collapses the full queued approval list on demand", () => {
+    render(<ToolApprovalDialog />)
+
+    act(() => {
+      useBridgeApprovalStore.getState().enqueuePending(
+        createBridgeToolApproval({
+          approval_token: "approval-expand-1",
+          tool_name: "write_file",
+          arguments: { path: "first.txt" },
+          meta: {
+            call_id: "call-expand-1",
+          },
+        })
+      )
+      useBridgeApprovalStore.getState().enqueuePending(
+        createBridgeToolApproval({
+          approval_token: "approval-expand-2",
+          tool_name: "edit_file",
+          arguments: { path: "second.txt" },
+          meta: {
+            call_id: "call-expand-2",
+          },
+        })
+      )
+      useBridgeApprovalStore.getState().enqueuePending(
+        createBridgeToolApproval({
+          approval_token: "approval-expand-3",
+          tool_name: "delete_file",
+          arguments: { path: "third.txt" },
+          meta: {
+            call_id: "call-expand-3",
+          },
+        })
+      )
+      useBridgeApprovalStore.getState().enqueuePending(
+        createBridgeToolApproval({
+          approval_token: "approval-expand-4",
+          tool_name: "run_shell",
+          arguments: { command: "echo hi" },
+          meta: {
+            call_id: "call-expand-4",
+          },
+        })
+      )
+      useBridgeApprovalStore.getState().enqueuePending(
+        createBridgeToolApproval({
+          approval_token: "approval-expand-5",
+          tool_name: "download_file",
+          arguments: { url: "https://example.com" },
+          meta: {
+            call_id: "call-expand-5",
+          },
+        })
+      )
+    })
+
+    expect(screen.getByText("edit_file")).toBeInTheDocument()
+    expect(screen.getByText("delete_file")).toBeInTheDocument()
+    expect(screen.getByText("run_shell")).toBeInTheDocument()
+    expect(screen.queryByText("download_file")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "再显示 1 个审批" }))
+
+    expect(screen.getByText("download_file")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "收起后续审批" })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "收起后续审批" }))
+
+    expect(screen.queryByText("download_file")).not.toBeInTheDocument()
+  })
+
   it("writes approved local-chat tool results back into the matching assistant message", async () => {
     mockInvoke.mockResolvedValueOnce({
       status: "LOCAL_CHAT_RESUMED",
       approved_tool_result: { crawled_pages: 3 },
       continuation_blocks: [{ id: "resume-text-1", type: "text", content: "Finished crawl." }],
+      execution_graph_execution_id: "graph-exec-local-1",
+      execution_graph: {
+        execution_id: "graph-exec-local-1",
+      },
     } as unknown)
 
     act(() => {
@@ -533,6 +780,9 @@ describe("ToolApprovalDialog", () => {
                 result: {
                   status: "REQUIRES_APPROVAL",
                   approval_token: "approval-local-1",
+                  execution_graph_execution_id: "graph-exec-local-1",
+                  execution_graph_gate_node_id: "approval_gate:call-local-1",
+                  execution_graph_tool_node_id: "tool_call:call-local-1",
                 },
               } as MessageBlock,
             ],
@@ -547,6 +797,9 @@ describe("ToolApprovalDialog", () => {
           meta: {
             call_id: "call-local-1",
             message_id: "assistant-local-1",
+            execution_graph_execution_id: "graph-exec-local-1",
+            execution_graph_gate_node_id: "approval_gate:call-local-1",
+            execution_graph_tool_node_id: "tool_call:call-local-1",
           },
         })
       )
@@ -564,6 +817,7 @@ describe("ToolApprovalDialog", () => {
         approvalMode: "allow_once",
         callId: "call-local-1",
         executionToken: undefined,
+        executionGraphExecutionId: "graph-exec-local-1",
       })
     })
 
@@ -574,7 +828,12 @@ describe("ToolApprovalDialog", () => {
           type: "tool_result",
           callId: "call-local-1",
           status: "success",
-          result: { crawled_pages: 3 },
+          result: {
+            crawled_pages: 3,
+            execution_graph_execution_id: "graph-exec-local-1",
+            execution_graph_gate_node_id: "approval_gate:call-local-1",
+            execution_graph_tool_node_id: "tool_call:call-local-1",
+          },
         }),
         expect.objectContaining({
           type: "text",
@@ -589,6 +848,10 @@ describe("ToolApprovalDialog", () => {
       status: "LOCAL_CHAT_RESUMED",
       approved_tool_result: { crawled_pages: 7 },
       continuation_blocks: [{ id: "resume-text-restore-1", type: "text", content: "Resumed after refresh." }],
+      execution_graph_execution_id: "graph-exec-refresh-1",
+      execution_graph: {
+        execution_id: "graph-exec-refresh-1",
+      },
     } as unknown)
 
     act(() => {
@@ -618,6 +881,9 @@ describe("ToolApprovalDialog", () => {
                 result: {
                   status: "REQUIRES_APPROVAL",
                   approval_token: "approval-refresh-1",
+                  execution_graph_execution_id: "graph-exec-refresh-1",
+                  execution_graph_gate_node_id: "approval_gate:call-refresh-1",
+                  execution_graph_tool_node_id: "tool_call:call-refresh-1",
                 },
               } as MessageBlock,
             ],
@@ -631,6 +897,9 @@ describe("ToolApprovalDialog", () => {
           arguments: { url: "https://example.com/refresh" },
           meta: {
             call_id: "call-refresh-1",
+            execution_graph_execution_id: "graph-exec-refresh-1",
+            execution_graph_gate_node_id: "approval_gate:call-refresh-1",
+            execution_graph_tool_node_id: "tool_call:call-refresh-1",
           },
         })
       )
@@ -648,6 +917,7 @@ describe("ToolApprovalDialog", () => {
         approvalMode: "allow_once",
         callId: "call-refresh-1",
         executionToken: undefined,
+        executionGraphExecutionId: "graph-exec-refresh-1",
       })
     })
 
@@ -657,7 +927,12 @@ describe("ToolApprovalDialog", () => {
           type: "tool_result",
           callId: "call-refresh-1",
           status: "success",
-          result: { crawled_pages: 7 },
+          result: {
+            crawled_pages: 7,
+            execution_graph_execution_id: "graph-exec-refresh-1",
+            execution_graph_gate_node_id: "approval_gate:call-refresh-1",
+            execution_graph_tool_node_id: "tool_call:call-refresh-1",
+          },
         }),
         expect.objectContaining({
           type: "text",

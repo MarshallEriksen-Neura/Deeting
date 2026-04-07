@@ -2,6 +2,7 @@ import React from "react"
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { hydrateRoot } from "react-dom/client"
 import { renderToString } from "react-dom/server.node"
+import type { ButtonHTMLAttributes, ReactNode } from "react"
 
 import { PageContent } from "./page-content"
 
@@ -88,6 +89,62 @@ jest.mock("@/components/ui/button", () => ({
 jest.mock("@/components/ui/input", () => ({
   Input: (props: React.InputHTMLAttributes<HTMLInputElement>) => <input {...props} />,
 }))
+
+jest.mock("@/components/ui/tabs", () => {
+  const React = jest.requireActual<typeof import("react")>("react")
+  const TabsContext = React.createContext<{
+    value: string
+    onValueChange?: (value: string) => void
+  }>({
+    value: "",
+  })
+
+  return {
+    Tabs: ({
+      children,
+      value,
+      defaultValue,
+      onValueChange,
+    }: {
+      children: ReactNode
+      value?: string
+      defaultValue?: string
+      onValueChange?: (value: string) => void
+    }) => {
+      const [internalValue, setInternalValue] = React.useState(defaultValue ?? "")
+      const resolvedValue = value ?? internalValue
+      const handleValueChange = (nextValue: string) => {
+        onValueChange?.(nextValue)
+        if (value === undefined) {
+          setInternalValue(nextValue)
+        }
+      }
+
+      return (
+        <TabsContext.Provider value={{ value: resolvedValue, onValueChange: handleValueChange }}>
+          <div>{children}</div>
+        </TabsContext.Provider>
+      )
+    },
+    TabsList: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    TabsTrigger: ({
+      children,
+      value,
+      ...props
+    }: ButtonHTMLAttributes<HTMLButtonElement> & { value: string }) => {
+      const context = React.useContext(TabsContext)
+      return (
+        <button type="button" role="tab" aria-selected={context.value === value} onClick={() => context.onValueChange?.(value)} {...props}>
+          {children}
+        </button>
+      )
+    },
+    TabsContent: ({ children, value }: { children: ReactNode; value: string }) => {
+      const context = React.useContext(TabsContext)
+      return context.value === value ? <div>{children}</div> : null
+    },
+  }
+})
 
 const mockRun = {
   run_id: "run-1",
@@ -245,6 +302,7 @@ describe("Dashboard scan reviews page", () => {
     mockScanFileReview.mockResolvedValue(mockRun)
 
     await triggerScanWithResults()
+    fireEvent.click(screen.getByRole("tab", { name: "table.findings.title (1)" }))
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "actions.reindex_bundle" }))
@@ -264,6 +322,7 @@ describe("Dashboard scan reviews page", () => {
     mockScanFileReview.mockResolvedValue(mockRun)
 
     await triggerScanWithResults()
+    fireEvent.click(screen.getByRole("tab", { name: "table.findings.title (1)" }))
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "actions.reindex_bundle" }))
@@ -281,6 +340,7 @@ describe("Dashboard scan reviews page", () => {
     mockScanFileReview.mockResolvedValue(mockRun)
 
     await triggerScanWithResults()
+    fireEvent.click(screen.getByRole("tab", { name: "table.findings.title (1)" }))
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "actions.fixAll" }))
@@ -324,6 +384,7 @@ describe("Dashboard scan reviews page", () => {
     mockScanFileReview.mockResolvedValue(mockRun)
 
     await triggerScanWithResults()
+    fireEvent.click(screen.getByRole("tab", { name: "table.findings.title (1)" }))
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "actions.fixAll" }))
@@ -352,6 +413,8 @@ describe("Dashboard scan reviews page", () => {
     await waitFor(() => {
       expect(mockScanDirectoryReview).toHaveBeenNthCalledWith(1)
     })
+
+    fireEvent.click(screen.getByRole("tab", { name: "table.findings.title (1)" }))
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "actions.fixAll" }))
@@ -402,13 +465,13 @@ describe("Dashboard scan reviews page", () => {
     }
 
     await triggerScanWithResults("/tmp/skills/skill.find-skills/SKILL.md", runWithDocs)
+    fireEvent.click(screen.getByRole("tab", { name: "table.findings.title (1)" }))
 
     expect(
       screen.getAllByText(
         'executionSurface.script_runner · adapterKind.openclaw_script · openclaw_agentskills'
       )
-    ).toHaveLength(2)
-    expect(screen.getByText("medium · network_read · soft_boundary")).toBeInTheDocument()
+    ).toHaveLength(1)
     expect(screen.getByText("medium · network_read · public_internet · soft_boundary")).toBeInTheDocument()
   })
 
@@ -435,6 +498,7 @@ describe("Dashboard scan reviews page", () => {
 
     await triggerScanWithResults("/tmp/skills/skill.find-skills/SKILL.md", runWithMultipleFindings)
 
+    fireEvent.click(screen.getByRole("tab", { name: "table.findings.title (2)" }))
     fireEvent.click(screen.getByRole("button", { name: "boundary.hard_boundary" }))
 
     expect(screen.getByText("Runtime script")).toBeInTheDocument()
@@ -467,6 +531,7 @@ describe("Dashboard scan reviews page", () => {
 
     await triggerScanWithResults("/tmp/skills/skill.find-skills/SKILL.md", runWithMultipleFindings)
 
+    fireEvent.click(screen.getByRole("tab", { name: "table.findings.title (2)" }))
     fireEvent.click(screen.getByRole("button", { name: "boundary.hard_boundary" }))
 
     await act(async () => {
@@ -507,10 +572,45 @@ describe("Dashboard scan reviews page", () => {
 
     await triggerScanWithResults("/tmp/skills/skill.find-skills/SKILL.md", runWithMultipleFindings)
 
+    fireEvent.click(screen.getByRole("tab", { name: "table.findings.title (2)" }))
     fireEvent.click(screen.getByRole("button", { name: "operation.process_exec" }))
 
     expect(screen.getByText("Shell script")).toBeInTheDocument()
     expect(screen.queryByText("Index missing")).not.toBeInTheDocument()
+  })
+
+  it("shows documents tab by default and switches to findings tab on click", async () => {
+    const runWithDocs = {
+      ...mockRun,
+      documents: [
+        {
+          id: "doc-1",
+          path: "/tmp/skills/skill.find-skills",
+          relative_path: "skill.find-skills",
+          document_kind: "skill_bundle",
+          display_name: "Find Skills",
+          bundle_id: "skill.find-skills",
+          status: "needs_review",
+          size_bytes: null,
+          modified_at: null,
+          sha256: null,
+          excerpt: "Bundle summary",
+          metadata: {},
+        },
+      ],
+    }
+
+    await triggerScanWithResults("/tmp/skills/skill.find-skills/SKILL.md", runWithDocs)
+
+    expect(screen.getByText("Find Skills")).toBeInTheDocument()
+    expect(screen.queryByText("Index missing")).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "actions.fixAll" })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("tab", { name: "table.findings.title (1)" }))
+
+    expect(screen.getByText("Index missing")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "actions.fixAll" })).toBeInTheDocument()
+    expect(screen.queryByText("Find Skills")).not.toBeInTheDocument()
   })
 
   it("shows compact scan bar after results are loaded", async () => {

@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::capability_snapshot::merge_allowed_tool_names;
@@ -50,9 +50,10 @@ impl RuntimeDiscoveryBundle {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LocalExecutionPlane {
     ResponseOnly,
+    CodeModeOrchestration,
     WorkerReasoning,
 }
 
@@ -60,12 +61,13 @@ impl LocalExecutionPlane {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::ResponseOnly => "response_only",
+            Self::CodeModeOrchestration => "code_mode_orchestration",
             Self::WorkerReasoning => "worker_reasoning",
         }
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LocalExecutionPolicy {
     pub route: LocalRouteKind,
     pub plane: LocalExecutionPlane,
@@ -138,16 +140,29 @@ pub fn build_local_execution_policy(decision: &LocalRouteDecision) -> LocalExecu
             prefer_workflow_runtime: false,
             capability_snapshot: None,
         },
-        LocalRouteKind::Worker => LocalExecutionPolicy {
-            route: LocalRouteKind::Worker,
-            plane: LocalExecutionPlane::WorkerReasoning,
-            allowed_tool_names: full_execution_tool_names(),
-            inject_execution_protocol: true,
-            allow_worker_delegation: true,
-            prefer_workflow_runtime: false,
-            capability_snapshot: None,
-        },
+        LocalRouteKind::Worker => {
+            let code_mode_orchestration = should_use_code_mode_orchestration(decision);
+            LocalExecutionPolicy {
+                route: LocalRouteKind::Worker,
+                plane: if code_mode_orchestration {
+                    LocalExecutionPlane::CodeModeOrchestration
+                } else {
+                    LocalExecutionPlane::WorkerReasoning
+                },
+                allowed_tool_names: full_execution_tool_names(),
+                inject_execution_protocol: true,
+                allow_worker_delegation: !code_mode_orchestration,
+                prefer_workflow_runtime: false,
+                capability_snapshot: None,
+            }
+        }
     }
+}
+
+fn should_use_code_mode_orchestration(decision: &LocalRouteDecision) -> bool {
+    decision.profile.wants_programmatic_logic
+        && decision.evidence.has_programmatic_executor
+        && (!decision.profile.wants_analysis || decision.profile.has_batch_scope)
 }
 
 pub fn build_local_execution_policy_status_meta(policy: &LocalExecutionPolicy) -> Value {
@@ -227,7 +242,7 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn worker_execution_policy_defaults_to_legacy_worker_path() {
+    fn worker_execution_policy_uses_code_mode_plane_for_programmatic_logic() {
         let decision = LocalRouteDecision {
             route: LocalRouteKind::Worker,
             reasons: vec!["programmatic_logic".to_string()],
@@ -252,9 +267,10 @@ mod tests {
 
         let policy = build_local_execution_policy(&decision);
 
-        assert!(policy.allow_worker_delegation);
+        assert!(!policy.allow_worker_delegation);
         assert!(!policy.prefer_workflow_runtime);
         assert!(policy.inject_execution_protocol);
+        assert_eq!(policy.plane, LocalExecutionPlane::CodeModeOrchestration);
         assert!(policy
             .allowed_tool_names
             .iter()
@@ -271,6 +287,14 @@ mod tests {
         assert_eq!(
             meta.get("prefer_workflow_runtime").and_then(Value::as_bool),
             Some(true)
+        );
+    }
+
+    #[test]
+    fn code_mode_execution_plane_has_stable_string_value() {
+        assert_eq!(
+            LocalExecutionPlane::CodeModeOrchestration.as_str(),
+            "code_mode_orchestration"
         );
     }
 

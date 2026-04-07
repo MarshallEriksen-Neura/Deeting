@@ -415,6 +415,23 @@
     "approvalDialog": {
       "title": "Approval required",
       "description": "The AI is requesting permission to run a high-risk tool on your local system.",
+      "queueStatus": "Approval {current} of {total}",
+      "queueRemaining": "{count} remaining after this",
+      "queueCurrentStatus": "Current branch awaiting decision",
+      "queuePreviewLabel": "Up next",
+      "queuePreviewMore": "Show {count} more approvals",
+      "queuePreviewLess": "Show fewer approvals",
+      "queueItemMeta": "{level} · {summary}",
+      "queueItemNoSummary": "No summary",
+      "queueItemSource": "Source: {source}",
+      "queueItemSourceBound": "Linked to the current chat message",
+      "queueItemSourceFallback": "Source details unavailable",
+      "debug": {
+        "title": "Debug details",
+        "callId": "call_id: {value}",
+        "executionId": "execution_id: {value}",
+        "messageId": "message_id: {value}"
+      },
       "toolLabel": "Tool",
       "argumentsLabel": "Arguments",
       "summaryLabel": "Summary",

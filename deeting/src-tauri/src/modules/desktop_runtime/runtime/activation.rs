@@ -1,7 +1,7 @@
 use crate::modules::mcp::commands::common_impl::to_string;
 use crate::modules::mcp::commands::support::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct LocalCapabilityActivationState {
     pub(crate) capability_id: String,
     pub(crate) capability_name: String,

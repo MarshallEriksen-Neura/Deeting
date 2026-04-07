@@ -19,7 +19,9 @@ export function useHydratePendingToolApproval(
   sessionId: string | null | undefined,
   messages: Message[]
 ) {
-  const pendingToken = useBridgeApprovalStore((state) => state.pending?.approval_token ?? null)
+  const queuedApprovalTokenKey = useBridgeApprovalStore((state) =>
+    state.queue.map((item) => item.approval_token).join("|")
+  )
   const recentApprovedCallId = useBridgeApprovalStore(
     (state) => state.recentApprovedExecution?.call_id ?? null
   )
@@ -45,7 +47,7 @@ export function useHydratePendingToolApproval(
       lastHydratedKeyRef.current = null
       return
     }
-    if (!isTauriRuntime() || pendingToken) {
+    if (!isTauriRuntime()) {
       return
     }
 
@@ -56,32 +58,37 @@ export function useHydratePendingToolApproval(
         const snapshots = await listPendingMcpApprovals(normalizedSessionId)
         if (cancelled || snapshots.length === 0) return
 
-        const snapshot =
-          snapshots.find((candidate) => {
-            const callId =
-              typeof candidate.call_id === "string" ? candidate.call_id.trim() : ""
-            return !callId || callId !== recentApprovedCallId
-          }) ?? null
-        if (!snapshot) return
-        const approvalKey =
-          typeof snapshot.approval_token === "string" && snapshot.approval_token.trim().length > 0
-            ? `${normalizedSessionId}:${snapshot.approval_token.trim()}`
-            : null
-        if (!approvalKey || lastHydratedKeyRef.current === approvalKey) return
+        const eligibleSnapshots = snapshots.filter((candidate) => {
+          const callId = typeof candidate.call_id === "string" ? candidate.call_id.trim() : ""
+          return !callId || callId !== recentApprovedCallId
+        })
+        if (eligibleSnapshots.length === 0) return
 
-        const resolvedMessageId =
-          (typeof snapshot.call_id === "string" ? callIdToMessageId.get(snapshot.call_id) : undefined) ??
-          findMessageIdForToolCall(messages, snapshot.call_id)
-        if (!resolvedMessageId && messages.length === 0) {
+        const approvalKey = eligibleSnapshots
+          .map((snapshot) =>
+            typeof snapshot.approval_token === "string" ? snapshot.approval_token.trim() : ""
+          )
+          .filter((value) => value.length > 0)
+          .join("|")
+        if (!approvalKey || lastHydratedKeyRef.current === `${normalizedSessionId}:${approvalKey}`) {
           return
         }
-        const approval = buildBridgeToolApprovalFromPendingSnapshot(snapshot, {
-          messageId: resolvedMessageId,
-        })
-        if (!approval || cancelled) return
 
-        enqueueBridgeToolApproval(approval)
-        lastHydratedKeyRef.current = approvalKey
+        for (const snapshot of eligibleSnapshots) {
+          const resolvedMessageId =
+            (typeof snapshot.call_id === "string"
+              ? callIdToMessageId.get(snapshot.call_id)
+              : undefined) ?? findMessageIdForToolCall(messages, snapshot.call_id)
+          if (!resolvedMessageId && messages.length === 0) {
+            continue
+          }
+          const approval = buildBridgeToolApprovalFromPendingSnapshot(snapshot, {
+            messageId: resolvedMessageId,
+          })
+          if (!approval || cancelled) continue
+          enqueueBridgeToolApproval(approval)
+        }
+        lastHydratedKeyRef.current = `${normalizedSessionId}:${approvalKey}`
       } catch (error) {
         console.error("[useHydratePendingToolApproval] failed to restore pending approval", error)
       }
@@ -90,5 +97,5 @@ export function useHydratePendingToolApproval(
     return () => {
       cancelled = true
     }
-  }, [callIdToMessageId, messages, pendingToken, recentApprovedCallId, sessionId])
+  }, [callIdToMessageId, messages, queuedApprovalTokenKey, recentApprovedCallId, sessionId])
 }

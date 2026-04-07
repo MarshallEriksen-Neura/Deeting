@@ -1,9 +1,9 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::capability_snapshot::extract_callable_direct_capability_names;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LocalRouteKind {
     Direct,
     Worker,
@@ -18,7 +18,7 @@ impl LocalRouteKind {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskProfile {
     pub explicit_route: Option<LocalRouteKind>,
     pub has_batch_scope: bool,
@@ -29,7 +29,7 @@ pub struct TaskProfile {
     pub approval_sensitive: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RouteEvidence {
     pub direct_callable_capability_count: usize,
     pub has_programmatic_executor: bool,
@@ -39,7 +39,7 @@ pub struct RouteEvidence {
     pub callable_direct_capability_names: Vec<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LocalRouteDecision {
     pub route: LocalRouteKind,
     pub reasons: Vec<String>,

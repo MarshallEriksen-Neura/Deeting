@@ -3,7 +3,7 @@
 import { deriveAssistantActivityState } from "@/lib/chat/assistant-activity";
 import { extractAssistantTextFromBlocks } from "@/lib/chat/message-blocks";
 import type { Message } from "@/lib/chat/message-types";
-import { findLatestUnresolvedToolApproval } from "@/lib/chat/tool-approval";
+import { findUnresolvedToolApprovals } from "@/lib/chat/tool-approval";
 
 import type { IslandApproval, IslandRecentMessage } from "./island-store";
 
@@ -65,7 +65,7 @@ function findLatestUserMessage(messages: Message[]) {
 }
 
 function derivePendingApproval(messages: Message[]): IslandApproval | null {
-  const approval = findLatestUnresolvedToolApproval(messages);
+  const approval = findUnresolvedToolApprovals(messages)[0];
   if (!approval) return null;
 
   return {

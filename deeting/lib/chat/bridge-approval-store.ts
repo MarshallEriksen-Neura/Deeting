@@ -21,6 +21,9 @@ export interface BridgeToolPendingApproval extends BasePendingApproval {
     call_id: string
     execution_token?: string
     message_id?: string
+    execution_graph_execution_id?: string
+    execution_graph_gate_node_id?: string
+    execution_graph_tool_node_id?: string
   }
 }
 
@@ -34,21 +37,82 @@ export interface RecentApprovedExecution {
 }
 
 interface BridgeApprovalState {
+  queue: PendingApproval[]
   pending: PendingApproval | null
   isApproving: boolean
   recentApprovedExecution: RecentApprovedExecution | null
   setPending: (approval: PendingApproval | null) => void
+  enqueuePending: (approval: PendingApproval) => void
+  replacePendingByToken: (approval: PendingApproval) => void
+  focusPendingByToken: (approvalToken: string) => void
   setApproving: (approving: boolean) => void
   setRecentApprovedExecution: (execution: RecentApprovedExecution | null) => void
   clearRecentApprovedExecution: () => void
   clear: () => void
+  clearAll: () => void
 }
 
 export const useBridgeApprovalStore = create<BridgeApprovalState>((set) => ({
+  queue: [],
   pending: null,
   isApproving: false,
   recentApprovedExecution: null,
-  setPending: (approval) => set({ pending: approval }),
+  setPending: (approval) =>
+    set((state) => {
+      if (!approval) {
+        return { queue: [], pending: null }
+      }
+      const nextQueue = [...state.queue]
+      const existingIndex = nextQueue.findIndex(
+        (item) => item.approval_token === approval.approval_token
+      )
+      if (existingIndex >= 0) {
+        nextQueue[existingIndex] = approval
+      } else {
+        nextQueue.push(approval)
+      }
+      return {
+        queue: nextQueue,
+        pending: nextQueue[0] ?? null,
+      }
+    }),
+  enqueuePending: (approval) =>
+    set((state) => {
+      if (state.queue.some((item) => item.approval_token === approval.approval_token)) {
+        return state
+      }
+      const nextQueue = [...state.queue, approval]
+      return {
+        queue: nextQueue,
+        pending: nextQueue[0] ?? null,
+      }
+    }),
+  replacePendingByToken: (approval) =>
+    set((state) => {
+      const nextQueue = state.queue.map((item) =>
+        item.approval_token === approval.approval_token ? approval : item
+      )
+      return {
+        queue: nextQueue,
+        pending: nextQueue[0] ?? null,
+      }
+    }),
+  focusPendingByToken: (approvalToken) =>
+    set((state) => {
+      const normalizedToken = approvalToken.trim()
+      if (!normalizedToken) return state
+      const index = state.queue.findIndex(
+        (item) => item.approval_token === normalizedToken
+      )
+      if (index <= 0) return state
+      const nextQueue = [...state.queue]
+      const [selected] = nextQueue.splice(index, 1)
+      nextQueue.unshift(selected)
+      return {
+        queue: nextQueue,
+        pending: nextQueue[0] ?? null,
+      }
+    }),
   setApproving: (approving) => set({ isApproving: approving }),
   setRecentApprovedExecution: (execution) => set({ recentApprovedExecution: execution }),
   clearRecentApprovedExecution: () => {
@@ -58,7 +122,16 @@ export const useBridgeApprovalStore = create<BridgeApprovalState>((set) => ({
     }
     set({ recentApprovedExecution: null })
   },
-  clear: () => set({ pending: null, isApproving: false }),
+  clear: () =>
+    set((state) => {
+      const nextQueue = state.queue.slice(1)
+      return {
+        queue: nextQueue,
+        pending: nextQueue[0] ?? null,
+        isApproving: false,
+      }
+    }),
+  clearAll: () => set({ queue: [], pending: null, isApproving: false }),
 }))
 
 let recentApprovedExecutionTimer: ReturnType<typeof setTimeout> | null = null

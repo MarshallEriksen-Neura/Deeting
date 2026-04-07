@@ -24,7 +24,10 @@ pub fn format_model_config_required_error(missing: &[&str]) -> String {
     if missing.iter().any(|value| *value == MODEL_CONFIG_EMBEDDING) {
         normalized.push(MODEL_CONFIG_EMBEDDING);
     }
-    if missing.iter().any(|value| *value == MODEL_CONFIG_MULTIMODAL) {
+    if missing
+        .iter()
+        .any(|value| *value == MODEL_CONFIG_MULTIMODAL)
+    {
         normalized.push(MODEL_CONFIG_MULTIMODAL);
     }
     if normalized.is_empty() {
@@ -195,8 +198,12 @@ pub async fn ensure_required_local_multimodal_model_configured(
         .as_deref()
         .map(str::trim)
         .unwrap_or_default();
-    if provider_model_id.is_empty() || !matches_active_multimodal_model(&active_models, provider_model_id) {
-        return Err(format_model_config_required_error(&[MODEL_CONFIG_MULTIMODAL]));
+    if provider_model_id.is_empty()
+        || !matches_active_multimodal_model(&active_models, provider_model_id)
+    {
+        return Err(format_model_config_required_error(&[
+            MODEL_CONFIG_MULTIMODAL,
+        ]));
     }
     Ok(())
 }
@@ -225,13 +232,9 @@ fn matches_active_multimodal_model(models: &[ProviderModel], provider_model_id: 
         if model.id.to_string() != provider_model_id {
             return false;
         }
-        model
-            .capabilities
-            .iter()
-            .any(|capability| {
-                capability.eq_ignore_ascii_case("chat")
-                    || capability.eq_ignore_ascii_case("vision")
-            })
+        model.capabilities.iter().any(|capability| {
+            capability.eq_ignore_ascii_case("chat") || capability.eq_ignore_ascii_case("vision")
+        })
     })
 }
 
