@@ -45,6 +45,7 @@ interface BridgeApprovalState {
   enqueuePending: (approval: PendingApproval) => void
   replacePendingByToken: (approval: PendingApproval) => void
   focusPendingByToken: (approvalToken: string) => void
+  removePendingByToken: (approvalToken: string) => void
   setApproving: (approving: boolean) => void
   setRecentApprovedExecution: (execution: RecentApprovedExecution | null) => void
   clearRecentApprovedExecution: () => void
@@ -111,6 +112,19 @@ export const useBridgeApprovalStore = create<BridgeApprovalState>((set) => ({
       return {
         queue: nextQueue,
         pending: nextQueue[0] ?? null,
+      }
+    }),
+  removePendingByToken: (approvalToken) =>
+    set((state) => {
+      const normalizedToken = approvalToken.trim()
+      if (!normalizedToken) return state
+      const nextQueue = state.queue.filter(
+        (item) => item.approval_token !== normalizedToken
+      )
+      return {
+        queue: nextQueue,
+        pending: nextQueue[0] ?? null,
+        isApproving: false,
       }
     }),
   setApproving: (approving) => set({ isApproving: approving }),

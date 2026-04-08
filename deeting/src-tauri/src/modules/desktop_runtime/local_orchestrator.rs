@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use futures_util::future::BoxFuture;
@@ -7,7 +7,6 @@ use tauri::AppHandle;
 use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
 
-use crate::modules::asset_registry::service::find_best_local_asset_match;
 use crate::modules::conversations::summary_generation::generate_local_conversation_title_with_secretary_model;
 #[cfg(test)]
 use crate::modules::custom_task_agents::types::{
@@ -30,16 +29,15 @@ use crate::modules::desktop_runtime::runtime::route_selector::{
 use crate::modules::desktop_runtime::runtime::{
     apply_desktop_execution_policy_overrides, build_default_local_execution_policy,
     build_local_control_plane_result, build_local_control_plane_status_meta,
-    build_local_execution_policy, build_runtime_discovery_bundle_with_runtime,
-    maybe_override_route_with_custom_task_agent, persist_execution_graph_snapshot,
+    build_local_execution_policy, build_runtime_discovery_bundle_with_runtime_query_vector,
+    maybe_override_route_with_custom_task_agent_query_vector, persist_execution_graph_snapshot,
     project_execution_graph_blocks_from_value, render_local_route_prompt,
     resolve_local_model_pool_connection, resolve_provider_model_connection,
     run_local_execution_plane, select_local_route_with_evidence, LocalControlPlaneResult,
     LocalExecutionPolicy, LocalExecutionRequest, LocalRouteDecision, RuntimeDiscoveryBundle,
 };
-use crate::modules::memory::types::{
-    LocalMemoryItem, LocalMemoryListQuery, LocalMemorySearchItem, LocalMemorySearchQuery,
-};
+#[cfg(test)]
+use crate::modules::memory::types::LocalMemoryItem;
 use crate::modules::providers::model_guard::ensure_required_local_models_configured;
 use crate::modules::render_runtime::resolve_response_rendering;
 use crate::state::AppState;
@@ -47,6 +45,21 @@ use mcp_core::types::LocalChatInputMessage;
 use mcp_session::conversation::CreateConversationMessageRequest;
 #[cfg(test)]
 use std::collections::HashMap;
+
+mod retrieval;
+
+#[cfg(test)]
+use retrieval::{
+    build_global_memory_list_query, build_global_semantic_memory_search_query,
+    build_scoped_memory_list_query, build_selected_document_overview,
+    build_selected_knowledge_fallback_hits, fuse_selected_knowledge_hits, matches_recall_when,
+    InjectedMemory, SelectedKnowledgeDocumentContext, CORE_MEMORY_LIST_LIMIT,
+    SEMANTIC_MEMORY_SEARCH_LIMIT,
+};
+use retrieval::{
+    AssetRecallInjectionStep, ContextRetrievalPrefetchStep, PrefetchedRetrievals,
+    SelectedKnowledgeInjectionStep, SemanticMemoryInjectionStep,
+};
 
 const LOCAL_DELTA_CHUNK_CHARS: usize = 64;
 const DESKTOP_PERSONA_PROMPT_KEY: &str = "chat.persona_prompt";
@@ -74,11 +87,12 @@ async fn ensure_runtime_discovery_bundle(
         return bundle;
     }
 
-    let bundle = build_runtime_discovery_bundle_with_runtime(
+    let bundle = build_runtime_discovery_bundle_with_runtime_query_vector(
         ctx.app_state.mcp.store.as_ref(),
         &ctx.app_state.providers.embedding,
         ctx.app_state.memory.service.as_ref(),
         query,
+        ctx.request_query_embedding.clone(),
         6,
     )
     .await;
@@ -260,12 +274,12 @@ fn build_desktop_local_chat_engine(
     LocalOrchestrationEngine::new(vec![
         Box::new(SummaryInjectionStep),
         Box::new(PersonaPromptInjectionStep),
+        Box::new(ContextRetrievalPrefetchStep),
         Box::new(SemanticMemoryInjectionStep),
         Box::new(SelectedKnowledgeInjectionStep),
         Box::new(AssetRecallInjectionStep),
         Box::new(RouteSelectionStep),
         Box::new(SkillRecipeInjectionStep),
-        Box::new(ActiveCapabilityHintStep),
         Box::new(PromptVariantSelectionStep),
         Box::new(TemplateRenderStep),
     ])
@@ -444,6 +458,10 @@ struct LocalWorkflowContext {
     status_code: Option<String>,
     status_meta: Option<Value>,
     selected_knowledge_file_ids: Vec<String>,
+    latest_user_query: Option<String>,
+    request_query_embedding: Option<Vec<f32>>,
+    request_query_embedding_attempted: bool,
+    prefetched_retrievals: PrefetchedRetrievals,
 }
 
 impl LocalWorkflowContext {
@@ -457,6 +475,7 @@ impl LocalWorkflowContext {
         summary_text: Option<String>,
         event_tx: Option<UnboundedSender<String>>,
     ) -> Self {
+        let latest_user_query = latest_user_message(&messages).map(str::to_string);
         Self {
             app_state,
             trace_id,
@@ -483,6 +502,40 @@ impl LocalWorkflowContext {
             status_code: None,
             status_meta: None,
             selected_knowledge_file_ids: input.selected_knowledge_file_ids.clone(),
+            latest_user_query,
+            request_query_embedding: None,
+            request_query_embedding_attempted: false,
+            prefetched_retrievals: PrefetchedRetrievals::default(),
+        }
+    }
+
+    fn latest_user_query(&self) -> Option<&str> {
+        self.latest_user_query
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+    }
+
+    async fn ensure_request_query_embedding(&mut self) -> Option<Vec<f32>> {
+        if self.request_query_embedding_attempted {
+            return self.request_query_embedding.clone();
+        }
+
+        let query = self.latest_user_query()?.to_string();
+        self.request_query_embedding_attempted = true;
+        match self.app_state.providers.embedding.embed_text(&query).await {
+            Ok(vector) => {
+                self.request_query_embedding = Some(vector.clone());
+                Some(vector)
+            }
+            Err(err) => {
+                log::warn!(
+                    "local_orchestrator: request query embedding failed session={} err={}",
+                    self.session_id,
+                    err
+                );
+                None
+            }
         }
     }
 
@@ -668,6 +721,10 @@ impl LocalWorkflowStep<LocalWorkflowContext> for PersonaPromptInjectionStep {
         "persona_prompt_injection"
     }
 
+    fn depends_on(&self) -> &'static [&'static str] {
+        &["summary_injection"]
+    }
+
     fn execute<'a>(
         &'a self,
         ctx: &'a mut LocalWorkflowContext,
@@ -702,863 +759,6 @@ impl LocalWorkflowStep<LocalWorkflowContext> for PersonaPromptInjectionStep {
     }
 }
 
-struct SemanticMemoryInjectionStep;
-
-#[derive(Debug, Clone)]
-struct InjectedMemory {
-    id: String,
-    content: String,
-    recall_when: Option<String>,
-    memory_tier: Option<String>,
-    is_core: bool,
-    is_boot: bool,
-}
-
-const CORE_MEMORY_LIST_LIMIT: i64 = 20;
-const FALLBACK_MEMORY_LIST_LIMIT: i64 = 5;
-const SEMANTIC_MEMORY_SEARCH_LIMIT: usize = 5;
-
-fn memory_meta_string(meta_info: &Option<Value>, key: &str) -> Option<String> {
-    meta_info
-        .as_ref()
-        .and_then(|value| value.get(key))
-        .and_then(|value| value.as_str())
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-}
-
-fn memory_meta_bool(meta_info: &Option<Value>, key: &str) -> bool {
-    meta_info
-        .as_ref()
-        .and_then(|value| value.get(key))
-        .and_then(|value| value.as_bool())
-        .unwrap_or(false)
-}
-
-fn matches_recall_when(query: &str, recall_when: Option<&str>) -> bool {
-    let hint = recall_when.unwrap_or("").trim().to_lowercase();
-    if hint.is_empty() {
-        return true;
-    }
-    let query_text = query.trim().to_lowercase();
-    if query_text.is_empty() {
-        return false;
-    }
-    if query_text.contains(&hint) || hint.contains(&query_text) {
-        return true;
-    }
-    hint.replace([';', ',', '|'], " ")
-        .split_whitespace()
-        .filter(|token| token.len() > 1)
-        .any(|token| query_text.contains(token))
-}
-
-fn build_global_semantic_memory_search_query(query: &str) -> LocalMemorySearchQuery {
-    LocalMemorySearchQuery {
-        query: query.to_string(),
-        limit: Some(SEMANTIC_MEMORY_SEARCH_LIMIT),
-        session_id: None,
-        capability_id: None,
-        category: None,
-        source: None,
-        tags: None,
-    }
-}
-
-fn build_global_memory_list_query(limit: i64) -> LocalMemoryListQuery {
-    LocalMemoryListQuery {
-        cursor: None,
-        limit: Some(limit),
-        session_id: None,
-        capability_id: None,
-    }
-}
-
-fn build_scoped_memory_list_query(
-    session_id: &str,
-    capability_id: Option<&str>,
-    limit: i64,
-) -> LocalMemoryListQuery {
-    LocalMemoryListQuery {
-        cursor: None,
-        limit: Some(limit),
-        session_id: Some(session_id.to_string()),
-        capability_id: capability_id.map(str::to_string),
-    }
-}
-
-impl InjectedMemory {
-    fn from_item(item: LocalMemoryItem) -> Self {
-        let recall_when = memory_meta_string(&item.meta_info, "recall_when");
-        let memory_tier = memory_meta_string(&item.meta_info, "memory_tier");
-        let is_boot = memory_meta_bool(&item.meta_info, "is_boot");
-        let is_core =
-            memory_meta_bool(&item.meta_info, "is_core") || memory_tier.as_deref() == Some("core");
-        Self {
-            id: item.id,
-            content: item.content,
-            recall_when,
-            memory_tier,
-            is_core,
-            is_boot,
-        }
-    }
-
-    fn from_search_item(item: LocalMemorySearchItem) -> Self {
-        let recall_when = memory_meta_string(&item.meta_info, "recall_when");
-        let memory_tier = memory_meta_string(&item.meta_info, "memory_tier");
-        let is_boot = memory_meta_bool(&item.meta_info, "is_boot");
-        let is_core =
-            memory_meta_bool(&item.meta_info, "is_core") || memory_tier.as_deref() == Some("core");
-        Self {
-            id: item.id,
-            content: item.content,
-            recall_when,
-            memory_tier,
-            is_core,
-            is_boot,
-        }
-    }
-}
-
-impl LocalWorkflowStep<LocalWorkflowContext> for SemanticMemoryInjectionStep {
-    fn name(&self) -> &'static str {
-        "semantic_memory_injection"
-    }
-
-    fn execute<'a>(
-        &'a self,
-        ctx: &'a mut LocalWorkflowContext,
-    ) -> BoxFuture<'a, Result<(), String>> {
-        Box::pin(async move {
-            // Try vector search using the last user message
-            let user_text = ctx
-                .messages
-                .iter()
-                .rev()
-                .find(|m| m.role == "user")
-                .map(|m| m.content.clone());
-
-            let query_text = user_text.unwrap_or_default();
-            let core_memories = self.load_core_memories(ctx, &query_text).await?;
-            let semantic_memories: Vec<InjectedMemory> = if !query_text.is_empty() {
-                // Attempt semantic search
-                let search_query = build_global_semantic_memory_search_query(&query_text);
-                match ctx.app_state.memory.service.search(search_query).await {
-                    Ok(result) if !result.items.is_empty() => result
-                        .items
-                        .into_iter()
-                        .map(InjectedMemory::from_search_item)
-                        .collect(),
-                    Ok(_) | Err(_) => {
-                        // Fallback to list (no embeddings yet or embedding service unavailable)
-                        self.fallback_list(ctx).await?
-                    }
-                }
-            } else {
-                self.fallback_list(ctx).await?
-            };
-
-            let mut seen = HashSet::new();
-            let mut core_lines = Vec::new();
-            let mut semantic_lines = Vec::new();
-
-            for memory in core_memories {
-                if !seen.insert(memory.id.clone()) {
-                    continue;
-                }
-                let text = memory.content.trim();
-                if text.is_empty() {
-                    continue;
-                }
-                core_lines.push(format!("- {}", text));
-            }
-
-            for memory in semantic_memories {
-                if !seen.insert(memory.id.clone()) {
-                    continue;
-                }
-                let text = memory.content.trim();
-                if text.is_empty() {
-                    continue;
-                }
-                semantic_lines.push(format!("- {}", text));
-            }
-
-            let total_count = core_lines.len() + semantic_lines.len();
-            if total_count == 0 {
-                ctx.emit_status(
-                    "remember",
-                    Some("semantic_memory_injection"),
-                    "success",
-                    "semantic.memory.loaded",
-                    Some(json!({ "count": 0 })),
-                );
-                return Ok(());
-            }
-
-            if !core_lines.is_empty() {
-                ctx.push_system_message(format!("## Core Memories\n{}", core_lines.join("\n")));
-            }
-            if !semantic_lines.is_empty() {
-                ctx.push_system_message(format!(
-                    "## Semantic Memories\n{}",
-                    semantic_lines.join("\n")
-                ));
-            }
-
-            ctx.emit_status(
-                "remember",
-                Some("semantic_memory_injection"),
-                "success",
-                "semantic.memory.loaded",
-                Some(json!({ "count": total_count })),
-            );
-            Ok(())
-        })
-    }
-}
-
-impl SemanticMemoryInjectionStep {
-    async fn load_core_memories(
-        &self,
-        ctx: &LocalWorkflowContext,
-        query_text: &str,
-    ) -> Result<Vec<InjectedMemory>, String> {
-        let query = build_global_memory_list_query(CORE_MEMORY_LIST_LIMIT);
-        let memories = ctx
-            .app_state
-            .memory
-            .service
-            .list(query)
-            .await
-            .map_err(|e| e.to_string())?;
-        let mut items = memories
-            .items
-            .into_iter()
-            .map(InjectedMemory::from_item)
-            .filter(|item| {
-                if item.is_boot {
-                    return true;
-                }
-                if !(item.is_core || item.memory_tier.as_deref() == Some("core")) {
-                    return false;
-                }
-                matches_recall_when(query_text, item.recall_when.as_deref())
-            })
-            .collect::<Vec<InjectedMemory>>();
-        items.sort_by_key(|item| {
-            (
-                if item.is_boot { 0 } else { 1 },
-                if item.is_core || item.memory_tier.as_deref() == Some("core") {
-                    0
-                } else {
-                    1
-                },
-            )
-        });
-        Ok(items)
-    }
-
-    async fn fallback_list(
-        &self,
-        ctx: &LocalWorkflowContext,
-    ) -> Result<Vec<InjectedMemory>, String> {
-        let scoped_query = build_scoped_memory_list_query(
-            &ctx.session_id,
-            ctx.capability_id.as_deref(),
-            FALLBACK_MEMORY_LIST_LIMIT,
-        );
-        let scoped_memories = ctx
-            .app_state
-            .memory
-            .service
-            .list(scoped_query)
-            .await
-            .map_err(|e| e.to_string())?;
-        let scoped_items = scoped_memories
-            .items
-            .into_iter()
-            .map(InjectedMemory::from_item)
-            .collect::<Vec<_>>();
-        if !scoped_items.is_empty() {
-            return Ok(scoped_items);
-        }
-
-        let global_query = build_global_memory_list_query(FALLBACK_MEMORY_LIST_LIMIT);
-        let global_memories = ctx
-            .app_state
-            .memory
-            .service
-            .list(global_query)
-            .await
-            .map_err(|e| e.to_string())?;
-        Ok(global_memories
-            .items
-            .into_iter()
-            .map(InjectedMemory::from_item)
-            .collect())
-    }
-}
-
-struct SelectedKnowledgeInjectionStep;
-
-#[derive(Debug, Clone)]
-struct SelectedKnowledgeDocumentContext {
-    file_id: String,
-    file_name: String,
-    overview: Option<String>,
-    leading_chunks: Vec<crate::modules::knowledge::types::LocalKnowledgeChunk>,
-}
-
-impl LocalWorkflowStep<LocalWorkflowContext> for SelectedKnowledgeInjectionStep {
-    fn name(&self) -> &'static str {
-        "selected_knowledge_injection"
-    }
-
-    fn execute<'a>(
-        &'a self,
-        ctx: &'a mut LocalWorkflowContext,
-    ) -> BoxFuture<'a, Result<(), String>> {
-        Box::pin(async move {
-            if ctx.selected_knowledge_file_ids.is_empty() {
-                return Ok(());
-            }
-
-            let query = latest_user_message(&ctx.messages)
-                .and_then(normalize_knowledge_search_query)
-                .unwrap_or_default();
-            if query.is_empty() {
-                ctx.emit_status(
-                    "remember",
-                    Some("selected_knowledge_injection"),
-                    "success",
-                    "knowledge.context.loaded",
-                    Some(json!({
-                        "selected_files": ctx.selected_knowledge_file_ids.len(),
-                        "count": 0,
-                        "query_empty": true,
-                    })),
-                );
-                return Ok(());
-            }
-
-            ctx.emit_status(
-                "remember",
-                Some("selected_knowledge_injection"),
-                "running",
-                "knowledge.context.loading",
-                Some(json!({
-                    "selected_files": ctx.selected_knowledge_file_ids.len(),
-                })),
-            );
-
-            let mut selected_ids = Vec::new();
-            let mut selected_id_set = HashSet::new();
-            for value in &ctx.selected_knowledge_file_ids {
-                let normalized = value.trim().to_string();
-                if normalized.is_empty() || !selected_id_set.insert(normalized.clone()) {
-                    continue;
-                }
-                selected_ids.push(normalized);
-            }
-            if selected_ids.is_empty() {
-                return Ok(());
-            }
-
-            let document_contexts =
-                load_selected_knowledge_document_contexts(ctx, &selected_ids, 3).await;
-
-            let mut lexical_search_failed = false;
-            let mut selected_hits = Vec::new();
-            if !query.is_empty() {
-                let lexical_hits = match ctx
-                    .app_state
-                    .knowledge
-                    .store
-                    .search_local_knowledge_chunks(&query, Some(40))
-                    .await
-                {
-                    Ok(value) => value,
-                    Err(err) => {
-                        lexical_search_failed = true;
-                        log::warn!(
-                            "selected_knowledge_injection: lexical search failed session={} err={}",
-                            ctx.session_id,
-                            err
-                        );
-                        Vec::new()
-                    }
-                };
-                for hit in lexical_hits {
-                    if !selected_id_set.contains(hit.file_id.as_str()) {
-                        continue;
-                    }
-                    if looks_like_docx_field_artifact(&hit.content) {
-                        continue;
-                    }
-                    selected_hits.push(hit);
-                    if selected_hits.len() >= 4 {
-                        break;
-                    }
-                }
-            }
-
-            let mut fallback_used = false;
-            if selected_hits.is_empty() {
-                fallback_used = true;
-                selected_hits = build_selected_knowledge_fallback_hits(&document_contexts, 4);
-            }
-
-            let overview_lines = document_contexts
-                .iter()
-                .filter_map(|context| {
-                    context
-                        .overview
-                        .as_ref()
-                        .map(|overview| format!("- [{}] {}", context.file_name, overview))
-                })
-                .collect::<Vec<_>>();
-            let excerpt_lines = selected_hits
-                .iter()
-                .map(|hit| {
-                    let snippet = compact_knowledge_snippet(&hit.content, 260);
-                    format!("- [{} #{}] {}", hit.file_name, hit.index + 1, snippet)
-                })
-                .collect::<Vec<_>>();
-
-            if overview_lines.is_empty() && excerpt_lines.is_empty() {
-                ctx.emit_status(
-                    "remember",
-                    Some("selected_knowledge_injection"),
-                    "success",
-                    "knowledge.context.loaded",
-                    Some(json!({
-                        "selected_files": selected_ids.len(),
-                        "count": 0,
-                        "overview_count": 0,
-                        "fallback_used": fallback_used,
-                        "search_error": lexical_search_failed,
-                    })),
-                );
-                return Ok(());
-            }
-
-            let mut sections = Vec::new();
-            if !overview_lines.is_empty() {
-                sections.push(format!(
-                    "## Selected Document Overviews\nThese are the user-selected local documents for this turn:\n{}",
-                    overview_lines.join("\n")
-                ));
-            }
-            if !excerpt_lines.is_empty() {
-                sections.push(format!(
-                    "## Selected Document Excerpts\nUse the following excerpts from the user-selected local documents when they are relevant:\n{}",
-                    excerpt_lines.join("\n")
-                ));
-            }
-            ctx.push_system_message(sections.join("\n\n"));
-
-            ctx.emit_status(
-                "remember",
-                Some("selected_knowledge_injection"),
-                "success",
-                "knowledge.context.loaded",
-                Some(json!({
-                    "selected_files": selected_ids.len(),
-                    "count": excerpt_lines.len(),
-                    "overview_count": overview_lines.len(),
-                    "fallback_used": fallback_used,
-                    "search_error": lexical_search_failed,
-                })),
-            );
-            Ok(())
-        })
-    }
-}
-
-async fn load_selected_knowledge_document_contexts(
-    ctx: &LocalWorkflowContext,
-    selected_ids: &[String],
-    leading_chunk_limit: usize,
-) -> Vec<SelectedKnowledgeDocumentContext> {
-    let mut contexts = Vec::new();
-    for file_id in selected_ids {
-        let document = match ctx
-            .app_state
-            .knowledge
-            .store
-            .get_local_user_document(file_id)
-            .await
-        {
-            Ok(value) => value,
-            Err(err) => {
-                log::warn!(
-                    "selected_knowledge_injection: failed to load document session={} file_id={} err={}",
-                    ctx.session_id,
-                    file_id,
-                    err
-                );
-                continue;
-            }
-        };
-        let chunk_list = match ctx
-            .app_state
-            .knowledge
-            .store
-            .list_local_user_document_chunks(
-                file_id,
-                crate::modules::knowledge::types::LocalUserDocumentChunkListQuery {
-                    offset: Some(0),
-                    limit: Some(leading_chunk_limit as i64),
-                },
-            )
-            .await
-        {
-            Ok(value) => value,
-            Err(err) => {
-                log::warn!(
-                    "selected_knowledge_injection: chunk fallback failed session={} file_id={} err={}",
-                    ctx.session_id,
-                    file_id,
-                    err
-                );
-                continue;
-            }
-        };
-        let leading_chunks = chunk_list
-            .items
-            .into_iter()
-            .filter(|chunk| !looks_like_docx_field_artifact(&chunk.content))
-            .collect::<Vec<_>>();
-        contexts.push(SelectedKnowledgeDocumentContext {
-            file_id: document.id,
-            file_name: document.name,
-            overview: build_selected_document_overview(&leading_chunks),
-            leading_chunks,
-        });
-    }
-    contexts
-}
-
-fn build_selected_knowledge_fallback_hits(
-    document_contexts: &[SelectedKnowledgeDocumentContext],
-    limit: usize,
-) -> Vec<crate::modules::knowledge::types::LocalKnowledgeSearchHit> {
-    let mut hits = Vec::new();
-    for context in document_contexts {
-        for chunk in &context.leading_chunks {
-            hits.push(crate::modules::knowledge::types::LocalKnowledgeSearchHit {
-                chunk_id: chunk.id.clone(),
-                file_id: context.file_id.clone(),
-                file_name: context.file_name.clone(),
-                index: chunk.index,
-                content: chunk.content.clone(),
-                token_count: chunk.token_count,
-                score: 0.0,
-            });
-            if hits.len() >= limit {
-                return hits;
-            }
-        }
-    }
-    hits
-}
-
-fn build_selected_document_overview(
-    chunks: &[crate::modules::knowledge::types::LocalKnowledgeChunk],
-) -> Option<String> {
-    let preview = chunks
-        .iter()
-        .take(2)
-        .map(|chunk| chunk.content.trim())
-        .filter(|value| !value.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n");
-    let normalized = compact_knowledge_snippet(&preview, 220);
-    if normalized.is_empty() {
-        None
-    } else {
-        Some(normalized)
-    }
-}
-
-fn looks_like_docx_field_artifact(content: &str) -> bool {
-    let normalized = content.replace('\r', "").replace('\n', " ");
-    let compact = normalized.split_whitespace().collect::<Vec<_>>().join(" ");
-    let trimmed = compact.trim();
-    if trimmed.is_empty() {
-        return true;
-    }
-    if trimmed.eq_ignore_ascii_case("\\h") {
-        return true;
-    }
-    if trimmed.starts_with("\\h ") {
-        return true;
-    }
-    if trimmed.starts_with("HYPERLINK \\l ") {
-        return true;
-    }
-    if trimmed.contains("PAGEREF _Toc") {
-        return true;
-    }
-    if trimmed.starts_with("TOC \\") {
-        return true;
-    }
-    false
-}
-
-fn normalize_knowledge_search_query(raw: &str) -> Option<String> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    if !trimmed.starts_with('[') {
-        return Some(trimmed.to_string());
-    }
-
-    let parsed = serde_json::from_str::<Value>(trimmed).ok()?;
-    let blocks = parsed.as_array()?;
-    let mut text_parts = Vec::new();
-    for block in blocks {
-        let Some(block_type) = block.get("type").and_then(Value::as_str) else {
-            continue;
-        };
-        if block_type != "text" {
-            continue;
-        }
-        let text = block
-            .get("text")
-            .and_then(Value::as_str)
-            .or_else(|| block.get("content").and_then(Value::as_str))
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
-        if let Some(value) = text {
-            text_parts.push(value.to_string());
-        }
-    }
-    if text_parts.is_empty() {
-        return Some(trimmed.to_string());
-    }
-    Some(text_parts.join("\n"))
-}
-
-fn compact_knowledge_snippet(content: &str, max_chars: usize) -> String {
-    let normalized = content
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .trim()
-        .to_string();
-    if normalized.chars().count() <= max_chars {
-        return normalized;
-    }
-
-    let compact = normalized.chars().take(max_chars).collect::<String>();
-    format!("{}...", compact)
-}
-
-struct ActiveCapabilityHintStep;
-
-struct AssetRecallInjectionStep;
-
-impl LocalWorkflowStep<LocalWorkflowContext> for AssetRecallInjectionStep {
-    fn name(&self) -> &'static str {
-        "asset_recall_injection"
-    }
-
-    fn execute<'a>(
-        &'a self,
-        ctx: &'a mut LocalWorkflowContext,
-    ) -> BoxFuture<'a, Result<(), String>> {
-        Box::pin(async move {
-            let latest_user_query = latest_user_message(&ctx.messages)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_string)
-                .unwrap_or_default();
-            if latest_user_query.is_empty() {
-                return Ok(());
-            }
-
-            let matched = match find_best_local_asset_match(
-                &ctx.app_state,
-                Some(ctx.session_id.as_str()),
-                &latest_user_query,
-            )
-            .await
-            {
-                Ok(value) => value,
-                Err(err) => {
-                    log::warn!(
-                        "asset_recall_lookup_failed session={} err={}",
-                        ctx.session_id,
-                        err
-                    );
-                    None
-                }
-            };
-
-            let Some(matched) = matched else {
-                return Ok(());
-            };
-
-            let render_hint = matched
-                .record
-                .render_hint
-                .clone()
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or_else(|| matched.record.title.clone());
-            let output_shape = matched
-                .output_example
-                .as_ref()
-                .map(|value| {
-                    serde_json::to_string_pretty(value).unwrap_or_else(|_| "{}".to_string())
-                })
-                .unwrap_or_else(|| "{}".to_string());
-            let props_hint = if matched.props_hint.is_empty() {
-                "[]".to_string()
-            } else {
-                serde_json::to_string(&matched.props_hint).unwrap_or_else(|_| "[]".to_string())
-            };
-            let match_hints = if matched.match_hints.is_empty() {
-                "[]".to_string()
-            } else {
-                serde_json::to_string(&matched.match_hints).unwrap_or_else(|_| "[]".to_string())
-            };
-            let data_mode = matched
-                .record
-                .data_mode
-                .clone()
-                .unwrap_or_else(|| "ai_data".to_string());
-            let matched_asset_id = matched.record.asset_id.clone();
-            let matched_title = matched.record.title.clone();
-            let matched_record_data_mode = matched.record.data_mode.clone();
-
-            ctx.push_system_message(format!(
-                "## Reusable HTML Asset Match\nA saved local HTML asset has been matched for this request. Reuse the matched asset instead of generating new HTML, CSS, JS, templates, or iframe markup.\n\nMatched asset:\n- asset_id: {asset_id}\n- title: {title}\n- render_hint: {render_hint}\n- data_mode: {data_mode}\n- match_hints: {match_hints}\n- props_hint: {props_hint}\n- output_example:\n{output_shape}\n\nResponse contract:\n- Return a top-level JSON object with optional `summary` and a `render` object.\n- Set `render.asset_id` to `{asset_id}`.\n- Set `render.hint` to `{render_hint}`.\n- Put the asset input data in `render.data`.\n- Do not generate new HTML.\n- If `data_mode` is `ai_data`, fill `render.data` using the same field shape as `output_example`.\n- If `data_mode` is `self_fetch`, only return the extracted props needed by the asset in `render.data`.\n\nExample:\n{{\n  \"summary\": \"short user-facing summary\",\n  \"render\": {{\n    \"asset_id\": \"{asset_id}\",\n    \"hint\": \"{render_hint}\",\n    \"data\": {output_shape}\n  }}\n}}",
-                asset_id = matched_asset_id.as_str(),
-                title = matched_title.as_str(),
-                render_hint = render_hint.as_str(),
-                data_mode = data_mode.as_str(),
-                match_hints = match_hints.as_str(),
-                props_hint = props_hint.as_str(),
-                output_shape = output_shape.as_str(),
-            ));
-
-            ctx.emit_status(
-                "remember",
-                Some("asset_recall"),
-                "success",
-                "asset.matched",
-                Some(json!({
-                    "asset_id": matched_asset_id,
-                    "title": matched_title,
-                    "score": matched.score,
-                    "data_mode": matched_record_data_mode,
-                })),
-            );
-
-            Ok(())
-        })
-    }
-}
-
-impl LocalWorkflowStep<LocalWorkflowContext> for ActiveCapabilityHintStep {
-    fn name(&self) -> &'static str {
-        "active_capability_hint"
-    }
-
-    fn execute<'a>(
-        &'a self,
-        ctx: &'a mut LocalWorkflowContext,
-    ) -> BoxFuture<'a, Result<(), String>> {
-        Box::pin(async move {
-            let latest_user_query = ctx
-                .messages
-                .iter()
-                .rev()
-                .find(|msg| msg.role.eq_ignore_ascii_case("user"))
-                .map(|msg| msg.content.trim().to_string())
-                .unwrap_or_default();
-            if latest_user_query.is_empty() {
-                return Ok(());
-            }
-
-            let vector = match ctx
-                .app_state
-                .providers
-                .embedding
-                .embed_text(&latest_user_query)
-                .await
-            {
-                Ok(value) => value,
-                Err(_) => return Ok(()),
-            };
-
-            let hits = match ctx
-                .app_state
-                .memory
-                .service
-                .search_assets(vector, 6, Some("assistant"))
-                .await
-            {
-                Ok(value) => value,
-                Err(_) => return Ok(()),
-            };
-
-            let current_capability_id = ctx.capability_id.clone().unwrap_or_default();
-            let candidate = hits.into_iter().find(|hit| {
-                let id = hit
-                    .get("id")
-                    .and_then(|value| value.as_str())
-                    .unwrap_or_default()
-                    .trim();
-                !id.is_empty() && id != current_capability_id
-            });
-
-            let Some(candidate) = candidate else {
-                return Ok(());
-            };
-
-            let capability_name = candidate
-                .get("name")
-                .and_then(|value| value.as_str())
-                .unwrap_or("capability")
-                .to_string();
-            let capability_desc = candidate
-                .get("description")
-                .and_then(|value| value.as_str())
-                .unwrap_or_default()
-                .trim()
-                .to_string();
-            let capability_score = candidate.get("_distance").cloned().unwrap_or(Value::Null);
-
-            let mut section = format!("## Active Capability Hint\nCapability: {}", capability_name);
-            if !capability_desc.is_empty() {
-                section.push_str(&format!("\nSummary: {}", capability_desc));
-            }
-            section.push_str(
-                "\nUse this as domain capability guidance only. Do not change the fixed desktop persona or reply style.",
-            );
-            ctx.push_system_message(section);
-
-            ctx.emit_status(
-                "remember",
-                Some("active_capability_hint"),
-                "success",
-                "semantic.capability.loaded",
-                Some(json!({
-                    "capability_name": capability_name,
-                    "score": capability_score,
-                })),
-            );
-
-            Ok(())
-        })
-    }
-}
-
 struct PromptVariantSelectionStep;
 
 /// Prompt variant identifiers for the `router:prompt` bandit scene.
@@ -1568,6 +768,10 @@ const PROMPT_VARIANT_CONCISE: &str = "concise";
 impl LocalWorkflowStep<LocalWorkflowContext> for PromptVariantSelectionStep {
     fn name(&self) -> &'static str {
         "prompt_variant_selection"
+    }
+
+    fn depends_on(&self) -> &'static [&'static str] {
+        &["skill_recipe_injection"]
     }
 
     fn execute<'a>(
@@ -1666,7 +870,7 @@ impl LocalWorkflowStep<LocalWorkflowContext> for RouteSelectionStep {
     }
 
     fn depends_on(&self) -> &'static [&'static str] {
-        &["semantic_memory_injection"]
+        &["asset_recall_injection"]
     }
 
     fn execute<'a>(
@@ -1674,15 +878,16 @@ impl LocalWorkflowStep<LocalWorkflowContext> for RouteSelectionStep {
         ctx: &'a mut LocalWorkflowContext,
     ) -> BoxFuture<'a, Result<(), String>> {
         Box::pin(async move {
-            let Some(query) = latest_user_message(&ctx.messages).map(str::to_string) else {
+            let Some(query) = ctx.latest_user_query().map(str::to_string) else {
                 return Ok(());
             };
 
             let discovery_bundle = ensure_runtime_discovery_bundle(ctx, &query).await;
-            let decision = maybe_override_route_with_custom_task_agent(
+            let decision = maybe_override_route_with_custom_task_agent_query_vector(
                 &ctx.app_state,
                 ctx.explicit_task_agent_id.as_deref(),
                 &query,
+                ctx.request_query_embedding.clone(),
                 select_local_route_with_evidence(&query, discovery_bundle.route_evidence.clone()),
             )
             .await?;
@@ -1725,7 +930,7 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SkillRecipeInjectionStep {
         ctx: &'a mut LocalWorkflowContext,
     ) -> BoxFuture<'a, Result<(), String>> {
         Box::pin(async move {
-            let Some(query) = latest_user_message(&ctx.messages).map(str::to_string) else {
+            let Some(query) = ctx.latest_user_query().map(str::to_string) else {
                 return Ok(());
             };
 
@@ -1763,7 +968,6 @@ impl LocalWorkflowStep<LocalWorkflowContext> for TemplateRenderStep {
             "semantic_memory_injection",
             "route_selection",
             "skill_recipe_injection",
-            "active_capability_hint",
             "prompt_variant_selection",
         ]
     }
@@ -2313,7 +1517,7 @@ pub async fn execute_local_orchestrated_chat(
             .append_local_conversation_message(CreateConversationMessageRequest {
                 session_id: session_id.clone(),
                 role: "assistant".to_string(),
-                content: response_text.clone(),
+                content: String::new(),
                 name: None,
                 meta_info: assistant_meta.clone(),
                 is_truncated: Some(false),

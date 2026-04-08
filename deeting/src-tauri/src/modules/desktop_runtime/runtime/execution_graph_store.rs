@@ -566,7 +566,9 @@ mod tests {
         migrate_execution_graph_runtime_bootstrap, persist_execution_graph_runtime_context,
     };
     use crate::modules::mcp::store::McpStore;
-    use mcp_session::conversation::{CreateConversationMessageRequest, LocalConversationCreateRequest};
+    use mcp_session::conversation::{
+        CreateConversationMessageRequest, LocalConversationCreateRequest,
+    };
     use sqlx::Row;
     use uuid::Uuid;
 
@@ -649,7 +651,10 @@ mod tests {
                 .expect("source_kind"),
             "desktop_local_chat_history_backfill"
         );
-        assert_eq!(row.try_get::<String, _>("status").expect("status"), "completed");
+        assert_eq!(
+            row.try_get::<String, _>("status").expect("status"),
+            "completed"
+        );
     }
 
     #[tokio::test]
@@ -671,13 +676,16 @@ mod tests {
         .bind("local")
         .bind("waiting_approval")
         .bind("desktop_local_chat_waiting_approval")
-        .bind(serde_json::json!({
-            "execution_id": "graph-runtime-1",
-            "route": "chat",
-            "plane": "local",
-            "nodes": [],
-            "events": []
-        }).to_string())
+        .bind(
+            serde_json::json!({
+                "execution_id": "graph-runtime-1",
+                "route": "chat",
+                "plane": "local",
+                "nodes": [],
+                "events": []
+            })
+            .to_string(),
+        )
         .execute(&store.write_pool)
         .await
         .expect("insert execution run");

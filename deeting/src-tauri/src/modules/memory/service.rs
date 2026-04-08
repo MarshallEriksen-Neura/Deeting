@@ -388,6 +388,14 @@ impl MemoryService {
             .embed_text(&query.query)
             .await
             .map_err(|e| MemoryError::Storage(format!("failed to embed search query: {}", e)))?;
+        self.search_with_query_vector(query, query_vector).await
+    }
+
+    pub async fn search_with_query_vector(
+        &self,
+        query: LocalMemorySearchQuery,
+        query_vector: Vec<f32>,
+    ) -> Result<LocalMemorySearchResult, MemoryError> {
         let limit = query.limit.unwrap_or(10).clamp(1, 100);
         let overfetch = limit * RERANK_OVERFETCH_FACTOR;
 
@@ -628,54 +636,37 @@ impl MemoryService {
             }
         };
 
+        self.search_knowledge_with_query_vector(query_vector, limit)
+            .await
+    }
+
+    pub async fn search_knowledge_with_query_vector(
+        &self,
+        query_vector: Vec<f32>,
+        limit: usize,
+    ) -> Result<Vec<crate::modules::memory::types::KnowledgeSearchResult>, MemoryError> {
         let clamped_limit = limit.clamp(1, 100);
         let results = self
             .store
             .search_knowledge_chunk_assets(query_vector, clamped_limit)
             .await?;
 
-        let mut hits = Vec::new();
-        for item in results {
-            let pkg_name = item.get("pkg_name").and_then(|v| v.as_str());
-            let document_id = pkg_name.map(|value| value.to_string());
-            let chunk_id = item
-                .get("id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let content = item
-                .get("description")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let score = item
-                .get("_distance")
-                .and_then(|v| v.as_f64())
-                .map(|d| d as f32)
-                .unwrap_or(0.0);
-            let metadata = item.get("metadata").cloned();
-            let chunk_index = metadata
-                .as_ref()
-                .and_then(|m| m.get("chunk_index"))
-                .and_then(|v| v.as_i64());
-            let document_name = metadata
-                .as_ref()
-                .and_then(|m| m.get("document_name"))
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
+        Ok(map_knowledge_search_results(results))
+    }
 
-            hits.push(crate::modules::memory::types::KnowledgeSearchResult {
-                chunk_id,
-                content,
-                score,
-                document_id,
-                document_name,
-                chunk_index,
-                metadata,
-            });
-        }
+    pub async fn search_knowledge_with_query_vector_in_documents(
+        &self,
+        query_vector: Vec<f32>,
+        document_ids: &[String],
+        limit: usize,
+    ) -> Result<Vec<crate::modules::memory::types::KnowledgeSearchResult>, MemoryError> {
+        let clamped_limit = limit.clamp(1, 100);
+        let results = self
+            .store
+            .search_knowledge_chunk_assets_in_documents(query_vector, clamped_limit, document_ids)
+            .await?;
 
-        Ok(hits)
+        Ok(map_knowledge_search_results(results))
     }
 
     // --- backfill helpers ---
@@ -700,6 +691,52 @@ fn now_rfc3339() -> String {
     time::OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_default()
+}
+
+fn map_knowledge_search_results(
+    items: Vec<serde_json::Value>,
+) -> Vec<crate::modules::memory::types::KnowledgeSearchResult> {
+    let mut hits = Vec::new();
+    for item in items {
+        let pkg_name = item.get("pkg_name").and_then(|v| v.as_str());
+        let document_id = pkg_name.map(|value| value.to_string());
+        let chunk_id = item
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let content = item
+            .get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let score = item
+            .get("_distance")
+            .and_then(|v| v.as_f64())
+            .map(|d| d as f32)
+            .unwrap_or(0.0);
+        let metadata = item.get("metadata").cloned();
+        let chunk_index = metadata
+            .as_ref()
+            .and_then(|m| m.get("chunk_index"))
+            .and_then(|v| v.as_i64());
+        let document_name = metadata
+            .as_ref()
+            .and_then(|m| m.get("document_name"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        hits.push(crate::modules::memory::types::KnowledgeSearchResult {
+            chunk_id,
+            content,
+            score,
+            document_id,
+            document_name,
+            chunk_index,
+            metadata,
+        });
+    }
+    hits
 }
 
 /// Parse an RFC3339 timestamp and return days elapsed since that time.

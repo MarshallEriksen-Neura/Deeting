@@ -7,6 +7,7 @@ use crate::modules::desktop_runtime::runtime::search_feedback::{
 use crate::modules::desktop_runtime::runtime::search_ranking::{
     asset_score_key, bm25_asset_match_scores, normalize_score_map, reciprocal_rank_fusion,
 };
+use crate::modules::desktop_runtime::runtime::should_run_semantic_recall;
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::store::McpStore;
 use crate::state::AppState;
@@ -83,10 +84,20 @@ pub(crate) async fn save_local_asset<R: tauri::Runtime>(
         .ok_or_else(|| McpError::Storage("saved local asset could not be reloaded".to_string()))
 }
 
+#[allow(dead_code)]
 pub(crate) async fn find_best_local_asset_match(
     app_state: &AppState,
     session_id: Option<&str>,
     query: &str,
+) -> Result<Option<LocalAssetRecallMatch>, McpError> {
+    find_best_local_asset_match_with_query_vector(app_state, session_id, query, None).await
+}
+
+pub(crate) async fn find_best_local_asset_match_with_query_vector(
+    app_state: &AppState,
+    session_id: Option<&str>,
+    query: &str,
+    query_vector: Option<Vec<f32>>,
 ) -> Result<Option<LocalAssetRecallMatch>, McpError> {
     let store = app_state.mcp.store.as_ref();
     let normalized_query = normalize_match_text(query);
@@ -123,12 +134,19 @@ pub(crate) async fn find_best_local_asset_match(
             .collect::<std::collections::HashMap<_, _>>(),
     );
     let semantic_limit = assets.len().clamp(8, 64);
-    let semantic = if let Ok(vector) = app_state
-        .providers
-        .embedding
-        .embed_text(&normalized_query)
-        .await
-    {
+    let semantic_vector = if let Some(vector) = query_vector {
+        Some(vector)
+    } else if should_run_semantic_recall(&normalized_query) {
+        app_state
+            .providers
+            .embedding
+            .embed_text(&normalized_query)
+            .await
+            .ok()
+    } else {
+        None
+    };
+    let semantic = if let Some(vector) = semantic_vector {
         match app_state
             .memory
             .service

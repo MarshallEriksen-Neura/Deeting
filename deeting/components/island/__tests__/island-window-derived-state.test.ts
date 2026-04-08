@@ -66,4 +66,32 @@ describe("buildIslandWindowDerivedState", () => {
     expect(derived.statusLabel).toBe("Ready")
     expect(derived.lastReplyText).toBe("已经执行完成")
   })
+  it("does not fall back to legacy assistant content when blocks are absent", () => {
+    const derived = buildIslandWindowDerivedState({
+      messages: [
+        {
+          id: "user-1",
+          role: "user",
+          content: "hello",
+          createdAt: 1,
+        },
+        {
+          id: "assistant-legacy-only",
+          role: "assistant",
+          content: "Legacy answer only",
+          createdAt: 2,
+          blocks: [],
+        },
+      ],
+      isLoading: false,
+      globalLoading: false,
+      statusCode: null,
+      errorMessage: null,
+    })
+
+    expect(derived.lastReplyText).toBe("No replies yet.")
+    expect(
+      derived.recentMessages.some((message) => message.content === "Legacy answer only")
+    ).toBe(false)
+  })
 })

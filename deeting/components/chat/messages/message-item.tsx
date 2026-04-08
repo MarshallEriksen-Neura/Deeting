@@ -227,6 +227,7 @@ export const MessageItem = React.memo<MessageItemProps>(
               />
             ) : (
               <AIResponseBubble
+                messageId={message.id}
                 parts={assistantParts}
                 isActive={isActive}
                 streamEnabled={streamEnabled}
@@ -313,9 +314,13 @@ export const MessageItem = React.memo<MessageItemProps>(
   // 自定义比较函数，只在必要时重渲染
   (prevProps, nextProps) => {
     // 消息 ID 和内容相同
+    const assistantContentUnchanged =
+      prevProps.message.role === "assistant" && nextProps.message.role === "assistant"
+        ? true
+        : prevProps.message.content === nextProps.message.content
     const messageUnchanged =
       prevProps.message.id === nextProps.message.id &&
-      prevProps.message.content === nextProps.message.content &&
+      assistantContentUnchanged &&
       prevProps.message.metaInfo?.display_content ===
         nextProps.message.metaInfo?.display_content &&
       prevProps.message.blocks === nextProps.message.blocks

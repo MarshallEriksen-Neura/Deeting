@@ -15,6 +15,7 @@ pub mod prompt_plan;
 pub mod route_selector;
 pub mod search_feedback;
 pub mod search_ranking;
+pub mod semantic_recall;
 pub mod tool_feedback;
 pub mod tool_result_blocks;
 pub mod tool_trace;
@@ -34,17 +35,18 @@ pub(crate) use chat_completion::{
 #[cfg(test)]
 pub(crate) use code_mode_catalog::{
     build_local_code_mode_entry_tools, build_local_sdk_search_result_with_runtime,
+    build_local_sdk_search_result_with_runtime_full,
 };
 pub(crate) use code_mode_catalog::{
     build_local_code_mode_entry_tools_with_allowlist,
     build_local_sdk_search_result_bundle_with_feedback_runtime,
-    build_local_sdk_search_result_with_runtime_full, resolve_dynamic_direct_capability_tool_name,
+    resolve_dynamic_direct_capability_tool_name,
 };
 pub(crate) use code_mode_orchestration::{
     apply_rejected_tool_result_to_execution_graph,
     apply_rejected_tool_result_to_execution_graph_value,
-    resume_suspended_local_chat_after_approval,
-    run_local_chat_complete_with_auto_code_mode, SuspendedLocalChatExecution,
+    resume_suspended_local_chat_after_approval, run_local_chat_complete_with_auto_code_mode,
+    SuspendedLocalChatExecution,
 };
 pub(crate) use consult::LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION;
 #[cfg(test)]
@@ -52,8 +54,8 @@ pub(crate) use control_plane::LocalExecutionPlane;
 pub(crate) use control_plane::{
     apply_desktop_execution_policy_overrides, build_default_local_execution_policy,
     build_local_control_plane_result, build_local_control_plane_status_meta,
-    build_local_execution_policy, build_runtime_discovery_bundle_with_runtime,
-    maybe_override_route_with_custom_task_agent, select_worker_custom_task_agent,
+    build_local_execution_policy, build_runtime_discovery_bundle_with_runtime_query_vector,
+    maybe_override_route_with_custom_task_agent_query_vector, select_worker_custom_task_agent,
     LocalControlPlaneResult, LocalExecutionPolicy, RuntimeDiscoveryBundle,
 };
 #[cfg(test)]
@@ -64,14 +66,15 @@ pub(crate) use execution_graph::{
 };
 pub(crate) use execution_graph_store::{
     delete_execution_graph_runtime_context, load_execution_graph_runtime_context,
-    load_execution_graph_snapshot,
-    load_execution_graph_snapshot_by_approval_token, migrate_execution_graph_runtime_bootstrap,
-    persist_execution_graph_runtime_context, persist_execution_graph_snapshot,
+    load_execution_graph_snapshot, load_execution_graph_snapshot_by_approval_token,
+    migrate_execution_graph_runtime_bootstrap, persist_execution_graph_runtime_context,
+    persist_execution_graph_snapshot,
 };
 pub(crate) use execution_plane::{run_local_execution_plane, LocalExecutionRequest};
 pub(crate) use route_selector::{
     render_local_route_prompt, select_local_route_with_evidence, LocalRouteDecision, LocalRouteKind,
 };
+pub(crate) use semantic_recall::should_run_semantic_recall;
 #[cfg(test)]
 pub(crate) use tool_feedback::{
     build_auto_code_mode_tool_feedback, build_local_tool_call_install_gate_error_meta,

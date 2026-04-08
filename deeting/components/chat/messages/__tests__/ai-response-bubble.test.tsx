@@ -1,6 +1,7 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { AIResponseBubble } from "@/components/chat/messages/ai-response-bubble";
+import { useBridgeApprovalStore } from "@/lib/chat/bridge-approval-store";
 import type { MessageBlock } from "@/lib/chat/message-protocol";
 
 const terminalStreamMock = jest.fn();
@@ -64,9 +65,20 @@ jest.mock("framer-motion", () => ({
   AnimatePresence: ({ children }: React.PropsWithChildren) => <>{children}</>,
 }));
 
+jest.mock("@/lib/api/mcp-desktop", () => ({
+  streamDesktopApproveTool: jest.fn(),
+  rejectDesktopTool: jest.fn(),
+}));
+
+jest.mock("@/lib/api/bridge", () => ({
+  bridgeCallTool: jest.fn(),
+}));
+
 describe("AIResponseBubble debug panel", () => {
   beforeEach(() => {
     terminalStreamMock.mockClear();
+    useBridgeApprovalStore.getState().clearAll();
+    useBridgeApprovalStore.getState().clearRecentApprovedExecution();
   });
 
   it("keeps terminal stream visible in compact mode after content appears", () => {
@@ -151,6 +163,35 @@ describe("AIResponseBubble debug panel", () => {
     expect(screen.getByTestId("terminal-stream")).toBeInTheDocument();
     expect(screen.getByText("SDK Search")).toBeInTheDocument();
     expect(screen.getByTestId("view-block")).toBeInTheDocument();
+  });
+
+  it("renders inline approval buttons for pending approval tool calls", () => {
+    const parts: MessageBlock[] = [
+      {
+        id: "tool-approval-1",
+        type: "tool_call",
+        callId: "call-approval-1",
+        toolName: "search_notes",
+        status: "success",
+      },
+      {
+        id: "tool-approval-result-1",
+        type: "tool_result",
+        callId: "call-approval-1",
+        toolName: "search_notes",
+        status: "requires_approval",
+        result: {
+          status: "REQUIRES_APPROVAL",
+          approval_token: "approval-1",
+          tool_name: "search_notes",
+        },
+      },
+    ];
+
+    render(<AIResponseBubble messageId="assistant-1" parts={parts} />);
+
+    expect(screen.getByText("approvalDialog.actions.approve")).toBeInTheDocument();
+    expect(screen.getByText("approvalDialog.actions.reject")).toBeInTheDocument();
   });
 
   it("groups active multi-tool calls into one live block", () => {

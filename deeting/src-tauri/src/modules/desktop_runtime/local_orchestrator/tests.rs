@@ -601,6 +601,59 @@ fn build_selected_knowledge_fallback_hits_uses_document_leading_chunks() {
 }
 
 #[test]
+fn fuse_selected_knowledge_hits_merges_lexical_and_semantic_candidates() {
+    let lexical_hits = vec![
+        crate::modules::knowledge::types::LocalKnowledgeSearchHit {
+            chunk_id: "chunk-1".to_string(),
+            file_id: "file-1".to_string(),
+            file_name: "guide.docx".to_string(),
+            index: 0,
+            content: "lexical overlap".to_string(),
+            token_count: 6,
+            score: 12.0,
+        },
+        crate::modules::knowledge::types::LocalKnowledgeSearchHit {
+            chunk_id: "chunk-2".to_string(),
+            file_id: "file-1".to_string(),
+            file_name: "guide.docx".to_string(),
+            index: 1,
+            content: "lexical only".to_string(),
+            token_count: 4,
+            score: 8.0,
+        },
+    ];
+    let semantic_hits = vec![
+        crate::modules::knowledge::types::LocalKnowledgeSearchHit {
+            chunk_id: "chunk-3".to_string(),
+            file_id: "file-1".to_string(),
+            file_name: "guide.docx".to_string(),
+            index: 2,
+            content: "semantic only".to_string(),
+            token_count: 9,
+            score: 0.9,
+        },
+        crate::modules::knowledge::types::LocalKnowledgeSearchHit {
+            chunk_id: "chunk-1".to_string(),
+            file_id: "file-1".to_string(),
+            file_name: "guide.docx".to_string(),
+            index: 0,
+            content: "lexical overlap".to_string(),
+            token_count: 6,
+            score: 0.8,
+        },
+    ];
+
+    let hits = fuse_selected_knowledge_hits(lexical_hits, semantic_hits, 3);
+
+    assert_eq!(hits.len(), 3);
+    assert_eq!(hits[0].chunk_id, "chunk-1");
+    assert_eq!(hits[1].chunk_id, "chunk-3");
+    assert_eq!(hits[2].chunk_id, "chunk-2");
+    assert!(hits[0].score > hits[1].score);
+    assert!(hits[1].score > hits[2].score);
+}
+
+#[test]
 fn derive_local_finish_reason_uses_error_for_synthesized_failure_text() {
     assert_eq!(derive_local_finish_reason(&json!({}), true), "error");
     assert_eq!(derive_local_finish_reason(&json!({}), false), "stop");

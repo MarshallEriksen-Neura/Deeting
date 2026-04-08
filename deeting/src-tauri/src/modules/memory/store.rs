@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicI32, Ordering as AtomicOrdering};
 use std::sync::Arc;
 
@@ -395,7 +396,7 @@ impl MemoryStore {
         limit: usize,
         asset_type: Option<&str>,
     ) -> Result<Vec<serde_json::Value>, MemoryError> {
-        self.search_assets_in_table(LOCAL_ASSET_TABLE, vector, limit, asset_type)
+        self.search_assets_in_table(LOCAL_ASSET_TABLE, vector, limit, asset_type, None)
             .await
     }
 
@@ -404,8 +405,34 @@ impl MemoryStore {
         vector: Vec<f32>,
         limit: usize,
     ) -> Result<Vec<serde_json::Value>, MemoryError> {
-        self.search_assets_in_table(USER_KNOWLEDGE_CHUNK_TABLE, vector, limit, None)
+        self.search_assets_in_table(USER_KNOWLEDGE_CHUNK_TABLE, vector, limit, None, None)
             .await
+    }
+
+    pub async fn search_knowledge_chunk_assets_in_documents(
+        &self,
+        vector: Vec<f32>,
+        limit: usize,
+        document_ids: &[String],
+    ) -> Result<Vec<serde_json::Value>, MemoryError> {
+        let normalized_document_ids = document_ids
+            .iter()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>();
+        if normalized_document_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        self.search_assets_in_table(
+            USER_KNOWLEDGE_CHUNK_TABLE,
+            vector,
+            limit,
+            None,
+            Some(normalized_document_ids.as_slice()),
+        )
+        .await
     }
 
     pub async fn list_assets_catalog(&self) -> Result<Vec<serde_json::Value>, MemoryError> {
@@ -452,12 +479,13 @@ impl MemoryStore {
         vector: Vec<f32>,
         limit: usize,
         asset_type: Option<&str>,
+        package_names: Option<&[String]>,
     ) -> Result<Vec<serde_json::Value>, MemoryError> {
         let table = self.conn.open_table(table_name).execute().await?;
         let mut vector_query = table.vector_search(vector.clone())?.limit(limit);
 
-        if let Some(t) = asset_type {
-            vector_query = vector_query.only_if(format!("asset_type = '{}'", sql_escape(t)));
+        if let Some(filter) = build_asset_search_filter_sql(asset_type, package_names) {
+            vector_query = vector_query.only_if(filter);
         }
 
         match vector_query.execute().await {
@@ -471,8 +499,14 @@ impl MemoryStore {
             Err(_) => {}
         }
 
-        self.search_assets_linear_fallback_in_table(table_name, vector, limit, asset_type)
-            .await
+        self.search_assets_linear_fallback_in_table(
+            table_name,
+            vector,
+            limit,
+            asset_type,
+            package_names,
+        )
+        .await
     }
 
     async fn search_assets_linear_fallback_in_table(
@@ -481,6 +515,7 @@ impl MemoryStore {
         vector: Vec<f32>,
         limit: usize,
         asset_type: Option<&str>,
+        package_names: Option<&[String]>,
     ) -> Result<Vec<serde_json::Value>, MemoryError> {
         let table = self.conn.open_table(table_name).execute().await?;
         let batches = table
@@ -489,6 +524,13 @@ impl MemoryStore {
             .await?
             .try_collect::<Vec<_>>()
             .await?;
+        let package_name_filter = package_names.map(|values| {
+            values
+                .iter()
+                .map(|value| value.trim())
+                .filter(|value| !value.is_empty())
+                .collect::<HashSet<_>>()
+        });
         let mut results = Vec::new();
         for batch in batches {
             let id_col = as_string_col(&batch, "id")?;
@@ -519,6 +561,16 @@ impl MemoryStore {
                         continue;
                     }
                 }
+                let package_name = nullable_string(pkg_col, row);
+                if let Some(expected_package_names) = package_name_filter.as_ref() {
+                    let Some(candidate_package_name) = package_name.as_deref().map(str::trim)
+                    else {
+                        continue;
+                    };
+                    if !expected_package_names.contains(candidate_package_name) {
+                        continue;
+                    }
+                }
                 let start = row.saturating_mul(value_len);
                 let end = start.saturating_add(value_len);
                 if end > values_col.len() {
@@ -540,7 +592,7 @@ impl MemoryStore {
                     "description": desc_col.value(row),
                     "asset_type": asset_type_value,
                     "source_type": s_type_col.value(row),
-                    "pkg_name": nullable_string(pkg_col, row),
+                    "pkg_name": package_name,
                     "metadata": nullable_string(meta_col, row)
                         .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()),
                     "_distance": score,
@@ -1813,6 +1865,31 @@ fn cosine_similarity(query: &[f32], candidate: &[f32]) -> f32 {
     dot / (query_norm.sqrt() * candidate_norm.sqrt())
 }
 
+fn build_asset_search_filter_sql(
+    asset_type: Option<&str>,
+    package_names: Option<&[String]>,
+) -> Option<String> {
+    let mut clauses = Vec::new();
+
+    if let Some(value) = asset_type.map(str::trim).filter(|value| !value.is_empty()) {
+        clauses.push(format!("asset_type = '{}'", sql_escape(value)));
+    }
+
+    if let Some(values) = package_names {
+        let normalized_values = values
+            .iter()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+            .map(|value| format!("'{}'", sql_escape(value)))
+            .collect::<Vec<_>>();
+        if !normalized_values.is_empty() {
+            clauses.push(format!("pkg_name IN ({})", normalized_values.join(", ")));
+        }
+    }
+
+    (!clauses.is_empty()).then(|| clauses.join(" AND "))
+}
+
 fn read_items_from_batch(batch: &RecordBatch) -> Result<Vec<LocalMemoryItem>, MemoryError> {
     let id_col = as_string_col(batch, "id")?;
     let content_col = as_string_col(batch, "content")?;
@@ -2036,6 +2113,18 @@ mod tests {
             embedding[1] = 0.1;
         }
         embedding
+    }
+
+    #[test]
+    fn build_asset_search_filter_sql_combines_asset_type_and_package_names() {
+        let package_names = vec!["doc-1".to_string(), "doc-2".to_string()];
+        let filter = build_asset_search_filter_sql(Some("knowledge_chunk"), Some(&package_names))
+            .expect("filter");
+
+        assert_eq!(
+            filter,
+            "asset_type = 'knowledge_chunk' AND pkg_name IN ('doc-1', 'doc-2')"
+        );
     }
 
     #[tokio::test]

@@ -193,7 +193,6 @@ pub struct LocalConversationCompareFinalizeRequest {
     pub session_id: String,
     pub model_id: String,
     pub provider_model_id: Option<String>,
-    pub content: String,
     pub blocks: Option<Vec<Value>>,
 }
 

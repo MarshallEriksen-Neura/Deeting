@@ -40,7 +40,6 @@ export type LocalConversationCompareFinalizeRequest = {
   session_id: string
   model_id: string
   provider_model_id?: string
-  content: string
   blocks?: unknown[]
 }
 
@@ -70,7 +69,7 @@ const sleep = (ms: number) =>
     setTimeout(resolve, ms)
   })
 
-async function resolveLocalGatewayBaseUrl() {
+export async function resolveLocalGatewayBaseUrl() {
   if (localGatewayBaseUrlCache) return localGatewayBaseUrlCache
   if (localGatewayBaseUrlInflight) return localGatewayBaseUrlInflight
 

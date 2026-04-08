@@ -24,11 +24,33 @@ pub(crate) async fn build_search_sdk_result(
     limit: usize,
     detail_level: SearchSdkDetailLevel,
 ) -> Value {
+    build_search_sdk_result_with_query_vector(
+        mcp_store,
+        embedding_service,
+        memory_store,
+        query,
+        None,
+        limit,
+        detail_level,
+    )
+    .await
+}
+
+pub(crate) async fn build_search_sdk_result_with_query_vector(
+    mcp_store: &crate::modules::mcp::store::McpStore,
+    embedding_service: &crate::modules::providers::embedding::EmbeddingService,
+    memory_store: &crate::modules::memory::service::MemoryService,
+    query: &str,
+    query_vector: Option<Vec<f32>>,
+    limit: usize,
+    detail_level: SearchSdkDetailLevel,
+) -> Value {
     crate::modules::desktop_runtime::runtime::capability_discovery::build_capability_search_result(
         mcp_store,
         embedding_service,
         memory_store,
         query,
+        query_vector,
         limit,
         detail_level,
     )
@@ -43,11 +65,33 @@ pub(crate) async fn build_search_sdk_result_bundle_with_feedback(
     limit: usize,
     feedback_context: &crate::modules::desktop_runtime::runtime::search_feedback::SearchFeedbackContext,
 ) -> CapabilitySearchResultBundle {
+    build_search_sdk_result_bundle_with_feedback_and_query_vector(
+        mcp_store,
+        embedding_service,
+        memory_store,
+        query,
+        None,
+        limit,
+        feedback_context,
+    )
+    .await
+}
+
+pub(crate) async fn build_search_sdk_result_bundle_with_feedback_and_query_vector(
+    mcp_store: &crate::modules::mcp::store::McpStore,
+    embedding_service: &crate::modules::providers::embedding::EmbeddingService,
+    memory_store: &crate::modules::memory::service::MemoryService,
+    query: &str,
+    query_vector: Option<Vec<f32>>,
+    limit: usize,
+    feedback_context: &crate::modules::desktop_runtime::runtime::search_feedback::SearchFeedbackContext,
+) -> CapabilitySearchResultBundle {
     crate::modules::desktop_runtime::runtime::capability_discovery::build_capability_search_result_bundle_with_feedback(
         mcp_store,
         embedding_service,
         memory_store,
         query,
+        query_vector,
         limit,
         feedback_context,
     )

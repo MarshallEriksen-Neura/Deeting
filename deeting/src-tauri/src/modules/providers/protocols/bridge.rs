@@ -4,6 +4,7 @@ use crate::modules::providers::protocols::canonical::{
     CanonicalClientContext, CanonicalInputItem, CanonicalMessage, CanonicalRequest,
     CanonicalToolCall,
 };
+use crate::modules::providers::protocols::content::normalize_message_content_value;
 use crate::modules::providers::protocols::profile::{
     ProfileAuthConfig, ProfileDefaults, ProfileFeatureFlags, ProfileRequestConfig,
     ProfileResponseConfig, ProfileStreamConfig, ProfileTransport, ProtocolProfile, RuntimeHook,
@@ -176,50 +177,6 @@ fn deep_merge_json(base: &Value, override_value: &Value) -> Value {
     override_value.clone()
 }
 
-fn is_structured_chat_content(value: &Value) -> bool {
-    match value {
-        Value::Array(items) => {
-            !items.is_empty()
-                && items.iter().all(|item| {
-                    item.as_object()
-                        .and_then(|object| object.get("type").and_then(|entry| entry.as_str()))
-                        .is_some()
-                })
-        }
-        Value::Object(object) => object
-            .get("type")
-            .and_then(|entry| entry.as_str())
-            .is_some(),
-        _ => false,
-    }
-}
-
-fn parse_structured_message_content(raw: &str) -> Option<Value> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    if !(trimmed.starts_with('[') || trimmed.starts_with('{')) {
-        return None;
-    }
-    let parsed = serde_json::from_str::<Value>(trimmed).ok()?;
-    if is_structured_chat_content(&parsed) {
-        Some(parsed)
-    } else {
-        None
-    }
-}
-
-fn normalize_message_content_value(value: Option<&Value>) -> Value {
-    match value {
-        Some(Value::String(text)) => {
-            parse_structured_message_content(text).unwrap_or_else(|| Value::String(text.clone()))
-        }
-        Some(other) => other.clone(),
-        None => Value::Null,
-    }
-}
-
 pub fn build_canonical_request_from_value(
     request_data: &Value,
     capability: &str,
@@ -252,7 +209,7 @@ pub fn build_canonical_request_from_value(
                     let role = item.get("role").and_then(|value| value.as_str())?;
                     Some(CanonicalMessage {
                         role: role.to_string(),
-                        content: normalize_message_content_value(item.get("content")),
+                        content: normalize_message_content_value(role, item.get("content")),
                         tool_calls: canonical_tool_calls_from_message(item),
                         tool_call_id: item
                             .get("tool_call_id")
@@ -895,6 +852,28 @@ mod tests {
         );
         assert_eq!(request.input_items[2].r#type, "input_file");
         assert_eq!(request.input_items[2].data["file_id"], json!("file-1"));
+    }
+
+    #[test]
+    fn build_canonical_request_keeps_tool_json_string_content_plain() {
+        let raw_tool_content =
+            "[{\"type\":\"text\",\"text\":\"Detailed Results:\"},{\"type\":\"text\",\"text\":\"1. Example\"}]";
+        let request = build_canonical_request_from_value(
+            &json!({
+                "model": "gpt-4o-mini",
+                "messages": [
+                    {
+                        "role": "tool",
+                        "tool_call_id": "call_123",
+                        "content": raw_tool_content
+                    }
+                ]
+            }),
+            "chat",
+            "openai_chat",
+        );
+
+        assert_eq!(request.messages[0].content, json!(raw_tool_content));
     }
 
     #[test]

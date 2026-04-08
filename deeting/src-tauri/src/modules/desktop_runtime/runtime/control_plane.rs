@@ -1,6 +1,7 @@
 use super::prompt_assets::PromptAssets;
 use super::prompt_plan::build_local_prompt_plan;
-use super::{build_local_sdk_search_result_with_runtime_full, LocalRouteDecision, LocalRouteKind};
+use super::should_run_semantic_recall;
+use super::{LocalRouteDecision, LocalRouteKind};
 use crate::modules::custom_task_agents::store::{get_custom_task_agent, list_custom_task_agents};
 use crate::modules::custom_task_agents::types::{
     CustomTaskAgentInvocationKind, CustomTaskAgentProfile,
@@ -30,6 +31,7 @@ pub(crate) struct WorkerTargetSelection {
     pub(crate) reason: String,
 }
 
+#[allow(dead_code)]
 pub(crate) async fn build_runtime_discovery_bundle_with_runtime(
     mcp_store: &McpStore,
     embedding_service: &EmbeddingService,
@@ -37,13 +39,34 @@ pub(crate) async fn build_runtime_discovery_bundle_with_runtime(
     query: &str,
     limit: usize,
 ) -> RuntimeDiscoveryBundle {
+    build_runtime_discovery_bundle_with_runtime_query_vector(
+        mcp_store,
+        embedding_service,
+        memory_store,
+        query,
+        None,
+        limit,
+    )
+    .await
+}
+
+pub(crate) async fn build_runtime_discovery_bundle_with_runtime_query_vector(
+    mcp_store: &McpStore,
+    embedding_service: &EmbeddingService,
+    memory_store: &MemoryService,
+    query: &str,
+    query_vector: Option<Vec<f32>>,
+    limit: usize,
+) -> RuntimeDiscoveryBundle {
     RuntimeDiscoveryBundle::from_search_result(
-        build_local_sdk_search_result_with_runtime_full(
+        crate::modules::capability_control_plane::build_search_sdk_result_with_query_vector(
             mcp_store,
             embedding_service,
             memory_store,
             query,
+            query_vector,
             limit,
+            super::capability_discovery::SearchSdkDetailLevel::Full,
         )
         .await,
     )
@@ -110,10 +133,28 @@ fn parse_desktop_config_bool(raw: Option<&str>) -> bool {
     )
 }
 
+#[allow(dead_code)]
 pub(crate) async fn maybe_override_route_with_custom_task_agent(
     app_state: &AppState,
     explicit_task_agent_id: Option<&str>,
     query: &str,
+    decision: LocalRouteDecision,
+) -> Result<LocalRouteDecision, String> {
+    maybe_override_route_with_custom_task_agent_query_vector(
+        app_state,
+        explicit_task_agent_id,
+        query,
+        None,
+        decision,
+    )
+    .await
+}
+
+pub(crate) async fn maybe_override_route_with_custom_task_agent_query_vector(
+    app_state: &AppState,
+    explicit_task_agent_id: Option<&str>,
+    query: &str,
+    query_vector: Option<Vec<f32>>,
     mut decision: LocalRouteDecision,
 ) -> Result<LocalRouteDecision, String> {
     if explicit_task_agent_id
@@ -121,8 +162,13 @@ pub(crate) async fn maybe_override_route_with_custom_task_agent(
         .filter(|value| !value.is_empty())
         .is_some()
     {
-        let Some(selection) =
-            select_worker_custom_task_agent(app_state, explicit_task_agent_id, query).await?
+        let Some(selection) = select_worker_custom_task_agent_with_query_vector(
+            app_state,
+            explicit_task_agent_id,
+            query,
+            query_vector.clone(),
+        )
+        .await?
         else {
             return Ok(decision);
         };
@@ -149,8 +195,13 @@ pub(crate) async fn maybe_override_route_with_custom_task_agent(
         return Ok(decision);
     }
 
-    let Some(selection) =
-        select_worker_custom_task_agent(app_state, explicit_task_agent_id, query).await?
+    let Some(selection) = select_worker_custom_task_agent_with_query_vector(
+        app_state,
+        explicit_task_agent_id,
+        query,
+        query_vector,
+    )
+    .await?
     else {
         return Ok(decision);
     };
@@ -174,6 +225,21 @@ pub(crate) async fn select_worker_custom_task_agent(
     explicit_task_agent_id: Option<&str>,
     query: &str,
 ) -> Result<Option<WorkerTargetSelection>, String> {
+    select_worker_custom_task_agent_with_query_vector(
+        app_state,
+        explicit_task_agent_id,
+        query,
+        None,
+    )
+    .await
+}
+
+pub(crate) async fn select_worker_custom_task_agent_with_query_vector(
+    app_state: &AppState,
+    explicit_task_agent_id: Option<&str>,
+    query: &str,
+    query_vector: Option<Vec<f32>>,
+) -> Result<Option<WorkerTargetSelection>, String> {
     if let Some(selection) =
         select_explicit_worker_custom_task_agent(app_state, explicit_task_agent_id).await?
     {
@@ -192,8 +258,14 @@ pub(crate) async fn select_worker_custom_task_agent(
     }
 
     let mut semantic_ranks = HashMap::new();
-    let embedded = app_state.providers.embedding.embed_text(query).await;
-    if let Ok(vector) = embedded {
+    let semantic_vector = if let Some(vector) = query_vector {
+        Some(vector)
+    } else if should_run_semantic_recall(query) {
+        app_state.providers.embedding.embed_text(query).await.ok()
+    } else {
+        None
+    };
+    if let Some(vector) = semantic_vector {
         if let Ok(hits) = app_state
             .memory
             .service

@@ -50,7 +50,7 @@ describe("useChatStore session state", () => {
     expect(useChatStore.getState().isLoading).toBe(false)
   })
 
-  it("setMessageBlocks should sync assistant content from text blocks", () => {
+  it("setMessageBlocks should keep assistant content empty even when text blocks exist", () => {
     useChatStore.setState({
       messages: [
         {
@@ -70,11 +70,11 @@ describe("useChatStore session state", () => {
     ])
 
     const message = useChatStore.getState().messages[0]
-    expect(message?.content).toBe("hello world")
+    expect(message?.content).toBe("")
     expect(message?.blocks).toHaveLength(3)
   })
 
-  it("appendMessageBlocks should keep assistant content in sync", () => {
+  it("appendMessageBlocks should keep assistant content empty", () => {
     useChatStore.setState({
       messages: [
         {
@@ -93,7 +93,7 @@ describe("useChatStore session state", () => {
     ])
 
     const message = useChatStore.getState().messages[0]
-    expect(message?.content).toBe("AB")
+    expect(message?.content).toBe("")
     expect(message?.blocks?.some((block) => block.type === "tool_result")).toBe(true)
   })
 
@@ -249,7 +249,7 @@ describe("useChatStore session state", () => {
     ])
 
     const message = useChatStore.getState().messages[0]
-    expect(message?.content).toBe("AB")
+    expect(message?.content).toBe("")
     expect(message?.blocks?.filter((block) => block.type === "text")).toHaveLength(1)
   })
 
@@ -383,7 +383,7 @@ describe("useChatStore session state", () => {
         {
           id: "assistant-compare-1",
           role: "assistant",
-          content: "baseline",
+          content: "",
           createdAt: 1,
           blocks: [{ id: "baseline-block", type: "text", content: "baseline" } as any],
         },
@@ -415,7 +415,7 @@ describe("useChatStore session state", () => {
     expect(state?.baselineModelKey).toBe("model-a")
     expect(state?.activeModelKey).toBe("model-b")
     expect(state?.candidates["model-b"]?.content).toBe("candidate")
-    expect(useChatStore.getState().messages[0]?.content).toBe("baseline")
+    expect(useChatStore.getState().messages[0]?.content).toBe("")
   })
 
   it("should clear compare state when target message disappears", () => {

@@ -8,6 +8,7 @@ use crate::modules::ai_upstream::gateway_log_recorder::{
 };
 use crate::modules::ai_upstream::types::LocalModelConnection;
 use crate::modules::providers::protocols::infer_protocol_family;
+use crate::modules::providers::protocols::parse_structured_message_content;
 use crate::modules::providers::request_runtime::{
     send_prepared_json_request_with_retry, UpstreamRetryPolicy,
 };
@@ -25,45 +26,13 @@ fn now_rfc3339() -> String {
         .unwrap_or_default()
 }
 
-fn is_structured_chat_content(value: &serde_json::Value) -> bool {
-    match value {
-        serde_json::Value::Array(items) => {
-            !items.is_empty()
-                && items.iter().all(|item| {
-                    item.as_object()
-                        .and_then(|object| object.get("type").and_then(|entry| entry.as_str()))
-                        .is_some()
-                })
-        }
-        serde_json::Value::Object(object) => object
-            .get("type")
-            .and_then(|entry| entry.as_str())
-            .is_some(),
-        _ => false,
-    }
-}
-
-fn parse_structured_message_content(raw: &str) -> Option<serde_json::Value> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    if !(trimmed.starts_with('[') || trimmed.starts_with('{')) {
-        return None;
-    }
-    let parsed = serde_json::from_str::<serde_json::Value>(trimmed).ok()?;
-    if is_structured_chat_content(&parsed) {
-        Some(parsed)
-    } else {
-        None
-    }
-}
-
 fn serialize_local_chat_messages(messages: Vec<LocalChatInputMessage>) -> serde_json::Value {
     serde_json::Value::Array(
         messages
             .into_iter()
             .map(|message| {
+                let should_parse_structured_content =
+                    matches!(message.role.trim().to_ascii_lowercase().as_str(), "user");
                 let mut value = serde_json::to_value(&message).unwrap_or_else(|_| {
                     serde_json::json!({
                         "role": message.role,
@@ -73,9 +42,11 @@ fn serialize_local_chat_messages(messages: Vec<LocalChatInputMessage>) -> serde_
                         "name": message.name,
                     })
                 });
-                if let Some(content) = parse_structured_message_content(&message.content) {
-                    if let Some(object) = value.as_object_mut() {
-                        object.insert("content".to_string(), content);
+                if should_parse_structured_content {
+                    if let Some(content) = parse_structured_message_content(&message.content) {
+                        if let Some(object) = value.as_object_mut() {
+                            object.insert("content".to_string(), content);
+                        }
                     }
                 }
                 value
@@ -854,6 +825,23 @@ mod tests {
         assert!(serialized[0]["content"].is_array());
         assert_eq!(serialized[0]["content"][0]["type"], json!("text"));
         assert_eq!(serialized[0]["content"][1]["type"], json!("image_url"));
+    }
+
+    #[test]
+    fn serialize_local_chat_messages_keeps_tool_content_as_plain_string() {
+        let tool_output =
+            "[{\"type\":\"text\",\"text\":\"Detailed Results:\"},{\"type\":\"text\",\"text\":\"1. Example\"}]";
+        let messages = vec![LocalChatInputMessage {
+            role: "tool".to_string(),
+            content: tool_output.to_string(),
+            tool_calls: vec![],
+            tool_call_id: Some("call_123".to_string()),
+            name: Some("search_sdk".to_string()),
+        }];
+
+        let serialized = serialize_local_chat_messages(messages);
+
+        assert_eq!(serialized[0]["content"], json!(tool_output));
     }
 
     #[test]

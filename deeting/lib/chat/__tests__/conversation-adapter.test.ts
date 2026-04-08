@@ -31,7 +31,7 @@ describe("normalizeConversationMessages", () => {
         content: "### 优势\n- 同配置价格更低\n- 散热表现中等偏上",
       }),
     ])
-    expect(message?.content).toBe("### 优势\n- 同配置价格更低\n- 散热表现中等偏上")
+    expect(message?.content).toBe("")
   })
 
   it("enforces block-first when assistant meta blocks are empty", () => {
@@ -81,7 +81,7 @@ describe("normalizeConversationMessages", () => {
       }
     )
 
-    expect(message?.content).toBe("第一行\n第二行\n第三行")
+    expect(message?.content).toBe("")
     expect(message?.blocks).toEqual([
       expect.objectContaining({
         type: "text",

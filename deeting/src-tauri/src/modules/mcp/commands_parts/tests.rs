@@ -3459,7 +3459,6 @@ for raw_line in sys.stdin:
                     session_id: session.session_id.clone(),
                     model_id: "compare-model".to_string(),
                     provider_model_id: Some("provider-compare".to_string()),
-                    content: "建议先杭州后上海，节奏更轻松。".to_string(),
                     blocks: Some(vec![serde_json::json!({
                         "type": "text",
                         "content": "建议先杭州后上海，节奏更轻松。"
@@ -3470,10 +3469,7 @@ for raw_line in sys.stdin:
             .expect("finalize compare winner");
 
         assert_eq!(Some(response.replaced_turn_index), baseline.turn_index);
-        assert_eq!(
-            response.message.content,
-            Some(serde_json::json!("建议先杭州后上海，节奏更轻松。"))
-        );
+        assert_eq!(response.message.content, None);
         assert_eq!(response.message.role, "assistant");
         let meta = response.message.meta_info.expect("winner meta info");
         assert_eq!(meta["model_id"], serde_json::json!("compare-model"));
@@ -3500,17 +3496,14 @@ for raw_line in sys.stdin:
             .filter(|message| message.role == "assistant")
             .collect();
         assert_eq!(assistant_messages.len(), 1);
-        assert_eq!(assistant_messages[0].content, response.message.content);
+        assert_eq!(assistant_messages[0].content, None);
 
         let runtime_window = store
             .load_local_conversation_runtime_window(&session.session_id)
             .await
             .expect("load runtime window");
         assert_eq!(runtime_window.messages.len(), 2);
-        assert_eq!(
-            runtime_window.messages[1].content,
-            response.message.content.clone()
-        );
+        assert_eq!(runtime_window.messages[1].content, None);
         let meta = runtime_window.meta.expect("runtime window meta");
         assert_eq!(meta["last_model_id"], serde_json::json!("compare-model"));
         assert_eq!(
@@ -3549,16 +3542,13 @@ for raw_line in sys.stdin:
                     session_id: session.session_id.clone(),
                     model_id: "compare-model".to_string(),
                     provider_model_id: None,
-                    content: "候选答案".to_string(),
                     blocks: None,
                 },
             )
             .await
-            .expect_err("should require latest assistant");
+            .expect_err("should require blocks");
 
-        assert!(error
-            .to_string()
-            .contains("latest assistant message not found"));
+        assert!(error.to_string().contains("blocks is required"));
     }
 
     #[tokio::test]

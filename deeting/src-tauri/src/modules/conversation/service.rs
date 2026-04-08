@@ -372,9 +372,9 @@ pub async fn reject_tool(
 ) -> Result<ApprovalActionResult, String> {
     use crate::modules::desktop_runtime::runtime::{
         apply_rejected_tool_result_to_execution_graph,
-        apply_rejected_tool_result_to_execution_graph_value, delete_execution_graph_runtime_context,
-        load_execution_graph_snapshot, load_execution_graph_snapshot_by_approval_token,
-        persist_execution_graph_snapshot,
+        apply_rejected_tool_result_to_execution_graph_value,
+        delete_execution_graph_runtime_context, load_execution_graph_snapshot,
+        load_execution_graph_snapshot_by_approval_token, persist_execution_graph_snapshot,
     };
     use crate::modules::mcp::commands::runtime::reject_mcp_tool_inner;
 
@@ -404,10 +404,12 @@ pub async fn reject_tool(
         None
     };
     if persisted_graph.is_none() {
-        persisted_graph =
-            load_execution_graph_snapshot_by_approval_token(app_state.mcp.store.as_ref(), approval_token)
-                .await
-                .map_err(|err| err.to_string())?;
+        persisted_graph = load_execution_graph_snapshot_by_approval_token(
+            app_state.mcp.store.as_ref(),
+            approval_token,
+        )
+        .await
+        .map_err(|err| err.to_string())?;
     }
     if let Some(mut execution_graph) = persisted_graph {
         let execution_id = execution_graph

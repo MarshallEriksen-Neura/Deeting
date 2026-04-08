@@ -403,10 +403,11 @@ function getAssistantBlocksForCandidate(message: Message): MessageBlock[] {
     streamState: "completed",
   })
   if (executionBlocks.length > 0) return executionBlocks
-  if (message.content.trim()) {
-    return [{ type: "text", content: message.content } as MessageBlock]
-  }
   return []
+}
+
+function getAssistantShadowContentForCandidate(message: Message): string {
+  return extractAssistantTextFromBlocks(getAssistantBlocksForCandidate(message))
 }
 
 export function useChatMessagingService() {
@@ -1279,12 +1280,13 @@ export function useChatMessagingService() {
     }
 
     const baselineModelKey = baselineModel.provider_model_id ?? baselineModel.id
+    const baselineBlocks = getAssistantBlocksForCandidate(targetMessage)
     const baselineCandidate: CompareCandidate = {
       modelKey: baselineModelKey,
       modelId: baselineModel.id,
       providerModelId: baselineModel.provider_model_id ?? undefined,
-      content: targetMessage.content,
-      blocks: getAssistantBlocksForCandidate(targetMessage),
+      content: getAssistantShadowContentForCandidate(targetMessage),
+      blocks: baselineBlocks,
       loading: false,
       baseline: true,
       traceId:
@@ -1487,7 +1489,6 @@ export function useChatMessagingService() {
         session_id: resolvedSessionId,
         model_id: candidate.modelId,
         provider_model_id: candidate.providerModelId,
-        content: candidate.content,
         blocks: candidate.blocks as unknown[],
       })
       if (response.session_id) {
@@ -1518,7 +1519,7 @@ export function useChatMessagingService() {
 
       replaceAssistantMessage(targetMessageId, {
         ...(normalized ?? currentMessage),
-        content: candidate.content,
+        content: "",
         blocks: candidate.blocks,
         metaInfo: {
           ...(normalized?.metaInfo ?? currentMessage.metaInfo ?? {}),

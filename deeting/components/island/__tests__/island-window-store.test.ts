@@ -69,8 +69,9 @@ describe("useIslandWindowStore", () => {
         {
           id: "assistant-1",
           role: "assistant",
-          content: "Previous answer",
+          content: "",
           createdAt: 2,
+          blocks: [{ id: "assistant-1-text", type: "text", content: "Previous answer" }],
         },
         {
           id: "user-1",
@@ -81,8 +82,9 @@ describe("useIslandWindowStore", () => {
         {
           id: "assistant-2",
           role: "assistant",
-          content: "new reply",
+          content: "",
           createdAt: 4,
+          blocks: [{ id: "assistant-2-text", type: "text", content: "new reply" }],
         },
       ],
       nextCursor: null,
@@ -143,8 +145,9 @@ describe("useIslandWindowStore", () => {
         {
           id: "assistant-2",
           role: "assistant",
-          content: "new reply",
+          content: "",
           createdAt: 4,
+          blocks: [{ id: "assistant-2-text", type: "text", content: "new reply" }],
         },
       ],
       nextCursor: null,

@@ -67,13 +67,6 @@ const decodeEscapedNewlines = (text: string) => {
 const normalizeTextValue = (value: string) =>
   decodeEscapedNewlines(normalizeLineBreaks(value))
 
-const extractAssistantTextFromBlocks = (blocks: MessageBlock[]): string =>
-  blocks.reduce((acc, block) => {
-    if (block.type !== "text") return acc
-    if (typeof block.content !== "string") return acc
-    return `${acc}${block.content}`
-  }, "")
-
 const buildExecutionLifecycleFallbackBlock = (
   metaInfo: MessageMetaInfo | undefined,
   messageId: string,
@@ -271,7 +264,7 @@ export function normalizeConversationMessages(
   const total = filtered.length
   return filtered.map((msg, index) => {
     const normalizedRole = normalizeRole(msg.role)
-    const candidate = readContentCandidate(msg)
+    const candidate = normalizedRole === "assistant" ? null : readContentCandidate(msg)
     const parsed = parseMessageContent(candidate)
     const normalizedText = normalizeTextValue(parsed.text)
     const metaInfo = msg.meta_info as MessageMetaInfo | undefined
@@ -291,11 +284,10 @@ export function normalizeConversationMessages(
       assistantBlocks.length > 0 && hasRenderableBlocks(assistantBlocks)
         ? assistantBlocks
         : []
-    const assistantText = extractAssistantTextFromBlocks(resolvedAssistantBlocks)
     const resolvedBlocks =
       normalizedRole === "assistant" ? resolvedAssistantBlocks : undefined
     const resolvedContent =
-      normalizedRole === "assistant" ? assistantText : normalizedText
+      normalizedRole === "assistant" ? "" : normalizedText
     return {
       id: messageId,
       role: normalizedRole === "assistant" ? "assistant" : normalizedRole === "system" ? "system" : "user",

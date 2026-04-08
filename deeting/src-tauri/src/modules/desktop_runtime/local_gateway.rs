@@ -12,6 +12,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use serde::Deserialize;
 use serde_json::json;
 use tauri::AppHandle;
 use tokio::net::TcpListener;
@@ -21,6 +22,9 @@ use uuid::Uuid;
 
 use crate::modules::desktop_runtime::local_orchestrator::{
     execute_local_orchestrated_chat, extract_user_text_from_messages, LocalOrchestratorInput,
+};
+use crate::modules::mcp::commands::tool_approval_impl::{
+    approve_mcp_tool_payload, reject_mcp_tool_payload,
 };
 use crate::state::AppState;
 use mcp_session::conversation::{
@@ -35,6 +39,59 @@ use mcp_transport::gateway::{
 pub struct LocalGatewayState {
     pub app_state: AppState,
     pub app_handle: AppHandle,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct LocalToolApprovalRequest {
+    #[serde(default, alias = "approvalToken")]
+    approval_token: Option<String>,
+    #[serde(default, alias = "approvalMode")]
+    approval_mode: Option<String>,
+    #[serde(default, alias = "callId")]
+    call_id: Option<String>,
+    #[serde(default, alias = "executionToken")]
+    execution_token: Option<String>,
+    #[serde(default, alias = "executionGraphExecutionId")]
+    execution_graph_execution_id: Option<String>,
+    #[serde(default)]
+    stream: Option<bool>,
+    #[serde(default, alias = "statusStream")]
+    status_stream: Option<bool>,
+    #[serde(default, alias = "requestId")]
+    request_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct LocalToolRejectRequest {
+    #[serde(default, alias = "approvalToken")]
+    approval_token: Option<String>,
+    #[serde(default, alias = "executionGraphExecutionId")]
+    execution_graph_execution_id: Option<String>,
+    #[serde(default, alias = "rejectMode")]
+    reject_mode: Option<String>,
+}
+
+fn build_approval_status_payload(trace_id: &str, request_id: Option<&str>) -> serde_json::Value {
+    json!({
+        "type": "status",
+        "stage": "approval",
+        "code": "approval.executing",
+        "trace_id": trace_id,
+        "request_id": normalize_optional_string(request_id),
+    })
+}
+
+fn build_blocks_stream_payload(
+    blocks: &[serde_json::Value],
+    trace_id: &str,
+    request_id: Option<&str>,
+) -> serde_json::Value {
+    json!({
+        "type": "blocks",
+        "blocks": blocks,
+        "trace_id": trace_id,
+        "request_id": normalize_optional_string(request_id),
+    })
 }
 
 #[derive(Clone)]
@@ -71,6 +128,8 @@ impl LocalGatewayServer {
         let app = Router::new()
             .route("/health", get(health_handler))
             .route("/v1/chat/completions", post(chat_completions_handler))
+            .route("/v1/mcp/tool-approvals/approve", post(approve_tool_handler))
+            .route("/v1/mcp/tool-approvals/reject", post(reject_tool_handler))
             .route(
                 "/v1/chat/comparisons/finalize",
                 post(finalize_compare_handler),
@@ -287,6 +346,184 @@ async fn stream_chat_completion(
     Sse::new(stream)
 }
 
+async fn approve_tool_handler(
+    State(state): State<Arc<LocalGatewayState>>,
+    Json(payload): Json<LocalToolApprovalRequest>,
+) -> Response {
+    let stream_enabled = payload.stream.unwrap_or(true);
+    let status_stream_enabled = payload.status_stream.unwrap_or(true);
+    if stream_enabled || status_stream_enabled {
+        return stream_approve_tool(state, payload).await.into_response();
+    }
+
+    let trace_id = Uuid::new_v4().to_string();
+    let approval_token = match normalize_optional_string(payload.approval_token.as_deref()) {
+        Some(value) => value,
+        None => {
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "code": "LOCAL_BAD_REQUEST",
+                    "message": "approval_token is required",
+                    "source": "desktop",
+                    "trace_id": trace_id,
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    match approve_mcp_tool_payload(
+        &state.app_handle,
+        &state.app_state,
+        &approval_token,
+        normalize_optional_string(payload.execution_graph_execution_id.as_deref()).as_deref(),
+        normalize_optional_string(payload.approval_mode.as_deref()).as_deref(),
+        normalize_optional_string(payload.call_id.as_deref()).as_deref(),
+        normalize_optional_string(payload.execution_token.as_deref()).as_deref(),
+    )
+    .await
+    {
+        Ok(response_body) => Json(response_body).into_response(),
+        Err(err) => (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(json!({
+                "code": "LOCAL_TOOL_APPROVAL_FAILED",
+                "message": err,
+                "source": "desktop",
+                "trace_id": trace_id,
+            })),
+        )
+            .into_response(),
+    }
+}
+
+async fn stream_approve_tool(
+    state: Arc<LocalGatewayState>,
+    payload: LocalToolApprovalRequest,
+) -> Sse<impl futures_util::stream::Stream<Item = Result<Event, Infallible>>> {
+    let trace_id = Uuid::new_v4().to_string();
+    let request_id = normalize_optional_string(payload.request_id.as_deref());
+    let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+
+    tokio::spawn(async move {
+        let approval_token = match normalize_optional_string(payload.approval_token.as_deref()) {
+            Some(value) => value,
+            None => {
+                let _ = tx.send(
+                    build_stream_error_payload(
+                        "LOCAL_BAD_REQUEST",
+                        "approval_token is required",
+                        &trace_id,
+                        request_id.as_deref(),
+                    )
+                    .to_string(),
+                );
+                let _ = tx.send("[DONE]".to_string());
+                return;
+            }
+        };
+
+        if payload.status_stream.unwrap_or(true) {
+            let _ = tx
+                .send(build_approval_status_payload(&trace_id, request_id.as_deref()).to_string());
+        }
+
+        match approve_mcp_tool_payload(
+            &state.app_handle,
+            &state.app_state,
+            &approval_token,
+            normalize_optional_string(payload.execution_graph_execution_id.as_deref()).as_deref(),
+            normalize_optional_string(payload.approval_mode.as_deref()).as_deref(),
+            normalize_optional_string(payload.call_id.as_deref()).as_deref(),
+            normalize_optional_string(payload.execution_token.as_deref()).as_deref(),
+        )
+        .await
+        {
+            Ok(response_body) => {
+                if let Some(blocks) = response_body
+                    .get("continuation_blocks")
+                    .and_then(|value| value.as_array())
+                    .filter(|items| !items.is_empty())
+                {
+                    let _ = tx.send(
+                        build_blocks_stream_payload(blocks, &trace_id, request_id.as_deref())
+                            .to_string(),
+                    );
+                }
+                let _ = tx.send(response_body.to_string());
+            }
+            Err(err) => {
+                let _ = tx.send(
+                    build_stream_error_payload(
+                        "LOCAL_TOOL_APPROVAL_FAILED",
+                        err,
+                        &trace_id,
+                        request_id.as_deref(),
+                    )
+                    .to_string(),
+                );
+            }
+        }
+
+        let _ = tx.send("[DONE]".to_string());
+    });
+
+    let stream = async_stream::stream! {
+        while let Some(payload) = rx.recv().await {
+            yield Ok(Event::default().data(payload.clone()));
+            if payload == "[DONE]" {
+                break;
+            }
+        }
+    };
+
+    Sse::new(stream)
+}
+
+async fn reject_tool_handler(
+    State(state): State<Arc<LocalGatewayState>>,
+    Json(payload): Json<LocalToolRejectRequest>,
+) -> Response {
+    let trace_id = Uuid::new_v4().to_string();
+    let approval_token = match normalize_optional_string(payload.approval_token.as_deref()) {
+        Some(value) => value,
+        None => {
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "code": "LOCAL_BAD_REQUEST",
+                    "message": "approval_token is required",
+                    "source": "desktop",
+                    "trace_id": trace_id,
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    match reject_mcp_tool_payload(
+        &state.app_state,
+        &approval_token,
+        normalize_optional_string(payload.execution_graph_execution_id.as_deref()).as_deref(),
+        normalize_optional_string(payload.reject_mode.as_deref()).as_deref(),
+    )
+    .await
+    {
+        Ok(response_body) => Json(response_body).into_response(),
+        Err(err) => (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(json!({
+                "code": "LOCAL_TOOL_REJECT_FAILED",
+                "message": err,
+                "source": "desktop",
+                "trace_id": trace_id,
+            })),
+        )
+            .into_response(),
+    }
+}
+
 async fn cancel_chat_completions_handler(
     Path(request_id): Path<String>,
     State(state): State<Arc<LocalGatewayState>>,
@@ -421,7 +658,11 @@ fn map_request_to_orchestrator_input(
 
 #[cfg(test)]
 mod tests {
-    use super::build_stream_error_payload;
+    use super::{
+        build_approval_status_payload, build_stream_error_payload, LocalToolApprovalRequest,
+        LocalToolRejectRequest,
+    };
+    use serde_json::json;
 
     #[test]
     fn build_stream_error_payload_uses_typed_error_event_shape() {
@@ -472,5 +713,73 @@ mod tests {
         assert!(payload
             .get("request_id")
             .is_some_and(|value| value.is_null()));
+    }
+
+    #[test]
+    fn build_approval_status_payload_uses_typed_status_event_shape() {
+        let payload = build_approval_status_payload("trace-approval-1", Some("request-approval-1"));
+
+        assert_eq!(
+            payload.get("type").and_then(|value| value.as_str()),
+            Some("status")
+        );
+        assert_eq!(
+            payload.get("stage").and_then(|value| value.as_str()),
+            Some("approval")
+        );
+        assert_eq!(
+            payload.get("code").and_then(|value| value.as_str()),
+            Some("approval.executing")
+        );
+        assert_eq!(
+            payload.get("trace_id").and_then(|value| value.as_str()),
+            Some("trace-approval-1")
+        );
+        assert_eq!(
+            payload.get("request_id").and_then(|value| value.as_str()),
+            Some("request-approval-1")
+        );
+    }
+
+    #[test]
+    fn local_tool_approval_request_accepts_camel_case_fields() {
+        let payload: LocalToolApprovalRequest = serde_json::from_value(json!({
+            "approvalToken": "approval-1",
+            "approvalMode": "allow_once",
+            "callId": "call-1",
+            "executionToken": "exec-1",
+            "executionGraphExecutionId": "graph-1",
+            "statusStream": true,
+            "requestId": "request-1"
+        }))
+        .expect("approval request should deserialize");
+
+        assert_eq!(payload.approval_token.as_deref(), Some("approval-1"));
+        assert_eq!(payload.approval_mode.as_deref(), Some("allow_once"));
+        assert_eq!(payload.call_id.as_deref(), Some("call-1"));
+        assert_eq!(payload.execution_token.as_deref(), Some("exec-1"));
+        assert_eq!(
+            payload.execution_graph_execution_id.as_deref(),
+            Some("graph-1")
+        );
+        assert_eq!(payload.status_stream, Some(true));
+        assert_eq!(payload.request_id.as_deref(), Some("request-1"));
+    }
+
+    #[test]
+    fn local_tool_reject_request_accepts_camel_case_fields() {
+        let payload: LocalToolRejectRequest = serde_json::from_value(json!({
+            "approvalToken": "approval-2",
+            "executionGraphExecutionId": "graph-2",
+            "rejectMode": "deny_always"
+        }))
+        .expect("reject request should deserialize");
+
+        assert_eq!(payload.approval_token.as_deref(), Some("approval-2"));
+        assert_eq!(
+            payload.execution_graph_execution_id.as_deref(),
+            Some("graph-2")
+        );
+        assert_eq!(payload.reject_mode.as_deref(), Some("deny_always"));
     }
 }

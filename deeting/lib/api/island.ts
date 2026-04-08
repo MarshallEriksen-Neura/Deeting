@@ -1,11 +1,10 @@
 import { streamChatCompletion, streamDesktopLocalChatCompletion } from "@/lib/api/chat"
+import { rejectDesktopTool, streamDesktopApproveTool } from "@/lib/api/mcp-desktop"
 import { z } from "zod"
 
 import { handleModelConfigRequiredError } from "@/lib/model-config-required"
 
 const EXECUTE_LOCAL_TEXT_CONVERSATION_COMMAND = "execute_local_text_conversation"
-const APPROVE_LOCAL_TEXT_CONVERSATION_TOOL_COMMAND = "approve_local_text_conversation_tool"
-const REJECT_LOCAL_TEXT_CONVERSATION_TOOL_COMMAND = "reject_local_text_conversation_tool"
 
 async function invokeTauri<T>(
   command: string,
@@ -44,6 +43,33 @@ export const IslandApprovalActionResultSchema = z.object({
 export type IslandToolApproval = z.infer<typeof IslandToolApprovalSchema>
 export type IslandTextConversationReply = z.infer<typeof IslandTextConversationReplySchema>
 export type IslandApprovalActionResult = z.infer<typeof IslandApprovalActionResultSchema>
+
+function extractFollowUpTextsFromApprovalResult(result: unknown): string[] {
+  if (!result || typeof result !== "object") return []
+  const payload = result as Record<string, unknown>
+
+  const continuationBlocks = Array.isArray(payload.continuation_blocks)
+    ? payload.continuation_blocks
+    : []
+  const continuationTexts = continuationBlocks
+    .filter(
+      (block): block is { type?: unknown; content?: unknown } =>
+        Boolean(block && typeof block === "object")
+    )
+    .filter((block) => block.type === "text" && typeof block.content === "string")
+    .map((block) => block.content.trim())
+    .filter((value) => value.length > 0)
+
+  if (continuationTexts.length > 0) {
+    return continuationTexts
+  }
+
+  const error =
+    typeof payload.error === "string" && payload.error.trim().length > 0
+      ? payload.error.trim()
+      : null
+  return error ? [error] : []
+}
 
 export interface IslandChatRequestConfig {
   model: string
@@ -98,21 +124,31 @@ export async function approveIslandTool(
   toolName: string,
   callId?: string | null
 ): Promise<IslandApprovalActionResult> {
-  const data = await invokeTauri<unknown>(APPROVE_LOCAL_TEXT_CONVERSATION_TOOL_COMMAND, {
+  const data = await streamDesktopApproveTool({
     approvalToken,
-    toolName,
-    callId: callId ?? null,
+    approvalMode: "allow_once",
+    callId: callId ?? undefined,
   })
-  return IslandApprovalActionResultSchema.parse(data)
+
+  return IslandApprovalActionResultSchema.parse({
+    tool_name: toolName,
+    approved: true,
+    follow_up_texts: extractFollowUpTextsFromApprovalResult(data),
+  })
 }
 
 export async function rejectIslandTool(
   approvalToken: string,
   toolName: string
 ): Promise<IslandApprovalActionResult> {
-  const data = await invokeTauri<unknown>(REJECT_LOCAL_TEXT_CONVERSATION_TOOL_COMMAND, {
+  await rejectDesktopTool({
     approvalToken,
-    toolName,
+    rejectMode: "reject_once",
   })
-  return IslandApprovalActionResultSchema.parse(data)
+
+  return IslandApprovalActionResultSchema.parse({
+    tool_name: toolName,
+    approved: false,
+    follow_up_texts: [],
+  })
 }

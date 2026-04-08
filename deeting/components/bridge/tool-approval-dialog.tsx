@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useTranslations } from "next-intl"
 import {
   AlertDialog,
@@ -14,12 +14,12 @@ import {
 } from "@/components/ui/alert-dialog"
 import {
   announceBridgeApprovalExecution,
+  type BridgeToolPendingApproval,
   isBridgeToolApproval,
   useBridgeApprovalStore,
 } from "@/lib/chat/bridge-approval-store"
-import { invoke } from "@tauri-apps/api/core"
 import { bridgeCallTool } from "@/lib/api/bridge"
-import { DESKTOP_MCP_COMMANDS } from "@/lib/api/mcp-desktop"
+import { rejectDesktopTool, streamDesktopApproveTool } from "@/lib/api/mcp-desktop"
 import { toast } from "sonner"
 import { Loader2, ShieldAlert, AlertTriangle, Terminal } from "lucide-react"
 import { useChatStore } from "@/store/chat-store"
@@ -35,6 +35,30 @@ import {
 
 export function ToolApprovalDialog() {
   const { pending, queue, clear, focusPendingByToken } = useBridgeApprovalStore()
+  if (!pending) return null
+
+  return (
+    <ToolApprovalDialogContent
+      key={pending.approval_token}
+      pending={pending}
+      queue={queue}
+      clear={clear}
+      focusPendingByToken={focusPendingByToken}
+    />
+  )
+}
+
+function ToolApprovalDialogContent({
+  pending,
+  queue,
+  clear,
+  focusPendingByToken,
+}: {
+  pending: BridgeToolPendingApproval
+  queue: BridgeToolPendingApproval[]
+  clear: () => void
+  focusPendingByToken: (approvalToken: string) => void
+}) {
   const messages = useChatStore((state) => state.messages)
   const focusMessage = useChatStore((state) => state.focusMessage)
   const setMessageBlocks = useChatStore((state) => state.setMessageBlocks)
@@ -44,22 +68,11 @@ export function ToolApprovalDialog() {
     "allow_once" | "allow_always" | "deny_always" | null
   >(null)
   const t = useTranslations("chat.approvalDialog")
-  const approvalToken = pending?.approval_token ?? null
   const queueLength = queue.length
   const remainingApprovals = Math.max(0, queueLength - 1)
   const [showAllApprovals, setShowAllApprovals] = useState(false)
   const upcomingApprovals = queue.slice(1, 4)
   const allUpcomingApprovals = queue.slice(1)
-
-  useEffect(() => {
-    setLoadingAction(null)
-  }, [approvalToken])
-
-  useEffect(() => {
-    setShowAllApprovals(false)
-  }, [approvalToken])
-
-  if (!pending) return null
 
   const resolveApprovalMessageId = (approval: typeof pending) => {
     if (approval.meta.message_id) {
@@ -75,13 +88,14 @@ export function ToolApprovalDialog() {
     if (!messageId) return t("queueItemSourceFallback")
     const message = messages.find((candidate) => candidate.id === messageId)
     if (!message) return t("queueItemSourceFallback")
-    const assistantPreview =
-      message.role === "assistant" ? extractAssistantTextFromBlocks(message.blocks).trim() : ""
-    const contentPreview = assistantPreview || message.content.trim()
-    if (contentPreview) {
-      return contentPreview.length > 48
-        ? `${contentPreview.slice(0, 47).trimEnd()}...`
-        : contentPreview
+    const previewText =
+      message.role === "assistant"
+        ? extractAssistantTextFromBlocks(message.blocks).trim()
+        : message.content.trim()
+    if (previewText) {
+      return previewText.length > 48
+        ? `${previewText.slice(0, 47).trimEnd()}...`
+        : previewText
     }
     return t("queueItemSourceBound")
   }
@@ -108,15 +122,35 @@ export function ToolApprovalDialog() {
     approvalMode: "allow_once" | "allow_always"
   ) => {
     try {
-      const result = await invoke(DESKTOP_MCP_COMMANDS.approveTool, {
-        approvalToken: approval.approval_token,
-        approvalMode,
-        callId: approval.meta.call_id,
-        executionToken: approval.meta.execution_token,
-        executionGraphExecutionId: approval.meta.execution_graph_execution_id,
-      })
-
       const messageId = resolveApprovalMessageId(approval)
+      let streamedContinuationApplied = false
+      const result = await streamDesktopApproveTool(
+        {
+          approvalToken: approval.approval_token,
+          approvalMode,
+          callId: approval.meta.call_id,
+          executionToken: approval.meta.execution_token,
+          executionGraphExecutionId: approval.meta.execution_graph_execution_id,
+        },
+        {
+          onMessage: (data) => {
+            if (!messageId || !data || typeof data !== "object" || !("type" in data)) return
+            const event = data as {
+              type?: string
+              blocks?: unknown
+            }
+            if (event.type !== "blocks" || !Array.isArray(event.blocks)) return
+            const blocks = event.blocks.filter(
+              (block): block is MessageBlock =>
+                Boolean(block && typeof block === "object" && "type" in (block as Record<string, unknown>))
+            )
+            if (blocks.length === 0) return
+            appendMessageBlocks(messageId, blocks)
+            streamedContinuationApplied = true
+          },
+        }
+      )
+
       if (messageId) {
         const resumePayload = extractLocalChatApprovalResume(result)
         const approvedToolResult = resumePayload?.approved_tool_result ?? result
@@ -124,7 +158,7 @@ export function ToolApprovalDialog() {
         if (successBlock) {
           upsertMessageToolResult(messageId, successBlock)
         }
-        if (resumePayload?.continuation_blocks?.length) {
+        if (resumePayload?.continuation_blocks?.length && !streamedContinuationApplied) {
           appendMessageBlocks(messageId, resumePayload.continuation_blocks)
         }
         if (resumePayload?.error) {
@@ -210,7 +244,7 @@ export function ToolApprovalDialog() {
 
     try {
       setLoadingAction("deny_always")
-      await invoke(DESKTOP_MCP_COMMANDS.rejectTool, {
+      await rejectDesktopTool({
         approvalToken: approval.approval_token,
         rejectMode: "deny_always",
         executionGraphExecutionId: approval.meta.execution_graph_execution_id,

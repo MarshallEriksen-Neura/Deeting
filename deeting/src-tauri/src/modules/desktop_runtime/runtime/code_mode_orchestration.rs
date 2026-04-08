@@ -2,11 +2,10 @@ use super::{
     append_streamable_local_tool_result_blocks, build_auto_code_mode_tool_feedback,
     build_local_code_mode_entry_tools_with_allowlist,
     build_local_sdk_search_result_bundle_with_feedback_runtime, build_local_tool_trace_blocks,
-    delete_execution_graph_runtime_context,
-    execute_or_queue_mcp_tool_call_with_tool_ref, extract_chat_tool_calls,
-    install_local_skill_from_onboarding_request, load_execution_graph_runtime_context,
-    load_execution_graph_snapshot, load_execution_graph_snapshot_by_approval_token,
-    persist_execution_graph_runtime_context,
+    delete_execution_graph_runtime_context, execute_or_queue_mcp_tool_call_with_tool_ref,
+    extract_chat_tool_calls, install_local_skill_from_onboarding_request,
+    load_execution_graph_runtime_context, load_execution_graph_snapshot,
+    load_execution_graph_snapshot_by_approval_token, persist_execution_graph_runtime_context,
     persist_execution_graph_snapshot, project_execution_graph_blocks_from_value,
     project_execution_graph_snapshot, request_provider_chat_completion,
     resolve_dynamic_direct_capability_tool_name, resolve_local_capability_activation_state,
@@ -377,6 +376,12 @@ fn derive_pending_call_id_from_tool_call_meta(tool_call_meta: &[serde_json::Valu
         .unwrap_or_else(|| "unknown-call".to_string())
 }
 
+fn last_response_content_or_empty(response: Option<&serde_json::Value>) -> serde_json::Value {
+    response
+        .and_then(|value| value.get("content").cloned())
+        .unwrap_or_else(|| serde_json::json!(""))
+}
+
 fn canonicalize_tool_call_meta_via_graph(
     session_id: &str,
     execution_policy: &LocalExecutionPolicy,
@@ -568,12 +573,13 @@ fn tool_node_id_from_graph_value(
                     return false;
                 }
                 match normalized_call_id {
-                    Some(expected) => node
-                        .get("metadata")
-                        .and_then(|value| value.get("call_id"))
-                        .and_then(serde_json::Value::as_str)
-                        .map(str::trim)
-                        == Some(expected),
+                    Some(expected) => {
+                        node.get("metadata")
+                            .and_then(|value| value.get("call_id"))
+                            .and_then(serde_json::Value::as_str)
+                            .map(str::trim)
+                            == Some(expected)
+                    }
                     None => true,
                 }
             })
@@ -600,12 +606,13 @@ fn gate_node_id_from_graph_value(
                     return false;
                 }
                 match normalized_call_id {
-                    Some(expected) => node
-                        .get("metadata")
-                        .and_then(|value| value.get("call_id"))
-                        .and_then(serde_json::Value::as_str)
-                        .map(str::trim)
-                        == Some(expected),
+                    Some(expected) => {
+                        node.get("metadata")
+                            .and_then(|value| value.get("call_id"))
+                            .and_then(serde_json::Value::as_str)
+                            .map(str::trim)
+                            == Some(expected)
+                    }
                     None => true,
                 }
             })
@@ -735,9 +742,13 @@ async fn persist_suspended_execution_graph_runtime(
     .map_err(|err| err.to_string())?;
 
     if let Some(execution_id) = suspended.graph_execution_id() {
-        persist_execution_graph_runtime_context(store, execution_id, &suspended.to_runtime_context_value())
-            .await
-            .map_err(|err| err.to_string())?;
+        persist_execution_graph_runtime_context(
+            store,
+            execution_id,
+            &suspended.to_runtime_context_value(),
+        )
+        .await
+        .map_err(|err| err.to_string())?;
     }
 
     Ok(())
@@ -1262,7 +1273,9 @@ async fn continue_local_chat_complete_with_auto_code_mode(
 
                 let mut current_tool_call_meta = build_state_effective_tool_call_meta(&state);
                 current_tool_call_meta.extend(suspended.pending_tool_call_meta());
-                let interrupted = serde_json::json!({ "content": "" });
+                let interrupted = serde_json::json!({
+                    "content": last_response_content_or_empty(state.last_response.as_ref()),
+                });
                 return Ok(LocalChatAutoCodeModeOutput {
                     response: enrich_response_with_tool_trace(
                         interrupted,
@@ -2242,15 +2255,15 @@ fn build_local_chat_resume_continuation_blocks(
     } else {
         build_local_tool_trace_blocks(continuation_meta)
     };
-    if let Some(content) = resumed_response
-        .get("content")
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
+    let response_text = extract_resume_response_text(
+        resumed_response
+            .get("content")
+            .unwrap_or(&serde_json::Value::Null),
+    );
+    if !response_text.trim().is_empty() {
         blocks.push(serde_json::json!({
             "type": "text",
-            "content": content,
+            "content": response_text,
         }));
     }
     blocks
@@ -2396,7 +2409,7 @@ async fn persist_resumed_local_chat_assistant_message(
         .append_local_conversation_message(CreateConversationMessageRequest {
             session_id: session_id.to_string(),
             role: "assistant".to_string(),
-            content: response_text,
+            content: String::new(),
             name: None,
             meta_info: Some(assistant_meta),
             is_truncated: Some(false),
@@ -2453,14 +2466,17 @@ pub(crate) async fn resume_suspended_local_chat_after_approval(
         None
     };
 
-    let mut suspended = if let Some(execution_graph) = if let Some(graph) = persisted_execution_graph
-    {
-        Some(graph)
-    } else {
-        load_execution_graph_snapshot_by_approval_token(app_state.mcp.store.as_ref(), approval_token)
+    let mut suspended = if let Some(execution_graph) =
+        if let Some(graph) = persisted_execution_graph {
+            Some(graph)
+        } else {
+            load_execution_graph_snapshot_by_approval_token(
+                app_state.mcp.store.as_ref(),
+                approval_token,
+            )
             .await
             .map_err(|err| err.to_string())?
-    } {
+        } {
         let Some(execution_id) = execution_graph
             .get("execution_id")
             .and_then(serde_json::Value::as_str)
@@ -2747,6 +2763,15 @@ mod tests {
         })))
         .expect_err("should require callable results");
         assert!(err.contains("capabilities"));
+    }
+
+    #[test]
+    fn last_response_content_or_empty_preserves_existing_assistant_text() {
+        let content = last_response_content_or_empty(Some(&serde_json::json!({
+            "content": "我来尝试读取一些笔记。"
+        })));
+
+        assert_eq!(content, serde_json::json!("我来尝试读取一些笔记。"));
     }
 
     #[test]
@@ -3120,6 +3145,48 @@ mod tests {
     }
 
     #[test]
+    fn build_local_chat_resume_continuation_blocks_keeps_non_string_text_with_tool_trace() {
+        let response = serde_json::json!({
+            "content": [
+                {
+                    "type": "output_text",
+                    "text": "Final answer after approval."
+                }
+            ],
+            "tool_trace_blocks": [
+                {
+                    "type": "tool_call",
+                    "callId": "call_123",
+                    "toolName": "firecrawl_search",
+                    "status": "success"
+                },
+                {
+                    "type": "tool_result",
+                    "callId": "call_123",
+                    "toolName": "firecrawl_search",
+                    "status": "success",
+                    "result": {
+                        "structuredContent": {
+                            "results": [{ "title": "Tianjin Weather" }]
+                        }
+                    }
+                }
+            ]
+        });
+
+        let blocks = build_local_chat_resume_continuation_blocks(&response, &[]);
+
+        assert_eq!(blocks.len(), 3);
+        assert_eq!(blocks[0]["type"], serde_json::json!("tool_call"));
+        assert_eq!(blocks[1]["type"], serde_json::json!("tool_result"));
+        assert_eq!(blocks[2]["type"], serde_json::json!("text"));
+        assert_eq!(
+            blocks[2]["content"],
+            serde_json::json!("Final answer after approval.")
+        );
+    }
+
+    #[test]
     fn build_persisted_resume_assistant_meta_carries_runtime_metadata() {
         let response = serde_json::json!({
             "content": "Resumed after approval.",
@@ -3244,6 +3311,7 @@ mod tests {
         apply_rejected_tool_result_to_execution_graph_value(
             &mut execution_graph,
             Some("graph-reject-1"),
+            None,
             "User rejected tool execution",
         );
 

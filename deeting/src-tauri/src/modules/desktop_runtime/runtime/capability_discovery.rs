@@ -9,6 +9,7 @@ use super::search_feedback::{
 use super::search_ranking::{
     asset_score_key, bm25_asset_match_scores, normalize_score_map, reciprocal_rank_fusion,
 };
+use super::should_run_semantic_recall;
 use crate::modules::mcp::commands::runtime::capability_catalog::{
     build_capability_registry, CapabilityRegistryEntry, RegistryAvailability, ToolContractSource,
 };
@@ -108,6 +109,7 @@ pub(crate) async fn build_capability_search_result(
     embedding_service: &crate::modules::providers::embedding::EmbeddingService,
     memory_store: &crate::modules::memory::service::MemoryService,
     query: &str,
+    query_vector: Option<Vec<f32>>,
     limit: usize,
     detail_level: SearchSdkDetailLevel,
 ) -> Value {
@@ -116,6 +118,7 @@ pub(crate) async fn build_capability_search_result(
         embedding_service,
         memory_store,
         query,
+        query_vector,
         limit,
         &SearchFeedbackContext::default(),
     )
@@ -131,6 +134,7 @@ pub(crate) async fn build_capability_search_result_bundle_with_feedback(
     embedding_service: &crate::modules::providers::embedding::EmbeddingService,
     memory_store: &crate::modules::memory::service::MemoryService,
     query: &str,
+    query_vector: Option<Vec<f32>>,
     limit: usize,
     feedback_context: &SearchFeedbackContext,
 ) -> CapabilitySearchResultBundle {
@@ -162,9 +166,14 @@ pub(crate) async fn build_capability_search_result_bundle_with_feedback(
     );
     let profile = QueryProfile::from_query(query);
     let limit = limit.clamp(1, MAX_LIMIT);
-    let retrieval_scores =
-        build_retrieval_score_maps(&registry_entries, &profile, embedding_service, memory_store)
-            .await;
+    let retrieval_scores = build_retrieval_score_maps(
+        &registry_entries,
+        &profile,
+        embedding_service,
+        memory_store,
+        query_vector,
+    )
+    .await;
     let mut ranked = registry_entries
         .into_iter()
         .filter_map(|entry| {
@@ -714,6 +723,7 @@ async fn build_retrieval_score_maps(
     profile: &QueryProfile,
     embedding_service: &crate::modules::providers::embedding::EmbeddingService,
     memory_store: &crate::modules::memory::service::MemoryService,
+    query_vector: Option<Vec<f32>>,
 ) -> RetrievalScoreMaps {
     let assets = entries
         .iter()
@@ -754,8 +764,14 @@ async fn build_retrieval_score_maps(
         })
         .collect::<std::collections::HashMap<_, _>>();
 
-    let semantic = if let Ok(query_vector) = embedding_service.embed_text(&profile.normalized).await
-    {
+    let semantic_vector = if let Some(vector) = query_vector {
+        Some(vector)
+    } else if should_run_semantic_recall(&profile.normalized) {
+        embedding_service.embed_text(&profile.normalized).await.ok()
+    } else {
+        None
+    };
+    let semantic = if let Some(query_vector) = semantic_vector {
         if let Ok(rows) = memory_store
             .search_assets(query_vector, entries.len().max(8), None)
             .await

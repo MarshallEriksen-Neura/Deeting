@@ -1,5 +1,6 @@
 pub mod bridge;
 pub mod canonical;
+pub mod content;
 pub mod profile;
 
 pub use bridge::{
@@ -10,6 +11,7 @@ pub use canonical::{
     CanonicalClientContext, CanonicalInputItem, CanonicalMessage, CanonicalRequest,
     CanonicalToolCall,
 };
+pub(crate) use content::{normalize_message_content_value, parse_structured_message_content};
 pub use profile::{
     ProfileAuthConfig, ProfileDefaults, ProfileFeatureFlags, ProfileRequestConfig,
     ProfileResponseConfig, ProfileStreamConfig, ProfileTransport, ProtocolProfile, RuntimeHook,

@@ -818,12 +818,9 @@ impl McpStore {
             return Err(McpError::Validation("model_id is required".to_string()));
         }
 
-        let content = request.content.trim().to_string();
         let blocks = request.blocks.unwrap_or_default();
-        if content.is_empty() && blocks.is_empty() {
-            return Err(McpError::Validation(
-                "content or blocks is required".to_string(),
-            ));
+        if blocks.is_empty() {
+            return Err(McpError::Validation("blocks is required".to_string()));
         }
 
         let provider_model_id = request
@@ -864,7 +861,7 @@ impl McpStore {
             .append_local_conversation_message(CreateConversationMessageRequest {
                 session_id: session_id.clone(),
                 role: "assistant".to_string(),
-                content,
+                content: String::new(),
                 name: None,
                 meta_info: Some(Value::Object(meta)),
                 is_truncated: Some(false),

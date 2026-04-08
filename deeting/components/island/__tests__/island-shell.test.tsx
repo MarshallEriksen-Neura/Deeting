@@ -123,8 +123,15 @@ function seedChatState(includeApproval = false) {
       {
         id: "assistant-1",
         role: "assistant",
-        content: "Updated the roadmap based on your latest feedback.",
+        content: "",
         createdAt: 2,
+        blocks: [
+          {
+            id: "assistant-1-text",
+            type: "text",
+            content: "Updated the roadmap based on your latest feedback.",
+          },
+        ] as Message["blocks"],
       },
       ...(includeApproval
         ? [
@@ -324,8 +331,15 @@ describe("IslandShell", () => {
         {
           id: "assistant-1",
           role: "assistant",
-          content: longAssistantReply,
+          content: "",
           createdAt: 2,
+          blocks: [
+            {
+              id: "assistant-long-text",
+              type: "text",
+              content: longAssistantReply,
+            },
+          ] as Message["blocks"],
         },
       ] as unknown as Message[],
     });

@@ -106,6 +106,18 @@ function filterCompareStateByMessageIds(
   )
 }
 
+function withAssistantShadowContent(message: Message, blocks: MessageBlock[]): Message {
+  if (message.role !== "assistant") {
+    return { ...message, blocks }
+  }
+
+  return {
+    ...message,
+    blocks,
+    content: "",
+  }
+}
+
 function isStatusMetaEqual(
   left: Record<string, unknown> | null,
   right: Record<string, unknown> | null
@@ -342,7 +354,14 @@ export const useChatStore = create<ChatStore>()(
 
       setMessages: (messages) =>
         set((state) => ({
-          messages,
+          messages: messages.map((message) =>
+            message.role === "assistant"
+              ? {
+                  ...message,
+                  content: "",
+                }
+              : message
+          ),
           focusedMessageId:
             state.focusedMessageId &&
             messages.some((message) => message.id === state.focusedMessageId)
@@ -386,14 +405,7 @@ export const useChatStore = create<ChatStore>()(
           messages: state.messages.map((msg) => {
             if (msg.id !== id) return msg
             const normalized = replaceMessageBlocks(msg.id, blocks)
-            if (msg.role !== "assistant") {
-              return { ...msg, blocks: normalized }
-            }
-            return {
-              ...msg,
-              blocks: normalized,
-              content: extractAssistantTextFromBlocks(normalized),
-            }
+            return withAssistantShadowContent(msg, normalized)
           }),
         })),
 
@@ -402,15 +414,7 @@ export const useChatStore = create<ChatStore>()(
           messages: state.messages.map((msg) => {
             if (msg.id !== id) return msg
             const next = appendNormalizedMessageBlocks(msg.id, msg.blocks, blocks)
-
-            if (msg.role !== "assistant") {
-              return { ...msg, blocks: next }
-            }
-            return {
-              ...msg,
-              blocks: next,
-              content: extractAssistantTextFromBlocks(next),
-            }
+            return withAssistantShadowContent(msg, next)
           }),
         })),
 
@@ -419,15 +423,7 @@ export const useChatStore = create<ChatStore>()(
           messages: state.messages.map((msg) => {
             if (msg.id !== id) return msg
             const next = upsertToolResultBlock(msg.id, msg.blocks, block)
-
-            if (msg.role !== "assistant") {
-              return { ...msg, blocks: next }
-            }
-            return {
-              ...msg,
-              blocks: next,
-              content: extractAssistantTextFromBlocks(next),
-            }
+            return withAssistantShadowContent(msg, next)
           }),
         })),
 

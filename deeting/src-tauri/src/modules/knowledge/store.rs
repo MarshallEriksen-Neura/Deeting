@@ -1195,6 +1195,26 @@ impl KnowledgeStore {
         query: &str,
         limit: Option<i64>,
     ) -> Result<Vec<LocalKnowledgeSearchHit>, KnowledgeError> {
+        self.search_local_knowledge_chunks_internal(query, limit, None)
+            .await
+    }
+
+    pub async fn search_local_knowledge_chunks_in_documents(
+        &self,
+        query: &str,
+        file_ids: &[String],
+        limit: Option<i64>,
+    ) -> Result<Vec<LocalKnowledgeSearchHit>, KnowledgeError> {
+        self.search_local_knowledge_chunks_internal(query, limit, Some(file_ids))
+            .await
+    }
+
+    async fn search_local_knowledge_chunks_internal(
+        &self,
+        query: &str,
+        limit: Option<i64>,
+        file_ids: Option<&[String]>,
+    ) -> Result<Vec<LocalKnowledgeSearchHit>, KnowledgeError> {
         let normalized_query = query.trim().to_string();
         if normalized_query.is_empty() {
             return Ok(Vec::new());
@@ -1210,6 +1230,15 @@ impl KnowledgeStore {
             .map(|token| token.to_ascii_lowercase())
             .collect();
         let query_lower = normalized_query.to_ascii_lowercase();
+        let document_ids = file_ids
+            .unwrap_or(&[])
+            .iter()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+            .collect::<Vec<_>>();
+        if file_ids.is_some() && document_ids.is_empty() {
+            return Ok(Vec::new());
+        }
         let mut where_predicate = String::new();
         for (index, _) in lowered_tokens.iter().enumerate() {
             if index > 0 {
@@ -1217,6 +1246,14 @@ impl KnowledgeStore {
             }
             where_predicate.push_str("LOWER(kc.text_content) LIKE ? ESCAPE '\\'");
         }
+        let document_filter = if document_ids.is_empty() {
+            String::new()
+        } else {
+            format!(
+                " AND kc.document_id IN ({})",
+                vec!["?"; document_ids.len()].join(", ")
+            )
+        };
 
         let sql = format!(
             r#"
@@ -1233,6 +1270,7 @@ impl KnowledgeStore {
             WHERE kc.user_id = ?
               AND ud.status = 'indexed'
               AND ({where_predicate})
+              {document_filter}
             ORDER BY kc.updated_at DESC, kc.chunk_index ASC
             LIMIT 300;
             "#
@@ -1244,6 +1282,9 @@ impl KnowledgeStore {
                 "%{}%",
                 token.replace('%', "\\%").replace('_', "\\_")
             ));
+        }
+        for file_id in document_ids {
+            query_builder = query_builder.bind(file_id);
         }
         let rows = query_builder
             .fetch_all(&self.pool)

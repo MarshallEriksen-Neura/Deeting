@@ -42,6 +42,246 @@ fn parse_reject_persist_mode(value: Option<String>) -> RejectPersistMode {
     }
 }
 
+fn require_approval_token(value: Option<String>) -> Result<String, String> {
+    value
+        .map(|item| item.trim().to_string())
+        .filter(|item| !item.is_empty())
+        .ok_or_else(|| "approval token is required".to_string())
+}
+
+pub(crate) async fn approve_mcp_tool_payload(
+    app: &tauri::AppHandle,
+    state: &crate::state::AppState,
+    approval_token: &str,
+    execution_graph_execution_id: Option<&str>,
+    approval_mode: Option<&str>,
+    call_id: Option<&str>,
+    execution_token: Option<&str>,
+) -> Result<Value, String> {
+    let token = approval_token.trim();
+    if token.is_empty() {
+        return Err("approval token is required".to_string());
+    }
+    let pending_before_approval = state
+        .mcp
+        .approvals
+        .pending_tool_calls
+        .read()
+        .await
+        .get(token)
+        .cloned();
+    let approval_context = state
+        .mcp
+        .build_approval_context(call_id, execution_token, None);
+    let persist_mode = parse_approve_persist_mode(approval_mode.map(str::to_string));
+
+    let approved = approve_mcp_tool_inner_with_context_and_mode(
+        &approval_context,
+        Some(&state.mcp),
+        state.mcp.store.as_ref(),
+        state.mcp.approvals.pending_tool_calls.as_ref(),
+        token,
+        persist_mode,
+    )
+    .await?;
+
+    if let Some(resumed) = resume_suspended_local_chat_after_approval(
+        app,
+        state,
+        token,
+        &approved,
+        pending_before_approval
+            .as_ref()
+            .and_then(|pending| pending.call_id.as_deref()),
+        execution_graph_execution_id,
+        pending_before_approval
+            .as_ref()
+            .map(|pending| pending.created_at_unix_ms),
+    )
+    .await?
+    {
+        return Ok(resumed);
+    }
+
+    Ok(approved)
+}
+
+pub(crate) async fn reject_mcp_tool_payload(
+    state: &crate::state::AppState,
+    approval_token: &str,
+    execution_graph_execution_id: Option<&str>,
+    reject_mode: Option<&str>,
+) -> Result<Value, String> {
+    let token = approval_token.trim();
+    if token.is_empty() {
+        return Err("approval token is required".to_string());
+    }
+    let pending_before_reject = state
+        .mcp
+        .approvals
+        .pending_tool_calls
+        .read()
+        .await
+        .get(token)
+        .cloned();
+    reject_mcp_tool_inner_with_mode(
+        Some(state.mcp.store.as_ref()),
+        state.mcp.approvals.pending_tool_calls.as_ref(),
+        token,
+        parse_reject_persist_mode(reject_mode.map(str::to_string)),
+    )
+    .await?;
+    let legacy_fallback_allowed = pending_before_reject
+        .as_ref()
+        .map(|pending| {
+            let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+            now.saturating_sub(pending.created_at_unix_ms)
+                <= LEGACY_SUSPENDED_REJECT_FALLBACK_WINDOW_MS
+        })
+        .unwrap_or(false);
+
+    let requested_execution_id = execution_graph_execution_id
+        .map(str::to_string)
+        .or_else(|| {
+            pending_before_reject
+                .as_ref()
+                .and_then(|pending| pending.execution_graph_execution_id.clone())
+        });
+    let mut persisted_graph = if let Some(execution_id) = requested_execution_id.as_deref() {
+        load_execution_graph_snapshot(state.mcp.store.as_ref(), execution_id)
+            .await
+            .map_err(to_string)?
+    } else {
+        None
+    };
+    if persisted_graph.is_none() {
+        persisted_graph =
+            load_execution_graph_snapshot_by_approval_token(state.mcp.store.as_ref(), token)
+                .await
+                .map_err(to_string)?;
+    }
+
+    if let Some(mut execution_graph) = persisted_graph {
+        let execution_id = execution_graph
+            .get("execution_id")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        apply_rejected_tool_result_to_execution_graph_value(
+            &mut execution_graph,
+            execution_id.as_deref(),
+            pending_before_reject
+                .as_ref()
+                .and_then(|pending| pending.call_id.as_deref()),
+            "User rejected tool execution",
+        );
+        if let Err(err) = persist_execution_graph_snapshot(
+            state.mcp.store.as_ref(),
+            &execution_graph,
+            pending_before_reject
+                .as_ref()
+                .and_then(|pending| pending.session_id.as_deref())
+                .unwrap_or("unknown"),
+            "desktop_local_chat_rejected",
+            None,
+            Some("cancelled"),
+        )
+        .await
+        {
+            log::warn!(
+                "persist rejected execution graph failed approval_token={} err={}",
+                token,
+                err
+            );
+        }
+        if let Some(execution_id) = execution_id.as_deref() {
+            if let Err(err) =
+                delete_execution_graph_runtime_context(state.mcp.store.as_ref(), execution_id).await
+            {
+                log::warn!(
+                    "delete_execution_graph_runtime_context failed execution_id={} err={}",
+                    execution_id,
+                    err
+                );
+            }
+        }
+        return Ok(serde_json::json!({
+            "status": "LOCAL_CHAT_REJECTED",
+            "execution_graph": execution_graph,
+            "execution_graph_execution_id": execution_id,
+            "execution_graph_gate_node_id": pending_before_reject
+                .as_ref()
+                .and_then(|pending| pending.execution_graph_gate_node_id.clone()),
+            "execution_graph_tool_node_id": pending_before_reject
+                .as_ref()
+                .and_then(|pending| pending.execution_graph_tool_node_id.clone()),
+        }));
+    }
+
+    let mut suspended = if legacy_fallback_allowed {
+        state
+            .mcp
+            .approvals
+            .suspended_local_chat_executions
+            .write()
+            .await
+            .remove(token)
+    } else {
+        None
+    };
+    if let Some(ref mut suspended) = suspended {
+        apply_rejected_tool_result_to_execution_graph(
+            suspended,
+            pending_before_reject
+                .as_ref()
+                .and_then(|pending| pending.call_id.as_deref()),
+            "User rejected tool execution",
+        );
+        if let Err(err) = persist_execution_graph_snapshot(
+            state.mcp.store.as_ref(),
+            suspended.execution_graph(),
+            pending_before_reject
+                .as_ref()
+                .and_then(|pending| pending.session_id.as_deref())
+                .unwrap_or("unknown"),
+            "desktop_local_chat_rejected_legacy_fallback",
+            None,
+            Some("cancelled"),
+        )
+        .await
+        {
+            log::warn!(
+                "persist rejected legacy fallback execution graph failed approval_token={} err={}",
+                token,
+                err
+            );
+        }
+        if let Some(execution_id) = suspended.graph_execution_id() {
+            if let Err(err) =
+                delete_execution_graph_runtime_context(state.mcp.store.as_ref(), execution_id).await
+            {
+                log::warn!(
+                    "delete_execution_graph_runtime_context failed execution_id={} err={}",
+                    execution_id,
+                    err
+                );
+            }
+        }
+        return Ok(serde_json::json!({
+            "status": "LOCAL_CHAT_REJECTED",
+            "execution_graph": suspended.execution_graph().clone(),
+            "execution_graph_execution_id": suspended.graph_execution_id(),
+            "execution_graph_gate_node_id": suspended.pending_gate_node_id(),
+            "execution_graph_tool_node_id": suspended.pending_tool_node_id(),
+        }));
+    }
+
+    Ok(serde_json::json!({
+        "status": "REJECTED",
+    }))
+}
+
 #[cfg(test)]
 pub(crate) async fn list_pending_mcp_approvals_inner(
     pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
@@ -335,58 +575,19 @@ pub async fn approve_mcp_tool(
     execution_token: Option<String>,
     #[allow(non_snake_case)] executionToken: Option<String>,
 ) -> Result<Value, String> {
-    let token = approval_token
-        .or(approvalToken)
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| "approval token is required".to_string())?;
-    let pending_before_approval = state
-        .mcp
-        .approvals
-        .pending_tool_calls
-        .read()
-        .await
-        .get(&token)
-        .cloned();
-    let approval_context = state.mcp.build_approval_context(
+    let token = require_approval_token(approval_token.or(approvalToken))?;
+    approve_mcp_tool_payload(
+        &app,
+        &state,
+        &token,
+        execution_graph_execution_id
+            .or(executionGraphExecutionId)
+            .as_deref(),
+        approval_mode.or(approvalMode).as_deref(),
         call_id.or(callId).as_deref(),
         execution_token.or(executionToken).as_deref(),
-        None,
-    );
-    let persist_mode = parse_approve_persist_mode(approval_mode.or(approvalMode));
-
-    let approved = approve_mcp_tool_inner_with_context_and_mode(
-        &approval_context,
-        Some(&state.mcp),
-        state.mcp.store.as_ref(),
-        state.mcp.approvals.pending_tool_calls.as_ref(),
-        &token,
-        persist_mode,
     )
-    .await?;
-
-    if let Some(resumed) =
-        resume_suspended_local_chat_after_approval(
-            &app,
-            &state,
-            &token,
-            &approved,
-            pending_before_approval
-                .as_ref()
-                .and_then(|pending| pending.call_id.as_deref()),
-            execution_graph_execution_id
-                .or(executionGraphExecutionId)
-                .as_deref(),
-            pending_before_approval
-                .as_ref()
-                .map(|pending| pending.created_at_unix_ms),
-        )
-        .await?
-    {
-        return Ok(resumed);
-    }
-
-    Ok(approved)
+    .await
 }
 
 #[tauri::command]
@@ -399,168 +600,14 @@ pub async fn reject_mcp_tool(
     reject_mode: Option<String>,
     #[allow(non_snake_case)] rejectMode: Option<String>,
 ) -> Result<Value, String> {
-    let token = approval_token
-        .or(approvalToken)
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| "approval token is required".to_string())?;
-    let pending_before_reject = state
-        .mcp
-        .approvals
-        .pending_tool_calls
-        .read()
-        .await
-        .get(&token)
-        .cloned();
-    reject_mcp_tool_inner_with_mode(
-        Some(state.mcp.store.as_ref()),
-        state.mcp.approvals.pending_tool_calls.as_ref(),
+    let token = require_approval_token(approval_token.or(approvalToken))?;
+    reject_mcp_tool_payload(
+        &state,
         &token,
-        parse_reject_persist_mode(reject_mode.or(rejectMode)),
+        execution_graph_execution_id
+            .or(executionGraphExecutionId)
+            .as_deref(),
+        reject_mode.or(rejectMode).as_deref(),
     )
-    .await?;
-    let legacy_fallback_allowed = pending_before_reject
-        .as_ref()
-        .map(|pending| {
-            let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
-            now.saturating_sub(pending.created_at_unix_ms) <= LEGACY_SUSPENDED_REJECT_FALLBACK_WINDOW_MS
-        })
-        .unwrap_or(false);
-
-    let requested_execution_id = execution_graph_execution_id
-        .or(executionGraphExecutionId)
-        .or_else(|| {
-            pending_before_reject
-                .as_ref()
-                .and_then(|pending| pending.execution_graph_execution_id.clone())
-        });
-    let mut persisted_graph = if let Some(execution_id) = requested_execution_id.as_deref()
-    {
-        load_execution_graph_snapshot(state.mcp.store.as_ref(), execution_id)
-            .await
-            .map_err(to_string)?
-    } else {
-        None
-    };
-    if persisted_graph.is_none() {
-        persisted_graph =
-            load_execution_graph_snapshot_by_approval_token(state.mcp.store.as_ref(), &token)
-                .await
-                .map_err(to_string)?;
-    }
-
-    if let Some(mut execution_graph) = persisted_graph {
-        let execution_id = execution_graph
-            .get("execution_id")
-            .and_then(|value| value.as_str())
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string);
-        apply_rejected_tool_result_to_execution_graph_value(
-            &mut execution_graph,
-            execution_id.as_deref(),
-            pending_before_reject
-                .as_ref()
-                .and_then(|pending| pending.call_id.as_deref()),
-            "User rejected tool execution",
-        );
-        if let Err(err) = persist_execution_graph_snapshot(
-            state.mcp.store.as_ref(),
-            &execution_graph,
-            pending_before_reject
-                .as_ref()
-                .and_then(|pending| pending.session_id.as_deref())
-                .unwrap_or("unknown"),
-            "desktop_local_chat_rejected",
-            None,
-            Some("cancelled"),
-        )
-        .await
-        {
-            log::warn!("persist rejected execution graph failed approval_token={} err={}", token, err);
-        }
-        if let Some(execution_id) = execution_id.as_deref() {
-            if let Err(err) =
-                delete_execution_graph_runtime_context(state.mcp.store.as_ref(), execution_id).await
-            {
-                log::warn!(
-                    "delete_execution_graph_runtime_context failed execution_id={} err={}",
-                    execution_id,
-                    err
-                );
-            }
-        }
-        return Ok(serde_json::json!({
-            "status": "LOCAL_CHAT_REJECTED",
-            "execution_graph": execution_graph,
-            "execution_graph_execution_id": execution_id,
-            "execution_graph_gate_node_id": pending_before_reject
-                .as_ref()
-                .and_then(|pending| pending.execution_graph_gate_node_id.clone()),
-            "execution_graph_tool_node_id": pending_before_reject
-                .as_ref()
-                .and_then(|pending| pending.execution_graph_tool_node_id.clone()),
-        }));
-    }
-
-    let mut suspended = if legacy_fallback_allowed {
-        state
-            .mcp
-            .approvals
-            .suspended_local_chat_executions
-            .write()
-            .await
-            .remove(&token)
-    } else {
-        None
-    };
-    if let Some(ref mut suspended) = suspended {
-        apply_rejected_tool_result_to_execution_graph(
-            suspended,
-            pending_before_reject
-                .as_ref()
-                .and_then(|pending| pending.call_id.as_deref()),
-            "User rejected tool execution",
-        );
-        if let Err(err) = persist_execution_graph_snapshot(
-            state.mcp.store.as_ref(),
-            suspended.execution_graph(),
-            pending_before_reject
-                .as_ref()
-                .and_then(|pending| pending.session_id.as_deref())
-                .unwrap_or("unknown"),
-            "desktop_local_chat_rejected_legacy_fallback",
-            None,
-            Some("cancelled"),
-        )
-        .await
-        {
-            log::warn!(
-                "persist rejected legacy fallback execution graph failed approval_token={} err={}",
-                token,
-                err
-            );
-        }
-        if let Some(execution_id) = suspended.graph_execution_id() {
-            if let Err(err) =
-                delete_execution_graph_runtime_context(state.mcp.store.as_ref(), execution_id).await
-            {
-                log::warn!(
-                    "delete_execution_graph_runtime_context failed execution_id={} err={}",
-                    execution_id,
-                    err
-                );
-            }
-        }
-        return Ok(serde_json::json!({
-            "status": "LOCAL_CHAT_REJECTED",
-            "execution_graph": suspended.execution_graph().clone(),
-            "execution_graph_execution_id": suspended.graph_execution_id(),
-            "execution_graph_gate_node_id": suspended.pending_gate_node_id(),
-            "execution_graph_tool_node_id": suspended.pending_tool_node_id(),
-        }));
-    }
-    Ok(serde_json::json!({
-        "status": "REJECTED",
-    }))
+    .await
 }

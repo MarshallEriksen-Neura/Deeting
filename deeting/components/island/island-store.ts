@@ -86,12 +86,7 @@ function truncate(value: string, maxChars: number) {
 function messagePreview(message: Message | undefined): string | null {
   if (!message) return null;
   const fromBlocks = extractAssistantTextFromBlocks(message.blocks).trim();
-  if (fromBlocks.length > 0) {
-    return fromBlocks;
-  }
-
-  const content = typeof message.content === "string" ? message.content.trim() : "";
-  return content.length > 0 ? content : null;
+  return fromBlocks.length > 0 ? fromBlocks : null;
 }
 
 function findLatestAssistantMessage(messages: Message[]) {

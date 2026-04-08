@@ -15,6 +15,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::Stdio,
+    sync::{Arc, Mutex},
 };
 use tokio::io::AsyncBufReadExt;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -248,6 +249,7 @@ async fn spawn_local_stdio_client(
     env: Option<&HashMap<String, String>>,
     stderr_sender: Option<UnboundedSender<String>>,
 ) -> Result<RunningService<RoleClient, ClientInfo>, String> {
+    let stderr_lines = Arc::new(Mutex::new(Vec::new()));
     let mut child_command = tokio::process::Command::new(command);
     configure_background_tokio_command(&mut child_command);
     child_command.args(args);
@@ -261,12 +263,18 @@ async fn spawn_local_stdio_client(
     if let Some(stderr) = stderr_handle {
         let command_label = format_command_label(command, args);
         let stderr_sender = stderr_sender.clone();
+        let stderr_lines = stderr_lines.clone();
         tokio::spawn(async move {
             let mut lines = tokio::io::BufReader::new(stderr).lines();
             let mut line_count = 0usize;
             while let Ok(Some(line)) = lines.next_line().await {
                 let trimmed = line.trim();
                 if !trimmed.is_empty() {
+                    if let Ok(mut captured) = stderr_lines.lock() {
+                        if captured.len() < 8 {
+                            captured.push(trimmed.to_string());
+                        }
+                    }
                     if line_count < 30 {
                         warn!(
                             "mcp subprocess stderr command='{}' line='{}'",
@@ -284,7 +292,52 @@ async fn spawn_local_stdio_client(
     client_info()
         .serve(transport)
         .await
-        .map_err(|err| err.to_string())
+        .map_err(|err| {
+            enrich_stdio_connect_error(err.to_string(), stderr_lines.as_ref(), command, args)
+        })
+}
+
+fn enrich_stdio_connect_error(
+    base_error: String,
+    stderr_lines: &Mutex<Vec<String>>,
+    command: &str,
+    args: &[String],
+) -> String {
+    let stderr_excerpt = stderr_excerpt(stderr_lines);
+    if stderr_excerpt.is_empty() {
+        return base_error;
+    }
+
+    let normalized_base = base_error.to_ascii_lowercase();
+    let normalized_excerpt = stderr_excerpt.to_ascii_lowercase();
+    if normalized_base.contains(&normalized_excerpt) {
+        return base_error;
+    }
+
+    format!(
+        "{}; subprocess stderr ({}): {}",
+        base_error,
+        format_command_label(command, args),
+        stderr_excerpt
+    )
+}
+
+fn stderr_excerpt(stderr_lines: &Mutex<Vec<String>>) -> String {
+    let lines = match stderr_lines.lock() {
+        Ok(lines) => lines,
+        Err(_) => return String::new(),
+    };
+    if lines.is_empty() {
+        return String::new();
+    }
+
+    lines
+        .iter()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty())
+        .take(4)
+        .collect::<Vec<_>>()
+        .join(" | ")
 }
 
 fn configure_background_tokio_command(
@@ -784,10 +837,12 @@ pub fn unbounded_stderr_channel() -> (UnboundedSender<String>, UnboundedReceiver
 mod tests {
     use super::{
         build_url_with_same_origin, extract_legacy_sse_endpoint_path,
-        heuristic_streamable_http_fallback_urls, is_http_405_method_not_allowed_error,
+        enrich_stdio_connect_error, heuristic_streamable_http_fallback_urls,
+        is_http_405_method_not_allowed_error,
         legacy_sse_proxy_command_candidates, local_stdio_command_candidates_with_discovered_paths,
-        looks_like_legacy_sse_endpoint_url,
+        looks_like_legacy_sse_endpoint_url, spawn_local_stdio_client,
     };
+    use std::sync::Mutex;
 
     #[test]
     fn detects_http_405_method_not_allowed_error_text() {
@@ -878,5 +933,39 @@ mod tests {
                 ]));
         assert!(candidates.iter().any(|item| item.0 == "npx"
             && item.1 == vec!["-y".to_string(), "tavily-mcp@0.1.2".to_string()]));
+    }
+
+    #[test]
+    fn appends_stderr_excerpt_to_stdio_connect_errors() {
+        let stderr_lines = Mutex::new(vec![
+            "Usage: mcp-obsidian <vault-directory>".to_string(),
+            "Additional detail".to_string(),
+        ]);
+
+        let err = enrich_stdio_connect_error(
+            "connection closed: initialize response".to_string(),
+            &stderr_lines,
+            "mcp-obsidian",
+            &["D:\\vault".to_string()],
+        );
+
+        assert!(err.contains("connection closed: initialize response"));
+        assert!(err.contains("subprocess stderr (mcp-obsidian D:\\vault)"));
+        assert!(err.contains("Usage: mcp-obsidian <vault-directory> | Additional detail"));
+    }
+
+    #[tokio::test]
+    async fn spawn_local_stdio_client_surfaces_subprocess_stderr_on_initialize_failure() {
+        let (command, args): (&str, Vec<String>) = if cfg!(target_os = "windows") {
+            ("cmd", vec!["/C".to_string(), "echo usage from stderr 1>&2 & exit /b 1".to_string()])
+        } else {
+            ("sh", vec!["-c".to_string(), "echo usage from stderr >&2; exit 1".to_string()])
+        };
+
+        let err = spawn_local_stdio_client(command, &args, None, None)
+            .await
+            .expect_err("stdio connect should fail");
+
+        assert!(err.contains("usage from stderr"), "{err}");
     }
 }

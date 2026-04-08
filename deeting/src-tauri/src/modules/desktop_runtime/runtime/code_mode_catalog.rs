@@ -81,6 +81,7 @@ pub(crate) async fn build_local_sdk_search_result_with_runtime(
     .await
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) async fn build_local_sdk_search_result_with_runtime_full(
     mcp_store: &crate::modules::mcp::store::McpStore,
     embedding_service: &crate::modules::providers::embedding::EmbeddingService,
