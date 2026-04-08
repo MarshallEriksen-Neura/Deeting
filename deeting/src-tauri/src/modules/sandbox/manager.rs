@@ -31,6 +31,7 @@ const DEFAULT_TIMEOUT_SECS: u64 = 30 * 60;
 const DEFAULT_MAX_SANDBOXES: usize = 50;
 const MIN_EXEC_TIMEOUT_SECS: u64 = 5;
 const SESSION_BUSY_RETRY_ATTEMPTS: usize = 2;
+const EXECUTION_PROBE_RECOVERY_ATTEMPTS: usize = 2;
 const REAPER_INTERVAL_SECS: u64 = 60;
 const DEFAULT_BOXRUN_PORT: u16 = 9090;
 #[allow(dead_code)]
@@ -264,16 +265,21 @@ impl SandboxRuntimeManager {
     }
 
     pub async fn repair(&self) -> Result<SandboxReadinessReport, SandboxError> {
-        if let Some(provisioner) = self.provisioner.as_ref() {
-            provisioner.stop().await;
-        }
+        self.reset_runtime_state(false).await;
         self.prepare().await
     }
 
     pub async fn rebuild_runtime(&self) -> Result<SandboxReadinessReport, SandboxError> {
-        let active_ids: Vec<String> = {
+        self.reset_runtime_state(true).await;
+        self.prepare().await
+    }
+
+    async fn reset_runtime_state(&self, stop_active_boxes: bool) {
+        let active_ids: Vec<String> = if stop_active_boxes {
             let active = self.active_ids.read().await;
             active.iter().cloned().collect()
+        } else {
+            Vec::new()
         };
 
         for sandbox_id in active_ids {
@@ -287,8 +293,6 @@ impl SandboxRuntimeManager {
         if let Some(provisioner) = self.provisioner.as_ref() {
             provisioner.stop().await;
         }
-
-        self.prepare().await
     }
 
     pub async fn install_boxlite(&self) -> Result<SandboxReadinessReport, SandboxError> {
@@ -637,52 +641,106 @@ impl SandboxRuntimeManager {
         }
     }
 
+    async fn reset_session_runtime(&self, normalized_session: &str) {
+        let lease = {
+            let leases = self.session_leases.read().await;
+            leases.get(normalized_session).cloned()
+        };
+        if let Some(lease) = lease {
+            let lease_info = SandboxLeaseInfo {
+                session_id: normalized_session.to_string(),
+                sandbox_id: lease.sandbox_id,
+                sandbox_name: lease.sandbox_name,
+                expires_at_unix_ms: lease.expires_at_unix_ms,
+            };
+            let backend = self.current_backend().await;
+            self.cleanup_missing_sandbox_state(normalized_session, &lease_info, &backend)
+                .await;
+        }
+        self.run_locks.write().await.remove(normalized_session);
+    }
+
     #[allow(dead_code)]
     async fn programmatic_execution_probe(&self) -> SandboxExecutionProbe {
         let checked_at_unix_ms = Some(now_unix_ms());
-        match self
-            .execute_session_code_without_prepare(
-                EXECUTION_PROBE_SESSION_ID,
-                &format!("print({EXECUTION_PROBE_SENTINEL:?})"),
-                EXECUTION_PROBE_TIMEOUT_SECS,
-            )
-            .await
-        {
-            Ok(run) if run.exit_code == 0
-                && run.stdout.iter().any(|line| line.contains(EXECUTION_PROBE_SENTINEL)) =>
+        for attempt in 0..EXECUTION_PROBE_RECOVERY_ATTEMPTS {
+            match self
+                .execute_session_code_without_prepare(
+                    EXECUTION_PROBE_SESSION_ID,
+                    &format!("print({EXECUTION_PROBE_SENTINEL:?})"),
+                    EXECUTION_PROBE_TIMEOUT_SECS,
+                )
+                .await
             {
-                SandboxExecutionProbe {
-                    status: SandboxExecutionProbeStatus::Passed,
-                    detail: Some(
-                        "Sandbox execution probe passed. Programmatic execution is responding."
-                            .to_string(),
-                    ),
-                    checked_at_unix_ms,
+                Ok(run)
+                    if run.exit_code == 0
+                        && run
+                            .stdout
+                            .iter()
+                            .any(|line| line.contains(EXECUTION_PROBE_SENTINEL)) =>
+                {
+                    return SandboxExecutionProbe {
+                        status: SandboxExecutionProbeStatus::Passed,
+                        detail: Some(
+                            "Sandbox execution probe passed. Programmatic execution is responding."
+                                .to_string(),
+                        ),
+                        checked_at_unix_ms,
+                    };
+                }
+                Ok(run) => {
+                    return SandboxExecutionProbe {
+                        status: SandboxExecutionProbeStatus::Failed,
+                        detail: Some(format!(
+                            "Sandbox execution probe returned exit code {} without the expected success marker.",
+                            run.exit_code
+                        )),
+                        checked_at_unix_ms,
+                    };
+                }
+                Err(SandboxError::Busy(detail)) => {
+                    return SandboxExecutionProbe {
+                        status: SandboxExecutionProbeStatus::Skipped,
+                        detail: Some(format!(
+                            "Sandbox execution probe skipped because the runtime is busy: {detail}"
+                        )),
+                        checked_at_unix_ms,
+                    };
+                }
+                Err(err)
+                    if should_retry_execution_probe_after_error(&err)
+                        && attempt + 1 < EXECUTION_PROBE_RECOVERY_ATTEMPTS =>
+                {
+                    log::warn!(
+                        "execution probe failed for session {} (attempt {}/{}), recreating probe runtime: code={} detail={}",
+                        EXECUTION_PROBE_SESSION_ID,
+                        attempt + 1,
+                        EXECUTION_PROBE_RECOVERY_ATTEMPTS,
+                        err.code(),
+                        err
+                    );
+                    self.reset_session_runtime(EXECUTION_PROBE_SESSION_ID).await;
+                }
+                Err(err) => {
+                    return SandboxExecutionProbe {
+                        status: SandboxExecutionProbeStatus::Failed,
+                        detail: Some(format!(
+                            "Sandbox bridge is reachable, but a lightweight execution probe failed: {}",
+                            err.user_message()
+                        )),
+                        checked_at_unix_ms,
+                    };
                 }
             }
-            Ok(run) => SandboxExecutionProbe {
-                status: SandboxExecutionProbeStatus::Failed,
-                detail: Some(format!(
-                    "Sandbox execution probe returned exit code {} without the expected success marker.",
-                    run.exit_code
-                )),
-                checked_at_unix_ms,
-            },
-            Err(SandboxError::Busy(detail)) => SandboxExecutionProbe {
-                status: SandboxExecutionProbeStatus::Skipped,
-                detail: Some(format!(
-                    "Sandbox execution probe skipped because the runtime is busy: {detail}"
-                )),
-                checked_at_unix_ms,
-            },
-            Err(err) => SandboxExecutionProbe {
-                status: SandboxExecutionProbeStatus::Failed,
-                detail: Some(format!(
-                    "Sandbox bridge is reachable, but a lightweight execution probe failed: {}",
-                    err.user_message()
-                )),
-                checked_at_unix_ms,
-            },
+        }
+
+        SandboxExecutionProbe {
+            status: SandboxExecutionProbeStatus::Failed,
+            detail: Some(
+                "Sandbox bridge is reachable, but the lightweight execution probe exhausted its recovery attempts."
+                    .to_string(),
+            ),
+            checked_at_unix_ms,
         }
     }
 
@@ -1529,6 +1587,10 @@ fn is_missing_sandbox_error(err: &SandboxError) -> bool {
     }
 }
 
+fn should_retry_execution_probe_after_error(err: &SandboxError) -> bool {
+    is_missing_sandbox_error(err) || matches!(err, SandboxError::Network(_))
+}
+
 fn now_unix_ms() -> i64 {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1581,6 +1643,11 @@ mod tests {
         outcome: MockProbeOutcome,
     }
 
+    #[derive(Clone)]
+    struct MockRecoverableProbeProvider {
+        state: Arc<Mutex<MockProviderState>>,
+    }
+
     #[async_trait]
     impl SandboxProvider for MockProbeProvider {
         fn provider_name(&self) -> &str {
@@ -1615,6 +1682,48 @@ mod tests {
                     "sandbox probe not found".to_string(),
                 )),
             }
+        }
+    }
+
+    #[async_trait]
+    impl SandboxProvider for MockRecoverableProbeProvider {
+        fn provider_name(&self) -> &str {
+            "mock-sandbox"
+        }
+
+        async fn get_or_create_box(&self, box_name: &str) -> Result<SandboxIdentity, SandboxError> {
+            Ok(SandboxIdentity {
+                sandbox_id: format!("{box_name}-id"),
+                sandbox_name: box_name.to_string(),
+            })
+        }
+
+        async fn stop_box(&self, box_id_or_name: &str) -> Result<(), SandboxError> {
+            let mut state = self.state.lock().await;
+            state.stop_calls.push(box_id_or_name.to_string());
+            state.broken_name_removed = true;
+            Ok(())
+        }
+
+        async fn run_python(
+            &self,
+            box_id_or_name: &str,
+            _code: &str,
+            _timeout_seconds: u64,
+        ) -> Result<SandboxExecutionOutput, SandboxError> {
+            let mut state = self.state.lock().await;
+            state.run_calls.push(box_id_or_name.to_string());
+            if state.broken_name_removed {
+                return Ok(SandboxExecutionOutput {
+                    stdout: vec![EXECUTION_PROBE_SENTINEL.to_string()],
+                    stderr: vec![],
+                    exit_code: 0,
+                    error_message: None,
+                });
+            }
+            Err(SandboxError::Network(
+                "bridge dropped the probe request".to_string(),
+            ))
         }
     }
 
@@ -1777,6 +1886,67 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn repair_clears_runtime_state_without_stopping_active_boxes() {
+        let provider = MockZombieByNameProvider::new("unused-box".to_string());
+        let state = provider.state.clone();
+        let manager = test_manager(Arc::new(provider));
+
+        manager.session_leases.write().await.insert(
+            "session-a".to_string(),
+            SessionLease {
+                sandbox_id: "box-a".to_string(),
+                sandbox_name: "box-name-a".to_string(),
+                expires_at_unix_ms: now_unix_ms() + 10_000,
+            },
+        );
+        manager.active_ids.write().await.insert("box-a".to_string());
+        manager
+            .run_locks
+            .write()
+            .await
+            .insert("session-a".to_string(), Arc::new(Mutex::new(())));
+
+        let _ = manager.repair().await.expect("repair should complete");
+
+        assert!(manager.session_leases.read().await.is_empty());
+        assert!(manager.active_ids.read().await.is_empty());
+        assert!(manager.run_locks.read().await.is_empty());
+        assert!(state.lock().await.stop_calls.is_empty());
+    }
+
+    #[tokio::test]
+    async fn rebuild_runtime_stops_active_boxes_and_clears_runtime_state() {
+        let provider = MockZombieByNameProvider::new("unused-box".to_string());
+        let state = provider.state.clone();
+        let manager = test_manager(Arc::new(provider));
+
+        manager.session_leases.write().await.insert(
+            "session-a".to_string(),
+            SessionLease {
+                sandbox_id: "box-a".to_string(),
+                sandbox_name: "box-name-a".to_string(),
+                expires_at_unix_ms: now_unix_ms() + 10_000,
+            },
+        );
+        manager.active_ids.write().await.insert("box-a".to_string());
+        manager
+            .run_locks
+            .write()
+            .await
+            .insert("session-a".to_string(), Arc::new(Mutex::new(())));
+
+        let _ = manager
+            .rebuild_runtime()
+            .await
+            .expect("rebuild should complete");
+
+        assert!(manager.session_leases.read().await.is_empty());
+        assert!(manager.active_ids.read().await.is_empty());
+        assert!(manager.run_locks.read().await.is_empty());
+        assert_eq!(state.lock().await.stop_calls, vec!["box-a".to_string()]);
+    }
+
+    #[tokio::test]
     async fn execution_probe_reports_passed_when_tiny_command_runs() {
         let manager = test_manager(Arc::new(MockProbeProvider {
             outcome: MockProbeOutcome::Passed,
@@ -1784,6 +1954,32 @@ mod tests {
 
         let probe = manager.programmatic_execution_probe().await;
         assert_eq!(probe.status, SandboxExecutionProbeStatus::Passed);
+    }
+
+    #[tokio::test]
+    async fn execution_probe_retries_after_network_failure_and_recovers() {
+        let provider = MockRecoverableProbeProvider {
+            state: Arc::new(Mutex::new(MockProviderState::default())),
+        };
+        let state = provider.state.clone();
+        let manager = test_manager(Arc::new(provider));
+
+        let probe = manager.programmatic_execution_probe().await;
+        assert_eq!(probe.status, SandboxExecutionProbeStatus::Passed);
+
+        let state = state.lock().await;
+        let probe_box_name = session_to_box_name(EXECUTION_PROBE_SESSION_ID);
+        assert_eq!(
+            state.run_calls,
+            vec![
+                format!("{probe_box_name}-id"),
+                format!("{probe_box_name}-id")
+            ]
+        );
+        assert_eq!(
+            state.stop_calls,
+            vec![format!("{probe_box_name}-id"), probe_box_name]
+        );
     }
 
     #[tokio::test]

@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from "framer-motion"
 import {
   Send,
   Loader2,
-  X,
   Clock,
   Zap,
   AlertCircle,
@@ -21,7 +20,6 @@ import { GlassButton } from "@/components/ui/glass-button"
 import { GlassCard } from "@/components/ui/glass-card"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Sheet,
   SheetContent,
@@ -29,7 +27,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet"
-import type { ProviderModel, TestMessage, TestSession } from "./types"
+import type { ProviderModel, TestMessage } from "./types"
 import { CAPABILITY_META, formatContextWindow } from "./types"
 
 /**
@@ -50,10 +48,8 @@ interface TestDrawerProps {
 // Chat bubble component
 function ChatBubble({
   message,
-  isLast,
 }: {
   message: TestMessage
-  isLast: boolean
 }) {
   const [copied, setCopied] = React.useState(false)
   const isUser = message.role === "user"
@@ -69,21 +65,21 @@ function ChatBubble({
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       className={cn(
-        "flex flex-col gap-1",
+        "flex w-full min-w-0 flex-col gap-1",
         isUser ? "items-end" : "items-start"
       )}
     >
       {/* Message Bubble */}
       <div
         className={cn(
-          "relative group max-w-[85%] rounded-2xl px-4 py-3",
+          "relative group min-w-0 max-w-[85%] rounded-2xl px-4 py-3",
           isUser
             ? "bg-[var(--primary)] text-white rounded-br-md"
             : "bg-white/5 text-[var(--foreground)] rounded-bl-md border border-white/10"
         )}
       >
         {/* Content */}
-        <p className="text-sm whitespace-pre-wrap break-words">
+        <p className="max-w-full text-sm whitespace-pre-wrap break-words">
           {message.content}
         </p>
 
@@ -234,15 +230,16 @@ export function TestDrawer({
   const [error, setError] = React.useState<string | null>(null)
   const scrollRef = React.useRef<HTMLDivElement>(null)
   const textareaRef = React.useRef<HTMLTextAreaElement>(null)
+  const modelId = model?.id ?? null
 
   // Reset state when model changes
   React.useEffect(() => {
-    if (model) {
+    if (modelId) {
       setMessages([])
       setInput("")
       setError(null)
     }
-  }, [model?.id])
+  }, [modelId])
 
   // Auto-scroll to bottom
   React.useEffect(() => {
@@ -337,21 +334,20 @@ export function TestDrawer({
         </SheetHeader>
 
         {/* Chat Area */}
-        <div className="flex-1 overflow-hidden flex flex-col">
-          <ScrollArea
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div
             ref={scrollRef}
-            className="flex-1 px-4"
+            className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4"
           >
             <div className="py-4 space-y-4">
               {messages.length === 0 ? (
                 <EmptyChatState modelId={model.id} />
               ) : (
                 <>
-                  {messages.map((message, i) => (
+                  {messages.map((message) => (
                     <ChatBubble
                       key={message.id}
                       message={message}
-                      isLast={i === messages.length - 1}
                     />
                   ))}
                   <AnimatePresence>
@@ -360,7 +356,7 @@ export function TestDrawer({
                 </>
               )}
             </div>
-          </ScrollArea>
+          </div>
 
           {/* Error Display */}
           {error && (
