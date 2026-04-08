@@ -30,6 +30,7 @@ export interface ChatAssistant {
 
 interface ChatConfig {
   model: string
+  temperatureEnabled: boolean
   temperature: number
   topP: number
   maxTokens: number | null
@@ -259,6 +260,7 @@ export const useChatStore = create<ChatStore>()(
       // === 配置状态初始值 ===
       config: {
         model: "gpt-4o",
+        temperatureEnabled: true,
         temperature: 0.7,
         topP: 1.0,
         maxTokens: null,
@@ -799,6 +801,10 @@ export const useChatStore = create<ChatStore>()(
           config: {
             ...currentState.config,
             ...persistedConfig,
+            temperatureEnabled:
+              typeof persistedConfig.temperatureEnabled === "boolean"
+                ? persistedConfig.temperatureEnabled
+                : currentState.config.temperatureEnabled,
             maxTokens:
               typeof normalizedMaxTokens === "number"
                 ? normalizedMaxTokens

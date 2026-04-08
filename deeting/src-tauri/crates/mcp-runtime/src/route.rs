@@ -117,10 +117,10 @@ pub fn select_local_route_with_evidence(
 pub fn render_local_route_prompt(decision: &LocalRouteDecision) -> String {
     let route_guidance = match decision.route {
         LocalRouteKind::Direct => {
-            "Prefer direct answer or the lightest direct callable capability that can finish the job. If capability choice is the blocker, you must call search_sdk before any refusal, inability claim, or manual-user handoff. If results are weak, refine the query with concrete action-and-target terms at least once before answering or refusing. For browser/page/tab requests, search for the requested action and target first rather than assuming the browser lane is unavailable. Escalate into execute_code_plan when the user wants a concrete deliverable that needs multi-step coordination."
+            "Prefer direct answer or the lightest direct callable capability that can finish the job. If capability choice is the blocker, you must call search_sdk before any refusal, inability claim, or manual-user handoff. Use the exact tool name `search_sdk` for capability discovery; do not substitute another tool just because its name also contains words like search, find, lookup, or query. If results are weak, refine the query with concrete action-and-target terms at least once before answering or refusing. For browser/page/tab requests, search for the requested action and target first rather than assuming the browser lane is unavailable. Escalate into execute_code_plan when the user wants a concrete deliverable that needs multi-step coordination."
         }
         LocalRouteKind::Worker => {
-            "Treat this as analysis, planning, or decomposition work, but keep moving toward completion. If the task depends on unknown runtime capabilities or installed tools, you must use search_sdk before concluding what is or is not possible, and refine weak results with concrete action-and-target terms at least once. Do not default to a generic inability claim for browser/page/tab actions before discovery has ruled out the relevant lane. When the task needs multi-step coordination, loops, aggregation, or broad edits, you may use execute_code_plan as a worker execution tool. If verified sources and available capabilities are enough to produce the requested deliverable, do that instead of stopping at recommendations."
+            "Treat this as analysis, planning, or decomposition work, but keep moving toward completion. If the task depends on unknown runtime capabilities or installed tools, you must use search_sdk before concluding what is or is not possible, and refine weak results with concrete action-and-target terms at least once. Use the exact tool name `search_sdk` for capability discovery; do not substitute another tool just because its name also contains words like search, find, lookup, or query. Do not default to a generic inability claim for browser/page/tab actions before discovery has ruled out the relevant lane. When the task needs multi-step coordination, loops, aggregation, or broad edits, you may use execute_code_plan as a worker execution tool. If verified sources and available capabilities are enough to produce the requested deliverable, do that instead of stopping at recommendations."
         }
     };
     let reasons = if decision.reasons.is_empty() {
@@ -452,6 +452,8 @@ mod tests {
         });
 
         assert!(prompt.contains("must call search_sdk before any refusal"));
+        assert!(prompt.contains("exact tool name `search_sdk`"));
+        assert!(prompt.contains("words like search, find, lookup, or query"));
         assert!(prompt.contains("browser/page/tab requests"));
     }
 }

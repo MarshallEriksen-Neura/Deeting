@@ -828,6 +828,9 @@ fn normalize_root_schema_for_provider_compat(value: &mut Value) {
     if map.get("type").and_then(Value::as_str) != Some("object") {
         map.insert("type".to_string(), Value::String("object".to_string()));
     }
+    if !map.contains_key("properties") {
+        map.insert("properties".to_string(), Value::Object(Map::new()));
+    }
 
     for key in ["oneOf", "anyOf", "allOf", "enum", "not"] {
         map.remove(key);
@@ -2197,10 +2200,10 @@ fn is_version_segment(segment: &str) -> bool {
 mod tests {
     use super::{
         apply_request_builder, build_effective_config, build_upstream_url_with_params,
-        calculate_retry_backoff_ms, deep_merge_json, prepare_provider_request,
-        resolve_auth_for_protocol, responses_input_from_messages_or_items_builder,
-        send_prepared_json_request_with_retry, should_retry_upstream_status,
-        PreparedProviderRequest, UpstreamRetryPolicy,
+        calculate_retry_backoff_ms, deep_merge_json, normalize_root_schema_for_provider_compat,
+        prepare_provider_request, resolve_auth_for_protocol,
+        responses_input_from_messages_or_items_builder, send_prepared_json_request_with_retry,
+        should_retry_upstream_status, PreparedProviderRequest, UpstreamRetryPolicy,
     };
     use crate::modules::providers::types::{ProviderInstance, ProviderModel, ProviderPreset};
     use axum::{extract::State as AxumState, http::StatusCode, routing::post, Json, Router};
@@ -3513,5 +3516,17 @@ mod tests {
                 { "type": "input_file", "file_id": "file-1", "filename": "note.txt" }
             ])
         );
+    }
+
+    #[test]
+    fn provider_schema_normalization_adds_empty_properties_for_object_roots() {
+        let mut schema = json!({
+            "type": "object"
+        });
+
+        normalize_root_schema_for_provider_compat(&mut schema);
+
+        assert_eq!(schema["type"], json!("object"));
+        assert_eq!(schema["properties"], json!({}));
     }
 }

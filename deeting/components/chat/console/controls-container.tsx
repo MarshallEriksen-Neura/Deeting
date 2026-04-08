@@ -432,6 +432,10 @@ function ControlsContainer() {
     setConfig({ temperature: Number(value[0].toFixed(2)) });
   }, [setConfig]);
 
+  const handleTemperatureEnabledChange = useCallback((checked: boolean) => {
+    setConfig({ temperatureEnabled: checked });
+  }, [setConfig]);
+
   const handleTopPChange = useCallback((value: number[]) => {
     setConfig({ topP: Number(value[0].toFixed(2)) });
   }, [setConfig]);
@@ -548,6 +552,23 @@ function ControlsContainer() {
               className="w-72 rounded-2xl border border-slate-200/70 dark:border-white/10 bg-white/95 dark:bg-[#0a0a0a]/95 shadow-2xl backdrop-blur-2xl"
             >
               <div className="space-y-4">
+                <div className="flex items-center justify-between rounded-xl border border-slate-200/80 bg-slate-50/80 px-3 py-2 dark:border-white/10 dark:bg-white/[0.03]">
+                  <div className="space-y-0.5">
+                    <div className="text-[11px] font-bold text-slate-700 dark:text-white/80">
+                      {t("hud.temperatureToggle")}
+                    </div>
+                    <div className="text-[10px] text-slate-500 dark:text-white/40">
+                      {config.temperatureEnabled
+                        ? t("hud.temperatureEnabled")
+                        : t("hud.temperatureDisabled")}
+                    </div>
+                  </div>
+                  <Switch
+                    checked={config.temperatureEnabled}
+                    onCheckedChange={handleTemperatureEnabledChange}
+                    aria-label={t("hud.temperatureToggle")}
+                  />
+                </div>
                 <div className="space-y-2">
                   <div className="flex justify-between items-center px-1">
                     <label className="text-[11px] font-bold text-slate-600 dark:text-white/50 flex items-center gap-1.5">
@@ -561,6 +582,7 @@ function ControlsContainer() {
                     max={2}
                     step={0.1}
                     aria-label={t("hud.temperature")}
+                    disabled={!config.temperatureEnabled}
                     onValueChange={handleTemperatureChange}
                   />
                 </div>

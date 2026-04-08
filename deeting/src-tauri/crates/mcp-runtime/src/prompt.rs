@@ -14,6 +14,8 @@ const LOCAL_ROUTER_BASE_PROMPT_TEMPLATE: &str = concat!(
 
     "## Phase 2: Capability Discovery (search_sdk)\n",
     "- Mandatory Discovery Gate: If the task may depend on runtime capabilities, external knowledge, files, browser/page interaction, executing code, or system interaction, call `search_sdk` before making any capability claim or refusal.\n",
+    "- Exact Primitive Rule: `search_sdk` is a reserved capability-discovery primitive. Use the exact tool name `search_sdk` for capability discovery; do not substitute any other tool just because its name also contains words like `search`, `find`, `lookup`, or `query`.\n",
+    "- Domain Search Separation: Content-search or domain-search tools may search notes, docs, files, memory, knowledge, or app data inside their own domain. They do not discover which runtime tools are installed, callable, or allowed in the current round.\n",
     "- Action-Oriented Search: Infer the required capability from the task, and search by action + target + surface rather than just matching proper nouns or product names.\n",
     "- No Premature Refusal: Do not say a tool is unavailable, or ask the user to do the step manually, until `search_sdk` has been used in the current turn and weak results have been refined at least once with adjacent capability terms.\n",
     "- Retry Missing Capability Discovery: If `search_sdk` still does not surface the needed callable tool, refine the query and call `search_sdk` again to search for that capability instead of stopping.\n\n",
@@ -176,6 +178,8 @@ mod tests {
 
         assert!(prompt.contains("Mandatory Discovery Gate"));
         assert!(prompt.contains("call `search_sdk` before making any capability claim or refusal"));
+        assert!(prompt.contains("reserved capability-discovery primitive"));
+        assert!(prompt.contains("name also contains words like `search`, `find`, `lookup`, or `query`"));
         assert!(prompt.contains("Do not say a tool is unavailable"));
     }
 

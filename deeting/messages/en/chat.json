@@ -306,6 +306,9 @@
       "newAgent": "New",
       "engine": "Engine",
       "optimized": "Optimized",
+      "temperatureToggle": "Use Temperature",
+      "temperatureEnabled": "Enabled",
+      "temperatureDisabled": "Disabled",
       "temperature": "Temperature",
       "topP": "Top P",
       "system": {

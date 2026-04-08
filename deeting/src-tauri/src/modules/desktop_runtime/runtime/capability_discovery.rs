@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, HashSet};
 
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
 use super::search_feedback::{
     compute_feedback_boost, historical_affinity_from_rows, query_affinity_from_rows,
@@ -1456,6 +1456,11 @@ fn ensure_object_schema(schema: Value, force_object: bool) -> Value {
     if force_object && schema_type != "object" {
         normalized.insert("type".to_string(), Value::String("object".to_string()));
     }
+    if normalized.get("type").and_then(|value| value.as_str()) == Some("object")
+        && !normalized.contains_key("properties")
+    {
+        normalized.insert("properties".to_string(), Value::Object(Map::new()));
+    }
     Value::Object(normalized)
 }
 
@@ -2205,6 +2210,17 @@ mod tests {
             groups["skill_tools"],
             json!(["skill.openclaw_weather.fetch_weather"])
         );
+    }
+
+    #[test]
+    fn normalize_input_schema_adds_empty_properties_for_object_tools() {
+        let normalized = normalize_input_schema(&json!({
+            "type": "object"
+        }))
+        .expect("normalized schema");
+
+        assert_eq!(normalized["type"], json!("object"));
+        assert_eq!(normalized["properties"], json!({}));
     }
 
     #[test]

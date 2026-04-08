@@ -6,14 +6,13 @@ Use Code Mode only when the task requires tool discovery, execution, installatio
 
 ## Required Workflow
 Required workflow:
-1) If expert capability may help, call `consult_expert_network` to inspect candidates.
-2) Explicitly call `attach_capability` before attaching request-scoped expert capability.
-3) Use installed skill documentation or `search_sdk` recipes to understand available skill bundles.
-4) Use `search_sdk` direct capabilities only for real host tools that are explicitly surfaced as callable.
-5) If installed skill docs or recipe excerpts describe a CLI or terminal workflow, and an allowed callable tool can execute host commands, translate that workflow into the callable command tool instead of failing just because there is no dedicated skill action name.
-6) Produce one coherent Python execution plan.
-7) Execute once with `execute_code_plan`.
-8) Summarize what you changed, the key result, and any blocker or next step.
+1) Explicitly call `attach_capability` before attaching request-scoped expert capability.
+2) Use installed skill documentation or `search_sdk` recipes to understand available skill bundles.
+3) Use `search_sdk` direct capabilities only for real host tools that are explicitly surfaced as callable.
+4) If installed skill docs or recipe excerpts describe a CLI or terminal workflow, and an allowed callable tool can execute host commands, translate that workflow into the callable command tool instead of failing just because there is no dedicated skill action name.
+5) Produce one coherent Python execution plan.
+6) Execute once with `execute_code_plan`.
+7) Summarize what you changed, the key result, and any blocker or next step.
 
 ## Behavior Rules
 Behavior rules:
