@@ -29,8 +29,6 @@ const ViewBlock = dynamic(() => import("@/components/views/view-block"), {
   ssr: false,
 });
 
-const TOOL_GROUP_THRESHOLD = 2;
-
 function getRenderableBlockContent(block: MessageBlock): string | null {
   if ("content" in block && typeof block.content === "string") {
     return block.content;
@@ -180,9 +178,12 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
           entries.push({ part, index: idx });
         }
       });
+      const areToolCallsContiguous = entries.every(
+        (entry, index) =>
+          index === 0 || entry.index === entries[index - 1].index + 1,
+      );
       return {
-        shouldGroupTools:
-          entries.length > TOOL_GROUP_THRESHOLD || (isActive && entries.length > 1),
+        shouldGroupTools: isActive && entries.length > 1 && areToolCallsContiguous,
         toolCallEntries: entries,
         firstToolCallIndex: entries.length > 0 ? entries[0].index : -1,
       };

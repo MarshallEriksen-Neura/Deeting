@@ -1,6 +1,5 @@
 import type {
   MessageBlock,
-  ToolResultBlock as MessageToolResultBlock,
   UIBlock as MessageUIBlock,
 } from "@/lib/chat/message-protocol";
 import type { useI18n } from "@/hooks/use-i18n";
@@ -94,7 +93,35 @@ type ResolveToolPreviewOptions = {
   uiBlocks?: MessageUIBlock[];
   isPendingApproval?: boolean;
   preferredPreview?: string | null;
+  translate?: Translator;
 };
+
+function translateCountNoun(
+  noun: ResultCountHint["noun"],
+  count: number,
+  translate?: Translator,
+): string {
+  if (!translate) return pluralize(count, noun);
+
+  switch (noun) {
+    case "result":
+      return translate("toolGroup.preview.nouns.result", { count });
+    case "row":
+      return translate("toolGroup.preview.nouns.row", { count });
+    case "document":
+      return translate("toolGroup.preview.nouns.document", { count });
+    case "file":
+      return translate("toolGroup.preview.nouns.file", { count });
+    case "page":
+      return translate("toolGroup.preview.nouns.page", { count });
+    case "item":
+      return translate("toolGroup.preview.nouns.item", { count });
+    case "match":
+      return translate("toolGroup.preview.nouns.match", { count });
+    case "record":
+      return translate("toolGroup.preview.nouns.record", { count });
+  }
+}
 
 function toRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -440,50 +467,76 @@ export function resolveToolActionPreview(
   name?: string | null,
   args?: string,
   status?: string,
+  translate?: Translator,
 ): string | null {
-  const title = humanizeToolName(name) ?? "Tool";
+  const title =
+    humanizeToolName(name) ?? translate?.("toolGroup.preview.fallbackName") ?? "Tool";
   const normalizedStatus = (status ?? "").trim().toLowerCase();
   if (normalizedStatus === "requires_approval") {
-    return `Waiting for approval to continue with ${title}`;
+    return translate
+      ? translate("toolGroup.preview.pendingApproval", { name: title })
+      : `Waiting for approval to continue with ${title}`;
   }
 
   const subject = extractToolSubject(args);
   if (subject?.kind === "search") {
-    return `Searching for "${subject.value}"`;
+    return translate
+      ? translate("toolGroup.preview.searchFor", { value: subject.value })
+      : `Searching for "${subject.value}"`;
   }
   if (subject?.kind === "url") {
-    return `Reading ${subject.value}`;
+    return translate
+      ? translate("toolGroup.preview.readingValue", { value: subject.value })
+      : `Reading ${subject.value}`;
   }
   if (subject?.kind === "file") {
     return subject.count
-      ? `Reading ${subject.value}`
-      : `Reading file ${subject.value}`;
+      ? translate
+        ? translate("toolGroup.preview.readingValue", { value: subject.value })
+        : `Reading ${subject.value}`
+      : translate
+        ? translate("toolGroup.preview.readingFile", { value: subject.value })
+        : `Reading file ${subject.value}`;
   }
   if (subject?.kind === "command") {
-    return `Running ${subject.value}`;
+    return translate
+      ? translate("toolGroup.preview.runningValue", { value: subject.value })
+      : `Running ${subject.value}`;
   }
   if (subject?.kind === "generic") {
-    return `Working with ${subject.value}`;
+    return translate
+      ? translate("toolGroup.preview.workingWith", { value: subject.value })
+      : `Working with ${subject.value}`;
   }
 
   const normalizedName = name?.toLowerCase() ?? "";
-  if (normalizedName.includes("search")) return `Searching with ${title}`;
+  if (normalizedName.includes("search")) {
+    return translate
+      ? translate("toolGroup.preview.searchingWith", { name: title })
+      : `Searching with ${title}`;
+  }
   if (
     normalizedName.includes("fetch") ||
     normalizedName.includes("read") ||
     normalizedName.includes("crawl")
   ) {
-    return `Reading with ${title}`;
+    return translate
+      ? translate("toolGroup.preview.readingWith", { name: title })
+      : `Reading with ${title}`;
   }
   if (
     normalizedName.includes("write") ||
     normalizedName.includes("save") ||
     normalizedName.includes("create")
   ) {
-    return `Creating output with ${title}`;
+    return translate
+      ? translate("toolGroup.preview.creatingWith", { name: title })
+      : `Creating output with ${title}`;
   }
 
-  return `Running ${title}`;
+  return translate
+    ? translate("toolGroup.preview.runningWith", { name: title })
+    : `Running ${title}`;
 }
 
 export function resolveToolResultPreview({
@@ -491,30 +544,50 @@ export function resolveToolResultPreview({
   result,
   uiBlocks = [],
   isPendingApproval = false,
+  translate,
 }: Pick<
   ResolveToolPreviewOptions,
-  "name" | "result" | "uiBlocks" | "isPendingApproval"
+  "name" | "result" | "uiBlocks" | "isPendingApproval" | "translate"
 >): string | null {
-  const title = humanizeToolName(name) ?? "Tool";
+  const title =
+    humanizeToolName(name) ?? translate?.("toolGroup.preview.fallbackName") ?? "Tool";
   if (isPendingApproval) {
-    return `Waiting for approval to continue with ${title}`;
+    return translate
+      ? translate("toolGroup.preview.pendingApproval", { name: title })
+      : `Waiting for approval to continue with ${title}`;
   }
 
   if (uiBlocks.length > 0) {
-    return "Prepared an interactive result view";
+    return translate
+      ? translate("toolGroup.preview.preparedInteractive")
+      : "Prepared an interactive result view";
   }
 
   const countHint = extractResultCount(result);
   if (countHint) {
     const normalizedName = name?.toLowerCase() ?? "";
     if (countHint.noun === "result" && normalizedName.includes("search")) {
-      return `Found ${countHint.count} ${pluralize(countHint.count, "result")}`;
+      const noun = translateCountNoun("result", countHint.count, translate);
+      return translate
+        ? translate("toolGroup.preview.foundCount", {
+            count: countHint.count,
+            noun,
+          })
+        : `Found ${countHint.count} ${noun}`;
     }
-    return `Returned ${countHint.count} ${pluralize(countHint.count, countHint.noun)}`;
+    const noun = translateCountNoun(countHint.noun, countHint.count, translate);
+    return translate
+      ? translate("toolGroup.preview.returnedCount", {
+          count: countHint.count,
+          noun,
+        })
+      : `Returned ${countHint.count} ${noun}`;
   }
 
   if (hasReadableContent(result)) {
-    return "Extracted readable content";
+    return translate
+      ? translate("toolGroup.preview.extractedReadableContent")
+      : "Extracted readable content";
   }
 
   if (typeof result === "string") {
@@ -525,7 +598,9 @@ export function resolveToolResultPreview({
   }
 
   if (result !== null && result !== undefined) {
-    return "Returned structured data";
+    return translate
+      ? translate("toolGroup.preview.returnedStructuredData")
+      : "Returned structured data";
   }
 
   return null;
@@ -539,12 +614,15 @@ export function resolveToolPreview({
   uiBlocks = [],
   isPendingApproval = false,
   preferredPreview = null,
+  translate,
 }: ResolveToolPreviewOptions): string | null {
   for (const uiBlock of uiBlocks) {
     if (typeof uiBlock.title === "string" && uiBlock.title.trim()) {
       const viewTitle = toInlinePreview(uiBlock.title);
       if (viewTitle) {
-        return `Prepared ${viewTitle}`;
+        return translate
+          ? translate("toolGroup.preview.preparedNamedView", { title: viewTitle })
+          : `Prepared ${viewTitle}`;
       }
     }
   }
@@ -552,11 +630,17 @@ export function resolveToolPreview({
   if (preferredPreview) return preferredPreview;
 
   const resultPreview =
-    resolveToolResultPreview({ name, result, uiBlocks, isPendingApproval }) ??
+    resolveToolResultPreview({
+      name,
+      result,
+      uiBlocks,
+      isPendingApproval,
+      translate,
+    }) ??
     summarizeUnknownValue(result);
   if (resultPreview) return resultPreview;
 
-  return resolveToolActionPreview(name, args, status);
+  return resolveToolActionPreview(name, args, status, translate);
 }
 
 export function resolveToolStatusDetail(

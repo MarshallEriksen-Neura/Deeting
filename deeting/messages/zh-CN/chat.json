@@ -387,7 +387,36 @@
       "liveSkillSummary": "技能链 · {count} 步",
       "codeExecution": "代码执行",
       "expand": "展开详情",
-      "collapse": "收起"
+      "collapse": "收起",
+      "preview": {
+        "fallbackName": "工具",
+        "pendingApproval": "正在等待你批准 {name}",
+        "searchFor": "正在搜索“{value}”",
+        "readingValue": "正在读取 {value}",
+        "readingFile": "正在读取文件 {value}",
+        "runningValue": "正在运行 {value}",
+        "workingWith": "正在处理 {value}",
+        "searchingWith": "正在使用 {name} 搜索",
+        "readingWith": "正在使用 {name} 读取",
+        "creatingWith": "正在使用 {name} 生成输出",
+        "runningWith": "正在运行 {name}",
+        "preparedNamedView": "已准备 {title}",
+        "preparedInteractive": "已准备交互式结果视图",
+        "foundCount": "找到 {count} 个{noun}",
+        "returnedCount": "返回了 {count} 个{noun}",
+        "extractedReadableContent": "已提取可读内容",
+        "returnedStructuredData": "返回了结构化数据",
+        "nouns": {
+          "result": "{count, plural, one {结果} other {结果}}",
+          "row": "{count, plural, one {行} other {行}}",
+          "document": "{count, plural, one {文档} other {文档}}",
+          "file": "{count, plural, one {文件} other {文件}}",
+          "page": "{count, plural, one {页面} other {页面}}",
+          "item": "{count, plural, one {项} other {项}}",
+          "match": "{count, plural, one {匹配} other {匹配}}",
+          "record": "{count, plural, one {记录} other {记录}}"
+        }
+      }
     },
     "island": {
       "liveProgress": "实时进度",

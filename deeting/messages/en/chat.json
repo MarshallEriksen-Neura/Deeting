@@ -370,7 +370,36 @@
       "liveSkillSummary": "Skill chain · {count} steps",
       "codeExecution": "Code Execution",
       "expand": "Show details",
-      "collapse": "Collapse"
+      "collapse": "Collapse",
+      "preview": {
+        "fallbackName": "Tool",
+        "pendingApproval": "Waiting for approval to continue with {name}",
+        "searchFor": "Searching for \"{value}\"",
+        "readingValue": "Reading {value}",
+        "readingFile": "Reading file {value}",
+        "runningValue": "Running {value}",
+        "workingWith": "Working with {value}",
+        "searchingWith": "Searching with {name}",
+        "readingWith": "Reading with {name}",
+        "creatingWith": "Creating output with {name}",
+        "runningWith": "Running {name}",
+        "preparedNamedView": "Prepared {title}",
+        "preparedInteractive": "Prepared an interactive result view",
+        "foundCount": "Found {count} {noun}",
+        "returnedCount": "Returned {count} {noun}",
+        "extractedReadableContent": "Extracted readable content",
+        "returnedStructuredData": "Returned structured data",
+        "nouns": {
+          "result": "{count, plural, one {result} other {results}}",
+          "row": "{count, plural, one {row} other {rows}}",
+          "document": "{count, plural, one {document} other {documents}}",
+          "file": "{count, plural, one {file} other {files}}",
+          "page": "{count, plural, one {page} other {pages}}",
+          "item": "{count, plural, one {item} other {items}}",
+          "match": "{count, plural, one {match} other {matches}}",
+          "record": "{count, plural, one {record} other {records}}"
+        }
+      }
     },
     "island": {
       "liveProgress": "Live progress",

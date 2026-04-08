@@ -19,6 +19,10 @@ jest.mock("@/components/chat/messages", () => ({
   ChatMessageList: () => <div data-testid="chat-message-list" />,
 }))
 
+jest.mock("@/components/bridge/tool-approval-dialog", () => ({
+  ToolApprovalDialog: () => <div data-testid="tool-approval-dialog" />,
+}))
+
 describe("ChatContent", () => {
   beforeEach(() => {
     sessionStorage.clear()
@@ -29,5 +33,11 @@ describe("ChatContent", () => {
     render(<ChatContent />)
 
     expect(screen.getByTestId("chat-message-list")).toBeInTheDocument()
+  })
+
+  it("mounts the tool approval dialog host", () => {
+    render(<ChatContent />)
+
+    expect(screen.getByTestId("tool-approval-dialog")).toBeInTheDocument()
   })
 })

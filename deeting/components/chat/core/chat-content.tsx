@@ -1,4 +1,5 @@
 "use client"
+import { ToolApprovalDialog } from "@/components/bridge/tool-approval-dialog"
 import { ChatMessageList } from "../messages"
 import { useChatStore, type ChatAssistant } from "@/store/chat-store"
 import { useChatMessagingService } from "@/hooks/chat/use-chat-messaging-service"
@@ -52,6 +53,7 @@ export function ChatContent({ agent }: ChatContentProps) {
           onFinalizeCompare={finalizeCompareWinner}
         />
       </div>
+      <ToolApprovalDialog />
     </>
   )
 }

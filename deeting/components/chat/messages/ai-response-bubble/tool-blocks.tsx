@@ -861,8 +861,9 @@ export const ToolCallBlock = memo<{
         preferredPreview: shellExecutionInsight
           ? summarizeShellExecutionInsight(shellExecutionInsight)
           : null,
+        translate: t,
       }),
-    [args, name, resultBlock, shellExecutionInsight, status, uiBlocks],
+    [args, name, resultBlock, shellExecutionInsight, status, t, uiBlocks],
   );
   const resultContent = useMemo(
     () => formatObjectAsMarkdown(resultBlock?.result),
@@ -1365,10 +1366,15 @@ export const ToolResultBlock = memo<{
       : null;
     return (
       shellPreview ||
-      sharedResolveToolResultPreview({ name, result, isPendingApproval }) ||
+      sharedResolveToolResultPreview({
+        name,
+        result,
+        isPendingApproval,
+        translate: t,
+      }) ||
       summarizeUnknownValue(result)
     );
-  }, [isPendingApproval, name, result, shellExecutionInsight]);
+  }, [isPendingApproval, name, result, shellExecutionInsight, t]);
 
   if (
     !isError &&

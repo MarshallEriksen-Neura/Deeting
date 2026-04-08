@@ -9,6 +9,23 @@ import {
 } from "@/lib/chat/tool-ux";
 
 describe("tool-ux helpers", () => {
+  type PreviewTranslator = NonNullable<
+    Parameters<typeof resolveToolActionPreview>[3]
+  >;
+
+  const previewTranslator = ((key: string, values?: Record<string, unknown>) => {
+    switch (key) {
+      case "toolGroup.preview.fallbackName":
+        return "工具";
+      case "toolGroup.preview.searchFor":
+        return `正在搜索“${values?.value as string}”`;
+      case "toolGroup.preview.returnedStructuredData":
+        return "返回了结构化数据";
+      default:
+        return key;
+    }
+  }) as PreviewTranslator;
+
   it("humanizes unknown tool ids", () => {
     expect(humanizeToolName("firecrawl_search")).toBe("Firecrawl Search");
     expect(
@@ -35,6 +52,27 @@ describe("tool-ux helpers", () => {
         },
       }),
     ).toBe("Found 2 results");
+  });
+
+  it("localizes action previews when a translator is provided", () => {
+    expect(
+      resolveToolActionPreview(
+        "firecrawl_search",
+        '{"query":"Gemma 4 Windows deployment"}',
+        "running",
+        previewTranslator,
+      ),
+    ).toBe("正在搜索“Gemma 4 Windows deployment”");
+  });
+
+  it("localizes structured result fallback previews when a translator is provided", () => {
+    expect(
+      resolveToolResultPreview({
+        name: "custom_tool",
+        result: { ok: true },
+        translate: previewTranslator,
+      }),
+    ).toBe("返回了结构化数据");
   });
 
   it("prefers provided preview before generic fallbacks", () => {

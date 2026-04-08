@@ -7,7 +7,20 @@ import type { MessageBlock } from "@/lib/chat/message-protocol";
 const terminalStreamMock = jest.fn();
 
 jest.mock("@/hooks/use-i18n", () => ({
-  useI18n: () => (key: string) => key,
+  useI18n: () => (key: string, values?: Record<string, unknown>) => {
+    switch (key) {
+      case "toolGroup.preview.searchFor":
+        return `Searching for "${values?.value as string}"`;
+      case "toolGroup.preview.nouns.result": {
+        const count = Number(values?.count ?? 0);
+        return count === 1 ? "result" : "results";
+      }
+      case "toolGroup.preview.foundCount":
+        return `Found ${values?.count as number} ${values?.noun as string}`;
+      default:
+        return key;
+    }
+  },
 }));
 
 jest.mock("@/components/chat/markdown-viewer", () => ({
@@ -17,7 +30,9 @@ jest.mock("@/components/chat/markdown-viewer", () => ({
 jest.mock("next/dynamic", () => ({
   __esModule: true,
   default: () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const React = require("react");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const ViewBlock = require("@/components/views/view-block").default;
     return function DynamicViewBlock(props: Record<string, unknown>) {
       return React.createElement(ViewBlock, props);
@@ -214,6 +229,67 @@ describe("AIResponseBubble debug panel", () => {
 
     expect(screen.getByText("toolGroup.liveSkillSummary")).toBeInTheDocument();
     expect(screen.getByText("SDK Search")).toBeInTheDocument();
+  });
+
+  it("keeps completed tool calls inline with surrounding assistant text", () => {
+    const parts: MessageBlock[] = [
+      { id: "text-before", type: "text", content: "Before tools" },
+      {
+        id: "tool-1",
+        type: "tool_call",
+        callId: "call-1",
+        toolName: "search_sdk",
+        status: "success",
+      },
+      {
+        id: "result-1",
+        type: "tool_result",
+        callId: "call-1",
+        toolName: "search_sdk",
+        status: "success",
+        result: { ok: true },
+      },
+      { id: "text-middle", type: "text", content: "Between tools" },
+      {
+        id: "tool-2",
+        type: "tool_call",
+        callId: "call-2",
+        toolName: "shell_execute",
+        status: "success",
+      },
+      {
+        id: "result-2",
+        type: "tool_result",
+        callId: "call-2",
+        toolName: "shell_execute",
+        status: "success",
+        result: { stdout: "done", exit_code: 0 },
+      },
+      { id: "text-after", type: "text", content: "Final answer" },
+    ];
+
+    render(<AIResponseBubble parts={parts} />);
+
+    expect(screen.queryByText("toolGroup.summary")).not.toBeInTheDocument();
+    expect(screen.getByText("SDK Search")).toBeInTheDocument();
+    expect(screen.getByText("Shell Execute")).toBeInTheDocument();
+
+    const bubble = screen.getByText("Before tools").closest("[data-slot='glass-card']");
+    expect(bubble).not.toBeNull();
+
+    const rendered = bubble?.textContent ?? "";
+    expect(rendered.indexOf("Before tools")).toBeLessThan(
+      rendered.indexOf("SDK Search"),
+    );
+    expect(rendered.indexOf("SDK Search")).toBeLessThan(
+      rendered.indexOf("Between tools"),
+    );
+    expect(rendered.indexOf("Between tools")).toBeLessThan(
+      rendered.indexOf("Shell Execute"),
+    );
+    expect(rendered.indexOf("Shell Execute")).toBeLessThan(
+      rendered.indexOf("Final answer"),
+    );
   });
 
   it("humanizes unknown mcp tool calls into action language", () => {

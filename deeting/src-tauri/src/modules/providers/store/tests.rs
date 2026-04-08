@@ -557,6 +557,8 @@ async fn quick_add_models_infers_capabilities_and_upstream_paths() {
                 "text-embedding-3-small".to_string(),
                 "grok-imagine-1.0".to_string(),
                 "grok-video".to_string(),
+                "gemini-nano-banana-preview".to_string(),
+                "gemini-banana-preview".to_string(),
             ],
             None,
         )
@@ -567,7 +569,7 @@ async fn quick_add_models_infers_capabilities_and_upstream_paths() {
         .list_models(Some(instance_id.clone()), None)
         .await
         .expect("list models");
-    assert_eq!(models.len(), 4);
+    assert_eq!(models.len(), 6);
 
     let chat = models
         .iter()
@@ -596,6 +598,23 @@ async fn quick_add_models_infers_capabilities_and_upstream_paths() {
         .expect("video model");
     assert_eq!(video.capabilities, vec!["video_generation".to_string()]);
     assert_eq!(video.upstream_path, "v1/video/generations");
+
+    let nano_banana = models
+        .iter()
+        .find(|model| model.model_id == "gemini-nano-banana-preview")
+        .expect("nano banana image model");
+    assert_eq!(
+        nano_banana.capabilities,
+        vec!["image_generation".to_string()]
+    );
+    assert_eq!(nano_banana.upstream_path, "v1/images/generations");
+
+    let banana = models
+        .iter()
+        .find(|model| model.model_id == "gemini-banana-preview")
+        .expect("banana image model");
+    assert_eq!(banana.capabilities, vec!["image_generation".to_string()]);
+    assert_eq!(banana.upstream_path, "v1/images/generations");
 
     for model in models {
         assert_eq!(model.source, "manual");
