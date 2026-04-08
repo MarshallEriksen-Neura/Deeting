@@ -149,7 +149,7 @@ fn build_local_prompt_plan_always_includes_pre_tool_visibility_guidance() {
 }
 
 #[test]
-fn build_local_prompt_plan_omits_code_mode_protocol_without_policy() {
+fn build_local_prompt_plan_omits_execution_tool_protocol_without_policy() {
     let rendered = build_local_prelude_messages(
         &PromptAssets::default(),
         Some(&build_default_local_execution_policy()),
@@ -225,7 +225,7 @@ fn build_route_selection_status_meta_embeds_execution_policy() {
         meta.get("execution_policy")
             .and_then(|value| value.get("plane"))
             .and_then(Value::as_str),
-        Some("code_mode_orchestration")
+        Some("worker_reasoning")
     );
 }
 

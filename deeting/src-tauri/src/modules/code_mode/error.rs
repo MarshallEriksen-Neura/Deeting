@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum CodeModeError {
+pub enum CodemodeToolError {
     #[error("validation error: {0}")]
     Validation(String),
     #[error("bridge error: {0}")]
@@ -14,7 +14,7 @@ pub enum CodeModeError {
     Internal(String),
 }
 
-impl CodeModeError {
+impl CodemodeToolError {
     pub fn validation(message: impl Into<String>) -> Self {
         Self::Validation(message.into())
     }

@@ -9,7 +9,7 @@ use crate::modules::desktop_runtime::runtime::{
     apply_rejected_tool_result_to_execution_graph,
     apply_rejected_tool_result_to_execution_graph_value, delete_execution_graph_runtime_context,
     load_execution_graph_snapshot, load_execution_graph_snapshot_by_approval_token,
-    persist_execution_graph_snapshot, resume_suspended_local_chat_after_approval,
+    persist_execution_graph_snapshot, resume_suspended_chat_tool_execution_after_approval,
 };
 use crate::modules::mcp::commands::common_impl::to_string;
 use crate::modules::mcp::policy::PersistedApprovalAction;
@@ -85,7 +85,7 @@ pub(crate) async fn approve_mcp_tool_payload(
     )
     .await?;
 
-    if let Some(resumed) = resume_suspended_local_chat_after_approval(
+    if let Some(resumed) = resume_suspended_chat_tool_execution_after_approval(
         app,
         state,
         token,
@@ -295,7 +295,7 @@ pub(crate) async fn list_pending_mcp_approvals_with_graph_inner(
     pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
     suspended_local_chat_executions: Option<
         &tokio::sync::RwLock<
-            HashMap<String, crate::modules::desktop_runtime::runtime::SuspendedLocalChatExecution>,
+            HashMap<String, crate::modules::desktop_runtime::runtime::SuspendedChatToolExecution>,
         >,
     >,
     session_id: Option<&str>,

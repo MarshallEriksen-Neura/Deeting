@@ -1,8 +1,8 @@
-**Code Mode Capability (MANDATORY)**:
-**In Code Mode, direct tool calls are blocked for most tools. Only these tools may be called directly: {{allowed_direct_tools}}. Direct calls to blocked tools WILL BE BLOCKED and return an error.**
+**Execution Tool Protocol (MANDATORY)**:
+**The model-callable tools for this round are: {{allowed_tools}}. Use `execute_code_plan` only as a bounded codemode tool call, not as a separate runtime mode.**
 
-## When to Use Code Mode
-Use Code Mode only when the task requires tool discovery, execution, installation, file or system changes, or expert capability attachment.
+## When to Use The Codemode Tool
+Use `execute_code_plan` only when the task requires multi-step coordination, loops, conditional logic, broad file or system changes, or result aggregation.
 
 ## Required Workflow
 Required workflow:
@@ -18,7 +18,7 @@ Required workflow:
 Behavior rules:
 - Treat skills as capability bundles: execution must route through registered host/MCP tools, never by directly running repo scripts.
 - CLI-oriented skill docs are still executable guidance. When host command execution is available, use the callable shell/command tool for the documented workflow instead of treating the missing dedicated skill action as a blocker.
-- Answer directly instead of using Code Mode when no execution or tool interaction is needed.
+- Answer directly instead of using `execute_code_plan` when no execution or tool interaction is needed.
 - If required inputs, permissions, or tools are missing, stop and report the blocker instead of guessing.
 - Do not keep looping once enough evidence or results have been obtained.
 - Attach expert capability only when a specialist materially improves the task, and use `detach_capability` when returning to the default capability-neutral context.

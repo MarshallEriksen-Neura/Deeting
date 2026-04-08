@@ -62,6 +62,20 @@ pub(crate) fn extract_ui_blocks_from_tool_result(
         return Vec::new();
     };
 
+    if let Some(result_blocks) = result
+        .get("result_blocks")
+        .and_then(|value| value.as_array())
+    {
+        let normalized = result_blocks
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, block)| normalize_result_block(block, call_id, tool_name, idx))
+            .collect::<Vec<_>>();
+        if !normalized.is_empty() {
+            return normalized;
+        }
+    }
+
     let Some(raw_blocks) = result
         .get("render_blocks")
         .and_then(|value| value.as_array())
@@ -74,6 +88,42 @@ pub(crate) fn extract_ui_blocks_from_tool_result(
         .enumerate()
         .filter_map(|(idx, raw)| map_render_block_to_ui_block(raw, call_id, tool_name, idx))
         .collect()
+}
+
+fn normalize_result_block(
+    raw: &serde_json::Value,
+    call_id: &str,
+    tool_name: &str,
+    index: usize,
+) -> Option<serde_json::Value> {
+    let object = raw.as_object()?;
+    let block_type = object.get("type").and_then(|value| value.as_str())?;
+    if block_type == "ui" {
+        let mut block = object.clone();
+        block.entry("id".to_string()).or_insert_with(|| {
+            serde_json::Value::String(format!(
+                "{}-ui-{}",
+                if call_id.trim().is_empty() {
+                    tool_name
+                } else {
+                    call_id
+                },
+                index
+            ))
+        });
+        if !call_id.trim().is_empty() {
+            block
+                .entry("callId".to_string())
+                .or_insert_with(|| serde_json::Value::String(call_id.to_string()));
+        }
+        if !tool_name.trim().is_empty() {
+            block
+                .entry("toolName".to_string())
+                .or_insert_with(|| serde_json::Value::String(tool_name.to_string()));
+        }
+        return Some(serde_json::Value::Object(block));
+    }
+    map_render_block_to_ui_block(raw, call_id, tool_name, index)
 }
 
 fn map_render_block_to_ui_block(

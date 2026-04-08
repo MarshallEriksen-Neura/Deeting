@@ -10,7 +10,7 @@ pub(crate) use serde_json::Value;
 pub(crate) use tauri::{AppHandle, Manager, State};
 pub(crate) use uuid::Uuid;
 
-pub(crate) use crate::modules::code_mode::types::ExecuteLocalCodeModeRequest;
+pub(crate) use crate::modules::code_mode::types::ExecuteLocalCodemodeRequest;
 pub(crate) use crate::modules::mcp::error::McpError;
 pub(crate) use crate::modules::mcp::McpRuntimeState;
 pub(crate) use crate::state::AppState;

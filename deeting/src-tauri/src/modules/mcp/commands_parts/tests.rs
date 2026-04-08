@@ -8,11 +8,10 @@ mod tests {
     use crate::modules::conversations::summary_workers::process_next_local_conversation_summary_job_with_store;
     use crate::modules::desktop_runtime::runtime::consult::build_local_consult_expert_network_result_with_runtime;
     use crate::modules::desktop_runtime::runtime::{
-        build_auto_code_mode_tool_feedback, build_local_code_mode_entry_tools,
-        build_local_sdk_search_result_with_runtime,
+        build_local_runtime_tools, build_local_sdk_search_result_with_runtime,
         build_local_sdk_search_result_with_runtime_full,
         build_local_tool_call_install_gate_error_meta, build_local_tool_trace_blocks,
-        extract_chat_tool_calls, normalize_chat_completion_response,
+        build_tool_loop_feedback, extract_chat_tool_calls, normalize_chat_completion_response,
         LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
     };
     use crate::modules::mcp::commands::runtime::{
@@ -1035,8 +1034,8 @@ for raw_line in sys.stdin:
     }
 
     #[test]
-    fn build_auto_code_mode_tool_feedback_contains_round() {
-        let feedback = build_auto_code_mode_tool_feedback(
+    fn build_tool_loop_feedback_contains_round() {
+        let feedback = build_tool_loop_feedback(
             2,
             &[serde_json::json!({"id":"call_1","status":"success"})],
             &["ok".to_string()],
@@ -1047,8 +1046,8 @@ for raw_line in sys.stdin:
     }
 
     #[test]
-    fn build_local_code_mode_entry_tools_exposes_core_function_schemas() {
-        let payload = build_local_code_mode_entry_tools();
+    fn build_local_runtime_tools_exposes_core_function_schemas() {
+        let payload = build_local_runtime_tools();
         let tools = payload
             .get("tools")
             .and_then(|value| value.as_array())
@@ -1361,8 +1360,8 @@ for raw_line in sys.stdin:
                 "browser_open_tab".to_string(),
                 "Launch a website destination in the local browser".to_string(),
                 "tool".to_string(),
-                "code_mode_core".to_string(),
-                Some("code_mode.core".to_string()),
+                "desktop_runtime_core".to_string(),
+                Some("desktop_runtime.core".to_string()),
                 vec![1.0, 0.0, 0.0],
                 Some(serde_json::json!({
                     "read_only": false,

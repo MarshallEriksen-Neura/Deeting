@@ -1,5 +1,5 @@
 use crate::modules::browser_agent::BrowserAgentState;
-use crate::modules::code_mode::CodeModeState;
+use crate::modules::code_mode::CodemodeToolState;
 use crate::modules::im::wechat::WechatState;
 use crate::modules::knowledge::KnowledgeState;
 use crate::modules::mcp::McpRuntimeState;
@@ -18,7 +18,7 @@ pub struct AppState {
     pub providers: std::sync::Arc<ProviderState>,
     pub memory: std::sync::Arc<MemoryState>,
     pub sandbox: std::sync::Arc<SandboxState>,
-    pub code_mode: std::sync::Arc<CodeModeState>,
+    pub code_mode: std::sync::Arc<CodemodeToolState>,
     pub monitor: std::sync::Arc<MonitorState>,
     pub wechat: std::sync::Arc<WechatState>,
 }
@@ -31,7 +31,7 @@ impl AppState {
         providers: ProviderState,
         memory: MemoryState,
         sandbox: SandboxState,
-        code_mode: CodeModeState,
+        code_mode: CodemodeToolState,
         monitor: MonitorState,
         wechat: WechatState,
     ) -> Self {

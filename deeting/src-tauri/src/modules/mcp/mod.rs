@@ -31,7 +31,7 @@ pub use mcp_facade::runtime::{
 };
 
 #[derive(Clone)]
-pub struct SuspendedLocalChatExecutionEnvelope {
+pub struct SuspendedChatToolExecutionEnvelope {
     pub approved_tool_result: Value,
     pub continuation_blocks: Vec<Value>,
     pub response: Option<Value>,
@@ -49,7 +49,7 @@ pub struct McpRuntimeState {
     >,
     pub(crate) approvals: McpApprovalFacade<
         SessionApprovalGrant,
-        crate::modules::desktop_runtime::runtime::SuspendedLocalChatExecution,
+        crate::modules::desktop_runtime::runtime::SuspendedChatToolExecution,
     >,
 }
 

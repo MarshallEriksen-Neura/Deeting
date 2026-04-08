@@ -324,7 +324,7 @@
       "engine": "引擎",
       "optimized": "已优化",
       "temperature": "温度",
-      "temperatureToggle": "启用温度",
+      "temperatureToggle": "采样参数",
       "temperatureEnabled": "已启用",
       "temperatureDisabled": "已关闭",
       "topP": "Top P",

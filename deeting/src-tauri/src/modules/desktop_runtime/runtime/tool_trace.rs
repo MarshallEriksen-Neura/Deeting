@@ -20,7 +20,7 @@ pub(crate) fn build_local_tool_trace_blocks(
     if has_code_execution {
         blocks.push(serde_json::json!({
             "type": "execution_section",
-            "title": "Code Execution"
+            "title": "Codemode Tool"
         }));
     }
 

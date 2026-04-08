@@ -59,7 +59,7 @@
 飞书消息走的是 **同一套本地编排层**（`execute_local_orchestrated_chat`），与桌面端聊天一致：
 
 - **控制面**：会做路由选择（`select_local_route`）、能力发现（语义检索本地 MCP 与 skills）、技能配方注入、能力提示等。
-- **执行面**：根据路由结果可能是「仅回复」、「带推理/工具」或「代码模式」。当路由到 **WorkerReasoning** 或 **CodeModeOrchestration** 时，会带上 **search_sdk**、**execute_code_plan** 以及从能力快照里解析出的 **MCP 工具 / Skills**，模型可以发起工具调用并在多轮中执行。
+- **执行面**：根据路由结果可能是「仅回复」、「带推理/工具」或「代码模式」。当路由到 **WorkerReasoning** 或 **ResponseOnly** 时，会带上 **search_sdk**、**execute_code_plan** 以及从能力快照里解析出的 **MCP 工具 / Skills**，模型可以发起工具调用并在多轮中执行。
 - **工具解析与执行**：与桌面端相同，通过 `resolve_callable_mcp_tool_by_ref`、`resolve_skill_binding_by_ref` 等解析并执行本地配置的 MCP 与 skill 绑定。
 
 因此：**本地配置的 MCP 和 Skills 在飞书里是可以被使用的**，并非「无法调用工具」；是否用上取决于当前用户消息触发的**路由结果**（简单问答可能走仅回复，需要查资料、执行操作等会走带工具的路径）。

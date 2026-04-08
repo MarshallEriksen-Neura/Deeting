@@ -1,14 +1,14 @@
 use super::{
-    append_streamable_local_tool_result_blocks, build_auto_code_mode_tool_feedback,
-    build_local_code_mode_entry_tools_with_allowlist,
+    append_streamable_local_tool_result_blocks, build_local_runtime_tools_with_allowlist,
     build_local_sdk_search_result_bundle_with_feedback_runtime, build_local_tool_trace_blocks,
-    delete_execution_graph_runtime_context, execute_or_queue_mcp_tool_call_with_tool_ref,
-    extract_chat_tool_calls, install_local_skill_from_onboarding_request,
-    load_execution_graph_runtime_context, load_execution_graph_snapshot,
-    load_execution_graph_snapshot_by_approval_token, persist_execution_graph_runtime_context,
-    persist_execution_graph_snapshot, project_execution_graph_blocks_from_value,
-    project_execution_graph_snapshot, request_provider_chat_completion,
-    resolve_dynamic_direct_capability_tool_name, resolve_local_capability_activation_state,
+    build_tool_loop_feedback, delete_execution_graph_runtime_context,
+    execute_or_queue_mcp_tool_call_with_tool_ref, extract_chat_tool_calls,
+    install_local_skill_from_onboarding_request, load_execution_graph_runtime_context,
+    load_execution_graph_snapshot, load_execution_graph_snapshot_by_approval_token,
+    persist_execution_graph_runtime_context, persist_execution_graph_snapshot,
+    project_execution_graph_blocks_from_value, project_execution_graph_snapshot,
+    request_provider_chat_completion, resolve_dynamic_direct_capability_tool_name,
+    resolve_local_capability_activation_state,
     search_feedback::search_feedback_context_from_tool_call_meta, CapabilityExecutionContract,
     GraphProjectionInput, LocalCapabilityActivationState, LocalExecutionPolicy,
     LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
@@ -101,11 +101,11 @@ enum LocalToolCallProcessingOutcome {
         approval_tokens: Vec<String>,
         tool_call_meta: Vec<serde_json::Value>,
         results: Vec<String>,
-        capability_update: Option<LocalCapabilityActivationUpdate>,
+        capability_update: Option<LocalCapabilityTransition>,
     },
 }
 
-struct LocalChatAutoCodeModeState {
+struct LocalChatToolRuntimeState {
     max_rounds: usize,
     round: usize,
     trace_id: String,
@@ -122,12 +122,12 @@ struct LocalChatAutoCodeModeState {
     realtime_emitter: LocalRealtimeToolTraceEmitter,
 }
 
-struct LocalChatAutoCodeModeOutput {
+struct LocalChatToolRuntimeOutput {
     response: serde_json::Value,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct PersistedExecutionGraphRuntimeContext {
+struct PersistedChatToolRuntimeContext {
     max_rounds: usize,
     round: usize,
     trace_id: String,
@@ -144,9 +144,9 @@ struct PersistedExecutionGraphRuntimeContext {
 }
 
 fn runtime_state_from_persisted_context(
-    context: PersistedExecutionGraphRuntimeContext,
-) -> LocalChatAutoCodeModeState {
-    LocalChatAutoCodeModeState {
+    context: PersistedChatToolRuntimeContext,
+) -> LocalChatToolRuntimeState {
+    LocalChatToolRuntimeState {
         max_rounds: context.max_rounds,
         round: context.round,
         trace_id: context.trace_id,
@@ -353,7 +353,7 @@ fn build_effective_tool_call_meta(
 }
 
 fn build_state_effective_tool_call_meta(
-    state: &LocalChatAutoCodeModeState,
+    state: &LocalChatToolRuntimeState,
 ) -> Vec<serde_json::Value> {
     state
         .last_response
@@ -442,7 +442,7 @@ fn push_local_tool_call_error_meta(
 
 fn attach_graph_metadata_to_pending_tool_meta(
     tool_call_meta: &mut [serde_json::Value],
-    suspended: &SuspendedLocalChatExecution,
+    suspended: &SuspendedChatToolExecution,
 ) {
     for item in tool_call_meta {
         let Some(call_id) = item
@@ -624,7 +624,7 @@ fn gate_node_id_from_graph_value(
 }
 
 fn apply_approved_tool_result_to_execution_graph(
-    suspended: &mut SuspendedLocalChatExecution,
+    suspended: &mut SuspendedChatToolExecution,
     call_id: Option<&str>,
     tool_result: &serde_json::Value,
 ) {
@@ -662,7 +662,7 @@ fn apply_approved_tool_result_to_execution_graph(
 }
 
 pub(crate) fn apply_rejected_tool_result_to_execution_graph(
-    suspended: &mut SuspendedLocalChatExecution,
+    suspended: &mut SuspendedChatToolExecution,
     call_id: Option<&str>,
     error_message: &str,
 ) {
@@ -726,7 +726,7 @@ fn legacy_suspended_fallback_allowed(legacy_created_at_unix_ms: Option<i128>) ->
 
 async fn persist_suspended_execution_graph_runtime(
     store: &crate::modules::mcp::store::McpStore,
-    suspended: &SuspendedLocalChatExecution,
+    suspended: &SuspendedChatToolExecution,
     source_kind: &str,
     status: &str,
 ) -> Result<(), String> {
@@ -771,7 +771,7 @@ async fn clear_execution_graph_runtime_context(
 }
 
 #[derive(Clone)]
-pub(crate) struct SuspendedLocalChatExecution {
+pub(crate) struct SuspendedChatToolExecution {
     max_rounds: usize,
     round: usize,
     trace_id: String,
@@ -788,12 +788,12 @@ pub(crate) struct SuspendedLocalChatExecution {
     execution_graph: serde_json::Value,
 }
 
-impl SuspendedLocalChatExecution {
+impl SuspendedChatToolExecution {
     fn from_state(
-        state: &LocalChatAutoCodeModeState,
+        state: &LocalChatToolRuntimeState,
         pending_tool_call_meta: &[serde_json::Value],
         _pending_results: &[String],
-        _pending_capability_update: Option<LocalCapabilityActivationUpdate>,
+        _pending_capability_update: Option<LocalCapabilityTransition>,
         _pending_call_id: String,
         _pending_tool_name: String,
     ) -> Self {
@@ -830,8 +830,8 @@ impl SuspendedLocalChatExecution {
         }
     }
 
-    fn into_runtime_state(self) -> LocalChatAutoCodeModeState {
-        LocalChatAutoCodeModeState {
+    fn into_runtime_state(self) -> LocalChatToolRuntimeState {
+        LocalChatToolRuntimeState {
             max_rounds: self.max_rounds,
             round: self.round,
             trace_id: self.trace_id.clone(),
@@ -972,7 +972,7 @@ impl SuspendedLocalChatExecution {
     }
 
     fn to_runtime_context_value(&self) -> serde_json::Value {
-        serde_json::to_value(PersistedExecutionGraphRuntimeContext {
+        serde_json::to_value(PersistedChatToolRuntimeContext {
             max_rounds: self.max_rounds,
             round: self.round,
             trace_id: self.trace_id.clone(),
@@ -991,7 +991,7 @@ impl SuspendedLocalChatExecution {
     }
 }
 
-pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
+pub(crate) async fn run_local_chat_complete_with_tools(
     app: &AppHandle,
     app_state: &AppState,
     model_connection: &LocalModelConnection,
@@ -1041,7 +1041,7 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
         });
     }
 
-    let state = LocalChatAutoCodeModeState {
+    let state = LocalChatToolRuntimeState {
         max_rounds,
         round: 0,
         trace_id: trace_id.clone(),
@@ -1061,13 +1061,13 @@ pub(crate) async fn run_local_chat_complete_with_auto_code_mode(
             request_id,
         ),
     };
-    continue_local_chat_complete_with_auto_code_mode(app, app_state, state)
+    continue_local_chat_complete_with_tools(app, app_state, state)
         .await
         .map(|output| output.response)
 }
 
 #[derive(Debug, Clone)]
-enum LocalCapabilityActivationUpdate {
+enum LocalCapabilityTransition {
     Activate(LocalCapabilityActivationState),
     Deactivate {
         _capability_id: Option<String>,
@@ -1075,11 +1075,11 @@ enum LocalCapabilityActivationUpdate {
     },
 }
 
-async fn continue_local_chat_complete_with_auto_code_mode(
+async fn continue_local_chat_complete_with_tools(
     app: &AppHandle,
     app_state: &AppState,
-    mut state: LocalChatAutoCodeModeState,
-) -> Result<LocalChatAutoCodeModeOutput, String> {
+    mut state: LocalChatToolRuntimeState,
+) -> Result<LocalChatToolRuntimeOutput, String> {
     let session_id = state.session_id.clone();
     let provider_model_id = state.model_connection.provider_model_id.clone();
     let model_id = state.model_connection.model_id.clone();
@@ -1095,7 +1095,7 @@ async fn continue_local_chat_complete_with_auto_code_mode(
             let fallback = state.last_response.unwrap_or_else(|| {
                 serde_json::json!({"content": "Tool execution reached the maximum number of rounds."})
             });
-            return Ok(LocalChatAutoCodeModeOutput {
+            return Ok(LocalChatToolRuntimeOutput {
                 response: enrich_response_with_tool_trace(
                     fallback,
                     &effective_tool_call_meta,
@@ -1108,7 +1108,7 @@ async fn continue_local_chat_complete_with_auto_code_mode(
         let effective_allowed_tool_names = state
             .execution_policy
             .effective_allowed_tool_names(state.last_capability_snapshot.as_ref());
-        let tools = build_local_code_mode_entry_tools_with_allowlist(
+        let tools = build_local_runtime_tools_with_allowlist(
             &effective_allowed_tool_names,
             state.last_capability_snapshot.as_ref(),
         );
@@ -1129,7 +1129,7 @@ async fn continue_local_chat_complete_with_auto_code_mode(
 
         if extract_chat_tool_calls(&response).is_empty() {
             let effective_tool_call_meta = build_state_effective_tool_call_meta(&state);
-            return Ok(LocalChatAutoCodeModeOutput {
+            return Ok(LocalChatToolRuntimeOutput {
                 response: enrich_response_with_tool_trace(
                     response,
                     &effective_tool_call_meta,
@@ -1141,7 +1141,7 @@ async fn continue_local_chat_complete_with_auto_code_mode(
 
         let prior_tool_call_meta = build_state_effective_tool_call_meta(&state);
         state.last_response = Some(response.clone());
-        match maybe_handle_local_code_mode_tool_calls(
+        match process_chat_tool_calls(
             app,
             app_state,
             &response,
@@ -1174,7 +1174,7 @@ async fn continue_local_chat_complete_with_auto_code_mode(
                 if !synthesized {
                     let mut current_tool_call_meta = build_state_effective_tool_call_meta(&state);
                     current_tool_call_meta.extend(canonical_tool_call_meta.clone());
-                    return Ok(LocalChatAutoCodeModeOutput {
+                    return Ok(LocalChatToolRuntimeOutput {
                         response: enrich_response_with_tool_trace(
                             response,
                             &current_tool_call_meta,
@@ -1211,7 +1211,7 @@ async fn continue_local_chat_complete_with_auto_code_mode(
                     &tool_call_meta,
                 )
                 .await;
-                let suspended = SuspendedLocalChatExecution::from_state(
+                let suspended = SuspendedChatToolExecution::from_state(
                     &state,
                     &tool_call_meta,
                     &results,
@@ -1276,7 +1276,7 @@ async fn continue_local_chat_complete_with_auto_code_mode(
                 let interrupted = serde_json::json!({
                     "content": last_response_content_or_empty(state.last_response.as_ref()),
                 });
-                return Ok(LocalChatAutoCodeModeOutput {
+                return Ok(LocalChatToolRuntimeOutput {
                     response: enrich_response_with_tool_trace(
                         interrupted,
                         &current_tool_call_meta,
@@ -1312,8 +1312,7 @@ fn finalize_tool_round(
     }
 
     let effective_tool_call_meta = build_effective_tool_call_meta(response, tool_call_meta);
-    let tool_feedback =
-        build_auto_code_mode_tool_feedback(round, &effective_tool_call_meta, results);
+    let tool_feedback = build_tool_loop_feedback(round, &effective_tool_call_meta, results);
     let assistant_content = response
         .get("content")
         .and_then(|v| v.as_str())
@@ -1484,11 +1483,11 @@ fn extract_mcp_result_text_content(result: &serde_json::Value) -> Option<String>
 fn apply_capability_update(
     orchestrated_messages: &mut Vec<LocalChatInputMessage>,
     active_capability: &mut Option<LocalCapabilityActivationState>,
-    capability_update: Option<LocalCapabilityActivationUpdate>,
+    capability_update: Option<LocalCapabilityTransition>,
 ) {
     if let Some(update) = capability_update {
         match update {
-            LocalCapabilityActivationUpdate::Activate(next_active) => {
+            LocalCapabilityTransition::Activate(next_active) => {
                 let capability_name = next_active.capability_name.clone();
                 let capability_summary = next_active.capability_summary.clone();
                 *active_capability = Some(next_active);
@@ -1508,7 +1507,7 @@ fn apply_capability_update(
                     name: None,
                 });
             }
-            LocalCapabilityActivationUpdate::Deactivate {
+            LocalCapabilityTransition::Deactivate {
                 _capability_id: _,
                 capability_name,
             } => {
@@ -1531,7 +1530,7 @@ fn apply_capability_update(
 
 fn derive_capability_update_from_tool_call_meta(
     tool_call_meta: &[serde_json::Value],
-) -> Option<LocalCapabilityActivationUpdate> {
+) -> Option<LocalCapabilityTransition> {
     for item in tool_call_meta.iter().rev() {
         let result = item.get("result")?.as_object()?;
         let transition = result.get("capability_transition")?.as_object()?;
@@ -1572,7 +1571,7 @@ fn derive_capability_update_from_tool_call_meta(
                     .map(str::trim)
                     .unwrap_or_default()
                     .to_string();
-                return Some(LocalCapabilityActivationUpdate::Activate(
+                return Some(LocalCapabilityTransition::Activate(
                     LocalCapabilityActivationState {
                         capability_id,
                         capability_name,
@@ -1603,7 +1602,7 @@ fn derive_capability_update_from_tool_call_meta(
                     .map(str::trim)
                     .filter(|value| !value.is_empty())
                     .map(str::to_string);
-                return Some(LocalCapabilityActivationUpdate::Deactivate {
+                return Some(LocalCapabilityTransition::Deactivate {
                     _capability_id: capability_id,
                     capability_name,
                 });
@@ -1691,7 +1690,7 @@ fn build_runtime_bridge_stream_target(
     )
 }
 
-async fn maybe_handle_local_code_mode_tool_calls(
+async fn process_chat_tool_calls(
     app: &AppHandle,
     app_state: &AppState,
     chat_response: &serde_json::Value,
@@ -1789,7 +1788,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
                         "id":call.id,
                         "name":tool_name,
                         "status":"error",
-                        "error_code":"CODE_MODE_SEARCH_REQUIRED",
+                        "error_code":"CODEMODE_SEARCH_REQUIRED",
                         "error":error,
                     });
                     let mut streamed_blocks = Vec::new();
@@ -1797,7 +1796,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
                     realtime_emitter.emit_blocks(streamed_blocks);
                     tool_call_meta.push(meta);
                     results.push(format!(
-                        "Code Execution Blocked [CODE_MODE_SEARCH_REQUIRED]: {}",
+                        "Codemode Tool Blocked [CODEMODE_SEARCH_REQUIRED]: {}",
                         error
                     ));
                     continue;
@@ -1811,7 +1810,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
                     realtime_emitter,
                     call.id.as_deref(),
                     &tool_name,
-                    "CODE_MODE_EMPTY_CODE",
+                    "CODEMODE_EMPTY_CODE",
                     "execute_code_plan requires a non-empty 'code' argument",
                 );
                 continue;
@@ -1819,8 +1818,15 @@ async fn maybe_handle_local_code_mode_tool_calls(
 
             let execution_res = crate::modules::code_mode::commands::execute_local_code_mode_inner(
                 app_state,
-                ExecuteLocalCodeModeRequest {
+                ExecuteLocalCodemodeRequest {
                     code: code.to_string(),
+                    task: call
+                        .arguments
+                        .get("task")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string),
+                    scope: call.arguments.get("scope").cloned(),
+                    constraints: call.arguments.get("constraints").cloned(),
                     session_id: Some(session_id.to_string()),
                     language: Some(language.to_string()),
                     execution_timeout,
@@ -1849,10 +1855,10 @@ async fn maybe_handle_local_code_mode_tool_calls(
                     realtime_emitter.emit_blocks(streamed_blocks);
                     tool_call_meta.push(meta);
                     if res.success {
-                        results.push(format!("Code Execution Result:\n{}", res.result.join("\n")));
+                        results.push(format!("Codemode Tool Result:\n{}", res.result.join("\n")));
                     } else {
                         results.push(format!(
-                            "Code Execution Blocked: {}",
+                            "Codemode Tool Blocked: {}",
                             res.error.unwrap_or_else(|| "sandbox not ready".to_string())
                         ));
                     }
@@ -1863,7 +1869,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
                     append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
                     realtime_emitter.emit_blocks(streamed_blocks);
                     tool_call_meta.push(meta);
-                    results.push(format!("Code Execution Failed: {}", err));
+                    results.push(format!("Codemode Tool Failed: {}", err));
                 }
             }
         } else if tool_name == "search_sdk" {
@@ -1935,7 +1941,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
                         "Expert capability '{}' attached for the current request.",
                         state.capability_name
                     ));
-                    capability_update = Some(LocalCapabilityActivationUpdate::Activate(state));
+                    capability_update = Some(LocalCapabilityTransition::Activate(state));
                     let bandit_store = app_state.providers.store.clone();
                     tauri::async_runtime::spawn(async move {
                         if let Err(e) = bandit_store
@@ -1995,7 +2001,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
             realtime_emitter.emit_blocks(streamed_blocks);
             tool_call_meta.push(meta);
             results.push("Assistant deactivated for the current request.".to_string());
-            capability_update = Some(LocalCapabilityActivationUpdate::Deactivate {
+            capability_update = Some(LocalCapabilityTransition::Deactivate {
                 _capability_id: active_capability.map(|v| v.capability_id.clone()),
                 capability_name: active_capability.map(|v| v.capability_name.clone()),
             });
@@ -2204,7 +2210,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
                 tool_name
             );
             log::warn!(
-                "local code mode tool call missing output meta: tool_name={} call_id={}",
+                "local chat tool call missing output meta: tool_name={} call_id={}",
                 tool_name,
                 call_id
             );
@@ -2236,7 +2242,7 @@ async fn maybe_handle_local_code_mode_tool_calls(
 }
 
 fn apply_approved_tool_result_to_suspended_round(
-    suspended: &mut SuspendedLocalChatExecution,
+    suspended: &mut SuspendedChatToolExecution,
     call_id: Option<&str>,
     tool_result: &serde_json::Value,
 ) {
@@ -2396,11 +2402,6 @@ async fn persist_resumed_local_chat_assistant_message(
     model_connection: &LocalModelConnection,
     resumed_response: &serde_json::Value,
 ) -> Result<(), String> {
-    let response_text = extract_resume_response_text(
-        resumed_response
-            .get("content")
-            .unwrap_or(&serde_json::Value::Null),
-    );
     let assistant_meta = build_persisted_resume_assistant_meta(resumed_response, model_connection);
 
     app_state
@@ -2446,7 +2447,7 @@ async fn persist_resumed_local_chat_assistant_message(
     Ok(())
 }
 
-pub(crate) async fn resume_suspended_local_chat_after_approval(
+pub(crate) async fn resume_suspended_chat_tool_execution_after_approval(
     app: &AppHandle,
     app_state: &AppState,
     approval_token: &str,
@@ -2492,10 +2493,10 @@ pub(crate) async fn resume_suspended_local_chat_after_approval(
         else {
             return Ok(None);
         };
-        let persisted_context: PersistedExecutionGraphRuntimeContext =
+        let persisted_context: PersistedChatToolRuntimeContext =
             serde_json::from_value(runtime_context).map_err(|err| err.to_string())?;
         let state = runtime_state_from_persisted_context(persisted_context);
-        SuspendedLocalChatExecution {
+        SuspendedChatToolExecution {
             max_rounds: state.max_rounds,
             round: state.round,
             trace_id: state.trace_id.clone(),
@@ -2609,7 +2610,7 @@ pub(crate) async fn resume_suspended_local_chat_after_approval(
         &state.runtime_metrics,
     ));
 
-    match continue_local_chat_complete_with_auto_code_mode(app, app_state, state).await {
+    match continue_local_chat_complete_with_tools(app, app_state, state).await {
         Ok(mut output) => {
             attach_execution_graph_to_response(
                 &mut output.response,
@@ -2753,7 +2754,7 @@ fn summarize_tool_call_meta_results(tool_call_meta: &[serde_json::Value]) -> Vec
 mod tests {
     use super::*;
     use crate::modules::desktop_runtime::runtime::build_local_tool_call_install_gate_error_meta;
-    use crate::modules::desktop_runtime::runtime::code_mode_catalog::dynamic_capability_alias;
+    use crate::modules::desktop_runtime::runtime::tool_catalog::dynamic_capability_alias;
     use crate::modules::desktop_runtime::runtime::LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE;
 
     #[test]
@@ -2782,7 +2783,7 @@ mod tests {
                 {"name": "fetch_page", "invocation_mode": "direct", "status": {"callable": true}},
                 {"name": "search_web", "invocation_mode": "direct", "status": {"callable": true}},
                 {"name": "disabled_tool", "invocation_mode": "direct", "status": {"callable": false}},
-                {"name": "execute_code_plan", "invocation_mode": "code_mode", "status": {"callable": true}}
+                {"name": "execute_code_plan", "invocation_mode": "direct", "status": {"callable": true}}
             ]
         })))
         .expect("contract");

@@ -1,5 +1,5 @@
 use crate::modules::browser_agent::BrowserAgentState;
-use crate::modules::code_mode::CodeModeState;
+use crate::modules::code_mode::CodemodeToolState;
 use crate::modules::desktop_runtime::runtime::migrate_execution_graph_runtime_bootstrap;
 use crate::modules::im::runtime::spawn_im_runtime_worker;
 use crate::modules::im::wechat::WechatState;
@@ -241,7 +241,7 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         let sandbox_state = SandboxState::new(boxrun_home_dir.clone());
         log_startup_phase("build_sandbox_state", phase_started_at);
         let phase_started_at = Instant::now();
-        let code_mode_state = CodeModeState::with_pool(global_pool.clone())
+        let code_mode_state = CodemodeToolState::with_pool(global_pool.clone())
             .await
             .map_err(|e| McpError::Storage(e.to_string()))?;
         log_startup_phase("init_code_mode_state", phase_started_at);

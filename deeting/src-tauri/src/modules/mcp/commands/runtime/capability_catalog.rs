@@ -254,7 +254,7 @@ fn replaced_by_core_tool_registry(asset: &Value, core_tool_names: &HashSet<Strin
         .get("source_type")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    if source_type != "code_mode_core" {
+    if source_type != "desktop_runtime_core" {
         return false;
     }
     let name = asset
@@ -464,7 +464,7 @@ impl RegistryAvailability {
                         pkg_name,
                     ));
                 }
-                if source_type == "code_mode_core" {
+                if source_type == "desktop_runtime_core" {
                     if let Some(availability) = core_registry_availability_override(asset_metadata)
                     {
                         return availability;
@@ -479,7 +479,7 @@ impl RegistryAvailability {
                         install_required: false,
                         activation_required: false,
                         recommended_action: "execute",
-                        status_reason: "core_code_mode_tool",
+                        status_reason: "core_runtime_tool",
                     };
                 }
                 if source_type == "mcp" {
@@ -708,7 +708,7 @@ fn core_registry_availability_override(
         install_required: false,
         activation_required: false,
         recommended_action: "execute",
-        status_reason: "core_code_mode_tool",
+        status_reason: "core_runtime_tool",
     })
 }
 
@@ -920,7 +920,7 @@ mod tests {
         assert!(replaced_by_core_tool_registry(
             &json!({
                 "asset_type": "tool",
-                "source_type": "code_mode_core",
+                "source_type": "desktop_runtime_core",
                 "name": "search_sdk",
             }),
             &names
@@ -1077,7 +1077,7 @@ mod tests {
             CapabilityRegistryReadMode::LegacyOnly,
         );
         assert!(assets.iter().any(|asset| {
-            asset.get("source_type").and_then(Value::as_str) == Some("code_mode_core")
+            asset.get("source_type").and_then(Value::as_str) == Some("desktop_runtime_core")
                 && asset.get("name").and_then(Value::as_str) == Some("search_sdk")
         }));
     }

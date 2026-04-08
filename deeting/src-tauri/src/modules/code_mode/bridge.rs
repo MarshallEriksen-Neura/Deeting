@@ -14,7 +14,7 @@ use tokio::sync::{Mutex, RwLock};
 use uuid::Uuid;
 
 use crate::modules::code_mode::contract::BRIDGE_EXECUTION_TOKEN_HEADER;
-use crate::modules::code_mode::error::CodeModeError;
+use crate::modules::code_mode::error::CodemodeToolError;
 use crate::modules::mcp::commands::runtime::{
     resolve_callable_mcp_tool_by_name, ToolResolutionError,
 };
@@ -86,7 +86,7 @@ struct RuntimeBridgeStore {
 }
 
 #[derive(Clone)]
-pub struct CodeModeBridgeState {
+pub struct CodemodeToolBridgeState {
     inner: Arc<Mutex<Option<BridgeServerHandle>>>,
 }
 
@@ -103,12 +103,12 @@ struct BridgeServerState {
 }
 
 #[derive(Debug, Deserialize)]
-struct CodeModeBridgeContextRequest {
+struct CodemodeToolBridgeContextRequest {
     execution_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-struct CodeModeBridgeCallRequest {
+struct CodemodeToolBridgeCallRequest {
     tool_name: String,
     #[serde(default)]
     arguments: HashMap<String, Value>,
@@ -116,7 +116,7 @@ struct CodeModeBridgeCallRequest {
 }
 
 #[derive(Debug, Deserialize)]
-struct CodeModeBridgeFileWriteRequest {
+struct CodemodeToolBridgeFileWriteRequest {
     name: String,
     content_base64: String,
     #[serde(default = "default_content_type")]
@@ -125,7 +125,7 @@ struct CodeModeBridgeFileWriteRequest {
 }
 
 #[derive(Debug, Deserialize)]
-struct CodeModeBridgeFileReadRequest {
+struct CodemodeToolBridgeFileReadRequest {
     ref_id: String,
     execution_token: Option<String>,
 }
@@ -189,14 +189,14 @@ async fn cleanup_bridge_files_for_token(state: &BridgeServerState, token: &str) 
     }
 }
 
-impl CodeModeBridgeState {
+impl CodemodeToolBridgeState {
     pub fn new() -> Self {
         Self {
             inner: Arc::new(Mutex::new(None)),
         }
     }
 
-    pub async fn ensure_started(&self, deps: BridgeDeps) -> Result<String, CodeModeError> {
+    pub async fn ensure_started(&self, deps: BridgeDeps) -> Result<String, CodemodeToolError> {
         let mut guard = self.inner.lock().await;
         if let Some(handle) = guard.as_ref() {
             return Ok(handle.base_url.clone());
@@ -216,10 +216,10 @@ impl CodeModeBridgeState {
 
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
-            .map_err(|err| CodeModeError::Bridge(err.to_string()))?;
+            .map_err(|err| CodemodeToolError::Bridge(err.to_string()))?;
         let addr = listener
             .local_addr()
-            .map_err(|err| CodeModeError::Bridge(err.to_string()))?;
+            .map_err(|err| CodemodeToolError::Bridge(err.to_string()))?;
         let base_url = format!("http://{}:{}", addr.ip(), addr.port());
 
         tauri::async_runtime::spawn(async move {
@@ -241,7 +241,7 @@ impl CodeModeBridgeState {
         context: Value,
         ttl_seconds: Option<i64>,
         stream_target: Option<RuntimeBridgeStreamTarget>,
-    ) -> Result<RuntimeBridgeIssueResult, CodeModeError> {
+    ) -> Result<RuntimeBridgeIssueResult, CodemodeToolError> {
         let state = self.server_state().await?;
         let token = Uuid::new_v4().to_string();
         let ttl = ttl_seconds.unwrap_or(DEFAULT_TOKEN_TTL_SECONDS).max(1);
@@ -266,19 +266,19 @@ impl CodeModeBridgeState {
         guard.as_ref().map(|item| item.base_url.clone())
     }
 
-    async fn server_state(&self) -> Result<Arc<BridgeServerState>, CodeModeError> {
+    async fn server_state(&self) -> Result<Arc<BridgeServerState>, CodemodeToolError> {
         let guard = self.inner.lock().await;
         guard
             .as_ref()
             .map(|item| item.state.clone())
-            .ok_or_else(|| CodeModeError::Bridge("bridge server not started".to_string()))
+            .ok_or_else(|| CodemodeToolError::Bridge("bridge server not started".to_string()))
     }
 }
 
 async fn code_mode_get_context(
     State(state): State<Arc<BridgeServerState>>,
     headers: HeaderMap,
-    Json(payload): Json<CodeModeBridgeContextRequest>,
+    Json(payload): Json<CodemodeToolBridgeContextRequest>,
 ) -> Json<Value> {
     let token = resolve_token(headers, payload.execution_token);
     match consume_claims(&state, &token).await {
@@ -292,7 +292,7 @@ async fn code_mode_get_context(
 async fn code_mode_call_tool(
     State(state): State<Arc<BridgeServerState>>,
     headers: HeaderMap,
-    Json(payload): Json<CodeModeBridgeCallRequest>,
+    Json(payload): Json<CodemodeToolBridgeCallRequest>,
 ) -> Json<Value> {
     let token = resolve_token(headers, payload.execution_token);
     let (claims, call_index, max_calls, _) = match consume_claims(&state, &token).await {
@@ -475,7 +475,7 @@ fn extract_runtime_ui_blocks_from_result(result: &Value) -> Vec<Value> {
 async fn code_mode_file_write(
     State(state): State<Arc<BridgeServerState>>,
     headers: HeaderMap,
-    Json(payload): Json<CodeModeBridgeFileWriteRequest>,
+    Json(payload): Json<CodemodeToolBridgeFileWriteRequest>,
 ) -> Json<Value> {
     let token = resolve_token(headers, payload.execution_token);
     let consumed = consume_claims(&state, &token).await;
@@ -537,7 +537,7 @@ async fn code_mode_file_write(
 async fn code_mode_file_read(
     State(state): State<Arc<BridgeServerState>>,
     headers: HeaderMap,
-    Json(payload): Json<CodeModeBridgeFileReadRequest>,
+    Json(payload): Json<CodemodeToolBridgeFileReadRequest>,
 ) -> Json<Value> {
     let token = resolve_token(headers, payload.execution_token);
     let consumed = consume_claims(&state, &token).await;
@@ -828,10 +828,10 @@ fn now_unix_ms() -> i128 {
         .as_millis() as i128
 }
 
-fn now_rfc3339_offset_seconds(offset_seconds: i64) -> Result<String, CodeModeError> {
+fn now_rfc3339_offset_seconds(offset_seconds: i64) -> Result<String, CodemodeToolError> {
     let now = time::OffsetDateTime::now_utc() + time::Duration::seconds(offset_seconds);
     now.format(&time::format_description::well_known::Rfc3339)
-        .map_err(|err| CodeModeError::Internal(err.to_string()))
+        .map_err(|err| CodemodeToolError::Internal(err.to_string()))
 }
 
 #[cfg(test)]

@@ -4,7 +4,7 @@ use serde_json::Value;
 
 const MISSING_CAPABILITIES_ERROR: &str = "search_sdk result is missing capabilities";
 const NO_CALLABLE_DIRECT_CAPABILITIES_ERROR: &str =
-    "search_sdk returned no callable direct capabilities; refine the search before execute_code_plan";
+    "search_sdk returned no callable direct capabilities; refine the search before codemode execution";
 
 pub fn extract_callable_direct_capability_names(
     search_result: &Value,
@@ -96,7 +96,7 @@ mod tests {
                 {"name": "search_web", "invocation_mode": "direct", "status": {"callable": true}},
                 {"name": "fetch_page", "invocation_mode": "direct", "status": {"callable": true}},
                 {"name": "search_web", "invocation_mode": "direct", "status": {"callable": true}},
-                {"name": "ignored_code_mode", "invocation_mode": "code_mode", "status": {"callable": true}},
+                {"name": "execute_code_plan", "invocation_mode": "direct", "status": {"callable": true}},
                 {"name": "ignored_disabled", "invocation_mode": "direct", "status": {"callable": false}}
             ]
         }))
@@ -104,7 +104,11 @@ mod tests {
 
         assert_eq!(
             names,
-            vec!["search_web".to_string(), "fetch_page".to_string()]
+            vec![
+                "search_web".to_string(),
+                "fetch_page".to_string(),
+                "execute_code_plan".to_string(),
+            ]
         );
     }
 
@@ -116,7 +120,7 @@ mod tests {
                 "allowed_tool_names": ["browser_open_tab"],
                 "capabilities": [
                     {"name": "browser_get_page_snapshot", "invocation_mode": "direct", "status": {"callable": true}},
-                    {"name": "execute_code_plan", "invocation_mode": "code_mode", "status": {"callable": true}}
+                    {"name": "execute_code_plan", "invocation_mode": "direct", "status": {"callable": true}}
                 ]
             })),
         );
@@ -126,6 +130,7 @@ mod tests {
             vec![
                 "browser_get_page_snapshot".to_string(),
                 "browser_open_tab".to_string(),
+                "execute_code_plan".to_string(),
                 "search_sdk".to_string(),
             ]
         );

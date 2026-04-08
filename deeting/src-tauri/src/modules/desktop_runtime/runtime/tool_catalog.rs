@@ -11,12 +11,12 @@ use crate::modules::code_mode::core_tool_contracts::build_core_tool_function_ent
 use mcp_runtime::policy::full_execution_tool_names;
 
 #[cfg(test)]
-pub(crate) fn build_local_code_mode_entry_tools() -> serde_json::Value {
-    build_local_code_mode_entry_tools_with_allowlist(&full_execution_tool_names(), None)
+pub(crate) fn build_local_runtime_tools() -> serde_json::Value {
+    build_local_runtime_tools_with_allowlist(&full_execution_tool_names(), None)
         .unwrap_or_else(|| serde_json::json!({ "tools": [] }))
 }
 
-pub(crate) fn build_local_code_mode_entry_tools_with_allowlist(
+pub(crate) fn build_local_runtime_tools_with_allowlist(
     allowed_tool_names: &[String],
     capability_snapshot: Option<&serde_json::Value>,
 ) -> Option<serde_json::Value> {
@@ -183,8 +183,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn build_local_code_mode_entry_tools_with_allowlist_filters_tools() {
-        let payload = build_local_code_mode_entry_tools_with_allowlist(
+    fn build_local_runtime_tools_with_allowlist_filters_tools() {
+        let payload = build_local_runtime_tools_with_allowlist(
             &["search_sdk".to_string(), "attach_capability".to_string()],
             None,
         )
@@ -203,8 +203,8 @@ mod tests {
     }
 
     #[test]
-    fn build_local_code_mode_entry_tools_with_allowlist_includes_direct_capability_tools() {
-        let payload = build_local_code_mode_entry_tools_with_allowlist(
+    fn build_local_runtime_tools_with_allowlist_includes_direct_capability_tools() {
+        let payload = build_local_runtime_tools_with_allowlist(
             &["weather_lookup".to_string(), "search_sdk".to_string()],
             Some(&serde_json::json!({
                 "capabilities": [
@@ -239,8 +239,8 @@ mod tests {
     }
 
     #[test]
-    fn build_local_code_mode_entry_tools_aliases_invalid_direct_capability_names() {
-        let payload = build_local_code_mode_entry_tools_with_allowlist(
+    fn build_local_runtime_tools_aliases_invalid_direct_capability_names() {
+        let payload = build_local_runtime_tools_with_allowlist(
             &[
                 "skill.official.skills.weather.get_weather".to_string(),
                 "search_sdk".to_string(),

@@ -53,7 +53,6 @@ impl RuntimeDiscoveryBundle {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LocalExecutionPlane {
     ResponseOnly,
-    CodeModeOrchestration,
     WorkerReasoning,
 }
 
@@ -61,7 +60,6 @@ impl LocalExecutionPlane {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::ResponseOnly => "response_only",
-            Self::CodeModeOrchestration => "code_mode_orchestration",
             Self::WorkerReasoning => "worker_reasoning",
         }
     }
@@ -121,8 +119,8 @@ pub fn build_default_local_execution_policy() -> LocalExecutionPolicy {
     LocalExecutionPolicy {
         route: LocalRouteKind::Direct,
         plane: LocalExecutionPlane::ResponseOnly,
-        allowed_tool_names: Vec::new(),
-        inject_execution_protocol: false,
+        allowed_tool_names: full_execution_tool_names(),
+        inject_execution_protocol: true,
         allow_worker_delegation: false,
         prefer_workflow_runtime: false,
         capability_snapshot: None,
@@ -134,35 +132,22 @@ pub fn build_local_execution_policy(decision: &LocalRouteDecision) -> LocalExecu
         LocalRouteKind::Direct => LocalExecutionPolicy {
             route: LocalRouteKind::Direct,
             plane: LocalExecutionPlane::ResponseOnly,
-            allowed_tool_names: vec![SEARCH_SDK_TOOL_NAME.to_string()],
-            inject_execution_protocol: false,
+            allowed_tool_names: full_execution_tool_names(),
+            inject_execution_protocol: true,
             allow_worker_delegation: false,
             prefer_workflow_runtime: false,
             capability_snapshot: None,
         },
-        LocalRouteKind::Worker => {
-            let code_mode_orchestration = should_use_code_mode_orchestration(decision);
-            LocalExecutionPolicy {
-                route: LocalRouteKind::Worker,
-                plane: if code_mode_orchestration {
-                    LocalExecutionPlane::CodeModeOrchestration
-                } else {
-                    LocalExecutionPlane::WorkerReasoning
-                },
-                allowed_tool_names: full_execution_tool_names(),
-                inject_execution_protocol: true,
-                allow_worker_delegation: !code_mode_orchestration,
-                prefer_workflow_runtime: false,
-                capability_snapshot: None,
-            }
-        }
+        LocalRouteKind::Worker => LocalExecutionPolicy {
+            route: LocalRouteKind::Worker,
+            plane: LocalExecutionPlane::WorkerReasoning,
+            allowed_tool_names: full_execution_tool_names(),
+            inject_execution_protocol: true,
+            allow_worker_delegation: true,
+            prefer_workflow_runtime: false,
+            capability_snapshot: None,
+        },
     }
-}
-
-fn should_use_code_mode_orchestration(decision: &LocalRouteDecision) -> bool {
-    decision.profile.wants_programmatic_logic
-        && decision.evidence.has_programmatic_executor
-        && (!decision.profile.wants_analysis || decision.profile.has_batch_scope)
 }
 
 pub fn build_local_execution_policy_status_meta(policy: &LocalExecutionPolicy) -> Value {
@@ -242,7 +227,7 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn worker_execution_policy_uses_code_mode_plane_for_programmatic_logic() {
+    fn worker_execution_policy_keeps_programmatic_logic_on_worker_plane() {
         let decision = LocalRouteDecision {
             route: LocalRouteKind::Worker,
             reasons: vec!["programmatic_logic".to_string()],
@@ -267,10 +252,10 @@ mod tests {
 
         let policy = build_local_execution_policy(&decision);
 
-        assert!(!policy.allow_worker_delegation);
+        assert!(policy.allow_worker_delegation);
         assert!(!policy.prefer_workflow_runtime);
         assert!(policy.inject_execution_protocol);
-        assert_eq!(policy.plane, LocalExecutionPlane::CodeModeOrchestration);
+        assert_eq!(policy.plane, LocalExecutionPlane::WorkerReasoning);
         assert!(policy
             .allowed_tool_names
             .iter()
@@ -291,10 +276,10 @@ mod tests {
     }
 
     #[test]
-    fn code_mode_execution_plane_has_stable_string_value() {
+    fn worker_execution_plane_has_stable_string_value() {
         assert_eq!(
-            LocalExecutionPlane::CodeModeOrchestration.as_str(),
-            "code_mode_orchestration"
+            LocalExecutionPlane::WorkerReasoning.as_str(),
+            "worker_reasoning"
         );
     }
 
@@ -328,9 +313,15 @@ mod tests {
         assert_eq!(
             policy.allowed_tool_names,
             vec![
+                "attach_capability".to_string(),
+                "detach_capability".to_string(),
                 "exa".to_string(),
+                "execute_code_plan".to_string(),
                 "fetch_page".to_string(),
+                "get_tool_schema".to_string(),
+                "refresh_skill_index".to_string(),
                 "search_sdk".to_string(),
+                "sys_submit_onboarding_request".to_string(),
                 "tavily-extract".to_string(),
                 "tavily-search".to_string(),
             ]

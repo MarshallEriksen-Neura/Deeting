@@ -1,10 +1,12 @@
 use crate::modules::conversations::text_utils::truncate_text_chars;
 use crate::modules::mcp::commands::support::*;
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) const LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE: &str =
     "LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED";
-const LOCAL_CODE_MODE_TOOL_RESULTS_MAX_CHARS: usize = 8000;
+const LOCAL_TOOL_LOOP_RESULTS_MAX_CHARS: usize = 8000;
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn build_local_tool_call_install_gate_error_meta(
     call_id: Option<&str>,
     tool_name: &str,
@@ -68,7 +70,7 @@ pub(crate) fn extract_chat_tool_calls(response: &serde_json::Value) -> Vec<Local
     calls
 }
 
-pub(crate) fn build_auto_code_mode_tool_feedback(
+pub(crate) fn build_tool_loop_feedback(
     round: usize,
     tool_call_meta: &[serde_json::Value],
     results: &[String],
@@ -81,8 +83,8 @@ pub(crate) fn build_auto_code_mode_tool_feedback(
     let serialized = serde_json::to_string_pretty(&payload)
         .unwrap_or_else(|_| serde_json::json!({ "round": round, "results": results }).to_string());
     let content = format!(
-        "Auto tool execution round {} completed. Continue based on these tool results. If all tasks are complete, return the final answer.\n{}",
+        "Tool execution round {} completed. Continue from these tool results. If the task is done, return the final answer.\n{}",
         round, serialized
     );
-    truncate_text_chars(&content, LOCAL_CODE_MODE_TOOL_RESULTS_MAX_CHARS)
+    truncate_text_chars(&content, LOCAL_TOOL_LOOP_RESULTS_MAX_CHARS)
 }

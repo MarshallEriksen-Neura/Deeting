@@ -390,7 +390,7 @@ fn build_search_result_payload(
     json!({
         "format_version": SEARCH_RESULT_FORMAT_VERSION,
         "runtime_protocol_version": crate::modules::code_mode::contract::RUNTIME_PROTOCOL_VERSION,
-        "mode": "code_mode",
+        "mode": "desktop_runtime",
         "detail_level": detail_level.as_str(),
         "query": query,
         "normalized_query": profile.to_value(),
@@ -1254,25 +1254,13 @@ fn materialize_ranked_entry(
                 }
             }
             SemanticGroup::OrchestrationPrimitive => {
-                let primitive_kind = match name {
-                    "execute_code_plan" => "orchestration",
-                    _ => "discovery",
-                };
-                let invocation_mode = match name {
-                    "execute_code_plan" => "code_mode",
-                    _ => "direct",
-                };
-                let execution_plane = match name {
-                    "execute_code_plan" => "sandbox",
-                    _ => "host",
-                };
                 object.insert(
                     "semantic_kind".to_string(),
                     json!("orchestration_primitive"),
                 );
-                object.insert("primitive_kind".to_string(), json!(primitive_kind));
-                object.insert("invocation_mode".to_string(), json!(invocation_mode));
-                object.insert("execution_plane".to_string(), json!(execution_plane));
+                object.insert("primitive_kind".to_string(), json!("discovery"));
+                object.insert("invocation_mode".to_string(), json!("direct"));
+                object.insert("execution_plane".to_string(), json!("host"));
             }
         }
     }
@@ -1287,7 +1275,7 @@ fn classify_semantic_group(
     availability: &RegistryAvailability,
     has_tool_contract: bool,
 ) -> SemanticGroup {
-    if matches!(name.trim(), "search_sdk" | "execute_code_plan") {
+    if matches!(name.trim(), "search_sdk") {
         return SemanticGroup::OrchestrationPrimitive;
     }
     if asset_type == "skill_tool"
@@ -1334,7 +1322,7 @@ fn resolve_asset_namespace(
     if matches!(asset_type, "assistant") {
         return "assistant";
     }
-    if matches!(source_type, "code_mode_core") {
+    if matches!(source_type, "desktop_runtime_core") {
         return "core";
     }
     if asset_metadata
@@ -2246,7 +2234,7 @@ mod tests {
             "local_inspection",
             shell_text,
             "tool",
-            "code_mode_core"
+            "desktop_runtime_core"
         ));
         assert!(!matches_intent("local_inspection", web_text, "tool", "mcp"));
     }
@@ -2261,7 +2249,7 @@ mod tests {
                 "name": "shell_execute",
                 "description": "Execute shell commands on the user's machine with security checks and user approval.",
                 "asset_type": "tool",
-                "source_type": "code_mode_core",
+                "source_type": "desktop_runtime_core",
                 "metadata": {
                     "permission_scope": ["shell_execution", "host_access"],
                     "input_schema": {
@@ -2282,7 +2270,7 @@ mod tests {
                 install_required: false,
                 activation_required: false,
                 recommended_action: "execute",
-                status_reason: "core_code_mode_tool",
+                status_reason: "core_runtime_tool",
             },
             tool_contract_source: None,
         };
@@ -2426,7 +2414,7 @@ mod tests {
                 "name": "shell_execute",
                 "description": "Execute shell commands on the user's machine with security checks and user approval.",
                 "asset_type": "tool",
-                "source_type": "code_mode_core",
+                "source_type": "desktop_runtime_core",
                 "metadata": {
                     "permission_scope": ["shell_execution", "host_access"]
                 }
@@ -2436,7 +2424,7 @@ mod tests {
                 install_required: false,
                 activation_required: false,
                 recommended_action: "execute",
-                status_reason: "core_code_mode_tool",
+                status_reason: "core_runtime_tool",
             },
             tool_contract_source: None,
         };
@@ -2550,7 +2538,7 @@ mod tests {
                 "name": "shell_execute",
                 "description": "Execute shell commands on the user's machine with security checks and user approval.",
                 "asset_type": "tool",
-                "source_type": "code_mode_core",
+                "source_type": "desktop_runtime_core",
                 "metadata": {
                     "permission_scope": ["shell_execution", "host_access"]
                 }
@@ -2560,7 +2548,7 @@ mod tests {
                 install_required: false,
                 activation_required: false,
                 recommended_action: "execute",
-                status_reason: "core_code_mode_tool",
+                status_reason: "core_runtime_tool",
             },
             tool_contract_source: None,
         };
@@ -2652,8 +2640,8 @@ mod tests {
                 "name": "browser_open_tab",
                 "description": "Ask the browser agent to work with the current page.",
                 "asset_type": "tool",
-                "source_type": "code_mode_core",
-                "pkg_name": "code_mode.core",
+                "source_type": "desktop_runtime_core",
+                "pkg_name": "desktop_runtime.core",
                 "metadata": {
                     "execution_surface": "host",
                     "runtime_state": "ready",
@@ -2666,7 +2654,7 @@ mod tests {
                 install_required: false,
                 activation_required: false,
                 recommended_action: "execute",
-                status_reason: "core_code_mode_tool",
+                status_reason: "core_runtime_tool",
             },
             tool_contract_source: None,
         };
@@ -2677,8 +2665,8 @@ mod tests {
                 "name": "browser_wait_for_element",
                 "description": "Ask the browser agent to work with the current page.",
                 "asset_type": "tool",
-                "source_type": "code_mode_core",
-                "pkg_name": "code_mode.core",
+                "source_type": "desktop_runtime_core",
+                "pkg_name": "desktop_runtime.core",
                 "metadata": {
                     "execution_surface": "host",
                     "runtime_state": "ready",
@@ -2691,7 +2679,7 @@ mod tests {
                 install_required: false,
                 activation_required: false,
                 recommended_action: "execute",
-                status_reason: "core_code_mode_tool",
+                status_reason: "core_runtime_tool",
             },
             tool_contract_source: None,
         };

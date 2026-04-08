@@ -1,7 +1,7 @@
 use super::control_plane::LocalExecutionPolicy;
 use super::prompt_assets::PromptAssets;
 use crate::modules::code_mode::prompt::{
-    render_code_mode_capability_prompt, render_runtime_capability_prompt,
+    render_execution_tool_prompt, render_runtime_capability_prompt,
 };
 #[cfg(target_os = "windows")]
 use crate::utils::configure_background_std_command;
@@ -109,7 +109,7 @@ pub(crate) fn build_local_prompt_plan(
     let execution_tool_prompt = execution_policy.and_then(|policy| {
         let tool_names = policy.prompt_tool_names();
         (policy.inject_execution_protocol && !tool_names.is_empty())
-            .then(|| render_code_mode_capability_prompt(&tool_names))
+            .then(|| render_execution_tool_prompt(&tool_names))
             .filter(|prompt| !prompt.trim().is_empty())
     });
     let local_context = router_prompt_local_context();
@@ -147,7 +147,7 @@ pub(crate) fn build_local_prelude_messages(
     let execution_tool_prompt = execution_policy.and_then(|policy| {
         let tool_names = policy.prompt_tool_names();
         (policy.inject_execution_protocol && !tool_names.is_empty())
-            .then(|| render_code_mode_capability_prompt(&tool_names))
+            .then(|| render_execution_tool_prompt(&tool_names))
             .filter(|prompt| !prompt.trim().is_empty())
     });
     let local_context = router_prompt_local_context();

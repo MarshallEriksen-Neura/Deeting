@@ -310,7 +310,7 @@ pub async fn approve_tool(
     call_id: Option<&str>,
     tool_name: &str,
 ) -> Result<ApprovalActionResult, String> {
-    use crate::modules::desktop_runtime::runtime::resume_suspended_local_chat_after_approval;
+    use crate::modules::desktop_runtime::runtime::resume_suspended_chat_tool_execution_after_approval;
     use crate::modules::mcp::commands::runtime::approve_mcp_tool_inner_with_context;
 
     let approval_context = app_state.mcp.build_approval_context(call_id, None, None);
@@ -332,7 +332,7 @@ pub async fn approve_tool(
     )
     .await?;
 
-    let resumed = resume_suspended_local_chat_after_approval(
+    let resumed = resume_suspended_chat_tool_execution_after_approval(
         app_handle,
         app_state,
         approval_token,

@@ -306,7 +306,7 @@
       "newAgent": "New",
       "engine": "Engine",
       "optimized": "Optimized",
-      "temperatureToggle": "Use Temperature",
+      "temperatureToggle": "Sampling Params",
       "temperatureEnabled": "Enabled",
       "temperatureDisabled": "Disabled",
       "temperature": "Temperature",

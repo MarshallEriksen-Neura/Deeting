@@ -599,6 +599,7 @@ function ControlsContainer() {
                     max={1}
                     step={0.05}
                     aria-label={t("hud.topP")}
+                    disabled={!config.temperatureEnabled}
                     onValueChange={handleTopPChange}
                   />
                 </div>

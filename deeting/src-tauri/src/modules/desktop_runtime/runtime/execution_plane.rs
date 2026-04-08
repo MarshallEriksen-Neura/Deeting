@@ -1,11 +1,10 @@
-mod code_mode_handler;
 mod direct_handler;
 mod worker_handler;
 
 use super::control_plane::LocalExecutionPlane;
 use super::{
-    project_execution_graph_snapshot, run_local_chat_complete_with_auto_code_mode,
-    GraphProjectionInput, LocalExecutionPolicy,
+    project_execution_graph_snapshot, run_local_chat_complete_with_tools, GraphProjectionInput,
+    LocalExecutionPolicy,
 };
 use crate::modules::ai_upstream::types::LocalModelConnection;
 use crate::state::AppState;
@@ -269,7 +268,6 @@ pub(crate) struct LocalExecutionOutcome {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LocalExecutionHandlerKind {
     Direct,
-    CodeMode,
     Worker,
 }
 
@@ -277,7 +275,6 @@ impl LocalExecutionHandlerKind {
     fn from_policy(policy: &LocalExecutionPolicy) -> Self {
         match policy.plane {
             LocalExecutionPlane::ResponseOnly => Self::Direct,
-            LocalExecutionPlane::CodeModeOrchestration => Self::CodeMode,
             LocalExecutionPlane::WorkerReasoning => Self::Worker,
         }
     }
@@ -285,7 +282,6 @@ impl LocalExecutionHandlerKind {
     fn as_str(&self) -> &'static str {
         match self {
             Self::Direct => "direct_handler",
-            Self::CodeMode => "code_mode_handler",
             Self::Worker => "worker_handler",
         }
     }
@@ -314,9 +310,6 @@ where
     match handler {
         LocalExecutionHandlerKind::Direct => {
             direct_handler::run_direct_execution_handler(request, &mut emit_status).await
-        }
-        LocalExecutionHandlerKind::CodeMode => {
-            code_mode_handler::run_code_mode_execution_handler(request, &mut emit_status).await
         }
         LocalExecutionHandlerKind::Worker => {
             worker_handler::run_worker_execution_handler(request, &mut emit_status).await
@@ -348,7 +341,7 @@ where
         assistant_id: request.capability_id.clone(),
         messages: request.messages.clone(),
     };
-    let response_json = run_local_chat_complete_with_auto_code_mode(
+    let response_json = run_local_chat_complete_with_tools(
         &request.app_handle,
         &request.app_state,
         &request.model_connection,
@@ -400,7 +393,7 @@ mod tests {
     use super::*;
     use crate::modules::desktop_runtime::runtime::route_selector::select_local_route;
     use crate::modules::desktop_runtime::runtime::{
-        build_default_local_execution_policy, build_local_execution_policy, LocalExecutionPlane,
+        build_default_local_execution_policy, build_local_execution_policy,
     };
     use serde_json::json;
 
@@ -432,7 +425,7 @@ mod tests {
     }
 
     #[test]
-    fn execution_handler_kind_maps_programmatic_worker_policy_to_code_mode_handler() {
+    fn execution_handler_kind_maps_programmatic_worker_policy_to_worker_handler() {
         let decision = select_local_route(
             "遍历所有 markdown files，抽标题、分类、去重后输出 JSON",
             &json!({
@@ -445,19 +438,7 @@ mod tests {
 
         assert_eq!(
             LocalExecutionHandlerKind::from_policy(&policy),
-            LocalExecutionHandlerKind::CodeMode
-        );
-    }
-
-    #[test]
-    fn execution_handler_kind_maps_code_mode_plane_to_code_mode_handler() {
-        let mut policy = build_default_local_execution_policy();
-        policy.plane = LocalExecutionPlane::CodeModeOrchestration;
-        policy.inject_execution_protocol = true;
-
-        assert_eq!(
-            LocalExecutionHandlerKind::from_policy(&policy),
-            LocalExecutionHandlerKind::CodeMode
+            LocalExecutionHandlerKind::Worker
         );
     }
 

@@ -11,14 +11,15 @@ use crate::modules::code_mode::contract::{
     BRIDGE_EXECUTION_TOKEN_HEADER, EXECUTION_FORMAT_VERSION, RUNTIME_PROTOCOL_VERSION,
     RUNTIME_RENDER_BLOCK_MARKER, RUNTIME_TOOL_CALL_MARKER,
 };
-use crate::modules::code_mode::error::CodeModeError;
+use crate::modules::code_mode::error::CodemodeToolError;
 use crate::modules::code_mode::protocol::{
     extract_runtime_render_blocks, extract_runtime_tool_calls, strip_runtime_signal_lines,
 };
 use crate::modules::code_mode::types::{
-    CodeModeExecutionDetail, CodeModeExecutionPage, ExecuteLocalCodeModeRequest,
-    ExecuteLocalCodeModeResponse, ListCodeModeExecutionsQuery, LocalCodeModeBridgeStatus,
-    ReplayLocalCodeModeRequest, ReplayLocalCodeModeResponse, RuntimeToolCallsEnvelope,
+    CodemodeToolExecutionDetail, CodemodeToolExecutionPage, ExecuteLocalCodemodeRequest,
+    ExecuteLocalCodemodeResponse, ListCodemodeExecutionsQuery, LocalCodemodeBridgeStatus,
+    ReplayLocalCodemodeRequest, ReplayLocalCodemodeResponse, RuntimeToolCall,
+    RuntimeToolCallsEnvelope,
 };
 use crate::modules::desktop_runtime::runtime::CapabilityExecutionContract;
 use crate::modules::sandbox::manager::SandboxLaunchPolicy;
@@ -32,9 +33,9 @@ const LOCAL_DEFAULT_USER_ID: &str = "00000000-0000-0000-0000-000000000000";
 #[tauri::command]
 pub async fn get_local_code_mode_bridge_status(
     state: State<'_, AppState>,
-) -> Result<LocalCodeModeBridgeStatus, String> {
+) -> Result<LocalCodemodeBridgeStatus, String> {
     let base_url = state.code_mode.bridge.get_base_url().await;
-    Ok(LocalCodeModeBridgeStatus {
+    Ok(LocalCodemodeBridgeStatus {
         running: base_url.is_some(),
         base_url,
     })
@@ -43,8 +44,8 @@ pub async fn get_local_code_mode_bridge_status(
 #[tauri::command]
 pub async fn execute_local_code_mode(
     state: State<'_, AppState>,
-    payload: ExecuteLocalCodeModeRequest,
-) -> Result<ExecuteLocalCodeModeResponse, String> {
+    payload: ExecuteLocalCodemodeRequest,
+) -> Result<ExecuteLocalCodemodeResponse, String> {
     execute_local_code_mode_inner(&state, payload, None)
         .await
         .map_err(|err| err.to_string())
@@ -52,17 +53,17 @@ pub async fn execute_local_code_mode(
 
 pub(crate) async fn execute_local_code_mode_inner(
     state: &AppState,
-    payload: ExecuteLocalCodeModeRequest,
+    payload: ExecuteLocalCodemodeRequest,
     stream_target: Option<RuntimeBridgeStreamTarget>,
-) -> Result<ExecuteLocalCodeModeResponse, CodeModeError> {
+) -> Result<ExecuteLocalCodemodeResponse, CodemodeToolError> {
     run_execute_local_code_mode(state, payload, stream_target).await
 }
 
 #[tauri::command]
 pub async fn list_local_code_mode_executions(
     state: State<'_, AppState>,
-    query: ListCodeModeExecutionsQuery,
-) -> Result<CodeModeExecutionPage, String> {
+    query: ListCodemodeExecutionsQuery,
+) -> Result<CodemodeToolExecutionPage, String> {
     let _cursor = query.cursor;
     let page = state
         .code_mode
@@ -81,7 +82,7 @@ pub async fn list_local_code_mode_executions(
 pub async fn get_local_code_mode_execution(
     state: State<'_, AppState>,
     execution_identifier: String,
-) -> Result<CodeModeExecutionDetail, String> {
+) -> Result<CodemodeToolExecutionDetail, String> {
     state
         .code_mode
         .execution_store
@@ -95,8 +96,8 @@ pub async fn get_local_code_mode_execution(
 pub async fn replay_local_code_mode_execution(
     state: State<'_, AppState>,
     execution_identifier: String,
-    payload: ReplayLocalCodeModeRequest,
-) -> Result<ReplayLocalCodeModeResponse, String> {
+    payload: ReplayLocalCodemodeRequest,
+) -> Result<ReplayLocalCodemodeResponse, String> {
     let source = state
         .code_mode
         .execution_store
@@ -118,8 +119,15 @@ pub async fn replay_local_code_mode_execution(
 
     let result = run_execute_local_code_mode(
         &state,
-        ExecuteLocalCodeModeRequest {
+        ExecuteLocalCodemodeRequest {
             code,
+            task: source
+                .request_meta
+                .get("task")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            scope: source.request_meta.get("scope").cloned(),
+            constraints: source.request_meta.get("constraints").cloned(),
             session_id: payload.session_id.or(Some(source.session_id.clone())),
             language: payload.language.or(Some(source.language.clone())),
             execution_timeout: payload.execution_timeout,
@@ -138,7 +146,7 @@ pub async fn replay_local_code_mode_execution(
     .map_err(|err| err.to_string())?;
 
     let _tool_plan = payload.tool_plan;
-    Ok(ReplayLocalCodeModeResponse {
+    Ok(ReplayLocalCodemodeResponse {
         replay_of: source.id,
         source_execution_id: source.execution_id,
         result,
@@ -147,13 +155,13 @@ pub async fn replay_local_code_mode_execution(
 
 async fn run_execute_local_code_mode(
     state: &AppState,
-    payload: ExecuteLocalCodeModeRequest,
+    payload: ExecuteLocalCodemodeRequest,
     stream_target: Option<RuntimeBridgeStreamTarget>,
-) -> Result<ExecuteLocalCodeModeResponse, CodeModeError> {
+) -> Result<ExecuteLocalCodemodeResponse, CodemodeToolError> {
     let started = Instant::now();
     let source_code = payload.code.trim().to_string();
     if source_code.is_empty() {
-        return Err(CodeModeError::validation("code is required"));
+        return Err(CodemodeToolError::validation("code is required"));
     }
     let language = payload
         .language
@@ -162,7 +170,7 @@ async fn run_execute_local_code_mode(
         .trim()
         .to_lowercase();
     if language != "python" {
-        return Err(CodeModeError::validation("only python is supported"));
+        return Err(CodemodeToolError::validation("only python is supported"));
     }
 
     let session_id = payload
@@ -171,9 +179,16 @@ async fn run_execute_local_code_mode(
         .unwrap_or_else(|| format!("local-{}", uuid::Uuid::new_v4().simple()));
     let dry_run = payload.dry_run.unwrap_or(false);
     if dry_run {
-        let response = ExecuteLocalCodeModeResponse {
+        let response = ExecuteLocalCodemodeResponse {
             success: true,
             status: "dry_run".to_string(),
+            summary: payload
+                .task
+                .clone()
+                .or_else(|| Some("codemode dry run completed without execution".to_string())),
+            actions: Vec::new(),
+            artifacts: Vec::new(),
+            result_blocks: Vec::new(),
             format_version: EXECUTION_FORMAT_VERSION.to_string(),
             runtime_protocol_version: RUNTIME_PROTOCOL_VERSION.to_string(),
             session_id,
@@ -197,7 +212,7 @@ async fn run_execute_local_code_mode(
         .manager
         .ensure_launch_policy(SandboxLaunchPolicy::StrictSandbox)
         .await
-        .map_err(|err| CodeModeError::Sandbox(err.user_message()))?;
+        .map_err(|err| CodemodeToolError::Sandbox(err.user_message()))?;
     if sandbox_report.runtime_mode != SandboxRuntimeMode::Sandbox {
         let response = build_sandbox_blocked_response(&session_id, &sandbox_report);
         persist_execution(
@@ -278,7 +293,7 @@ async fn run_execute_local_code_mode(
             SandboxLaunchPolicy::StrictSandbox,
         )
         .await
-        .map_err(|err| CodeModeError::Sandbox(err.user_message()))?;
+        .map_err(|err| CodemodeToolError::Sandbox(err.user_message()))?;
 
     let mut io_lines = Vec::new();
     io_lines.extend(run_result.stdout.clone());
@@ -288,13 +303,22 @@ async fn run_execute_local_code_mode(
     let runtime_tool_calls = extract_runtime_tool_calls(&io_lines);
     let render_blocks = extract_runtime_render_blocks(&io_lines);
 
-    let response = ExecuteLocalCodeModeResponse {
+    let response = ExecuteLocalCodemodeResponse {
         success: run_result.exit_code == 0,
         status: if run_result.exit_code == 0 {
             "success".to_string()
         } else {
             "failed".to_string()
         },
+        summary: summarize_codemode_response(
+            payload.task.as_deref(),
+            &strip_runtime_signal_lines(run_result.result.clone()),
+            &strip_runtime_signal_lines(run_result.stderr.clone()),
+            run_result.exit_code == 0,
+        ),
+        actions: codemode_actions_from_runtime_tool_calls(&runtime_tool_calls),
+        artifacts: codemode_artifacts_from_render_blocks(&render_blocks),
+        result_blocks: render_blocks.clone(),
         format_version: EXECUTION_FORMAT_VERSION.to_string(),
         runtime_protocol_version: RUNTIME_PROTOCOL_VERSION.to_string(),
         session_id,
@@ -330,8 +354,8 @@ async fn run_execute_local_code_mode(
 
 async fn persist_execution(
     state: &AppState,
-    request: &ExecuteLocalCodeModeRequest,
-    response: &ExecuteLocalCodeModeResponse,
+    request: &ExecuteLocalCodemodeRequest,
+    response: &ExecuteLocalCodemodeResponse,
     source_code: &str,
     duration_ms: i64,
 ) {
@@ -339,7 +363,7 @@ async fn persist_execution(
     let execution_id = format!("local_exec_{}", uuid::Uuid::new_v4().simple());
     let created_at = now_rfc3339();
 
-    let detail = CodeModeExecutionDetail {
+    let detail = CodemodeToolExecutionDetail {
         id,
         execution_id,
         user_id: LOCAL_DEFAULT_USER_ID.to_string(),
@@ -356,6 +380,9 @@ async fn persist_execution(
             "code": source_code,
             "bridge_endpoint": response.bridge_endpoint,
             "runtime_mode": response.runtime_mode,
+            "task": request.task.clone(),
+            "scope": request.scope.clone().unwrap_or(Value::Null),
+            "constraints": request.constraints.clone().unwrap_or(Value::Null),
             "capability_snapshot": request.capability_snapshot.clone().unwrap_or(Value::Null),
         }),
         tool_plan_results: json!({}),
@@ -371,6 +398,9 @@ async fn persist_execution(
             "dry_run": request.dry_run.unwrap_or(false),
             "execution_timeout": request.execution_timeout,
             "runtime_mode": response.runtime_mode,
+            "task": request.task.clone(),
+            "scope": request.scope.clone().unwrap_or(Value::Null),
+            "constraints": request.constraints.clone().unwrap_or(Value::Null),
             "allowed_tools": request.allowed_tools.clone().unwrap_or_default(),
             "capability_snapshot": request.capability_snapshot.clone().unwrap_or(Value::Null),
         }),
@@ -405,17 +435,89 @@ fn value_to_string_vec(value: &Value) -> Option<Vec<String>> {
     }
 }
 
+fn summarize_codemode_response(
+    task: Option<&str>,
+    result: &[String],
+    stderr: &[String],
+    success: bool,
+) -> Option<String> {
+    let task_summary = task
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let primary_output = result
+        .iter()
+        .find_map(|line| {
+            let trimmed = line.trim();
+            (!trimmed.is_empty()).then(|| trimmed.to_string())
+        })
+        .or_else(|| {
+            stderr.iter().find_map(|line| {
+                let trimmed = line.trim();
+                (!trimmed.is_empty()).then(|| trimmed.to_string())
+            })
+        });
+
+    match (success, task_summary, primary_output) {
+        (true, Some(task), Some(output)) => Some(format!("{task}: {output}")),
+        (true, Some(task), None) => Some(task),
+        (true, None, Some(output)) => Some(output),
+        (false, Some(task), Some(output)) => Some(format!("{task}: {output}")),
+        (false, Some(task), None) => Some(format!("{task}: execution failed")),
+        (false, None, Some(output)) => Some(output),
+        (false, None, None) => Some("codemode execution failed".to_string()),
+        (true, None, None) => None,
+    }
+}
+
+fn codemode_actions_from_runtime_tool_calls(runtime_tool_calls: &[RuntimeToolCall]) -> Vec<Value> {
+    runtime_tool_calls
+        .iter()
+        .map(|call| {
+            json!({
+                "type": "tool_call",
+                "tool_name": call.tool_name,
+                "index": call.index,
+                "arguments": call.arguments,
+            })
+        })
+        .collect()
+}
+
+fn codemode_artifacts_from_render_blocks(render_blocks: &[Value]) -> Vec<Value> {
+    render_blocks
+        .iter()
+        .enumerate()
+        .map(|(index, block)| {
+            json!({
+                "type": "render_block",
+                "index": index,
+                "view_type": block
+                    .get("view_type")
+                    .or_else(|| block.get("viewType"))
+                    .cloned()
+                    .unwrap_or(Value::Null),
+                "title": block.get("title").cloned().unwrap_or(Value::Null),
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {}
 
 fn build_sandbox_blocked_response(
     session_id: &str,
     report: &SandboxReadinessReport,
-) -> ExecuteLocalCodeModeResponse {
+) -> ExecuteLocalCodemodeResponse {
     let error_code = sandbox_status_error_code(report.status).to_string();
-    ExecuteLocalCodeModeResponse {
+    ExecuteLocalCodemodeResponse {
         success: false,
         status: "blocked".to_string(),
+        summary: Some("codemode execution blocked before sandbox launch".to_string()),
+        actions: Vec::new(),
+        artifacts: Vec::new(),
+        result_blocks: Vec::new(),
         format_version: EXECUTION_FORMAT_VERSION.to_string(),
         runtime_protocol_version: RUNTIME_PROTOCOL_VERSION.to_string(),
         session_id: session_id.to_string(),

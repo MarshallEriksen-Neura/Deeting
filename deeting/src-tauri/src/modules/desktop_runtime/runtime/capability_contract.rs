@@ -1,5 +1,12 @@
 use serde_json::{json, Value};
 
+fn sanitize_contract_allowed_tools(allowed_tools: Vec<String>) -> Vec<String> {
+    allowed_tools
+        .into_iter()
+        .filter(|tool_name| tool_name != "execute_code_plan")
+        .collect()
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct CapabilityExecutionContract {
     pub(crate) allowed_tools: Vec<String>,
@@ -10,13 +17,14 @@ impl CapabilityExecutionContract {
     pub(crate) fn from_search_result(search_result: Option<&Value>) -> Result<Self, String> {
         let Some(search_result) = search_result else {
             return Err(
-                "execute_code_plan requires a prior search_sdk result with callable direct capabilities"
+                "codemode execution requires a prior search_sdk result with callable host capabilities"
                     .to_string(),
             );
         };
         mcp_runtime::capability_snapshot::extract_callable_direct_capability_names(search_result)?;
-        let allowed_tools =
-            mcp_runtime::capability_snapshot::merge_allowed_tool_names(&[], Some(search_result));
+        let allowed_tools = sanitize_contract_allowed_tools(
+            mcp_runtime::capability_snapshot::merge_allowed_tool_names(&[], Some(search_result)),
+        );
         Ok(Self {
             allowed_tools,
             capability_snapshot: search_result.clone(),
@@ -28,9 +36,11 @@ impl CapabilityExecutionContract {
         capability_snapshot: Option<&Value>,
     ) -> Self {
         Self {
-            allowed_tools: mcp_runtime::capability_snapshot::merge_allowed_tool_names(
-                request_allowed_tools.unwrap_or(&[]),
-                capability_snapshot,
+            allowed_tools: sanitize_contract_allowed_tools(
+                mcp_runtime::capability_snapshot::merge_allowed_tool_names(
+                    request_allowed_tools.unwrap_or(&[]),
+                    capability_snapshot,
+                ),
             ),
             capability_snapshot: capability_snapshot.cloned().unwrap_or(Value::Null),
         }
@@ -69,7 +79,7 @@ mod tests {
                 {"name": "fetch_page", "invocation_mode": "direct", "status": {"callable": true}},
                 {"name": "search_web", "invocation_mode": "direct", "status": {"callable": true}},
                 {"name": "disabled_tool", "invocation_mode": "direct", "status": {"callable": false}},
-                {"name": "execute_code_plan", "invocation_mode": "code_mode", "status": {"callable": true}}
+                {"name": "execute_code_plan", "invocation_mode": "direct", "status": {"callable": true}}
             ]
         })))
         .expect("contract");
@@ -88,7 +98,7 @@ mod tests {
             "capabilities": [
                 { "name": "fetch_page", "invocation_mode": "direct", "status": { "callable": true } },
                 { "name": "search_web", "invocation_mode": "direct", "status": { "callable": true } },
-                { "name": "execute_code_plan", "invocation_mode": "code_mode", "status": { "callable": true } }
+                { "name": "execute_code_plan", "invocation_mode": "direct", "status": { "callable": true } }
             ]
         });
 

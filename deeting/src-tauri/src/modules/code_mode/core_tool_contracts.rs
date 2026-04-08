@@ -1,5 +1,10 @@
+use std::collections::HashSet;
+
 use mcp_registry::types::LocalCapabilityRegistryUpsert;
 use serde_json::{json, Value};
+
+const LEGACY_CORE_TOOL_PACKAGE_ID: &str = "code_mode.core";
+const CORE_TOOL_PACKAGE_ID: &str = "desktop_runtime.core";
 
 #[derive(Clone)]
 pub(crate) struct CoreToolContract {
@@ -32,8 +37,8 @@ impl CoreToolContract {
             "name": self.name,
             "description": self.description,
             "asset_type": "tool",
-            "source_type": "code_mode_core",
-            "pkg_name": "code_mode.core",
+            "source_type": "desktop_runtime_core",
+            "pkg_name": "desktop_runtime.core",
             "metadata": self.contract_metadata(),
         })
     }
@@ -52,20 +57,20 @@ impl CoreToolContract {
 }
 
 pub(crate) fn build_core_tool_function_entries() -> Vec<Value> {
-    code_mode_core_tools()
+    desktop_runtime_core_tools()
         .into_iter()
         .map(|tool| tool.as_function_tool())
         .collect()
 }
 
 pub(crate) fn build_core_tool_assets() -> Vec<Value> {
-    code_mode_core_tools()
+    desktop_runtime_core_tools()
         .into_iter()
         .map(|tool| tool.as_catalog_asset())
         .collect()
 }
 
-pub(crate) fn code_mode_core_tools() -> Vec<CoreToolContract> {
+pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
     vec![
         CoreToolContract {
             name: "search_sdk",
@@ -135,10 +140,13 @@ pub(crate) fn code_mode_core_tools() -> Vec<CoreToolContract> {
         },
         CoreToolContract {
             name: "execute_code_plan",
-            description: "Execute a Python code plan in sandbox. Runtime exposes `deeting.log()`, `deeting.section()`, and `deeting.call_tool()`. SDK tool stubs are only for direct callable host tools, including skill tool bindings and user MCP tools surfaced by search_sdk. Use `from deeting_sdk import <tool_name>` only for direct tools, or call `deeting.call_tool('tool-name', query='...')` with keyword args. Generate one coherent script, and always emit final structured output via `deeting.log(json.dumps(result, ensure_ascii=False))` instead of relying on top-level `return`.",
+            description: "Run a bounded codemode tool call in the sandbox. Use it only for multi-step program logic, loops, branching, or broad edits that cannot be completed with one lighter direct tool call. Runtime exposes `deeting.log()`, `deeting.section()`, and `deeting.call_tool()`. SDK tool stubs are only for direct callable host tools surfaced by search_sdk. Generate one coherent script inside the tool call and always emit final structured output via `deeting.log(json.dumps(result, ensure_ascii=False))` instead of relying on top-level `return`.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
+                    "task": { "type": "string", "description": "Optional high-level task summary for logging and result summarization." },
+                    "scope": { "type": "object", "description": "Optional structured scope metadata such as selected paths or resources." },
+                    "constraints": { "type": "object", "description": "Optional execution constraints such as read_only, max_steps, or mutation limits." },
                     "code": { "type": "string", "description": "Python code to execute." },
                     "session_id": { "type": "string", "description": "Optional explicit session ID." },
                     "language": { "type": "string", "description": "Execution language. Only python is supported.", "default": "python" },
@@ -151,11 +159,13 @@ pub(crate) fn code_mode_core_tools() -> Vec<CoreToolContract> {
                 "type": "object",
                 "properties": {
                     "status": {"type": "string"},
-                    "execution_id": {"type": "string"},
+                    "summary": {"type": ["string", "null"]},
+                    "actions": {"type": "array"},
+                    "artifacts": {"type": "array"},
+                    "result_blocks": {"type": "array"},
                     "runtime_mode": {"type": "string"},
                     "render_blocks": {"type": "array"},
-                    "allowed_tools": {"type": "array"},
-                    "capability_snapshot": {"type": "object"}
+                    "runtime_tool_calls": {"type": "array"}
                 }
             }),
             permission_scope: &["sandbox_execution", "tool_bridge", "local_runtime"],
@@ -163,6 +173,9 @@ pub(crate) fn code_mode_core_tools() -> Vec<CoreToolContract> {
             mutating: true,
             risk_level: "HIGH",
             example_arguments: json!({
+                "task": "Analyze and modify selected project files",
+                "scope": { "paths": ["src/foo.rs", "src/bar.rs"] },
+                "constraints": { "read_only": false, "max_steps": 8 },
                 "code": "from deeting_sdk import search_sdk\nresult = search_sdk(query='search web tools')\ndeeting.log(json.dumps(result, ensure_ascii=False))",
                 "language": "python",
                 "dry_run": false
@@ -784,13 +797,15 @@ fn core_tool_risk_runtime_state(tool_name: &str) -> &'static str {
 pub(crate) fn build_core_tool_registry_entries(
     generation: i64,
 ) -> Vec<LocalCapabilityRegistryUpsert> {
-    code_mode_core_tools()
+    let mut seen_capability_ids = HashSet::new();
+    desktop_runtime_core_tools()
         .into_iter()
+        .filter(|tool| seen_capability_ids.insert(format!("core.{}", tool.name)))
         .map(|tool| LocalCapabilityRegistryUpsert {
             capability_id: format!("core.{}", tool.name),
             source_kind: "core".to_string(),
             asset_kind: "core_tool".to_string(),
-            package_id: "code_mode.core".to_string(),
+            package_id: CORE_TOOL_PACKAGE_ID.to_string(),
             package_version: Some("1".to_string()),
             title: tool.name.to_string(),
             description: tool.description.to_string(),
@@ -829,24 +844,28 @@ pub(crate) fn build_core_tool_registry_entries(
 pub(crate) async fn sync_core_tool_registry_entries(
     store: &crate::modules::mcp::store::McpStore,
 ) -> Result<i64, String> {
+    let _ = store
+        .delete_local_capability_registry_entries(LEGACY_CORE_TOOL_PACKAGE_ID)
+        .await
+        .map_err(|err| err.to_string())?;
     let generation = store
         .next_local_capability_registry_generation()
         .await
         .map_err(|err| err.to_string())?;
     let entries = build_core_tool_registry_entries(generation);
     store
-        .replace_local_capability_registry_entries("code_mode.core", &entries)
+        .replace_local_capability_registry_entries(CORE_TOOL_PACKAGE_ID, &entries)
         .await
         .map_err(|err| err.to_string())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::code_mode_core_tools;
+    use super::desktop_runtime_core_tools;
 
     #[test]
     fn core_tool_registry_includes_browser_agent_status() {
-        let tool = code_mode_core_tools()
+        let tool = desktop_runtime_core_tools()
             .into_iter()
             .find(|tool| tool.name == "browser_agent_status")
             .expect("browser_agent_status core tool should exist");
@@ -858,7 +877,7 @@ mod tests {
 
     #[test]
     fn core_tool_registry_includes_browser_open_tab() {
-        let tool = code_mode_core_tools()
+        let tool = desktop_runtime_core_tools()
             .into_iter()
             .find(|tool| tool.name == "browser_open_tab")
             .expect("browser_open_tab core tool should exist");
@@ -870,7 +889,7 @@ mod tests {
 
     #[test]
     fn core_tool_registry_includes_browser_get_page_snapshot() {
-        let tool = code_mode_core_tools()
+        let tool = desktop_runtime_core_tools()
             .into_iter()
             .find(|tool| tool.name == "browser_get_page_snapshot")
             .expect("browser_get_page_snapshot core tool should exist");
@@ -882,7 +901,7 @@ mod tests {
 
     #[test]
     fn core_tool_registry_includes_browser_click() {
-        let tool = code_mode_core_tools()
+        let tool = desktop_runtime_core_tools()
             .into_iter()
             .find(|tool| tool.name == "browser_click")
             .expect("browser_click core tool should exist");
@@ -894,7 +913,7 @@ mod tests {
 
     #[test]
     fn core_tool_registry_includes_save_asset() {
-        let tool = code_mode_core_tools()
+        let tool = desktop_runtime_core_tools()
             .into_iter()
             .find(|tool| tool.name == "save_asset")
             .expect("save_asset core tool should exist");
@@ -906,7 +925,7 @@ mod tests {
 
     #[test]
     fn core_tool_registry_includes_browser_type() {
-        let tool = code_mode_core_tools()
+        let tool = desktop_runtime_core_tools()
             .into_iter()
             .find(|tool| tool.name == "browser_type")
             .expect("browser_type core tool should exist");
@@ -918,7 +937,7 @@ mod tests {
 
     #[test]
     fn core_tool_registry_includes_browser_wait_for_element() {
-        let tool = code_mode_core_tools()
+        let tool = desktop_runtime_core_tools()
             .into_iter()
             .find(|tool| tool.name == "browser_wait_for_element")
             .expect("browser_wait_for_element core tool should exist");
@@ -930,7 +949,7 @@ mod tests {
 
     #[test]
     fn core_tool_registry_includes_browser_wait_for_navigation() {
-        let tool = code_mode_core_tools()
+        let tool = desktop_runtime_core_tools()
             .into_iter()
             .find(|tool| tool.name == "browser_wait_for_navigation")
             .expect("browser_wait_for_navigation core tool should exist");
@@ -942,7 +961,7 @@ mod tests {
 
     #[test]
     fn core_tool_registry_includes_browser_scroll_into_view() {
-        let tool = code_mode_core_tools()
+        let tool = desktop_runtime_core_tools()
             .into_iter()
             .find(|tool| tool.name == "browser_scroll_into_view")
             .expect("browser_scroll_into_view core tool should exist");
@@ -954,7 +973,7 @@ mod tests {
 
     #[test]
     fn core_tool_registry_includes_browser_retry_with_relocate() {
-        let tool = code_mode_core_tools()
+        let tool = desktop_runtime_core_tools()
             .into_iter()
             .find(|tool| tool.name == "browser_retry_with_relocate")
             .expect("browser_retry_with_relocate core tool should exist");

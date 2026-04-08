@@ -82,7 +82,7 @@ pub fn is_legacy_control_plane_asset(asset: &Value) -> bool {
         (source_type, asset_type),
         ("builtin" | "user", "skill" | "skill_tool")
             | ("mcp", "tool")
-            | ("code_mode_core", "tool")
+            | ("desktop_runtime_core", "tool")
             | ("local_assistant", "assistant")
     )
 }
@@ -160,7 +160,7 @@ pub fn capability_asset_match_key(asset: &Value) -> Option<String> {
             })
             .map(|value| format!("skill_tool:{value}")),
         ("mcp", "tool") => asset_id.map(|value| format!("mcp_tool:{value}")),
-        ("code_mode_core", "tool") => asset_id
+        ("desktop_runtime_core", "tool") => asset_id
             .or_else(|| {
                 asset
                     .get("name")
@@ -227,8 +227,8 @@ pub fn local_capability_registry_entry_to_asset(entry: &LocalCapabilityRegistryS
             "name": entry.tool_name.as_deref().unwrap_or(entry.title.as_str()),
             "description": entry.description,
             "asset_type": "tool",
-            "source_type": "code_mode_core",
-            "pkg_name": "code_mode.core",
+            "source_type": "desktop_runtime_core",
+            "pkg_name": "desktop_runtime.core",
             "metadata": descriptor,
         }),
         "skill_tool" => {
@@ -388,12 +388,12 @@ mod tests {
                 "id": "core.shell_execute",
                 "name": "shell_execute",
                 "asset_type": "tool",
-                "source_type": "code_mode_core",
+                "source_type": "desktop_runtime_core",
             })],
         );
 
         assert!(assets.iter().any(|asset| {
-            asset.get("source_type").and_then(Value::as_str) == Some("code_mode_core")
+            asset.get("source_type").and_then(Value::as_str) == Some("desktop_runtime_core")
                 && asset.get("name").and_then(Value::as_str) == Some("shell_execute")
         }));
     }
@@ -406,7 +406,7 @@ mod tests {
                 capability_id: "core.search_sdk".to_string(),
                 source_kind: "core".to_string(),
                 asset_kind: "core_tool".to_string(),
-                package_id: "code_mode.core".to_string(),
+                package_id: "desktop_runtime.core".to_string(),
                 package_version: Some("1".to_string()),
                 title: "search_sdk".to_string(),
                 description: "Search SDK".to_string(),
@@ -432,7 +432,7 @@ mod tests {
                 "id": "core.search_sdk",
                 "name": "search_sdk",
                 "asset_type": "tool",
-                "source_type": "code_mode_core",
+                "source_type": "desktop_runtime_core",
             })],
         );
 

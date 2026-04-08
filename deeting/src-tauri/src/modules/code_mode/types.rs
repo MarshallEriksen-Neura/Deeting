@@ -4,8 +4,11 @@ use serde_json::Value;
 use crate::modules::sandbox::types::SandboxRuntimeMode;
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct ExecuteLocalCodeModeRequest {
+pub struct ExecuteLocalCodemodeRequest {
     pub code: String,
+    pub task: Option<String>,
+    pub scope: Option<Value>,
+    pub constraints: Option<Value>,
     pub session_id: Option<String>,
     pub language: Option<String>,
     pub execution_timeout: Option<u64>,
@@ -29,7 +32,7 @@ pub struct RuntimeToolCallsEnvelope {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CodeModeExecutionItem {
+pub struct CodemodeToolExecutionItem {
     pub id: String,
     pub execution_id: String,
     pub session_id: String,
@@ -44,14 +47,14 @@ pub struct CodeModeExecutionItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CodeModeExecutionPage {
-    pub items: Vec<CodeModeExecutionItem>,
+pub struct CodemodeToolExecutionPage {
+    pub items: Vec<CodemodeToolExecutionItem>,
     pub next_page: Option<String>,
     pub previous_page: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CodeModeExecutionDetail {
+pub struct CodemodeToolExecutionDetail {
     pub id: String,
     pub execution_id: String,
     pub user_id: String,
@@ -74,7 +77,7 @@ pub struct CodeModeExecutionDetail {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct ListCodeModeExecutionsQuery {
+pub struct ListCodemodeExecutionsQuery {
     pub cursor: Option<String>,
     pub size: Option<i64>,
     pub status: Option<String>,
@@ -82,7 +85,7 @@ pub struct ListCodeModeExecutionsQuery {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct ReplayLocalCodeModeRequest {
+pub struct ReplayLocalCodemodeRequest {
     pub code: Option<String>,
     pub session_id: Option<String>,
     pub language: Option<String>,
@@ -92,9 +95,13 @@ pub struct ReplayLocalCodeModeRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExecuteLocalCodeModeResponse {
+pub struct ExecuteLocalCodemodeResponse {
     pub success: bool,
     pub status: String,
+    pub summary: Option<String>,
+    pub actions: Vec<Value>,
+    pub artifacts: Vec<Value>,
+    pub result_blocks: Vec<Value>,
     pub format_version: String,
     pub runtime_protocol_version: String,
     pub session_id: String,
@@ -111,14 +118,14 @@ pub struct ExecuteLocalCodeModeResponse {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct ReplayLocalCodeModeResponse {
+pub struct ReplayLocalCodemodeResponse {
     pub replay_of: String,
     pub source_execution_id: String,
-    pub result: ExecuteLocalCodeModeResponse,
+    pub result: ExecuteLocalCodemodeResponse,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct LocalCodeModeBridgeStatus {
+pub struct LocalCodemodeBridgeStatus {
     pub running: bool,
     pub base_url: Option<String>,
 }

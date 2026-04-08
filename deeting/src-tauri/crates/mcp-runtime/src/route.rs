@@ -169,8 +169,6 @@ impl TaskProfile {
                 "交给子代理",
                 "交给 worker",
                 "用 worker",
-                "codemode",
-                "code mode",
                 "代码模式",
             ],
         ) {
@@ -332,7 +330,11 @@ impl TaskProfile {
 impl RouteEvidence {
     pub fn from_search_result(search_result: &Value) -> Self {
         let callable_direct_capability_names =
-            extract_callable_direct_capability_names(search_result).unwrap_or_default();
+            extract_callable_direct_capability_names(search_result)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|name| name != "execute_code_plan")
+                .collect::<Vec<_>>();
         let direct_callable_capability_count = search_result
             .pointer("/routing_hint/direct_callable_capability_count")
             .and_then(Value::as_u64)
@@ -344,11 +346,17 @@ impl RouteEvidence {
             .cloned()
             .unwrap_or_default();
         let any_mutating_capability = capabilities.iter().any(|item| {
+            if is_non_routing_runtime_capability(item) {
+                return false;
+            }
             item.get("mutating")
                 .and_then(Value::as_bool)
                 .unwrap_or(false)
         });
         let any_high_risk_capability = capabilities.iter().any(|item| {
+            if is_non_routing_runtime_capability(item) {
+                return false;
+            }
             item.get("risk_level")
                 .and_then(Value::as_str)
                 .is_some_and(|value| matches!(value, "high" | "critical"))
@@ -415,7 +423,7 @@ mod tests {
     }
 
     #[test]
-    fn codemode_phrase_is_treated_as_worker_route_hint() {
+    fn codemode_phrase_no_longer_forces_explicit_worker_route() {
         let decision = select_local_route(
             "请用 code mode 处理这个多步文件整理任务",
             &json!({
@@ -424,7 +432,10 @@ mod tests {
         );
 
         assert_eq!(decision.route, LocalRouteKind::Worker);
-        assert_eq!(decision.reasons, vec!["explicit_route".to_string()]);
+        assert!(!decision
+            .reasons
+            .iter()
+            .any(|reason| reason == "explicit_route"));
     }
 
     #[test]
@@ -456,4 +467,8 @@ mod tests {
         assert!(prompt.contains("words like search, find, lookup, or query"));
         assert!(prompt.contains("browser/page/tab requests"));
     }
+}
+
+fn is_non_routing_runtime_capability(item: &Value) -> bool {
+    item.get("name").and_then(Value::as_str) == Some("execute_code_plan")
 }
