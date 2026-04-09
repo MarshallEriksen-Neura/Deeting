@@ -1,4 +1,5 @@
 pub mod activation;
+pub mod assistant_persistence;
 pub mod capability_contract;
 pub mod capability_discovery;
 pub mod capability_toolset;
@@ -24,6 +25,9 @@ pub(crate) use crate::modules::mcp::commands::runtime::execute_or_queue_mcp_tool
 pub(crate) use crate::modules::skills::onboarding::install_local_skill_from_onboarding_request;
 pub(crate) use activation::{
     resolve_local_capability_activation_state, LocalCapabilityActivationState,
+};
+pub(crate) use assistant_persistence::{
+    mark_local_assistant_postprocess_completed, persist_local_assistant_turn,
 };
 pub(crate) use capability_contract::CapabilityExecutionContract;
 #[cfg(test)]

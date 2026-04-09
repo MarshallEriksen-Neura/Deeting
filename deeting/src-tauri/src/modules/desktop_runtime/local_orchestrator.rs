@@ -30,7 +30,8 @@ use crate::modules::desktop_runtime::runtime::{
     apply_desktop_execution_policy_overrides, build_default_local_execution_policy,
     build_local_control_plane_result, build_local_control_plane_status_meta,
     build_local_execution_policy, build_runtime_discovery_bundle_with_runtime_query_vector,
-    maybe_override_route_with_custom_task_agent_query_vector, persist_execution_graph_snapshot,
+    mark_local_assistant_postprocess_completed,
+    maybe_override_route_with_custom_task_agent_query_vector, persist_local_assistant_turn,
     project_execution_graph_blocks_from_value, render_local_route_prompt,
     resolve_local_model_pool_connection, resolve_provider_model_connection,
     run_local_execution_plane, select_local_route_with_evidence, LocalControlPlaneResult,
@@ -1512,40 +1513,24 @@ pub async fn execute_local_orchestrated_chat(
             AssistantMetaMode::Canonical
         },
     );
+    let mut assistant_meta = assistant_meta;
     if !input.compare_only {
-        store
-            .append_local_conversation_message(CreateConversationMessageRequest {
-                session_id: session_id.clone(),
-                role: "assistant".to_string(),
-                content: String::new(),
-                name: None,
-                meta_info: assistant_meta.clone(),
-                is_truncated: Some(false),
-                parent_message_id: None,
-            })
-            .await
-            .map_err(|e| {
-                format!(
-                    "chat step=append_assistant_message session={} err={}",
-                    session_id, e
-                )
-            })?;
-        if let Err(err) = persist_execution_graph_snapshot(
+        let persistence = persist_local_assistant_turn(
             store.as_ref(),
-            &execution_graph,
             &session_id,
-            "desktop_local_chat",
+            assistant_meta.clone(),
+            &execution_graph,
             input.request_id.as_deref(),
-            Some("completed"),
         )
         .await
-        {
-            log::warn!(
-                "persist_execution_graph_snapshot failed session={} err={}",
-                session_id,
-                err
-            );
-        }
+        .map_err(|e| {
+            format!(
+                "chat step=persist_assistant_core session={} err={}",
+                session_id, e
+            )
+        })?;
+        let persisted_assistant_turn_index = persistence.turn_index;
+        assistant_meta = persistence.assistant_meta;
         if !latest_user_query.is_empty() {
             for asset_id in &rendered_asset_ids {
                 if let Err(err) = store
@@ -1657,6 +1642,27 @@ pub async fn execute_local_orchestrated_chat(
                     log::warn!("bandit feedback failed for router:prompt: {}", e);
                 }
             });
+        }
+
+        match mark_local_assistant_postprocess_completed(
+            store.as_ref(),
+            &session_id,
+            persisted_assistant_turn_index,
+            assistant_meta.clone(),
+        )
+        .await
+        {
+            Ok(updated_meta) => {
+                assistant_meta = updated_meta;
+            }
+            Err(err) => {
+                log::warn!(
+                    "mark_local_assistant_postprocess_completed failed session={} turn={} err={}",
+                    session_id,
+                    persisted_assistant_turn_index,
+                    err
+                );
+            }
         }
     }
 

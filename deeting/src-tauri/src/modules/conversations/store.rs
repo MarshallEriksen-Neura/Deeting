@@ -42,6 +42,10 @@ fn storage_step_error(step: &str, err: impl std::fmt::Display) -> McpError {
     McpError::Storage(format!("append_message step={} err={}", step, err))
 }
 
+fn update_assistant_meta_step_error(step: &str, err: impl std::fmt::Display) -> McpError {
+    McpError::Storage(format!("update_assistant_meta step={} err={}", step, err))
+}
+
 fn parse_chat_history_retention_days(value: Option<String>) -> Option<i64> {
     let raw = value?.trim().to_string();
     if raw.is_empty() {
@@ -3077,6 +3081,129 @@ impl McpStore {
         })
     }
 
+    pub async fn update_local_conversation_assistant_meta_info(
+        &self,
+        session_id: &str,
+        turn_index: i64,
+        meta_info: Option<Value>,
+    ) -> Result<(), McpError> {
+        let mut attempt = 0_usize;
+        loop {
+            match self
+                .update_local_conversation_assistant_meta_info_once(
+                    session_id,
+                    turn_index,
+                    meta_info.clone(),
+                )
+                .await
+            {
+                Ok(()) => return Ok(()),
+                Err(err)
+                    if is_sqlite_busy_error(&err)
+                        && attempt < SQLITE_BUSY_RETRY_DELAYS_MS.len() =>
+                {
+                    let delay_ms = SQLITE_BUSY_RETRY_DELAYS_MS[attempt];
+                    attempt += 1;
+                    log::warn!(
+                        "update_local_conversation_assistant_meta_info busy retry session={} turn={} attempt={} delay_ms={}",
+                        session_id,
+                        turn_index,
+                        attempt,
+                        delay_ms
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                }
+                Err(err) => return Err(err),
+            }
+        }
+    }
+
+    async fn update_local_conversation_assistant_meta_info_once(
+        &self,
+        session_id: &str,
+        turn_index: i64,
+        meta_info: Option<Value>,
+    ) -> Result<(), McpError> {
+        let normalized_session_id = session_id.trim().to_string();
+        if normalized_session_id.is_empty() {
+            return Err(McpError::validation("session_id is required"));
+        }
+        if turn_index <= 0 {
+            return Err(McpError::validation("turn_index must be positive"));
+        }
+
+        let now = now_rfc3339()?;
+        let meta_json = meta_info
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|err| update_assistant_meta_step_error("serialize_meta_info", err))?;
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|err| update_assistant_meta_step_error("begin_tx", err))?;
+
+        let row = sqlx::query(
+            r#"
+            SELECT id, role
+            FROM conversation_message
+            WHERE session_id = ? AND turn_index = ? AND is_deleted = 0
+            LIMIT 1;
+            "#,
+        )
+        .bind(&normalized_session_id)
+        .bind(turn_index)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|err| update_assistant_meta_step_error("fetch_message", err))?
+        .ok_or_else(|| McpError::NotFound("conversation message not found".to_string()))?;
+
+        let message_id: String = row
+            .try_get("id")
+            .map_err(|err| update_assistant_meta_step_error("read_message_id", err))?;
+        let role: String = row
+            .try_get("role")
+            .map_err(|err| update_assistant_meta_step_error("read_role", err))?;
+        if !role.eq_ignore_ascii_case("assistant") {
+            return Err(McpError::validation(
+                "only assistant messages support meta_info replacement",
+            ));
+        }
+
+        sqlx::query(
+            r#"
+            UPDATE conversation_message
+            SET meta_info = ?, updated_at = ?
+            WHERE id = ?;
+            "#,
+        )
+        .bind(meta_json)
+        .bind(&now)
+        .bind(&message_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|err| update_assistant_meta_step_error("update_message", err))?;
+
+        sync_conversation_execution_tree_tx(
+            &mut tx,
+            &normalized_session_id,
+            &message_id,
+            turn_index,
+            meta_info.as_ref(),
+            &now,
+        )
+        .await
+        .map_err(|err| update_assistant_meta_step_error("sync_execution_tree", err))?;
+
+        tx.commit()
+            .await
+            .map_err(|err| update_assistant_meta_step_error("commit_tx", err))?;
+
+        Ok(())
+    }
+
     pub async fn get_local_conversation_execution_tree(
         &self,
         root_execution_id: &str,
@@ -4941,6 +5068,90 @@ mod tests {
         assert_eq!(
             execution_tree.children[0].phase_id.as_deref(),
             Some("phase-1")
+        );
+    }
+
+    #[tokio::test]
+    async fn update_assistant_meta_info_resyncs_execution_tree_rows() {
+        let store = create_test_store("execution-tree-resync").await;
+        let created = store
+            .create_local_conversation(LocalConversationCreateRequest {
+                assistant_id: None,
+                title: Some("Execution Tree Update".to_string()),
+            })
+            .await
+            .expect("create conversation");
+
+        let appended = store
+            .append_local_conversation_message(CreateConversationMessageRequest {
+                session_id: created.session_id.clone(),
+                role: "assistant".to_string(),
+                content: "delegated result".to_string(),
+                name: None,
+                meta_info: Some(serde_json::json!({
+                    "execution_tree": {
+                        "schema_version": 1,
+                        "root_execution_id": "exec-root-update-1",
+                        "execution_id": "exec-root-update-1",
+                        "execution_kind": "workflow",
+                        "execution_status": "waiting_graph",
+                        "terminal_status": "waiting_graph",
+                        "children": [
+                            {
+                                "id": "step-old",
+                                "title": "Old Child",
+                                "status": "pending"
+                            }
+                        ]
+                    }
+                })),
+                is_truncated: Some(false),
+                parent_message_id: None,
+            })
+            .await
+            .expect("append assistant message");
+
+        let updated_meta = serde_json::json!({
+            "execution_tree": {
+                "schema_version": 1,
+                "root_execution_id": "exec-root-update-1",
+                "execution_id": "exec-root-update-1",
+                "execution_kind": "workflow",
+                "execution_status": "integrated",
+                "terminal_status": "succeeded",
+                "children": [
+                    {
+                        "id": "step-new",
+                        "phase_id": "phase-updated",
+                        "title": "Updated Child",
+                        "status": "succeeded"
+                    }
+                ]
+            }
+        });
+
+        store
+            .update_local_conversation_assistant_meta_info(
+                &created.session_id,
+                appended.turn_index.expect("assistant turn index"),
+                Some(updated_meta),
+            )
+            .await
+            .expect("update assistant meta info");
+
+        let execution_tree = store
+            .get_local_conversation_execution_tree("exec-root-update-1")
+            .await
+            .expect("query execution tree")
+            .expect("execution tree exists");
+
+        assert_eq!(execution_tree.root.execution_status, "integrated");
+        assert_eq!(execution_tree.root.terminal_status, "succeeded");
+        assert_eq!(execution_tree.children.len(), 1);
+        assert_eq!(execution_tree.children[0].id, "step-new");
+        assert_eq!(
+            execution_tree.children[0].phase_id.as_deref(),
+            Some("phase-updated")
         );
     }
 }

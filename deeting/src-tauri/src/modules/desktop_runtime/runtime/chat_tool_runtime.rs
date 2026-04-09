@@ -1322,6 +1322,10 @@ fn build_max_rounds_exceeded_response(state: &LocalChatToolRuntimeState) -> serd
     fallback
 }
 
+fn rewind_round_for_post_approval_continuation(state: &mut LocalChatToolRuntimeState) {
+    state.round = state.round.saturating_sub(1);
+}
+
 fn finalize_tool_round(
     orchestrated_messages: &mut Vec<LocalChatInputMessage>,
     active_capability: &mut Option<LocalCapabilityActivationState>,
@@ -2642,6 +2646,7 @@ pub(crate) async fn resume_suspended_chat_tool_execution_after_approval(
         false,
         &state.runtime_metrics,
     ));
+    rewind_round_for_post_approval_continuation(&mut state);
 
     match continue_local_chat_complete_with_tools(app, app_state, state).await {
         Ok(mut output) => {
@@ -3309,8 +3314,8 @@ mod tests {
     #[test]
     fn build_max_rounds_exceeded_response_appends_visible_notice() {
         let state = LocalChatToolRuntimeState {
-            max_rounds: 24,
-            round: 24,
+            max_rounds: 10,
+            round: 10,
             trace_id: "trace-max-rounds-1".to_string(),
             execution_policy: mcp_runtime::policy::build_default_local_execution_policy(),
             model_connection: LocalModelConnection {
@@ -3350,7 +3355,7 @@ mod tests {
             .expect("content");
 
         assert!(content.contains("Shell step finished."));
-        assert!(content.contains("agentic round limit (24)"));
+        assert!(content.contains("agentic round limit (10)"));
         assert_eq!(
             response
                 .get("error_code")
@@ -3363,6 +3368,43 @@ mod tests {
                 .and_then(serde_json::Value::as_str),
             Some("max_agentic_rounds_exceeded")
         );
+    }
+
+    #[test]
+    fn rewind_round_for_post_approval_continuation_does_not_consume_user_round_budget() {
+        let mut state = LocalChatToolRuntimeState {
+            max_rounds: 10,
+            round: 4,
+            trace_id: "trace-approval-round-1".to_string(),
+            execution_policy: mcp_runtime::policy::build_default_local_execution_policy(),
+            model_connection: LocalModelConnection {
+                model_id: "deeting-os".to_string(),
+                provider_model_id: "deepseek-v3.1".to_string(),
+                logical_model_key: Some("deeting-os".to_string()),
+                protocol_family: "openai_chat".to_string(),
+            },
+            orchestrated_messages: Vec::new(),
+            session_id: "session-approval-round-1".to_string(),
+            temperature: None,
+            max_tokens: None,
+            active_capability: None,
+            runtime_metrics: RuntimeMetricsAccumulator::default(),
+            last_capability_snapshot: None,
+            last_response: None,
+            realtime_emitter: LocalRealtimeToolTraceEmitter::new(
+                None,
+                Some("trace-approval-round-1"),
+                None,
+            ),
+        };
+
+        rewind_round_for_post_approval_continuation(&mut state);
+        assert_eq!(state.round, 3);
+
+        rewind_round_for_post_approval_continuation(&mut state);
+        rewind_round_for_post_approval_continuation(&mut state);
+        rewind_round_for_post_approval_continuation(&mut state);
+        assert_eq!(state.round, 0);
     }
 
     #[test]

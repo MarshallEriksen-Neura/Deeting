@@ -4,7 +4,7 @@ pub(crate) mod store;
 pub(crate) mod store_init;
 
 pub(crate) const MAX_AGENTIC_ROUNDS_CONFIG_KEY: &str = "max_agentic_rounds";
-pub(crate) const DEFAULT_MAX_AGENTIC_ROUNDS: usize = 24;
+pub(crate) const DEFAULT_MAX_AGENTIC_ROUNDS: usize = 10;
 pub(crate) const APPROVAL_POLICY_LEVEL_CONFIG_KEY: &str = "chat.approval_policy_level";
 pub(crate) const DESKTOP_NETWORK_PROXY_MODE_CONFIG_KEY: &str = "network.proxy.mode";
 pub(crate) const DESKTOP_NETWORK_PROXY_URL_CONFIG_KEY: &str = "network.proxy.url";
@@ -80,7 +80,6 @@ mod tests {
     #[test]
     fn parse_max_agentic_rounds_falls_back_for_missing_or_invalid_values() {
         assert_eq!(MAX_AGENTIC_ROUNDS_CONFIG_KEY, "max_agentic_rounds");
-        assert_eq!(DEFAULT_MAX_AGENTIC_ROUNDS, 24);
         assert_eq!(parse_max_agentic_rounds(None), DEFAULT_MAX_AGENTIC_ROUNDS);
         assert_eq!(
             parse_max_agentic_rounds(Some("")),

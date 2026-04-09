@@ -1,3 +1,4 @@
+use super::assistant_persistence::{assistant_persistence_state, mark_execution_graph_persisted};
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::store::McpStore;
 use sqlx::Row;
@@ -112,24 +113,24 @@ pub(crate) async fn migrate_execution_graph_runtime_bootstrap(
         .await?
         .as_deref()
         == Some(DESKTOP_EXECUTION_GRAPH_BOOTSTRAP_DONE);
-    if already_bootstrapped {
-        return Ok(());
+    if !already_bootstrapped {
+        backfill_execution_graph_history_from_conversation_messages(store).await?;
+
+        store
+            .set_desktop_config(
+                DESKTOP_EXECUTION_GRAPH_SCHEMA_VERSION_KEY,
+                DESKTOP_EXECUTION_GRAPH_SCHEMA_VERSION,
+            )
+            .await?;
+        store
+            .set_desktop_config(
+                DESKTOP_EXECUTION_GRAPH_BOOTSTRAP_KEY,
+                DESKTOP_EXECUTION_GRAPH_BOOTSTRAP_DONE,
+            )
+            .await?;
     }
 
-    backfill_execution_graph_history_from_conversation_messages(store).await?;
-
-    store
-        .set_desktop_config(
-            DESKTOP_EXECUTION_GRAPH_SCHEMA_VERSION_KEY,
-            DESKTOP_EXECUTION_GRAPH_SCHEMA_VERSION,
-        )
-        .await?;
-    store
-        .set_desktop_config(
-            DESKTOP_EXECUTION_GRAPH_BOOTSTRAP_KEY,
-            DESKTOP_EXECUTION_GRAPH_BOOTSTRAP_DONE,
-        )
-        .await?;
+    repair_pending_execution_graph_persistence(store).await?;
 
     Ok(())
 }
@@ -185,6 +186,96 @@ async fn backfill_execution_graph_history_from_conversation_messages(
             log::warn!(
                 "execution graph history backfill failed session={} err={}",
                 session_id,
+                err
+            );
+        }
+    }
+
+    Ok(())
+}
+
+async fn repair_pending_execution_graph_persistence(store: &McpStore) -> Result<(), McpError> {
+    let rows = sqlx::query(
+        r#"
+        SELECT session_id, turn_index, meta_info
+        FROM conversation_message
+        WHERE role = 'assistant'
+          AND is_deleted = 0
+          AND meta_info IS NOT NULL
+          AND json_extract(meta_info, '$.execution_graph.execution_id') IS NOT NULL
+          AND json_extract(meta_info, '$.persistence.assistant_message_persisted') = 1
+          AND COALESCE(json_extract(meta_info, '$.persistence.execution_graph_persisted'), 0) = 0
+        ORDER BY created_at ASC, turn_index ASC
+        "#,
+    )
+    .fetch_all(&store.pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+
+    for row in rows {
+        let session_id = row
+            .try_get::<String, _>("session_id")
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+        let turn_index = row
+            .try_get::<i64, _>("turn_index")
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+        let meta_info_text = row
+            .try_get::<String, _>("meta_info")
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+        let meta_info: serde_json::Value = match serde_json::from_str(&meta_info_text) {
+            Ok(value) => value,
+            Err(err) => {
+                log::warn!(
+                    "execution graph pending repair skipped malformed conversation meta session={} turn={} err={}",
+                    session_id,
+                    turn_index,
+                    err
+                );
+                continue;
+            }
+        };
+        let Some(state) = assistant_persistence_state(Some(&meta_info)) else {
+            continue;
+        };
+        if !state.assistant_message_persisted || state.execution_graph_persisted {
+            continue;
+        }
+        let Some(execution_graph) = meta_info.get("execution_graph") else {
+            continue;
+        };
+
+        if let Err(err) = persist_execution_graph_snapshot(
+            store,
+            execution_graph,
+            session_id.as_str(),
+            "desktop_local_chat_pending_repair",
+            None,
+            None,
+        )
+        .await
+        {
+            log::warn!(
+                "execution graph pending repair failed session={} turn={} err={}",
+                session_id,
+                turn_index,
+                err
+            );
+            continue;
+        }
+
+        let repaired_meta = mark_execution_graph_persisted(Some(meta_info.clone()), true);
+        if let Err(err) = store
+            .update_local_conversation_assistant_meta_info(
+                session_id.as_str(),
+                turn_index,
+                repaired_meta,
+            )
+            .await
+        {
+            log::warn!(
+                "execution graph pending repair meta update failed session={} turn={} err={}",
+                session_id,
+                turn_index,
                 err
             );
         }
@@ -565,6 +656,7 @@ mod tests {
         delete_execution_graph_runtime_context, load_execution_graph_snapshot,
         migrate_execution_graph_runtime_bootstrap, persist_execution_graph_runtime_context,
     };
+    use crate::modules::desktop_runtime::runtime::assistant_persistence::assistant_persistence_state;
     use crate::modules::mcp::store::McpStore;
     use mcp_session::conversation::{
         CreateConversationMessageRequest, LocalConversationCreateRequest,
@@ -710,5 +802,108 @@ mod tests {
         .await
         .expect("count runtime contexts");
         assert_eq!(count, 0);
+    }
+
+    #[tokio::test]
+    async fn migrate_bootstrap_repairs_pending_execution_graph_persistence_after_bootstrap_done() {
+        let store = create_test_store("execution-graph-pending-repair").await;
+        store.init().await.expect("init store");
+        migrate_execution_graph_runtime_bootstrap(&store)
+            .await
+            .expect("complete initial bootstrap");
+
+        let session = store
+            .create_local_conversation(LocalConversationCreateRequest {
+                assistant_id: None,
+                title: Some("pending execution graph repair".to_string()),
+            })
+            .await
+            .expect("create conversation");
+        let execution_graph = serde_json::json!({
+            "execution_id": "graph-pending-repair-1",
+            "route": "chat",
+            "plane": "local",
+            "metadata": { "status": "completed" },
+            "nodes": [
+                {
+                    "node_id": "finalize:graph-pending-repair-1",
+                    "node_type": "finalize",
+                    "status": "completed",
+                    "dependency_ids": [],
+                    "metadata": {},
+                    "input_payload": null,
+                    "output_payload": { "ok": true }
+                }
+            ],
+            "events": []
+        });
+
+        store
+            .append_local_conversation_message(CreateConversationMessageRequest {
+                session_id: session.session_id.clone(),
+                role: "assistant".to_string(),
+                content: "pending graph".to_string(),
+                name: None,
+                meta_info: Some(serde_json::json!({
+                    "execution_graph": execution_graph,
+                    "persistence": {
+                        "assistant_message_persisted": true,
+                        "execution_graph_persisted": false,
+                        "postprocess_completed": true
+                    }
+                })),
+                is_truncated: Some(false),
+                parent_message_id: None,
+            })
+            .await
+            .expect("append pending assistant message");
+
+        migrate_execution_graph_runtime_bootstrap(&store)
+            .await
+            .expect("run startup repair");
+
+        let snapshot = load_execution_graph_snapshot(&store, "graph-pending-repair-1")
+            .await
+            .expect("load repaired execution graph")
+            .expect("repaired execution graph exists");
+        assert_eq!(
+            snapshot
+                .get("execution_id")
+                .and_then(serde_json::Value::as_str),
+            Some("graph-pending-repair-1")
+        );
+
+        let meta_info_text: String = sqlx::query_scalar(
+            r#"
+            SELECT meta_info
+            FROM conversation_message
+            WHERE session_id = ? AND role = 'assistant'
+            ORDER BY turn_index DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(&session.session_id)
+        .fetch_one(&store.pool)
+        .await
+        .expect("read repaired assistant meta");
+        let meta_info: serde_json::Value =
+            serde_json::from_str(&meta_info_text).expect("parse repaired assistant meta");
+        let state = assistant_persistence_state(Some(&meta_info)).expect("assistant state");
+        assert!(state.assistant_message_persisted);
+        assert!(state.execution_graph_persisted);
+        assert!(state.postprocess_completed);
+
+        let run_row =
+            sqlx::query("SELECT source_kind FROM local_execution_graph_run WHERE execution_id = ?")
+                .bind("graph-pending-repair-1")
+                .fetch_one(&store.pool)
+                .await
+                .expect("read repaired execution graph run");
+        assert_eq!(
+            run_row
+                .try_get::<String, _>("source_kind")
+                .expect("source kind"),
+            "desktop_local_chat_pending_repair"
+        );
     }
 }
