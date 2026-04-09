@@ -21,6 +21,78 @@ function isEmptyTextLikeBlock(block: MessageBlock): boolean {
   return false
 }
 
+function isToolVisualBlock(block: MessageBlock): boolean {
+  return (
+    block.type === "tool_call" ||
+    block.type === "tool_result" ||
+    (block.type === "ui" &&
+      typeof block.callId === "string" &&
+      block.callId.trim().length > 0)
+  )
+}
+
+function isActiveToolCallStatus(status: ToolCallBlock["status"] | undefined) {
+  return status === "running" || status === "requires_approval"
+}
+
+function findNarrativeInsertionIndex(blocks: MessageBlock[]): number {
+  const activeToolCallIds = new Set(
+    blocks.flatMap((block) => {
+      if (block.type !== "tool_call") return []
+      const callId = typeof block.callId === "string" ? block.callId.trim() : ""
+      return callId && isActiveToolCallStatus(block.status) ? [callId] : []
+    }),
+  )
+
+  if (activeToolCallIds.size === 0) {
+    return blocks.length
+  }
+
+  let insertionIndex = blocks.length
+
+  while (insertionIndex > 0) {
+    const candidate = blocks[insertionIndex - 1]
+    if (!isToolVisualBlock(candidate)) {
+      break
+    }
+
+    if (candidate.type === "tool_call") {
+      const callId = typeof candidate.callId === "string" ? candidate.callId.trim() : ""
+      if (!callId || !activeToolCallIds.has(callId)) {
+        break
+      }
+      insertionIndex -= 1
+      continue
+    }
+
+    const callId = typeof candidate.callId === "string" ? candidate.callId.trim() : ""
+    if (!callId || !activeToolCallIds.has(callId)) {
+      break
+    }
+    insertionIndex -= 1
+  }
+
+  return insertionIndex
+}
+
+function insertOrMergeNarrativeBlock(
+  next: MessageBlock[],
+  block: Extract<MessageBlock, { type: "text" | "thought" }>,
+): void {
+  const insertionIndex = findNarrativeInsertionIndex(next)
+  const previous = next[insertionIndex - 1]
+
+  if (previous?.type === block.type) {
+    next[insertionIndex - 1] = {
+      ...previous,
+      content: `${previous.content}${block.content}`,
+    }
+    return
+  }
+
+  next.splice(insertionIndex, 0, block)
+}
+
 function upsertToolBlock(next: MessageBlock[], block: MessageBlock): boolean {
   if (block.type !== "tool_call" && block.type !== "tool_result") return false
   const callId = typeof block.callId === "string" ? block.callId.trim() : ""
@@ -122,22 +194,12 @@ export function appendMessageBlocks(
 
   for (const block of normalizedIncoming) {
     if (block.type === "text") {
-      const last = next[next.length - 1]
-      if (last?.type === "text") {
-        next[next.length - 1] = { ...last, content: `${last.content}${block.content}` }
-      } else {
-        next.push(block)
-      }
+      insertOrMergeNarrativeBlock(next, block)
       continue
     }
 
     if (block.type === "thought") {
-      const last = next[next.length - 1]
-      if (last?.type === "thought") {
-        next[next.length - 1] = { ...last, content: `${last.content}${block.content}` }
-      } else {
-        next.push(block)
-      }
+      insertOrMergeNarrativeBlock(next, block)
       continue
     }
 

@@ -5,6 +5,7 @@ import { useMemo, useRef, useState, useCallback, useEffect, memo } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useShallow } from 'zustand/react/shallow';
 import { useChatStore } from '@/store/chat-store';
+import { useChatRuntimeStore } from '@/store/chat-runtime-store';
 import { useI18n } from '@/hooks/use-i18n';
 import { isTauriRuntime as detectTauriRuntime } from '@/lib/runtime/tauri';
 import { Button } from '@/components/ui/button';
@@ -83,10 +84,6 @@ function ControlsContainer() {
     clearAttachments,
     toggleSelectedKnowledgeFileId,
     clearSelectedKnowledgeFileIds,
-    isLoading,
-    setSessionId,
-    setGlobalLoading,
-    resetSession,
   } = useChatStore(
     useShallow((state) => ({
       input: state.input,
@@ -103,6 +100,15 @@ function ControlsContainer() {
       clearAttachments: state.clearAttachments,
       toggleSelectedKnowledgeFileId: state.toggleSelectedKnowledgeFileId,
       clearSelectedKnowledgeFileIds: state.clearSelectedKnowledgeFileIds,
+    }))
+  );
+  const {
+    isLoading,
+    setSessionId,
+    setGlobalLoading,
+    resetSession,
+  } = useChatRuntimeStore(
+    useShallow((state) => ({
       isLoading: state.isLoading,
       setSessionId: state.setSessionId,
       setGlobalLoading: state.setGlobalLoading,

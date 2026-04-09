@@ -21,10 +21,10 @@ function Harness({
 
 describe("useMessageToolApproval", () => {
   afterEach(() => {
-    useBridgeApprovalStore.getState().clear()
+    useBridgeApprovalStore.getState().clearAll()
   })
 
-  it("queues pending approval from assistant message tool results", async () => {
+  it("queues pending approval from assistant message tool results that are still awaiting approval", async () => {
     render(
       <Harness
         messageId="assistant-approval-1"
@@ -41,7 +41,7 @@ describe("useMessageToolApproval", () => {
             type: "tool_result",
             callId: "call-approval-1",
             toolName: "skill.official.skills.crawler.crawl_website",
-            status: "success",
+            status: "requires_approval",
             result: {
               status: "REQUIRES_APPROVAL",
               approval_token: "approval-queue-1",
@@ -64,6 +64,107 @@ describe("useMessageToolApproval", () => {
           message_id: "assistant-approval-1",
         },
       })
+    })
+  })
+
+  it("does not re-queue a stale approval payload once the tool result is already marked success", async () => {
+    render(
+      <Harness
+        messageId="assistant-approved-1"
+        blocks={[
+          {
+            id: "tool-call-approved-1",
+            type: "tool_call",
+            callId: "call-approved-1",
+            toolName: "shell_execute",
+            status: "success",
+          },
+          {
+            id: "tool-result-approved-1",
+            type: "tool_result",
+            callId: "call-approved-1",
+            toolName: "shell_execute",
+            status: "success",
+            result: {
+              status: "REQUIRES_APPROVAL",
+              approval_token: "approval-stale-success-1",
+              tool_name: "shell_execute",
+              arguments: { command: "dir" },
+              ok: true,
+            },
+          },
+        ]}
+      />
+    )
+
+    await waitFor(() => {
+      expect(useBridgeApprovalStore.getState().pending).toBeNull()
+      expect(useBridgeApprovalStore.getState().queue).toEqual([])
+    })
+  })
+
+  it("skips a resolved stale approval and queues the newer unresolved approval in the same assistant message", async () => {
+    render(
+      <Harness
+        messageId="assistant-multi-approval-1"
+        blocks={[
+          {
+            id: "tool-call-old-1",
+            type: "tool_call",
+            callId: "call-old-1",
+            toolName: "shell_execute",
+            status: "success",
+          },
+          {
+            id: "tool-result-old-1",
+            type: "tool_result",
+            callId: "call-old-1",
+            toolName: "shell_execute",
+            status: "success",
+            result: {
+              status: "REQUIRES_APPROVAL",
+              approval_token: "approval-old-stale-1",
+              tool_name: "shell_execute",
+              arguments: { command: "dir" },
+              execution_graph_execution_id: "graph-old-1",
+            },
+          },
+          {
+            id: "tool-call-new-1",
+            type: "tool_call",
+            callId: "call-new-1",
+            toolName: "search_notes",
+            status: "running",
+          },
+          {
+            id: "tool-result-new-1",
+            type: "tool_result",
+            callId: "call-new-1",
+            toolName: "search_notes",
+            status: "requires_approval",
+            result: {
+              status: "REQUIRES_APPROVAL",
+              approval_token: "approval-new-live-1",
+              tool_name: "search_notes",
+              arguments: { query: "approval queue" },
+              execution_graph_execution_id: "graph-new-1",
+            },
+          },
+        ]}
+      />
+    )
+
+    await waitFor(() => {
+      expect(useBridgeApprovalStore.getState().pending).toMatchObject({
+        approval_token: "approval-new-live-1",
+        tool_name: "search_notes",
+        meta: {
+          call_id: "call-new-1",
+          message_id: "assistant-multi-approval-1",
+          execution_graph_execution_id: "graph-new-1",
+        },
+      })
+      expect(useBridgeApprovalStore.getState().queue).toHaveLength(1)
     })
   })
 

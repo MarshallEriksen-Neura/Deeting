@@ -215,7 +215,7 @@ describe("AIResponseBubble debug panel", () => {
         id: "tool-1",
         type: "tool_call",
         toolName: "search_sdk",
-        status: "success",
+        status: "running",
       },
       {
         id: "tool-2",
@@ -229,6 +229,48 @@ describe("AIResponseBubble debug panel", () => {
 
     expect(screen.getByText("toolGroup.liveSkillSummary")).toBeInTheDocument();
     expect(screen.getByText("SDK Search")).toBeInTheDocument();
+  });
+
+  it("keeps the current round text ahead of only the trailing live tool group", () => {
+    const parts: MessageBlock[] = [
+      {
+        id: "tool-complete-1",
+        type: "tool_call",
+        toolName: "search_sdk",
+        status: "success",
+      },
+      { id: "text-before-tools", type: "text", content: "I will inspect the vault first." },
+      {
+        id: "tool-2",
+        type: "tool_call",
+        toolName: "shell_execute",
+        status: "running",
+      },
+      {
+        id: "tool-3",
+        type: "tool_call",
+        toolName: "read_file",
+        status: "running",
+      },
+    ];
+
+    render(<AIResponseBubble parts={parts} isActive />);
+
+    expect(screen.getByText("toolGroup.liveSummary")).toBeInTheDocument();
+    expect(screen.getByText("SDK Search")).toBeInTheDocument();
+    expect(screen.getByText("Shell Execute")).toBeInTheDocument();
+    const bubble = screen
+      .getByText("I will inspect the vault first.")
+      .closest("[data-slot='glass-card']");
+    expect(bubble).not.toBeNull();
+
+    const rendered = bubble?.textContent ?? "";
+    expect(rendered.indexOf("SDK Search")).toBeLessThan(
+      rendered.indexOf("I will inspect the vault first."),
+    );
+    expect(rendered.indexOf("I will inspect the vault first.")).toBeLessThan(
+      rendered.indexOf("Shell Execute"),
+    );
   });
 
   it("keeps completed tool calls inline with surrounding assistant text", () => {

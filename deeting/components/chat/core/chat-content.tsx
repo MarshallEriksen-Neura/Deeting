@@ -2,6 +2,7 @@
 import { ToolApprovalDialog } from "@/components/bridge/tool-approval-dialog"
 import { ChatMessageList } from "../messages"
 import { useChatStore, type ChatAssistant } from "@/store/chat-store"
+import { useChatRuntimeStore } from "@/store/chat-runtime-store"
 import { useChatMessagingService } from "@/hooks/chat/use-chat-messaging-service"
 import { useHydratePendingToolApproval } from "@/hooks/chat/use-hydrate-pending-tool-approval"
 import { useBrowserModeToolActivity } from "@/hooks/chat/use-browser-mode-tool-activity"
@@ -19,13 +20,14 @@ interface ChatContentProps {
 export function ChatContent({ agent }: ChatContentProps) {
   // 直接从 store 读取状态（使用选择器优化重渲染）
   const messages = useChatStore((state) => state.messages)
-  const sessionId = useChatStore((state) => state.sessionId)
-  // isLoading = history loading, NOT typing. Only treat as typing when streaming.
-  const isTyping = useChatStore((state) => state.statusStage !== null)
+  const sessionId = useChatRuntimeStore((state) => state.sessionId)
+  const activeMessageId = useChatRuntimeStore((state) => state.activeMessageId)
+  const isTyping = activeMessageId !== null
+  const statusMessageId = useChatRuntimeStore((state) => state.statusMessageId)
   const streamEnabled = useChatStore((state) => state.streamEnabled)
-  const statusStage = useChatStore((state) => state.statusStage)
-  const statusCode = useChatStore((state) => state.statusCode)
-  const statusMeta = useChatStore((state) => state.statusMeta)
+  const statusStage = useChatRuntimeStore((state) => state.statusStage)
+  const statusCode = useChatRuntimeStore((state) => state.statusCode)
+  const statusMeta = useChatRuntimeStore((state) => state.statusMeta)
   const sendFeedback = useChatStore((state) => state.sendFeedback)
   const {
     regenerateMessage,
@@ -42,6 +44,7 @@ export function ChatContent({ agent }: ChatContentProps) {
           messages={messages}
           agent={agent}
           isTyping={isTyping}
+          statusMessageId={statusMessageId}
           streamEnabled={streamEnabled}
           statusStage={statusStage}
           statusCode={statusCode}

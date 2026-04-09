@@ -1088,13 +1088,11 @@ async fn continue_local_chat_complete_with_tools(
         state.round = state.round.saturating_add(1);
         if state.round > state.max_rounds {
             log::warn!(
-                "agentic loop exceeded {} rounds, returning last response",
+                "agentic loop exceeded {} rounds, returning explicit stop response",
                 state.max_rounds
             );
             let effective_tool_call_meta = build_state_effective_tool_call_meta(&state);
-            let fallback = state.last_response.unwrap_or_else(|| {
-                serde_json::json!({"content": "Tool execution reached the maximum number of rounds."})
-            });
+            let fallback = build_max_rounds_exceeded_response(&state);
             return Ok(LocalChatToolRuntimeOutput {
                 response: enrich_response_with_tool_trace(
                     fallback,
@@ -1287,6 +1285,41 @@ async fn continue_local_chat_complete_with_tools(
             }
         }
     }
+}
+
+fn build_max_rounds_exceeded_response(state: &LocalChatToolRuntimeState) -> serde_json::Value {
+    let notice = format!(
+        "Stopped because the local desktop runtime reached the agentic round limit ({}). Increase `max_agentic_rounds` to let longer approval-heavy runs continue.",
+        state.max_rounds
+    );
+    let mut fallback = state
+        .last_response
+        .clone()
+        .unwrap_or_else(|| serde_json::json!({ "content": "" }));
+    let existing_content =
+        extract_resume_response_text(fallback.get("content").unwrap_or(&serde_json::Value::Null));
+    let next_content = if existing_content.trim().is_empty() {
+        notice.clone()
+    } else if existing_content.contains(&notice) {
+        existing_content
+    } else {
+        format!("{existing_content}\n\n{notice}")
+    };
+    if let Some(object) = fallback.as_object_mut() {
+        object.insert(
+            "content".to_string(),
+            serde_json::Value::String(next_content),
+        );
+        object.insert(
+            "error_code".to_string(),
+            serde_json::Value::String("LOCAL_CHAT_MAX_ROUNDS_EXCEEDED".to_string()),
+        );
+        object.insert(
+            "stop_reason".to_string(),
+            serde_json::Value::String("max_agentic_rounds_exceeded".to_string()),
+        );
+    }
+    fallback
 }
 
 fn finalize_tool_round(
@@ -3270,6 +3303,65 @@ mod tests {
         assert_eq!(
             blocks[1]["result"]["approval_token"],
             serde_json::json!("approval-1")
+        );
+    }
+
+    #[test]
+    fn build_max_rounds_exceeded_response_appends_visible_notice() {
+        let state = LocalChatToolRuntimeState {
+            max_rounds: 24,
+            round: 24,
+            trace_id: "trace-max-rounds-1".to_string(),
+            execution_policy: mcp_runtime::policy::build_default_local_execution_policy(),
+            model_connection: LocalModelConnection {
+                model_id: "deeting-os".to_string(),
+                provider_model_id: "deepseek-v3.1".to_string(),
+                logical_model_key: Some("deeting-os".to_string()),
+                protocol_family: "openai_chat".to_string(),
+            },
+            orchestrated_messages: Vec::new(),
+            session_id: "session-max-rounds-1".to_string(),
+            temperature: None,
+            max_tokens: None,
+            active_capability: None,
+            runtime_metrics: RuntimeMetricsAccumulator::default(),
+            last_capability_snapshot: None,
+            last_response: Some(serde_json::json!({
+                "content": "Shell step finished.",
+                "tool_calls": [
+                    {
+                        "id": "call-shell-1",
+                        "name": "shell_execute",
+                        "arguments": {"command": "pwd"}
+                    }
+                ]
+            })),
+            realtime_emitter: LocalRealtimeToolTraceEmitter::new(
+                None,
+                Some("trace-max-rounds-1"),
+                None,
+            ),
+        };
+
+        let response = build_max_rounds_exceeded_response(&state);
+        let content = response
+            .get("content")
+            .and_then(serde_json::Value::as_str)
+            .expect("content");
+
+        assert!(content.contains("Shell step finished."));
+        assert!(content.contains("agentic round limit (24)"));
+        assert_eq!(
+            response
+                .get("error_code")
+                .and_then(serde_json::Value::as_str),
+            Some("LOCAL_CHAT_MAX_ROUNDS_EXCEEDED")
+        );
+        assert_eq!(
+            response
+                .get("stop_reason")
+                .and_then(serde_json::Value::as_str),
+            Some("max_agentic_rounds_exceeded")
         );
     }
 

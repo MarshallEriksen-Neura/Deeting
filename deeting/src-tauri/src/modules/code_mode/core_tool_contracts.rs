@@ -141,14 +141,14 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
         },
         CoreToolContract {
             name: "execute_code_plan",
-            description: "Run a bounded codemode tool call in the sandbox. Use it only for multi-step program logic, loops, branching, or broad edits that cannot be completed with one lighter direct tool call. Runtime exposes `deeting.log()`, `deeting.section()`, and `deeting.call_tool()`. SDK tool stubs are only for direct callable host tools surfaced by search_sdk. Generate one coherent script inside the tool call and always emit final structured output via `deeting.log(json.dumps(result, ensure_ascii=False))` instead of relying on top-level `return`.",
+            description: "Run a bounded codemode tool call in the sandbox. Use it only for multi-step program logic, loops, branching, or broad edits that cannot be completed with one lighter direct tool call. Runtime exposes `deeting.log()`, `deeting.section()`, and `deeting.call_tool()`. SDK tool stubs are only for direct callable host tools surfaced by search_sdk. The required `code` field must contain one coherent executable Python script, not plan-only prose, markdown, pseudocode, or metadata. Keep planning implicit or as Python comments inside that script, and always emit final structured output via `deeting.log(json.dumps(result, ensure_ascii=False))` instead of relying on top-level `return`.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
                     "task": { "type": "string", "description": "Optional high-level task summary for logging and result summarization." },
                     "scope": { "type": "object", "description": "Optional structured scope metadata such as selected paths or resources." },
                     "constraints": { "type": "object", "description": "Optional execution constraints such as read_only, max_steps, or mutation limits." },
-                    "code": { "type": "string", "description": "Python code to execute." },
+                    "code": { "type": "string", "description": "Required full executable Python source to run in the sandbox. Must be non-empty and must not be replaced by plan-only text or metadata." },
                     "session_id": { "type": "string", "description": "Optional explicit session ID." },
                     "language": { "type": "string", "description": "Execution language. Only python is supported.", "default": "python" },
                     "execution_timeout": { "type": "integer", "description": "Execution timeout hint in seconds.", "default": 30 },

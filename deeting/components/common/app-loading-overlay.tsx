@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { useShallow } from "zustand/react/shallow"
 import { StartupShell } from "@/components/common/startup-shell"
 import { useThemeStore } from "@/store/theme-store"
-import { useChatStore } from "@/store/chat-store"
+import { useChatRuntimeStore } from "@/store/chat-runtime-store"
 import { useI18n } from "@/hooks/use-i18n"
 
 export function AppLoadingOverlay() {
@@ -14,7 +14,7 @@ export function AppLoadingOverlay() {
       isTransitioning: state.isTransitioning,
     }))
   )
-  const { globalLoading } = useChatStore(
+  const { globalLoading } = useChatRuntimeStore(
     useShallow((state) => ({
       globalLoading: state.globalLoading,
     }))

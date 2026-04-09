@@ -25,10 +25,11 @@ import {
 const WEB_SESSION_STORAGE_KEY = "deeting-chat-session:router"
 
 export function resolveChatRequestContext({
-  isTauriRuntime,
+  isTauriRuntime: _isTauriRuntime,
 }: {
   isTauriRuntime: boolean
 }) {
+  void _isTauriRuntime
   return { assistantId: undefined, sessionStorageKey: WEB_SESSION_STORAGE_KEY }
 }
 import { resolveSessionIdFromBrowser } from "@/lib/chat/session-storage"
@@ -37,8 +38,8 @@ import {
   useChatStore,
   type CompareCandidate,
   type Message,
-  type PendingTakeoverRequestedAction,
 } from "@/store/chat-store"
+import { useChatRuntimeStore } from "@/store/chat-runtime-store"
 import { useWorkspaceStore } from "@/store/workspace-store"
 import type { HtmlRuntimeRefreshSpec, MessageBlock } from "@/lib/chat/message-protocol"
 import { extractAssistantTextFromBlocks } from "@/lib/chat/message-blocks"
@@ -52,6 +53,10 @@ import {
 } from "@/lib/chat/execution-tree"
 import { listCustomTaskAgents } from "@/lib/api/custom-task-agents"
 import { resolveLeadingTaskAgentMention } from "./task-agent-mention"
+import {
+  deriveAssistantActivityState,
+} from "@/lib/chat/assistant-activity"
+import { deriveChatStatusUpdateForMessage } from "@/lib/chat/live-status"
 import {
   buildPendingTakeoverDispatchDraft,
   isPendingTakeoverSafeBoundary,
@@ -175,6 +180,35 @@ function isValidBlock(block: unknown): block is MessageBlock {
       typeof block === "object" &&
       "type" in (block as Record<string, unknown>)
   )
+}
+
+function syncAssistantActivityStatus({
+  assistantMessageId,
+  setStatus,
+  clearStatus,
+  setActiveMessageId,
+}: {
+  assistantMessageId: string
+  setStatus: (status: {
+    messageId?: string | null
+    stage?: string | null
+    code?: string | null
+    meta?: Record<string, unknown> | null
+  }) => void
+  clearStatus: () => void
+  setActiveMessageId: (messageId: string | null) => void
+}) {
+  const status = deriveChatStatusUpdateForMessage(
+    useChatStore.getState().messages,
+    assistantMessageId
+  )
+  if (!status) {
+    setActiveMessageId(null)
+    clearStatus()
+    return
+  }
+  setActiveMessageId(assistantMessageId)
+  setStatus(status)
 }
 
 function hasRenderableTextBlock(blocks: MessageBlock[]): boolean {
@@ -421,21 +455,37 @@ export function useChatMessagingService() {
     key: "",
     repeatCount: 0,
   })
-  const [interruptedAssistantMessageId, setInterruptedAssistantMessageId] = useState<string | null>(null)
   const openedWorkflowRunIdsRef = useRef<Set<string>>(new Set())
   const pendingTakeoverDispatchingRef = useRef(false)
+  const {
+    sessionId,
+    isLoading,
+    statusCode,
+    pendingTakeover,
+    pendingTakeoverRequestedAction,
+    setSessionId,
+    setIsLoading,
+    setErrorMessage,
+    setStatus,
+    clearStatus,
+    setPendingTakeover,
+    setPendingTakeoverRequestedAction,
+    clearPendingTakeover,
+    interruptedMessageId,
+    setInterruptedMessageId,
+    setActiveMessageId,
+    resetSession: resetRuntimeSession,
+    loadHistory: loadRuntimeHistory,
+    setHistoryState,
+  } = useChatRuntimeStore()
   const {
     input,
     attachments,
     selectedKnowledgeFileIds,
-    pendingTakeover,
-    pendingTakeoverRequestedAction,
     messages,
     config,
     models,
     streamEnabled,
-    isLoading,
-    statusCode,
     setInput,
     setSelectedKnowledgeFileIds,
     clearAttachments,
@@ -449,25 +499,8 @@ export function useChatMessagingService() {
     setCompareFinalizing,
     clearCompareState,
     clearAllCompareStates,
-    sessionId,
-    setSessionId,
-    setIsLoading,
-    setErrorMessage,
-    setStatus,
-    clearStatus,
-    setPendingTakeover,
-    setPendingTakeoverRequestedAction,
-    clearPendingTakeover,
   } = useChatStore()
   const openWorkspaceView = useWorkspaceStore((state) => state.openView)
-
-  const setHistoryState = useCallback((state: { cursor?: number | null; hasMore?: boolean; loading?: boolean }) => {
-    useChatStore.setState({
-      ...(state.cursor !== undefined && { historyCursor: state.cursor }),
-      ...(state.hasMore !== undefined && { historyHasMore: state.hasMore }),
-      ...(state.loading !== undefined && { isLoading: state.loading }),
-    })
-  }, [])
 
   const isTauriRuntime = useMemo(
     () =>
@@ -497,15 +530,12 @@ export function useChatMessagingService() {
 
   const loadHistoryBySession = useCallback(async (sessionId: string) => {
     if (!sessionId) return
-    await useChatStore.getState().loadHistory(sessionId)
-  }, [])
+    await loadRuntimeHistory(sessionId)
+  }, [loadRuntimeHistory])
 
   const resetSession = useCallback(() => {
-    setMessages([])
-    setSessionId(null)
-    clearAttachments()
-    setHistoryState({ cursor: null, hasMore: false, loading: false })
-  }, [setMessages, setSessionId, clearAttachments, setHistoryState])
+    resetRuntimeSession()
+  }, [resetRuntimeSession])
 
   const loadMoreHistory = useCallback(async () => {
     const state = useChatStore.getState()
@@ -550,12 +580,13 @@ export function useChatMessagingService() {
     const activeAssistantMessageId = activeAssistantMessageIdRef.current
     if (activeAssistantMessageId) {
       interruptedMessageIdsRef.current.add(activeAssistantMessageId)
-      setInterruptedAssistantMessageId(activeAssistantMessageId)
+      setInterruptedMessageId(activeAssistantMessageId)
     }
     cancelRef.current?.()
     cancelRef.current = null
     requestIdRef.current = null
     activeAssistantMessageIdRef.current = null
+    setActiveMessageId(null)
     setIsLoading(false)
     clearStatus()
     if (!requestId) return
@@ -570,7 +601,7 @@ export function useChatMessagingService() {
     } finally {
       activeRequestRouteRef.current = null
     }
-  }, [clearStatus, setIsLoading])
+  }, [clearStatus, setActiveMessageId, setInterruptedMessageId, setIsLoading])
 
   const findModelByValue = useCallback((value?: string | null) => {
     if (!value) return null
@@ -580,7 +611,7 @@ export function useChatMessagingService() {
   }, [models])
 
   const resolveCurrentSessionId = useCallback((sessionStorageKey: string, fallback?: string | null) => {
-    let resolved = fallback ?? useChatStore.getState().sessionId ?? sessionId
+    let resolved = fallback ?? useChatRuntimeStore.getState().sessionId ?? sessionId
     if (!resolved) {
       const fallbackSessionId = resolveSessionIdFromBrowser(sessionStorageKey, {
         allowStorageFallback: false,
@@ -903,7 +934,7 @@ export function useChatMessagingService() {
       createdAt: Date.now(),
     }
     activeAssistantMessageIdRef.current = assistantMessageId
-    setInterruptedAssistantMessageId(null)
+    setInterruptedMessageId(null)
     clearAllCompareStates()
 
     // 更新 UI 状态
@@ -916,6 +947,7 @@ export function useChatMessagingService() {
       clearComposer()
     }
     setIsLoading(true)
+    setActiveMessageId(assistantMessageId)
     clearStatus()
 
     const resolvedSessionId = resolveCurrentSessionId(sessionStorageKey, sessionIdOverride)
@@ -968,7 +1000,7 @@ export function useChatMessagingService() {
         onTraceId: (traceId) => mergeMessageMeta(assistantMessageId, { trace_id: traceId }),
         onSessionResolved: (nextSessionId) => setSessionId(nextSessionId),
         onStatusEvent: (status) => {
-          setStatus(status)
+          setStatus({ ...status, messageId: assistantMessageId })
           if (status.code === "upstream.response" && status.meta) {
             mergeMessageMeta(assistantMessageId, { runtime_metrics: status.meta })
           }
@@ -990,7 +1022,12 @@ export function useChatMessagingService() {
       setErrorMessage(message)
     } finally {
       setIsLoading(false)
-      clearStatus()
+      syncAssistantActivityStatus({
+        assistantMessageId,
+        setStatus,
+        clearStatus,
+        setActiveMessageId,
+      })
       cancelRef.current = null
       requestIdRef.current = null
       activeRequestRouteRef.current = null
@@ -1088,7 +1125,7 @@ export function useChatMessagingService() {
   }, [setPendingTakeoverRequestedAction])
 
   const stopAndSendPendingTakeover = useCallback(async () => {
-    const currentPendingTakeover = useChatStore.getState().pendingTakeover
+    const currentPendingTakeover = useChatRuntimeStore.getState().pendingTakeover
     if (!currentPendingTakeover) return
 
     await cancelActiveRequest()
@@ -1103,7 +1140,7 @@ export function useChatMessagingService() {
 
   const regenerateMessage = useCallback(async (targetMessageId: string) => {
     // 并发保护：如果有正在进行的请求，先取消
-    if (useChatStore.getState().isLoading) {
+    if (useChatRuntimeStore.getState().isLoading) {
       await cancelActiveRequest()
     }
 
@@ -1138,11 +1175,12 @@ export function useChatMessagingService() {
       createdAt: Date.now(),
     }
     activeAssistantMessageIdRef.current = assistantMessageId
-    setInterruptedAssistantMessageId(null)
+    setInterruptedMessageId(null)
     clearAllCompareStates()
 
     setMessages([...messagesBeforeTarget, newAssistantMessage])
     setIsLoading(true)
+    setActiveMessageId(assistantMessageId)
     clearStatus()
 
     // 构建请求消息（不含被删除的 assistant 消息）
@@ -1197,7 +1235,7 @@ export function useChatMessagingService() {
         },
         onTraceId: (traceId) => mergeMessageMeta(assistantMessageId, { trace_id: traceId }),
         onSessionResolved: (nextSessionId) => setSessionId(nextSessionId),
-        onStatusEvent: (status) => setStatus(status),
+        onStatusEvent: (status) => setStatus({ ...status, messageId: assistantMessageId }),
         getCurrentBlocks: () => {
           const latest = useChatStore.getState().messages.find((message) => message.id === assistantMessageId)
           return Array.isArray(latest?.blocks) ? (latest.blocks as MessageBlock[]) : []
@@ -1215,7 +1253,12 @@ export function useChatMessagingService() {
       setErrorMessage(message)
     } finally {
       setIsLoading(false)
-      clearStatus()
+      syncAssistantActivityStatus({
+        assistantMessageId,
+        setStatus,
+        clearStatus,
+        setActiveMessageId,
+      })
       cancelRef.current = null
       requestIdRef.current = null
       activeRequestRouteRef.current = null
@@ -1549,15 +1592,15 @@ export function useChatMessagingService() {
   ])
 
   const hasInterruptedGeneration = useMemo(() => {
-    if (!interruptedAssistantMessageId) return false
+    if (!interruptedMessageId) return false
     return messages.some(
       (message) =>
-        message.id === interruptedAssistantMessageId && message.role === "assistant"
+        message.id === interruptedMessageId && message.role === "assistant"
     )
-  }, [interruptedAssistantMessageId, messages])
+  }, [interruptedMessageId, messages])
 
   const continueInterruptedGeneration = useCallback(async () => {
-    const targetMessageId = interruptedAssistantMessageId
+    const targetMessageId = interruptedMessageId
     if (!targetMessageId) return
     const targetMessage = useChatStore
       .getState()
@@ -1566,12 +1609,12 @@ export function useChatMessagingService() {
           message.id === targetMessageId && message.role === "assistant"
       )
     if (!targetMessage) {
-      setInterruptedAssistantMessageId(null)
+      setInterruptedMessageId(null)
       return
     }
-    setInterruptedAssistantMessageId(null)
+    setInterruptedMessageId(null)
     await regenerateMessage(targetMessageId)
-  }, [interruptedAssistantMessageId, regenerateMessage])
+  }, [interruptedMessageId, regenerateMessage, setInterruptedMessageId])
 
   useEffect(() => {
     if (!pendingTakeover || pendingTakeoverRequestedAction !== "send_after_step") {

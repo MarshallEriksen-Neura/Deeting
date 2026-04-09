@@ -20,10 +20,12 @@ import {
 } from "@/lib/chat/bridge-approval-store"
 import { bridgeCallTool } from "@/lib/api/bridge"
 import { rejectDesktopTool, streamDesktopApproveTool } from "@/lib/api/mcp-desktop"
-import { toast } from "sonner"
 import { Loader2, ShieldAlert, AlertTriangle, Terminal } from "lucide-react"
 import { useChatStore } from "@/store/chat-store"
+import { useChatRuntimeStore } from "@/store/chat-runtime-store"
 import { extractAssistantTextFromBlocks } from "@/lib/chat/message-blocks"
+import { deriveChatStatusUpdateForMessage } from "@/lib/chat/live-status"
+import type { MessageBlock } from "@/lib/chat/message-protocol"
 import {
   createOptimisticApprovalExecutionBlocks,
   createApprovedToolResultBlock,
@@ -64,6 +66,8 @@ function ToolApprovalDialogContent({
   const setMessageBlocks = useChatStore((state) => state.setMessageBlocks)
   const upsertMessageToolResult = useChatStore((state) => state.upsertMessageToolResult)
   const appendMessageBlocks = useChatStore((state) => state.appendMessageBlocks)
+  const setStatus = useChatRuntimeStore((state) => state.setStatus)
+  const clearStatus = useChatRuntimeStore((state) => state.clearStatus)
   const [loadingAction, setLoadingAction] = useState<
     "allow_once" | "allow_always" | "deny_always" | null
   >(null)
@@ -102,19 +106,38 @@ function ToolApprovalDialogContent({
 
   const approvalSourceMessageId = (approval: typeof pending) => resolveApprovalMessageId(approval)
 
+  const syncChatStatusForMessage = (messageId: string | null | undefined) => {
+    const status = deriveChatStatusUpdateForMessage(
+      useChatStore.getState().messages,
+      messageId
+    )
+    if (!status) {
+      clearStatus()
+      return
+    }
+    setStatus(status)
+  }
+
   const applyOptimisticExecutionState = (approval: typeof pending) => {
     const messageId = resolveApprovalMessageId(approval)
-    if (!messageId) return
+    if (!messageId) {
+      clearStatus()
+      return
+    }
 
     const message = useChatStore
       .getState()
       .messages.find((candidate) => candidate.id === messageId)
-    if (!message?.blocks?.length) return
+    if (!message?.blocks?.length) {
+      clearStatus()
+      return
+    }
 
     const nextBlocks = createOptimisticApprovalExecutionBlocks(approval, message.blocks)
     if (nextBlocks !== message.blocks) {
       setMessageBlocks(messageId, nextBlocks)
     }
+    syncChatStatusForMessage(messageId)
   }
 
   const executeApprovedTool = async (
@@ -146,6 +169,7 @@ function ToolApprovalDialogContent({
             )
             if (blocks.length === 0) return
             appendMessageBlocks(messageId, blocks)
+            syncChatStatusForMessage(messageId)
             streamedContinuationApplied = true
           },
         }
@@ -166,10 +190,9 @@ function ToolApprovalDialogContent({
             createLocalChatResumeErrorBlock(approval, resumePayload.error),
           ])
         }
-      }
-
-      if (!messageId) {
-        toast.success(t("toast.approved", { toolName: approval.tool_name }))
+        syncChatStatusForMessage(messageId)
+      } else {
+        clearStatus()
       }
 
       if (approval.meta.execution_token) {
@@ -185,14 +208,11 @@ function ToolApprovalDialogContent({
           })
         } catch (err: unknown) {
           console.error("[ApprovalDialog] Bridge callback failed after approval", err)
-          const errorMessage = err instanceof Error ? err.message : String(err)
-          toast.error(t("toast.executionFailed", { message: errorMessage }))
         }
       }
     } catch (err: unknown) {
       console.error("[ApprovalDialog] Execution failed", err)
       const errorMessage = err instanceof Error ? err.message : String(err)
-      toast.error(t("toast.executionFailed", { message: errorMessage }))
 
       if (isBridgeToolApproval(approval)) {
         const messageId = resolveApprovalMessageId(approval)
@@ -201,6 +221,9 @@ function ToolApprovalDialogContent({
           if (errorBlock) {
             upsertMessageToolResult(messageId, errorBlock)
           }
+          syncChatStatusForMessage(messageId)
+        } else {
+          clearStatus()
         }
         if (approval.meta.execution_token) {
           await bridgeCallTool({
@@ -224,16 +247,6 @@ function ToolApprovalDialogContent({
     setLoadingAction(approvalMode)
     applyOptimisticExecutionState(approval)
     announceBridgeApprovalExecution(approval)
-    if (resolveApprovalMessageId(approval)) {
-      toast.success(
-        t(
-          approvalMode === "allow_always"
-            ? "toast.approvedAlwaysPending"
-            : "toast.approvedPending",
-          { toolName: approval.tool_name }
-        )
-      )
-    }
     clear()
     void executeApprovedTool(approval, approvalMode)
   }
@@ -259,10 +272,12 @@ function ToolApprovalDialogContent({
         if (rejectedBlock) {
           upsertMessageToolResult(messageId, rejectedBlock)
         }
+        syncChatStatusForMessage(messageId)
+      } else {
+        clearStatus()
       }
 
       clear()
-      toast.info(t("toast.deniedAlways"))
 
       if (approval.meta.execution_token) {
         try {
@@ -281,6 +296,7 @@ function ToolApprovalDialogContent({
       }
     } catch (err) {
       console.error("[ApprovalDialog] Reject failed", err)
+      syncChatStatusForMessage(resolveApprovalMessageId(approval))
       clear()
     }
   }

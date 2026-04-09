@@ -8,7 +8,6 @@ import {
 } from "@/lib/chat/bridge-approval-store"
 import { bridgeCallTool } from "@/lib/api/bridge"
 import { rejectDesktopTool, streamDesktopApproveTool } from "@/lib/api/mcp-desktop"
-import { toast } from "sonner"
 import { useChatStore } from "@/store/chat-store"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
 
@@ -84,19 +83,21 @@ jest.mock("@/lib/api/bridge", () => ({
   bridgeCallTool: jest.fn(),
 }))
 
-jest.mock("sonner", () => ({
-  toast: {
-    success: jest.fn(),
-    error: jest.fn(),
-    info: jest.fn(),
-  },
-}))
-
 const mockApproveTool = streamDesktopApproveTool as jest.MockedFunction<
   typeof streamDesktopApproveTool
 >
 const mockRejectTool = rejectDesktopTool as jest.MockedFunction<typeof rejectDesktopTool>
 const mockBridgeCallTool = bridgeCallTool as jest.MockedFunction<typeof bridgeCallTool>
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
 
 describe("ToolApprovalDialog", () => {
   afterEach(() => {
@@ -207,7 +208,6 @@ describe("ToolApprovalDialog", () => {
       },
       execution_token: "exec-3",
     })
-    expect(toast.info).toHaveBeenCalledWith("toast.deniedAlways")
   })
 
   it("writes approved local-chat results back into the matching assistant message", async () => {
@@ -478,6 +478,104 @@ describe("ToolApprovalDialog", () => {
       (block) => block.type === "text" && block.content === "Streamed continuation."
     )
     expect(textBlocks).toHaveLength(1)
+  })
+
+  it("replaces stale approval status with execution and then clears it after approval completes", async () => {
+    const deferred = createDeferred<unknown>()
+    mockApproveTool.mockImplementationOnce(async () => deferred.promise)
+
+    act(() => {
+      useChatStore.setState({
+        statusStage: "render",
+        statusCode: "approval.required",
+        statusMeta: {
+          tool_name: "search_notes",
+          call_id: "call-status-1",
+        },
+        messages: [
+          {
+            id: "assistant-status-1",
+            role: "assistant",
+            content: "",
+            createdAt: 1,
+            blocks: [
+              {
+                id: "call-status-1",
+                type: "tool_call",
+                callId: "call-status-1",
+                toolName: "search_notes",
+                status: "success",
+              } as MessageBlock,
+              {
+                id: "result-status-1",
+                type: "tool_result",
+                callId: "call-status-1",
+                toolName: "search_notes",
+                status: "requires_approval",
+                result: {
+                  status: "REQUIRES_APPROVAL",
+                  approval_token: "approval-status-1",
+                },
+              } as MessageBlock,
+            ],
+          },
+        ],
+      })
+      useBridgeApprovalStore.getState().setPending(
+        createBridgeToolApproval({
+          approval_token: "approval-status-1",
+          tool_name: "search_notes",
+          arguments: {},
+          meta: {
+            call_id: "call-status-1",
+            message_id: "assistant-status-1",
+          },
+        })
+      )
+    })
+
+    render(<ToolApprovalDialog />)
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "actions.approveOnce" }))
+      await Promise.resolve()
+    })
+
+    expect(useChatStore.getState().statusStage).toBe("render")
+    expect(useChatStore.getState().statusCode).toBe("approval.executing")
+
+    await act(async () => {
+      deferred.resolve({
+        status: "LOCAL_CHAT_RESUMED",
+        approved_tool_result: { ok: true },
+        continuation_blocks: [
+          {
+            id: "exec-status-ui-1",
+            type: "ui",
+            viewType: "execution.lifecycle",
+            payload: {
+              schema_version: 1,
+              root_execution_id: "exec-root-status-1",
+              execution_id: "exec-root-status-1",
+              execution_kind: "workflow",
+              execution_status: "integrated",
+            },
+          },
+          {
+            id: "resume-status-text-1",
+            type: "text",
+            content: "Done.",
+          },
+        ],
+      })
+      await Promise.resolve()
+    })
+
+    await waitFor(() => {
+      expect(useChatStore.getState().statusStage).toBeNull()
+      expect(useChatStore.getState().statusCode).toBeNull()
+      expect(useChatStore.getState().statusMeta).toBeNull()
+    })
   })
 
   it("uses assistant blocks instead of legacy assistant content for queued source previews", () => {

@@ -172,6 +172,7 @@ interface ChatStore {
   models: ModelInfo[]
 
   // === 状态信息 ===
+  statusMessageId: string | null
   statusStage: string | null
   statusCode: string | null
   statusMeta: Record<string, unknown> | null
@@ -223,7 +224,12 @@ interface ChatStore {
   setModels: (models: ModelInfo[]) => void
   setIsLoading: (loading: boolean) => void
   setGlobalLoading: (loading: boolean) => void
-  setStatus: (status: { stage?: string | null; code?: string | null; meta?: Record<string, unknown> | null }) => void
+  setStatus: (status: {
+    messageId?: string | null
+    stage?: string | null
+    code?: string | null
+    meta?: Record<string, unknown> | null
+  }) => void
   clearStatus: () => void
   setErrorMessage: (error: string | null) => void
   sendFeedback: (messageId: string, score: number) => Promise<void>
@@ -269,6 +275,7 @@ export const useChatStore = create<ChatStore>()(
       models: [],
 
       // === 状态信息初始值 ===
+      statusMessageId: null,
       statusStage: null,
       statusCode: null,
       statusMeta: null,
@@ -311,6 +318,7 @@ export const useChatStore = create<ChatStore>()(
             pendingTakeover: null,
             pendingTakeoverRequestedAction: null,
             errorMessage: null,
+            statusMessageId: null,
             statusStage: null,
             statusCode: null,
             statusMeta: null,
@@ -649,11 +657,14 @@ export const useChatStore = create<ChatStore>()(
 
       setStatus: (status) =>
         set((state) => {
+          const nextMessageId =
+            status.messageId !== undefined ? status.messageId : state.statusMessageId
           const nextStage = status.stage !== undefined ? status.stage : state.statusStage
           const nextCode = status.code !== undefined ? status.code : state.statusCode
           const nextMeta = status.meta !== undefined ? status.meta : state.statusMeta
 
           if (
+            nextMessageId === state.statusMessageId &&
             nextStage === state.statusStage &&
             nextCode === state.statusCode &&
             isStatusMetaEqual(state.statusMeta, nextMeta)
@@ -662,6 +673,7 @@ export const useChatStore = create<ChatStore>()(
           }
 
           return {
+            statusMessageId: nextMessageId,
             statusStage: nextStage,
             statusCode: nextCode,
             statusMeta: nextMeta,
@@ -670,6 +682,7 @@ export const useChatStore = create<ChatStore>()(
 
       clearStatus: () =>
         set({
+          statusMessageId: null,
           statusStage: null,
           statusCode: null,
           statusMeta: null,
@@ -749,6 +762,7 @@ export const useChatStore = create<ChatStore>()(
           sessionId: null,
           initialized: false,
           errorMessage: null,
+          statusMessageId: null,
           statusStage: null,
           statusCode: null,
           statusMeta: null,
@@ -771,6 +785,7 @@ export const useChatStore = create<ChatStore>()(
           isLoading: false,
           globalLoading: false,
           errorMessage: null,
+          statusMessageId: null,
           statusStage: null,
           statusCode: null,
           statusMeta: null,

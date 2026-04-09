@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useShallow } from "zustand/react/shallow";
 import { useIslandStore } from "./island-store";
@@ -11,6 +11,7 @@ import { resolveIslandChatRequestConfig } from "./island-chat-request";
 import { cn } from "@/lib/utils";
 import { isTauriRuntime as detectTauriRuntime } from "@/lib/runtime/tauri";
 import { useChatStore } from "@/store/chat-store";
+import { useChatRuntimeStore } from "@/store/chat-runtime-store";
 
 type IslandActionCompletedPayload = {
   sessionId?: string | null;
@@ -69,12 +70,16 @@ export function IslandShell() {
     detailKey?: string | null;
   } | null>(null);
   const hydrateFromChat = useIslandStore((s) => s.hydrateFromChat);
-  const chatSnapshot = useChatStore(
+  const chatContentSnapshot = useChatStore(
     useShallow((state) => ({
-      sessionId: state.sessionId,
       config: state.config,
       models: state.models,
       messages: state.messages,
+    })),
+  );
+  const chatRuntimeSnapshot = useChatRuntimeStore(
+    useShallow((state) => ({
+      sessionId: state.sessionId,
       isLoading: state.isLoading,
       globalLoading: state.globalLoading,
       statusStage: state.statusStage,
@@ -82,6 +87,13 @@ export function IslandShell() {
       statusMeta: state.statusMeta,
       errorMessage: state.errorMessage,
     })),
+  );
+  const chatSnapshot = useMemo(
+    () => ({
+      ...chatContentSnapshot,
+      ...chatRuntimeSnapshot,
+    }),
+    [chatContentSnapshot, chatRuntimeSnapshot],
   );
 
   useEffect(() => {
@@ -251,11 +263,11 @@ export function IslandShell() {
         typeof payload?.sessionId === "string" &&
         payload.sessionId.trim().length > 0
           ? payload.sessionId.trim()
-          : useChatStore.getState().sessionId;
+          : useChatRuntimeStore.getState().sessionId;
       if (!sessionId) return;
       try {
-        if (useChatStore.getState().sessionId !== sessionId) {
-          useChatStore.getState().setSessionId(sessionId);
+        if (useChatRuntimeStore.getState().sessionId !== sessionId) {
+          useChatRuntimeStore.getState().setSessionId(sessionId);
         }
         const { fetchConversationHistory } =
           await import("@/lib/api/conversations");

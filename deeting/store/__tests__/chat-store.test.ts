@@ -253,6 +253,64 @@ describe("useChatStore session state", () => {
     expect(message?.blocks?.filter((block) => block.type === "text")).toHaveLength(1)
   })
 
+  it("appendMessageBlocks should place late assistant text before only the trailing active tool chain", () => {
+    useChatStore.setState({
+      messages: [
+        {
+          id: "assistant-6b",
+          role: "assistant",
+          content: "",
+          createdAt: 1,
+          blocks: [
+            {
+              id: "result-1",
+              type: "tool_result",
+              callId: "call-1",
+              toolName: "search_sdk",
+              status: "success",
+              result: { ok: true },
+            } as MessageBlock,
+            {
+              id: "tool-1",
+              type: "tool_call",
+              callId: "call-1",
+              toolName: "search_sdk",
+              status: "success",
+            } as MessageBlock,
+            {
+              id: "tool-2",
+              type: "tool_call",
+              callId: "call-2",
+              toolName: "shell_execute",
+              status: "running",
+            } as MessageBlock,
+          ],
+        },
+      ],
+    })
+
+    useChatStore.getState().appendMessageBlocks("assistant-6b", [
+      { type: "text", content: "I will check the vault first. " } as MessageBlock,
+      { type: "text", content: "Then I will run the shell step." } as MessageBlock,
+    ])
+
+    const message = useChatStore.getState().messages[0]
+    expect(message?.content).toBe("")
+    expect(message?.blocks?.map((block) => block.type)).toEqual([
+      "tool_result",
+      "tool_call",
+      "text",
+      "tool_call",
+    ])
+    expect(message?.blocks?.[0]).toMatchObject({ toolName: "search_sdk" })
+    expect(message?.blocks?.[1]).toMatchObject({ toolName: "search_sdk" })
+    expect(message?.blocks?.[2]).toMatchObject({
+      type: "text",
+      content: "I will check the vault first. Then I will run the shell step.",
+    })
+    expect(message?.blocks?.[3]).toMatchObject({ toolName: "shell_execute" })
+  })
+
   it("appendMessageBlocks should replace matching execution lifecycle blocks by root_execution_id", () => {
     useChatStore.setState({
       messages: [
@@ -375,6 +433,26 @@ describe("useChatStore session state", () => {
       request_id: "req-1",
       trace_id: "trace-1",
     })
+  })
+
+  it("tracks which assistant message owns the live status and clears it cleanly", () => {
+    useChatStore.getState().setStatus({
+      messageId: "assistant-live-1",
+      stage: "render",
+      code: "approval.required",
+      meta: { tool_name: "search_notes" },
+    })
+
+    expect(useChatStore.getState().statusMessageId).toBe("assistant-live-1")
+    expect(useChatStore.getState().statusStage).toBe("render")
+    expect(useChatStore.getState().statusCode).toBe("approval.required")
+
+    useChatStore.getState().clearStatus()
+
+    expect(useChatStore.getState().statusMessageId).toBeNull()
+    expect(useChatStore.getState().statusStage).toBeNull()
+    expect(useChatStore.getState().statusCode).toBeNull()
+    expect(useChatStore.getState().statusMeta).toBeNull()
   })
 
   it("should manage compare candidates without mutating canonical messages", () => {

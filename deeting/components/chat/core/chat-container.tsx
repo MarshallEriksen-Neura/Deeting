@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useSearchParams } from "next/navigation"
-import { useChatStore } from "@/store/chat-store"
+import { useChatRuntimeStore } from "@/store/chat-runtime-store"
 import { isTauriRuntime as detectTauriRuntime } from "@/lib/runtime/tauri"
 import { ChatLayout } from "./chat-layout"
 import { ChatContent } from "./chat-content"
@@ -28,8 +28,8 @@ export function ChatContainer({ agentId }: ChatContainerProps) {
   const searchParams = useSearchParams()
 
   // 从 store 获取状态和 action
-  const initSession = useChatStore((state) => state.initSession)
-  const initialized = useChatStore((state) => state.initialized)
+  const initSession = useChatRuntimeStore((state) => state.initSession)
+  const initialized = useChatRuntimeStore((state) => state.initialized)
 
   // 环境检测
   const isTauriRuntime = detectTauriRuntime()

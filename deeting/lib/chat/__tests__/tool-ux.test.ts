@@ -107,6 +107,20 @@ describe("tool-ux helpers", () => {
       resolveToolStatusDetail("approval.executing", {
         tool_name: "firecrawl_search",
       }),
-    ).toBe("Running Firecrawl Search");
+    ).toBe("Approved, now running Firecrawl Search");
+  });
+
+  it("uses execution target names for approval-required graph status", () => {
+    expect(
+      resolveToolStatusDetail("approval.required", {
+        target_name: "Research Worker",
+      }),
+    ).toBe("Waiting for approval to continue with Research Worker");
+  });
+
+  it("falls back to a generic approval-required label without a tool or target name", () => {
+    expect(resolveToolStatusDetail("approval.required", {})).toBe(
+      "Waiting for your approval",
+    );
   });
 });

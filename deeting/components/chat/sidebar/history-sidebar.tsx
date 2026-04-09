@@ -34,6 +34,7 @@ import { useConversationSessions } from '@/lib/swr/use-conversation-sessions';
 import { archiveConversation, createConversation, unarchiveConversation, renameConversation } from '@/lib/api/conversations';
 import { useI18n } from '@/hooks/use-i18n';
 import { useChatStore } from '@/store/chat-store';
+import { useChatRuntimeStore } from '@/store/chat-runtime-store';
 import { useChatMessagingService } from '@/hooks/chat/use-chat-messaging-service';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/lib/utils';
@@ -62,10 +63,14 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
     typeof document === 'undefined' ? true : document.visibilityState === 'visible'
   );
   
-  const { setMessages, clearAttachments, sessionId, resetSession, setSessionId, setGlobalLoading } = useChatStore(
+  const { setMessages, clearAttachments } = useChatStore(
     useShallow((state) => ({
       setMessages: state.setMessages,
       clearAttachments: state.clearAttachments,
+    }))
+  );
+  const { sessionId, resetSession, setSessionId, setGlobalLoading } = useChatRuntimeStore(
+    useShallow((state) => ({
       sessionId: state.sessionId,
       resetSession: state.resetSession,
       setSessionId: state.setSessionId,

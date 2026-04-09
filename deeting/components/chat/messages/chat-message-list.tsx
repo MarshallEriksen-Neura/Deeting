@@ -16,6 +16,7 @@ interface ChatMessageListProps {
   messages: Message[]
   agent?: ChatAssistant
   isTyping: boolean
+  statusMessageId?: string | null
   streamEnabled: boolean
   statusStage: string | null
   statusCode: string | null
@@ -68,6 +69,7 @@ export function ChatMessageList({
   messages,
   agent,
   isTyping,
+  statusMessageId,
   streamEnabled,
   statusStage,
   statusCode,
@@ -274,20 +276,24 @@ export function ChatMessageList({
         msg.role === "assistant"
           ? deriveAssistantActivityState(msg.blocks)
           : { isActive: false, statusStage: null, statusCode: null, statusMeta: null }
-      const isStreamedActive = msg.id === lastAssistantId && isTyping
+      const activeStatusMessageId =
+        typeof statusMessageId === "string" && statusMessageId.trim().length > 0
+          ? statusMessageId.trim()
+          : lastAssistantId
+      const isStreamedActive = msg.id === activeStatusMessageId && isTyping
       const isMessageActive = isStreamedActive || embeddedActivity.isActive
       const effectiveStatusStage = isStreamedActive
-        ? msg.id === lastAssistantId
+        ? msg.id === activeStatusMessageId
           ? statusStage
           : null
         : embeddedActivity.statusStage
       const effectiveStatusCode = isStreamedActive
-        ? msg.id === lastAssistantId
+        ? msg.id === activeStatusMessageId
           ? statusCode
           : null
         : embeddedActivity.statusCode
       const effectiveStatusMeta = isStreamedActive
-        ? msg.id === lastAssistantId
+        ? msg.id === activeStatusMessageId
           ? statusMeta
           : null
         : embeddedActivity.statusMeta
@@ -316,6 +322,7 @@ export function ChatMessageList({
       messages,
       agent,
       lastAssistantId,
+      statusMessageId,
       isTyping,
       streamEnabled,
       statusStage,

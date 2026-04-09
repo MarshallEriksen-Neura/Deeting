@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from 'next-themes';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useChatStore } from '@/store/chat-store';
+import { useChatRuntimeStore } from '@/store/chat-runtime-store';
 import { useShallow } from 'zustand/react/shallow';
 import { useChatModels } from '@/hooks/use-chat-models';
 import { useI18n } from '@/hooks/use-i18n';
@@ -55,13 +56,6 @@ export default function HUD() {
     setModels,
     setMessages,
     clearAttachments,
-    isLoading,
-    errorMessage,
-    statusCode,
-    statusMeta,
-    resetSession,
-    setSessionId,
-    setGlobalLoading,
   } = useChatStore(
     useShallow((state) => ({
       config: state.config,
@@ -70,6 +64,18 @@ export default function HUD() {
       setModels: state.setModels,
       setMessages: state.setMessages,
       clearAttachments: state.clearAttachments,
+    }))
+  );
+  const {
+    isLoading,
+    errorMessage,
+    statusCode,
+    statusMeta,
+    resetSession,
+    setSessionId,
+    setGlobalLoading,
+  } = useChatRuntimeStore(
+    useShallow((state) => ({
       isLoading: state.isLoading,
       errorMessage: state.errorMessage,
       statusCode: state.statusCode,

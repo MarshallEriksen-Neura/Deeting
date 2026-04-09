@@ -12,6 +12,7 @@ import {
 } from "@/lib/api/conversations"
 import { useChatMessagingService } from "@/hooks/chat/use-chat-messaging-service"
 import { useChatStore } from "@/store/chat-store"
+import { useChatRuntimeStore } from "@/store/chat-runtime-store"
 
 jest.mock("@/hooks/use-i18n", () => ({
   useI18n: () => (key: string) => key,
@@ -68,7 +69,7 @@ describe("useChatMessagingService pending takeover orchestration", () => {
     mockCancelChatCompletion.mockReset()
     mockFinalizeDesktopLocalCompare.mockReset()
     mockFetchConversationHistory.mockReset()
-    useChatStore.getState().resetSession()
+    useChatRuntimeStore.getState().resetSession()
     useChatStore.setState({
       models: [{ id: "model-1", provider_model_id: "model-1" }],
       config: {
@@ -77,7 +78,23 @@ describe("useChatMessagingService pending takeover orchestration", () => {
         topP: 1,
         maxTokens: null,
       },
+    })
+    useChatRuntimeStore.setState({
       sessionId: "session-1",
+      initialized: true,
+      isLoading: false,
+      globalLoading: false,
+      activeMessageId: null,
+      interruptedMessageId: null,
+      statusMessageId: null,
+      statusStage: null,
+      statusCode: null,
+      statusMeta: null,
+      errorMessage: null,
+      historyCursor: null,
+      historyHasMore: false,
+      pendingTakeover: null,
+      pendingTakeoverRequestedAction: null,
     })
   })
 
@@ -86,8 +103,8 @@ describe("useChatMessagingService pending takeover orchestration", () => {
       input: "follow-up prompt",
       attachments: [{ id: "att-1", kind: "image" } as any],
       selectedKnowledgeFileIds: ["doc-1"],
-      isLoading: true,
     })
+    useChatRuntimeStore.setState({ isLoading: true })
 
     const { result } = renderHook(() => useChatMessagingService())
 
@@ -95,7 +112,7 @@ describe("useChatMessagingService pending takeover orchestration", () => {
       result.current.queuePendingTakeoverFromCurrentDraft()
     })
 
-    expect(useChatStore.getState().pendingTakeover).toEqual(
+    expect(useChatRuntimeStore.getState().pendingTakeover).toEqual(
       expect.objectContaining({
         input: "follow-up prompt",
         attachments: [{ id: "att-1", kind: "image" }],
@@ -124,10 +141,9 @@ describe("useChatMessagingService pending takeover orchestration", () => {
         topP: 1,
         maxTokens: null,
       },
-      sessionId: "session-local-1",
       input: "hello desktop",
-      isLoading: false,
     })
+    useChatRuntimeStore.setState({ sessionId: "session-local-1", isLoading: false })
 
     const { result } = renderHook(() => useChatMessagingService())
 
@@ -140,6 +156,81 @@ describe("useChatMessagingService pending takeover orchestration", () => {
     expect(payload?.model).toBe("qwen-local")
     expect(payload?.model_selection_mode).toBe("pool")
     expect(payload?.provider_model_id).toBe("provider-local-1")
+
+    delete windowWithTauri.__TAURI_INTERNALS__
+  })
+
+  it("keeps approval-required status active after a local request pauses for tool approval", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI_INTERNALS__ = {}
+    mockStreamDesktopLocalChatCompletion.mockImplementationOnce(async (_payload, handlers) => {
+      handlers?.onMessage?.({
+        type: "blocks",
+        blocks: [
+          {
+            id: "call-approval-1",
+            type: "tool_call",
+            callId: "call-approval-1",
+            toolName: "shell_execute",
+            status: "running",
+          },
+          {
+            id: "result-approval-1",
+            type: "tool_result",
+            callId: "call-approval-1",
+            toolName: "shell_execute",
+            status: "requires_approval",
+            result: {
+              status: "REQUIRES_APPROVAL",
+              approval_token: "approval-1",
+            },
+          },
+        ],
+      })
+      return ""
+    })
+
+    useChatStore.setState({
+      models: [
+        {
+          id: "qwen-local",
+          provider_model_id: "provider-local-1",
+          request_route: "local_invoke",
+          runtime_source: "desktop_local",
+        } as any,
+      ],
+      config: {
+        model: "qwen-local",
+        temperature: 0.7,
+        topP: 1,
+        maxTokens: null,
+      },
+      input: "check local folder",
+    })
+    useChatRuntimeStore.setState({ sessionId: "session-local-approval-1", isLoading: false })
+
+    const { result } = renderHook(() => useChatMessagingService())
+
+    await act(async () => {
+      await result.current.sendMessage()
+    })
+
+    expect(useChatRuntimeStore.getState().statusStage).toBe("render")
+    expect(useChatRuntimeStore.getState().statusCode).toBe("approval.required")
+    expect(useChatStore.getState().messages.at(-1)?.blocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "tool_call",
+          callId: "call-approval-1",
+          status: "requires_approval",
+        }),
+        expect.objectContaining({
+          type: "tool_result",
+          callId: "call-approval-1",
+          status: "requires_approval",
+        }),
+      ])
+    )
 
     delete windowWithTauri.__TAURI_INTERNALS__
   })
@@ -160,8 +251,8 @@ describe("useChatMessagingService pending takeover orchestration", () => {
 
     useChatStore.setState({
       input: "initial prompt",
-      isLoading: false,
     })
+    useChatRuntimeStore.setState({ isLoading: false })
 
     const { result } = renderHook(() => useChatMessagingService())
 
@@ -205,14 +296,8 @@ describe("useChatMessagingService pending takeover orchestration", () => {
     useChatStore.setState({
       input: "deferred prompt",
       selectedKnowledgeFileIds: ["doc-3"],
-      pendingTakeover: {
-        input: "deferred prompt",
-        attachments: [],
-        selectedKnowledgeFileIds: ["doc-3"],
-        createdAt: 1,
-        updatedAt: 1,
-      },
-      pendingTakeoverRequestedAction: "send_after_step",
+    })
+    useChatRuntimeStore.setState({
       isLoading: true,
     })
 
@@ -221,8 +306,8 @@ describe("useChatMessagingService pending takeover orchestration", () => {
     const { result, rerender } = renderHook(() => useChatMessagingService())
 
     act(() => {
-      result.current.markPendingTakeoverForDeferredSend()
-      useChatStore.getState().setIsLoading(false)
+      result.current.queuePendingTakeoverFromCurrentDraft("send_after_step")
+      useChatRuntimeStore.getState().setIsLoading(false)
     })
     rerender()
 
@@ -245,8 +330,8 @@ describe("useChatMessagingService pending takeover orchestration", () => {
 
     useChatStore.setState({
       input: "initial prompt",
-      isLoading: false,
     })
+    useChatRuntimeStore.setState({ isLoading: false })
 
     const { result } = renderHook(() => useChatMessagingService())
 
@@ -255,7 +340,7 @@ describe("useChatMessagingService pending takeover orchestration", () => {
     })
 
     await waitFor(() => {
-      expect(useChatStore.getState().isLoading).toBe(true)
+      expect(useChatRuntimeStore.getState().isLoading).toBe(true)
       expect(mockStreamChatCompletion).toHaveBeenCalledTimes(1)
     })
 
@@ -281,14 +366,14 @@ describe("useChatMessagingService pending takeover orchestration", () => {
 
     const secondPayload = mockStreamChatCompletion.mock.calls[1]?.[0]
     expect(JSON.stringify(secondPayload?.messages ?? [])).toContain("queued follow-up")
-    expect(useChatStore.getState().pendingTakeover).toBeNull()
-    expect(useChatStore.getState().pendingTakeoverRequestedAction).toBeNull()
+    expect(useChatRuntimeStore.getState().pendingTakeover).toBeNull()
+    expect(useChatRuntimeStore.getState().pendingTakeoverRequestedAction).toBeNull()
     expect(useChatStore.getState().input).toBe("")
     expect(useChatStore.getState().selectedKnowledgeFileIds).toEqual([])
   })
 
   it("cancels the pending takeover without touching the active run", () => {
-    useChatStore.setState({
+    useChatRuntimeStore.setState({
       pendingTakeover: {
         input: "cancel me",
         attachments: [],
@@ -441,7 +526,6 @@ describe("useChatMessagingService pending takeover orchestration", () => {
         topP: 1,
         maxTokens: null,
       },
-      sessionId: "session-1",
       messages: [
         {
           id: "assistant-regen-1",
@@ -458,6 +542,7 @@ describe("useChatMessagingService pending takeover orchestration", () => {
         },
       ],
     })
+    useChatRuntimeStore.setState({ sessionId: "session-1" })
     mockStreamChatCompletion.mockResolvedValueOnce("")
     mockStreamDesktopLocalChatCompletion.mockResolvedValueOnce("")
 
@@ -525,7 +610,7 @@ describe("useChatMessagingService pending takeover orchestration", () => {
     })
 
     await waitFor(() => {
-      expect(useChatStore.getState().isLoading).toBe(true)
+      expect(useChatRuntimeStore.getState().isLoading).toBe(true)
     })
 
     const assistantMessage = useChatStore

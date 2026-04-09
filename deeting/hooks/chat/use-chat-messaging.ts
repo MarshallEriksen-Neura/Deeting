@@ -2,6 +2,7 @@
 
 import { useCallback } from "react"
 import { useChatStore } from "@/store/chat-store"
+import { useChatRuntimeStore } from "@/store/chat-runtime-store"
 import { useChatMessagingService } from "./use-chat-messaging-service"
 import { useI18n } from "@/hooks/use-i18n"
 import { createConversation } from "@/lib/api/conversations"
@@ -17,12 +18,14 @@ export function useChatMessaging({ isTauriRuntime }: UseChatMessagingProps) {
     input,
     attachments,
     config,
+  } = useChatStore()
+  const {
     isLoading,
     errorMessage,
     setErrorMessage,
     sessionId,
     setSessionId,
-  } = useChatStore()
+  } = useChatRuntimeStore()
   const {
     sendMessage: serviceSendMessage,
     pendingTakeover,

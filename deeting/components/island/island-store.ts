@@ -13,6 +13,7 @@ import { extractAssistantTextFromBlocks } from "@/lib/chat/message-blocks";
 import { findUnresolvedToolApprovals } from "@/lib/chat/tool-approval";
 import type { Message } from "@/lib/chat/message-types";
 import { useChatStore } from "@/store/chat-store";
+import { useChatRuntimeStore } from "@/store/chat-runtime-store";
 import { isTauriRuntime as detectTauriRuntime } from "@/lib/runtime/tauri";
 import { resolveIslandChatRequestConfig } from "./island-chat-request";
 import {
@@ -212,15 +213,16 @@ function deriveStatusLabel(snapshot: IslandChatSnapshot, pendingApproval: Island
 
 function getChatSnapshot(): IslandChatSnapshot {
   const chatState = useChatStore.getState();
+  const runtimeState = useChatRuntimeStore.getState();
   return {
-    sessionId: chatState.sessionId,
+    sessionId: runtimeState.sessionId,
     messages: chatState.messages,
-    isLoading: chatState.isLoading,
-    globalLoading: chatState.globalLoading,
-    statusStage: chatState.statusStage,
-    statusCode: chatState.statusCode,
-    statusMeta: chatState.statusMeta,
-    errorMessage: chatState.errorMessage,
+    isLoading: runtimeState.isLoading,
+    globalLoading: runtimeState.globalLoading,
+    statusStage: runtimeState.statusStage,
+    statusCode: runtimeState.statusCode,
+    statusMeta: runtimeState.statusMeta,
+    errorMessage: runtimeState.errorMessage,
   };
 }
 
@@ -235,14 +237,14 @@ async function syncChatHistory(sessionId: string) {
 }
 
 async function ensureSessionId() {
-  const chatState = useChatStore.getState();
-  if (chatState.sessionId) {
-    return chatState.sessionId;
+  const runtimeState = useChatRuntimeStore.getState();
+  if (runtimeState.sessionId) {
+    return runtimeState.sessionId;
   }
 
   const created = await createConversation({
   });
-  useChatStore.getState().setSessionId(created.session_id);
+  useChatRuntimeStore.getState().setSessionId(created.session_id);
   return created.session_id;
 }
 

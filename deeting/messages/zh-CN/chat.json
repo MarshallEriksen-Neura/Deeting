@@ -490,6 +490,8 @@
       "warningTitle": "执行前请确认",
       "warning": "该操作可能修改文件或执行系统命令。仅在你信任当前会话和本次操作时才允许执行。",
       "actions": {
+        "reject": "拒绝",
+        "approve": "批准执行",
         "denyAlways": "始终拒绝",
         "blocking": "正在阻止...",
         "approveOnce": "允许一次",

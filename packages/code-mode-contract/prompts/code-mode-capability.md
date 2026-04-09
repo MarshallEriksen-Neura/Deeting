@@ -10,9 +10,9 @@ Required workflow:
 2) Use installed skill documentation or `search_sdk` recipes to understand available skill bundles.
 3) Use `search_sdk` direct capabilities only for real host tools that are explicitly surfaced as callable.
 4) If installed skill docs or recipe excerpts describe a CLI or terminal workflow, and an allowed callable tool can execute host commands, translate that workflow into the callable command tool instead of failing just because there is no dedicated skill action name.
-5) Produce one coherent Python execution plan.
-6) Execute once with `execute_code_plan`.
-7) Summarize what you changed, the key result, and any blocker or next step.
+5) If you use `execute_code_plan`, send one coherent executable Python script in the required `code` field.
+6) Keep planning implicit or as Python comments inside that script; do not send plan-only prose, markdown, pseudocode, or metadata instead of `code`.
+7) Execute once with `execute_code_plan` per coherent bounded task, then summarize what you changed, the key result, and any blocker or next step.
 
 ## Behavior Rules
 Behavior rules:
@@ -27,6 +27,7 @@ Behavior rules:
 Conventions:
 - Prefer `from deeting_sdk import <tool_name>` only for direct callable host tools.
 - Or call direct tools with `deeting.call_tool(name, **kwargs)`.
+- `execute_code_plan.code` must be a non-empty Python source string that can run as-is in the sandbox.
 - Do NOT assume a skill bundle name is a callable tool name.
 - Do NOT pass positional dict args like `deeting.call_tool(name, {...})`.
 - Before any destructive or high-risk command, verify the current environment and working directory first.

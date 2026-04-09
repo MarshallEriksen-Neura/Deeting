@@ -656,16 +656,27 @@ export function resolveToolStatusDetail(
     statusMeta.target_name.trim().length > 0
       ? statusMeta.target_name.trim()
       : null;
+  const subjectName = toolName ?? targetName;
 
-  if (statusCode === "approval.required" && toolName) {
+  if (statusCode === "approval.required" && subjectName) {
     return translate
-      ? translate("island.toolStatus.pendingApproval", { name: toolName })
-      : `Waiting for approval to continue with ${toolName}`;
+      ? translate("status.detail.approvalRequired", { name: subjectName })
+      : `Waiting for approval to continue with ${subjectName}`;
   }
-  if (statusCode === "approval.executing" && toolName) {
+  if (statusCode === "approval.required") {
     return translate
-      ? translate("island.toolStatus.running", { name: toolName })
-      : `Running ${toolName}`;
+      ? translate("status.detail.approvalRequiredFallback")
+      : "Waiting for your approval";
+  }
+  if (statusCode === "approval.executing" && subjectName) {
+    return translate
+      ? translate("status.detail.approvalExecuting", { name: subjectName })
+      : `Approved, now running ${subjectName}`;
+  }
+  if (statusCode === "approval.executing") {
+    return translate
+      ? translate("status.detail.approvalExecutingFallback")
+      : "Approved, now running the tool";
   }
   if (statusCode === "tool.call" && toolName) {
     return translate

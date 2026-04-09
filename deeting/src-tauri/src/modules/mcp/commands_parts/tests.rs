@@ -3635,23 +3635,7 @@ for raw_line in sys.stdin:
             .await
             .expect("load runtime window");
 
-        assert_eq!(window.messages.len(), 12);
-        assert_eq!(
-            window
-                .messages
-                .first()
-                .and_then(|item| item.content.as_ref())
-                .and_then(|value| value.as_str()),
-            Some("turn-3")
-        );
-        assert_eq!(
-            window
-                .messages
-                .last()
-                .and_then(|item| item.content.as_ref())
-                .and_then(|value| value.as_str()),
-            Some("turn-14")
-        );
+        assert!(window.messages.is_empty());
         assert_eq!(
             window
                 .summary
@@ -3705,13 +3689,14 @@ for raw_line in sys.stdin:
             .load_local_conversation_runtime_window(&session.session_id)
             .await
             .expect("load runtime window");
+        assert!(window.messages.is_empty());
         let summary = window.summary.expect("summary exists");
 
         assert_eq!(
             summary
                 .get("covered_from_turn")
                 .and_then(|value| value.as_i64()),
-            Some(3)
+            Some(1)
         );
         assert_eq!(
             summary
@@ -3723,8 +3708,102 @@ for raw_line in sys.stdin:
             .get("summary_text")
             .and_then(|value| value.as_str())
             .unwrap_or("");
-        assert!(!summary_text.lines().any(|line| line.ends_with("marker-1")));
-        assert!(!summary_text.lines().any(|line| line.ends_with("marker-2")));
+        assert!(summary_text.lines().any(|line| line.ends_with("marker-1")));
+        assert!(summary_text.lines().any(|line| line.ends_with("marker-2")));
+    }
+
+    #[tokio::test]
+    async fn process_summary_job_only_covers_turns_after_previous_summary() {
+        let store = create_test_store("summary-after-previous-summary").await;
+        let session = store
+            .create_local_conversation(LocalConversationCreateRequest {
+                assistant_id: None,
+                title: Some("summary-after-previous-summary".to_string()),
+            })
+            .await
+            .expect("create conversation");
+
+        for turn in 1..=14 {
+            store
+                .append_local_conversation_message(CreateConversationMessageRequest {
+                    session_id: session.session_id.clone(),
+                    role: if turn % 2 == 0 {
+                        "assistant".to_string()
+                    } else {
+                        "user".to_string()
+                    },
+                    content: format!("seed-{turn}"),
+                    name: None,
+                    meta_info: None,
+                    is_truncated: Some(false),
+                    parent_message_id: None,
+                })
+                .await
+                .expect("append seed message");
+        }
+
+        store
+            .persist_local_conversation_summary(
+                &session.session_id,
+                "seed summary",
+                Some("test-worker"),
+            )
+            .await
+            .expect("persist seed summary");
+
+        for turn in 15..=17 {
+            store
+                .append_local_conversation_message(CreateConversationMessageRequest {
+                    session_id: session.session_id.clone(),
+                    role: if turn % 2 == 0 {
+                        "assistant".to_string()
+                    } else {
+                        "user".to_string()
+                    },
+                    content: format!("fresh-{turn}"),
+                    name: None,
+                    meta_info: None,
+                    is_truncated: Some(false),
+                    parent_message_id: None,
+                })
+                .await
+                .expect("append fresh message");
+        }
+
+        store
+            .enqueue_local_conversation_summary_job(&session.session_id, "test")
+            .await
+            .expect("enqueue second summary job");
+
+        process_next_local_conversation_summary_job_with_store(&store)
+            .await
+            .expect("process second summary job");
+
+        let window = store
+            .load_local_conversation_runtime_window(&session.session_id)
+            .await
+            .expect("load filtered runtime window");
+        assert!(window.messages.is_empty());
+
+        let summary = window.summary.expect("summary exists");
+        assert_eq!(
+            summary
+                .get("covered_from_turn")
+                .and_then(|value| value.as_i64()),
+            Some(15)
+        );
+        assert_eq!(
+            summary
+                .get("covered_to_turn")
+                .and_then(|value| value.as_i64()),
+            Some(17)
+        );
+        let summary_text = summary
+            .get("summary_text")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        assert!(summary_text.contains("fresh-15"));
+        assert!(!summary_text.contains("seed-14"));
     }
 
     #[cfg(not(target_os = "windows"))]

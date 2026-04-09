@@ -172,20 +172,24 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
     }, [parts]);
 
     const { shouldGroupTools, toolCallEntries, firstToolCallIndex } = useMemo(() => {
-      const entries: Array<{ part: MessageToolCallBlock; index: number }> = [];
-      parts.forEach((part, idx) => {
-        if (part.type === "tool_call") {
-          entries.push({ part, index: idx });
+      const trailingEntries: Array<{ part: MessageToolCallBlock; index: number }> = [];
+
+      for (let idx = parts.length - 1; idx >= 0; idx -= 1) {
+        const part = parts[idx];
+        if (part.type !== "tool_call") {
+          break;
         }
-      });
-      const areToolCallsContiguous = entries.every(
-        (entry, index) =>
-          index === 0 || entry.index === entries[index - 1].index + 1,
-      );
+        if (part.status !== "running" && part.status !== "requires_approval") {
+          break;
+        }
+        trailingEntries.unshift({ part, index: idx });
+      }
+
       return {
-        shouldGroupTools: isActive && entries.length > 1 && areToolCallsContiguous,
-        toolCallEntries: entries,
-        firstToolCallIndex: entries.length > 0 ? entries[0].index : -1,
+        shouldGroupTools: isActive && trailingEntries.length > 1,
+        toolCallEntries: trailingEntries,
+        firstToolCallIndex:
+          trailingEntries.length > 0 ? trailingEntries[0].index : -1,
       };
     }, [parts, isActive]);
 
@@ -274,6 +278,21 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
 
                 if (part.type === "tool_call") {
                   if (shouldGroupTools) {
+                    if (index < firstToolCallIndex) {
+                      return (
+                        <AnimatedBlock key={`tool-${index}`}>
+                          <ToolCallBlock
+                            messageId={messageId}
+                            callId={part.callId}
+                            name={part.toolName}
+                            args={part.toolArgs}
+                            status={part.status}
+                            resultBlock={part.callId ? resultMap.get(part.callId) : undefined}
+                            uiBlocks={part.callId ? uiBlocksByCallId.get(part.callId) : undefined}
+                          />
+                        </AnimatedBlock>
+                      );
+                    }
                     if (index === firstToolCallIndex) {
                       return (
                         <AnimatedBlock key="tool-group">

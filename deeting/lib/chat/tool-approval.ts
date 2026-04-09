@@ -65,6 +65,12 @@ function asStringArray(value: unknown): string[] | undefined {
   return items.length > 0 ? items : undefined
 }
 
+function hasExplicitResolvedToolResultStatus(block: ToolResultBlock) {
+  const normalizedStatus =
+    typeof block.status === "string" ? block.status.trim().toLowerCase() : ""
+  return normalizedStatus === "success" || normalizedStatus === "error"
+}
+
 function describeBrowserTarget(value: unknown): string {
   const target = toRecord(value)
   if (!target) return "the targeted element in the browser"
@@ -238,6 +244,7 @@ export function buildBridgeToolApprovalFromMessageBlock(
 ): BridgeToolPendingApproval | null {
   if (block.type !== "tool_result") return null
   if (!block.callId || block.callId.trim().length === 0) return null
+  if (hasExplicitResolvedToolResultStatus(block)) return null
 
   return buildBridgeToolApprovalFromResult(block.result, {
     tool_name: block.toolName,
@@ -267,6 +274,9 @@ function isApprovalToolResultBlock(
   if (!block || block.type !== "tool_result") return false
   if (typeof block.status === "string" && block.status.trim().toLowerCase() === "requires_approval") {
     return true
+  }
+  if (hasExplicitResolvedToolResultStatus(block)) {
+    return false
   }
   return extractToolApprovalPayload(block.result) !== null
 }
@@ -406,8 +416,7 @@ export function createOptimisticApprovalExecutionBlocks(
 
   for (const block of blocks) {
     if (block.type === "tool_result" && block.callId === callId) {
-      const payload = extractToolApprovalPayload(block.result)
-      if (payload?.approval_token === approval.approval_token) {
+      if (isApprovalToolResultBlock(block)) {
         changed = true
         continue
       }

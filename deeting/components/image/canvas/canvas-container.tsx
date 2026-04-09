@@ -5,6 +5,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { Loader2, X, Download, Maximize2, Monitor } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useChatStore } from '@/store/chat-store';
+import { useChatRuntimeStore } from '@/store/chat-runtime-store';
 import { useArtifactStore } from '@/store/artifact-store';
 import { useChatMessagingService } from '@/hooks/chat/use-chat-messaging-service';
 import { useI18n } from '@/hooks/use-i18n';
@@ -148,14 +149,17 @@ export default function Canvas() {
   const {
     messages,
     streamEnabled,
+  } = useChatStore(useShallow((state) => ({
+    messages: state.messages,
+    streamEnabled: state.streamEnabled,
+  })));
+  const {
     isLoading,
     historyHasMore,
     statusStage,
     statusCode,
     statusMeta,
-  } = useChatStore(useShallow((state) => ({
-    messages: state.messages,
-    streamEnabled: state.streamEnabled,
+  } = useChatRuntimeStore(useShallow((state) => ({
     isLoading: state.isLoading,
     historyHasMore: state.historyHasMore,
     statusStage: state.statusStage,

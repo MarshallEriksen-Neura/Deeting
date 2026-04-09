@@ -473,6 +473,8 @@
       "warningTitle": "Review before continuing",
       "warning": "This action may modify files or execute system commands. Only allow it if you trust the current conversation and this specific request.",
       "actions": {
+        "reject": "Reject",
+        "approve": "Approve",
         "denyAlways": "Always block",
         "blocking": "Blocking...",
         "approveOnce": "Allow once",

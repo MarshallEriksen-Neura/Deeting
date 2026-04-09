@@ -97,7 +97,7 @@ describe("findLatestUnresolvedToolApproval", () => {
             type: "tool_result",
             callId: "call-2",
             toolName: "browser_type",
-            status: "success",
+            status: "requires_approval",
             result: {
               status: "REQUIRES_APPROVAL",
               approval_token: "approval-2",
@@ -123,6 +123,60 @@ describe("findLatestUnresolvedToolApproval", () => {
         execution_graph_tool_node_id: "tool_call:call-2",
       },
     })
+  })
+
+  it("ignores stale approval payloads once the block itself is marked success", () => {
+    const messages: Message[] = [
+      {
+        id: "assistant-approved-stale",
+        role: "assistant",
+        content: "",
+        createdAt: 1,
+        blocks: [
+          {
+            id: "tool-result-approved-stale-1",
+            type: "tool_result",
+            callId: "call-stale-1",
+            toolName: "shell_execute",
+            status: "success",
+            result: {
+              status: "REQUIRES_APPROVAL",
+              approval_token: "approval-stale-1",
+              ok: true,
+            },
+          },
+        ],
+      },
+    ]
+
+    expect(findLatestUnresolvedToolApproval(messages)).toBeNull()
+  })
+
+  it("ignores stale approval payloads once the block itself is marked error", () => {
+    const messages: Message[] = [
+      {
+        id: "assistant-error-stale",
+        role: "assistant",
+        content: "",
+        createdAt: 1,
+        blocks: [
+          {
+            id: "tool-result-error-stale-1",
+            type: "tool_result",
+            callId: "call-error-stale-1",
+            toolName: "shell_execute",
+            status: "error",
+            result: {
+              status: "REQUIRES_APPROVAL",
+              approval_token: "approval-error-stale-1",
+              error: "pending tool call not found",
+            },
+          },
+        ],
+      },
+    ]
+
+    expect(findLatestUnresolvedToolApproval(messages)).toBeNull()
   })
 })
 

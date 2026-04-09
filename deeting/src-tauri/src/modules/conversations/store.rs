@@ -59,6 +59,26 @@ fn local_conversation_row_token_estimate(row: &SqliteRow) -> i64 {
     row.try_get::<i64, _>("token_estimate").unwrap_or(0).max(0)
 }
 
+fn local_conversation_row_turn_index(row: &SqliteRow) -> i64 {
+    row.try_get::<i64, _>("turn_index").unwrap_or(0)
+}
+
+fn filter_local_rows_outside_summary_coverage(
+    rows: Vec<SqliteRow>,
+    summary_coverage: Option<(i64, i64)>,
+) -> Vec<SqliteRow> {
+    let Some((covered_from_turn, covered_to_turn)) = summary_coverage else {
+        return rows;
+    };
+
+    rows.into_iter()
+        .filter(|row| {
+            let turn_index = local_conversation_row_turn_index(row);
+            turn_index < covered_from_turn || turn_index > covered_to_turn
+        })
+        .collect()
+}
+
 fn trim_local_active_window_rows(rows: Vec<SqliteRow>) -> Vec<SqliteRow> {
     let mut selected_rows = Vec::new();
     let mut total_tokens = 0_i64;
@@ -76,6 +96,47 @@ fn trim_local_active_window_rows(rows: Vec<SqliteRow>) -> Vec<SqliteRow> {
 
     selected_rows.reverse();
     selected_rows
+}
+
+fn select_local_active_window_rows(
+    rows: Vec<SqliteRow>,
+    summary_coverage: Option<(i64, i64)>,
+) -> Vec<SqliteRow> {
+    trim_local_active_window_rows(filter_local_rows_outside_summary_coverage(
+        rows,
+        summary_coverage,
+    ))
+}
+
+fn sum_local_conversation_row_tokens(rows: &[SqliteRow]) -> i64 {
+    rows.iter().fold(0_i64, |acc, row| {
+        acc.saturating_add(local_conversation_row_token_estimate(row))
+    })
+}
+
+async fn fetch_local_summary_row_by_version<'e, E>(
+    executor: E,
+    session_id: &str,
+    version: i64,
+) -> Result<Option<SqliteRow>, McpError>
+where
+    E: sqlx::Executor<'e, Database = Sqlite>,
+{
+    sqlx::query(
+        r#"
+        SELECT
+          id, version, summary_text, covered_from_turn, covered_to_turn,
+          token_estimate, summarizer_model, created_at, updated_at
+        FROM conversation_summary
+        WHERE session_id = ? AND version = ?
+        LIMIT 1;
+        "#,
+    )
+    .bind(session_id)
+    .bind(version)
+    .fetch_optional(executor)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))
 }
 
 fn conversation_json_text(value: Option<&Value>) -> Result<Option<String>, McpError> {
@@ -804,6 +865,60 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
 }
 
 impl McpStore {
+    async fn compute_local_conversation_runtime_tokens_tx(
+        &self,
+        tx: &mut sqlx::Transaction<'_, Sqlite>,
+        session_id: &str,
+    ) -> Result<i64, McpError> {
+        let session_row = sqlx::query(
+            r#"
+            SELECT last_summary_version
+            FROM conversation_session
+            WHERE id = ?
+            LIMIT 1;
+            "#,
+        )
+        .bind(session_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?
+        .ok_or_else(|| McpError::NotFound("conversation session not found".to_string()))?;
+
+        let last_summary_version = session_row
+            .try_get::<i64, _>("last_summary_version")
+            .unwrap_or(0);
+        let summary_coverage = if last_summary_version > 0 {
+            fetch_local_summary_row_by_version(&mut **tx, session_id, last_summary_version)
+                .await?
+                .and_then(|row| {
+                    Some((
+                        row.try_get::<i64, _>("covered_from_turn").ok()?,
+                        row.try_get::<i64, _>("covered_to_turn").ok()?,
+                    ))
+                })
+        } else {
+            None
+        };
+
+        let recent_rows = sqlx::query(
+            r#"
+            SELECT turn_index, token_estimate
+            FROM conversation_message
+            WHERE session_id = ? AND is_deleted = 0
+            ORDER BY turn_index DESC
+            LIMIT ?;
+            "#,
+        )
+        .bind(session_id)
+        .bind(LOCAL_CONVERSATION_ACTIVE_WINDOW_TURN_CAP_INTERNAL)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let active_rows = select_local_active_window_rows(recent_rows, summary_coverage);
+        Ok(sum_local_conversation_row_tokens(&active_rows))
+    }
+
     pub async fn finalize_local_compare_winner(
         &self,
         request: LocalConversationCompareFinalizeRequest,
@@ -2265,20 +2380,15 @@ impl McpStore {
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
 
+            let runtime_window_tokens = self
+                .compute_local_conversation_runtime_tokens_tx(&mut tx, &normalized_session_id)
+                .await?;
+
             sqlx::query(
                 r#"
                 UPDATE conversation_session
                 SET message_count = CASE WHEN message_count > 0 THEN message_count - 1 ELSE 0 END,
-                    total_tokens = COALESCE((
-                        SELECT SUM(token_estimate)
-                        FROM (
-                            SELECT token_estimate
-                            FROM conversation_message
-                            WHERE session_id = ? AND is_deleted = 0
-                            ORDER BY turn_index DESC
-                            LIMIT ?
-                        )
-                    ), 0),
+                    total_tokens = ?,
                     last_summary_version = 0,
                     summarizing = 0,
                     summary_job_id = '',
@@ -2288,8 +2398,7 @@ impl McpStore {
                 WHERE id = ?;
                 "#,
             )
-            .bind(&normalized_session_id)
-            .bind(LOCAL_CONVERSATION_ACTIVE_WINDOW_TURN_CAP_INTERNAL)
+            .bind(runtime_window_tokens)
             .bind(&now)
             .bind(&now)
             .bind(&normalized_session_id)
@@ -2530,20 +2639,15 @@ impl McpStore {
                 .await
                 .map_err(|err| McpError::Storage(err.to_string()))?;
 
+                let runtime_window_tokens = self
+                    .compute_local_conversation_runtime_tokens_tx(&mut tx, &normalized_session_id)
+                    .await?;
+
                 sqlx::query(
                     r#"
                     UPDATE conversation_session
                     SET message_count = CASE WHEN message_count > 0 THEN message_count - 1 ELSE 0 END,
-                        total_tokens = COALESCE((
-                            SELECT SUM(token_estimate)
-                            FROM (
-                                SELECT token_estimate
-                                FROM conversation_message
-                                WHERE session_id = ? AND is_deleted = 0
-                                ORDER BY turn_index DESC
-                                LIMIT ?
-                            )
-                        ), 0),
+                        total_tokens = ?,
                         last_summary_version = 0,
                         summarizing = 0,
                         summary_job_id = '',
@@ -2553,8 +2657,7 @@ impl McpStore {
                     WHERE id = ?;
                     "#,
                 )
-                .bind(&normalized_session_id)
-                .bind(LOCAL_CONVERSATION_ACTIVE_WINDOW_TURN_CAP_INTERNAL)
+                .bind(runtime_window_tokens)
                 .bind(&now)
                 .bind(&now)
                 .bind(&normalized_session_id)
@@ -2660,6 +2763,36 @@ impl McpStore {
         .ok_or_else(|| McpError::NotFound("conversation session not found".to_string()))?;
 
         let assistant_id: Option<String> = session_row.try_get("assistant_id")?;
+        let last_summary_version: i64 = session_row.try_get("last_summary_version").unwrap_or(0);
+        let summary_row = if last_summary_version > 0 {
+            fetch_local_summary_row_by_version(
+                &self.pool,
+                &normalized_session_id,
+                last_summary_version,
+            )
+            .await?
+        } else {
+            None
+        };
+        let summary_coverage = summary_row.as_ref().and_then(|row| {
+            Some((
+                row.try_get::<i64, _>("covered_from_turn").ok()?,
+                row.try_get::<i64, _>("covered_to_turn").ok()?,
+            ))
+        });
+        let summary = summary_row.map(|row| {
+            serde_json::json!({
+                "id": row.try_get::<String, _>("id").ok(),
+                "version": row.try_get::<i64, _>("version").ok(),
+                "summary_text": row.try_get::<String, _>("summary_text").ok(),
+                "covered_from_turn": row.try_get::<i64, _>("covered_from_turn").ok(),
+                "covered_to_turn": row.try_get::<i64, _>("covered_to_turn").ok(),
+                "token_estimate": row.try_get::<i64, _>("token_estimate").ok().unwrap_or(0),
+                "summarizer_model": row.try_get::<Option<String>, _>("summarizer_model").ok().flatten(),
+                "created_at": row.try_get::<String, _>("created_at").ok(),
+                "updated_at": row.try_get::<String, _>("updated_at").ok(),
+            })
+        });
 
         let recent_rows = sqlx::query(
             r#"
@@ -2676,8 +2809,8 @@ impl McpStore {
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
-        let rows = trim_local_active_window_rows(recent_rows);
-        if rows.is_empty() {
+        let rows = select_local_active_window_rows(recent_rows, summary_coverage);
+        if rows.is_empty() && summary.is_none() {
             return Err(McpError::validation("conversation has no messages"));
         }
 
@@ -2698,41 +2831,6 @@ impl McpStore {
                 },
             });
         }
-
-        let last_summary_version: i64 = session_row.try_get("last_summary_version").unwrap_or(0);
-        let summary = if last_summary_version > 0 {
-            let summary_row = sqlx::query(
-                r#"
-                SELECT
-                  id, version, summary_text, covered_from_turn, covered_to_turn,
-                  token_estimate, summarizer_model, created_at, updated_at
-                FROM conversation_summary
-                WHERE session_id = ? AND version = ?
-                LIMIT 1;
-                "#,
-            )
-            .bind(&normalized_session_id)
-            .bind(last_summary_version)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(|err| McpError::Storage(err.to_string()))?;
-
-            summary_row.map(|row| {
-                serde_json::json!({
-                    "id": row.try_get::<String, _>("id").ok(),
-                    "version": row.try_get::<i64, _>("version").ok(),
-                    "summary_text": row.try_get::<String, _>("summary_text").ok(),
-                    "covered_from_turn": row.try_get::<i64, _>("covered_from_turn").ok(),
-                    "covered_to_turn": row.try_get::<i64, _>("covered_to_turn").ok(),
-                    "token_estimate": row.try_get::<i64, _>("token_estimate").ok().unwrap_or(0),
-                    "summarizer_model": row.try_get::<Option<String>, _>("summarizer_model").ok().flatten(),
-                    "created_at": row.try_get::<String, _>("created_at").ok(),
-                    "updated_at": row.try_get::<String, _>("updated_at").ok(),
-                })
-            })
-        } else {
-            None
-        };
 
         let meta = Some(serde_json::json!({
             "title": session_row.try_get::<Option<String>, _>("title").ok().flatten(),
@@ -2906,26 +3004,10 @@ impl McpStore {
         .await
         .map_err(|err| storage_step_error("insert_message", err))?;
 
-        let window_tokens_row = sqlx::query(
-            r#"
-            SELECT COALESCE(SUM(token_estimate), 0) AS total_tokens
-            FROM (
-              SELECT token_estimate
-              FROM conversation_message
-              WHERE session_id = ? AND is_deleted = 0
-              ORDER BY turn_index DESC
-              LIMIT ?
-            );
-            "#,
-        )
-        .bind(&session_id)
-        .bind(LOCAL_CONVERSATION_ACTIVE_WINDOW_TURN_CAP_INTERNAL)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|err| storage_step_error("compute_window_tokens", err))?;
-        let window_tokens = window_tokens_row
-            .try_get::<i64, _>("total_tokens")
-            .unwrap_or(0);
+        let window_tokens = self
+            .compute_local_conversation_runtime_tokens_tx(&mut tx, &session_id)
+            .await
+            .map_err(|err| storage_step_error("compute_window_tokens", err))?;
 
         sqlx::query(
             r#"
@@ -3304,9 +3386,37 @@ impl McpStore {
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
+        let current_version: i64 = session_row.try_get("last_summary_version").unwrap_or(0);
+        let (previous_summary_id, previous_summary_coverage) = if current_version > 0 {
+            let row = fetch_local_summary_row_by_version(
+                &mut *tx,
+                &normalized_session_id,
+                current_version,
+            )
+            .await?;
+            (
+                row.as_ref()
+                    .and_then(|item| item.try_get::<String, _>("id").ok()),
+                row.and_then(|item| {
+                    Some((
+                        item.try_get::<i64, _>("covered_from_turn").ok()?,
+                        item.try_get::<i64, _>("covered_to_turn").ok()?,
+                    ))
+                }),
+            )
+        } else {
+            (None, None)
+        };
+
+        let recent_message_rows = filter_local_rows_outside_summary_coverage(
+            recent_message_rows,
+            previous_summary_coverage,
+        );
         let message_rows = trim_local_active_window_rows(recent_message_rows);
         if message_rows.is_empty() {
-            return Err(McpError::validation("conversation has no messages"));
+            return Err(McpError::validation(
+                "conversation summary has no uncovered runtime messages",
+            ));
         }
 
         let first_row = message_rows.first().ok_or_else(|| {
@@ -3321,31 +3431,8 @@ impl McpStore {
         let covered_from_turn: i64 = first_row.try_get("turn_index")?;
         let covered_to_turn: i64 = last_row.try_get("turn_index")?;
 
-        let token_estimate = message_rows.iter().fold(0_i64, |acc, row| {
-            acc + row.try_get::<i64, _>("token_estimate").unwrap_or(0)
-        });
-
-        let current_version: i64 = session_row.try_get("last_summary_version").unwrap_or(0);
+        let token_estimate = sum_local_conversation_row_tokens(&message_rows);
         let new_version = current_version.max(0) + 1;
-
-        let previous_summary_id = if current_version > 0 {
-            let row = sqlx::query(
-                r#"
-                SELECT id
-                FROM conversation_summary
-                WHERE session_id = ? AND version = ?
-                LIMIT 1;
-                "#,
-            )
-            .bind(&normalized_session_id)
-            .bind(current_version)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(|err| McpError::Storage(err.to_string()))?;
-            row.and_then(|item| item.try_get::<String, _>("id").ok())
-        } else {
-            None
-        };
 
         let summary_id = Uuid::new_v4().to_string();
         sqlx::query(
@@ -3388,7 +3475,7 @@ impl McpStore {
             "#,
         )
         .bind(new_version)
-        .bind(token_estimate)
+        .bind(0_i64)
         .bind(&now)
         .bind(&now)
         .bind(&normalized_session_id)

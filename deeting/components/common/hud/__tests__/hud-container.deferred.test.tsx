@@ -185,6 +185,28 @@ describe("HUD deferred surfaces", () => {
           setGlobalLoading: jest.fn(),
         }),
       }))
+      jest.doMock("@/store/chat-runtime-store", () => ({
+        useChatRuntimeStore: () => ({
+          isLoading: false,
+          errorMessage: null,
+          statusCode: null,
+          statusMeta: null,
+          resetSession: jest.fn(),
+          setSessionId: jest.fn(),
+          setGlobalLoading: jest.fn(),
+        }),
+      }))
+      jest.doMock("@/store/chat-runtime-store", () => ({
+        useChatRuntimeStore: () => ({
+          isLoading: false,
+          errorMessage: null,
+          statusCode: null,
+          statusMeta: null,
+          resetSession: jest.fn(),
+          setSessionId: jest.fn(),
+          setGlobalLoading: jest.fn(),
+        }),
+      }))
       jest.doMock("@/lib/runtime/tauri", () => ({
         isTauriRuntime: () => false,
       }))

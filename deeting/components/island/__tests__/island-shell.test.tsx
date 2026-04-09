@@ -3,9 +3,12 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 
 import type { Message } from "@/lib/chat/message-types";
 import { useChatStore } from "@/store/chat-store";
+import { useChatRuntimeStore } from "@/store/chat-runtime-store";
 
 import { IslandShell } from "../island-shell";
 import { useIslandStore } from "../island-store";
+
+const defaultHydrateFromChat = useIslandStore.getState().hydrateFromChat;
 
 jest.mock("framer-motion", () => {
   type MockMotionDivProps = React.ComponentPropsWithoutRef<"div"> &
@@ -145,9 +148,14 @@ function seedChatState(includeApproval = false) {
           ]
         : []),
     ] as unknown as Message[],
+  });
+  useChatRuntimeStore.setState({
+    sessionId: "session-1",
     isLoading: false,
     globalLoading: false,
+    statusStage: null,
     statusCode: null,
+    statusMeta: null,
     errorMessage: null,
   });
 }
@@ -155,6 +163,23 @@ function seedChatState(includeApproval = false) {
 describe("IslandShell", () => {
   beforeEach(() => {
     seedChatState(false);
+    useChatRuntimeStore.setState({
+      sessionId: "session-1",
+      initialized: false,
+      isLoading: false,
+      globalLoading: false,
+      activeMessageId: null,
+      interruptedMessageId: null,
+      statusMessageId: null,
+      statusStage: null,
+      statusCode: null,
+      statusMeta: null,
+      errorMessage: null,
+      historyCursor: null,
+      historyHasMore: false,
+      pendingTakeover: null,
+      pendingTakeoverRequestedAction: null,
+    });
     useIslandStore.setState({
       mode: "collapsed",
       statusLabel: "Idle",
@@ -168,6 +193,7 @@ describe("IslandShell", () => {
       statusCode: null,
       statusMeta: null,
       stageHistory: [],
+      hydrateFromChat: defaultHydrateFromChat,
     });
   });
 
@@ -175,6 +201,21 @@ describe("IslandShell", () => {
     render(<IslandShell />);
     expect(screen.getByText("island.status.ready")).toBeInTheDocument();
     expect(screen.getByText("Q3 planning draft")).toBeInTheDocument();
+  });
+
+  it("does not re-hydrate when only island state changes", () => {
+    const originalHydrateFromChat = useIslandStore.getState().hydrateFromChat;
+    const hydrateFromChatSpy = jest.fn(originalHydrateFromChat);
+    useIslandStore.setState({ hydrateFromChat: hydrateFromChatSpy });
+
+    render(<IslandShell />);
+    expect(hydrateFromChatSpy).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      useIslandStore.getState().expand();
+    });
+
+    expect(hydrateFromChatSpy).toHaveBeenCalledTimes(1);
   });
 
   it("expands into a task-oriented island layout", () => {
@@ -227,7 +268,7 @@ describe("IslandShell", () => {
   });
 
   it("shows live progress detail when chat status is active", () => {
-    useChatStore.setState({
+    useChatRuntimeStore.setState({
       statusStage: "remember",
       statusCode: "context.loaded",
       statusMeta: { count: 3, has_summary: true },
@@ -245,7 +286,7 @@ describe("IslandShell", () => {
   });
 
   it("humanizes running tool activity inside island progress", () => {
-    useChatStore.setState({
+    useChatRuntimeStore.setState({
       statusStage: "render",
       statusCode: "approval.executing",
       statusMeta: { tool_name: "firecrawl_search" },
@@ -255,14 +296,14 @@ describe("IslandShell", () => {
 
     expect(screen.getByText("status.flow.render")).toBeInTheDocument();
     expect(
-      screen.getByText('island.toolStatus.running:{"name":"Firecrawl Search"}'),
+      screen.getByText('status.detail.approvalExecuting:{"name":"Firecrawl Search"}'),
     ).toBeInTheDocument();
   });
 
   it("auto-collapses after a task completes", () => {
     jest.useFakeTimers();
 
-    useChatStore.setState({
+    useChatRuntimeStore.setState({
       statusStage: "render",
       statusCode: "approval.executing",
       statusMeta: { tool_name: "firecrawl_search" },
@@ -272,7 +313,7 @@ describe("IslandShell", () => {
     render(<IslandShell />);
 
     act(() => {
-      useChatStore.setState({
+      useChatRuntimeStore.setState({
         statusStage: null,
         statusCode: null,
         statusMeta: null,

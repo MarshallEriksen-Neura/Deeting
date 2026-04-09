@@ -98,6 +98,13 @@ async fn process_next_local_conversation_summary_job_inner(
                     job_context, err
                 ))
             })?;
+        if window.messages.is_empty() {
+            log::info!(
+                "summary worker step=skip_empty_runtime_window {}",
+                job_context
+            );
+            return Ok::<(), McpError>(());
+        }
         let model_summary = if let Some(app_state) = app_state {
             match generate_local_conversation_summary_with_secretary_model(
                 app_state,
