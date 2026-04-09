@@ -13,6 +13,7 @@ use crate::modules::mcp::store::McpStore;
 use crate::state::AppState;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use std::collections::BTreeSet;
 use std::path::Path;
 use tauri::Manager;
 use time::OffsetDateTime;
@@ -120,6 +121,15 @@ pub(crate) async fn find_best_local_asset_match_with_query_vector(
     ));
     let feedback_context =
         build_local_asset_feedback_context(store, &normalized_query, session_id).await;
+    let query_affinity_targets = feedback_context
+        .query_affinity
+        .iter()
+        .map(|item| item.target_name.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty())
+        .collect::<BTreeSet<_>>();
+    if bm25.is_empty() && query_affinity_targets.is_empty() {
+        return Ok(None);
+    }
     let feedback = normalize_score_map(
         assets
             .iter()
@@ -180,6 +190,9 @@ pub(crate) async fn find_best_local_asset_match_with_query_vector(
         let key = record.asset_id.trim().to_ascii_lowercase();
         let score = fused.get(&key).copied().unwrap_or(0.0);
         if score <= 0.0 {
+            continue;
+        }
+        if !asset_candidate_has_grounded_recall_support(&key, &bm25, &query_affinity_targets) {
             continue;
         }
 
@@ -590,6 +603,14 @@ fn normalize_match_text(input: &str) -> String {
         .to_lowercase()
 }
 
+fn asset_candidate_has_grounded_recall_support(
+    asset_key: &str,
+    lexical_scores: &std::collections::HashMap<String, f64>,
+    query_affinity_targets: &BTreeSet<String>,
+) -> bool {
+    lexical_scores.contains_key(asset_key) || query_affinity_targets.contains(asset_key)
+}
+
 fn render_asset_record_from_block(
     session_id: &str,
     turn_index: i64,
@@ -814,8 +835,8 @@ mod tests {
             html_entry: Some("bundles/weather/index.html".to_string()),
             data_mode: Some("ai_data".to_string()),
             match_hints_json: Some("[\"天气\",\"weather\"]".to_string()),
-            props_hint_json: None,
-            output_example_json: None,
+            props_hint_json: Some("[\"location\"]".to_string()),
+            output_example_json: Some("{\"temp_c\":22}".to_string()),
             latest_snapshot_html: None,
             latest_render_data_json: None,
             refresh_spec_json: None,
@@ -835,6 +856,28 @@ mod tests {
         assert!(text.contains("match_hints: 天气, weather"));
         assert!(text.contains("props_hint: location"));
         assert!(text.contains("\"temp_c\":22"));
+    }
+
+    #[test]
+    fn asset_candidate_requires_lexical_or_query_affinity_support() {
+        let lexical = std::collections::HashMap::from([("weather-ios18-card".to_string(), 1.0)]);
+        let query_affinity_targets = BTreeSet::from(["stocks-market-card".to_string()]);
+
+        assert!(asset_candidate_has_grounded_recall_support(
+            "weather-ios18-card",
+            &lexical,
+            &BTreeSet::new()
+        ));
+        assert!(asset_candidate_has_grounded_recall_support(
+            "stocks-market-card",
+            &std::collections::HashMap::new(),
+            &query_affinity_targets
+        ));
+        assert!(!asset_candidate_has_grounded_recall_support(
+            "wiki-card",
+            &std::collections::HashMap::new(),
+            &BTreeSet::new()
+        ));
     }
 
     #[test]

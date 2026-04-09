@@ -921,7 +921,7 @@ for raw_line in sys.stdin:
         let mut case_results = Vec::with_capacity(cases.len());
 
         for case in cases {
-            let result = build_local_sdk_search_result_with_runtime(
+            let result = build_local_sdk_search_result_with_runtime_full(
                 &store,
                 &provider_state.embedding,
                 memory_state.service.as_ref(),
@@ -1277,27 +1277,51 @@ for raw_line in sys.stdin:
             result["format_version"],
             serde_json::json!("sdk_control_plane.v1")
         );
-        assert_eq!(matched["source"], serde_json::json!("local_mcp"));
         assert_eq!(matched["semantic_kind"], serde_json::json!("capability"));
         assert_eq!(matched["status"]["callable"], serde_json::json!(true));
-        assert_eq!(matched["pkg_name"], serde_json::json!("skill.web-tools"));
         assert_eq!(
             matched["status"]["recommended_action"],
             serde_json::json!("execute")
         );
         assert_eq!(
-            result["routing_hint"]["direct_callable_capability_count"],
+            matched["description"],
+            serde_json::json!("抓取网页内容并提取标题")
+        );
+        assert!(matched.get("source").is_none());
+        assert!(matched.get("pkg_name").is_none());
+        assert!(result.get("normalized_query").is_none());
+        assert!(result.get("routing_hint").is_none());
+        assert!(result.get("usage_hint").is_none());
+        assert!(result.get("availability").is_none());
+        let full_result = build_local_sdk_search_result_with_runtime_full(
+            &store,
+            &provider_state.embedding,
+            memory_state.service.as_ref(),
+            query,
+            8,
+        )
+        .await;
+        let full_matched = full_result["capabilities"]
+            .as_array()
+            .expect("full capabilities array")
+            .iter()
+            .find(|item| item["name"] == serde_json::json!("search_web"))
+            .expect("matched full skill tool capability");
+        assert_eq!(full_matched["source"], serde_json::json!("local_mcp"));
+        assert_eq!(full_matched["pkg_name"], serde_json::json!("skill.web-tools"));
+        assert_eq!(
+            full_result["routing_hint"]["direct_callable_capability_count"],
             serde_json::json!(1)
         );
         assert_eq!(
-            result["normalized_query"]["intent"],
+            full_result["normalized_query"]["intent"],
             serde_json::json!("web_fetch")
         );
         assert_eq!(
-            result["normalized_query"]["wants_recipes"],
+            full_result["normalized_query"]["wants_recipes"],
             serde_json::json!(false)
         );
-        let normalized_query = result["normalized_query"]
+        let normalized_query = full_result["normalized_query"]
             .as_object()
             .expect("normalized query");
         assert_eq!(normalized_query.len(), 6);
@@ -1317,24 +1341,6 @@ for raw_line in sys.stdin:
             normalized_query.get("requires_network"),
             Some(&serde_json::json!(true))
         );
-        assert_eq!(
-            matched["description"],
-            serde_json::json!("抓取网页内容并提取标题")
-        );
-        let full_result = build_local_sdk_search_result_with_runtime_full(
-            &store,
-            &provider_state.embedding,
-            memory_state.service.as_ref(),
-            query,
-            8,
-        )
-        .await;
-        let full_matched = full_result["capabilities"]
-            .as_array()
-            .expect("full capabilities array")
-            .iter()
-            .find(|item| item["name"] == serde_json::json!("search_web"))
-            .expect("matched full skill tool capability");
         assert!(full_matched.get("required_parameters").is_some());
         assert!(full_matched.get("python_stub").is_some());
 
@@ -1378,7 +1384,7 @@ for raw_line in sys.stdin:
             .await
             .expect("insert semantic asset");
 
-        let result = build_local_sdk_search_result_with_runtime(
+        let result = build_local_sdk_search_result_with_runtime_full(
             &store,
             &provider_state.embedding,
             memory_state.service.as_ref(),
@@ -1432,7 +1438,7 @@ for raw_line in sys.stdin:
             memory_state.service.as_ref(),
             query,
             8,
-            crate::modules::desktop_runtime::runtime::capability_discovery::SearchSdkDetailLevel::Summary,
+            crate::modules::desktop_runtime::runtime::capability_discovery::SearchSdkDetailLevel::Full,
         )
         .await;
 
@@ -2593,7 +2599,7 @@ for raw_line in sys.stdin:
             .await
             .expect("insert disabled stock tool asset");
 
-        let web_result = build_local_sdk_search_result_with_runtime(
+        let web_result = build_local_sdk_search_result_with_runtime_full(
             &store,
             &provider_state.embedding,
             memory_state.service.as_ref(),
@@ -2611,7 +2617,7 @@ for raw_line in sys.stdin:
             .iter()
             .any(|item| item["name"] == serde_json::json!("search_web")));
 
-        let weather_skill_result = build_local_sdk_search_result_with_runtime(
+        let weather_skill_result = build_local_sdk_search_result_with_runtime_full(
             &store,
             &provider_state.embedding,
             memory_state.service.as_ref(),
@@ -2629,7 +2635,7 @@ for raw_line in sys.stdin:
             .iter()
             .all(|item| item["name"] != serde_json::json!("Weather Skill")));
 
-        let stock_result = build_local_sdk_search_result_with_runtime(
+        let stock_result = build_local_sdk_search_result_with_runtime_full(
             &store,
             &provider_state.embedding,
             memory_state.service.as_ref(),
@@ -2650,7 +2656,7 @@ for raw_line in sys.stdin:
                     && item["status"]["recommended_action"] == serde_json::json!("enable_skill")
             }));
 
-        let realtime_weather_result = build_local_sdk_search_result_with_runtime(
+        let realtime_weather_result = build_local_sdk_search_result_with_runtime_full(
             &store,
             &provider_state.embedding,
             memory_state.service.as_ref(),

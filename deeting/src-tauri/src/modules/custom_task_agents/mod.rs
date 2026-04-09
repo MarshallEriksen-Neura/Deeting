@@ -1,3 +1,4 @@
+pub mod bound_callables;
 pub mod commands;
 pub mod image_config;
 pub mod import;

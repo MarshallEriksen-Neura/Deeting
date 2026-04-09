@@ -74,7 +74,7 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
     vec![
         CoreToolContract {
             name: "search_sdk",
-            description: "Search desktop capability control-plane objects by intent and return semantic groups for direct capabilities, grouped capability namespaces, recipes, and orchestration primitives. Direct capabilities include skill tool bindings and user MCP tools. Recipes are guidance-oriented skill or assistant bundles and are not directly callable tools. execute_code_plan is only for multi-step orchestration.",
+            description: "Search desktop capability control-plane objects by intent and return semantic groups for direct capabilities, grouped capability namespaces, recipes, and orchestration primitives. Direct capabilities include skill tool bindings and user MCP tools. Recipes are guidance-oriented skill or assistant bundles and are not directly callable tools. Summary results stay lightweight for model selection; use detail_level='full' or get_tool_schema for internal diagnostics or exact invocation contracts. execute_code_plan is only for multi-step orchestration.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -94,13 +94,14 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
                 "properties": {
                     "format_version": {"type": "string"},
                     "mode": {"type": "string"},
+                    "detail_level": {"type": "string"},
                     "query": {"type": "string"},
-                    "normalized_query": {"type": "object"},
                     "count": {"type": "integer"},
                     "capabilities": {"type": "array"},
+                    "capability_groups": {"type": "object"},
                     "recipes": {"type": "array"},
-                    "orchestration_primitives": {"type": "array"},
-                    "usage_hint": {"type": "string"}
+                    "recipe_groups": {"type": "object"},
+                    "orchestration_primitives": {"type": "array"}
                 },
                 "required": ["format_version", "mode", "query", "count", "capabilities", "recipes", "orchestration_primitives"]
             }),

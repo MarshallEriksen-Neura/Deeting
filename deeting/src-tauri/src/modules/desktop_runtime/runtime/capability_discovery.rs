@@ -387,31 +387,41 @@ fn build_search_result_payload(
     let capability_groups = build_capability_groups(capabilities, detail_level);
     let recipe_groups = build_recipe_groups(recipes, detail_level);
 
-    json!({
+    let mut payload = json!({
         "format_version": SEARCH_RESULT_FORMAT_VERSION,
-        "runtime_protocol_version": crate::modules::code_mode::contract::RUNTIME_PROTOCOL_VERSION,
         "mode": "desktop_runtime",
         "detail_level": detail_level.as_str(),
         "query": query,
-        "normalized_query": profile.to_value(),
         "count": serialized_capabilities.len() + serialized_recipes.len() + serialized_orchestration_primitives.len(),
         "capabilities": serialized_capabilities,
         "recipes": serialized_recipes,
         "capability_groups": capability_groups,
         "recipe_groups": recipe_groups,
         "orchestration_primitives": serialized_orchestration_primitives,
-        "routing_hint": {
-            "default_path": "direct_capability_call",
-            "programmatic_path": "execute_code_plan",
-            "direct_callable_capability_count": direct_callable_capability_count,
-        },
-        "usage_hint": "Prefer direct host capabilities from capability_groups.skill_tools, capability_groups.user_mcp_tools, and capability_groups.core_tools. recipe_groups.skills are guidance-only skill bundles, not callable tools by themselves. If a recipe describes a CLI or terminal workflow and shell_execute is callable, execute that workflow through shell_execute instead of failing for lack of a dedicated skill action. Use execute_code_plan only for multi-step program logic, loops, branching, or result aggregation.",
-        "availability": {
-            "enabled_assistant_count": enabled_assistant_count,
-            "read_path_mode": read_path_mode,
-            "legacy_control_plane_reads_enabled": false,
-        }
-    })
+    });
+
+    if detail_level == SearchSdkDetailLevel::Full {
+        merge_object(
+            &mut payload,
+            json!({
+                "runtime_protocol_version": crate::modules::code_mode::contract::RUNTIME_PROTOCOL_VERSION,
+                "normalized_query": profile.to_value(),
+                "routing_hint": {
+                    "default_path": "direct_capability_call",
+                    "programmatic_path": "execute_code_plan",
+                    "direct_callable_capability_count": direct_callable_capability_count,
+                },
+                "usage_hint": "Prefer direct host capabilities from capability_groups.skill_tools, capability_groups.user_mcp_tools, and capability_groups.core_tools. recipe_groups.skills are guidance-only skill bundles, not callable tools by themselves. If a recipe describes a CLI or terminal workflow and shell_execute is callable, execute that workflow through shell_execute instead of failing for lack of a dedicated skill action. Use execute_code_plan only for multi-step program logic, loops, branching, or result aggregation.",
+                "availability": {
+                    "enabled_assistant_count": enabled_assistant_count,
+                    "read_path_mode": read_path_mode,
+                    "legacy_control_plane_reads_enabled": false,
+                }
+            }),
+        );
+    }
+
+    payload
 }
 
 fn serialize_search_items(items: &[Value], detail_level: SearchSdkDetailLevel) -> Vec<Value> {
@@ -425,33 +435,52 @@ fn serialize_search_items(items: &[Value], detail_level: SearchSdkDetailLevel) -
 }
 
 fn summarize_search_item(item: &Value) -> Value {
-    let mut summary = item.clone();
-    if let Some(object) = summary.as_object_mut() {
-        let keep_permission_scope =
-            object.get("semantic_kind").and_then(Value::as_str) == Some("orchestration_primitive");
-        let schema_available = object
+    let Some(object) = item.as_object() else {
+        return item.clone();
+    };
+
+    let mut summary = Map::new();
+    for key in [
+        "capability_id",
+        "name",
+        "description",
+        "semantic_kind",
+        "asset_namespace",
+        "invocation_mode",
+        "read_only",
+        "mutating",
+        "risk_level",
+        "recipe_kind",
+        "recommended_path",
+        "primitive_kind",
+        "docs_excerpt",
+    ] {
+        copy_non_null_field(&mut summary, object, key);
+    }
+
+    let schema_available = object
+        .get("schema_available")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || object
             .get("input_schema")
             .map(Value::is_object)
             .unwrap_or(false);
-        for key in [
-            "input_schema",
-            "output_schema",
-            "parameters",
-            "required_parameters",
-            "signature",
-            "python_stub",
-            "example_arguments",
-        ] {
-            object.remove(key);
+    if schema_available {
+        summary.insert("schema_available".to_string(), Value::Bool(true));
+    }
+
+    if let Some(status) = object.get("status").and_then(Value::as_object) {
+        let mut status_summary = Map::new();
+        for key in ["callable", "recommended_action", "reason"] {
+            copy_non_null_field(&mut status_summary, status, key);
         }
-        if !keep_permission_scope {
-            object.remove("permission_scope");
-        }
-        if schema_available {
-            object.insert("schema_available".to_string(), Value::Bool(true));
+        if !status_summary.is_empty() {
+            summary.insert("status".to_string(), Value::Object(status_summary));
         }
     }
-    summary
+
+    Value::Object(summary)
 }
 
 fn build_capability_groups(items: &[Value], detail_level: SearchSdkDetailLevel) -> Value {
@@ -1878,6 +1907,12 @@ fn merge_object(target: &mut Value, extra: Value) {
     }
 }
 
+fn copy_non_null_field(target: &mut Map<String, Value>, source: &Map<String, Value>, key: &str) {
+    if let Some(value) = source.get(key).filter(|value| !value.is_null()) {
+        target.insert(key.to_string(), value.clone());
+    }
+}
+
 impl QueryProfile {
     fn from_query(query: &str) -> Self {
         let normalized = query.trim().to_lowercase();
@@ -2152,11 +2187,24 @@ mod tests {
     }
 
     #[test]
-    fn summarize_search_item_omits_heavy_contract_fields_but_keeps_schema_flag() {
+    fn summarize_search_item_keeps_selection_fields_but_omits_internal_contract_and_ranking_data() {
         let summary = summarize_search_item(&json!({
+            "capability_id": "core.browser_open_tab",
             "name": "browser_open_tab",
             "description": "Open a browser tab",
-            "status": {"callable": true},
+            "semantic_kind": "capability",
+            "asset_namespace": "core",
+            "source": "local_desktop_runtime_core",
+            "pkg_name": "desktop_runtime.core",
+            "assistant_id": null,
+            "status": {
+                "class": "callable_direct",
+                "callable": true,
+                "install_required": false,
+                "activation_required": false,
+                "recommended_action": "execute",
+                "reason": "core_runtime_tool"
+            },
             "input_schema": {
                 "type": "object",
                 "properties": {
@@ -2171,16 +2219,104 @@ mod tests {
             "python_stub": "def browser_open_tab(url: str) -> dict[str, Any]: ...",
             "example_arguments": {"url": "https://example.com"},
             "permission_scope": ["network_read"],
+            "match_reason": ["bm25:1.00", "direct_callable"],
+            "semantic_score": 0.5,
+            "lexical_score": 1.0,
+            "rank_score": 88.0,
+            "runtime_state": "ready",
+            "search_index_state": "not_required",
             "mutating": true,
             "risk_level": "LOW"
         }));
 
+        assert_eq!(summary["capability_id"], json!("core.browser_open_tab"));
+        assert_eq!(summary["semantic_kind"], json!("capability"));
+        assert_eq!(summary["asset_namespace"], json!("core"));
         assert_eq!(summary["schema_available"], json!(true));
         assert_eq!(summary["mutating"], json!(true));
         assert_eq!(summary["risk_level"], json!("LOW"));
+        assert_eq!(summary["status"]["callable"], json!(true));
+        assert_eq!(summary["status"]["recommended_action"], json!("execute"));
+        assert_eq!(summary["status"]["reason"], json!("core_runtime_tool"));
         assert!(summary.get("input_schema").is_none());
         assert!(summary.get("required_parameters").is_none());
         assert!(summary.get("python_stub").is_none());
+        assert!(summary.get("source").is_none());
+        assert!(summary.get("pkg_name").is_none());
+        assert!(summary.get("match_reason").is_none());
+        assert!(summary.get("runtime_state").is_none());
+        assert!(summary["status"].get("class").is_none());
+    }
+
+    #[test]
+    fn search_result_summary_omits_internal_top_level_metadata() {
+        let profile = QueryProfile::from_query("search web tools");
+        let summary = build_search_result_payload(
+            "search web tools",
+            &profile,
+            0,
+            "registry_first",
+            &[json!({
+                "capability_id": "tool.search_web",
+                "name": "search_web",
+                "description": "Search the web",
+                "semantic_kind": "capability",
+                "asset_namespace": "user_mcp",
+                "status": {"callable": true, "recommended_action": "execute", "reason": "ready"},
+                "input_schema": {"type": "object"},
+                "mutating": false,
+                "risk_level": "LOW"
+            })],
+            &[],
+            &[json!({
+                "name": "execute_code_plan",
+                "description": "Programmatic executor",
+                "semantic_kind": "orchestration_primitive",
+                "invocation_mode": "direct"
+            })],
+            1,
+            SearchSdkDetailLevel::Summary,
+        );
+
+        assert_eq!(summary["detail_level"], json!("summary"));
+        assert!(summary.get("normalized_query").is_none());
+        assert!(summary.get("routing_hint").is_none());
+        assert!(summary.get("usage_hint").is_none());
+        assert!(summary.get("availability").is_none());
+        assert!(summary.get("runtime_protocol_version").is_none());
+    }
+
+    #[test]
+    fn search_result_full_keeps_internal_top_level_metadata() {
+        let profile = QueryProfile::from_query("search web tools");
+        let full = build_search_result_payload(
+            "search web tools",
+            &profile,
+            2,
+            "registry_first",
+            &[],
+            &[],
+            &[json!({
+                "name": "execute_code_plan",
+                "description": "Programmatic executor",
+                "semantic_kind": "orchestration_primitive",
+                "invocation_mode": "direct"
+            })],
+            1,
+            SearchSdkDetailLevel::Full,
+        );
+
+        assert_eq!(full["detail_level"], json!("full"));
+        assert_eq!(full["normalized_query"]["intent"], json!("web_fetch"));
+        assert_eq!(
+            full["routing_hint"]["programmatic_path"],
+            json!("execute_code_plan")
+        );
+        assert_eq!(
+            full["availability"]["read_path_mode"],
+            json!("registry_first")
+        );
+        assert_eq!(full["runtime_protocol_version"], json!("v1"));
     }
 
     #[test]
