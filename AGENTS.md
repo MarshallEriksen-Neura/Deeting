@@ -23,6 +23,7 @@ Keep runtime marker contracts stable and non-destructive when overlays are appli
 - Delegate specialized or tool-heavy work to the most appropriate agent.
 - Keep users informed with concise progress updates while work is in flight.
 - Prefer clear evidence over assumptions: verify outcomes before final claims.
+- Prefer the smallest verification that proves the change; do not default to adding or expanding tests for every task.
 - Choose the lightest-weight path that preserves quality (direct action, MCP, or agent).
 - Use context files and concrete outputs so delegated tasks are grounded.
 - Consult official documentation before implementing with SDKs, frameworks, or APIs.
@@ -277,6 +278,11 @@ Sizing guidance:
 - Standard changes: standard verifier
 - Large or security/architectural changes (>20 files): thorough verifier
 
+Test creation guidance:
+- Do not add or expand tests by default for small copy, config, wiring, or narrow bug-fix tasks.
+- Add tests when the user explicitly asks for them, when changing behavior needs durable regression protection, or when a cleanup/refactor would otherwise be unsafe.
+- Prefer targeted checks, focused existing tests, diagnostics, or manual evidence when they are sufficient to prove the change.
+
 Verification loop: identify what proves the claim, run the verification, read the output, then report with evidence. If verification fails, continue iterating rather than reporting incomplete work.
 </verification>
 
@@ -295,7 +301,7 @@ Visual iteration gate:
 - Persist visual verdict JSON in `.omx/state/{scope}/ralph-progress.json` with both numeric (`score`, threshold pass/fail) and qualitative (`reasoning`, `differences`, `suggestions`, `next_actions`) feedback.
 
 Continuation:
-  Before concluding, confirm: zero pending tasks, all features working, tests passing, zero errors, verification evidence collected. If any item is unchecked, continue working.
+  Before concluding, confirm: zero pending tasks, all features working, relevant verification completed, zero errors, and evidence collected. Prefer existing targeted tests or other focused verification over adding new tests unless new regression coverage is clearly warranted.
 
 Ralph planning gate:
   If ralph is active, verify PRD + test spec artifacts exist before any implementation work/tool execution. If missing, stay in planning and create them first (ralplan-first).

@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 
-#[cfg(test)]
 pub(crate) use super::capability_toolset::dynamic_capability_alias;
 use super::capability_toolset::{
     build_dynamic_direct_capability_tools,
@@ -25,29 +24,34 @@ pub(crate) fn build_local_runtime_tools_with_allowlist(
         .map(|name| name.trim().to_lowercase())
         .filter(|name| !name.is_empty())
         .collect();
+    let mut used_provider_tool_names = HashSet::new();
     let mut tools = build_core_tool_function_entries()
         .into_iter()
-        .filter(|tool| {
-            function_tool_name(tool)
-                .map(|name| allowlist.contains(&name.to_lowercase()))
-                .unwrap_or(false)
+        .filter_map(|tool| {
+            let canonical_name = function_tool_name(&tool)
+                .map(|name| name.trim().to_lowercase())
+                .filter(|name| !name.is_empty())?;
+            if !allowlist.contains(&canonical_name) {
+                return None;
+            }
+            alias_tool_definition_for_provider(tool, &mut used_provider_tool_names)
         })
         .collect::<Vec<_>>();
     tools.extend(
         build_local_execution_lane_aux_tools()
             .into_iter()
-            .filter(|tool| {
-                function_tool_name(tool)
-                    .map(|name| allowlist.contains(&name.to_lowercase()))
-                    .unwrap_or(false)
+            .filter_map(|tool| {
+                let canonical_name = function_tool_name(&tool)
+                    .map(|name| name.trim().to_lowercase())
+                    .filter(|name| !name.is_empty())?;
+                if !allowlist.contains(&canonical_name) {
+                    return None;
+                }
+                alias_tool_definition_for_provider(tool, &mut used_provider_tool_names)
             }),
     );
     let reserved_names = reserved_local_execution_tool_names();
-    let existing_tool_names = tools
-        .iter()
-        .filter_map(function_tool_name)
-        .map(|name| name.trim().to_lowercase())
-        .collect::<HashSet<_>>();
+    let existing_tool_names = used_provider_tool_names;
     tools.extend(build_dynamic_direct_capability_tools(
         capability_snapshot,
         &allowlist,
@@ -151,6 +155,42 @@ fn function_tool_name(tool: &serde_json::Value) -> Option<&str> {
     tool.get("function")?.get("name")?.as_str()
 }
 
+fn is_provider_safe_tool_name(name: &str) -> bool {
+    let trimmed = name.trim();
+    !trimmed.is_empty()
+        && trimmed
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+}
+
+fn provider_safe_tool_name_for_callable(canonical_name: &str) -> String {
+    let normalized = canonical_name.trim().to_lowercase();
+    if is_provider_safe_tool_name(&normalized) {
+        normalized
+    } else {
+        dynamic_capability_alias(&normalized)
+    }
+}
+
+fn alias_tool_definition_for_provider(
+    mut tool: serde_json::Value,
+    used_provider_tool_names: &mut HashSet<String>,
+) -> Option<serde_json::Value> {
+    let canonical_name = function_tool_name(&tool)
+        .map(|name| name.trim().to_lowercase())
+        .filter(|name| !name.is_empty())?;
+    let provider_tool_name = provider_safe_tool_name_for_callable(&canonical_name);
+    if !used_provider_tool_names.insert(provider_tool_name.to_lowercase()) {
+        return None;
+    }
+    let function_obj = tool.get_mut("function")?.as_object_mut()?;
+    function_obj.insert(
+        "name".to_string(),
+        serde_json::Value::String(provider_tool_name),
+    );
+    Some(tool)
+}
+
 fn reserved_local_execution_tool_names() -> HashSet<String> {
     let mut reserved = build_core_tool_function_entries()
         .into_iter()
@@ -176,6 +216,33 @@ pub(crate) fn resolve_dynamic_direct_capability_tool_name(
         capability_snapshot,
         &reserved_names,
     )
+}
+
+pub(crate) fn resolve_provider_tool_name_for_execution(
+    provider_tool_name: &str,
+    allowed_tool_names: &[String],
+    capability_snapshot: Option<&serde_json::Value>,
+) -> Option<String> {
+    let requested = provider_tool_name.trim().to_lowercase();
+    if requested.is_empty() {
+        return None;
+    }
+
+    if let Some(canonical_name) =
+        resolve_dynamic_direct_capability_tool_name(&requested, capability_snapshot)
+    {
+        return Some(canonical_name);
+    }
+
+    if allowed_tool_names.iter().any(|item| item == &requested) {
+        return Some(requested);
+    }
+
+    allowed_tool_names
+        .iter()
+        .map(|name| name.trim().to_lowercase())
+        .filter(|name| !name.is_empty())
+        .find(|name| provider_safe_tool_name_for_callable(name) == requested)
 }
 
 #[cfg(test)]
@@ -284,5 +351,38 @@ mod tests {
         assert!(provider_name
             .chars()
             .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_'));
+    }
+
+    #[test]
+    fn build_local_runtime_tools_aliases_invalid_core_tool_names() {
+        let payload =
+            build_local_runtime_tools_with_allowlist(&["monitor.create".to_string()], None)
+                .expect("tool payload");
+
+        let tools = payload
+            .get("tools")
+            .and_then(serde_json::Value::as_array)
+            .expect("tools array");
+        let names = tools
+            .iter()
+            .filter_map(function_tool_name)
+            .collect::<Vec<_>>();
+
+        assert_eq!(names.len(), 1);
+        assert_ne!(names[0], "monitor.create");
+        assert!(names[0]
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_'));
+    }
+
+    #[test]
+    fn resolve_provider_tool_name_for_execution_maps_alias_back_to_core_tool_name() {
+        let resolved = resolve_provider_tool_name_for_execution(
+            &dynamic_capability_alias("monitor.create"),
+            &["monitor.create".to_string()],
+            None,
+        );
+
+        assert_eq!(resolved.as_deref(), Some("monitor.create"));
     }
 }

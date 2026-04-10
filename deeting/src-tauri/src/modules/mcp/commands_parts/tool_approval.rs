@@ -49,6 +49,23 @@ fn require_approval_token(value: Option<String>) -> Result<String, String> {
         .ok_or_else(|| "approval token is required".to_string())
 }
 
+fn resolve_requested_execution_graph_id(
+    requested_execution_graph_id: Option<&str>,
+    pending_execution_graph_id: Option<&str>,
+) -> Option<String> {
+    requested_execution_graph_id
+        .and_then(|value| {
+            let normalized = value.trim();
+            (!normalized.is_empty()).then(|| normalized.to_string())
+        })
+        .or_else(|| {
+            pending_execution_graph_id.and_then(|value| {
+                let normalized = value.trim();
+                (!normalized.is_empty()).then(|| normalized.to_string())
+            })
+        })
+}
+
 pub(crate) async fn approve_mcp_tool_payload(
     app: &tauri::AppHandle,
     state: &crate::state::AppState,
@@ -85,6 +102,13 @@ pub(crate) async fn approve_mcp_tool_payload(
     )
     .await?;
 
+    let requested_execution_id = resolve_requested_execution_graph_id(
+        execution_graph_execution_id,
+        pending_before_approval
+            .as_ref()
+            .and_then(|pending| pending.execution_graph_execution_id.as_deref()),
+    );
+
     if let Some(resumed) = resume_suspended_chat_tool_execution_after_approval(
         app,
         state,
@@ -93,7 +117,7 @@ pub(crate) async fn approve_mcp_tool_payload(
         pending_before_approval
             .as_ref()
             .and_then(|pending| pending.call_id.as_deref()),
-        execution_graph_execution_id,
+        requested_execution_id.as_deref(),
         pending_before_approval
             .as_ref()
             .map(|pending| pending.created_at_unix_ms),
@@ -140,13 +164,12 @@ pub(crate) async fn reject_mcp_tool_payload(
         })
         .unwrap_or(false);
 
-    let requested_execution_id = execution_graph_execution_id
-        .map(str::to_string)
-        .or_else(|| {
-            pending_before_reject
-                .as_ref()
-                .and_then(|pending| pending.execution_graph_execution_id.clone())
-        });
+    let requested_execution_id = resolve_requested_execution_graph_id(
+        execution_graph_execution_id,
+        pending_before_reject
+            .as_ref()
+            .and_then(|pending| pending.execution_graph_execution_id.as_deref()),
+    );
     let mut persisted_graph = if let Some(execution_id) = requested_execution_id.as_deref() {
         load_execution_graph_snapshot(state.mcp.store.as_ref(), execution_id)
             .await
@@ -610,4 +633,33 @@ pub async fn reject_mcp_tool(
         reject_mode.or(rejectMode).as_deref(),
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_requested_execution_graph_id;
+
+    #[test]
+    fn resolve_requested_execution_graph_id_prefers_explicit_request() {
+        assert_eq!(
+            resolve_requested_execution_graph_id(
+                Some(" graph-explicit-1 "),
+                Some("graph-pending-1")
+            ),
+            Some("graph-explicit-1".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_requested_execution_graph_id_falls_back_to_pending_value() {
+        assert_eq!(
+            resolve_requested_execution_graph_id(Some("  "), Some(" graph-pending-1 ")),
+            Some("graph-pending-1".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_requested_execution_graph_id_returns_none_when_both_missing() {
+        assert_eq!(resolve_requested_execution_graph_id(None, Some(" ")), None);
+    }
 }

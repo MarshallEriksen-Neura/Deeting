@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::capability_snapshot::merge_allowed_tool_names;
@@ -51,7 +51,7 @@ impl RuntimeDiscoveryBundle {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LocalExecutionPlane {
     ResponseOnly,
     WorkerReasoning,
@@ -66,7 +66,7 @@ impl LocalExecutionPlane {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LocalExecutionPolicy {
     pub route: LocalRouteKind,
     pub plane: LocalExecutionPlane,

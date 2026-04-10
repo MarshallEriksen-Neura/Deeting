@@ -73,7 +73,7 @@ pub(crate) use tool_catalog::{
 pub(crate) use tool_catalog::{
     build_local_runtime_tools_with_allowlist,
     build_local_sdk_search_result_bundle_with_feedback_runtime,
-    resolve_dynamic_direct_capability_tool_name,
+    resolve_provider_tool_name_for_execution,
 };
 #[cfg(test)]
 pub(crate) use tool_feedback::{

@@ -8,7 +8,7 @@ use super::{
     load_execution_graph_snapshot_by_approval_token, persist_execution_graph_runtime_context,
     persist_execution_graph_snapshot, project_execution_graph_blocks_from_value,
     project_execution_graph_snapshot, request_provider_chat_completion,
-    resolve_dynamic_direct_capability_tool_name, resolve_local_capability_activation_state,
+    resolve_local_capability_activation_state, resolve_provider_tool_name_for_execution,
     search_feedback::search_feedback_context_from_tool_call_meta, CapabilityExecutionContract,
     GraphProjectionInput, LocalCapabilityActivationState, LocalExecutionPolicy,
     LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
@@ -280,6 +280,16 @@ fn enrich_response_with_tool_trace(
         response["tool_trace_streamed"] = serde_json::json!(true);
     }
     runtime_metrics.inject_into_response(&mut response);
+    response
+}
+
+fn strip_stale_resume_response_metadata(mut response: serde_json::Value) -> serde_json::Value {
+    let Some(object) = response.as_object_mut() else {
+        return response;
+    };
+    object.remove("execution_graph");
+    object.remove("tool_trace_blocks");
+    object.remove("tool_trace_streamed");
     response
 }
 
@@ -2024,8 +2034,9 @@ async fn process_chat_tool_calls(
 
     for call in tool_calls {
         let requested_tool_name = call.name.trim().to_lowercase();
-        let tool_name = resolve_dynamic_direct_capability_tool_name(
+        let tool_name = resolve_provider_tool_name_for_execution(
             &requested_tool_name,
+            effective_allowed_tool_names,
             last_capability_snapshot.as_ref(),
         )
         .unwrap_or(requested_tool_name);
@@ -2717,9 +2728,15 @@ fn attach_execution_graph_to_response(
     session_id: &str,
     execution_policy: &LocalExecutionPolicy,
     root_execution_id: Option<&str>,
+    force_rebuild: bool,
 ) {
-    if response.get("execution_graph").is_some() {
+    if !force_rebuild && response.get("execution_graph").is_some() {
         return;
+    }
+    if force_rebuild {
+        if let Some(object) = response.as_object_mut() {
+            object.remove("execution_graph");
+        }
     }
     let tool_trace_blocks = response
         .get("tool_trace_blocks")
@@ -2925,6 +2942,7 @@ pub(crate) async fn resume_suspended_chat_tool_execution_after_approval(
         .last_response
         .clone()
         .unwrap_or_else(|| serde_json::json!({ "content": "" }));
+    let pending_response = strip_stale_resume_response_metadata(pending_response);
     let graph_pending_tool_call_meta = suspended.pending_tool_call_meta();
     let pending_results = summarize_tool_call_meta_results(&graph_pending_tool_call_meta);
     let root_execution_id = suspended
@@ -2996,6 +3014,7 @@ pub(crate) async fn resume_suspended_chat_tool_execution_after_approval(
                 &session_id,
                 &execution_policy,
                 root_execution_id.as_deref(),
+                true,
             );
             if let Err(err) = persist_resumed_local_chat_assistant_message(
                 app_state,
@@ -3519,8 +3538,9 @@ mod tests {
     #[test]
     fn resolves_direct_capability_alias_back_to_callable_name() {
         let alias = dynamic_capability_alias("skill.official.skills.weather.get_weather");
-        let resolved = resolve_dynamic_direct_capability_tool_name(
+        let resolved = resolve_provider_tool_name_for_execution(
             &alias,
+            &["skill.official.skills.weather.get_weather".to_string()],
             Some(&serde_json::json!({
                 "capabilities": [
                     {
@@ -3978,6 +3998,56 @@ mod tests {
         assert_eq!(
             blocks[1]["result"]["approval_token"],
             serde_json::json!("approval-1")
+        );
+    }
+
+    #[test]
+    fn strip_stale_resume_response_metadata_removes_old_graph_and_trace_blocks() {
+        let response = serde_json::json!({
+            "content": "pending",
+            "execution_graph": { "execution_id": "graph-old" },
+            "tool_trace_blocks": [{ "type": "text", "content": "old" }],
+            "tool_trace_streamed": true,
+        });
+
+        let stripped = strip_stale_resume_response_metadata(response);
+
+        assert_eq!(stripped.get("content"), Some(&serde_json::json!("pending")));
+        assert!(stripped.get("execution_graph").is_none());
+        assert!(stripped.get("tool_trace_blocks").is_none());
+        assert!(stripped.get("tool_trace_streamed").is_none());
+    }
+
+    #[test]
+    fn attach_execution_graph_to_response_force_rebuild_replaces_stale_graph() {
+        let execution_policy = mcp_runtime::policy::build_default_local_execution_policy();
+        let mut response = serde_json::json!({
+            "content": "final answer",
+            "execution_graph": {
+                "execution_id": "graph-stale",
+                "nodes": [
+                    { "node_id": "approval_gate:call-1", "node_type": "approval_gate", "status": "waiting_approval" }
+                ]
+            },
+            "tool_trace_blocks": [
+                { "type": "text", "content": "final answer" }
+            ]
+        });
+
+        attach_execution_graph_to_response(
+            &mut response,
+            "session-1",
+            &execution_policy,
+            Some("root-1"),
+            true,
+        );
+
+        assert_ne!(
+            response
+                .get("execution_graph")
+                .and_then(|value| value.get("execution_id"))
+                .and_then(serde_json::Value::as_str),
+            Some("graph-stale")
         );
     }
 

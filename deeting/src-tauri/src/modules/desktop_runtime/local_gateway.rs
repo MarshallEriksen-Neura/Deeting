@@ -264,12 +264,11 @@ async fn stream_chat_completion(
             let worker_state = run_state.clone();
             let worker_trace_id = trace_id.clone();
             let tx_clone = tx.clone();
-            let input_clone = input.clone();
             let task = tokio::spawn(async move {
                 execute_local_orchestrated_chat(
                     &worker_state.app_handle,
                     &worker_state.app_state,
-                    input_clone,
+                    input,
                     worker_trace_id,
                     Some(tx_clone),
                 )
