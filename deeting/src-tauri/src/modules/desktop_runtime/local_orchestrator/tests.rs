@@ -1,13 +1,23 @@
 use super::*;
+use crate::modules::desktop_runtime::local_orchestrator::workflow::LayerExecutionMode;
 use futures_util::future::BoxFuture;
 
-#[derive(Default)]
+fn layer_mode_label(mode: LayerExecutionMode) -> &'static str {
+    match mode {
+        LayerExecutionMode::Sequential => "sequential",
+        LayerExecutionMode::Parallel => "parallel",
+    }
+}
+
+#[derive(Default, Clone)]
 struct EngineTestContext {
     applied_steps: Vec<String>,
     system_messages: Vec<String>,
     status_codes: Vec<String>,
     selected_prompt_variant: Option<String>,
     metrics: Vec<Value>,
+    layer_started: Vec<String>,
+    layer_finished: Vec<String>,
 }
 
 impl StepResultContext for EngineTestContext {
@@ -46,6 +56,44 @@ impl StepResultContext for EngineTestContext {
         self.applied_steps
             .push(format!("{}:{}", step_name, status.as_str()));
         Ok(())
+    }
+
+    fn before_layer_execution(
+        &mut self,
+        layer_index: usize,
+        layer_steps: &[String],
+        mode: LayerExecutionMode,
+    ) -> Result<(), String> {
+        self.layer_started.push(format!(
+            "{}:{}:{}",
+            layer_index + 1,
+            layer_mode_label(mode),
+            layer_steps.join(",")
+        ));
+        Ok(())
+    }
+
+    fn after_layer_execution(
+        &mut self,
+        layer_index: usize,
+        layer_steps: &[String],
+        mode: LayerExecutionMode,
+    ) -> Result<(), String> {
+        self.layer_finished.push(format!(
+            "{}:{}:{}",
+            layer_index + 1,
+            layer_mode_label(mode),
+            layer_steps.join(",")
+        ));
+        Ok(())
+    }
+
+    fn supports_parallel_snapshot(&self) -> bool {
+        true
+    }
+
+    fn clone_for_parallel(&self) -> Result<Self, String> {
+        Ok(self.clone())
     }
 }
 
@@ -236,6 +284,93 @@ async fn engine_executes_and_applies_step_results_centrally() {
         ctx.metrics[0].get("name").and_then(Value::as_str),
         Some("summary")
     );
+    assert_eq!(
+        ctx.layer_started,
+        vec![
+            "1:sequential:step_a".to_string(),
+            "2:sequential:step_b".to_string()
+        ]
+    );
+    assert_eq!(
+        ctx.layer_finished,
+        vec![
+            "1:sequential:step_a".to_string(),
+            "2:sequential:step_b".to_string()
+        ]
+    );
+}
+
+#[tokio::test]
+async fn engine_rejects_conflicting_parallel_layer_patches() {
+    let steps: Vec<Box<dyn LocalWorkflowStep<EngineTestContext>>> = vec![
+        Box::new(TestStep {
+            name: "step_a",
+            deps: &[],
+            system_message: None,
+            status_code: None,
+            selected_prompt_variant: Some("detailed"),
+            metric_name: None,
+        }),
+        Box::new(TestStep {
+            name: "step_b",
+            deps: &[],
+            system_message: None,
+            status_code: None,
+            selected_prompt_variant: Some("concise"),
+            metric_name: None,
+        }),
+    ];
+
+    let engine = LocalOrchestrationEngine::new(steps).expect("engine should build");
+    let mut ctx = EngineTestContext::default();
+    let error = engine
+        .execute(&mut ctx)
+        .await
+        .expect_err("conflicting layer patches should fail");
+
+    assert!(error.contains("conflicting"));
+    assert!(error.contains("set_selected_prompt_variant"));
+}
+
+#[tokio::test]
+async fn engine_marks_parallel_layer_execution_mode() {
+    let steps: Vec<Box<dyn LocalWorkflowStep<EngineTestContext>>> = vec![
+        Box::new(TestStep {
+            name: "step_a",
+            deps: &[],
+            system_message: Some("a"),
+            status_code: None,
+            selected_prompt_variant: None,
+            metric_name: None,
+        }),
+        Box::new(TestStep {
+            name: "step_b",
+            deps: &[],
+            system_message: Some("b"),
+            status_code: None,
+            selected_prompt_variant: None,
+            metric_name: None,
+        }),
+        Box::new(TestStep {
+            name: "step_c",
+            deps: &["step_a", "step_b"],
+            system_message: Some("c"),
+            status_code: None,
+            selected_prompt_variant: None,
+            metric_name: None,
+        }),
+    ];
+
+    let engine = LocalOrchestrationEngine::new(steps).expect("engine should build");
+    let mut ctx = EngineTestContext::default();
+    engine.execute(&mut ctx).await.expect("engine executes");
+
+    assert_eq!(ctx.layer_started.len(), 2);
+    assert_eq!(ctx.layer_finished.len(), 2);
+    assert!(ctx.layer_started[0].contains(":parallel:"));
+    assert!(ctx.layer_finished[0].contains(":parallel:"));
+    assert!(ctx.layer_started[1].contains(":sequential:"));
+    assert!(ctx.layer_finished[1].contains(":sequential:"));
 }
 
 #[test]
@@ -431,6 +566,32 @@ fn desktop_local_chat_engine_includes_route_selection_before_recipe_and_template
 
     assert!(route_index < recipe_index);
     assert!(route_index < template_index);
+}
+
+#[test]
+fn desktop_local_chat_engine_groups_retrieval_injections_in_same_layer() {
+    let engine = build_desktop_local_chat_engine().expect("engine should build");
+    let layers = engine.debug_layers();
+
+    let semantic_index = layers
+        .iter()
+        .position(|layer| layer.iter().any(|name| name == "semantic_memory_injection"))
+        .expect("semantic_memory_injection layer");
+    let selected_index = layers
+        .iter()
+        .position(|layer| {
+            layer
+                .iter()
+                .any(|name| name == "selected_knowledge_injection")
+        })
+        .expect("selected_knowledge_injection layer");
+    let asset_index = layers
+        .iter()
+        .position(|layer| layer.iter().any(|name| name == "asset_recall_injection"))
+        .expect("asset_recall_injection layer");
+
+    assert_eq!(semantic_index, selected_index);
+    assert_eq!(selected_index, asset_index);
 }
 
 #[test]

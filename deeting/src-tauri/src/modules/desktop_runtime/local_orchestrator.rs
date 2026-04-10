@@ -1,4 +1,4 @@
-﻿use serde_json::{json, Value};
+use serde_json::{json, Value};
 use tauri::AppHandle;
 use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
@@ -43,8 +43,8 @@ use std::collections::HashMap;
 
 mod message_utils;
 mod model_selection;
-mod workflow;
 mod retrieval;
+mod workflow;
 
 use message_utils::{
     build_assistant_meta, build_compare_only_messages, convert_history_message_to_chat_input,
@@ -52,12 +52,12 @@ use message_utils::{
     extract_saved_asset_ids_from_blocks, extract_summary_text, fallback_prefers_chinese,
     latest_tool_error_summary, AssistantMetaMode,
 };
+#[cfg(test)]
+use model_selection::LocalConversationModelBinding;
 use model_selection::{
     extract_local_conversation_model_binding, pool_request_matches_model_connection,
     reusable_pinned_provider_model_id, LocalModelSelectionMode,
 };
-#[cfg(test)]
-use model_selection::LocalConversationModelBinding;
 #[cfg(test)]
 use retrieval::{
     build_global_memory_list_query, build_global_semantic_memory_search_query,
@@ -66,7 +66,9 @@ use retrieval::{
     InjectedMemory, SelectedKnowledgeDocumentContext, CORE_MEMORY_LIST_LIMIT,
     SEMANTIC_MEMORY_SEARCH_LIMIT,
 };
-use workflow::{build_desktop_local_chat_engine, latest_user_message, unix_seconds, LocalWorkflowContext};
+use workflow::{
+    build_desktop_local_chat_engine, latest_user_message, unix_seconds, LocalWorkflowContext,
+};
 #[cfg(test)]
 use workflow::{render_skill_recipe_prompt, status_patch, ContextPatch, LocalStepResult};
 
@@ -778,8 +780,6 @@ pub async fn execute_local_orchestrated_chat(
     Ok(response)
 }
 
-
 #[cfg(test)]
 #[path = "local_orchestrator/tests.rs"]
 mod tests;
-

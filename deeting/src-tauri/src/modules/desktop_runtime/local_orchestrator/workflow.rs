@@ -1,6 +1,6 @@
-﻿use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use futures_util::future::BoxFuture;
+use futures_util::future::{try_join_all, BoxFuture};
 use serde_json::{json, Value};
 use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
@@ -144,6 +144,21 @@ impl StepStatus {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LayerExecutionMode {
+    Sequential,
+    Parallel,
+}
+
+impl LayerExecutionMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Sequential => "sequential",
+            Self::Parallel => "parallel",
+        }
+    }
+}
+
 pub(super) struct StatusPatch {
     pub(crate) stage: String,
     pub(crate) step: Option<String>,
@@ -227,7 +242,12 @@ pub(crate) fn status_patch(
     })
 }
 
-pub(crate) trait StepResultContext {
+pub(crate) struct LayerStepResult<P> {
+    pub(crate) step_name: String,
+    pub(crate) result: StepResult<P>,
+}
+
+pub(crate) trait StepResultContext: Sized {
     type Patch;
 
     fn apply_step_result(
@@ -235,6 +255,41 @@ pub(crate) trait StepResultContext {
         step_name: &str,
         result: StepResult<Self::Patch>,
     ) -> Result<(), String>;
+
+    fn before_layer_execution(
+        &mut self,
+        _layer_index: usize,
+        _layer_steps: &[String],
+        _mode: LayerExecutionMode,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn validate_layer_results(
+        &self,
+        _layer_index: usize,
+        _layer_steps: &[String],
+        _results: &[LayerStepResult<Self::Patch>],
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn after_layer_execution(
+        &mut self,
+        _layer_index: usize,
+        _layer_steps: &[String],
+        _mode: LayerExecutionMode,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn supports_parallel_snapshot(&self) -> bool {
+        false
+    }
+
+    fn clone_for_parallel(&self) -> Result<Self, String> {
+        Err("parallel snapshot is not supported for this workflow context".to_string())
+    }
 }
 
 pub(crate) trait LocalWorkflowStep<C: StepResultContext>: Send + Sync {
@@ -253,7 +308,7 @@ pub(crate) struct LocalOrchestrationEngine<C> {
     execution_layers: Vec<Vec<String>>,
 }
 
-impl<C> LocalOrchestrationEngine<C> {
+impl<C: StepResultContext> LocalOrchestrationEngine<C> {
     pub(crate) fn new(steps: Vec<Box<dyn LocalWorkflowStep<C>>>) -> Result<Self, String> {
         use std::collections::{HashMap, HashSet};
 
@@ -326,19 +381,67 @@ impl<C> LocalOrchestrationEngine<C> {
 
 impl<C: StepResultContext> LocalOrchestrationEngine<C> {
     pub(crate) async fn execute(&self, ctx: &mut C) -> Result<(), String> {
-        for layer in &self.execution_layers {
-            for name in layer {
-                let step = self
-                    .steps
-                    .get(name)
-                    .ok_or_else(|| format!("step '{}' not found in engine", name))?;
-                let result = step.execute(ctx).await?;
-                ctx.apply_step_result(name, result)?;
+        for (layer_index, layer) in self.execution_layers.iter().enumerate() {
+            let mode = if layer.len() > 1 && ctx.supports_parallel_snapshot() {
+                LayerExecutionMode::Parallel
+            } else {
+                LayerExecutionMode::Sequential
+            };
+            ctx.before_layer_execution(layer_index, layer, mode)?;
+
+            let layer_results = match mode {
+                LayerExecutionMode::Sequential => {
+                    let Some(step_name) = layer.first() else {
+                        ctx.after_layer_execution(layer_index, layer, mode)?;
+                        continue;
+                    };
+                    let step = self
+                        .steps
+                        .get(step_name)
+                        .ok_or_else(|| format!("step '{}' not found in engine", step_name))?;
+                    let result = step.execute(ctx).await?;
+                    vec![LayerStepResult {
+                        step_name: step_name.clone(),
+                        result,
+                    }]
+                }
+                LayerExecutionMode::Parallel => {
+                    let mut futures = Vec::with_capacity(layer.len());
+                    for step_name in layer {
+                        let step = self
+                            .steps
+                            .get(step_name)
+                            .ok_or_else(|| format!("step '{}' not found in engine", step_name))?;
+                        let step_name = step_name.clone();
+                        let mut step_ctx = ctx.clone_for_parallel().map_err(|err| {
+                            format!(
+                                "failed to clone parallel snapshot for step '{}': {}",
+                                step_name, err
+                            )
+                        })?;
+                        futures.push(async move {
+                            let result = step.execute(&mut step_ctx).await?;
+                            Ok::<LayerStepResult<C::Patch>, String>(LayerStepResult {
+                                step_name,
+                                result,
+                            })
+                        });
+                    }
+                    try_join_all(futures).await?
+                }
+            };
+
+            ctx.validate_layer_results(layer_index, layer, &layer_results)?;
+            for layer_result in layer_results {
+                ctx.apply_step_result(&layer_result.step_name, layer_result.result)?;
             }
+            ctx.after_layer_execution(layer_index, layer, mode)?;
         }
         Ok(())
     }
+}
 
+impl<C: StepResultContext> LocalOrchestrationEngine<C> {
     #[cfg(test)]
     pub(crate) fn debug_layers(&self) -> &Vec<Vec<String>> {
         &self.execution_layers
@@ -360,40 +463,40 @@ pub(super) fn build_desktop_local_chat_engine(
     ])
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 
 pub(super) struct LocalWorkflowContext {
-    app_state: AppState,
-    trace_id: String,
-    request_id: Option<String>,
-    session_id: String,
-    input_model: String,
-    stream: bool,
-    status_stream: bool,
-    started_at: Instant,
-    event_tx: Option<UnboundedSender<String>>,
-    capability_id: Option<String>,
-    explicit_task_agent_id: Option<String>,
-    summary_text: Option<String>,
-    messages: Vec<LocalChatInputMessage>,
-    system_messages: Vec<LocalChatInputMessage>,
-    runtime_discovery: Option<RuntimeDiscoveryBundle>,
-    route_decision: Option<LocalRouteDecision>,
-    execution_policy: Option<LocalExecutionPolicy>,
-    control_plane_result: Option<LocalControlPlaneResult>,
+    pub(super) app_state: AppState,
+    pub(super) trace_id: String,
+    pub(super) request_id: Option<String>,
+    pub(super) session_id: String,
+    pub(super) input_model: String,
+    pub(super) stream: bool,
+    pub(super) status_stream: bool,
+    pub(super) started_at: Instant,
+    pub(super) event_tx: Option<UnboundedSender<String>>,
+    pub(super) capability_id: Option<String>,
+    pub(super) explicit_task_agent_id: Option<String>,
+    pub(super) summary_text: Option<String>,
+    pub(super) messages: Vec<LocalChatInputMessage>,
+    pub(super) system_messages: Vec<LocalChatInputMessage>,
+    pub(super) runtime_discovery: Option<RuntimeDiscoveryBundle>,
+    pub(super) route_decision: Option<LocalRouteDecision>,
+    pub(super) execution_policy: Option<LocalExecutionPolicy>,
+    pub(super) control_plane_result: Option<LocalControlPlaneResult>,
     // Bandit-selected prompt variant for `router:prompt` scene
-    selected_prompt_variant: Option<String>,
+    pub(super) selected_prompt_variant: Option<String>,
     // last emitted status snapshot for de-duplication and richer payloads
-    status_stage: Option<String>,
-    status_step: Option<String>,
-    status_state: Option<String>,
-    status_code: Option<String>,
-    status_meta: Option<Value>,
-    selected_knowledge_file_ids: Vec<String>,
-    latest_user_query: Option<String>,
-    request_query_embedding: Option<Vec<f32>>,
-    request_query_embedding_attempted: bool,
-    prefetched_retrievals: PrefetchedRetrievals,
+    pub(super) status_stage: Option<String>,
+    pub(super) status_step: Option<String>,
+    pub(super) status_state: Option<String>,
+    pub(super) status_code: Option<String>,
+    pub(super) status_meta: Option<Value>,
+    pub(super) selected_knowledge_file_ids: Vec<String>,
+    pub(super) latest_user_query: Option<String>,
+    pub(super) request_query_embedding: Option<Vec<f32>>,
+    pub(super) request_query_embedding_attempted: bool,
+    pub(super) prefetched_retrievals: PrefetchedRetrievals,
 }
 
 impl LocalWorkflowContext {
@@ -501,7 +604,7 @@ impl LocalWorkflowContext {
         });
     }
 
-    fn enrich_payload(&self, payload: &mut Value) {
+    pub(super) fn enrich_payload(&self, payload: &mut Value) {
         if let Some(object) = payload.as_object_mut() {
             object.insert("trace_id".to_string(), json!(self.trace_id));
             if let Some(request_id) = self
@@ -713,6 +816,101 @@ impl StepResultContext for LocalWorkflowContext {
             );
         }
         Ok(())
+    }
+
+    fn before_layer_execution(
+        &mut self,
+        layer_index: usize,
+        layer_steps: &[String],
+        mode: LayerExecutionMode,
+    ) -> Result<(), String> {
+        self.emit_status(
+            "orchestrate",
+            Some("layer"),
+            "running",
+            "orchestrator.layer.started",
+            Some(json!({
+                "layer_index": layer_index + 1,
+                "step_count": layer_steps.len(),
+                "steps": layer_steps,
+                "mode": mode.as_str(),
+            })),
+        );
+        Ok(())
+    }
+
+    fn validate_layer_results(
+        &self,
+        layer_index: usize,
+        _layer_steps: &[String],
+        results: &[LayerStepResult<Self::Patch>],
+    ) -> Result<(), String> {
+        if results.len() <= 1 {
+            return Ok(());
+        }
+        let mut owners = std::collections::HashMap::<&'static str, &str>::new();
+        for layer_result in results {
+            let step_name = layer_result.step_name.as_str();
+            for patch in &layer_result.result.patches {
+                let Some(key) = context_patch_conflict_key(patch) else {
+                    continue;
+                };
+                if let Some(previous_owner) = owners.insert(key, step_name) {
+                    if previous_owner != step_name {
+                        return Err(format!(
+                            "local orchestrator layer {} has conflicting '{}' patches from steps '{}' and '{}'",
+                            layer_index + 1,
+                            key,
+                            previous_owner,
+                            step_name
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn after_layer_execution(
+        &mut self,
+        layer_index: usize,
+        layer_steps: &[String],
+        mode: LayerExecutionMode,
+    ) -> Result<(), String> {
+        self.emit_status(
+            "orchestrate",
+            Some("layer"),
+            "success",
+            "orchestrator.layer.finished",
+            Some(json!({
+                "layer_index": layer_index + 1,
+                "step_count": layer_steps.len(),
+                "steps": layer_steps,
+                "mode": mode.as_str(),
+            })),
+        );
+        Ok(())
+    }
+
+    fn supports_parallel_snapshot(&self) -> bool {
+        true
+    }
+
+    fn clone_for_parallel(&self) -> Result<Self, String> {
+        Ok(self.clone())
+    }
+}
+
+fn context_patch_conflict_key(patch: &ContextPatch) -> Option<&'static str> {
+    match patch {
+        ContextPatch::SetRuntimeDiscovery(_) => Some("set_runtime_discovery"),
+        ContextPatch::SetRouteDecision(_) => Some("set_route_decision"),
+        ContextPatch::SetExecutionPolicy(_) => Some("set_execution_policy"),
+        ContextPatch::SetControlPlaneResult(_) => Some("set_control_plane_result"),
+        ContextPatch::SetSelectedPromptVariant(_) => Some("set_selected_prompt_variant"),
+        ContextPatch::SetRequestQueryEmbedding { .. } => Some("set_request_query_embedding"),
+        ContextPatch::SetPrefetchedRetrievals(_) => Some("set_prefetched_retrievals"),
+        ContextPatch::PrependMessages(_) | ContextPatch::EmitStatus(_) => None,
     }
 }
 
@@ -1065,12 +1263,9 @@ impl LocalWorkflowStep<LocalWorkflowContext> for TemplateRenderStep {
     }
 }
 
-
 pub(super) fn unix_seconds() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs())
         .unwrap_or(0)
 }
-
-

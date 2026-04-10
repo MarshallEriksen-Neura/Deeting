@@ -4,6 +4,7 @@ use crate::modules::workflow::store::artifacts::{
 };
 use crate::modules::workflow::store::checkpoints::{
     create_workflow_checkpoint, get_active_checkpoint_for_run, resolve_checkpoint,
+    update_checkpoint_approval_payload,
 };
 use crate::modules::workflow::store::events::{create_workflow_event, list_workflow_events_by_run};
 use crate::modules::workflow::store::runs::{
@@ -241,6 +242,91 @@ async fn active_checkpoint_can_be_resolved() {
         .await
         .expect("get active checkpoint after resolve");
     assert!(active_after.is_none());
+}
+
+#[tokio::test]
+async fn active_checkpoint_approval_payload_can_be_updated() {
+    let store = create_test_store("checkpoint-update-payload").await;
+    let run = create_workflow_run(
+        &store,
+        CreateWorkflowRunRequest {
+            title: "Checkpoint Payload".to_string(),
+            goal: "Track payload changes".to_string(),
+            proposal_text: None,
+        },
+    )
+    .await
+    .expect("create workflow run");
+
+    let step = create_workflow_step_run(
+        &store,
+        CreateWorkflowStepRunRequest {
+            run_id: run.id.clone(),
+            phase_id: "phase-1".to_string(),
+            phase_index: 1,
+            step_type: WorkflowStepType::ApprovalGate,
+            title: "Approval Step".to_string(),
+            worker_ref: None,
+            goal: None,
+        },
+    )
+    .await
+    .expect("create workflow step");
+
+    let checkpoint = create_workflow_checkpoint(
+        &store,
+        CreateWorkflowCheckpointRequest {
+            run_id: run.id.clone(),
+            blocked_step_id: Some(step.id.clone()),
+            reason: "waiting_approval".to_string(),
+            approval_payload: Some(serde_json::json!({
+                "approval_group_id": "group-1",
+                "policy": "all",
+                "items": [{ "id": "a1", "label": "Security", "status": "pending" }],
+                "resolution_summary": { "approved": 0, "rejected": 0, "pending": 1 }
+            })),
+        },
+    )
+    .await
+    .expect("create checkpoint");
+
+    update_checkpoint_approval_payload(
+        &store,
+        &checkpoint.id,
+        Some(&serde_json::json!({
+            "approval_group_id": "group-1",
+            "policy": "all",
+            "items": [
+                { "id": "a1", "label": "Security", "status": "approved" },
+                { "id": "a2", "label": "Product", "status": "pending" }
+            ],
+            "resolution_summary": { "approved": 1, "rejected": 0, "pending": 1 }
+        })),
+    )
+    .await
+    .expect("update checkpoint payload");
+
+    let active = get_active_checkpoint_for_run(&store, &run.id)
+        .await
+        .expect("get active checkpoint")
+        .expect("active checkpoint exists");
+    assert_eq!(
+        active
+            .approval_payload
+            .as_ref()
+            .and_then(|v| v.get("approval_group_id"))
+            .and_then(|v| v.as_str()),
+        Some("group-1")
+    );
+    assert_eq!(
+        active
+            .approval_payload
+            .as_ref()
+            .and_then(|v| v.get("items"))
+            .and_then(|v| v.as_array())
+            .map(|items| items.len()),
+        Some(2)
+    );
 }
 
 #[tokio::test]

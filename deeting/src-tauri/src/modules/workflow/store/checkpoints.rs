@@ -119,6 +119,34 @@ pub(crate) async fn resolve_checkpoint(
     Ok(())
 }
 
+pub(crate) async fn update_checkpoint_approval_payload(
+    store: &McpStore,
+    id: &str,
+    approval_payload: Option<&serde_json::Value>,
+) -> Result<(), McpError> {
+    ensure_schema(store).await?;
+    let approval_payload_json = serialize_json_opt(approval_payload)?;
+    let result = sqlx::query(&format!(
+        r#"
+        UPDATE {WORKFLOW_CHECKPOINT_TABLE}
+        SET approval_payload = ?
+        WHERE id = ? AND resolved = 0
+        "#
+    ))
+    .bind(approval_payload_json)
+    .bind(id.trim())
+    .execute(&store.pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+
+    if result.rows_affected() == 0 {
+        return Err(McpError::NotFound(
+            "active workflow checkpoint not found".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 fn row_to_workflow_checkpoint(row: &SqliteRow) -> Result<WorkflowCheckpoint, McpError> {
     Ok(WorkflowCheckpoint {
         id: row

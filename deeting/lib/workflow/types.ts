@@ -38,6 +38,8 @@ export type WorkflowArtifactKind =
   | "link"
 
 export type ApprovalAction = "approve" | "reject" | "modify"
+export type ApprovalGroupPolicy = "all" | "any"
+export type ApprovalItemStatus = "pending" | "approved" | "rejected"
 
 export type RevalidationDecision =
   | "continue"
@@ -103,6 +105,26 @@ export interface WorkflowCheckpoint {
   resolved: boolean
   created_at: string
   resolved_at: string | null
+}
+
+export interface ApprovalItem {
+  id: string
+  label: string
+  status: ApprovalItemStatus
+  reviewer?: string | null
+}
+
+export interface ApprovalResolutionSummary {
+  approved: number
+  rejected: number
+  pending: number
+}
+
+export interface ApprovalGroup {
+  approval_group_id: string
+  policy: ApprovalGroupPolicy
+  items: ApprovalItem[]
+  resolution_summary: ApprovalResolutionSummary
 }
 
 export interface WorkflowArtifact {
@@ -213,8 +235,18 @@ export interface RegenerateProposalRequest {
 
 export interface ApproveWorkflowRequest {
   run_id: string
-  action: ApprovalAction
+  action?: ApprovalAction | null
   updated_proposal?: string | null
+  approval_group?: {
+    approval_group_id: string
+    policy?: ApprovalGroupPolicy | null
+    items: Array<{
+      id: string
+      status: ApprovalItemStatus
+      label?: string | null
+      reviewer?: string | null
+    }>
+  } | null
 }
 
 export interface RerunPhaseRequest {

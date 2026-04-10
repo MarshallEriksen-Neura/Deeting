@@ -5,10 +5,11 @@ use crate::modules::workflow::result_packet;
 use crate::modules::workflow::run_dir;
 use crate::modules::workflow::store;
 use crate::modules::workflow::types::{
-    CompiledPhase, CreateWorkflowArtifactRequest, CreateWorkflowCheckpointRequest,
-    CreateWorkflowEventRequest, CreateWorkflowStepRunRequest, ExecutionSnapshot, PhaseOutcome,
-    ResultPacket, RevalidationDecision, WorkerExecutionInput, WorkflowArtifactKind,
-    WorkflowProgress, WorkflowRun, WorkflowRunStatus, WorkflowStepStatus, WorkflowStepType,
+    ApprovalGroup, ApprovalGroupPolicy, ApprovalItem, ApprovalItemStatus, CompiledPhase,
+    CreateWorkflowArtifactRequest, CreateWorkflowCheckpointRequest, CreateWorkflowEventRequest,
+    CreateWorkflowStepRunRequest, ExecutionSnapshot, PhaseOutcome, ResultPacket,
+    RevalidationDecision, WorkerExecutionInput, WorkflowArtifactKind, WorkflowProgress,
+    WorkflowRun, WorkflowRunStatus, WorkflowStepStatus, WorkflowStepType,
 };
 use crate::modules::workflow::worker_adapter;
 use crate::state::AppState;
@@ -319,11 +320,7 @@ async fn handle_approval_gate(
             run_id: run_id.to_string(),
             blocked_step_id: Some(step_run.id.clone()),
             reason: format!("Approval required: {}", phase.title),
-            approval_payload: Some(serde_json::json!({
-                "phase_id": phase.phase_id,
-                "phase_title": phase.title,
-                "goal": phase.goal,
-            })),
+            approval_payload: Some(build_approval_payload(phase, &step_run.id)?),
         },
     )
     .await
@@ -339,6 +336,49 @@ async fn handle_approval_gate(
     .await;
 
     Ok(WorkflowRunStatus::WaitingApproval)
+}
+
+fn build_approval_payload(
+    phase: &CompiledPhase,
+    step_run_id: &str,
+) -> Result<serde_json::Value, String> {
+    let mut approval_group = ApprovalGroup {
+        approval_group_id: format!("group:{step_run_id}"),
+        policy: ApprovalGroupPolicy::All,
+        items: vec![ApprovalItem {
+            id: format!("item:{step_run_id}"),
+            label: format!("{} approval", phase.title),
+            status: ApprovalItemStatus::Pending,
+            reviewer: None,
+        }],
+        resolution_summary: Default::default(),
+    };
+    approval_group.recompute_summary();
+
+    let mut payload = serde_json::Map::new();
+    payload.insert(
+        "phase_id".to_string(),
+        serde_json::Value::String(phase.phase_id.clone()),
+    );
+    payload.insert(
+        "phase_title".to_string(),
+        serde_json::Value::String(phase.title.clone()),
+    );
+    payload.insert(
+        "goal".to_string(),
+        serde_json::Value::String(phase.goal.clone()),
+    );
+
+    let group_value = serde_json::to_value(approval_group)
+        .map_err(|err| format!("failed to serialize approval group payload: {err}"))?;
+    let group_obj = group_value
+        .as_object()
+        .ok_or_else(|| "approval group payload must be an object".to_string())?;
+    for (key, value) in group_obj {
+        payload.insert(key.clone(), value.clone());
+    }
+
+    Ok(serde_json::Value::Object(payload))
 }
 
 pub(crate) fn revalidate_remaining_phases(
@@ -431,7 +471,8 @@ fn emit_progress(
 mod tests {
     use super::*;
     use crate::modules::workflow::types::{
-        CompiledPhase, FollowupHints, ResultJson, ResultOutputs, ResultPacket,
+        ApprovalGroup, ApprovalItemStatus, CompiledPhase, FollowupHints, ResultJson, ResultOutputs,
+        ResultPacket,
     };
 
     fn sample_compiled_phase() -> CompiledPhase {
@@ -513,5 +554,25 @@ mod tests {
         let phase = sample_compiled_phase();
         let decision = revalidate_remaining_phases(&result, &phase, &[phase.clone()]);
         assert_eq!(decision, RevalidationDecision::MarkInvalidated);
+    }
+
+    #[test]
+    fn build_approval_payload_contains_group_model() {
+        let phase = CompiledPhase {
+            phase_id: "phase-2".to_string(),
+            title: "Security Review".to_string(),
+            worker_ref: "approval_gate".to_string(),
+            depends_on: vec!["phase-1".to_string()],
+            goal: "Approve security scope".to_string(),
+            expected_output: None,
+        };
+
+        let payload = build_approval_payload(&phase, "step-123").expect("build payload");
+        let group: ApprovalGroup = serde_json::from_value(payload.clone()).expect("group payload");
+        assert_eq!(group.approval_group_id, "group:step-123");
+        assert_eq!(group.items.len(), 1);
+        assert_eq!(group.items[0].status, ApprovalItemStatus::Pending);
+        assert_eq!(group.resolution_summary.pending, 1);
+        assert_eq!(payload["phase_id"], "phase-2");
     }
 }

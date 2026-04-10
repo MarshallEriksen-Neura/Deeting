@@ -1,4 +1,4 @@
-﻿use serde_json::Value;
+use serde_json::Value;
 
 use crate::modules::ai_upstream::types::LocalModelConnection;
 
@@ -126,5 +126,3 @@ pub(super) fn pool_request_matches_model_connection(
             .map(|value| value.eq_ignore_ascii_case(requested_model))
             .unwrap_or(false)
 }
-
-

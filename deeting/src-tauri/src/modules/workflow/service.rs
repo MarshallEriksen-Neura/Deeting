@@ -6,7 +6,8 @@ use crate::modules::workflow::proposal;
 use crate::modules::workflow::run_dir;
 use crate::modules::workflow::store;
 use crate::modules::workflow::types::{
-    ApprovalAction, ApproveWorkflowRequest, CompileResult, CreateWorkflowEventRequest,
+    ApprovalAction, ApprovalGroup, ApprovalGroupPolicy, ApprovalGroupUpdate, ApprovalItem,
+    ApprovalItemStatus, ApproveWorkflowRequest, CompileResult, CreateWorkflowEventRequest,
     CreateWorkflowRunRequest, EditRemainingPhasesRequest, ExecutionSnapshot,
     GenerateProposalRequest, QuickWorkflowRequest, QuickWorkflowResult, RegenerateProposalRequest,
     RerunPhaseRequest, UpdateProposalRequest, WorkflowPhaseContext, WorkflowRun, WorkflowRunDetail,
@@ -570,16 +571,35 @@ pub(crate) async fn approve_workflow(
         .map_err(|err| err.to_string())?
         .ok_or_else(|| "No active checkpoint found for this run".to_string())?;
 
+    let mut approval_group = parse_or_create_approval_group(&checkpoint)?;
+    if let Some(group_update) = req.approval_group.as_ref() {
+        apply_approval_group_updates(&mut approval_group, group_update)?;
+    }
+
+    let mut effective_action = req.action.clone();
+    if req.approval_group.is_some() {
+        if !matches!(effective_action, Some(ApprovalAction::Modify)) {
+            effective_action = infer_action_from_group(&approval_group);
+        }
+    } else if let Some(action) = effective_action.as_ref() {
+        mark_pending_items_for_legacy_action(&mut approval_group, action);
+    } else {
+        return Err("approval action or approval_group is required".to_string());
+    }
+
     let next_status = apply_approval_action(
         store_ref,
         &run,
         &checkpoint,
-        &req.action,
+        effective_action.as_ref(),
         req.updated_proposal.as_deref(),
+        &approval_group,
     )
     .await?;
 
-    if next_status == WorkflowRunStatus::Ready && matches!(req.action, ApprovalAction::Approve) {
+    if next_status == WorkflowRunStatus::Ready
+        && matches!(effective_action, Some(ApprovalAction::Approve))
+    {
         return resume_workflow(app_handle, app_state, run_id).await;
     }
 
@@ -908,19 +928,229 @@ fn update_phase_goal_in_proposal_text(
     }
 }
 
+fn parse_or_create_approval_group(
+    checkpoint: &crate::modules::workflow::types::WorkflowCheckpoint,
+) -> Result<ApprovalGroup, String> {
+    if let Some(payload) = checkpoint.approval_payload.as_ref() {
+        if let Ok(mut group) = serde_json::from_value::<ApprovalGroup>(payload.clone()) {
+            if group.approval_group_id.trim().is_empty() {
+                group.approval_group_id = format!("group:{}", checkpoint.id);
+            }
+            if group.items.is_empty() {
+                group.items.push(ApprovalItem {
+                    id: format!(
+                        "item:{}",
+                        checkpoint
+                            .blocked_step_id
+                            .as_deref()
+                            .unwrap_or(checkpoint.id.as_str())
+                    ),
+                    label: "Approval".to_string(),
+                    status: ApprovalItemStatus::Pending,
+                    reviewer: None,
+                });
+            }
+            group.recompute_summary();
+            return Ok(group);
+        }
+    }
+
+    let label = checkpoint
+        .approval_payload
+        .as_ref()
+        .and_then(|payload| payload.get("phase_title"))
+        .and_then(|value| value.as_str())
+        .map(|title| format!("{title} approval"))
+        .unwrap_or_else(|| "Approval".to_string());
+
+    let mut group = ApprovalGroup {
+        approval_group_id: format!("group:{}", checkpoint.id),
+        policy: ApprovalGroupPolicy::All,
+        items: vec![ApprovalItem {
+            id: format!(
+                "item:{}",
+                checkpoint
+                    .blocked_step_id
+                    .as_deref()
+                    .unwrap_or(checkpoint.id.as_str())
+            ),
+            label,
+            status: ApprovalItemStatus::Pending,
+            reviewer: None,
+        }],
+        resolution_summary: Default::default(),
+    };
+    group.recompute_summary();
+    Ok(group)
+}
+
+fn apply_approval_group_updates(
+    approval_group: &mut ApprovalGroup,
+    update: &ApprovalGroupUpdate,
+) -> Result<(), String> {
+    if update.approval_group_id.trim().is_empty() {
+        return Err("approval_group.approval_group_id is required".to_string());
+    }
+    if update.approval_group_id.trim() != approval_group.approval_group_id {
+        return Err(format!(
+            "approval_group_id mismatch: expected '{}', got '{}'",
+            approval_group.approval_group_id, update.approval_group_id
+        ));
+    }
+
+    if let Some(policy) = update.policy.clone() {
+        approval_group.policy = policy;
+    }
+
+    for item_update in &update.items {
+        if let Some(item) = approval_group
+            .items
+            .iter_mut()
+            .find(|item| item.id == item_update.id)
+        {
+            item.status = item_update.status.clone();
+            if let Some(label) = item_update.label.as_deref() {
+                let label = label.trim();
+                if !label.is_empty() {
+                    item.label = label.to_string();
+                }
+            }
+            if item_update.reviewer.is_some() {
+                item.reviewer = item_update.reviewer.clone();
+            }
+        } else {
+            approval_group.items.push(ApprovalItem {
+                id: item_update.id.clone(),
+                label: item_update
+                    .label
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or(item_update.id.as_str())
+                    .to_string(),
+                status: item_update.status.clone(),
+                reviewer: item_update.reviewer.clone(),
+            });
+        }
+    }
+
+    approval_group.recompute_summary();
+    Ok(())
+}
+
+fn infer_action_from_group(approval_group: &ApprovalGroup) -> Option<ApprovalAction> {
+    let summary = &approval_group.resolution_summary;
+    match approval_group.policy {
+        ApprovalGroupPolicy::All => {
+            if summary.rejected > 0 {
+                Some(ApprovalAction::Reject)
+            } else if summary.pending > 0 {
+                None
+            } else {
+                Some(ApprovalAction::Approve)
+            }
+        }
+        ApprovalGroupPolicy::Any => {
+            if summary.approved > 0 {
+                Some(ApprovalAction::Approve)
+            } else if summary.pending > 0 {
+                None
+            } else {
+                Some(ApprovalAction::Reject)
+            }
+        }
+    }
+}
+
+fn mark_pending_items_for_legacy_action(
+    approval_group: &mut ApprovalGroup,
+    action: &ApprovalAction,
+) {
+    let status = match action {
+        ApprovalAction::Approve => Some(ApprovalItemStatus::Approved),
+        ApprovalAction::Reject => Some(ApprovalItemStatus::Rejected),
+        ApprovalAction::Modify => None,
+    };
+    if let Some(status) = status {
+        for item in &mut approval_group.items {
+            if item.status == ApprovalItemStatus::Pending {
+                item.status = status.clone();
+            }
+        }
+    }
+    approval_group.recompute_summary();
+}
+
+fn build_approval_payload(
+    checkpoint: &crate::modules::workflow::types::WorkflowCheckpoint,
+    approval_group: &ApprovalGroup,
+) -> Result<serde_json::Value, String> {
+    let mut payload = checkpoint
+        .approval_payload
+        .as_ref()
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+
+    let group_value = serde_json::to_value(approval_group)
+        .map_err(|err| format!("failed to serialize approval group: {err}"))?;
+    let group_obj = group_value
+        .as_object()
+        .ok_or_else(|| "approval group payload must be an object".to_string())?;
+    for (key, value) in group_obj {
+        payload.insert(key.clone(), value.clone());
+    }
+    Ok(serde_json::Value::Object(payload))
+}
+
 async fn apply_approval_action(
     store_ref: &McpStore,
     run: &WorkflowRun,
     checkpoint: &crate::modules::workflow::types::WorkflowCheckpoint,
-    action: &ApprovalAction,
+    action: Option<&ApprovalAction>,
     updated_proposal: Option<&str>,
+    approval_group: &ApprovalGroup,
 ) -> Result<WorkflowRunStatus, String> {
     let run_id = run.id.as_str();
+    let approval_group_id = approval_group.approval_group_id.clone();
+    let approval_policy = approval_group.policy.clone();
+    let approval_summary = approval_group.resolution_summary.clone();
+    let approval_items = approval_group.items.clone();
+
+    let Some(action) = action else {
+        let merged_payload = build_approval_payload(checkpoint, approval_group)?;
+        store::update_checkpoint_approval_payload(store_ref, &checkpoint.id, Some(&merged_payload))
+            .await
+            .map_err(|err| err.to_string())?;
+        emit_event(
+            store_ref,
+            run_id,
+            checkpoint.blocked_step_id.as_deref(),
+            "step.waiting_approval",
+            Some(serde_json::json!({
+                "approval_group_id": &approval_group_id,
+                "resolution_summary": &approval_summary,
+                "policy": &approval_policy,
+            })),
+        )
+        .await;
+        return Ok(WorkflowRunStatus::WaitingApproval);
+    };
+
     match action {
         ApprovalAction::Approve => {
-            store::resolve_checkpoint(store_ref, &checkpoint.id, None)
-                .await
-                .map_err(|err| err.to_string())?;
+            store::resolve_checkpoint(
+                store_ref,
+                &checkpoint.id,
+                Some(&serde_json::json!({
+                    "action": "approved",
+                    "approval_group_id": &approval_group_id,
+                    "policy": &approval_policy,
+                    "resolution_summary": &approval_summary,
+                    "items": &approval_items,
+                })),
+            )
+            .await
+            .map_err(|err| err.to_string())?;
             if let Some(step_id) = checkpoint.blocked_step_id.as_deref() {
                 store::update_workflow_step_status(
                     store_ref,
@@ -934,7 +1164,11 @@ async fn apply_approval_action(
                     run_id,
                     Some(step_id),
                     "step.succeeded",
-                    Some(serde_json::json!({ "approval": "approved" })),
+                    Some(serde_json::json!({
+                        "approval": "approved",
+                        "approval_group_id": &approval_group_id,
+                        "resolution_summary": &approval_summary,
+                    })),
                 )
                 .await;
             }
@@ -947,7 +1181,13 @@ async fn apply_approval_action(
             store::resolve_checkpoint(
                 store_ref,
                 &checkpoint.id,
-                Some(&serde_json::json!({ "action": "rejected" })),
+                Some(&serde_json::json!({
+                    "action": "rejected",
+                    "approval_group_id": &approval_group_id,
+                    "policy": &approval_policy,
+                    "resolution_summary": &approval_summary,
+                    "items": &approval_items,
+                })),
             )
             .await
             .map_err(|err| err.to_string())?;
@@ -968,7 +1208,11 @@ async fn apply_approval_action(
                 run_id,
                 None,
                 "run.cancelled",
-                Some(serde_json::json!({ "reason": "user_rejected_approval" })),
+                Some(serde_json::json!({
+                    "reason": "user_rejected_approval",
+                    "approval_group_id": &approval_group_id,
+                    "resolution_summary": &approval_summary,
+                })),
             )
             .await;
             Ok(WorkflowRunStatus::Cancelled)
@@ -977,7 +1221,13 @@ async fn apply_approval_action(
             store::resolve_checkpoint(
                 store_ref,
                 &checkpoint.id,
-                Some(&serde_json::json!({ "action": "modify" })),
+                Some(&serde_json::json!({
+                    "action": "modify",
+                    "approval_group_id": &approval_group_id,
+                    "policy": &approval_policy,
+                    "resolution_summary": &approval_summary,
+                    "items": &approval_items,
+                })),
             )
             .await
             .map_err(|err| err.to_string())?;
@@ -1002,7 +1252,10 @@ async fn apply_approval_action(
                 run_id,
                 None,
                 "run.awaiting_plan_edit",
-                Some(serde_json::json!({ "reason": "user_requested_modify" })),
+                Some(serde_json::json!({
+                    "reason": "user_requested_modify",
+                    "approval_group_id": &approval_group_id,
+                })),
             )
             .await;
             if let Some(proposal) = updated_proposal {
@@ -1021,7 +1274,8 @@ mod tests {
     use crate::modules::mcp::store::McpStore;
     use crate::modules::workflow::store;
     use crate::modules::workflow::types::{
-        CreateWorkflowRunRequest, WorkflowRunStatus, WorkflowStepType,
+        ApprovalGroup, ApprovalGroupPolicy, ApprovalGroupUpdate, ApprovalItem, ApprovalItemStatus,
+        ApprovalItemUpdate, CreateWorkflowRunRequest, WorkflowRunStatus, WorkflowStepType,
     };
     use uuid::Uuid;
 
@@ -1782,10 +2036,19 @@ Goal: Produce a useful output
     async fn approval_action_helper_approve_marks_ready() {
         let (store, app_data_dir, run, checkpoint) =
             create_waiting_approval_run("approve-ready").await;
-        let status =
-            apply_approval_action(&store, &run, &checkpoint, &ApprovalAction::Approve, None)
-                .await
-                .expect("approve action");
+        let mut approval_group =
+            parse_or_create_approval_group(&checkpoint).expect("approval group");
+        mark_pending_items_for_legacy_action(&mut approval_group, &ApprovalAction::Approve);
+        let status = apply_approval_action(
+            &store,
+            &run,
+            &checkpoint,
+            Some(&ApprovalAction::Approve),
+            None,
+            &approval_group,
+        )
+        .await
+        .expect("approve action");
         assert_eq!(status, WorkflowRunStatus::Ready);
 
         let reloaded = store::get_workflow_run(&store, &run.id)
@@ -1801,10 +2064,19 @@ Goal: Produce a useful output
     async fn approval_action_reject_cancels_run() {
         let (store, app_data_dir, run, checkpoint) =
             create_waiting_approval_run("approve-reject").await;
-        let status =
-            apply_approval_action(&store, &run, &checkpoint, &ApprovalAction::Reject, None)
-                .await
-                .expect("reject action");
+        let mut approval_group =
+            parse_or_create_approval_group(&checkpoint).expect("approval group");
+        mark_pending_items_for_legacy_action(&mut approval_group, &ApprovalAction::Reject);
+        let status = apply_approval_action(
+            &store,
+            &run,
+            &checkpoint,
+            Some(&ApprovalAction::Reject),
+            None,
+            &approval_group,
+        )
+        .await
+        .expect("reject action");
         assert_eq!(status, WorkflowRunStatus::Cancelled);
 
         let reloaded = store::get_workflow_run(&store, &run.id)
@@ -1820,12 +2092,14 @@ Goal: Produce a useful output
     async fn approval_action_modify_transitions_to_awaiting_edit() {
         let (store, app_data_dir, run, checkpoint) =
             create_waiting_approval_run("approve-modify").await;
+        let approval_group = parse_or_create_approval_group(&checkpoint).expect("approval group");
         let status = apply_approval_action(
             &store,
             &run,
             &checkpoint,
-            &ApprovalAction::Modify,
+            Some(&ApprovalAction::Modify),
             Some(&SAMPLE_PROPOSAL.replace("Analysis", "Edited Analysis")),
+            &approval_group,
         )
         .await
         .expect("modify action");
@@ -1840,6 +2114,94 @@ Goal: Produce a useful output
         assert!(reloaded.snapshot_json.is_none());
 
         std::fs::remove_dir_all(app_data_dir).ok();
+    }
+
+    #[tokio::test]
+    async fn approval_group_pending_keeps_run_waiting() {
+        let (store, app_data_dir, run, checkpoint) =
+            create_waiting_approval_run("approve-group-pending").await;
+        let mut approval_group =
+            parse_or_create_approval_group(&checkpoint).expect("approval group");
+        approval_group.items.push(ApprovalItem {
+            id: "item:product-review".to_string(),
+            label: "Product approval".to_string(),
+            status: ApprovalItemStatus::Pending,
+            reviewer: None,
+        });
+        approval_group.items[0].status = ApprovalItemStatus::Approved;
+        approval_group.recompute_summary();
+        let inferred = infer_action_from_group(&approval_group);
+        assert!(
+            inferred.is_none(),
+            "all-policy with pending should not resolve"
+        );
+
+        let status = apply_approval_action(
+            &store,
+            &run,
+            &checkpoint,
+            inferred.as_ref(),
+            None,
+            &approval_group,
+        )
+        .await
+        .expect("apply pending group action");
+        assert_eq!(status, WorkflowRunStatus::WaitingApproval);
+
+        let active = store::get_active_checkpoint_for_run(&store, &run.id)
+            .await
+            .expect("load checkpoint")
+            .expect("checkpoint still active");
+        let payload = active.approval_payload.expect("payload should exist");
+        assert_eq!(payload["resolution_summary"]["approved"], 1);
+        assert_eq!(payload["resolution_summary"]["pending"], 1);
+
+        std::fs::remove_dir_all(app_data_dir).ok();
+    }
+
+    #[test]
+    fn approval_group_update_can_append_new_items() {
+        let mut group = ApprovalGroup {
+            approval_group_id: "group:test".to_string(),
+            policy: ApprovalGroupPolicy::All,
+            items: vec![ApprovalItem {
+                id: "item:a1".to_string(),
+                label: "Security approval".to_string(),
+                status: ApprovalItemStatus::Pending,
+                reviewer: None,
+            }],
+            resolution_summary: Default::default(),
+        };
+        group.recompute_summary();
+
+        apply_approval_group_updates(
+            &mut group,
+            &ApprovalGroupUpdate {
+                approval_group_id: "group:test".to_string(),
+                policy: Some(ApprovalGroupPolicy::All),
+                items: vec![
+                    ApprovalItemUpdate {
+                        id: "item:a1".to_string(),
+                        status: ApprovalItemStatus::Approved,
+                        label: None,
+                        reviewer: Some("security_reviewer".to_string()),
+                    },
+                    ApprovalItemUpdate {
+                        id: "item:a2".to_string(),
+                        status: ApprovalItemStatus::Pending,
+                        label: Some("Product approval".to_string()),
+                        reviewer: Some("product_reviewer".to_string()),
+                    },
+                ],
+            },
+        )
+        .expect("apply updates");
+
+        assert_eq!(group.items.len(), 2);
+        assert_eq!(group.resolution_summary.approved, 1);
+        assert_eq!(group.resolution_summary.pending, 1);
+        assert_eq!(group.items[1].label, "Product approval");
+        assert_eq!(group.items[1].reviewer.as_deref(), Some("product_reviewer"));
     }
 
     #[tokio::test]

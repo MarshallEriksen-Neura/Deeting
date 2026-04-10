@@ -178,7 +178,7 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SelectedKnowledgeInjectionStep 
     }
 
     fn depends_on(&self) -> &'static [&'static str] {
-        &["semantic_memory_injection"]
+        &["context_retrieval_prefetch"]
     }
 
     fn execute<'a>(
@@ -211,7 +211,7 @@ impl LocalWorkflowStep<LocalWorkflowContext> for AssetRecallInjectionStep {
     }
 
     fn depends_on(&self) -> &'static [&'static str] {
-        &["selected_knowledge_injection"]
+        &["context_retrieval_prefetch"]
     }
 
     fn execute<'a>(

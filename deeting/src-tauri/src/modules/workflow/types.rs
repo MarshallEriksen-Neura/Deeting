@@ -582,11 +582,91 @@ pub enum ApprovalAction {
     Modify,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalGroupPolicy {
+    #[default]
+    All,
+    Any,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalItemStatus {
+    #[default]
+    Pending,
+    Approved,
+    Rejected,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ApprovalItem {
+    pub id: String,
+    pub label: String,
+    pub status: ApprovalItemStatus,
+    #[serde(default)]
+    pub reviewer: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct ApprovalResolutionSummary {
+    pub approved: i64,
+    pub rejected: i64,
+    pub pending: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ApprovalGroup {
+    pub approval_group_id: String,
+    #[serde(default)]
+    pub policy: ApprovalGroupPolicy,
+    #[serde(default)]
+    pub items: Vec<ApprovalItem>,
+    #[serde(default)]
+    pub resolution_summary: ApprovalResolutionSummary,
+}
+
+impl ApprovalGroup {
+    pub fn recompute_summary(&mut self) {
+        let mut summary = ApprovalResolutionSummary::default();
+        for item in &self.items {
+            match item.status {
+                ApprovalItemStatus::Approved => summary.approved += 1,
+                ApprovalItemStatus::Rejected => summary.rejected += 1,
+                ApprovalItemStatus::Pending => summary.pending += 1,
+            }
+        }
+        self.resolution_summary = summary;
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ApprovalItemUpdate {
+    pub id: String,
+    pub status: ApprovalItemStatus,
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub reviewer: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ApprovalGroupUpdate {
+    pub approval_group_id: String,
+    #[serde(default)]
+    pub policy: Option<ApprovalGroupPolicy>,
+    #[serde(default)]
+    pub items: Vec<ApprovalItemUpdate>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApproveWorkflowRequest {
     pub run_id: String,
-    pub action: ApprovalAction,
+    #[serde(default)]
+    pub action: Option<ApprovalAction>,
     pub updated_proposal: Option<String>,
+    #[serde(default)]
+    pub approval_group: Option<ApprovalGroupUpdate>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

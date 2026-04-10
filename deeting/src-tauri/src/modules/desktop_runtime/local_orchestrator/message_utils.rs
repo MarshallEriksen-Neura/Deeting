@@ -1,4 +1,4 @@
-﻿use std::collections::BTreeSet;
+use std::collections::BTreeSet;
 
 use serde_json::Value;
 
@@ -262,7 +262,9 @@ pub(super) fn extract_content_text(content: Value) -> String {
     }
 }
 
-pub(super) fn fallback_prefers_chinese(control_plane_result: Option<&LocalControlPlaneResult>) -> bool {
+pub(super) fn fallback_prefers_chinese(
+    control_plane_result: Option<&LocalControlPlaneResult>,
+) -> bool {
     control_plane_result
         .map(|result| result.prompt_plan.response_language)
         .map(|value| value.to_ascii_lowercase().contains("zh"))
@@ -354,5 +356,3 @@ pub(super) fn derive_local_finish_reason(
         None => "stop".to_string(),
     }
 }
-
-

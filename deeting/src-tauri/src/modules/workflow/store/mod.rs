@@ -9,6 +9,7 @@ mod steps;
 pub(crate) use artifacts::create_workflow_artifact;
 pub(crate) use checkpoints::{
     create_workflow_checkpoint, get_active_checkpoint_for_run, resolve_checkpoint,
+    update_checkpoint_approval_payload,
 };
 pub(crate) use events::{create_workflow_event, list_workflow_events_by_run};
 pub(crate) use runs::{
