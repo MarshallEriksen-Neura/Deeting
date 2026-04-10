@@ -8,11 +8,14 @@ use super::{
 use crate::modules::desktop_runtime::runtime::{
     apply_rejected_tool_result_to_execution_graph,
     apply_rejected_tool_result_to_execution_graph_value, delete_execution_graph_runtime_context,
-    load_execution_graph_snapshot, load_execution_graph_snapshot_by_approval_token,
-    persist_execution_graph_snapshot, resume_suspended_chat_tool_execution_after_approval,
+    list_canonical_pending_local_approval_snapshots, load_execution_graph_snapshot,
+    load_execution_graph_snapshot_by_approval_token,
+    materialize_pending_local_approval_from_runtime_context, persist_execution_graph_snapshot,
+    resume_suspended_chat_tool_execution_after_approval,
 };
 use crate::modules::mcp::commands::common_impl::to_string;
 use crate::modules::mcp::policy::PersistedApprovalAction;
+use std::collections::HashSet;
 
 const LEGACY_SUSPENDED_REJECT_FALLBACK_WINDOW_MS: i128 = 5 * 60 * 1000;
 
@@ -79,6 +82,12 @@ pub(crate) async fn approve_mcp_tool_payload(
     if token.is_empty() {
         return Err("approval token is required".to_string());
     }
+    let materialized_pending = materialize_pending_local_approval_from_runtime_context(
+        state,
+        token,
+        execution_graph_execution_id,
+    )
+    .await?;
     let pending_before_approval = state
         .mcp
         .approvals
@@ -86,7 +95,8 @@ pub(crate) async fn approve_mcp_tool_payload(
         .read()
         .await
         .get(token)
-        .cloned();
+        .cloned()
+        .or(materialized_pending);
     let approval_context = state
         .mcp
         .build_approval_context(call_id, execution_token, None);
@@ -127,6 +137,16 @@ pub(crate) async fn approve_mcp_tool_payload(
         return Ok(resumed);
     }
 
+    if let Some(execution_id) = requested_execution_id {
+        return Ok(serde_json::json!({
+            "status": "LOCAL_CHAT_RESUME_FAILED",
+            "approved_tool_result": approved,
+            "continuation_blocks": [],
+            "execution_graph_execution_id": execution_id,
+            "error": "canonical waiting approval existed, but post-approval continuation could not be resumed",
+        }));
+    }
+
     Ok(approved)
 }
 
@@ -140,6 +160,12 @@ pub(crate) async fn reject_mcp_tool_payload(
     if token.is_empty() {
         return Err("approval token is required".to_string());
     }
+    let materialized_pending = materialize_pending_local_approval_from_runtime_context(
+        state,
+        token,
+        execution_graph_execution_id,
+    )
+    .await?;
     let pending_before_reject = state
         .mcp
         .approvals
@@ -147,7 +173,8 @@ pub(crate) async fn reject_mcp_tool_payload(
         .read()
         .await
         .get(token)
-        .cloned();
+        .cloned()
+        .or(materialized_pending);
     reject_mcp_tool_inner_with_mode(
         Some(state.mcp.store.as_ref()),
         state.mcp.approvals.pending_tool_calls.as_ref(),
@@ -326,14 +353,33 @@ pub(crate) async fn list_pending_mcp_approvals_with_graph_inner(
     let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
     let session_id = session_id.map(str::trim).filter(|value| !value.is_empty());
 
+    let mut approvals = if let Some(store) = store {
+        list_canonical_pending_local_approval_snapshots(store, session_id)
+            .await
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let canonical_tokens = approvals
+        .iter()
+        .filter_map(|value| {
+            value
+                .get("approval_token")
+                .and_then(serde_json::Value::as_str)
+        })
+        .map(str::to_string)
+        .collect::<HashSet<_>>();
+
     let pending = pending_tool_calls.read().await;
     let suspended = if let Some(store) = suspended_local_chat_executions {
         Some(store.read().await)
     } else {
         None
     };
-    let mut approvals = Vec::new();
     for (approval_token, pending) in pending.iter() {
+        if canonical_tokens.contains(approval_token) {
+            continue;
+        }
         if pending.expires_at_unix_ms <= now as i128 {
             continue;
         }

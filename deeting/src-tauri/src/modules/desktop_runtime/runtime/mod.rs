@@ -38,9 +38,12 @@ pub(crate) use chat_completion::{
 };
 pub(crate) use chat_tool_runtime::{
     apply_rejected_tool_result_to_execution_graph,
-    apply_rejected_tool_result_to_execution_graph_value, recover_inflight_local_execution_state,
-    resume_suspended_chat_tool_execution_after_approval, run_local_chat_complete_with_tools,
-    serialize_inflight_runtime_context, InFlightExecutionStage, SuspendedChatToolExecution,
+    apply_rejected_tool_result_to_execution_graph_value,
+    list_canonical_pending_local_approval_snapshots,
+    materialize_pending_local_approval_from_runtime_context,
+    recover_inflight_local_execution_state, resume_suspended_chat_tool_execution_after_approval,
+    run_local_chat_complete_with_tools, serialize_inflight_runtime_context, InFlightExecutionStage,
+    SuspendedChatToolExecution,
 };
 pub(crate) use consult::LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION;
 pub(crate) use control_plane::{

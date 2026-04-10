@@ -7,6 +7,11 @@ import {
   findLatestMessageToolApproval,
 } from "@/lib/chat/tool-approval"
 
+const isTauriRuntime = () =>
+  process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
+  typeof window !== "undefined" &&
+  ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
+
 export function useMessageToolApproval(
   messageId: string | null | undefined,
   blocks: MessageBlock[],
@@ -18,7 +23,7 @@ export function useMessageToolApproval(
   const fromHistory = options?.fromHistory === true
 
   const approval = useMemo(() => {
-    if (!messageId || fromHistory) return null
+    if (!messageId || fromHistory || isTauriRuntime()) return null
     return findLatestMessageToolApproval(blocks, { messageId })
   }, [blocks, fromHistory, messageId])
 

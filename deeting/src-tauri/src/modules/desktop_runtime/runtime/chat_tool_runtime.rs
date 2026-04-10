@@ -259,6 +259,224 @@ fn persistable_inflight_context_from_value(
     serde_json::from_value::<PersistedInFlightExecutionContext>(value.clone()).ok()
 }
 
+#[derive(Debug, Clone)]
+struct CanonicalPendingLocalApprovalMatch {
+    execution_id: String,
+    pending: PersistedPendingApproval,
+}
+
+fn canonical_waiting_approval_context(
+    context: serde_json::Value,
+    execution_id: &str,
+    session_id: Option<&str>,
+) -> Option<PersistedInFlightExecutionContext> {
+    let persisted = persistable_inflight_context_from_value(&context)?;
+    if persisted.stage != InFlightExecutionStage::WaitingApproval {
+        return None;
+    }
+    if let Some(expected_session_id) = session_id {
+        if persisted.session_id.trim() != expected_session_id {
+            return None;
+        }
+    }
+    let normalized_execution_id = execution_id.trim();
+    if normalized_execution_id.is_empty() {
+        return None;
+    }
+    Some(persisted)
+}
+
+async fn load_canonical_waiting_approval_context_by_execution_id(
+    store: &crate::modules::mcp::store::McpStore,
+    execution_id: &str,
+    session_id: Option<&str>,
+) -> Result<Option<(String, PersistedInFlightExecutionContext)>, String> {
+    let normalized_execution_id = execution_id.trim();
+    if normalized_execution_id.is_empty() {
+        return Ok(None);
+    }
+    let Some(context) = load_execution_graph_runtime_context(store, normalized_execution_id)
+        .await
+        .map_err(|err| err.to_string())?
+    else {
+        return Ok(None);
+    };
+    Ok(
+        canonical_waiting_approval_context(context, normalized_execution_id, session_id)
+            .map(|persisted| (normalized_execution_id.to_string(), persisted)),
+    )
+}
+
+async fn list_canonical_waiting_approval_contexts(
+    store: &crate::modules::mcp::store::McpStore,
+    session_id: Option<&str>,
+) -> Result<Vec<(String, PersistedInFlightExecutionContext)>, String> {
+    let rows = list_execution_graph_runtime_contexts(store)
+        .await
+        .map_err(|err| err.to_string())?;
+
+    Ok(rows
+        .into_iter()
+        .filter_map(|row| {
+            canonical_waiting_approval_context(row.context, row.execution_id.as_str(), session_id)
+                .map(|persisted| (row.execution_id, persisted))
+        })
+        .collect())
+}
+
+fn pending_approval_snapshot_from_canonical_match(
+    matched: &CanonicalPendingLocalApprovalMatch,
+    now_unix_ms: i128,
+) -> serde_json::Value {
+    serde_json::json!({
+        "status": "REQUIRES_APPROVAL",
+        "approval_token": matched.pending.approval_token.clone(),
+        "tool_id": matched.pending.tool_id.clone(),
+        "tool_name": matched.pending.tool_name.clone(),
+        "arguments": matched.pending.arguments.clone(),
+        "description": matched.pending.description.clone(),
+        "risk_level": matched.pending.risk_level.clone().unwrap_or_else(|| "HIGH".to_string()),
+        "risk_reasons": matched.pending.risk_reasons.clone(),
+        "call_id": matched.pending.call_id.clone(),
+        "execution_token": matched.pending.execution_token.clone(),
+        "session_id": matched.pending.session_id.clone(),
+        "created_at_unix_ms": matched.pending.created_at_unix_ms,
+        "expires_at_unix_ms": matched.pending.expires_at_unix_ms,
+        "expires_in_ms": matched.pending.expires_at_unix_ms.saturating_sub(now_unix_ms),
+        "execution_graph_execution_id": matched
+            .pending
+            .execution_graph_execution_id
+            .clone()
+            .or_else(|| Some(matched.execution_id.clone())),
+        "execution_graph_gate_node_id": matched.pending.execution_graph_gate_node_id.clone(),
+        "execution_graph_tool_node_id": matched.pending.execution_graph_tool_node_id.clone(),
+    })
+}
+
+async fn find_canonical_pending_local_approval_match(
+    store: &crate::modules::mcp::store::McpStore,
+    approval_token: &str,
+    execution_graph_execution_id: Option<&str>,
+) -> Result<Option<CanonicalPendingLocalApprovalMatch>, String> {
+    let normalized_token = approval_token.trim();
+    if normalized_token.is_empty() {
+        return Ok(None);
+    }
+
+    let contexts = if let Some(execution_id) = execution_graph_execution_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        load_canonical_waiting_approval_context_by_execution_id(store, execution_id, None)
+            .await?
+            .into_iter()
+            .collect::<Vec<_>>()
+    } else {
+        list_canonical_waiting_approval_contexts(store, None).await?
+    };
+
+    for (execution_id, context) in contexts {
+        for pending in &context.pending_approvals {
+            if pending.approval_token.trim() != normalized_token {
+                continue;
+            }
+            return Ok(Some(CanonicalPendingLocalApprovalMatch {
+                execution_id,
+                pending: pending.clone(),
+            }));
+        }
+    }
+
+    Ok(None)
+}
+
+pub(crate) async fn list_canonical_pending_local_approval_snapshots(
+    store: &crate::modules::mcp::store::McpStore,
+    session_id: Option<&str>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+    let contexts = list_canonical_waiting_approval_contexts(store, session_id).await?;
+    let mut snapshots = Vec::new();
+
+    for (execution_id, context) in contexts {
+        for pending in &context.pending_approvals {
+            if pending.expires_at_unix_ms <= now as i128 {
+                continue;
+            }
+            snapshots.push(pending_approval_snapshot_from_canonical_match(
+                &CanonicalPendingLocalApprovalMatch {
+                    execution_id: execution_id.clone(),
+                    pending: pending.clone(),
+                },
+                now as i128,
+            ));
+        }
+    }
+
+    snapshots.sort_by(|left, right| {
+        let left_created = left
+            .get("created_at_unix_ms")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or_default();
+        let right_created = right
+            .get("created_at_unix_ms")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or_default();
+        right_created.cmp(&left_created)
+    });
+
+    Ok(snapshots)
+}
+
+pub(crate) async fn materialize_pending_local_approval_from_runtime_context(
+    app_state: &AppState,
+    approval_token: &str,
+    execution_graph_execution_id: Option<&str>,
+) -> Result<Option<crate::modules::mcp::PendingToolCall>, String> {
+    let normalized_token = approval_token.trim();
+    if normalized_token.is_empty() {
+        return Ok(None);
+    }
+
+    if let Some(existing) = app_state
+        .mcp
+        .approvals
+        .pending_tool_calls
+        .read()
+        .await
+        .get(normalized_token)
+        .cloned()
+    {
+        return Ok(Some(existing));
+    }
+
+    let Some(matched) = find_canonical_pending_local_approval_match(
+        app_state.mcp.store.as_ref(),
+        normalized_token,
+        execution_graph_execution_id,
+    )
+    .await?
+    else {
+        return Ok(None);
+    };
+
+    let expires_at_unix_ms = (now_unix_ms_i64() as i128) + app_state.mcp.pending_tool_call_ttl_ms();
+    let materialized = pending_tool_call_from_persisted_approval(
+        &matched.pending,
+        Some(matched.execution_id.as_str()),
+        expires_at_unix_ms,
+    );
+
+    let mut pending_tool_calls = app_state.mcp.approvals.pending_tool_calls.write().await;
+    let entry = pending_tool_calls
+        .entry(normalized_token.to_string())
+        .or_insert_with(|| materialized.clone());
+    if entry.execution_graph_execution_id.is_none() {
+        entry.execution_graph_execution_id = Some(matched.execution_id.clone());
+    }
+    Ok(Some(entry.clone()))
+}
+
 fn enrich_response_with_tool_trace(
     mut response: serde_json::Value,
     tool_call_meta: &[serde_json::Value],
