@@ -1325,7 +1325,10 @@ for raw_line in sys.stdin:
             .find(|item| item["name"] == serde_json::json!("search_web"))
             .expect("matched full skill tool capability");
         assert_eq!(full_matched["source"], serde_json::json!("local_mcp"));
-        assert_eq!(full_matched["pkg_name"], serde_json::json!("skill.web-tools"));
+        assert_eq!(
+            full_matched["pkg_name"],
+            serde_json::json!("skill.web-tools")
+        );
         assert_eq!(
             full_result["routing_hint"]["direct_callable_capability_count"],
             serde_json::json!(1)

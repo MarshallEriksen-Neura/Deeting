@@ -42,9 +42,8 @@ pub(crate) async fn update_custom_task_agent_service(
             Some(validate_guidance_skill_ids(app_state, guidance_skill_ids).await?);
     }
     if let Some(callable_skill_action_refs) = payload.callable_skill_action_refs.as_ref() {
-        payload.callable_skill_action_refs = Some(
-            validate_callable_skill_action_refs(app_state, callable_skill_action_refs).await?,
-        );
+        payload.callable_skill_action_refs =
+            Some(validate_callable_skill_action_refs(app_state, callable_skill_action_refs).await?);
     }
 
     let profile = update_custom_task_agent_inner(app_state.mcp.store.as_ref(), agent_id, payload)

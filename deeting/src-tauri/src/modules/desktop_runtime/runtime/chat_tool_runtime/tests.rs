@@ -1,0 +1,822 @@
+use super::*;
+use crate::modules::desktop_runtime::runtime::build_local_tool_call_install_gate_error_meta;
+use crate::modules::desktop_runtime::runtime::tool_catalog::dynamic_capability_alias;
+use crate::modules::desktop_runtime::runtime::LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE;
+
+#[test]
+fn build_execution_contract_from_search_result_requires_capabilities() {
+    let err = CapabilityExecutionContract::from_search_result(Some(&serde_json::json!({
+        "recipes": [{"name": "Weather Skill"}]
+    })))
+    .expect_err("should require callable results");
+    assert!(err.contains("capabilities"));
+}
+
+#[test]
+fn last_response_content_or_empty_preserves_existing_assistant_text() {
+    let content = last_response_content_or_empty(Some(&serde_json::json!({
+        "content": "Existing assistant text."
+    })));
+
+    assert_eq!(content, serde_json::json!("Existing assistant text."));
+}
+
+#[test]
+fn build_execution_contract_from_search_result_extracts_allowed_tools() {
+    let contract = CapabilityExecutionContract::from_search_result(Some(&serde_json::json!({
+        "capabilities": [
+            {"name": "search_web", "invocation_mode": "direct", "status": {"callable": true}},
+            {"name": "fetch_page", "invocation_mode": "direct", "status": {"callable": true}},
+            {"name": "search_web", "invocation_mode": "direct", "status": {"callable": true}},
+            {"name": "disabled_tool", "invocation_mode": "direct", "status": {"callable": false}},
+            {"name": "execute_code_plan", "invocation_mode": "direct", "status": {"callable": true}}
+        ]
+    })))
+    .expect("contract");
+    assert_eq!(
+        contract.allowed_tools,
+        vec!["fetch_page".to_string(), "search_web".to_string()]
+    );
+}
+
+#[test]
+fn install_gate_error_meta_uses_stable_not_installed_code() {
+    let meta = build_local_tool_call_install_gate_error_meta(
+        Some("call-123"),
+        "stock_quotes",
+        "tool 'stock_quotes' is not installed or enabled in local desktop runtime",
+    );
+    assert_eq!(
+        meta["error_code"],
+        serde_json::json!(LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE)
+    );
+    assert_eq!(meta["status"], serde_json::json!("error"));
+    assert_eq!(meta["name"], serde_json::json!("stock_quotes"));
+}
+
+#[test]
+fn canonicalize_tool_name_for_allowed_list_accepts_underscore_variant() {
+    let canonical = canonicalize_tool_name_for_allowed_list(
+        "tavily_search",
+        &["search_sdk".to_string(), "tavily-search".to_string()],
+    );
+
+    assert_eq!(canonical.as_deref(), Some("tavily-search"));
+}
+
+#[test]
+fn structured_tool_replay_messages_use_family_gates_for_supported_protocols() {
+    let response = serde_json::json!({
+        "content": "",
+        "tool_calls": [
+            {
+                "id": "call_123",
+                "name": "search_sdk",
+                "arguments": { "query": "tool replay" }
+            }
+        ]
+    });
+    let meta = vec![serde_json::json!({
+        "id": "call_123",
+        "name": "search_sdk",
+        "status": "success",
+        "result": { "ok": true }
+    })];
+
+    let openai_replay = build_structured_tool_replay_messages("openai_chat", &response, &meta)
+        .expect("openai replay");
+    assert_eq!(openai_replay.len(), 2);
+    assert_eq!(openai_replay[0].role, "assistant");
+    assert_eq!(openai_replay[0].tool_calls.len(), 1);
+    assert_eq!(openai_replay[1].role, "tool");
+    assert_eq!(openai_replay[1].tool_call_id.as_deref(), Some("call_123"));
+
+    let anthropic_replay =
+        build_structured_tool_replay_messages("anthropic_messages", &response, &meta)
+            .expect("anthropic replay");
+    assert_eq!(anthropic_replay.len(), 2);
+    assert_eq!(anthropic_replay[1].role, "tool");
+
+    let gemini_replay = build_structured_tool_replay_messages("google_gemini", &response, &meta)
+        .expect("gemini replay");
+    assert_eq!(gemini_replay.len(), 2);
+    assert_eq!(gemini_replay[1].role, "tool");
+
+    let responses_replay =
+        build_structured_tool_replay_messages("openai_responses", &response, &meta)
+            .expect("responses replay");
+    assert_eq!(responses_replay.len(), 2);
+    assert_eq!(responses_replay[0].role, "assistant");
+    assert_eq!(
+        responses_replay[1].tool_call_id.as_deref(),
+        Some("call_123")
+    );
+}
+
+#[test]
+fn structured_tool_replay_messages_require_output_for_every_call() {
+    let response = serde_json::json!({
+        "content": "",
+        "tool_calls": [
+            {
+                "id": "call_123",
+                "name": "search_sdk",
+                "arguments": { "query": "tool replay" }
+            },
+            {
+                "id": "call_456",
+                "name": "refresh_skill_index",
+                "arguments": {}
+            }
+        ]
+    });
+    let meta = vec![serde_json::json!({
+        "id": "call_123",
+        "name": "search_sdk",
+        "status": "success",
+        "result": { "ok": true }
+    })];
+
+    assert!(build_structured_tool_replay_messages("openai_responses", &response, &meta).is_none());
+}
+
+#[test]
+fn structured_tool_replay_messages_fall_back_to_execution_graph_when_meta_missing() {
+    let response = serde_json::json!({
+        "content": "",
+        "tool_calls": [
+            {
+                "id": "call_123",
+                "name": "search_sdk",
+                "arguments": { "query": "tool replay" }
+            }
+        ],
+        "execution_graph": {
+            "schema_version": 1,
+            "execution_id": "graph-exec-1",
+            "session_id": "session-1",
+            "route": "direct",
+            "plane": "response_only",
+            "request_id": null,
+            "root_execution_id": null,
+            "nodes": [
+                {
+                    "node_id": "tool_call:call_123",
+                    "node_type": "tool_call",
+                    "status": "success",
+                    "dependency_ids": [],
+                    "metadata": {
+                        "call_id": "call_123",
+                        "tool_name": "search_sdk"
+                    },
+                    "input_payload": null,
+                    "output_payload": {
+                        "structuredContent": {
+                            "ok": true
+                        }
+                    }
+                }
+            ],
+            "events": [],
+            "metadata": {}
+        }
+    });
+
+    let replay = build_structured_tool_replay_messages("openai_responses", &response, &[])
+        .expect("graph replay");
+    assert_eq!(replay.len(), 2);
+    assert_eq!(replay[1].role, "tool");
+    assert_eq!(replay[1].tool_call_id.as_deref(), Some("call_123"));
+    assert!(replay[1].content.contains("\"structuredContent\""));
+}
+
+#[test]
+fn enrich_response_with_tool_trace_includes_error_result_blocks() {
+    let response = serde_json::json!({
+        "content": ""
+    });
+    let meta = vec![
+        serde_json::json!({
+            "id": "call_search",
+            "name": "search_sdk",
+            "status": "success",
+            "result": { "ok": true }
+        }),
+        serde_json::json!({
+            "id": "call_crawler",
+            "name": "skill.official.skills.crawler.fetch_web_content",
+            "status": "error",
+            "error_code": "LOCAL_TOOL_EXECUTION_FAILED",
+            "error": "crawler failed"
+        }),
+    ];
+    let metrics = RuntimeMetricsAccumulator::default();
+
+    let enriched = enrich_response_with_tool_trace(response, &meta, true, &metrics);
+    let blocks = enriched
+        .get("tool_trace_blocks")
+        .and_then(serde_json::Value::as_array)
+        .expect("tool trace blocks should be present");
+
+    assert!(blocks.iter().any(|block| {
+        block.get("type").and_then(|v| v.as_str()) == Some("tool_result")
+            && block.get("status").and_then(|v| v.as_str()) == Some("error")
+            && block.get("toolName").and_then(|v| v.as_str())
+                == Some("skill.official.skills.crawler.fetch_web_content")
+            && block
+                .get("result")
+                .and_then(|v| v.get("error"))
+                .and_then(|v| v.as_str())
+                == Some("crawler failed")
+    }));
+    assert_eq!(
+        enriched.get("tool_trace_streamed"),
+        Some(&serde_json::json!(true))
+    );
+}
+
+#[test]
+fn enrich_response_with_tool_trace_falls_back_to_execution_graph_blocks() {
+    let response = serde_json::json!({
+        "content": "",
+        "execution_graph": {
+            "schema_version": 1,
+            "execution_id": "graph-exec-1",
+            "session_id": "session-1",
+            "route": "direct",
+            "plane": "response_only",
+            "request_id": null,
+            "root_execution_id": null,
+            "nodes": [
+                {
+                    "node_id": "tool_call:call-1",
+                    "node_type": "tool_call",
+                    "status": "success",
+                    "dependency_ids": [],
+                    "metadata": {
+                        "call_id": "call-1",
+                        "tool_name": "search_sdk"
+                    },
+                    "input_payload": null,
+                    "output_payload": {
+                        "ok": true
+                    }
+                }
+            ],
+            "events": [],
+            "metadata": {}
+        }
+    });
+    let metrics = RuntimeMetricsAccumulator::default();
+
+    let enriched = enrich_response_with_tool_trace(response, &[], false, &metrics);
+    let blocks = enriched
+        .get("tool_trace_blocks")
+        .and_then(serde_json::Value::as_array)
+        .expect("tool trace blocks should be present");
+
+    assert_eq!(blocks.len(), 2);
+    assert_eq!(blocks[0]["type"], serde_json::json!("tool_call"));
+    assert_eq!(blocks[1]["type"], serde_json::json!("tool_result"));
+    assert_eq!(blocks[1]["result"]["ok"], serde_json::json!(true));
+}
+
+#[test]
+fn serialize_tool_replay_content_preserves_structured_content_payloads() {
+    let item = serde_json::json!({
+        "id": "call_tavily",
+        "name": "tavily-search",
+        "status": "success",
+        "result": {
+            "content": [
+                { "type": "text", "text": "Detailed Results:" },
+                { "type": "text", "text": "1. Example result body" }
+            ],
+            "structuredContent": {
+                "results": [
+                    { "title": "Example", "url": "https://example.com" }
+                ]
+            },
+            "isError": false
+        }
+    });
+
+    let serialized = serialize_tool_replay_content(&item);
+    let reparsed: serde_json::Value =
+        serde_json::from_str(&serialized).expect("structured tool replay should stay json");
+
+    assert_eq!(reparsed, item["result"]);
+}
+
+#[test]
+fn serialize_tool_replay_content_extracts_standard_mcp_text_content_without_structured_data() {
+    let item = serde_json::json!({
+        "id": "call_tavily",
+        "name": "tavily-search",
+        "status": "success",
+        "result": {
+            "content": [
+                { "type": "text", "text": "Detailed Results:" },
+                { "type": "text", "text": "1. Example result body" }
+            ],
+            "isError": false
+        }
+    });
+
+    assert_eq!(
+        serialize_tool_replay_content(&item),
+        "Detailed Results:\n1. Example result body"
+    );
+}
+
+#[test]
+fn build_persisted_resume_assistant_blocks_keeps_tool_trace_and_final_text() {
+    let response = serde_json::json!({
+        "content": "Final answer after approval.",
+        "tool_trace_blocks": [
+            {
+                "type": "tool_call",
+                "callId": "call_123",
+                "toolName": "firecrawl_search",
+                "status": "success"
+            },
+            {
+                "type": "tool_result",
+                "callId": "call_123",
+                "toolName": "firecrawl_search",
+                "status": "success",
+                "result": {
+                    "structuredContent": {
+                        "results": [{ "title": "Tianjin Weather" }]
+                    }
+                }
+            }
+        ]
+    });
+
+    let blocks = build_persisted_resume_assistant_blocks(&response);
+
+    assert_eq!(blocks.len(), 3);
+    assert_eq!(blocks[0]["type"], serde_json::json!("tool_call"));
+    assert_eq!(blocks[1]["type"], serde_json::json!("tool_result"));
+    assert_eq!(blocks[2]["type"], serde_json::json!("text"));
+    assert_eq!(
+        blocks[2]["content"],
+        serde_json::json!("Final answer after approval.")
+    );
+}
+
+#[test]
+fn build_local_chat_resume_continuation_blocks_keeps_non_string_text_with_tool_trace() {
+    let response = serde_json::json!({
+        "content": [
+            {
+                "type": "output_text",
+                "text": "Final answer after approval."
+            }
+        ],
+        "tool_trace_blocks": [
+            {
+                "type": "tool_call",
+                "callId": "call_123",
+                "toolName": "firecrawl_search",
+                "status": "success"
+            },
+            {
+                "type": "tool_result",
+                "callId": "call_123",
+                "toolName": "firecrawl_search",
+                "status": "success",
+                "result": {
+                    "structuredContent": {
+                        "results": [{ "title": "Tianjin Weather" }]
+                    }
+                }
+            }
+        ]
+    });
+
+    let blocks = build_local_chat_resume_continuation_blocks(&response, &[]);
+
+    assert_eq!(blocks.len(), 3);
+    assert_eq!(blocks[0]["type"], serde_json::json!("tool_call"));
+    assert_eq!(blocks[1]["type"], serde_json::json!("tool_result"));
+    assert_eq!(blocks[2]["type"], serde_json::json!("text"));
+    assert_eq!(
+        blocks[2]["content"],
+        serde_json::json!("Final answer after approval.")
+    );
+}
+
+#[test]
+fn build_persisted_resume_assistant_meta_carries_runtime_metadata() {
+    let response = serde_json::json!({
+        "content": "Resumed after approval.",
+        "tool_trace_blocks": [],
+        "execution_graph": {
+            "execution_id": "graph-exec-1"
+        },
+        "runtime_metrics": {
+            "upstream_latency_ms": 1200,
+            "upstream_calls": 2
+        }
+    });
+    let model_connection = LocalModelConnection {
+        model_id: "deeting-os".to_string(),
+        provider_model_id: "deepseek-v3.1".to_string(),
+        logical_model_key: Some("deeting-os".to_string()),
+        protocol_family: "openai_chat".to_string(),
+    };
+
+    let meta = build_persisted_resume_assistant_meta(&response, &model_connection);
+
+    assert_eq!(meta["model_id"], serde_json::json!("deeting-os"));
+    assert_eq!(
+        meta["provider_model_id"],
+        serde_json::json!("deepseek-v3.1")
+    );
+    assert_eq!(
+        meta["runtime_metrics"]["upstream_latency_ms"],
+        serde_json::json!(1200)
+    );
+    assert_eq!(
+        meta["execution_graph"]["execution_id"],
+        serde_json::json!("graph-exec-1")
+    );
+    assert_eq!(
+        meta["blocks"][0]["content"],
+        serde_json::json!("Resumed after approval.")
+    );
+}
+
+#[test]
+fn build_persisted_resume_assistant_blocks_falls_back_to_execution_graph_blocks() {
+    let response = serde_json::json!({
+        "content": "",
+        "execution_graph": {
+            "schema_version": 1,
+            "execution_id": "graph-exec-1",
+            "session_id": "session-1",
+            "route": "direct",
+            "plane": "response_only",
+            "request_id": null,
+            "root_execution_id": null,
+            "nodes": [
+                {
+                    "node_id": "tool_call:call-1",
+                    "node_type": "tool_call",
+                    "status": "waiting_approval",
+                    "dependency_ids": [],
+                    "metadata": {
+                        "call_id": "call-1",
+                        "tool_name": "browser_open_tab"
+                    },
+                    "input_payload": null,
+                    "output_payload": {
+                        "status": "REQUIRES_APPROVAL",
+                        "approval_token": "approval-1"
+                    }
+                }
+            ],
+            "events": [],
+            "metadata": {}
+        }
+    });
+
+    let blocks = build_persisted_resume_assistant_blocks(&response);
+
+    assert_eq!(blocks.len(), 2);
+    assert_eq!(blocks[0]["type"], serde_json::json!("tool_call"));
+    assert_eq!(blocks[1]["type"], serde_json::json!("tool_result"));
+    assert_eq!(
+        blocks[1]["result"]["approval_token"],
+        serde_json::json!("approval-1")
+    );
+}
+
+#[test]
+fn canonicalize_tool_call_meta_via_graph_assigns_stable_ids_when_missing() {
+    let execution_policy = mcp_runtime::policy::build_default_local_execution_policy();
+    let response = serde_json::json!({
+        "content": "pending approval"
+    });
+    let tool_call_meta = vec![
+        serde_json::json!({
+            "name": "search_notes",
+            "status": "requires_approval",
+            "result": {
+                "status": "REQUIRES_APPROVAL",
+                "approval_token": "approval-a"
+            }
+        }),
+        serde_json::json!({
+            "name": "search_notes",
+            "status": "requires_approval",
+            "result": {
+                "status": "REQUIRES_APPROVAL",
+                "approval_token": "approval-b"
+            }
+        }),
+    ];
+
+    let canonical = canonicalize_tool_call_meta_via_graph(
+        "session-canonical-missing-id",
+        &execution_policy,
+        &response,
+        &tool_call_meta,
+    );
+
+    assert_eq!(canonical.len(), 2);
+    assert_eq!(
+        canonical[0]["id"],
+        serde_json::json!("approval-token:approval-a")
+    );
+    assert_eq!(
+        canonical[1]["id"],
+        serde_json::json!("approval-token:approval-b")
+    );
+    assert_eq!(
+        derive_pending_call_id_from_tool_call_meta(&canonical),
+        "approval-token:approval-b"
+    );
+}
+
+#[test]
+fn strip_stale_resume_response_metadata_removes_old_graph_and_trace_blocks() {
+    let response = serde_json::json!({
+        "content": "pending",
+        "execution_graph": { "execution_id": "graph-old" },
+        "tool_trace_blocks": [{ "type": "text", "content": "old" }],
+        "tool_trace_streamed": true,
+    });
+
+    let stripped = strip_stale_resume_response_metadata(response);
+
+    assert_eq!(stripped.get("content"), Some(&serde_json::json!("pending")));
+    assert!(stripped.get("execution_graph").is_none());
+    assert!(stripped.get("tool_trace_blocks").is_none());
+    assert!(stripped.get("tool_trace_streamed").is_none());
+}
+
+#[test]
+fn attach_execution_graph_to_response_force_rebuild_replaces_stale_graph() {
+    let execution_policy = mcp_runtime::policy::build_default_local_execution_policy();
+    let mut response = serde_json::json!({
+        "content": "final answer",
+        "execution_graph": {
+            "execution_id": "graph-stale",
+            "nodes": [
+                { "node_id": "approval_gate:call-1", "node_type": "approval_gate", "status": "waiting_approval" }
+            ]
+        },
+        "tool_trace_blocks": [
+            { "type": "text", "content": "final answer" }
+        ]
+    });
+
+    attach_execution_graph_to_response(
+        &mut response,
+        "session-1",
+        &execution_policy,
+        Some("root-1"),
+        true,
+    );
+
+    assert_ne!(
+        response
+            .get("execution_graph")
+            .and_then(|value| value.get("execution_id"))
+            .and_then(serde_json::Value::as_str),
+        Some("graph-stale")
+    );
+}
+
+#[test]
+fn build_max_rounds_exceeded_response_appends_visible_notice() {
+    let state = LocalChatToolRuntimeState {
+        max_rounds: 10,
+        round: 10,
+        trace_id: "trace-max-rounds-1".to_string(),
+        request_id: None,
+        execution_policy: mcp_runtime::policy::build_default_local_execution_policy(),
+        model_connection: LocalModelConnection {
+            model_id: "deeting-os".to_string(),
+            provider_model_id: "deepseek-v3.1".to_string(),
+            logical_model_key: Some("deeting-os".to_string()),
+            protocol_family: "openai_chat".to_string(),
+        },
+        orchestrated_messages: Vec::new(),
+        session_id: "session-max-rounds-1".to_string(),
+        temperature: None,
+        max_tokens: None,
+        active_capability: None,
+        runtime_metrics: RuntimeMetricsAccumulator::default(),
+        last_capability_snapshot: None,
+        last_response: Some(serde_json::json!({
+            "content": "Shell step finished.",
+            "tool_calls": [
+                {
+                    "id": "call-shell-1",
+                    "name": "shell_execute",
+                    "arguments": {"command": "pwd"}
+                }
+            ]
+        })),
+        realtime_emitter: LocalRealtimeToolTraceEmitter::new(
+            None,
+            Some("trace-max-rounds-1"),
+            None,
+        ),
+    };
+
+    let response = build_max_rounds_exceeded_response(&state);
+    let content = response
+        .get("content")
+        .and_then(serde_json::Value::as_str)
+        .expect("content");
+
+    assert!(content.contains("Shell step finished."));
+    assert!(content.contains("agentic round limit (10)"));
+    assert_eq!(
+        response
+            .get("error_code")
+            .and_then(serde_json::Value::as_str),
+        Some("LOCAL_CHAT_MAX_ROUNDS_EXCEEDED")
+    );
+    assert_eq!(
+        response
+            .get("stop_reason")
+            .and_then(serde_json::Value::as_str),
+        Some("max_agentic_rounds_exceeded")
+    );
+}
+
+#[test]
+fn rewind_round_for_post_approval_continuation_does_not_consume_user_round_budget() {
+    let mut state = LocalChatToolRuntimeState {
+        max_rounds: 10,
+        round: 4,
+        trace_id: "trace-approval-round-1".to_string(),
+        request_id: None,
+        execution_policy: mcp_runtime::policy::build_default_local_execution_policy(),
+        model_connection: LocalModelConnection {
+            model_id: "deeting-os".to_string(),
+            provider_model_id: "deepseek-v3.1".to_string(),
+            logical_model_key: Some("deeting-os".to_string()),
+            protocol_family: "openai_chat".to_string(),
+        },
+        orchestrated_messages: Vec::new(),
+        session_id: "session-approval-round-1".to_string(),
+        temperature: None,
+        max_tokens: None,
+        active_capability: None,
+        runtime_metrics: RuntimeMetricsAccumulator::default(),
+        last_capability_snapshot: None,
+        last_response: None,
+        realtime_emitter: LocalRealtimeToolTraceEmitter::new(
+            None,
+            Some("trace-approval-round-1"),
+            None,
+        ),
+    };
+
+    rewind_round_for_post_approval_continuation(&mut state);
+    assert_eq!(state.round, 3);
+
+    rewind_round_for_post_approval_continuation(&mut state);
+    rewind_round_for_post_approval_continuation(&mut state);
+    rewind_round_for_post_approval_continuation(&mut state);
+    assert_eq!(state.round, 0);
+}
+
+#[test]
+fn resolve_local_tool_call_id_synthesizes_stable_missing_id() {
+    assert_eq!(
+        resolve_local_tool_call_id(None, "search_notes", 2, 1),
+        "local-missing-call:r2:i1:search_notes"
+    );
+    assert_eq!(
+        resolve_local_tool_call_id(Some(" call-explicit-1 "), "search_notes", 2, 1),
+        "call-explicit-1"
+    );
+}
+
+#[test]
+fn apply_rejected_tool_result_updates_graph_without_runtime_shell() {
+    let mut execution_graph = serde_json::json!({
+        "execution_id": "graph-reject-1",
+        "nodes": [
+            {
+                "node_id": "approval_gate:call-1",
+                "node_type": "approval_gate",
+                "status": "waiting_approval",
+                "dependency_ids": [],
+                "metadata": { "approval_token": "approval-1" },
+                "input_payload": null,
+                "output_payload": null
+            },
+            {
+                "node_id": "tool_call:call-1",
+                "node_type": "tool_call",
+                "status": "waiting_approval",
+                "dependency_ids": [],
+                "metadata": { "call_id": "call-1" },
+                "input_payload": null,
+                "output_payload": null
+            },
+            {
+                "node_id": "finalize:call-1",
+                "node_type": "finalize",
+                "status": "pending",
+                "dependency_ids": [],
+                "metadata": {},
+                "input_payload": null,
+                "output_payload": null
+            }
+        ],
+        "events": []
+    });
+
+    apply_rejected_tool_result_to_execution_graph_value(
+        &mut execution_graph,
+        Some("graph-reject-1"),
+        None,
+        "User rejected tool execution",
+    );
+
+    let nodes = execution_graph
+        .get("nodes")
+        .and_then(serde_json::Value::as_array)
+        .expect("nodes");
+    assert_eq!(
+        nodes[0].get("status").and_then(serde_json::Value::as_str),
+        Some("cancelled")
+    );
+    assert_eq!(
+        nodes[1].get("status").and_then(serde_json::Value::as_str),
+        Some("cancelled")
+    );
+    assert_eq!(
+        nodes[2].get("status").and_then(serde_json::Value::as_str),
+        Some("cancelled")
+    );
+    let events = execution_graph
+        .get("events")
+        .and_then(serde_json::Value::as_array)
+        .expect("events");
+    assert!(events.iter().any(|event| {
+        event.get("event_type").and_then(serde_json::Value::as_str)
+            == Some("approval_gate.rejected")
+    }));
+    assert!(events.iter().any(|event| {
+        event.get("event_type").and_then(serde_json::Value::as_str) == Some("tool_call.rejected")
+    }));
+}
+
+#[test]
+fn serialize_inflight_runtime_context_round_trips_waiting_approval_state() {
+    let value = serialize_inflight_runtime_context(
+        InFlightExecutionStage::WaitingApproval,
+        Some("approval_gate:call-1".to_string()),
+        Some("call-1".to_string()),
+        None,
+        true,
+        vec![PersistedPendingApproval {
+            approval_token: "approval-1".to_string(),
+            tool_id: Some("tool-1".to_string()),
+            tool_name: "browser_open_tab".to_string(),
+            arguments: serde_json::json!({ "url": "https://example.com" }),
+            call_id: Some("call-1".to_string()),
+            execution_token: Some("exec-1".to_string()),
+            session_id: Some("session-1".to_string()),
+            description: Some("open a tab".to_string()),
+            risk_level: Some("MEDIUM".to_string()),
+            risk_reasons: vec!["navigates public internet".to_string()],
+            tool_fingerprint: "fingerprint-1".to_string(),
+            policy_rule_key: Some("policy-1".to_string()),
+            approval_grant_key: None,
+            execution_graph_execution_id: Some("graph-1".to_string()),
+            execution_graph_gate_node_id: Some("approval_gate:call-1".to_string()),
+            execution_graph_tool_node_id: Some("tool_call:call-1".to_string()),
+            created_at_unix_ms: 1,
+            expires_at_unix_ms: 2,
+        }],
+        None,
+        "session-1",
+        "trace-1",
+        Some("request-1"),
+        Some("graph-1"),
+    );
+
+    let parsed = persistable_inflight_context_from_value(&value).expect("parse inflight context");
+    assert_eq!(parsed.stage, InFlightExecutionStage::WaitingApproval);
+    assert_eq!(
+        parsed.execution_graph_execution_id.as_deref(),
+        Some("graph-1")
+    );
+    assert_eq!(parsed.pending_approvals.len(), 1);
+    assert_eq!(
+        parsed.pending_approvals[0].approval_token.as_str(),
+        "approval-1"
+    );
+}
