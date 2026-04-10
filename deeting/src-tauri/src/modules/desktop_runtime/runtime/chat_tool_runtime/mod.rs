@@ -29,7 +29,7 @@ mod suspended;
 mod tests;
 mod tool_meta;
 
-pub(super) use inflight::{
+use inflight::{
     build_pending_approval_records, clear_execution_graph_runtime_context,
     load_suspended_chat_tool_execution_for_resume, now_unix_ms_i64,
     pending_tool_call_from_persisted_approval, persist_running_tool_execution_runtime,
@@ -42,8 +42,8 @@ pub(crate) use inflight::{
     InFlightExecutionStage, PersistedChatToolRuntimeContext, PersistedInFlightExecutionContext,
     PersistedPendingApproval,
 };
-pub(super) use recovery::{
-    append_recovery_assistant_message_if_missing, attach_execution_graph_to_response,
+use recovery::{
+    attach_execution_graph_to_response,
     build_local_chat_resume_continuation_blocks, build_persisted_resume_assistant_blocks,
     build_persisted_resume_assistant_meta, extract_resume_response_text,
     mark_inflight_execution_interrupted, persist_resumed_local_chat_assistant_message,
@@ -51,13 +51,13 @@ pub(super) use recovery::{
 pub(crate) use recovery::{
     recover_inflight_local_execution_state, resume_suspended_chat_tool_execution_after_approval,
 };
-pub(super) use replay::{
+use replay::{
     build_structured_tool_replay_messages, derive_capability_update_from_tool_call_meta,
     finalize_tool_round, serialize_tool_replay_content,
 };
 pub(crate) use suspended::SuspendedChatToolExecution;
 pub(crate) use tool_meta::apply_rejected_tool_result_to_execution_graph_value;
-pub(super) use tool_meta::{
+use tool_meta::{
     apply_approved_tool_result_to_execution_graph, attach_graph_metadata_to_pending_tool_meta,
     build_effective_tool_call_meta, build_state_effective_tool_call_meta,
     build_tool_call_meta_from_execution_graph, canonicalize_tool_call_meta_via_graph,

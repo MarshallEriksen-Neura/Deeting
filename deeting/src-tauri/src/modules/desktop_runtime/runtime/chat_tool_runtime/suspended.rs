@@ -2,21 +2,21 @@ use super::*;
 
 #[derive(Clone)]
 pub(crate) struct SuspendedChatToolExecution {
-    max_rounds: usize,
-    round: usize,
-    trace_id: String,
-    request_id: Option<String>,
-    execution_policy: LocalExecutionPolicy,
-    model_connection: LocalModelConnection,
-    orchestrated_messages: Vec<LocalChatInputMessage>,
-    session_id: String,
-    temperature: Option<f32>,
-    max_tokens: Option<u32>,
-    active_capability: Option<LocalCapabilityActivationState>,
-    runtime_metrics: RuntimeMetricsAccumulator,
-    last_capability_snapshot: Option<serde_json::Value>,
-    last_response: Option<serde_json::Value>,
-    execution_graph: serde_json::Value,
+    pub(super) max_rounds: usize,
+    pub(super) round: usize,
+    pub(super) trace_id: String,
+    pub(super) request_id: Option<String>,
+    pub(super) execution_policy: LocalExecutionPolicy,
+    pub(super) model_connection: LocalModelConnection,
+    pub(super) orchestrated_messages: Vec<LocalChatInputMessage>,
+    pub(super) session_id: String,
+    pub(super) temperature: Option<f32>,
+    pub(super) max_tokens: Option<u32>,
+    pub(super) active_capability: Option<LocalCapabilityActivationState>,
+    pub(super) runtime_metrics: RuntimeMetricsAccumulator,
+    pub(super) last_capability_snapshot: Option<serde_json::Value>,
+    pub(super) last_response: Option<serde_json::Value>,
+    pub(super) execution_graph: serde_json::Value,
 }
 
 impl SuspendedChatToolExecution {
