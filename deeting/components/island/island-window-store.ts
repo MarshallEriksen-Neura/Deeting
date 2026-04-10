@@ -9,6 +9,7 @@ import {
   type IslandChatRequestConfig,
 } from "@/lib/api/island";
 import { createConversation } from "@/lib/api/conversations";
+import { useBridgeApprovalStore } from "@/lib/chat/bridge-approval-store";
 import { loadConversationHistoryPage } from "@/lib/chat/history-loader";
 import { isTauriRuntime as detectTauriRuntime } from "@/lib/runtime/tauri";
 
@@ -124,6 +125,7 @@ async function loadIslandWindowStateFromHistory(sessionId: string) {
 
   return buildIslandWindowDerivedState({
     messages: history.messages,
+    pendingApprovalSource: useBridgeApprovalStore.getState().pending,
     isLoading: false,
     globalLoading: false,
     statusCode: null,

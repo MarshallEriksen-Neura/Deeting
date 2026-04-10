@@ -127,4 +127,19 @@ describe("LoginForm desktop convergence", () => {
     expect(screen.getByText("oauthLinuxdo")).toBeInTheDocument()
     expect(screen.getByText("sendCode")).toBeInTheDocument()
   })
+
+  it("renders a stable loading shell during server render before runtime detection", async () => {
+    mockIsTauriRuntime.mockReturnValue(true)
+    const { MessageChannel } = await import("node:worker_threads")
+    const { TextEncoder, TextDecoder } = await import("node:util")
+    Object.assign(globalThis, { MessageChannel, TextEncoder, TextDecoder })
+
+    const { renderToString } = await import("react-dom/server")
+    const { LoginForm } = await import("../login-form")
+    const html = renderToString(<LoginForm />)
+
+    expect(html).toContain("aria-busy=\"true\"")
+    expect(html).not.toContain("<form")
+    expect(html).not.toContain("desktopBrowserAction")
+  })
 })

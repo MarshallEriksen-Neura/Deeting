@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { isTauriRuntime as detectTauriRuntime } from "@/lib/runtime/tauri";
 import { useChatStore } from "@/store/chat-store";
 import { useChatRuntimeStore } from "@/store/chat-runtime-store";
+import { useBridgeApprovalStore } from "@/lib/chat/bridge-approval-store";
 
 type IslandActionCompletedPayload = {
   sessionId?: string | null;
@@ -88,12 +89,14 @@ export function IslandShell() {
       errorMessage: state.errorMessage,
     })),
   );
+  const pendingApprovalSource = useBridgeApprovalStore((state) => state.pending);
   const chatSnapshot = useMemo(
     () => ({
       ...chatContentSnapshot,
       ...chatRuntimeSnapshot,
+      pendingApprovalSource,
     }),
-    [chatContentSnapshot, chatRuntimeSnapshot],
+    [chatContentSnapshot, chatRuntimeSnapshot, pendingApprovalSource],
   );
 
   useEffect(() => {

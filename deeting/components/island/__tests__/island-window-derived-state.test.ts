@@ -56,6 +56,7 @@ describe("buildIslandWindowDerivedState", () => {
           ],
         },
       ],
+      pendingApprovalSource: null,
       isLoading: false,
       globalLoading: false,
       statusCode: null,
@@ -83,6 +84,7 @@ describe("buildIslandWindowDerivedState", () => {
           blocks: [],
         },
       ],
+      pendingApprovalSource: null,
       isLoading: false,
       globalLoading: false,
       statusCode: null,
@@ -93,5 +95,32 @@ describe("buildIslandWindowDerivedState", () => {
     expect(
       derived.recentMessages.some((message) => message.content === "Legacy answer only")
     ).toBe(false)
+  })
+
+  it("surfaces island pending approval from canonical approval store input", () => {
+    const derived = buildIslandWindowDerivedState({
+      messages: [],
+      pendingApprovalSource: {
+        kind: "bridge_mcp",
+        approval_token: "approval-canonical-1",
+        tool_name: "shell_execute",
+        arguments: {},
+        description: "Run the migration script.",
+        meta: {
+          call_id: "call-canonical-1",
+        },
+      },
+      isLoading: false,
+      globalLoading: false,
+      statusCode: null,
+      errorMessage: null,
+    })
+
+    expect(derived.pendingApproval).toMatchObject({
+      approvalToken: "approval-canonical-1",
+      toolName: "shell_execute",
+      callId: "call-canonical-1",
+    })
+    expect(derived.statusLabel).toBe("Pending approval")
   })
 })

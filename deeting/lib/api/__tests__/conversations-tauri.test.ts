@@ -117,7 +117,7 @@ describe("conversation tauri apis", () => {
     expect(mockRequest).not.toHaveBeenCalled()
   })
 
-  it("hydrates a pending approval assistant turn into first-page local history", async () => {
+  it("does not synthesize pending approval assistant turns into first-page local history", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
     mockInvoke
@@ -127,76 +127,21 @@ describe("conversation tauri apis", () => {
         next_cursor: null,
         has_more: false,
       } as unknown)
-      .mockResolvedValueOnce([
-        {
-          status: "REQUIRES_APPROVAL",
-          approval_token: "approval-1",
-          tool_name: "tavily_search",
-          arguments: { query: "tool replay" },
-          call_id: "call-1",
-          session_id: "session-local-history-1",
-          execution_graph_execution_id: "graph-exec-1",
-          execution_graph_gate_node_id: "approval_gate:call-1",
-          execution_graph_tool_node_id: "tool_call:call-1",
-        },
-      ] as unknown)
 
     const result = await fetchConversationHistory("session-local-history-1")
 
-    expect(result.messages).toHaveLength(2)
-    expect(result.messages[1]).toMatchObject({
-      role: "assistant",
-      content: "",
-      turn_index: 2,
-      meta_info: {
-        pending_approval_snapshot: true,
-        execution_graph: {
-          execution_id: "graph-exec-1",
-          nodes: [
-            {
-              node_id: "tool_call:call-1",
-              node_type: "tool_call",
-              status: "waiting_approval",
-            },
-            {
-              node_id: "approval_gate:call-1",
-              node_type: "approval_gate",
-              status: "waiting_approval",
-            },
-          ],
-        },
-        blocks: [
-          {
-            type: "tool_call",
-            callId: "call-1",
-            toolName: "tavily_search",
-            status: "success",
-          },
-          {
-            type: "tool_result",
-            callId: "call-1",
-            toolName: "tavily_search",
-            status: "requires_approval",
-            result: expect.objectContaining({
-              status: "REQUIRES_APPROVAL",
-              approval_token: "approval-1",
-              execution_graph_execution_id: "graph-exec-1",
-              execution_graph_gate_node_id: "approval_gate:call-1",
-              execution_graph_tool_node_id: "tool_call:call-1",
-            }),
-          },
-        ],
-      },
+    expect(result.messages).toHaveLength(1)
+    expect(result.messages[0]).toMatchObject({
+      role: "user",
+      turn_index: 1,
     })
     expect(mockInvoke).toHaveBeenNthCalledWith(1, "list_local_conversation_history", {
       query: { session_id: "session-local-history-1", cursor: null, limit: null },
     })
-    expect(mockInvoke).toHaveBeenNthCalledWith(2, "list_pending_mcp_approvals", {
-      sessionId: "session-local-history-1",
-    })
+    expect(mockInvoke).toHaveBeenCalledTimes(1)
   })
 
-  it("does not duplicate a pending approval turn when history already contains the same tool call", async () => {
+  it("does not query pending approvals separately when history already contains the same tool call", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
     mockInvoke
@@ -227,16 +172,6 @@ describe("conversation tauri apis", () => {
         next_cursor: null,
         has_more: false,
       } as unknown)
-      .mockResolvedValueOnce([
-        {
-          status: "REQUIRES_APPROVAL",
-          approval_token: "approval-existing",
-          tool_name: "tavily_search",
-          arguments: { query: "tool replay" },
-          call_id: "call-existing",
-          session_id: "session-local-history-2",
-        },
-      ] as unknown)
 
     const result = await fetchConversationHistory("session-local-history-2")
 
@@ -245,9 +180,7 @@ describe("conversation tauri apis", () => {
       role: "assistant",
       turn_index: 2,
     })
-    expect(mockInvoke).toHaveBeenNthCalledWith(2, "list_pending_mcp_approvals", {
-      sessionId: "session-local-history-2",
-    })
+    expect(mockInvoke).toHaveBeenCalledTimes(1)
   })
 
   it("reconciles execution lifecycle history blocks against the latest persisted execution tree", async () => {
@@ -375,23 +308,12 @@ describe("conversation tauri apis", () => {
     })
   })
 
-  it("falls back to web conversation sessions outside tauri runtime", async () => {
+  it("requires tauri runtime for conversation sessions", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "false"
-    mockRequest.mockResolvedValue({
-      items: [],
-      next_page: null,
-      previous_page: null,
-    })
-
-    await fetchConversationSessions({ size: 5 })
-
-    expect(mockRequest).toHaveBeenCalledWith(
-      expect.objectContaining({
-        url: "/api/v1/internal/conversations",
-        method: "GET",
-        params: { size: 5 },
-      })
+    await expect(fetchConversationSessions({ size: 5 })).rejects.toThrow(
+      "Conversation APIs are only available in Tauri runtime"
     )
+    expect(mockRequest).not.toHaveBeenCalled()
     expect(mockInvoke).not.toHaveBeenCalled()
   })
 

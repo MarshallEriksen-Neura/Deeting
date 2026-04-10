@@ -2,10 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
-  cancelChatCompletion,
   cancelDesktopLocalChatCompletion,
   finalizeDesktopLocalCompare,
-  streamChatCompletion,
   streamDesktopLocalChatCompletion,
   type ChatMessage,
 } from "@/lib/api/chat"
@@ -448,7 +446,7 @@ export function useChatMessagingService() {
   const t = useI18n("chat")
   const cancelRef = useRef<(() => void) | null>(null)
   const requestIdRef = useRef<string | null>(null)
-  const activeRequestRouteRef = useRef<"local_gateway" | "cloud" | null>(null)
+  const activeRequestRouteRef = useRef<"local_gateway" | null>(null)
   const activeAssistantMessageIdRef = useRef<string | null>(null)
   const interruptedMessageIdsRef = useRef<Set<string>>(new Set())
   const statusRepeatRef = useRef<{ key: string; repeatCount: number }>({
@@ -591,11 +589,7 @@ export function useChatMessagingService() {
     clearStatus()
     if (!requestId) return
     try {
-      if (route === "local_gateway") {
-        await cancelDesktopLocalChatCompletion(requestId)
-      } else {
-        await cancelChatCompletion(requestId)
-      }
+      await cancelDesktopLocalChatCompletion(requestId)
     } catch {
       // ignore cancel errors
     } finally {
@@ -626,7 +620,6 @@ export function useChatMessagingService() {
 
   const runStreamedRequest = useCallback(async ({
     payload,
-    preferLocalRoute,
     trackActiveRequest = false,
     errorBlockIdBase,
     onBlocks,
@@ -636,8 +629,7 @@ export function useChatMessagingService() {
     getCurrentBlocks,
     onRequestError,
   }: {
-    payload: Parameters<typeof streamChatCompletion>[0]
-    preferLocalRoute: boolean
+    payload: Parameters<typeof streamDesktopLocalChatCompletion>[0]
     trackActiveRequest?: boolean
     errorBlockIdBase: string
     onBlocks: (blocks: MessageBlock[]) => void
@@ -652,9 +644,8 @@ export function useChatMessagingService() {
     onRequestError: (message: string, errorCode?: string | null) => void
   }) => {
     statusRepeatRef.current = { key: "", repeatCount: 0 }
-    const streamFn = preferLocalRoute ? streamDesktopLocalChatCompletion : streamChatCompletion
     let receivedStructuredBlocks = false
-    const streamedText = await streamFn(
+    const streamedText = await streamDesktopLocalChatCompletion(
       {
         ...payload,
         stream: streamEnabled,
@@ -733,7 +724,7 @@ export function useChatMessagingService() {
                   const filteredBlocks = filterIncomingStructuredBlocks({
                     currentBlocks: getCurrentBlocks(),
                     incomingBlocks: blocks,
-                    preferLocalRoute,
+                    preferLocalRoute: true,
                     isStreaming: streamEnabled,
                   })
                   if (filteredBlocks.length > 0) {
@@ -866,10 +857,8 @@ export function useChatMessagingService() {
     const selectedModel =
       models.find((model) => matchesChatModelSelectionValue(model, config.model)) ??
       models[0]
-    const preferLocalRoute =
-      isTauriRuntime && (selectedModel?.request_route ?? "local_invoke") === "local_invoke"
-    const modelSelectionMode =
-      preferLocalRoute && isDesktopLocalModel(selectedModel) ? ("pool" as const) : undefined
+    if (!isTauriRuntime) return false
+    const modelSelectionMode = isDesktopLocalModel(selectedModel) ? ("pool" as const) : undefined
     if (!selectedModel) return false
 
     const { sessionStorageKey } = resolveChatRequestContext({
@@ -952,7 +941,7 @@ export function useChatMessagingService() {
 
     const resolvedSessionId = resolveCurrentSessionId(sessionStorageKey, sessionIdOverride)
     try {
-      if (preferLocalRoute && !resolvedSessionId) {
+      if (!resolvedSessionId) {
         throw new Error("Session not found")
       }
 
@@ -969,20 +958,19 @@ export function useChatMessagingService() {
         explicit_task_agent_id: explicitTaskAgentId,
         messages: requestMessages,
         temperature: config.temperatureEnabled ? config.temperature : undefined,
-        max_tokens: preferLocalRoute ? undefined : resolveRequestedMaxTokens(config.maxTokens),
+        max_tokens: undefined,
         request_id: createRequestId(),
         session_id: resolvedSessionId ?? undefined,
         metadata: buildKnowledgeSelectionMetadata(draft.selectedKnowledgeFileIds),
       }
       requestIdRef.current = payload.request_id ?? null
-      activeRequestRouteRef.current = preferLocalRoute ? "local_gateway" : "cloud"
+      activeRequestRouteRef.current = "local_gateway"
 
       await runStreamedRequest({
         payload: {
           ...payload,
           session_id: resolvedSessionId ?? undefined,
         },
-        preferLocalRoute,
         trackActiveRequest: true,
         errorBlockIdBase: assistantMessageId,
         onBlocks: (blocks) => {
@@ -1155,10 +1143,8 @@ export function useChatMessagingService() {
     const selectedModel =
       models.find((model) => matchesChatModelSelectionValue(model, config.model)) ??
       models[0]
-    const preferLocalRoute =
-      isTauriRuntime && (selectedModel?.request_route ?? "local_invoke") === "local_invoke"
-    const modelSelectionMode =
-      preferLocalRoute && isDesktopLocalModel(selectedModel) ? ("pool" as const) : undefined
+    if (!isTauriRuntime) return
+    const modelSelectionMode = isDesktopLocalModel(selectedModel) ? ("pool" as const) : undefined
     if (!selectedModel) return
 
     const { sessionStorageKey } = resolveChatRequestContext({
@@ -1186,7 +1172,7 @@ export function useChatMessagingService() {
     // 构建请求消息（不含被删除的 assistant 消息）
     const resolvedSessionId = resolveCurrentSessionId(sessionStorageKey)
     try {
-      if (preferLocalRoute && !resolvedSessionId) {
+      if (!resolvedSessionId) {
         throw new Error("Session not found")
       }
 
@@ -1201,7 +1187,7 @@ export function useChatMessagingService() {
           selectedModel.provider_model_id ?? undefined,
         messages: requestMessages,
         temperature: config.temperatureEnabled ? config.temperature : undefined,
-        max_tokens: preferLocalRoute ? undefined : resolveRequestedMaxTokens(config.maxTokens),
+        max_tokens: undefined,
         request_id: createRequestId(),
         session_id: resolvedSessionId ?? undefined,
         regenerate: true,
@@ -1211,14 +1197,13 @@ export function useChatMessagingService() {
         ),
       }
       requestIdRef.current = payload.request_id ?? null
-      activeRequestRouteRef.current = preferLocalRoute ? "local_gateway" : "cloud"
+      activeRequestRouteRef.current = "local_gateway"
 
       await runStreamedRequest({
         payload: {
           ...payload,
           session_id: resolvedSessionId ?? undefined,
         },
-        preferLocalRoute,
         trackActiveRequest: true,
         errorBlockIdBase: assistantMessageId,
         onBlocks: (blocks) => {
@@ -1403,7 +1388,6 @@ export function useChatMessagingService() {
           compare_only: true,
           metadata: buildKnowledgeSelectionMetadata(selectedKnowledgeFileIds),
         },
-        preferLocalRoute: true,
         errorBlockIdBase: `${targetMessageId}-${compareModelKey}`,
         onBlocks: (blocks) => appendCompareCandidateBlocks(targetMessageId, compareModelKey, blocks),
         onTraceId: (traceId) => {

@@ -8,9 +8,9 @@ import {
   streamIslandTextConversation,
 } from "@/lib/api/island";
 import { createConversation } from "@/lib/api/conversations";
+import { useBridgeApprovalStore } from "@/lib/chat/bridge-approval-store";
 import { loadConversationHistoryPage } from "@/lib/chat/history-loader";
 import { extractAssistantTextFromBlocks } from "@/lib/chat/message-blocks";
-import { findUnresolvedToolApprovals } from "@/lib/chat/tool-approval";
 import type { Message } from "@/lib/chat/message-types";
 import { useChatStore } from "@/store/chat-store";
 import { useChatRuntimeStore } from "@/store/chat-runtime-store";
@@ -41,6 +41,9 @@ export type IslandMode = "collapsed" | "expanded" | "hidden";
 type IslandChatSnapshot = {
   sessionId: string | null;
   messages: Message[];
+  pendingApprovalSource: ReturnType<
+    typeof useBridgeApprovalStore.getState
+  >["pending"];
   isLoading: boolean;
   globalLoading: boolean;
   statusStage: string | null;
@@ -109,8 +112,9 @@ function findLatestUserMessage(messages: Message[]) {
   return undefined;
 }
 
-function derivePendingApproval(messages: Message[]): IslandApproval | null {
-  const approval = findUnresolvedToolApprovals(messages)[0];
+function derivePendingApproval(
+  approval: ReturnType<typeof useBridgeApprovalStore.getState>["pending"]
+): IslandApproval | null {
   if (!approval) return null;
 
   return {
@@ -214,9 +218,11 @@ function deriveStatusLabel(snapshot: IslandChatSnapshot, pendingApproval: Island
 function getChatSnapshot(): IslandChatSnapshot {
   const chatState = useChatStore.getState();
   const runtimeState = useChatRuntimeStore.getState();
+  const approvalState = useBridgeApprovalStore.getState();
   return {
     sessionId: runtimeState.sessionId,
     messages: chatState.messages,
+    pendingApprovalSource: approvalState.pending,
     isLoading: runtimeState.isLoading,
     globalLoading: runtimeState.globalLoading,
     statusStage: runtimeState.statusStage,
@@ -282,7 +288,7 @@ export const useIslandStore = create<IslandState>((set) => ({
   restoreWorkspace: () => set({ mode: "hidden" }),
   hydrateFromChat: (snapshot) => {
     const latestAssistant = findLatestAssistantMessage(snapshot.messages);
-    const pendingApproval = derivePendingApproval(snapshot.messages);
+    const pendingApproval = derivePendingApproval(snapshot.pendingApprovalSource);
     set((state) => {
       const runtimeStatus = resolveIslandRuntimeStatus(snapshot, pendingApproval, state.stageHistory);
       return {

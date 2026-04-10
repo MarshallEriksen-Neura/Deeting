@@ -25,10 +25,8 @@ export function resolveIslandChatRequestConfig({
     return null;
   }
 
-  const useDesktopLocalGateway =
-    isTauriRuntime && (selectedModel.request_route ?? "local_invoke") === "local_invoke";
-  const isDesktopLocalSelection =
-    useDesktopLocalGateway && isDesktopLocalModel(selectedModel);
+  const useDesktopLocalGateway = isTauriRuntime;
+  const isDesktopLocalSelection = isTauriRuntime && isDesktopLocalModel(selectedModel);
   const localProviderModelId = isDesktopLocalSelection
     ? selectedModel.provider_model_id?.trim() || undefined
     : undefined;

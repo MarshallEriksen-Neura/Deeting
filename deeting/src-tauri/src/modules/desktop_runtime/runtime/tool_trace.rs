@@ -2,6 +2,87 @@ use super::tool_result_blocks::{
     extract_capability_transition_blocks, extract_ui_blocks_from_tool_result,
 };
 
+fn trimmed_json_string(value: Option<&serde_json::Value>) -> Option<String> {
+    value
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn call_id_from_execution_graph_node_id(value: Option<&serde_json::Value>) -> Option<String> {
+    let node_id = trimmed_json_string(value)?;
+    let call_id = node_id
+        .strip_prefix("tool_call:")
+        .or_else(|| node_id.strip_prefix("approval_gate:"))
+        .unwrap_or(node_id.as_str())
+        .trim()
+        .to_string();
+    if call_id.is_empty() {
+        None
+    } else {
+        Some(call_id)
+    }
+}
+
+fn sanitize_tool_call_segment(value: &str) -> String {
+    let sanitized = value
+        .trim()
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else if ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    let sanitized = sanitized.trim_matches('_');
+    if sanitized.is_empty() {
+        "tool".to_string()
+    } else {
+        sanitized.to_string()
+    }
+}
+
+fn synthesize_missing_tool_call_id(tool_name: &str, index: usize) -> String {
+    format!(
+        "local-missing-call:{index}:{}",
+        sanitize_tool_call_segment(tool_name)
+    )
+}
+
+pub(crate) fn resolve_tool_trace_call_id(item: &serde_json::Value, index: usize) -> String {
+    if let Some(call_id) = trimmed_json_string(item.get("id")) {
+        return call_id;
+    }
+
+    let result = item.get("result");
+    if let Some(call_id) = call_id_from_execution_graph_node_id(
+        result.and_then(|value| value.get("execution_graph_tool_node_id")),
+    ) {
+        return call_id;
+    }
+    if let Some(call_id) = call_id_from_execution_graph_node_id(
+        result.and_then(|value| value.get("execution_graph_gate_node_id")),
+    ) {
+        return call_id;
+    }
+    if let Some(approval_token) =
+        trimmed_json_string(result.and_then(|value| value.get("approval_token")))
+    {
+        return format!("approval-token:{approval_token}");
+    }
+
+    let tool_name = item
+        .get("name")
+        .and_then(|value| value.as_str())
+        .unwrap_or("unknown_tool");
+    synthesize_missing_tool_call_id(tool_name, index)
+}
+
 pub(crate) fn build_local_tool_trace_blocks(
     tool_call_meta: &[serde_json::Value],
 ) -> Vec<serde_json::Value> {
@@ -24,15 +105,12 @@ pub(crate) fn build_local_tool_trace_blocks(
         }));
     }
 
-    for item in tool_call_meta {
+    for (index, item) in tool_call_meta.iter().enumerate() {
         let tool_name = item
             .get("name")
             .and_then(|value| value.as_str())
             .unwrap_or("unknown_tool");
-        let call_id = item
-            .get("id")
-            .and_then(|value| value.as_str())
-            .unwrap_or_default();
+        let call_id = resolve_tool_trace_call_id(item, index);
         let status = item
             .get("status")
             .and_then(|value| value.as_str())
@@ -64,9 +142,11 @@ pub(crate) fn build_local_tool_trace_blocks(
                 "result": item.get("result").cloned().unwrap_or_else(|| serde_json::json!({})),
             }));
             blocks.extend(extract_capability_transition_blocks(
-                item, call_id, tool_name,
+                item, &call_id, tool_name,
             ));
-            blocks.extend(extract_ui_blocks_from_tool_result(item, call_id, tool_name));
+            blocks.extend(extract_ui_blocks_from_tool_result(
+                item, &call_id, tool_name,
+            ));
         } else if status.eq_ignore_ascii_case("error") {
             blocks.push(serde_json::json!({
                 "type": "tool_result",
@@ -92,10 +172,7 @@ pub(crate) fn append_streamable_local_tool_result_blocks(
         .get("name")
         .and_then(|value| value.as_str())
         .unwrap_or("unknown_tool");
-    let call_id = item
-        .get("id")
-        .and_then(|value| value.as_str())
-        .unwrap_or_default();
+    let call_id = resolve_tool_trace_call_id(item, 0);
     let status = item
         .get("status")
         .and_then(|value| value.as_str())
@@ -112,9 +189,11 @@ pub(crate) fn append_streamable_local_tool_result_blocks(
             "result": item.get("result").cloned().unwrap_or_else(|| serde_json::json!({})),
         }));
         blocks.extend(extract_capability_transition_blocks(
-            item, call_id, tool_name,
+            item, &call_id, tool_name,
         ));
-        blocks.extend(extract_ui_blocks_from_tool_result(item, call_id, tool_name));
+        blocks.extend(extract_ui_blocks_from_tool_result(
+            item, &call_id, tool_name,
+        ));
     } else if status.eq_ignore_ascii_case("error") {
         blocks.push(serde_json::json!({
             "id": format!("{call_id}-tool-result"),
@@ -185,6 +264,62 @@ mod tests {
                 .and_then(|value| value.get("approval_token"))
                 .and_then(|value| value.as_str()),
             Some("approval-2")
+        );
+    }
+
+    #[test]
+    fn build_local_tool_trace_blocks_synthesizes_distinct_call_ids_when_missing() {
+        let blocks = build_local_tool_trace_blocks(&[
+            serde_json::json!({
+                "name": "search_notes",
+                "status": "success",
+                "result": { "ok": true }
+            }),
+            serde_json::json!({
+                "name": "search_notes",
+                "status": "success",
+                "result": { "ok": true }
+            }),
+        ]);
+
+        let call_ids = blocks
+            .iter()
+            .filter(|block| block.get("type").and_then(|value| value.as_str()) == Some("tool_call"))
+            .filter_map(|block| {
+                block
+                    .get("callId")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string)
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            call_ids,
+            vec![
+                "local-missing-call:0:search_notes".to_string(),
+                "local-missing-call:1:search_notes".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn append_streamable_local_tool_result_blocks_uses_approval_token_as_fallback_call_id() {
+        let mut blocks = Vec::new();
+        append_streamable_local_tool_result_blocks(
+            &mut blocks,
+            &serde_json::json!({
+                "name": "search_notes",
+                "status": "requires_approval",
+                "result": {
+                    "status": "REQUIRES_APPROVAL",
+                    "approval_token": "approval-missing-id-1"
+                }
+            }),
+        );
+
+        assert_eq!(
+            blocks[0].get("callId").and_then(|value| value.as_str()),
+            Some("approval-token:approval-missing-id-1")
         );
     }
 }

@@ -184,11 +184,11 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
         },
         CoreToolContract {
             name: "sys_submit_onboarding_request",
-            description: "Create or install local desktop capabilities. Use `asset_type='skill'` with payload such as `{repo_url, skill_name}` to install a skill, or `asset_type='assistant'` to create a local assistant.",
+            description: "Create or install local desktop capabilities. Use `asset_type='skill'` with payload such as `{repo_url, skill_name}` to install a skill, `asset_type='assistant'` to create a local assistant, or `asset_type='custom_task_agent'` to create a reusable custom task agent with fields such as `{name, description, task_prompt, invocation_kind, callable_mcp_tool_ids, guidance_skill_ids, callable_skill_action_refs, tags, discoverable, is_enabled}`.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "asset_type": { "type": "string", "enum": ["assistant", "skill"], "description": "Kind of asset to provision locally." },
+                    "asset_type": { "type": "string", "enum": ["assistant", "skill", "custom_task_agent"], "description": "Kind of asset to provision locally." },
                     "payload": { "type": "object", "description": "Structured onboarding payload for the selected asset type." }
                 },
                 "required": ["asset_type", "payload"]

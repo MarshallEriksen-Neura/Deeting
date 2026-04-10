@@ -12,9 +12,6 @@ const isTauriRuntime = () => {
   return process.env.NEXT_PUBLIC_IS_TAURI === "true"
 }
 
-const shouldIncludeCloudModelsInDesktop = () =>
-  process.env.NEXT_PUBLIC_DESKTOP_INCLUDE_CLOUD_MODELS === "true"
-
 async function invokeTauri<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke } = await import("@tauri-apps/api/core")
   return invoke<T>(command, args)
@@ -281,23 +278,7 @@ export async function fetchChatModels(options?: {
   } catch (error) {
     console.warn("fetch_local_models_failed", error)
   }
-
-  if (!shouldIncludeCloudModelsInDesktop()) {
-    return localPayload
-  }
-
-  let cloudPayload: ModelListResponse = { instances: [] }
-  try {
-    cloudPayload = await fetchCloudModels()
-  } catch (error) {
-    if (localPayload.instances.length === 0) {
-      throw error
-    }
-    console.warn("fetch_cloud_models_failed", error)
-  }
-
-  const merged = [...localPayload.instances, ...cloudPayload.instances]
-  return { instances: merged }
+  return localPayload
 }
 
 export async function fetchAvailableModels(): Promise<AvailableModelsResponse> {

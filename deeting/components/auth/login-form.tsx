@@ -129,10 +129,11 @@ export function LoginForm({ onSuccess, onError, className }: LoginFormProps) {
   const t = useTranslations("auth.login.form")
   const inviteCodeRef = React.useRef<HTMLInputElement>(null)
   const searchParams = useSearchParams()
-  const tauriRuntime = isTauriRuntime()
+  const [desktopSupport, setDesktopSupport] = React.useState<boolean | null>(null)
+  const tauriRuntime = desktopSupport === true
   const desktopExternalLoginUrl = DESKTOP_EXTERNAL_LOGIN_URL.trim()
   const desktopLoginSessionId =
-    !tauriRuntime ? searchParams.get("desktop_login_session")?.trim() ?? "" : ""
+    desktopSupport === false ? searchParams.get("desktop_login_session")?.trim() ?? "" : ""
   const hasDesktopBrowserSession = desktopLoginSessionId.length > 0
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
   const {
@@ -203,6 +204,10 @@ export function LoginForm({ onSuccess, onError, className }: LoginFormProps) {
     browserReturnLoading
 
   // 邀请码输入框展开后自动聚焦
+  React.useEffect(() => {
+    setDesktopSupport(isTauriRuntime())
+  }, [])
+
   React.useEffect(() => {
     if (showInviteCode && inviteCodeRef.current) {
       const timer = setTimeout(() => {
@@ -285,6 +290,18 @@ export function LoginForm({ onSuccess, onError, className }: LoginFormProps) {
 
   return (
     <div className={cn("grid gap-6", className)}>
+      {desktopSupport === null ? (
+        <div className="space-y-4" aria-busy="true">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+            <div className="h-4 w-32 rounded-full bg-slate-200" />
+            <div className="mt-3 h-4 w-full rounded-full bg-slate-100" />
+            <div className="mt-2 h-4 w-5/6 rounded-full bg-slate-100" />
+          </div>
+          <div className="h-12 rounded-xl bg-slate-100" />
+          <div className="h-12 rounded-xl bg-slate-100" />
+        </div>
+      ) : (
+        <>
       {hasDesktopBrowserSession && (
         <div className="rounded-2xl border border-blue-100 bg-blue-50/80 p-4 text-left">
           <p className="text-sm font-semibold text-slate-800">
@@ -621,6 +638,8 @@ export function LoginForm({ onSuccess, onError, className }: LoginFormProps) {
       )}
 
       {/* 服务条款 */}
+        </>
+      )}
       <p className="text-center text-xs text-slate-400">
         {t("termsPrefix")}{" "}
         <a href="/terms" className="text-blue-500 underline-offset-4 hover:underline">

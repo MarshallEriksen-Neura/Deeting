@@ -5,14 +5,16 @@ use super::{
     execute_or_queue_mcp_tool_call_with_tool_ref, extract_chat_tool_calls,
     install_local_skill_from_onboarding_request, list_execution_graph_runtime_contexts,
     load_execution_graph_runtime_context, load_execution_graph_snapshot,
-    load_execution_graph_snapshot_by_approval_token, persist_execution_graph_runtime_context,
-    persist_execution_graph_snapshot, project_execution_graph_blocks_from_value,
-    project_execution_graph_snapshot, request_provider_chat_completion,
-    resolve_local_capability_activation_state, resolve_provider_tool_name_for_execution,
+    persist_execution_graph_runtime_context, persist_execution_graph_snapshot,
+    project_execution_graph_blocks_from_value, project_execution_graph_snapshot,
+    request_provider_chat_completion, resolve_local_capability_activation_state,
+    resolve_provider_tool_name_for_execution, resolve_tool_trace_call_id,
     search_feedback::search_feedback_context_from_tool_call_meta, CapabilityExecutionContract,
     GraphProjectionInput, LocalCapabilityActivationState, LocalExecutionPolicy,
     LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
 };
+use crate::modules::custom_task_agents::service::create_custom_task_agent_service;
+use crate::modules::custom_task_agents::types::CreateCustomTaskAgentRequest;
 use crate::modules::desktop_config::{parse_max_agentic_rounds, MAX_AGENTIC_ROUNDS_CONFIG_KEY};
 use crate::modules::mcp::commands::common_impl::to_string;
 use crate::modules::mcp::commands::common_impl::LocalModelConnection;
@@ -25,8 +27,6 @@ struct RuntimeMetricsAccumulator {
     upstream_calls: i64,
     ttft_ms: Option<i64>,
 }
-
-const LEGACY_SUSPENDED_COMPAT_WINDOW_MS: i128 = 5 * 60 * 1000;
 
 impl RuntimeMetricsAccumulator {
     fn observe_response(&mut self, response: &serde_json::Value) {
@@ -438,18 +438,6 @@ pub(crate) async fn materialize_pending_local_approval_from_runtime_context(
         return Ok(None);
     }
 
-    if let Some(existing) = app_state
-        .mcp
-        .approvals
-        .pending_tool_calls
-        .read()
-        .await
-        .get(normalized_token)
-        .cloned()
-    {
-        return Ok(Some(existing));
-    }
-
     let Some(matched) = find_canonical_pending_local_approval_match(
         app_state.mcp.store.as_ref(),
         normalized_token,
@@ -457,7 +445,14 @@ pub(crate) async fn materialize_pending_local_approval_from_runtime_context(
     )
     .await?
     else {
-        return Ok(None);
+        return Ok(app_state
+            .mcp
+            .approvals
+            .pending_tool_calls
+            .read()
+            .await
+            .get(normalized_token)
+            .cloned());
     };
 
     let expires_at_unix_ms = (now_unix_ms_i64() as i128) + app_state.mcp.pending_tool_call_ttl_ms();
@@ -471,9 +466,7 @@ pub(crate) async fn materialize_pending_local_approval_from_runtime_context(
     let entry = pending_tool_calls
         .entry(normalized_token.to_string())
         .or_insert_with(|| materialized.clone());
-    if entry.execution_graph_execution_id.is_none() {
-        entry.execution_graph_execution_id = Some(matched.execution_id.clone());
-    }
+    *entry = materialized;
     Ok(Some(entry.clone()))
 }
 
@@ -570,6 +563,63 @@ fn tool_call_meta_matches_call_id(item: &serde_json::Value, call_id: &str) -> bo
         .is_some_and(|value| value == expected)
 }
 
+fn sanitize_tool_call_id_segment(value: &str) -> String {
+    let sanitized = value
+        .trim()
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else if ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    let sanitized = sanitized.trim_matches('_');
+    if sanitized.is_empty() {
+        "tool".to_string()
+    } else {
+        sanitized.to_string()
+    }
+}
+
+fn resolve_local_tool_call_id(
+    raw_call_id: Option<&str>,
+    tool_name: &str,
+    round: usize,
+    call_index: usize,
+) -> String {
+    raw_call_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            format!(
+                "local-missing-call:r{round}:i{call_index}:{}",
+                sanitize_tool_call_id_segment(tool_name)
+            )
+        })
+}
+
+fn tool_call_meta_with_resolved_ids(
+    tool_call_meta: &[serde_json::Value],
+) -> Vec<serde_json::Value> {
+    tool_call_meta
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            let resolved_call_id = resolve_tool_trace_call_id(item, index);
+            let mut cloned = item.clone();
+            if let Some(object) = cloned.as_object_mut() {
+                object.insert("id".to_string(), serde_json::json!(resolved_call_id));
+            }
+            cloned
+        })
+        .collect()
+}
+
 fn build_tool_call_meta_from_execution_graph(
     execution_graph: &serde_json::Value,
 ) -> Vec<serde_json::Value> {
@@ -655,21 +705,17 @@ fn build_effective_tool_call_meta(
         .map(build_tool_call_meta_from_execution_graph)
         .unwrap_or_default();
     let mut effective_tool_call_meta: Vec<serde_json::Value> = graph_tool_call_meta;
-    for item in tool_call_meta {
-        let Some(call_id) = item
-            .get("id")
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
-        else {
-            continue;
-        };
+    for (index, item) in tool_call_meta.iter().enumerate() {
+        let call_id = resolve_tool_trace_call_id(item, index);
         let already_present = effective_tool_call_meta
             .iter()
             .any(|existing| tool_call_meta_matches_call_id(existing, &call_id));
         if !already_present {
-            effective_tool_call_meta.push(item.clone());
+            let mut cloned = item.clone();
+            if let Some(object) = cloned.as_object_mut() {
+                object.insert("id".to_string(), serde_json::json!(call_id));
+            }
+            effective_tool_call_meta.push(cloned);
         }
     }
     effective_tool_call_meta
@@ -688,14 +734,10 @@ fn build_state_effective_tool_call_meta(
 fn derive_pending_call_id_from_tool_call_meta(tool_call_meta: &[serde_json::Value]) -> String {
     tool_call_meta
         .iter()
+        .enumerate()
         .rev()
-        .find_map(|item| {
-            item.get("id")
-                .and_then(serde_json::Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_string)
-        })
+        .map(|(index, item)| resolve_tool_trace_call_id(item, index))
+        .find(|value| !value.trim().is_empty())
         .unwrap_or_else(|| "unknown-call".to_string())
 }
 
@@ -1038,14 +1080,6 @@ pub(crate) fn apply_rejected_tool_result_to_execution_graph_value(
         "tool_call.rejected",
         rejection_payload,
     );
-}
-
-fn legacy_suspended_fallback_allowed(legacy_created_at_unix_ms: Option<i128>) -> bool {
-    let Some(created_at_unix_ms) = legacy_created_at_unix_ms else {
-        return false;
-    };
-    let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
-    now.saturating_sub(created_at_unix_ms) <= LEGACY_SUSPENDED_COMPAT_WINDOW_MS
 }
 
 pub(crate) fn serialize_inflight_runtime_context(
@@ -1694,20 +1728,29 @@ async fn continue_local_chat_complete_with_tools(
                 results,
                 capability_update,
             } => {
+                let canonical_tool_call_meta = canonicalize_tool_call_meta_via_graph(
+                    &session_id,
+                    &state.execution_policy,
+                    &response,
+                    &tool_call_meta,
+                );
+                let resolved_tool_call_meta =
+                    tool_call_meta_with_resolved_ids(&canonical_tool_call_meta);
                 record_query_affinity_from_tool_meta(
                     app_state.mcp.store.as_ref(),
                     state.last_capability_snapshot.as_ref(),
-                    &tool_call_meta,
+                    &resolved_tool_call_meta,
                 )
                 .await;
                 let suspended = SuspendedChatToolExecution::from_state(
                     &state,
-                    &tool_call_meta,
+                    &resolved_tool_call_meta,
                     &results,
                     capability_update,
-                    derive_pending_call_id_from_tool_call_meta(&tool_call_meta),
+                    derive_pending_call_id_from_tool_call_meta(&resolved_tool_call_meta),
                     String::new(),
                 );
+                tool_call_meta = resolved_tool_call_meta;
                 attach_graph_metadata_to_pending_tool_meta(&mut tool_call_meta, &suspended);
                 {
                     let mut pending_tool_calls =
@@ -1821,6 +1864,137 @@ fn build_max_rounds_exceeded_response(state: &LocalChatToolRuntimeState) -> serd
 
 fn rewind_round_for_post_approval_continuation(state: &mut LocalChatToolRuntimeState) {
     state.round = state.round.saturating_sub(1);
+}
+
+fn suspended_execution_matches_requested_execution_id(
+    suspended: &SuspendedChatToolExecution,
+    execution_graph_execution_id: Option<&str>,
+) -> bool {
+    let Some(expected_execution_id) = execution_graph_execution_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return true;
+    };
+
+    suspended.graph_execution_id() == Some(expected_execution_id)
+}
+
+async fn take_suspended_local_chat_execution_fallback(
+    suspended_local_chat_executions: &tokio::sync::RwLock<
+        HashMap<String, SuspendedChatToolExecution>,
+    >,
+    approval_token: &str,
+    execution_graph_execution_id: Option<&str>,
+) -> Option<SuspendedChatToolExecution> {
+    let normalized_token = approval_token.trim();
+    if normalized_token.is_empty() {
+        return None;
+    }
+
+    let mut suspended_local_chat_executions = suspended_local_chat_executions.write().await;
+    let suspended = suspended_local_chat_executions.remove(normalized_token)?;
+    if suspended_execution_matches_requested_execution_id(&suspended, execution_graph_execution_id)
+    {
+        return Some(suspended);
+    }
+
+    suspended_local_chat_executions.insert(normalized_token.to_string(), suspended);
+    None
+}
+
+async fn load_suspended_chat_tool_execution_for_resume(
+    app_state: &AppState,
+    approval_token: &str,
+    execution_graph_execution_id: Option<&str>,
+) -> Result<Option<SuspendedChatToolExecution>, String> {
+    let persisted_execution_graph = if let Some(execution_id) = execution_graph_execution_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        load_execution_graph_snapshot(app_state.mcp.store.as_ref(), execution_id)
+            .await
+            .map_err(|err| err.to_string())?
+    } else {
+        None
+    };
+
+    if let Some(execution_graph) = persisted_execution_graph {
+        if let Some(execution_id) = execution_graph
+            .get("execution_id")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            if let Some(runtime_context) =
+                load_execution_graph_runtime_context(app_state.mcp.store.as_ref(), execution_id)
+                    .await
+                    .map_err(|err| err.to_string())?
+            {
+                let persisted_context = persistable_inflight_context_from_value(&runtime_context)
+                    .and_then(|context| context.chat_runtime)
+                    .unwrap_or_else(|| {
+                        serde_json::from_value(runtime_context).unwrap_or_else(|_| {
+                            PersistedChatToolRuntimeContext {
+                                max_rounds: 4,
+                                round: 0,
+                                trace_id: execution_id.to_string(),
+                                request_id: None,
+                                execution_policy:
+                                    crate::modules::desktop_runtime::runtime::build_default_local_execution_policy(),
+                                model_connection: LocalModelConnection {
+                                    model_id: "deeting-os".to_string(),
+                                    provider_model_id: "deeting-os".to_string(),
+                                    logical_model_key: None,
+                                    protocol_family: "openai_chat".to_string(),
+                                },
+                                orchestrated_messages: Vec::new(),
+                                session_id: execution_graph
+                                    .get("session_id")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default()
+                                    .to_string(),
+                                temperature: None,
+                                max_tokens: None,
+                                active_capability: None,
+                                runtime_metrics: RuntimeMetricsAccumulator::default(),
+                                last_capability_snapshot: None,
+                                last_response: None,
+                            }
+                        })
+                    });
+                let state = runtime_state_from_persisted_context(persisted_context);
+                return Ok(Some(SuspendedChatToolExecution {
+                    max_rounds: state.max_rounds,
+                    round: state.round,
+                    trace_id: state.trace_id.clone(),
+                    request_id: state.request_id.clone(),
+                    execution_policy: state.execution_policy.clone(),
+                    model_connection: state.model_connection.clone(),
+                    orchestrated_messages: state.orchestrated_messages.clone(),
+                    session_id: state.session_id.clone(),
+                    temperature: state.temperature,
+                    max_tokens: state.max_tokens,
+                    active_capability: state.active_capability.clone(),
+                    runtime_metrics: state.runtime_metrics.clone(),
+                    last_capability_snapshot: state.last_capability_snapshot.clone(),
+                    last_response: state.last_response.clone(),
+                    execution_graph,
+                }));
+            }
+        }
+    }
+
+    Ok(take_suspended_local_chat_execution_fallback(
+        app_state
+            .mcp
+            .approvals
+            .suspended_local_chat_executions
+            .as_ref(),
+        approval_token,
+        execution_graph_execution_id,
+    )
+    .await)
 }
 
 fn finalize_tool_round(
@@ -2250,7 +2424,7 @@ async fn process_chat_tool_calls(
     let mut capability_update = None;
     let mut approval_tokens = Vec::new();
 
-    for call in tool_calls {
+    for (call_index, call) in tool_calls.into_iter().enumerate() {
         let requested_tool_name = call.name.trim().to_lowercase();
         let tool_name = resolve_provider_tool_name_for_execution(
             &requested_tool_name,
@@ -2261,7 +2435,8 @@ async fn process_chat_tool_calls(
         let tool_name =
             canonicalize_tool_name_for_allowed_list(&tool_name, effective_allowed_tool_names)
                 .unwrap_or(tool_name);
-        let call_id = call.id.clone().unwrap_or_default();
+        let call_id =
+            resolve_local_tool_call_id(call.id.as_deref(), &tool_name, state.round, call_index);
         let meta_len_before = tool_call_meta.len();
         let approval_count_before = approval_tokens.len();
         if !effective_allowed_tool_names
@@ -2273,9 +2448,9 @@ async fn process_chat_tool_calls(
                 "tool '{}' is not enabled for the current execution policy",
                 tool_name
             );
-            realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call.id,"toolName":tool_name,"status":"running"})]);
+            realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call_id.as_str(),"toolName":tool_name,"status":"running"})]);
             let meta = serde_json::json!({
-                "id": call.id,
+                "id": call_id.as_str(),
                 "name": tool_name,
                 "status": "error",
                 "error_code": "LOCAL_TOOL_POLICY_BLOCKED",
@@ -2315,7 +2490,7 @@ async fn process_chat_tool_calls(
                     state.request_id.as_deref(),
                 ),
             },
-            call.id.as_deref().unwrap_or_default(),
+            call_id.as_str(),
             &tool_name,
             &call.arguments,
         )
@@ -2325,7 +2500,7 @@ async fn process_chat_tool_calls(
 
         if tool_name == "execute_code_plan" {
             realtime_emitter.emit_execution_section_once();
-            realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call.id,"toolName":tool_name,"status":"running"})]);
+            realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call_id.as_str(),"toolName":tool_name,"status":"running"})]);
             let code = call
                 .arguments
                 .get("code")
@@ -2353,7 +2528,7 @@ async fn process_chat_tool_calls(
                 Err(error) => {
                     synthesized = true;
                     let meta = serde_json::json!({
-                        "id":call.id,
+                        "id":call_id.as_str(),
                         "name":tool_name,
                         "status":"error",
                         "error_code":"CODEMODE_SEARCH_REQUIRED",
@@ -2376,7 +2551,7 @@ async fn process_chat_tool_calls(
                     &mut tool_call_meta,
                     &mut results,
                     realtime_emitter,
-                    call.id.as_deref(),
+                    Some(call_id.as_str()),
                     &tool_name,
                     "CODEMODE_EMPTY_CODE",
                     "execute_code_plan requires a non-empty 'code' argument",
@@ -2412,7 +2587,7 @@ async fn process_chat_tool_calls(
                     synthesized = true;
                     let meta_status = if res.success { "success" } else { "error" };
                     let meta = serde_json::json!({
-                        "id":call.id,
+                        "id":call_id.as_str(),
                         "name":tool_name,
                         "status":meta_status,
                         "errorCode":res.error_code,
@@ -2432,7 +2607,7 @@ async fn process_chat_tool_calls(
                     }
                 }
                 Err(err) => {
-                    let meta = serde_json::json!({"id":call.id,"name":tool_name,"status":"error","error":err.to_string()});
+                    let meta = serde_json::json!({"id":call_id.as_str(),"name":tool_name,"status":"error","error":err.to_string()});
                     let mut streamed_blocks = Vec::new();
                     append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
                     realtime_emitter.emit_blocks(streamed_blocks);
@@ -2441,7 +2616,7 @@ async fn process_chat_tool_calls(
                 }
             }
         } else if tool_name == "search_sdk" {
-            realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call.id,"toolName":tool_name,"status":"running"})]);
+            realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call_id.as_str(),"toolName":tool_name,"status":"running"})]);
             let query = call
                 .arguments
                 .get("query")
@@ -2468,7 +2643,7 @@ async fn process_chat_tool_calls(
             let search_res = search_bundle.summary_payload;
             *last_capability_snapshot = Some(search_bundle.full_payload);
             synthesized = true;
-            let meta = serde_json::json!({"id":call.id,"name":tool_name,"status":"success","result":search_res});
+            let meta = serde_json::json!({"id":call_id.as_str(),"name":tool_name,"status":"success","result":search_res});
             let mut streamed_blocks = Vec::new();
             append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
             realtime_emitter.emit_blocks(streamed_blocks);
@@ -2479,7 +2654,7 @@ async fn process_chat_tool_calls(
                 serde_json::to_string_pretty(&search_res).unwrap()
             ));
         } else if tool_name == "attach_capability" {
-            realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call.id,"toolName":tool_name,"status":"running"})]);
+            realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call_id.as_str(),"toolName":tool_name,"status":"running"})]);
             let capability_id = call
                 .arguments
                 .get("capability_id")
@@ -2500,7 +2675,7 @@ async fn process_chat_tool_calls(
                         "capability_transition":{"action":"activated","capability_id":capability_id,"capability_name":state.capability_name.clone(),"reason":reason}
                     });
                     synthesized = true;
-                    let meta = serde_json::json!({"id":call.id,"name":tool_name,"status":"success","result":result});
+                    let meta = serde_json::json!({"id":call_id.as_str(),"name":tool_name,"status":"success","result":result});
                     let mut streamed_blocks = Vec::new();
                     append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
                     realtime_emitter.emit_blocks(streamed_blocks);
@@ -2526,7 +2701,7 @@ async fn process_chat_tool_calls(
                     });
                 }
                 Err(err) => {
-                    let meta = serde_json::json!({"id":call.id,"name":tool_name,"status":"error","error_code":"CAPABILITY_ATTACH_FAILED","error":err});
+                    let meta = serde_json::json!({"id":call_id.as_str(),"name":tool_name,"status":"error","error_code":"CAPABILITY_ATTACH_FAILED","error":err});
                     let mut streamed_blocks = Vec::new();
                     append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
                     realtime_emitter.emit_blocks(streamed_blocks);
@@ -2551,7 +2726,7 @@ async fn process_chat_tool_calls(
                 }
             }
         } else if tool_name == "detach_capability" {
-            realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call.id,"toolName":tool_name,"status":"running"})]);
+            realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call_id.as_str(),"toolName":tool_name,"status":"running"})]);
             let reason = call
                 .arguments
                 .get("reason")
@@ -2563,7 +2738,7 @@ async fn process_chat_tool_calls(
                 "capability_transition":{"action":"deactivated","capability_id":active_capability.map(|v| v.capability_id.clone()),"capability_name":active_capability.map(|v| v.capability_name.clone()),"reason":reason}
             });
             synthesized = true;
-            let meta = serde_json::json!({"id":call.id,"name":tool_name,"status":"success","result":result});
+            let meta = serde_json::json!({"id":call_id.as_str(),"name":tool_name,"status":"success","result":result});
             let mut streamed_blocks = Vec::new();
             append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
             realtime_emitter.emit_blocks(streamed_blocks);
@@ -2574,7 +2749,7 @@ async fn process_chat_tool_calls(
                 capability_name: active_capability.map(|v| v.capability_name.clone()),
             });
         } else if tool_name == "sys_submit_onboarding_request" {
-            realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call.id,"toolName":tool_name,"status":"running"})]);
+            realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call_id.as_str(),"toolName":tool_name,"status":"running"})]);
             let asset_type = call
                 .arguments
                 .get("asset_type")
@@ -2592,7 +2767,7 @@ async fn process_chat_tool_calls(
                     Ok(req) => match app_state.mcp.store.create_local_assistant(req).await {
                         Ok(id) => {
                             synthesized = true;
-                            let meta = serde_json::json!({"id":call.id,"name":tool_name,"status":"success","result":{"action":"created","id":id}});
+                            let meta = serde_json::json!({"id":call_id.as_str(),"name":tool_name,"status":"success","result":{"action":"created","id":id}});
                             let mut streamed_blocks = Vec::new();
                             append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
                             realtime_emitter.emit_blocks(streamed_blocks);
@@ -2605,7 +2780,7 @@ async fn process_chat_tool_calls(
                                 &mut tool_call_meta,
                                 &mut results,
                                 realtime_emitter,
-                                call.id.as_deref(),
+                                Some(call_id.as_str()),
                                 &tool_name,
                                 "LOCAL_ASSISTANT_CREATE_FAILED",
                                 format!("assistant creation failed: {}", err),
@@ -2618,7 +2793,7 @@ async fn process_chat_tool_calls(
                             &mut tool_call_meta,
                             &mut results,
                             realtime_emitter,
-                            call.id.as_deref(),
+                            Some(call_id.as_str()),
                             &tool_name,
                             "INVALID_ONBOARDING_ASSISTANT_PAYLOAD",
                             format!("assistant onboarding payload could not be parsed: {}", err),
@@ -2629,7 +2804,7 @@ async fn process_chat_tool_calls(
                 match install_local_skill_from_onboarding_request(app, app_state, &payload).await {
                     Ok(result) => {
                         synthesized = true;
-                        let meta = serde_json::json!({"id":call.id,"name":tool_name,"status":"success","result":result});
+                        let meta = serde_json::json!({"id":call_id.as_str(),"name":tool_name,"status":"success","result":result});
                         let mut streamed_blocks = Vec::new();
                         append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
                         realtime_emitter.emit_blocks(streamed_blocks);
@@ -2642,12 +2817,58 @@ async fn process_chat_tool_calls(
                     }
                     Err(err) => {
                         synthesized = true;
-                        let meta = serde_json::json!({"id":call.id,"name":tool_name,"status":"error","error":err});
+                        let meta = serde_json::json!({"id":call_id.as_str(),"name":tool_name,"status":"error","error":err});
                         let mut streamed_blocks = Vec::new();
                         append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
                         realtime_emitter.emit_blocks(streamed_blocks);
                         tool_call_meta.push(meta);
                         results.push(format!("Skill onboarding failed: {}", err));
+                    }
+                }
+            } else if asset_type == "custom_task_agent" {
+                let create_req: Result<CreateCustomTaskAgentRequest, _> =
+                    serde_json::from_value(payload);
+                match create_req {
+                    Ok(req) => match create_custom_task_agent_service(app_state, req).await {
+                        Ok(profile) => {
+                            synthesized = true;
+                            let result = serde_json::json!({
+                                "action": "created",
+                                "id": profile.id,
+                                "status": "success",
+                                "result": profile,
+                            });
+                            let meta = serde_json::json!({"id":call_id.as_str(),"name":tool_name,"status":"success","result":result});
+                            let mut streamed_blocks = Vec::new();
+                            append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+                            realtime_emitter.emit_blocks(streamed_blocks);
+                            tool_call_meta.push(meta);
+                            results.push("Custom task agent created successfully.".to_string());
+                        }
+                        Err(err) => {
+                            synthesized = true;
+                            push_local_tool_call_error_meta(
+                                &mut tool_call_meta,
+                                &mut results,
+                                realtime_emitter,
+                                Some(call_id.as_str()),
+                                &tool_name,
+                                "LOCAL_CUSTOM_TASK_AGENT_CREATE_FAILED",
+                                format!("custom task agent creation failed: {}", err),
+                            );
+                        }
+                    },
+                    Err(err) => {
+                        synthesized = true;
+                        push_local_tool_call_error_meta(
+                            &mut tool_call_meta,
+                            &mut results,
+                            realtime_emitter,
+                            Some(call_id.as_str()),
+                            &tool_name,
+                            "INVALID_ONBOARDING_CUSTOM_TASK_AGENT_PAYLOAD",
+                            format!("custom task agent onboarding payload could not be parsed: {}", err),
+                        );
                     }
                 }
             } else {
@@ -2661,17 +2882,17 @@ async fn process_chat_tool_calls(
                     &mut tool_call_meta,
                     &mut results,
                     realtime_emitter,
-                    call.id.as_deref(),
+                    Some(call_id.as_str()),
                     &tool_name,
                     "UNSUPPORTED_ONBOARDING_ASSET_TYPE",
                     format!(
-                        "unsupported onboarding asset_type '{}'; expected 'assistant' or 'skill'",
+                        "unsupported onboarding asset_type '{}'; expected 'assistant', 'skill', or 'custom_task_agent'",
                         asset_type_label
                     ),
                 );
             }
         } else if tool_name == "refresh_skill_index" {
-            realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call.id,"toolName":tool_name,"status":"running"})]);
+            realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call_id.as_str(),"toolName":tool_name,"status":"running"})]);
             match crate::modules::skills::commands::register_local_skills_inner(
                 app.clone(),
                 app_state,
@@ -2684,7 +2905,7 @@ async fn process_chat_tool_calls(
                         "status": "ok",
                         "registered": registered,
                     });
-                    let meta = serde_json::json!({"id":call.id,"name":tool_name,"status":"success","result":result});
+                    let meta = serde_json::json!({"id":call_id.as_str(),"name":tool_name,"status":"success","result":result});
                     let mut streamed_blocks = Vec::new();
                     append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
                     realtime_emitter.emit_blocks(streamed_blocks);
@@ -2696,7 +2917,7 @@ async fn process_chat_tool_calls(
                 }
                 Err(err) => {
                     synthesized = true;
-                    let meta = serde_json::json!({"id":call.id,"name":tool_name,"status":"error","error":err.to_string()});
+                    let meta = serde_json::json!({"id":call_id.as_str(),"name":tool_name,"status":"error","error":err.to_string()});
                     let mut streamed_blocks = Vec::new();
                     append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
                     realtime_emitter.emit_blocks(streamed_blocks);
@@ -2706,11 +2927,12 @@ async fn process_chat_tool_calls(
             }
         } else {
             synthesized = true;
-            realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call.id,"toolName":tool_name,"status":"running"})]);
-            let approval_context =
-                app_state
-                    .mcp
-                    .build_approval_context(call.id.as_deref(), None, Some(session_id));
+            realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call_id.as_str(),"toolName":tool_name,"status":"running"})]);
+            let approval_context = app_state.mcp.build_approval_context(
+                Some(call_id.as_str()),
+                None,
+                Some(session_id),
+            );
             match execute_or_queue_mcp_tool_call_with_tool_ref(
                 &approval_context,
                 Some(&app_state.mcp),
@@ -2729,7 +2951,7 @@ async fn process_chat_tool_calls(
                         .map(|status| status == "REQUIRES_APPROVAL")
                         .unwrap_or(false);
                     let meta = serde_json::json!({
-                        "id": call.id,
+                        "id": call_id.as_str(),
                         "name": tool_name,
                         "status": if requires_approval { "requires_approval" } else { "success" },
                         "result": tool_result,
@@ -2762,7 +2984,7 @@ async fn process_chat_tool_calls(
                         &mut tool_call_meta,
                         &mut results,
                         realtime_emitter,
-                        call.id.as_deref(),
+                        Some(call_id.as_str()),
                         &tool_name,
                         "LOCAL_TOOL_EXECUTION_FAILED",
                         error,
@@ -2786,7 +3008,7 @@ async fn process_chat_tool_calls(
                 &mut tool_call_meta,
                 &mut results,
                 realtime_emitter,
-                call.id.as_deref(),
+                Some(call_id.as_str()),
                 &tool_name,
                 "LOCAL_TOOL_RESULT_MISSING",
                 error,
@@ -3036,119 +3258,14 @@ pub(crate) async fn resume_suspended_chat_tool_execution_after_approval(
     tool_result: &serde_json::Value,
     call_id: Option<&str>,
     execution_graph_execution_id: Option<&str>,
-    legacy_fallback_created_at_unix_ms: Option<i128>,
 ) -> Result<Option<serde_json::Value>, String> {
-    let persisted_execution_graph = if let Some(execution_id) = execution_graph_execution_id
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+    let mut suspended = if let Some(suspended) = load_suspended_chat_tool_execution_for_resume(
+        app_state,
+        approval_token,
+        execution_graph_execution_id,
+    )
+    .await?
     {
-        load_execution_graph_snapshot(app_state.mcp.store.as_ref(), execution_id)
-            .await
-            .map_err(|err| err.to_string())?
-    } else {
-        None
-    };
-
-    let mut suspended = if let Some(execution_graph) =
-        if let Some(graph) = persisted_execution_graph {
-            Some(graph)
-        } else {
-            load_execution_graph_snapshot_by_approval_token(
-                app_state.mcp.store.as_ref(),
-                approval_token,
-            )
-            .await
-            .map_err(|err| err.to_string())?
-        } {
-        let Some(execution_id) = execution_graph
-            .get("execution_id")
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        else {
-            return Ok(None);
-        };
-        let Some(runtime_context) =
-            load_execution_graph_runtime_context(app_state.mcp.store.as_ref(), execution_id)
-                .await
-                .map_err(|err| err.to_string())?
-        else {
-            return Ok(None);
-        };
-        let persisted_context = persistable_inflight_context_from_value(&runtime_context)
-            .and_then(|context| context.chat_runtime)
-            .unwrap_or_else(|| {
-                serde_json::from_value(runtime_context)
-                    .unwrap_or_else(|_| PersistedChatToolRuntimeContext {
-                        max_rounds: 4,
-                        round: 0,
-                        trace_id: execution_id.to_string(),
-                        request_id: None,
-                        execution_policy: crate::modules::desktop_runtime::runtime::build_default_local_execution_policy(),
-                        model_connection: LocalModelConnection {
-                            model_id: "deeting-os".to_string(),
-                            provider_model_id: "deeting-os".to_string(),
-                            logical_model_key: None,
-                            protocol_family: "openai_chat".to_string(),
-                        },
-                        orchestrated_messages: Vec::new(),
-                        session_id: execution_graph
-                            .get("session_id")
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or_default()
-                            .to_string(),
-                        temperature: None,
-                        max_tokens: None,
-                        active_capability: None,
-                        runtime_metrics: RuntimeMetricsAccumulator::default(),
-                        last_capability_snapshot: None,
-                        last_response: None,
-                    })
-            });
-        let state = runtime_state_from_persisted_context(persisted_context);
-        SuspendedChatToolExecution {
-            max_rounds: state.max_rounds,
-            round: state.round,
-            trace_id: state.trace_id.clone(),
-            request_id: state.request_id.clone(),
-            execution_policy: state.execution_policy.clone(),
-            model_connection: state.model_connection.clone(),
-            orchestrated_messages: state.orchestrated_messages.clone(),
-            session_id: state.session_id.clone(),
-            temperature: state.temperature,
-            max_tokens: state.max_tokens,
-            active_capability: state.active_capability.clone(),
-            runtime_metrics: state.runtime_metrics.clone(),
-            last_capability_snapshot: state.last_capability_snapshot.clone(),
-            last_response: state.last_response.clone(),
-            execution_graph,
-        }
-    } else if legacy_suspended_fallback_allowed(legacy_fallback_created_at_unix_ms) {
-        let mut suspended = app_state
-            .mcp
-            .approvals
-            .suspended_local_chat_executions
-            .write()
-            .await
-            .remove(approval_token);
-        let Some(suspended) = suspended.take() else {
-            return Ok(None);
-        };
-        if let Err(err) = persist_suspended_execution_graph_runtime(
-            app_state.mcp.store.as_ref(),
-            &suspended,
-            &[],
-            "desktop_local_chat_legacy_fallback",
-            "waiting_approval",
-        )
-        .await
-        {
-            log::warn!(
-                "legacy suspended execution graph migration failed approval_token={} err={}",
-                approval_token,
-                err
-            );
-        }
         suspended
     } else {
         return Ok(None);
@@ -3753,28 +3870,6 @@ mod tests {
         assert_eq!(meta["name"], serde_json::json!("stock_quotes"));
     }
 
-    #[test]
-    fn resolves_direct_capability_alias_back_to_callable_name() {
-        let alias = dynamic_capability_alias("skill.official.skills.weather.get_weather");
-        let resolved = resolve_provider_tool_name_for_execution(
-            &alias,
-            &["skill.official.skills.weather.get_weather".to_string()],
-            Some(&serde_json::json!({
-                "capabilities": [
-                    {
-                        "name": "skill.official.skills.weather.get_weather",
-                        "invocation_mode": "direct",
-                        "status": {"callable": true}
-                    }
-                ]
-            })),
-        );
-
-        assert_eq!(
-            resolved.as_deref(),
-            Some("skill.official.skills.weather.get_weather")
-        );
-    }
 
     #[test]
     fn canonicalize_tool_name_for_allowed_list_accepts_underscore_variant() {
@@ -4220,6 +4315,53 @@ mod tests {
     }
 
     #[test]
+    fn canonicalize_tool_call_meta_via_graph_assigns_stable_ids_when_missing() {
+        let execution_policy = mcp_runtime::policy::build_default_local_execution_policy();
+        let response = serde_json::json!({
+            "content": "pending approval"
+        });
+        let tool_call_meta = vec![
+            serde_json::json!({
+                "name": "search_notes",
+                "status": "requires_approval",
+                "result": {
+                    "status": "REQUIRES_APPROVAL",
+                    "approval_token": "approval-a"
+                }
+            }),
+            serde_json::json!({
+                "name": "search_notes",
+                "status": "requires_approval",
+                "result": {
+                    "status": "REQUIRES_APPROVAL",
+                    "approval_token": "approval-b"
+                }
+            }),
+        ];
+
+        let canonical = canonicalize_tool_call_meta_via_graph(
+            "session-canonical-missing-id",
+            &execution_policy,
+            &response,
+            &tool_call_meta,
+        );
+
+        assert_eq!(canonical.len(), 2);
+        assert_eq!(
+            canonical[0]["id"],
+            serde_json::json!("approval-token:approval-a")
+        );
+        assert_eq!(
+            canonical[1]["id"],
+            serde_json::json!("approval-token:approval-b")
+        );
+        assert_eq!(
+            derive_pending_call_id_from_tool_call_meta(&canonical),
+            "approval-token:approval-b"
+        );
+    }
+
+    #[test]
     fn strip_stale_resume_response_metadata_removes_old_graph_and_trace_blocks() {
         let response = serde_json::json!({
             "content": "pending",
@@ -4365,6 +4507,18 @@ mod tests {
         rewind_round_for_post_approval_continuation(&mut state);
         rewind_round_for_post_approval_continuation(&mut state);
         assert_eq!(state.round, 0);
+    }
+
+    #[test]
+    fn resolve_local_tool_call_id_synthesizes_stable_missing_id() {
+        assert_eq!(
+            resolve_local_tool_call_id(None, "search_notes", 2, 1),
+            "local-missing-call:r2:i1:search_notes"
+        );
+        assert_eq!(
+            resolve_local_tool_call_id(Some(" call-explicit-1 "), "search_notes", 2, 1),
+            "call-explicit-1"
+        );
     }
 
     #[test]

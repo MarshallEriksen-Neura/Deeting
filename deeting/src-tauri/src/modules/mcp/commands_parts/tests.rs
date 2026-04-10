@@ -1067,6 +1067,23 @@ for raw_line in sys.stdin:
         assert!(names.contains(&"detach_capability"));
         assert!(names.contains(&"execute_code_plan"));
         assert!(names.contains(&"sys_submit_onboarding_request"));
+
+        let onboarding_tool = tools
+            .iter()
+            .find(|tool| {
+                tool.get("function")
+                    .and_then(|function| function.get("name"))
+                    .and_then(|value| value.as_str())
+                    == Some("sys_submit_onboarding_request")
+            })
+            .expect("onboarding tool");
+        let asset_type_enum = onboarding_tool["function"]["parameters"]["properties"]["asset_type"]
+            ["enum"]
+            .as_array()
+            .expect("asset_type enum");
+        assert!(asset_type_enum
+            .iter()
+            .any(|value| value == "custom_task_agent"));
     }
 
     #[tokio::test]

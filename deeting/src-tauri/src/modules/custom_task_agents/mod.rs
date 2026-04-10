@@ -5,6 +5,7 @@ pub mod import;
 pub mod import_templates;
 pub mod indexing;
 pub mod runtime;
+pub mod service;
 pub mod skill_actions;
 pub mod store;
 pub mod types;

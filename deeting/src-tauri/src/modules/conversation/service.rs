@@ -310,49 +310,20 @@ pub async fn approve_tool(
     call_id: Option<&str>,
     tool_name: &str,
 ) -> Result<ApprovalActionResult, String> {
-    use crate::modules::desktop_runtime::runtime::resume_suspended_chat_tool_execution_after_approval;
-    use crate::modules::mcp::commands::runtime::approve_mcp_tool_inner_with_context;
+    use crate::modules::mcp::commands::tool_approval_impl::approve_mcp_tool_payload;
 
-    let approval_context = app_state.mcp.build_approval_context(call_id, None, None);
-    let pending_before_approval = app_state
-        .mcp
-        .approvals
-        .pending_tool_calls
-        .read()
-        .await
-        .get(approval_token)
-        .cloned();
-
-    let approved = approve_mcp_tool_inner_with_context(
-        &approval_context,
-        Some(&app_state.mcp),
-        app_state.mcp.store.as_ref(),
-        app_state.mcp.approvals.pending_tool_calls.as_ref(),
-        approval_token,
-    )
-    .await?;
-
-    let resumed = resume_suspended_chat_tool_execution_after_approval(
+    let approved = approve_mcp_tool_payload(
         app_handle,
         app_state,
         approval_token,
-        &approved,
-        pending_before_approval
-            .as_ref()
-            .and_then(|pending| pending.call_id.as_deref()),
-        pending_before_approval
-            .as_ref()
-            .and_then(|pending| pending.execution_graph_execution_id.as_deref()),
-        pending_before_approval
-            .as_ref()
-            .map(|pending| pending.created_at_unix_ms),
+        None,
+        None,
+        call_id,
+        None,
     )
     .await?;
 
-    let mut follow_up_texts = resumed
-        .as_ref()
-        .map(|r| extract_follow_up_texts(r))
-        .unwrap_or_default();
+    let mut follow_up_texts = extract_follow_up_texts(&approved);
     if follow_up_texts.is_empty() {
         follow_up_texts.push(format!("已批准 `{}`，当前流程继续执行。", tool_name));
     }
@@ -370,128 +341,9 @@ pub async fn reject_tool(
     approval_token: &str,
     tool_name: &str,
 ) -> Result<ApprovalActionResult, String> {
-    use crate::modules::desktop_runtime::runtime::{
-        apply_rejected_tool_result_to_execution_graph,
-        apply_rejected_tool_result_to_execution_graph_value,
-        delete_execution_graph_runtime_context, load_execution_graph_snapshot,
-        load_execution_graph_snapshot_by_approval_token, persist_execution_graph_snapshot,
-    };
-    use crate::modules::mcp::commands::runtime::reject_mcp_tool_inner;
+    use crate::modules::mcp::commands::tool_approval_impl::reject_mcp_tool_payload;
 
-    let pending_before_reject = app_state
-        .mcp
-        .approvals
-        .pending_tool_calls
-        .read()
-        .await
-        .get(approval_token)
-        .cloned();
-
-    reject_mcp_tool_inner(
-        app_state.mcp.approvals.pending_tool_calls.as_ref(),
-        approval_token,
-    )
-    .await;
-
-    let mut persisted_graph = if let Some(execution_id) = pending_before_reject
-        .as_ref()
-        .and_then(|pending| pending.execution_graph_execution_id.as_deref())
-    {
-        load_execution_graph_snapshot(app_state.mcp.store.as_ref(), execution_id)
-            .await
-            .map_err(|err| err.to_string())?
-    } else {
-        None
-    };
-    if persisted_graph.is_none() {
-        persisted_graph = load_execution_graph_snapshot_by_approval_token(
-            app_state.mcp.store.as_ref(),
-            approval_token,
-        )
-        .await
-        .map_err(|err| err.to_string())?;
-    }
-    if let Some(mut execution_graph) = persisted_graph {
-        let execution_id = execution_graph
-            .get("execution_id")
-            .and_then(|value| value.as_str())
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string);
-        apply_rejected_tool_result_to_execution_graph_value(
-            &mut execution_graph,
-            execution_id.as_deref(),
-            pending_before_reject
-                .as_ref()
-                .and_then(|pending| pending.call_id.as_deref()),
-            "User rejected tool execution",
-        );
-        if let Err(err) = persist_execution_graph_snapshot(
-            app_state.mcp.store.as_ref(),
-            &execution_graph,
-            pending_before_reject
-                .as_ref()
-                .and_then(|pending| pending.session_id.as_deref())
-                .unwrap_or("unknown"),
-            "desktop_local_chat_rejected_internal",
-            None,
-            Some("cancelled"),
-        )
-        .await
-        {
-            log::warn!(
-                "persist rejected internal execution graph failed approval_token={} err={}",
-                approval_token,
-                err
-            );
-        }
-        if let Some(execution_id) = execution_id.as_deref() {
-            if let Err(err) =
-                delete_execution_graph_runtime_context(app_state.mcp.store.as_ref(), execution_id)
-                    .await
-            {
-                log::warn!(
-                    "delete_execution_graph_runtime_context failed execution_id={} err={}",
-                    execution_id,
-                    err
-                );
-            }
-        }
-    } else if let Some(mut suspended) = app_state
-        .mcp
-        .approvals
-        .suspended_local_chat_executions
-        .write()
-        .await
-        .remove(approval_token)
-    {
-        apply_rejected_tool_result_to_execution_graph(
-            &mut suspended,
-            pending_before_reject
-                .as_ref()
-                .and_then(|pending| pending.call_id.as_deref()),
-            "User rejected tool execution",
-        );
-        if let Err(err) = persist_execution_graph_snapshot(
-            app_state.mcp.store.as_ref(),
-            suspended.execution_graph(),
-            pending_before_reject
-                .as_ref()
-                .and_then(|pending| pending.session_id.as_deref())
-                .unwrap_or("unknown"),
-            "desktop_local_chat_rejected_internal_legacy_fallback",
-            None,
-            Some("cancelled"),
-        )
-        .await
-        {
-            log::warn!(
-                "persist rejected internal legacy fallback graph failed approval_token={} err={}",
-                approval_token,
-                err
-            );
-        }
-    }
+    reject_mcp_tool_payload(app_state, approval_token, None, None).await?;
 
     Ok(ApprovalActionResult {
         tool_name: tool_name.to_string(),

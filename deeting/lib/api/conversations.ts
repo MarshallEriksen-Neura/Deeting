@@ -5,11 +5,7 @@ import {
   fetchDesktopObjectStorageConfig,
 } from "@/lib/api/desktop-object-storage"
 import { parseMessageContent } from "@/lib/chat/message-content"
-import { request } from "@/lib/http"
 import { handleModelConfigRequiredError } from "@/lib/model-config-required"
-
-const CONVERSATION_BASE = "/api/v1/internal/conversations"
-const LIST_PENDING_APPROVALS_COMMAND = "list_pending_mcp_approvals"
 
 const isTauriRuntime = () =>
   process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
@@ -216,31 +212,31 @@ function buildExecutionLifecyclePayloadFromPersistedTreeRecord(
   }
 }
 
-export async function fetchConversationWindow(sessionId: string): Promise<ConversationWindow> {
-  if (isTauriRuntime()) {
-    try {
-      const data = await invokeTauri<ConversationWindow>("get_local_conversation_window", {
-        sessionId,
-      })
-      return ConversationWindowSchema.parse(data)
-    } catch {
-      const history = await invokeTauri<ConversationHistoryResponse>(
-        "list_local_conversation_history",
-        { query: { session_id: sessionId, limit: 200 } }
-      )
-      return ConversationWindowSchema.parse({
-        session_id: sessionId,
-        messages: history.messages ?? [],
-        meta: null,
-        summary: null,
-      })
-    }
+function assertTauriConversationRuntime() {
+  if (!isTauriRuntime()) {
+    throw new Error("Conversation APIs are only available in Tauri runtime")
   }
-  const data = await request({
-    url: `${CONVERSATION_BASE}/${sessionId}`,
-    method: "GET",
-  })
-  return ConversationWindowSchema.parse(data)
+}
+
+export async function fetchConversationWindow(sessionId: string): Promise<ConversationWindow> {
+  assertTauriConversationRuntime()
+  try {
+    const data = await invokeTauri<ConversationWindow>("get_local_conversation_window", {
+      sessionId,
+    })
+    return ConversationWindowSchema.parse(data)
+  } catch {
+    const history = await invokeTauri<ConversationHistoryResponse>(
+      "list_local_conversation_history",
+      { query: { session_id: sessionId, limit: 200 } }
+    )
+    return ConversationWindowSchema.parse({
+      session_id: sessionId,
+      messages: history.messages ?? [],
+      meta: null,
+      summary: null,
+    })
+  }
 }
 
 export const ConversationHistoryResponseSchema = z.object({
@@ -251,27 +247,6 @@ export const ConversationHistoryResponseSchema = z.object({
 })
 
 export type ConversationHistoryResponse = z.infer<typeof ConversationHistoryResponseSchema>
-
-type PendingToolApprovalSnapshot = {
-  status?: string
-  approval_token?: string
-  tool_id?: string
-  tool_name?: string
-  arguments?: Record<string, unknown>
-  description?: string
-  risk_level?: string
-  risk_reasons?: string[]
-  recovered?: boolean
-  recovery_reason?: string
-  attempts?: number
-  expires_in_ms?: number
-  call_id?: string
-  execution_token?: string
-  session_id?: string
-  execution_graph_execution_id?: string
-  execution_graph_gate_node_id?: string
-  execution_graph_tool_node_id?: string
-}
 
 export async function getConversationExecutionTree(
   rootExecutionId: string
@@ -471,211 +446,6 @@ async function hydratePersistedExecutionTreesInHistory(
   }
 }
 
-const collectHistoryToolCallIds = (messages: ConversationMessage[]) => {
-  const callIds = new Set<string>()
-
-  for (const message of messages) {
-    const meta = asRecord(message.meta_info)
-    const blocks = Array.isArray(meta?.blocks) ? meta.blocks : []
-    for (const block of blocks) {
-      const blockRecord = asRecord(block)
-      if (!blockRecord) continue
-      const type = asTrimmedString(blockRecord.type)
-      if (type !== "tool_call" && type !== "tool_result") continue
-      const callId = asTrimmedString(blockRecord.callId)
-      if (callId) {
-        callIds.add(callId)
-      }
-    }
-  }
-
-  return callIds
-}
-
-const buildPendingApprovalResultPayload = (snapshot: PendingToolApprovalSnapshot) => {
-  const result: Record<string, unknown> = {
-    status: "REQUIRES_APPROVAL",
-  }
-
-  if (snapshot.approval_token) result.approval_token = snapshot.approval_token
-  if (snapshot.tool_id) result.tool_id = snapshot.tool_id
-  if (snapshot.tool_name) result.tool_name = snapshot.tool_name
-  if (snapshot.arguments) result.arguments = snapshot.arguments
-  if (snapshot.description) result.description = snapshot.description
-  if (snapshot.risk_level) result.risk_level = snapshot.risk_level
-
-  const riskReasons = asStringArray(snapshot.risk_reasons)
-  if (riskReasons) result.risk_reasons = riskReasons
-  if (snapshot.recovered === true) result.recovered = true
-  if (snapshot.recovery_reason) result.recovery_reason = snapshot.recovery_reason
-  if (typeof snapshot.attempts === "number" && Number.isFinite(snapshot.attempts)) {
-    result.attempts = snapshot.attempts
-  }
-  if (
-    typeof snapshot.expires_in_ms === "number" &&
-    Number.isFinite(snapshot.expires_in_ms)
-  ) {
-    result.expires_in_ms = snapshot.expires_in_ms
-  }
-  if (snapshot.execution_graph_execution_id) {
-    result.execution_graph_execution_id = snapshot.execution_graph_execution_id
-  }
-  if (snapshot.execution_graph_gate_node_id) {
-    result.execution_graph_gate_node_id = snapshot.execution_graph_gate_node_id
-  }
-  if (snapshot.execution_graph_tool_node_id) {
-    result.execution_graph_tool_node_id = snapshot.execution_graph_tool_node_id
-  }
-
-  return result
-}
-
-const buildPendingApprovalExecutionGraph = (
-  snapshot: PendingToolApprovalSnapshot
-): Record<string, unknown> | null => {
-  const executionId = asTrimmedString(snapshot.execution_graph_execution_id)
-  if (!executionId) return null
-
-  const callId = asTrimmedString(snapshot.call_id) ?? "unknown-call"
-  const gateNodeId =
-    asTrimmedString(snapshot.execution_graph_gate_node_id) ??
-    `approval_gate:${callId}`
-  const toolNodeId =
-    asTrimmedString(snapshot.execution_graph_tool_node_id) ?? `tool_call:${callId}`
-
-  return {
-    execution_id: executionId,
-    nodes: [
-      {
-        node_id: toolNodeId,
-        node_type: "tool_call",
-        status: "waiting_approval",
-      },
-      {
-        node_id: gateNodeId,
-        node_type: "approval_gate",
-        status: "waiting_approval",
-      },
-    ],
-  }
-}
-
-const buildSyntheticPendingApprovalMessage = ({
-  snapshot,
-  turnIndex,
-  createdAt,
-}: {
-  snapshot: PendingToolApprovalSnapshot
-  turnIndex: number
-  createdAt: string
-}): ConversationMessage | null => {
-  const approvalToken = asTrimmedString(snapshot.approval_token)
-  const callId = asTrimmedString(snapshot.call_id)
-  const toolName =
-    asTrimmedString(snapshot.tool_name) ?? asTrimmedString(snapshot.tool_id) ?? "unknown_tool"
-
-  if (!approvalToken || !callId) return null
-
-  const toolArgs =
-    snapshot.arguments && Object.keys(snapshot.arguments).length > 0
-      ? JSON.stringify(snapshot.arguments, null, 2)
-      : undefined
-
-  return {
-    role: "assistant",
-    content: "",
-    turn_index: turnIndex,
-    created_at: createdAt,
-    is_truncated: false,
-    name: null,
-    meta_info: {
-      pending_approval_snapshot: true,
-      ...(buildPendingApprovalExecutionGraph(snapshot)
-        ? { execution_graph: buildPendingApprovalExecutionGraph(snapshot) }
-        : {}),
-      blocks: [
-        {
-          type: "tool_call",
-          callId,
-          toolName,
-          ...(toolArgs ? { toolArgs } : {}),
-          status: "success",
-        },
-        {
-          type: "tool_result",
-          callId,
-          toolName,
-          status: "requires_approval",
-          result: buildPendingApprovalResultPayload(snapshot),
-        },
-      ],
-    },
-  }
-}
-
-const mergePendingApprovalSnapshotsIntoHistory = (
-  response: ConversationHistoryResponse,
-  snapshots: PendingToolApprovalSnapshot[]
-): ConversationHistoryResponse => {
-  if (!snapshots.length) return response
-
-  const existingCallIds = collectHistoryToolCallIds(response.messages)
-  let nextTurnIndex = response.messages.reduce((maxTurnIndex, message) => {
-    return typeof message.turn_index === "number" && Number.isFinite(message.turn_index)
-      ? Math.max(maxTurnIndex, message.turn_index)
-      : maxTurnIndex
-  }, 0)
-  let nextCreatedAtMs = response.messages.reduce((maxCreatedAt, message) => {
-    const createdAt = typeof message.created_at === "string" ? Date.parse(message.created_at) : NaN
-    return Number.isFinite(createdAt) ? Math.max(maxCreatedAt, createdAt) : maxCreatedAt
-  }, 0)
-
-  const syntheticMessages: ConversationMessage[] = []
-
-  for (const snapshot of snapshots) {
-    if (asTrimmedString(snapshot.status) !== "REQUIRES_APPROVAL") continue
-
-    const callId = asTrimmedString(snapshot.call_id)
-    if (!callId || existingCallIds.has(callId)) continue
-
-    existingCallIds.add(callId)
-    nextTurnIndex += 1
-    nextCreatedAtMs = nextCreatedAtMs > 0 ? nextCreatedAtMs + 1 : Date.now() + syntheticMessages.length
-
-    const syntheticMessage = buildSyntheticPendingApprovalMessage({
-      snapshot,
-      turnIndex: nextTurnIndex,
-      createdAt: new Date(nextCreatedAtMs).toISOString(),
-    })
-    if (syntheticMessage) {
-      syntheticMessages.push(syntheticMessage)
-    }
-  }
-
-  if (!syntheticMessages.length) return response
-
-  return {
-    ...response,
-    messages: [...response.messages, ...syntheticMessages],
-  }
-}
-
-async function listPendingLocalApprovals(
-  sessionId: string
-): Promise<PendingToolApprovalSnapshot[]> {
-  try {
-    const result = await invokeTauri<unknown>(LIST_PENDING_APPROVALS_COMMAND, { sessionId })
-    return Array.isArray(result)
-      ? (result.filter(
-          (item): item is PendingToolApprovalSnapshot =>
-            Boolean(item && typeof item === "object" && !Array.isArray(item))
-        ) as PendingToolApprovalSnapshot[])
-      : []
-  } catch {
-    return []
-  }
-}
-
 export async function fetchConversationHistory(
   sessionId: string,
   options: {
@@ -685,67 +455,26 @@ export async function fetchConversationHistory(
     includePersistedExecutionTrees?: boolean
   } = {}
 ): Promise<ConversationHistoryResponse> {
-  if (isTauriRuntime()) {
-    try {
-      const data = await invokeTauri<ConversationHistoryResponse>(
-        "list_local_conversation_history",
-        {
-          query: {
-            session_id: sessionId,
-            cursor: options.cursor ?? null,
-            limit: options.limit ?? null,
-          },
-        }
-      )
-      const normalized = normalizeConversationHistoryPayload(sessionId, data)
-      const parsed = ConversationHistoryResponseSchema.safeParse(data)
-      let response = parsed.success ? parsed.data : normalized
-      if (options.cursor == null && options.includePendingApprovals !== false) {
-        const pendingApprovals = await listPendingLocalApprovals(sessionId)
-        response = mergePendingApprovalSnapshotsIntoHistory(response, pendingApprovals)
-      }
-      if (options.includePersistedExecutionTrees !== false) {
-        response = await hydratePersistedExecutionTreesInHistory(response)
-      }
-      return response
-    } catch {
-      return { session_id: sessionId, messages: [], next_cursor: null, has_more: false }
-    }
-  }
-
-  const params = new URLSearchParams()
-  if (options.cursor) {
-    params.set("cursor", String(options.cursor))
-  }
-  if (options.limit) {
-    params.set("limit", String(options.limit))
-  }
-  const query = params.toString()
-
+  assertTauriConversationRuntime()
   try {
-    const data = await request({
-      url: `${CONVERSATION_BASE}/${sessionId}/history${query ? `?${query}` : ""}`,
-      method: "GET",
-    })
-
-    const normalized = normalizeConversationHistoryPayload(sessionId, data)
-    if (!data || typeof data !== "object" || Array.isArray(data)) {
-      return normalized
-    }
-
-    try {
-      const result = ConversationHistoryResponseSchema.safeParse(data)
-      if (result.success) {
-        return result.data
+    const data = await invokeTauri<ConversationHistoryResponse>(
+      "list_local_conversation_history",
+      {
+        query: {
+          session_id: sessionId,
+          cursor: options.cursor ?? null,
+          limit: options.limit ?? null,
+        },
       }
-      console.warn("Conversation history schema mismatch, fallback to normalized payload.", result.error)
-    } catch (error) {
-      console.warn("Conversation history schema parse failed, fallback to normalized payload.", error)
+    )
+    const normalized = normalizeConversationHistoryPayload(sessionId, data)
+    const parsed = ConversationHistoryResponseSchema.safeParse(data)
+    let response = parsed.success ? parsed.data : normalized
+    if (options.includePersistedExecutionTrees !== false) {
+      response = await hydratePersistedExecutionTreesInHistory(response)
     }
-
-    return normalized
-  } catch (error) {
-    console.error("Failed to fetch conversation history:", error)
+    return response
+  } catch {
     return { session_id: sessionId, messages: [], next_cursor: null, has_more: false }
   }
 }
@@ -838,22 +567,14 @@ export type ConversationSessionsQuery = {
 export async function fetchConversationSessions(
   query: ConversationSessionsQuery
 ): Promise<ConversationSessionPage> {
-  if (isTauriRuntime()) {
-    const data = await invokeTauri<ConversationSessionPage>("list_local_conversations", {
-      query: {
-        cursor: query.cursor ?? null,
-        size: query.size ?? null,
-        assistant_id: query.assistant_id ?? null,
-        status: query.status ?? "active",
-      },
-    })
-    return ConversationSessionPageSchema.parse(data)
-  }
-
-  const data = await request({
-    url: CONVERSATION_BASE,
-    method: "GET",
-    params: query,
+  assertTauriConversationRuntime()
+  const data = await invokeTauri<ConversationSessionPage>("list_local_conversations", {
+    query: {
+      cursor: query.cursor ?? null,
+      size: query.size ?? null,
+      assistant_id: query.assistant_id ?? null,
+      status: query.status ?? "active",
+    },
   })
   return ConversationSessionPageSchema.parse(data)
 }
@@ -861,50 +582,28 @@ export async function fetchConversationSessions(
 export async function createConversation(
   payload: ConversationCreateRequest = {}
 ): Promise<ConversationCreateResponse> {
-  if (isTauriRuntime()) {
-    const data = await invokeTauri<ConversationCreateResponse>("create_local_conversation", {
-      payload: {
-        assistant_id: payload.assistant_id ?? null,
-        title: payload.title ?? null,
-      },
-    })
-    return ConversationCreateResponseSchema.parse(data)
-  }
-
-  const data = await request({
-    url: CONVERSATION_BASE,
-    method: "POST",
-    data: payload,
+  assertTauriConversationRuntime()
+  const data = await invokeTauri<ConversationCreateResponse>("create_local_conversation", {
+    payload: {
+      assistant_id: payload.assistant_id ?? null,
+      title: payload.title ?? null,
+    },
   })
   return ConversationCreateResponseSchema.parse(data)
 }
 
 export async function archiveConversation(sessionId: string): Promise<ConversationArchiveResponse> {
-  if (isTauriRuntime()) {
-    const data = await invokeTauri<ConversationArchiveResponse>("archive_local_conversation", {
-      sessionId,
-    })
-    return ConversationArchiveResponseSchema.parse(data)
-  }
-
-  const data = await request({
-    url: `${CONVERSATION_BASE}/${sessionId}/archive`,
-    method: "POST",
+  assertTauriConversationRuntime()
+  const data = await invokeTauri<ConversationArchiveResponse>("archive_local_conversation", {
+    sessionId,
   })
   return ConversationArchiveResponseSchema.parse(data)
 }
 
 export async function unarchiveConversation(sessionId: string): Promise<ConversationArchiveResponse> {
-  if (isTauriRuntime()) {
-    const data = await invokeTauri<ConversationArchiveResponse>("unarchive_local_conversation", {
-      sessionId,
-    })
-    return ConversationArchiveResponseSchema.parse(data)
-  }
-
-  const data = await request({
-    url: `${CONVERSATION_BASE}/${sessionId}/unarchive`,
-    method: "POST",
+  assertTauriConversationRuntime()
+  const data = await invokeTauri<ConversationArchiveResponse>("unarchive_local_conversation", {
+    sessionId,
   })
   return ConversationArchiveResponseSchema.parse(data)
 }
@@ -913,18 +612,10 @@ export async function renameConversation(
   sessionId: string,
   title: string
 ): Promise<ConversationRenameResponse> {
-  if (isTauriRuntime()) {
-    const data = await invokeTauri<ConversationRenameResponse>("rename_local_conversation", {
-      sessionId,
-      payload: { title },
-    })
-    return ConversationRenameResponseSchema.parse(data)
-  }
-
-  const data = await request({
-    url: `${CONVERSATION_BASE}/${sessionId}/title`,
-    method: "PATCH",
-    data: { title },
+  assertTauriConversationRuntime()
+  const data = await invokeTauri<ConversationRenameResponse>("rename_local_conversation", {
+    sessionId,
+    payload: { title },
   })
   return ConversationRenameResponseSchema.parse(data)
 }
@@ -933,30 +624,23 @@ export async function deleteConversationMessage(
   sessionId: string,
   turnIndex: number
 ): Promise<ConversationDeleteResponse> {
-  if (isTauriRuntime()) {
-    try {
-      const history = await fetchConversationHistory(sessionId, {
-        limit: 500,
-        includePendingApprovals: false,
-        includePersistedExecutionTrees: false,
-      })
-      const targetMessages = (history.messages ?? []).filter(
-        (message) => message.turn_index === turnIndex
-      )
-      await cleanupDesktopObjectStorageAssetsForMessages(targetMessages)
-    } catch {
-      // best-effort cleanup
-    }
-    const data = await invokeTauri<ConversationDeleteResponse>("delete_local_conversation_message", {
-      sessionId,
-      turnIndex,
+  assertTauriConversationRuntime()
+  try {
+    const history = await fetchConversationHistory(sessionId, {
+      limit: 500,
+      includePendingApprovals: false,
+      includePersistedExecutionTrees: false,
     })
-    return ConversationDeleteResponseSchema.parse(data)
+    const targetMessages = (history.messages ?? []).filter(
+      (message) => message.turn_index === turnIndex
+    )
+    await cleanupDesktopObjectStorageAssetsForMessages(targetMessages)
+  } catch {
+    // best-effort cleanup
   }
-
-  const data = await request({
-    url: `${CONVERSATION_BASE}/${sessionId}/messages/${turnIndex}`,
-    method: "DELETE",
+  const data = await invokeTauri<ConversationDeleteResponse>("delete_local_conversation_message", {
+    sessionId,
+    turnIndex,
   })
   return ConversationDeleteResponseSchema.parse(data)
 }
@@ -1037,17 +721,10 @@ async function cleanupLocalAssetsForConversation(sessionId: string): Promise<voi
 }
 
 export async function clearConversation(sessionId: string): Promise<ConversationClearResponse> {
-  if (isTauriRuntime()) {
-    await cleanupLocalAssetsForConversation(sessionId)
-    const data = await invokeTauri<ConversationClearResponse>("clear_local_conversation", {
-      sessionId,
-    })
-    return ConversationClearResponseSchema.parse(data)
-  }
-
-  const data = await request({
-    url: `${CONVERSATION_BASE}/${sessionId}/clear`,
-    method: "POST",
+  assertTauriConversationRuntime()
+  await cleanupLocalAssetsForConversation(sessionId)
+  const data = await invokeTauri<ConversationClearResponse>("clear_local_conversation", {
+    sessionId,
   })
   return ConversationClearResponseSchema.parse(data)
 }
@@ -1056,31 +733,8 @@ export async function regenerateConversationReply(
   sessionId: string,
   payload: ConversationRegenerateRequest
 ): Promise<ConversationRegenerateResponse> {
-  const data = await request<{
-    session_id?: string | null
-    choices?: Array<{ message?: { content?: string | null } }>
-  }>({
-    url: `${CONVERSATION_BASE}/${sessionId}/regenerate`,
-    method: "POST",
-    data: {
-      model: payload.model,
-      temperature: payload.temperature,
-      max_tokens: payload.max_tokens,
-    },
-  })
-
-  const content = data?.choices?.[0]?.message?.content ?? ""
-  return ConversationRegenerateResponseSchema.parse({
-    session_id: data?.session_id || sessionId,
-    deleted_turn_index: null,
-    message: {
-      role: "assistant",
-      content,
-      turn_index: null,
-      created_at: null,
-      is_truncated: null,
-      name: null,
-      meta_info: null,
-    },
-  })
+  assertTauriConversationRuntime()
+  throw new Error(
+    `Conversation regenerate API has been removed from the frontend chat path; use the local streamed regenerate flow for session ${sessionId}`
+  )
 }

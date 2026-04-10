@@ -20,8 +20,17 @@ function Harness({
 }
 
 describe("useMessageToolApproval", () => {
+  const originalIsTauriEnv = process.env.NEXT_PUBLIC_IS_TAURI
+  const originalTauri = (window as Record<string, unknown>).__TAURI__
+
   afterEach(() => {
     useBridgeApprovalStore.getState().clearAll()
+    process.env.NEXT_PUBLIC_IS_TAURI = originalIsTauriEnv
+    if (originalTauri === undefined) {
+      delete (window as Record<string, unknown>).__TAURI__
+    } else {
+      ;(window as Record<string, unknown>).__TAURI__ = originalTauri
+    }
   })
 
   it("queues pending approval from assistant message tool results that are still awaiting approval", async () => {
@@ -201,6 +210,44 @@ describe("useMessageToolApproval", () => {
 
     await waitFor(() => {
       expect(useBridgeApprovalStore.getState().pending).toBeNull()
+    })
+  })
+
+  it("does not queue approvals from assistant blocks in tauri runtime", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    ;(window as Record<string, unknown>).__TAURI__ = {}
+
+    render(
+      <Harness
+        messageId="assistant-tauri-approval-1"
+        blocks={[
+          {
+            id: "tool-call-tauri-1",
+            type: "tool_call",
+            callId: "call-tauri-1",
+            toolName: "shell_execute",
+            status: "running",
+          },
+          {
+            id: "tool-result-tauri-1",
+            type: "tool_result",
+            callId: "call-tauri-1",
+            toolName: "shell_execute",
+            status: "requires_approval",
+            result: {
+              status: "REQUIRES_APPROVAL",
+              approval_token: "approval-tauri-1",
+              tool_name: "shell_execute",
+              arguments: { command: "dir" },
+            },
+          },
+        ]}
+      />
+    )
+
+    await waitFor(() => {
+      expect(useBridgeApprovalStore.getState().pending).toBeNull()
+      expect(useBridgeApprovalStore.getState().queue).toEqual([])
     })
   })
 })

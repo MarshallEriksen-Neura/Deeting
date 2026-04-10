@@ -1,9 +1,9 @@
 "use client";
 
 import { deriveAssistantActivityState } from "@/lib/chat/assistant-activity";
+import type { BridgeToolPendingApproval } from "@/lib/chat/bridge-approval-store";
 import { extractAssistantTextFromBlocks } from "@/lib/chat/message-blocks";
 import type { Message } from "@/lib/chat/message-types";
-import { findUnresolvedToolApprovals } from "@/lib/chat/tool-approval";
 
 import type { IslandApproval, IslandRecentMessage } from "./island-store";
 
@@ -13,6 +13,7 @@ const ISLAND_TRANSCRIPT_MAX_MESSAGES = 8;
 
 type IslandChatSnapshotLike = {
   messages: Message[];
+  pendingApprovalSource?: BridgeToolPendingApproval | null;
   isLoading: boolean;
   globalLoading: boolean;
   statusCode: string | null;
@@ -59,8 +60,9 @@ function findLatestUserMessage(messages: Message[]) {
   return undefined;
 }
 
-function derivePendingApproval(messages: Message[]): IslandApproval | null {
-  const approval = findUnresolvedToolApprovals(messages)[0];
+function derivePendingApproval(
+  approval: BridgeToolPendingApproval | null | undefined
+): IslandApproval | null {
   if (!approval) return null;
 
   return {
@@ -136,7 +138,7 @@ export function buildIslandWindowDerivedState(
   snapshot: IslandChatSnapshotLike
 ): IslandWindowDerivedState {
   const latestAssistant = findLatestAssistantMessage(snapshot.messages);
-  const pendingApproval = derivePendingApproval(snapshot.messages);
+  const pendingApproval = derivePendingApproval(snapshot.pendingApprovalSource);
 
   return {
     statusLabel: deriveStatusLabel(snapshot, pendingApproval),

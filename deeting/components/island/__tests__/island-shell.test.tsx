@@ -2,6 +2,7 @@ import * as React from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 
 import type { Message } from "@/lib/chat/message-types";
+import { useBridgeApprovalStore } from "@/lib/chat/bridge-approval-store";
 import { useChatStore } from "@/store/chat-store";
 import { useChatRuntimeStore } from "@/store/chat-runtime-store";
 
@@ -158,6 +159,36 @@ function seedChatState(includeApproval = false) {
     statusMeta: null,
     errorMessage: null,
   });
+  useBridgeApprovalStore.setState({
+    queue: includeApproval
+      ? [
+          {
+            kind: "bridge_mcp",
+            approval_token: "approval-1",
+            tool_name: "Shell Execute",
+            arguments: {},
+            description: "Run the migration script.",
+            meta: {
+              call_id: "call-1",
+            },
+          },
+        ]
+      : [],
+    pending: includeApproval
+      ? {
+          kind: "bridge_mcp",
+          approval_token: "approval-1",
+          tool_name: "Shell Execute",
+          arguments: {},
+          description: "Run the migration script.",
+          meta: {
+            call_id: "call-1",
+          },
+        }
+      : null,
+    isApproving: false,
+    recentApprovedExecution: null,
+  });
 }
 
 describe("IslandShell", () => {
@@ -195,6 +226,7 @@ describe("IslandShell", () => {
       stageHistory: [],
       hydrateFromChat: defaultHydrateFromChat,
     });
+    useBridgeApprovalStore.getState().clearAll();
   });
 
   it("renders collapsed view from chat state", () => {
@@ -236,7 +268,7 @@ describe("IslandShell", () => {
     useIslandStore.setState({ mode: "expanded" });
     render(<IslandShell />);
     expect(screen.getAllByText("island.approvalTitle").length).toBeGreaterThan(0);
-    expect(screen.getByText("Shell Execute")).toBeInTheDocument();
+    expect(screen.getByText("Run the migration script.")).toBeInTheDocument();
     expect(screen.getByText("approvalDialog.actions.approve")).toBeInTheDocument();
     expect(screen.getByText("approvalDialog.actions.reject")).toBeInTheDocument();
   });

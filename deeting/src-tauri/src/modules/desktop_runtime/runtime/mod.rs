@@ -37,7 +37,6 @@ pub(crate) use chat_completion::{
     resolve_local_model_pool_connection, resolve_provider_model_connection,
 };
 pub(crate) use chat_tool_runtime::{
-    apply_rejected_tool_result_to_execution_graph,
     apply_rejected_tool_result_to_execution_graph_value,
     list_canonical_pending_local_approval_snapshots,
     materialize_pending_local_approval_from_runtime_context,
@@ -60,8 +59,8 @@ pub(crate) use execution_graph::{
 pub(crate) use execution_graph_store::{
     delete_execution_graph_runtime_context, list_execution_graph_runtime_contexts,
     load_execution_graph_runtime_context, load_execution_graph_snapshot,
-    load_execution_graph_snapshot_by_approval_token, migrate_execution_graph_runtime_bootstrap,
-    persist_execution_graph_runtime_context, persist_execution_graph_snapshot,
+    migrate_execution_graph_runtime_bootstrap, persist_execution_graph_runtime_context,
+    persist_execution_graph_snapshot,
 };
 pub(crate) use execution_plane::{run_local_execution_plane, LocalExecutionRequest};
 pub(crate) use route_selector::{
@@ -87,4 +86,5 @@ pub(crate) use tool_feedback::{
 pub(crate) use tool_feedback::{build_tool_loop_feedback, extract_chat_tool_calls};
 pub(crate) use tool_trace::{
     append_streamable_local_tool_result_blocks, build_local_tool_trace_blocks,
+    resolve_tool_trace_call_id,
 };
