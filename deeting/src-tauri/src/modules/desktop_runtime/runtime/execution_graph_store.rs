@@ -10,6 +10,12 @@ pub(crate) const DESKTOP_EXECUTION_GRAPH_BOOTSTRAP_KEY: &str =
 const DESKTOP_EXECUTION_GRAPH_SCHEMA_VERSION: &str = "2";
 const DESKTOP_EXECUTION_GRAPH_BOOTSTRAP_DONE: &str = "done:v2";
 
+#[derive(Debug, Clone)]
+pub(crate) struct ExecutionGraphRuntimeContextRow {
+    pub(crate) execution_id: String,
+    pub(crate) context: serde_json::Value,
+}
+
 pub(crate) async fn init_execution_graph_tables(store: &McpStore) -> Result<(), McpError> {
     sqlx::query(
         r#"
@@ -648,6 +654,38 @@ pub(crate) async fn delete_execution_graph_runtime_context(
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
     Ok(())
+}
+
+pub(crate) async fn list_execution_graph_runtime_contexts(
+    store: &McpStore,
+) -> Result<Vec<ExecutionGraphRuntimeContextRow>, McpError> {
+    let rows = sqlx::query(
+        r#"
+        SELECT execution_id, context_json, updated_at_unix_ms
+        FROM local_execution_graph_runtime_context
+        ORDER BY updated_at_unix_ms DESC
+        "#,
+    )
+    .fetch_all(&store.pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+
+    rows.into_iter()
+        .map(|row| {
+            let execution_id = row
+                .try_get::<String, _>("execution_id")
+                .map_err(|err| McpError::Storage(err.to_string()))?;
+            let context_json = row
+                .try_get::<String, _>("context_json")
+                .map_err(|err| McpError::Storage(err.to_string()))?;
+            let context = serde_json::from_str(&context_json)
+                .map_err(|err| McpError::Storage(err.to_string()))?;
+            Ok(ExecutionGraphRuntimeContextRow {
+                execution_id,
+                context,
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]

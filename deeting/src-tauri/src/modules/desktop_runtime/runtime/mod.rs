@@ -38,9 +38,9 @@ pub(crate) use chat_completion::{
 };
 pub(crate) use chat_tool_runtime::{
     apply_rejected_tool_result_to_execution_graph,
-    apply_rejected_tool_result_to_execution_graph_value,
+    apply_rejected_tool_result_to_execution_graph_value, recover_inflight_local_execution_state,
     resume_suspended_chat_tool_execution_after_approval, run_local_chat_complete_with_tools,
-    SuspendedChatToolExecution,
+    serialize_inflight_runtime_context, InFlightExecutionStage, SuspendedChatToolExecution,
 };
 pub(crate) use consult::LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION;
 pub(crate) use control_plane::{
@@ -55,10 +55,10 @@ pub(crate) use execution_graph::{
     GraphProjectionInput,
 };
 pub(crate) use execution_graph_store::{
-    delete_execution_graph_runtime_context, load_execution_graph_runtime_context,
-    load_execution_graph_snapshot, load_execution_graph_snapshot_by_approval_token,
-    migrate_execution_graph_runtime_bootstrap, persist_execution_graph_runtime_context,
-    persist_execution_graph_snapshot,
+    delete_execution_graph_runtime_context, list_execution_graph_runtime_contexts,
+    load_execution_graph_runtime_context, load_execution_graph_snapshot,
+    load_execution_graph_snapshot_by_approval_token, migrate_execution_graph_runtime_bootstrap,
+    persist_execution_graph_runtime_context, persist_execution_graph_snapshot,
 };
 pub(crate) use execution_plane::{run_local_execution_plane, LocalExecutionRequest};
 pub(crate) use route_selector::{

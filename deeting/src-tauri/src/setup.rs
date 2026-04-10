@@ -286,6 +286,19 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     app.manage(state);
     crate::state::set_global_app_state(sync_state.clone());
     crate::state::set_global_app_handle(app.handle().clone());
+    let inflight_recovery_state = sync_state.clone();
+    let inflight_recovery_handle = app.handle().clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(err) =
+            crate::modules::desktop_runtime::runtime::recover_inflight_local_execution_state(
+                &inflight_recovery_handle,
+                &inflight_recovery_state,
+            )
+            .await
+        {
+            log::warn!("recover_inflight_local_execution_state failed: {}", err);
+        }
+    });
     spawn_capability_registry_bootstrap(sync_state.clone());
 
     let sync_state_for_mcp = sync_state.clone();

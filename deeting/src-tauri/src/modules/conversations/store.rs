@@ -220,9 +220,13 @@ async fn sync_conversation_execution_tree_tx(
         .unwrap_or(execution_status.as_str())
         .to_string();
     let target = tree.get("target").and_then(Value::as_object);
+    let delegated_result = tree.get("delegated_result").and_then(Value::as_object);
     let selection = conversation_json_text(tree.get("selection"))?;
     let available_actions = conversation_json_text(tree.get("available_actions"))?;
-    let result_payload = conversation_json_text(tree.get("result_payload"))?;
+    let result_payload = conversation_json_text(
+        tree.get("result_payload")
+            .or_else(|| delegated_result.and_then(|value| value.get("primary_output"))),
+    )?;
     let raw_json = conversation_json_text(Some(&Value::Object(tree.clone())))?;
     let schema_version = tree
         .get("schema_version")

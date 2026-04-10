@@ -1,8 +1,9 @@
 use super::{
-    run_policy_scoped_chat_completion, DelegatedExecutionAction, DelegatedExecutionChildRecord,
-    DelegatedExecutionKind, DelegatedExecutionRecord, DelegatedExecutionSelection,
-    DelegatedExecutionSession, DelegatedExecutionStatus, DelegatedExecutionTarget,
-    LocalExecutionOutcome, LocalExecutionRequest,
+    build_delegated_result_feedback_messages, run_policy_scoped_chat_completion,
+    DelegatedExecutionAction, DelegatedExecutionChildRecord, DelegatedExecutionKind,
+    DelegatedExecutionRecord, DelegatedExecutionSelection, DelegatedExecutionSession,
+    DelegatedExecutionStatus, DelegatedExecutionTarget, LocalExecutionOutcome,
+    LocalExecutionRequest,
 };
 use crate::modules::audio::result_blocks::build_audio_result_block;
 use crate::modules::chat_assets::resolve_chat_assets_dir;
@@ -15,10 +16,15 @@ use crate::modules::custom_task_agents::types::{
 };
 use crate::modules::desktop_runtime::runtime::control_plane::LocalExecutionPlane;
 use crate::modules::desktop_runtime::runtime::{
-    build_local_tool_trace_blocks, select_worker_custom_task_agent,
+    build_local_tool_trace_blocks, delete_execution_graph_runtime_context,
+    persist_execution_graph_runtime_context, persist_execution_graph_snapshot,
+    project_execution_graph_snapshot, select_worker_custom_task_agent,
+    serialize_inflight_runtime_context, GraphProjectionInput, InFlightExecutionStage,
 };
 use crate::modules::workflow::service as workflow_service;
-use crate::modules::workflow::types::QuickWorkflowRequest;
+use crate::modules::workflow::types::{
+    QuickWorkflowRequest, QuickWorkflowResult, WorkflowRunStatus,
+};
 use crate::state::AppState;
 use base64::Engine;
 use mcp_core::types::LocalChatInputMessage;
@@ -156,7 +162,7 @@ where
             None,
             None,
         );
-        let execution = match workflow_service::quick_workflow_run(
+        let execution = match workflow_service::prepare_quick_workflow_run(
             &request.app_handle,
             &request.app_state,
             QuickWorkflowRequest {
@@ -167,62 +173,189 @@ where
         )
         .await
         {
-            Ok(result) => {
-                let workflow_run_id = result.run.id.clone();
-                let workflow_status = result.run.status.as_str().to_string();
-                let step_count = result.steps.len();
-                let summary = result
-                    .content
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                    .map(str::to_string)
-                    .unwrap_or_else(|| format!("workflow {} {}", workflow_run_id, workflow_status));
-                emit_delegation_lifecycle(
-                    emit_status,
-                    "worker_delegation",
-                    if result.succeeded {
-                        DelegatedExecutionStatus::Succeeded
-                    } else {
-                        DelegatedExecutionStatus::Failed
+            Ok(prepared_run) => {
+                let delegated_execution_tree = json!({
+                    "execution_id": execution_id,
+                    "execution_kind": "workflow",
+                    "execution_status": "running",
+                    "terminal_status": "running",
+                    "target_id": selection.profile.id,
+                    "target_name": selection.profile.name,
+                    "invocation_kind": selection.profile.invocation_kind.as_str(),
+                    "worker_ref": worker_ref.as_str(),
+                    "workflow_run_id": prepared_run.id.clone(),
+                    "selection": {
+                        "explicit": request.explicit_task_agent_id.as_deref() == Some(selection.profile.id.as_str()),
+                        "score": execution_selection.score,
+                        "reason_codes": execution_selection.reason_codes,
+                        "reason_text": execution_selection.reason_text,
                     },
-                    &execution_id,
-                    DelegatedExecutionKind::Workflow,
-                    &selection.profile.id,
-                    &selection.profile.name,
-                    Some(selection.profile.invocation_kind.as_str()),
-                    Some(worker_ref.as_str()),
-                    execution_selection.score,
-                    execution_selection.reason_text.as_deref(),
-                    Some(workflow_run_id.as_str()),
-                    Some(summary.as_str()),
-                );
-                let status = if result.succeeded { "success" } else { "error" };
-                emit_status(
-                    "evolve",
-                    Some("worker_delegation"),
-                    status,
-                    if result.succeeded {
-                        "worker.task.completed"
-                    } else {
-                        "worker.task.failed"
-                    },
-                    Some(json!({
-                        "agent_id": selection.profile.id,
-                        "agent_name": selection.profile.name,
-                        "execution_path": "workflow_runtime",
-                        "workflow_run_id": workflow_run_id,
-                        "workflow_status": workflow_status,
-                        "step_count": step_count,
-                    })),
-                );
-                build_workflow_delegated_execution_session(
-                    execution_id.clone(),
-                    selection.profile.clone(),
-                    execution_selection.clone(),
-                    worker_ref,
-                    Ok(result),
+                    "children": [],
+                });
+                let execution_graph = project_execution_graph_snapshot(GraphProjectionInput {
+                    session_id: request.session_id.clone(),
+                    route: request.execution_policy.route.as_str().to_string(),
+                    plane: request.execution_policy.plane.as_str().to_string(),
+                    trace_id: request.trace_id.clone(),
+                    request_id: request.request_id.clone(),
+                    root_execution_id: Some(execution_id.clone()),
+                    response_content: None,
+                    tool_trace_blocks: Vec::new(),
+                    delegated_execution_tree: Some(delegated_execution_tree),
+                })
+                .to_value();
+                let _ = persist_execution_graph_snapshot(
+                    request.app_state.mcp.store.as_ref(),
+                    &execution_graph,
+                    request.session_id.as_str(),
+                    "desktop_local_chat_delegated_workflow_running",
+                    request.request_id.as_deref(),
+                    Some("active"),
                 )
+                .await;
+                let _ = persist_execution_graph_runtime_context(
+                    request.app_state.mcp.store.as_ref(),
+                    execution_id.as_str(),
+                    &serialize_inflight_runtime_context(
+                        InFlightExecutionStage::DelegatedWorkflowRunning,
+                        Some(format!("workflow:{}", prepared_run.id)),
+                        None,
+                        Some(prepared_run.id.clone()),
+                        true,
+                        Vec::new(),
+                        None,
+                        request.session_id.as_str(),
+                        request.trace_id.as_deref().unwrap_or_default(),
+                        request.request_id.as_deref(),
+                        Some(execution_id.as_str()),
+                    ),
+                )
+                .await;
+
+                let workflow_result = async {
+                    let _run = workflow_service::start_workflow_run(
+                        &request.app_handle,
+                        &request.app_state,
+                        &prepared_run.id,
+                    )
+                    .await?;
+                    let detail = workflow_service::get_workflow_run_status(
+                        &request.app_state,
+                        &prepared_run.id,
+                    )
+                    .await?;
+                    Ok::<QuickWorkflowResult, String>(QuickWorkflowResult {
+                        run: detail.run.clone(),
+                        steps: detail.steps.clone(),
+                        content: workflow_service::extract_primary_content(&detail),
+                        succeeded: detail.run.status == WorkflowRunStatus::Completed,
+                    })
+                }
+                .await;
+
+                let _ = delete_execution_graph_runtime_context(
+                    request.app_state.mcp.store.as_ref(),
+                    execution_id.as_str(),
+                )
+                .await;
+
+                match workflow_result {
+                    Ok(result) => {
+                        let workflow_run_id = result.run.id.clone();
+                        let workflow_status = result.run.status.as_str().to_string();
+                        let step_count = result.steps.len();
+                        let summary = result
+                            .content
+                            .as_deref()
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                            .map(str::to_string)
+                            .unwrap_or_else(|| {
+                                format!("workflow {} {}", workflow_run_id, workflow_status)
+                            });
+                        emit_delegation_lifecycle(
+                            emit_status,
+                            "worker_delegation",
+                            if result.succeeded {
+                                DelegatedExecutionStatus::Succeeded
+                            } else {
+                                DelegatedExecutionStatus::Failed
+                            },
+                            &execution_id,
+                            DelegatedExecutionKind::Workflow,
+                            &selection.profile.id,
+                            &selection.profile.name,
+                            Some(selection.profile.invocation_kind.as_str()),
+                            Some(worker_ref.as_str()),
+                            execution_selection.score,
+                            execution_selection.reason_text.as_deref(),
+                            Some(workflow_run_id.as_str()),
+                            Some(summary.as_str()),
+                        );
+                        let status = if result.succeeded { "success" } else { "error" };
+                        emit_status(
+                            "evolve",
+                            Some("worker_delegation"),
+                            status,
+                            if result.succeeded {
+                                "worker.task.completed"
+                            } else {
+                                "worker.task.failed"
+                            },
+                            Some(json!({
+                                "agent_id": selection.profile.id,
+                                "agent_name": selection.profile.name,
+                                "execution_path": "workflow_runtime",
+                                "workflow_run_id": workflow_run_id,
+                                "workflow_status": workflow_status,
+                                "step_count": step_count,
+                            })),
+                        );
+                        build_workflow_delegated_execution_session(
+                            execution_id.clone(),
+                            selection.profile.clone(),
+                            execution_selection.clone(),
+                            worker_ref,
+                            Ok(result),
+                        )
+                    }
+                    Err(err) => {
+                        emit_delegation_lifecycle(
+                            emit_status,
+                            "worker_delegation",
+                            DelegatedExecutionStatus::Failed,
+                            &execution_id,
+                            DelegatedExecutionKind::Workflow,
+                            &selection.profile.id,
+                            &selection.profile.name,
+                            Some(selection.profile.invocation_kind.as_str()),
+                            Some(worker_ref.as_str()),
+                            execution_selection.score,
+                            execution_selection.reason_text.as_deref(),
+                            None,
+                            Some(err.as_str()),
+                        );
+                        emit_status(
+                            "evolve",
+                            Some("worker_delegation"),
+                            "error",
+                            "worker.task.failed",
+                            Some(json!({
+                                "agent_id": selection.profile.id,
+                                "agent_name": selection.profile.name,
+                                "execution_path": "workflow_runtime",
+                                "error": err,
+                            })),
+                        );
+                        build_workflow_delegated_execution_session(
+                            execution_id.clone(),
+                            selection.profile.clone(),
+                            execution_selection.clone(),
+                            worker_ref,
+                            Err(err),
+                        )
+                    }
+                }
             }
             Err(err) => {
                 emit_delegation_lifecycle(
@@ -613,34 +746,12 @@ fn build_delegated_execution_session(
                 "callable_skill_action_refs": result.callable_skill_action_refs,
                 "render_blocks": render_blocks,
             });
-            let pretty_payload =
-                serde_json::to_string_pretty(&payload).unwrap_or_else(|_| "{}".to_string());
             let tool_trace_blocks = build_local_tool_trace_blocks(&[json!({
                 "id": format!("delegated-agent-{}", profile.id),
                 "name": format!("custom_task_agent/{}", profile.name),
                 "status": "success",
                 "result": payload.clone(),
             })]);
-            let system_message = LocalChatInputMessage {
-                role: "system".to_string(),
-                content: format!(
-                    "[Delegated Custom Task Agent Completed: {}]\nUse the delegated result as authoritative for the delegated subtask. Do not re-run the delegated task unless the user asks or the result is blocked.",
-                    profile.name
-                ),
-                tool_calls: vec![],
-                tool_call_id: None,
-                name: None,
-            };
-            let user_message = LocalChatInputMessage {
-                role: "user".to_string(),
-                content: format!(
-                    "## Delegated Agent Result\n{}\n\nUse this delegated result to answer the user's original request. Do not re-run the delegated task.",
-                    pretty_payload
-                ),
-                tool_calls: vec![],
-                tool_call_id: None,
-                name: None,
-            };
             let primary_child = build_primary_child_execution_record(
                 execution_id.as_str(),
                 &profile,
@@ -655,28 +766,30 @@ fn build_delegated_execution_session(
                     }]
                 },
             );
-            DelegatedExecutionSession {
-                record: DelegatedExecutionRecord {
-                    execution_id,
-                    kind: DelegatedExecutionKind::CustomTaskAgent,
-                    status: DelegatedExecutionStatus::Succeeded,
-                    target: DelegatedExecutionTarget {
-                        id: profile.id.clone(),
-                        name: profile.name.clone(),
-                        invocation_kind: Some(result.invocation_kind.as_str().to_string()),
-                        worker_ref: None,
-                        workflow_run_id: None,
-                    },
-                    selection,
-                    available_actions: Vec::new(),
-                    children: vec![primary_child],
-                    summary: summarize_content(result.content.as_str()),
-                    result_payload: Some(payload.clone()),
-                    error: None,
-                    started_at_ms,
-                    completed_at_ms: Some(chrono::Utc::now().timestamp_millis()),
+            let record = DelegatedExecutionRecord {
+                execution_id,
+                kind: DelegatedExecutionKind::CustomTaskAgent,
+                status: DelegatedExecutionStatus::Succeeded,
+                target: DelegatedExecutionTarget {
+                    id: profile.id.clone(),
+                    name: profile.name.clone(),
+                    invocation_kind: Some(result.invocation_kind.as_str().to_string()),
+                    worker_ref: None,
+                    workflow_run_id: None,
                 },
-                feedback_messages: vec![system_message, user_message],
+                selection,
+                available_actions: Vec::new(),
+                children: vec![primary_child],
+                summary: summarize_content(result.content.as_str()),
+                primary_output: Some(payload.clone()),
+                error: None,
+                started_at_ms,
+                completed_at_ms: Some(chrono::Utc::now().timestamp_millis()),
+            };
+            let feedback_messages = build_delegated_result_feedback_messages(&record);
+            DelegatedExecutionSession {
+                record,
+                feedback_messages,
                 trace_blocks: tool_trace_blocks,
             }
         }
@@ -689,8 +802,6 @@ fn build_delegated_execution_session(
                 "error_code": error.code.clone(),
                 "error": error_text,
             });
-            let pretty_payload =
-                serde_json::to_string_pretty(&payload).unwrap_or_else(|_| "{}".to_string());
             let tool_trace_blocks = build_local_tool_trace_blocks(&[json!({
                 "id": format!("delegated-agent-{}", profile.id),
                 "name": format!("custom_task_agent/{}", profile.name),
@@ -698,23 +809,6 @@ fn build_delegated_execution_session(
                 "error_code": error.code,
                 "error": error.message,
             })]);
-            let system_message = LocalChatInputMessage {
-                role: "system".to_string(),
-                content: format!(
-                    "[Delegated Custom Task Agent Failed: {}]\nThe delegated task failed. You may continue with your own reasoning and explain the fallback clearly.",
-                    profile.name
-                ),
-                tool_calls: vec![],
-                tool_call_id: None,
-                name: None,
-            };
-            let user_message = LocalChatInputMessage {
-                role: "user".to_string(),
-                content: format!("## Delegated Agent Failure\n{}", pretty_payload),
-                tool_calls: vec![],
-                tool_call_id: None,
-                name: None,
-            };
             let primary_child = build_primary_child_execution_record(
                 execution_id.as_str(),
                 &profile,
@@ -723,28 +817,30 @@ fn build_delegated_execution_session(
                 Some(error_text.clone()),
                 Vec::new(),
             );
-            DelegatedExecutionSession {
-                record: DelegatedExecutionRecord {
-                    execution_id,
-                    kind: DelegatedExecutionKind::CustomTaskAgent,
-                    status: DelegatedExecutionStatus::Failed,
-                    target: DelegatedExecutionTarget {
-                        id: profile.id.clone(),
-                        name: profile.name.clone(),
-                        invocation_kind: Some(profile.invocation_kind.as_str().to_string()),
-                        worker_ref: None,
-                        workflow_run_id: None,
-                    },
-                    selection,
-                    available_actions: Vec::new(),
-                    children: vec![primary_child],
-                    summary: Some(error_text.clone()),
-                    result_payload: Some(payload.clone()),
-                    error: Some(error_text),
-                    started_at_ms,
-                    completed_at_ms: Some(chrono::Utc::now().timestamp_millis()),
+            let record = DelegatedExecutionRecord {
+                execution_id,
+                kind: DelegatedExecutionKind::CustomTaskAgent,
+                status: DelegatedExecutionStatus::Failed,
+                target: DelegatedExecutionTarget {
+                    id: profile.id.clone(),
+                    name: profile.name.clone(),
+                    invocation_kind: Some(profile.invocation_kind.as_str().to_string()),
+                    worker_ref: None,
+                    workflow_run_id: None,
                 },
-                feedback_messages: vec![system_message, user_message],
+                selection,
+                available_actions: Vec::new(),
+                children: vec![primary_child],
+                summary: Some(error_text.clone()),
+                primary_output: Some(payload.clone()),
+                error: Some(error_text),
+                started_at_ms,
+                completed_at_ms: Some(chrono::Utc::now().timestamp_millis()),
+            };
+            let feedback_messages = build_delegated_result_feedback_messages(&record);
+            DelegatedExecutionSession {
+                record,
+                feedback_messages,
                 trace_blocks: tool_trace_blocks,
             }
         }
@@ -846,81 +942,50 @@ fn build_workflow_delegated_execution_session(
                 "content": primary_content,
                 "steps": step_statuses,
             });
-            let pretty_payload =
-                serde_json::to_string_pretty(&payload).unwrap_or_else(|_| "{}".to_string());
             let tool_trace_blocks = build_local_tool_trace_blocks(&[json!({
                 "id": format!("delegated-workflow-{}", workflow_run_id),
                 "name": format!("workflow/{}", profile.name),
                 "status": if result.succeeded { "success" } else { "error" },
                 "result": payload.clone(),
             })]);
-            let system_message = LocalChatInputMessage {
-                role: "system".to_string(),
-                content: if result.succeeded {
-                    format!(
-                        "[Delegated Workflow Completed: {}]\nUse the persisted workflow result as authoritative for the delegated subtask. Do not re-run the delegated task unless the user asks or the result is blocked.",
-                        profile.name
-                    )
+            let record = DelegatedExecutionRecord {
+                execution_id,
+                kind: DelegatedExecutionKind::Workflow,
+                status: if result.succeeded {
+                    DelegatedExecutionStatus::Succeeded
                 } else {
-                    format!(
-                        "[Delegated Workflow Failed: {}]\nThe delegated workflow failed. You may continue with your own reasoning and explain the fallback clearly.",
-                        profile.name
-                    )
+                    DelegatedExecutionStatus::Failed
                 },
-                tool_calls: vec![],
-                tool_call_id: None,
-                name: None,
-            };
-            let user_message = LocalChatInputMessage {
-                role: "user".to_string(),
-                content: if result.succeeded {
-                    format!(
-                        "## Delegated Workflow Result\n{}\n\nUse this delegated workflow result to answer the user's original request. Do not re-run the delegated task.",
-                        pretty_payload
-                    )
-                } else {
-                    format!("## Delegated Workflow Failure\n{}", pretty_payload)
+                target: DelegatedExecutionTarget {
+                    id: profile.id.clone(),
+                    name: profile.name.clone(),
+                    invocation_kind: Some(profile.invocation_kind.as_str().to_string()),
+                    worker_ref: Some(worker_ref),
+                    workflow_run_id: Some(workflow_run_id.clone()),
                 },
-                tool_calls: vec![],
-                tool_call_id: None,
-                name: None,
+                selection,
+                available_actions: vec![DelegatedExecutionAction {
+                    kind: "open".to_string(),
+                }],
+                children: child_records,
+                summary: primary_content
+                    .as_deref()
+                    .and_then(summarize_content)
+                    .or_else(|| Some(format!("workflow {}", workflow_status))),
+                primary_output: Some(payload.clone()),
+                error: (!result.succeeded).then(|| {
+                    format!(
+                        "workflow execution finished with status {}",
+                        workflow_status
+                    )
+                }),
+                started_at_ms,
+                completed_at_ms: Some(chrono::Utc::now().timestamp_millis()),
             };
+            let feedback_messages = build_delegated_result_feedback_messages(&record);
             DelegatedExecutionSession {
-                record: DelegatedExecutionRecord {
-                    execution_id,
-                    kind: DelegatedExecutionKind::Workflow,
-                    status: if result.succeeded {
-                        DelegatedExecutionStatus::Succeeded
-                    } else {
-                        DelegatedExecutionStatus::Failed
-                    },
-                    target: DelegatedExecutionTarget {
-                        id: profile.id.clone(),
-                        name: profile.name.clone(),
-                        invocation_kind: Some(profile.invocation_kind.as_str().to_string()),
-                        worker_ref: Some(worker_ref),
-                        workflow_run_id: Some(workflow_run_id.clone()),
-                    },
-                    selection,
-                    available_actions: vec![DelegatedExecutionAction {
-                        kind: "open".to_string(),
-                    }],
-                    children: child_records,
-                    summary: primary_content
-                        .as_deref()
-                        .and_then(summarize_content)
-                        .or_else(|| Some(format!("workflow {}", workflow_status))),
-                    result_payload: Some(payload.clone()),
-                    error: (!result.succeeded).then(|| {
-                        format!(
-                            "workflow execution finished with status {}",
-                            workflow_status
-                        )
-                    }),
-                    started_at_ms,
-                    completed_at_ms: Some(chrono::Utc::now().timestamp_millis()),
-                },
-                feedback_messages: vec![system_message, user_message],
+                record,
+                feedback_messages,
                 trace_blocks: tool_trace_blocks,
             }
         }
@@ -932,53 +997,36 @@ fn build_workflow_delegated_execution_session(
                 "execution_path": "workflow_runtime",
                 "error": error,
             });
-            let pretty_payload =
-                serde_json::to_string_pretty(&payload).unwrap_or_else(|_| "{}".to_string());
             let tool_trace_blocks = build_local_tool_trace_blocks(&[json!({
                 "id": format!("delegated-workflow-error-{}", profile.id),
                 "name": format!("workflow/{}", profile.name),
                 "status": "error",
                 "error": payload.get("error").cloned().unwrap_or(Value::Null),
             })]);
-            let system_message = LocalChatInputMessage {
-                role: "system".to_string(),
-                content: format!(
-                    "[Delegated Workflow Failed: {}]\nThe delegated workflow failed. You may continue with your own reasoning and explain the fallback clearly.",
-                    profile.name
-                ),
-                tool_calls: vec![],
-                tool_call_id: None,
-                name: None,
-            };
-            let user_message = LocalChatInputMessage {
-                role: "user".to_string(),
-                content: format!("## Delegated Workflow Failure\n{}", pretty_payload),
-                tool_calls: vec![],
-                tool_call_id: None,
-                name: None,
-            };
-            DelegatedExecutionSession {
-                record: DelegatedExecutionRecord {
-                    execution_id,
-                    kind: DelegatedExecutionKind::Workflow,
-                    status: DelegatedExecutionStatus::Failed,
-                    target: DelegatedExecutionTarget {
-                        id: profile.id.clone(),
-                        name: profile.name.clone(),
-                        invocation_kind: Some(profile.invocation_kind.as_str().to_string()),
-                        worker_ref: Some(worker_ref),
-                        workflow_run_id: None,
-                    },
-                    selection,
-                    available_actions: Vec::new(),
-                    children: Vec::new(),
-                    summary: Some(error.clone()),
-                    result_payload: Some(payload.clone()),
-                    error: Some(error),
-                    started_at_ms,
-                    completed_at_ms: Some(chrono::Utc::now().timestamp_millis()),
+            let record = DelegatedExecutionRecord {
+                execution_id,
+                kind: DelegatedExecutionKind::Workflow,
+                status: DelegatedExecutionStatus::Failed,
+                target: DelegatedExecutionTarget {
+                    id: profile.id.clone(),
+                    name: profile.name.clone(),
+                    invocation_kind: Some(profile.invocation_kind.as_str().to_string()),
+                    worker_ref: Some(worker_ref),
+                    workflow_run_id: None,
                 },
-                feedback_messages: vec![system_message, user_message],
+                selection,
+                available_actions: Vec::new(),
+                children: Vec::new(),
+                summary: Some(error.clone()),
+                primary_output: Some(payload.clone()),
+                error: Some(error),
+                started_at_ms,
+                completed_at_ms: Some(chrono::Utc::now().timestamp_millis()),
+            };
+            let feedback_messages = build_delegated_result_feedback_messages(&record);
+            DelegatedExecutionSession {
+                record,
+                feedback_messages,
                 trace_blocks: tool_trace_blocks,
             }
         }

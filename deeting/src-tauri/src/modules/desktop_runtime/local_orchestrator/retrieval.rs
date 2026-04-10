@@ -3,7 +3,10 @@ use std::collections::{HashMap, HashSet};
 use futures_util::future::BoxFuture;
 use serde_json::{json, Value};
 
-use super::{LocalWorkflowContext, LocalWorkflowStep};
+use super::workflow::{
+    status_patch, ContextPatch, LocalStepResult, LocalWorkflowContext, LocalWorkflowStep,
+    StepResult,
+};
 use crate::modules::asset_registry::service::find_best_local_asset_match_with_query_vector;
 use crate::modules::desktop_runtime::runtime::search_ranking::reciprocal_rank_fusion;
 use crate::modules::desktop_runtime::runtime::{
@@ -84,17 +87,17 @@ impl LocalWorkflowStep<LocalWorkflowContext> for ContextRetrievalPrefetchStep {
     fn execute<'a>(
         &'a self,
         ctx: &'a mut LocalWorkflowContext,
-    ) -> BoxFuture<'a, Result<(), String>> {
+    ) -> BoxFuture<'a, Result<LocalStepResult, String>> {
         Box::pin(async move {
             let latest_user_query = ctx.latest_user_query().unwrap_or_default().to_string();
             let selected_ids =
                 normalize_selected_knowledge_file_ids(&ctx.selected_knowledge_file_ids);
             let knowledge_query = normalize_knowledge_search_query(&latest_user_query);
             let semantic_enabled = should_run_semantic_recall(&latest_user_query);
-            let query_vector = if semantic_enabled {
-                ctx.ensure_request_query_embedding().await
+            let (query_vector, request_query_patch) = if semantic_enabled {
+                ctx.resolve_request_query_embedding().await
             } else {
-                None
+                (None, None)
             };
 
             let semantic_memory_fut =
@@ -117,14 +120,21 @@ impl LocalWorkflowStep<LocalWorkflowContext> for ContextRetrievalPrefetchStep {
                 runtime_discovery_fut,
             );
 
-            ctx.prefetched_retrievals.semantic_memory = Some(semantic_memory?);
-            ctx.prefetched_retrievals.selected_knowledge = selected_knowledge;
-            ctx.prefetched_retrievals.asset_recall = asset_recall;
-            if let Some(bundle) = runtime_discovery {
-                ctx.runtime_discovery = Some(bundle);
+            let mut result = StepResult::success();
+            if let Some(patch) = request_query_patch {
+                result = result.with_patch(patch);
             }
-
-            Ok(())
+            result = result.with_patch(ContextPatch::SetPrefetchedRetrievals(
+                PrefetchedRetrievals {
+                    semantic_memory: Some(semantic_memory?),
+                    selected_knowledge,
+                    asset_recall,
+                },
+            ));
+            if let Some(bundle) = runtime_discovery {
+                result = result.with_patch(ContextPatch::SetRuntimeDiscovery(Some(bundle)));
+            }
+            Ok(result)
         })
     }
 }
@@ -141,23 +151,23 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SemanticMemoryInjectionStep {
     fn execute<'a>(
         &'a self,
         ctx: &'a mut LocalWorkflowContext,
-    ) -> BoxFuture<'a, Result<(), String>> {
+    ) -> BoxFuture<'a, Result<LocalStepResult, String>> {
         Box::pin(async move {
-            let Some(result) = ctx.prefetched_retrievals.semantic_memory.take() else {
-                return Ok(());
+            let Some(result) = ctx.prefetched_retrievals.semantic_memory.clone() else {
+                return Ok(StepResult::skipped());
             };
 
+            let mut step_result = StepResult::success();
             for section in result.sections {
-                ctx.push_system_message(section);
+                step_result = step_result.with_system_message(section);
             }
-            ctx.emit_status(
+            Ok(step_result.with_patch(status_patch(
                 "remember",
                 Some("semantic_memory_injection"),
                 "success",
                 "semantic.memory.loaded",
                 Some(json!({ "count": result.total_count })),
-            );
-            Ok(())
+            )))
         })
     }
 }
@@ -174,23 +184,23 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SelectedKnowledgeInjectionStep 
     fn execute<'a>(
         &'a self,
         ctx: &'a mut LocalWorkflowContext,
-    ) -> BoxFuture<'a, Result<(), String>> {
+    ) -> BoxFuture<'a, Result<LocalStepResult, String>> {
         Box::pin(async move {
-            let Some(result) = ctx.prefetched_retrievals.selected_knowledge.take() else {
-                return Ok(());
+            let Some(result) = ctx.prefetched_retrievals.selected_knowledge.clone() else {
+                return Ok(StepResult::skipped());
             };
 
+            let mut step_result = StepResult::success();
             if let Some(system_message) = result.system_message {
-                ctx.push_system_message(system_message);
+                step_result = step_result.with_system_message(system_message);
             }
-            ctx.emit_status(
+            Ok(step_result.with_patch(status_patch(
                 "remember",
                 Some("selected_knowledge_injection"),
                 "success",
                 "knowledge.context.loaded",
                 Some(result.status_meta),
-            );
-            Ok(())
+            )))
         })
     }
 }
@@ -207,21 +217,21 @@ impl LocalWorkflowStep<LocalWorkflowContext> for AssetRecallInjectionStep {
     fn execute<'a>(
         &'a self,
         ctx: &'a mut LocalWorkflowContext,
-    ) -> BoxFuture<'a, Result<(), String>> {
+    ) -> BoxFuture<'a, Result<LocalStepResult, String>> {
         Box::pin(async move {
-            let Some(result) = ctx.prefetched_retrievals.asset_recall.take() else {
-                return Ok(());
+            let Some(result) = ctx.prefetched_retrievals.asset_recall.clone() else {
+                return Ok(StepResult::skipped());
             };
 
-            ctx.push_system_message(result.system_message);
-            ctx.emit_status(
-                "remember",
-                Some("asset_recall"),
-                "success",
-                "asset.matched",
-                Some(result.status_meta),
-            );
-            Ok(())
+            Ok(StepResult::success()
+                .with_system_message(result.system_message)
+                .with_patch(status_patch(
+                    "remember",
+                    Some("asset_recall"),
+                    "success",
+                    "asset.matched",
+                    Some(result.status_meta),
+                )))
         })
     }
 }

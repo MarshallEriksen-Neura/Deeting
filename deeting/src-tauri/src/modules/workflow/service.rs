@@ -400,7 +400,7 @@ fn format_compiler_errors(errors: &[crate::modules::workflow::types::CompilerErr
         .join("; ")
 }
 
-fn extract_primary_content(detail: &WorkflowRunDetail) -> Option<String> {
+pub(crate) fn extract_primary_content(detail: &WorkflowRunDetail) -> Option<String> {
     let step = detail
         .steps
         .iter()
@@ -430,11 +430,11 @@ fn extract_primary_content(detail: &WorkflowRunDetail) -> Option<String> {
         .map(str::to_string)
 }
 
-pub(crate) async fn quick_workflow_run(
+pub(crate) async fn prepare_quick_workflow_run(
     app_handle: &tauri::AppHandle,
     app_state: &AppState,
     req: QuickWorkflowRequest,
-) -> Result<QuickWorkflowResult, String> {
+) -> Result<WorkflowRun, String> {
     let goal = req.goal.trim();
     if goal.is_empty() {
         return Err("quick workflow goal is required".to_string());
@@ -470,6 +470,16 @@ pub(crate) async fn quick_workflow_run(
     if compile_result.snapshot.is_none() {
         return Err("Quick workflow compile produced no executable snapshot".to_string());
     }
+
+    Ok(run)
+}
+
+pub(crate) async fn quick_workflow_run(
+    app_handle: &tauri::AppHandle,
+    app_state: &AppState,
+    req: QuickWorkflowRequest,
+) -> Result<QuickWorkflowResult, String> {
+    let run = prepare_quick_workflow_run(app_handle, app_state, req).await?;
 
     let run = start_workflow_run(app_handle, app_state, &run.id).await?;
     let detail = get_workflow_run_status(app_state, &run.id).await?;

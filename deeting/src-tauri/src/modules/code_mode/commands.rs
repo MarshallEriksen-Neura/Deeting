@@ -267,6 +267,18 @@ async fn run_execute_local_code_mode(
                 session_id: session_id.clone(),
                 max_calls,
                 allowed_tools: allowed_tools.clone(),
+                execution_scope: stream_target
+                    .as_ref()
+                    .and_then(|target| {
+                        target
+                            .request_id
+                            .as_deref()
+                            .or(target.trace_id.as_deref())
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                            .map(str::to_string)
+                    })
+                    .unwrap_or_else(|| format!("codemode-{}", uuid::Uuid::new_v4().simple())),
             },
             context,
             Some(600),
@@ -565,7 +577,7 @@ import urllib.request
 
 class DeetingRuntime:
     def __init__(self):
-        self.version = "1.2.0"
+        self.version = "1.3.0"
         self._call_index = 0
         self._max_tool_calls = {max_tool_calls}
         self._bridge_call = "{escaped_endpoint}"
@@ -621,6 +633,7 @@ class DeetingRuntime:
 
         request_payload = {{
             "tool_name": str(tool_name or "").strip(),
+            "call_id": f"runtime-tool-{{idx}}",
             "arguments": kwargs or {{}},
             "execution_token": self._execution_token,
         }}

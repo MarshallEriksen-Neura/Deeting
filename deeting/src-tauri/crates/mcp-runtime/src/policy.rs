@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{json, Value};
 
 use crate::capability_snapshot::merge_allowed_tool_names;
@@ -10,6 +10,7 @@ use crate::route::{
 pub const SEARCH_SDK_TOOL_NAME: &str = "search_sdk";
 pub const GET_TOOL_SCHEMA_TOOL_NAME: &str = "get_tool_schema";
 pub const EXECUTE_CODE_PLAN_TOOL_NAME: &str = "execute_code_plan";
+pub const CONSULT_EXPERT_NETWORK_TOOL_NAME: &str = "consult_expert_network";
 pub const ATTACH_CAPABILITY_TOOL_NAME: &str = "attach_capability";
 pub const DETACH_CAPABILITY_TOOL_NAME: &str = "detach_capability";
 pub const SYS_SUBMIT_ONBOARDING_REQUEST_TOOL_NAME: &str = "sys_submit_onboarding_request";
@@ -50,7 +51,7 @@ impl RuntimeDiscoveryBundle {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub enum LocalExecutionPlane {
     ResponseOnly,
     WorkerReasoning,
@@ -65,7 +66,7 @@ impl LocalExecutionPlane {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct LocalExecutionPolicy {
     pub route: LocalRouteKind,
     pub plane: LocalExecutionPlane,
@@ -119,8 +120,8 @@ pub fn build_default_local_execution_policy() -> LocalExecutionPolicy {
     LocalExecutionPolicy {
         route: LocalRouteKind::Direct,
         plane: LocalExecutionPlane::ResponseOnly,
-        allowed_tool_names: full_execution_tool_names(),
-        inject_execution_protocol: true,
+        allowed_tool_names: Vec::new(),
+        inject_execution_protocol: false,
         allow_worker_delegation: false,
         prefer_workflow_runtime: false,
         capability_snapshot: None,
@@ -132,8 +133,8 @@ pub fn build_local_execution_policy(decision: &LocalRouteDecision) -> LocalExecu
         LocalRouteKind::Direct => LocalExecutionPolicy {
             route: LocalRouteKind::Direct,
             plane: LocalExecutionPlane::ResponseOnly,
-            allowed_tool_names: full_execution_tool_names(),
-            inject_execution_protocol: true,
+            allowed_tool_names: vec![SEARCH_SDK_TOOL_NAME.to_string()],
+            inject_execution_protocol: false,
             allow_worker_delegation: false,
             prefer_workflow_runtime: false,
             capability_snapshot: None,
@@ -202,6 +203,7 @@ pub fn full_execution_tool_names() -> Vec<String> {
         SEARCH_SDK_TOOL_NAME,
         GET_TOOL_SCHEMA_TOOL_NAME,
         EXECUTE_CODE_PLAN_TOOL_NAME,
+        CONSULT_EXPERT_NETWORK_TOOL_NAME,
         ATTACH_CAPABILITY_TOOL_NAME,
         DETACH_CAPABILITY_TOOL_NAME,
         SYS_SUBMIT_ONBOARDING_REQUEST_TOOL_NAME,
@@ -227,7 +229,7 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn worker_execution_policy_keeps_programmatic_logic_on_worker_plane() {
+    fn worker_execution_policy_defaults_to_legacy_worker_path() {
         let decision = LocalRouteDecision {
             route: LocalRouteKind::Worker,
             reasons: vec!["programmatic_logic".to_string()],
@@ -255,7 +257,6 @@ mod tests {
         assert!(policy.allow_worker_delegation);
         assert!(!policy.prefer_workflow_runtime);
         assert!(policy.inject_execution_protocol);
-        assert_eq!(policy.plane, LocalExecutionPlane::WorkerReasoning);
         assert!(policy
             .allowed_tool_names
             .iter()
@@ -272,14 +273,6 @@ mod tests {
         assert_eq!(
             meta.get("prefer_workflow_runtime").and_then(Value::as_bool),
             Some(true)
-        );
-    }
-
-    #[test]
-    fn worker_execution_plane_has_stable_string_value() {
-        assert_eq!(
-            LocalExecutionPlane::WorkerReasoning.as_str(),
-            "worker_reasoning"
         );
     }
 
@@ -313,15 +306,9 @@ mod tests {
         assert_eq!(
             policy.allowed_tool_names,
             vec![
-                "attach_capability".to_string(),
-                "detach_capability".to_string(),
                 "exa".to_string(),
-                "execute_code_plan".to_string(),
                 "fetch_page".to_string(),
-                "get_tool_schema".to_string(),
-                "refresh_skill_index".to_string(),
                 "search_sdk".to_string(),
-                "sys_submit_onboarding_request".to_string(),
                 "tavily-extract".to_string(),
                 "tavily-search".to_string(),
             ]

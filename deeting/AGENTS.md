@@ -34,6 +34,8 @@ deeting/
 - 状态管理使用 Zustand
 - 数据获取使用 SWR
 - i18n 使用 next-intl
+- 注意模块化 高内聚低耦合 避免单文件膨胀
+- 代码上优雅且强壮
 
 ## ANTI-PATTERNS
 - 禁止直接使用 `fetch`，统一通过 `lib/api/`

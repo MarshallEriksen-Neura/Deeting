@@ -218,26 +218,26 @@
       "emptyDesc": "开始新的对话后会显示在这里。",
       "loading": "加载中...",
       "loadFailed": "加载会话失败。",
-    "retry": "重试",
-    "noMore": "没有更多会话",
-    "untitled": "未命名会话",
-    "viewArchived": "查看归档",
-    "viewActive": "查看进行中",
-    "archive": "归档",
-    "unarchive": "取消归档",
-    "rename": "重命名",
-    "renameTitle": "重命名会话",
-    "renameLabel": "新标题",
-    "renamePlaceholder": "输入新的会话标题...",
-    "renameCancel": "取消",
-    "renameConfirm": "保存",
-    "renameSaving": "保存中...",
-    "renameEmpty": "标题不能为空。",
-    "renameFailed": "重命名失败，请稍后重试。",
+      "retry": "重试",
+      "noMore": "没有更多会话",
+      "untitled": "未命名会话",
+      "viewArchived": "查看归档",
+      "viewActive": "查看进行中",
+      "archive": "归档",
+      "unarchive": "取消归档",
+      "rename": "重命名",
+      "renameTitle": "重命名会话",
+      "renameLabel": "新标题",
+      "renamePlaceholder": "输入新的会话标题...",
+      "renameCancel": "取消",
+      "renameConfirm": "保存",
+      "renameSaving": "保存中...",
+      "renameEmpty": "标题不能为空。",
+      "renameFailed": "重命名失败，请稍后重试。",
       "groups": {
-      "today": "今天",
-      "yesterday": "昨天",
-      "last7Days": "近 7 天",
+        "today": "今天",
+        "yesterday": "昨天",
+        "last7Days": "近 7 天",
         "earlier": "更早"
       }
     },
@@ -290,27 +290,66 @@
     },
     "approvalDialog": {
       "title": "审批确认",
-      "description": "当前 AI 正请求在本地执行一个高风险工具。",
+      "description": "当前 AI 正请求在你的本地环境执行一个高风险工具。",
+      "queueStatus": "第 {current} 个审批，共 {total} 个",
+      "queueRemaining": "处理完当前后还剩 {count} 个",
+      "queueCurrentStatus": "当前分支等待决策",
+      "queuePreviewLabel": "后续审批",
+      "queuePreviewMore": "再显示 {count} 个审批",
+      "queuePreviewLess": "收起后续审批",
+      "queueItemMeta": "{level} · {summary}",
+      "queueItemNoSummary": "暂无摘要",
+      "queueItemSource": "来源：{source}",
+      "queueItemSourceBound": "已绑定到当前聊天消息",
+      "queueItemSourceFallback": "暂无来源信息",
+      "debug": {
+        "title": "调试信息",
+        "callId": "call_id: {value}",
+        "executionId": "execution_id: {value}",
+        "messageId": "message_id: {value}"
+      },
       "toolLabel": "工具",
       "argumentsLabel": "参数",
       "summaryLabel": "说明",
       "recoveryLabel": "恢复后重新确认",
-      "recoveryFallback": "已恢复目标，需要重新确认后才能继续。",
+      "recoveryFallback": "目标已恢复，继续执行前需要重新确认。",
       "recoveryAttempts": "恢复尝试次数 {count}",
       "warningTitle": "执行前请确认",
-      "warning": "该操作可能修改文件或执行系统命令，仅在你信任当前会话时才允许。",
+      "warning": "该操作可能修改文件或执行系统命令。仅在你信任当前会话和本次操作时才允许执行。",
       "actions": {
         "reject": "拒绝",
         "approve": "批准执行",
+        "denyAlways": "始终拒绝",
+        "blocking": "正在阻止...",
+        "approveOnce": "允许一次",
+        "approveAlways": "始终允许",
         "approving": "执行中..."
+      },
+      "risk": {
+        "title": "风险等级 {level}"
+      },
+      "badges": {
+        "approved": "已批准"
+      },
+      "toast": {
+        "approvedPending": "已批准，正在执行 {toolName}",
+        "approvedAlwaysPending": "已批准并记住，正在执行 {toolName}",
+        "approved": "工具 {toolName} 已执行",
+        "rejected": "已取消工具执行",
+        "deniedAlways": "后续同类操作将被自动阻止",
+        "executionFailed": "执行失败：{message}"
+      },
+      "result": {
+        "userRejected": "用户已拒绝工具执行",
+        "userDeniedAlways": "用户已将该操作加入阻止规则"
       }
     },
     "routing": {
-    "auto": "自动路由",
-    "autoDesc": "系统智能选择助手",
-    "persona": "人格",
-    "personaDesc": "风格固定，能力动态增强",
-    "locked": "已锁定",
+      "auto": "自动路由",
+      "autoDesc": "系统智能选择助手",
+      "persona": "人格",
+      "personaDesc": "风格固定，能力动态增强",
+      "locked": "已锁定",
       "override": "切换助手",
       "clear": "恢复自动",
       "empty": "暂无可用助手"
@@ -362,7 +401,20 @@
       "stop": "停止",
       "continue": "继续生成",
       "queueTakeover": "加入待接管",
-      "send": "发送"
+      "send": "发送",
+      "recovery": {
+        "title": "已恢复中断执行",
+        "description": {
+          "toolRunningInterrupted": "上一次执行在工具运行时中断。请先确认结果后再继续或重试。",
+          "delegatedWorkflowRunning": "上一次委派的 workflow 没有完整回挂到聊天。若你要从当前上下文继续，可以重试。",
+          "fallback": "上一次本地执行已中断。你可以继续、重试，或放弃这张恢复卡。"
+        },
+        "actions": {
+          "continue": "继续",
+          "retry": "重试",
+          "abandon": "放弃"
+        }
+      }
     },
     "codeBlock": {
       "copy": "复制代码",
@@ -460,62 +512,6 @@
         "using": "正在使用 {name}"
       },
       "completedDetail": "任务已经完成。灵动岛会先保留这个状态，方便你确认结果。"
-    },
-    "approvalDialog": {
-      "title": "审批确认",
-      "description": "当前 AI 正请求在你的本地环境执行一个高风险工具。",
-      "queueStatus": "第 {current} 个审批，共 {total} 个",
-      "queueRemaining": "处理完当前后还剩 {count} 个",
-      "queueCurrentStatus": "当前分支等待决策",
-      "queuePreviewLabel": "后续审批",
-      "queuePreviewMore": "再显示 {count} 个审批",
-      "queuePreviewLess": "收起后续审批",
-      "queueItemMeta": "{level} · {summary}",
-      "queueItemNoSummary": "暂无摘要",
-      "queueItemSource": "来源：{source}",
-      "queueItemSourceBound": "已绑定到当前聊天消息",
-      "queueItemSourceFallback": "暂无来源信息",
-      "debug": {
-        "title": "调试信息",
-        "callId": "call_id: {value}",
-        "executionId": "execution_id: {value}",
-        "messageId": "message_id: {value}"
-      },
-      "toolLabel": "工具",
-      "argumentsLabel": "参数",
-      "summaryLabel": "说明",
-      "recoveryLabel": "恢复后重新确认",
-      "recoveryFallback": "目标已恢复，继续执行前需要重新确认。",
-      "recoveryAttempts": "恢复尝试次数 {count}",
-      "warningTitle": "执行前请确认",
-      "warning": "该操作可能修改文件或执行系统命令。仅在你信任当前会话和本次操作时才允许执行。",
-      "actions": {
-        "reject": "拒绝",
-        "approve": "批准执行",
-        "denyAlways": "始终拒绝",
-        "blocking": "正在阻止...",
-        "approveOnce": "允许一次",
-        "approveAlways": "始终允许",
-        "approving": "执行中..."
-      },
-      "risk": {
-        "title": "风险等级 {level}"
-      },
-      "badges": {
-        "approved": "已批准"
-      },
-      "toast": {
-        "approvedPending": "已批准，正在执行 {toolName}",
-        "approvedAlwaysPending": "已批准并记住，正在执行 {toolName}",
-        "approved": "工具 {toolName} 已执行",
-        "rejected": "已取消工具执行",
-        "deniedAlways": "后续同类操作将被自动阻止",
-        "executionFailed": "执行失败：{message}"
-      },
-      "result": {
-        "userRejected": "用户已拒绝工具执行",
-        "userDeniedAlways": "用户已将该操作加入阻止规则"
-      }
     },
     "voice": {
       "listening": "正在聆听...",

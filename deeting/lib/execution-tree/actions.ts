@@ -8,6 +8,8 @@ import {
   type ExecutionTreeAction,
   type ExecutionTreeChild,
   asRenderBlockList,
+  getExecutionLifecyclePrimaryOutput,
+  getExecutionLifecycleTarget,
   toText,
 } from "@/lib/execution-tree/types"
 import { rerunPhase } from "@/lib/workflow/commands"
@@ -18,7 +20,7 @@ export function useExecutionActionDispatcher(payload: ExecutionLifecyclePayload)
 
   const openWorkflowRun = useCallback(
     (phaseId?: string | null) => {
-      const workflowRunId = toText(payload.target?.workflow_run_id)
+      const workflowRunId = toText(getExecutionLifecycleTarget(payload)?.workflow_run_id)
       if (!workflowRunId) return
       openWorkspaceView({
         id: `workflow-${workflowRunId}`,
@@ -32,12 +34,12 @@ export function useExecutionActionDispatcher(payload: ExecutionLifecyclePayload)
         },
       })
     },
-    [openWorkspaceView, payload.target?.workflow_run_id]
+    [openWorkspaceView, payload]
   )
 
   const openWorkflowContext = useCallback(
     (phaseId: string) => {
-      const workflowRunId = toText(payload.target?.workflow_run_id)
+      const workflowRunId = toText(getExecutionLifecycleTarget(payload)?.workflow_run_id)
       if (!workflowRunId) return
       openWorkspaceView({
         id: `workflow-${workflowRunId}`,
@@ -52,12 +54,12 @@ export function useExecutionActionDispatcher(payload: ExecutionLifecyclePayload)
         },
       })
     },
-    [openWorkspaceView, payload.target?.workflow_run_id]
+    [openWorkspaceView, payload]
   )
 
   const rerunWorkflowPhase = useCallback(
     async (phaseId: string) => {
-      const workflowRunId = toText(payload.target?.workflow_run_id)
+      const workflowRunId = toText(getExecutionLifecycleTarget(payload)?.workflow_run_id)
       if (!workflowRunId) return
       try {
         await rerunPhase({ run_id: workflowRunId, phase_id: phaseId })
@@ -67,16 +69,17 @@ export function useExecutionActionDispatcher(payload: ExecutionLifecyclePayload)
         toast.error(error instanceof Error ? error.message : String(error))
       }
     },
-    [openWorkflowRun, payload.target?.workflow_run_id]
+    [openWorkflowRun, payload]
   )
 
   const openSingleWorkerResult = useCallback(() => {
-    const resultBlocks = asRenderBlockList(payload.result_payload?.render_blocks)
+    const primaryOutput = getExecutionLifecyclePrimaryOutput(payload)
+    const resultBlocks = asRenderBlockList(primaryOutput?.render_blocks)
     const resultBlock = resultBlocks[0]
     const viewType = toText(resultBlock?.view_type)
     if (!viewType || !resultBlock?.payload) return
     const executionId = toText(payload.execution_id) ?? `execution-${Date.now()}`
-    const targetName = toText(payload.target?.name) ?? "Execution Result"
+    const targetName = toText(getExecutionLifecycleTarget(payload)?.name) ?? "Execution Result"
     openWorkspaceView({
       id: `execution-result-${executionId}`,
       type: "native-canvas",
@@ -92,7 +95,7 @@ export function useExecutionActionDispatcher(payload: ExecutionLifecyclePayload)
             : undefined,
       },
     })
-  }, [openWorkspaceView, payload.execution_id, payload.result_payload, payload.target?.name])
+  }, [openWorkspaceView, payload])
 
   const dispatchAction = useCallback(
     async (action: ExecutionTreeAction, child?: ExecutionTreeChild) => {

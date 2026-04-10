@@ -3,6 +3,7 @@ import React from "react"
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import ControlsContainer from "@/components/chat/console/controls-container"
 import { useChatStore } from "@/store/chat-store"
+import { useChatRuntimeStore } from "@/store/chat-runtime-store"
 import { useBrowserModeStore } from "@/store/browser-mode-store"
 import { useWorkspaceStore } from "@/store/workspace-store"
 import { useChatMessaging } from "@/hooks/chat/use-chat-messaging"
@@ -78,6 +79,7 @@ const buildMessagingMock = (
   markPendingTakeoverForDeferredSend: jest.fn(),
   cancelPendingTakeover: jest.fn(),
   cancelActiveRequest: jest.fn(),
+  regenerateMessage: jest.fn(),
   hasInterruptedGeneration: false,
   continueInterruptedGeneration: jest.fn(),
   ...overrides,
@@ -99,6 +101,15 @@ describe("ControlsContainer (web)", () => {
       isLoading: false,
       models: [{ id: "model-1", provider_model_id: "model-1" }],
       selectedAssistant: null,
+    })
+    useChatRuntimeStore.setState({
+      isLoading: false,
+      globalLoading: false,
+      statusCode: null,
+      statusStage: null,
+      statusMeta: null,
+      activeMessageId: null,
+      interruptedMessageId: null,
     })
     useBrowserModeStore.getState().reset()
     useWorkspaceStore.getState().closeAll()
@@ -178,11 +189,75 @@ describe("ControlsContainer (web)", () => {
 
     fireEvent.click(screen.getByText("takeover.actions.immediateStop"))
     fireEvent.click(screen.getByText("takeover.actions.sendAfterStep"))
-    fireEvent.click(screen.getAllByText("takeover.actions.cancel")[0])
+    fireEvent.click(screen.getByLabelText("takeover.actions.cancel"))
 
     expect(stopAndSendPendingTakeover).toHaveBeenCalledTimes(1)
     expect(markPendingTakeoverForDeferredSend).toHaveBeenCalledTimes(1)
     expect(cancelPendingTakeover).toHaveBeenCalledTimes(1)
+  })
+
+  it("renders the recovery action bar above the composer and wires its actions", () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "false"
+    const regenerateMessage = jest.fn()
+    const continueInterruptedGeneration = jest.fn()
+    useChatStore.setState({
+      messages: [
+        {
+          id: "assistant-recovery",
+          role: "assistant",
+          content: "",
+          createdAt: Date.now(),
+          metaInfo: {
+            recovery: {
+              execution_id: "exec-recovery-1",
+              stage: "tool_running_interrupted",
+              available_actions: ["continue", "retry", "abandon"],
+            },
+          },
+        },
+      ],
+    })
+    mockUseChatMessaging.mockReturnValue(buildMessagingMock({
+      regenerateMessage,
+      continueInterruptedGeneration,
+    }))
+
+    render(<ControlsContainer />)
+
+    expect(screen.getByText("controls.recovery.title")).toBeInTheDocument()
+    expect(screen.getByText("controls.recovery.description.toolRunningInterrupted")).toBeInTheDocument()
+    expect(screen.getByText("exec-recovery-1")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText("controls.recovery.actions.continue"))
+    expect(regenerateMessage).toHaveBeenCalledWith("assistant-recovery")
+    expect(continueInterruptedGeneration).not.toHaveBeenCalled()
+  })
+
+  it("dismisses the recovery action bar when abandon is pressed", () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "false"
+    useChatStore.setState({
+      messages: [
+        {
+          id: "assistant-recovery-dismiss",
+          role: "assistant",
+          content: "",
+          createdAt: Date.now(),
+          metaInfo: {
+            recovery: {
+              execution_id: "exec-recovery-2",
+              stage: "delegated_workflow_running",
+              available_actions: ["continue", "retry", "abandon"],
+            },
+          },
+        },
+      ],
+    })
+
+    render(<ControlsContainer />)
+
+    fireEvent.click(screen.getByText("controls.recovery.actions.abandon"))
+
+    expect(screen.queryByText("controls.recovery.title")).not.toBeInTheDocument()
   })
 
   it("hides the secondary send-after-step action once the follow-up is already scheduled", () => {
@@ -201,7 +276,9 @@ describe("ControlsContainer (web)", () => {
     render(<ControlsContainer />)
 
     expect(screen.getByText("takeover.title")).toBeInTheDocument()
-    expect(screen.queryByText("takeover.actions.sendAfterStep")).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole("button", { name: "takeover.actions.sendAfterStep" })
+    ).not.toBeInTheDocument()
   })
 
   it("queues a pending takeover instead of cancelling when the run is active and the composer has content", () => {
@@ -210,10 +287,9 @@ describe("ControlsContainer (web)", () => {
     const cancelActiveRequest = jest.fn()
     useChatStore.setState({
       input: "follow-up prompt",
-      isLoading: true,
     })
+    useChatRuntimeStore.setState({ isLoading: true })
     mockUseChatMessaging.mockReturnValue(buildMessagingMock({
-      isLoading: true,
       queuePendingTakeoverFromCurrentDraft,
       cancelActiveRequest,
     }))
@@ -231,10 +307,9 @@ describe("ControlsContainer (web)", () => {
     const cancelActiveRequest = jest.fn()
     useChatStore.setState({
       input: "follow-up prompt",
-      isLoading: true,
     })
+    useChatRuntimeStore.setState({ isLoading: true })
     mockUseChatMessaging.mockReturnValue(buildMessagingMock({
-      isLoading: true,
       queuePendingTakeoverFromCurrentDraft,
       cancelActiveRequest,
     }))
@@ -281,12 +356,9 @@ describe("ControlsContainer (web)", () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "false"
     const queuePendingTakeoverFromCurrentDraft = jest.fn()
     const cancelActiveRequest = jest.fn()
-    useChatStore.setState({
-      input: "",
-      isLoading: true,
-    })
+    useChatStore.setState({ input: "" })
+    useChatRuntimeStore.setState({ isLoading: true })
     mockUseChatMessaging.mockReturnValue(buildMessagingMock({
-      isLoading: true,
       queuePendingTakeoverFromCurrentDraft,
       cancelActiveRequest,
     }))
@@ -397,7 +469,7 @@ describe("ControlsContainer (web)", () => {
     expect(handleSendMessage).not.toHaveBeenCalled()
   })
 
-  it("passes the selected assistant directly into chat messaging on web", () => {
+  it("passes the runtime mode into chat messaging on web", () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "false"
     useChatStore.setState({
       selectedAssistant: {
@@ -410,12 +482,11 @@ describe("ControlsContainer (web)", () => {
 
     render(<ControlsContainer />)
 
-    expect(mockUseChatMessaging.mock.calls).toContainEqual([
+    expect(mockUseChatMessaging).toHaveBeenCalledWith(
       expect.objectContaining({
-        agent: { id: "assistant-1", name: "Assistant One" },
         isTauriRuntime: false,
-      }),
-    ])
+      })
+    )
   })
 
   it("loads the desktop workflow routing switch from persisted config", async () => {

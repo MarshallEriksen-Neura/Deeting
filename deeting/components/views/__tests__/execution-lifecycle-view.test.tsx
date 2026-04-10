@@ -214,16 +214,24 @@ describe("ExecutionLifecycleView", () => {
           target: {
             name: "Image Worker",
           },
-          result_payload: {
-            render_blocks: [
-              {
-                view_type: "image.result",
-                title: "Image Result",
-                payload: {
-                  outputs: [{ source_url: "local-asset://abc" }],
+          delegated_result: {
+            type: "delegated_result",
+            schema_version: 1,
+            kind: "custom_task_agent",
+            authoritative: true,
+            status: "succeeded",
+            execution_id: "exec-worker-1",
+            primary_output: {
+              render_blocks: [
+                {
+                  view_type: "image.result",
+                  title: "Image Result",
+                  payload: {
+                    outputs: [{ source_url: "local-asset://abc" }],
+                  },
                 },
-              },
-            ],
+              ],
+            },
           },
           children: [
             {
@@ -262,16 +270,24 @@ describe("ExecutionLifecycleView", () => {
           target: {
             name: "Image Worker",
           },
-          result_payload: {
-            render_blocks: [
-              {
-                view_type: "image.result",
-                title: "Image Result",
-                payload: {
-                  outputs: [{ source_url: "local-asset://abc" }],
+          delegated_result: {
+            type: "delegated_result",
+            schema_version: 1,
+            kind: "custom_task_agent",
+            authoritative: true,
+            status: "succeeded",
+            execution_id: "exec-worker-1",
+            primary_output: {
+              render_blocks: [
+                {
+                  view_type: "image.result",
+                  title: "Image Result",
+                  payload: {
+                    outputs: [{ source_url: "local-asset://abc" }],
+                  },
                 },
-              },
-            ],
+              ],
+            },
           },
           children: [
             {
@@ -297,6 +313,65 @@ describe("ExecutionLifecycleView", () => {
           title: "Image Result",
           payload: {
             outputs: [{ source_url: "local-asset://abc" }],
+          },
+        }),
+      })
+    )
+  })
+
+  it("opens a workspace result view from delegated_result primary_output", () => {
+    render(
+      <ExecutionLifecycleView
+        data={{
+          execution_id: "exec-worker-2",
+          execution_kind: "custom_task_agent",
+          execution_status: "integrated",
+          target: {
+            name: "Image Worker",
+          },
+          delegated_result: {
+            type: "delegated_result",
+            schema_version: 1,
+            kind: "custom_task_agent",
+            authoritative: true,
+            status: "succeeded",
+            execution_id: "exec-worker-2",
+            primary_output: {
+              render_blocks: [
+                {
+                  view_type: "image.result",
+                  title: "Delegated Image Result",
+                  payload: {
+                    outputs: [{ source_url: "local-asset://delegated" }],
+                  },
+                },
+              ],
+            },
+          },
+          children: [
+            {
+              id: "exec-worker-2:primary",
+              step_type: "worker_call",
+              title: "Image Worker",
+              status: "succeeded",
+              available_actions: [{ kind: "view_result" }],
+            },
+          ],
+        }}
+      />
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "View result" }))
+
+    expect(openView).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "execution-result-exec-worker-2",
+        type: "native-canvas",
+        content: expect.objectContaining({
+          viewType: "image.result",
+          title: "Delegated Image Result",
+          payload: {
+            outputs: [{ source_url: "local-asset://delegated" }],
           },
         }),
       })
@@ -356,7 +431,28 @@ describe("ExecutionLifecycleView", () => {
         summary: "Hydrated summary",
         error: null,
         result_payload: null,
-        raw_json: null,
+        raw_json: {
+          delegated_result: {
+            type: "delegated_result",
+            schema_version: 1,
+            kind: "workflow",
+            authoritative: true,
+            status: "succeeded",
+            execution_id: "exec-123",
+            target: {
+              id: "worker-1",
+              name: "Hydrated Worker",
+              invocation_kind: "chat",
+              worker_ref: "user_worker_profile:hydrated",
+              workflow_run_id: "run-999",
+            },
+            available_actions: [{ kind: "open" }],
+            summary: "Hydrated summary",
+            steps: [],
+            primary_output: null,
+            error: null,
+          },
+        },
         started_at_ms: 1,
         completed_at_ms: 2,
         created_at: "2026-01-01T00:00:00Z",

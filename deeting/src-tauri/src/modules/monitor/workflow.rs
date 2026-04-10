@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::modules::custom_task_agents::types::CustomTaskAgentProfile;
 use crate::modules::desktop_runtime::local_orchestrator::{
-    LocalOrchestrationEngine, LocalWorkflowStep,
+    LocalOrchestrationEngine, LocalWorkflowStep, StepResult, StepResultContext,
 };
 
 use super::agent_runtime::{build_monitor_task_agent_message, execute_monitor_task_agent};
@@ -93,6 +93,18 @@ impl MonitorWorkflowContext {
     }
 }
 
+impl StepResultContext for MonitorWorkflowContext {
+    type Patch = ();
+
+    fn apply_step_result(
+        &mut self,
+        _step_name: &str,
+        _result: StepResult<Self::Patch>,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+}
+
 impl MonitorState {
     pub(super) async fn execute_task_local(
         &self,
@@ -171,7 +183,7 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorResolveTaskAgentStep {
     fn execute<'a>(
         &'a self,
         ctx: &'a mut MonitorWorkflowContext,
-    ) -> BoxFuture<'a, Result<(), String>> {
+    ) -> BoxFuture<'a, Result<StepResult<()>, String>> {
         Box::pin(async move {
             ctx.emit_status(
                 "remember",
@@ -197,7 +209,7 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorResolveTaskAgentStep {
                     "assistant_name": profile.name,
                 })),
             );
-            Ok(())
+            Ok(StepResult::success())
         })
     }
 }
@@ -216,7 +228,7 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorBuildPromptStep {
     fn execute<'a>(
         &'a self,
         ctx: &'a mut MonitorWorkflowContext,
-    ) -> BoxFuture<'a, Result<(), String>> {
+    ) -> BoxFuture<'a, Result<StepResult<()>, String>> {
         Box::pin(async move {
             ctx.emit_status(
                 "evolve",
@@ -234,7 +246,7 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorBuildPromptStep {
                 "monitor.prompt.built",
                 None,
             );
-            Ok(())
+            Ok(StepResult::success())
         })
     }
 }
@@ -253,7 +265,7 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorInvokeTaskAgentStep {
     fn execute<'a>(
         &'a self,
         ctx: &'a mut MonitorWorkflowContext,
-    ) -> BoxFuture<'a, Result<(), String>> {
+    ) -> BoxFuture<'a, Result<StepResult<()>, String>> {
         Box::pin(async move {
             let app_handle = global_app_handle_required()?;
             let profile = ctx
@@ -327,7 +339,7 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorInvokeTaskAgentStep {
                     "tool_trace_len": response.tool_trace.len(),
                 })),
             );
-            Ok(())
+            Ok(StepResult::success())
         })
     }
 }
@@ -346,7 +358,7 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorParseResultStep {
     fn execute<'a>(
         &'a self,
         ctx: &'a mut MonitorWorkflowContext,
-    ) -> BoxFuture<'a, Result<(), String>> {
+    ) -> BoxFuture<'a, Result<StepResult<()>, String>> {
         Box::pin(async move {
             let content = ctx
                 .content
@@ -383,7 +395,7 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorParseResultStep {
                 })),
             ));
             ctx.next_event_seq += 1;
-            Ok(())
+            Ok(StepResult::success())
         })
     }
 }

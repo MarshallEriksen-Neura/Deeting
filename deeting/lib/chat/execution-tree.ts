@@ -1,6 +1,10 @@
 import type { MessageBlock, UIBlock } from "@/lib/chat/message-protocol"
 import type { Message, MessageMetaInfo } from "@/lib/chat/message-types"
-import type { ExecutionLifecyclePayload } from "@/lib/execution-tree/types"
+import {
+  asExecutionLifecyclePayload,
+  getExecutionLifecycleTarget,
+  type ExecutionLifecyclePayload,
+} from "@/lib/execution-tree/types"
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object") return null
@@ -50,7 +54,7 @@ export function extractWorkflowRunIdFromExecutionTree(
   executionTree: Record<string, unknown> | null
 ): string | null {
   if (!executionTree) return null
-  const target = asRecord(executionTree.target)
+  const target = getExecutionLifecycleTarget(asExecutionLifecyclePayload(executionTree))
   return asTrimmedString(target?.workflow_run_id)
 }
 
@@ -109,7 +113,8 @@ export function buildExecutionLifecycleBlock(
     streamState?: "streaming" | "completed"
   }
 ): UIBlock {
-  const target = asRecord(executionTree.target)
+  const payload = asExecutionLifecyclePayload(executionTree)
+  const target = getExecutionLifecycleTarget(payload)
   const targetName =
     typeof target?.name === "string" && target.name.trim().length > 0
       ? target.name.trim()

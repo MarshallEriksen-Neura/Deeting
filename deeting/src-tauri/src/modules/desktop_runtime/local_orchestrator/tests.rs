@@ -1,12 +1,64 @@
 use super::*;
 use futures_util::future::BoxFuture;
 
+#[derive(Default)]
+struct EngineTestContext {
+    applied_steps: Vec<String>,
+    system_messages: Vec<String>,
+    status_codes: Vec<String>,
+    selected_prompt_variant: Option<String>,
+    metrics: Vec<Value>,
+}
+
+impl StepResultContext for EngineTestContext {
+    type Patch = ContextPatch;
+
+    fn apply_step_result(
+        &mut self,
+        step_name: &str,
+        result: StepResult<Self::Patch>,
+    ) -> Result<(), String> {
+        let StepResult {
+            status,
+            system_messages,
+            patches,
+            events: _,
+            metrics,
+        } = result;
+
+        for message in system_messages {
+            self.system_messages.push(message);
+        }
+        for patch in patches {
+            match patch {
+                ContextPatch::SetSelectedPromptVariant(selected_prompt_variant) => {
+                    self.selected_prompt_variant = selected_prompt_variant;
+                }
+                ContextPatch::EmitStatus(status_patch) => {
+                    self.status_codes.push(status_patch.code);
+                }
+                _ => {}
+            }
+        }
+        if let Some(metrics) = metrics {
+            self.metrics.push(metrics);
+        }
+        self.applied_steps
+            .push(format!("{}:{}", step_name, status.as_str()));
+        Ok(())
+    }
+}
+
 struct TestStep {
     name: &'static str,
     deps: &'static [&'static str],
+    system_message: Option<&'static str>,
+    status_code: Option<&'static str>,
+    selected_prompt_variant: Option<&'static str>,
+    metric_name: Option<&'static str>,
 }
 
-impl LocalWorkflowStep<LocalWorkflowContext> for TestStep {
+impl LocalWorkflowStep<EngineTestContext> for TestStep {
     fn name(&self) -> &'static str {
         self.name
     }
@@ -17,26 +69,61 @@ impl LocalWorkflowStep<LocalWorkflowContext> for TestStep {
 
     fn execute<'a>(
         &'a self,
-        _ctx: &'a mut LocalWorkflowContext,
-    ) -> BoxFuture<'a, Result<(), String>> {
-        Box::pin(async { Ok(()) })
+        _ctx: &'a mut EngineTestContext,
+    ) -> BoxFuture<'a, Result<LocalStepResult, String>> {
+        Box::pin(async move {
+            let mut result = StepResult::success();
+            if let Some(message) = self.system_message {
+                result = result.with_system_message(message);
+            }
+            if let Some(selected_prompt_variant) = self.selected_prompt_variant {
+                result = result.with_patch(ContextPatch::SetSelectedPromptVariant(Some(
+                    selected_prompt_variant.to_string(),
+                )));
+            }
+            if let Some(status_code) = self.status_code {
+                result = result.with_patch(status_patch(
+                    "test",
+                    Some(self.name),
+                    "success",
+                    status_code,
+                    None,
+                ));
+            }
+            if let Some(metric_name) = self.metric_name {
+                result = result.with_metrics(json!({ "name": metric_name }));
+            }
+            Ok(result)
+        })
     }
 }
 
 #[test]
 fn engine_builds_layers_for_linear_dependencies() {
-    let steps: Vec<Box<dyn LocalWorkflowStep<LocalWorkflowContext>>> = vec![
+    let steps: Vec<Box<dyn LocalWorkflowStep<EngineTestContext>>> = vec![
         Box::new(TestStep {
             name: "step_a",
             deps: &[],
+            system_message: None,
+            status_code: None,
+            selected_prompt_variant: None,
+            metric_name: None,
         }),
         Box::new(TestStep {
             name: "step_b",
             deps: &["step_a"],
+            system_message: None,
+            status_code: None,
+            selected_prompt_variant: None,
+            metric_name: None,
         }),
         Box::new(TestStep {
             name: "step_c",
             deps: &["step_b"],
+            system_message: None,
+            status_code: None,
+            selected_prompt_variant: None,
+            metric_name: None,
         }),
     ];
 
@@ -51,14 +138,22 @@ fn engine_builds_layers_for_linear_dependencies() {
 
 #[test]
 fn engine_fails_on_unknown_dependency() {
-    let steps: Vec<Box<dyn LocalWorkflowStep<LocalWorkflowContext>>> = vec![
+    let steps: Vec<Box<dyn LocalWorkflowStep<EngineTestContext>>> = vec![
         Box::new(TestStep {
             name: "step_a",
             deps: &[],
+            system_message: None,
+            status_code: None,
+            selected_prompt_variant: None,
+            metric_name: None,
         }),
         Box::new(TestStep {
             name: "step_b",
             deps: &["unknown_step"],
+            system_message: None,
+            status_code: None,
+            selected_prompt_variant: None,
+            metric_name: None,
         }),
     ];
 
@@ -70,14 +165,22 @@ fn engine_fails_on_unknown_dependency() {
 
 #[test]
 fn engine_fails_on_cycle() {
-    let steps: Vec<Box<dyn LocalWorkflowStep<LocalWorkflowContext>>> = vec![
+    let steps: Vec<Box<dyn LocalWorkflowStep<EngineTestContext>>> = vec![
         Box::new(TestStep {
             name: "step_a",
             deps: &["step_b"],
+            system_message: None,
+            status_code: None,
+            selected_prompt_variant: None,
+            metric_name: None,
         }),
         Box::new(TestStep {
             name: "step_b",
             deps: &["step_a"],
+            system_message: None,
+            status_code: None,
+            selected_prompt_variant: None,
+            metric_name: None,
         }),
     ];
 
@@ -85,6 +188,54 @@ fn engine_fails_on_cycle() {
     assert!(result.is_err());
     let msg = result.err().unwrap();
     assert!(msg.contains("cyclic dependencies"));
+}
+
+#[tokio::test]
+async fn engine_executes_and_applies_step_results_centrally() {
+    let steps: Vec<Box<dyn LocalWorkflowStep<EngineTestContext>>> = vec![
+        Box::new(TestStep {
+            name: "step_a",
+            deps: &[],
+            system_message: Some("summary"),
+            status_code: Some("summary.loaded"),
+            selected_prompt_variant: None,
+            metric_name: Some("summary"),
+        }),
+        Box::new(TestStep {
+            name: "step_b",
+            deps: &["step_a"],
+            system_message: Some("style"),
+            status_code: Some("prompt.variant.selected"),
+            selected_prompt_variant: Some("concise"),
+            metric_name: None,
+        }),
+    ];
+
+    let engine = LocalOrchestrationEngine::new(steps).expect("engine should build");
+    let mut ctx = EngineTestContext::default();
+    engine
+        .execute(&mut ctx)
+        .await
+        .expect("engine should execute successfully");
+
+    assert_eq!(
+        ctx.applied_steps,
+        vec!["step_a:success".to_string(), "step_b:success".to_string()]
+    );
+    assert_eq!(ctx.system_messages, vec!["summary", "style"]);
+    assert_eq!(
+        ctx.status_codes,
+        vec![
+            "summary.loaded".to_string(),
+            "prompt.variant.selected".to_string()
+        ]
+    );
+    assert_eq!(ctx.selected_prompt_variant.as_deref(), Some("concise"));
+    assert_eq!(ctx.metrics.len(), 1);
+    assert_eq!(
+        ctx.metrics[0].get("name").and_then(Value::as_str),
+        Some("summary")
+    );
 }
 
 #[test]

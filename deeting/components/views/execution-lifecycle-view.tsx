@@ -6,10 +6,16 @@ import { Badge } from "@/components/ui/badge"
 import { getConversationExecutionTree } from "@/lib/api/conversations"
 import {
   asActionList,
-  asChildList,
   asExecutionLifecyclePayload,
   buildExecutionLifecyclePayloadFromPersistedTree,
   type ExecutionLifecyclePayload,
+  getExecutionLifecycleAvailableActions,
+  getExecutionLifecycleChildren,
+  getExecutionLifecycleError,
+  getExecutionLifecycleKind,
+  getExecutionLifecycleSelection,
+  getExecutionLifecycleSummary,
+  getExecutionLifecycleTarget,
   toText,
 } from "@/lib/execution-tree/types"
 import { useExecutionActionDispatcher } from "@/lib/execution-tree/actions"
@@ -71,17 +77,19 @@ export default function ExecutionLifecycleView({
 
   const status = toText(payload.execution_status) ?? "unknown"
   const terminalStatus = toText(payload.terminal_status)
-  const targetName = toText(payload.target?.name) ?? "Unknown target"
-  const reasonText = toText(payload.selection?.reason_text)
-  const summary = toText(payload.summary)
-  const error = toText(payload.error)
-  const workflowRunId = toText(payload.target?.workflow_run_id)
-  const workerRef = toText(payload.target?.worker_ref)
-  const invocationKind = toText(payload.target?.invocation_kind)
-  const score =
-    typeof payload.selection?.score === "number" ? payload.selection.score : null
-  const availableActions = asActionList(payload.available_actions)
-  const children = asChildList(payload.children)
+  const target = getExecutionLifecycleTarget(payload)
+  const selection = getExecutionLifecycleSelection(payload)
+  const targetName = toText(target?.name) ?? "Unknown target"
+  const reasonText = toText(selection?.reason_text)
+  const summary = getExecutionLifecycleSummary(payload)
+  const error = getExecutionLifecycleError(payload)
+  const workflowRunId = toText(target?.workflow_run_id)
+  const workerRef = toText(target?.worker_ref)
+  const invocationKind = toText(target?.invocation_kind)
+  const executionKind = getExecutionLifecycleKind(payload)
+  const score = typeof selection?.score === "number" ? selection.score : null
+  const availableActions = asActionList(getExecutionLifecycleAvailableActions(payload))
+  const children = getExecutionLifecycleChildren(payload)
   const { dispatchAction } = useExecutionActionDispatcher(payload)
 
   return (
@@ -101,9 +109,9 @@ export default function ExecutionLifecycleView({
             terminal: {terminalStatus}
           </Badge>
         ) : null}
-        {toText(payload.execution_kind) ? (
+        {executionKind ? (
           <Badge variant="outline" className="border-zinc-200 text-zinc-600">
-            {payload.execution_kind}
+            {executionKind}
           </Badge>
         ) : null}
       </div>

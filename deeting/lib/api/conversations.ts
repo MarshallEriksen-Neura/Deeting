@@ -103,6 +103,74 @@ export type ConversationExecutionTree = z.infer<typeof ConversationExecutionTree
 function buildExecutionLifecyclePayloadFromPersistedTreeRecord(
   tree: ConversationExecutionTree
 ): Record<string, unknown> {
+  const rawPayload =
+    tree.root.raw_json && typeof tree.root.raw_json === "object" ? tree.root.raw_json : null
+  const children = tree.children.map((child) => ({
+    id: child.id,
+    phase_id: child.phase_id ?? undefined,
+    step_type: child.step_type ?? undefined,
+    title: child.title,
+    status: child.status,
+    worker_ref: child.worker_ref ?? undefined,
+    summary: child.summary ?? undefined,
+    error: child.error ?? undefined,
+    available_actions: Array.isArray(child.available_actions)
+      ? child.available_actions
+      : [],
+  }))
+  const resultPayload =
+    tree.root.result_payload && typeof tree.root.result_payload === "object"
+      ? tree.root.result_payload
+      : null
+  const delegatedResult =
+    rawPayload &&
+    typeof rawPayload === "object" &&
+    rawPayload.delegated_result &&
+    typeof rawPayload.delegated_result === "object"
+      ? rawPayload.delegated_result
+      : {
+          type: "delegated_result",
+          schema_version: 1,
+          kind: tree.root.execution_kind,
+          authoritative: tree.root.terminal_status === "succeeded",
+          status: tree.root.terminal_status,
+          execution_id: tree.root.execution_id,
+          target: {
+            id: tree.root.target_id ?? undefined,
+            name: tree.root.target_name ?? undefined,
+            invocation_kind: tree.root.target_invocation_kind ?? undefined,
+            worker_ref: tree.root.target_worker_ref ?? undefined,
+            workflow_run_id: tree.root.target_workflow_run_id ?? undefined,
+          },
+          selection:
+            tree.root.selection && typeof tree.root.selection === "object"
+              ? {
+                  explicit:
+                    typeof tree.root.selection.explicit === "boolean"
+                      ? tree.root.selection.explicit
+                      : undefined,
+                  score:
+                    typeof tree.root.selection.score === "number"
+                      ? tree.root.selection.score
+                      : null,
+                  reason_codes: Array.isArray(tree.root.selection.reason_codes)
+                    ? (tree.root.selection.reason_codes as string[])
+                    : undefined,
+                  reason_text:
+                    typeof tree.root.selection.reason_text === "string"
+                      ? tree.root.selection.reason_text
+                      : null,
+                }
+              : undefined,
+          available_actions: Array.isArray(tree.root.available_actions)
+            ? tree.root.available_actions
+            : [],
+          summary: tree.root.summary ?? undefined,
+          steps: children,
+          primary_output: resultPayload,
+          error: tree.root.error ?? undefined,
+        }
+
   return {
     schema_version: tree.root.schema_version,
     root_execution_id: tree.root.root_execution_id,
@@ -143,23 +211,8 @@ function buildExecutionLifecyclePayloadFromPersistedTreeRecord(
       : [],
     summary: tree.root.summary ?? undefined,
     error: tree.root.error ?? undefined,
-    result_payload:
-      tree.root.result_payload && typeof tree.root.result_payload === "object"
-        ? tree.root.result_payload
-        : null,
-    children: tree.children.map((child) => ({
-      id: child.id,
-      phase_id: child.phase_id ?? undefined,
-      step_type: child.step_type ?? undefined,
-      title: child.title,
-      status: child.status,
-      worker_ref: child.worker_ref ?? undefined,
-      summary: child.summary ?? undefined,
-      error: child.error ?? undefined,
-      available_actions: Array.isArray(child.available_actions)
-        ? child.available_actions
-        : [],
-    })),
+    delegated_result: delegatedResult,
+    children,
   }
 }
 

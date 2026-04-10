@@ -35,12 +35,59 @@ pub struct BridgeDeps {
     pub providers: Arc<ProviderState>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum RuntimeToolRetryPolicy {
+    None,
+    SafeReadonly,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum RuntimeToolSideEffectLevel {
+    ReadOnly,
+    SessionWrite,
+    ExternalWrite,
+    HighRisk,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum RuntimeToolExecutionState {
+    InProgress,
+    NotExecuted,
+    Completed,
+    AlreadyExecuted,
+    TimedOutMayHaveExecuted,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct RuntimeToolExecutionContract {
+    call_id: String,
+    idempotency_key: String,
+    timeout_ms: u64,
+    retry_policy: RuntimeToolRetryPolicy,
+    side_effect_level: RuntimeToolSideEffectLevel,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeToolExecutionReceipt {
+    contract: RuntimeToolExecutionContract,
+    state: RuntimeToolExecutionState,
+    ok: bool,
+    result: Option<Value>,
+    error_code: Option<String>,
+    error: Option<String>,
+    attempts: u32,
+}
+
 #[derive(Debug, Clone)]
 pub struct RuntimeBridgeClaims {
     pub user_id: String,
     pub session_id: String,
     pub max_calls: i64,
     pub allowed_tools: Option<Vec<String>>,
+    pub execution_scope: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -60,6 +107,7 @@ pub struct RuntimeBridgeStreamTarget {
 struct RuntimeBridgeEntry {
     claims: RuntimeBridgeClaims,
     used_calls: i64,
+    call_slots: HashMap<String, i64>,
     expires_at_unix_ms: i128,
     context: Value,
     stream_target: Option<RuntimeBridgeStreamTarget>,
@@ -83,6 +131,7 @@ struct StoredFile {
 struct RuntimeBridgeStore {
     tokens: HashMap<String, RuntimeBridgeEntry>,
     files: HashMap<String, StoredFile>,
+    tool_execution_receipts: HashMap<String, RuntimeToolExecutionReceipt>,
 }
 
 #[derive(Clone)]
@@ -112,6 +161,7 @@ struct CodemodeToolBridgeCallRequest {
     tool_name: String,
     #[serde(default)]
     arguments: HashMap<String, Value>,
+    call_id: Option<String>,
     execution_token: Option<String>,
 }
 
@@ -251,6 +301,7 @@ impl CodemodeToolBridgeState {
         let entry = RuntimeBridgeEntry {
             claims,
             used_calls: 0,
+            call_slots: HashMap::new(),
             expires_at_unix_ms,
             context,
             stream_target,
@@ -281,8 +332,8 @@ async fn code_mode_get_context(
     Json(payload): Json<CodemodeToolBridgeContextRequest>,
 ) -> Json<Value> {
     let token = resolve_token(headers, payload.execution_token);
-    match consume_claims(&state, &token).await {
-        Ok((_, _, _, context)) => Json(json!({"ok": true, "context": context})),
+    match consume_claims(&state, &token, None).await {
+        Ok((_, _, _, _, context)) => Json(json!({"ok": true, "context": context})),
         Err((error_code, error)) => {
             Json(json!({"ok": false, "error_code": error_code, "error": error}))
         }
@@ -295,13 +346,6 @@ async fn code_mode_call_tool(
     Json(payload): Json<CodemodeToolBridgeCallRequest>,
 ) -> Json<Value> {
     let token = resolve_token(headers, payload.execution_token);
-    let (claims, call_index, max_calls, _) = match consume_claims(&state, &token).await {
-        Ok(consumed) => consumed,
-        Err((error_code, error)) => {
-            return Json(json!({"ok": false, "error_code": error_code, "error": error}));
-        }
-    };
-
     if payload.tool_name.trim().is_empty() {
         return Json(json!({
             "ok": false,
@@ -310,8 +354,50 @@ async fn code_mode_call_tool(
         }));
     }
 
+    let (claims, runtime_call_id, call_index, max_calls, _) =
+        match consume_claims(&state, &token, payload.call_id.as_deref()).await {
+            Ok(consumed) => consumed,
+            Err((error_code, error)) => {
+                return Json(json!({"ok": false, "error_code": error_code, "error": error}));
+            }
+        };
+
+    let contract = build_runtime_tool_execution_contract(
+        &state,
+        &claims,
+        &runtime_call_id,
+        payload.tool_name.trim(),
+        &payload.arguments,
+    )
+    .await;
+    let existing_receipt = {
+        let store = state.store.read().await;
+        store
+            .tool_execution_receipts
+            .get(&contract.idempotency_key)
+            .cloned()
+    };
+    if let Some(receipt) = existing_receipt {
+        if receipt.state == RuntimeToolExecutionState::InProgress {
+            return Json(json!({
+                "ok": false,
+                "error_code": "CODE_MODE_BRIDGE_CALL_IN_PROGRESS",
+                "error": "tool call with the same idempotency key is already running",
+                "meta": build_runtime_tool_meta(
+                    &claims,
+                    call_index,
+                    max_calls,
+                    &contract,
+                    RuntimeToolExecutionState::TimedOutMayHaveExecuted,
+                    receipt.attempts,
+                    true,
+                ),
+            }));
+        }
+        return cached_tool_execution_response(&claims, call_index, max_calls, &receipt, &contract);
+    }
+
     maybe_emit_runtime_execution_section(&state, &token).await;
-    let runtime_call_id = format!("runtime-tool-{call_index}");
     emit_runtime_blocks(
         &state,
         &token,
@@ -322,56 +408,424 @@ async fn code_mode_call_tool(
             "toolName": payload.tool_name.trim(),
             "toolArgs": payload.arguments.clone(),
             "status": "running",
+            "executionContract": &contract,
         })],
     )
     .await;
 
-    let dispatch = dispatch_tool_call(&state, &claims, &payload.tool_name, payload.arguments).await;
-    match dispatch {
-        Ok(result) => {
-            let mut blocks = vec![json!({
-                "id": format!("{runtime_call_id}-result"),
-                "type": "tool_result",
-                "callId": runtime_call_id,
-                "toolName": payload.tool_name.trim(),
-                "status": "success",
-                "result": result.clone(),
-            })];
-            blocks.extend(extract_runtime_ui_blocks_from_result(&result));
-            emit_runtime_blocks(&state, &token, blocks).await;
-            Json(json!({
-                "ok": true,
-                "result": result,
-                "meta": {
-                    "call_index": call_index,
-                    "max_calls": max_calls,
-                    "session_id": claims.session_id,
-                }
-            }))
-        }
-        Err((code, error)) => {
-            emit_runtime_blocks(
+    store_runtime_tool_execution_receipt(
+        &state,
+        RuntimeToolExecutionReceipt {
+            contract: contract.clone(),
+            state: RuntimeToolExecutionState::InProgress,
+            ok: false,
+            result: None,
+            error_code: None,
+            error: None,
+            attempts: 0,
+        },
+    )
+    .await;
+
+    let max_attempts = match contract.retry_policy {
+        RuntimeToolRetryPolicy::SafeReadonly => 2,
+        RuntimeToolRetryPolicy::None => 1,
+    };
+    let mut attempts = 0_u32;
+    loop {
+        attempts = attempts.saturating_add(1);
+        let dispatch = tokio::time::timeout(
+            Duration::from_millis(contract.timeout_ms.max(1)),
+            dispatch_tool_call(
                 &state,
-                &token,
-                vec![json!({
+                &claims,
+                &payload.tool_name,
+                payload.arguments.clone(),
+            ),
+        )
+        .await;
+        match dispatch {
+            Ok(Ok(result)) => {
+                let receipt = RuntimeToolExecutionReceipt {
+                    contract: contract.clone(),
+                    state: RuntimeToolExecutionState::Completed,
+                    ok: true,
+                    result: Some(result.clone()),
+                    error_code: None,
+                    error: None,
+                    attempts,
+                };
+                store_runtime_tool_execution_receipt(&state, receipt.clone()).await;
+                let mut blocks = vec![json!({
                     "id": format!("{runtime_call_id}-result"),
                     "type": "tool_result",
                     "callId": runtime_call_id,
                     "toolName": payload.tool_name.trim(),
-                    "status": "error",
-                    "result": {
-                        "error": error.clone(),
-                        "error_code": code.clone(),
-                    },
-                })],
-            )
-            .await;
-            Json(json!({
-                "ok": false,
-                "error_code": code,
-                "error": error,
-            }))
+                    "status": "success",
+                    "result": result.clone(),
+                    "meta": build_runtime_tool_meta(
+                        &claims,
+                        call_index,
+                        max_calls,
+                        &contract,
+                        RuntimeToolExecutionState::Completed,
+                        attempts,
+                        false,
+                    ),
+                })];
+                blocks.extend(extract_runtime_ui_blocks_from_result(&result));
+                emit_runtime_blocks(&state, &token, blocks).await;
+                return Json(json!({
+                    "ok": true,
+                    "result": result,
+                    "meta": build_runtime_tool_meta(
+                        &claims,
+                        call_index,
+                        max_calls,
+                        &contract,
+                        RuntimeToolExecutionState::Completed,
+                        attempts,
+                        false,
+                    ),
+                }));
+            }
+            Ok(Err((code, error))) => {
+                let execution_state = runtime_tool_error_state(&code);
+                let receipt = RuntimeToolExecutionReceipt {
+                    contract: contract.clone(),
+                    state: execution_state.clone(),
+                    ok: false,
+                    result: None,
+                    error_code: Some(code.clone()),
+                    error: Some(error.clone()),
+                    attempts,
+                };
+                store_runtime_tool_execution_receipt(&state, receipt).await;
+                emit_runtime_blocks(
+                    &state,
+                    &token,
+                    vec![json!({
+                        "id": format!("{runtime_call_id}-result"),
+                        "type": "tool_result",
+                        "callId": runtime_call_id,
+                        "toolName": payload.tool_name.trim(),
+                        "status": "error",
+                        "result": {
+                            "error": error.clone(),
+                            "error_code": code.clone(),
+                        },
+                        "meta": build_runtime_tool_meta(
+                            &claims,
+                            call_index,
+                            max_calls,
+                            &contract,
+                            execution_state.clone(),
+                            attempts,
+                            false,
+                        ),
+                    })],
+                )
+                .await;
+                return Json(json!({
+                    "ok": false,
+                    "error_code": code,
+                    "error": error,
+                    "meta": build_runtime_tool_meta(
+                        &claims,
+                        call_index,
+                        max_calls,
+                        &contract,
+                        execution_state,
+                        attempts,
+                        false,
+                    ),
+                }));
+            }
+            Err(_)
+                if contract.retry_policy == RuntimeToolRetryPolicy::SafeReadonly
+                    && attempts < max_attempts =>
+            {
+                continue;
+            }
+            Err(_) => {
+                let timeout_error = format!(
+                    "tool '{}' timed out after {}ms; the tool may have executed, so Deeting did not automatically replay it",
+                    payload.tool_name.trim(),
+                    contract.timeout_ms
+                );
+                let receipt = RuntimeToolExecutionReceipt {
+                    contract: contract.clone(),
+                    state: RuntimeToolExecutionState::TimedOutMayHaveExecuted,
+                    ok: false,
+                    result: None,
+                    error_code: Some("CODE_MODE_BRIDGE_TIMEOUT".to_string()),
+                    error: Some(timeout_error.clone()),
+                    attempts,
+                };
+                store_runtime_tool_execution_receipt(&state, receipt).await;
+                emit_runtime_blocks(
+                    &state,
+                    &token,
+                    vec![json!({
+                        "id": format!("{runtime_call_id}-result"),
+                        "type": "tool_result",
+                        "callId": runtime_call_id,
+                        "toolName": payload.tool_name.trim(),
+                        "status": "error",
+                        "result": {
+                            "error": timeout_error.clone(),
+                            "error_code": "CODE_MODE_BRIDGE_TIMEOUT",
+                            "execution_state": "timed_out_may_have_executed",
+                        },
+                        "meta": build_runtime_tool_meta(
+                            &claims,
+                            call_index,
+                            max_calls,
+                            &contract,
+                            RuntimeToolExecutionState::TimedOutMayHaveExecuted,
+                            attempts,
+                            false,
+                        ),
+                    })],
+                )
+                .await;
+                return Json(json!({
+                    "ok": false,
+                    "error_code": "CODE_MODE_BRIDGE_TIMEOUT",
+                    "error": timeout_error,
+                    "meta": build_runtime_tool_meta(
+                        &claims,
+                        call_index,
+                        max_calls,
+                        &contract,
+                        RuntimeToolExecutionState::TimedOutMayHaveExecuted,
+                        attempts,
+                        false,
+                    ),
+                }));
+            }
         }
+    }
+}
+
+fn build_runtime_tool_meta(
+    claims: &RuntimeBridgeClaims,
+    call_index: i64,
+    max_calls: i64,
+    contract: &RuntimeToolExecutionContract,
+    execution_state: RuntimeToolExecutionState,
+    attempts: u32,
+    cached: bool,
+) -> Value {
+    json!({
+        "call_index": call_index,
+        "max_calls": max_calls,
+        "session_id": claims.session_id,
+        "execution_scope": claims.execution_scope,
+        "execution_state": execution_state,
+        "attempts": attempts,
+        "cached": cached,
+        "execution_contract": contract,
+    })
+}
+
+async fn build_runtime_tool_execution_contract(
+    state: &BridgeServerState,
+    claims: &RuntimeBridgeClaims,
+    call_id: &str,
+    tool_name: &str,
+    arguments: &HashMap<String, Value>,
+) -> RuntimeToolExecutionContract {
+    if let Some((side_effect_level, timeout_ms)) = built_in_contract_profile(tool_name, arguments) {
+        return RuntimeToolExecutionContract {
+            call_id: call_id.to_string(),
+            idempotency_key: format!("{}:{}", claims.execution_scope, call_id),
+            timeout_ms,
+            retry_policy: retry_policy_for_side_effect_level(side_effect_level),
+            side_effect_level,
+        };
+    }
+
+    let argument_value = serde_json::to_value(arguments).unwrap_or_else(|_| json!({}));
+    let (side_effect_level, timeout_ms) =
+        match resolve_callable_mcp_tool_by_name(state.deps.mcp.store.as_ref(), tool_name).await {
+            Ok(tool) => {
+                let risk = state.deps.mcp.assess_tool_risk(&tool, &argument_value);
+                (
+                    side_effect_level_from_mcp_tool(&tool, &risk),
+                    tool_timeout_ms(&tool).unwrap_or_else(|| {
+                        default_timeout_ms_for_side_effect_level(side_effect_level_from_mcp_tool(
+                            &tool, &risk,
+                        ))
+                    }),
+                )
+            }
+            Err(_) => (
+                RuntimeToolSideEffectLevel::HighRisk,
+                default_timeout_ms_for_side_effect_level(RuntimeToolSideEffectLevel::HighRisk),
+            ),
+        };
+
+    RuntimeToolExecutionContract {
+        call_id: call_id.to_string(),
+        idempotency_key: format!("{}:{}", claims.execution_scope, call_id),
+        timeout_ms,
+        retry_policy: retry_policy_for_side_effect_level(side_effect_level),
+        side_effect_level,
+    }
+}
+
+fn built_in_contract_profile(
+    tool_name: &str,
+    _arguments: &HashMap<String, Value>,
+) -> Option<(RuntimeToolSideEffectLevel, u64)> {
+    let normalized = tool_name.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "list_local_memories"
+        | "list_user_memories"
+        | "search_user_memories"
+        | "list_mcp_tools"
+        | "list_tools"
+        | "list_local_provider_instances"
+        | "list_provider_instances" => Some((
+            RuntimeToolSideEffectLevel::ReadOnly,
+            default_timeout_ms_for_side_effect_level(RuntimeToolSideEffectLevel::ReadOnly),
+        )),
+        "append_local_memory" | "add_knowledge_chunk" => Some((
+            RuntimeToolSideEffectLevel::SessionWrite,
+            default_timeout_ms_for_side_effect_level(RuntimeToolSideEffectLevel::SessionWrite),
+        )),
+        "clear_local_memories" => Some((
+            RuntimeToolSideEffectLevel::HighRisk,
+            default_timeout_ms_for_side_effect_level(RuntimeToolSideEffectLevel::HighRisk),
+        )),
+        _ => None,
+    }
+}
+
+fn retry_policy_for_side_effect_level(
+    side_effect_level: RuntimeToolSideEffectLevel,
+) -> RuntimeToolRetryPolicy {
+    match side_effect_level {
+        RuntimeToolSideEffectLevel::ReadOnly => RuntimeToolRetryPolicy::SafeReadonly,
+        RuntimeToolSideEffectLevel::SessionWrite
+        | RuntimeToolSideEffectLevel::ExternalWrite
+        | RuntimeToolSideEffectLevel::HighRisk => RuntimeToolRetryPolicy::None,
+    }
+}
+
+fn default_timeout_ms_for_side_effect_level(side_effect_level: RuntimeToolSideEffectLevel) -> u64 {
+    match side_effect_level {
+        RuntimeToolSideEffectLevel::ReadOnly => 15_000,
+        RuntimeToolSideEffectLevel::SessionWrite => 20_000,
+        RuntimeToolSideEffectLevel::ExternalWrite => 30_000,
+        RuntimeToolSideEffectLevel::HighRisk => 45_000,
+    }
+}
+
+fn side_effect_level_from_mcp_tool(
+    tool: &mcp_core::types::McpTool,
+    risk: &crate::modules::mcp::ToolRiskAssessment,
+) -> RuntimeToolSideEffectLevel {
+    use crate::modules::mcp::{ApprovalBoundaryClass, RiskOperationClass};
+
+    if tool.is_read_only {
+        return RuntimeToolSideEffectLevel::ReadOnly;
+    }
+
+    match (&risk.operation_class, &risk.boundary_class) {
+        (RiskOperationClass::NetworkRead | RiskOperationClass::FilesystemRead, _)
+            if !risk.requires_approval =>
+        {
+            RuntimeToolSideEffectLevel::ReadOnly
+        }
+        (_, ApprovalBoundaryClass::HardBoundary) | (RiskOperationClass::ProcessExec, _) => {
+            RuntimeToolSideEffectLevel::HighRisk
+        }
+        (RiskOperationClass::FilesystemWrite, _) => RuntimeToolSideEffectLevel::ExternalWrite,
+        _ => RuntimeToolSideEffectLevel::ExternalWrite,
+    }
+}
+
+fn tool_timeout_ms(tool: &mcp_core::types::McpTool) -> Option<u64> {
+    serde_json::from_str::<Value>(&tool.config_json)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("execution")
+                .and_then(|execution| execution.get("timeout_seconds"))
+                .and_then(Value::as_u64)
+        })
+        .map(|seconds| seconds.max(1).saturating_mul(1000))
+}
+
+fn runtime_tool_error_state(error_code: &str) -> RuntimeToolExecutionState {
+    match error_code {
+        "CODE_MODE_BRIDGE_TOOL_NOT_IN_CAPABILITY_SNAPSHOT"
+        | "CODE_MODE_BRIDGE_TOOL_NOT_ALLOWED"
+        | "CODE_MODE_BRIDGE_TOOL_NOT_RUNNABLE"
+        | "CODE_MODE_BRIDGE_MISSING_TOOL_NAME" => RuntimeToolExecutionState::NotExecuted,
+        _ => RuntimeToolExecutionState::Completed,
+    }
+}
+
+async fn store_runtime_tool_execution_receipt(
+    state: &BridgeServerState,
+    receipt: RuntimeToolExecutionReceipt,
+) {
+    let mut store = state.store.write().await;
+    store
+        .tool_execution_receipts
+        .insert(receipt.contract.idempotency_key.clone(), receipt);
+}
+
+fn cached_tool_execution_response(
+    claims: &RuntimeBridgeClaims,
+    call_index: i64,
+    max_calls: i64,
+    receipt: &RuntimeToolExecutionReceipt,
+    contract: &RuntimeToolExecutionContract,
+) -> Json<Value> {
+    let execution_state = match receipt.state {
+        RuntimeToolExecutionState::Completed | RuntimeToolExecutionState::NotExecuted => {
+            RuntimeToolExecutionState::AlreadyExecuted
+        }
+        RuntimeToolExecutionState::TimedOutMayHaveExecuted => {
+            RuntimeToolExecutionState::TimedOutMayHaveExecuted
+        }
+        RuntimeToolExecutionState::InProgress => RuntimeToolExecutionState::TimedOutMayHaveExecuted,
+        RuntimeToolExecutionState::AlreadyExecuted => RuntimeToolExecutionState::AlreadyExecuted,
+    };
+    if receipt.ok {
+        Json(json!({
+            "ok": true,
+            "result": receipt.result.clone().unwrap_or(Value::Null),
+            "meta": build_runtime_tool_meta(
+                claims,
+                call_index,
+                max_calls,
+                contract,
+                execution_state,
+                receipt.attempts,
+                true,
+            ),
+        }))
+    } else {
+        Json(json!({
+            "ok": false,
+            "error_code": receipt.error_code.clone().unwrap_or_else(|| "CODE_MODE_BRIDGE_EXECUTION_FAILED".to_string()),
+            "error": receipt.error.clone().unwrap_or_else(|| "bridge call failed".to_string()),
+            "result": receipt.result.clone(),
+            "meta": build_runtime_tool_meta(
+                claims,
+                call_index,
+                max_calls,
+                contract,
+                execution_state,
+                receipt.attempts,
+                true,
+            ),
+        }))
     }
 }
 
@@ -478,7 +932,7 @@ async fn code_mode_file_write(
     Json(payload): Json<CodemodeToolBridgeFileWriteRequest>,
 ) -> Json<Value> {
     let token = resolve_token(headers, payload.execution_token);
-    let consumed = consume_claims(&state, &token).await;
+    let consumed = consume_claims(&state, &token, None).await;
     if let Err((error_code, error)) = consumed {
         return Json(json!({"ok": false, "error_code": error_code, "error": error}));
     }
@@ -540,7 +994,7 @@ async fn code_mode_file_read(
     Json(payload): Json<CodemodeToolBridgeFileReadRequest>,
 ) -> Json<Value> {
     let token = resolve_token(headers, payload.execution_token);
-    let consumed = consume_claims(&state, &token).await;
+    let consumed = consume_claims(&state, &token, None).await;
     if let Err((error_code, error)) = consumed {
         return Json(json!({"ok": false, "error_code": error_code, "error": error}));
     }
@@ -590,10 +1044,18 @@ fn resolve_token(headers: HeaderMap, body_token: Option<String>) -> String {
     body_token.unwrap_or_default().trim().to_string()
 }
 
+fn normalize_call_id(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
 async fn consume_claims(
     state: &BridgeServerState,
     token: &str,
-) -> Result<(RuntimeBridgeClaims, i64, i64, Value), (String, String)> {
+    call_id: Option<&str>,
+) -> Result<(RuntimeBridgeClaims, String, i64, i64, Value), (String, String)> {
     let normalized = token.trim();
     if normalized.is_empty() {
         return Err((
@@ -616,23 +1078,43 @@ async fn consume_claims(
                 "CODE_MODE_BRIDGE_TOKEN_EXPIRED".to_string(),
                 "execution token expired".to_string(),
             ))
-        } else if entry.used_calls >= entry.claims.max_calls {
-            Err((
-                "CODE_MODE_BRIDGE_CALL_LIMIT".to_string(),
-                format!(
-                    "runtime bridge call limit exceeded ({})",
-                    entry.claims.max_calls
-                ),
-            ))
         } else {
-            let call_index = entry.used_calls;
-            entry.used_calls += 1;
-            Ok((
-                entry.claims.clone(),
-                call_index,
-                entry.claims.max_calls,
-                entry.context.clone(),
-            ))
+            let normalized_call_id = normalize_call_id(call_id);
+            if let Some(call_id) = normalized_call_id
+                .as_ref()
+                .and_then(|value| entry.call_slots.get(value).map(|index| (value, *index)))
+            {
+                Ok((
+                    entry.claims.clone(),
+                    call_id.0.clone(),
+                    call_id.1,
+                    entry.claims.max_calls,
+                    entry.context.clone(),
+                ))
+            } else if entry.used_calls >= entry.claims.max_calls {
+                Err((
+                    "CODE_MODE_BRIDGE_CALL_LIMIT".to_string(),
+                    format!(
+                        "runtime bridge call limit exceeded ({})",
+                        entry.claims.max_calls
+                    ),
+                ))
+            } else {
+                let call_index = entry.used_calls;
+                entry.used_calls += 1;
+                let assigned_call_id =
+                    normalized_call_id.unwrap_or_else(|| format!("runtime-tool-{call_index}"));
+                entry
+                    .call_slots
+                    .insert(assigned_call_id.clone(), call_index);
+                Ok((
+                    entry.claims.clone(),
+                    assigned_call_id,
+                    call_index,
+                    entry.claims.max_calls,
+                    entry.context.clone(),
+                ))
+            }
         }
     };
 
@@ -845,6 +1327,7 @@ mod tests {
             session_id: "session".to_string(),
             max_calls: 4,
             allowed_tools: None,
+            execution_scope: "trace-1".to_string(),
         };
         assert!(tool_allowed_by_claims(&claims, "search_web"));
     }
@@ -856,8 +1339,35 @@ mod tests {
             session_id: "session".to_string(),
             max_calls: 4,
             allowed_tools: Some(vec!["search_web".to_string(), "fetch_page".to_string()]),
+            execution_scope: "trace-2".to_string(),
         };
         assert!(tool_allowed_by_claims(&claims, "search_web"));
         assert!(!tool_allowed_by_claims(&claims, "list_tools"));
+    }
+
+    #[test]
+    fn built_in_contract_profile_retries_only_read_only_tools() {
+        let (side_effect_level, timeout_ms) =
+            built_in_contract_profile("list_local_memories", &HashMap::new())
+                .expect("read-only profile");
+        assert_eq!(side_effect_level, RuntimeToolSideEffectLevel::ReadOnly);
+        assert_eq!(
+            retry_policy_for_side_effect_level(side_effect_level),
+            RuntimeToolRetryPolicy::SafeReadonly
+        );
+        assert_eq!(timeout_ms, 15_000);
+    }
+
+    #[test]
+    fn built_in_contract_profile_disables_auto_retry_for_mutations() {
+        let (side_effect_level, timeout_ms) =
+            built_in_contract_profile("clear_local_memories", &HashMap::new())
+                .expect("mutating profile");
+        assert_eq!(side_effect_level, RuntimeToolSideEffectLevel::HighRisk);
+        assert_eq!(
+            retry_policy_for_side_effect_level(side_effect_level),
+            RuntimeToolRetryPolicy::None
+        );
+        assert_eq!(timeout_ms, 45_000);
     }
 }

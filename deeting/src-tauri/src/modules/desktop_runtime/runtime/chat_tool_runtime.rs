@@ -3,12 +3,12 @@ use super::{
     build_local_sdk_search_result_bundle_with_feedback_runtime, build_local_tool_trace_blocks,
     build_tool_loop_feedback, delete_execution_graph_runtime_context,
     execute_or_queue_mcp_tool_call_with_tool_ref, extract_chat_tool_calls,
-    install_local_skill_from_onboarding_request, load_execution_graph_runtime_context,
-    load_execution_graph_snapshot, load_execution_graph_snapshot_by_approval_token,
-    persist_execution_graph_runtime_context, persist_execution_graph_snapshot,
-    project_execution_graph_blocks_from_value, project_execution_graph_snapshot,
-    request_provider_chat_completion, resolve_dynamic_direct_capability_tool_name,
-    resolve_local_capability_activation_state,
+    install_local_skill_from_onboarding_request, list_execution_graph_runtime_contexts,
+    load_execution_graph_runtime_context, load_execution_graph_snapshot,
+    load_execution_graph_snapshot_by_approval_token, persist_execution_graph_runtime_context,
+    persist_execution_graph_snapshot, project_execution_graph_blocks_from_value,
+    project_execution_graph_snapshot, request_provider_chat_completion,
+    resolve_dynamic_direct_capability_tool_name, resolve_local_capability_activation_state,
     search_feedback::search_feedback_context_from_tool_call_meta, CapabilityExecutionContract,
     GraphProjectionInput, LocalCapabilityActivationState, LocalExecutionPolicy,
     LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
@@ -109,6 +109,7 @@ struct LocalChatToolRuntimeState {
     max_rounds: usize,
     round: usize,
     trace_id: String,
+    request_id: Option<String>,
     execution_policy: LocalExecutionPolicy,
     model_connection: LocalModelConnection,
     orchestrated_messages: Vec<LocalChatInputMessage>,
@@ -127,10 +128,11 @@ struct LocalChatToolRuntimeOutput {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct PersistedChatToolRuntimeContext {
+pub(crate) struct PersistedChatToolRuntimeContext {
     max_rounds: usize,
     round: usize,
     trace_id: String,
+    request_id: Option<String>,
     execution_policy: LocalExecutionPolicy,
     model_connection: LocalModelConnection,
     orchestrated_messages: Vec<LocalChatInputMessage>,
@@ -143,6 +145,56 @@ struct PersistedChatToolRuntimeContext {
     last_response: Option<serde_json::Value>,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum InFlightExecutionStage {
+    ToolRunning,
+    WaitingApproval,
+    DelegatedWorkflowRunning,
+    Interrupted,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) struct PersistedPendingApproval {
+    approval_token: String,
+    tool_id: Option<String>,
+    tool_name: String,
+    arguments: serde_json::Value,
+    call_id: Option<String>,
+    execution_token: Option<String>,
+    session_id: Option<String>,
+    description: Option<String>,
+    risk_level: Option<String>,
+    risk_reasons: Vec<String>,
+    tool_fingerprint: String,
+    policy_rule_key: Option<String>,
+    approval_grant_key: Option<String>,
+    execution_graph_execution_id: Option<String>,
+    execution_graph_gate_node_id: Option<String>,
+    execution_graph_tool_node_id: Option<String>,
+    created_at_unix_ms: i128,
+    expires_at_unix_ms: i128,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) struct PersistedInFlightExecutionContext {
+    schema_version: i64,
+    session_id: String,
+    trace_id: String,
+    request_id: Option<String>,
+    execution_graph_execution_id: Option<String>,
+    stage: InFlightExecutionStage,
+    current_node: Option<String>,
+    current_call_id: Option<String>,
+    workflow_run_id: Option<String>,
+    started_at_unix_ms: i64,
+    last_heartbeat_at_unix_ms: i64,
+    recoverable: bool,
+    pending_approvals: Vec<PersistedPendingApproval>,
+    chat_runtime: Option<PersistedChatToolRuntimeContext>,
+    recovery_notice_emitted_at_unix_ms: Option<i64>,
+}
+
 fn runtime_state_from_persisted_context(
     context: PersistedChatToolRuntimeContext,
 ) -> LocalChatToolRuntimeState {
@@ -150,6 +202,7 @@ fn runtime_state_from_persisted_context(
         max_rounds: context.max_rounds,
         round: context.round,
         trace_id: context.trace_id,
+        request_id: context.request_id,
         execution_policy: context.execution_policy,
         model_connection: context.model_connection,
         orchestrated_messages: context.orchestrated_messages,
@@ -162,6 +215,48 @@ fn runtime_state_from_persisted_context(
         last_response: context.last_response,
         realtime_emitter: LocalRealtimeToolTraceEmitter::new(None, None, None),
     }
+}
+
+fn now_unix_ms_i64() -> i64 {
+    (time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000) as i64
+}
+
+fn build_pending_approval_records(
+    pending_tool_calls: &std::collections::HashMap<String, crate::modules::mcp::PendingToolCall>,
+    approval_tokens: &[String],
+) -> Vec<PersistedPendingApproval> {
+    approval_tokens
+        .iter()
+        .filter_map(|approval_token| {
+            let pending = pending_tool_calls.get(approval_token)?;
+            Some(PersistedPendingApproval {
+                approval_token: approval_token.clone(),
+                tool_id: pending.tool_id.clone(),
+                tool_name: pending.tool_name.clone(),
+                arguments: pending.arguments.clone(),
+                call_id: pending.call_id.clone(),
+                execution_token: pending.execution_token.clone(),
+                session_id: pending.session_id.clone(),
+                description: pending.description.clone(),
+                risk_level: pending.risk_level.clone(),
+                risk_reasons: pending.risk_reasons.clone(),
+                tool_fingerprint: pending.tool_fingerprint.clone(),
+                policy_rule_key: pending.policy_rule_key.clone(),
+                approval_grant_key: pending.approval_grant_key.clone(),
+                execution_graph_execution_id: pending.execution_graph_execution_id.clone(),
+                execution_graph_gate_node_id: pending.execution_graph_gate_node_id.clone(),
+                execution_graph_tool_node_id: pending.execution_graph_tool_node_id.clone(),
+                created_at_unix_ms: pending.created_at_unix_ms,
+                expires_at_unix_ms: pending.expires_at_unix_ms,
+            })
+        })
+        .collect()
+}
+
+fn persistable_inflight_context_from_value(
+    value: &serde_json::Value,
+) -> Option<PersistedInFlightExecutionContext> {
+    serde_json::from_value::<PersistedInFlightExecutionContext>(value.clone()).ok()
 }
 
 fn enrich_response_with_tool_trace(
@@ -396,6 +491,7 @@ fn canonicalize_tool_call_meta_via_graph(
         session_id: session_id.to_string(),
         route: execution_policy.route.as_str().to_string(),
         plane: execution_policy.plane.as_str().to_string(),
+        trace_id: None,
         request_id: None,
         root_execution_id: None,
         response_content: response.get("content").cloned(),
@@ -724,9 +820,141 @@ fn legacy_suspended_fallback_allowed(legacy_created_at_unix_ms: Option<i128>) ->
     now.saturating_sub(created_at_unix_ms) <= LEGACY_SUSPENDED_COMPAT_WINDOW_MS
 }
 
+pub(crate) fn serialize_inflight_runtime_context(
+    stage: InFlightExecutionStage,
+    current_node: Option<String>,
+    current_call_id: Option<String>,
+    workflow_run_id: Option<String>,
+    recoverable: bool,
+    pending_approvals: Vec<PersistedPendingApproval>,
+    chat_runtime: Option<PersistedChatToolRuntimeContext>,
+    session_id: &str,
+    trace_id: &str,
+    request_id: Option<&str>,
+    execution_graph_execution_id: Option<&str>,
+) -> serde_json::Value {
+    serde_json::to_value(PersistedInFlightExecutionContext {
+        schema_version: 1,
+        session_id: session_id.to_string(),
+        trace_id: trace_id.to_string(),
+        request_id: request_id
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+        execution_graph_execution_id: execution_graph_execution_id
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+        stage,
+        current_node,
+        current_call_id,
+        workflow_run_id,
+        started_at_unix_ms: now_unix_ms_i64(),
+        last_heartbeat_at_unix_ms: now_unix_ms_i64(),
+        recoverable,
+        pending_approvals,
+        chat_runtime,
+        recovery_notice_emitted_at_unix_ms: None,
+    })
+    .unwrap_or_else(|_| serde_json::json!({}))
+}
+
+async fn persist_running_tool_execution_runtime(
+    store: &crate::modules::mcp::store::McpStore,
+    state: &LocalChatToolRuntimeState,
+    call_id: &str,
+    tool_name: &str,
+    tool_args: &serde_json::Value,
+) -> Result<Option<String>, String> {
+    let normalized_call_id = call_id.trim();
+    if normalized_call_id.is_empty() {
+        return Ok(None);
+    }
+
+    let mut tool_trace_blocks =
+        build_local_tool_trace_blocks(&build_state_effective_tool_call_meta(state));
+    tool_trace_blocks.push(serde_json::json!({
+        "type": "tool_call",
+        "callId": normalized_call_id,
+        "toolName": tool_name,
+        "toolArgs": tool_args,
+        "status": "running",
+    }));
+
+    let execution_graph = project_execution_graph_snapshot(GraphProjectionInput {
+        session_id: state.session_id.clone(),
+        route: state.execution_policy.route.as_str().to_string(),
+        plane: state.execution_policy.plane.as_str().to_string(),
+        trace_id: Some(state.trace_id.clone()),
+        request_id: state.request_id.clone(),
+        root_execution_id: None,
+        response_content: state
+            .last_response
+            .as_ref()
+            .and_then(|response| response.get("content").cloned()),
+        tool_trace_blocks,
+        delegated_execution_tree: None,
+    })
+    .to_value();
+    let execution_id = execution_graph
+        .get("execution_id")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+
+    persist_execution_graph_snapshot(
+        store,
+        &execution_graph,
+        state.session_id.as_str(),
+        "desktop_local_chat_tool_running",
+        state.request_id.as_deref(),
+        Some("active"),
+    )
+    .await
+    .map_err(|err| err.to_string())?;
+
+    if let Some(execution_id) = execution_id.as_deref() {
+        let context = serialize_inflight_runtime_context(
+            InFlightExecutionStage::ToolRunning,
+            Some(format!("tool_call:{normalized_call_id}")),
+            Some(normalized_call_id.to_string()),
+            None,
+            true,
+            Vec::new(),
+            Some(PersistedChatToolRuntimeContext {
+                max_rounds: state.max_rounds,
+                round: state.round,
+                trace_id: state.trace_id.clone(),
+                request_id: state.request_id.clone(),
+                execution_policy: state.execution_policy.clone(),
+                model_connection: state.model_connection.clone(),
+                orchestrated_messages: state.orchestrated_messages.clone(),
+                session_id: state.session_id.clone(),
+                temperature: state.temperature,
+                max_tokens: state.max_tokens,
+                active_capability: state.active_capability.clone(),
+                runtime_metrics: state.runtime_metrics.clone(),
+                last_capability_snapshot: state.last_capability_snapshot.clone(),
+                last_response: state.last_response.clone(),
+            }),
+            state.session_id.as_str(),
+            state.trace_id.as_str(),
+            state.request_id.as_deref(),
+            Some(execution_id),
+        );
+        persist_execution_graph_runtime_context(store, execution_id, &context)
+            .await
+            .map_err(|err| err.to_string())?;
+    }
+
+    Ok(execution_id)
+}
+
 async fn persist_suspended_execution_graph_runtime(
     store: &crate::modules::mcp::store::McpStore,
     suspended: &SuspendedChatToolExecution,
+    pending_approvals: &[PersistedPendingApproval],
     source_kind: &str,
     status: &str,
 ) -> Result<(), String> {
@@ -735,20 +963,44 @@ async fn persist_suspended_execution_graph_runtime(
         suspended.execution_graph(),
         suspended.session_id.as_str(),
         source_kind,
-        None,
+        suspended.request_id.as_deref(),
         Some(status),
     )
     .await
     .map_err(|err| err.to_string())?;
 
     if let Some(execution_id) = suspended.graph_execution_id() {
-        persist_execution_graph_runtime_context(
-            store,
-            execution_id,
-            &suspended.to_runtime_context_value(),
-        )
-        .await
-        .map_err(|err| err.to_string())?;
+        let context = serialize_inflight_runtime_context(
+            InFlightExecutionStage::WaitingApproval,
+            Some(suspended.pending_gate_node_id().to_string()),
+            Some(suspended.pending_call_id().to_string()),
+            None,
+            true,
+            pending_approvals.to_vec(),
+            Some(PersistedChatToolRuntimeContext {
+                max_rounds: suspended.max_rounds,
+                round: suspended.round,
+                trace_id: suspended.trace_id.clone(),
+                request_id: suspended.request_id.clone(),
+                execution_policy: suspended.execution_policy.clone(),
+                model_connection: suspended.model_connection.clone(),
+                orchestrated_messages: suspended.orchestrated_messages.clone(),
+                session_id: suspended.session_id.clone(),
+                temperature: suspended.temperature,
+                max_tokens: suspended.max_tokens,
+                active_capability: suspended.active_capability.clone(),
+                runtime_metrics: suspended.runtime_metrics.clone(),
+                last_capability_snapshot: suspended.last_capability_snapshot.clone(),
+                last_response: suspended.last_response.clone(),
+            }),
+            suspended.session_id.as_str(),
+            suspended.trace_id.as_str(),
+            suspended.request_id.as_deref(),
+            Some(execution_id),
+        );
+        persist_execution_graph_runtime_context(store, execution_id, &context)
+            .await
+            .map_err(|err| err.to_string())?;
     }
 
     Ok(())
@@ -775,6 +1027,7 @@ pub(crate) struct SuspendedChatToolExecution {
     max_rounds: usize,
     round: usize,
     trace_id: String,
+    request_id: Option<String>,
     execution_policy: LocalExecutionPolicy,
     model_connection: LocalModelConnection,
     orchestrated_messages: Vec<LocalChatInputMessage>,
@@ -802,7 +1055,8 @@ impl SuspendedChatToolExecution {
             session_id: state.session_id.clone(),
             route: state.execution_policy.route.as_str().to_string(),
             plane: state.execution_policy.plane.as_str().to_string(),
-            request_id: None,
+            trace_id: Some(state.trace_id.clone()),
+            request_id: state.request_id.clone(),
             root_execution_id: None,
             response_content: state
                 .last_response
@@ -816,6 +1070,7 @@ impl SuspendedChatToolExecution {
             max_rounds: state.max_rounds,
             round: state.round,
             trace_id: state.trace_id.clone(),
+            request_id: state.request_id.clone(),
             execution_policy: state.execution_policy.clone(),
             model_connection: state.model_connection.clone(),
             orchestrated_messages: state.orchestrated_messages.clone(),
@@ -835,6 +1090,7 @@ impl SuspendedChatToolExecution {
             max_rounds: self.max_rounds,
             round: self.round,
             trace_id: self.trace_id.clone(),
+            request_id: self.request_id.clone(),
             execution_policy: self.execution_policy,
             model_connection: self.model_connection,
             orchestrated_messages: self.orchestrated_messages,
@@ -848,7 +1104,7 @@ impl SuspendedChatToolExecution {
             realtime_emitter: LocalRealtimeToolTraceEmitter::new(
                 None,
                 Some(self.trace_id.as_str()),
-                None,
+                self.request_id.as_deref(),
             ),
         }
     }
@@ -970,25 +1226,6 @@ impl SuspendedChatToolExecution {
             })
             .collect()
     }
-
-    fn to_runtime_context_value(&self) -> serde_json::Value {
-        serde_json::to_value(PersistedChatToolRuntimeContext {
-            max_rounds: self.max_rounds,
-            round: self.round,
-            trace_id: self.trace_id.clone(),
-            execution_policy: self.execution_policy.clone(),
-            model_connection: self.model_connection.clone(),
-            orchestrated_messages: self.orchestrated_messages.clone(),
-            session_id: self.session_id.clone(),
-            temperature: self.temperature,
-            max_tokens: self.max_tokens,
-            active_capability: self.active_capability.clone(),
-            runtime_metrics: self.runtime_metrics.clone(),
-            last_capability_snapshot: self.last_capability_snapshot.clone(),
-            last_response: self.last_response.clone(),
-        })
-        .unwrap_or_else(|_| serde_json::json!({}))
-    }
 }
 
 pub(crate) async fn run_local_chat_complete_with_tools(
@@ -1045,6 +1282,10 @@ pub(crate) async fn run_local_chat_complete_with_tools(
         max_rounds,
         round: 0,
         trace_id: trace_id.clone(),
+        request_id: request_id
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
         execution_policy: execution_policy.clone(),
         model_connection: model_connection.clone(),
         orchestrated_messages,
@@ -1139,9 +1380,31 @@ async fn continue_local_chat_complete_with_tools(
 
         let prior_tool_call_meta = build_state_effective_tool_call_meta(&state);
         state.last_response = Some(response.clone());
+        let state_snapshot = LocalChatToolRuntimeState {
+            max_rounds: state.max_rounds,
+            round: state.round,
+            trace_id: state.trace_id.clone(),
+            request_id: state.request_id.clone(),
+            execution_policy: state.execution_policy.clone(),
+            model_connection: state.model_connection.clone(),
+            orchestrated_messages: state.orchestrated_messages.clone(),
+            session_id: state.session_id.clone(),
+            temperature: state.temperature,
+            max_tokens: state.max_tokens,
+            active_capability: state.active_capability.clone(),
+            runtime_metrics: state.runtime_metrics.clone(),
+            last_capability_snapshot: state.last_capability_snapshot.clone(),
+            last_response: state.last_response.clone(),
+            realtime_emitter: LocalRealtimeToolTraceEmitter::new(
+                None,
+                Some(state.trace_id.as_str()),
+                state.request_id.as_deref(),
+            ),
+        };
         match process_chat_tool_calls(
             app,
             app_state,
+            &state_snapshot,
             &response,
             &prior_tool_call_meta,
             state.session_id.as_str(),
@@ -1240,10 +1503,16 @@ async fn continue_local_chat_complete_with_tools(
                         }
                     }
                 }
+                let persisted_pending_approvals = {
+                    let pending_tool_calls =
+                        app_state.mcp.approvals.pending_tool_calls.read().await;
+                    build_pending_approval_records(&pending_tool_calls, &approval_tokens)
+                };
                 let mut persisted_graph_runtime = true;
                 if let Err(err) = persist_suspended_execution_graph_runtime(
                     app_state.mcp.store.as_ref(),
                     &suspended,
+                    &persisted_pending_approvals,
                     "desktop_local_chat_waiting_approval",
                     "waiting_approval",
                 )
@@ -1730,6 +1999,7 @@ fn build_runtime_bridge_stream_target(
 async fn process_chat_tool_calls(
     app: &AppHandle,
     app_state: &AppState,
+    state: &LocalChatToolRuntimeState,
     chat_response: &serde_json::Value,
     prior_tool_call_meta: &[serde_json::Value],
     session_id: &str,
@@ -1764,6 +2034,7 @@ async fn process_chat_tool_calls(
                 .unwrap_or(tool_name);
         let call_id = call.id.clone().unwrap_or_default();
         let meta_len_before = tool_call_meta.len();
+        let approval_count_before = approval_tokens.len();
         if !effective_allowed_tool_names
             .iter()
             .any(|item| item == &tool_name)
@@ -1791,6 +2062,37 @@ async fn process_chat_tool_calls(
             ));
             continue;
         }
+
+        let running_execution_id = persist_running_tool_execution_runtime(
+            app_state.mcp.store.as_ref(),
+            &LocalChatToolRuntimeState {
+                max_rounds: state.max_rounds,
+                round: state.round,
+                trace_id: state.trace_id.clone(),
+                request_id: state.request_id.clone(),
+                execution_policy: state.execution_policy.clone(),
+                model_connection: state.model_connection.clone(),
+                orchestrated_messages: state.orchestrated_messages.clone(),
+                session_id: state.session_id.clone(),
+                temperature: state.temperature,
+                max_tokens: state.max_tokens,
+                active_capability: state.active_capability.clone(),
+                runtime_metrics: state.runtime_metrics.clone(),
+                last_capability_snapshot: state.last_capability_snapshot.clone(),
+                last_response: state.last_response.clone(),
+                realtime_emitter: LocalRealtimeToolTraceEmitter::new(
+                    None,
+                    Some(state.trace_id.as_str()),
+                    state.request_id.as_deref(),
+                ),
+            },
+            call.id.as_deref().unwrap_or_default(),
+            &tool_name,
+            &call.arguments,
+        )
+        .await
+        .ok()
+        .flatten();
 
         if tool_name == "execute_code_plan" {
             realtime_emitter.emit_execution_section_once();
@@ -2261,6 +2563,13 @@ async fn process_chat_tool_calls(
                 error,
             );
         }
+        if approval_tokens.len() == approval_count_before {
+            clear_execution_graph_runtime_context(
+                app_state.mcp.store.as_ref(),
+                running_execution_id.as_deref(),
+            )
+            .await;
+        }
     }
     if approval_tokens.is_empty() {
         LocalToolCallProcessingOutcome::Completed {
@@ -2421,6 +2730,7 @@ fn attach_execution_graph_to_response(
         session_id: session_id.to_string(),
         route: execution_policy.route.as_str().to_string(),
         plane: execution_policy.plane.as_str().to_string(),
+        trace_id: None,
         request_id: None,
         root_execution_id: root_execution_id.map(str::to_string),
         response_content: response.get("content").cloned(),
@@ -2530,13 +2840,42 @@ pub(crate) async fn resume_suspended_chat_tool_execution_after_approval(
         else {
             return Ok(None);
         };
-        let persisted_context: PersistedChatToolRuntimeContext =
-            serde_json::from_value(runtime_context).map_err(|err| err.to_string())?;
+        let persisted_context = persistable_inflight_context_from_value(&runtime_context)
+            .and_then(|context| context.chat_runtime)
+            .unwrap_or_else(|| {
+                serde_json::from_value(runtime_context)
+                    .unwrap_or_else(|_| PersistedChatToolRuntimeContext {
+                        max_rounds: 4,
+                        round: 0,
+                        trace_id: execution_id.to_string(),
+                        request_id: None,
+                        execution_policy: crate::modules::desktop_runtime::runtime::build_default_local_execution_policy(),
+                        model_connection: LocalModelConnection {
+                            model_id: "deeting-os".to_string(),
+                            provider_model_id: "deeting-os".to_string(),
+                            logical_model_key: None,
+                            protocol_family: "openai_chat".to_string(),
+                        },
+                        orchestrated_messages: Vec::new(),
+                        session_id: execution_graph
+                            .get("session_id")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or_default()
+                            .to_string(),
+                        temperature: None,
+                        max_tokens: None,
+                        active_capability: None,
+                        runtime_metrics: RuntimeMetricsAccumulator::default(),
+                        last_capability_snapshot: None,
+                        last_response: None,
+                    })
+            });
         let state = runtime_state_from_persisted_context(persisted_context);
         SuspendedChatToolExecution {
             max_rounds: state.max_rounds,
             round: state.round,
             trace_id: state.trace_id.clone(),
+            request_id: state.request_id.clone(),
             execution_policy: state.execution_policy.clone(),
             model_connection: state.model_connection.clone(),
             orchestrated_messages: state.orchestrated_messages.clone(),
@@ -2563,6 +2902,7 @@ pub(crate) async fn resume_suspended_chat_tool_execution_after_approval(
         if let Err(err) = persist_suspended_execution_graph_runtime(
             app_state.mcp.store.as_ref(),
             &suspended,
+            &[],
             "desktop_local_chat_legacy_fallback",
             "waiting_approval",
         )
@@ -2597,6 +2937,7 @@ pub(crate) async fn resume_suspended_chat_tool_execution_after_approval(
     if let Err(err) = persist_suspended_execution_graph_runtime(
         app_state.mcp.store.as_ref(),
         &suspended,
+        &[],
         "desktop_local_chat_approval_applied",
         "active",
     )
@@ -2717,6 +3058,335 @@ pub(crate) async fn resume_suspended_chat_tool_execution_after_approval(
             })))
         }
     }
+}
+
+fn pending_tool_call_from_persisted_approval(
+    pending: &PersistedPendingApproval,
+    default_execution_id: Option<&str>,
+    expires_at_unix_ms: i128,
+) -> crate::modules::mcp::PendingToolCall {
+    crate::modules::mcp::PendingToolCall {
+        tool_id: pending.tool_id.clone(),
+        tool_name: pending.tool_name.clone(),
+        arguments: pending.arguments.clone(),
+        call_id: pending.call_id.clone(),
+        execution_token: pending.execution_token.clone(),
+        session_id: pending.session_id.clone(),
+        description: pending.description.clone(),
+        risk_level: pending.risk_level.clone(),
+        risk_reasons: pending.risk_reasons.clone(),
+        tool_fingerprint: pending.tool_fingerprint.clone(),
+        policy_rule_key: pending.policy_rule_key.clone(),
+        approval_grant_key: pending.approval_grant_key.clone(),
+        execution_graph_execution_id: pending
+            .execution_graph_execution_id
+            .clone()
+            .or_else(|| default_execution_id.map(str::to_string)),
+        execution_graph_gate_node_id: pending.execution_graph_gate_node_id.clone(),
+        execution_graph_tool_node_id: pending.execution_graph_tool_node_id.clone(),
+        created_at_unix_ms: pending.created_at_unix_ms,
+        expires_at_unix_ms,
+    }
+}
+
+fn recovery_assistant_meta(
+    execution_graph: &serde_json::Value,
+    execution_id: &str,
+    stage: &str,
+    available_actions: &[&str],
+) -> Option<serde_json::Value> {
+    crate::modules::desktop_runtime::runtime::assistant_persistence::with_assistant_persistence_state(
+        Some(serde_json::json!({
+            "execution_graph": execution_graph,
+            "recovery": {
+                "execution_id": execution_id,
+                "stage": stage,
+                "available_actions": available_actions,
+            }
+        })),
+        crate::modules::desktop_runtime::runtime::assistant_persistence::AssistantPersistenceState {
+            assistant_message_persisted: true,
+            execution_graph_persisted: true,
+            postprocess_completed: true,
+        },
+    )
+}
+
+async fn recovery_message_exists(
+    store: &crate::modules::mcp::store::McpStore,
+    session_id: &str,
+    execution_id: &str,
+) -> Result<bool, String> {
+    let count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM conversation_message
+        WHERE session_id = ?
+          AND role = 'assistant'
+          AND is_deleted = 0
+          AND (
+            json_extract(meta_info, '$.recovery.execution_id') = ?
+            OR json_extract(meta_info, '$.execution_graph.execution_id') = ?
+          )
+        "#,
+    )
+    .bind(session_id)
+    .bind(execution_id)
+    .bind(execution_id)
+    .fetch_one(&store.pool)
+    .await
+    .map_err(|err| err.to_string())?;
+    Ok(count > 0)
+}
+
+async fn append_recovery_assistant_message_if_missing(
+    store: &crate::modules::mcp::store::McpStore,
+    session_id: &str,
+    execution_graph: &serde_json::Value,
+    execution_id: &str,
+    stage: &str,
+    content: &str,
+    available_actions: &[&str],
+) -> Result<(), String> {
+    if recovery_message_exists(store, session_id, execution_id).await? {
+        return Ok(());
+    }
+    store
+        .append_local_conversation_message(CreateConversationMessageRequest {
+            session_id: session_id.to_string(),
+            role: "assistant".to_string(),
+            content: content.to_string(),
+            name: None,
+            meta_info: recovery_assistant_meta(
+                execution_graph,
+                execution_id,
+                stage,
+                available_actions,
+            ),
+            is_truncated: Some(false),
+            parent_message_id: None,
+        })
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+fn mark_inflight_execution_interrupted(
+    execution_graph: &mut serde_json::Value,
+    current_call_id: Option<&str>,
+    message: &str,
+) {
+    let execution_id = execution_graph
+        .get("execution_id")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    apply_rejected_tool_result_to_execution_graph_value(
+        execution_graph,
+        execution_id.as_deref(),
+        current_call_id,
+        message,
+    );
+    if let Some(metadata) = execution_graph
+        .get_mut("metadata")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        metadata.insert("status".to_string(), serde_json::json!("interrupted"));
+        metadata.insert("interrupted_reason".to_string(), serde_json::json!(message));
+    }
+}
+
+pub(crate) async fn recover_inflight_local_execution_state(
+    _app: &AppHandle,
+    app_state: &AppState,
+) -> Result<(), String> {
+    let store = app_state.mcp.store.as_ref();
+    let rows = list_execution_graph_runtime_contexts(store)
+        .await
+        .map_err(|err| err.to_string())?;
+
+    for row in rows {
+        let Some(mut persisted) = persistable_inflight_context_from_value(&row.context) else {
+            continue;
+        };
+        let Some(execution_id) = persisted
+            .execution_graph_execution_id
+            .clone()
+            .or_else(|| Some(row.execution_id.clone()))
+        else {
+            continue;
+        };
+
+        match persisted.stage {
+            InFlightExecutionStage::WaitingApproval => {
+                let extended_expiry =
+                    now_unix_ms_i64() as i128 + app_state.mcp.pending_tool_call_ttl_ms();
+                let mut pending_tool_calls =
+                    app_state.mcp.approvals.pending_tool_calls.write().await;
+                for pending in &persisted.pending_approvals {
+                    pending_tool_calls
+                        .entry(pending.approval_token.clone())
+                        .or_insert_with(|| {
+                            pending_tool_call_from_persisted_approval(
+                                pending,
+                                Some(execution_id.as_str()),
+                                extended_expiry,
+                            )
+                        });
+                }
+                drop(pending_tool_calls);
+                if let Some(execution_graph) =
+                    load_execution_graph_snapshot(store, execution_id.as_str())
+                        .await
+                        .map_err(|err| err.to_string())?
+                {
+                    append_recovery_assistant_message_if_missing(
+                        store,
+                        persisted.session_id.as_str(),
+                        &execution_graph,
+                        execution_id.as_str(),
+                        "waiting_approval",
+                        "上次执行停在工具审批节点，当前待审批状态已恢复。",
+                        &["approve", "reject"],
+                    )
+                    .await?;
+                }
+            }
+            InFlightExecutionStage::ToolRunning => {
+                if persisted.recovery_notice_emitted_at_unix_ms.is_some() {
+                    continue;
+                }
+                let Some(mut execution_graph) =
+                    load_execution_graph_snapshot(store, execution_id.as_str())
+                        .await
+                        .map_err(|err| err.to_string())?
+                else {
+                    continue;
+                };
+                let message = "上次执行在工具运行中断开，系统未自动重放；该工具可能已经执行，请确认后继续、重试或放弃。";
+                mark_inflight_execution_interrupted(
+                    &mut execution_graph,
+                    persisted.current_call_id.as_deref(),
+                    message,
+                );
+                persist_execution_graph_snapshot(
+                    store,
+                    &execution_graph,
+                    persisted.session_id.as_str(),
+                    "desktop_local_chat_recovered_interrupt",
+                    persisted.request_id.as_deref(),
+                    Some("interrupted"),
+                )
+                .await
+                .map_err(|err| err.to_string())?;
+                append_recovery_assistant_message_if_missing(
+                    store,
+                    persisted.session_id.as_str(),
+                    &execution_graph,
+                    execution_id.as_str(),
+                    "tool_running_interrupted",
+                    message,
+                    &["continue", "retry", "abandon"],
+                )
+                .await?;
+                persisted.stage = InFlightExecutionStage::Interrupted;
+                persisted.recovery_notice_emitted_at_unix_ms = Some(now_unix_ms_i64());
+                persist_execution_graph_runtime_context(
+                    store,
+                    execution_id.as_str(),
+                    &serde_json::to_value(&persisted).unwrap_or_else(|_| serde_json::json!({})),
+                )
+                .await
+                .map_err(|err| err.to_string())?;
+            }
+            InFlightExecutionStage::DelegatedWorkflowRunning => {
+                if persisted.recovery_notice_emitted_at_unix_ms.is_some() {
+                    continue;
+                }
+                let Some(workflow_run_id) = persisted.workflow_run_id.as_deref() else {
+                    persisted.stage = InFlightExecutionStage::Interrupted;
+                    persisted.recovery_notice_emitted_at_unix_ms = Some(now_unix_ms_i64());
+                    persist_execution_graph_runtime_context(
+                        store,
+                        execution_id.as_str(),
+                        &serde_json::to_value(&persisted).unwrap_or_else(|_| serde_json::json!({})),
+                    )
+                    .await
+                    .map_err(|err| err.to_string())?;
+                    continue;
+                };
+                let detail = crate::modules::workflow::service::get_workflow_run_status(
+                    app_state,
+                    workflow_run_id,
+                )
+                .await?;
+                let workflow_text = match detail.run.status {
+                    crate::modules::workflow::types::WorkflowRunStatus::Completed => {
+                        crate::modules::workflow::service::extract_primary_content(&detail)
+                            .unwrap_or_else(|| {
+                                format!(
+                                    "上次委派的 workflow `{}` 已完成，结果已补回会话。",
+                                    workflow_run_id
+                                )
+                            })
+                    }
+                    crate::modules::workflow::types::WorkflowRunStatus::WaitingApproval => {
+                        format!(
+                            "上次委派的 workflow `{}` 目前停在审批节点，当前状态已恢复。",
+                            workflow_run_id
+                        )
+                    }
+                    crate::modules::workflow::types::WorkflowRunStatus::Running => {
+                        format!(
+                            "上次委派的 workflow `{}` 在应用中断前仍处于运行中，系统未自动重放，请确认后重试或放弃。",
+                            workflow_run_id
+                        )
+                    }
+                    _ => format!(
+                        "上次委派的 workflow `{}` 当前状态为 `{}`。",
+                        workflow_run_id,
+                        detail.run.status.as_str()
+                    ),
+                };
+                append_recovery_assistant_message_if_missing(
+                    store,
+                    persisted.session_id.as_str(),
+                    &serde_json::json!({
+                        "execution_id": execution_id,
+                        "metadata": {
+                            "status": detail.run.status.as_str(),
+                            "workflow_run_id": workflow_run_id,
+                        },
+                        "nodes": [],
+                        "events": [],
+                    }),
+                    execution_id.as_str(),
+                    "delegated_workflow_running",
+                    workflow_text.as_str(),
+                    &["retry", "abandon"],
+                )
+                .await?;
+                persisted.recovery_notice_emitted_at_unix_ms = Some(now_unix_ms_i64());
+                if detail.run.status == crate::modules::workflow::types::WorkflowRunStatus::Running
+                {
+                    persisted.stage = InFlightExecutionStage::Interrupted;
+                    persist_execution_graph_runtime_context(
+                        store,
+                        execution_id.as_str(),
+                        &serde_json::to_value(&persisted).unwrap_or_else(|_| serde_json::json!({})),
+                    )
+                    .await
+                    .map_err(|err| err.to_string())?;
+                } else {
+                    clear_execution_graph_runtime_context(store, Some(execution_id.as_str())).await;
+                }
+            }
+            InFlightExecutionStage::Interrupted => {}
+        }
+    }
+
+    Ok(())
 }
 
 fn canonicalize_tool_name_for_allowed_list(
@@ -3317,6 +3987,7 @@ mod tests {
             max_rounds: 10,
             round: 10,
             trace_id: "trace-max-rounds-1".to_string(),
+            request_id: None,
             execution_policy: mcp_runtime::policy::build_default_local_execution_policy(),
             model_connection: LocalModelConnection {
                 model_id: "deeting-os".to_string(),
@@ -3376,6 +4047,7 @@ mod tests {
             max_rounds: 10,
             round: 4,
             trace_id: "trace-approval-round-1".to_string(),
+            request_id: None,
             execution_policy: mcp_runtime::policy::build_default_local_execution_policy(),
             model_connection: LocalModelConnection {
                 model_id: "deeting-os".to_string(),
@@ -3478,5 +4150,54 @@ mod tests {
             event.get("event_type").and_then(serde_json::Value::as_str)
                 == Some("tool_call.rejected")
         }));
+    }
+
+    #[test]
+    fn serialize_inflight_runtime_context_round_trips_waiting_approval_state() {
+        let value = serialize_inflight_runtime_context(
+            InFlightExecutionStage::WaitingApproval,
+            Some("approval_gate:call-1".to_string()),
+            Some("call-1".to_string()),
+            None,
+            true,
+            vec![PersistedPendingApproval {
+                approval_token: "approval-1".to_string(),
+                tool_id: Some("tool-1".to_string()),
+                tool_name: "browser_open_tab".to_string(),
+                arguments: serde_json::json!({ "url": "https://example.com" }),
+                call_id: Some("call-1".to_string()),
+                execution_token: Some("exec-1".to_string()),
+                session_id: Some("session-1".to_string()),
+                description: Some("open a tab".to_string()),
+                risk_level: Some("MEDIUM".to_string()),
+                risk_reasons: vec!["navigates public internet".to_string()],
+                tool_fingerprint: "fingerprint-1".to_string(),
+                policy_rule_key: Some("policy-1".to_string()),
+                approval_grant_key: None,
+                execution_graph_execution_id: Some("graph-1".to_string()),
+                execution_graph_gate_node_id: Some("approval_gate:call-1".to_string()),
+                execution_graph_tool_node_id: Some("tool_call:call-1".to_string()),
+                created_at_unix_ms: 1,
+                expires_at_unix_ms: 2,
+            }],
+            None,
+            "session-1",
+            "trace-1",
+            Some("request-1"),
+            Some("graph-1"),
+        );
+
+        let parsed =
+            persistable_inflight_context_from_value(&value).expect("parse inflight context");
+        assert_eq!(parsed.stage, InFlightExecutionStage::WaitingApproval);
+        assert_eq!(
+            parsed.execution_graph_execution_id.as_deref(),
+            Some("graph-1")
+        );
+        assert_eq!(parsed.pending_approvals.len(), 1);
+        assert_eq!(
+            parsed.pending_approvals[0].approval_token.as_str(),
+            "approval-1"
+        );
     }
 }

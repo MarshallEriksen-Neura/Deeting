@@ -35,6 +35,7 @@ export function useChatMessaging({ isTauriRuntime }: UseChatMessagingProps) {
     markPendingTakeoverForDeferredSend,
     cancelPendingTakeover,
     cancelActiveRequest,
+    regenerateMessage,
     hasInterruptedGeneration,
     continueInterruptedGeneration,
   } = useChatMessagingService()
@@ -92,6 +93,7 @@ export function useChatMessaging({ isTauriRuntime }: UseChatMessagingProps) {
     markPendingTakeoverForDeferredSend,
     cancelPendingTakeover,
     cancelActiveRequest,
+    regenerateMessage,
     hasInterruptedGeneration,
     continueInterruptedGeneration,
   }

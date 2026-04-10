@@ -340,13 +340,26 @@
       "workflowRouting": "Workflow Routing",
       "workflowRoutingOn": "On",
       "workflowRoutingOff": "Off",
-      "placeholder": "Type a message...",
-      "menu": "Actions",
-      "stop": "Stop",
-      "continue": "Continue",
-      "queueTakeover": "Queue follow-up",
-      "send": "Send"
-    },
+        "placeholder": "Type a message...",
+        "menu": "Actions",
+        "stop": "Stop",
+        "continue": "Continue",
+        "recovery": {
+          "title": "Recovered interrupted execution",
+          "description": {
+            "toolRunningInterrupted": "The previous run stopped while a tool was executing. Confirm the outcome before continuing or retrying.",
+            "delegatedWorkflowRunning": "The previous delegated workflow did not finish attaching to chat. Retry if you want to resume from the current context.",
+            "fallback": "The previous local execution was interrupted. Continue, retry, or abandon this recovery prompt."
+          },
+          "actions": {
+            "continue": "Continue",
+            "retry": "Retry",
+            "abandon": "Abandon"
+          }
+        },
+        "queueTakeover": "Queue follow-up",
+        "send": "Send"
+      },
     "codeBlock": {
       "copy": "Copy code",
       "copied": "Copied",

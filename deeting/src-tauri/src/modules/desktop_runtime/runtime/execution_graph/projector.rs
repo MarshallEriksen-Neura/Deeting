@@ -12,6 +12,7 @@ pub(crate) struct GraphProjectionInput {
     pub(crate) session_id: String,
     pub(crate) route: String,
     pub(crate) plane: String,
+    pub(crate) trace_id: Option<String>,
     pub(crate) request_id: Option<String>,
     pub(crate) root_execution_id: Option<String>,
     pub(crate) response_content: Option<Value>,
@@ -214,6 +215,7 @@ pub(crate) fn project_execution_graph_snapshot(
         events,
         metadata: json!({
             "projection_version": 1,
+            "trace_id": input.trace_id,
             "tool_trace_block_count": input.tool_trace_blocks.len(),
             "has_delegated_execution": input.delegated_execution_tree.is_some(),
         }),
@@ -353,6 +355,14 @@ fn resolve_execution_id(input: &GraphProjectionInput) -> String {
                 .filter(|value| !value.is_empty())
                 .map(|value| format!("local-request:{value}"))
         })
+        .or_else(|| {
+            input
+                .trace_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(|value| format!("local-trace:{value}"))
+        })
         .unwrap_or_else(|| format!("local-session:{}:{}", input.session_id, input.plane))
 }
 
@@ -395,6 +405,7 @@ mod tests {
             session_id: "session-1".to_string(),
             route: "direct".to_string(),
             plane: "response_only".to_string(),
+            trace_id: Some("trace-1".to_string()),
             request_id: Some("req-1".to_string()),
             root_execution_id: None,
             response_content: Some(json!("done")),
@@ -437,6 +448,7 @@ mod tests {
             session_id: "session-1".to_string(),
             route: "direct".to_string(),
             plane: "response_only".to_string(),
+            trace_id: Some("trace-approval".to_string()),
             request_id: None,
             root_execution_id: Some("root-1".to_string()),
             response_content: None,
@@ -474,6 +486,7 @@ mod tests {
             session_id: "session-1".to_string(),
             route: "direct".to_string(),
             plane: "response_only".to_string(),
+            trace_id: Some("trace-blocks".to_string()),
             request_id: None,
             root_execution_id: Some("root-1".to_string()),
             response_content: None,

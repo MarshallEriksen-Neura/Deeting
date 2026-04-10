@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { BrowserModeConfirmationBar } from '@/components/chat/browser-mode/browser-mode-confirmation-bar';
 import { TakeoverPendingBar } from '@/components/chat/takeover/takeover-pending-bar';
+import { RecoveryActionBar } from '@/components/chat/recovery/recovery-action-bar';
 import Image from 'next/image';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Slider } from '@/components/ui/slider';
@@ -32,6 +33,7 @@ import { resolveLeadingTaskAgentMention } from '@/hooks/chat/task-agent-mention'
 import { useBrowserModeStore } from '@/store/browser-mode-store';
 import { useWorkspaceStore } from '@/store/workspace-store';
 import { deriveAssistantActivityState } from '@/lib/chat/assistant-activity';
+import { extractLatestComposerRecoveryPrompt } from '@/lib/chat/recovery';
 
 function parseDesktopConfigBool(raw: string | null | undefined) {
   const normalized = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
@@ -64,6 +66,7 @@ function ControlsContainer() {
   const [knowledgeLoading, setKnowledgeLoading] = useState(false);
   const [knowledgeLoadError, setKnowledgeLoadError] = useState<string | null>(null);
   const [taskAgents, setTaskAgents] = useState<CustomTaskAgentProfile[]>([]);
+  const [dismissedRecoveryMessageIds, setDismissedRecoveryMessageIds] = useState<string[]>([]);
   const [workflowRoutingEnabled, setWorkflowRoutingEnabled] = useState(false);
   const [workflowRoutingLoading, setWorkflowRoutingLoading] = useState(false);
   const [workflowRoutingSaving, setWorkflowRoutingSaving] = useState(false);
@@ -129,6 +132,7 @@ function ControlsContainer() {
     markPendingTakeoverForDeferredSend,
     cancelPendingTakeover,
     cancelActiveRequest,
+    regenerateMessage,
     hasInterruptedGeneration,
     continueInterruptedGeneration,
   } = useChatMessaging({
@@ -148,6 +152,14 @@ function ControlsContainer() {
     }
     return deriveAssistantActivityState([]);
   }, [messages]);
+  const recoveryPrompt = useMemo(() => {
+    const latest = extractLatestComposerRecoveryPrompt(messages);
+    if (!latest) return null;
+    if (dismissedRecoveryMessageIds.includes(latest.messageId)) {
+      return null;
+    }
+    return latest;
+  }, [dismissedRecoveryMessageIds, messages]);
   const isApprovalFlowActive = useMemo(
     () => !isLoading && latestAssistantActivity.isActive,
     [isLoading, latestAssistantActivity.isActive]
@@ -177,11 +189,12 @@ function ControlsContainer() {
   const isApprovalBusy = isApprovalFlowActive && !hasComposerContent;
   const canContinueGeneration = useMemo(
     () =>
+      !recoveryPrompt &&
       !isGenerating &&
       hasInterruptedGeneration &&
       input.trim().length === 0 &&
       attachments.length === 0,
-    [isGenerating, hasInterruptedGeneration, input, attachments.length]
+    [attachments.length, hasInterruptedGeneration, input, isGenerating, recoveryPrompt]
   );
   const sendButtonDisabled = useMemo(() => {
     if (isGenerating) return false;
@@ -487,6 +500,45 @@ function ControlsContainer() {
     }
   }, [isTauriRuntime, workflowRoutingEnabled]);
 
+  useEffect(() => {
+    setDismissedRecoveryMessageIds((previous) =>
+      previous.filter((messageId) => messages.some((message) => message.id === messageId))
+    );
+  }, [messages]);
+
+  const dismissRecoveryPrompt = useCallback((messageId: string | null | undefined) => {
+    if (!messageId) return;
+    setDismissedRecoveryMessageIds((previous) =>
+      previous.includes(messageId) ? previous : [...previous, messageId]
+    );
+  }, []);
+
+  const handleRecoveryContinue = useCallback(() => {
+    if (!recoveryPrompt) return;
+    dismissRecoveryPrompt(recoveryPrompt.messageId);
+    if (hasInterruptedGeneration) {
+      void continueInterruptedGeneration();
+      return;
+    }
+    void regenerateMessage(recoveryPrompt.messageId);
+  }, [
+    continueInterruptedGeneration,
+    dismissRecoveryPrompt,
+    hasInterruptedGeneration,
+    recoveryPrompt,
+    regenerateMessage,
+  ]);
+
+  const handleRecoveryRetry = useCallback(() => {
+    if (!recoveryPrompt) return;
+    dismissRecoveryPrompt(recoveryPrompt.messageId);
+    void regenerateMessage(recoveryPrompt.messageId);
+  }, [dismissRecoveryPrompt, recoveryPrompt, regenerateMessage]);
+
+  const handleRecoveryAbandon = useCallback(() => {
+    dismissRecoveryPrompt(recoveryPrompt?.messageId);
+  }, [dismissRecoveryPrompt, recoveryPrompt?.messageId]);
+
   const handleSendOrCancel = useCallback(() => {
     if (isGenerating) {
       if (hasComposerContent) {
@@ -518,7 +570,14 @@ function ControlsContainer() {
 
       {/* 1. Main Input Area */}
       <div className="relative pt-0.5">
-        <div className="pointer-events-none absolute bottom-full left-0 z-20 mb-2">
+        <div className="pointer-events-none absolute bottom-full left-0 z-20 mb-2 flex flex-col gap-2">
+          <RecoveryActionBar
+            recovery={recoveryPrompt}
+            disabled={isLoading || isApprovalFlowActive}
+            onContinue={handleRecoveryContinue}
+            onRetry={handleRecoveryRetry}
+            onAbandon={handleRecoveryAbandon}
+          />
           <TakeoverPendingBar
             pendingTakeover={pendingTakeover}
             requestedAction={pendingTakeoverRequestedAction}

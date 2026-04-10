@@ -1,5 +1,6 @@
 import type { MessageBlock, ToolResultBlock } from "@/lib/chat/message-protocol"
 import { extractExecutionTreeFromMessage, extractRootExecutionIdFromExecutionTree } from "@/lib/chat/execution-tree"
+import { asExecutionLifecyclePayload, getExecutionLifecycleKind, getExecutionLifecycleTarget } from "@/lib/execution-tree/types"
 
 export type AssistantActivityState = {
   isActive: boolean
@@ -106,18 +107,13 @@ export function deriveAssistantActivityState(
   }
 
   if (ACTIVE_EXECUTION_STATUSES.has(executionStatus)) {
-    const target =
-      executionTree && typeof executionTree.target === "object" && executionTree.target !== null
-        ? (executionTree.target as Record<string, unknown>)
-        : null
+    const payload = asExecutionLifecyclePayload(executionTree)
+    const target = getExecutionLifecycleTarget(payload)
     const targetName =
       typeof target?.name === "string" && target.name.trim().length > 0
         ? target.name.trim()
         : ""
-    const executionKind =
-      typeof executionTree?.execution_kind === "string"
-        ? executionTree.execution_kind.trim()
-        : ""
+    const executionKind = getExecutionLifecycleKind(payload) ?? ""
     const rootExecutionId = extractRootExecutionIdFromExecutionTree(executionTree)
     return {
       isActive: true,
