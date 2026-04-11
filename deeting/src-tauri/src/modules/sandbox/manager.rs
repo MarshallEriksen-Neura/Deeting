@@ -14,15 +14,15 @@ use crate::modules::sandbox::error::SandboxError;
 use crate::modules::sandbox::provider::SandboxProvider;
 use crate::modules::sandbox::types::{
     SandboxBoxLiteStatus, SandboxExecutionProbe, SandboxExecutionProbeStatus, SandboxInstallGuide,
-    SandboxLeaseInfo, SandboxPythonStatus, SandboxReadinessReport, SandboxReadinessStatus,
-    SandboxRunResult, SandboxRuntimeMode, SandboxWslStatus,
+    SandboxLeaseInfo, SandboxReadinessReport, SandboxReadinessStatus, SandboxRunResult,
+    SandboxRuntimeMode, SandboxWslStatus,
 };
 
 #[cfg(target_os = "windows")]
 use crate::modules::sandbox::backend_host::{HostBackendOptions, HostPythonBackend};
 #[cfg(target_os = "windows")]
 use crate::modules::sandbox::backend_wsl::{
-    diagnose_wsl_availability, inspect_wsl_python, WslBackendOptions, WslBoxrunBackend,
+    diagnose_wsl_availability, WslBackendOptions, WslBoxrunBackend,
 };
 #[cfg(target_os = "windows")]
 use crate::modules::sandbox::installer::{install_boxlite_wsl, BoxLiteInstallerConfig};
@@ -182,14 +182,9 @@ impl SandboxRuntimeManager {
         #[cfg(target_os = "windows")]
         {
             let wsl = diagnose_wsl_availability();
-            let python = if wsl.ready {
-                Some(inspect_wsl_python(&self.options.python_bin))
-            } else {
-                None
-            };
             let boxlite_binary_found = boxlite.binary_found;
             let (mut status, mut blocking_reason, mut next_actions) =
-                derive_windows_readiness(runtime_mode, &wsl, python.as_ref(), &boxlite);
+                derive_windows_readiness(runtime_mode, &wsl, &boxlite);
             let execution_probe = if status == SandboxReadinessStatus::Ready {
                 let execution_probe = self.programmatic_execution_probe().await;
                 (status, blocking_reason, next_actions) = refine_ready_status_with_execution_probe(
@@ -209,12 +204,10 @@ impl SandboxRuntimeManager {
                 provider_name,
                 runtime_mode,
                 wsl: Some(wsl),
-                python,
                 boxlite,
                 execution_probe,
                 blocking_reason,
                 can_auto_prepare: status != SandboxReadinessStatus::NeedsWsl
-                    && status != SandboxReadinessStatus::NeedsPython
                     && boxlite_binary_found,
                 next_actions,
             };
@@ -229,7 +222,6 @@ impl SandboxRuntimeManager {
                 provider_name,
                 runtime_mode,
                 wsl: None,
-                python: None,
                 boxlite,
                 execution_probe: SandboxExecutionProbe::default(),
                 blocking_reason: Some(
@@ -307,7 +299,6 @@ impl SandboxRuntimeManager {
 
             let config = BoxLiteInstallerConfig {
                 data_dir: self.options.home_dir.join("sandbox"),
-                python_bin: self.options.python_bin.clone(),
             };
             install_boxlite_wsl(&config).await?;
             return self.prepare().await;
@@ -725,7 +716,7 @@ impl SandboxRuntimeManager {
                     return SandboxExecutionProbe {
                         status: SandboxExecutionProbeStatus::Failed,
                         detail: Some(format!(
-                            "Sandbox bridge is reachable, but a lightweight execution probe failed: {}",
+                            "The BoxLite server is reachable, but a lightweight execution probe failed: {}",
                             err.user_message()
                         )),
                         checked_at_unix_ms,
@@ -737,7 +728,7 @@ impl SandboxRuntimeManager {
         SandboxExecutionProbe {
             status: SandboxExecutionProbeStatus::Failed,
             detail: Some(
-                "Sandbox bridge is reachable, but the lightweight execution probe exhausted its recovery attempts."
+                "The BoxLite server is reachable, but the lightweight execution probe exhausted its recovery attempts."
                     .to_string(),
             ),
             checked_at_unix_ms,
@@ -928,22 +919,14 @@ impl SandboxRuntimeManager {
     async fn boxlite_status(&self) -> SandboxBoxLiteStatus {
         if let Some(provisioner) = self.provisioner.as_ref() {
             let record = provisioner.installation_record();
-            let binary_path = record
-                .as_ref()
-                .map(|record| PathBuf::from(&record.bridge_script_host_path));
             let endpoint = provisioner.endpoint();
             let reachable = provisioner.is_endpoint_reachable().await;
-            let managed_path = provisioner.managed_binary_path();
-            let managed_by_deeting = binary_path
-                .as_ref()
-                .map(|path| path == &managed_path)
-                .unwrap_or(false);
             return SandboxBoxLiteStatus {
                 binary_found: record.is_some(),
-                binary_path: record.map(|record| record.wsl_site_dir),
+                binary_path: record.as_ref().map(|record| record.wsl_binary_path.clone()),
                 endpoint: Some(endpoint),
                 reachable,
-                managed_by_deeting,
+                managed_by_deeting: record.is_some(),
             };
         }
 
@@ -1071,7 +1054,6 @@ fn current_platform() -> &'static str {
 fn derive_windows_readiness(
     runtime_mode: SandboxRuntimeMode,
     wsl: &SandboxWslStatus,
-    python: Option<&SandboxPythonStatus>,
     boxlite: &SandboxBoxLiteStatus,
 ) -> (SandboxReadinessStatus, Option<String>, Vec<String>) {
     if runtime_mode == SandboxRuntimeMode::Sandbox && boxlite.reachable {
@@ -1092,30 +1074,12 @@ fn derive_windows_readiness(
         );
     }
 
-    if let Some(python) = python {
-        if !python.installed || !python.supported {
-            return (
-                SandboxReadinessStatus::NeedsPython,
-                python.detail.clone().or_else(|| {
-                    Some(
-                        "WSL Python 3.10–3.13 is required before BoxLite can be installed."
-                            .to_string(),
-                    )
-                }),
-                vec![
-                    "Install Python 3.10–3.13 inside your WSL distro, then rerun sandbox detection."
-                        .to_string(),
-                ],
-            );
-        }
-    }
-
     if !boxlite.binary_found {
         return (
             SandboxReadinessStatus::NeedsBoxLite,
             Some("BoxLite is not installed in WSL for the Deeting sandbox yet.".to_string()),
             vec![
-                "Install BoxLite from Desktop Sandbox settings, then Deeting will prepare the WSL bridge automatically."
+                "Install BoxLite from Desktop Sandbox settings, then Deeting will prepare the managed BoxLite server automatically."
                     .to_string(),
             ],
         );
@@ -1153,7 +1117,7 @@ fn refine_ready_status_with_execution_probe(
             SandboxReadinessStatus::RepairNeeded,
             execution_probe.detail.or(blocking_reason).or_else(|| {
                 Some(
-                    "Sandbox bridge is reachable, but a lightweight execution probe failed."
+                    "The BoxLite server is reachable, but a lightweight execution probe failed."
                         .to_string(),
                 )
             }),
@@ -1193,20 +1157,6 @@ fn build_install_guide(report: &SandboxReadinessReport) -> SandboxInstallGuide {
                 .and_then(|wsl| wsl.recommended_command.clone())
                 .or_else(|| Some("wsl --install".to_string())),
         },
-        SandboxReadinessStatus::NeedsPython => SandboxInstallGuide {
-            status: report.status,
-            title: "Install Python inside WSL".to_string(),
-            description:
-                "The pinned BoxLite release needs a supported Python runtime inside WSL before installation can continue."
-                    .to_string(),
-            steps: vec![
-                "Open your WSL distro terminal and install Python 3.10–3.13 using that distro's package manager."
-                    .to_string(),
-                "Verify the runtime with `python3 --version` inside WSL, then refresh Desktop Sandbox settings."
-                    .to_string(),
-            ],
-            primary_command: None,
-        },
         SandboxReadinessStatus::NeedsBoxLite => SandboxInstallGuide {
             status: report.status,
             title: "Install BoxLite into WSL".to_string(),
@@ -1215,7 +1165,7 @@ fn build_install_guide(report: &SandboxReadinessReport) -> SandboxInstallGuide {
                     .to_string(),
             steps: vec![
                 "Click Install BoxLite in Desktop Sandbox settings.".to_string(),
-                "Deeting will download the pinned official BoxLite Python wheel, verify its SHA256 checksum, and install it into WSL."
+                "Deeting will download the pinned official BoxLite CLI release, verify its SHA256 checksum, and install the managed BoxLite server into WSL."
                     .to_string(),
             ],
             primary_command: None,
@@ -1227,7 +1177,7 @@ fn build_install_guide(report: &SandboxReadinessReport) -> SandboxInstallGuide {
                 "BoxLite is reachable, but the desktop sandbox session is stale or no longer runnable."
                     .to_string()
             } else {
-                "BoxLite is installed in WSL, but the local sandbox bridge is not reachable."
+                "BoxLite is installed in WSL, but the local BoxLite server is not reachable."
                     .to_string()
             },
             steps: if report.boxlite.reachable {
@@ -1447,7 +1397,7 @@ mod session_name_tests {
     }
 
     #[test]
-    fn derive_windows_readiness_requires_supported_wsl_python() {
+    fn derive_windows_readiness_requires_boxlite_install_when_wsl_is_ready() {
         let (status, reason, actions) = derive_windows_readiness(
             SandboxRuntimeMode::HostFallback,
             &SandboxWslStatus {
@@ -1456,17 +1406,11 @@ mod session_name_tests {
                 detail: None,
                 recommended_command: None,
             },
-            Some(&SandboxPythonStatus {
-                installed: false,
-                abi: None,
-                supported: false,
-                detail: Some("python3 not found".to_string()),
-            }),
             &SandboxBoxLiteStatus::default(),
         );
 
-        assert_eq!(status, SandboxReadinessStatus::NeedsPython);
-        assert!(reason.unwrap().contains("python3"));
+        assert_eq!(status, SandboxReadinessStatus::NeedsBoxLite);
+        assert!(reason.unwrap().contains("BoxLite"));
         assert!(!actions.is_empty());
     }
 
@@ -1483,12 +1427,6 @@ mod session_name_tests {
                 ready: true,
                 detail: None,
                 recommended_command: None,
-            }),
-            python: Some(SandboxPythonStatus {
-                installed: true,
-                abi: Some("cp311".to_string()),
-                supported: true,
-                detail: None,
             }),
             boxlite: SandboxBoxLiteStatus {
                 binary_found: true,
@@ -1522,15 +1460,9 @@ mod session_name_tests {
                 detail: None,
                 recommended_command: None,
             }),
-            python: Some(SandboxPythonStatus {
-                installed: true,
-                abi: Some("cp312".to_string()),
-                supported: true,
-                detail: None,
-            }),
             boxlite: SandboxBoxLiteStatus {
                 binary_found: true,
-                binary_path: Some("/home/timeline/.local/lib/python3.12/site-packages".to_string()),
+                binary_path: Some("/home/timeline/.deeting/sandbox/boxlite/cli/boxlite".to_string()),
                 endpoint: Some("http://127.0.0.1:9090".to_string()),
                 reachable: true,
                 managed_by_deeting: true,
@@ -1538,13 +1470,13 @@ mod session_name_tests {
             execution_probe: SandboxExecutionProbe {
                 status: SandboxExecutionProbeStatus::Failed,
                 detail: Some(
-                    "Sandbox bridge is reachable, but a lightweight execution probe failed."
+                    "The BoxLite server is reachable, but a lightweight execution probe failed."
                         .to_string(),
                 ),
                 checked_at_unix_ms: Some(123),
             },
             blocking_reason: Some(
-                "Sandbox bridge is reachable, but a lightweight execution probe failed."
+                "The BoxLite server is reachable, but a lightweight execution probe failed."
                     .to_string(),
             ),
             next_actions: vec![],

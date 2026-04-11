@@ -39,6 +39,8 @@ export function TaskAgentsClient() {
     agentsError,
     bindingCatalog,
     bindingsLoading,
+    localAssets,
+    assetsLoading,
     modelGroups,
     isLoadingModels,
 
@@ -258,6 +260,8 @@ export function TaskAgentsClient() {
                     modelGroups={modelGroups}
                     bindingCatalog={bindingCatalog}
                     bindingsLoading={bindingsLoading}
+                    localAssets={localAssets}
+                    assetsLoading={assetsLoading}
                     filteredBindingTools={filteredBindingTools}
                     filteredBindingSkills={filteredBindingSkills}
                     toolQuery={toolQuery}

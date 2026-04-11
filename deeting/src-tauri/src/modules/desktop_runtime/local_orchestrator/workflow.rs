@@ -17,8 +17,8 @@ use crate::state::AppState;
 use mcp_core::types::LocalChatInputMessage;
 
 use super::retrieval::{
-    AssetRecallInjectionStep, ContextRetrievalPrefetchStep, PrefetchedRetrievals,
-    SelectedKnowledgeInjectionStep, SemanticMemoryInjectionStep,
+    ContextRetrievalPrefetchStep, PrefetchedRetrievals, SelectedKnowledgeInjectionStep,
+    SemanticMemoryInjectionStep,
 };
 use super::LocalOrchestratorInput;
 
@@ -455,7 +455,6 @@ pub(super) fn build_desktop_local_chat_engine(
         Box::new(ContextRetrievalPrefetchStep),
         Box::new(SemanticMemoryInjectionStep),
         Box::new(SelectedKnowledgeInjectionStep),
-        Box::new(AssetRecallInjectionStep),
         Box::new(RouteSelectionStep),
         Box::new(SkillRecipeInjectionStep),
         Box::new(PromptVariantSelectionStep),
@@ -1105,7 +1104,7 @@ impl LocalWorkflowStep<LocalWorkflowContext> for RouteSelectionStep {
     }
 
     fn depends_on(&self) -> &'static [&'static str] {
-        &["asset_recall_injection"]
+        &["selected_knowledge_injection"]
     }
 
     fn execute<'a>(

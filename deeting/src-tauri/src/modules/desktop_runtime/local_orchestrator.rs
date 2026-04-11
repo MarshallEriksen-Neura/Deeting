@@ -49,7 +49,7 @@ mod workflow;
 use message_utils::{
     build_assistant_meta, build_compare_only_messages, convert_history_message_to_chat_input,
     derive_local_finish_reason, extract_content_text, extract_response_runtime_metrics,
-    extract_saved_asset_ids_from_blocks, extract_summary_text, fallback_prefers_chinese,
+    extract_summary_text, fallback_prefers_chinese,
     latest_tool_error_summary, AssistantMetaMode,
 };
 #[cfg(test)]
@@ -67,7 +67,7 @@ use retrieval::{
     SEMANTIC_MEMORY_SEARCH_LIMIT,
 };
 use workflow::{
-    build_desktop_local_chat_engine, latest_user_message, unix_seconds, LocalWorkflowContext,
+    build_desktop_local_chat_engine, unix_seconds, LocalWorkflowContext,
 };
 #[cfg(test)]
 use workflow::{render_skill_recipe_prompt, status_patch, ContextPatch, LocalStepResult};
@@ -349,11 +349,6 @@ pub async fn execute_local_orchestrated_chat(
         })),
     );
 
-    let latest_user_query = latest_user_message(&ctx.messages)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-        .unwrap_or_default();
     let engine = build_desktop_local_chat_engine()?;
     engine.execute(&mut ctx).await?;
 
@@ -395,7 +390,6 @@ pub async fn execute_local_orchestrated_chat(
     let mut response_text_was_synthesized_from_error = false;
     let render_resolution =
         resolve_response_rendering(app_handle, app_state.mcp.store.as_ref(), &response_json).await;
-    let rendered_asset_ids = extract_saved_asset_ids_from_blocks(&render_resolution.blocks);
     if render_resolution.consumed_content {
         response_text = render_resolution.summary_text.clone().unwrap_or_default();
     }
@@ -614,32 +608,6 @@ pub async fn execute_local_orchestrated_chat(
         })?;
         let persisted_assistant_turn_index = persistence.turn_index;
         assistant_meta = persistence.assistant_meta;
-        if !latest_user_query.is_empty() {
-            for asset_id in &rendered_asset_ids {
-                if let Err(err) = store
-                    .record_asset_execution(Some(&session_id), asset_id, true)
-                    .await
-                {
-                    log::warn!(
-                        "record_asset_execution failed session={} asset_id={} err={}",
-                        session_id,
-                        asset_id,
-                        err
-                    );
-                }
-                if let Err(err) = store
-                    .upsert_asset_query_affinity(&latest_user_query, asset_id)
-                    .await
-                {
-                    log::warn!(
-                        "upsert_asset_query_affinity failed session={} asset_id={} err={}",
-                        session_id,
-                        asset_id,
-                        err
-                    );
-                }
-            }
-        }
         let title_app_state = app_state.clone();
         let title_session_id = session_id.clone();
         tauri::async_runtime::spawn(async move {

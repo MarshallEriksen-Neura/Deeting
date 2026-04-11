@@ -7,39 +7,31 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 #[cfg(target_os = "windows")]
-use crate::modules::sandbox::backend_wsl::{
-    detect_wsl_python_abi, resolve_wsl_home_dir, shell_quote, windows_path_to_wsl,
-};
+use crate::modules::sandbox::backend_wsl::{detect_wsl_arch, resolve_wsl_home_dir, shell_quote, windows_path_to_wsl};
 use crate::modules::sandbox::error::SandboxError;
 #[cfg(target_os = "windows")]
 use crate::utils::configure_background_std_command;
 
-const BOXLITE_VERSION: &str = "0.6.0";
-const BOXLITE_RELEASE_BASE: &str = "https://github.com/boxlite-ai/boxlite/releases/download/v0.6.0";
-const BRIDGE_SCRIPT_NAME: &str = "boxlite_bridge.py";
+const BOXLITE_VERSION: &str = "0.8.2";
+const BOXLITE_RELEASE_BASE: &str =
+    "https://github.com/boxlite-ai/boxlite/releases/download/v0.8.2";
 const INSTALL_RECORD_NAME: &str = "boxlite-installation.json";
-const SUPPORTED_PYTHON_ABIS: [&str; 4] = ["cp310", "cp311", "cp312", "cp313"];
 
 #[derive(Debug, Clone)]
 pub struct BoxLiteInstallerConfig {
     pub data_dir: PathBuf,
-    pub python_bin: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BoxLiteInstallationRecord {
     pub version: String,
-    pub python_bin: String,
-    pub python_abi: String,
     pub asset_name: String,
     pub asset_url: String,
     pub asset_sha256: String,
     pub wsl_home: String,
-    pub wsl_site_dir: String,
-    pub wsl_runtime_home: String,
-    pub wsl_state_dir: String,
-    pub bridge_script_host_path: String,
-    pub bridge_script_wsl_path: String,
+    pub wsl_install_dir: String,
+    pub wsl_binary_path: String,
+    pub wsl_boxlite_home: String,
 }
 
 #[derive(Debug, Clone)]
@@ -63,39 +55,28 @@ pub async fn install_boxlite_wsl(
     {
         fs::create_dir_all(&config.data_dir)?;
 
-        let python_abi = detect_wsl_python_abi(&config.python_bin)?;
-        let release = release_asset_for_python_abi(&python_abi)?;
+        let wsl_arch = detect_wsl_arch()?;
+        let release = release_asset_for_wsl_arch(&wsl_arch)?;
         let downloaded_asset = download_release_asset(&config.data_dir, &release).await?;
-        let bridge_script_host_path = write_bridge_script(&config.data_dir)?;
 
         let wsl_home = resolve_wsl_home_dir()?;
-        let wsl_site_dir = format!("{wsl_home}/.deeting/sandbox/boxlite/site-packages");
-        let wsl_runtime_home = format!("{wsl_home}/.deeting/sandbox/boxlite/runtime-home");
-        let wsl_state_dir = format!("{wsl_home}/.deeting/sandbox/boxlite/state");
-        let wheel_wsl_path = windows_path_to_wsl(&downloaded_asset)?;
-        let bridge_script_wsl_path = windows_path_to_wsl(&bridge_script_host_path)?;
+        let install_root = format!("{wsl_home}/.deeting/sandbox/boxlite");
+        let wsl_install_dir = format!("{install_root}/cli");
+        let wsl_binary_path = format!("{wsl_install_dir}/boxlite");
+        let wsl_boxlite_home = format!("{install_root}/home");
+        let asset_wsl_path = windows_path_to_wsl(&downloaded_asset)?;
 
-        install_wheel_into_wsl(
-            &config.python_bin,
-            &wheel_wsl_path,
-            &wsl_site_dir,
-            &wsl_runtime_home,
-            &wsl_state_dir,
-        )?;
+        install_cli_into_wsl(&asset_wsl_path, &wsl_install_dir, &wsl_binary_path, &wsl_boxlite_home)?;
 
         let record = BoxLiteInstallationRecord {
             version: BOXLITE_VERSION.to_string(),
-            python_bin: config.python_bin.clone(),
-            python_abi: python_abi.clone(),
             asset_name: release.asset_name.to_string(),
             asset_url: release_asset_url(&release),
             asset_sha256: release.sha256.to_string(),
             wsl_home,
-            wsl_site_dir,
-            wsl_runtime_home,
-            wsl_state_dir,
-            bridge_script_host_path: bridge_script_host_path.display().to_string(),
-            bridge_script_wsl_path,
+            wsl_install_dir,
+            wsl_binary_path,
+            wsl_boxlite_home,
         };
         fs::write(
             installation_record_path(&config.data_dir),
@@ -111,45 +92,25 @@ pub fn installation_record_path(data_dir: &Path) -> PathBuf {
     data_dir.join(INSTALL_RECORD_NAME)
 }
 
-pub fn bridge_script_host_path(data_dir: &Path) -> PathBuf {
-    data_dir.join(BRIDGE_SCRIPT_NAME)
-}
-
 pub fn load_installation_record(data_dir: &Path) -> Option<BoxLiteInstallationRecord> {
     let path = installation_record_path(data_dir);
     let bytes = fs::read(path).ok()?;
     serde_json::from_slice(&bytes).ok()
 }
 
-pub fn is_supported_python_abi(python_abi: &str) -> bool {
-    SUPPORTED_PYTHON_ABIS.contains(&python_abi)
-}
-
-pub fn supported_python_abis_label() -> &'static str {
-    "cp310, cp311, cp312, cp313"
-}
-
-fn release_asset_for_python_abi(python_abi: &str) -> Result<BoxLiteReleaseAsset, SandboxError> {
-    let release = match python_abi {
-        "cp310" => BoxLiteReleaseAsset {
-            asset_name: "boxlite-0.6.0-cp310-cp310-manylinux_2_28_x86_64.whl",
-            sha256: "eefc50988d788cd691c64c095d8020e7153922462cc72af807632e0355ad1f18",
+fn release_asset_for_wsl_arch(wsl_arch: &str) -> Result<BoxLiteReleaseAsset, SandboxError> {
+    let release = match wsl_arch {
+        "x86_64" => BoxLiteReleaseAsset {
+            asset_name: "boxlite-cli-v0.8.2-x86_64-unknown-linux-gnu.tar.gz",
+            sha256: "61b8e6ad3356ea06f78e2a2ea958b6595593f55fd63f3bfb770897f35fc038ed",
         },
-        "cp311" => BoxLiteReleaseAsset {
-            asset_name: "boxlite-0.6.0-cp311-cp311-manylinux_2_28_x86_64.whl",
-            sha256: "ba7f50cadc630a20ab46d7255b9d94a3c0b6fb905e37717747e1d9523d0b6b1c",
+        "aarch64" => BoxLiteReleaseAsset {
+            asset_name: "boxlite-cli-v0.8.2-aarch64-unknown-linux-gnu.tar.gz",
+            sha256: "6dbd215c8965968c62ad4ceca7cccf6165a6068ad9188d6fdb9a26fdac6b1b73",
         },
-        "cp312" => BoxLiteReleaseAsset {
-            asset_name: "boxlite-0.6.0-cp312-cp312-manylinux_2_28_x86_64.whl",
-            sha256: "42ea936b0dd692a6550f7e4c5309cd51d86b0b25cf5c1789d58093db3f0409fe",
-        },
-        "cp313" => BoxLiteReleaseAsset {
-            asset_name: "boxlite-0.6.0-cp313-cp313-manylinux_2_28_x86_64.whl",
-            sha256: "53352002d36c73b0652d3c8bb18ae7d09715db6d9f89488505896b53bee972a7",
-        },
-        _ => {
+        other => {
             return Err(SandboxError::Unavailable(format!(
-                "WSL Python ABI {python_abi} is not supported for BoxLite {}. Supported ABIs: cp310, cp311, cp312, cp313",
+                "WSL architecture {other} is not supported for managed BoxLite {} installation.",
                 BOXLITE_VERSION
             )));
         }
@@ -189,33 +150,34 @@ async fn download_release_asset(
     Ok(download_path)
 }
 
-fn write_bridge_script(data_dir: &Path) -> Result<PathBuf, SandboxError> {
-    let path = bridge_script_host_path(data_dir);
-    let contents = include_str!("boxlite_bridge.py");
-    match fs::read_to_string(&path) {
-        Ok(existing) if existing == contents => Ok(path),
-        _ => {
-            fs::write(&path, contents)?;
-            Ok(path)
-        }
-    }
-}
-
 #[cfg(target_os = "windows")]
-fn install_wheel_into_wsl(
-    python_bin: &str,
-    wheel_wsl_path: &str,
-    wsl_site_dir: &str,
-    wsl_runtime_home: &str,
-    wsl_state_dir: &str,
+fn install_cli_into_wsl(
+    asset_wsl_path: &str,
+    wsl_install_dir: &str,
+    wsl_binary_path: &str,
+    wsl_boxlite_home: &str,
 ) -> Result<(), SandboxError> {
     let script = format!(
-        "set -eu; mkdir -p {site} {runtime} {state}; {python} - <<'PY'\nimport os, shutil, zipfile\nwheel={wheel}\nsite={site}\ntmp=site + '.tmp'\nshutil.rmtree(tmp, ignore_errors=True)\nshutil.rmtree(site, ignore_errors=True)\nos.makedirs(tmp, exist_ok=True)\nwith zipfile.ZipFile(wheel) as archive:\n    archive.extractall(tmp)\nos.makedirs(site, exist_ok=True)\nfor name in os.listdir(tmp):\n    shutil.move(os.path.join(tmp, name), os.path.join(site, name))\nshutil.rmtree(tmp, ignore_errors=True)\nPY\nchmod +x {site}/boxlite/runtime/boxlite-shim {site}/boxlite/runtime/boxlite-guest || true",
-        python = shell_quote(python_bin),
-        wheel = shell_quote(wheel_wsl_path),
-        site = shell_quote(wsl_site_dir),
-        runtime = shell_quote(wsl_runtime_home),
-        state = shell_quote(wsl_state_dir),
+        "set -eu; \
+asset={asset}; \
+install_dir={install_dir}; \
+binary_path={binary_path}; \
+boxlite_home={boxlite_home}; \
+tmp_dir=\"$install_dir.tmp\"; \
+rm -rf \"$tmp_dir\"; \
+mkdir -p \"$tmp_dir\" \"$boxlite_home\"; \
+tar -xzf \"$asset\" -C \"$tmp_dir\"; \
+binary=$(find \"$tmp_dir\" -type f -name boxlite | head -n 1); \
+if [ -z \"$binary\" ]; then echo 'boxlite binary not found in archive' >&2; exit 1; fi; \
+rm -rf \"$install_dir\"; \
+mkdir -p \"$install_dir\"; \
+mv \"$binary\" \"$binary_path\"; \
+chmod +x \"$binary_path\"; \
+rm -rf \"$tmp_dir\"",
+        asset = shell_quote(asset_wsl_path),
+        install_dir = shell_quote(wsl_install_dir),
+        binary_path = shell_quote(wsl_binary_path),
+        boxlite_home = shell_quote(wsl_boxlite_home),
     );
     let mut command = std::process::Command::new("wsl.exe");
     configure_background_std_command(&mut command);
@@ -223,12 +185,12 @@ fn install_wheel_into_wsl(
         .args(["--", "bash", "-lc", &script])
         .output()
         .map_err(|err| {
-            SandboxError::Unavailable(format!("failed to install BoxLite into WSL: {err}"))
+            SandboxError::Unavailable(format!("failed to install BoxLite CLI into WSL: {err}"))
         })?;
     if !output.status.success() {
         let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(SandboxError::Unavailable(format!(
-            "failed to install BoxLite into WSL: {detail}"
+            "failed to install BoxLite CLI into WSL: {detail}"
         )));
     }
     Ok(())
@@ -260,16 +222,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn release_asset_supports_known_python_abis() {
+    fn release_asset_supports_known_wsl_architectures() {
         assert_eq!(
-            release_asset_for_python_abi("cp310").unwrap().asset_name,
-            "boxlite-0.6.0-cp310-cp310-manylinux_2_28_x86_64.whl"
+            release_asset_for_wsl_arch("x86_64").unwrap().asset_name,
+            "boxlite-cli-v0.8.2-x86_64-unknown-linux-gnu.tar.gz"
         );
         assert_eq!(
-            release_asset_for_python_abi("cp311").unwrap().asset_name,
-            "boxlite-0.6.0-cp311-cp311-manylinux_2_28_x86_64.whl"
+            release_asset_for_wsl_arch("aarch64").unwrap().asset_name,
+            "boxlite-cli-v0.8.2-aarch64-unknown-linux-gnu.tar.gz"
         );
-        assert!(release_asset_for_python_abi("cp39").is_err());
+        assert!(release_asset_for_wsl_arch("armv7l").is_err());
     }
 
     #[test]

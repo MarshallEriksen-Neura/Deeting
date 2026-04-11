@@ -25,6 +25,7 @@ import {
   type ImportClaudeAgentsResponse,
   type UpsertCustomTaskAgentPayload,
 } from "@/lib/api/custom-task-agents"
+import { listLocalAssets, type LocalAsset } from "@/lib/api/local-assets"
 import { useChatModels } from "@/hooks/use-chat-models"
 import {
   applyTaskAgentImageConfigToModelConfig,
@@ -126,6 +127,15 @@ export function useTaskAgents(t: Translation) {
   } = useSWR<CustomTaskAgentBindingCatalog, Error>(
     isDesktop ? "local-custom-task-agent-binding-catalog" : null,
     () => getCustomTaskAgentBindingCatalog(),
+    { revalidateOnFocus: false, keepPreviousData: true },
+  )
+
+  const {
+    data: localAssets = [],
+    isLoading: assetsLoading,
+  } = useSWR<LocalAsset[], Error>(
+    isDesktop ? "local-custom-task-agent-assets" : null,
+    () => listLocalAssets({ limit: 100, includeArchived: false }),
     { revalidateOnFocus: false, keepPreviousData: true },
   )
 
@@ -398,6 +408,7 @@ export function useTaskAgents(t: Translation) {
         model_config: Object.keys(modelConfig).length > 0 ? modelConfig : null,
         callable_mcp_tool_ids: [...sourceDraft.callable_mcp_tool_ids],
         guidance_skill_ids: [...sourceDraft.guidance_skill_ids],
+        bound_asset_id: sourceDraft.bound_asset_id.trim(),
         tags: parseTagsInput(sourceDraft.tags_input),
         discoverable: sourceDraft.discoverable,
         is_enabled: sourceDraft.is_enabled,
@@ -453,7 +464,8 @@ export function useTaskAgents(t: Translation) {
         draft.model.trim() || draft.provider_model_id.trim() ||
         hasImageConfigValues || hasVoiceConfigValues ||
         draft.model_config_json.trim() || draft.callable_mcp_tool_ids.length ||
-        draft.guidance_skill_ids.length || parseTagsInput(draft.tags_input).length ||
+        draft.guidance_skill_ids.length || draft.bound_asset_id.trim() ||
+        parseTagsInput(draft.tags_input).length ||
         draft.preferred_for_image_generation !== false ||
         draft.discoverable !== true || draft.is_enabled !== true,
       )
@@ -750,6 +762,8 @@ export function useTaskAgents(t: Translation) {
     agentsLoading,
     bindingCatalog,
     bindingsLoading,
+    localAssets,
+    assetsLoading,
     modelGroups,
     isLoadingModels,
 

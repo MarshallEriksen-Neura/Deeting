@@ -19,7 +19,6 @@ export const SandboxRuntimeModeSchema = z.enum([
 export const SandboxReadinessStatusSchema = z.enum([
   "ready",
   "needs_wsl",
-  "needs_python",
   "needs_boxlite",
   "repair_needed",
   "unsupported",
@@ -52,13 +51,6 @@ export const SandboxExecutionProbeSchema = z.object({
   checked_at_unix_ms: z.number().nullable().optional(),
 })
 
-export const SandboxPythonStatusSchema = z.object({
-  installed: z.boolean(),
-  abi: z.string().nullable().optional(),
-  supported: z.boolean(),
-  detail: z.string().nullable().optional(),
-})
-
 export const SandboxReadinessReportSchema = z.object({
   platform: z.string(),
   platform_supported: z.boolean(),
@@ -66,7 +58,6 @@ export const SandboxReadinessReportSchema = z.object({
   provider_name: z.string(),
   runtime_mode: SandboxRuntimeModeSchema,
   wsl: SandboxWslStatusSchema.nullish(),
-  python: SandboxPythonStatusSchema.nullish(),
   boxlite: SandboxBoxLiteStatusSchema,
   execution_probe: SandboxExecutionProbeSchema,
   blocking_reason: z.string().nullable().optional(),
@@ -97,7 +88,6 @@ export async function getLocalSandboxStatus(): Promise<SandboxReadinessReport> {
       provider_name: "disabled",
       runtime_mode: "disabled",
       wsl: null,
-      python: null,
       boxlite: {
         binary_found: false,
         binary_path: null,

@@ -44,7 +44,6 @@ pub enum SandboxRuntimeMode {
 pub enum SandboxReadinessStatus {
     Ready,
     NeedsWsl,
-    NeedsPython,
     #[serde(rename = "needs_boxlite")]
     NeedsBoxLite,
     RepairNeeded,
@@ -65,14 +64,6 @@ pub struct SandboxWslStatus {
     pub ready: bool,
     pub detail: Option<String>,
     pub recommended_command: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct SandboxPythonStatus {
-    pub installed: bool,
-    pub abi: Option<String>,
-    pub supported: bool,
-    pub detail: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -109,7 +100,6 @@ pub struct SandboxReadinessReport {
     pub provider_name: String,
     pub runtime_mode: SandboxRuntimeMode,
     pub wsl: Option<SandboxWslStatus>,
-    pub python: Option<SandboxPythonStatus>,
     pub boxlite: SandboxBoxLiteStatus,
     pub execution_probe: SandboxExecutionProbe,
     pub blocking_reason: Option<String>,

@@ -4,18 +4,18 @@ use std::process::Command;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use base64::Engine;
+use futures_util::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 use crate::modules::sandbox::error::SandboxError;
-use crate::modules::sandbox::installer::{is_supported_python_abi, supported_python_abis_label};
 use crate::modules::sandbox::provider::SandboxProvider;
-use crate::modules::sandbox::types::{
-    SandboxExecutionOutput, SandboxIdentity, SandboxPythonStatus, SandboxWslStatus,
-};
+use crate::modules::sandbox::types::{SandboxExecutionOutput, SandboxIdentity, SandboxWslStatus};
 use crate::utils::configure_background_std_command;
 
 const BOXRUN_API_PREFIX: &str = "v1";
+const BOXLITE_API_PREFIX: &str = "default";
 
 #[derive(Debug, Clone)]
 pub struct WslBackendOptions {
@@ -52,25 +52,135 @@ impl WslBoxrunBackend {
         Ok(Self { client, options })
     }
 
-    async fn get_box(&self, box_id_or_name: &str) -> Result<Option<SandboxIdentity>, SandboxError> {
-        let url = self.url(&format!("/boxes/{box_id_or_name}"));
+    async fn list_boxes(&self) -> Result<Vec<BoxResponse>, SandboxError> {
+        let url = self.url("/boxes");
         let response = self.authorized(self.client.get(url)).send().await?;
-        if response.status().as_u16() == 404 {
-            return Ok(None);
-        }
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             return Err(SandboxError::Internal(format!(
-                "get box failed: status={status} body={body}"
+                "list boxes failed: status={status} body={body}"
             )));
         }
-        let box_resp: BoxResponse = response.json().await?;
-        let sandbox_id = box_resp.id;
-        Ok(Some(SandboxIdentity {
-            sandbox_id,
-            sandbox_name: box_resp.name.unwrap_or_else(|| box_id_or_name.to_string()),
+        let list: ListBoxesResponse = response.json().await?;
+        Ok(list.boxes)
+    }
+
+    async fn get_box(&self, box_id_or_name: &str) -> Result<Option<SandboxIdentity>, SandboxError> {
+        let boxes = self.list_boxes().await?;
+        let found = boxes.into_iter().find(|box_resp| {
+            box_resp.box_id == box_id_or_name
+                || box_resp.name.as_deref() == Some(box_id_or_name)
+        });
+        Ok(found.map(|box_resp| SandboxIdentity {
+            sandbox_id: box_resp.box_id,
+            sandbox_name: box_resp
+                .name
+                .unwrap_or_else(|| box_id_or_name.to_string()),
         }))
+    }
+
+    async fn close_execution_stdin(
+        &self,
+        box_id: &str,
+        execution_id: &str,
+    ) -> Result<(), SandboxError> {
+        let url = self.url(&format!("/boxes/{box_id}/executions/{execution_id}/input"));
+        let response = self
+            .authorized(
+                self.client
+                    .post(url)
+                    .header("X-Close-Stdin", "true")
+                    .body(Vec::new()),
+            )
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        Err(classify_exec_error(status, &body))
+    }
+
+    async fn collect_execution_output(
+        &self,
+        box_id: &str,
+        execution_id: &str,
+    ) -> Result<SandboxExecutionOutput, SandboxError> {
+        let url = self.url(&format!("/boxes/{box_id}/executions/{execution_id}/output"));
+        let response = self
+            .authorized(
+                self.client
+                    .get(url)
+                    .header("Accept", "text/event-stream"),
+            )
+            .send()
+            .await?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(classify_exec_error(status, &body));
+        }
+
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let mut exit_code = -1;
+        let mut error_message = None;
+
+        let mut stream = response.bytes_stream();
+        let mut buffer = String::new();
+        let mut current_event = String::new();
+        let mut current_data = String::new();
+
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|err| SandboxError::Network(err.to_string()))?;
+            buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+            while let Some(newline_pos) = buffer.find('\n') {
+                let line = buffer[..newline_pos].trim_end_matches('\r').to_string();
+                buffer = buffer[newline_pos + 1..].to_string();
+
+                if line.is_empty() {
+                    dispatch_sse_event(
+                        &current_event,
+                        &current_data,
+                        &mut stdout,
+                        &mut stderr,
+                        &mut exit_code,
+                        &mut error_message,
+                    );
+                    current_event.clear();
+                    current_data.clear();
+                } else if let Some(value) = line.strip_prefix("event: ") {
+                    current_event = value.to_string();
+                } else if let Some(value) = line.strip_prefix("data: ") {
+                    if !current_data.is_empty() {
+                        current_data.push('\n');
+                    }
+                    current_data.push_str(value);
+                }
+            }
+        }
+
+        if !current_event.is_empty() || !current_data.is_empty() {
+            dispatch_sse_event(
+                &current_event,
+                &current_data,
+                &mut stdout,
+                &mut stderr,
+                &mut exit_code,
+                &mut error_message,
+            );
+        }
+
+        Ok(SandboxExecutionOutput {
+            stdout,
+            stderr,
+            exit_code,
+            error_message,
+        })
     }
 
     fn url(&self, path: &str) -> String {
@@ -79,9 +189,10 @@ impl WslBoxrunBackend {
 
     fn api_base(&self) -> String {
         format!(
-            "{}/{}",
+            "{}/{}/{}",
             self.options.base_url.trim_end_matches('/'),
-            BOXRUN_API_PREFIX
+            BOXRUN_API_PREFIX,
+            BOXLITE_API_PREFIX
         )
     }
 
@@ -120,14 +231,17 @@ impl SandboxProvider for WslBoxrunBackend {
         let payload = CreateBoxRequest {
             name: Some(box_name.to_string()),
             image: Some(self.options.image.clone()),
-            cpu: self.options.cpus.map(|v| v.to_string()),
-            memory: self.options.memory_mib.map(|v| format!("{v}Mi")),
-            disk: None,
-            cwd: self.options.working_dir.clone(),
+            rootfs_path: None,
+            cpus: self.options.cpus,
+            memory_mib: self.options.memory_mib,
+            disk_size_gb: None,
+            working_dir: self.options.working_dir.clone(),
             env: Option::<HashMap<String, String>>::None,
             entrypoint: None,
             cmd: None,
             user: None,
+            auto_remove: Some(false),
+            detach: Some(true),
         };
 
         let url = self.url("/boxes");
@@ -145,18 +259,18 @@ impl SandboxProvider for WslBoxrunBackend {
         }
 
         let created: BoxResponse = response.json().await?;
-        let sandbox_id = created.id;
         Ok(SandboxIdentity {
-            sandbox_id,
+            sandbox_id: created.box_id,
             sandbox_name: created.name.unwrap_or_else(|| box_name.to_string()),
         })
     }
 
     async fn stop_box(&self, box_id_or_name: &str) -> Result<(), SandboxError> {
-        if self.get_box(box_id_or_name).await?.is_none() {
+        let Some(identity) = self.get_box(box_id_or_name).await? else {
             return Ok(());
-        }
-        let url = self.url(&format!("/boxes/{box_id_or_name}:stop"));
+        };
+
+        let url = self.url(&format!("/boxes/{}/stop", identity.sandbox_id));
         let response = self.authorized(self.client.post(url)).send().await?;
         if response.status().is_success() || response.status().as_u16() == 404 {
             return Ok(());
@@ -180,17 +294,16 @@ impl SandboxProvider for WslBoxrunBackend {
             .ok_or_else(|| SandboxError::NotFound(format!("sandbox {box_id_or_name} not found")))?;
 
         let request = ExecRequest {
-            cmd: vec![
-                self.options.python_bin.clone(),
-                "-c".to_string(),
-                code.to_string(),
-            ],
+            command: self.options.python_bin.clone(),
+            args: vec!["-c".to_string(), code.to_string()],
+            stdin: None,
             env: None,
-            timeout_ms: Some(timeout_seconds.max(1).saturating_mul(1000)),
-            cwd: self.options.working_dir.clone(),
+            timeout_seconds: Some(timeout_seconds.max(1) as f64),
+            working_dir: self.options.working_dir.clone(),
+            tty: false,
         };
 
-        let exec_url = self.url(&format!("/boxes/{}/exec-sync", identity.sandbox_id));
+        let exec_url = self.url(&format!("/boxes/{}/exec", identity.sandbox_id));
         let response = self
             .authorized(self.client.post(exec_url))
             .json(&request)
@@ -199,25 +312,16 @@ impl SandboxProvider for WslBoxrunBackend {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            if status.as_u16() == 409 {
-                return Err(SandboxError::Busy(format!(
-                    "synchronous execution failed: status={status} body={body}"
-                )));
-            }
-            if status.as_u16() == 408 {
-                return Err(SandboxError::Timeout(body));
-            }
             return Err(classify_exec_error(status, &body));
         }
 
-        let exec: SyncExecResponse = response.json().await?;
+        let exec: ExecResponse = response.json().await?;
+        let _ = self
+            .close_execution_stdin(&identity.sandbox_id, &exec.execution_id)
+            .await;
 
-        Ok(SandboxExecutionOutput {
-            stdout: split_output_lines(exec.stdout),
-            stderr: split_output_lines(exec.stderr),
-            exit_code: exec.exit_code,
-            error_message: exec.error,
-        })
+        self.collect_execution_output(&identity.sandbox_id, &exec.execution_id)
+            .await
     }
 }
 
@@ -291,58 +395,29 @@ pub fn resolve_wsl_home_dir() -> Result<String, SandboxError> {
     Ok(home)
 }
 
-pub fn detect_wsl_python_abi(python_bin: &str) -> Result<String, SandboxError> {
+pub fn detect_wsl_arch() -> Result<String, SandboxError> {
     ensure_wsl_available()?;
-    let script = format!(
-        "{} -c 'import sys; print(f\"cp{{sys.version_info.major}}{{sys.version_info.minor}}\")'",
-        shell_quote(python_bin)
-    );
     let mut command = Command::new("wsl.exe");
     configure_background_std_command(&mut command);
     let output = command
-        .args(["--", "sh", "-lc", &script])
+        .args(["--", "sh", "-lc", "uname -m"])
         .output()
-        .map_err(|err| SandboxError::Unavailable(format!("failed to inspect WSL python: {err}")))?;
+        .map_err(|err| {
+            SandboxError::Unavailable(format!("failed to inspect WSL architecture: {err}"))
+        })?;
     if !output.status.success() {
         let detail = decode_wsl_text(&output.stderr);
         return Err(SandboxError::Unavailable(format!(
-            "WSL python3 is required for BoxLite installation: {detail}"
+            "failed to inspect WSL architecture: {detail}"
         )));
     }
-    let abi = decode_wsl_text(&output.stdout);
-    if abi.is_empty() {
+    let arch = decode_wsl_text(&output.stdout);
+    if arch.is_empty() {
         return Err(SandboxError::Unavailable(
-            "failed to detect the WSL Python ABI".to_string(),
+            "failed to detect the WSL architecture".to_string(),
         ));
     }
-    Ok(abi)
-}
-
-pub fn inspect_wsl_python(python_bin: &str) -> SandboxPythonStatus {
-    match detect_wsl_python_abi(python_bin) {
-        Ok(abi) => {
-            let supported = is_supported_python_abi(&abi);
-            SandboxPythonStatus {
-                installed: true,
-                abi: Some(abi.clone()),
-                supported,
-                detail: if supported {
-                    None
-                } else {
-                    Some(format!(
-                        "WSL Python ABI {abi} is not supported for the pinned BoxLite release. Supported ABIs: {}",
-                        supported_python_abis_label()
-                    ))
-                },
-            }
-        }
-        Err(err) => SandboxPythonStatus {
-            installed: false,
-            abi: None,
-            supported: false,
-            detail: Some(err.to_string()),
-        },
-    }
+    Ok(arch)
 }
 
 pub fn windows_path_to_wsl(path: &Path) -> Result<String, SandboxError> {
@@ -419,13 +494,15 @@ struct CreateBoxRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     image: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    cpu: Option<String>,
+    rootfs_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    memory: Option<String>,
+    cpus: Option<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    disk: Option<String>,
+    memory_mib: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    cwd: Option<String>,
+    disk_size_gb: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    working_dir: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     env: Option<HashMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -434,37 +511,55 @@ struct CreateBoxRequest {
     cmd: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     user: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    auto_remove: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    detach: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ListBoxesResponse {
+    boxes: Vec<BoxResponse>,
 }
 
 #[derive(Debug, Deserialize)]
 struct BoxResponse {
-    id: String,
+    box_id: String,
     name: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 struct ExecRequest {
-    cmd: Vec<String>,
+    command: String,
+    #[serde(default)]
+    args: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stdin: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     env: Option<HashMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    timeout_ms: Option<u64>,
+    timeout_seconds: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    cwd: Option<String>,
+    working_dir: Option<String>,
+    #[serde(default)]
+    tty: bool,
 }
 
 #[derive(Debug, Deserialize)]
-struct SyncExecResponse {
-    stdout: String,
-    stderr: String,
-    exit_code: i32,
-    error: Option<String>,
+struct ExecResponse {
+    execution_id: String,
 }
 
 fn classify_exec_error(status: reqwest::StatusCode, body: &str) -> SandboxError {
-    let detail = format!("synchronous execution failed: status={status} body={body}");
+    let detail = format!("execution failed: status={status} body={body}");
     if status.as_u16() == 404 || missing_box_detail(body) {
         return SandboxError::NotFound(detail);
+    }
+    if status.as_u16() == 409 {
+        return SandboxError::Busy(detail);
+    }
+    if status.as_u16() == 408 {
+        return SandboxError::Timeout(detail);
     }
     SandboxError::Internal(detail)
 }
@@ -476,10 +571,62 @@ fn missing_box_detail(body: &str) -> bool {
         || lowered.contains("no such box")
 }
 
+fn dispatch_sse_event(
+    event: &str,
+    data: &str,
+    stdout: &mut Vec<String>,
+    stderr: &mut Vec<String>,
+    exit_code: &mut i32,
+    error_message: &mut Option<String>,
+) {
+    if data.is_empty() {
+        return;
+    }
+
+    match event {
+        "stdout" => {
+            if let Some(decoded) = extract_and_decode_b64(data) {
+                stdout.extend(split_output_lines(decoded));
+            }
+        }
+        "stderr" => {
+            if let Some(decoded) = extract_and_decode_b64(data) {
+                stderr.extend(split_output_lines(decoded));
+            }
+        }
+        "exit" => {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(data) {
+                *exit_code = parsed
+                    .get("exit_code")
+                    .and_then(|value| value.as_i64())
+                    .unwrap_or(-1) as i32;
+                *error_message = parsed
+                    .get("error")
+                    .and_then(|value| value.as_str())
+                    .map(|value| value.to_string());
+            }
+        }
+        "error" => {
+            *error_message = Some(data.to_string());
+        }
+        _ => {}
+    }
+}
+
+fn extract_and_decode_b64(data: &str) -> Option<String> {
+    let parsed: serde_json::Value = serde_json::from_str(data).ok()?;
+    let encoded = parsed.get("data")?.as_str()?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(encoded.trim())
+        .ok()?;
+    String::from_utf8(bytes).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        classify_exec_error, decode_wsl_text, normalize_windows_path_for_wsl, SandboxError,
+        classify_exec_error, decode_wsl_text, dispatch_sse_event, normalize_windows_path_for_wsl,
+        SandboxError,
     };
 
     #[test]
@@ -498,24 +645,52 @@ mod tests {
     }
 
     #[test]
+    fn classify_exec_error_maps_conflict_to_busy() {
+        let err = classify_exec_error(reqwest::StatusCode::CONFLICT, "already running");
+        assert!(matches!(err, SandboxError::Busy(_)));
+    }
+
+    #[test]
     fn normalize_windows_path_replaces_backslashes() {
         assert_eq!(
             normalize_windows_path_for_wsl(
-                r"C:\Users\timeline\AppData\Roaming\com.deeting.app\boxrun\sandbox\downloads\boxlite.whl"
+                r"C:\Users\timeline\AppData\Roaming\com.deeting.app\boxrun\sandbox\downloads\boxlite.tar.gz"
             ),
-            "C:/Users/timeline/AppData/Roaming/com.deeting.app/boxrun/sandbox/downloads/boxlite.whl"
+            "C:/Users/timeline/AppData/Roaming/com.deeting.app/boxrun/sandbox/downloads/boxlite.tar.gz"
         );
     }
 
     #[test]
     fn decode_wsl_text_supports_utf16le_output() {
-        let utf16: Vec<u8> = "wslpath: C:/Users/timeline/boxlite.whl"
+        let utf16: Vec<u8> = "wslpath: C:/Users/timeline/boxlite.tar.gz"
             .encode_utf16()
             .flat_map(|unit| unit.to_le_bytes())
             .collect();
         assert_eq!(
             decode_wsl_text(&utf16),
-            "wslpath: C:/Users/timeline/boxlite.whl"
+            "wslpath: C:/Users/timeline/boxlite.tar.gz"
         );
+    }
+
+    #[test]
+    fn dispatch_sse_event_decodes_stdout_payloads() {
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let mut exit_code = -1;
+        let mut error_message = None;
+
+        dispatch_sse_event(
+            "stdout",
+            r#"{"data":"SGVsbG8K"}"#,
+            &mut stdout,
+            &mut stderr,
+            &mut exit_code,
+            &mut error_message,
+        );
+
+        assert_eq!(stdout, vec!["Hello".to_string()]);
+        assert!(stderr.is_empty());
+        assert_eq!(exit_code, -1);
+        assert!(error_message.is_none());
     }
 }

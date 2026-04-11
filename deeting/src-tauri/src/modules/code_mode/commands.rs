@@ -552,7 +552,6 @@ fn build_sandbox_blocked_response(
 fn sandbox_status_error_code(status: SandboxReadinessStatus) -> &'static str {
     match status {
         SandboxReadinessStatus::NeedsWsl => "SANDBOX_NEEDS_WSL",
-        SandboxReadinessStatus::NeedsPython => "SANDBOX_NEEDS_PYTHON",
         SandboxReadinessStatus::NeedsBoxLite => "SANDBOX_NEEDS_BOXLITE",
         SandboxReadinessStatus::RepairNeeded => "SANDBOX_REPAIR_REQUIRED",
         SandboxReadinessStatus::Unsupported => "SANDBOX_UNSUPPORTED_PLATFORM",

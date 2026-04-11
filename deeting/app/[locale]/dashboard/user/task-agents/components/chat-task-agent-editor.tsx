@@ -5,6 +5,7 @@ import {
 } from "lucide-react"
 
 import type { ModelGroup } from "@/lib/api/models"
+import type { LocalAsset } from "@/lib/api/local-assets"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -60,6 +61,8 @@ type ChatTaskAgentEditorProps = {
   modelGroups: ModelGroup[]
   bindingCatalog: CustomTaskAgentBindingCatalog
   bindingsLoading: boolean
+  localAssets: LocalAsset[]
+  assetsLoading: boolean
   filteredBindingTools: CustomTaskAgentBindingCatalog["mcp_tools"]
   filteredBindingSkills: CustomTaskAgentBindingCatalog["guidance_skills"]
   toolQuery: string
@@ -107,6 +110,8 @@ export function ChatTaskAgentEditor({
   modelGroups,
   bindingCatalog,
   bindingsLoading,
+  localAssets,
+  assetsLoading,
   filteredBindingTools,
   filteredBindingSkills,
   toolQuery,
@@ -121,6 +126,9 @@ export function ChatTaskAgentEditor({
   setShowSelectedSkillsOnly,
   toggleBinding,
 }: ChatTaskAgentEditorProps) {
+  const bindableAssets = localAssets.filter(
+    (asset) => asset.asset_kind === "html_asset" && !asset.is_archived,
+  )
   return (
     <>
       <TabsContent value="config" className="space-y-6">
@@ -263,6 +271,82 @@ export function ChatTaskAgentEditor({
           title={t("bindings.title")}
           description={t("bindings.description")}
         />
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="space-y-1">
+              <p className="font-medium text-[var(--foreground)]">{t("bindings.assetTitle")}</p>
+              <p className="text-sm text-[var(--muted)]">{t("bindings.assetDescription")}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary">{draft.bound_asset_id ? 1 : 0}</Badge>
+              {draft.bound_asset_id ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => updateDraft("bound_asset_id", "")}
+                >
+                  {t("bindings.clearAsset")}
+                </Button>
+              ) : null}
+            </div>
+          </div>
+          <ScrollArea className="h-[240px] pr-4">
+            <div className="space-y-3">
+              {assetsLoading ? (
+                Array.from({ length: 3 }).map((_, index) => (
+                  <div
+                    key={`asset-skeleton-${index}`}
+                    className="space-y-2 rounded-xl border border-white/10 p-3"
+                  >
+                    <Skeleton className="h-4 w-1/2" />
+                    <Skeleton className="h-3 w-full" />
+                  </div>
+                ))
+              ) : bindableAssets.length === 0 ? (
+                <p className="text-sm text-[var(--muted)]">{t("bindings.noAssets")}</p>
+              ) : (
+                bindableAssets.map((asset) => {
+                    const isSelected = draft.bound_asset_id === asset.asset_id
+                    return (
+                      <button
+                        key={asset.asset_id}
+                        type="button"
+                        onClick={() =>
+                          updateDraft("bound_asset_id", isSelected ? "" : asset.asset_id)
+                        }
+                        className={cn(
+                          "w-full rounded-xl border p-3 text-left transition-colors",
+                          isSelected
+                            ? "border-emerald-500/40 bg-emerald-500/10"
+                            : "border-white/10 bg-transparent hover:bg-white/[0.03]",
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-sm font-medium text-[var(--foreground)]">
+                                {asset.title}
+                              </span>
+                              {isSelected ? (
+                                <Badge variant="secondary">{t("bindings.assetBound")}</Badge>
+                              ) : null}
+                            </div>
+                            <p className="text-sm text-[var(--muted)]">
+                              {asset.summary || asset.render_hint || asset.asset_id}
+                            </p>
+                            <p className="text-xs text-[var(--muted)]">
+                              {asset.asset_id}
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+                    )
+                  })
+              )}
+            </div>
+          </ScrollArea>
+        </div>
         <div className="grid gap-5 xl:grid-cols-2">
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
             <div className="mb-4 flex items-center justify-between gap-3">
@@ -464,6 +548,12 @@ export function ChatTaskAgentEditor({
                 <dt className="text-[var(--muted)]">{t("editor.fields.boundSkills")}</dt>
                 <dd className="text-right text-[var(--foreground)]">
                   {draft.guidance_skill_ids.length}
+                </dd>
+              </div>
+              <div className="flex items-start justify-between gap-3">
+                <dt className="text-[var(--muted)]">{t("editor.fields.boundAsset")}</dt>
+                <dd className="max-w-[180px] text-right text-[var(--foreground)]">
+                  {draft.bound_asset_id || "none"}
                 </dd>
               </div>
               <div className="flex items-start justify-between gap-3">

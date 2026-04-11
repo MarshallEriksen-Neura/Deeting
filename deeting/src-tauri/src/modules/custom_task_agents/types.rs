@@ -43,6 +43,8 @@ pub struct CustomTaskAgentProfile {
     pub callable_mcp_tool_ids: Vec<String>,
     pub guidance_skill_ids: Vec<String>,
     pub callable_skill_action_refs: Vec<CustomTaskAgentSkillActionRef>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bound_asset_id: Option<String>,
     pub tags: Vec<String>,
     pub discoverable: bool,
     pub is_enabled: bool,
@@ -75,6 +77,8 @@ pub struct CreateCustomTaskAgentRequest {
     pub guidance_skill_ids: Vec<String>,
     #[serde(default)]
     pub callable_skill_action_refs: Vec<CustomTaskAgentSkillActionRef>,
+    #[serde(default)]
+    pub bound_asset_id: Option<String>,
     pub tags: Option<Vec<String>>,
     pub discoverable: Option<bool>,
     pub is_enabled: Option<bool>,
@@ -98,6 +102,7 @@ pub struct UpdateCustomTaskAgentRequest {
     #[serde(alias = "bound_skill_ids")]
     pub guidance_skill_ids: Option<Vec<String>>,
     pub callable_skill_action_refs: Option<Vec<CustomTaskAgentSkillActionRef>>,
+    pub bound_asset_id: Option<String>,
     pub tags: Option<Vec<String>>,
     pub discoverable: Option<bool>,
     pub is_enabled: Option<bool>,

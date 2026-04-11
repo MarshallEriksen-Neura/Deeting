@@ -1,4 +1,4 @@
-//! BoxLite WSL bridge provisioning layer.
+//! Official BoxLite CLI provisioning layer for Windows + WSL.
 
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -10,9 +10,7 @@ use tokio::sync::Mutex;
 #[cfg(target_os = "windows")]
 use crate::modules::sandbox::backend_wsl::shell_quote;
 use crate::modules::sandbox::error::SandboxError;
-use crate::modules::sandbox::installer::{
-    bridge_script_host_path, load_installation_record, BoxLiteInstallationRecord,
-};
+use crate::modules::sandbox::installer::{load_installation_record, BoxLiteInstallationRecord};
 use crate::utils::configure_background_tokio_command;
 
 const BOXLITE_DEFAULT_PORT: u16 = 9090;
@@ -23,7 +21,6 @@ const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone)]
 pub struct BoxLiteConfig {
-    pub binary_path: Option<PathBuf>,
     pub port: u16,
     pub data_dir: PathBuf,
 }
@@ -32,7 +29,6 @@ impl BoxLiteConfig {
     pub fn from_home_dir(home_dir: &std::path::Path) -> Self {
         let data_dir = home_dir.join("sandbox");
         Self {
-            binary_path: None,
             port: BOXLITE_DEFAULT_PORT,
             data_dir,
         }
@@ -59,15 +55,11 @@ impl BoxLiteProvisioner {
 
     pub fn resolve_binary(&self) -> Option<PathBuf> {
         self.installation_record()
-            .map(|record| PathBuf::from(record.bridge_script_host_path))
+            .map(|record| PathBuf::from(record.wsl_binary_path))
     }
 
     pub fn endpoint(&self) -> String {
         self.config.endpoint()
-    }
-
-    pub fn managed_binary_path(&self) -> PathBuf {
-        bridge_script_host_path(&self.config.data_dir)
     }
 
     pub fn installation_record(&self) -> Option<BoxLiteInstallationRecord> {
@@ -88,14 +80,15 @@ impl BoxLiteProvisioner {
         }
 
         let record = self.installation_record().ok_or_else(|| {
-            SandboxError::Unavailable(format!(
+            SandboxError::Unavailable(
                 "BoxLite is not installed yet. Install it from Settings before preparing the sandbox."
-            ))
+                    .to_string(),
+            )
         })?;
 
         log::info!(
-            "starting BoxLite bridge from {} on port {}",
-            record.bridge_script_wsl_path,
+            "starting official BoxLite server from {} on port {}",
+            record.wsl_binary_path,
             self.config.port
         );
 
@@ -109,7 +102,7 @@ impl BoxLiteProvisioner {
             })?;
         }
 
-        let launch_script = build_bridge_launch_command(&record, self.config.port);
+        let launch_script = build_server_launch_command(&record, self.config.port);
         let mut command = tokio::process::Command::new("wsl.exe");
         configure_background_tokio_command(&mut command);
         let child = command
@@ -121,8 +114,8 @@ impl BoxLiteProvisioner {
             .spawn()
             .map_err(|e| {
                 SandboxError::Unavailable(format!(
-                    "failed to start the WSL BoxLite bridge from {}: {}",
-                    record.bridge_script_wsl_path, e
+                    "failed to start the BoxLite server from {}: {}",
+                    record.wsl_binary_path, e
                 ))
             })?;
 
@@ -142,15 +135,6 @@ impl BoxLiteProvisioner {
         for attempt in 0..HEALTH_CHECK_RETRIES {
             if tokio::time::Instant::now() >= deadline {
                 break;
-            }
-
-            {
-                let guard = self.child.lock().await;
-                if let Some(ref child) = *guard {
-                    if let Some(ref id) = child.id() {
-                        let _ = id; // process still alive
-                    }
-                }
             }
 
             if probe_endpoint(endpoint).await.is_ok() {
@@ -200,7 +184,7 @@ async fn probe_endpoint(base_url: &str) -> Result<(), SandboxError> {
         .build()
         .map_err(|e| SandboxError::Internal(e.to_string()))?;
 
-    let url = format!("{}/v1/boxes", base_url.trim_end_matches('/'));
+    let url = format!("{}/v1/default/boxes", base_url.trim_end_matches('/'));
     let response = client.get(&url).send().await?;
     let status = response.status();
     if status.is_success() || status.as_u16() == 401 || status.as_u16() == 403 {
@@ -213,20 +197,17 @@ async fn probe_endpoint(base_url: &str) -> Result<(), SandboxError> {
 }
 
 #[cfg(target_os = "windows")]
-fn build_bridge_launch_command(record: &BoxLiteInstallationRecord, port: u16) -> String {
+fn build_server_launch_command(record: &BoxLiteInstallationRecord, port: u16) -> String {
     format!(
-        "set -eu; export PYTHONPATH={site}; exec {python} {bridge} --port {port} --runtime-home {runtime} --state-dir {state}",
-        site = shell_quote(&record.wsl_site_dir),
-        python = shell_quote(&record.python_bin),
-        bridge = shell_quote(&record.bridge_script_wsl_path),
-        runtime = shell_quote(&record.wsl_runtime_home),
-        state = shell_quote(&record.wsl_state_dir),
+        "set -eu; exec {binary} --home {home} serve --host 127.0.0.1 --port {port}",
+        binary = shell_quote(&record.wsl_binary_path),
+        home = shell_quote(&record.wsl_boxlite_home),
         port = port,
     )
 }
 
 #[cfg(not(target_os = "windows"))]
-fn build_bridge_launch_command(_record: &BoxLiteInstallationRecord, _port: u16) -> String {
+fn build_server_launch_command(_record: &BoxLiteInstallationRecord, _port: u16) -> String {
     String::new()
 }
 
@@ -238,7 +219,6 @@ mod tests {
     #[test]
     fn config_endpoint_uses_port() {
         let config = BoxLiteConfig {
-            binary_path: None,
             port: 3030,
             data_dir: PathBuf::from("/tmp"),
         };

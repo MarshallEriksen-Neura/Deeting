@@ -20,6 +20,8 @@ pub(crate) async fn create_custom_task_agent_service(
         validate_guidance_skill_ids(app_state, &payload.guidance_skill_ids).await?;
     payload.callable_skill_action_refs =
         validate_callable_skill_action_refs(app_state, &payload.callable_skill_action_refs).await?;
+    payload.bound_asset_id = validate_bound_asset_id(app_state, payload.bound_asset_id.as_deref())
+        .await?;
 
     let profile = create_custom_task_agent_inner(app_state.mcp.store.as_ref(), payload)
         .await
@@ -44,6 +46,10 @@ pub(crate) async fn update_custom_task_agent_service(
     if let Some(callable_skill_action_refs) = payload.callable_skill_action_refs.as_ref() {
         payload.callable_skill_action_refs =
             Some(validate_callable_skill_action_refs(app_state, callable_skill_action_refs).await?);
+    }
+    if payload.bound_asset_id.is_some() {
+        payload.bound_asset_id =
+            validate_bound_asset_id(app_state, payload.bound_asset_id.as_deref()).await?;
     }
 
     let profile = update_custom_task_agent_inner(app_state.mcp.store.as_ref(), agent_id, payload)
@@ -114,4 +120,39 @@ async fn validate_guidance_skill_ids(
         normalized.push(trimmed.to_string());
     }
     Ok(normalized)
+}
+
+async fn validate_bound_asset_id(
+    app_state: &AppState,
+    bound_asset_id: Option<&str>,
+) -> Result<Option<String>, String> {
+    let Some(asset_id) = bound_asset_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+    else {
+        return Ok(None);
+    };
+
+    let Some(record) = app_state
+        .mcp
+        .store
+        .get_local_asset_record(&asset_id)
+        .await
+        .map_err(|err| err.to_string())?
+    else {
+        return Err(format!("local asset '{}' not found", asset_id));
+    };
+
+    if record.is_archived || !record.status.eq_ignore_ascii_case("active") {
+        return Err(format!("local asset '{}' is unavailable", asset_id));
+    }
+    if !record.asset_kind.eq_ignore_ascii_case("html_asset") {
+        return Err(format!(
+            "local asset '{}' is not a bindable html asset",
+            asset_id
+        ));
+    }
+
+    Ok(Some(asset_id))
 }

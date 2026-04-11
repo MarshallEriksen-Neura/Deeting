@@ -167,6 +167,7 @@ mod tests {
             callable_mcp_tool_ids: Vec::new(),
             guidance_skill_ids: Vec::new(),
             callable_skill_action_refs: Vec::new(),
+            bound_asset_id: None,
             tags: Vec::new(),
             discoverable: true,
             is_enabled,

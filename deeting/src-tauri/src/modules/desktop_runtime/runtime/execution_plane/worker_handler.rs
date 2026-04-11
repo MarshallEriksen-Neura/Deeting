@@ -21,6 +21,7 @@ use crate::modules::desktop_runtime::runtime::{
     project_execution_graph_snapshot, select_worker_custom_task_agent,
     serialize_inflight_runtime_context, GraphProjectionInput, InFlightExecutionStage,
 };
+use crate::modules::render_runtime::resolve_response_rendering;
 use crate::modules::workflow::service as workflow_service;
 use crate::modules::workflow::types::{
     QuickWorkflowRequest, QuickWorkflowResult, WorkflowRunStatus,
@@ -746,12 +747,13 @@ fn build_delegated_execution_session(
                 "callable_skill_action_refs": result.callable_skill_action_refs,
                 "render_blocks": render_blocks,
             });
-            let tool_trace_blocks = build_local_tool_trace_blocks(&[json!({
+            let mut tool_trace_blocks = build_local_tool_trace_blocks(&[json!({
                 "id": format!("delegated-agent-{}", profile.id),
                 "name": format!("custom_task_agent/{}", profile.name),
                 "status": "success",
                 "result": payload.clone(),
             })]);
+            tool_trace_blocks.extend(extract_auto_display_render_blocks(&render_blocks));
             let primary_child = build_primary_child_execution_record(
                 execution_id.as_str(),
                 &profile,
@@ -1046,14 +1048,21 @@ fn build_custom_task_agent_render_blocks(
     let app_state = app_state.clone();
     let app_handle = app_handle.clone();
     Box::pin(async move {
+        let mut blocks = build_bound_asset_render_blocks(
+            &app_handle,
+            &app_state,
+            &profile,
+            &result,
+        )
+        .await;
         if result.invocation_kind == CustomTaskAgentInvocationKind::ImageGeneration {
             let outputs =
                 persist_custom_task_agent_image_outputs(&app_handle, &app_state, &result).await;
             if outputs.is_empty() {
-                return Vec::new();
+                return blocks;
             }
             let preview = outputs.first().cloned().unwrap_or_else(|| json!({}));
-            return vec![json!({
+            blocks.push(json!({
                 "view_type": "image.result",
                 "title": format!("{} Image Result", profile.name),
                 "payload": {
@@ -1068,18 +1077,19 @@ fn build_custom_task_agent_render_blocks(
                     "invocationKind": result.invocation_kind.as_str(),
                     "providerModelId": result.provider_model_id,
                 }
-            })];
+            }));
+            return blocks;
         }
 
         if result.invocation_kind == CustomTaskAgentInvocationKind::TextToSpeech {
             let Some(payload) = result.raw.as_ref() else {
-                return Vec::new();
+                return blocks;
             };
             let Some(audio_payload) = serde_json::from_value(payload.clone()).ok() else {
-                return Vec::new();
+                return blocks;
             };
             let title = format!("{} Audio Result", profile.name);
-            return vec![build_audio_result_block(
+            blocks.push(build_audio_result_block(
                 profile.id.as_str(),
                 Some(title.as_str()),
                 &audio_payload,
@@ -1089,11 +1099,101 @@ fn build_custom_task_agent_render_blocks(
                     "invocationKind": result.invocation_kind.as_str(),
                     "providerModelId": result.provider_model_id,
                 })),
-            )];
+            ));
+            return blocks;
         }
 
-        Vec::new()
+        blocks
     })
+}
+
+async fn build_bound_asset_render_blocks(
+    app_handle: &AppHandle,
+    app_state: &AppState,
+    profile: &CustomTaskAgentProfile,
+    result: &CustomTaskAgentPreviewResponse,
+) -> Vec<Value> {
+    let Some(asset_id) = profile
+        .bound_asset_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Vec::new();
+    };
+
+    let Some(record) = app_state
+        .mcp
+        .store
+        .get_local_asset_record(asset_id)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return Vec::new();
+    };
+
+    if record.is_archived
+        || !record.status.eq_ignore_ascii_case("active")
+        || !record.asset_kind.eq_ignore_ascii_case("html_asset")
+    {
+        return Vec::new();
+    }
+
+    let render_data = record
+        .latest_render_data_json
+        .as_deref()
+        .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+        .unwrap_or_else(|| json!({}));
+    let summary = result
+        .content
+        .trim()
+        .to_string();
+    let response_json = json!({
+        "summary": if summary.is_empty() {
+            record.summary.clone().unwrap_or_else(|| record.title.clone())
+        } else {
+            summary
+        },
+        "render": {
+            "asset_id": record.asset_id.clone(),
+            "hint": record.render_hint.clone().unwrap_or_else(|| record.title.clone()),
+            "data": render_data,
+        }
+    });
+    let mut blocks =
+        resolve_response_rendering(app_handle, app_state.mcp.store.as_ref(), &response_json)
+            .await
+            .blocks;
+
+    for block in &mut blocks {
+        if let Some(metadata) = block.get_mut("metadata").and_then(Value::as_object_mut) {
+            metadata.insert("auto_display".to_string(), json!(true));
+            metadata.insert("agentId".to_string(), json!(profile.id.clone()));
+            metadata.insert("agentName".to_string(), json!(profile.name.clone()));
+            metadata.insert(
+                "invocationKind".to_string(),
+                json!(result.invocation_kind.as_str()),
+            );
+            metadata.insert("bound_asset_id".to_string(), json!(record.asset_id.clone()));
+        }
+    }
+
+    blocks
+}
+
+fn extract_auto_display_render_blocks(render_blocks: &[Value]) -> Vec<Value> {
+    render_blocks
+        .iter()
+        .filter(|block| {
+            block.get("metadata")
+                .and_then(Value::as_object)
+                .and_then(|metadata| metadata.get("auto_display"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .cloned()
+        .collect()
 }
 
 #[cfg(test)]

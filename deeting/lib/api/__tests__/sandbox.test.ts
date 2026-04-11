@@ -37,22 +37,16 @@ describe("sandbox api", () => {
     expect(mockInvoke).not.toHaveBeenCalled()
   })
 
-  it("parses needs_python readiness reports", async () => {
+  it("parses needs_boxlite readiness reports", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
     mockInvoke.mockResolvedValueOnce({
       platform: "windows",
       platform_supported: true,
-      status: "needs_python",
+      status: "needs_boxlite",
       provider_name: "host-python",
       runtime_mode: "host_fallback",
       wsl: { installed: true, ready: true },
-      python: {
-        installed: false,
-        abi: null,
-        supported: false,
-        detail: "python3 not found",
-      },
       boxlite: {
         binary_found: false,
         binary_path: null,
@@ -65,15 +59,15 @@ describe("sandbox api", () => {
         detail: "Sandbox is not ready yet.",
         checked_at_unix_ms: null,
       },
-      blocking_reason: "python3 not found",
-      next_actions: ["Install Python inside WSL"],
+      blocking_reason: "BoxLite is not installed in WSL for the Deeting sandbox yet.",
+      next_actions: ["Install BoxLite from Desktop Sandbox settings"],
       can_auto_prepare: false,
     } as unknown)
 
     const result = await getLocalSandboxStatus()
 
-    expect(result.status).toBe("needs_python")
-    expect(result.python?.supported).toBe(false)
+    expect(result.status).toBe("needs_boxlite")
+    expect(result.boxlite.binary_found).toBe(false)
   })
 
   it("calls tauri sandbox commands when desktop runtime is active", async () => {
@@ -87,7 +81,6 @@ describe("sandbox api", () => {
         provider_name: "boxlite",
         runtime_mode: "sandbox",
         wsl: { installed: true, ready: true },
-        python: { installed: true, abi: "cp311", supported: true, detail: null },
         boxlite: {
           binary_found: true,
           binary_path: "C:/Users/test/.deeting/sandbox/boxlite.exe",
@@ -111,10 +104,9 @@ describe("sandbox api", () => {
         provider_name: "host-python",
         runtime_mode: "host_fallback",
         wsl: { installed: true, ready: true },
-        python: { installed: true, abi: "cp311", supported: true, detail: null },
         boxlite: {
           binary_found: true,
-          binary_path: "/home/test/.deeting/sandbox/boxlite/site-packages",
+          binary_path: "/home/test/.deeting/sandbox/boxlite/cli/boxlite",
           endpoint: "http://127.0.0.1:4318",
           reachable: false,
           managed_by_deeting: true,
@@ -124,7 +116,7 @@ describe("sandbox api", () => {
           detail: "Sandbox execution probe skipped.",
           checked_at_unix_ms: 124,
         },
-        blocking_reason: "BoxLite was installed in WSL, but the bridge is still starting.",
+        blocking_reason: "BoxLite was installed in WSL, but the managed BoxLite server is still starting.",
         next_actions: ["Try Prepare"],
         can_auto_prepare: true,
       } as unknown)
@@ -135,7 +127,6 @@ describe("sandbox api", () => {
         provider_name: "host-python",
         runtime_mode: "host_fallback",
         wsl: { installed: true, ready: true },
-        python: { installed: true, abi: "cp311", supported: true, detail: null },
         boxlite: {
           binary_found: true,
           binary_path: "C:/Users/test/.deeting/sandbox/boxlite.exe",
@@ -159,7 +150,6 @@ describe("sandbox api", () => {
         provider_name: "boxlite",
         runtime_mode: "sandbox",
         wsl: { installed: true, ready: true },
-        python: { installed: true, abi: "cp311", supported: true, detail: null },
         boxlite: {
           binary_found: true,
           binary_path: "C:/Users/test/.deeting/sandbox/boxlite.exe",
@@ -183,7 +173,6 @@ describe("sandbox api", () => {
         provider_name: "boxlite",
         runtime_mode: "sandbox",
         wsl: { installed: true, ready: true },
-        python: { installed: true, abi: "cp311", supported: true, detail: null },
         boxlite: {
           binary_found: true,
           binary_path: "C:/Users/test/.deeting/sandbox/boxlite.exe",

@@ -1,13 +1,8 @@
 use super::resolve_asset_registry_bundle_dir;
 use super::types::{LocalAssetRecord, SaveLocalAssetManifest, SaveLocalAssetRequest};
 use crate::modules::desktop_runtime::runtime::search_feedback::{
-    compute_feedback_boost, historical_affinity_from_asset_rows, query_affinity_from_asset_rows,
-    SearchFeedbackContext,
+    historical_affinity_from_asset_rows, query_affinity_from_asset_rows, SearchFeedbackContext,
 };
-use crate::modules::desktop_runtime::runtime::search_ranking::{
-    asset_score_key, bm25_asset_match_scores, normalize_score_map, reciprocal_rank_fusion,
-};
-use crate::modules::desktop_runtime::runtime::should_run_semantic_recall;
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::store::McpStore;
 use crate::state::AppState;
@@ -18,18 +13,9 @@ use std::path::Path;
 use tauri::Manager;
 use time::OffsetDateTime;
 
-#[derive(Debug, Clone)]
-pub(crate) struct LocalAssetRecallMatch {
-    pub record: LocalAssetRecord,
-    pub match_hints: Vec<String>,
-    pub props_hint: Vec<String>,
-    pub output_example: Option<Value>,
-    pub score: i32,
-}
-
 pub(crate) async fn save_local_asset<R: tauri::Runtime>(
     app_handle: &tauri::AppHandle<R>,
-    app_state: &AppState,
+    _app_state: &AppState,
     store: &McpStore,
     request: SaveLocalAssetRequest,
 ) -> Result<LocalAssetRecord, McpError> {
@@ -72,148 +58,10 @@ pub(crate) async fn save_local_asset<R: tauri::Runtime>(
     };
 
     store.upsert_local_asset_record(&record).await?;
-    if let Err(err) = sync_local_asset_memory_index(app_state, &record).await {
-        log::warn!(
-            "sync_local_asset_memory_index failed asset_id={} err={}",
-            record.asset_id,
-            err
-        );
-    }
     store
         .get_local_asset_record(&prepared.asset_id)
         .await?
         .ok_or_else(|| McpError::Storage("saved local asset could not be reloaded".to_string()))
-}
-
-#[allow(dead_code)]
-pub(crate) async fn find_best_local_asset_match(
-    app_state: &AppState,
-    session_id: Option<&str>,
-    query: &str,
-) -> Result<Option<LocalAssetRecallMatch>, McpError> {
-    find_best_local_asset_match_with_query_vector(app_state, session_id, query, None).await
-}
-
-pub(crate) async fn find_best_local_asset_match_with_query_vector(
-    app_state: &AppState,
-    session_id: Option<&str>,
-    query: &str,
-    query_vector: Option<Vec<f32>>,
-) -> Result<Option<LocalAssetRecallMatch>, McpError> {
-    let store = app_state.mcp.store.as_ref();
-    let normalized_query = normalize_match_text(query);
-    if normalized_query.is_empty() {
-        return Ok(None);
-    }
-
-    let assets = store.list_active_local_assets_by_kind("html_asset").await?;
-    if assets.is_empty() {
-        return Ok(None);
-    }
-
-    let lexical_documents = assets
-        .iter()
-        .map(local_asset_record_to_search_document)
-        .collect::<Vec<_>>();
-    let bm25 = normalize_score_map(bm25_asset_match_scores(
-        &normalized_query,
-        &lexical_documents,
-    ));
-    let feedback_context =
-        build_local_asset_feedback_context(store, &normalized_query, session_id).await;
-    let query_affinity_targets = feedback_context
-        .query_affinity
-        .iter()
-        .map(|item| item.target_name.trim().to_ascii_lowercase())
-        .filter(|value| !value.is_empty())
-        .collect::<BTreeSet<_>>();
-    if bm25.is_empty() && query_affinity_targets.is_empty() {
-        return Ok(None);
-    }
-    let feedback = normalize_score_map(
-        assets
-            .iter()
-            .filter_map(|record| {
-                let key = record.asset_id.trim().to_ascii_lowercase();
-                if key.is_empty() {
-                    return None;
-                }
-                let boost = compute_feedback_boost(&record.asset_id, &feedback_context);
-                (boost.score > 0.0).then_some((key, boost.score))
-            })
-            .collect::<std::collections::HashMap<_, _>>(),
-    );
-    let semantic_limit = assets.len().clamp(8, 64);
-    let semantic_vector = if let Some(vector) = query_vector {
-        Some(vector)
-    } else if should_run_semantic_recall(&normalized_query) {
-        app_state
-            .providers
-            .embedding
-            .embed_text(&normalized_query)
-            .await
-            .ok()
-    } else {
-        None
-    };
-    let semantic = if let Some(vector) = semantic_vector {
-        match app_state
-            .memory
-            .service
-            .search_assets(vector, semantic_limit, Some("html_asset"))
-            .await
-        {
-            Ok(rows) => normalize_score_map(
-                rows.into_iter()
-                    .enumerate()
-                    .filter_map(|(index, row)| {
-                        let key = asset_score_key(&row)?;
-                        Some((key, 1.0 / (index as f64 + 1.0)))
-                    })
-                    .collect::<std::collections::HashMap<_, _>>(),
-            ),
-            Err(err) => {
-                log::warn!("local_asset_semantic_search_failed err={}", err);
-                std::collections::HashMap::new()
-            }
-        }
-    } else {
-        std::collections::HashMap::new()
-    };
-    let fused = reciprocal_rank_fusion(&[&bm25, &semantic, &feedback]);
-    let mut best: Option<LocalAssetRecallMatch> = None;
-
-    for record in assets {
-        let match_hints = parse_string_list_json(record.match_hints_json.as_deref());
-        let props_hint = parse_string_list_json(record.props_hint_json.as_deref());
-        let output_example = parse_value_json(record.output_example_json.as_deref());
-        let key = record.asset_id.trim().to_ascii_lowercase();
-        let score = fused.get(&key).copied().unwrap_or(0.0);
-        if score <= 0.0 {
-            continue;
-        }
-        if !asset_candidate_has_grounded_recall_support(&key, &bm25, &query_affinity_targets) {
-            continue;
-        }
-
-        let candidate = LocalAssetRecallMatch {
-            record,
-            match_hints,
-            props_hint,
-            output_example,
-            score: (score * 1000.0).round() as i32,
-        };
-
-        let replace = best
-            .as_ref()
-            .map(|current| candidate.score > current.score)
-            .unwrap_or(true);
-        if replace {
-            best = Some(candidate);
-        }
-    }
-
-    Ok(best.filter(|matched| matched.score >= 120))
 }
 
 #[allow(dead_code)]
@@ -224,7 +72,7 @@ pub(crate) async fn register_render_assets_for_assistant_message(
     meta_info: Option<&Value>,
 ) -> Result<usize, McpError> {
     let blocks = meta_info
-        .and_then(|value| value.get("blocks"))
+        .and_then(|value: &Value| value.get("blocks"))
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
@@ -625,8 +473,10 @@ fn render_asset_record_from_block(
     let snapshot_html = payload
         .get("snapshot_html")
         .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())?
+        .and_then(|value| {
+            let trimmed = value.trim();
+            (!trimmed.is_empty()).then_some(trimmed)
+        })?
         .to_string();
     let refresh_spec = payload.get("refresh_spec").cloned();
     if refresh_spec.is_none() {
@@ -637,41 +487,49 @@ fn render_asset_record_from_block(
     let title = block
         .get("title")
         .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+        .and_then(|value| {
+            let trimmed = value.trim();
+            (!trimmed.is_empty()).then_some(trimmed)
+        })
         .or_else(|| {
             metadata
                 .and_then(|value| value.get("render_hint"))
                 .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
+                .and_then(|value| {
+                    let trimmed = value.trim();
+                    (!trimmed.is_empty()).then_some(trimmed)
+                })
         })
         .unwrap_or("Rendered Asset")
         .to_string();
     let render_hint = payload
         .get("render_hint")
         .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string);
+        .and_then(|value| {
+            let trimmed = value.trim();
+            (!trimmed.is_empty()).then_some(trimmed.to_string())
+        });
     let template_id = metadata
         .and_then(|value| value.get("template_id"))
         .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string);
+        .and_then(|value| {
+            let trimmed = value.trim();
+            (!trimmed.is_empty()).then_some(trimmed.to_string())
+        });
     let template_version = metadata
         .and_then(|value| value.get("template_version"))
         .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string);
+        .and_then(|value| {
+            let trimmed = value.trim();
+            (!trimmed.is_empty()).then_some(trimmed.to_string())
+        });
     let summary = payload
         .get("summary")
         .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string);
+        .and_then(|value| {
+            let trimmed = value.trim();
+            (!trimmed.is_empty()).then_some(trimmed.to_string())
+        });
     let render_data_json = payload
         .get("render_data")
         .or_else(|| payload.get("initial_data"))
@@ -680,9 +538,10 @@ fn render_asset_record_from_block(
     let source_block_id = block
         .get("id")
         .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string);
+        .and_then(|value| {
+            let trimmed = value.trim();
+            (!trimmed.is_empty()).then_some(trimmed.to_string())
+        });
     let asset_id = derive_asset_id(
         session_id,
         turn_index,

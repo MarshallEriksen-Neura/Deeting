@@ -34,26 +34,33 @@ use inflight::{
     load_suspended_chat_tool_execution_for_resume, now_unix_ms_i64,
     pending_tool_call_from_persisted_approval, persist_running_tool_execution_runtime,
     persist_suspended_execution_graph_runtime, persistable_inflight_context_from_value,
-    runtime_state_from_persisted_context,
 };
 pub(crate) use inflight::{
     list_canonical_pending_local_approval_snapshots,
     materialize_pending_local_approval_from_runtime_context, serialize_inflight_runtime_context,
-    InFlightExecutionStage, PersistedChatToolRuntimeContext, PersistedInFlightExecutionContext,
-    PersistedPendingApproval,
+    InFlightExecutionStage,
 };
+#[cfg(test)]
+use inflight::{
+    runtime_state_from_persisted_context, PersistedChatToolRuntimeContext,
+    PersistedInFlightExecutionContext, PersistedPendingApproval,
+};
+use recovery::extract_resume_response_text;
+#[cfg(test)]
 use recovery::{
     attach_execution_graph_to_response,
     build_local_chat_resume_continuation_blocks, build_persisted_resume_assistant_blocks,
-    build_persisted_resume_assistant_meta, extract_resume_response_text,
+    build_persisted_resume_assistant_meta,
     mark_inflight_execution_interrupted, persist_resumed_local_chat_assistant_message,
 };
 pub(crate) use recovery::{
     recover_inflight_local_execution_state, resume_suspended_chat_tool_execution_after_approval,
 };
+use replay::finalize_tool_round;
+#[cfg(test)]
 use replay::{
     build_structured_tool_replay_messages, derive_capability_update_from_tool_call_meta,
-    finalize_tool_round, serialize_tool_replay_content,
+    serialize_tool_replay_content,
 };
 pub(crate) use suspended::SuspendedChatToolExecution;
 pub(crate) use tool_meta::apply_rejected_tool_result_to_execution_graph_value;

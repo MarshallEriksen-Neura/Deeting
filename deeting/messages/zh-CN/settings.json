@@ -244,7 +244,6 @@
         "status": {
           "ready": "已就绪",
           "needs_wsl": "需要 WSL",
-          "needs_python": "需要 Python",
           "needs_boxlite": "需要 BoxLite",
           "repair_needed": "需要修复",
           "unsupported": "暂不支持"

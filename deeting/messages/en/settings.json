@@ -244,7 +244,6 @@
         "status": {
           "ready": "Ready",
           "needs_wsl": "Needs WSL",
-          "needs_python": "Needs Python",
           "needs_boxlite": "Needs BoxLite",
           "repair_needed": "Needs repair",
           "unsupported": "Unsupported"

@@ -1580,6 +1580,7 @@ Goal: Produce a useful output
                 callable_mcp_tool_ids: vec![],
                 guidance_skill_ids: vec![],
                 callable_skill_action_refs: vec![],
+                bound_asset_id: None,
                 tags: None,
                 discoverable: Some(true),
                 is_enabled: Some(true),

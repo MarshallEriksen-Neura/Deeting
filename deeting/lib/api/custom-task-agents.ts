@@ -38,6 +38,7 @@ export const CustomTaskAgentProfileSchema = z.object({
       }),
     )
     .default([]),
+  bound_asset_id: z.string().nullish(),
   tags: z.array(z.string()).default([]),
   discoverable: z.boolean(),
   is_enabled: z.boolean(),
@@ -180,6 +181,7 @@ export interface UpsertCustomTaskAgentPayload {
     skill_id: string
     action_id: string
   }>
+  bound_asset_id?: string | null
   tags?: string[]
   discoverable?: boolean
   is_enabled?: boolean

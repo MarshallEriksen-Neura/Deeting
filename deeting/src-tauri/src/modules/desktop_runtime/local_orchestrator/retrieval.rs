@@ -7,7 +7,6 @@ use super::workflow::{
     status_patch, ContextPatch, LocalStepResult, LocalWorkflowContext, LocalWorkflowStep,
     StepResult,
 };
-use crate::modules::asset_registry::service::find_best_local_asset_match_with_query_vector;
 use crate::modules::desktop_runtime::runtime::search_ranking::reciprocal_rank_fusion;
 use crate::modules::desktop_runtime::runtime::{
     build_runtime_discovery_bundle_with_runtime_query_vector, should_run_semantic_recall,
@@ -23,13 +22,11 @@ use crate::modules::memory::types::{
 pub(super) struct ContextRetrievalPrefetchStep;
 pub(super) struct SemanticMemoryInjectionStep;
 pub(super) struct SelectedKnowledgeInjectionStep;
-pub(super) struct AssetRecallInjectionStep;
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct PrefetchedRetrievals {
     pub(super) semantic_memory: Option<SemanticMemoryPrefetchResult>,
     pub(super) selected_knowledge: Option<SelectedKnowledgePrefetchResult>,
-    pub(super) asset_recall: Option<AssetRecallPrefetchResult>,
 }
 
 #[derive(Debug, Clone)]
@@ -41,12 +38,6 @@ pub(super) struct SemanticMemoryPrefetchResult {
 #[derive(Debug, Clone)]
 pub(super) struct SelectedKnowledgePrefetchResult {
     system_message: Option<String>,
-    status_meta: Value,
-}
-
-#[derive(Debug, Clone)]
-pub(super) struct AssetRecallPrefetchResult {
-    system_message: String,
     status_meta: Value,
 }
 
@@ -108,15 +99,12 @@ impl LocalWorkflowStep<LocalWorkflowContext> for ContextRetrievalPrefetchStep {
                 knowledge_query.as_deref(),
                 query_vector.clone(),
             );
-            let asset_recall_fut =
-                prefetch_asset_recall(ctx, &latest_user_query, query_vector.clone());
             let runtime_discovery_fut =
                 prefetch_runtime_discovery(ctx, &latest_user_query, query_vector);
 
-            let (semantic_memory, selected_knowledge, asset_recall, runtime_discovery) = tokio::join!(
+            let (semantic_memory, selected_knowledge, runtime_discovery) = tokio::join!(
                 semantic_memory_fut,
                 selected_knowledge_fut,
-                asset_recall_fut,
                 runtime_discovery_fut,
             );
 
@@ -124,13 +112,12 @@ impl LocalWorkflowStep<LocalWorkflowContext> for ContextRetrievalPrefetchStep {
             if let Some(patch) = request_query_patch {
                 result = result.with_patch(patch);
             }
-            result = result.with_patch(ContextPatch::SetPrefetchedRetrievals(
-                PrefetchedRetrievals {
-                    semantic_memory: Some(semantic_memory?),
-                    selected_knowledge,
-                    asset_recall,
-                },
-            ));
+                result = result.with_patch(ContextPatch::SetPrefetchedRetrievals(
+                    PrefetchedRetrievals {
+                        semantic_memory: Some(semantic_memory?),
+                        selected_knowledge,
+                    },
+                ));
             if let Some(bundle) = runtime_discovery {
                 result = result.with_patch(ContextPatch::SetRuntimeDiscovery(Some(bundle)));
             }
@@ -201,37 +188,6 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SelectedKnowledgeInjectionStep 
                 "knowledge.context.loaded",
                 Some(result.status_meta),
             )))
-        })
-    }
-}
-
-impl LocalWorkflowStep<LocalWorkflowContext> for AssetRecallInjectionStep {
-    fn name(&self) -> &'static str {
-        "asset_recall_injection"
-    }
-
-    fn depends_on(&self) -> &'static [&'static str] {
-        &["context_retrieval_prefetch"]
-    }
-
-    fn execute<'a>(
-        &'a self,
-        ctx: &'a mut LocalWorkflowContext,
-    ) -> BoxFuture<'a, Result<LocalStepResult, String>> {
-        Box::pin(async move {
-            let Some(result) = ctx.prefetched_retrievals.asset_recall.clone() else {
-                return Ok(StepResult::skipped());
-            };
-
-            Ok(StepResult::success()
-                .with_system_message(result.system_message)
-                .with_patch(status_patch(
-                    "remember",
-                    Some("asset_recall"),
-                    "success",
-                    "asset.matched",
-                    Some(result.status_meta),
-                )))
         })
     }
 }
@@ -940,82 +896,4 @@ fn compact_knowledge_snippet(content: &str, max_chars: usize) -> String {
 
     let compact = normalized.chars().take(max_chars).collect::<String>();
     format!("{}...", compact)
-}
-
-async fn prefetch_asset_recall(
-    ctx: &LocalWorkflowContext,
-    latest_user_query: &str,
-    query_vector: Option<Vec<f32>>,
-) -> Option<AssetRecallPrefetchResult> {
-    if latest_user_query.trim().is_empty() {
-        return None;
-    }
-
-    let matched = match find_best_local_asset_match_with_query_vector(
-        &ctx.app_state,
-        Some(ctx.session_id.as_str()),
-        latest_user_query,
-        query_vector,
-    )
-    .await
-    {
-        Ok(value) => value,
-        Err(err) => {
-            log::warn!(
-                "asset_recall_lookup_failed session={} err={}",
-                ctx.session_id,
-                err
-            );
-            None
-        }
-    }?;
-
-    let render_hint = matched
-        .record
-        .render_hint
-        .clone()
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| matched.record.title.clone());
-    let output_shape = matched
-        .output_example
-        .as_ref()
-        .map(|value| serde_json::to_string_pretty(value).unwrap_or_else(|_| "{}".to_string()))
-        .unwrap_or_else(|| "{}".to_string());
-    let props_hint = if matched.props_hint.is_empty() {
-        "[]".to_string()
-    } else {
-        serde_json::to_string(&matched.props_hint).unwrap_or_else(|_| "[]".to_string())
-    };
-    let match_hints = if matched.match_hints.is_empty() {
-        "[]".to_string()
-    } else {
-        serde_json::to_string(&matched.match_hints).unwrap_or_else(|_| "[]".to_string())
-    };
-    let data_mode = matched
-        .record
-        .data_mode
-        .clone()
-        .unwrap_or_else(|| "ai_data".to_string());
-    let matched_asset_id = matched.record.asset_id.clone();
-    let matched_title = matched.record.title.clone();
-    let matched_record_data_mode = matched.record.data_mode.clone();
-
-    Some(AssetRecallPrefetchResult {
-        system_message: format!(
-            "## Reusable HTML Asset Match\nA saved local HTML asset has been matched for this request. Reuse the matched asset instead of generating new HTML, CSS, JS, templates, or iframe markup.\n\nMatched asset:\n- asset_id: {asset_id}\n- title: {title}\n- render_hint: {render_hint}\n- data_mode: {data_mode}\n- match_hints: {match_hints}\n- props_hint: {props_hint}\n- output_example:\n{output_shape}\n\nResponse contract:\n- Return a top-level JSON object with optional `summary` and a `render` object.\n- Set `render.asset_id` to `{asset_id}`.\n- Set `render.hint` to `{render_hint}`.\n- Put the asset input data in `render.data`.\n- Do not generate new HTML.\n- If `data_mode` is `ai_data`, fill `render.data` using the same field shape as `output_example`.\n- If `data_mode` is `self_fetch`, only return the extracted props needed by the asset in `render.data`.\n\nExample:\n{{\n  \"summary\": \"short user-facing summary\",\n  \"render\": {{\n    \"asset_id\": \"{asset_id}\",\n    \"hint\": \"{render_hint}\",\n    \"data\": {output_shape}\n  }}\n}}",
-            asset_id = matched_asset_id.as_str(),
-            title = matched_title.as_str(),
-            render_hint = render_hint.as_str(),
-            data_mode = data_mode.as_str(),
-            match_hints = match_hints.as_str(),
-            props_hint = props_hint.as_str(),
-            output_shape = output_shape.as_str(),
-        ),
-        status_meta: json!({
-            "asset_id": matched_asset_id,
-            "title": matched_title,
-            "score": matched.score,
-            "data_mode": matched_record_data_mode,
-        }),
-    })
 }

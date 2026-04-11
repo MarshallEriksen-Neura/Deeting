@@ -26,6 +26,7 @@ pub(crate) async fn ensure_schema(store: &McpStore) -> Result<(), McpError> {
           model_config TEXT,
           bound_tool_ids TEXT NOT NULL DEFAULT '[]',
           bound_skill_ids TEXT NOT NULL DEFAULT '[]',
+          bound_asset_id TEXT,
           tags TEXT NOT NULL DEFAULT '[]',
           discoverable INTEGER NOT NULL DEFAULT 1,
           is_enabled INTEGER NOT NULL DEFAULT 1,
@@ -58,6 +59,7 @@ pub(crate) async fn ensure_schema(store: &McpStore) -> Result<(), McpError> {
         "INTEGER NOT NULL DEFAULT 0",
     )
     .await?;
+    ensure_column(store, "bound_asset_id", "TEXT").await?;
     ensure_column(store, "source_kind", "TEXT").await?;
     ensure_column(store, "source_path", "TEXT").await?;
     ensure_column(store, "source_repo", "TEXT").await?;
@@ -95,7 +97,7 @@ pub(crate) async fn list_custom_task_agents(
     let rows = sqlx::query(&format!(
         r#"
         SELECT id, name, description, task_prompt, invocation_kind, preferred_for_image_generation, model_config,
-               callable_mcp_tool_ids, guidance_skill_ids, callable_skill_action_refs, tags,
+               callable_mcp_tool_ids, guidance_skill_ids, callable_skill_action_refs, bound_asset_id, tags,
                discoverable, is_enabled, is_deleted, source_kind, source_path, source_repo, source_ref, source_hash,
                created_at, updated_at
         FROM {TABLE_NAME}
@@ -124,7 +126,7 @@ pub(crate) async fn get_custom_task_agent(
     let row = sqlx::query(&format!(
         r#"
         SELECT id, name, description, task_prompt, invocation_kind, preferred_for_image_generation, model_config,
-               callable_mcp_tool_ids, guidance_skill_ids, callable_skill_action_refs, tags,
+               callable_mcp_tool_ids, guidance_skill_ids, callable_skill_action_refs, bound_asset_id, tags,
                discoverable, is_enabled, is_deleted, source_kind, source_path, source_repo, source_ref, source_hash,
                created_at, updated_at
         FROM {TABLE_NAME}
@@ -161,14 +163,15 @@ pub(crate) async fn create_custom_task_agent(
     let guidance_skill_ids = normalize_string_list(payload.guidance_skill_ids);
     let callable_skill_action_refs =
         normalize_skill_action_refs(payload.callable_skill_action_refs);
+    let bound_asset_id = normalize_optional_string(payload.bound_asset_id.as_deref());
 
     sqlx::query(&format!(
         r#"
         INSERT INTO {TABLE_NAME}
           (id, name, description, task_prompt, invocation_kind, preferred_for_image_generation, model_config, callable_mcp_tool_ids,
-           guidance_skill_ids, callable_skill_action_refs, tags, discoverable, is_enabled, is_deleted,
+           guidance_skill_ids, callable_skill_action_refs, bound_asset_id, tags, discoverable, is_enabled, is_deleted,
            source_kind, source_path, source_repo, source_ref, source_hash, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?);
         "#
     ))
     .bind(&id)
@@ -181,6 +184,7 @@ pub(crate) async fn create_custom_task_agent(
     .bind(serialize_json(&Some(callable_mcp_tool_ids.clone()))?)
     .bind(serialize_json(&Some(guidance_skill_ids.clone()))?)
     .bind(serialize_json(&Some(callable_skill_action_refs.clone()))?)
+    .bind(bound_asset_id.as_deref())
     .bind(serialize_json(&Some(tags.clone()))?)
     .bind(if payload.discoverable.unwrap_or(true) {
         1
@@ -214,6 +218,7 @@ pub(crate) async fn create_custom_task_agent(
         callable_mcp_tool_ids,
         guidance_skill_ids,
         callable_skill_action_refs,
+        bound_asset_id,
         tags,
         discoverable: payload.discoverable.unwrap_or(true),
         is_enabled: payload.is_enabled.unwrap_or(true),
@@ -278,6 +283,11 @@ pub(crate) async fn update_custom_task_agent(
             .callable_skill_action_refs
             .unwrap_or(existing.callable_skill_action_refs.clone()),
     );
+    let bound_asset_id = if payload.bound_asset_id.is_some() {
+        normalize_optional_string(payload.bound_asset_id.as_deref())
+    } else {
+        existing.bound_asset_id.clone()
+    };
     let tags = normalize_string_list(payload.tags.unwrap_or(existing.tags.clone()));
     let discoverable = payload.discoverable.unwrap_or(existing.discoverable);
     let is_enabled = payload.is_enabled.unwrap_or(existing.is_enabled);
@@ -292,7 +302,7 @@ pub(crate) async fn update_custom_task_agent(
         r#"
         UPDATE {TABLE_NAME}
         SET name = ?, description = ?, task_prompt = ?, invocation_kind = ?, preferred_for_image_generation = ?, model_config = ?,
-            callable_mcp_tool_ids = ?, guidance_skill_ids = ?, callable_skill_action_refs = ?,
+            callable_mcp_tool_ids = ?, guidance_skill_ids = ?, callable_skill_action_refs = ?, bound_asset_id = ?,
             tags = ?, discoverable = ?, is_enabled = ?, source_kind = ?, source_path = ?, source_repo = ?, source_ref = ?, source_hash = ?, updated_at = ?
         WHERE id = ? AND is_deleted = 0;
         "#
@@ -306,6 +316,7 @@ pub(crate) async fn update_custom_task_agent(
     .bind(serialize_json(&Some(callable_mcp_tool_ids.clone()))?)
     .bind(serialize_json(&Some(guidance_skill_ids.clone()))?)
     .bind(serialize_json(&Some(callable_skill_action_refs.clone()))?)
+    .bind(bound_asset_id.as_deref())
     .bind(serialize_json(&Some(tags.clone()))?)
     .bind(if discoverable { 1 } else { 0 })
     .bind(if is_enabled { 1 } else { 0 })
@@ -331,6 +342,7 @@ pub(crate) async fn update_custom_task_agent(
         callable_mcp_tool_ids,
         guidance_skill_ids,
         callable_skill_action_refs,
+        bound_asset_id,
         tags,
         discoverable,
         is_enabled,
@@ -408,6 +420,9 @@ fn row_to_profile(row: &SqliteRow) -> Result<CustomTaskAgentProfile, McpError> {
         callable_mcp_tool_ids: row_json_string_list(row, "callable_mcp_tool_ids")?,
         guidance_skill_ids: row_json_string_list(row, "guidance_skill_ids")?,
         callable_skill_action_refs: row_json_skill_action_refs(row, "callable_skill_action_refs")?,
+        bound_asset_id: row
+            .try_get("bound_asset_id")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
         tags: row_json_string_list(row, "tags")?,
         discoverable: row
             .try_get::<i64, _>("discoverable")
@@ -592,6 +607,13 @@ fn normalize_skill_action_refs(
     normalized
 }
 
+fn normalize_optional_string(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
 fn now_rfc3339() -> Result<String, McpError> {
     Ok(time::OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Rfc3339)
@@ -650,6 +672,7 @@ mod tests {
             callable_mcp_tool_ids: vec![],
             guidance_skill_ids: vec![],
             callable_skill_action_refs: vec![],
+            bound_asset_id: None,
             tags: vec![],
             discoverable: true,
             is_enabled: true,

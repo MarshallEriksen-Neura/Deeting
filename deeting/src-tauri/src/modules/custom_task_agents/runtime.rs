@@ -889,6 +889,7 @@ mod tests {
             callable_mcp_tool_ids: vec!["tool.shell_execute".to_string()],
             guidance_skill_ids: vec!["skill.cli-docs".to_string()],
             callable_skill_action_refs: vec![],
+            bound_asset_id: None,
             tags: vec![],
             discoverable: true,
             is_enabled: true,

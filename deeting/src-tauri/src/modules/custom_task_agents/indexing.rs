@@ -132,6 +132,7 @@ mod tests {
                 skill_id: "official.skills.crawler".to_string(),
                 action_id: "fetch_web_content".to_string(),
             }],
+            bound_asset_id: None,
             tags: vec!["image".to_string()],
             discoverable: true,
             is_enabled: true,
