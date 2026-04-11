@@ -1,0 +1,16 @@
+[package]
+name = "deeting-boxlite-sidecar"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+boxlite = { version = "0.8.2", default-features = false, features = ["rest"] }
+boxlite-sidecar-protocol = { path = "../boxlite-sidecar-protocol" }
+futures-util = "0.3"
+serde_json = "1.0"
+tokio = { version = "1", features = ["io-std", "io-util", "rt", "rt-multi-thread"] }
+
+[patch.crates-io]
+boxlite = { path = "vendor/boxlite" }

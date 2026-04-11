@@ -3,10 +3,12 @@
 import { ArrowUp, Sliders, MessageSquarePlus, Paperclip, X, Square, FileText, Play, Check, Loader2 } from 'lucide-react';
 import { useMemo, useRef, useState, useCallback, useEffect, memo } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
+import { toast } from 'sonner';
 import { useShallow } from 'zustand/react/shallow';
 import { useChatStore } from '@/store/chat-store';
 import { useChatRuntimeStore } from '@/store/chat-runtime-store';
 import { useI18n } from '@/hooks/use-i18n';
+import { useOpenWorkflow } from '@/hooks/use-open-workflow';
 import { isTauriRuntime as detectTauriRuntime } from '@/lib/runtime/tauri';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,9 +27,9 @@ import { buildChatAttachments, UPLOAD_ERROR_CODES, ATTACHMENT_INVALID_ERROR_CODE
 import { createConversation } from '@/lib/api/conversations';
 import { useChatMessaging } from '@/hooks/chat/use-chat-messaging';
 import { listLocalUserDocuments } from '@/lib/api/knowledge';
+import { generateWorkflowProposal } from '@/lib/workflow/commands';
 import type { KnowledgeFile } from '@/types/knowledge';
 import { listCustomTaskAgents, type CustomTaskAgentProfile } from '@/lib/api/custom-task-agents';
-import { DESKTOP_CONFIG_KEYS, getDesktopConfig, setDesktopConfig } from '@/lib/api/desktop-config';
 import { matchesChatModelSelectionValue } from '@/lib/api/models';
 import { resolveLeadingTaskAgentMention } from '@/hooks/chat/task-agent-mention';
 import { useBrowserModeStore } from '@/store/browser-mode-store';
@@ -35,14 +37,35 @@ import { useWorkspaceStore } from '@/store/workspace-store';
 import { deriveAssistantActivityState } from '@/lib/chat/assistant-activity';
 import { extractLatestComposerRecoveryPrompt } from '@/lib/chat/recovery';
 
-function parseDesktopConfigBool(raw: string | null | undefined) {
-  const normalized = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
-  return ['1', 'true', 'yes', 'on', 'enabled'].includes(normalized);
+type ComposerMode = 'chat' | 'workflow';
+
+function buildWorkflowPlanningHints(agent?: CustomTaskAgentProfile | null) {
+  if (!agent) return undefined;
+  return [
+    `Preferred executor / phase owner: @${agent.name} (agent id: ${agent.id}).`,
+    'Use this agent as the default owner for relevant phases when building the plan.',
+  ].join('\n');
+}
+
+function resolveWorkflowGoal(
+  rawInput: string,
+  resolvedMention: ReturnType<typeof resolveLeadingTaskAgentMention>,
+) {
+  const trimmedInput = rawInput.trim();
+  const mentionedPrompt = resolvedMention?.agent
+    ? resolvedMention.mention.prompt.trim()
+    : '';
+
+  if (mentionedPrompt) {
+    return mentionedPrompt;
+  }
+
+  return trimmedInput;
 }
 
 /**
  * ControlsContainer - 聊天控制面板组件
- * 
+ *
  * 功能：
  * - 消息输入和发送
  * - 附件管理（图片上传、预览、删除）
@@ -50,7 +73,7 @@ function parseDesktopConfigBool(raw: string | null | undefined) {
  * - 桌面知识文件挂载
  * - 新建会话
  * - 模式切换（聊天/图像/代码）
- * 
+ *
  * 性能优化：
  * - 使用 React.memo 避免不必要的重渲染
  * - 使用 useCallback 缓存事件处理函数

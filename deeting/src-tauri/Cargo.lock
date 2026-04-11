@@ -863,6 +863,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "boxlite-sidecar-protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "brotli"
 version = "8.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2207,6 +2214,7 @@ dependencies = [
  "async-trait",
  "axum",
  "base64 0.22.1",
+ "boxlite-sidecar-protocol",
  "chrono",
  "dirs 5.0.1",
  "encoding_rs",

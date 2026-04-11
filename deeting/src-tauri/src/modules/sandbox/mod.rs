@@ -1,4 +1,5 @@
 pub mod backend_host;
+pub mod boxlite_sidecar_client;
 pub mod commands;
 pub mod error;
 pub mod installer;

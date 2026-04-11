@@ -1,0 +1,225 @@
+{
+  "ARP": {
+    "DisabledPacketsReceived": 0,
+    "MalformedPacketsReceived": 0,
+    "OutgoingRepliesDropped": 0,
+    "OutgoingRepliesSent": 0,
+    "OutgoingRequestBadLocalAddressErrors": 0,
+    "OutgoingRequestInterfaceHasNoLocalAddressErrors": 0,
+    "OutgoingRequestsDropped": 0,
+    "OutgoingRequestsSent": 1,
+    "PacketsReceived": 1,
+    "RepliesReceived": 1,
+    "RequestsReceived": 0,
+    "RequestsReceivedUnknownTargetAddress": 0
+  },
+  "BytesReceived": 20985957,
+  "BytesSent": 6337404,
+  "DroppedPackets": 0,
+  "ICMP": {
+    "V4": {
+      "PacketsReceived": {
+        "ICMPv4PacketStats": {
+          "DstUnreachable": 1,
+          "EchoReply": 0,
+          "EchoRequest": 0,
+          "InfoReply": 0,
+          "InfoRequest": 0,
+          "ParamProblem": 0,
+          "Redirect": 0,
+          "SrcQuench": 0,
+          "TimeExceeded": 0,
+          "Timestamp": 0,
+          "TimestampReply": 0
+        },
+        "Invalid": 0
+      },
+      "PacketsSent": {
+        "Dropped": 0,
+        "ICMPv4PacketStats": {
+          "DstUnreachable": 0,
+          "EchoReply": 0,
+          "EchoRequest": 0,
+          "InfoReply": 0,
+          "InfoRequest": 0,
+          "ParamProblem": 0,
+          "Redirect": 0,
+          "SrcQuench": 0,
+          "TimeExceeded": 0,
+          "Timestamp": 0,
+          "TimestampReply": 0
+        },
+        "RateLimited": 0
+      }
+    },
+    "V6": {
+      "PacketsReceived": {
+        "ICMPv6PacketStats": {
+          "DstUnreachable": 0,
+          "EchoReply": 0,
+          "EchoRequest": 0,
+          "MulticastListenerDone": 0,
+          "MulticastListenerQuery": 0,
+          "MulticastListenerReport": 0,
+          "MulticastListenerReportV2": 0,
+          "NeighborAdvert": 0,
+          "NeighborSolicit": 0,
+          "PacketTooBig": 0,
+          "ParamProblem": 0,
+          "RedirectMsg": 0,
+          "RouterAdvert": 0,
+          "RouterSolicit": 0,
+          "TimeExceeded": 0
+        },
+        "Invalid": 0,
+        "RouterOnlyPacketsDroppedByHost": 0,
+        "Unrecognized": 0
+      },
+      "PacketsSent": {
+        "Dropped": 0,
+        "ICMPv6PacketStats": {
+          "DstUnreachable": 0,
+          "EchoReply": 0,
+          "EchoRequest": 0,
+          "MulticastListenerDone": 0,
+          "MulticastListenerQuery": 0,
+          "MulticastListenerReport": 0,
+          "MulticastListenerReportV2": 0,
+          "NeighborAdvert": 0,
+          "NeighborSolicit": 0,
+          "PacketTooBig": 0,
+          "ParamProblem": 0,
+          "RedirectMsg": 0,
+          "RouterAdvert": 0,
+          "RouterSolicit": 0,
+          "TimeExceeded": 0
+        },
+        "RateLimited": 0
+      }
+    }
+  },
+  "IGMP": {
+    "PacketsReceived": {
+      "ChecksumErrors": 0,
+      "IGMPPacketStats": {
+        "LeaveGroup": 0,
+        "MembershipQuery": 0,
+        "V1MembershipReport": 0,
+        "V2MembershipReport": 0,
+        "V3MembershipReport": 0
+      },
+      "Invalid": 0,
+      "Unrecognized": 0
+    },
+    "PacketsSent": {
+      "Dropped": 0,
+      "IGMPPacketStats": {
+        "LeaveGroup": 0,
+        "MembershipQuery": 0,
+        "V1MembershipReport": 0,
+        "V2MembershipReport": 0,
+        "V3MembershipReport": 0
+      }
+    }
+  },
+  "IP": {
+    "DisabledPacketsReceived": 0,
+    "Forwarding": {
+      "Errors": 0,
+      "ExhaustedTTL": 0,
+      "ExtensionHeaderProblem": 0,
+      "HostUnreachable": 0,
+      "InitializingSource": 0,
+      "LinkLocalDestination": 0,
+      "LinkLocalSource": 0,
+      "NoMulticastPendingQueueBufferSpace": 0,
+      "OutgoingDeviceNoBufferSpace": 0,
+      "PacketTooBig": 0,
+      "UnexpectedMulticastInputInterface": 0,
+      "UnknownOutputEndpoint": 0,
+      "Unrouteable": 0
+    },
+    "IPTablesForwardDropped": 0,
+    "IPTablesInputDropped": 0,
+    "IPTablesOutputDropped": 0,
+    "IPTablesPostroutingDropped": 0,
+    "IPTablesPreroutingDropped": 0,
+    "InvalidDestinationAddressesReceived": 0,
+    "InvalidSourceAddressesReceived": 0,
+    "MalformedFragmentsReceived": 0,
+    "MalformedPacketsReceived": 0,
+    "OptionRecordRouteReceived": 0,
+    "OptionRouterAlertReceived": 0,
+    "OptionTimestampReceived": 0,
+    "OptionUnknownReceived": 0,
+    "OutgoingPacketErrors": 0,
+    "PacketsDelivered": 25332,
+    "PacketsReceived": 25332,
+    "PacketsSent": 27916,
+    "ValidPacketsReceived": 25332
+  },
+  "NICs": {
+    "DisabledRx": {
+      "Bytes": 0,
+      "Packets": 0
+    },
+    "MalformedL4RcvdPackets": 0,
+    "Neighbor": {
+      "DroppedConfirmationForNoninitiatedNeighbor": 0,
+      "DroppedInvalidLinkAddressConfirmations": 0,
+      "UnreachableEntryLookups": 0
+    },
+    "Rx": {
+      "Bytes": 20630359,
+      "Packets": 25333
+    },
+    "Tx": {
+      "Bytes": 6337404,
+      "Packets": 27917
+    },
+    "TxPacketsDroppedNoBufferSpace": 0
+  },
+  "TCP": {
+    "ActiveConnectionOpenings": 3,
+    "ChecksumErrors": 0,
+    "CurrentConnected": 17,
+    "CurrentEstablished": 3,
+    "EstablishedClosed": 34,
+    "EstablishedResets": 0,
+    "EstablishedTimedout": 0,
+    "FailedConnectionAttempts": 1,
+    "FailedPortReservations": 0,
+    "FastRecovery": 0,
+    "FastRetransmit": 0,
+    "ForwardMaxInFlightDrop": 302,
+    "InvalidSegmentsReceived": 0,
+    "ListenOverflowAckDrop": 0,
+    "ListenOverflowInvalidSynCookieRcvd": 0,
+    "ListenOverflowSynCookieRcvd": 0,
+    "ListenOverflowSynCookieSent": 0,
+    "ListenOverflowSynDrop": 0,
+    "PassiveConnectionOpenings": 0,
+    "ResetsReceived": 12,
+    "ResetsSent": 26,
+    "Retransmits": 21,
+    "SACKRecovery": 6,
+    "SegmentSendErrors": 0,
+    "SegmentsAckedWithDSACK": 21,
+    "SegmentsSent": 27827,
+    "SlowStartRetransmits": 18,
+    "SpuriousRTORecovery": 0,
+    "SpuriousRecovery": 5,
+    "TLPRecovery": 0,
+    "Timeouts": 0,
+    "ValidSegmentsReceived": 24560
+  },
+  "UDP": {
+    "ChecksumErrors": 0,
+    "MalformedPacketsReceived": 0,
+    "PacketSendErrors": 0,
+    "PacketsReceived": 89,
+    "PacketsSent": 89,
+    "ReceiveBufferErrors": 0,
+    "UnknownPortErrors": 0
+  }
+}
