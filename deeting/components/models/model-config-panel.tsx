@@ -18,6 +18,16 @@ const CHAT_COMPLETIONS_PATH = "chat/completions"
 const RESPONSES_PATH = "responses"
 
 type RequestMode = "chat_completions" | "responses" | "custom"
+type ChatContentCompatibilityMode = "auto" | "string_only"
+
+const CHAT_CONTENT_COMPATIBILITY_KEY = "chat_content_compatibility"
+
+function parseChatContentCompatibilityMode(
+  configOverride?: Record<string, unknown> | null
+): ChatContentCompatibilityMode {
+  const raw = configOverride?.[CHAT_CONTENT_COMPATIBILITY_KEY]
+  return raw === "string_only" ? "string_only" : "auto"
+}
 
 function normalizeUpstreamPath(value?: string | null) {
   return String(value || "").trim().replace(/^\/+/, "")
@@ -133,6 +143,9 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
   const [requestMode, setRequestMode] = React.useState<RequestMode>(
     detectRequestMode(model.upstream_path)
   )
+  const [chatContentCompatibility, setChatContentCompatibility] = React.useState<ChatContentCompatibilityMode>(
+    parseChatContentCompatibilityMode(model.config_override)
+  )
   const [weight, setWeight] = React.useState(model.weight?.toString() || "")
   const [priority, setPriority] = React.useState(model.priority?.toString() || "")
   const [inputPrice, setInputPrice] = React.useState(model.pricing.input?.toString() || "")
@@ -166,6 +179,7 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
       displayName: (displayName || "").trim(),
       unifiedModelId: (unifiedModelId || "").trim(),
       upstreamPath: (upstreamPath || "").trim(),
+      chatContentCompatibility,
       weight: (weight || "").trim(),
       priority: (priority || "").trim(),
       inputPrice: (inputPrice || "").trim(),
@@ -179,6 +193,7 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
     }
   }, [
     capabilities,
+    chatContentCompatibility,
     contextWindow,
     displayName,
     inputPrice,
@@ -272,9 +287,23 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
     if (alias && alias !== model.id) routing.unified_model_alias = alias
     if (Object.keys(routing).length) payload.routing_config = routing
 
+    if (capabilities.includes("chat")) {
+      if (chatContentCompatibility === "string_only") {
+        payload.config_override = {
+          ...(model.config_override || {}),
+          [CHAT_CONTENT_COMPATIBILITY_KEY]: "string_only",
+        }
+      } else if (model.config_override?.[CHAT_CONTENT_COMPATIBILITY_KEY] != null) {
+        const nextConfigOverride = { ...(model.config_override || {}) }
+        delete nextConfigOverride[CHAT_CONTENT_COMPATIBILITY_KEY]
+        payload.config_override = nextConfigOverride
+      }
+    }
+
     return payload
   }, [
     capabilities,
+    chatContentCompatibility,
     contextWindow,
     displayName,
     inputPrice,
@@ -286,6 +315,7 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
     rpm,
     tpm,
     maxInputImages,
+    model.config_override,
     unifiedModelId,
     upstreamPath,
     weight,
@@ -312,6 +342,9 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
     setDisplayName((snap.displayName as string) || "")
     setUnifiedModelId((snap.unifiedModelId as string) || model.id)
     setUpstreamPath((snap.upstreamPath as string) ?? model.upstream_path ?? "")
+    setChatContentCompatibility(
+      ((snap.chatContentCompatibility as ChatContentCompatibilityMode) || "auto")
+    )
     setWeight((snap.weight as string) || "")
     setPriority((snap.priority as string) || "")
     setInputPrice((snap.inputPrice as string) || "")
@@ -330,6 +363,7 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
       displayName: model.display_name || "",
       unifiedModelId: model.unified_model_id || model.id,
       upstreamPath: model.upstream_path || "",
+      chatContentCompatibility: parseChatContentCompatibilityMode(model.config_override),
       weight: model.weight?.toString() || "",
       priority: model.priority?.toString() || "",
       inputPrice: model.pricing.input?.toString() || "",
@@ -417,6 +451,39 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
               onChange={handleUpstreamPathChange}
               placeholder={t("basic.upstreamPathPlaceholder")}
             />
+            {capabilities.includes("chat") ? (
+              <div className="space-y-1.5 md:col-span-2">
+                <Label className="text-xs text-[var(--muted)]">
+                  {t("basic.chatContentCompatibility")}
+                </Label>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { id: "auto" as const, label: t("basic.chatContentCompatibilityModes.auto") },
+                    { id: "string_only" as const, label: t("basic.chatContentCompatibilityModes.stringOnly") },
+                  ].map((option) => {
+                    const active = chatContentCompatibility === option.id
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => setChatContentCompatibility(option.id)}
+                        className={cn(
+                          "h-9 rounded-md border px-3 text-xs transition-colors",
+                          active
+                            ? "border-[var(--primary)] bg-[var(--primary)]/15 text-[var(--foreground)]"
+                            : "border-white/10 bg-white/5 text-[var(--muted)] hover:bg-white/10"
+                        )}
+                      >
+                        {option.label}
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className="text-xs text-[var(--muted)]">
+                  {t("basic.chatContentCompatibilityHint")}
+                </p>
+              </div>
+            ) : null}
             <ReadonlyInput
               label={t("basic.requestUrl")}
               value={requestUrlPreview}

@@ -73,6 +73,25 @@ const imageModel: ProviderModel = {
   max_input_images: 2,
 }
 
+const chatModel: ProviderModel = {
+  uuid: "model-2",
+  id: "deepseek-reasoner",
+  object: "model",
+  display_name: "DeepSeek Reasoner",
+  unified_model_id: "deepseek-reasoner",
+  capabilities: ["chat"],
+  context_window: 64000,
+  pricing: { input: 0, output: 0 },
+  is_active: true,
+  upstream_path: "chat/completions",
+  request_url: "https://example.com/v1/chat/completions",
+  weight: 100,
+  priority: 0,
+  updated_at: "2026-04-11T00:00:00Z",
+  routing_config: {},
+  config_override: {},
+}
+
 describe("ModelConfigPanel", () => {
   it("shows custom image mode as OpenAI-compatible and saves image input limits", async () => {
     const onSave = jest.fn().mockResolvedValue(undefined)
@@ -96,5 +115,21 @@ describe("ModelConfigPanel", () => {
       max_input_images: 3,
     })
     expect(payload.config_override).toBeUndefined()
+  })
+
+  it("saves chat content compatibility override when string-only mode is selected", async () => {
+    const onSave = jest.fn().mockResolvedValue(undefined)
+
+    render(<ModelConfigPanel model={chatModel} onSave={onSave} />)
+
+    fireEvent.click(screen.getByRole("button", { name: "basic.chatContentCompatibilityModes.stringOnly" }))
+    fireEvent.click(screen.getByRole("button", { name: "actions.save" }))
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled())
+
+    const [, payload] = onSave.mock.calls[0]
+    expect(payload.config_override).toEqual({
+      chat_content_compatibility: "string_only",
+    })
   })
 })

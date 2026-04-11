@@ -86,6 +86,12 @@
         "responses": "Responses",
         "custom": "Custom Path"
       },
+      "chatContentCompatibility": "Chat content compatibility",
+      "chatContentCompatibilityHint": "Use string-only when this OpenAI-compatible chat endpoint rejects structured message content blocks or JSON objects.",
+      "chatContentCompatibilityModes": {
+        "auto": "Auto",
+        "stringOnly": "String only"
+      },
       "upstreamPath": "Request path",
       "upstreamPathPlaceholder": "Leave empty for default chat/completions",
       "requestUrl": "Request URL",

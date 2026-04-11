@@ -76,21 +76,27 @@
       },
       "basic": {
         "title": "基础信息",
-      "desc": "为模型添加易读名称并控制启用状态。",
-      "displayName": "展示名称",
-      "unifiedId": "对外模型 ID（路由别名）",
-      "requestMode": "对话请求模式",
-      "requestModeHint": "对 OpenAI 聊天模型优先使用快捷切换；更高级的场景仍可直接编辑请求路径。",
-      "requestModes": {
-        "chatCompletions": "Chat Completions",
-        "responses": "Responses",
-        "custom": "自定义路径"
-      },
-      "upstreamPath": "请求路径",
-      "upstreamPathPlaceholder": "留空则使用默认 chat/completions",
-      "requestUrl": "实际请求 URL",
-      "weight": "路由权重",
-      "priority": "路由优先级"
+        "desc": "为模型添加易读名称并控制启用状态。",
+        "displayName": "展示名称",
+        "unifiedId": "对外模型 ID（路由别名）",
+        "requestMode": "对话请求模式",
+        "requestModeHint": "对 OpenAI 聊天模型优先使用快捷切换；更高级的场景仍可直接编辑请求路径。",
+        "requestModes": {
+          "chatCompletions": "Chat Completions",
+          "responses": "Responses",
+          "custom": "自定义路径"
+        },
+        "upstreamPath": "请求路径",
+        "upstreamPathPlaceholder": "留空则使用默认 chat/completions",
+        "requestUrl": "实际请求 URL",
+        "weight": "路由权重",
+        "priority": "路由优先级",
+        "chatContentCompatibility": "对话内容兼容模式",
+        "chatContentCompatibilityHint": "当 OpenAI 兼容 chat 接口不接受结构化 content 数组或 JSON 对象时，切换为仅字符串。",
+        "chatContentCompatibilityModes": {
+          "auto": "自动",
+          "stringOnly": "仅字符串"
+        }
       },
       "pricing": {
         "title": "定价",
@@ -176,12 +182,30 @@
       "clearChat": "清除聊天"
     },
     "capabilities": {
-      "chat": { "label": "对话", "description": "通用对话 AI 能力" },
-      "image_generation": { "label": "图像生成", "description": "文生图能力" },
-      "text_to_speech": { "label": "语音合成", "description": "文本转语音（TTS）" },
-      "speech_to_text": { "label": "语音识别", "description": "语音转文本（STT）" },
-      "video_generation": { "label": "视频生成", "description": "文生视频能力" },
-      "embedding": { "label": "嵌入", "description": "文本向量生成" }
+      "chat": {
+        "label": "对话",
+        "description": "通用对话 AI 能力"
+      },
+      "image_generation": {
+        "label": "图像生成",
+        "description": "文生图能力"
+      },
+      "text_to_speech": {
+        "label": "语音合成",
+        "description": "文本转语音（TTS）"
+      },
+      "speech_to_text": {
+        "label": "语音识别",
+        "description": "语音转文本（STT）"
+      },
+      "video_generation": {
+        "label": "视频生成",
+        "description": "文生视频能力"
+      },
+      "embedding": {
+        "label": "嵌入",
+        "description": "文本向量生成"
+      }
     },
     "contextPresets": {
       "all": "全部",

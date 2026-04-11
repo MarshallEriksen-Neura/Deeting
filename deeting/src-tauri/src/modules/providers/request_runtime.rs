@@ -9,6 +9,9 @@ use crate::modules::providers::protocols::{
 };
 use crate::modules::providers::types::{ProviderInstance, ProviderModel, ProviderPreset};
 
+const CHAT_CONTENT_COMPATIBILITY_KEY: &str = "chat_content_compatibility";
+const CHAT_CONTENT_COMPATIBILITY_STRING_ONLY: &str = "string_only";
+
 #[derive(Debug, Clone)]
 pub struct PreparedProviderRequest {
     pub method: String,
@@ -891,8 +894,27 @@ fn apply_request_builder(config: &Value, rendered_body: Value, context: &Value) 
     }
 }
 
+fn prefers_string_only_openai_chat_content(context: &Value) -> bool {
+    context
+        .get("item_config")
+        .and_then(|value| value.get("config_override"))
+        .and_then(|value| value.get(CHAT_CONTENT_COMPATIBILITY_KEY))
+        .and_then(Value::as_str)
+        .is_some_and(|value| value == CHAT_CONTENT_COMPATIBILITY_STRING_ONLY)
+}
+
+fn stringify_openai_chat_content_if_needed(content: &Value, force_string_only: bool) -> Value {
+    if !force_string_only || content.is_string() {
+        return content.clone();
+    }
+    serde_json::to_string(content)
+        .map(Value::String)
+        .unwrap_or_else(|_| Value::String(String::new()))
+}
+
 fn openai_chat_messages_from_canonical_builder(rendered_body: Value, context: &Value) -> Value {
     let mut body = rendered_body.as_object().cloned().unwrap_or_default();
+    let force_string_only = prefers_string_only_openai_chat_content(context);
     let Some(messages) = context
         .get("canonical_request")
         .and_then(|value| value.get("messages"))
@@ -903,7 +925,9 @@ fn openai_chat_messages_from_canonical_builder(rendered_body: Value, context: &V
 
     let rendered_messages: Vec<Value> = messages
         .iter()
-        .filter_map(render_openai_chat_message_from_canonical)
+        .filter_map(|message| {
+            render_openai_chat_message_from_canonical(message, force_string_only)
+        })
         .collect();
     if !rendered_messages.is_empty() {
         body.insert("messages".to_string(), Value::Array(rendered_messages));
@@ -912,7 +936,10 @@ fn openai_chat_messages_from_canonical_builder(rendered_body: Value, context: &V
     Value::Object(body)
 }
 
-fn render_openai_chat_message_from_canonical(message: &Value) -> Option<Value> {
+fn render_openai_chat_message_from_canonical(
+    message: &Value,
+    force_string_only: bool,
+) -> Option<Value> {
     let role = message.get("role").and_then(|value| value.as_str())?;
     let mut object = Map::new();
     object.insert("role".to_string(), Value::String(role.to_string()));
@@ -926,7 +953,10 @@ fn render_openai_chat_message_from_canonical(message: &Value) -> Option<Value> {
     }
 
     if let Some(content) = message.get("content").filter(|value| !value.is_null()) {
-        object.insert("content".to_string(), content.clone());
+        object.insert(
+            "content".to_string(),
+            stringify_openai_chat_content_if_needed(content, force_string_only),
+        );
     }
 
     if let Some(tool_calls) = message.get("tool_calls").and_then(|value| value.as_array()) {
@@ -3095,6 +3125,42 @@ mod tests {
                     "content": "{\"status\":\"ok\"}"
                 }
             ])
+        );
+    }
+
+    #[test]
+    fn prepare_provider_request_openai_chat_stringifies_structured_content_when_model_requests_it() {
+        let preset = mock_preset();
+        let instance = mock_instance(json!({ "protocol": "openai", "auto_append_v1": true }));
+        let mut model = mock_model(&["chat"]);
+        model.config_override = json!({
+            "chat_content_compatibility": "string_only"
+        });
+
+        let prepared = prepare_provider_request(
+            Some(&preset),
+            &instance,
+            &model,
+            Some("sk-test"),
+            "chat",
+            json!({
+                "model": "deepseek-reasoner",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": { "type": "tool_result", "value": "ok" }
+                    }
+                ],
+                "stream": false
+            }),
+            None,
+            None,
+        )
+        .expect("prepare request with string-only chat content");
+
+        assert_eq!(
+            prepared.body["messages"][0]["content"],
+            json!("{\"type\":\"tool_result\",\"value\":\"ok\"}")
         );
     }
 
