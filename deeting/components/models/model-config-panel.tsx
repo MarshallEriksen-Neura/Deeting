@@ -129,10 +129,15 @@ function ReadonlyInput({ label, value, placeholder }: ReadonlyInputProps) {
 
 type ModelConfigPanelProps = {
   model: ProviderModel
+  showChatContentCompatibility?: boolean
   onSave?: (model: ProviderModel, payload: ProviderModelUpdate) => Promise<void>
 }
 
-export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
+export function ModelConfigPanel({
+  model,
+  showChatContentCompatibility = false,
+  onSave,
+}: ModelConfigPanelProps) {
   const t = useTranslations("models.form")
   const tCap = useTranslations("models.capabilities")
 
@@ -287,7 +292,7 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
     if (alias && alias !== model.id) routing.unified_model_alias = alias
     if (Object.keys(routing).length) payload.routing_config = routing
 
-    if (capabilities.includes("chat")) {
+    if (showChatContentCompatibility && capabilities.includes("chat")) {
       if (chatContentCompatibility === "string_only") {
         payload.config_override = {
           ...(model.config_override || {}),
@@ -316,6 +321,7 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
     tpm,
     maxInputImages,
     model.config_override,
+    showChatContentCompatibility,
     unifiedModelId,
     upstreamPath,
     weight,
@@ -451,7 +457,7 @@ export function ModelConfigPanel({ model, onSave }: ModelConfigPanelProps) {
               onChange={handleUpstreamPathChange}
               placeholder={t("basic.upstreamPathPlaceholder")}
             />
-            {capabilities.includes("chat") ? (
+            {showChatContentCompatibility && capabilities.includes("chat") ? (
               <div className="space-y-1.5 md:col-span-2">
                 <Label className="text-xs text-[var(--muted)]">
                   {t("basic.chatContentCompatibility")}

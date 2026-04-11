@@ -16,6 +16,7 @@ const ModelConfigPanel = dynamic(
 
 interface ModelAccordionProps {
   models: ProviderModel[]
+  showChatContentCompatibility?: boolean
   onTest: (model: ProviderModel) => void
   onToggleActive: (model: ProviderModel, active: boolean) => void
   onUpdateAlias: (model: ProviderModel, alias: string) => void
@@ -27,6 +28,7 @@ interface ModelAccordionProps {
 
 export const ModelAccordion = React.memo(function ModelAccordion({
   models,
+  showChatContentCompatibility = false,
   onTest,
   onToggleActive,
   onUpdateAlias,
@@ -81,7 +83,11 @@ export const ModelAccordion = React.memo(function ModelAccordion({
                     exit={{ opacity: 0, height: 0 }}
                     transition={{ duration: 0.18, ease: "easeOut" }}
                   >
-                    <ModelConfigPanel model={model} onSave={onSave} />
+                    <ModelConfigPanel
+                      model={model}
+                      showChatContentCompatibility={showChatContentCompatibility}
+                      onSave={onSave}
+                    />
                   </motion.div>
                 </CollapsibleContent>
               )}

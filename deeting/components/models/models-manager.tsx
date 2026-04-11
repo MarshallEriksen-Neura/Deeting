@@ -115,6 +115,17 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
     [instances, instanceId, normalizeStatus]
   )
 
+  const supportsOpenAiCompatibleChatContentConfig = React.useMemo(() => {
+    const protocolValue = (
+      instance?.protocol ||
+      instance?.provider ||
+      instance?.preset_slug ||
+      ""
+    ).toLowerCase()
+    const presetSlug = (instance?.preset_slug || "").toLowerCase()
+    return protocolValue.includes("openai") && presetSlug !== "openai"
+  }, [instance?.preset_slug, instance?.protocol, instance?.provider])
+
   const buildRequestUrl = React.useCallback(
     (baseUrl?: string, upstreamPath?: string) => {
       if (!baseUrl) return ""
@@ -479,6 +490,7 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
       {normalizedModels.length > 0 ? (
         <ModelAccordion
           models={filteredModels}
+          showChatContentCompatibility={supportsOpenAiCompatibleChatContentConfig}
           onTest={handleTestModel}
           onToggleActive={handleToggleActive}
           onUpdateAlias={handleUpdateAlias}

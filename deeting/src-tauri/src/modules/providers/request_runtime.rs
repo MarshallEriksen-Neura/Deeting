@@ -895,6 +895,22 @@ fn apply_request_builder(config: &Value, rendered_body: Value, context: &Value) 
 }
 
 fn prefers_string_only_openai_chat_content(context: &Value) -> bool {
+    let provider = context
+        .get("provider")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let preset_slug = context
+        .get("instance")
+        .and_then(|value| value.get("preset_slug"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    if !provider.contains("openai") || preset_slug == "openai" {
+        return false;
+    }
+
     context
         .get("item_config")
         .and_then(|value| value.get("config_override"))
@@ -3131,7 +3147,8 @@ mod tests {
     #[test]
     fn prepare_provider_request_openai_chat_stringifies_structured_content_when_model_requests_it() {
         let preset = mock_preset();
-        let instance = mock_instance(json!({ "protocol": "openai", "auto_append_v1": true }));
+        let mut instance = mock_instance(json!({ "protocol": "openai", "auto_append_v1": true }));
+        instance.preset_slug = "custom".to_string();
         let mut model = mock_model(&["chat"]);
         model.config_override = json!({
             "chat_content_compatibility": "string_only"
@@ -3161,6 +3178,42 @@ mod tests {
         assert_eq!(
             prepared.body["messages"][0]["content"],
             json!("{\"type\":\"tool_result\",\"value\":\"ok\"}")
+        );
+    }
+
+    #[test]
+    fn prepare_provider_request_openai_chat_does_not_stringify_for_official_openai() {
+        let preset = mock_preset();
+        let instance = mock_instance(json!({ "protocol": "openai", "auto_append_v1": true }));
+        let mut model = mock_model(&["chat"]);
+        model.config_override = json!({
+            "chat_content_compatibility": "string_only"
+        });
+
+        let prepared = prepare_provider_request(
+            Some(&preset),
+            &instance,
+            &model,
+            Some("sk-test"),
+            "chat",
+            json!({
+                "model": "gpt-4o-mini",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": { "type": "tool_result", "value": "ok" }
+                    }
+                ],
+                "stream": false
+            }),
+            None,
+            None,
+        )
+        .expect("prepare request for official openai");
+
+        assert_eq!(
+            prepared.body["messages"][0]["content"],
+            json!({ "type": "tool_result", "value": "ok" })
         );
     }
 
