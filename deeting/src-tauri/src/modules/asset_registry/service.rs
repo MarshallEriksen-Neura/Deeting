@@ -1,17 +1,18 @@
 use super::resolve_asset_registry_bundle_dir;
 use super::types::{LocalAssetRecord, SaveLocalAssetManifest, SaveLocalAssetRequest};
-use crate::modules::desktop_runtime::runtime::search_feedback::{
-    historical_affinity_from_asset_rows, query_affinity_from_asset_rows, SearchFeedbackContext,
-};
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::store::McpStore;
 use crate::state::AppState;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::collections::BTreeSet;
 use std::path::Path;
 use tauri::Manager;
 use time::OffsetDateTime;
+
+#[cfg(test)]
+use crate::modules::desktop_runtime::runtime::search_ranking::bm25_asset_match_scores;
+#[cfg(test)]
+use std::collections::BTreeSet;
 
 pub(crate) async fn save_local_asset<R: tauri::Runtime>(
     app_handle: &tauri::AppHandle<R>,
@@ -300,35 +301,7 @@ fn to_json_string<T: serde::Serialize>(value: &T) -> Option<String> {
     serde_json::to_string(value).ok()
 }
 
-async fn build_local_asset_feedback_context(
-    store: &McpStore,
-    query: &str,
-    session_id: Option<&str>,
-) -> SearchFeedbackContext {
-    let mut context = SearchFeedbackContext::default();
-
-    if let Some(normalized_session_id) = session_id.map(str::trim).filter(|value| !value.is_empty())
-    {
-        if let Ok(recent_targets) = store
-            .list_recent_session_asset_ids(normalized_session_id, 4)
-            .await
-        {
-            context.recent_targets = recent_targets;
-        }
-    }
-
-    let now_unix_ms = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
-    if let Ok(rows) = store.list_asset_execution_affinity_rows(32).await {
-        context.historical_affinity =
-            historical_affinity_from_asset_rows(&rows, now_unix_ms as i64);
-    }
-    if let Ok(rows) = store.list_asset_query_affinity_rows(64).await {
-        context.query_affinity = query_affinity_from_asset_rows(query, &rows, now_unix_ms as i64);
-    }
-
-    context
-}
-
+#[cfg(test)]
 fn build_local_asset_memory_text(record: &LocalAssetRecord) -> String {
     let mut sections = vec![format!("title: {}", record.title)];
     if let Some(summary) = record
@@ -372,6 +345,7 @@ fn build_local_asset_memory_text(record: &LocalAssetRecord) -> String {
     sections.join("\n")
 }
 
+#[cfg(test)]
 fn local_asset_record_to_memory_metadata(record: &LocalAssetRecord) -> Value {
     serde_json::json!({
         "asset_id": record.asset_id,
@@ -387,6 +361,7 @@ fn local_asset_record_to_memory_metadata(record: &LocalAssetRecord) -> Value {
     })
 }
 
+#[cfg(test)]
 fn local_asset_record_to_search_document(record: &LocalAssetRecord) -> Value {
     serde_json::json!({
         "id": record.asset_id,
@@ -399,49 +374,19 @@ fn local_asset_record_to_search_document(record: &LocalAssetRecord) -> Value {
     })
 }
 
-pub(crate) async fn sync_local_asset_memory_index(
-    app_state: &AppState,
-    record: &LocalAssetRecord,
-) -> Result<(), String> {
-    if !record.asset_kind.eq_ignore_ascii_case("html_asset") {
-        return Ok(());
-    }
-
-    let text = build_local_asset_memory_text(record);
-    let vector = app_state
-        .providers
-        .embedding
-        .embed_text(&text)
-        .await
-        .map_err(|err| err.to_string())?;
-
-    app_state
-        .memory
-        .service
-        .upsert_asset(
-            record.asset_id.clone(),
-            record.title.clone(),
-            text,
-            "html_asset".to_string(),
-            "local_asset_registry".to_string(),
-            Some(record.asset_id.clone()),
-            vector,
-            Some(local_asset_record_to_memory_metadata(record)),
-        )
-        .await
-        .map_err(|err| err.to_string())
-}
-
+#[cfg(test)]
 fn parse_string_list_json(raw: Option<&str>) -> Vec<String> {
     raw.and_then(|value| serde_json::from_str::<Vec<String>>(value).ok())
         .map(normalize_string_list)
         .unwrap_or_default()
 }
 
+#[cfg(test)]
 fn parse_value_json(raw: Option<&str>) -> Option<Value> {
     raw.and_then(|value| serde_json::from_str::<Value>(value).ok())
 }
 
+#[cfg(test)]
 fn normalize_match_text(input: &str) -> String {
     input
         .trim()
@@ -451,6 +396,7 @@ fn normalize_match_text(input: &str) -> String {
         .to_lowercase()
 }
 
+#[cfg(test)]
 fn asset_candidate_has_grounded_recall_support(
     asset_key: &str,
     lexical_scores: &std::collections::HashMap<String, f64>,

@@ -6,41 +6,6 @@ const BM25_K1: f64 = 1.2;
 const BM25_B: f64 = 0.75;
 const RRF_K: f64 = 60.0;
 
-pub(crate) fn lexical_rank_asset_hits(
-    normalized_query: &str,
-    assets: Vec<Value>,
-    limit: usize,
-) -> Vec<Value> {
-    let scores = bm25_asset_match_scores(normalized_query, &assets);
-    let mut ranked = assets
-        .into_iter()
-        .filter_map(|mut item| {
-            let key = asset_score_key(&item)?;
-            let score = scores.get(&key).copied()?;
-            if let Some(object) = item.as_object_mut() {
-                object.insert("_distance".to_string(), serde_json::json!(score));
-            }
-            Some(item)
-        })
-        .collect::<Vec<_>>();
-
-    ranked.sort_by(|left, right| {
-        let lhs = left
-            .get("_distance")
-            .and_then(|value| value.as_f64())
-            .unwrap_or(f64::NEG_INFINITY);
-        let rhs = right
-            .get("_distance")
-            .and_then(|value| value.as_f64())
-            .unwrap_or(f64::NEG_INFINITY);
-        rhs.partial_cmp(&lhs).unwrap_or(std::cmp::Ordering::Equal)
-    });
-    if ranked.len() > limit {
-        ranked.truncate(limit);
-    }
-    ranked
-}
-
 pub(crate) fn bm25_asset_match_scores(
     normalized_query: &str,
     items: &[Value],

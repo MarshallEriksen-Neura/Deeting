@@ -1213,7 +1213,7 @@ pub(crate) async fn execute_mcp_tool(
     execute_local_mcp_tool(store, tool, arguments).await
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg_attr(any(not(test), target_os = "windows"), allow(dead_code))]
 pub(crate) async fn execute_or_queue_mcp_tool_call(
     store: &crate::modules::mcp::store::McpStore,
     pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
@@ -1231,6 +1231,7 @@ pub(crate) async fn execute_or_queue_mcp_tool_call(
     .await
 }
 
+#[cfg_attr(any(not(test), target_os = "windows"), allow(dead_code))]
 pub(crate) async fn execute_or_queue_mcp_tool_call_with_context(
     approval_context: &crate::modules::mcp::ToolApprovalContext,
     runtime_state: Option<&crate::modules::mcp::McpRuntimeState>,
@@ -1483,7 +1484,7 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_tool_ref(
     Ok(result)
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg_attr(any(not(test), target_os = "windows"), allow(dead_code))]
 pub(crate) async fn approve_mcp_tool_inner(
     store: &crate::modules::mcp::store::McpStore,
     pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
@@ -1492,24 +1493,6 @@ pub(crate) async fn approve_mcp_tool_inner(
     approve_mcp_tool_inner_with_context_and_mode(
         &crate::modules::mcp::ToolApprovalContext::default(),
         None,
-        store,
-        pending_tool_calls,
-        approval_token,
-        ApprovePersistMode::AllowOnce,
-    )
-    .await
-}
-
-pub(crate) async fn approve_mcp_tool_inner_with_context(
-    approval_context: &crate::modules::mcp::ToolApprovalContext,
-    runtime_state: Option<&crate::modules::mcp::McpRuntimeState>,
-    store: &crate::modules::mcp::store::McpStore,
-    pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
-    approval_token: &str,
-) -> Result<Value, String> {
-    approve_mcp_tool_inner_with_context_and_mode(
-        approval_context,
-        runtime_state,
         store,
         pending_tool_calls,
         approval_token,
@@ -1742,6 +1725,8 @@ pub(crate) async fn approve_mcp_tool_inner_with_context_and_mode(
     Ok(result)
 }
 
+#[cfg(test)]
+#[cfg_attr(target_os = "windows", allow(dead_code))]
 pub(crate) async fn reject_mcp_tool_inner(
     pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
     approval_token: &str,

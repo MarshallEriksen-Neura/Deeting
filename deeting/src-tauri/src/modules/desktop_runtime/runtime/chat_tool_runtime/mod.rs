@@ -41,17 +41,13 @@ pub(crate) use inflight::{
     InFlightExecutionStage,
 };
 #[cfg(test)]
-use inflight::{
-    runtime_state_from_persisted_context, PersistedChatToolRuntimeContext,
-    PersistedInFlightExecutionContext, PersistedPendingApproval,
-};
+use inflight::PersistedPendingApproval;
 use recovery::extract_resume_response_text;
 #[cfg(test)]
 use recovery::{
     attach_execution_graph_to_response,
     build_local_chat_resume_continuation_blocks, build_persisted_resume_assistant_blocks,
     build_persisted_resume_assistant_meta,
-    mark_inflight_execution_interrupted, persist_resumed_local_chat_assistant_message,
 };
 pub(crate) use recovery::{
     recover_inflight_local_execution_state, resume_suspended_chat_tool_execution_after_approval,
@@ -59,8 +55,7 @@ pub(crate) use recovery::{
 use replay::finalize_tool_round;
 #[cfg(test)]
 use replay::{
-    build_structured_tool_replay_messages, derive_capability_update_from_tool_call_meta,
-    serialize_tool_replay_content,
+    build_structured_tool_replay_messages, serialize_tool_replay_content,
 };
 pub(crate) use suspended::SuspendedChatToolExecution;
 pub(crate) use tool_meta::apply_rejected_tool_result_to_execution_graph_value;

@@ -181,22 +181,6 @@ pub(crate) fn historical_affinity_from_rows(
     )
 }
 
-pub(crate) fn historical_affinity_from_asset_rows(
-    rows: &[crate::modules::mcp::store::AssetExecutionAffinityRow],
-    now_unix_ms: i64,
-) -> Vec<SearchAffinityScore> {
-    historical_affinity_from_records(
-        rows.iter().map(|row| {
-            (
-                row.asset_id.as_str(),
-                row.success_count,
-                row.last_used_at_unix_ms,
-            )
-        }),
-        now_unix_ms,
-    )
-}
-
 fn query_affinity_from_records<'a>(
     current_query: &str,
     rows: impl IntoIterator<Item = (&'a str, &'a str, i64, i64)>,
@@ -260,25 +244,6 @@ pub(crate) fn query_affinity_from_rows(
             (
                 row.query_text.as_str(),
                 row.tool_name.as_str(),
-                row.success_count,
-                row.last_matched_at_unix_ms,
-            )
-        }),
-        now_unix_ms,
-    )
-}
-
-pub(crate) fn query_affinity_from_asset_rows(
-    current_query: &str,
-    rows: &[crate::modules::mcp::store::AssetQueryAffinityRow],
-    now_unix_ms: i64,
-) -> Vec<SearchAffinityScore> {
-    query_affinity_from_records(
-        current_query,
-        rows.iter().map(|row| {
-            (
-                row.query_text.as_str(),
-                row.asset_id.as_str(),
                 row.success_count,
                 row.last_matched_at_unix_ms,
             )

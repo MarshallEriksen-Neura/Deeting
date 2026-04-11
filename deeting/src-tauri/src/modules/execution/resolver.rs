@@ -20,7 +20,6 @@ pub enum ResolvedInvocation {
 pub struct ResolvedExecutionPlan {
     pub mode: ExecutionMode,
     pub shell_family: Option<ExecutionShell>,
-    pub display_command: String,
     pub invocation: ResolvedInvocation,
     pub warnings: Vec<String>,
 }
@@ -49,7 +48,6 @@ pub fn resolve_request(
             Ok(ResolvedExecutionPlan {
                 mode: ExecutionMode::Process,
                 shell_family: None,
-                display_command: request.command_label(),
                 invocation: ResolvedInvocation::Process {
                     program,
                     args: request.args.clone(),
@@ -83,7 +81,6 @@ pub fn resolve_request(
             Ok(ResolvedExecutionPlan {
                 mode: ExecutionMode::Shell,
                 shell_family: Some(shell),
-                display_command: request.command_label(),
                 invocation: ResolvedInvocation::Shell { shell, command },
                 warnings,
             })
@@ -112,7 +109,6 @@ pub fn resolve_request(
             Ok(ResolvedExecutionPlan {
                 mode: ExecutionMode::Script,
                 shell_family: Some(shell),
-                display_command: request.command_label(),
                 invocation: ResolvedInvocation::Script { shell, script },
                 warnings,
             })

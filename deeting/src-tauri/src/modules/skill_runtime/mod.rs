@@ -959,9 +959,11 @@ pub(crate) fn runtime_install_metadata_from_outcome(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_command_for_skill_binding_with_store, execute_skill_binding,
-        resolve_skill_binding_by_ref, resolve_skill_binding_env, skill_binding_fingerprint,
+        build_command_for_skill_binding_with_store, resolve_skill_binding_by_ref,
+        resolve_skill_binding_env, skill_binding_fingerprint,
     };
+    #[cfg(not(target_os = "windows"))]
+    use super::execute_skill_binding;
     use crate::modules::mcp::store::{LocalSkillToolBindingUpsert, McpStore};
     use mcp_storage::types::LocalSkillToolBindingSnapshot;
     use uuid::Uuid;

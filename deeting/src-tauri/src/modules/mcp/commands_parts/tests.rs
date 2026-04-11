@@ -15,15 +15,19 @@ mod tests {
         LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
     };
     use crate::modules::mcp::commands::runtime::{
-        config::{apply_config_payload_to_store, hash_config, read_local_mcp_config},
+        config::{hash_config, read_local_mcp_config},
+        tool_resolution::{
+            build_desktop_mcp_tool_view, build_desktop_mcp_tool_views, DesktopMcpToolIndexStatus,
+            ToolAvailabilityClass,
+        },
+    };
+    #[cfg(not(target_os = "windows"))]
+    use crate::modules::mcp::commands::runtime::{
+        config::apply_config_payload_to_store,
         remote_transport::list_local_stdio_tools,
         tool_execution::{
             approve_mcp_tool_inner, execute_or_queue_mcp_tool_call,
             execute_or_queue_mcp_tool_call_with_context, reject_mcp_tool_inner,
-        },
-        tool_resolution::{
-            build_desktop_mcp_tool_view, build_desktop_mcp_tool_views, DesktopMcpToolIndexStatus,
-            ToolAvailabilityClass,
         },
     };
     use crate::modules::mcp::commands::tool_approval_impl::list_pending_mcp_approvals_inner;
@@ -52,6 +56,7 @@ mod tests {
         LocalConversationHistoryQuery, LocalConversationSessionsQuery, LocalConversationStatus,
     };
     use serde::Deserialize;
+    #[cfg(not(target_os = "windows"))]
     use sqlx::Row;
     use std::collections::{HashMap, HashSet};
     use std::path::Path;

@@ -563,20 +563,6 @@ pub(super) fn apply_approved_tool_result_to_execution_graph(
     );
 }
 
-pub(crate) fn apply_rejected_tool_result_to_execution_graph(
-    suspended: &mut SuspendedChatToolExecution,
-    call_id: Option<&str>,
-    error_message: &str,
-) {
-    let execution_id = suspended.graph_execution_id().map(str::to_string);
-    apply_rejected_tool_result_to_execution_graph_value(
-        &mut suspended.execution_graph,
-        execution_id.as_deref(),
-        call_id,
-        error_message,
-    );
-}
-
 pub(crate) fn apply_rejected_tool_result_to_execution_graph_value(
     execution_graph: &mut serde_json::Value,
     execution_id: Option<&str>,

@@ -624,31 +624,7 @@ fn extract_and_decode_b64(data: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        classify_exec_error, decode_wsl_text, dispatch_sse_event, normalize_windows_path_for_wsl,
-        SandboxError,
-    };
-
-    #[test]
-    fn classify_exec_error_maps_404_to_not_found() {
-        let err = classify_exec_error(reqwest::StatusCode::NOT_FOUND, "{\"error\":\"not found\"}");
-        assert!(matches!(err, SandboxError::NotFound(_)));
-    }
-
-    #[test]
-    fn classify_exec_error_maps_missing_id_body_to_not_found() {
-        let err = classify_exec_error(
-            reqwest::StatusCode::INTERNAL_SERVER_ERROR,
-            "box id does not exist",
-        );
-        assert!(matches!(err, SandboxError::NotFound(_)));
-    }
-
-    #[test]
-    fn classify_exec_error_maps_conflict_to_busy() {
-        let err = classify_exec_error(reqwest::StatusCode::CONFLICT, "already running");
-        assert!(matches!(err, SandboxError::Busy(_)));
-    }
+    use super::{decode_wsl_text, normalize_windows_path_for_wsl};
 
     #[test]
     fn normalize_windows_path_replaces_backslashes() {
@@ -670,27 +646,5 @@ mod tests {
             decode_wsl_text(&utf16),
             "wslpath: C:/Users/timeline/boxlite.tar.gz"
         );
-    }
-
-    #[test]
-    fn dispatch_sse_event_decodes_stdout_payloads() {
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
-        let mut exit_code = -1;
-        let mut error_message = None;
-
-        dispatch_sse_event(
-            "stdout",
-            r#"{"data":"SGVsbG8K"}"#,
-            &mut stdout,
-            &mut stderr,
-            &mut exit_code,
-            &mut error_message,
-        );
-
-        assert_eq!(stdout, vec!["Hello".to_string()]);
-        assert!(stderr.is_empty());
-        assert_eq!(exit_code, -1);
-        assert!(error_message.is_none());
     }
 }

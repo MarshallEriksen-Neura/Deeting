@@ -1387,7 +1387,6 @@ mod session_name_tests {
                 detail: Some("wsl unavailable".to_string()),
                 recommended_command: Some("wsl --install".to_string()),
             },
-            None,
             &SandboxBoxLiteStatus::default(),
         );
 

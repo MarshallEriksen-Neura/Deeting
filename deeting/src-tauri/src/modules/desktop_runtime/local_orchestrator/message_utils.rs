@@ -1,5 +1,3 @@
-use std::collections::BTreeSet;
-
 use serde_json::Value;
 
 use crate::modules::desktop_runtime::runtime::LocalControlPlaneResult;
@@ -12,23 +10,6 @@ pub(super) fn extract_summary_text(summary: Option<&Value>) -> Option<String> {
         .and_then(|value| value.as_str())
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-}
-
-pub(super) fn extract_saved_asset_ids_from_blocks(blocks: &[Value]) -> Vec<String> {
-    let mut asset_ids = BTreeSet::new();
-    for block in blocks {
-        let Some(asset_id) = block
-            .get("metadata")
-            .and_then(|value| value.get("asset_id"))
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        else {
-            continue;
-        };
-        asset_ids.insert(asset_id.to_string());
-    }
-    asset_ids.into_iter().collect()
 }
 
 pub(super) fn extract_response_runtime_metrics(

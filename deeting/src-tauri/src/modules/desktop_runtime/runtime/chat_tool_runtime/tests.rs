@@ -1,6 +1,5 @@
 use super::*;
 use crate::modules::desktop_runtime::runtime::build_local_tool_call_install_gate_error_meta;
-use crate::modules::desktop_runtime::runtime::tool_catalog::dynamic_capability_alias;
 use crate::modules::desktop_runtime::runtime::LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE;
 
 #[test]
