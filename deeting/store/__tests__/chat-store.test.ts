@@ -297,18 +297,188 @@ describe("useChatStore session state", () => {
     const message = useChatStore.getState().messages[0]
     expect(message?.content).toBe("")
     expect(message?.blocks?.map((block) => block.type)).toEqual([
-      "tool_result",
       "tool_call",
+      "tool_result",
       "text",
       "tool_call",
     ])
-    expect(message?.blocks?.[0]).toMatchObject({ toolName: "search_sdk" })
-    expect(message?.blocks?.[1]).toMatchObject({ toolName: "search_sdk" })
+    expect(message?.blocks?.[0]).toMatchObject({ toolName: "search_sdk", status: "success" })
+    expect(message?.blocks?.[1]).toMatchObject({ toolName: "search_sdk", status: "success" })
     expect(message?.blocks?.[2]).toMatchObject({
       type: "text",
       content: "I will check the vault first. Then I will run the shell step.",
     })
     expect(message?.blocks?.[3]).toMatchObject({ toolName: "shell_execute" })
+  })
+
+  it("appendMessageBlocks should canonicalize a resolved tool chain to tool_call then tool_result then linked ui then continuation text", () => {
+    useChatStore.setState({
+      messages: [
+        {
+          id: "assistant-6c",
+          role: "assistant",
+          content: "",
+          createdAt: 1,
+          blocks: [
+            {
+              id: "tool-1",
+              type: "tool_call",
+              callId: "call-1",
+              toolName: "search_sdk",
+              status: "running",
+            } as MessageBlock,
+          ],
+        },
+      ],
+    })
+
+    useChatStore.getState().appendMessageBlocks("assistant-6c", [
+      { type: "text", content: "I will summarize the result next." } as MessageBlock,
+    ])
+
+    useChatStore.getState().appendMessageBlocks("assistant-6c", [
+      {
+        id: "result-1",
+        type: "tool_result",
+        callId: "call-1",
+        toolName: "search_sdk",
+        status: "success",
+        result: { ok: true },
+      } as MessageBlock,
+      {
+        id: "ui-1",
+        type: "ui",
+        callId: "call-1",
+        toolName: "search_sdk",
+        viewType: "table.simple",
+        payload: { rows: [{ value: 1 }] },
+      } as MessageBlock,
+    ])
+
+    const message = useChatStore.getState().messages[0]
+    expect(message?.blocks?.map((block) => block.type)).toEqual([
+      "tool_call",
+      "tool_result",
+      "ui",
+      "text",
+    ])
+    expect(message?.blocks?.[0]).toMatchObject({ callId: "call-1", status: "success" })
+    expect(message?.blocks?.[1]).toMatchObject({ callId: "call-1", status: "success" })
+    expect(message?.blocks?.[2]).toMatchObject({ type: "ui", callId: "call-1" })
+    expect(message?.blocks?.[3]).toMatchObject({
+      type: "text",
+      content: "I will summarize the result next.",
+    })
+  })
+
+  it("approval-resume ordering should converge when continuation text arrives before the approved result", () => {
+    useChatStore.setState({
+      messages: [
+        {
+          id: "assistant-approval-order-1",
+          role: "assistant",
+          content: "",
+          createdAt: 1,
+          blocks: [
+            {
+              id: "call-approval-1",
+              type: "tool_call",
+              callId: "call-approval-1",
+              toolName: "browser_open_tab",
+              status: "requires_approval",
+            } as MessageBlock,
+            {
+              id: "result-approval-1",
+              type: "tool_result",
+              callId: "call-approval-1",
+              toolName: "browser_open_tab",
+              status: "requires_approval",
+              result: { status: "REQUIRES_APPROVAL" },
+            } as MessageBlock,
+          ],
+        },
+      ],
+    })
+
+    useChatStore.getState().appendMessageBlocks("assistant-approval-order-1", [
+      { type: "text", content: "The tab is open. Continuing now." } as MessageBlock,
+    ])
+    useChatStore.getState().upsertMessageToolResult("assistant-approval-order-1", {
+      id: "result-approval-1-new",
+      type: "tool_result",
+      callId: "call-approval-1",
+      toolName: "browser_open_tab",
+      status: "success",
+      result: { ok: true },
+    })
+
+    const message = useChatStore.getState().messages[0]
+    expect(message?.blocks?.map((block) => block.type)).toEqual([
+      "tool_call",
+      "tool_result",
+      "text",
+    ])
+    expect(message?.blocks?.[0]).toMatchObject({ callId: "call-approval-1", status: "success" })
+    expect(message?.blocks?.[1]).toMatchObject({ callId: "call-approval-1", status: "success" })
+    expect(message?.blocks?.[2]).toMatchObject({
+      type: "text",
+      content: "The tab is open. Continuing now.",
+    })
+  })
+
+  it("approval-resume ordering should converge when the approved result arrives before continuation text", () => {
+    useChatStore.setState({
+      messages: [
+        {
+          id: "assistant-approval-order-2",
+          role: "assistant",
+          content: "",
+          createdAt: 1,
+          blocks: [
+            {
+              id: "call-approval-2",
+              type: "tool_call",
+              callId: "call-approval-2",
+              toolName: "browser_open_tab",
+              status: "requires_approval",
+            } as MessageBlock,
+            {
+              id: "result-approval-2",
+              type: "tool_result",
+              callId: "call-approval-2",
+              toolName: "browser_open_tab",
+              status: "requires_approval",
+              result: { status: "REQUIRES_APPROVAL" },
+            } as MessageBlock,
+          ],
+        },
+      ],
+    })
+
+    useChatStore.getState().upsertMessageToolResult("assistant-approval-order-2", {
+      id: "result-approval-2-new",
+      type: "tool_result",
+      callId: "call-approval-2",
+      toolName: "browser_open_tab",
+      status: "success",
+      result: { ok: true },
+    })
+    useChatStore.getState().appendMessageBlocks("assistant-approval-order-2", [
+      { type: "text", content: "The tab is open. Continuing now." } as MessageBlock,
+    ])
+
+    const message = useChatStore.getState().messages[0]
+    expect(message?.blocks?.map((block) => block.type)).toEqual([
+      "tool_call",
+      "tool_result",
+      "text",
+    ])
+    expect(message?.blocks?.[0]).toMatchObject({ callId: "call-approval-2", status: "success" })
+    expect(message?.blocks?.[1]).toMatchObject({ callId: "call-approval-2", status: "success" })
+    expect(message?.blocks?.[2]).toMatchObject({
+      type: "text",
+      content: "The tab is open. Continuing now.",
+    })
   })
 
   it("appendMessageBlocks should replace matching execution lifecycle blocks by root_execution_id", () => {

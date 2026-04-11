@@ -3,6 +3,7 @@ import type { ConversationMessage } from "@/lib/api/conversations"
 import type { Message, MessageMetaInfo, ToolCall } from "@/lib/chat/message-types"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
 import { buildExecutionLifecycleBlock } from "@/lib/chat/execution-tree"
+import { canonicalizeMessageBlockOrder } from "@/lib/chat/message-blocks"
 
 const DEFAULT_ROLES = ["user", "assistant"] as const
 
@@ -218,37 +219,6 @@ const resolveCreatedAt = (
   return Date.now() - (total - index) * 1000
 }
 
-/** Re-order blocks so each tool_result follows its matching tool_call (by callId). */
-const interleaveToolBlocks = (blocks: MessageBlock[]): MessageBlock[] => {
-  const resultsByCallId = new Map<string, MessageBlock>()
-  const callIdSet = new Set<string>()
-
-  for (const block of blocks) {
-    if (block.type === "tool_call" && block.callId) {
-      callIdSet.add(block.callId)
-    }
-  }
-  for (const block of blocks) {
-    if (block.type === "tool_result" && block.callId && callIdSet.has(block.callId)) {
-      resultsByCallId.set(block.callId, block)
-    }
-  }
-
-  if (resultsByCallId.size === 0) return blocks
-
-  const result: MessageBlock[] = []
-  for (const block of blocks) {
-    if (block.type === "tool_result" && block.callId && resultsByCallId.has(block.callId)) {
-      continue
-    }
-    result.push(block)
-    if (block.type === "tool_call" && block.callId && resultsByCallId.has(block.callId)) {
-      result.push(resultsByCallId.get(block.callId)!)
-    }
-  }
-  return result
-}
-
 export function normalizeConversationMessages(
   messages: ConversationMessage[],
   options: {
@@ -275,7 +245,7 @@ export function normalizeConversationMessages(
       typeof metaInfo?.tool_call_id === "string" ? metaInfo.tool_call_id : undefined
     const messageId = `${options.idPrefix ?? "conv"}-${msg.turn_index ?? index}`
     const assistantBlocks = isBlockArray(metaInfo?.blocks)
-      ? interleaveToolBlocks(normalizeBlocks(metaInfo.blocks, messageId))
+      ? canonicalizeMessageBlockOrder(normalizeBlocks(metaInfo.blocks, messageId))
       : (() => {
           const fallback = buildExecutionLifecycleFallbackBlock(metaInfo, messageId)
           return fallback ? [fallback] : []

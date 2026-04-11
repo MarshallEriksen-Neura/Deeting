@@ -414,20 +414,20 @@
         "executionLabel": "鎵ц ID",
         "title": "已恢复中断执行",
         "description": {
-          "waitingApproval": "褰撳墠杩愯鍋滃湪宸ュ叿瀹℃壒鑺傜偣銆傚畬鎴愬鎵瑰悗鍗冲彲缁х画銆?,
-          "resumingAfterApproval": "涓婁竴娆¤繍琛屽湪瀹℃壒閫氳繃鍚庣户缁仮澶嶆椂琚腑鏂€傚彲缁х画浠庡凡鎭㈠鐨勭姸鎬佹帴鐫€璧帮紝鎴栭噸璇曢噸鏂伴┍鍔ㄧ户缁祦绋嬨€?,
-          "resumeFailed": "涓婁竴娆¤繍琛屽湪瀹℃壒鍚庣户缁椂澶辫触銆傚彲閲嶈瘯鍐嶆鎵ц缁窇锛屾垨鍦ㄧ姸鎬佸凡鍙敤鏃剁洿鎺ョ户缁€?,
+          "waitingApproval": "当前执行暂停在工具审批节点。请先处理待审批项，然后再继续。",
+          "resumingAfterApproval": "上一次执行在审批通过后继续时中断。你可以继续从已恢复的状态接着走，或重试以重新驱动后续流程。",
+          "resumeFailed": "上一次执行在审批后继续时失败。你可以重试再次运行后续流程，或在已恢复状态已经可用时直接继续。",
           "toolRunningInterrupted": "上一次执行在工具运行时中断。请先确认结果后再继续或重试。",
           "delegatedWorkflowRunning": "上一次委派的 workflow 没有完整回挂到聊天。若你要从当前上下文继续，可以重试。",
           "fallback": "上一次本地执行已中断。你可以继续、重试，或放弃这张恢复卡。"
         },
         "stage": {
-          "waitingApproval": "绛夊緟瀹℃壒",
-          "resumingAfterApproval": "瀹℃壒鍚庢仮澶嶄腑",
-          "resumeFailed": "鎭㈠澶辫触",
-          "toolRunningInterrupted": "宸ュ叿鎵ц涓柇",
-          "delegatedWorkflowRunning": "Workflow 涓柇",
-          "unknown": "宸叉仮澶嶇姸鎬?"
+          "waitingApproval": "等待审批",
+          "resumingAfterApproval": "审批后恢复中",
+          "resumeFailed": "恢复失败",
+          "toolRunningInterrupted": "工具执行中断",
+          "delegatedWorkflowRunning": "Workflow 中断",
+          "unknown": "已恢复状态"
         },
         "actions": {
           "continue": "继续",

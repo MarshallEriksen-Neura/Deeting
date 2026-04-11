@@ -324,6 +324,127 @@ describe("normalizeConversationMessages", () => {
     expect(message?.createdAt).toBe(Date.parse(createdAtIso))
   })
 
+  it("canonicalizes history blocks to tool_call then tool_result then linked ui then continuation text", () => {
+    const [message] = normalizeConversationMessages(
+      [
+        {
+          role: "assistant",
+          content: "legacy-order",
+          turn_index: 18,
+          meta_info: {
+            blocks: [
+              {
+                type: "text",
+                content: "I will summarize the result next.",
+              },
+              {
+                type: "ui",
+                callId: "call_hist_1",
+                toolName: "search_web",
+                viewType: "table.simple",
+                payload: { rows: [{ value: 1 }] },
+              },
+              {
+                type: "tool_result",
+                toolName: "search_web",
+                callId: "call_hist_1",
+                status: "success",
+                result: "done",
+              },
+              {
+                type: "tool_call",
+                toolName: "search_web",
+                callId: "call_hist_1",
+                status: "running",
+              },
+            ],
+          },
+        },
+      ] as unknown as Parameters<typeof normalizeConversationMessages>[0],
+      {
+        includeRoles: ["assistant"],
+      }
+    )
+
+    expect(message?.blocks?.map((block) => block.type)).toEqual([
+      "tool_call",
+      "tool_result",
+      "ui",
+      "text",
+    ])
+    expect(message?.blocks?.[0]).toMatchObject({
+      type: "tool_call",
+      callId: "call_hist_1",
+      status: "success",
+    })
+    expect(message?.blocks?.[1]).toMatchObject({
+      type: "tool_result",
+      callId: "call_hist_1",
+      status: "success",
+    })
+    expect(message?.blocks?.[2]).toMatchObject({ type: "ui", callId: "call_hist_1" })
+    expect(message?.blocks?.[3]).toMatchObject({
+      type: "text",
+      content: "I will summarize the result next.",
+    })
+  })
+
+  it("history canonicalization matches live approval-resume final ordering", () => {
+    const [message] = normalizeConversationMessages(
+      [
+        {
+          role: "assistant",
+          content: "legacy-order",
+          turn_index: 19,
+          meta_info: {
+            blocks: [
+              {
+                type: "text",
+                content: "The tab is open. Continuing now.",
+              },
+              {
+                type: "tool_result",
+                toolName: "browser_open_tab",
+                callId: "call_hist_approval_1",
+                status: "success",
+                result: { ok: true },
+              },
+              {
+                type: "tool_call",
+                toolName: "browser_open_tab",
+                callId: "call_hist_approval_1",
+                status: "requires_approval",
+              },
+            ],
+          },
+        },
+      ] as unknown as Parameters<typeof normalizeConversationMessages>[0],
+      {
+        includeRoles: ["assistant"],
+      }
+    )
+
+    expect(message?.blocks?.map((block) => block.type)).toEqual([
+      "tool_call",
+      "tool_result",
+      "text",
+    ])
+    expect(message?.blocks?.[0]).toMatchObject({
+      type: "tool_call",
+      callId: "call_hist_approval_1",
+      status: "success",
+    })
+    expect(message?.blocks?.[1]).toMatchObject({
+      type: "tool_result",
+      callId: "call_hist_approval_1",
+      status: "success",
+    })
+    expect(message?.blocks?.[2]).toMatchObject({
+      type: "text",
+      content: "The tab is open. Continuing now.",
+    })
+  })
+
   it("does not synthesize blocks for user messages", () => {
     const [message] = normalizeConversationMessages(
       [

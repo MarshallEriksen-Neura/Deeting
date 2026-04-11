@@ -2,6 +2,10 @@ import type { MessageBlock, ToolCallBlock, ToolResultBlock } from "@/lib/chat/me
 import { isToolApprovalResultBlock } from "@/lib/chat/assistant-activity"
 import { extractRootExecutionIdFromBlock } from "@/lib/chat/execution-tree"
 
+type InternalMessageBlock = MessageBlock & {
+  __insertedBeforeActiveToolChain?: boolean
+}
+
 export function extractAssistantTextFromBlocks(blocks?: MessageBlock[]): string {
   if (!Array.isArray(blocks) || blocks.length === 0) return ""
   return blocks.reduce((acc, block) => {
@@ -33,6 +37,12 @@ function isToolVisualBlock(block: MessageBlock): boolean {
 
 function isActiveToolCallStatus(status: ToolCallBlock["status"] | undefined) {
   return status === "running" || status === "requires_approval"
+}
+
+function isNarrativeBlock(
+  block: MessageBlock,
+): block is Extract<MessageBlock, { type: "text" | "thought" | "error" }> {
+  return block.type === "text" || block.type === "thought" || block.type === "error"
 }
 
 function findNarrativeInsertionIndex(blocks: MessageBlock[]): number {
@@ -76,24 +86,30 @@ function findNarrativeInsertionIndex(blocks: MessageBlock[]): number {
 }
 
 function insertOrMergeNarrativeBlock(
-  next: MessageBlock[],
-  block: Extract<MessageBlock, { type: "text" | "thought" }>,
+  next: InternalMessageBlock[],
+  block: Extract<InternalMessageBlock, { type: "text" | "thought" }>,
 ): void {
   const insertionIndex = findNarrativeInsertionIndex(next)
   const previous = next[insertionIndex - 1]
+  const insertedBeforeActiveToolChain = insertionIndex < next.length
 
   if (previous?.type === block.type) {
     next[insertionIndex - 1] = {
       ...previous,
       content: `${previous.content}${block.content}`,
+      __insertedBeforeActiveToolChain:
+        previous.__insertedBeforeActiveToolChain || insertedBeforeActiveToolChain,
     }
     return
   }
 
-  next.splice(insertionIndex, 0, block)
+  next.splice(insertionIndex, 0, {
+    ...block,
+    __insertedBeforeActiveToolChain: insertedBeforeActiveToolChain || undefined,
+  })
 }
 
-function upsertToolBlock(next: MessageBlock[], block: MessageBlock): boolean {
+function upsertToolBlock(next: InternalMessageBlock[], block: InternalMessageBlock): boolean {
   if (block.type !== "tool_call" && block.type !== "tool_result") return false
   const callId = typeof block.callId === "string" ? block.callId.trim() : ""
   if (!callId) return false
@@ -125,7 +141,7 @@ function upsertToolBlock(next: MessageBlock[], block: MessageBlock): boolean {
   return true
 }
 
-function upsertExecutionLifecycleBlock(next: MessageBlock[], block: MessageBlock): boolean {
+function upsertExecutionLifecycleBlock(next: InternalMessageBlock[], block: InternalMessageBlock): boolean {
   if (block.type !== "ui") return false
   const rootExecutionId = extractRootExecutionIdFromBlock(block)
   if (!rootExecutionId) return false
@@ -145,7 +161,7 @@ function upsertExecutionLifecycleBlock(next: MessageBlock[], block: MessageBlock
   return true
 }
 
-function applyToolResultStatuses(blocks: MessageBlock[]): MessageBlock[] {
+function applyToolResultStatuses(blocks: InternalMessageBlock[]): InternalMessageBlock[] {
   const normalized = [...blocks]
   for (const block of normalized) {
     if (block.type !== "tool_result") continue
@@ -180,8 +196,139 @@ function normalizeIncomingBlocks(messageId: string, blocks: MessageBlock[], star
     }))
 }
 
+function resolveDeferredNarrativePlacement(
+  blocks: InternalMessageBlock[],
+  index: number,
+): { callId: string; sawLinkedToolVisual: boolean } | null {
+  let sawLinkedToolVisual = false
+
+  for (let cursor = index + 1; cursor < blocks.length; cursor += 1) {
+    const candidate = blocks[cursor]
+    if (!candidate) return null
+    if (isNarrativeBlock(candidate)) {
+      return null
+    }
+    if (candidate.type === "tool_call") {
+      const callId = typeof candidate.callId === "string" ? candidate.callId.trim() : ""
+      return callId ? { callId, sawLinkedToolVisual } : null
+    }
+    if (isToolVisualBlock(candidate)) {
+      sawLinkedToolVisual = true
+      continue
+    }
+    return null
+  }
+
+  return null
+}
+
+export function canonicalizeMessageBlockOrder(blocks: MessageBlock[]): MessageBlock[] {
+  const normalized = applyToolResultStatuses(blocks as InternalMessageBlock[])
+  const callIdsWithAnchors = new Set(
+    normalized.flatMap((block) => {
+      if (block.type !== "tool_call") return []
+      const callId = typeof block.callId === "string" ? block.callId.trim() : ""
+      return callId ? [callId] : []
+    }),
+  )
+
+  const linkedResultIndices = new Set<number>()
+  const linkedUiIndices = new Set<number>()
+  const linkedResultsByCallId = new Map<string, InternalMessageBlock[]>()
+  const linkedUiByCallId = new Map<string, InternalMessageBlock[]>()
+
+  normalized.forEach((block, index) => {
+    const callId = typeof block.callId === "string" ? block.callId.trim() : ""
+    if (!callId || !callIdsWithAnchors.has(callId)) return
+
+    if (block.type === "tool_result") {
+      linkedResultIndices.add(index)
+      const existing = linkedResultsByCallId.get(callId) ?? []
+      existing.push(block)
+      linkedResultsByCallId.set(callId, existing)
+      return
+    }
+
+    if (block.type === "ui") {
+      linkedUiIndices.add(index)
+      const existing = linkedUiByCallId.get(callId) ?? []
+      existing.push(block)
+      linkedUiByCallId.set(callId, existing)
+    }
+  })
+
+  const deferredNarrativeIndices = new Set<number>()
+  const deferredNarrativesByCallId = new Map<string, InternalMessageBlock[]>()
+
+  normalized.forEach((block, index) => {
+    if (!isNarrativeBlock(block)) {
+      return
+    }
+
+    const deferredPlacement = resolveDeferredNarrativePlacement(normalized, index)
+    if (!deferredPlacement) {
+      return
+    }
+
+    const shouldDefer =
+      block.__insertedBeforeActiveToolChain || deferredPlacement.sawLinkedToolVisual
+    if (!shouldDefer) {
+      return
+    }
+
+    const anchor = normalized.find(
+      (candidate) =>
+        candidate.type === "tool_call" && candidate.callId === deferredPlacement.callId,
+    )
+    if (!anchor || isActiveToolCallStatus(anchor.status)) {
+      return
+    }
+
+    deferredNarrativeIndices.add(index)
+    const existing = deferredNarrativesByCallId.get(deferredPlacement.callId) ?? []
+    existing.push({
+      ...block,
+      __insertedBeforeActiveToolChain: undefined,
+    })
+    deferredNarrativesByCallId.set(deferredPlacement.callId, existing)
+  })
+
+  const reordered: InternalMessageBlock[] = []
+
+  normalized.forEach((block, index) => {
+    if (deferredNarrativeIndices.has(index)) {
+      return
+    }
+
+    if (linkedResultIndices.has(index) || linkedUiIndices.has(index)) {
+      return
+    }
+
+    reordered.push(block)
+
+    if (block.type !== "tool_call") {
+      return
+    }
+
+    const callId = typeof block.callId === "string" ? block.callId.trim() : ""
+    if (!callId) {
+      return
+    }
+
+    const linkedResults = linkedResultsByCallId.get(callId) ?? []
+    const linkedUi = linkedUiByCallId.get(callId) ?? []
+    const deferredNarratives = deferredNarrativesByCallId.get(callId) ?? []
+
+    reordered.push(...linkedResults, ...linkedUi, ...deferredNarratives)
+  })
+
+  return reordered
+}
+
 export function replaceMessageBlocks(messageId: string, blocks: MessageBlock[]): MessageBlock[] {
-  return applyToolResultStatuses(normalizeIncomingBlocks(messageId, Array.isArray(blocks) ? blocks : []))
+  return canonicalizeMessageBlockOrder(
+    normalizeIncomingBlocks(messageId, Array.isArray(blocks) ? blocks : []),
+  )
 }
 
 export function appendMessageBlocks(
@@ -189,8 +336,12 @@ export function appendMessageBlocks(
   existingBlocks: MessageBlock[] | undefined,
   incomingBlocks: MessageBlock[]
 ): MessageBlock[] {
-  const next = Array.isArray(existingBlocks) ? [...existingBlocks] : []
-  const normalizedIncoming = normalizeIncomingBlocks(messageId, Array.isArray(incomingBlocks) ? incomingBlocks : [], next.length)
+  const next = (Array.isArray(existingBlocks) ? [...existingBlocks] : []) as InternalMessageBlock[]
+  const normalizedIncoming = normalizeIncomingBlocks(
+    messageId,
+    Array.isArray(incomingBlocks) ? incomingBlocks : [],
+    next.length,
+  ) as InternalMessageBlock[]
 
   for (const block of normalizedIncoming) {
     if (block.type === "text") {
@@ -214,7 +365,7 @@ export function appendMessageBlocks(
     next.push(block)
   }
 
-  return applyToolResultStatuses(next)
+  return canonicalizeMessageBlockOrder(next)
 }
 
 export function upsertToolResultBlock(
@@ -222,32 +373,32 @@ export function upsertToolResultBlock(
   existingBlocks: MessageBlock[] | undefined,
   incomingBlock: ToolResultBlock
 ): MessageBlock[] {
-  const next = Array.isArray(existingBlocks) ? [...existingBlocks] : []
-  const [normalized] = normalizeIncomingBlocks(messageId, [incomingBlock], next.length)
+  const next = (Array.isArray(existingBlocks) ? [...existingBlocks] : []) as InternalMessageBlock[]
+  const [normalized] = normalizeIncomingBlocks(messageId, [incomingBlock], next.length) as InternalMessageBlock[]
 
   if (!normalized || normalized.type !== "tool_result") {
-    return applyToolResultStatuses(next)
+    return canonicalizeMessageBlockOrder(next)
   }
 
   const callId = normalized.callId
-    if (typeof callId === "string" && callId.trim().length > 0) {
-      const existingIndex = next.findIndex(
-        (block) => block.type === "tool_result" && block.callId === callId
-      )
-      if (existingIndex >= 0) {
-        const existing = next[existingIndex]
-        if (!existing || existing.type !== "tool_result") {
-          return applyToolResultStatuses(next)
-        }
-        next[existingIndex] = {
-          ...existing,
-          ...normalized,
+  if (typeof callId === "string" && callId.trim().length > 0) {
+    const existingIndex = next.findIndex(
+      (block) => block.type === "tool_result" && block.callId === callId,
+    )
+    if (existingIndex >= 0) {
+      const existing = next[existingIndex]
+      if (!existing || existing.type !== "tool_result") {
+        return canonicalizeMessageBlockOrder(next)
+      }
+      next[existingIndex] = {
+        ...existing,
+        ...normalized,
         id: existing.id || normalized.id,
       }
-      return applyToolResultStatuses(next)
+      return canonicalizeMessageBlockOrder(next)
     }
   }
 
   next.push(normalized)
-  return applyToolResultStatuses(next)
+  return canonicalizeMessageBlockOrder(next)
 }
