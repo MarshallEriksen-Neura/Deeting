@@ -307,48 +307,41 @@ pub async fn rebuild_local_embedding_assets(
         Vec::new()
     };
 
-    let (tools, assistant_candidates, local_knowledge_files) =
-        if rebuild_scope.rebuilds_assets() {
-            let tools = app_state.mcp.store.list_tools().await.map_err(to_string)?;
-            let assistants = app_state
-                .mcp
-                .store
-                .list_local_assistants()
-                .await
-                .map_err(to_string)?;
-            let enabled_assistant_ids = app_state
-                .mcp
-                .store
-                .list_enabled_local_assistant_ids()
-                .await
-                .unwrap_or_else(|_| HashSet::new());
-            let local_knowledge_files = app_state
-                .knowledge
-                .store
-                .list_local_user_documents(LocalUserDocumentListQuery {
-                    folder_id: None,
-                    status: None,
-                    q: None,
-                })
-                .await
-                .map_err(to_string)?;
-            let assistant_candidates = assistants
-                .into_iter()
-                .filter(|assistant| enabled_assistant_ids.contains(assistant.id.as_str()))
-                .collect::<Vec<_>>();
-            (
-                tools,
-                assistant_candidates,
-                local_knowledge_files,
-            )
-        } else {
-            (Vec::new(), Vec::new(), Vec::new())
-        };
+    let (tools, assistant_candidates, local_knowledge_files) = if rebuild_scope.rebuilds_assets() {
+        let tools = app_state.mcp.store.list_tools().await.map_err(to_string)?;
+        let assistants = app_state
+            .mcp
+            .store
+            .list_local_assistants()
+            .await
+            .map_err(to_string)?;
+        let enabled_assistant_ids = app_state
+            .mcp
+            .store
+            .list_enabled_local_assistant_ids()
+            .await
+            .unwrap_or_else(|_| HashSet::new());
+        let local_knowledge_files = app_state
+            .knowledge
+            .store
+            .list_local_user_documents(LocalUserDocumentListQuery {
+                folder_id: None,
+                status: None,
+                q: None,
+            })
+            .await
+            .map_err(to_string)?;
+        let assistant_candidates = assistants
+            .into_iter()
+            .filter(|assistant| enabled_assistant_ids.contains(assistant.id.as_str()))
+            .collect::<Vec<_>>();
+        (tools, assistant_candidates, local_knowledge_files)
+    } else {
+        (Vec::new(), Vec::new(), Vec::new())
+    };
 
     let memory_total = memories.len();
-    let asset_total = tools.len()
-        + assistant_candidates.len()
-        + local_knowledge_files.len();
+    let asset_total = tools.len() + assistant_candidates.len() + local_knowledge_files.len();
     let total = memory_total + asset_total;
     let (mut processed, mut indexed, mut failed) = (0usize, 0usize, 0usize);
     let (mut memory_indexed, mut memory_failed, mut asset_indexed, mut asset_failed) =

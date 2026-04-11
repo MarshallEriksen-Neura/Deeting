@@ -7,6 +7,7 @@ import {
   useBridgeApprovalStore,
 } from "@/lib/chat/bridge-approval-store"
 import { bridgeCallTool } from "@/lib/api/bridge"
+import { listPendingMcpApprovals } from "@/lib/api/mcp-approvals"
 import { rejectDesktopTool, streamDesktopApproveTool } from "@/lib/api/mcp-desktop"
 import { useChatStore } from "@/store/chat-store"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
@@ -83,11 +84,17 @@ jest.mock("@/lib/api/bridge", () => ({
   bridgeCallTool: jest.fn(),
 }))
 
+jest.mock("@/lib/api/mcp-approvals", () => ({
+  listPendingMcpApprovals: jest.fn(),
+}))
+
 const mockApproveTool = streamDesktopApproveTool as jest.MockedFunction<
   typeof streamDesktopApproveTool
 >
 const mockRejectTool = rejectDesktopTool as jest.MockedFunction<typeof rejectDesktopTool>
 const mockBridgeCallTool = bridgeCallTool as jest.MockedFunction<typeof bridgeCallTool>
+const mockListPendingMcpApprovals =
+  listPendingMcpApprovals as jest.MockedFunction<typeof listPendingMcpApprovals>
 
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
@@ -104,6 +111,7 @@ describe("ToolApprovalDialog", () => {
     mockApproveTool.mockReset()
     mockRejectTool.mockReset()
     mockBridgeCallTool.mockReset()
+    mockListPendingMcpApprovals.mockReset()
     jest.clearAllMocks()
     act(() => {
       useBridgeApprovalStore.getState().clearAll()
@@ -478,6 +486,118 @@ describe("ToolApprovalDialog", () => {
       (block) => block.type === "text" && block.content === "Streamed continuation."
     )
     expect(textBlocks).toHaveLength(1)
+  })
+
+  it("refreshes canonical pending approvals after a local approval returns waiting_approval", async () => {
+    mockApproveTool.mockResolvedValueOnce({
+      status: "LOCAL_CHAT_WAITING_APPROVAL",
+      approved_tool_result: { ok: true },
+      continuation_blocks: [
+        {
+          id: "call-local-next-1",
+          type: "tool_call",
+          callId: "call-local-next-1",
+          toolName: "browser_click",
+          status: "running",
+        },
+        {
+          id: "result-local-next-1",
+          type: "tool_result",
+          callId: "call-local-next-1",
+          toolName: "browser_click",
+          status: "requires_approval",
+          result: {
+            status: "REQUIRES_APPROVAL",
+            approval_token: "approval-local-next-1",
+            tool_name: "browser_click",
+          },
+        },
+      ],
+      execution_graph_execution_id: "graph-exec-waiting-1",
+    } as unknown)
+    mockListPendingMcpApprovals.mockResolvedValueOnce([
+      {
+        status: "REQUIRES_APPROVAL",
+        approval_token: "approval-local-next-1",
+        tool_name: "browser_click",
+        arguments: { target: { text: "Continue" } },
+        call_id: "call-local-next-1",
+        session_id: "session-local-waiting-1",
+        execution_graph_execution_id: "graph-exec-waiting-1",
+      },
+    ])
+
+    act(() => {
+      useChatStore.setState({
+        sessionId: "session-local-waiting-1",
+        messages: [
+          {
+            id: "assistant-local-waiting-1",
+            role: "assistant",
+            content: "",
+            createdAt: 1,
+            blocks: [
+              {
+                id: "call-local-waiting-1",
+                type: "tool_call",
+                callId: "call-local-waiting-1",
+                toolName: "browser_open_tab",
+                status: "running",
+              } as MessageBlock,
+              {
+                id: "result-local-waiting-1",
+                type: "tool_result",
+                callId: "call-local-waiting-1",
+                toolName: "browser_open_tab",
+                status: "requires_approval",
+                result: {
+                  status: "REQUIRES_APPROVAL",
+                  approval_token: "approval-local-waiting-1",
+                  execution_graph_execution_id: "graph-exec-waiting-1",
+                },
+              } as MessageBlock,
+            ],
+          },
+        ],
+      })
+      useBridgeApprovalStore.getState().setPending(
+        createBridgeToolApproval({
+          approval_token: "approval-local-waiting-1",
+          tool_name: "browser_open_tab",
+          arguments: { url: "https://example.com" },
+          meta: {
+            call_id: "call-local-waiting-1",
+            message_id: "assistant-local-waiting-1",
+            execution_graph_execution_id: "graph-exec-waiting-1",
+          },
+        })
+      )
+    })
+
+    render(<ToolApprovalDialog />)
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "actions.approveOnce" }))
+      await Promise.resolve()
+    })
+
+    await waitFor(() => {
+      expect(mockListPendingMcpApprovals).toHaveBeenCalledWith("session-local-waiting-1")
+    })
+
+    await waitFor(() => {
+      expect(useBridgeApprovalStore.getState().pending).toMatchObject({
+        approval_token: "approval-local-next-1",
+        tool_name: "browser_click",
+        arguments: { target: { text: "Continue" } },
+        meta: {
+          call_id: "call-local-next-1",
+          message_id: "assistant-local-waiting-1",
+          execution_graph_execution_id: "graph-exec-waiting-1",
+        },
+      })
+    })
+
+    expect(useBridgeApprovalStore.getState().queue).toHaveLength(1)
   })
 
   it("replaces stale approval status with execution and then clears it after approval completes", async () => {

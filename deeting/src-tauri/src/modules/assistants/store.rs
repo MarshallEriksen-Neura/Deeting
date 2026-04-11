@@ -93,7 +93,7 @@ pub(crate) async fn init_assistant_tables(store: &McpStore) -> Result<(), McpErr
         );
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -117,7 +117,7 @@ pub(crate) async fn init_assistant_tables(store: &McpStore) -> Result<(), McpErr
         );
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -127,7 +127,7 @@ pub(crate) async fn init_assistant_tables(store: &McpStore) -> Result<(), McpErr
         ON assistant(owner_user_id);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -137,7 +137,7 @@ pub(crate) async fn init_assistant_tables(store: &McpStore) -> Result<(), McpErr
         ON assistant(visibility, status);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -147,7 +147,7 @@ pub(crate) async fn init_assistant_tables(store: &McpStore) -> Result<(), McpErr
         ON assistant(published_at);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -169,7 +169,7 @@ pub(crate) async fn init_assistant_tables(store: &McpStore) -> Result<(), McpErr
         );
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -190,7 +190,7 @@ pub(crate) async fn init_assistant_tables(store: &McpStore) -> Result<(), McpErr
         );
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -200,7 +200,7 @@ pub(crate) async fn init_assistant_tables(store: &McpStore) -> Result<(), McpErr
         ON assistant_install(user_id, assistant_id);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -210,7 +210,7 @@ pub(crate) async fn init_assistant_tables(store: &McpStore) -> Result<(), McpErr
         ON assistant_install(user_id);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -220,7 +220,7 @@ pub(crate) async fn init_assistant_tables(store: &McpStore) -> Result<(), McpErr
         ON assistant_install(assistant_id);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -236,7 +236,7 @@ pub(crate) async fn init_assistant_tables(store: &McpStore) -> Result<(), McpErr
         );
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -246,7 +246,7 @@ pub(crate) async fn init_assistant_tables(store: &McpStore) -> Result<(), McpErr
         ON assistant_rating(user_id, assistant_id);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -256,7 +256,7 @@ pub(crate) async fn init_assistant_tables(store: &McpStore) -> Result<(), McpErr
         ON assistant_rating(user_id);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -266,7 +266,7 @@ pub(crate) async fn init_assistant_tables(store: &McpStore) -> Result<(), McpErr
         ON assistant_rating(assistant_id);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -285,7 +285,7 @@ pub(crate) async fn init_assistant_tables(store: &McpStore) -> Result<(), McpErr
         );
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -295,7 +295,7 @@ pub(crate) async fn init_assistant_tables(store: &McpStore) -> Result<(), McpErr
         ON assistant_routing_state(assistant_id);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -305,7 +305,7 @@ pub(crate) async fn init_assistant_tables(store: &McpStore) -> Result<(), McpErr
         ON assistant_routing_state(assistant_id);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -319,7 +319,7 @@ pub(crate) async fn init_assistant_tables(store: &McpStore) -> Result<(), McpErr
         );
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -329,7 +329,7 @@ pub(crate) async fn init_assistant_tables(store: &McpStore) -> Result<(), McpErr
         ON assistant_tag(name);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -339,7 +339,7 @@ pub(crate) async fn init_assistant_tables(store: &McpStore) -> Result<(), McpErr
         ON assistant_tag(name);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -352,7 +352,7 @@ pub(crate) async fn init_assistant_tables(store: &McpStore) -> Result<(), McpErr
         );
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -362,7 +362,7 @@ pub(crate) async fn init_assistant_tables(store: &McpStore) -> Result<(), McpErr
         ON assistant_tag_link(assistant_id);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -372,7 +372,7 @@ pub(crate) async fn init_assistant_tables(store: &McpStore) -> Result<(), McpErr
         ON assistant_tag_link(tag_id);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -382,7 +382,7 @@ pub(crate) async fn init_assistant_tables(store: &McpStore) -> Result<(), McpErr
         ON assistant_version(assistant_id, version);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -392,7 +392,7 @@ pub(crate) async fn init_assistant_tables(store: &McpStore) -> Result<(), McpErr
         ON assistant_version(assistant_id);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -426,7 +426,7 @@ pub(crate) async fn init_assistant_tables(store: &McpStore) -> Result<(), McpErr
         FROM assistants a;
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -444,7 +444,7 @@ pub(crate) async fn init_assistant_tables(store: &McpStore) -> Result<(), McpErr
         );
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -454,7 +454,7 @@ pub(crate) async fn init_assistant_tables(store: &McpStore) -> Result<(), McpErr
         ON assistant_messages(assistant_id, created_at);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -835,7 +835,7 @@ impl McpStore {
         .bind(0)
         .bind(&now)
         .bind(&now)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -855,7 +855,7 @@ impl McpStore {
         .bind(&now)
         .bind(&now)
         .bind(&now)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -944,7 +944,7 @@ impl McpStore {
         .bind(cloud_id.as_deref())
         .bind(&now)
         .bind(id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -960,7 +960,7 @@ impl McpStore {
         .bind(avatar.as_deref())
         .bind(&now)
         .bind(id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -994,7 +994,7 @@ impl McpStore {
         )
         .bind(&now)
         .bind(id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -1007,7 +1007,7 @@ impl McpStore {
         )
         .bind(&now)
         .bind(id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -1076,7 +1076,7 @@ impl McpStore {
         .bind(0)
         .bind(&now)
         .bind(&now)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -1102,7 +1102,7 @@ impl McpStore {
         )
         .bind(&now)
         .bind(assistant_id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
         Ok(())
@@ -1298,7 +1298,7 @@ impl McpStore {
                 "#,
             )
             .bind(&now)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?
             .rows_affected() as i64
@@ -1319,7 +1319,7 @@ impl McpStore {
                 query = query.bind(id);
             }
             query
-                .execute(&self.pool)
+                .execute(&self.write_pool)
                 .await
                 .map_err(|err| McpError::Storage(err.to_string()))?
                 .rows_affected() as i64
@@ -1375,7 +1375,7 @@ impl McpStore {
             query = query.bind(assistant_id);
         }
         let result = query
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
         let rows_affected = result.rows_affected() as i64;
@@ -1408,7 +1408,7 @@ impl McpStore {
             query = query.bind(assistant_id);
         }
         let result = query
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
         Ok(result.rows_affected() as i64)
@@ -1682,7 +1682,7 @@ impl McpStore {
         .bind(sort_order)
         .bind(&now)
         .bind(&now)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -1833,7 +1833,7 @@ impl McpStore {
         .bind(sort_order)
         .bind(&now)
         .bind(&install_id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
         self.sync_assistant_registry_entry(&normalized_assistant_id)
@@ -1859,7 +1859,7 @@ impl McpStore {
         )
         .bind(LOCAL_DESKTOP_USER_ID)
         .bind(&normalized_assistant_id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -1961,7 +1961,7 @@ impl McpStore {
             .bind(payload.rating)
             .bind(&now)
             .bind(&rating_id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -1985,7 +1985,7 @@ impl McpStore {
                 .bind(rating_avg)
                 .bind(&now)
                 .bind(&normalized_assistant_id)
-                .execute(&self.pool)
+                .execute(&self.write_pool)
                 .await
                 .map_err(|err| McpError::Storage(err.to_string()))?;
             }
@@ -2005,7 +2005,7 @@ impl McpStore {
             .bind(payload.rating)
             .bind(&now)
             .bind(&now)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -2024,7 +2024,7 @@ impl McpStore {
             .bind(rating_avg)
             .bind(&now)
             .bind(&normalized_assistant_id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
         }
@@ -2081,7 +2081,7 @@ impl McpStore {
         .bind(&now)
         .bind(&now)
         .bind(&now)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -2147,7 +2147,7 @@ impl McpStore {
         .bind(&now)
         .bind(positive_inc)
         .bind(negative_inc)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -2369,7 +2369,7 @@ impl McpStore {
         .bind(tags_json.as_deref())
         .bind(&now)
         .bind(&now)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -2488,7 +2488,7 @@ impl McpStore {
         .bind(normalized_error_code.as_deref())
         .bind(meta_json.as_deref())
         .bind(&now)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -2693,7 +2693,7 @@ impl McpStore {
         .bind(&normalized_message)
         .bind(details_json.as_deref())
         .bind(&created_at)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -3224,7 +3224,7 @@ impl McpStore {
                 .bind(sort_order)
                 .bind(&created_at)
                 .bind(&created_at)
-                .execute(&self.pool)
+                .execute(&self.write_pool)
                 .await
                 .map_err(|err| McpError::Storage(err.to_string()))?;
             }
@@ -3257,7 +3257,7 @@ impl McpStore {
         .bind(assistant_id)
         .bind(updated_at)
         .bind(assistant_id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
         Ok(())
@@ -3332,7 +3332,7 @@ impl McpStore {
                 .bind(&name)
                 .bind(updated_at)
                 .bind(updated_at)
-                .execute(&self.pool)
+                .execute(&self.write_pool)
                 .await
                 .map_err(|err| McpError::Storage(err.to_string()))?;
                 new_id
@@ -3351,7 +3351,7 @@ impl McpStore {
             )
             .bind(assistant_id)
             .bind(tag_id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
         }
@@ -3365,7 +3365,7 @@ impl McpStore {
             )
             .bind(assistant_id)
             .bind(tag_id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
         }
@@ -3406,7 +3406,7 @@ impl McpStore {
         .bind(total_count)
         .bind(updated_at)
         .bind(assistant_id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -3557,7 +3557,7 @@ impl McpStore {
                     .bind(published_at)
                     .bind(created_at)
                     .bind(updated_at)
-                    .execute(&self.pool)
+                    .execute(&self.write_pool)
                     .await
                     .map_err(|err| McpError::Storage(err.to_string()))?;
                     new_version_id
@@ -3601,7 +3601,7 @@ impl McpStore {
                 .bind(published_at)
                 .bind(created_at)
                 .bind(updated_at)
-                .execute(&self.pool)
+                .execute(&self.write_pool)
                 .await
                 .map_err(|err| McpError::Storage(err.to_string()))?;
                 new_version_id
@@ -3624,7 +3624,7 @@ impl McpStore {
         .bind(updated_at)
         .bind(published_at)
         .bind(&selected_version_id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -3638,7 +3638,7 @@ impl McpStore {
         .bind(&selected_version_id)
         .bind(updated_at)
         .bind(assistant_id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -3666,7 +3666,7 @@ impl McpStore {
         });
         if !exists {
             sqlx::query(ddl)
-                .execute(&self.pool)
+                .execute(&self.write_pool)
                 .await
                 .map_err(|err| McpError::Storage(err.to_string()))?;
         }
@@ -3688,7 +3688,7 @@ impl McpStore {
         }
 
         sqlx::query("PRAGMA foreign_keys=OFF;")
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -3777,7 +3777,7 @@ impl McpStore {
         .await;
 
         sqlx::query("PRAGMA foreign_keys=ON;")
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -3799,7 +3799,7 @@ impl McpStore {
         }
 
         sqlx::query("PRAGMA foreign_keys=OFF;")
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -3913,7 +3913,7 @@ impl McpStore {
         .await;
 
         sqlx::query("PRAGMA foreign_keys=ON;")
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
 

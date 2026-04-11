@@ -7,12 +7,35 @@ import type { ComposerRecoveryPrompt } from "@/lib/chat/recovery"
 
 function descriptionKeyForStage(stage: string | null) {
   switch (stage) {
+    case "waiting_approval":
+      return "controls.recovery.description.waitingApproval"
+    case "resuming_after_approval":
+      return "controls.recovery.description.resumingAfterApproval"
+    case "resume_failed":
+      return "controls.recovery.description.resumeFailed"
     case "tool_running_interrupted":
       return "controls.recovery.description.toolRunningInterrupted"
     case "delegated_workflow_running":
       return "controls.recovery.description.delegatedWorkflowRunning"
     default:
       return "controls.recovery.description.fallback"
+  }
+}
+
+function stageLabelKeyForStage(stage: string | null) {
+  switch (stage) {
+    case "waiting_approval":
+      return "controls.recovery.stage.waitingApproval"
+    case "resuming_after_approval":
+      return "controls.recovery.stage.resumingAfterApproval"
+    case "resume_failed":
+      return "controls.recovery.stage.resumeFailed"
+    case "tool_running_interrupted":
+      return "controls.recovery.stage.toolRunningInterrupted"
+    case "delegated_workflow_running":
+      return "controls.recovery.stage.delegatedWorkflowRunning"
+    default:
+      return "controls.recovery.stage.unknown"
   }
 }
 
@@ -38,6 +61,7 @@ export function RecoveryActionBar({
   const canContinue = recovery.availableActions.includes("continue")
   const canRetry = recovery.availableActions.includes("retry")
   const canAbandon = recovery.availableActions.includes("abandon")
+  const stageLabel = t(stageLabelKeyForStage(recovery.stage))
 
   return (
     <div className="pointer-events-auto w-full max-w-[min(30rem,calc(100vw-2.5rem))] rounded-2xl border border-sky-200/80 bg-white/95 p-3 text-slate-950 shadow-[0_20px_45px_-26px_rgba(14,116,144,0.45)] ring-1 ring-white/70 backdrop-blur-2xl dark:border-sky-400/20 dark:bg-[#0c1418]/95 dark:text-sky-50 dark:ring-white/5">
@@ -47,19 +71,22 @@ export function RecoveryActionBar({
         </div>
         <div className="min-w-0 flex-1 space-y-2">
           <div className="space-y-1">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <p className="truncate text-[13px] font-semibold leading-none">
                 {t("controls.recovery.title")}
               </p>
-              {recovery.executionId ? (
-                <span className="inline-flex shrink-0 items-center rounded-full bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium text-sky-800 dark:bg-sky-400/12 dark:text-sky-200">
-                  {recovery.executionId}
-                </span>
-              ) : null}
+              <span className="inline-flex shrink-0 items-center rounded-full border border-sky-300/50 bg-sky-500/8 px-2 py-0.5 text-[10px] font-medium text-sky-900 dark:border-sky-400/20 dark:bg-sky-400/12 dark:text-sky-100">
+                {t("controls.recovery.stageLabel")}: {stageLabel}
+              </span>
             </div>
             <p className="text-[11px] leading-4 text-slate-700/80 dark:text-sky-100/70">
               {t(descriptionKeyForStage(recovery.stage))}
             </p>
+            {recovery.executionId ? (
+              <p className="font-mono text-[10px] leading-4 text-slate-500 dark:text-sky-100/55">
+                {t("controls.recovery.executionLabel")}: {recovery.executionId}
+              </p>
+            ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
             <Button

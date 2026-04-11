@@ -7,14 +7,15 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 #[cfg(target_os = "windows")]
-use crate::modules::sandbox::backend_wsl::{detect_wsl_arch, resolve_wsl_home_dir, shell_quote, windows_path_to_wsl};
+use crate::modules::sandbox::backend_wsl::{
+    detect_wsl_arch, resolve_wsl_home_dir, shell_quote, windows_path_to_wsl,
+};
 use crate::modules::sandbox::error::SandboxError;
 #[cfg(target_os = "windows")]
 use crate::utils::configure_background_std_command;
 
 const BOXLITE_VERSION: &str = "0.8.2";
-const BOXLITE_RELEASE_BASE: &str =
-    "https://github.com/boxlite-ai/boxlite/releases/download/v0.8.2";
+const BOXLITE_RELEASE_BASE: &str = "https://github.com/boxlite-ai/boxlite/releases/download/v0.8.2";
 const INSTALL_RECORD_NAME: &str = "boxlite-installation.json";
 
 #[derive(Debug, Clone)]
@@ -66,7 +67,12 @@ pub async fn install_boxlite_wsl(
         let wsl_boxlite_home = format!("{install_root}/home");
         let asset_wsl_path = windows_path_to_wsl(&downloaded_asset)?;
 
-        install_cli_into_wsl(&asset_wsl_path, &wsl_install_dir, &wsl_binary_path, &wsl_boxlite_home)?;
+        install_cli_into_wsl(
+            &asset_wsl_path,
+            &wsl_install_dir,
+            &wsl_binary_path,
+            &wsl_boxlite_home,
+        )?;
 
         let record = BoxLiteInstallationRecord {
             version: BOXLITE_VERSION.to_string(),

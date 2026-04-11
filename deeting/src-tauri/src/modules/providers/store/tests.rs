@@ -175,6 +175,31 @@ async fn update_instance_persists_protocol_meta_fields() {
 }
 
 #[tokio::test]
+async fn record_feedback_simple_persists_bandit_state_with_shared_memory_pool() {
+    let store = init_store().await;
+
+    let first = store
+        .record_feedback_simple("router:prompt", "variant-a", true, Some(120.0))
+        .await
+        .expect("record first feedback");
+    let second = store
+        .record_feedback_simple("router:prompt", "variant-a", false, None)
+        .await
+        .expect("record second feedback");
+    let persisted = store
+        .get_bandit_arm_state("router:prompt", "variant-a")
+        .await
+        .expect("load bandit state")
+        .expect("bandit state exists");
+
+    assert_eq!(first.total_trials, 1);
+    assert_eq!(second.total_trials, 2);
+    assert_eq!(persisted.total_trials, 2);
+    assert_eq!(persisted.successes, 1);
+    assert_eq!(persisted.failures, 1);
+}
+
+#[tokio::test]
 async fn get_instance_connection_falls_back_to_preset_provider_protocol() {
     let store = init_store().await;
     let now = now_rfc3339().expect("time");

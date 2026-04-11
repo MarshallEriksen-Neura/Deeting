@@ -142,6 +142,36 @@ impl MonitorState {
         })
     }
 
+    pub async fn with_pools(
+        pool: sqlx::sqlite::SqlitePool,
+        write_pool: sqlx::sqlite::SqlitePool,
+        _provider_store: Arc<ProviderStore>,
+        mcp_store: Option<Arc<crate::modules::mcp::store::McpStore>>,
+    ) -> Result<Self, String> {
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+        let config = WorkerConfig {
+            agent_id: make_default_agent_id(),
+            poll_interval_seconds: DEFAULT_MONITOR_POLL_INTERVAL_SECONDS,
+            pull_limit: DEFAULT_MONITOR_PULL_LIMIT,
+        };
+        let store = Arc::new(MonitorStore::with_pools(pool, write_pool).await?);
+        Ok(Self {
+            shared: Arc::new(MonitorWorkerShared {
+                client,
+                store,
+                mcp_store,
+                wechat_state: RwLock::new(None),
+                worker_task: Mutex::new(None),
+                tick_lock: Mutex::new(()),
+                config: RwLock::new(config),
+                runtime: RwLock::new(WorkerRuntime::default()),
+            }),
+        })
+    }
+
     pub async fn start_worker(
         &self,
         payload: MonitorWorkerStartRequest,

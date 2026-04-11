@@ -16,6 +16,7 @@ pub(crate) struct SuspendedChatToolExecution {
     pub(super) runtime_metrics: RuntimeMetricsAccumulator,
     pub(super) last_capability_snapshot: Option<serde_json::Value>,
     pub(super) last_response: Option<serde_json::Value>,
+    pub(super) pending_approvals: Vec<super::inflight::PersistedPendingApproval>,
     pub(super) execution_graph: serde_json::Value,
 }
 
@@ -59,6 +60,7 @@ impl SuspendedChatToolExecution {
             runtime_metrics: state.runtime_metrics.clone(),
             last_capability_snapshot: state.last_capability_snapshot.clone(),
             last_response: state.last_response.clone(),
+            pending_approvals: Vec::new(),
             execution_graph,
         }
     }
@@ -96,17 +98,7 @@ impl SuspendedChatToolExecution {
     }
 
     pub(crate) fn pending_tool_node_id(&self) -> &str {
-        self.execution_graph
-            .get("nodes")
-            .and_then(serde_json::Value::as_array)
-            .and_then(|nodes| {
-                nodes.iter().find(|node| {
-                    node.get("node_type").and_then(serde_json::Value::as_str) == Some("tool_call")
-                })
-            })
-            .and_then(|node| node.get("node_id"))
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("tool_call:unknown")
+        self.pending_node_id_for_type("tool_call", "tool_call:unknown")
     }
 
     pub(crate) fn tool_node_id_for_call_id(&self, call_id: &str) -> Option<String> {
@@ -134,18 +126,7 @@ impl SuspendedChatToolExecution {
     }
 
     pub(crate) fn pending_gate_node_id(&self) -> &str {
-        self.execution_graph
-            .get("nodes")
-            .and_then(serde_json::Value::as_array)
-            .and_then(|nodes| {
-                nodes.iter().find(|node| {
-                    node.get("node_type").and_then(serde_json::Value::as_str)
-                        == Some("approval_gate")
-                })
-            })
-            .and_then(|node| node.get("node_id"))
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("approval_gate:unknown")
+        self.pending_node_id_for_type("approval_gate", "approval_gate:unknown")
     }
 
     pub(crate) fn approval_gate_node_id_for_call_id(&self, call_id: &str) -> Option<String> {
@@ -203,5 +184,63 @@ impl SuspendedChatToolExecution {
                     .map(str::to_string)
             })
             .collect()
+    }
+
+    pub(super) fn sync_remaining_pending_approvals(&mut self, approved_token: &str) -> Vec<String> {
+        let normalized_approved_token = approved_token.trim();
+        let remaining_call_ids = self.pending_requires_approval_call_ids();
+        if remaining_call_ids.is_empty() {
+            self.pending_approvals.clear();
+            return remaining_call_ids;
+        }
+
+        self.pending_approvals.retain(|pending| {
+            if pending.approval_token.trim() == normalized_approved_token {
+                return false;
+            }
+
+            let Some(call_id) = pending
+                .call_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            else {
+                return true;
+            };
+
+            remaining_call_ids
+                .iter()
+                .any(|candidate| candidate == call_id)
+        });
+
+        remaining_call_ids
+    }
+
+    fn pending_node_id_for_type<'a>(&'a self, node_type: &str, fallback: &'a str) -> &'a str {
+        let Some(nodes) = self
+            .execution_graph
+            .get("nodes")
+            .and_then(serde_json::Value::as_array)
+        else {
+            return fallback;
+        };
+
+        let preferred = nodes.iter().find(|node| {
+            node.get("node_type").and_then(serde_json::Value::as_str) == Some(node_type)
+                && node
+                    .get("status")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|status| status.eq_ignore_ascii_case("waiting_approval"))
+        });
+
+        preferred
+            .or_else(|| {
+                nodes.iter().find(|node| {
+                    node.get("node_type").and_then(serde_json::Value::as_str) == Some(node_type)
+                })
+            })
+            .and_then(|node| node.get("node_id"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or(fallback)
     }
 }

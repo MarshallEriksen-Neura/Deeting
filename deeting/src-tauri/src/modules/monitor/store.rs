@@ -25,6 +25,7 @@ const DEFAULT_ANALYSIS_MODE: &str = "concise";
 #[derive(Clone)]
 pub struct MonitorStore {
     pool: SqlitePool,
+    write_pool: SqlitePool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -41,16 +42,35 @@ impl MonitorStore {
             .create_if_missing(true);
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
-            .connect_with(options)
+            .connect_with(options.clone())
             .await
             .map_err(|err| err.to_string())?;
-        let store = Self { pool };
+        let write_pool =
+            if database_url == "sqlite::memory:" || database_url.contains("mode=memory") {
+                pool.clone()
+            } else {
+                SqlitePoolOptions::new()
+                    .max_connections(1)
+                    .connect_with(options)
+                    .await
+                    .map_err(|err| err.to_string())?
+            };
+        let store = Self { pool, write_pool };
         store.init().await?;
         Ok(store)
     }
 
     pub async fn with_pool(pool: SqlitePool) -> Result<Self, String> {
-        let store = Self { pool };
+        let store = Self {
+            write_pool: pool.clone(),
+            pool,
+        };
+        store.init().await?;
+        Ok(store)
+    }
+
+    pub async fn with_pools(pool: SqlitePool, write_pool: SqlitePool) -> Result<Self, String> {
+        let store = Self { pool, write_pool };
         store.init().await?;
         Ok(store)
     }
@@ -82,26 +102,26 @@ impl MonitorStore {
             )
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
 
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_local_monitor_tasks_status_active ON local_monitor_tasks(status, is_active, next_run_ts)",
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
 
         ensure_column(
-            &self.pool,
+            &self.write_pool,
             "local_monitor_tasks",
             "analysis_mode",
             &format!("TEXT NOT NULL DEFAULT '{}'", DEFAULT_ANALYSIS_MODE),
         )
         .await?;
         ensure_column(
-            &self.pool,
+            &self.write_pool,
             "local_monitor_tasks",
             "policy_state_json",
             "TEXT NOT NULL DEFAULT '{}'",
@@ -123,14 +143,14 @@ impl MonitorStore {
             )
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
 
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_local_monitor_logs_task_time ON local_monitor_execution_logs(task_id, triggered_at DESC)",
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
 
@@ -145,7 +165,7 @@ impl MonitorStore {
             )
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
 
@@ -165,21 +185,21 @@ impl MonitorStore {
             )
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
 
         sqlx::query(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_local_notification_channels_user_channel ON local_notification_channels(user_id, channel)",
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
 
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_local_notification_channels_priority ON local_notification_channels(user_id, is_active, priority)",
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
 
@@ -196,7 +216,7 @@ impl MonitorStore {
             )
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
 
@@ -342,7 +362,7 @@ impl MonitorStore {
         .bind(json_to_string(&policy_state))
         .bind(&now_iso)
         .bind(&now_iso)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
 
@@ -456,7 +476,7 @@ impl MonitorStore {
         })
         .bind(now_iso)
         .bind(task_id.trim())
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
 
@@ -494,7 +514,7 @@ impl MonitorStore {
         )
         .bind(now_rfc3339())
         .bind(task_id.trim())
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
         Ok(result.rows_affected() > 0)
@@ -513,7 +533,7 @@ impl MonitorStore {
         .bind(now_ts)
         .bind(now_rfc3339())
         .bind(task_id.trim())
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
         if result.rows_affected() == 0 {
@@ -633,7 +653,7 @@ impl MonitorStore {
         .bind(log_id.trim())
         .bind(score)
         .bind(now_rfc3339())
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
         Ok(())
@@ -724,7 +744,7 @@ impl MonitorStore {
         .bind(priority)
         .bind(now.as_str())
         .bind(now.as_str())
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await;
         if let Err(err) = result {
             let detail = err.to_string();
@@ -779,7 +799,7 @@ impl MonitorStore {
         .bind(updated_at)
         .bind(channel_id.trim())
         .bind(LOCAL_MONITOR_USER_ID)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
 
@@ -798,7 +818,7 @@ impl MonitorStore {
         )
         .bind(channel_id.trim())
         .bind(LOCAL_MONITOR_USER_ID)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
         Ok(result.rows_affected() > 0)
@@ -885,7 +905,7 @@ impl MonitorStore {
         .bind(now.as_str())
         .bind(channel_id.trim())
         .bind(LOCAL_MONITOR_USER_ID)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
         Ok(())
@@ -958,7 +978,7 @@ impl MonitorStore {
         .bind(normalized_message_id)
         .bind(context_json)
         .bind(updated_at)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
         Ok(())
@@ -1136,7 +1156,7 @@ impl MonitorStore {
         .bind(json_to_string(&output_data))
         .bind(result.tokens_used.max(0))
         .bind(now_iso.as_str())
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
 
@@ -1165,7 +1185,7 @@ impl MonitorStore {
         .bind(next_run_ts)
         .bind(now_iso)
         .bind(task.id.as_str())
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
         Ok(())
@@ -1210,7 +1230,7 @@ impl MonitorStore {
         .bind(json_to_string(&output_data))
         .bind(error_text)
         .bind(now_iso.as_str())
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
 
@@ -1231,7 +1251,7 @@ impl MonitorStore {
         .bind(next_run_ts)
         .bind(now_iso)
         .bind(task.id.as_str())
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
         Ok(())
@@ -1260,7 +1280,7 @@ impl MonitorStore {
         .bind(next_run_ts)
         .bind(now_rfc3339())
         .bind(task_id.trim())
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
         if result.rows_affected() == 0 {

@@ -229,6 +229,7 @@ where
                         request.trace_id.as_deref().unwrap_or_default(),
                         request.request_id.as_deref(),
                         Some(execution_id.as_str()),
+                        None,
                     ),
                 )
                 .await;
@@ -1048,13 +1049,8 @@ fn build_custom_task_agent_render_blocks(
     let app_state = app_state.clone();
     let app_handle = app_handle.clone();
     Box::pin(async move {
-        let mut blocks = build_bound_asset_render_blocks(
-            &app_handle,
-            &app_state,
-            &profile,
-            &result,
-        )
-        .await;
+        let mut blocks =
+            build_bound_asset_render_blocks(&app_handle, &app_state, &profile, &result).await;
         if result.invocation_kind == CustomTaskAgentInvocationKind::ImageGeneration {
             let outputs =
                 persist_custom_task_agent_image_outputs(&app_handle, &app_state, &result).await;
@@ -1145,10 +1141,7 @@ async fn build_bound_asset_render_blocks(
         .as_deref()
         .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
         .unwrap_or_else(|| json!({}));
-    let summary = result
-        .content
-        .trim()
-        .to_string();
+    let summary = result.content.trim().to_string();
     let response_json = json!({
         "summary": if summary.is_empty() {
             record.summary.clone().unwrap_or_else(|| record.title.clone())
@@ -1186,7 +1179,8 @@ fn extract_auto_display_render_blocks(render_blocks: &[Value]) -> Vec<Value> {
     render_blocks
         .iter()
         .filter(|block| {
-            block.get("metadata")
+            block
+                .get("metadata")
                 .and_then(Value::as_object)
                 .and_then(|metadata| metadata.get("auto_display"))
                 .and_then(Value::as_bool)

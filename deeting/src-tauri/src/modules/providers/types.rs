@@ -391,7 +391,7 @@ pub struct BanditArmState {
     pub updated_at: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct BanditFeedbackRequest {
     pub scene: Option<String>,
     pub arm_id: String,

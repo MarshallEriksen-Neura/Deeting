@@ -2,8 +2,8 @@
 
 import React from "react"
 import { act, render, waitFor } from "@testing-library/react"
-import { invoke } from "@tauri-apps/api/core"
 import { useHydratePendingToolApproval } from "@/hooks/chat/use-hydrate-pending-tool-approval"
+import { listPendingMcpApprovals } from "@/lib/api/mcp-approvals"
 import {
   announceBridgeApprovalExecution,
   createBridgeToolApproval,
@@ -11,11 +11,12 @@ import {
 } from "@/lib/chat/bridge-approval-store"
 import type { Message } from "@/lib/chat/message-types"
 
-jest.mock("@tauri-apps/api/core", () => ({
-  invoke: jest.fn(),
+jest.mock("@/lib/api/mcp-approvals", () => ({
+  listPendingMcpApprovals: jest.fn(),
 }))
 
-const mockInvoke = invoke as jest.MockedFunction<typeof invoke>
+const mockListPendingMcpApprovals =
+  listPendingMcpApprovals as jest.MockedFunction<typeof listPendingMcpApprovals>
 
 function Harness({ sessionId, messages }: { sessionId: string | null; messages: Message[] }) {
   useHydratePendingToolApproval(sessionId, messages)
@@ -31,9 +32,10 @@ describe("useHydratePendingToolApproval", () => {
   })
 
   afterEach(() => {
-    mockInvoke.mockReset()
+    mockListPendingMcpApprovals.mockReset()
     act(() => {
-      useBridgeApprovalStore.getState().clear()
+      useBridgeApprovalStore.getState().clearAll()
+      useBridgeApprovalStore.getState().clearRecentApprovedExecution()
     })
     if (originalIsTauriEnv === undefined) {
       delete process.env.NEXT_PUBLIC_IS_TAURI
@@ -44,7 +46,7 @@ describe("useHydratePendingToolApproval", () => {
   })
 
   it("hydrates the latest pending approval for the active session from the runtime snapshot", async () => {
-    mockInvoke.mockResolvedValueOnce([
+    mockListPendingMcpApprovals.mockResolvedValueOnce([
       {
         status: "REQUIRES_APPROVAL",
         approval_token: "approval-runtime-1",
@@ -94,9 +96,7 @@ describe("useHydratePendingToolApproval", () => {
     )
 
     await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith("list_pending_mcp_approvals", {
-        sessionId: "session-runtime-1",
-      })
+      expect(mockListPendingMcpApprovals).toHaveBeenCalledWith("session-runtime-1")
     })
 
     await waitFor(() => {
@@ -113,7 +113,7 @@ describe("useHydratePendingToolApproval", () => {
   })
 
   it("does not rehydrate the same runtime approval that was just approved locally", async () => {
-    mockInvoke.mockResolvedValueOnce([
+    mockListPendingMcpApprovals.mockResolvedValueOnce([
       {
         status: "REQUIRES_APPROVAL",
         approval_token: "approval-runtime-inflight-1",
@@ -165,8 +165,69 @@ describe("useHydratePendingToolApproval", () => {
       expect(useBridgeApprovalStore.getState().pending).toBeNull()
     })
 
-    expect(mockInvoke).toHaveBeenCalledWith("list_pending_mcp_approvals", {
-      sessionId: "session-runtime-inflight-1",
+    expect(mockListPendingMcpApprovals).toHaveBeenCalledWith("session-runtime-inflight-1")
+  })
+
+  it("replaces stale queued approvals with the canonical runtime snapshot", async () => {
+    mockListPendingMcpApprovals.mockResolvedValueOnce([
+      {
+        status: "REQUIRES_APPROVAL",
+        approval_token: "approval-runtime-fresh-1",
+        tool_name: "browser_click",
+        arguments: { target: { text: "Continue" } },
+        session_id: "session-runtime-refresh-1",
+        call_id: "call-runtime-refresh-1",
+      },
+    ] as never)
+
+    act(() => {
+      useBridgeApprovalStore.getState().setPending(
+        createBridgeToolApproval({
+          approval_token: "approval-runtime-stale-1",
+          tool_name: "shell_execute",
+          arguments: { command: "dir" },
+          meta: {
+            call_id: "call-runtime-stale-1",
+            message_id: "assistant-runtime-refresh-1",
+          },
+        })
+      )
+    })
+
+    render(
+      <Harness
+        sessionId="session-runtime-refresh-1"
+        messages={[
+          {
+            id: "assistant-runtime-refresh-1",
+            role: "assistant",
+            content: "",
+            createdAt: 1,
+            blocks: [
+              {
+                id: "call-runtime-refresh-1",
+                type: "tool_call",
+                callId: "call-runtime-refresh-1",
+                toolName: "browser_click",
+                status: "running",
+              },
+            ],
+          },
+        ]}
+      />
+    )
+
+    await waitFor(() => {
+      expect(useBridgeApprovalStore.getState().queue).toEqual([
+        expect.objectContaining({
+          approval_token: "approval-runtime-fresh-1",
+          tool_name: "browser_click",
+          meta: expect.objectContaining({
+            call_id: "call-runtime-refresh-1",
+            message_id: "assistant-runtime-refresh-1",
+          }),
+        }),
+      ])
     })
   })
 })

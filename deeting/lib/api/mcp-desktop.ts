@@ -1,5 +1,6 @@
 "use client"
 
+import { invoke } from "@tauri-apps/api/core"
 import { resolveLocalGatewayBaseUrl } from "@/lib/api/chat"
 import { openSSE, request } from "@/lib/http"
 
@@ -17,6 +18,7 @@ export const DESKTOP_MCP_COMMANDS = {
   listPendingApprovals: "list_pending_mcp_approvals",
   approveTool: "approve_mcp_tool",
   rejectTool: "reject_mcp_tool",
+  recoverLocalChatExecution: "recover_local_chat_execution",
   resolveConflict: "resolve_mcp_conflict",
   getLogs: "get_mcp_logs",
   clearLogs: "clear_mcp_logs",
@@ -41,6 +43,11 @@ export type DesktopToolRejectRequest = {
   approvalToken: string
   rejectMode?: string
   executionGraphExecutionId?: string
+}
+
+export type DesktopLocalChatRecoveryRequest = {
+  executionGraphExecutionId: string
+  action: "continue" | "retry" | "abandon"
 }
 
 export async function streamDesktopApproveTool(
@@ -122,5 +129,14 @@ export async function rejectDesktopTool(payload: DesktopToolRejectRequest) {
       execution_graph_execution_id: payload.executionGraphExecutionId,
     },
     anonymous: true,
+  })
+}
+
+export async function recoverDesktopLocalChatExecution(
+  payload: DesktopLocalChatRecoveryRequest
+) {
+  return invoke<unknown>(DESKTOP_MCP_COMMANDS.recoverLocalChatExecution, {
+    executionGraphExecutionId: payload.executionGraphExecutionId,
+    action: payload.action,
   })
 }

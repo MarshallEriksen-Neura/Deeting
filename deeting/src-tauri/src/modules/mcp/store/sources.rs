@@ -36,7 +36,7 @@ impl McpStore {
         .bind(0)
         .bind(&now)
         .bind(&now)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -69,7 +69,7 @@ impl McpStore {
         .bind(1)
         .bind(&now)
         .bind(&now)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -158,7 +158,7 @@ impl McpStore {
         .bind(if source.is_read_only { 1 } else { 0 })
         .bind(&now)
         .bind(&now)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -185,7 +185,7 @@ impl McpStore {
         .bind(last_synced_at)
         .bind(now)
         .bind(id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
         Ok(())
@@ -222,7 +222,7 @@ impl McpStore {
             "#,
         )
         .bind(McpSourceType::Skill.as_str())
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?
         .rows_affected();
@@ -234,7 +234,7 @@ impl McpStore {
             "#,
         )
         .bind(McpSourceType::Skill.as_str())
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?
         .rows_affected();
@@ -249,7 +249,7 @@ impl McpStore {
     pub async fn delete_source(&self, id: &str) -> Result<(), McpError> {
         sqlx::query("DELETE FROM mcp_sources WHERE id = ?;")
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
         Ok(())

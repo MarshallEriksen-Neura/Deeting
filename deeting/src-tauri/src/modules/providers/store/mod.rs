@@ -29,6 +29,9 @@ pub struct ProviderConnection {
 
 pub struct ProviderStore {
     pub pool: SqlitePool,
+    /// Dedicated write pool used for transactional writes that need
+    /// serialization to avoid SQLite single-writer contention.
+    pub write_pool: SqlitePool,
     secret_store: SecretStore,
 }
 
@@ -54,14 +57,48 @@ impl ProviderStore {
         let options = SqliteConnectOptions::from_str(database_url)
             .map_err(|err| ProviderError::Database(err.to_string()))?
             .create_if_missing(true);
-        let pool = SqlitePoolOptions::new().connect_with(options).await?;
+        let pool = SqlitePoolOptions::new()
+            .max_connections(5)
+            .connect_with(options.clone())
+            .await?;
+        let write_pool =
+            if database_url == "sqlite::memory:" || database_url.contains("mode=memory") {
+                pool.clone()
+            } else {
+                SqlitePoolOptions::new()
+                    .max_connections(1)
+                    .connect_with(options)
+                    .await?
+            };
         let secret_store = SecretStore::new(database_url)?;
-        Ok(Self { pool, secret_store })
+        Ok(Self {
+            pool,
+            write_pool,
+            secret_store,
+        })
     }
 
     pub fn with_pool(pool: SqlitePool, database_url: &str) -> Result<Self, ProviderError> {
+        Self::with_pool_and_write_pool(pool.clone(), pool, database_url)
+    }
+
+    pub fn with_pool_and_write_pool(
+        pool: SqlitePool,
+        write_pool: SqlitePool,
+        database_url: &str,
+    ) -> Result<Self, ProviderError> {
         let secret_store = SecretStore::new(database_url)?;
-        Ok(Self { pool, secret_store })
+        Ok(Self {
+            pool,
+            write_pool,
+            secret_store,
+        })
+    }
+
+    pub(crate) async fn begin_write(
+        &self,
+    ) -> Result<sqlx::Transaction<'_, sqlx::Sqlite>, ProviderError> {
+        self.write_pool.begin().await.map_err(ProviderError::from)
     }
 
     pub async fn init(&self) -> Result<(), ProviderError> {
@@ -83,7 +120,7 @@ impl ProviderStore {
                 is_active BOOLEAN DEFAULT 1
             )",
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
 
         sqlx::query(
@@ -103,7 +140,7 @@ impl ProviderStore {
                 updated_at TEXT NOT NULL
             )",
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
 
         self.ensure_column(
@@ -133,7 +170,7 @@ impl ProviderStore {
                 created_at TEXT NOT NULL
             )",
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
 
         sqlx::query(
@@ -160,7 +197,7 @@ impl ProviderStore {
                 updated_at TEXT NOT NULL
             )",
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
 
         sqlx::query(
@@ -187,7 +224,7 @@ impl ProviderStore {
                 updated_at TEXT NOT NULL
             )",
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
 
         sqlx::query(
@@ -201,7 +238,7 @@ impl ProviderStore {
                 updated_at TEXT NOT NULL
             )",
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
 
         sqlx::query(
@@ -214,7 +251,7 @@ impl ProviderStore {
                 updated_at TEXT NOT NULL
             )",
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
         self.ensure_column(
             "user_embedding_config",
@@ -242,7 +279,7 @@ impl ProviderStore {
                 updated_at TEXT NOT NULL
             )",
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
 
         self.ensure_column(
@@ -451,40 +488,40 @@ impl ProviderStore {
         .await?;
 
         sqlx::query("DROP INDEX IF EXISTS idx_provider_models_instance_model")
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         sqlx::query(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_provider_models_identity
              ON provider_models(instance_id, model_id, upstream_path)",
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_provider_models_instance_unified_model
              ON provider_models(instance_id, unified_model_id)",
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
 
         sqlx::query(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_bandit_arm_scene
              ON bandit_arm_state(scene, arm_id)",
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
 
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_bandit_arm_arm_id
              ON bandit_arm_state(arm_id)",
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
 
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_bandit_arm_provider_model_id
              ON bandit_arm_state(provider_model_id)",
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
 
         // Backfill updated_at for existing rows.
@@ -497,7 +534,7 @@ impl ProviderStore {
                  meta = COALESCE(NULLIF(meta, ''), '{}')",
         )
         .bind(&backfill_now)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
         sqlx::query(
             "UPDATE provider_models
@@ -517,7 +554,7 @@ impl ProviderStore {
         )
         .bind(&backfill_now)
         .bind(CHAT_UPSTREAM_PATH)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
 
         self.normalize_provider_instance_protocol_data().await?;
@@ -549,7 +586,7 @@ impl ProviderStore {
             return Ok(());
         }
 
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.begin_write().await?;
         sqlx::query(
             "CREATE TABLE provider_presets_v2 (
                 slug TEXT PRIMARY KEY,
@@ -609,7 +646,7 @@ impl ProviderStore {
         });
 
         if !exists {
-            sqlx::query(ddl).execute(&self.pool).await?;
+            sqlx::query(ddl).execute(&self.write_pool).await?;
         }
         Ok(())
     }
@@ -832,7 +869,7 @@ impl ProviderStore {
             .bind(&ciphertext)
             .bind(version)
             .bind(&credential_id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await
             {
                 warn!(

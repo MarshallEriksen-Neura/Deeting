@@ -21,11 +21,26 @@ const LOCAL_KNOWLEDGE_CHUNK_OVERLAP_CHARS: usize = 120;
 
 pub struct KnowledgeStore {
     pool: SqlitePool,
+    write_pool: SqlitePool,
 }
 
 impl KnowledgeStore {
     pub fn with_pool(pool: SqlitePool) -> Self {
-        Self { pool }
+        Self {
+            write_pool: pool.clone(),
+            pool,
+        }
+    }
+
+    pub fn with_pools(pool: SqlitePool, write_pool: SqlitePool) -> Self {
+        Self { pool, write_pool }
+    }
+
+    async fn begin_write(&self) -> Result<sqlx::Transaction<'_, sqlx::Sqlite>, KnowledgeError> {
+        self.write_pool
+            .begin()
+            .await
+            .map_err(|err| KnowledgeError::Storage(err.to_string()))
     }
 
     pub async fn init(&self) -> Result<(), KnowledgeError> {
@@ -42,7 +57,7 @@ impl KnowledgeStore {
             );
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
 
@@ -52,7 +67,7 @@ impl KnowledgeStore {
             ON knowledge_folder(user_id, parent_id, name);
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
 
@@ -63,7 +78,7 @@ impl KnowledgeStore {
             WHERE parent_id IS NULL;
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
 
@@ -73,7 +88,7 @@ impl KnowledgeStore {
             ON knowledge_folder(user_id);
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
 
@@ -83,7 +98,7 @@ impl KnowledgeStore {
             ON knowledge_folder(parent_id);
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
 
@@ -106,7 +121,7 @@ impl KnowledgeStore {
             );
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
 
@@ -116,7 +131,7 @@ impl KnowledgeStore {
             ON user_document(user_id);
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
 
@@ -126,7 +141,7 @@ impl KnowledgeStore {
             ON user_document(status);
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
 
@@ -136,7 +151,7 @@ impl KnowledgeStore {
             ON user_document(media_asset_id);
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
 
@@ -146,7 +161,7 @@ impl KnowledgeStore {
             ON user_document(folder_id);
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
 
@@ -165,7 +180,7 @@ impl KnowledgeStore {
             );
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
 
@@ -175,7 +190,7 @@ impl KnowledgeStore {
             ON knowledge_chunk(document_id, chunk_index);
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
 
@@ -185,7 +200,7 @@ impl KnowledgeStore {
             ON knowledge_chunk(document_id);
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
 
@@ -195,7 +210,7 @@ impl KnowledgeStore {
             ON knowledge_chunk(user_id);
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
 
@@ -472,7 +487,7 @@ impl KnowledgeStore {
         .bind(name)
         .bind(&now)
         .bind(&now)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
 
@@ -505,7 +520,7 @@ impl KnowledgeStore {
         .bind(&now)
         .bind(&normalized_id)
         .bind(LOCAL_DESKTOP_USER_ID)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
         if result.rows_affected() == 0 {
@@ -592,7 +607,7 @@ impl KnowledgeStore {
             )
             .bind(&normalized_id)
             .bind(LOCAL_DESKTOP_USER_ID)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await
             .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
             return Ok(());
@@ -619,7 +634,7 @@ impl KnowledgeStore {
         .bind(&normalized_id)
         .bind(LOCAL_DESKTOP_USER_ID)
         .bind(LOCAL_DESKTOP_USER_ID)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
 
@@ -631,7 +646,7 @@ impl KnowledgeStore {
         )
         .bind(&normalized_id)
         .bind(LOCAL_DESKTOP_USER_ID)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
 
@@ -775,7 +790,7 @@ impl KnowledgeStore {
         .bind(meta_info_text)
         .bind(&now)
         .bind(&now)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
 
@@ -977,7 +992,7 @@ impl KnowledgeStore {
         .bind(&now)
         .bind(&normalized_id)
         .bind(LOCAL_DESKTOP_USER_ID)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
 
@@ -998,7 +1013,7 @@ impl KnowledgeStore {
         )
         .bind(&normalized_id)
         .bind(LOCAL_DESKTOP_USER_ID)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
 
@@ -1010,7 +1025,7 @@ impl KnowledgeStore {
         )
         .bind(&normalized_id)
         .bind(LOCAL_DESKTOP_USER_ID)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
         if result.rows_affected() == 0 {
@@ -1045,7 +1060,7 @@ impl KnowledgeStore {
         .bind(&now)
         .bind(&normalized_id)
         .bind(LOCAL_DESKTOP_USER_ID)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
         if result.rows_affected() == 0 {
@@ -1062,7 +1077,7 @@ impl KnowledgeStore {
         )
         .bind(&normalized_id)
         .bind(LOCAL_DESKTOP_USER_ID)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
 
@@ -1343,7 +1358,7 @@ impl KnowledgeStore {
         let now = now_rfc3339();
         let sanitized_meta_info = strip_local_document_raw_text(meta_info);
         let sanitized_meta_info_text = serde_json::to_string(&sanitized_meta_info)?;
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.begin_write().await?;
 
         sqlx::query(
             r#"
@@ -1411,7 +1426,7 @@ impl KnowledgeStore {
     ) -> Result<(), KnowledgeError> {
         let now = now_rfc3339();
         let normalized_error = truncate_local_document_error_message(error_message);
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.begin_write().await?;
 
         sqlx::query(
             r#"

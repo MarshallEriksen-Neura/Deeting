@@ -340,16 +340,36 @@
       "workflowRouting": "Workflow Routing",
       "workflowRoutingOn": "On",
       "workflowRoutingOff": "Off",
+      "modeChat": "Chat",
+      "modeWorkflow": "Orchestrate",
+      "generatePlan": "Generate plan",
+      "generatingPlan": "Generating plan",
+      "workflowSuggestionTitle": "This task is a better fit for orchestration",
+      "workflowSuggestionDescription": "Generate a plan first so you can review phases, owners, and approvals before running it.",
+      "switchToWorkflow": "Switch to orchestration",
         "placeholder": "Type a message...",
         "menu": "Actions",
         "stop": "Stop",
         "continue": "Continue",
         "recovery": {
           "title": "Recovered interrupted execution",
+          "stageLabel": "Stage",
+          "executionLabel": "Execution",
           "description": {
+            "waitingApproval": "This run is paused at a tool approval gate. Review the pending approval to continue.",
+            "resumingAfterApproval": "The previous run was interrupted while continuing after approval. Continue to resume from the restored state, or retry to re-drive the continuation.",
+            "resumeFailed": "The previous run failed while continuing after approval. Retry to run the continuation again, or continue if the restored state is already usable.",
             "toolRunningInterrupted": "The previous run stopped while a tool was executing. Confirm the outcome before continuing or retrying.",
             "delegatedWorkflowRunning": "The previous delegated workflow did not finish attaching to chat. Retry if you want to resume from the current context.",
             "fallback": "The previous local execution was interrupted. Continue, retry, or abandon this recovery prompt."
+          },
+          "stage": {
+            "waitingApproval": "Waiting approval",
+            "resumingAfterApproval": "Resuming after approval",
+            "resumeFailed": "Resume failed",
+            "toolRunningInterrupted": "Tool interrupted",
+            "delegatedWorkflowRunning": "Workflow interrupted",
+            "unknown": "Recovered state"
           },
           "actions": {
             "continue": "Continue",

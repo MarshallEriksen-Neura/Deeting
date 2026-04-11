@@ -607,7 +607,7 @@ impl ProviderStore {
                 .unwrap_or(&now),
         )
         .bind(&now)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
 
         self.get_local_desktop_object_storage_config()
@@ -622,7 +622,7 @@ impl ProviderStore {
     pub async fn clear_local_desktop_object_storage_config(&self) -> Result<bool, ProviderError> {
         let result = sqlx::query("DELETE FROM desktop_object_storage_config WHERE user_id = ?")
             .bind(LOCAL_DESKTOP_USER_ID)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         Ok(result.rows_affected() > 0)
     }

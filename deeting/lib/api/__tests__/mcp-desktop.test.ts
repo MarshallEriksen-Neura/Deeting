@@ -1,6 +1,16 @@
-import { rejectDesktopTool, streamDesktopApproveTool } from "@/lib/api/mcp-desktop"
+import { invoke } from "@tauri-apps/api/core"
+import {
+  DESKTOP_MCP_COMMANDS,
+  recoverDesktopLocalChatExecution,
+  rejectDesktopTool,
+  streamDesktopApproveTool,
+} from "@/lib/api/mcp-desktop"
 import { resolveLocalGatewayBaseUrl } from "@/lib/api/chat"
 import { openSSE, request } from "@/lib/http"
+
+jest.mock("@tauri-apps/api/core", () => ({
+  invoke: jest.fn(),
+}))
 
 jest.mock("@/lib/api/chat", () => ({
   resolveLocalGatewayBaseUrl: jest.fn(),
@@ -15,6 +25,7 @@ const mockResolveLocalGatewayBaseUrl =
   resolveLocalGatewayBaseUrl as jest.MockedFunction<typeof resolveLocalGatewayBaseUrl>
 const mockOpenSSE = openSSE as jest.MockedFunction<typeof openSSE>
 const mockRequest = request as jest.MockedFunction<typeof request>
+const mockInvoke = invoke as jest.MockedFunction<typeof invoke>
 
 describe("mcp desktop gateway approval helpers", () => {
   beforeEach(() => {
@@ -25,6 +36,7 @@ describe("mcp desktop gateway approval helpers", () => {
     mockResolveLocalGatewayBaseUrl.mockReset()
     mockOpenSSE.mockReset()
     mockRequest.mockReset()
+    mockInvoke.mockReset()
   })
 
   it("streams desktop approval over the local gateway SSE endpoint", async () => {
@@ -109,5 +121,22 @@ describe("mcp desktop gateway approval helpers", () => {
       },
       anonymous: true,
     })
+  })
+
+  it("invokes the desktop recovery command for canonical local chat recovery", async () => {
+    mockInvoke.mockResolvedValue({ status: "LOCAL_CHAT_RESUMED" } as never)
+
+    await recoverDesktopLocalChatExecution({
+      executionGraphExecutionId: "graph-recovery-1",
+      action: "retry",
+    })
+
+    expect(mockInvoke).toHaveBeenCalledWith(
+      DESKTOP_MCP_COMMANDS.recoverLocalChatExecution,
+      {
+        executionGraphExecutionId: "graph-recovery-1",
+        action: "retry",
+      }
+    )
   })
 })

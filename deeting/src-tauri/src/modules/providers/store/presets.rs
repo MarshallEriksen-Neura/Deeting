@@ -81,7 +81,7 @@ impl ProviderStore {
     }
 
     pub async fn replace_presets(&self, presets: Vec<ProviderPreset>) -> Result<(), ProviderError> {
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.begin_write().await?;
 
         // Mark all as inactive first
         sqlx::query("UPDATE provider_presets SET is_active = 0")

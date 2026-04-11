@@ -20,8 +20,8 @@ pub(crate) async fn create_custom_task_agent_service(
         validate_guidance_skill_ids(app_state, &payload.guidance_skill_ids).await?;
     payload.callable_skill_action_refs =
         validate_callable_skill_action_refs(app_state, &payload.callable_skill_action_refs).await?;
-    payload.bound_asset_id = validate_bound_asset_id(app_state, payload.bound_asset_id.as_deref())
-        .await?;
+    payload.bound_asset_id =
+        validate_bound_asset_id(app_state, payload.bound_asset_id.as_deref()).await?;
 
     let profile = create_custom_task_agent_inner(app_state.mcp.store.as_ref(), payload)
         .await

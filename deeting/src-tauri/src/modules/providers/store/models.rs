@@ -66,7 +66,7 @@ impl ProviderStore {
         .fetch_all(&self.pool)
         .await?;
 
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.begin_write().await?;
         for row in rows {
             let id: String = row.try_get("id")?;
             let model_id: String = row.try_get("model_id")?;
@@ -124,7 +124,7 @@ impl ProviderStore {
         models: Vec<ProviderModel>,
     ) -> Result<(), ProviderError> {
         let now = now_rfc3339()?;
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.begin_write().await?;
 
         // Mark existing as inactive first for this instance
         sqlx::query("UPDATE provider_models SET is_active = 0 WHERE instance_id = ?")
@@ -193,7 +193,7 @@ impl ProviderStore {
         let preferred_chat_upstream_path = self
             .preferred_upstream_path_for_instance_capability(instance_id, CHAT_CAPABILITY)
             .await?;
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.begin_write().await?;
         let normalized_forced_capability = normalize_capability(forced_capability);
 
         for model_id in model_ids {
@@ -259,7 +259,7 @@ impl ProviderStore {
         payload: ProviderModelUpdateRequest,
     ) -> Result<ProviderModel, ProviderError> {
         let now = now_rfc3339()?;
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.begin_write().await?;
 
         if let Some(display_name) = payload.display_name {
             sqlx::query("UPDATE provider_models SET display_name = ?, updated_at = ? WHERE id = ?")

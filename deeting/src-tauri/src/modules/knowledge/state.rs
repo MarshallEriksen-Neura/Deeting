@@ -16,4 +16,13 @@ impl KnowledgeState {
         store.init().await?;
         Ok(Self { store })
     }
+
+    pub async fn with_pools(
+        pool: SqlitePool,
+        write_pool: SqlitePool,
+    ) -> Result<Self, KnowledgeError> {
+        let store = Arc::new(KnowledgeStore::with_pools(pool, write_pool));
+        store.init().await?;
+        Ok(Self { store })
+    }
 }

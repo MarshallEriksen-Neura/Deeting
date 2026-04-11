@@ -32,7 +32,7 @@ impl ProviderStore {
         let now = now_rfc3339()?;
         let credentials_ref = Uuid::new_v4().to_string();
 
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.begin_write().await?;
 
         let meta = build_create_instance_meta(&payload).to_string();
         let is_enabled = true;
@@ -97,7 +97,7 @@ impl ProviderStore {
         payload: UpdateInstanceRequest,
     ) -> Result<ProviderInstance, ProviderError> {
         let now = now_rfc3339()?;
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.begin_write().await?;
         let existing_meta = sqlx::query("SELECT meta FROM provider_instances WHERE id = ?")
             .bind(instance_id)
             .fetch_optional(&mut *tx)
@@ -239,7 +239,7 @@ impl ProviderStore {
 
         sqlx::query("DELETE FROM provider_instances WHERE id = ?")
             .bind(instance_id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         Ok(())
     }
@@ -347,7 +347,7 @@ impl ProviderStore {
         }
 
         let now = now_rfc3339()?;
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.begin_write().await?;
 
         for row in rows {
             let instance_id: String = row.try_get("id")?;

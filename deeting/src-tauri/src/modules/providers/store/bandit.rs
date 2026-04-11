@@ -3,6 +3,17 @@ use crate::modules::providers::store::utils::{now_rfc3339, row_to_bandit_arm_sta
 use crate::modules::providers::store::{ProviderStore, BANDIT_DEFAULT_SCENE};
 use crate::modules::providers::types::{BanditArmState, BanditFeedbackRequest};
 
+const SQLITE_BUSY_RETRY_DELAYS_MS: [u64; 4] = [100, 250, 500, 1000];
+
+fn is_sqlite_busy_error(err: &ProviderError) -> bool {
+    let text = err.to_string().to_ascii_lowercase();
+    text.contains("database is locked")
+        || text.contains("sqlite_busy")
+        || text.contains("busy_snapshot")
+        || text.contains("(code: 5)")
+        || text.contains("(code: 517)")
+}
+
 impl ProviderStore {
     pub async fn get_bandit_arm_state(
         &self,
@@ -46,8 +57,42 @@ impl ProviderStore {
             .scene
             .clone()
             .unwrap_or_else(|| BANDIT_DEFAULT_SCENE.to_string());
+        let arm_id = payload.arm_id.clone();
+        let mut attempt = 0_usize;
 
-        let mut tx = self.pool.begin().await?;
+        loop {
+            match self.record_bandit_feedback_once(payload.clone()).await {
+                Ok(state) => return Ok(state),
+                Err(err)
+                    if is_sqlite_busy_error(&err)
+                        && attempt < SQLITE_BUSY_RETRY_DELAYS_MS.len() =>
+                {
+                    let delay_ms = SQLITE_BUSY_RETRY_DELAYS_MS[attempt];
+                    attempt += 1;
+                    log::warn!(
+                        "record_bandit_feedback busy retry scene={} arm_id={} attempt={} delay_ms={}",
+                        scene,
+                        arm_id,
+                        attempt,
+                        delay_ms
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                }
+                Err(err) => return Err(err),
+            }
+        }
+    }
+
+    async fn record_bandit_feedback_once(
+        &self,
+        payload: BanditFeedbackRequest,
+    ) -> Result<BanditArmState, ProviderError> {
+        let scene = payload
+            .scene
+            .clone()
+            .unwrap_or_else(|| BANDIT_DEFAULT_SCENE.to_string());
+
+        let mut tx = self.begin_write().await?;
 
         let now = now_rfc3339()?;
         let row = sqlx::query("SELECT * FROM bandit_arm_state WHERE scene = ? AND arm_id = ?")
@@ -167,5 +212,21 @@ impl ProviderStore {
             reward_metric_type: None,
         };
         self.record_bandit_feedback(payload).await
+    }
+}
+
+#[cfg(test)]
+mod bandit_tests {
+    use super::is_sqlite_busy_error;
+    use crate::modules::providers::error::ProviderError;
+
+    #[test]
+    fn sqlite_busy_classifier_catches_extended_busy_codes() {
+        assert!(is_sqlite_busy_error(&ProviderError::Database(
+            "error returned from database: (code: 5) database is locked".to_string(),
+        )));
+        assert!(is_sqlite_busy_error(&ProviderError::Database(
+            "error returned from database: (code: 517) database is locked".to_string(),
+        )));
     }
 }

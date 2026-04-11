@@ -18,6 +18,11 @@ function asTrimmedString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null
 }
 
+function normalizeRecoveryStage(value: unknown): string | null {
+  const normalized = asTrimmedString(value)?.toLowerCase()
+  return normalized && normalized.length > 0 ? normalized : null
+}
+
 function normalizeRecoveryActions(value: unknown): ComposerRecoveryAction[] {
   if (!Array.isArray(value)) return []
   const allowed = new Set<ComposerRecoveryAction>()
@@ -52,7 +57,7 @@ export function extractLatestComposerRecoveryPrompt(
     return {
       messageId: message.id,
       executionId: asTrimmedString(recovery.execution_id),
-      stage: asTrimmedString(recovery.stage),
+      stage: normalizeRecoveryStage(recovery.stage),
       availableActions,
     }
   }

@@ -13,6 +13,7 @@ use crate::modules::sandbox::types::SandboxRuntimeMode;
 #[derive(Clone)]
 pub struct CodemodeToolExecutionStore {
     pool: SqlitePool,
+    write_pool: SqlitePool,
 }
 
 impl CodemodeToolExecutionStore {
@@ -22,16 +23,38 @@ impl CodemodeToolExecutionStore {
             .create_if_missing(true);
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
-            .connect_with(options)
+            .connect_with(options.clone())
             .await
             .map_err(|err| CodemodeToolError::Storage(err.to_string()))?;
-        let store = Self { pool };
+        let write_pool =
+            if database_url == "sqlite::memory:" || database_url.contains("mode=memory") {
+                pool.clone()
+            } else {
+                SqlitePoolOptions::new()
+                    .max_connections(1)
+                    .connect_with(options)
+                    .await
+                    .map_err(|err| CodemodeToolError::Storage(err.to_string()))?
+            };
+        let store = Self { pool, write_pool };
         store.init().await?;
         Ok(store)
     }
 
     pub async fn with_pool(pool: SqlitePool) -> Result<Self, CodemodeToolError> {
-        let store = Self { pool };
+        let store = Self {
+            write_pool: pool.clone(),
+            pool,
+        };
+        store.init().await?;
+        Ok(store)
+    }
+
+    pub async fn with_pools(
+        pool: SqlitePool,
+        write_pool: SqlitePool,
+    ) -> Result<Self, CodemodeToolError> {
+        let store = Self { pool, write_pool };
         store.init().await?;
         Ok(store)
     }
@@ -61,21 +84,21 @@ impl CodemodeToolExecutionStore {
             )
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| CodemodeToolError::Storage(err.to_string()))?;
 
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_code_mode_exec_created_at ON code_mode_executions(created_at DESC)",
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| CodemodeToolError::Storage(err.to_string()))?;
 
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_code_mode_exec_status_session ON code_mode_executions(status, session_id)",
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| CodemodeToolError::Storage(err.to_string()))?;
 
@@ -94,7 +117,7 @@ impl CodemodeToolExecutionStore {
               AND json_extract(runtime_context_json, '$.code') IS NOT NULL
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| CodemodeToolError::Storage(err.to_string()))?;
 
@@ -151,7 +174,7 @@ impl CodemodeToolExecutionStore {
         .bind(request_meta_json)
         .bind(record.created_at)
         .bind(code)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| CodemodeToolError::Storage(err.to_string()))?;
 
@@ -368,7 +391,7 @@ impl CodemodeToolExecutionStore {
         });
         if !exists {
             sqlx::query(ddl)
-                .execute(&self.pool)
+                .execute(&self.write_pool)
                 .await
                 .map_err(|err| CodemodeToolError::Storage(err.to_string()))?;
         }

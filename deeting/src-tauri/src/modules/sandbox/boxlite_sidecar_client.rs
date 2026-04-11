@@ -155,9 +155,7 @@ impl BoxLiteSidecarClient {
             Err(first_error) => {
                 *self.process.lock().await = None;
                 self.send_once(request).await.map_err(|second_error| {
-                    SandboxError::Internal(format!(
-                        "{first_error}; retry_failed: {second_error}"
-                    ))
+                    SandboxError::Internal(format!("{first_error}; retry_failed: {second_error}"))
                 })
             }
         }

@@ -194,12 +194,28 @@ describe("extractLocalChatApprovalResume", () => {
         },
       })
     ).toMatchObject({
+      status: "LOCAL_CHAT_RESUMED",
       approved_tool_result: { ok: true },
       continuation_blocks: [{ id: "resume-1", type: "text", content: "done" }],
       execution_graph_execution_id: "graph-exec-1",
       execution_graph: {
         execution_id: "graph-exec-1",
       },
+    })
+  })
+
+  it("accepts waiting_approval local chat payloads so callers can refresh canonical approvals", () => {
+    expect(
+      extractLocalChatApprovalResume({
+        status: "LOCAL_CHAT_WAITING_APPROVAL",
+        approved_tool_result: { ok: true },
+        continuation_blocks: [],
+        execution_graph_execution_id: "graph-exec-waiting-1",
+      })
+    ).toMatchObject({
+      status: "LOCAL_CHAT_WAITING_APPROVAL",
+      approved_tool_result: { ok: true },
+      execution_graph_execution_id: "graph-exec-waiting-1",
     })
   })
 })

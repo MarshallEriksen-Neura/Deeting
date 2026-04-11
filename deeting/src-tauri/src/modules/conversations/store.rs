@@ -477,7 +477,7 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
         );
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -501,7 +501,7 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
         );
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -525,7 +525,7 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
         );
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -559,7 +559,7 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
         );
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -584,7 +584,7 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
         );
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -604,7 +604,7 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
         );
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -619,7 +619,7 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
         );
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -639,7 +639,7 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
         );
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -649,7 +649,7 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
         ON conversation_session(assistant_id);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -659,7 +659,7 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
         ON conversation_session(status, last_active_at DESC);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -669,7 +669,7 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
         ON conversation_execution_root(session_id, turn_index DESC);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -679,7 +679,7 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
         ON conversation_execution_root(message_id);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -689,7 +689,7 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
         ON conversation_execution_root(target_workflow_run_id);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -699,7 +699,7 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
         ON conversation_execution_child(root_execution_id);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -709,7 +709,7 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
         ON conversation_execution_child(session_id);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -719,7 +719,7 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
         ON conversation_message(session_id, turn_index);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -729,7 +729,7 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
         ON conversation_message(session_id, turn_index DESC);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -739,7 +739,7 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
         ON conversation_summary(session_id, version);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -749,7 +749,7 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
         ON conversation_summary_job(status, available_after_epoch ASC);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -759,7 +759,7 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
         ON conversation_summary_job(session_id, status);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -769,7 +769,7 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
         ON conversation_summary_idle_task(run_after_epoch ASC);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -779,7 +779,7 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
         ON local_periodic_task(is_enabled, next_run_after_epoch ASC);
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -790,7 +790,7 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
         WHERE status = 'pending';
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -801,7 +801,7 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
         WHERE status = 'running';
         "#,
     )
-    .execute(&store.pool)
+    .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -1960,7 +1960,7 @@ impl McpStore {
         .bind(&now)
         .bind(&now)
         .bind(&now)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -2002,7 +2002,7 @@ impl McpStore {
         .bind(&now)
         .bind(&now)
         .bind(&now)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|e| McpError::Storage(e.to_string()))?;
         Ok(())
@@ -2047,7 +2047,7 @@ impl McpStore {
         .bind(&now)
         .bind(&now)
         .bind(session_id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -2087,7 +2087,7 @@ impl McpStore {
         .bind(&normalized_title)
         .bind(&now)
         .bind(session_id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -2137,7 +2137,7 @@ impl McpStore {
         .bind(&next_title)
         .bind(&now)
         .bind(&normalized_session_id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -2189,7 +2189,7 @@ impl McpStore {
         .bind(&normalized_provider_model_id)
         .bind(&now)
         .bind(&normalized_session_id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -2241,7 +2241,7 @@ impl McpStore {
         .bind(normalize_optional(pinned_binding_source))
         .bind(&now)
         .bind(&normalized_session_id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -4158,7 +4158,7 @@ impl McpStore {
         .bind(run_after_epoch)
         .bind(&now)
         .bind(&now)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -4232,7 +4232,7 @@ impl McpStore {
             )
             .bind(&session_id)
             .bind(now_epoch)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
             if claim.rows_affected() == 0 {
@@ -4380,7 +4380,7 @@ impl McpStore {
         .bind(next_run_after_epoch)
         .bind(&now)
         .bind(&now)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -4470,7 +4470,7 @@ impl McpStore {
         .bind(&now)
         .bind(&now)
         .bind(&normalized_task_name)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -4512,7 +4512,7 @@ impl McpStore {
         .bind(&now)
         .bind(&now)
         .bind(&normalized_task_name)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -4539,7 +4539,7 @@ impl McpStore {
         .bind(CONVERSATION_SUMMARY_JOB_STATUS_COMPLETED)
         .bind(CONVERSATION_SUMMARY_JOB_STATUS_FAILED)
         .bind(threshold_epoch)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 

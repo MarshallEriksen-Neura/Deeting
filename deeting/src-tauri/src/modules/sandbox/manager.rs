@@ -1461,7 +1461,9 @@ mod session_name_tests {
             }),
             boxlite: SandboxBoxLiteStatus {
                 binary_found: true,
-                binary_path: Some("/home/timeline/.deeting/sandbox/boxlite/cli/boxlite".to_string()),
+                binary_path: Some(
+                    "/home/timeline/.deeting/sandbox/boxlite/cli/boxlite".to_string(),
+                ),
                 endpoint: Some("http://127.0.0.1:9090".to_string()),
                 reachable: true,
                 managed_by_deeting: true,

@@ -9,6 +9,7 @@ use crate::modules::desktop_runtime::runtime::{
     apply_rejected_tool_result_to_execution_graph_value, delete_execution_graph_runtime_context,
     list_canonical_pending_local_approval_snapshots, load_execution_graph_snapshot,
     materialize_pending_local_approval_from_runtime_context, persist_execution_graph_snapshot,
+    project_local_chat_approval_state_payload, recover_local_chat_execution_from_action,
     resume_suspended_chat_tool_execution_after_approval,
 };
 use crate::modules::mcp::commands::common_impl::to_string;
@@ -65,6 +66,13 @@ fn resolve_requested_execution_graph_id(
         })
 }
 
+fn is_idempotent_post_approval_error(error: &str) -> bool {
+    matches!(
+        error.trim(),
+        "pending tool call not found" | "pending tool call already consumed"
+    )
+}
+
 pub(crate) async fn approve_mcp_tool_payload(
     app: &tauri::AppHandle,
     state: &crate::state::AppState,
@@ -97,8 +105,14 @@ pub(crate) async fn approve_mcp_tool_payload(
         .mcp
         .build_approval_context(call_id, execution_token, None);
     let persist_mode = parse_approve_persist_mode(approval_mode.map(str::to_string));
+    let requested_execution_id = resolve_requested_execution_graph_id(
+        execution_graph_execution_id,
+        pending_before_approval
+            .as_ref()
+            .and_then(|pending| pending.execution_graph_execution_id.as_deref()),
+    );
 
-    let approved = approve_mcp_tool_inner_with_context_and_mode(
+    let approved = match approve_mcp_tool_inner_with_context_and_mode(
         &approval_context,
         Some(&state.mcp),
         state.mcp.store.as_ref(),
@@ -106,14 +120,26 @@ pub(crate) async fn approve_mcp_tool_payload(
         token,
         persist_mode,
     )
-    .await?;
-
-    let requested_execution_id = resolve_requested_execution_graph_id(
-        execution_graph_execution_id,
-        pending_before_approval
-            .as_ref()
-            .and_then(|pending| pending.execution_graph_execution_id.as_deref()),
-    );
+    .await
+    {
+        Ok(approved) => approved,
+        Err(err) => {
+            if is_idempotent_post_approval_error(err.as_str()) {
+                if let Some(execution_id) = requested_execution_id.as_deref() {
+                    if let Some(payload) = project_local_chat_approval_state_payload(
+                        state,
+                        execution_id,
+                        Some(err.as_str()),
+                    )
+                    .await?
+                    {
+                        return Ok(payload);
+                    }
+                }
+            }
+            return Err(err);
+        }
+    };
 
     if let Some(resumed) = resume_suspended_chat_tool_execution_after_approval(
         app,
@@ -131,6 +157,22 @@ pub(crate) async fn approve_mcp_tool_payload(
     }
 
     if let Some(execution_id) = requested_execution_id {
+        if let Some(mut payload) = project_local_chat_approval_state_payload(
+            state,
+            execution_id.as_str(),
+            Some("canonical waiting approval existed, but post-approval continuation could not be resumed"),
+        )
+        .await?
+        {
+            if let Some(object) = payload.as_object_mut() {
+                object.insert(
+                    "approved_tool_result".to_string(),
+                    approved.clone(),
+                );
+            }
+            return Ok(payload);
+        }
+
         return Ok(serde_json::json!({
             "status": "LOCAL_CHAT_RESUME_FAILED",
             "approved_tool_result": approved,
@@ -535,6 +577,27 @@ pub async fn reject_mcp_tool(
         reject_mode.or(rejectMode).as_deref(),
     )
     .await
+}
+
+#[tauri::command]
+pub async fn recover_local_chat_execution(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    execution_graph_execution_id: Option<String>,
+    #[allow(non_snake_case)] executionGraphExecutionId: Option<String>,
+    action: Option<String>,
+) -> Result<Value, String> {
+    let execution_id = execution_graph_execution_id
+        .or(executionGraphExecutionId)
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "execution_graph_execution_id is required".to_string())?;
+    let action = action
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "action is required".to_string())?;
+    recover_local_chat_execution_from_action(&app, &state, execution_id.as_str(), action.as_str())
+        .await
 }
 
 #[cfg(test)]

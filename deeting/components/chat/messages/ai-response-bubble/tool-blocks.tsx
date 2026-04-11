@@ -790,6 +790,7 @@ export const ToolCallBlock = memo<{
   const removePendingByToken = useBridgeApprovalStore(
     (state) => state.removePendingByToken,
   );
+  const sessionId = useChatStore((state) => state.sessionId);
   const setMessageBlocks = useChatStore((state) => state.setMessageBlocks);
   const upsertMessageToolResult = useChatStore(
     (state) => state.upsertMessageToolResult,
@@ -912,6 +913,8 @@ export const ToolCallBlock = memo<{
       await runInlineApproval({
         approval: inlineApproval,
         messageId,
+        sessionId,
+        resolveMessages: () => useChatStore.getState().messages,
         applyOptimisticExecutionState,
         removePendingByToken,
         upsertMessageToolResult,
@@ -925,6 +928,7 @@ export const ToolCallBlock = memo<{
     applyOptimisticExecutionState,
     inlineApproval,
     messageId,
+    sessionId,
     removePendingByToken,
     upsertMessageToolResult,
   ]);

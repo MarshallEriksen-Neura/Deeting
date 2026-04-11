@@ -1,4 +1,5 @@
 use super::*;
+use sqlx::Row;
 
 fn apply_approved_tool_result_to_suspended_round(
     suspended: &mut SuspendedChatToolExecution,
@@ -213,28 +214,85 @@ pub(super) async fn persist_resumed_local_chat_assistant_message(
     Ok(())
 }
 
-pub(crate) async fn resume_suspended_chat_tool_execution_after_approval(
+fn pending_approval_call_ids_from_graph(execution_graph: &serde_json::Value) -> Vec<String> {
+    build_tool_call_meta_from_execution_graph(execution_graph)
+        .into_iter()
+        .filter(|item| {
+            item.get("status")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|status| status.eq_ignore_ascii_case("requires_approval"))
+        })
+        .filter_map(|item| {
+            item.get("id")
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        })
+        .collect()
+}
+
+fn build_local_chat_waiting_approval_payload(
+    execution_graph: &serde_json::Value,
+    approved_tool_result: &serde_json::Value,
+    continuation_blocks: Vec<serde_json::Value>,
+    execution_graph_execution_id: Option<&str>,
+    pending_call_ids: Vec<String>,
+) -> serde_json::Value {
+    serde_json::json!({
+        "status": "LOCAL_CHAT_WAITING_APPROVAL",
+        "approved_tool_result": approved_tool_result,
+        "continuation_blocks": continuation_blocks,
+        "execution_graph": execution_graph,
+        "execution_graph_execution_id": execution_graph_execution_id,
+        "pending_call_ids": pending_call_ids,
+    })
+}
+
+fn build_local_chat_resumed_payload(
+    approved_tool_result: &serde_json::Value,
+    resumed_response: &serde_json::Value,
+    continuation_meta: &[serde_json::Value],
+) -> serde_json::Value {
+    serde_json::json!({
+        "status": "LOCAL_CHAT_RESUMED",
+        "approved_tool_result": approved_tool_result,
+        "continuation_blocks": build_local_chat_resume_continuation_blocks(
+            resumed_response,
+            continuation_meta,
+        ),
+        "execution_graph": resumed_response.get("execution_graph").cloned(),
+        "execution_graph_execution_id": resumed_response
+            .get("execution_graph")
+            .and_then(|value| value.get("execution_id"))
+            .cloned(),
+        "response": resumed_response,
+    })
+}
+
+fn build_local_chat_resume_failed_payload(
+    approved_tool_result: &serde_json::Value,
+    execution_graph: &serde_json::Value,
+    execution_graph_execution_id: Option<&str>,
+    error: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "status": "LOCAL_CHAT_RESUME_FAILED",
+        "approved_tool_result": approved_tool_result,
+        "continuation_blocks": [],
+        "execution_graph": execution_graph,
+        "execution_graph_execution_id": execution_graph_execution_id,
+        "error": error,
+    })
+}
+
+async fn advance_local_chat_execution_from_graph_state(
     app: &AppHandle,
     app_state: &AppState,
-    approval_token: &str,
-    tool_result: &serde_json::Value,
-    call_id: Option<&str>,
-    execution_graph_execution_id: Option<&str>,
-) -> Result<Option<serde_json::Value>, String> {
-    let mut suspended = if let Some(suspended) = load_suspended_chat_tool_execution_for_resume(
-        app_state,
-        approval_token,
-        execution_graph_execution_id,
-    )
-    .await?
-    {
-        suspended
-    } else {
-        return Ok(None);
-    };
-
-    apply_approved_tool_result_to_suspended_round(&mut suspended, call_id, tool_result);
-
+    mut suspended: SuspendedChatToolExecution,
+    consumed_approval_token: Option<&str>,
+    approved_tool_result: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
     let pending_response = suspended
         .last_response
         .clone()
@@ -248,41 +306,66 @@ pub(crate) async fn resume_suspended_chat_tool_execution_after_approval(
         .and_then(serde_json::Value::as_str)
         .map(str::to_string);
     let post_approval_graph = suspended.execution_graph.clone();
+    let remaining_pending_call_ids = if let Some(approval_token) = consumed_approval_token {
+        suspended.sync_remaining_pending_approvals(approval_token)
+    } else {
+        suspended.pending_requires_approval_call_ids()
+    };
 
-    if let Err(err) = persist_suspended_execution_graph_runtime(
-        app_state.mcp.store.as_ref(),
-        &suspended,
-        &[],
-        "desktop_local_chat_approval_applied",
-        "active",
-    )
-    .await
-    {
-        log::warn!(
-            "persist approved execution graph failed approval_token={} err={}",
-            approval_token,
-            err
-        );
-    }
-
-    let remaining_pending_call_ids = suspended.pending_requires_approval_call_ids();
     if !remaining_pending_call_ids.is_empty() {
-        return Ok(Some(serde_json::json!({
-            "status": "LOCAL_CHAT_WAITING_APPROVAL",
-            "approved_tool_result": tool_result,
-            "continuation_blocks": build_local_chat_resume_continuation_blocks(
+        if let Err(err) = persist_suspended_execution_graph_runtime(
+            app_state.mcp.store.as_ref(),
+            &suspended,
+            &suspended.pending_approvals,
+            "desktop_local_chat_approval_applied",
+            "waiting_approval",
+            InFlightExecutionStage::WaitingApproval,
+            None,
+        )
+        .await
+        {
+            log::warn!(
+                "persist approved execution graph failed approval_token={} err={}",
+                consumed_approval_token.unwrap_or("resume"),
+                err
+            );
+        }
+
+        return Ok(build_local_chat_waiting_approval_payload(
+            suspended.execution_graph(),
+            approved_tool_result,
+            build_local_chat_resume_continuation_blocks(
                 &serde_json::json!({
                     "execution_graph": suspended.execution_graph().clone(),
                     "content": "",
                 }),
                 &suspended.pending_tool_call_meta(),
             ),
-            "execution_graph": suspended.execution_graph().clone(),
-            "execution_graph_execution_id": root_execution_id,
-            "pending_call_ids": remaining_pending_call_ids,
-        })));
+            root_execution_id.as_deref(),
+            remaining_pending_call_ids,
+        ));
     }
 
+    if let Err(err) = persist_suspended_execution_graph_runtime(
+        app_state.mcp.store.as_ref(),
+        &suspended,
+        &[],
+        "desktop_local_chat_approval_resuming",
+        "active",
+        InFlightExecutionStage::ResumingAfterApproval,
+        None,
+    )
+    .await
+    {
+        log::warn!(
+            "persist approved execution graph failed approval_token={} err={}",
+            consumed_approval_token.unwrap_or("resume"),
+            err
+        );
+    }
+
+    let resume_gate_node_id = suspended.pending_gate_node_id().to_string();
+    let resume_call_id = suspended.pending_call_id().to_string();
     let mut state = suspended.into_runtime_state();
     let session_id = state.session_id.clone();
     let model_connection = state.model_connection.clone();
@@ -303,6 +386,24 @@ pub(crate) async fn resume_suspended_chat_tool_execution_after_approval(
         &state.runtime_metrics,
     ));
     rewind_round_for_post_approval_continuation(&mut state);
+    let failed_chat_runtime = super::inflight::PersistedChatToolRuntimeContext {
+        max_rounds: state.max_rounds,
+        round: state.round,
+        trace_id: state.trace_id.clone(),
+        request_id: state.request_id.clone(),
+        execution_policy: state.execution_policy.clone(),
+        model_connection: state.model_connection.clone(),
+        orchestrated_messages: state.orchestrated_messages.clone(),
+        session_id: state.session_id.clone(),
+        temperature: state.temperature,
+        max_tokens: state.max_tokens,
+        active_capability: state.active_capability.clone(),
+        runtime_metrics: state.runtime_metrics.clone(),
+        last_capability_snapshot: state.last_capability_snapshot.clone(),
+        last_response: state.last_response.clone(),
+    };
+    let failed_trace_id = state.trace_id.clone();
+    let failed_request_id = state.request_id.clone();
 
     match continue_local_chat_complete_with_tools(app, app_state, state).await {
         Ok(mut output) => {
@@ -329,18 +430,11 @@ pub(crate) async fn resume_suspended_chat_tool_execution_after_approval(
             )
             .await;
             let continuation_meta = build_effective_tool_call_meta(&output.response, &[]);
-            Ok(Some(serde_json::json!({
-                "status": "LOCAL_CHAT_RESUMED",
-                "approved_tool_result": tool_result,
-                "continuation_blocks": build_local_chat_resume_continuation_blocks(&output.response, &continuation_meta),
-                "execution_graph": output.response.get("execution_graph").cloned(),
-                "execution_graph_execution_id": output
-                    .response
-                    .get("execution_graph")
-                    .and_then(|value| value.get("execution_id"))
-                    .cloned(),
-                "response": output.response,
-            })))
+            Ok(build_local_chat_resumed_payload(
+                approved_tool_result,
+                &output.response,
+                &continuation_meta,
+            ))
         }
         Err(err) => {
             if let Err(persist_err) = persist_execution_graph_snapshot(
@@ -359,21 +453,151 @@ pub(crate) async fn resume_suspended_chat_tool_execution_after_approval(
                     persist_err
                 );
             }
-            clear_execution_graph_runtime_context(
-                app_state.mcp.store.as_ref(),
+            if let Some(execution_id) = root_execution_id.as_deref() {
+                let failed_context = serialize_inflight_runtime_context(
+                    InFlightExecutionStage::ResumeFailed,
+                    Some(resume_gate_node_id.clone()),
+                    Some(resume_call_id.clone()),
+                    None,
+                    true,
+                    Vec::new(),
+                    Some(failed_chat_runtime.clone()),
+                    session_id.as_str(),
+                    failed_trace_id.as_str(),
+                    failed_request_id.as_deref(),
+                    Some(execution_id),
+                    Some(err.as_str()),
+                );
+                if let Err(persist_err) = persist_execution_graph_runtime_context(
+                    app_state.mcp.store.as_ref(),
+                    execution_id,
+                    &failed_context,
+                )
+                .await
+                {
+                    log::warn!(
+                        "persist_execution_graph_runtime_context failed execution_id={} err={}",
+                        execution_id,
+                        persist_err
+                    );
+                }
+            }
+
+            Ok(build_local_chat_resume_failed_payload(
+                approved_tool_result,
+                &post_approval_graph,
                 root_execution_id.as_deref(),
-            )
-            .await;
-            Ok(Some(serde_json::json!({
-                "status": "LOCAL_CHAT_RESUME_FAILED",
-                "approved_tool_result": tool_result,
-                "continuation_blocks": [],
-                "execution_graph": post_approval_graph,
-                "execution_graph_execution_id": root_execution_id,
-                "error": err,
-            })))
+                err.as_str(),
+            ))
         }
     }
+}
+
+pub(crate) async fn project_local_chat_approval_state_payload(
+    app_state: &AppState,
+    execution_graph_execution_id: &str,
+    fallback_error: Option<&str>,
+) -> Result<Option<serde_json::Value>, String> {
+    let normalized_execution_id = execution_graph_execution_id.trim();
+    if normalized_execution_id.is_empty() {
+        return Ok(None);
+    }
+
+    let Some(execution_graph) =
+        load_execution_graph_snapshot(app_state.mcp.store.as_ref(), normalized_execution_id)
+            .await
+            .map_err(|err| err.to_string())?
+    else {
+        return Ok(None);
+    };
+
+    let persisted =
+        load_execution_graph_runtime_context(app_state.mcp.store.as_ref(), normalized_execution_id)
+            .await
+            .map_err(|err| err.to_string())?
+            .and_then(|value| persistable_inflight_context_from_value(&value));
+    let continuation_blocks = build_local_chat_resume_continuation_blocks(
+        &serde_json::json!({
+            "execution_graph": execution_graph.clone(),
+            "content": "",
+        }),
+        &build_tool_call_meta_from_execution_graph(&execution_graph),
+    );
+    let pending_call_ids = pending_approval_call_ids_from_graph(&execution_graph);
+
+    if !pending_call_ids.is_empty() {
+        return Ok(Some(build_local_chat_waiting_approval_payload(
+            &execution_graph,
+            &serde_json::Value::Null,
+            continuation_blocks,
+            Some(normalized_execution_id),
+            pending_call_ids,
+        )));
+    }
+
+    if persisted
+        .as_ref()
+        .is_some_and(|context| context.stage == InFlightExecutionStage::ResumeFailed)
+    {
+        let error = persisted
+            .as_ref()
+            .and_then(|context| context.last_error.clone())
+            .or_else(|| fallback_error.map(str::to_string));
+        let mut payload = build_local_chat_resume_failed_payload(
+            &serde_json::Value::Null,
+            &execution_graph,
+            Some(normalized_execution_id),
+            error.as_deref().unwrap_or_default(),
+        );
+        if let Some(object) = payload.as_object_mut() {
+            object.insert(
+                "continuation_blocks".to_string(),
+                serde_json::Value::Array(continuation_blocks),
+            );
+        }
+        return Ok(Some(payload));
+    }
+
+    Ok(Some(serde_json::json!({
+        "status": "LOCAL_CHAT_RESUMED",
+        "approved_tool_result": serde_json::Value::Null,
+        "continuation_blocks": continuation_blocks,
+        "execution_graph": execution_graph,
+        "execution_graph_execution_id": normalized_execution_id,
+    })))
+}
+
+pub(crate) async fn resume_suspended_chat_tool_execution_after_approval(
+    app: &AppHandle,
+    app_state: &AppState,
+    approval_token: &str,
+    tool_result: &serde_json::Value,
+    call_id: Option<&str>,
+    execution_graph_execution_id: Option<&str>,
+) -> Result<Option<serde_json::Value>, String> {
+    let mut suspended = if let Some(suspended) = load_suspended_chat_tool_execution_for_resume(
+        app_state,
+        approval_token,
+        execution_graph_execution_id,
+    )
+    .await?
+    {
+        suspended
+    } else {
+        return Ok(None);
+    };
+
+    apply_approved_tool_result_to_suspended_round(&mut suspended, call_id, tool_result);
+    Ok(Some(
+        advance_local_chat_execution_from_graph_state(
+            app,
+            app_state,
+            suspended,
+            Some(approval_token),
+            tool_result,
+        )
+        .await?,
+    ))
 }
 
 fn recovery_assistant_meta(
@@ -424,6 +648,80 @@ async fn recovery_message_exists(
     .await
     .map_err(|err| err.to_string())?;
     Ok(count > 0)
+}
+
+async fn find_recovery_message_turn_and_meta(
+    store: &crate::modules::mcp::store::McpStore,
+    session_id: &str,
+    execution_id: &str,
+) -> Result<Option<(i64, serde_json::Value)>, String> {
+    let row = sqlx::query(
+        r#"
+        SELECT turn_index, meta_info
+        FROM conversation_message
+        WHERE session_id = ?
+          AND role = 'assistant'
+          AND is_deleted = 0
+          AND json_extract(meta_info, '$.recovery.execution_id') = ?
+        ORDER BY turn_index DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(session_id)
+    .bind(execution_id)
+    .fetch_optional(&store.pool)
+    .await
+    .map_err(|err| err.to_string())?;
+
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    let turn_index: i64 = row.try_get("turn_index").map_err(|err| err.to_string())?;
+    let meta_info_text: Option<String> = row.try_get("meta_info").map_err(|err| err.to_string())?;
+    let Some(meta_info_text) = meta_info_text else {
+        return Ok(None);
+    };
+    let meta_info = serde_json::from_str::<serde_json::Value>(&meta_info_text)
+        .map_err(|err| err.to_string())?;
+    Ok(Some((turn_index, meta_info)))
+}
+
+async fn resolve_recovery_prompt_message(
+    store: &crate::modules::mcp::store::McpStore,
+    session_id: &str,
+    execution_id: &str,
+    action: &str,
+) -> Result<(), String> {
+    let Some((turn_index, mut meta_info)) =
+        find_recovery_message_turn_and_meta(store, session_id, execution_id).await?
+    else {
+        return Ok(());
+    };
+
+    let Some(recovery) = meta_info
+        .get_mut("recovery")
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return Ok(());
+    };
+
+    recovery.insert(
+        "available_actions".to_string(),
+        serde_json::Value::Array(Vec::new()),
+    );
+    recovery.insert(
+        "resolved_action".to_string(),
+        serde_json::Value::String(action.to_string()),
+    );
+    recovery.insert(
+        "resolved_at_unix_ms".to_string(),
+        serde_json::json!(now_unix_ms_i64()),
+    );
+
+    store
+        .update_local_conversation_assistant_meta_info(session_id, turn_index, Some(meta_info))
+        .await
+        .map_err(|err| err.to_string())
 }
 
 async fn append_recovery_assistant_message_if_missing(
@@ -539,6 +837,86 @@ pub(crate) async fn recover_inflight_local_execution_state(
                     )
                     .await?;
                 }
+            }
+            InFlightExecutionStage::ResumingAfterApproval => {
+                if persisted.recovery_notice_emitted_at_unix_ms.is_some() {
+                    continue;
+                }
+                let Some(mut execution_graph) =
+                    load_execution_graph_snapshot(store, execution_id.as_str())
+                        .await
+                        .map_err(|err| err.to_string())?
+                else {
+                    continue;
+                };
+                let message = "The previous run was interrupted while continuing after approval. Confirm the restored state before retrying or continuing.";
+                mark_inflight_execution_interrupted(
+                    &mut execution_graph,
+                    persisted.current_call_id.as_deref(),
+                    message,
+                );
+                persist_execution_graph_snapshot(
+                    store,
+                    &execution_graph,
+                    persisted.session_id.as_str(),
+                    "desktop_local_chat_resuming_after_approval_interrupted",
+                    persisted.request_id.as_deref(),
+                    Some("interrupted"),
+                )
+                .await
+                .map_err(|err| err.to_string())?;
+                append_recovery_assistant_message_if_missing(
+                    store,
+                    persisted.session_id.as_str(),
+                    &execution_graph,
+                    execution_id.as_str(),
+                    "resuming_after_approval",
+                    message,
+                    &["continue", "retry", "abandon"],
+                )
+                .await?;
+                persisted.last_error = Some(message.to_string());
+                persisted.recovery_notice_emitted_at_unix_ms = Some(now_unix_ms_i64());
+                persist_execution_graph_runtime_context(
+                    store,
+                    execution_id.as_str(),
+                    &serde_json::to_value(&persisted).unwrap_or_else(|_| serde_json::json!({})),
+                )
+                .await
+                .map_err(|err| err.to_string())?;
+            }
+            InFlightExecutionStage::ResumeFailed => {
+                if persisted.recovery_notice_emitted_at_unix_ms.is_some() {
+                    continue;
+                }
+                let Some(execution_graph) =
+                    load_execution_graph_snapshot(store, execution_id.as_str())
+                        .await
+                        .map_err(|err| err.to_string())?
+                else {
+                    continue;
+                };
+                let message = persisted.last_error.clone().unwrap_or_else(|| {
+                    "The previous run failed while continuing after approval.".to_string()
+                });
+                append_recovery_assistant_message_if_missing(
+                    store,
+                    persisted.session_id.as_str(),
+                    &execution_graph,
+                    execution_id.as_str(),
+                    "resume_failed",
+                    message.as_str(),
+                    &["retry", "abandon"],
+                )
+                .await?;
+                persisted.recovery_notice_emitted_at_unix_ms = Some(now_unix_ms_i64());
+                persist_execution_graph_runtime_context(
+                    store,
+                    execution_id.as_str(),
+                    &serde_json::to_value(&persisted).unwrap_or_else(|_| serde_json::json!({})),
+                )
+                .await
+                .map_err(|err| err.to_string())?;
             }
             InFlightExecutionStage::ToolRunning => {
                 if persisted.recovery_notice_emitted_at_unix_ms.is_some() {
@@ -674,4 +1052,108 @@ pub(crate) async fn recover_inflight_local_execution_state(
     }
 
     Ok(())
+}
+
+pub(crate) async fn recover_local_chat_execution_from_action(
+    app: &AppHandle,
+    app_state: &AppState,
+    execution_graph_execution_id: &str,
+    action: &str,
+) -> Result<serde_json::Value, String> {
+    let normalized_execution_id = execution_graph_execution_id.trim();
+    if normalized_execution_id.is_empty() {
+        return Err("execution_graph_execution_id is required".to_string());
+    }
+
+    let normalized_action = action.trim().to_ascii_lowercase();
+    if normalized_action.is_empty() {
+        return Err("action is required".to_string());
+    }
+
+    let Some(runtime_context_value) =
+        load_execution_graph_runtime_context(app_state.mcp.store.as_ref(), normalized_execution_id)
+            .await
+            .map_err(|err| err.to_string())?
+    else {
+        return Err("local chat recovery context not found".to_string());
+    };
+    let Some(persisted) = persistable_inflight_context_from_value(&runtime_context_value) else {
+        return Err("local chat recovery context is invalid".to_string());
+    };
+
+    match normalized_action.as_str() {
+        "abandon" => {
+            clear_execution_graph_runtime_context(
+                app_state.mcp.store.as_ref(),
+                Some(normalized_execution_id),
+            )
+            .await;
+            resolve_recovery_prompt_message(
+                app_state.mcp.store.as_ref(),
+                persisted.session_id.as_str(),
+                normalized_execution_id,
+                "abandon",
+            )
+            .await?;
+            let execution_graph = load_execution_graph_snapshot(
+                app_state.mcp.store.as_ref(),
+                normalized_execution_id,
+            )
+            .await
+            .map_err(|err| err.to_string())?;
+            return Ok(serde_json::json!({
+                "status": "LOCAL_CHAT_RECOVERY_ABANDONED",
+                "execution_graph_execution_id": normalized_execution_id,
+                "execution_graph": execution_graph,
+            }));
+        }
+        "continue" | "retry" => {}
+        _ => {
+            return Err(format!(
+                "unsupported local chat recovery action: {normalized_action}"
+            ))
+        }
+    }
+
+    if persisted.stage != InFlightExecutionStage::ResumingAfterApproval
+        && persisted.stage != InFlightExecutionStage::ResumeFailed
+    {
+        return Err(format!(
+            "local chat recovery action '{}' is not supported for stage '{}'",
+            normalized_action,
+            serde_json::to_string(&persisted.stage).unwrap_or_else(|_| "\"unknown\"".to_string())
+        ));
+    }
+
+    let Some(suspended) =
+        load_suspended_chat_tool_execution_for_resume(app_state, "", Some(normalized_execution_id))
+            .await?
+    else {
+        return Err("local chat suspended execution not found".to_string());
+    };
+
+    let payload = advance_local_chat_execution_from_graph_state(
+        app,
+        app_state,
+        suspended,
+        None,
+        &serde_json::Value::Null,
+    )
+    .await?;
+
+    let is_terminal_success = payload
+        .get("status")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|status| status == "LOCAL_CHAT_RESUMED");
+    if is_terminal_success {
+        resolve_recovery_prompt_message(
+            app_state.mcp.store.as_ref(),
+            persisted.session_id.as_str(),
+            normalized_execution_id,
+            normalized_action.as_str(),
+        )
+        .await?;
+    }
+
+    Ok(payload)
 }

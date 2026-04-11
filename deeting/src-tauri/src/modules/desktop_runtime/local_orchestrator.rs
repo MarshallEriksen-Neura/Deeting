@@ -49,8 +49,7 @@ mod workflow;
 use message_utils::{
     build_assistant_meta, build_compare_only_messages, convert_history_message_to_chat_input,
     derive_local_finish_reason, extract_content_text, extract_response_runtime_metrics,
-    extract_summary_text, fallback_prefers_chinese,
-    latest_tool_error_summary, AssistantMetaMode,
+    extract_summary_text, fallback_prefers_chinese, latest_tool_error_summary, AssistantMetaMode,
 };
 #[cfg(test)]
 use model_selection::LocalConversationModelBinding;
@@ -66,9 +65,7 @@ use retrieval::{
     InjectedMemory, SelectedKnowledgeDocumentContext, CORE_MEMORY_LIST_LIMIT,
     SEMANTIC_MEMORY_SEARCH_LIMIT,
 };
-use workflow::{
-    build_desktop_local_chat_engine, unix_seconds, LocalWorkflowContext,
-};
+use workflow::{build_desktop_local_chat_engine, unix_seconds, LocalWorkflowContext};
 #[cfg(test)]
 use workflow::{render_skill_recipe_prompt, status_patch, ContextPatch, LocalStepResult};
 

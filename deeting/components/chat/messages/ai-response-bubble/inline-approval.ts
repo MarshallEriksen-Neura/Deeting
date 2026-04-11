@@ -14,10 +14,14 @@ import {
   createRejectedToolResultBlock,
   extractLocalChatApprovalResume,
 } from "@/lib/chat/tool-approval";
+import { refreshBridgePendingApprovalsFromCanonical } from "@/lib/chat/canonical-approval-refresh";
+import type { Message } from "@/lib/chat/message-types";
 
 export async function runInlineApproval({
   approval,
   messageId,
+  sessionId,
+  resolveMessages,
   applyOptimisticExecutionState,
   removePendingByToken,
   upsertMessageToolResult,
@@ -25,6 +29,8 @@ export async function runInlineApproval({
 }: {
   approval: BridgeToolPendingApproval;
   messageId: string;
+  sessionId: string | null;
+  resolveMessages: () => Message[];
   applyOptimisticExecutionState: () => void;
   removePendingByToken: (approvalToken: string) => void;
   upsertMessageToolResult: (messageId: string, block: ToolResultBlock) => void;
@@ -83,6 +89,22 @@ export async function runInlineApproval({
       appendMessageBlocks(messageId, [
         createLocalChatResumeErrorBlock(approval, resumePayload.error),
       ]);
+    }
+
+    if (resumePayload?.status === "LOCAL_CHAT_WAITING_APPROVAL") {
+      try {
+        await refreshBridgePendingApprovalsFromCanonical({
+          sessionId,
+          messages: resolveMessages(),
+          excludeCallIds: [approval.meta.call_id],
+          forceReplace: true,
+        });
+      } catch (refreshError) {
+        console.error(
+          "[InlineApproval] Failed to refresh canonical approvals after approval",
+          refreshError,
+        );
+      }
     }
 
     if (approval.meta.execution_token) {

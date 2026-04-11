@@ -224,7 +224,7 @@ impl McpStore {
             );
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -258,7 +258,7 @@ impl McpStore {
             );
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -268,7 +268,7 @@ impl McpStore {
             ON gateway_log(trace_id);
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -278,7 +278,7 @@ impl McpStore {
             ON gateway_log(user_id);
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -288,7 +288,7 @@ impl McpStore {
             ON gateway_log(api_key_id);
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -298,7 +298,7 @@ impl McpStore {
             ON gateway_log(preset_id);
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -308,7 +308,7 @@ impl McpStore {
             ON gateway_log(status_code);
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -318,7 +318,7 @@ impl McpStore {
             ON gateway_log(model);
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -328,7 +328,7 @@ impl McpStore {
             ON gateway_log(created_at);
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -343,7 +343,7 @@ impl McpStore {
             );
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -367,7 +367,7 @@ impl McpStore {
             );
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -391,7 +391,7 @@ impl McpStore {
             ON tool_approval_rules(updated_at_unix_ms DESC);
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -401,7 +401,7 @@ impl McpStore {
             ON tool_execution_history(tool_name, created_at_unix_ms DESC);
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -411,7 +411,7 @@ impl McpStore {
             ON tool_execution_history(session_id, created_at_unix_ms DESC);
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -426,7 +426,7 @@ impl McpStore {
             );
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -436,7 +436,7 @@ impl McpStore {
             ON tool_query_affinity(last_matched_at_unix_ms DESC);
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -451,7 +451,7 @@ impl McpStore {
             );
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -461,7 +461,7 @@ impl McpStore {
             ON asset_execution_history(asset_id, created_at_unix_ms DESC);
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -471,7 +471,7 @@ impl McpStore {
             ON asset_execution_history(session_id, created_at_unix_ms DESC);
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -486,7 +486,7 @@ impl McpStore {
             );
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -496,7 +496,7 @@ impl McpStore {
             ON asset_query_affinity(last_matched_at_unix_ms DESC);
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -538,7 +538,7 @@ impl McpStore {
             ON mcp_tools(source_id, name);
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -548,7 +548,7 @@ impl McpStore {
             ON mcp_tools(source_id, identifier);
             "#,
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 

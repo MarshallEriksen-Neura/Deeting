@@ -773,6 +773,132 @@ fn apply_rejected_tool_result_updates_graph_without_runtime_shell() {
 }
 
 #[test]
+fn suspended_execution_keeps_remaining_pending_approvals_after_one_is_approved() {
+    let mut suspended = SuspendedChatToolExecution {
+        max_rounds: 4,
+        round: 1,
+        trace_id: "trace-pending-approval-sync-1".to_string(),
+        request_id: None,
+        execution_policy: mcp_runtime::policy::build_default_local_execution_policy(),
+        model_connection: LocalModelConnection {
+            model_id: "deeting-os".to_string(),
+            provider_model_id: "deepseek-v3.1".to_string(),
+            logical_model_key: Some("deeting-os".to_string()),
+            protocol_family: "openai_chat".to_string(),
+        },
+        orchestrated_messages: Vec::new(),
+        session_id: "session-pending-approval-sync-1".to_string(),
+        temperature: None,
+        max_tokens: None,
+        active_capability: None,
+        runtime_metrics: RuntimeMetricsAccumulator::default(),
+        last_capability_snapshot: None,
+        last_response: None,
+        pending_approvals: vec![
+            PersistedPendingApproval {
+                approval_token: "approval-1".to_string(),
+                tool_id: Some("tool-1".to_string()),
+                tool_name: "shell_execute".to_string(),
+                arguments: serde_json::json!({ "command": "echo 1" }),
+                call_id: Some("call-1".to_string()),
+                execution_token: Some("exec-1".to_string()),
+                session_id: Some("session-pending-approval-sync-1".to_string()),
+                description: Some("run first command".to_string()),
+                risk_level: Some("MEDIUM".to_string()),
+                risk_reasons: vec!["writes to stdout".to_string()],
+                tool_fingerprint: "fingerprint-1".to_string(),
+                policy_rule_key: Some("policy-1".to_string()),
+                approval_grant_key: None,
+                execution_graph_execution_id: Some("graph-pending-approval-sync-1".to_string()),
+                execution_graph_gate_node_id: Some("approval_gate:call-1".to_string()),
+                execution_graph_tool_node_id: Some("tool_call:call-1".to_string()),
+                created_at_unix_ms: 1,
+                expires_at_unix_ms: 2,
+            },
+            PersistedPendingApproval {
+                approval_token: "approval-2".to_string(),
+                tool_id: Some("tool-2".to_string()),
+                tool_name: "shell_execute".to_string(),
+                arguments: serde_json::json!({ "command": "echo 2" }),
+                call_id: Some("call-2".to_string()),
+                execution_token: Some("exec-2".to_string()),
+                session_id: Some("session-pending-approval-sync-1".to_string()),
+                description: Some("run second command".to_string()),
+                risk_level: Some("MEDIUM".to_string()),
+                risk_reasons: vec!["writes to stdout".to_string()],
+                tool_fingerprint: "fingerprint-2".to_string(),
+                policy_rule_key: Some("policy-2".to_string()),
+                approval_grant_key: None,
+                execution_graph_execution_id: Some("graph-pending-approval-sync-1".to_string()),
+                execution_graph_gate_node_id: Some("approval_gate:call-2".to_string()),
+                execution_graph_tool_node_id: Some("tool_call:call-2".to_string()),
+                created_at_unix_ms: 1,
+                expires_at_unix_ms: 2,
+            },
+        ],
+        execution_graph: serde_json::json!({
+            "execution_id": "graph-pending-approval-sync-1",
+            "nodes": [
+                {
+                    "node_id": "approval_gate:call-1",
+                    "node_type": "approval_gate",
+                    "status": "success",
+                    "dependency_ids": [],
+                    "metadata": { "approval_token": "approval-1", "call_id": "call-1" },
+                    "input_payload": null,
+                    "output_payload": { "ok": true }
+                },
+                {
+                    "node_id": "tool_call:call-1",
+                    "node_type": "tool_call",
+                    "status": "success",
+                    "dependency_ids": [],
+                    "metadata": { "call_id": "call-1", "tool_name": "shell_execute" },
+                    "input_payload": null,
+                    "output_payload": { "ok": true }
+                },
+                {
+                    "node_id": "approval_gate:call-2",
+                    "node_type": "approval_gate",
+                    "status": "waiting_approval",
+                    "dependency_ids": [],
+                    "metadata": { "approval_token": "approval-2", "call_id": "call-2" },
+                    "input_payload": null,
+                    "output_payload": { "status": "REQUIRES_APPROVAL", "approval_token": "approval-2" }
+                },
+                {
+                    "node_id": "tool_call:call-2",
+                    "node_type": "tool_call",
+                    "status": "waiting_approval",
+                    "dependency_ids": [],
+                    "metadata": { "call_id": "call-2", "tool_name": "shell_execute" },
+                    "input_payload": null,
+                    "output_payload": { "status": "REQUIRES_APPROVAL", "approval_token": "approval-2" }
+                },
+                {
+                    "node_id": "finalize:call-2",
+                    "node_type": "finalize",
+                    "status": "pending",
+                    "dependency_ids": [],
+                    "metadata": {},
+                    "input_payload": null,
+                    "output_payload": null
+                }
+            ],
+            "events": []
+        }),
+    };
+
+    let remaining_call_ids = suspended.sync_remaining_pending_approvals("approval-1");
+
+    assert_eq!(remaining_call_ids, vec!["call-2".to_string()]);
+    assert_eq!(suspended.pending_approvals.len(), 1);
+    assert_eq!(suspended.pending_approvals[0].approval_token, "approval-2");
+    assert_eq!(suspended.pending_call_id(), "call-2");
+    assert_eq!(suspended.pending_gate_node_id(), "approval_gate:call-2");
+}
+
+#[test]
 fn serialize_inflight_runtime_context_round_trips_waiting_approval_state() {
     let value = serialize_inflight_runtime_context(
         InFlightExecutionStage::WaitingApproval,
@@ -805,6 +931,7 @@ fn serialize_inflight_runtime_context_round_trips_waiting_approval_state() {
         "trace-1",
         Some("request-1"),
         Some("graph-1"),
+        None,
     );
 
     let parsed = persistable_inflight_context_from_value(&value).expect("parse inflight context");
@@ -817,5 +944,35 @@ fn serialize_inflight_runtime_context_round_trips_waiting_approval_state() {
     assert_eq!(
         parsed.pending_approvals[0].approval_token.as_str(),
         "approval-1"
+    );
+    assert!(parsed.last_error.is_none());
+}
+
+#[test]
+fn serialize_inflight_runtime_context_round_trips_resume_failed_state() {
+    let value = serialize_inflight_runtime_context(
+        InFlightExecutionStage::ResumeFailed,
+        Some("approval_gate:call-2".to_string()),
+        Some("call-2".to_string()),
+        None,
+        true,
+        Vec::new(),
+        None,
+        "session-2",
+        "trace-2",
+        Some("request-2"),
+        Some("graph-2"),
+        Some("resume continuation failed"),
+    );
+
+    let parsed = persistable_inflight_context_from_value(&value).expect("parse inflight context");
+    assert_eq!(parsed.stage, InFlightExecutionStage::ResumeFailed);
+    assert_eq!(
+        parsed.execution_graph_execution_id.as_deref(),
+        Some("graph-2")
+    );
+    assert_eq!(
+        parsed.last_error.as_deref(),
+        Some("resume continuation failed")
     );
 }

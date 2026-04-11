@@ -26,6 +26,7 @@ import { useChatRuntimeStore } from "@/store/chat-runtime-store"
 import { extractAssistantTextFromBlocks } from "@/lib/chat/message-blocks"
 import { deriveChatStatusUpdateForMessage } from "@/lib/chat/live-status"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
+import { refreshBridgePendingApprovalsFromCanonical } from "@/lib/chat/canonical-approval-refresh"
 import {
   createOptimisticApprovalExecutionBlocks,
   createApprovedToolResultBlock,
@@ -62,6 +63,7 @@ function ToolApprovalDialogContent({
   focusPendingByToken: (approvalToken: string) => void
 }) {
   const messages = useChatStore((state) => state.messages)
+  const sessionId = useChatStore((state) => state.sessionId)
   const focusMessage = useChatStore((state) => state.focusMessage)
   const setMessageBlocks = useChatStore((state) => state.setMessageBlocks)
   const upsertMessageToolResult = useChatStore((state) => state.upsertMessageToolResult)
@@ -191,6 +193,22 @@ function ToolApprovalDialogContent({
           ])
         }
         syncChatStatusForMessage(messageId)
+
+        if (resumePayload?.status === "LOCAL_CHAT_WAITING_APPROVAL") {
+          try {
+            await refreshBridgePendingApprovalsFromCanonical({
+              sessionId,
+              messages: useChatStore.getState().messages,
+              excludeCallIds: [approval.meta.call_id],
+              forceReplace: true,
+            })
+          } catch (refreshError) {
+            console.error(
+              "[ApprovalDialog] Failed to refresh canonical approvals after approval",
+              refreshError
+            )
+          }
+        }
       } else {
         clearStatus()
       }

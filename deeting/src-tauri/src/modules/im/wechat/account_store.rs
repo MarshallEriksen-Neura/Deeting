@@ -8,13 +8,31 @@ use super::types::{StoredWechatAccount, WECHAT_DEFAULT_ACCOUNT_KEY};
 
 pub struct WechatAccountStore {
     pool: SqlitePool,
+    write_pool: SqlitePool,
     secret_store: SecretStore,
 }
 
 impl WechatAccountStore {
     pub fn new(pool: SqlitePool, database_url: &str) -> Result<Self, String> {
         let secret_store = SecretStore::new(database_url).map_err(|err| err.to_string())?;
-        Ok(Self { pool, secret_store })
+        Ok(Self {
+            write_pool: pool.clone(),
+            pool,
+            secret_store,
+        })
+    }
+
+    pub fn with_pools(
+        pool: SqlitePool,
+        write_pool: SqlitePool,
+        database_url: &str,
+    ) -> Result<Self, String> {
+        let secret_store = SecretStore::new(database_url).map_err(|err| err.to_string())?;
+        Ok(Self {
+            pool,
+            write_pool,
+            secret_store,
+        })
     }
 
     pub async fn init(&self) -> Result<(), String> {
@@ -29,7 +47,7 @@ impl WechatAccountStore {
                 updated_at TEXT NOT NULL
             )",
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
 
@@ -39,7 +57,7 @@ impl WechatAccountStore {
                 created_at TEXT NOT NULL
             )",
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
 
@@ -51,7 +69,7 @@ impl WechatAccountStore {
                 expires_at TEXT NOT NULL
             )",
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
 
@@ -92,7 +110,7 @@ impl WechatAccountStore {
         .bind(key_version)
         .bind(now.as_str())
         .bind(now.as_str())
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
 
@@ -180,7 +198,7 @@ impl WechatAccountStore {
     pub async fn clear_account(&self) -> Result<(), String> {
         sqlx::query("DELETE FROM local_wechat_accounts WHERE account_key = ?")
             .bind(WECHAT_DEFAULT_ACCOUNT_KEY)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await
             .map_err(|err| err.to_string())?;
         Ok(())
@@ -198,7 +216,7 @@ impl WechatAccountStore {
         )
         .bind(contact_id)
         .bind(now_rfc3339())
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
         Ok(())
@@ -277,7 +295,7 @@ impl WechatAccountStore {
         .bind(contact_id)
         .bind(created_at.as_str())
         .bind(expires_at.as_str())
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
         Ok(code)
@@ -318,7 +336,7 @@ impl WechatAccountStore {
     async fn delete_pending_pairing(&self, pairing_code: &str) -> Result<(), String> {
         sqlx::query("DELETE FROM local_wechat_pending_pairings WHERE pairing_code = ?")
             .bind(pairing_code.trim())
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await
             .map_err(|err| err.to_string())?;
         Ok(())
@@ -329,7 +347,7 @@ impl WechatAccountStore {
             "DELETE FROM local_wechat_pending_pairings
              WHERE datetime(expires_at) <= datetime('now')",
         )
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
         Ok(())

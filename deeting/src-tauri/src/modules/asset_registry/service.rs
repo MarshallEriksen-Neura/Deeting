@@ -481,13 +481,10 @@ fn render_asset_record_from_block(
         .or_else(|| payload.get("initial_data"))
         .and_then(|value| serde_json::to_string(value).ok());
     let refresh_spec_json = refresh_spec.and_then(|value| serde_json::to_string(&value).ok());
-    let source_block_id = block
-        .get("id")
-        .and_then(Value::as_str)
-        .and_then(|value| {
-            let trimmed = value.trim();
-            (!trimmed.is_empty()).then_some(trimmed.to_string())
-        });
+    let source_block_id = block.get("id").and_then(Value::as_str).and_then(|value| {
+        let trimmed = value.trim();
+        (!trimmed.is_empty()).then_some(trimmed.to_string())
+    });
     let asset_id = derive_asset_id(
         session_id,
         turn_index,

@@ -16,6 +16,7 @@ import { Switch } from '@/components/ui/switch';
 import { BrowserModeConfirmationBar } from '@/components/chat/browser-mode/browser-mode-confirmation-bar';
 import { TakeoverPendingBar } from '@/components/chat/takeover/takeover-pending-bar';
 import { RecoveryActionBar } from '@/components/chat/recovery/recovery-action-bar';
+import { WorkflowSuggestionBar } from '@/components/chat/console/workflow-suggestion-bar';
 import Image from 'next/image';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Slider } from '@/components/ui/slider';
@@ -25,6 +26,7 @@ import { getLocalBrowserAgentPageSnapshot } from '@/lib/api/browser-agent';
 import { buildPageInspectionResult, isPageInspectionPrompt } from '@/lib/browser/page-inspection';
 import { buildChatAttachments, UPLOAD_ERROR_CODES, ATTACHMENT_INVALID_ERROR_CODES } from '@/lib/chat/attachments';
 import { createConversation } from '@/lib/api/conversations';
+import { recoverDesktopLocalChatExecution } from '@/lib/api/mcp-desktop';
 import { useChatMessaging } from '@/hooks/chat/use-chat-messaging';
 import { listLocalUserDocuments } from '@/lib/api/knowledge';
 import { generateWorkflowProposal } from '@/lib/workflow/commands';
@@ -36,6 +38,7 @@ import { useBrowserModeStore } from '@/store/browser-mode-store';
 import { useWorkspaceStore } from '@/store/workspace-store';
 import { deriveAssistantActivityState } from '@/lib/chat/assistant-activity';
 import { extractLatestComposerRecoveryPrompt } from '@/lib/chat/recovery';
+import { shouldSuggestWorkflowPlanning } from '@/lib/chat/workflow-planning-suggestion';
 
 type ComposerMode = 'chat' | 'workflow';
 
@@ -90,18 +93,20 @@ function ControlsContainer() {
   const [knowledgeLoadError, setKnowledgeLoadError] = useState<string | null>(null);
   const [taskAgents, setTaskAgents] = useState<CustomTaskAgentProfile[]>([]);
   const [dismissedRecoveryMessageIds, setDismissedRecoveryMessageIds] = useState<string[]>([]);
-  const [workflowRoutingEnabled, setWorkflowRoutingEnabled] = useState(false);
-  const [workflowRoutingLoading, setWorkflowRoutingLoading] = useState(false);
-  const [workflowRoutingSaving, setWorkflowRoutingSaving] = useState(false);
+  const [composerMode, setComposerMode] = useState<ComposerMode>('chat');
+  const [isPlanningWorkflow, setIsPlanningWorkflow] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const t = useI18n('chat');
+  const openWorkflow = useOpenWorkflow();
   const {
     input,
     attachments,
     messages,
+    sessionId,
     selectedKnowledgeFileIds,
     setInput,
     setMessages,
+    loadHistory,
     models,
     config,
     setConfig,
@@ -115,9 +120,11 @@ function ControlsContainer() {
       input: state.input,
       attachments: state.attachments,
       messages: state.messages,
+      sessionId: state.sessionId,
       selectedKnowledgeFileIds: state.selectedKnowledgeFileIds,
       setInput: state.setInput,
       setMessages: state.setMessages,
+      loadHistory: state.loadHistory,
       models: state.models,
       config: state.config,
       setConfig: state.setConfig,
@@ -201,15 +208,66 @@ function ControlsContainer() {
       models[0],
     [models, config.model]
   );
+  const resolvedTaskAgentMention = useMemo(() => {
+    if (!isTauriRuntime) return null;
+    return resolveLeadingTaskAgentMention(
+      input,
+      taskAgents.map((agent) => ({ id: agent.id, name: agent.name })),
+    );
+  }, [input, isTauriRuntime, taskAgents]);
 
   const knowledgeFileMap = useMemo(() => {
     return new Map(knowledgeFiles.map((file) => [file.id, file]));
   }, [knowledgeFiles]);
+  const workflowGoal = useMemo(
+    () => resolveWorkflowGoal(input, resolvedTaskAgentMention),
+    [input, resolvedTaskAgentMention]
+  );
+  const hasWorkflowGoal = workflowGoal.trim().length > 0;
+  const hasResolvedTaskAgent = !resolvedTaskAgentMention || Boolean(resolvedTaskAgentMention.agent);
+  const showWorkflowSuggestion = useMemo(
+    () => Boolean(
+      isTauriRuntime &&
+      composerMode === 'chat' &&
+      hasWorkflowGoal &&
+      hasResolvedTaskAgent &&
+      !isLoading &&
+      !isApprovalFlowActive &&
+      shouldSuggestWorkflowPlanning(workflowGoal)
+    ),
+    [
+      composerMode,
+      hasResolvedTaskAgent,
+      hasWorkflowGoal,
+      isApprovalFlowActive,
+      isLoading,
+      isTauriRuntime,
+      workflowGoal,
+    ]
+  );
 
   const isGenerating = isLoading;
   const isApprovalPending = latestAssistantActivity.statusCode === 'approval.required';
   const isApprovalExecuting = latestAssistantActivity.statusCode === 'approval.executing';
   const isApprovalBusy = isApprovalFlowActive && !hasComposerContent;
+  const canGeneratePlan = useMemo(
+    () => Boolean(
+      isTauriRuntime &&
+      hasWorkflowGoal &&
+      hasResolvedTaskAgent &&
+      !isLoading &&
+      !isApprovalFlowActive &&
+      !isPlanningWorkflow
+    ),
+    [
+      hasResolvedTaskAgent,
+      hasWorkflowGoal,
+      isApprovalFlowActive,
+      isLoading,
+      isPlanningWorkflow,
+      isTauriRuntime,
+    ]
+  );
   const canContinueGeneration = useMemo(
     () =>
       !recoveryPrompt &&
@@ -220,19 +278,26 @@ function ControlsContainer() {
     [attachments.length, hasInterruptedGeneration, input, isGenerating, recoveryPrompt]
   );
   const sendButtonDisabled = useMemo(() => {
+    if (isPlanningWorkflow) return true;
     if (isGenerating) return false;
     if (canQueuePendingTakeover) return false;
     if (canContinueGeneration) return false;
     if (isApprovalBusy) return true;
-    return !canSend;
+    return composerMode === 'workflow' ? !canGeneratePlan : !canSend;
   }, [
     canContinueGeneration,
+    canGeneratePlan,
     canQueuePendingTakeover,
     canSend,
+    composerMode,
     isApprovalBusy,
     isGenerating,
+    isPlanningWorkflow,
   ]);
   const sendButtonAriaLabel = useMemo(() => {
+    if (isPlanningWorkflow) {
+      return t("controls.generatingPlan");
+    }
     if (isGenerating) {
       return hasComposerContent ? t("controls.queueTakeover") : t("controls.stop");
     }
@@ -248,14 +313,18 @@ function ControlsContainer() {
     if (canContinueGeneration) {
       return t("controls.continue");
     }
-    return t("controls.send");
+    return composerMode === 'workflow'
+      ? t("controls.generatePlan")
+      : t("controls.send");
   }, [
     canContinueGeneration,
     canQueuePendingTakeover,
+    composerMode,
     hasComposerContent,
     isApprovalExecuting,
     isApprovalPending,
     isGenerating,
+    isPlanningWorkflow,
     t,
   ]);
   
@@ -300,36 +369,6 @@ function ControlsContainer() {
     };
   }, [isTauriRuntime]);
 
-  useEffect(() => {
-    if (!isTauriRuntime) return;
-    let cancelled = false;
-    setWorkflowRoutingLoading(true);
-    void getDesktopConfig(DESKTOP_CONFIG_KEYS.workerWorkflowRouting)
-      .then((value) => {
-        if (cancelled) return;
-        setWorkflowRoutingEnabled(parseDesktopConfigBool(value));
-      })
-      .catch((error) => {
-        console.warn('load_workflow_routing_config_failed', error);
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setWorkflowRoutingLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isTauriRuntime]);
-
-  const resolvedTaskAgentMention = useMemo(() => {
-    if (!isTauriRuntime) return null;
-    return resolveLeadingTaskAgentMention(
-      input,
-      taskAgents.map((agent) => ({ id: agent.id, name: agent.name })),
-    );
-  }, [input, isTauriRuntime, taskAgents]);
-
   const handleNewChat = useCallback(async () => {
     resetSession();
     setMessages([]);
@@ -371,9 +410,49 @@ function ControlsContainer() {
     setGlobalLoading,
   ]);
 
+  const handleGeneratePlan = useCallback(async () => {
+    if (!isTauriRuntime || !canGeneratePlan) return;
+    if (!hasResolvedTaskAgent) {
+      toast.error(
+        t("input.taskAgentMissing", {
+          name: resolvedTaskAgentMention?.mention.agentName ?? "",
+        })
+      );
+      return;
+    }
+
+    setIsPlanningWorkflow(true);
+    try {
+      const run = await generateWorkflowProposal({
+        goal: workflowGoal,
+        hints: buildWorkflowPlanningHints(resolvedTaskAgentMention?.agent ?? null),
+      });
+      openWorkflow({ goal: workflowGoal, runId: run.id });
+      setInput("");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error(message);
+    } finally {
+      setIsPlanningWorkflow(false);
+    }
+  }, [
+    canGeneratePlan,
+    hasResolvedTaskAgent,
+    isTauriRuntime,
+    openWorkflow,
+    resolvedTaskAgentMention,
+    setInput,
+    t,
+    workflowGoal,
+  ]);
+
   const handleSend = useCallback(async () => {
     if (canQueuePendingTakeover) {
       queuePendingTakeoverFromCurrentDraft("send_after_step");
+      return;
+    }
+    if (composerMode === 'workflow') {
+      await handleGeneratePlan();
       return;
     }
     if (!canSend) return;
@@ -402,11 +481,12 @@ function ControlsContainer() {
     browserModePage,
     canSend,
     canQueuePendingTakeover,
+    composerMode,
+    handleGeneratePlan,
     handleSendMessage,
     input,
     isTauriRuntime,
     openWorkspaceView,
-    pendingTakeoverRequestedAction,
     queuePendingTakeoverFromCurrentDraft,
     setInput,
     t,
@@ -505,24 +585,6 @@ function ControlsContainer() {
     clearSelectedKnowledgeFileIds();
   }, [clearSelectedKnowledgeFileIds]);
 
-  const handleWorkflowRoutingChange = useCallback(async (checked: boolean) => {
-    if (!isTauriRuntime) return;
-    const previous = workflowRoutingEnabled;
-    setWorkflowRoutingEnabled(checked);
-    setWorkflowRoutingSaving(true);
-    try {
-      await setDesktopConfig(
-        DESKTOP_CONFIG_KEYS.workerWorkflowRouting,
-        checked ? 'true' : 'false',
-      );
-    } catch (error) {
-      console.warn('save_workflow_routing_config_failed', error);
-      setWorkflowRoutingEnabled(previous);
-    } finally {
-      setWorkflowRoutingSaving(false);
-    }
-  }, [isTauriRuntime, workflowRoutingEnabled]);
-
   useEffect(() => {
     setDismissedRecoveryMessageIds((previous) =>
       previous.filter((messageId) => messages.some((message) => message.id === messageId))
@@ -538,6 +600,26 @@ function ControlsContainer() {
 
   const handleRecoveryContinue = useCallback(() => {
     if (!recoveryPrompt) return;
+    const normalizedStage = recoveryPrompt.stage?.trim().toLowerCase() ?? '';
+    if (
+      recoveryPrompt.executionId &&
+      sessionId &&
+      (normalizedStage === 'resuming_after_approval' || normalizedStage === 'resume_failed')
+    ) {
+      void recoverDesktopLocalChatExecution({
+        executionGraphExecutionId: recoveryPrompt.executionId,
+        action: 'continue',
+      })
+        .then(async () => {
+          await loadHistory(sessionId);
+        })
+        .catch((error) => {
+          toast.error(
+            error instanceof Error ? error.message : 'Failed to continue local recovery'
+          );
+        });
+      return;
+    }
     dismissRecoveryPrompt(recoveryPrompt.messageId);
     if (hasInterruptedGeneration) {
       void continueInterruptedGeneration();
@@ -548,19 +630,53 @@ function ControlsContainer() {
     continueInterruptedGeneration,
     dismissRecoveryPrompt,
     hasInterruptedGeneration,
+    loadHistory,
     recoveryPrompt,
     regenerateMessage,
+    sessionId,
   ]);
 
   const handleRecoveryRetry = useCallback(() => {
     if (!recoveryPrompt) return;
+    const normalizedStage = recoveryPrompt.stage?.trim().toLowerCase() ?? '';
+    if (
+      recoveryPrompt.executionId &&
+      sessionId &&
+      (normalizedStage === 'resuming_after_approval' || normalizedStage === 'resume_failed')
+    ) {
+      void recoverDesktopLocalChatExecution({
+        executionGraphExecutionId: recoveryPrompt.executionId,
+        action: 'retry',
+      })
+        .then(async () => {
+          await loadHistory(sessionId);
+        })
+      .catch((error) => {
+        toast.error(error instanceof Error ? error.message : 'Failed to retry local recovery');
+      });
+      return;
+    }
     dismissRecoveryPrompt(recoveryPrompt.messageId);
     void regenerateMessage(recoveryPrompt.messageId);
-  }, [dismissRecoveryPrompt, recoveryPrompt, regenerateMessage]);
+  }, [dismissRecoveryPrompt, loadHistory, recoveryPrompt, regenerateMessage, sessionId]);
 
   const handleRecoveryAbandon = useCallback(() => {
-    dismissRecoveryPrompt(recoveryPrompt?.messageId);
-  }, [dismissRecoveryPrompt, recoveryPrompt?.messageId]);
+    if (!recoveryPrompt) return;
+    if (!recoveryPrompt.executionId || !sessionId) {
+      dismissRecoveryPrompt(recoveryPrompt.messageId);
+      return;
+    }
+    void recoverDesktopLocalChatExecution({
+      executionGraphExecutionId: recoveryPrompt.executionId,
+      action: 'abandon',
+    })
+      .then(async () => {
+        await loadHistory(sessionId);
+      })
+      .catch((error) => {
+        toast.error(error instanceof Error ? error.message : 'Failed to abandon local recovery');
+      });
+  }, [dismissRecoveryPrompt, loadHistory, recoveryPrompt, sessionId]);
 
   const handleSendOrCancel = useCallback(() => {
     if (isGenerating) {
@@ -579,7 +695,6 @@ function ControlsContainer() {
   }, [
     isGenerating,
     hasComposerContent,
-    pendingTakeoverRequestedAction,
     queuePendingTakeoverFromCurrentDraft,
     canContinueGeneration,
     cancelActiveRequest,
@@ -825,6 +940,10 @@ function ControlsContainer() {
         </div>
       ) : null}
 
+      {showWorkflowSuggestion ? (
+        <WorkflowSuggestionBar onSwitchToWorkflow={() => setComposerMode('workflow')} />
+      ) : null}
+
       {/* 2. Action Row */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
@@ -925,22 +1044,60 @@ function ControlsContainer() {
           ) : null}
 
           {isTauriRuntime ? (
-            <div className="flex h-10 items-center gap-2 rounded-full bg-slate-100/80 px-3 text-slate-600 dark:bg-white/5 dark:text-white/70">
-              <span className="text-[11px] font-medium whitespace-nowrap">
-                {t("controls.workflowRouting")}
-              </span>
-              <Switch
-                aria-label={t("controls.workflowRouting")}
-                checked={workflowRoutingEnabled}
-                onCheckedChange={(checked) => void handleWorkflowRoutingChange(checked)}
-                disabled={isLoading || workflowRoutingLoading || workflowRoutingSaving}
-              />
-              <span className="hidden text-[10px] text-slate-500 dark:text-white/45 sm:inline">
-                {workflowRoutingEnabled
-                  ? t("controls.workflowRoutingOn")
-                  : t("controls.workflowRoutingOff")}
-              </span>
-            </div>
+            <>
+              <div className="flex items-center rounded-full bg-slate-100/80 p-1 dark:bg-white/5">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setComposerMode('chat')}
+                  aria-label={t("controls.modeChat")}
+                  className={cn(
+                    "h-8 rounded-full px-3 text-xs transition-colors",
+                    composerMode === 'chat'
+                      ? "bg-white text-slate-900 shadow-sm dark:bg-white dark:text-slate-900"
+                      : "text-slate-600 dark:text-white/70"
+                  )}
+                >
+                  {t("controls.modeChat")}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setComposerMode('workflow')}
+                  aria-label={t("controls.modeWorkflow")}
+                  className={cn(
+                    "h-8 rounded-full px-3 text-xs transition-colors",
+                    composerMode === 'workflow'
+                      ? "bg-white text-slate-900 shadow-sm dark:bg-white dark:text-slate-900"
+                      : "text-slate-600 dark:text-white/70"
+                  )}
+                >
+                  {t("controls.modeWorkflow")}
+                </Button>
+              </div>
+
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setComposerMode('workflow');
+                  void handleGeneratePlan();
+                }}
+                aria-label={t("controls.generatePlan")}
+                className="h-10 rounded-full bg-slate-100/80 px-3 text-xs text-slate-600 dark:bg-white/5 dark:text-white/70 hover:bg-slate-200/70 dark:hover:bg-white/10"
+                disabled={!canGeneratePlan}
+              >
+                {isPlanningWorkflow ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <FileText className="h-4 w-4" />
+                )}
+                <span className="ml-1.5">{t("controls.generatePlan")}</span>
+              </Button>
+            </>
           ) : null}
 
           <Button
@@ -965,11 +1122,19 @@ function ControlsContainer() {
             className={`
               min-h-[44px] min-w-[44px] size-11 rounded-full bg-slate-900 text-white dark:bg-white/10 dark:text-white
               hover:bg-slate-800 dark:hover:bg-white dark:hover:text-black transition-all duration-300 active:scale-95 shadow-sm
-              ${isGenerating || canQueuePendingTakeover || canContinueGeneration ? 'cursor-pointer' : isApprovalBusy ? 'opacity-80 cursor-wait' : !canSend ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+              ${
+                isGenerating || canQueuePendingTakeover || canContinueGeneration || !sendButtonDisabled
+                  ? 'cursor-pointer'
+                  : isApprovalBusy
+                    ? 'opacity-80 cursor-wait'
+                    : 'opacity-50 cursor-not-allowed'
+              }
             `}
             aria-label={sendButtonAriaLabel}
           >
-            {isGenerating ? (
+            {isPlanningWorkflow ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : isGenerating ? (
               hasComposerContent ? (
                 <ArrowUp className="w-5 h-5" />
               ) : (
@@ -981,6 +1146,8 @@ function ControlsContainer() {
               <Loader2 className="w-5 h-5 animate-spin" />
             ) : canContinueGeneration ? (
               <Play className="w-5 h-5" />
+            ) : composerMode === 'workflow' ? (
+              <FileText className="w-5 h-5" />
             ) : (
               <ArrowUp className="w-5 h-5" />
             )}

@@ -23,6 +23,8 @@ pub(crate) struct PersistedChatToolRuntimeContext {
 pub(crate) enum InFlightExecutionStage {
     ToolRunning,
     WaitingApproval,
+    ResumingAfterApproval,
+    ResumeFailed,
     DelegatedWorkflowRunning,
     Interrupted,
 }
@@ -65,6 +67,7 @@ pub(crate) struct PersistedInFlightExecutionContext {
     pub(super) recoverable: bool,
     pub(super) pending_approvals: Vec<PersistedPendingApproval>,
     pub(super) chat_runtime: Option<PersistedChatToolRuntimeContext>,
+    pub(super) last_error: Option<String>,
     pub(super) recovery_notice_emitted_at_unix_ms: Option<i64>,
 }
 
@@ -355,6 +358,7 @@ pub(crate) fn serialize_inflight_runtime_context(
     trace_id: &str,
     request_id: Option<&str>,
     execution_graph_execution_id: Option<&str>,
+    last_error: Option<&str>,
 ) -> serde_json::Value {
     serde_json::to_value(PersistedInFlightExecutionContext {
         schema_version: 1,
@@ -377,6 +381,10 @@ pub(crate) fn serialize_inflight_runtime_context(
         recoverable,
         pending_approvals,
         chat_runtime,
+        last_error: last_error
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
         recovery_notice_emitted_at_unix_ms: None,
     })
     .unwrap_or_else(|_| serde_json::json!({}))
@@ -465,6 +473,7 @@ pub(super) async fn persist_running_tool_execution_runtime(
             state.trace_id.as_str(),
             state.request_id.as_deref(),
             Some(execution_id),
+            None,
         );
         persist_execution_graph_runtime_context(store, execution_id, &context)
             .await
@@ -480,6 +489,8 @@ pub(super) async fn persist_suspended_execution_graph_runtime(
     pending_approvals: &[PersistedPendingApproval],
     source_kind: &str,
     status: &str,
+    stage: InFlightExecutionStage,
+    last_error: Option<&str>,
 ) -> Result<(), String> {
     persist_execution_graph_snapshot(
         store,
@@ -494,7 +505,7 @@ pub(super) async fn persist_suspended_execution_graph_runtime(
 
     if let Some(execution_id) = suspended.graph_execution_id() {
         let context = serialize_inflight_runtime_context(
-            InFlightExecutionStage::WaitingApproval,
+            stage,
             Some(suspended.pending_gate_node_id().to_string()),
             Some(suspended.pending_call_id().to_string()),
             None,
@@ -520,6 +531,7 @@ pub(super) async fn persist_suspended_execution_graph_runtime(
             suspended.trace_id.as_str(),
             suspended.request_id.as_deref(),
             Some(execution_id),
+            last_error,
         );
         persist_execution_graph_runtime_context(store, execution_id, &context)
             .await
@@ -610,7 +622,12 @@ pub(super) async fn load_suspended_chat_tool_execution_for_resume(
                     .await
                     .map_err(|err| err.to_string())?
             {
-                let persisted_context = persistable_inflight_context_from_value(&runtime_context)
+                let persisted_inflight = persistable_inflight_context_from_value(&runtime_context);
+                let persisted_pending_approvals = persisted_inflight
+                    .as_ref()
+                    .map(|context| context.pending_approvals.clone())
+                    .unwrap_or_default();
+                let persisted_context = persisted_inflight
                     .and_then(|context| context.chat_runtime)
                     .unwrap_or_else(|| {
                         serde_json::from_value(runtime_context).unwrap_or_else(|_| {
@@ -658,6 +675,7 @@ pub(super) async fn load_suspended_chat_tool_execution_for_resume(
                     runtime_metrics: state.runtime_metrics.clone(),
                     last_capability_snapshot: state.last_capability_snapshot.clone(),
                     last_response: state.last_response.clone(),
+                    pending_approvals: persisted_pending_approvals,
                     execution_graph,
                 }));
             }

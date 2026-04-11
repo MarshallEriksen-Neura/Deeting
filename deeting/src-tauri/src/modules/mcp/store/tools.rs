@@ -190,7 +190,7 @@ impl McpStore {
         .bind(error)
         .bind(now)
         .bind(id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
         if let Some(tool) = self.get_tool(id).await? {
@@ -215,7 +215,7 @@ impl McpStore {
         .bind(serialize_json(&env)?)
         .bind(now)
         .bind(id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
@@ -236,7 +236,7 @@ impl McpStore {
         .bind(if is_new { 1 } else { 0 })
         .bind(now)
         .bind(id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
         Ok(())
@@ -265,7 +265,7 @@ impl McpStore {
         .bind(conflict_status.as_str())
         .bind(now)
         .bind(id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
         Ok(())
@@ -286,7 +286,7 @@ impl McpStore {
         .bind(McpConflictStatus::None.as_str())
         .bind(now)
         .bind(id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
         Ok(())
@@ -443,7 +443,7 @@ impl McpStore {
         .bind(if tool.is_new { 1 } else { 0 })
         .bind(&now)
         .bind(&now)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
         Ok(())
@@ -482,7 +482,7 @@ impl McpStore {
         .bind(if tool.is_new { 1 } else { 0 })
         .bind(&now)
         .bind(id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
         Ok(())
@@ -498,7 +498,7 @@ impl McpStore {
             .collect::<Vec<_>>();
         let result = sqlx::query("DELETE FROM mcp_tools WHERE source_id = ?;")
             .bind(source_id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
         for tool_id in tool_ids {
@@ -524,7 +524,7 @@ impl McpStore {
 
         let result = query_builder
             .build()
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
         for tool_id in tool_ids {

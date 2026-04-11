@@ -32,7 +32,7 @@ impl ProviderStore {
         .bind(None::<String>)
         .bind(&now)
         .bind(&now)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
 
         Ok(UserSecretary {
@@ -65,7 +65,7 @@ impl ProviderStore {
         .bind(&provider_model_id)
         .bind(&now)
         .bind(LOCAL_DESKTOP_USER_ID)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
 
         self.get_user_secretary_by_user_id(LOCAL_DESKTOP_USER_ID)
@@ -111,7 +111,7 @@ impl ProviderStore {
         .bind(None::<String>)
         .bind(&now)
         .bind(&now)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
 
         Ok(UserEmbeddingConfig {
@@ -145,7 +145,7 @@ impl ProviderStore {
         .bind(&multimodal_provider_model_id)
         .bind(&now)
         .bind(LOCAL_DESKTOP_USER_ID)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
 
         self.get_user_embedding_config_by_user_id(LOCAL_DESKTOP_USER_ID)

@@ -112,12 +112,12 @@ impl LocalWorkflowStep<LocalWorkflowContext> for ContextRetrievalPrefetchStep {
             if let Some(patch) = request_query_patch {
                 result = result.with_patch(patch);
             }
-                result = result.with_patch(ContextPatch::SetPrefetchedRetrievals(
-                    PrefetchedRetrievals {
-                        semantic_memory: Some(semantic_memory?),
-                        selected_knowledge,
-                    },
-                ));
+            result = result.with_patch(ContextPatch::SetPrefetchedRetrievals(
+                PrefetchedRetrievals {
+                    semantic_memory: Some(semantic_memory?),
+                    selected_knowledge,
+                },
+            ));
             if let Some(bundle) = runtime_discovery {
                 result = result.with_patch(ContextPatch::SetRuntimeDiscovery(Some(bundle)));
             }

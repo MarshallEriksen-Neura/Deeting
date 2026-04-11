@@ -513,6 +513,7 @@ export function createRejectedToolResultBlock(
 }
 
 export function extractLocalChatApprovalResume(result: unknown): {
+  status: "LOCAL_CHAT_WAITING_APPROVAL" | "LOCAL_CHAT_RESUMED" | "LOCAL_CHAT_RESUME_FAILED"
   approved_tool_result: unknown
   continuation_blocks: MessageBlock[]
   execution_graph?: Record<string, unknown>
@@ -522,7 +523,11 @@ export function extractLocalChatApprovalResume(result: unknown): {
   const payload = toRecord(result)
   if (!payload) return null
   const status = asTrimmedString(payload.status)
-  if (status !== "LOCAL_CHAT_RESUMED" && status !== "LOCAL_CHAT_RESUME_FAILED") {
+  if (
+    status !== "LOCAL_CHAT_WAITING_APPROVAL" &&
+    status !== "LOCAL_CHAT_RESUMED" &&
+    status !== "LOCAL_CHAT_RESUME_FAILED"
+  ) {
     return null
   }
 
@@ -534,6 +539,7 @@ export function extractLocalChatApprovalResume(result: unknown): {
     : []
 
   return {
+    status,
     approved_tool_result: payload.approved_tool_result,
     continuation_blocks: continuationBlocks,
     execution_graph: toRecord(payload.execution_graph) ?? undefined,

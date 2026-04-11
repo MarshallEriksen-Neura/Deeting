@@ -162,7 +162,7 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         let store = Arc::new(
             crate::modules::mcp::store::McpStore::with_pool_and_write_pool(
                 global_pool.clone(),
-                global_write_pool,
+                global_write_pool.clone(),
                 &database_url,
             )?,
         );
@@ -196,13 +196,15 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
         // Knowledge 初始化
         let phase_started_at = Instant::now();
-        let knowledge_state = KnowledgeState::with_pool(global_pool.clone()).await?;
+        let knowledge_state =
+            KnowledgeState::with_pools(global_pool.clone(), global_write_pool.clone()).await?;
         log_startup_phase("init_knowledge_state", phase_started_at);
 
         // Providers 初始化
         let phase_started_at = Instant::now();
-        let provider_state = ProviderState::with_pool_and_proxy(
+        let provider_state = ProviderState::with_pools_and_proxy(
             global_pool.clone(),
+            global_write_pool.clone(),
             &database_url,
             Some(mcp_state.store.clone()),
             Some(mcp_state.transport.cloud_base_url.clone()),
@@ -241,14 +243,16 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         let sandbox_state = SandboxState::new(boxrun_home_dir.clone());
         log_startup_phase("build_sandbox_state", phase_started_at);
         let phase_started_at = Instant::now();
-        let code_mode_state = CodemodeToolState::with_pool(global_pool.clone())
-            .await
-            .map_err(|e| McpError::Storage(e.to_string()))?;
+        let code_mode_state =
+            CodemodeToolState::with_pools(global_pool.clone(), global_write_pool.clone())
+                .await
+                .map_err(|e| McpError::Storage(e.to_string()))?;
         log_startup_phase("init_code_mode_state", phase_started_at);
 
         let phase_started_at = Instant::now();
-        let monitor_state = MonitorState::with_pool(
+        let monitor_state = MonitorState::with_pools(
             global_pool.clone(),
+            global_write_pool.clone(),
             provider_state.store.clone(),
             Some(mcp_state.store.clone()),
         )
@@ -257,9 +261,13 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         log_startup_phase("init_monitor_state", phase_started_at);
 
         let phase_started_at = Instant::now();
-        let wechat_state = WechatState::with_pool(global_pool.clone(), &database_url)
-            .await
-            .map_err(|e| McpError::Storage(e.to_string()))?;
+        let wechat_state = WechatState::with_pools(
+            global_pool.clone(),
+            global_write_pool.clone(),
+            &database_url,
+        )
+        .await
+        .map_err(|e| McpError::Storage(e.to_string()))?;
         log_startup_phase("init_wechat_state", phase_started_at);
         monitor_state
             .attach_wechat_state(std::sync::Arc::new(wechat_state.clone()))

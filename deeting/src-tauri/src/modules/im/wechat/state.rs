@@ -55,6 +55,23 @@ impl WechatState {
         })
     }
 
+    pub async fn with_pools(
+        pool: SqlitePool,
+        write_pool: SqlitePool,
+        database_url: &str,
+    ) -> Result<Self, String> {
+        let store = WechatAccountStore::with_pools(pool, write_pool, database_url)?;
+        store.init().await?;
+        Ok(Self {
+            shared: Arc::new(WechatShared {
+                bridge: WechatBridgeClient::new(),
+                store,
+                qr_sessions: Mutex::new(HashMap::new()),
+                last_error: RwLock::new(None),
+            }),
+        })
+    }
+
     pub async fn start_pairing(&self) -> Result<WechatPairingResponse, String> {
         let qr = self
             .shared

@@ -19,7 +19,7 @@ pub use source_registry_impl::{create_mcp_source, list_mcp_sources, sync_mcp_sou
 pub use tool_approval_impl::{
     approve_mcp_tool, clear_tool_approval_rules, delete_tool_approval_rule,
     get_tool_approval_learning_summary, list_pending_mcp_approvals, list_tool_approval_rules,
-    reject_mcp_tool, reset_tool_approval_learning,
+    recover_local_chat_execution, reject_mcp_tool, reset_tool_approval_learning,
 };
 pub use tool_management_impl::{
     apply_pending_config, clear_mcp_logs, delete_local_mcp_tool, execute_mcp_tool_raw,
