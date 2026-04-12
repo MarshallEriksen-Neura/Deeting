@@ -5,6 +5,7 @@ use std::time::Instant;
 
 use crate::modules::memory::types::{CreateLocalMemoryRequest, LocalMemorySearchQuery};
 use crate::modules::monitor::types::{LocalMonitorListQuery, LocalMonitorTaskCreateRequest};
+use crate::modules::providers::protocols::build_canonical_request_from_value;
 use crate::modules::providers::types::{
     ProviderInstance, ProviderModel, ProviderPreset, ProviderVerifyRequest,
 };
@@ -864,16 +865,32 @@ async fn dispatch_provider_template_verify(arguments: &Value) -> Result<Value, S
         updated_at: None,
     };
 
-    let prepared = crate::modules::providers::request_runtime::prepare_provider_request(
-        Some(&preset),
-        &instance,
-        &model,
-        Some(test_api_key),
-        &capability,
-        test_payload.clone(),
-        None,
-        None,
-    )?;
+    let prepared = if capability == "chat" {
+        let canonical_request =
+            build_canonical_request_from_value(&test_payload, &capability, &protocol_family);
+        crate::modules::providers::request_runtime::prepare_provider_request_from_canonical_request(
+            Some(&preset),
+            &instance,
+            &model,
+            Some(test_api_key),
+            &capability,
+            test_payload.clone(),
+            canonical_request,
+            None,
+            None,
+        )?
+    } else {
+        crate::modules::providers::request_runtime::prepare_provider_request(
+            Some(&preset),
+            &instance,
+            &model,
+            Some(test_api_key),
+            &capability,
+            test_payload.clone(),
+            None,
+            None,
+        )?
+    };
     let started = Instant::now();
     let response = crate::modules::providers::request_runtime::send_prepared_json_request(
         &reqwest::Client::new(),

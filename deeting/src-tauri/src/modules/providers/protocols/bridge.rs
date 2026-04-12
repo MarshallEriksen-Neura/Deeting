@@ -1,4 +1,5 @@
 use serde_json::{json, Value};
+use mcp_core::types::{LocalChatInputMessage, LocalChatToolCall};
 
 use crate::modules::providers::protocols::canonical::{
     CanonicalClientContext, CanonicalInputItem, CanonicalMessage, CanonicalRequest,
@@ -274,6 +275,54 @@ pub fn build_canonical_request_from_value(
     }
 }
 
+pub fn build_canonical_chat_request_from_local_messages(
+    model: &str,
+    messages: &[LocalChatInputMessage],
+    stream: bool,
+    temperature: Option<f64>,
+    max_output_tokens: Option<i64>,
+) -> CanonicalRequest {
+    CanonicalRequest {
+        canonical_version: "2026-03-07".to_string(),
+        capability: "chat".to_string(),
+        model: model.to_string(),
+        instructions: None,
+        messages: messages
+            .iter()
+            .map(canonical_message_from_local_chat_message)
+            .collect(),
+        input_items: vec![],
+        stream,
+        temperature,
+        max_output_tokens,
+        metadata: json!({}),
+        client_context: CanonicalClientContext::default(),
+    }
+}
+
+pub fn build_chat_request_data_from_canonical_request(request: &CanonicalRequest) -> Value {
+    let mut body = json!({
+        "model": request.model,
+        "messages": Value::Array(
+            request
+                .messages
+                .iter()
+                .map(message_value_from_canonical_message)
+                .collect(),
+        ),
+        "stream": request.stream,
+    });
+
+    if let Some(temperature) = request.temperature {
+        body["temperature"] = json!(temperature);
+    }
+    if let Some(max_output_tokens) = request.max_output_tokens {
+        body["max_tokens"] = json!(max_output_tokens);
+    }
+
+    body
+}
+
 fn canonical_input_items_from_value(value: &Value) -> Vec<CanonicalInputItem> {
     match value {
         Value::String(text) => vec![CanonicalInputItem {
@@ -335,6 +384,93 @@ fn canonical_input_items_from_value(value: &Value) -> Vec<CanonicalInputItem> {
         }],
         _ => vec![],
     }
+}
+
+fn canonical_message_from_local_chat_message(message: &LocalChatInputMessage) -> CanonicalMessage {
+    CanonicalMessage {
+        role: message.role.clone(),
+        content: normalize_message_content_value(
+            message.role.as_str(),
+            Some(&Value::String(message.content.clone())),
+        ),
+        tool_calls: message
+            .tool_calls
+            .iter()
+            .map(canonical_tool_call_from_local_chat_tool_call)
+            .collect(),
+        tool_call_id: message.tool_call_id.clone(),
+        name: message.name.clone(),
+    }
+}
+
+fn canonical_tool_call_from_local_chat_tool_call(call: &LocalChatToolCall) -> CanonicalToolCall {
+    CanonicalToolCall {
+        id: call.id.clone(),
+        r#type: "function".to_string(),
+        name: Some(call.name.clone()),
+        arguments: Some(call.arguments.clone()),
+        status: None,
+        extra_content: call.extra_content.clone().unwrap_or_else(|| json!({})),
+    }
+}
+
+fn message_value_from_canonical_message(message: &CanonicalMessage) -> Value {
+    let mut object = serde_json::Map::new();
+    object.insert("role".to_string(), Value::String(message.role.clone()));
+    object.insert("content".to_string(), message.content.clone());
+
+    if let Some(name) = message.name.as_ref() {
+        object.insert("name".to_string(), Value::String(name.clone()));
+    }
+    if let Some(tool_call_id) = message.tool_call_id.as_ref() {
+        object.insert(
+            "tool_call_id".to_string(),
+            Value::String(tool_call_id.clone()),
+        );
+    }
+    if !message.tool_calls.is_empty() {
+        object.insert(
+            "tool_calls".to_string(),
+            Value::Array(
+                message
+                    .tool_calls
+                    .iter()
+                    .map(tool_call_value_from_canonical_tool_call)
+                    .collect(),
+            ),
+        );
+    }
+
+    Value::Object(object)
+}
+
+fn tool_call_value_from_canonical_tool_call(call: &CanonicalToolCall) -> Value {
+    let mut object = serde_json::Map::new();
+    object.insert("type".to_string(), Value::String(call.r#type.clone()));
+
+    if let Some(id) = call.id.as_ref() {
+        object.insert("id".to_string(), Value::String(id.clone()));
+    }
+    if let Some(name) = call.name.as_ref() {
+        object.insert("name".to_string(), Value::String(name.clone()));
+    }
+    if let Some(arguments) = call.arguments.as_ref() {
+        object.insert("arguments".to_string(), arguments.clone());
+    }
+    if let Some(status) = call.status.as_ref() {
+        object.insert("status".to_string(), Value::String(status.clone()));
+    }
+    if !call.extra_content.is_null()
+        && call
+            .extra_content
+            .as_object()
+            .map(|object| !object.is_empty())
+            .unwrap_or(true)
+    {
+        object.insert("extra_content".to_string(), call.extra_content.clone());
+    }
+
+    Value::Object(object)
 }
 
 fn canonical_input_items_from_messages(messages: &[CanonicalMessage]) -> Vec<CanonicalInputItem> {
@@ -678,9 +814,11 @@ fn runtime_hook_from_value(value: &Value) -> Option<RuntimeHook> {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_canonical_request_from_value, build_protocol_profile, infer_protocol_family,
-        template_matches_family,
+        build_canonical_chat_request_from_local_messages, build_canonical_request_from_value,
+        build_chat_request_data_from_canonical_request, build_protocol_profile,
+        infer_protocol_family, template_matches_family,
     };
+    use mcp_core::types::LocalChatInputMessage;
     use crate::modules::providers::types::{ProviderModel, ProviderPreset};
     use serde_json::{json, Value};
     use uuid::Uuid;
@@ -895,6 +1033,65 @@ mod tests {
         );
 
         assert_eq!(request.messages[0].content, json!(raw_tool_content));
+    }
+
+    #[test]
+    fn build_canonical_chat_request_from_local_messages_normalizes_user_and_tool_content() {
+        let raw_tool_content =
+            "[{\"type\":\"text\",\"text\":\"Detailed Results:\"},{\"type\":\"text\",\"text\":\"1. Example\"}]";
+        let request = build_canonical_chat_request_from_local_messages(
+            "gpt-4o-mini",
+            &[
+                LocalChatInputMessage {
+                    role: "user".to_string(),
+                    content:
+                        "[{\"type\":\"text\",\"text\":\"describe this\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"https://example.com/image.png\"}}]"
+                            .to_string(),
+                    tool_calls: vec![],
+                    tool_call_id: None,
+                    name: None,
+                },
+                LocalChatInputMessage {
+                    role: "tool".to_string(),
+                    content: raw_tool_content.to_string(),
+                    tool_calls: vec![],
+                    tool_call_id: Some("call_123".to_string()),
+                    name: Some("search_sdk".to_string()),
+                },
+            ],
+            false,
+            Some(0.3),
+            Some(32),
+        );
+
+        assert!(request.messages[0].content.is_array());
+        assert_eq!(request.messages[0].content[0]["type"], json!("text"));
+        assert_eq!(request.messages[1].content, json!(raw_tool_content));
+        assert_eq!(request.max_output_tokens, Some(32));
+    }
+
+    #[test]
+    fn build_chat_request_data_from_canonical_request_preserves_normalized_message_content() {
+        let request = build_canonical_chat_request_from_local_messages(
+            "gpt-4o-mini",
+            &[LocalChatInputMessage {
+                role: "user".to_string(),
+                content:
+                    "[{\"type\":\"text\",\"text\":\"describe this\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"https://example.com/image.png\"}}]"
+                        .to_string(),
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
+            }],
+            false,
+            None,
+            Some(16),
+        );
+
+        let request_data = build_chat_request_data_from_canonical_request(&request);
+
+        assert!(request_data["messages"][0]["content"].is_array());
+        assert_eq!(request_data["max_tokens"], json!(16));
     }
 
     #[test]

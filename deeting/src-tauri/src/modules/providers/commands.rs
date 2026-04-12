@@ -5,7 +5,12 @@ use serde_json::Value;
 use sqlx::Row;
 use tauri::State;
 use uuid::Uuid;
+use mcp_core::types::LocalChatInputMessage;
 
+use crate::modules::providers::protocols::{
+    build_canonical_chat_request_from_local_messages,
+    build_chat_request_data_from_canonical_request,
+};
 use crate::modules::providers::types::{
     BanditArmState, BanditFeedbackRequest, CreateInstanceRequest, DesktopObjectStorageConfig,
     DesktopObjectStorageConfigUpdateRequest, DesktopObjectStorageReadRequest,
@@ -853,16 +858,44 @@ pub async fn test_local_provider_model(
             "max_tokens": 16,
         }),
     };
-    let prepared = crate::modules::providers::request_runtime::prepare_provider_request(
-        preset.as_ref(),
-        &instance,
-        &model,
-        connection.secret_key.as_deref(),
-        capability.as_str(),
-        request_data,
-        None,
-        None,
-    )?;
+    let prepared = if capability == "chat" {
+        let canonical_request = build_canonical_chat_request_from_local_messages(
+            model.model_id.as_str(),
+            &[LocalChatInputMessage {
+                role: "user".to_string(),
+                content: prompt.clone(),
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
+            }],
+            false,
+            None,
+            Some(16),
+        );
+        let request_data = build_chat_request_data_from_canonical_request(&canonical_request);
+        crate::modules::providers::request_runtime::prepare_provider_request_from_canonical_request(
+            preset.as_ref(),
+            &instance,
+            &model,
+            connection.secret_key.as_deref(),
+            capability.as_str(),
+            request_data,
+            canonical_request,
+            None,
+            None,
+        )?
+    } else {
+        crate::modules::providers::request_runtime::prepare_provider_request(
+            preset.as_ref(),
+            &instance,
+            &model,
+            connection.secret_key.as_deref(),
+            capability.as_str(),
+            request_data,
+            None,
+            None,
+        )?
+    };
     let client = crate::modules::desktop_config::network::build_proxy_aware_reqwest_client(
         state.mcp.store.as_ref(),
     )

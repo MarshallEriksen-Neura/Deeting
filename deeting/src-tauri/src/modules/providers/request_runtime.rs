@@ -5,7 +5,7 @@ use reqwest::{Client, Method, Url};
 use serde_json::{json, Map, Value};
 
 use crate::modules::providers::protocols::{
-    build_canonical_request_from_value, build_protocol_profile,
+    build_canonical_request_from_value, build_protocol_profile, CanonicalRequest,
 };
 use crate::modules::providers::types::{ProviderInstance, ProviderModel, ProviderPreset};
 
@@ -175,6 +175,54 @@ pub fn prepare_provider_request(
     trace_id: Option<&str>,
 ) -> Result<PreparedProviderRequest, String> {
     let protocol = resolve_protocol(instance, preset);
+    let effective_config = build_effective_config(preset, model, capability);
+    let protocol_profile = build_protocol_profile(
+        preset,
+        model,
+        capability,
+        protocol.as_str(),
+        &effective_config,
+        &effective_config
+            .get("default_headers")
+            .cloned()
+            .or_else(|| effective_config.get("headers").cloned())
+            .unwrap_or_else(|| json!({})),
+        &effective_config
+            .get("default_params")
+            .cloned()
+            .or_else(|| effective_config.get("params").cloned())
+            .unwrap_or_else(|| json!({})),
+    );
+    let canonical_request = build_canonical_request_from_value(
+        &request_data,
+        capability,
+        protocol_profile.protocol_family.as_str(),
+    );
+    prepare_provider_request_from_canonical_request(
+        preset,
+        instance,
+        model,
+        secret,
+        capability,
+        request_data,
+        canonical_request,
+        tools,
+        trace_id,
+    )
+}
+
+pub fn prepare_provider_request_from_canonical_request(
+    preset: Option<&ProviderPreset>,
+    instance: &ProviderInstance,
+    model: &ProviderModel,
+    secret: Option<&str>,
+    capability: &str,
+    request_data: Value,
+    canonical_request: CanonicalRequest,
+    tools: Option<&Value>,
+    trace_id: Option<&str>,
+) -> Result<PreparedProviderRequest, String> {
+    let protocol = resolve_protocol(instance, preset);
     let base_url = normalize_base_url(preset, instance);
     let auto_append_v1 = instance.meta.get("auto_append_v1").and_then(value_as_bool);
     let api_version = instance.meta.get("api_version").and_then(value_as_string);
@@ -245,12 +293,6 @@ pub fn prepare_provider_request(
             value
         })
         .unwrap_or_else(|| json!({}));
-    let canonical_request = build_canonical_request_from_value(
-        &request_data,
-        capability,
-        protocol_profile.protocol_family.as_str(),
-    );
-
     let render_context = build_render_context(
         request_data.as_object().cloned().unwrap_or_default(),
         preset.map(|item| item.provider.as_str()),
@@ -2392,11 +2434,17 @@ mod tests {
     use super::{
         apply_request_builder, build_effective_config, build_upstream_url_with_params,
         calculate_retry_backoff_ms, deep_merge_json, normalize_root_schema_for_provider_compat,
-        prepare_provider_request, resolve_auth_for_protocol,
-        responses_input_from_messages_or_items_builder, send_prepared_json_request_with_retry,
-        should_retry_upstream_status, PreparedProviderRequest, UpstreamRetryPolicy,
+        prepare_provider_request, prepare_provider_request_from_canonical_request,
+        resolve_auth_for_protocol, responses_input_from_messages_or_items_builder,
+        send_prepared_json_request_with_retry, should_retry_upstream_status,
+        PreparedProviderRequest, UpstreamRetryPolicy,
+    };
+    use crate::modules::providers::protocols::bridge::{
+        build_canonical_chat_request_from_local_messages,
+        build_chat_request_data_from_canonical_request,
     };
     use crate::modules::providers::types::{ProviderInstance, ProviderModel, ProviderPreset};
+    use mcp_core::types::{LocalChatInputMessage, LocalChatToolCall};
     use axum::{extract::State as AxumState, http::StatusCode, routing::post, Json, Router};
     use serde_json::{json, Map, Value};
     use std::sync::{
@@ -2720,19 +2768,29 @@ mod tests {
         let preset = mock_preset();
         let instance = mock_instance(json!({ "protocol": "openai", "auto_append_v1": true }));
         let model = mock_model(&["chat"]);
-        let prepared = prepare_provider_request(
+
+        let canonical = build_canonical_chat_request_from_local_messages(
+            "gpt-4o-mini",
+            &[LocalChatInputMessage {
+                role: "user".to_string(),
+                content: "hi".to_string(),
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
+            }],
+            false,
+            Some(0.2),
+            Some(64),
+        );
+        let request_data = build_chat_request_data_from_canonical_request(&canonical);
+        let prepared = prepare_provider_request_from_canonical_request(
             Some(&preset),
             &instance,
             &model,
             Some("sk-test"),
             "chat",
-            json!({
-                "model": "gpt-4o-mini",
-                "messages": [{ "role": "user", "content": "hi" }],
-                "stream": false,
-                "temperature": 0.2,
-                "max_tokens": 64
-            }),
+            request_data,
+            canonical,
             None,
             Some("trace-1"),
         )
@@ -2810,17 +2868,28 @@ mod tests {
         let instance = mock_instance(json!({ "protocol": "openai", "auto_append_v1": true }));
         let model = mock_model(&["chat"]);
 
-        let prepared = prepare_provider_request(
+        let canonical = build_canonical_chat_request_from_local_messages(
+            "gpt-4o-mini",
+            &[LocalChatInputMessage {
+                role: "user".to_string(),
+                content: "hi".to_string(),
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
+            }],
+            false,
+            None,
+            None,
+        );
+        let request_data = build_chat_request_data_from_canonical_request(&canonical);
+        let prepared = prepare_provider_request_from_canonical_request(
             Some(&preset),
             &instance,
             &model,
             Some("sk-test"),
             "chat",
-            json!({
-                "model": "gpt-4o-mini",
-                "messages": [{ "role": "user", "content": "hi" }],
-                "stream": false,
-            }),
+            request_data,
+            canonical,
             Some(&json!({
                 "tools": [
                     {
@@ -3103,17 +3172,28 @@ mod tests {
         let mut model = mock_model(&["chat"]);
         model.upstream_path = "responses".to_string();
 
-        let prepared = prepare_provider_request(
+        let canonical = build_canonical_chat_request_from_local_messages(
+            "gpt-5.3-codex",
+            &[LocalChatInputMessage {
+                role: "user".to_string(),
+                content: "hello responses".to_string(),
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
+            }],
+            false,
+            None,
+            None,
+        );
+        let request_data = build_chat_request_data_from_canonical_request(&canonical);
+        let prepared = prepare_provider_request_from_canonical_request(
             Some(&preset),
             &instance,
             &model,
             Some("sk-test"),
             "chat",
-            json!({
-                "model": "gpt-5.3-codex",
-                "messages": [{ "role": "user", "content": "hello responses" }],
-                "stream": false,
-            }),
+            request_data,
+            canonical,
             None,
             None,
         )
@@ -3326,34 +3406,42 @@ mod tests {
         let instance = mock_instance(json!({ "protocol": "openai", "auto_append_v1": true }));
         let model = mock_model(&["chat"]);
 
-        let prepared = prepare_provider_request(
+        let canonical = build_canonical_chat_request_from_local_messages(
+            "gpt-4o-mini",
+            &[
+                LocalChatInputMessage {
+                    role: "assistant".to_string(),
+                    content: "".to_string(),
+                    tool_calls: vec![LocalChatToolCall {
+                        id: Some("call_123".to_string()),
+                        name: "search_sdk".to_string(),
+                        arguments: json!({ "query": "tool replay" }),
+                        extra_content: None,
+                    }],
+                    tool_call_id: None,
+                    name: None,
+                },
+                LocalChatInputMessage {
+                    role: "tool".to_string(),
+                    content: "{\"status\":\"ok\"}".to_string(),
+                    tool_calls: vec![],
+                    tool_call_id: Some("call_123".to_string()),
+                    name: None,
+                },
+            ],
+            false,
+            None,
+            None,
+        );
+        let request_data = build_chat_request_data_from_canonical_request(&canonical);
+        let prepared = prepare_provider_request_from_canonical_request(
             Some(&preset),
             &instance,
             &model,
             Some("sk-test"),
             "chat",
-            json!({
-                "model": "gpt-4o-mini",
-                "messages": [
-                    {
-                        "role": "assistant",
-                        "content": "",
-                        "tool_calls": [
-                            {
-                                "id": "call_123",
-                                "name": "search_sdk",
-                                "arguments": { "query": "tool replay" }
-                            }
-                        ]
-                    },
-                    {
-                        "role": "tool",
-                        "tool_call_id": "call_123",
-                        "content": "{\"status\":\"ok\"}"
-                    }
-                ],
-                "stream": false
-            }),
+            request_data,
+            canonical,
             None,
             None,
         )
@@ -3544,34 +3632,42 @@ mod tests {
         let mut model = mock_model(&["chat"]);
         model.upstream_path = "v1/messages".to_string();
 
-        let prepared = prepare_provider_request(
+        let canonical = build_canonical_chat_request_from_local_messages(
+            "claude-sonnet",
+            &[
+                LocalChatInputMessage {
+                    role: "assistant".to_string(),
+                    content: "".to_string(),
+                    tool_calls: vec![LocalChatToolCall {
+                        id: Some("call_123".to_string()),
+                        name: "search_sdk".to_string(),
+                        arguments: json!({ "query": "tool replay" }),
+                        extra_content: None,
+                    }],
+                    tool_call_id: None,
+                    name: None,
+                },
+                LocalChatInputMessage {
+                    role: "tool".to_string(),
+                    content: "{\"status\":\"ok\"}".to_string(),
+                    tool_calls: vec![],
+                    tool_call_id: Some("call_123".to_string()),
+                    name: None,
+                },
+            ],
+            false,
+            None,
+            None,
+        );
+        let request_data = build_chat_request_data_from_canonical_request(&canonical);
+        let prepared = prepare_provider_request_from_canonical_request(
             Some(&preset),
             &instance,
             &model,
             Some("sk-test"),
             "chat",
-            json!({
-                "model": "claude-sonnet",
-                "messages": [
-                    {
-                        "role": "assistant",
-                        "content": "",
-                        "tool_calls": [
-                            {
-                                "id": "call_123",
-                                "name": "search_sdk",
-                                "arguments": { "query": "tool replay" }
-                            }
-                        ]
-                    },
-                    {
-                        "role": "tool",
-                        "tool_call_id": "call_123",
-                        "content": "{\"status\":\"ok\"}"
-                    }
-                ],
-                "stream": false
-            }),
+            request_data,
+            canonical,
             None,
             None,
         )

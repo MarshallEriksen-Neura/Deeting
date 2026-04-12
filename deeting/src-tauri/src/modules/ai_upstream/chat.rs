@@ -7,9 +7,13 @@ use crate::modules::ai_upstream::gateway_log_recorder::{
     GatewayLogEntry,
 };
 use crate::modules::ai_upstream::types::LocalModelConnection;
-use crate::modules::providers::protocols::infer_protocol_family;
+use crate::modules::providers::protocols::{
+    build_canonical_chat_request_from_local_messages,
+    build_chat_request_data_from_canonical_request, infer_protocol_family,
+};
 use crate::modules::providers::request_runtime::{
-    send_prepared_json_request_with_retry, UpstreamRetryPolicy,
+    prepare_provider_request_from_canonical_request, send_prepared_json_request_with_retry,
+    UpstreamRetryPolicy,
 };
 use crate::state::AppState;
 use mcp_core::types::LocalChatInputMessage;
@@ -23,65 +27,6 @@ fn now_rfc3339() -> String {
     time::OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_default()
-}
-
-fn is_structured_chat_content(value: &serde_json::Value) -> bool {
-    match value {
-        serde_json::Value::Array(items) => {
-            !items.is_empty()
-                && items.iter().all(|item| {
-                    item.as_object()
-                        .and_then(|object| object.get("type").and_then(|entry| entry.as_str()))
-                        .is_some()
-                })
-        }
-        serde_json::Value::Object(object) => object
-            .get("type")
-            .and_then(|entry| entry.as_str())
-            .is_some(),
-        _ => false,
-    }
-}
-
-fn parse_structured_message_content(raw: &str) -> Option<serde_json::Value> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    if !(trimmed.starts_with('[') || trimmed.starts_with('{')) {
-        return None;
-    }
-    let parsed = serde_json::from_str::<serde_json::Value>(trimmed).ok()?;
-    if is_structured_chat_content(&parsed) {
-        Some(parsed)
-    } else {
-        None
-    }
-}
-
-fn serialize_local_chat_messages(messages: Vec<LocalChatInputMessage>) -> serde_json::Value {
-    serde_json::Value::Array(
-        messages
-            .into_iter()
-            .map(|message| {
-                let mut value = serde_json::to_value(&message).unwrap_or_else(|_| {
-                    serde_json::json!({
-                        "role": message.role,
-                        "content": message.content,
-                        "tool_calls": message.tool_calls,
-                        "tool_call_id": message.tool_call_id,
-                        "name": message.name,
-                    })
-                });
-                if let Some(content) = parse_structured_message_content(&message.content) {
-                    if let Some(object) = value.as_object_mut() {
-                        object.insert("content".to_string(), content);
-                    }
-                }
-                value
-            })
-            .collect(),
-    )
 }
 
 fn inject_runtime_metrics(
@@ -447,25 +392,22 @@ pub(crate) async fn request_provider_chat_completion(
         .get_preset(&instance.preset_slug)
         .await
         .map_err(to_string)?;
-    let serialized_messages = serialize_local_chat_messages(messages);
-    let mut body = serde_json::json!({
-        "model": effective_model,
-        "messages": serialized_messages,
-        "stream": false
-    });
-    if let Some(t) = temperature {
-        body["temperature"] = serde_json::json!(t);
-    }
-    if let Some(m) = max_tokens {
-        body["max_tokens"] = serde_json::json!(m);
-    }
-    let prepared = crate::modules::providers::request_runtime::prepare_provider_request(
+    let canonical_request = build_canonical_chat_request_from_local_messages(
+        effective_model.as_str(),
+        &messages,
+        false,
+        temperature.map(|value| value as f64),
+        max_tokens.map(|value| value as i64),
+    );
+    let body = build_chat_request_data_from_canonical_request(&canonical_request);
+    let prepared = prepare_provider_request_from_canonical_request(
         preset.as_ref(),
         &instance,
         &model,
         connection.secret_key.as_deref(),
         "chat",
         body,
+        canonical_request,
         tools.as_ref(),
         trace_id,
     )?;
@@ -845,28 +787,7 @@ pub(crate) fn truncate_upstream_body(text: &str, max_len: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::serialize_local_chat_messages;
-    use mcp_core::types::LocalChatInputMessage;
     use serde_json::json;
-
-    #[test]
-    fn serialize_local_chat_messages_preserves_structured_content_blocks() {
-        let messages = vec![LocalChatInputMessage {
-            role: "user".to_string(),
-            content:
-                "[{\"type\":\"text\",\"text\":\"describe this\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"https://example.com/a.png\"}}]"
-                    .to_string(),
-            tool_calls: vec![],
-            tool_call_id: None,
-            name: None,
-        }];
-
-        let serialized = serialize_local_chat_messages(messages);
-
-        assert!(serialized[0]["content"].is_array());
-        assert_eq!(serialized[0]["content"][0]["type"], json!("text"));
-        assert_eq!(serialized[0]["content"][1]["type"], json!("image_url"));
-    }
 
     #[test]
     fn normalize_chat_completion_response_preserves_usage_when_flattening_choices() {
