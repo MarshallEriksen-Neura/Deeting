@@ -67,7 +67,9 @@
         "performance": "性能指标",
         "tokenConsumption": "Token 消耗",
         "costAnalysis": "成本分析",
-        "technicalMetadata": "技术元数据"
+        "technicalMetadata": "技术元数据",
+        "upstreamRequest": "上游请求",
+        "requestPayload": "请求载荷"
       },
       "trace": {
         "client": "客户端请求",

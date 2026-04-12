@@ -2444,8 +2444,8 @@ mod tests {
         build_chat_request_data_from_canonical_request,
     };
     use crate::modules::providers::types::{ProviderInstance, ProviderModel, ProviderPreset};
-    use mcp_core::types::{LocalChatInputMessage, LocalChatToolCall};
     use axum::{extract::State as AxumState, http::StatusCode, routing::post, Json, Router};
+    use mcp_core::types::{LocalChatInputMessage, LocalChatToolCall};
     use serde_json::{json, Map, Value};
     use std::sync::{
         atomic::{AtomicUsize, Ordering},

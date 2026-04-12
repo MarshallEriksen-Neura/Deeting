@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
+use mcp_core::types::LocalChatInputMessage;
 use serde_json::Value;
 use sqlx::Row;
 use tauri::State;
 use uuid::Uuid;
-use mcp_core::types::LocalChatInputMessage;
 
 use crate::modules::providers::protocols::{
     build_canonical_chat_request_from_local_messages,

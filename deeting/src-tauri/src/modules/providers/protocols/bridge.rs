@@ -1,5 +1,5 @@
-use serde_json::{json, Value};
 use mcp_core::types::{LocalChatInputMessage, LocalChatToolCall};
+use serde_json::{json, Value};
 
 use crate::modules::providers::protocols::canonical::{
     CanonicalClientContext, CanonicalInputItem, CanonicalMessage, CanonicalRequest,
@@ -818,8 +818,8 @@ mod tests {
         build_chat_request_data_from_canonical_request, build_protocol_profile,
         infer_protocol_family, template_matches_family,
     };
-    use mcp_core::types::LocalChatInputMessage;
     use crate::modules::providers::types::{ProviderModel, ProviderPreset};
+    use mcp_core::types::LocalChatInputMessage;
     use serde_json::{json, Value};
     use uuid::Uuid;
 

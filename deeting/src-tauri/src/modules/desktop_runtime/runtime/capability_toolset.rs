@@ -3,10 +3,12 @@ use std::collections::HashSet;
 use crate::modules::custom_task_agents::skill_actions::sanitize_callable_name;
 
 const DYNAMIC_CAPABILITY_ALIAS_PREFIX: &str = "cap_";
+pub(crate) const PROVIDER_MAX_TOOL_NAME_LEN: usize = 64;
 
-fn is_provider_safe_tool_name(name: &str) -> bool {
+pub(crate) fn is_provider_safe_tool_name(name: &str) -> bool {
     let trimmed = name.trim();
     !trimmed.is_empty()
+        && trimmed.len() <= PROVIDER_MAX_TOOL_NAME_LEN
         && trimmed
             .chars()
             .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
@@ -28,10 +30,15 @@ pub(crate) fn dynamic_capability_alias(name: &str) -> String {
     } else {
         sanitized.as_str()
     };
-    format!(
-        "{DYNAMIC_CAPABILITY_ALIAS_PREFIX}{stem}_{:08x}",
-        stable_tool_name_hash(name.trim())
-    )
+    let hash_suffix = format!("_{:08x}", stable_tool_name_hash(name.trim()));
+    let max_stem_len = PROVIDER_MAX_TOOL_NAME_LEN
+        .saturating_sub(DYNAMIC_CAPABILITY_ALIAS_PREFIX.len() + hash_suffix.len());
+    let truncated_stem = if stem.len() > max_stem_len {
+        &stem[..max_stem_len]
+    } else {
+        stem
+    };
+    format!("{DYNAMIC_CAPABILITY_ALIAS_PREFIX}{truncated_stem}{hash_suffix}")
 }
 
 pub(crate) fn direct_capability_requires_alias(
@@ -168,6 +175,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn dynamic_capability_alias_truncates_long_names_to_provider_limit() {
+        let canonical_name = "skill.official.skills.expert_network.consult_expert_network";
+        let alias = dynamic_capability_alias(canonical_name);
+
+        assert!(alias.len() <= PROVIDER_MAX_TOOL_NAME_LEN);
+        assert!(alias.starts_with("cap_"));
+        assert!(alias.ends_with("_71ae5364"));
+        assert!(is_provider_safe_tool_name(&alias));
+    }
+
+    #[test]
     fn build_dynamic_direct_capability_tools_aliases_invalid_names() {
         let allowlist = HashSet::from(["skill.official.skills.weather.get_weather".to_string()]);
         let reserved_names = HashSet::new();
@@ -197,6 +215,7 @@ mod tests {
         let provider_name = tools[0]["function"]["name"].as_str().expect("tool name");
         assert_ne!(provider_name, "skill.official.skills.weather.get_weather");
         assert!(provider_name.starts_with("cap_"));
+        assert!(provider_name.len() <= PROVIDER_MAX_TOOL_NAME_LEN);
     }
 
     #[test]

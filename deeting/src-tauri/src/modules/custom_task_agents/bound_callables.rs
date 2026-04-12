@@ -3,7 +3,9 @@ use std::collections::{HashMap, HashSet};
 use mcp_core::types::McpTool;
 use serde_json::{json, Value};
 
-use crate::modules::desktop_runtime::runtime::capability_toolset::dynamic_capability_alias;
+use crate::modules::desktop_runtime::runtime::capability_toolset::{
+    dynamic_capability_alias, is_provider_safe_tool_name, PROVIDER_MAX_TOOL_NAME_LEN,
+};
 
 use super::skill_actions::ResolvedSkillAction;
 
@@ -141,12 +143,14 @@ impl BoundCallablePayload {
     }
 }
 
-fn is_provider_safe_callable_name(name: &str) -> bool {
-    let trimmed = name.trim();
-    !trimmed.is_empty()
-        && trimmed
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+fn with_provider_suffix(base: &str, suffix: &str) -> String {
+    let max_base_len = PROVIDER_MAX_TOOL_NAME_LEN.saturating_sub(suffix.len());
+    let truncated_base = if base.len() > max_base_len {
+        &base[..max_base_len]
+    } else {
+        base
+    };
+    format!("{truncated_base}{suffix}")
 }
 
 fn reserve_provider_callable_name(
@@ -154,7 +158,7 @@ fn reserve_provider_callable_name(
     used_provider_names: &mut HashSet<String>,
 ) -> String {
     let trimmed = callable_name.trim();
-    let base_candidate = if is_provider_safe_callable_name(trimmed) {
+    let base_candidate = if is_provider_safe_tool_name(trimmed) {
         trimmed.to_string()
     } else {
         dynamic_capability_alias(trimmed)
@@ -166,7 +170,7 @@ fn reserve_provider_callable_name(
     };
     let mut suffix = 2usize;
     while !used_provider_names.insert(candidate.to_ascii_lowercase()) {
-        candidate = format!("{base_candidate}_{suffix}");
+        candidate = with_provider_suffix(&base_candidate, &format!("_{suffix}"));
         suffix += 1;
     }
     candidate
@@ -211,7 +215,9 @@ mod tests {
 
     use super::{BoundCallableLane, BoundCallablePayload};
     use crate::modules::custom_task_agents::skill_actions::ResolvedSkillAction;
-    use crate::modules::desktop_runtime::runtime::capability_toolset::dynamic_capability_alias;
+    use crate::modules::desktop_runtime::runtime::capability_toolset::{
+        dynamic_capability_alias, PROVIDER_MAX_TOOL_NAME_LEN,
+    };
 
     fn sample_mcp_tool(name: &str) -> McpTool {
         McpTool {
@@ -280,6 +286,9 @@ mod tests {
 
         assert!(provider_names.contains(&dynamic_capability_alias("monitor.create").as_str()));
         assert!(provider_names.contains(&dynamic_capability_alias("Firecrawl Scrape").as_str()));
+        assert!(provider_names
+            .iter()
+            .all(|name| name.len() <= PROVIDER_MAX_TOOL_NAME_LEN));
 
         let response = json!({
             "tool_calls": [
@@ -375,5 +384,35 @@ mod tests {
         assert_eq!(callables.len(), 1);
         assert_eq!(callables[0].name, "search_sdk");
         assert_eq!(callables[0].lane, BoundCallableLane::SkillAction);
+    }
+
+    #[test]
+    fn disambiguates_duplicate_provider_names_within_length_limit() {
+        let long_safe_name = "a23456789012345678901234567890123456789012345678901234567890123";
+        assert_eq!(long_safe_name.len(), PROVIDER_MAX_TOOL_NAME_LEN);
+
+        let mcp_tools =
+            HashMap::from([(long_safe_name.to_string(), sample_mcp_tool(long_safe_name))]);
+        let skill_actions = HashMap::from([(
+            long_safe_name.to_string(),
+            sample_skill_action(long_safe_name),
+        )]);
+
+        let payload = BoundCallablePayload::build(&mcp_tools, &skill_actions);
+        let tool_payload = payload.tool_payload().expect("tool payload");
+        let provider_names = tool_payload
+            .get("tools")
+            .and_then(Value::as_array)
+            .expect("tools array")
+            .iter()
+            .filter_map(|entry| entry.pointer("/function/name").and_then(Value::as_str))
+            .collect::<Vec<_>>();
+
+        assert_eq!(provider_names.len(), 2);
+        assert!(provider_names
+            .iter()
+            .all(|name| name.len() <= PROVIDER_MAX_TOOL_NAME_LEN));
+        assert!(provider_names.contains(&long_safe_name));
+        assert!(provider_names.iter().any(|name| *name != long_safe_name));
     }
 }
