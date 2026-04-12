@@ -34,6 +34,8 @@ mod tests {
     use crate::modules::mcp::commands::tool_management_impl::{
         build_remote_transport_log_entries, start_remote_transport_tool, stop_remote_transport_tool,
     };
+    #[cfg(not(target_os = "windows"))]
+    use crate::modules::mcp::commands::tool_management_impl::start_mcp_tool_inner;
     use crate::modules::skill_runtime::resolve_local_tool_env;
     use crate::modules::skills::onboarding::{
         derive_skill_name_from_repo_url, parse_skill_onboarding_payload,
@@ -4200,6 +4202,46 @@ for raw_line in sys.stdin:
                 .expect("success"),
             1
         );
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[tokio::test]
+    async fn start_mcp_tool_inner_allows_local_stdio_mcp_start_without_approval_gate() {
+        let store = std::sync::Arc::new(create_test_store("start-stdio-mcp-without-approval").await);
+        let script_path = write_mock_stdio_mcp_server_script("start-stdio-mcp-without-approval");
+        let tool = upsert_test_stdio_mcp_tool(&store, "mock_stdio", "write_file", &script_path).await;
+        let app = tauri::test::mock_app();
+        let process_manager = crate::modules::mcp::process::ProcessManager::new(store.clone(), app.handle().clone());
+        let runtime = crate::modules::mcp::McpRuntimeState::new(
+            store.clone(),
+            process_manager,
+            "http://127.0.0.1:8000".to_string(),
+        );
+
+        store
+            .set_tool_status(&tool.id, McpToolStatus::Stopped, None, None)
+            .await
+            .expect("seed stopped stdio tool");
+
+        let started = start_mcp_tool_inner(&runtime, &tool.id)
+            .await
+            .expect("start stdio mcp tool without approval gate");
+
+        assert_eq!(started["status"], serde_json::json!("STARTED"));
+        assert_eq!(started["transport"], serde_json::json!("stdio"));
+
+        let healthy_tool = store
+            .get_tool(&tool.id)
+            .await
+            .expect("reload started stdio tool")
+            .expect("started stdio tool exists");
+        assert_eq!(healthy_tool.status, McpToolStatus::Healthy);
+
+        runtime
+            .stdio_mcp_sessions
+            .close_tool_session(&healthy_tool, None)
+            .await
+            .expect("close started stdio mcp session");
     }
 
     #[cfg(not(target_os = "windows"))]

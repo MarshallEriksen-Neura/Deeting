@@ -169,6 +169,16 @@ pub(super) async fn persist_resumed_local_chat_assistant_message(
     model_connection: &LocalModelConnection,
     resumed_response: &serde_json::Value,
 ) -> Result<(), String> {
+    if resumed_response
+        .get("execution_graph")
+        .is_some_and(|execution_graph| !pending_approval_gate_ids_from_graph(execution_graph).is_empty())
+    {
+        return Err(format!(
+            "chat step=append_resumed_assistant_message blocked because execution_graph still has pending approval gates session={} ",
+            session_id
+        ));
+    }
+
     let assistant_meta = build_persisted_resume_assistant_meta(resumed_response, model_connection);
 
     app_state
@@ -191,6 +201,42 @@ pub(super) async fn persist_resumed_local_chat_assistant_message(
                 session_id, err
             )
         })?;
+
+    let latest_turn_index = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COALESCE(MAX(turn_index), 0)
+        FROM conversation_message
+        WHERE session_id = ? AND is_deleted = 0;
+        "#,
+    )
+    .bind(session_id)
+    .fetch_one(&app_state.mcp.store.pool)
+    .await
+    .map_err(|err| {
+        format!(
+            "chat step=read_latest_turn_after_resumed_assistant_message session={} err={}",
+            session_id, err
+        )
+    })?;
+
+    if latest_turn_index > 0 {
+        if let Err(err) = app_state
+            .mcp
+            .store
+            .soft_delete_stale_pending_approval_assistant_messages_before_turn(
+                session_id,
+                latest_turn_index,
+            )
+            .await
+        {
+            log::warn!(
+                "soft_delete_stale_pending_approval_assistant_messages_before_turn failed session={} turn={} err={}",
+                session_id,
+                latest_turn_index,
+                err
+            );
+        }
+    }
 
     if let Some(execution_graph) = resumed_response.get("execution_graph") {
         if let Err(err) = persist_execution_graph_snapshot(
@@ -514,6 +560,48 @@ async fn advance_local_chat_execution_from_graph_state(
                 root_execution_id.as_deref(),
                 true,
             );
+            let pending_gate_ids_after_resume = output
+                .response
+                .get("execution_graph")
+                .map(pending_approval_gate_ids_from_graph)
+                .unwrap_or_default();
+            if !pending_gate_ids_after_resume.is_empty() {
+                if let Some(execution_graph) = output.response.get("execution_graph") {
+                    if let Err(err) = persist_execution_graph_snapshot(
+                        app_state.mcp.store.as_ref(),
+                        execution_graph,
+                        &session_id,
+                        "desktop_local_chat_resume_waiting_approval",
+                        None,
+                        Some("waiting_approval"),
+                    )
+                    .await
+                    {
+                        log::warn!(
+                            "persist post-resume waiting execution graph failed session={} err={}",
+                            session_id,
+                            err
+                        );
+                    }
+                }
+                let continuation_meta = build_effective_tool_call_meta(&output.response, &[]);
+                return Ok(build_local_chat_waiting_approval_payload(
+                    consumed_approval_token.unwrap_or_default(),
+                    resolved_gate_node_id.as_str(),
+                    resolved_call_id.as_str(),
+                    output
+                        .response
+                        .get("execution_graph")
+                        .unwrap_or(&serde_json::Value::Null),
+                    approved_tool_result,
+                    build_local_chat_resume_continuation_blocks(&output.response, &continuation_meta),
+                    output
+                        .response
+                        .get("execution_graph")
+                        .and_then(|value| value.get("execution_id"))
+                        .and_then(serde_json::Value::as_str),
+                ));
+            }
             if let Err(err) = persist_resumed_local_chat_assistant_message(
                 app_state,
                 &session_id,

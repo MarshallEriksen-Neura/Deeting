@@ -445,6 +445,68 @@ describe("normalizeConversationMessages", () => {
     })
   })
 
+  it("drops stale pending approval assistant messages once a later assistant answer exists", () => {
+    const messages = [
+      {
+        role: "assistant",
+        content: "",
+        turn_index: 2,
+        meta_info: {
+          blocks: [
+            {
+              type: "tool_call",
+              callId: "call-old",
+              toolName: "shell_execute",
+              status: "success",
+            },
+            {
+              type: "tool_result",
+              callId: "call-old",
+              toolName: "shell_execute",
+              status: "requires_approval",
+              result: {
+                status: "REQUIRES_APPROVAL",
+                approval_token: "approval-old",
+              },
+            },
+          ],
+        },
+      },
+      {
+        role: "assistant",
+        content: "",
+        turn_index: 3,
+        meta_info: {
+          blocks: [
+            {
+              type: "text",
+              content: "Final answer after tool execution.",
+            },
+          ],
+        },
+      },
+    ]
+
+    const normalized = normalizeConversationMessages(
+      messages as unknown as Parameters<typeof normalizeConversationMessages>[0],
+      {
+        includeRoles: ["assistant"],
+      }
+    )
+
+    expect(normalized).toHaveLength(1)
+    expect(normalized[0]).toMatchObject({
+      role: "assistant",
+      id: "conv-3",
+      blocks: [
+        expect.objectContaining({
+          type: "text",
+          content: "Final answer after tool execution.",
+        }),
+      ],
+    })
+  })
+
   it("does not synthesize blocks for user messages", () => {
     const [message] = normalizeConversationMessages(
       [

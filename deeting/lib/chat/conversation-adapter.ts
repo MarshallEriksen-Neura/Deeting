@@ -57,6 +57,53 @@ const hasRenderableBlocks = (blocks: MessageBlock[]) =>
     return false
   })
 
+const isPendingApprovalAssistantMessage = (message: Message) => {
+  if (message.role !== "assistant" || !Array.isArray(message.blocks) || message.blocks.length === 0) {
+    return false
+  }
+
+  let hasRequiresApproval = false
+  let hasResolvedContent = false
+
+  for (const block of message.blocks) {
+    if (block.type === "text" && typeof block.content === "string" && block.content.trim().length > 0) {
+      hasResolvedContent = true
+    }
+    if (block.type === "error") {
+      hasResolvedContent = true
+    }
+    if (block.type === "tool_result") {
+      if (block.status === "requires_approval") {
+        hasRequiresApproval = true
+      }
+      if (block.status === "success" || block.status === "error") {
+        hasResolvedContent = true
+      }
+    }
+  }
+
+  return hasRequiresApproval && !hasResolvedContent
+}
+
+const dropStalePendingApprovalAssistantMessages = (messages: Message[]) => {
+  let seenLaterResolvedAssistant = false
+  const kept: Message[] = []
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message.role === "assistant" && !isPendingApprovalAssistantMessage(message)) {
+      seenLaterResolvedAssistant = true
+    }
+    if (seenLaterResolvedAssistant && isPendingApprovalAssistantMessage(message)) {
+      continue
+    }
+    kept.push(message)
+  }
+
+  kept.reverse()
+  return kept
+}
+
 const normalizeLineBreaks = (text: string) => text.replace(/\r\n?/g, "\n")
 
 const decodeEscapedNewlines = (text: string) => {
@@ -232,7 +279,7 @@ export function normalizeConversationMessages(
     return normalizedRole ? roleSet.has(normalizedRole) : false
   })
   const total = filtered.length
-  return filtered.map((msg, index) => {
+  const normalized = filtered.map((msg, index) => {
     const normalizedRole = normalizeRole(msg.role)
     const candidate = normalizedRole === "assistant" ? null : readContentCandidate(msg)
     const parsed = parseMessageContent(candidate)
@@ -271,4 +318,6 @@ export function normalizeConversationMessages(
       ...(resolvedBlocks !== undefined ? { blocks: resolvedBlocks } : {}),
     }
   })
+
+  return dropStalePendingApprovalAssistantMessages(normalized)
 }

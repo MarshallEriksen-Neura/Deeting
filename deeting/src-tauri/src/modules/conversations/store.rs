@@ -3085,6 +3085,47 @@ impl McpStore {
         })
     }
 
+    pub async fn soft_delete_stale_pending_approval_assistant_messages_before_turn(
+        &self,
+        session_id: &str,
+        keep_turn_index: i64,
+    ) -> Result<u64, McpError> {
+        let normalized_session_id = session_id.trim().to_string();
+        if normalized_session_id.is_empty() {
+            return Err(McpError::validation("session_id is required"));
+        }
+        if keep_turn_index <= 0 {
+            return Err(McpError::validation("keep_turn_index must be positive"));
+        }
+
+        let now = now_rfc3339()?;
+        let result = sqlx::query(
+            r#"
+            UPDATE conversation_message
+            SET is_deleted = 1, updated_at = ?
+            WHERE session_id = ?
+              AND role = 'assistant'
+              AND is_deleted = 0
+              AND turn_index < ?
+              AND json_extract(meta_info, '$.blocks') IS NOT NULL
+              AND EXISTS (
+                SELECT 1
+                FROM json_each(conversation_message.meta_info, '$.blocks') AS block
+                WHERE json_extract(block.value, '$.type') = 'tool_result'
+                  AND lower(COALESCE(json_extract(block.value, '$.status'), '')) = 'requires_approval'
+              );
+            "#,
+        )
+        .bind(&now)
+        .bind(&normalized_session_id)
+        .bind(keep_turn_index)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        Ok(result.rows_affected())
+    }
+
     pub async fn update_local_conversation_assistant_meta_info(
         &self,
         session_id: &str,

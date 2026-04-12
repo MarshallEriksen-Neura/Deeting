@@ -69,16 +69,6 @@ pub(crate) async fn start_mcp_tool_inner(
         ));
     }
 
-    let risk = state.assess_tool_risk(&tool, &serde_json::json!({}));
-    if risk.requires_approval {
-        return Err(format!(
-            "starting tool '{}' is blocked without explicit approval flow (risk={}): {}",
-            tool.name,
-            risk.risk_level,
-            risk.reasons.join("; ")
-        ));
-    }
-
     if tool.is_stdio_mcp_tool() {
         let env = resolve_local_tool_env(state.store.as_ref(), &tool)
             .await
