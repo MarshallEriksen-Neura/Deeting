@@ -23,6 +23,37 @@ use std::{any::Any, future::Future, panic::AssertUnwindSafe, time::Duration};
 
 const DEFAULT_MCP_TOOL_TIMEOUT_SECS: u64 = 180;
 
+fn normalized_approval_status(value: Option<&str>) -> &str {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("waiting_approval")
+}
+
+async fn update_pending_approval_status(
+    pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
+    approval_token: &str,
+    status: &str,
+) -> Result<crate::modules::mcp::PendingToolCall, String> {
+    let mut pending_tool_calls = pending_tool_calls.write().await;
+    let Some(pending) = pending_tool_calls.get_mut(approval_token) else {
+        return Err("pending tool call not found".to_string());
+    };
+    pending.approval_status = Some(status.to_string());
+    Ok(pending.clone())
+}
+
+async fn remove_pending_approval_entry(
+    pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
+    approval_token: &str,
+) -> Result<crate::modules::mcp::PendingToolCall, String> {
+    pending_tool_calls
+        .write()
+        .await
+        .remove(approval_token)
+        .ok_or_else(|| "pending tool call already consumed".to_string())
+}
+
 fn is_stdio_invocation_error(error: &str) -> bool {
     let normalized = error.trim().to_ascii_lowercase();
     normalized.contains("-32602")
@@ -486,6 +517,7 @@ async fn maybe_queue_core_tool_approval(
                     execution_graph_execution_id: None,
                     execution_graph_gate_node_id: None,
                     execution_graph_tool_node_id: None,
+                    approval_status: Some("waiting_approval".to_string()),
                     created_at_unix_ms: now as i128,
                     expires_at_unix_ms: now as i128 + 5 * 60 * 1000,
                 }
@@ -1382,6 +1414,7 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_tool_ref(
                     execution_graph_execution_id: None,
                     execution_graph_gate_node_id: None,
                     execution_graph_tool_node_id: None,
+                    approval_status: Some("waiting_approval".to_string()),
                     created_at_unix_ms: now as i128,
                     expires_at_unix_ms: now as i128 + 5 * 60 * 1000,
                 };
@@ -1512,6 +1545,7 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_tool_ref(
                     execution_graph_execution_id: None,
                     execution_graph_gate_node_id: None,
                     execution_graph_tool_node_id: None,
+                    approval_status: Some("waiting_approval".to_string()),
                     created_at_unix_ms: now as i128,
                     expires_at_unix_ms: now as i128 + 5 * 60 * 1000,
                 }
@@ -1581,6 +1615,21 @@ pub(crate) async fn approve_mcp_tool_inner_with_context_and_mode(
         pending_tool_calls.write().await.remove(approval_token);
         return Err("approval token expired; please retry the action".to_string());
     }
+    match normalized_approval_status(pending.approval_status.as_deref()) {
+        "approved" => {
+            return Err("pending tool call already consumed".to_string());
+        }
+        "approving" => {
+            return Err("approval already in progress".to_string());
+        }
+        "rejected" => {
+            return Err("approval already rejected".to_string());
+        }
+        "approval_failed" | "waiting_approval" => {}
+        _ => {
+            return Err("approval gate is in an invalid state".to_string());
+        }
+    }
     if let Some(expected_call_id) = pending.call_id.as_deref() {
         if approval_context.call_id.as_deref() != Some(expected_call_id) {
             return Err("approval context mismatch (call_id)".to_string());
@@ -1591,6 +1640,13 @@ pub(crate) async fn approve_mcp_tool_inner_with_context_and_mode(
             return Err("approval context mismatch (execution_token)".to_string());
         }
     }
+    let pending = update_pending_approval_status(
+        pending_tool_calls,
+        approval_token,
+        "approving",
+    )
+    .await?;
+
     if let Some(binding) = resolve_skill_binding_by_ref(
         store,
         pending.tool_id.as_deref(),
@@ -1599,25 +1655,38 @@ pub(crate) async fn approve_mcp_tool_inner_with_context_and_mode(
     .await?
     {
         if skill_binding_fingerprint(&binding) != pending.tool_fingerprint {
-            pending_tool_calls.write().await.remove(approval_token);
+            if let Ok(mut failed_pending) = update_pending_approval_status(
+                pending_tool_calls,
+                approval_token,
+                "approval_failed",
+            )
+            .await
+            {
+                failed_pending.approval_status = Some("approval_failed".to_string());
+            }
             return Err(
                 "skill binding changed after approval prompt; request was cancelled".to_string(),
             );
         }
-        if pending_tool_calls
-            .write()
-            .await
-            .remove(approval_token)
-            .is_none()
-        {
-            return Err("pending tool call already consumed".to_string());
-        }
-        let result = guard_tool_execution_future(
+        let result = match guard_tool_execution_future(
             &binding.callable_name,
             "skill binding approval execution",
             execute_skill_binding(store, &binding, &pending.arguments),
         )
-        .await?;
+        .await
+        {
+            Ok(result) => result,
+            Err(err) => {
+                let _ = update_pending_approval_status(
+                    pending_tool_calls,
+                    approval_token,
+                    "approval_failed",
+                )
+                .await;
+                return Err(err);
+            }
+        };
+        let pending = remove_pending_approval_entry(pending_tool_calls, approval_token).await?;
         record_successful_tool_execution(
             store,
             pending.session_id.as_deref(),
@@ -1664,7 +1733,7 @@ pub(crate) async fn approve_mcp_tool_inner_with_context_and_mode(
         return Ok(result);
     }
 
-    if let Some(result) = guard_tool_execution_future(
+    if let Some(result) = match guard_tool_execution_future(
         pending.tool_name.as_str(),
         "core tool approval execution",
         execute_core_tool_call_with_tool_ref_internal(
@@ -1678,16 +1747,21 @@ pub(crate) async fn approve_mcp_tool_inner_with_context_and_mode(
             true,
         ),
     )
-    .await?
+    .await
     {
-        if pending_tool_calls
-            .write()
-            .await
-            .remove(approval_token)
-            .is_none()
-        {
-            return Err("pending tool call already consumed".to_string());
+        Ok(result) => Ok(result),
+        Err(err) => {
+            let _ = update_pending_approval_status(
+                pending_tool_calls,
+                approval_token,
+                "approval_failed",
+            )
+            .await;
+            Err(err)
         }
+    }?
+    {
+        let pending = remove_pending_approval_entry(pending_tool_calls, approval_token).await?;
         record_successful_tool_execution(
             store,
             pending.session_id.as_deref(),
@@ -1728,27 +1802,37 @@ pub(crate) async fn approve_mcp_tool_inner_with_context_and_mode(
     if let Some(runtime) = runtime_state {
         let current_fingerprint = runtime.tool_fingerprint(&tool);
         if current_fingerprint != pending.tool_fingerprint {
-            pending_tool_calls.write().await.remove(approval_token);
+            let _ = update_pending_approval_status(
+                pending_tool_calls,
+                approval_token,
+                "approval_failed",
+            )
+            .await;
             return Err(
                 "tool configuration changed after approval prompt; request was cancelled"
                     .to_string(),
             );
         }
     }
-    if pending_tool_calls
-        .write()
-        .await
-        .remove(approval_token)
-        .is_none()
-    {
-        return Err("pending tool call already consumed".to_string());
-    }
-    let result = guard_tool_execution_future(
+    let result = match guard_tool_execution_future(
         &tool.name,
         "MCP tool approval execution",
         execute_mcp_tool(runtime_state, store, &tool, &pending.arguments),
     )
-    .await?;
+    .await
+    {
+        Ok(result) => result,
+        Err(err) => {
+            let _ = update_pending_approval_status(
+                pending_tool_calls,
+                approval_token,
+                "approval_failed",
+            )
+            .await;
+            return Err(err);
+        }
+    };
+    let pending = remove_pending_approval_entry(pending_tool_calls, approval_token).await?;
     record_successful_tool_execution(store, pending.session_id.as_deref(), &tool.name, &result)
         .await;
     if matches!(

@@ -47,6 +47,7 @@ pub(crate) struct PersistedPendingApproval {
     pub(super) execution_graph_execution_id: Option<String>,
     pub(super) execution_graph_gate_node_id: Option<String>,
     pub(super) execution_graph_tool_node_id: Option<String>,
+    pub(super) approval_status: Option<String>,
     pub(super) created_at_unix_ms: i128,
     pub(super) expires_at_unix_ms: i128,
 }
@@ -122,6 +123,7 @@ pub(super) fn build_pending_approval_records(
                 execution_graph_execution_id: pending.execution_graph_execution_id.clone(),
                 execution_graph_gate_node_id: pending.execution_graph_gate_node_id.clone(),
                 execution_graph_tool_node_id: pending.execution_graph_tool_node_id.clone(),
+                approval_status: pending.approval_status.clone(),
                 created_at_unix_ms: pending.created_at_unix_ms,
                 expires_at_unix_ms: pending.expires_at_unix_ms,
             })
@@ -145,6 +147,7 @@ fn canonical_waiting_approval_context(
     context: serde_json::Value,
     execution_id: &str,
     session_id: Option<&str>,
+    approval_token: Option<&str>,
 ) -> Option<PersistedInFlightExecutionContext> {
     let persisted = persistable_inflight_context_from_value(&context)?;
     if persisted.stage != InFlightExecutionStage::WaitingApproval {
@@ -159,6 +162,17 @@ fn canonical_waiting_approval_context(
     if normalized_execution_id.is_empty() {
         return None;
     }
+    if let Some(expected_approval_token) = approval_token
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        let has_matching_token = persisted.pending_approvals.iter().any(|pending| {
+            pending.approval_token.trim() == expected_approval_token
+        });
+        if !has_matching_token {
+            return None;
+        }
+    }
     Some(persisted)
 }
 
@@ -166,6 +180,7 @@ async fn load_canonical_waiting_approval_context_by_execution_id(
     store: &crate::modules::mcp::store::McpStore,
     execution_id: &str,
     session_id: Option<&str>,
+    approval_token: Option<&str>,
 ) -> Result<Option<(String, PersistedInFlightExecutionContext)>, String> {
     let normalized_execution_id = execution_id.trim();
     if normalized_execution_id.is_empty() {
@@ -178,14 +193,20 @@ async fn load_canonical_waiting_approval_context_by_execution_id(
         return Ok(None);
     };
     Ok(
-        canonical_waiting_approval_context(context, normalized_execution_id, session_id)
-            .map(|persisted| (normalized_execution_id.to_string(), persisted)),
+        canonical_waiting_approval_context(
+            context,
+            normalized_execution_id,
+            session_id,
+            approval_token,
+        )
+        .map(|persisted| (normalized_execution_id.to_string(), persisted)),
     )
 }
 
 async fn list_canonical_waiting_approval_contexts(
     store: &crate::modules::mcp::store::McpStore,
     session_id: Option<&str>,
+    approval_token: Option<&str>,
 ) -> Result<Vec<(String, PersistedInFlightExecutionContext)>, String> {
     let rows = list_execution_graph_runtime_contexts(store)
         .await
@@ -194,8 +215,13 @@ async fn list_canonical_waiting_approval_contexts(
     Ok(rows
         .into_iter()
         .filter_map(|row| {
-            canonical_waiting_approval_context(row.context, row.execution_id.as_str(), session_id)
-                .map(|persisted| (row.execution_id, persisted))
+            canonical_waiting_approval_context(
+                row.context,
+                row.execution_id.as_str(),
+                session_id,
+                approval_token,
+            )
+            .map(|persisted| (row.execution_id, persisted))
         })
         .collect())
 }
@@ -226,6 +252,7 @@ fn pending_approval_snapshot_from_canonical_match(
             .or_else(|| Some(matched.execution_id.clone())),
         "execution_graph_gate_node_id": matched.pending.execution_graph_gate_node_id.clone(),
         "execution_graph_tool_node_id": matched.pending.execution_graph_tool_node_id.clone(),
+        "approval_status": matched.pending.approval_status.clone().unwrap_or_else(|| "waiting_approval".to_string()),
     })
 }
 
@@ -243,12 +270,17 @@ async fn find_canonical_pending_local_approval_match(
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        load_canonical_waiting_approval_context_by_execution_id(store, execution_id, None)
+        load_canonical_waiting_approval_context_by_execution_id(
+            store,
+            execution_id,
+            None,
+            Some(normalized_token),
+        )
             .await?
             .into_iter()
             .collect::<Vec<_>>()
     } else {
-        list_canonical_waiting_approval_contexts(store, None).await?
+        list_canonical_waiting_approval_contexts(store, None, Some(normalized_token)).await?
     };
 
     for (execution_id, context) in contexts {
@@ -271,7 +303,7 @@ pub(crate) async fn list_canonical_pending_local_approval_snapshots(
     session_id: Option<&str>,
 ) -> Result<Vec<serde_json::Value>, String> {
     let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
-    let contexts = list_canonical_waiting_approval_contexts(store, session_id).await?;
+    let contexts = list_canonical_waiting_approval_contexts(store, session_id, None).await?;
     let mut snapshots = Vec::new();
 
     for (execution_id, context) in contexts {
@@ -483,7 +515,7 @@ pub(super) async fn persist_running_tool_execution_runtime(
     Ok(execution_id)
 }
 
-pub(super) async fn persist_suspended_execution_graph_runtime(
+pub(crate) async fn persist_suspended_execution_graph_runtime(
     store: &crate::modules::mcp::store::McpStore,
     suspended: &SuspendedChatToolExecution,
     pending_approvals: &[PersistedPendingApproval],
@@ -594,7 +626,7 @@ async fn take_suspended_local_chat_execution_fallback(
     None
 }
 
-pub(super) async fn load_suspended_chat_tool_execution_for_resume(
+pub(crate) async fn load_suspended_chat_tool_execution_for_resume(
     app_state: &AppState,
     approval_token: &str,
     execution_graph_execution_id: Option<&str>,
@@ -718,6 +750,7 @@ pub(super) fn pending_tool_call_from_persisted_approval(
             .or_else(|| default_execution_id.map(str::to_string)),
         execution_graph_gate_node_id: pending.execution_graph_gate_node_id.clone(),
         execution_graph_tool_node_id: pending.execution_graph_tool_node_id.clone(),
+        approval_status: pending.approval_status.clone(),
         created_at_unix_ms: pending.created_at_unix_ms,
         expires_at_unix_ms,
     }

@@ -232,57 +232,147 @@ fn pending_approval_call_ids_from_graph(execution_graph: &serde_json::Value) -> 
         .collect()
 }
 
+fn pending_approval_gate_ids_from_graph(execution_graph: &serde_json::Value) -> Vec<String> {
+    execution_graph
+        .get("nodes")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|node| {
+            node.get("node_type")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|node_type| node_type == "approval_gate")
+        })
+        .filter(|node| {
+            node.get("status")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|status| {
+                    matches!(status, "waiting_approval" | "approving" | "approval_failed")
+                })
+        })
+        .filter_map(|node| {
+            node.get("node_id")
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        })
+        .collect()
+}
+
+fn next_pending_approval_tokens_from_graph(execution_graph: &serde_json::Value) -> Vec<String> {
+    execution_graph
+        .get("nodes")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|node| {
+            node.get("node_type")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|node_type| node_type == "approval_gate")
+        })
+        .filter(|node| {
+            node.get("status")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|status| {
+                    matches!(status, "waiting_approval" | "approving" | "approval_failed")
+                })
+        })
+        .filter_map(|node| {
+            node.get("metadata")
+                .and_then(|value| value.get("approval_token"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        })
+        .collect()
+}
+
 fn build_local_chat_waiting_approval_payload(
+    approval_token: &str,
+    resolved_gate_node_id: &str,
+    resolved_call_id: &str,
     execution_graph: &serde_json::Value,
     approved_tool_result: &serde_json::Value,
     continuation_blocks: Vec<serde_json::Value>,
     execution_graph_execution_id: Option<&str>,
-    pending_call_ids: Vec<String>,
 ) -> serde_json::Value {
     serde_json::json!({
         "status": "LOCAL_CHAT_WAITING_APPROVAL",
+        "approval_token": approval_token,
+        "resolved_gate_node_id": resolved_gate_node_id,
+        "resolved_call_id": resolved_call_id,
         "approved_tool_result": approved_tool_result,
         "continuation_blocks": continuation_blocks,
         "execution_graph": execution_graph,
         "execution_graph_execution_id": execution_graph_execution_id,
-        "pending_call_ids": pending_call_ids,
+        "pending_approval_gate_ids": pending_approval_gate_ids_from_graph(execution_graph),
+        "next_pending_approval_tokens": next_pending_approval_tokens_from_graph(execution_graph),
     })
 }
 
 fn build_local_chat_resumed_payload(
+    approval_token: &str,
+    resolved_gate_node_id: &str,
+    resolved_call_id: &str,
     approved_tool_result: &serde_json::Value,
     resumed_response: &serde_json::Value,
     continuation_meta: &[serde_json::Value],
 ) -> serde_json::Value {
+    let execution_graph = resumed_response.get("execution_graph").cloned();
     serde_json::json!({
         "status": "LOCAL_CHAT_RESUMED",
+        "approval_token": approval_token,
+        "resolved_gate_node_id": resolved_gate_node_id,
+        "resolved_call_id": resolved_call_id,
         "approved_tool_result": approved_tool_result,
         "continuation_blocks": build_local_chat_resume_continuation_blocks(
             resumed_response,
             continuation_meta,
         ),
-        "execution_graph": resumed_response.get("execution_graph").cloned(),
+        "execution_graph": execution_graph,
         "execution_graph_execution_id": resumed_response
             .get("execution_graph")
             .and_then(|value| value.get("execution_id"))
             .cloned(),
+        "pending_approval_gate_ids": execution_graph
+            .as_ref()
+            .map(pending_approval_gate_ids_from_graph)
+            .unwrap_or_default(),
+        "next_pending_approval_tokens": execution_graph
+            .as_ref()
+            .map(next_pending_approval_tokens_from_graph)
+            .unwrap_or_default(),
         "response": resumed_response,
     })
 }
 
 fn build_local_chat_resume_failed_payload(
+    approval_token: &str,
+    resolved_gate_node_id: Option<&str>,
+    resolved_call_id: Option<&str>,
     approved_tool_result: &serde_json::Value,
     execution_graph: &serde_json::Value,
     execution_graph_execution_id: Option<&str>,
+    error_code: &str,
     error: &str,
+    retryable: bool,
 ) -> serde_json::Value {
     serde_json::json!({
         "status": "LOCAL_CHAT_RESUME_FAILED",
+        "approval_token": approval_token,
+        "resolved_gate_node_id": resolved_gate_node_id,
+        "resolved_call_id": resolved_call_id,
         "approved_tool_result": approved_tool_result,
         "continuation_blocks": [],
         "execution_graph": execution_graph,
         "execution_graph_execution_id": execution_graph_execution_id,
+        "pending_approval_gate_ids": pending_approval_gate_ids_from_graph(execution_graph),
+        "next_pending_approval_tokens": next_pending_approval_tokens_from_graph(execution_graph),
+        "error_code": error_code,
         "error": error,
+        "retryable": retryable,
     })
 }
 
@@ -291,6 +381,7 @@ async fn advance_local_chat_execution_from_graph_state(
     app_state: &AppState,
     mut suspended: SuspendedChatToolExecution,
     consumed_approval_token: Option<&str>,
+    resolved_call_id: Option<&str>,
     approved_tool_result: &serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     let pending_response = suspended
@@ -305,6 +396,13 @@ async fn advance_local_chat_execution_from_graph_state(
         .get("execution_id")
         .and_then(serde_json::Value::as_str)
         .map(str::to_string);
+    let resolved_call_id = resolved_call_id
+        .unwrap_or(suspended.pending_call_id())
+        .trim()
+        .to_string();
+    let resolved_gate_node_id = suspended
+        .approval_gate_node_id_for_call_id(resolved_call_id.as_str())
+        .unwrap_or_else(|| suspended.pending_gate_node_id().to_string());
     let post_approval_graph = suspended.execution_graph.clone();
     let remaining_pending_call_ids = if let Some(approval_token) = consumed_approval_token {
         suspended.sync_remaining_pending_approvals(approval_token)
@@ -332,6 +430,9 @@ async fn advance_local_chat_execution_from_graph_state(
         }
 
         return Ok(build_local_chat_waiting_approval_payload(
+            consumed_approval_token.unwrap_or_default(),
+            resolved_gate_node_id.as_str(),
+            resolved_call_id.as_str(),
             suspended.execution_graph(),
             approved_tool_result,
             build_local_chat_resume_continuation_blocks(
@@ -342,7 +443,6 @@ async fn advance_local_chat_execution_from_graph_state(
                 &suspended.pending_tool_call_meta(),
             ),
             root_execution_id.as_deref(),
-            remaining_pending_call_ids,
         ));
     }
 
@@ -431,6 +531,9 @@ async fn advance_local_chat_execution_from_graph_state(
             .await;
             let continuation_meta = build_effective_tool_call_meta(&output.response, &[]);
             Ok(build_local_chat_resumed_payload(
+                consumed_approval_token.unwrap_or_default(),
+                resolved_gate_node_id.as_str(),
+                resolved_call_id.as_str(),
                 approved_tool_result,
                 &output.response,
                 &continuation_meta,
@@ -484,10 +587,15 @@ async fn advance_local_chat_execution_from_graph_state(
             }
 
             Ok(build_local_chat_resume_failed_payload(
+                consumed_approval_token.unwrap_or_default(),
+                Some(resolved_gate_node_id.as_str()),
+                Some(resolved_call_id.as_str()),
                 approved_tool_result,
                 &post_approval_graph,
                 root_execution_id.as_deref(),
+                "LOCAL_CHAT_RESUME_FAILED",
                 err.as_str(),
+                true,
             ))
         }
     }
@@ -526,12 +634,18 @@ pub(crate) async fn project_local_chat_approval_state_payload(
     let pending_call_ids = pending_approval_call_ids_from_graph(&execution_graph);
 
     if !pending_call_ids.is_empty() {
-        return Ok(Some(build_local_chat_waiting_approval_payload(
-            &execution_graph,
+        return Ok(Some(build_local_chat_resume_failed_payload(
+            normalized_execution_id,
+            None,
+            None,
             &serde_json::Value::Null,
-            continuation_blocks,
+            &execution_graph,
             Some(normalized_execution_id),
-            pending_call_ids,
+            "LOCAL_CHAT_APPROVAL_FALLBACK_STALE",
+            fallback_error.unwrap_or(
+                "approval continuation fell back to a stale waiting graph; resolved gate identity was unavailable",
+            ),
+            true,
         )));
     }
 
@@ -544,10 +658,15 @@ pub(crate) async fn project_local_chat_approval_state_payload(
             .and_then(|context| context.last_error.clone())
             .or_else(|| fallback_error.map(str::to_string));
         let mut payload = build_local_chat_resume_failed_payload(
+            normalized_execution_id,
+            None,
+            None,
             &serde_json::Value::Null,
             &execution_graph,
             Some(normalized_execution_id),
+            "LOCAL_CHAT_RESUME_FAILED",
             error.as_deref().unwrap_or_default(),
+            true,
         );
         if let Some(object) = payload.as_object_mut() {
             object.insert(
@@ -558,13 +677,19 @@ pub(crate) async fn project_local_chat_approval_state_payload(
         return Ok(Some(payload));
     }
 
-    Ok(Some(serde_json::json!({
-        "status": "LOCAL_CHAT_RESUMED",
-        "approved_tool_result": serde_json::Value::Null,
-        "continuation_blocks": continuation_blocks,
-        "execution_graph": execution_graph,
-        "execution_graph_execution_id": normalized_execution_id,
-    })))
+    Ok(Some(build_local_chat_resume_failed_payload(
+        normalized_execution_id,
+        None,
+        None,
+        &serde_json::Value::Null,
+        &execution_graph,
+        Some(normalized_execution_id),
+        "LOCAL_CHAT_RESUME_FALLBACK_NO_IDENTITY",
+        fallback_error.unwrap_or(
+            "approval continuation returned a terminal fallback snapshot without resolved gate identity",
+        ),
+        true,
+    )))
 }
 
 pub(crate) async fn resume_suspended_chat_tool_execution_after_approval(
@@ -588,12 +713,20 @@ pub(crate) async fn resume_suspended_chat_tool_execution_after_approval(
     };
 
     apply_approved_tool_result_to_suspended_round(&mut suspended, call_id, tool_result);
+    if let Some(pending) = suspended
+        .pending_approvals
+        .iter_mut()
+        .find(|pending| pending.approval_token.trim() == approval_token.trim())
+    {
+        pending.approval_status = Some("approved".to_string());
+    }
     Ok(Some(
         advance_local_chat_execution_from_graph_state(
             app,
             app_state,
             suspended,
             Some(approval_token),
+            call_id,
             tool_result,
         )
         .await?,
@@ -1136,6 +1269,7 @@ pub(crate) async fn recover_local_chat_execution_from_action(
         app,
         app_state,
         suspended,
+        None,
         None,
         &serde_json::Value::Null,
     )

@@ -44,6 +44,7 @@ export type PendingToolApprovalSnapshot = {
   execution_graph_execution_id?: string
   execution_graph_gate_node_id?: string
   execution_graph_tool_node_id?: string
+  approval_status?: string
 }
 
 type ToolApprovalContext = BridgeToolPendingApproval["meta"]
@@ -512,14 +513,44 @@ export function createRejectedToolResultBlock(
   }
 }
 
-export function extractLocalChatApprovalResume(result: unknown): {
+export type LocalChatApprovalResume = {
   status: "LOCAL_CHAT_WAITING_APPROVAL" | "LOCAL_CHAT_RESUMED" | "LOCAL_CHAT_RESUME_FAILED"
+  approval_token: string
+  resolved_gate_node_id?: string
+  resolved_call_id?: string
   approved_tool_result: unknown
   continuation_blocks: MessageBlock[]
   execution_graph?: Record<string, unknown>
   execution_graph_execution_id?: string
+  pending_approval_gate_ids: string[]
+  next_pending_approval_tokens: string[]
+  error_code?: string
   error?: string
-} | null {
+  retryable?: boolean
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter((item) => item.length > 0)
+}
+
+function extractNodeStatusById(
+  executionGraph: Record<string, unknown> | undefined,
+  nodeId: string | undefined
+): string | undefined {
+  const normalizedNodeId = typeof nodeId === "string" ? nodeId.trim() : ""
+  if (!normalizedNodeId) return undefined
+  const nodes = Array.isArray(executionGraph?.nodes) ? executionGraph.nodes : []
+  const matched = nodes.find((node) => {
+    if (!node || typeof node !== "object") return false
+    return (node as Record<string, unknown>).node_id === normalizedNodeId
+  }) as Record<string, unknown> | undefined
+  return typeof matched?.status === "string" ? matched.status.trim() : undefined
+}
+
+export function extractLocalChatApprovalResume(result: unknown): LocalChatApprovalResume | null {
   const payload = toRecord(result)
   if (!payload) return null
   const status = asTrimmedString(payload.status)
@@ -531,6 +562,9 @@ export function extractLocalChatApprovalResume(result: unknown): {
     return null
   }
 
+  const approvalToken = asTrimmedString(payload.approval_token)
+  if (!approvalToken) return null
+
   const continuationBlocks = Array.isArray(payload.continuation_blocks)
     ? (payload.continuation_blocks.filter(
         (block): block is MessageBlock =>
@@ -538,14 +572,69 @@ export function extractLocalChatApprovalResume(result: unknown): {
       ) as MessageBlock[])
     : []
 
+  const executionGraph = toRecord(payload.execution_graph) ?? undefined
+  const resolvedGateNodeId = asTrimmedString(payload.resolved_gate_node_id) ?? undefined
+  const pendingApprovalGateIds = normalizeStringArray(payload.pending_approval_gate_ids)
+  const nextPendingApprovalTokens = normalizeStringArray(payload.next_pending_approval_tokens)
+
+  if (status === "LOCAL_CHAT_WAITING_APPROVAL") {
+    const resolvedGateStatus = extractNodeStatusById(executionGraph, resolvedGateNodeId)
+    if (resolvedGateNodeId && resolvedGateStatus?.toLowerCase() === "waiting_approval") {
+      return {
+        status: "LOCAL_CHAT_RESUME_FAILED",
+        approval_token: approvalToken,
+        resolved_gate_node_id: resolvedGateNodeId,
+        resolved_call_id: asTrimmedString(payload.resolved_call_id) ?? undefined,
+        approved_tool_result: payload.approved_tool_result,
+        continuation_blocks: continuationBlocks,
+        execution_graph: executionGraph,
+        execution_graph_execution_id:
+          asTrimmedString(payload.execution_graph_execution_id) ?? undefined,
+        pending_approval_gate_ids: pendingApprovalGateIds,
+        next_pending_approval_tokens: nextPendingApprovalTokens,
+        error_code: "APPROVAL_GRAPH_NOT_ADVANCED",
+        error:
+          "Approval completed, but the resolved approval gate is still waiting_approval in the returned graph.",
+        retryable: true,
+      }
+    }
+
+    if (pendingApprovalGateIds.length === 0 && nextPendingApprovalTokens.length === 0) {
+      return {
+        status: "LOCAL_CHAT_RESUME_FAILED",
+        approval_token: approvalToken,
+        resolved_gate_node_id: resolvedGateNodeId,
+        resolved_call_id: asTrimmedString(payload.resolved_call_id) ?? undefined,
+        approved_tool_result: payload.approved_tool_result,
+        continuation_blocks: continuationBlocks,
+        execution_graph: executionGraph,
+        execution_graph_execution_id:
+          asTrimmedString(payload.execution_graph_execution_id) ?? undefined,
+        pending_approval_gate_ids: pendingApprovalGateIds,
+        next_pending_approval_tokens: nextPendingApprovalTokens,
+        error_code: "APPROVAL_NEXT_GATE_MISSING",
+        error:
+          "Approval reported waiting_approval, but no next pending approval gate was present in the returned payload.",
+        retryable: true,
+      }
+    }
+  }
+
   return {
     status,
+    approval_token: approvalToken,
+    resolved_gate_node_id: resolvedGateNodeId,
+    resolved_call_id: asTrimmedString(payload.resolved_call_id) ?? undefined,
     approved_tool_result: payload.approved_tool_result,
     continuation_blocks: continuationBlocks,
-    execution_graph: toRecord(payload.execution_graph) ?? undefined,
+    execution_graph: executionGraph,
     execution_graph_execution_id:
       asTrimmedString(payload.execution_graph_execution_id) ?? undefined,
+    pending_approval_gate_ids: pendingApprovalGateIds,
+    next_pending_approval_tokens: nextPendingApprovalTokens,
+    error_code: asTrimmedString(payload.error_code) ?? undefined,
     error: asTrimmedString(payload.error) ?? undefined,
+    retryable: payload.retryable === true,
   }
 }
 

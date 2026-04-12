@@ -289,9 +289,14 @@ fn map_graph_tool_call_block_status(status: &LocalExecutionGraphNodeStatus) -> &
     match status {
         LocalExecutionGraphNodeStatus::Pending | LocalExecutionGraphNodeStatus::Queued => "running",
         LocalExecutionGraphNodeStatus::Running => "running",
-        LocalExecutionGraphNodeStatus::WaitingApproval => "success",
-        LocalExecutionGraphNodeStatus::Success => "success",
-        LocalExecutionGraphNodeStatus::Error | LocalExecutionGraphNodeStatus::Cancelled => "error",
+        LocalExecutionGraphNodeStatus::WaitingApproval
+        | LocalExecutionGraphNodeStatus::Approving
+        | LocalExecutionGraphNodeStatus::Approved
+        | LocalExecutionGraphNodeStatus::Success => "success",
+        LocalExecutionGraphNodeStatus::Rejected
+        | LocalExecutionGraphNodeStatus::ApprovalFailed
+        | LocalExecutionGraphNodeStatus::Error
+        | LocalExecutionGraphNodeStatus::Cancelled => "error",
     }
 }
 
@@ -304,29 +309,34 @@ fn build_graph_tool_result_block(
         LocalExecutionGraphNodeStatus::Pending
         | LocalExecutionGraphNodeStatus::Queued
         | LocalExecutionGraphNodeStatus::Running => None,
-        LocalExecutionGraphNodeStatus::WaitingApproval => Some(json!({
-            "type": "tool_result",
-            "callId": call_id,
-            "toolName": tool_name,
-            "status": "requires_approval",
-            "result": node.output_payload.clone().unwrap_or_else(|| json!({})),
-        })),
-        LocalExecutionGraphNodeStatus::Success => Some(json!({
-            "type": "tool_result",
-            "callId": call_id,
-            "toolName": tool_name,
-            "status": "success",
-            "result": node.output_payload.clone().unwrap_or_else(|| json!({})),
-        })),
-        LocalExecutionGraphNodeStatus::Error | LocalExecutionGraphNodeStatus::Cancelled => {
+        LocalExecutionGraphNodeStatus::WaitingApproval | LocalExecutionGraphNodeStatus::Approving => {
             Some(json!({
                 "type": "tool_result",
                 "callId": call_id,
                 "toolName": tool_name,
-                "status": "error",
-                "result": node.output_payload.clone().unwrap_or_else(|| json!({"error":"tool call failed"})),
+                "status": "requires_approval",
+                "result": node.output_payload.clone().unwrap_or_else(|| json!({})),
             }))
         }
+        LocalExecutionGraphNodeStatus::Approved | LocalExecutionGraphNodeStatus::Success => {
+            Some(json!({
+                "type": "tool_result",
+                "callId": call_id,
+                "toolName": tool_name,
+                "status": "success",
+                "result": node.output_payload.clone().unwrap_or_else(|| json!({})),
+            }))
+        }
+        LocalExecutionGraphNodeStatus::Rejected
+        | LocalExecutionGraphNodeStatus::ApprovalFailed
+        | LocalExecutionGraphNodeStatus::Error
+        | LocalExecutionGraphNodeStatus::Cancelled => Some(json!({
+            "type": "tool_result",
+            "callId": call_id,
+            "toolName": tool_name,
+            "status": "error",
+            "result": node.output_payload.clone().unwrap_or_else(|| json!({"error":"tool call failed"})),
+        })),
     }
 }
 
@@ -378,6 +388,10 @@ fn map_tool_call_status(status: Option<&str>) -> LocalExecutionGraphNodeStatus {
         "error" => LocalExecutionGraphNodeStatus::Error,
         "cancelled" => LocalExecutionGraphNodeStatus::Cancelled,
         "requires_approval" => LocalExecutionGraphNodeStatus::WaitingApproval,
+        "approving" => LocalExecutionGraphNodeStatus::Approving,
+        "approved" => LocalExecutionGraphNodeStatus::Approved,
+        "rejected" => LocalExecutionGraphNodeStatus::Rejected,
+        "approval_failed" => LocalExecutionGraphNodeStatus::ApprovalFailed,
         _ => LocalExecutionGraphNodeStatus::Running,
     }
 }
@@ -387,6 +401,10 @@ fn map_tool_result_status(status: &str) -> LocalExecutionGraphNodeStatus {
         "error" => LocalExecutionGraphNodeStatus::Error,
         "cancelled" => LocalExecutionGraphNodeStatus::Cancelled,
         "requires_approval" => LocalExecutionGraphNodeStatus::WaitingApproval,
+        "approving" => LocalExecutionGraphNodeStatus::Approving,
+        "approved" => LocalExecutionGraphNodeStatus::Approved,
+        "rejected" => LocalExecutionGraphNodeStatus::Rejected,
+        "approval_failed" => LocalExecutionGraphNodeStatus::ApprovalFailed,
         _ => LocalExecutionGraphNodeStatus::Success,
     }
 }

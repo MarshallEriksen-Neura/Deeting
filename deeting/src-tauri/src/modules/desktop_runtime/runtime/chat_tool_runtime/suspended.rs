@@ -216,6 +216,30 @@ impl SuspendedChatToolExecution {
         remaining_call_ids
     }
 
+    pub(crate) fn set_pending_approval_status(
+        &mut self,
+        approval_token: &str,
+        status: &str,
+    ) -> bool {
+        let normalized_token = approval_token.trim();
+        if normalized_token.is_empty() {
+            return false;
+        }
+        let Some(pending) = self
+            .pending_approvals
+            .iter_mut()
+            .find(|pending| pending.approval_token.trim() == normalized_token)
+        else {
+            return false;
+        };
+        pending.approval_status = Some(status.to_string());
+        true
+    }
+
+    pub(crate) fn pending_approvals(&self) -> &[super::inflight::PersistedPendingApproval] {
+        &self.pending_approvals
+    }
+
     fn pending_node_id_for_type<'a>(&'a self, node_type: &str, fallback: &'a str) -> &'a str {
         let Some(nodes) = self
             .execution_graph

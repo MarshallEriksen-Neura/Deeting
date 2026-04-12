@@ -221,9 +221,14 @@ describe("ToolApprovalDialog", () => {
   it("writes approved local-chat results back into the matching assistant message", async () => {
     mockApproveTool.mockResolvedValueOnce({
       status: "LOCAL_CHAT_RESUMED",
+      approval_token: "approval-local-1",
+      resolved_gate_node_id: "approval_gate:call-local-1",
+      resolved_call_id: "call-local-1",
       approved_tool_result: { crawled_pages: 3 },
       continuation_blocks: [{ id: "resume-text-1", type: "text", content: "Finished crawl." }],
       execution_graph_execution_id: "graph-exec-local-1",
+      pending_approval_gate_ids: [],
+      next_pending_approval_tokens: [],
       execution_graph: {
         execution_id: "graph-exec-local-1",
       },
@@ -324,6 +329,9 @@ describe("ToolApprovalDialog", () => {
   it("preserves tool error payloads and appends the resume error block when continuation fails", async () => {
     mockApproveTool.mockResolvedValueOnce({
       status: "LOCAL_CHAT_RESUME_FAILED",
+      approval_token: "approval-failed-1",
+      resolved_gate_node_id: "approval_gate:call-failed-1",
+      resolved_call_id: "call-failed-1",
       approved_tool_result: {
         content: [
           {
@@ -334,8 +342,12 @@ describe("ToolApprovalDialog", () => {
         isError: true,
       },
       continuation_blocks: [],
+      error_code: "LOCAL_CHAT_RESUME_FAILED",
       error: "upstream error: do request failed",
+      retryable: true,
       execution_graph_execution_id: "graph-exec-failed-1",
+      pending_approval_gate_ids: [],
+      next_pending_approval_tokens: [],
       execution_graph: {
         execution_id: "graph-exec-failed-1",
       },
@@ -491,6 +503,9 @@ describe("ToolApprovalDialog", () => {
   it("refreshes canonical pending approvals after a local approval returns waiting_approval", async () => {
     mockApproveTool.mockResolvedValueOnce({
       status: "LOCAL_CHAT_WAITING_APPROVAL",
+      approval_token: "approval-local-waiting-1",
+      resolved_gate_node_id: "approval_gate:call-local-waiting-1",
+      resolved_call_id: "call-local-waiting-1",
       approved_tool_result: { ok: true },
       continuation_blocks: [
         {
@@ -514,6 +529,8 @@ describe("ToolApprovalDialog", () => {
         },
       ],
       execution_graph_execution_id: "graph-exec-waiting-1",
+      pending_approval_gate_ids: ["approval_gate:call-local-next-1"],
+      next_pending_approval_tokens: ["approval-local-next-1"],
     } as unknown)
     mockListPendingMcpApprovals.mockResolvedValueOnce([
       {

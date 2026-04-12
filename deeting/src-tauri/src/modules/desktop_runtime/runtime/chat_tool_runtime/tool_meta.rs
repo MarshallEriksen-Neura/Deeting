@@ -525,21 +525,86 @@ fn gate_node_id_from_graph_value(
         .to_string()
 }
 
+fn update_finalize_node_status_from_graph(execution_graph: &mut serde_json::Value) {
+    let Some(nodes) = execution_graph
+        .get("nodes")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return;
+    };
+
+    let has_pending_approval = nodes.iter().any(|node| {
+        node.get("node_type").and_then(serde_json::Value::as_str) == Some("approval_gate")
+            && node
+                .get("status")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|status| {
+                    matches!(
+                        status,
+                        "waiting_approval" | "approving" | "approval_failed"
+                    )
+                })
+    });
+
+    let next_status = if has_pending_approval { "pending" } else { "success" };
+    update_finalize_node_status(execution_graph, next_status);
+}
+
+pub(crate) fn mark_approval_gate_approving(
+    suspended: &mut SuspendedChatToolExecution,
+    call_id: Option<&str>,
+) -> (String, String) {
+    let resolved_call_id = call_id.unwrap_or(suspended.pending_call_id()).trim().to_string();
+    let gate_node_id = suspended
+        .approval_gate_node_id_for_call_id(resolved_call_id.as_str())
+        .unwrap_or_else(|| suspended.pending_gate_node_id().to_string());
+    let tool_node_id = suspended
+        .tool_node_id_for_call_id(resolved_call_id.as_str())
+        .unwrap_or_else(|| suspended.pending_tool_node_id().to_string());
+
+    update_execution_graph_node(
+        &mut suspended.execution_graph,
+        gate_node_id.as_str(),
+        "approving",
+        None,
+    );
+    update_execution_graph_node(
+        &mut suspended.execution_graph,
+        tool_node_id.as_str(),
+        "running",
+        None,
+    );
+    update_finalize_node_status_from_graph(&mut suspended.execution_graph);
+    append_execution_graph_event(
+        &mut suspended.execution_graph,
+        gate_node_id.as_str(),
+        "approval_gate.approving",
+        serde_json::json!({
+            "call_id": resolved_call_id,
+            "execution_graph_gate_node_id": gate_node_id,
+            "execution_graph_tool_node_id": tool_node_id,
+        }),
+    );
+
+    (gate_node_id, tool_node_id)
+}
+
 pub(super) fn apply_approved_tool_result_to_execution_graph(
     suspended: &mut SuspendedChatToolExecution,
     call_id: Option<&str>,
     tool_result: &serde_json::Value,
 ) {
+    let resolved_call_id = call_id.unwrap_or(suspended.pending_call_id()).trim().to_string();
     let gate_node_id = suspended
-        .approval_gate_node_id_for_call_id(call_id.unwrap_or(suspended.pending_call_id()))
+        .approval_gate_node_id_for_call_id(resolved_call_id.as_str())
         .unwrap_or_else(|| suspended.pending_gate_node_id().to_string());
     let tool_node_id = suspended
-        .tool_node_id_for_call_id(call_id.unwrap_or(suspended.pending_call_id()))
+        .tool_node_id_for_call_id(resolved_call_id.as_str())
         .unwrap_or_else(|| suspended.pending_tool_node_id().to_string());
     update_execution_graph_node(
         &mut suspended.execution_graph,
         gate_node_id.as_str(),
-        "success",
+        "approved",
         Some(tool_result.clone()),
     );
     update_execution_graph_node(
@@ -548,12 +613,17 @@ pub(super) fn apply_approved_tool_result_to_execution_graph(
         "success",
         Some(tool_result.clone()),
     );
-    update_finalize_node_status(&mut suspended.execution_graph, "pending");
+    update_finalize_node_status_from_graph(&mut suspended.execution_graph);
     append_execution_graph_event(
         &mut suspended.execution_graph,
         gate_node_id.as_str(),
         "approval_gate.approved",
-        tool_result.clone(),
+        serde_json::json!({
+            "call_id": resolved_call_id,
+            "execution_graph_gate_node_id": gate_node_id,
+            "execution_graph_tool_node_id": tool_node_id,
+            "tool_result": tool_result,
+        }),
     );
     append_execution_graph_event(
         &mut suspended.execution_graph,
@@ -580,7 +650,7 @@ pub(crate) fn apply_rejected_tool_result_to_execution_graph_value(
     update_execution_graph_node(
         execution_graph,
         gate_node_id.as_str(),
-        "cancelled",
+        "rejected",
         Some(rejection_payload.clone()),
     );
     update_execution_graph_node(

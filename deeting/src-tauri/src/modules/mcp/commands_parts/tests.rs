@@ -3977,6 +3977,7 @@ for raw_line in sys.stdin:
                             "approval_gate:call-session-1".to_string(),
                         ),
                         execution_graph_tool_node_id: Some("tool_call:call-session-1".to_string()),
+                        approval_status: Some("waiting_approval".to_string()),
                         created_at_unix_ms: now - 1_000,
                         expires_at_unix_ms: now + 60_000,
                     },
@@ -3999,6 +4000,7 @@ for raw_line in sys.stdin:
                         execution_graph_execution_id: None,
                         execution_graph_gate_node_id: None,
                         execution_graph_tool_node_id: None,
+                        approval_status: Some("approving".to_string()),
                         created_at_unix_ms: now - 500,
                         expires_at_unix_ms: now + 60_000,
                     },
@@ -4075,6 +4077,12 @@ for raw_line in sys.stdin:
                 .get("execution_graph_tool_node_id")
                 .and_then(|value| value.as_str()),
             Some("tool_call:call-session-1")
+        );
+        assert_eq!(
+            snapshot
+                .get("approval_status")
+                .and_then(|value| value.as_str()),
+            Some("waiting_approval")
         );
         assert!(
             snapshot

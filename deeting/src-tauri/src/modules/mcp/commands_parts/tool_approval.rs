@@ -8,9 +8,11 @@ use super::{
 use crate::modules::desktop_runtime::runtime::{
     apply_rejected_tool_result_to_execution_graph_value, delete_execution_graph_runtime_context,
     list_canonical_pending_local_approval_snapshots, load_execution_graph_snapshot,
+    load_suspended_chat_tool_execution_for_resume, mark_approval_gate_approving,
     materialize_pending_local_approval_from_runtime_context, persist_execution_graph_snapshot,
-    project_local_chat_approval_state_payload, recover_local_chat_execution_from_action,
-    resume_suspended_chat_tool_execution_after_approval,
+    persist_suspended_execution_graph_runtime, project_local_chat_approval_state_payload,
+    recover_local_chat_execution_from_action, resume_suspended_chat_tool_execution_after_approval,
+    InFlightExecutionStage,
 };
 use crate::modules::mcp::commands::common_impl::to_string;
 use crate::modules::mcp::policy::PersistedApprovalAction;
@@ -111,6 +113,39 @@ pub(crate) async fn approve_mcp_tool_payload(
             .as_ref()
             .and_then(|pending| pending.execution_graph_execution_id.as_deref()),
     );
+
+    if let Some(execution_id) = requested_execution_id.as_deref() {
+        if let Some(mut suspended) = load_suspended_chat_tool_execution_for_resume(
+            state,
+            token,
+            Some(execution_id),
+        )
+        .await?
+        {
+            if let Some(pending) = pending_before_approval.as_ref() {
+                let resolved_call_id = pending.call_id.as_deref().or(call_id);
+                let _ = mark_approval_gate_approving(&mut suspended, resolved_call_id);
+                let _ = suspended.set_pending_approval_status(token, "approving");
+                if let Err(err) = persist_suspended_execution_graph_runtime(
+                    state.mcp.store.as_ref(),
+                    &suspended,
+                    suspended.pending_approvals(),
+                    "desktop_local_chat_approval_approving",
+                    "active",
+                    InFlightExecutionStage::WaitingApproval,
+                    None,
+                )
+                .await
+                {
+                    log::warn!(
+                        "persist approving execution graph failed approval_token={} err={}",
+                        token,
+                        err
+                    );
+                }
+            }
+        }
+    }
 
     let approved = match approve_mcp_tool_inner_with_context_and_mode(
         &approval_context,
@@ -348,6 +383,7 @@ pub(crate) async fn list_pending_mcp_approvals_with_graph_inner(
 
         approvals.push(serde_json::json!({
             "status": "REQUIRES_APPROVAL",
+            "approval_status": pending.approval_status.clone().unwrap_or_else(|| "waiting_approval".to_string()),
             "approval_token": approval_token,
             "tool_id": pending.tool_id.clone(),
             "tool_name": pending.tool_name.clone(),

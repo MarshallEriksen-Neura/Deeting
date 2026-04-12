@@ -185,9 +185,14 @@ describe("extractLocalChatApprovalResume", () => {
     expect(
       extractLocalChatApprovalResume({
         status: "LOCAL_CHAT_RESUMED",
+        approval_token: "approval-1",
+        resolved_gate_node_id: "approval_gate:call-1",
+        resolved_call_id: "call-1",
         approved_tool_result: { ok: true },
         continuation_blocks: [{ id: "resume-1", type: "text", content: "done" }],
         execution_graph_execution_id: "graph-exec-1",
+        pending_approval_gate_ids: [],
+        next_pending_approval_tokens: [],
         execution_graph: {
           execution_id: "graph-exec-1",
           nodes: [],
@@ -195,6 +200,9 @@ describe("extractLocalChatApprovalResume", () => {
       })
     ).toMatchObject({
       status: "LOCAL_CHAT_RESUMED",
+      approval_token: "approval-1",
+      resolved_gate_node_id: "approval_gate:call-1",
+      resolved_call_id: "call-1",
       approved_tool_result: { ok: true },
       continuation_blocks: [{ id: "resume-1", type: "text", content: "done" }],
       execution_graph_execution_id: "graph-exec-1",
@@ -208,14 +216,24 @@ describe("extractLocalChatApprovalResume", () => {
     expect(
       extractLocalChatApprovalResume({
         status: "LOCAL_CHAT_WAITING_APPROVAL",
+        approval_token: "approval-waiting-1",
+        resolved_gate_node_id: "approval_gate:call-waiting-1",
+        resolved_call_id: "call-waiting-1",
         approved_tool_result: { ok: true },
         continuation_blocks: [],
         execution_graph_execution_id: "graph-exec-waiting-1",
+        pending_approval_gate_ids: ["approval_gate:call-next-1"],
+        next_pending_approval_tokens: ["approval-next-1"],
       })
     ).toMatchObject({
       status: "LOCAL_CHAT_WAITING_APPROVAL",
+      approval_token: "approval-waiting-1",
+      resolved_gate_node_id: "approval_gate:call-waiting-1",
+      resolved_call_id: "call-waiting-1",
       approved_tool_result: { ok: true },
       execution_graph_execution_id: "graph-exec-waiting-1",
+      pending_approval_gate_ids: ["approval_gate:call-next-1"],
+      next_pending_approval_tokens: ["approval-next-1"],
     })
   })
 })

@@ -32,14 +32,15 @@ mod tool_meta;
 #[cfg(test)]
 use inflight::PersistedPendingApproval;
 use inflight::{
-    build_pending_approval_records, clear_execution_graph_runtime_context,
-    load_suspended_chat_tool_execution_for_resume, now_unix_ms_i64,
+    build_pending_approval_records, clear_execution_graph_runtime_context, now_unix_ms_i64,
     pending_tool_call_from_persisted_approval, persist_running_tool_execution_runtime,
-    persist_suspended_execution_graph_runtime, persistable_inflight_context_from_value,
+    persistable_inflight_context_from_value,
 };
 pub(crate) use inflight::{
     list_canonical_pending_local_approval_snapshots,
-    materialize_pending_local_approval_from_runtime_context, serialize_inflight_runtime_context,
+    load_suspended_chat_tool_execution_for_resume,
+    materialize_pending_local_approval_from_runtime_context,
+    persist_suspended_execution_graph_runtime, serialize_inflight_runtime_context,
     InFlightExecutionStage,
 };
 use recovery::extract_resume_response_text;
@@ -56,7 +57,9 @@ use replay::finalize_tool_round;
 #[cfg(test)]
 use replay::{build_structured_tool_replay_messages, serialize_tool_replay_content};
 pub(crate) use suspended::SuspendedChatToolExecution;
-pub(crate) use tool_meta::apply_rejected_tool_result_to_execution_graph_value;
+pub(crate) use tool_meta::{
+    apply_rejected_tool_result_to_execution_graph_value, mark_approval_gate_approving,
+};
 use tool_meta::{
     apply_approved_tool_result_to_execution_graph, attach_graph_metadata_to_pending_tool_meta,
     build_effective_tool_call_meta, build_state_effective_tool_call_meta,

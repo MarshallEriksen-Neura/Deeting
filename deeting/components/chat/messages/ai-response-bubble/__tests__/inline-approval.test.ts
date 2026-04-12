@@ -44,6 +44,9 @@ describe("runInlineApproval", () => {
   it("refreshes canonical pending approvals when the local approval result is still waiting on the next gate", async () => {
     mockApproveTool.mockResolvedValueOnce({
       status: "LOCAL_CHAT_WAITING_APPROVAL",
+      approval_token: "approval-inline-1",
+      resolved_gate_node_id: "approval_gate:call-inline-1",
+      resolved_call_id: "call-inline-1",
       approved_tool_result: { ok: true },
       continuation_blocks: [
         {
@@ -67,6 +70,8 @@ describe("runInlineApproval", () => {
         },
       ],
       execution_graph_execution_id: "graph-inline-1",
+      pending_approval_gate_ids: ["approval_gate:call-inline-next-1"],
+      next_pending_approval_tokens: ["approval-inline-next-1"],
     } as unknown)
     mockListPendingMcpApprovals.mockResolvedValueOnce([
       {

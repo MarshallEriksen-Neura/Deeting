@@ -97,6 +97,12 @@ export async function runInlineApproval({
           sessionId,
           messages: resolveMessages(),
           excludeCallIds: [approval.meta.call_id],
+          excludeApprovalTokens: [approval.approval_token, resumePayload.approval_token],
+          excludeGateNodeIds: [
+            approval.meta.execution_graph_gate_node_id,
+            resumePayload.resolved_gate_node_id,
+          ],
+          preferredApprovalToken: resumePayload.next_pending_approval_tokens[0],
           forceReplace: true,
         });
       } catch (refreshError) {

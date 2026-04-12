@@ -15,6 +15,8 @@ type RefreshBridgePendingApprovalsOptions = {
   sessionId: string | null | undefined
   messages: Message[]
   excludeCallIds?: Array<string | null | undefined>
+  excludeApprovalTokens?: Array<string | null | undefined>
+  excludeGateNodeIds?: Array<string | null | undefined>
   preferredApprovalToken?: string | null | undefined
   currentApprovalKey?: string | null | undefined
   forceReplace?: boolean
@@ -64,6 +66,8 @@ export async function refreshBridgePendingApprovalsFromCanonical({
   sessionId,
   messages,
   excludeCallIds = [],
+  excludeApprovalTokens = [],
+  excludeGateNodeIds = [],
   preferredApprovalToken,
   currentApprovalKey,
   forceReplace = false,
@@ -79,6 +83,16 @@ export async function refreshBridgePendingApprovalsFromCanonical({
   const callIdToMessageId = buildCallIdToMessageIdIndex(messages)
   const excludedCallIds = new Set(
     excludeCallIds.map((callId) => normalizeToken(callId)).filter((callId) => callId.length > 0)
+  )
+  const excludedApprovalTokens = new Set(
+    excludeApprovalTokens
+      .map((approvalToken) => normalizeToken(approvalToken))
+      .filter((approvalToken) => approvalToken.length > 0)
+  )
+  const excludedGateNodeIds = new Set(
+    excludeGateNodeIds
+      .map((gateNodeId) => normalizeToken(gateNodeId))
+      .filter((gateNodeId) => gateNodeId.length > 0)
   )
 
   const snapshotList = await listPendingMcpApprovals(normalizedSessionId)
@@ -104,6 +118,9 @@ export async function refreshBridgePendingApprovalsFromCanonical({
 
     const approvalToken = normalizeToken(approval.approval_token)
     if (!approvalToken || seenTokens.has(approvalToken)) continue
+    if (excludedApprovalTokens.has(approvalToken)) continue
+    const gateNodeId = normalizeToken(approval.meta.execution_graph_gate_node_id)
+    if (gateNodeId && excludedGateNodeIds.has(gateNodeId)) continue
     seenTokens.add(approvalToken)
     approvals.push(approval)
   }

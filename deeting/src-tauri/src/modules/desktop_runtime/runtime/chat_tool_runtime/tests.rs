@@ -762,7 +762,7 @@ fn apply_rejected_tool_result_updates_graph_without_runtime_shell() {
         .expect("nodes");
     assert_eq!(
         nodes[0].get("status").and_then(serde_json::Value::as_str),
-        Some("cancelled")
+        Some("rejected")
     );
     assert_eq!(
         nodes[1].get("status").and_then(serde_json::Value::as_str),
@@ -770,7 +770,7 @@ fn apply_rejected_tool_result_updates_graph_without_runtime_shell() {
     );
     assert_eq!(
         nodes[2].get("status").and_then(serde_json::Value::as_str),
-        Some("cancelled")
+        Some("success")
     );
     let events = execution_graph
         .get("events")
@@ -825,6 +825,7 @@ fn suspended_execution_keeps_remaining_pending_approvals_after_one_is_approved()
                 execution_graph_execution_id: Some("graph-pending-approval-sync-1".to_string()),
                 execution_graph_gate_node_id: Some("approval_gate:call-1".to_string()),
                 execution_graph_tool_node_id: Some("tool_call:call-1".to_string()),
+                approval_status: Some("approved".to_string()),
                 created_at_unix_ms: 1,
                 expires_at_unix_ms: 2,
             },
@@ -845,6 +846,7 @@ fn suspended_execution_keeps_remaining_pending_approvals_after_one_is_approved()
                 execution_graph_execution_id: Some("graph-pending-approval-sync-1".to_string()),
                 execution_graph_gate_node_id: Some("approval_gate:call-2".to_string()),
                 execution_graph_tool_node_id: Some("tool_call:call-2".to_string()),
+                approval_status: Some("waiting_approval".to_string()),
                 created_at_unix_ms: 1,
                 expires_at_unix_ms: 2,
             },
@@ -936,6 +938,7 @@ fn serialize_inflight_runtime_context_round_trips_waiting_approval_state() {
             execution_graph_execution_id: Some("graph-1".to_string()),
             execution_graph_gate_node_id: Some("approval_gate:call-1".to_string()),
             execution_graph_tool_node_id: Some("tool_call:call-1".to_string()),
+            approval_status: Some("waiting_approval".to_string()),
             created_at_unix_ms: 1,
             expires_at_unix_ms: 2,
         }],

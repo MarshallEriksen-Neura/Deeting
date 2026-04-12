@@ -25,6 +25,7 @@ pub struct PendingToolCall {
     pub execution_graph_execution_id: Option<String>,
     pub execution_graph_gate_node_id: Option<String>,
     pub execution_graph_tool_node_id: Option<String>,
+    pub approval_status: Option<String>,
     pub created_at_unix_ms: i128,
     pub expires_at_unix_ms: i128,
 }
@@ -167,6 +168,7 @@ pub fn build_pending_tool_call(
         execution_graph_execution_id: None,
         execution_graph_gate_node_id: None,
         execution_graph_tool_node_id: None,
+        approval_status: Some("waiting_approval".to_string()),
         created_at_unix_ms: created_at,
         expires_at_unix_ms: created_at + pending_tool_call_ttl_ms(),
     }
