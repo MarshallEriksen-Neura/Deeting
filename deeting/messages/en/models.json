@@ -87,9 +87,10 @@
         "custom": "Custom Path"
       },
       "chatContentCompatibility": "Chat content compatibility",
-      "chatContentCompatibilityHint": "Use string-only when this OpenAI-compatible chat endpoint rejects structured message content blocks or JSON objects.",
+      "chatContentCompatibilityHint": "Default uses string content for OpenAI-compatible chat/completions MCP replies. Switch to structured only if this endpoint supports native structured message content.",
       "chatContentCompatibilityModes": {
         "auto": "Auto",
+        "structured": "Structured",
         "stringOnly": "String only"
       },
       "upstreamPath": "Request path",

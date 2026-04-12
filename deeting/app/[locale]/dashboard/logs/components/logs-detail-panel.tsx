@@ -37,6 +37,12 @@ export function LogsDetailPanel({ log }: LogsDetailPanelProps) {
   const cacheSourceLabel = log ? getCacheSourceLabel(cacheSource, t) : t("detail.metrics.na")
 
   const canCopy = Boolean(log)
+  const requestPayload = log?.meta && typeof log.meta === "object"
+    ? (log.meta as Record<string, unknown>).request_payload
+    : null
+  const upstreamRequest = log?.meta && typeof log.meta === "object"
+    ? (log.meta as Record<string, unknown>).upstream_request
+    : null
 
   const handleCopy = async () => {
     if (!log || typeof window === "undefined") return
@@ -236,6 +242,20 @@ export function LogsDetailPanel({ log }: LogsDetailPanelProps) {
                   value={usageSourceLabel}
                 />
               </div>
+              {upstreamRequest ? (
+                <JsonDetail
+                  className="mt-4"
+                  title={t("detail.sections.upstreamRequest")}
+                  value={upstreamRequest}
+                />
+              ) : null}
+              {requestPayload ? (
+                <JsonDetail
+                  className="mt-4"
+                  title={t("detail.sections.requestPayload")}
+                  value={requestPayload}
+                />
+              ) : null}
             </section>
           </div>
         )}
@@ -306,6 +326,27 @@ function MetaItem({ label, value }: { label: string; value: string }) {
       <p className="text-xs text-[var(--muted)]">{label}</p>
       <p className="mt-1 break-all font-mono text-xs text-[var(--foreground)]">{value}</p>
     </div>
+  )
+}
+
+function JsonDetail({
+  title,
+  value,
+  className,
+}: {
+  title: string
+  value: unknown
+  className?: string
+}) {
+  return (
+    <details className={cn("mt-4 rounded-lg border border-[var(--border)]/60 bg-[var(--background)]/20", className)}>
+      <summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-[var(--foreground)]">
+        {title}
+      </summary>
+      <pre className="overflow-x-auto border-t border-[var(--border)]/50 px-3 py-3 text-xs text-[var(--foreground)]">
+        {JSON.stringify(value, null, 2)}
+      </pre>
+    </details>
   )
 }
 

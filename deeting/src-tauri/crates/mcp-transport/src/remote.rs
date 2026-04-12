@@ -289,12 +289,9 @@ async fn spawn_local_stdio_client(
             }
         });
     }
-    client_info()
-        .serve(transport)
-        .await
-        .map_err(|err| {
-            enrich_stdio_connect_error(err.to_string(), stderr_lines.as_ref(), command, args)
-        })
+    client_info().serve(transport).await.map_err(|err| {
+        enrich_stdio_connect_error(err.to_string(), stderr_lines.as_ref(), command, args)
+    })
 }
 
 fn enrich_stdio_connect_error(
@@ -836,9 +833,8 @@ pub fn unbounded_stderr_channel() -> (UnboundedSender<String>, UnboundedReceiver
 #[cfg(test)]
 mod tests {
     use super::{
-        build_url_with_same_origin, extract_legacy_sse_endpoint_path,
-        enrich_stdio_connect_error, heuristic_streamable_http_fallback_urls,
-        is_http_405_method_not_allowed_error,
+        build_url_with_same_origin, enrich_stdio_connect_error, extract_legacy_sse_endpoint_path,
+        heuristic_streamable_http_fallback_urls, is_http_405_method_not_allowed_error,
         legacy_sse_proxy_command_candidates, local_stdio_command_candidates_with_discovered_paths,
         looks_like_legacy_sse_endpoint_url, spawn_local_stdio_client,
     };
@@ -957,9 +953,21 @@ mod tests {
     #[tokio::test]
     async fn spawn_local_stdio_client_surfaces_subprocess_stderr_on_initialize_failure() {
         let (command, args): (&str, Vec<String>) = if cfg!(target_os = "windows") {
-            ("cmd", vec!["/C".to_string(), "echo usage from stderr 1>&2 & exit /b 1".to_string()])
+            (
+                "cmd",
+                vec![
+                    "/C".to_string(),
+                    "echo usage from stderr 1>&2 & exit /b 1".to_string(),
+                ],
+            )
         } else {
-            ("sh", vec!["-c".to_string(), "echo usage from stderr >&2; exit 1".to_string()])
+            (
+                "sh",
+                vec![
+                    "-c".to_string(),
+                    "echo usage from stderr >&2; exit 1".to_string(),
+                ],
+            )
         };
 
         let err = spawn_local_stdio_client(command, &args, None, None)

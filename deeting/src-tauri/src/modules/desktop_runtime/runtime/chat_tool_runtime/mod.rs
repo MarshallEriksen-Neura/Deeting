@@ -553,6 +553,15 @@ fn rewind_round_for_post_approval_continuation(state: &mut LocalChatToolRuntimeS
     state.round = state.round.saturating_sub(1);
 }
 
+fn classify_local_tool_execution_error_code(error: &str) -> &'static str {
+    let normalized = error.trim();
+    if normalized.starts_with("MCP tool '") && normalized.contains(" timed out after ") {
+        "MCP_TOOL_TIMEOUT"
+    } else {
+        "LOCAL_TOOL_EXECUTION_FAILED"
+    }
+}
+
 struct LocalRealtimeToolTraceEmitter {
     tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
     trace_id: Option<String>,
@@ -1221,7 +1230,7 @@ async fn process_chat_tool_calls(
                         realtime_emitter,
                         Some(call_id.as_str()),
                         &tool_name,
-                        "LOCAL_TOOL_EXECUTION_FAILED",
+                        classify_local_tool_execution_error_code(&error),
                         error,
                     );
                 }

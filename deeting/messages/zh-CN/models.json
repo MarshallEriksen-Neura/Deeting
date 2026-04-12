@@ -92,9 +92,10 @@
         "weight": "路由权重",
         "priority": "路由优先级",
         "chatContentCompatibility": "对话内容兼容模式",
-        "chatContentCompatibilityHint": "当 OpenAI 兼容 chat 接口不接受结构化 content 数组或 JSON 对象时，切换为仅字符串。",
+        "chatContentCompatibilityHint": "默认会把 OpenAI 兼容 chat/completions 的 MCP 返回内容按字符串发送；如果该端点支持原生结构化消息内容，再切回结构化。",
         "chatContentCompatibilityModes": {
           "auto": "自动",
+          "structured": "结构化",
           "stringOnly": "仅字符串"
         }
       },

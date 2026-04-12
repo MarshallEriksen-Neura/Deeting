@@ -329,6 +329,8 @@ pub fn build_gateway_log_meta(
     usage: &GatewayUsageDetails,
     usage_source: Option<&str>,
     cache: &GatewayCacheDetails,
+    request_payload: Option<&Value>,
+    upstream_request: Option<&Value>,
 ) -> Option<Value> {
     let normalized_usage_source = usage_source
         .map(str::trim)
@@ -346,7 +348,9 @@ pub fn build_gateway_log_meta(
         || usage.provider_usage_raw.is_some()
         || cache.is_cached
         || normalized_usage_source != "unknown"
-        || normalized_cache_source != "unknown";
+        || normalized_cache_source != "unknown"
+        || request_payload.is_some()
+        || upstream_request.is_some();
 
     if !has_extra_details {
         return None;
@@ -379,6 +383,12 @@ pub fn build_gateway_log_meta(
     meta.insert("usage_normalized".to_string(), Value::Object(normalized));
     if let Some(raw) = usage.provider_usage_raw.clone() {
         meta.insert("provider_usage_raw".to_string(), raw);
+    }
+    if let Some(payload) = request_payload.cloned() {
+        meta.insert("request_payload".to_string(), payload);
+    }
+    if let Some(request) = upstream_request.cloned() {
+        meta.insert("upstream_request".to_string(), request);
     }
     Some(Value::Object(meta))
 }
@@ -514,7 +524,7 @@ mod tests {
         let usage = extract_usage_details_from_response(&payload);
         let cache =
             extract_cache_details_from_response(&BTreeMap::new(), Some(&payload), Some(&usage));
-        let meta = build_gateway_log_meta(&usage, Some("provider_reported"), &cache)
+        let meta = build_gateway_log_meta(&usage, Some("provider_reported"), &cache, None, None)
             .expect("meta should be produced");
 
         assert_eq!(

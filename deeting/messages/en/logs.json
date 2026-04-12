@@ -67,7 +67,9 @@
         "performance": "Performance Metrics",
         "tokenConsumption": "Token Consumption",
         "costAnalysis": "Cost Analysis",
-        "technicalMetadata": "Technical Metadata"
+        "technicalMetadata": "Technical Metadata",
+        "upstreamRequest": "Upstream Request",
+        "requestPayload": "Request Payload"
       },
       "trace": {
         "client": "Client Request",

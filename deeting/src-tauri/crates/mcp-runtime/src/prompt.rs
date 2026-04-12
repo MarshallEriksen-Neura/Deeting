@@ -179,7 +179,9 @@ mod tests {
         assert!(prompt.contains("Mandatory Discovery Gate"));
         assert!(prompt.contains("call `search_sdk` before making any capability claim or refusal"));
         assert!(prompt.contains("reserved capability-discovery primitive"));
-        assert!(prompt.contains("name also contains words like `search`, `find`, `lookup`, or `query`"));
+        assert!(
+            prompt.contains("name also contains words like `search`, `find`, `lookup`, or `query`")
+        );
         assert!(prompt.contains("Do not say a tool is unavailable"));
     }
 

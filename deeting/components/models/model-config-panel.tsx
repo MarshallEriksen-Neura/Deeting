@@ -18,7 +18,7 @@ const CHAT_COMPLETIONS_PATH = "chat/completions"
 const RESPONSES_PATH = "responses"
 
 type RequestMode = "chat_completions" | "responses" | "custom"
-type ChatContentCompatibilityMode = "auto" | "string_only"
+type ChatContentCompatibilityMode = "auto" | "structured" | "string_only"
 
 const CHAT_CONTENT_COMPATIBILITY_KEY = "chat_content_compatibility"
 
@@ -26,6 +26,7 @@ function parseChatContentCompatibilityMode(
   configOverride?: Record<string, unknown> | null
 ): ChatContentCompatibilityMode {
   const raw = configOverride?.[CHAT_CONTENT_COMPATIBILITY_KEY]
+  if (raw === "structured") return "structured"
   return raw === "string_only" ? "string_only" : "auto"
 }
 
@@ -293,10 +294,10 @@ export function ModelConfigPanel({
     if (Object.keys(routing).length) payload.routing_config = routing
 
     if (showChatContentCompatibility && capabilities.includes("chat")) {
-      if (chatContentCompatibility === "string_only") {
+      if (chatContentCompatibility === "string_only" || chatContentCompatibility === "structured") {
         payload.config_override = {
           ...(model.config_override || {}),
-          [CHAT_CONTENT_COMPATIBILITY_KEY]: "string_only",
+          [CHAT_CONTENT_COMPATIBILITY_KEY]: chatContentCompatibility,
         }
       } else if (model.config_override?.[CHAT_CONTENT_COMPATIBILITY_KEY] != null) {
         const nextConfigOverride = { ...(model.config_override || {}) }
@@ -465,6 +466,7 @@ export function ModelConfigPanel({
                 <div className="flex flex-wrap gap-2">
                   {[
                     { id: "auto" as const, label: t("basic.chatContentCompatibilityModes.auto") },
+                    { id: "structured" as const, label: t("basic.chatContentCompatibilityModes.structured") },
                     { id: "string_only" as const, label: t("basic.chatContentCompatibilityModes.stringOnly") },
                   ].map((option) => {
                     const active = chatContentCompatibility === option.id

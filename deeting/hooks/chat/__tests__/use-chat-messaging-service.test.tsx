@@ -3,6 +3,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react"
 import {
   cancelChatCompletion,
+  cancelDesktopLocalChatCompletion,
   finalizeDesktopLocalCompare,
   streamChatCompletion,
   streamDesktopLocalChatCompletion,
@@ -52,6 +53,10 @@ const mockStreamDesktopLocalChatCompletion =
   >
 const mockCancelChatCompletion =
   cancelChatCompletion as jest.MockedFunction<typeof cancelChatCompletion>
+const mockCancelDesktopLocalChatCompletion =
+  cancelDesktopLocalChatCompletion as jest.MockedFunction<
+    typeof cancelDesktopLocalChatCompletion
+  >
 const mockFinalizeDesktopLocalCompare =
   finalizeDesktopLocalCompare as jest.MockedFunction<typeof finalizeDesktopLocalCompare>
 const mockFetchConversationHistory =
@@ -67,6 +72,7 @@ describe("useChatMessagingService pending takeover orchestration", () => {
     mockStreamChatCompletion.mockReset()
     mockStreamDesktopLocalChatCompletion.mockReset()
     mockCancelChatCompletion.mockReset()
+    mockCancelDesktopLocalChatCompletion.mockReset()
     mockFinalizeDesktopLocalCompare.mockReset()
     mockFetchConversationHistory.mockReset()
     useChatRuntimeStore.getState().resetSession()
@@ -236,23 +242,42 @@ describe("useChatMessagingService pending takeover orchestration", () => {
   })
 
   it("cancels the active request and sends the pending takeover draft", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI_INTERNALS__ = {}
     const firstRequest = createDeferred<string>()
-    mockStreamChatCompletion.mockImplementationOnce(async (_payload, _handlers, control) => {
+    mockStreamDesktopLocalChatCompletion.mockImplementationOnce(async (_payload, _handlers, control) => {
       control?.onCancel?.(() => {
         firstRequest.resolve("")
       })
       return firstRequest.promise
     })
-    mockStreamChatCompletion.mockImplementationOnce(async () => "")
-    mockCancelChatCompletion.mockResolvedValue({
+    mockStreamDesktopLocalChatCompletion.mockImplementationOnce(async () => "")
+    mockCancelDesktopLocalChatCompletion.mockResolvedValue({
       request_id: "request-1",
       status: "cancelled",
     })
 
     useChatStore.setState({
+      models: [
+        {
+          id: "model-local",
+          provider_model_id: "model-local",
+          request_route: "local_invoke",
+          runtime_source: "desktop_local",
+        } as any,
+      ],
+      config: {
+        model: "model-local",
+        temperature: 0.7,
+        topP: 1,
+        maxTokens: null,
+      },
       input: "initial prompt",
     })
-    useChatRuntimeStore.setState({ isLoading: false })
+    useChatRuntimeStore.setState({
+      sessionId: "session-local-1",
+      isLoading: false,
+    })
 
     const { result } = renderHook(() => useChatMessagingService())
 
@@ -261,7 +286,7 @@ describe("useChatMessagingService pending takeover orchestration", () => {
     })
 
     await waitFor(() => {
-      expect(useChatStore.getState().isLoading).toBe(true)
+      expect(useChatRuntimeStore.getState().isLoading).toBe(true)
     })
 
     act(() => {
@@ -281,27 +306,117 @@ describe("useChatMessagingService pending takeover orchestration", () => {
     })
 
     await waitFor(() => {
-      expect(mockCancelChatCompletion).toHaveBeenCalledTimes(1)
-      expect(mockStreamChatCompletion).toHaveBeenCalledTimes(2)
+      expect(mockCancelDesktopLocalChatCompletion).toHaveBeenCalledTimes(1)
+      expect(mockStreamDesktopLocalChatCompletion).toHaveBeenCalledTimes(2)
     })
 
-    const secondPayload = mockStreamChatCompletion.mock.calls[1]?.[0]
+    const secondPayload = mockStreamDesktopLocalChatCompletion.mock.calls[1]?.[0]
     expect(JSON.stringify(secondPayload?.messages ?? [])).toContain("follow-up prompt")
     expect(useChatStore.getState().pendingTakeover).toBeNull()
     expect(useChatStore.getState().input).toBe("")
     expect(useChatStore.getState().selectedKnowledgeFileIds).toEqual([])
+
+    delete windowWithTauri.__TAURI_INTERNALS__
+  })
+
+  it("does not double-dispatch when immediate stop consumes a deferred takeover", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI_INTERNALS__ = {}
+    const firstRequest = createDeferred<string>()
+    mockStreamDesktopLocalChatCompletion.mockImplementationOnce(async (_payload, _handlers, control) => {
+      control?.onCancel?.(() => {
+        firstRequest.resolve("")
+      })
+      return firstRequest.promise
+    })
+    mockStreamDesktopLocalChatCompletion.mockImplementation(async () => "")
+
+    useChatStore.setState({
+      models: [
+        {
+          id: "model-local",
+          provider_model_id: "model-local",
+          request_route: "local_invoke",
+          runtime_source: "desktop_local",
+        } as any,
+      ],
+      config: {
+        model: "model-local",
+        temperature: 0.7,
+        topP: 1,
+        maxTokens: null,
+      },
+      input: "initial prompt",
+    })
+    useChatRuntimeStore.setState({
+      sessionId: "session-local-2",
+      isLoading: false,
+    })
+
+    const { result } = renderHook(() => useChatMessagingService())
+
+    act(() => {
+      void result.current.sendMessage()
+    })
+
+    await waitFor(() => {
+      expect(useChatRuntimeStore.getState().isLoading).toBe(true)
+      expect(mockStreamDesktopLocalChatCompletion).toHaveBeenCalledTimes(1)
+    })
+
+    act(() => {
+      useChatStore.setState({
+        input: "follow-up prompt",
+        attachments: [],
+        selectedKnowledgeFileIds: ["doc-2"],
+      })
+      result.current.queuePendingTakeoverFromCurrentDraft("send_after_step")
+    })
+
+    await act(async () => {
+      await result.current.stopAndSendPendingTakeover()
+    })
+
+    await waitFor(() => {
+      expect(useChatRuntimeStore.getState().isLoading).toBe(false)
+    })
+
+    expect(mockStreamDesktopLocalChatCompletion).toHaveBeenCalledTimes(2)
+    const secondPayload = mockStreamDesktopLocalChatCompletion.mock.calls[1]?.[0]
+    expect(JSON.stringify(secondPayload?.messages ?? [])).toContain("follow-up prompt")
+    expect(useChatRuntimeStore.getState().pendingTakeover).toBeNull()
+    expect(useChatRuntimeStore.getState().pendingTakeoverRequestedAction).toBeNull()
+
+    delete windowWithTauri.__TAURI_INTERNALS__
   })
 
   it("auto-dispatches a deferred pending takeover once the active request settles", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI_INTERNALS__ = {}
     useChatStore.setState({
+      models: [
+        {
+          id: "model-local",
+          provider_model_id: "model-local",
+          request_route: "local_invoke",
+          runtime_source: "desktop_local",
+        } as any,
+      ],
+      config: {
+        model: "model-local",
+        temperature: 0.7,
+        topP: 1,
+        maxTokens: null,
+      },
       input: "deferred prompt",
       selectedKnowledgeFileIds: ["doc-3"],
     })
     useChatRuntimeStore.setState({
+      sessionId: "session-local-3",
       isLoading: true,
     })
 
-    mockStreamChatCompletion.mockResolvedValueOnce("")
+    mockStreamDesktopLocalChatCompletion.mockResolvedValueOnce("")
 
     const { result, rerender } = renderHook(() => useChatMessagingService())
 
@@ -312,26 +427,47 @@ describe("useChatMessagingService pending takeover orchestration", () => {
     rerender()
 
     await waitFor(() => {
-      expect(mockStreamChatCompletion).toHaveBeenCalledTimes(1)
+      expect(mockStreamDesktopLocalChatCompletion).toHaveBeenCalledTimes(1)
     })
 
-    const firstPayload = mockStreamChatCompletion.mock.calls[0]?.[0]
+    const firstPayload = mockStreamDesktopLocalChatCompletion.mock.calls[0]?.[0]
     expect(JSON.stringify(firstPayload?.messages ?? [])).toContain("deferred prompt")
     expect(useChatStore.getState().pendingTakeover).toBeNull()
     expect(useChatStore.getState().pendingTakeoverRequestedAction).toBeNull()
     expect(useChatStore.getState().input).toBe("")
     expect(useChatStore.getState().selectedKnowledgeFileIds).toEqual([])
+
+    delete windowWithTauri.__TAURI_INTERNALS__
   })
 
   it("auto-dispatches a scheduled takeover after the active streamed request naturally finishes", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI_INTERNALS__ = {}
     const firstRequest = createDeferred<string>()
-    mockStreamChatCompletion.mockImplementationOnce(async () => firstRequest.promise)
-    mockStreamChatCompletion.mockImplementationOnce(async () => "")
+    mockStreamDesktopLocalChatCompletion.mockImplementationOnce(async () => firstRequest.promise)
+    mockStreamDesktopLocalChatCompletion.mockImplementationOnce(async () => "")
 
     useChatStore.setState({
+      models: [
+        {
+          id: "model-local",
+          provider_model_id: "model-local",
+          request_route: "local_invoke",
+          runtime_source: "desktop_local",
+        } as any,
+      ],
+      config: {
+        model: "model-local",
+        temperature: 0.7,
+        topP: 1,
+        maxTokens: null,
+      },
       input: "initial prompt",
     })
-    useChatRuntimeStore.setState({ isLoading: false })
+    useChatRuntimeStore.setState({
+      sessionId: "session-local-4",
+      isLoading: false,
+    })
 
     const { result } = renderHook(() => useChatMessagingService())
 
@@ -341,7 +477,7 @@ describe("useChatMessagingService pending takeover orchestration", () => {
 
     await waitFor(() => {
       expect(useChatRuntimeStore.getState().isLoading).toBe(true)
-      expect(mockStreamChatCompletion).toHaveBeenCalledTimes(1)
+      expect(mockStreamDesktopLocalChatCompletion).toHaveBeenCalledTimes(1)
     })
 
     act(() => {
@@ -361,15 +497,17 @@ describe("useChatMessagingService pending takeover orchestration", () => {
     })
 
     await waitFor(() => {
-      expect(mockStreamChatCompletion).toHaveBeenCalledTimes(2)
+      expect(mockStreamDesktopLocalChatCompletion).toHaveBeenCalledTimes(2)
     })
 
-    const secondPayload = mockStreamChatCompletion.mock.calls[1]?.[0]
+    const secondPayload = mockStreamDesktopLocalChatCompletion.mock.calls[1]?.[0]
     expect(JSON.stringify(secondPayload?.messages ?? [])).toContain("queued follow-up")
     expect(useChatRuntimeStore.getState().pendingTakeover).toBeNull()
     expect(useChatRuntimeStore.getState().pendingTakeoverRequestedAction).toBeNull()
     expect(useChatStore.getState().input).toBe("")
     expect(useChatStore.getState().selectedKnowledgeFileIds).toEqual([])
+
+    delete windowWithTauri.__TAURI_INTERNALS__
   })
 
   it("cancels the pending takeover without touching the active run", () => {

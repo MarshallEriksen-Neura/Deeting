@@ -1,3 +1,4 @@
+use super::classify_local_tool_execution_error_code;
 use super::*;
 use crate::modules::desktop_runtime::runtime::build_local_tool_call_install_gate_error_meta;
 use crate::modules::desktop_runtime::runtime::LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE;
@@ -51,6 +52,18 @@ fn install_gate_error_meta_uses_stable_not_installed_code() {
     );
     assert_eq!(meta["status"], serde_json::json!("error"));
     assert_eq!(meta["name"], serde_json::json!("stock_quotes"));
+}
+
+#[test]
+fn classify_local_tool_execution_error_code_detects_mcp_timeout() {
+    assert_eq!(
+        classify_local_tool_execution_error_code("MCP tool 'firecrawl' timed out after 60s"),
+        "MCP_TOOL_TIMEOUT"
+    );
+    assert_eq!(
+        classify_local_tool_execution_error_code("stdio client transport closed"),
+        "LOCAL_TOOL_EXECUTION_FAILED"
+    );
 }
 
 #[test]
@@ -281,7 +294,7 @@ fn enrich_response_with_tool_trace_falls_back_to_execution_graph_blocks() {
 }
 
 #[test]
-fn serialize_tool_replay_content_preserves_structured_content_payloads() {
+fn serialize_tool_replay_content_prefers_structured_content_only() {
     let item = serde_json::json!({
         "id": "call_tavily",
         "name": "tavily-search",
@@ -304,7 +317,7 @@ fn serialize_tool_replay_content_preserves_structured_content_payloads() {
     let reparsed: serde_json::Value =
         serde_json::from_str(&serialized).expect("structured tool replay should stay json");
 
-    assert_eq!(reparsed, item["result"]);
+    assert_eq!(reparsed, item["result"]["structuredContent"]);
 }
 
 #[test]

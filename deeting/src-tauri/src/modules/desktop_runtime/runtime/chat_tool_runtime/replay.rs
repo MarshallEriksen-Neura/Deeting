@@ -131,12 +131,11 @@ pub(super) fn serialize_tool_replay_content(item: &serde_json::Value) -> String 
         if let Some(text) = result.as_str() {
             return text.to_string();
         }
-        if result
+        if let Some(structured) = result
             .get("structuredContent")
             .filter(|value| !value.is_null())
-            .is_some()
         {
-            return serde_json::to_string(result).unwrap_or_else(|_| "{}".to_string());
+            return serde_json::to_string(structured).unwrap_or_else(|_| "{}".to_string());
         }
         if let Some(extracted) = extract_mcp_result_text_content(result) {
             return extracted;

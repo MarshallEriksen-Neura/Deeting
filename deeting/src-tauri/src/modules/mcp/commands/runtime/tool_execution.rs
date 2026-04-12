@@ -19,7 +19,9 @@ use crate::modules::skill_runtime::{
 };
 use futures_util::FutureExt;
 use mcp_storage::types::LocalSkillToolBindingSnapshot;
-use std::{any::Any, future::Future, panic::AssertUnwindSafe};
+use std::{any::Any, future::Future, panic::AssertUnwindSafe, time::Duration};
+
+const DEFAULT_MCP_TOOL_TIMEOUT_SECS: u64 = 180;
 
 fn is_stdio_invocation_error(error: &str) -> bool {
     let normalized = error.trim().to_ascii_lowercase();
@@ -35,6 +37,46 @@ fn stdio_status_for_execution_error(error: &str) -> mcp_core::types::McpToolStat
         mcp_core::types::McpToolStatus::Healthy
     } else {
         mcp_core::types::McpToolStatus::Error
+    }
+}
+
+fn resolve_mcp_tool_execution_timeout(tool: &McpTool) -> Duration {
+    let seconds = serde_json::from_str::<Value>(&tool.config_json)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("execution")
+                .and_then(|execution| execution.get("timeout_seconds"))
+                .and_then(Value::as_u64)
+        })
+        .unwrap_or(DEFAULT_MCP_TOOL_TIMEOUT_SECS)
+        .max(1);
+    Duration::from_secs(seconds)
+}
+
+fn format_mcp_tool_timeout(timeout: Duration) -> String {
+    if timeout.subsec_nanos() == 0 {
+        format!("{}s", timeout.as_secs())
+    } else {
+        format!("{}ms", timeout.as_millis())
+    }
+}
+
+async fn run_mcp_tool_future_with_timeout<T, F>(
+    tool_name: &str,
+    timeout: Duration,
+    future: F,
+) -> Result<T, String>
+where
+    F: Future<Output = Result<T, String>>,
+{
+    match tokio::time::timeout(timeout, future).await {
+        Ok(result) => result,
+        Err(_) => Err(format!(
+            "MCP tool '{}' timed out after {}",
+            tool_name,
+            format_mcp_tool_timeout(timeout)
+        )),
     }
 }
 
@@ -1157,6 +1199,8 @@ pub(crate) async fn execute_mcp_tool(
     tool: &McpTool,
     arguments: &Value,
 ) -> Result<Value, String> {
+    let timeout = resolve_mcp_tool_execution_timeout(tool);
+
     if tool.is_remote_sse() {
         let sse_url = tool
             .remote_sse_url()
@@ -1164,16 +1208,25 @@ pub(crate) async fn execute_mcp_tool(
         let remote_tool_name = tool
             .remote_tool_name()
             .ok_or_else(|| format!("remote tool {} is missing remote tool name", tool.name))?;
-        return call_remote_sse_tool(&sse_url, &remote_tool_name, arguments).await;
+        return run_mcp_tool_future_with_timeout(
+            &tool.name,
+            timeout,
+            call_remote_sse_tool(&sse_url, &remote_tool_name, arguments),
+        )
+        .await;
     }
 
     if tool.is_stdio_mcp_tool() {
         let env = resolve_local_tool_env(store, tool).await?;
         if let Some(runtime) = runtime_state {
-            let result = runtime
-                .stdio_mcp_sessions
-                .call_tool(tool, env.as_ref(), arguments)
-                .await;
+            let result = run_mcp_tool_future_with_timeout(
+                &tool.name,
+                timeout,
+                runtime
+                    .stdio_mcp_sessions
+                    .call_tool(tool, env.as_ref(), arguments),
+            )
+            .await;
             match result {
                 Ok(value) => {
                     let _ = crate::modules::mcp::update_stdio_mcp_server_statuses(
@@ -1207,10 +1260,20 @@ pub(crate) async fn execute_mcp_tool(
             .stdio_mcp_tool_name()
             .ok_or_else(|| format!("stdio MCP tool {} is missing tool metadata", tool.name))?;
         let args = tool.args.clone().unwrap_or_default();
-        return call_local_stdio_tool(command, &args, env.as_ref(), &tool_name, arguments).await;
+        return run_mcp_tool_future_with_timeout(
+            &tool.name,
+            timeout,
+            call_local_stdio_tool(command, &args, env.as_ref(), &tool_name, arguments),
+        )
+        .await;
     }
 
-    execute_local_mcp_tool(store, tool, arguments).await
+    run_mcp_tool_future_with_timeout(
+        &tool.name,
+        timeout,
+        execute_local_mcp_tool(store, tool, arguments),
+    )
+    .await
 }
 
 #[cfg_attr(any(not(test), target_os = "windows"), allow(dead_code))]
@@ -1774,14 +1837,44 @@ pub(crate) async fn reject_mcp_tool_inner_with_mode(
 #[cfg(test)]
 mod tests {
     use super::{
-        extract_browser_retry_recovered_approval_request, format_tool_execution_panic,
-        guard_tool_execution_future, is_stdio_invocation_error, resolve_core_tool_name,
-        stdio_status_for_execution_error,
+        extract_browser_retry_recovered_approval_request, format_mcp_tool_timeout,
+        format_tool_execution_panic, guard_tool_execution_future, is_stdio_invocation_error,
+        resolve_core_tool_name, resolve_mcp_tool_execution_timeout,
+        run_mcp_tool_future_with_timeout, stdio_status_for_execution_error,
     };
     use crate::modules::capability_control_plane::{
         resolve_official_skill_host_tool_route, OfficialSkillHostToolRoute,
     };
-    use mcp_core::types::McpToolStatus;
+    use mcp_core::types::{McpConflictStatus, McpSourceType, McpTool, McpToolStatus};
+    use std::collections::HashMap;
+    use std::time::Duration;
+
+    fn mock_mcp_tool(config_json: &str) -> McpTool {
+        McpTool {
+            id: "tool-1".to_string(),
+            identifier: None,
+            name: "mock_tool".to_string(),
+            source_type: McpSourceType::Local,
+            source_id: None,
+            status: McpToolStatus::Healthy,
+            ping_ms: None,
+            capabilities: Vec::new(),
+            description: "Mock tool".to_string(),
+            error: None,
+            command: None,
+            args: None,
+            env: Some(HashMap::new()),
+            config_json: config_json.to_string(),
+            pending_config_json: None,
+            config_hash: "hash-1".to_string(),
+            pending_config_hash: None,
+            conflict_status: McpConflictStatus::None,
+            is_read_only: false,
+            is_new: false,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            updated_at: "2026-01-01T00:00:00Z".to_string(),
+        }
+    }
 
     #[test]
     fn capability_bridge_registry_exposes_desktop_official_skill_capabilities() {
@@ -2019,6 +2112,46 @@ mod tests {
         assert_eq!(
             stdio_status_for_execution_error("stdio client transport closed"),
             McpToolStatus::Error
+        );
+    }
+
+    #[test]
+    fn resolve_mcp_tool_execution_timeout_prefers_configured_seconds() {
+        let configured = mock_mcp_tool(r#"{"execution":{"timeout_seconds":17}}"#);
+        assert_eq!(
+            resolve_mcp_tool_execution_timeout(&configured),
+            Duration::from_secs(17)
+        );
+
+        let defaulted = mock_mcp_tool("{}");
+        assert_eq!(
+            resolve_mcp_tool_execution_timeout(&defaulted),
+            Duration::from_secs(180)
+        );
+    }
+
+    #[test]
+    fn format_mcp_tool_timeout_prefers_readable_units() {
+        assert_eq!(format_mcp_tool_timeout(Duration::from_secs(9)), "9s");
+        assert_eq!(format_mcp_tool_timeout(Duration::from_millis(250)), "250ms");
+    }
+
+    #[tokio::test]
+    async fn run_mcp_tool_future_with_timeout_returns_timeout_error() {
+        let err = run_mcp_tool_future_with_timeout::<serde_json::Value, _>(
+            "mock_stdio",
+            Duration::from_millis(10),
+            async {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                Ok(serde_json::json!({"ok": true}))
+            },
+        )
+        .await
+        .expect_err("slow MCP tool should time out");
+
+        assert!(
+            err.contains("MCP tool 'mock_stdio' timed out after 10ms"),
+            "{err}"
         );
     }
 

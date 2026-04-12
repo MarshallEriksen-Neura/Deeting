@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone)]
 pub struct WorkingDirectoryPolicy {
     home_dir: PathBuf,
-    allowed_paths: Vec<String>,
     forbidden_paths: Vec<String>,
 }
 
@@ -12,7 +11,6 @@ impl WorkingDirectoryPolicy {
     pub fn new(home_dir: PathBuf, config: &ExecutionConfig) -> Self {
         Self {
             home_dir,
-            allowed_paths: config.allowed_paths.clone(),
             forbidden_paths: config.forbidden_paths.clone(),
         }
     }
@@ -31,21 +29,6 @@ impl WorkingDirectoryPolicy {
             }
         }
 
-        let is_allowed = self.allowed_paths.iter().any(|allowed| {
-            let allowed_path = self.expand_path(allowed);
-            allowed_path
-                .canonicalize()
-                .map(|candidate| canonical_path.starts_with(candidate))
-                .unwrap_or(false)
-        });
-
-        if !is_allowed {
-            return Err(format!(
-                "Path '{}' is not in allowed paths",
-                canonical_path.display()
-            ));
-        }
-
         Ok(())
     }
 
@@ -61,5 +44,61 @@ impl WorkingDirectoryPolicy {
         }
 
         PathBuf::from(expanded)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WorkingDirectoryPolicy;
+    use crate::modules::execution::ExecutionConfig;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn allows_existing_directory_outside_old_home_allowlist() {
+        let home_dir = std::env::temp_dir();
+        let temp_dir = unique_test_dir("allowed");
+        std::fs::create_dir_all(&temp_dir).expect("create temp directory");
+
+        let policy = WorkingDirectoryPolicy::new(home_dir, &ExecutionConfig::default());
+        let result = policy.validate(&temp_dir);
+
+        std::fs::remove_dir_all(&temp_dir).expect("remove temp directory");
+        assert!(
+            result.is_ok(),
+            "expected arbitrary working dir to be allowed"
+        );
+    }
+
+    #[test]
+    fn rejects_forbidden_directory() {
+        let home_dir = if cfg!(windows) {
+            PathBuf::from(r"C:\Users\tester")
+        } else {
+            PathBuf::from("/home/tester")
+        };
+        let policy = WorkingDirectoryPolicy::new(home_dir, &ExecutionConfig::default());
+        let forbidden = if cfg!(windows) {
+            PathBuf::from(r"C:\Windows")
+        } else {
+            PathBuf::from("/etc")
+        };
+
+        let error = policy
+            .validate(&forbidden)
+            .expect_err("expected forbidden directory to be rejected");
+
+        assert!(error.contains("is forbidden"));
+    }
+
+    fn unique_test_dir(label: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time before unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "deeting-working-dir-policy-{label}-{}-{nonce}",
+            std::process::id()
+        ))
     }
 }

@@ -1116,15 +1116,26 @@ export function useChatMessagingService() {
     const currentPendingTakeover = useChatRuntimeStore.getState().pendingTakeover
     if (!currentPendingTakeover) return
 
-    await cancelActiveRequest()
-    const dispatched = await dispatchDraft({
-      draft: buildPendingTakeoverDispatchDraft(currentPendingTakeover),
-      clearComposerMode: "if_matching_draft",
-    })
-    if (dispatched) {
-      clearPendingTakeover()
+    pendingTakeoverDispatchingRef.current = true
+    setPendingTakeoverRequestedAction(null)
+    try {
+      await cancelActiveRequest()
+      const dispatched = await dispatchDraft({
+        draft: buildPendingTakeoverDispatchDraft(currentPendingTakeover),
+        clearComposerMode: "if_matching_draft",
+      })
+      if (dispatched) {
+        clearPendingTakeover()
+      }
+    } finally {
+      pendingTakeoverDispatchingRef.current = false
     }
-  }, [cancelActiveRequest, clearPendingTakeover, dispatchDraft])
+  }, [
+    cancelActiveRequest,
+    clearPendingTakeover,
+    dispatchDraft,
+    setPendingTakeoverRequestedAction,
+  ])
 
   const regenerateMessage = useCallback(async (targetMessageId: string) => {
     // 并发保护：如果有正在进行的请求，先取消

@@ -11,6 +11,7 @@ use crate::modules::providers::types::{ProviderInstance, ProviderModel, Provider
 
 const CHAT_CONTENT_COMPATIBILITY_KEY: &str = "chat_content_compatibility";
 const CHAT_CONTENT_COMPATIBILITY_STRING_ONLY: &str = "string_only";
+const CHAT_CONTENT_COMPATIBILITY_STRUCTURED: &str = "structured";
 
 #[derive(Debug, Clone)]
 pub struct PreparedProviderRequest {
@@ -269,6 +270,7 @@ pub fn prepare_provider_request(
         &default_params,
         &request_builder,
         template_engine.as_str(),
+        protocol_profile.protocol_family.as_str(),
         &render_context,
         tools,
         &hb,
@@ -580,6 +582,7 @@ fn render_body(
     default_params: &Value,
     request_builder: &Value,
     engine: &str,
+    protocol_family: &str,
     context: &Value,
     tools: Option<&Value>,
     hb: &Handlebars<'static>,
@@ -591,7 +594,7 @@ fn render_body(
         simple_merge_body(&effective_template, context)
     };
     body = apply_request_builder(request_builder, body, context);
-    inject_tools(&mut body, tools, engine);
+    inject_tools(&mut body, tools, engine, protocol_family);
     Ok(body)
 }
 
@@ -637,7 +640,7 @@ fn simple_merge_body(template: &Value, context: &Value) -> Value {
     Value::Object(body)
 }
 
-fn inject_tools(body: &mut Value, tools: Option<&Value>, engine: &str) {
+fn inject_tools(body: &mut Value, tools: Option<&Value>, engine: &str, protocol_family: &str) {
     let Some(body_object) = body.as_object_mut() else {
         return;
     };
@@ -650,6 +653,21 @@ fn inject_tools(body: &mut Value, tools: Option<&Value>, engine: &str) {
         .map(sanitize_tool_definition_for_provider_compat)
         .collect::<Vec<_>>();
     if raw_tools.is_empty() {
+        return;
+    }
+
+    if protocol_family == "openai_responses" {
+        if body_object.contains_key("tools") {
+            return;
+        }
+        let items: Vec<Value> = raw_tools
+            .iter()
+            .map(render_openai_responses_tool_definition)
+            .collect();
+        body_object.insert("tools".to_string(), Value::Array(items));
+        body_object
+            .entry("tool_choice".to_string())
+            .or_insert_with(|| Value::String("auto".to_string()));
         return;
     }
 
@@ -731,6 +749,30 @@ fn inject_tools(body: &mut Value, tools: Option<&Value>, engine: &str) {
                 .or_insert_with(|| Value::String("auto".to_string()));
         }
     }
+}
+
+fn render_openai_responses_tool_definition(tool: &Value) -> Value {
+    let function = tool.get("function");
+    json!({
+        "type": "function",
+        "name": tool
+            .get("name")
+            .cloned()
+            .or_else(|| function.and_then(|value| value.get("name")).cloned())
+            .unwrap_or(Value::Null),
+        "description": tool
+            .get("description")
+            .cloned()
+            .or_else(|| function.and_then(|value| value.get("description")).cloned())
+            .unwrap_or(Value::String(String::new())),
+        "parameters": tool
+            .get("input_schema")
+            .cloned()
+            .or_else(|| tool.get("parameters").cloned())
+            .or_else(|| function.and_then(|value| value.get("parameters")).cloned())
+            .or_else(|| function.and_then(|value| value.get("input_schema")).cloned())
+            .unwrap_or_else(|| json!({})),
+    })
 }
 
 fn sanitize_tool_definition_for_provider_compat(mut tool: Value) -> Value {
@@ -911,12 +953,17 @@ fn prefers_string_only_openai_chat_content(context: &Value) -> bool {
         return false;
     }
 
-    context
+    let compatibility = context
         .get("item_config")
         .and_then(|value| value.get("config_override"))
         .and_then(|value| value.get(CHAT_CONTENT_COMPATIBILITY_KEY))
-        .and_then(Value::as_str)
-        .is_some_and(|value| value == CHAT_CONTENT_COMPATIBILITY_STRING_ONLY)
+        .and_then(Value::as_str);
+
+    match compatibility {
+        Some(CHAT_CONTENT_COMPATIBILITY_STRUCTURED) => false,
+        Some(CHAT_CONTENT_COMPATIBILITY_STRING_ONLY) => true,
+        _ => true,
+    }
 }
 
 fn stringify_openai_chat_content_if_needed(content: &Value, force_string_only: bool) -> Value {
@@ -941,9 +988,7 @@ fn openai_chat_messages_from_canonical_builder(rendered_body: Value, context: &V
 
     let rendered_messages: Vec<Value> = messages
         .iter()
-        .filter_map(|message| {
-            render_openai_chat_message_from_canonical(message, force_string_only)
-        })
+        .filter_map(|message| render_openai_chat_message_from_canonical(message, force_string_only))
         .collect();
     if !rendered_messages.is_empty() {
         body.insert("messages".to_string(), Value::Array(rendered_messages));
@@ -1548,13 +1593,19 @@ fn responses_input_from_messages_or_items_builder(
 ) -> Value {
     let mut body = rendered_body.as_object().cloned().unwrap_or_default();
 
-    if body.get("input").is_some_and(|value| !value.is_null()) {
-        return Value::Object(body);
+    if let Some(existing_input) = body.get("input").filter(|value| !value.is_null()) {
+        if let Some(normalized) = normalize_responses_direct_input(existing_input) {
+            body.insert("input".to_string(), normalized);
+            return Value::Object(body);
+        }
+        body.remove("input");
     }
 
     if let Some(input_value) = request_data.get("input") {
-        body.insert("input".to_string(), input_value.clone());
-        return Value::Object(body);
+        if let Some(normalized) = normalize_responses_direct_input(input_value) {
+            body.insert("input".to_string(), normalized);
+            return Value::Object(body);
+        }
     }
 
     if let Some(items) = request_data
@@ -1563,25 +1614,10 @@ fn responses_input_from_messages_or_items_builder(
     {
         let collected: Vec<Value> = items
             .iter()
-            .filter_map(|item| {
-                item.get("text").cloned().or_else(|| {
-                    if item.is_object() {
-                        Some(item.clone())
-                    } else {
-                        None
-                    }
-                })
-            })
+            .filter_map(canonical_input_item_to_responses_input_value)
             .collect();
-        if !collected.is_empty() {
-            body.insert(
-                "input".to_string(),
-                if collected.len() == 1 {
-                    collected[0].clone()
-                } else {
-                    Value::Array(collected)
-                },
-            );
+        if let Some(normalized) = finalize_responses_input_values(collected) {
+            body.insert("input".to_string(), normalized);
             return Value::Object(body);
         }
     }
@@ -1608,15 +1644,8 @@ fn responses_input_from_messages_or_items_builder(
             .iter()
             .filter_map(canonical_input_item_to_responses_input_value)
             .collect();
-        if !collected.is_empty() {
-            body.insert(
-                "input".to_string(),
-                if collected.len() == 1 {
-                    collected[0].clone()
-                } else {
-                    Value::Array(collected)
-                },
-            );
+        if let Some(normalized) = finalize_responses_input_values(collected) {
+            body.insert("input".to_string(), normalized);
             return Value::Object(body);
         }
     }
@@ -1648,6 +1677,122 @@ fn responses_input_from_messages_or_items_builder(
     }
 
     Value::Object(body)
+}
+
+fn normalize_responses_direct_input(input_value: &Value) -> Option<Value> {
+    match input_value {
+        Value::Null => None,
+        Value::String(text) => {
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(Value::String(trimmed.to_string()))
+            }
+        }
+        Value::Bool(value) => Some(Value::String(value.to_string())),
+        Value::Number(value) => Some(Value::String(value.to_string())),
+        Value::Array(items) => {
+            let collected: Vec<Value> = items
+                .iter()
+                .filter_map(normalize_responses_direct_input_item)
+                .collect();
+            finalize_responses_input_values(collected)
+        }
+        Value::Object(object) => {
+            if let Some(text) = responses_text_alias_from_object(object) {
+                return Some(Value::String(text));
+            }
+            if let Some(message_item) = render_responses_message_item(input_value) {
+                return finalize_responses_input_values(vec![message_item]);
+            }
+            if let Some(item) = canonical_input_item_to_responses_input_value(input_value) {
+                return finalize_responses_input_values(vec![item]);
+            }
+            object
+                .get("input_items")
+                .and_then(|value| value.as_array())
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(normalize_responses_direct_input_item)
+                        .collect::<Vec<_>>()
+                })
+                .and_then(finalize_responses_input_values)
+        }
+    }
+}
+
+fn normalize_responses_direct_input_item(item: &Value) -> Option<Value> {
+    match item {
+        Value::String(text) => {
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(json!({ "type": "input_text", "text": trimmed }))
+            }
+        }
+        Value::Object(object) => {
+            if let Some(text) = responses_text_alias_from_object(object) {
+                return Some(json!({ "type": "input_text", "text": text }));
+            }
+            if let Some(message_item) = render_responses_message_item(item) {
+                return Some(message_item);
+            }
+            canonical_input_item_to_responses_input_value(item)
+        }
+        _ => None,
+    }
+}
+
+fn responses_text_alias_from_object(object: &Map<String, Value>) -> Option<String> {
+    ["text", "content", "prompt", "query"]
+        .into_iter()
+        .find_map(|key| object.get(key).and_then(|value| value.as_str()))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn finalize_responses_input_values(mut collected: Vec<Value>) -> Option<Value> {
+    if collected.is_empty() {
+        return None;
+    }
+
+    if collected.len() == 1 {
+        let value = collected.pop().unwrap_or(Value::Null);
+        if let Some(text) = extract_single_responses_text(&value) {
+            return Some(Value::String(text));
+        }
+        return Some(Value::Array(vec![value]));
+    }
+
+    Some(Value::Array(collected))
+}
+
+fn extract_single_responses_text(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) => {
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }
+        Value::Object(object)
+            if object.get("type").and_then(|value| value.as_str()) == Some("input_text") =>
+        {
+            object
+                .get("text")
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        }
+        _ => None,
+    }
 }
 
 fn canonical_input_item_to_responses_input_value(item: &Value) -> Option<Value> {
@@ -2706,6 +2851,102 @@ mod tests {
     }
 
     #[test]
+    fn prepare_provider_request_responses_family_injects_top_level_tools_payload() {
+        let mut preset = mock_preset();
+        preset.provider = "openai".to_string();
+        preset.protocol_profiles = json!({
+            "chat": {
+                "runtime_version": "v2",
+                "schema_version": "2026-03-07",
+                "profile_id": "openai:chat:openai_responses",
+                "provider": "openai",
+                "protocol_family": "openai_responses",
+                "capability": "chat",
+                "transport": {
+                    "method": "POST",
+                    "path": "responses",
+                    "query_template": {},
+                    "header_template": {}
+                },
+                "request": {
+                    "template_engine": "openai_compat",
+                    "request_template": {
+                        "model": null,
+                        "input": null,
+                        "stream": null
+                    },
+                    "request_builder": {
+                        "name": "responses_input_from_messages_or_items",
+                        "config": {}
+                    }
+                },
+                "response": {
+                    "decoder": { "name": "openai_responses", "config": {} },
+                    "response_template": {}
+                },
+                "stream": {
+                    "stream_decoder": { "name": "openai_responses_events", "config": {} }
+                },
+                "auth": { "auth_policy": "inherit", "config": {} },
+                "features": {
+                    "supports_messages": false,
+                    "supports_input_items": true
+                },
+                "defaults": {
+                    "headers": {},
+                    "query": {},
+                    "body": {}
+                }
+            }
+        });
+        let instance = mock_instance(json!({ "protocol": "responses", "auto_append_v1": true }));
+        let mut model = mock_model(&["chat"]);
+        model.upstream_path = "responses".to_string();
+
+        let prepared = prepare_provider_request(
+            Some(&preset),
+            &instance,
+            &model,
+            Some("sk-test"),
+            "chat",
+            json!({
+                "model": "gpt-5.4",
+                "messages": [{ "role": "user", "content": "hi" }],
+                "stream": false,
+            }),
+            Some(&json!({
+                "tools": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "search_sdk",
+                            "description": "Search SDK signatures",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {
+                                    "query": { "type": "string" }
+                                },
+                                "required": ["query"]
+                            }
+                        }
+                    }
+                ]
+            })),
+            None,
+        )
+        .expect("prepare responses request with tools");
+
+        assert_eq!(prepared.body["tools"][0]["type"], json!("function"));
+        assert_eq!(prepared.body["tools"][0]["name"], json!("search_sdk"));
+        assert_eq!(
+            prepared.body["tools"][0]["parameters"]["properties"]["query"]["type"],
+            json!("string")
+        );
+        assert!(prepared.body["tools"][0].get("function").is_none());
+        assert_eq!(prepared.body["tool_choice"], json!("auto"));
+    }
+
+    #[test]
     fn prepare_provider_request_sanitizes_wrapped_tool_array_schemas() {
         let preset = mock_preset();
         let instance = mock_instance(json!({ "protocol": "openai", "auto_append_v1": true }));
@@ -3145,7 +3386,8 @@ mod tests {
     }
 
     #[test]
-    fn prepare_provider_request_openai_chat_stringifies_structured_content_when_model_requests_it() {
+    fn prepare_provider_request_openai_chat_stringifies_structured_content_when_model_requests_it()
+    {
         let preset = mock_preset();
         let mut instance = mock_instance(json!({ "protocol": "openai", "auto_append_v1": true }));
         instance.preset_slug = "custom".to_string();
@@ -3178,6 +3420,43 @@ mod tests {
         assert_eq!(
             prepared.body["messages"][0]["content"],
             json!("{\"type\":\"tool_result\",\"value\":\"ok\"}")
+        );
+    }
+
+    #[test]
+    fn prepare_provider_request_openai_chat_keeps_structured_content_when_model_requests_it() {
+        let preset = mock_preset();
+        let mut instance = mock_instance(json!({ "protocol": "openai", "auto_append_v1": true }));
+        instance.preset_slug = "custom".to_string();
+        let mut model = mock_model(&["chat"]);
+        model.config_override = json!({
+            "chat_content_compatibility": "structured"
+        });
+
+        let prepared = prepare_provider_request(
+            Some(&preset),
+            &instance,
+            &model,
+            Some("sk-test"),
+            "chat",
+            json!({
+                "model": "deepseek-reasoner",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": { "type": "tool_result", "value": "ok" }
+                    }
+                ],
+                "stream": false
+            }),
+            None,
+            None,
+        )
+        .expect("prepare request with structured chat content override");
+
+        assert_eq!(
+            prepared.body["messages"][0]["content"],
+            json!({ "type": "tool_result", "value": "ok" })
         );
     }
 
@@ -3633,6 +3912,50 @@ mod tests {
                 { "type": "input_text", "text": "describe this image" },
                 { "type": "input_image", "image_url": "https://example.com/input.png" },
                 { "type": "input_file", "file_id": "file-1", "filename": "note.txt" }
+            ])
+        );
+    }
+
+    #[test]
+    fn responses_input_builder_normalizes_prompt_object_to_string() {
+        let mut request_data = Map::new();
+        request_data.insert("input".to_string(), json!({ "prompt": "hello responses" }));
+
+        let result =
+            responses_input_from_messages_or_items_builder(json!({}), &request_data, &json!({}));
+
+        assert_eq!(result["input"], json!("hello responses"));
+    }
+
+    #[test]
+    fn responses_input_builder_normalizes_existing_template_input_object() {
+        let result = responses_input_from_messages_or_items_builder(
+            json!({ "input": { "prompt": "hello from stale template" } }),
+            &Map::new(),
+            &json!({}),
+        );
+
+        assert_eq!(result["input"], json!("hello from stale template"));
+    }
+
+    #[test]
+    fn responses_input_builder_wraps_single_non_text_item_in_array() {
+        let result = responses_input_from_messages_or_items_builder(
+            json!({}),
+            &Map::new(),
+            &json!({
+                "canonical_request": {
+                    "input_items": [
+                        { "type": "input_image", "url": "https://example.com/input.png" }
+                    ]
+                }
+            }),
+        );
+
+        assert_eq!(
+            result["input"],
+            json!([
+                { "type": "input_image", "image_url": "https://example.com/input.png" }
             ])
         );
     }

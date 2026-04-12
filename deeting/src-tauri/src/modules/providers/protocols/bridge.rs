@@ -58,20 +58,42 @@ pub fn build_protocol_profile(
     resolved_headers: &Value,
     default_params: &Value,
 ) -> ProtocolProfile {
+    let family = infer_protocol_family(protocol, model.upstream_path.as_str()).to_string();
+
     if let Some(stored) = preset
         .and_then(|item| item.protocol_profiles.as_object())
         .and_then(|profiles| profiles.get(capability))
         .cloned()
     {
         if let Ok(mut profile) = serde_json::from_value::<ProtocolProfile>(stored) {
+            let family_changed = profile.protocol_family != family;
             profile.provider = preset
                 .map(|item| item.provider.clone())
                 .unwrap_or_else(|| profile.provider.clone());
+            profile.profile_id = format!("{}:{}:{}", profile.provider, capability, family);
+            profile.protocol_family = family.clone();
             profile.capability = capability.to_string();
             profile.transport.path = model.upstream_path.clone();
-            if profile.request.request_builder.is_none() {
-                profile.request.request_builder =
-                    builtin_request_builder(profile.protocol_family.as_str());
+            if !template_matches_family(
+                &profile.request.request_template,
+                capability,
+                family.as_str(),
+            ) {
+                profile.request.request_template =
+                    builtin_request_template(capability, family.as_str());
+                profile.request.template_engine =
+                    builtin_template_engine(family.as_str()).to_string();
+            }
+            if family_changed || profile.request.request_builder.is_none() {
+                profile.request.request_builder = builtin_request_builder(family.as_str());
+            }
+            if family_changed {
+                profile.response.decoder = builtin_response_decoder(family.as_str());
+                profile.stream.stream_decoder = Some(builtin_stream_decoder(family.as_str()));
+                profile.features = ProfileFeatureFlags {
+                    supports_messages: family != "openai_responses",
+                    supports_input_items: family == "openai_responses",
+                };
             }
             profile.defaults.headers = deep_merge_json(&profile.defaults.headers, resolved_headers);
             profile.defaults.body = deep_merge_json(&profile.defaults.body, default_params);
@@ -79,7 +101,6 @@ pub fn build_protocol_profile(
         }
     }
 
-    let family = infer_protocol_family(protocol, model.upstream_path.as_str()).to_string();
     let template_candidate = effective_config
         .get("request_template")
         .cloned()
@@ -937,6 +958,89 @@ mod tests {
         assert_eq!(profile.request.request_template["input"], Value::Null);
         assert_eq!(profile.defaults.headers["X-Test"], json!("1"));
         assert_eq!(profile.defaults.body["temperature"], json!(0.2));
+    }
+
+    #[test]
+    fn build_protocol_profile_repairs_stale_stored_responses_chat_template() {
+        let mut preset = mock_preset();
+        preset.protocol_profiles = json!({
+            "chat": {
+                "runtime_version": "v2",
+                "schema_version": "2026-03-07",
+                "profile_id": "openai:chat:openai_responses",
+                "provider": "openai",
+                "protocol_family": "openai_responses",
+                "capability": "chat",
+                "transport": {
+                    "method": "POST",
+                    "path": "responses",
+                    "query_template": {},
+                    "header_template": {}
+                },
+                "request": {
+                    "template_engine": "simple_replace",
+                    "request_template": { "messages": null },
+                    "request_builder": {
+                        "name": "openai_chat_messages_from_canonical",
+                        "config": {}
+                    }
+                },
+                "response": {
+                    "decoder": { "name": "openai_chat", "config": {} },
+                    "response_template": {}
+                },
+                "stream": {
+                    "stream_decoder": {
+                        "name": "openai_chat_events",
+                        "config": {}
+                    }
+                },
+                "auth": { "auth_policy": "inherit", "config": {} },
+                "features": {
+                    "supports_messages": true,
+                    "supports_input_items": false
+                },
+                "defaults": {
+                    "headers": {},
+                    "query": {},
+                    "body": {}
+                }
+            }
+        });
+
+        let profile = build_protocol_profile(
+            Some(&preset),
+            &mock_model("responses"),
+            "chat",
+            "responses",
+            &json!({}),
+            &json!({}),
+            &json!({}),
+        );
+
+        assert_eq!(profile.protocol_family, "openai_responses");
+        assert_eq!(profile.request.template_engine, "openai_compat");
+        assert_eq!(profile.request.request_template["input"], Value::Null);
+        assert!(profile.request.request_template.get("messages").is_none());
+        assert_eq!(
+            profile
+                .request
+                .request_builder
+                .as_ref()
+                .map(|item| item.name.as_str()),
+            Some("responses_input_from_messages_or_items")
+        );
+        assert_eq!(profile.response.decoder.name, "openai_responses");
+        assert_eq!(
+            profile
+                .stream
+                .stream_decoder
+                .as_ref()
+                .map(|item| item.name.as_str()),
+            Some("openai_responses_events")
+        );
+        assert!(!profile.features.supports_messages);
+        assert!(profile.features.supports_input_items);
     }
 
     #[test]

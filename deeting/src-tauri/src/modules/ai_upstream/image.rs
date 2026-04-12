@@ -83,6 +83,10 @@ pub(crate) async fn request_provider_image_generation(
         None,
         trace_id,
     )?;
+    let upstream_request_meta = serde_json::json!({
+        "method": prepared.method,
+        "url": prepared.display_url(),
+    });
     let client = crate::modules::desktop_config::network::build_proxy_aware_reqwest_client(
         app_state.mcp.store.as_ref(),
     )
@@ -147,6 +151,8 @@ pub(crate) async fn request_provider_image_generation(
                     &raw_usage,
                     raw_usage.has_usage_details().then_some("provider_reported"),
                     &cache_details,
+                    Some(&prepared.body),
+                    Some(&upstream_request_meta),
                 ),
                 ..Default::default()
             },
@@ -195,6 +201,8 @@ pub(crate) async fn request_provider_image_generation(
                     .has_usage_details()
                     .then_some("provider_reported"),
                 &cache_details,
+                Some(&prepared.body),
+                Some(&upstream_request_meta),
             ),
             ..Default::default()
         },

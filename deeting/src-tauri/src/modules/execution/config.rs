@@ -8,9 +8,6 @@ pub struct ExecutionConfig {
     #[serde(default = "default_max_script_bytes")]
     pub max_script_bytes: usize,
 
-    #[serde(default = "default_allowed_paths")]
-    pub allowed_paths: Vec<String>,
-
     #[serde(default = "default_forbidden_paths")]
     pub forbidden_paths: Vec<String>,
 
@@ -35,7 +32,6 @@ impl Default for ExecutionConfig {
         Self {
             max_timeout_seconds: default_max_timeout_seconds(),
             max_script_bytes: default_max_script_bytes(),
-            allowed_paths: default_allowed_paths(),
             forbidden_paths: default_forbidden_paths(),
             auto_approve_exact_commands: default_auto_approve_exact_commands(),
             denied_patterns: default_denied_patterns(),
@@ -52,16 +48,6 @@ fn default_max_timeout_seconds() -> u64 {
 
 fn default_max_script_bytes() -> usize {
     256 * 1024
-}
-
-fn default_allowed_paths() -> Vec<String> {
-    vec![
-        "$HOME".to_string(),
-        "$HOME/Documents".to_string(),
-        "$HOME/Desktop".to_string(),
-        "$HOME/Projects".to_string(),
-        "$HOME/workspace".to_string(),
-    ]
 }
 
 fn default_forbidden_paths() -> Vec<String> {

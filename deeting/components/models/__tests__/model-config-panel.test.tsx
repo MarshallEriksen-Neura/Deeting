@@ -120,7 +120,9 @@ describe("ModelConfigPanel", () => {
   it("saves chat content compatibility override when string-only mode is selected", async () => {
     const onSave = jest.fn().mockResolvedValue(undefined)
 
-    render(<ModelConfigPanel model={chatModel} onSave={onSave} />)
+    render(
+      <ModelConfigPanel model={chatModel} onSave={onSave} showChatContentCompatibility />
+    )
 
     fireEvent.click(screen.getByRole("button", { name: "basic.chatContentCompatibilityModes.stringOnly" }))
     fireEvent.click(screen.getByRole("button", { name: "actions.save" }))
@@ -130,6 +132,24 @@ describe("ModelConfigPanel", () => {
     const [, payload] = onSave.mock.calls[0]
     expect(payload.config_override).toEqual({
       chat_content_compatibility: "string_only",
+    })
+  })
+
+  it("saves chat content compatibility override when structured mode is selected", async () => {
+    const onSave = jest.fn().mockResolvedValue(undefined)
+
+    render(
+      <ModelConfigPanel model={chatModel} onSave={onSave} showChatContentCompatibility />
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "basic.chatContentCompatibilityModes.structured" }))
+    fireEvent.click(screen.getByRole("button", { name: "actions.save" }))
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled())
+
+    const [, payload] = onSave.mock.calls[0]
+    expect(payload.config_override).toEqual({
+      chat_content_compatibility: "structured",
     })
   })
 })

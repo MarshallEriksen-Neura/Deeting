@@ -37,13 +37,6 @@ function mirrorRuntimePatchToChatStore(patch: Partial<{
   useChatStore.setState(patch)
 }
 
-type ChatRuntimeStatus = {
-  messageId: string | null
-  stage: string | null
-  code: string | null
-  meta: Record<string, unknown> | null
-}
-
 interface ChatRuntimeStore {
   sessionId: string | null
   initialized: boolean
@@ -138,22 +131,29 @@ export const useChatRuntimeStore = create<ChatRuntimeStore>()((set, get) => ({
 
   initSession: async (sessionId) => {
     const state = get()
-    if (state.initialized && state.sessionId === sessionId) {
+    const isNewSession = state.sessionId !== sessionId
+    const shouldRefreshCurrentSession =
+      state.initialized && !isNewSession && Boolean(sessionId) && !state.isLoading
+
+    if (state.initialized && !isNewSession && !shouldRefreshCurrentSession) {
       return
     }
 
-    const isNewSession = state.sessionId !== sessionId
     const shouldReset = isNewSession
+    const shouldLoadHistory = Boolean(sessionId) && (shouldReset || shouldRefreshCurrentSession)
+    const nextHistoryLoading = shouldReset || shouldLoadHistory
 
     set({
       sessionId,
       initialized: true,
-      isLoading: true,
-      ...(shouldReset ? { ...emptyRuntimeState, sessionId, initialized: true, isLoading: true } : {}),
+      isLoading: nextHistoryLoading,
+      ...(shouldReset
+        ? { ...emptyRuntimeState, sessionId, initialized: true, isLoading: nextHistoryLoading }
+        : {}),
     })
     mirrorRuntimePatchToChatStore({
       sessionId,
-      isLoading: true,
+      isLoading: nextHistoryLoading,
       ...(shouldReset
         ? {
             statusMessageId: null,
@@ -171,10 +171,10 @@ export const useChatRuntimeStore = create<ChatRuntimeStore>()((set, get) => ({
 
     try {
       let messages = shouldReset ? [] : useChatStore.getState().messages
-      let historyCursor: number | null = null
-      let historyHasMore = false
+      let historyCursor: number | null = shouldReset ? null : state.historyCursor
+      let historyHasMore = shouldReset ? false : state.historyHasMore
 
-      if (sessionId && shouldReset) {
+      if (shouldLoadHistory && sessionId) {
         try {
           const historyState = await readConversationHistoryState(sessionId)
           messages = historyState.messages
@@ -182,7 +182,11 @@ export const useChatRuntimeStore = create<ChatRuntimeStore>()((set, get) => ({
           historyHasMore = historyState.historyHasMore
         } catch (error) {
           console.error("Failed to load history:", error)
-          messages = []
+          if (shouldReset) {
+            messages = []
+            historyCursor = null
+            historyHasMore = false
+          }
         }
       }
 
