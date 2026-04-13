@@ -253,6 +253,8 @@
     "stop": "Stop",
     "delete": "Delete",
     "enableSkill": "Enable skill",
+    "reindexMissing": "Index missing tools",
+    "reindexingMissing": "Indexing missing tools...",
     "review": "Review",
     "reviewLogs": "Review logs",
     "configure": "Configure",
@@ -309,7 +311,13 @@
     "enableSkillSuccess": "Skill enabled",
     "enableSkillSuccessDesc": "The local skill is enabled again. Start it to make the tool runnable.",
     "enableSkillFailed": "Failed to enable skill",
-    "enableSkillMissingId": "This tool is missing its backing skill id and cannot be re-enabled from here."
+    "enableSkillMissingId": "This tool is missing its backing skill id and cannot be re-enabled from here.",
+    "reindexMissingSuccess": "Missing tools indexed",
+    "reindexMissingSuccessDesc": "Indexed {count} missing tool(s) for this MCP.",
+    "reindexMissingPartial": "Indexed with some failures",
+    "reindexMissingPartialDesc": "Indexed {successCount} tool(s). {failedCount} failed: {failedTools}.",
+    "reindexMissingFailed": "Failed to index missing tools",
+    "reindexMissingFailedDesc": "Unable to index {count} tool(s): {failedTools}."
   }
 }
 }

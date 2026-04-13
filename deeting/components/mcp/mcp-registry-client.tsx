@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react"
 import dynamic from "next/dynamic"
 import { useTranslations } from "next-intl"
+import { invoke } from "@tauri-apps/api/core"
 import {
   mapDesktopToolRecordToTool,
   mapRemoteServerToolRecordToTool,
@@ -31,6 +32,7 @@ import { useMcpRegistryViewModel } from "@/components/mcp/registry-view-model"
 import { RegistryHeader } from "./registry-header"
 import { Skeleton } from "@/components/ui/skeleton"
 import { MCPLogEntry, MCPSource, MCPTool, McpToolRecord } from "@/types/mcp"
+import { DESKTOP_MCP_COMMANDS } from "@/lib/api/mcp-desktop"
 import { useMcpServers } from "@/lib/swr/use-mcp-servers"
 import { useMcpSources } from "@/lib/swr/use-mcp-sources"
 import { useMcpTools, type McpServerToolRecord } from "@/lib/swr/use-mcp-tools"
@@ -96,6 +98,7 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
   const [syncingServerIds, setSyncingServerIds] = useState<Record<string, boolean>>({})
   const [editServer, setEditServer] = useState<McpServer | null>(null)
   const [editServerOpen, setEditServerOpen] = useState(false)
+  const [reindexingMissingTools, setReindexingMissingTools] = useState(false)
 
   const mapTool = useCallback((tool: McpToolRecord): MCPTool => mapDesktopToolRecordToTool(tool, t("conflict.warningDescription")), [t])
 
@@ -243,6 +246,62 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
     setConflictOpen,
   })
 
+  const handleReindexMissingTools = useCallback(async (groupTools: MCPTool[]) => {
+    if (!isTauri || groupTools.length === 0) {
+      return
+    }
+
+    setReindexingMissingTools(true)
+    try {
+      let successCount = 0
+      const failedToolNames: string[] = []
+
+      for (const tool of groupTools) {
+        try {
+          await invoke<void>(DESKTOP_MCP_COMMANDS.reindexTool, { toolId: tool.id })
+          successCount += 1
+        } catch (error) {
+          failedToolNames.push(tool.name)
+          console.warn("[mcp] failed to reindex tool", tool.id, error)
+        }
+      }
+
+      await refreshAll()
+
+      if (successCount > 0) {
+        addNotification({
+          type: failedToolNames.length > 0 ? "warning" : "success",
+          title: t(failedToolNames.length > 0 ? "toast.reindexMissingPartial" : "toast.reindexMissingSuccess"),
+          description: failedToolNames.length > 0
+            ? t("toast.reindexMissingPartialDesc", {
+                successCount,
+                failedCount: failedToolNames.length,
+                failedTools: failedToolNames.join(", "),
+              })
+            : t("toast.reindexMissingSuccessDesc", { count: successCount }),
+          timestamp: Date.now(),
+        })
+      }
+
+      if (successCount === 0 && failedToolNames.length > 0) {
+        addNotification({
+          type: "error",
+          title: t("toast.reindexMissingFailed"),
+          description: t("toast.reindexMissingFailedDesc", {
+            count: failedToolNames.length,
+            failedTools: failedToolNames.join(", "),
+          }),
+          timestamp: Date.now(),
+        })
+      }
+    } catch (error) {
+      addNotification(getMcpRegistryErrorNotification(t, "save", error))
+      await refreshAll()
+    } finally {
+      setReindexingMissingTools(false)
+    }
+  }, [addNotification, isTauri, refreshAll, t])
+
   return (
     <div className="relative min-h-screen bg-[var(--background)] px-6 py-12 lg:px-8">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -279,6 +338,8 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
               syncAllLoading={syncingServers}
               onSyncTool={!isTauri ? handleSyncServer : undefined}
               syncingToolIds={!isTauri ? syncingServerIds : undefined}
+              onReindexMissingTools={isTauri ? handleReindexMissingTools : undefined}
+              reindexMissingLoading={reindexingMissingTools}
             />
           </div>
         </div>

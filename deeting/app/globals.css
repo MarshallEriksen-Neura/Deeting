@@ -132,6 +132,30 @@
   --island-gold-stroke-soft: rgba(201, 169, 110, 0.35);
   --island-seed-glow: rgba(201, 169, 110, 0.18);
   --island-snap-glow: rgba(201, 169, 110, 0.45);
+
+  /* iOS-aligned frosted control system */
+  --ios-shell-border: rgba(148, 163, 184, 0.18);
+  --ios-shell-bg: rgba(255, 255, 255, 0.82);
+  --ios-shell-subtle: rgba(255, 255, 255, 0.64);
+  --ios-shell-hover: rgba(255, 255, 255, 0.92);
+  --ios-pill-border: rgba(148, 163, 184, 0.16);
+  --ios-pill-muted: rgba(255, 255, 255, 0.72);
+  --ios-pill-hover: rgba(255, 255, 255, 0.9);
+  --ios-pill-ghost-hover: rgba(148, 163, 184, 0.12);
+  --ios-pill-foreground: rgba(15, 23, 42, 0.82);
+  --ios-segment-bg: rgba(241, 245, 249, 0.86);
+  --ios-segment-hover: rgba(255, 255, 255, 0.55);
+  --ios-segment-foreground: rgba(71, 85, 105, 0.92);
+  --ios-segment-active-bg: rgba(255, 255, 255, 0.96);
+  --ios-segment-active-border: rgba(255, 255, 255, 0.9);
+  --ios-segment-active-foreground: rgba(15, 23, 42, 0.96);
+  --ios-tint-fill: linear-gradient(135deg, #7b8dff 0%, #5fb9ff 52%, #7ce2df 100%);
+  --ios-tint-border: rgba(119, 137, 255, 0.34);
+  --ios-tint-foreground: rgba(255, 255, 255, 0.98);
+  --ios-ring: rgba(124, 109, 255, 0.28);
+  --ios-button-shadow: 0 16px 36px -22px rgba(89, 116, 255, 0.62), inset 0 1px 0 rgba(255, 255, 255, 0.34);
+  --ios-button-shadow-soft: 0 12px 30px -24px rgba(15, 23, 42, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  --ios-segment-shadow: 0 10px 24px -18px rgba(15, 23, 42, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.78);
 }
 
 /* ============================================
@@ -171,6 +195,30 @@ html.dark {
   --island-gold-stroke-soft: rgba(212, 184, 150, 0.25);
   --island-seed-glow: rgba(212, 184, 150, 0.12);
   --island-snap-glow: rgba(212, 184, 150, 0.35);
+
+  /* iOS-aligned frosted control system */
+  --ios-shell-border: rgba(255, 255, 255, 0.09);
+  --ios-shell-bg: rgba(18, 20, 32, 0.78);
+  --ios-shell-subtle: rgba(255, 255, 255, 0.06);
+  --ios-shell-hover: rgba(255, 255, 255, 0.12);
+  --ios-pill-border: rgba(255, 255, 255, 0.08);
+  --ios-pill-muted: rgba(255, 255, 255, 0.07);
+  --ios-pill-hover: rgba(255, 255, 255, 0.13);
+  --ios-pill-ghost-hover: rgba(255, 255, 255, 0.08);
+  --ios-pill-foreground: rgba(232, 235, 255, 0.9);
+  --ios-segment-bg: rgba(255, 255, 255, 0.05);
+  --ios-segment-hover: rgba(255, 255, 255, 0.08);
+  --ios-segment-foreground: rgba(214, 220, 255, 0.76);
+  --ios-segment-active-bg: rgba(255, 255, 255, 0.14);
+  --ios-segment-active-border: rgba(255, 255, 255, 0.1);
+  --ios-segment-active-foreground: rgba(255, 255, 255, 0.98);
+  --ios-tint-fill: linear-gradient(135deg, #8291ff 0%, #64b9ff 52%, #65dfd2 100%);
+  --ios-tint-border: rgba(138, 156, 255, 0.34);
+  --ios-tint-foreground: rgba(255, 255, 255, 0.98);
+  --ios-ring: rgba(124, 109, 255, 0.34);
+  --ios-button-shadow: 0 18px 40px -24px rgba(101, 137, 255, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  --ios-button-shadow-soft: 0 14px 32px -24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --ios-segment-shadow: 0 12px 24px -18px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 @theme inline {

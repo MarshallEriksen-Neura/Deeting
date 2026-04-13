@@ -240,7 +240,7 @@ export function WorkflowRuntime({
   const showApproval = store.run?.status === "waiting_approval"
 
   return (
-    <div className="flex h-full flex-col bg-background/80 backdrop-blur-sm">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[30px] border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-bg)] shadow-[0_28px_68px_-38px_rgba(15,23,42,0.42)] backdrop-blur-2xl">
       {/* Surface 1: Landing */}
       {store.view === "landing" && (
         <WorkflowLanding
@@ -264,8 +264,8 @@ export function WorkflowRuntime({
 
       {/* Surface 3: Execution + Surface 5: Approval */}
       {store.view === "execution" && store.run && (
-        <div className="flex h-full flex-col">
-          <div className="flex-1 min-h-0">
+        <div className="flex h-full min-h-0 flex-col overflow-hidden">
+          <div className="flex-1 min-h-0 overflow-hidden px-3 pb-3 pt-2">
             <WorkflowExecution
               run={store.run}
               steps={store.steps}
@@ -280,7 +280,7 @@ export function WorkflowRuntime({
 
           {/* Approval gate overlay */}
           {showApproval && (
-            <div className="p-4 border-t border-border/50">
+            <div className="border-t border-[color:var(--ios-shell-border)] px-4 py-4">
               <ApprovalGate
                 checkpoint={{
                   id: "",

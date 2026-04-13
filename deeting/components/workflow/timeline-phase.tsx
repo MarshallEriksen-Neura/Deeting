@@ -48,17 +48,17 @@ export function TimelinePhase({
   const duration = computeDuration(step)
 
   return (
-    <div className="relative flex gap-3 pb-6 last:pb-0">
+    <div className="relative flex gap-4 pb-6 last:pb-0">
       {/* Timeline connector */}
       <div className="flex flex-col items-center">
         {/* Status dot */}
         <div className="relative">
           <div
-            className={`h-3 w-3 rounded-full border-2 ${config.color} ${config.bg} flex items-center justify-center transition-colors`}
+            className={`flex h-4 w-4 items-center justify-center rounded-full border-2 bg-white/90 shadow-[0_8px_20px_-14px_rgba(15,23,42,0.35)] transition-colors dark:bg-slate-950 ${config.color} ${config.bg}`}
           >
             {StatusIcon && (
               <StatusIcon
-                className={`h-2 w-2 text-white ${isRunning ? "animate-spin" : ""}`}
+                className={`h-2.5 w-2.5 text-white ${isRunning ? "animate-spin" : ""}`}
               />
             )}
           </div>
@@ -68,17 +68,17 @@ export function TimelinePhase({
           )}
         </div>
         {/* Vertical line */}
-        <div className="flex-1 w-px bg-border/50 mt-1" />
+        <div className="mt-1 w-px flex-1 bg-border/50" />
       </div>
 
       {/* Content */}
-      <div className="flex-1 min-w-0 -mt-0.5">
+      <div className="min-w-0 flex-1 rounded-[22px] border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-subtle)] px-4 py-3 shadow-[0_14px_32px_-28px_rgba(15,23,42,0.36)]">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
-            <span className={`text-sm font-medium truncate ${isActive ? "text-foreground" : "text-muted-foreground"}`}>
+            <span className={`truncate text-sm font-medium ${isActive ? "text-foreground" : "text-muted-foreground"}`}>
               {step.title || step.phase_id}
             </span>
-            <Badge variant={config.tone} className="text-[10px] h-4 px-1.5 shrink-0">
+            <Badge variant={config.tone} className="h-5 shrink-0 rounded-full px-2 text-[10px]">
               {t(`status.${step.status}`)}
             </Badge>
           </div>
@@ -92,18 +92,18 @@ export function TimelinePhase({
 
         {/* Goal */}
         {step.goal && (
-          <p className="mt-1 text-xs text-muted-foreground/70 line-clamp-2">{step.goal}</p>
+          <p className="mt-1.5 line-clamp-2 text-xs text-muted-foreground/80">{step.goal}</p>
         )}
 
         {/* Error display */}
         {isFailed && step.error && (
-          <div className="mt-2 rounded-lg border border-destructive/20 bg-destructive/5 p-2">
+          <div className="mt-3 rounded-[18px] border border-destructive/20 bg-destructive/5 p-3">
             <p className="text-xs text-destructive/80">{step.error}</p>
             {onRerun && (
               <Button
                 variant="outline"
-                size="sm"
-                className="mt-2 h-6 text-xs"
+                size="xs"
+                className="mt-3"
                 onClick={onRerun}
               >
                 {t("execution.rerunPhase")}
@@ -116,20 +116,20 @@ export function TimelinePhase({
         {isCompleted && step.worker_trace_summary && (
           <Collapsible open={isExpanded} onOpenChange={onToggleExpand}>
             <CollapsibleTrigger asChild>
-              <Button variant="ghost" size="sm" className="mt-1 h-6 text-xs text-muted-foreground px-0">
+              <Button variant="ghost" size="xs" className="mt-2 px-0 text-xs text-muted-foreground">
                 {isExpanded ? t("execution.hideResults") : t("execution.showResults")}
               </Button>
             </CollapsibleTrigger>
             <CollapsibleContent>
-              <div className="mt-2 rounded-lg border border-border/50 bg-card/30 p-3">
+              <div className="mt-3 rounded-[18px] border border-[color:var(--ios-shell-border)] bg-background/40 p-3">
                 <p className="text-xs text-muted-foreground whitespace-pre-wrap line-clamp-10">
                   {step.worker_trace_summary}
                 </p>
                 {onViewContext && (
                   <Button
                     variant="ghost"
-                    size="sm"
-                    className="mt-2 h-6 text-xs text-muted-foreground px-0"
+                    size="xs"
+                    className="mt-3 px-0 text-xs text-muted-foreground"
                     onClick={onViewContext}
                   >
                     {t("execution.viewContext")}

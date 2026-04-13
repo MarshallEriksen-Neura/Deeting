@@ -8,6 +8,10 @@ const buttonGroupVariants = cva(
   "flex w-fit items-stretch [&>*]:focus-visible:z-10 [&>*]:focus-visible:relative [&>[data-slot=select-trigger]:not([class*='w-'])]:w-fit [&>input]:flex-1 has-[select[aria-hidden=true]:last-child]:[&>[data-slot=select-trigger]:last-of-type]:rounded-r-md has-[>[data-slot=button-group]]:gap-2",
   {
     variants: {
+      variant: {
+        default: "",
+        ios: "rounded-[calc(var(--radius)+999px)] border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-segment-bg)] p-1 shadow-[var(--ios-button-shadow-soft)] backdrop-blur-xl",
+      },
       orientation: {
         horizontal:
           "[&>*:not(:first-child)]:rounded-l-none [&>*:not(:first-child)]:border-l-0 [&>*:not(:last-child)]:rounded-r-none",
@@ -16,6 +20,7 @@ const buttonGroupVariants = cva(
       },
     },
     defaultVariants: {
+      variant: "default",
       orientation: "horizontal",
     },
   }
@@ -23,6 +28,7 @@ const buttonGroupVariants = cva(
 
 function ButtonGroup({
   className,
+  variant,
   orientation,
   ...props
 }: React.ComponentProps<"div"> & VariantProps<typeof buttonGroupVariants>) {
@@ -30,8 +36,9 @@ function ButtonGroup({
     <div
       role="group"
       data-slot="button-group"
+      data-variant={variant}
       data-orientation={orientation}
-      className={cn(buttonGroupVariants({ orientation }), className)}
+      className={cn(buttonGroupVariants({ variant, orientation }), className)}
       {...props}
     />
   )
@@ -49,7 +56,7 @@ function ButtonGroupText({
   return (
     <Comp
       className={cn(
-        "bg-muted flex items-center gap-2 rounded-md border px-4 text-sm font-medium shadow-xs [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4",
+        "bg-muted flex items-center gap-2 rounded-[calc(var(--radius)+999px)] border px-4 text-sm font-medium shadow-xs [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}

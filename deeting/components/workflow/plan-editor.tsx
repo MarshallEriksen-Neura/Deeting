@@ -94,17 +94,20 @@ export function PlanEditor({
   const isDisabled = disabled || compiling || regenerating
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border/50">
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onBack}>
+      <div className="flex items-center justify-between border-b border-[color:var(--ios-shell-border)] px-5 py-4">
+        <div className="flex items-center gap-3">
+          <Button variant="ios" size="icon-sm" className="size-8" onClick={onBack}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <h2 className="text-sm font-semibold">{t("plan.title")}</h2>
+          <div>
+            <h2 className="text-sm font-semibold tracking-tight">{t("plan.title")}</h2>
+            <p className="text-xs text-muted-foreground">{t("plan.goalLabel")}</p>
+          </div>
         </div>
         <Button
-          variant="secondary"
+          variant="ios"
           size="sm"
           onClick={handleRegenerate}
           disabled={isDisabled}
@@ -116,15 +119,15 @@ export function PlanEditor({
       </div>
 
       {/* Content */}
-      <ScrollArea className="flex-1">
-        <div className="p-4 space-y-4">
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="space-y-5 p-5">
           {/* Goal display */}
-          <div className="text-sm text-muted-foreground">
+          <div className="rounded-[24px] border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-subtle)] px-4 py-3 text-sm text-muted-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.5)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
             <span className="font-medium text-foreground">{t("plan.goalLabel")}:</span>{" "}
             {goal}
           </div>
 
-          <Separator className="opacity-50" />
+          <Separator className="opacity-40" />
 
           {/* Phase list */}
           <TooltipProvider>
@@ -145,11 +148,11 @@ export function PlanEditor({
 
           {/* Add phase */}
           <Button
-            variant="ghost"
+            variant="ios"
             size="sm"
             onClick={handleAddPhase}
             disabled={isDisabled}
-            className="text-xs text-muted-foreground"
+            className="text-xs"
           >
             <Plus className="mr-1.5 h-3 w-3" />
             {t("plan.addPhase")}
@@ -157,13 +160,13 @@ export function PlanEditor({
 
           {/* Compiler errors */}
           {compilerErrors.length > 0 && (
-            <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-3 space-y-2">
+            <div className="space-y-2 rounded-[24px] border border-destructive/20 bg-destructive/5 p-4">
               <div className="flex items-center gap-1.5 text-sm font-medium text-destructive">
                 <AlertTriangle className="h-4 w-4" />
                 {t("plan.compilerErrors")}
               </div>
               {compilerErrors.map((err, i) => (
-                <div key={i} className="text-xs text-destructive/80 pl-5">
+                <div key={i} className="pl-5 text-xs text-destructive/80">
                   {err.phase_id && <span className="font-mono">{err.phase_id}: </span>}
                   {err.message}
                 </div>
@@ -174,10 +177,11 @@ export function PlanEditor({
       </ScrollArea>
 
       {/* Footer */}
-      <div className="p-4 border-t border-border/50">
+      <div className="border-t border-[color:var(--ios-shell-border)] p-5">
         <Button
           className="w-full"
-          size="lg"
+          variant="ios-primary"
+          size="xl"
           onClick={handleCompile}
           disabled={isDisabled || phases.length === 0}
         >

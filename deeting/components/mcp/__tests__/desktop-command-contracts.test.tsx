@@ -75,6 +75,7 @@ describe("desktop MCP command contracts", () => {
     expect(DESKTOP_MCP_COMMANDS.syncSource).toBe("sync_mcp_source")
     expect(DESKTOP_MCP_COMMANDS.listSources).toBe("list_mcp_sources")
     expect(DESKTOP_MCP_COMMANDS.listTools).toBe("list_mcp_tools")
+    expect(DESKTOP_MCP_COMMANDS.reindexTool).toBe("reindex_mcp_tool")
     expect(DESKTOP_MCP_COMMANDS.importConfig).toBe("import_mcp_config")
     expect(DESKTOP_MCP_COMMANDS.startTool).toBe("start_mcp_tool")
     expect(DESKTOP_MCP_COMMANDS.approveTool).toBe("approve_mcp_tool")

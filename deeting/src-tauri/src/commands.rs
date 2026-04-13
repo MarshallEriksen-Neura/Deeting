@@ -10,6 +10,7 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::mcp::commands::source_registry_impl::sync_mcp_source,
         crate::modules::desktop_config::commands::get_local_gateway_url,
         crate::modules::mcp::commands::tool_management_impl::list_mcp_tools,
+        crate::modules::mcp::commands::tool_management_impl::reindex_mcp_tool,
         crate::modules::mcp::commands::tool_management_impl::delete_local_mcp_tool,
         crate::modules::assistants::commands::list_local_assistants,
         crate::modules::assistants::commands::list_local_assistant_entities,

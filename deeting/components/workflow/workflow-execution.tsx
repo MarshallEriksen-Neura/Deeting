@@ -51,37 +51,39 @@ export function WorkflowExecution({
   const badge = runStatusBadge[run.status] ?? { label: "status.draft", variant: "secondary" as const }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[26px] border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-subtle)] shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border/50">
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onBack}>
+      <div className="flex items-center justify-between border-b border-[color:var(--ios-shell-border)] px-5 py-4">
+        <div className="flex items-center gap-3">
+          <Button variant="ios" size="icon-sm" className="size-8" onClick={onBack}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <h2 className="text-sm font-semibold">{t("execution.title")}</h2>
-          <Badge variant={badge.variant} className="text-xs">
-            {t(badge.label)}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold tracking-tight">{t("execution.title")}</h2>
+            <Badge variant={badge.variant} className="text-[10px]">
+              {t(badge.label)}
+            </Badge>
+          </div>
         </div>
         {isRunning && onCancel && (
-          <Button variant="secondary" size="sm" className="text-xs" onClick={onCancel}>
+          <Button variant="ios" size="sm" className="text-xs" onClick={onCancel}>
             {t("execution.cancel")}
           </Button>
         )}
       </div>
 
       {/* Progress */}
-      <div className="px-4 py-3 space-y-2 border-b border-border/50">
+      <div className="space-y-3 border-b border-[color:var(--ios-shell-border)] px-5 py-4">
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>{t("execution.phaseOf", { current: succeededCount, total: totalPhases })}</span>
           <span>{progressPercent}%</span>
         </div>
-        <Progress value={progressPercent} className="h-1.5" />
+        <Progress value={progressPercent} className="h-2 rounded-full bg-white/50 dark:bg-white/8" />
       </div>
 
       {/* Timeline */}
-      <ScrollArea className="flex-1">
-        <div className="p-4">
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="p-5">
           {steps.length === 0 ? (
             <div className="text-center text-sm text-muted-foreground py-8">
               {t("execution.pending")}

@@ -253,6 +253,8 @@
     "stop": "停止",
     "delete": "删除",
     "enableSkill": "启用 skill",
+    "reindexMissing": "补入未索引工具",
+    "reindexingMissing": "正在补入未索引工具...",
     "review": "查看",
     "reviewLogs": "查看日志",
     "configure": "配置",
@@ -309,7 +311,13 @@
     "enableSkillSuccess": "Skill 已启用",
     "enableSkillSuccessDesc": "本地 skill 已重新启用。现在可以继续启动工具。",
     "enableSkillFailed": "启用 skill 失败",
-    "enableSkillMissingId": "该工具缺少对应的 skill 标识，无法在这里重新启用。"
+    "enableSkillMissingId": "该工具缺少对应的 skill 标识，无法在这里重新启用。",
+    "reindexMissingSuccess": "未索引工具已补入",
+    "reindexMissingSuccessDesc": "当前 MCP 下共补入 {count} 个未索引工具。",
+    "reindexMissingPartial": "补入完成，但有部分失败",
+    "reindexMissingPartialDesc": "已补入 {successCount} 个工具，{failedCount} 个失败：{failedTools}。",
+    "reindexMissingFailed": "补入未索引工具失败",
+    "reindexMissingFailedDesc": "共 {count} 个工具补入失败：{failedTools}。"
   }
 }
 }

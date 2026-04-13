@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { ArrowLeft, ChevronRight, Folder, Pencil, RefreshCw, Search, Server, Terminal } from "lucide-react"
+import { ArrowLeft, ChevronRight, Folder, Pencil, RefreshCw, Search, Server, Sparkles, Terminal } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { Badge } from "@/components/ui/badge"
@@ -13,6 +13,7 @@ import type { MCPTool } from "@/types/mcp"
 
 import { ServerCard } from "./server-card"
 import type { MCPRuntimeServerGroup } from "./registry-view-model"
+import { isMcpIndexMissing } from "./tool-semantics"
 
 interface RuntimeServerListSectionProps {
   groups: MCPRuntimeServerGroup[]
@@ -28,6 +29,8 @@ interface RuntimeServerListSectionProps {
   syncAllLoading?: boolean
   onSyncTool?: (tool: MCPTool) => void
   syncingToolIds?: Record<string, boolean>
+  onReindexMissingTools?: (tools: MCPTool[]) => void
+  reindexMissingLoading?: boolean
 }
 
 type GroupTone = {
@@ -114,6 +117,8 @@ export function RuntimeServerListSection({
   syncAllLoading = false,
   onSyncTool,
   syncingToolIds,
+  onReindexMissingTools,
+  reindexMissingLoading = false,
 }: RuntimeServerListSectionProps) {
   const t = useTranslations("mcp")
   const [activeTab, setActiveTab] = useState("all")
@@ -151,6 +156,9 @@ export function RuntimeServerListSection({
     const canSyncGroup = platform === "cloud" && Boolean(representativeTool && onSyncTool)
     const canEditGroup = platform === "cloud" && Boolean(representativeTool && onEditServer)
     const canReviewGroup = Boolean(selectedGroup.conflictCount > 0 && representativeTool && onResolveConflict)
+    const missingIndexTools = selectedGroup.tools.filter((tool) => isMcpIndexMissing(tool))
+    const canReindexMissing =
+      platform === "desktop" && missingIndexTools.length > 0 && Boolean(onReindexMissingTools)
 
     return (
       <section className="space-y-5">
@@ -178,6 +186,18 @@ export function RuntimeServerListSection({
           </div>
 
           <div className="mcp-runtime-action-cluster flex items-center gap-2 rounded-[1.15rem] border border-white/55 bg-white/70 p-2 shadow-[0_18px_32px_-26px_rgba(15,23,42,0.28)] backdrop-blur-xl">
+            {canReindexMissing && (
+              <GlassButton
+                size="sm"
+                variant="secondary"
+                className="mcp-runtime-action-button h-8 rounded-xl px-3 text-[11px]"
+                loading={reindexMissingLoading}
+                onClick={() => onReindexMissingTools?.(missingIndexTools)}
+              >
+                <Sparkles size={13} />
+                {reindexMissingLoading ? t("actions.reindexingMissing") : t("actions.reindexMissing")}
+              </GlassButton>
+            )}
             {canReviewGroup && (
               <GlassButton
                 size="sm"

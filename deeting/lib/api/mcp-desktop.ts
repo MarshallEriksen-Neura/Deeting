@@ -10,6 +10,7 @@ export const DESKTOP_MCP_COMMANDS = {
   syncSource: "sync_mcp_source",
   syncCloudSubscriptions: "sync_cloud_subscriptions",
   listTools: "list_mcp_tools",
+  reindexTool: "reindex_mcp_tool",
   deleteLocalTool: "delete_local_mcp_tool",
   importConfig: "import_mcp_config",
   startTool: "start_mcp_tool",

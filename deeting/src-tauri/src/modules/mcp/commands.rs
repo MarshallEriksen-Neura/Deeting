@@ -23,8 +23,8 @@ pub use tool_approval_impl::{
 };
 pub use tool_management_impl::{
     apply_pending_config, clear_mcp_logs, delete_local_mcp_tool, execute_mcp_tool_raw,
-    get_mcp_logs, import_mcp_config, list_mcp_tools, resolve_mcp_conflict, start_mcp_tool,
-    stop_mcp_tool, update_mcp_tool_env,
+    get_mcp_logs, import_mcp_config, list_mcp_tools, reindex_mcp_tool, resolve_mcp_conflict,
+    start_mcp_tool, stop_mcp_tool, update_mcp_tool_env,
 };
 
 #[cfg(test)]

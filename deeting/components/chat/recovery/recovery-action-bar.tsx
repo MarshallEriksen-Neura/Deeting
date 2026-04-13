@@ -84,7 +84,7 @@ export function RecoveryActionBar({
             </p>
             {recovery.executionId ? (
               <p className="font-mono text-[10px] leading-4 text-slate-500 dark:text-sky-100/55">
-                {t("controls.recovery.executionLabel")}: {recovery.executionId}
+                {t("controls.recovery.executionLabel")}: <span>{recovery.executionId}</span>
               </p>
             ) : null}
           </div>

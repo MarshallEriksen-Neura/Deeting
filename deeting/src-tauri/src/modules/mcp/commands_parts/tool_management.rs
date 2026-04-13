@@ -278,6 +278,22 @@ pub async fn stop_mcp_tool(state: State<'_, AppState>, tool_id: String) -> Resul
 }
 
 #[tauri::command]
+pub async fn reindex_mcp_tool(
+    state: State<'_, AppState>,
+    tool_id: String,
+) -> Result<(), String> {
+    let tool = state
+        .mcp
+        .store
+        .get_tool(&tool_id)
+        .await
+        .map_err(to_string)?
+        .ok_or_else(|| format!("tool {} not found", tool_id))?;
+
+    reindex_desktop_tool_asset(state.inner(), &tool).await
+}
+
+#[tauri::command]
 pub async fn delete_local_mcp_tool(
     _app: AppHandle,
     state: State<'_, AppState>,

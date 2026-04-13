@@ -11,6 +11,7 @@ import { useI18n } from '@/hooks/use-i18n';
 import { useOpenWorkflow } from '@/hooks/use-open-workflow';
 import { isTauriRuntime as detectTauriRuntime } from '@/lib/runtime/tauri';
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { BrowserModeConfirmationBar } from '@/components/chat/browser-mode/browser-mode-confirmation-bar';
@@ -703,7 +704,8 @@ function ControlsContainer() {
   ]);
 
   return (
-    <div className="flex flex-col gap-2 p-2 relative rounded-2xl border border-slate-200/70 dark:border-white/10 bg-white/90 dark:bg-[#0a0a0a]/90 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.2)] backdrop-blur-xl">
+    <div className="relative flex flex-col gap-2 overflow-hidden rounded-[28px] border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-bg)] p-2.5 shadow-[0_24px_60px_-34px_rgba(15,23,42,0.38)] backdrop-blur-2xl supports-[backdrop-filter]:bg-[color:var(--ios-shell-bg)]">
+      <div className="pointer-events-none absolute inset-x-8 top-0 h-16 rounded-full bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.72),transparent_70%)] opacity-70 dark:opacity-40" />
       <BrowserModeConfirmationBar />
 
       {/* 1. Main Input Area */}
@@ -724,7 +726,7 @@ function ControlsContainer() {
             onCancel={() => void cancelPendingTakeover()}
           />
         </div>
-        <div className="flex items-center rounded-2xl bg-slate-100/80 dark:bg-white/5 px-3 py-2">
+        <div className="flex items-center rounded-[22px] border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-subtle)] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -740,11 +742,14 @@ function ControlsContainer() {
             <PopoverTrigger asChild>
               <Button
                 type="button"
-                variant="ghost"
+                variant="ios"
                 size="icon"
                 aria-label={`${t("hud.temperature")} / ${t("hud.topP")}`}
                 title={`${t("hud.temperature")} / ${t("hud.topP")}`}
-                className={`min-h-[44px] min-w-[44px] size-10 rounded-full bg-white/70 dark:bg-white/10 text-slate-600 dark:text-white/70 hover:bg-white/90 dark:hover:bg-white/20 cursor-pointer ${isParamsOpen ? "ring-2 ring-indigo-500/30" : ""}`}
+                className={cn(
+                  "min-h-[44px] min-w-[44px] size-10 cursor-pointer",
+                  isParamsOpen ? "ring-2 ring-[color:var(--ios-ring)]" : undefined,
+                )}
               >
                 <Sliders className="w-5 h-5" />
               </Button>
@@ -945,16 +950,16 @@ function ControlsContainer() {
       ) : null}
 
       {/* 2. Action Row */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
           {/* New Chat Button */}
           <Button
              type="button"
-             variant="ghost"
+             variant="ios"
              size="icon"
              onClick={handleNewChat}
              aria-label={t("header.newChat")}
-             className="min-h-[44px] min-w-[44px] size-11 rounded-full bg-slate-100/80 dark:bg-white/5 text-slate-600 dark:text-white/70 hover:bg-slate-200/70 dark:hover:bg-white/10 transition-colors cursor-pointer"
+             className="min-h-[44px] min-w-[44px] size-11 cursor-pointer"
           >
              <MessageSquarePlus className="w-5 h-5" />
           </Button>
@@ -964,10 +969,10 @@ function ControlsContainer() {
               <PopoverTrigger asChild>
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="ios"
                   size="icon"
                   aria-label={t("controls.knowledge")}
-                  className="min-h-[44px] min-w-[44px] size-10 rounded-full bg-slate-100/80 dark:bg-white/5 text-slate-600 dark:text-white/70 hover:bg-slate-200/70 dark:hover:bg-white/10 transition-colors cursor-pointer"
+                  className="min-h-[44px] min-w-[44px] size-10 cursor-pointer"
                   disabled={isLoading}
                 >
                   <FileText className="w-5 h-5" />
@@ -976,7 +981,7 @@ function ControlsContainer() {
               <PopoverContent
                 side="top"
                 align="start"
-                className="w-80 max-w-[calc(100vw-1rem)] rounded-2xl border border-slate-200/70 dark:border-white/10 bg-white/95 dark:bg-[#0a0a0a]/95 shadow-2xl backdrop-blur-2xl"
+                className="w-80 max-w-[calc(100vw-1rem)] rounded-[26px] border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-bg)] p-3 shadow-[0_24px_48px_-32px_rgba(15,23,42,0.45)] backdrop-blur-2xl"
               >
                 <div className="mb-2 flex items-center justify-between">
                   <span className="text-sm font-semibold text-slate-700 dark:text-white/85">
@@ -985,8 +990,8 @@ function ControlsContainer() {
                   <Button
                     type="button"
                     variant="ghost"
-                    size="sm"
-                    className="h-7 rounded-full px-2 text-xs"
+                    size="xs"
+                    className="rounded-full"
                     onClick={() => void loadIndexedKnowledgeFiles()}
                     disabled={knowledgeLoading}
                   >
@@ -1004,11 +1009,11 @@ function ControlsContainer() {
                     {t("controls.knowledgePickerLoading")}
                   </div>
                 ) : knowledgeLoadError ? (
-                  <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-600 dark:border-red-400/30 dark:bg-red-500/10 dark:text-red-300">
+                  <div className="rounded-2xl border border-red-200 bg-red-50/90 p-3 text-xs text-red-600 dark:border-red-400/30 dark:bg-red-500/10 dark:text-red-300">
                     {knowledgeLoadError}
                   </div>
                 ) : knowledgeFiles.length === 0 ? (
-                  <div className="rounded-xl border border-slate-200/80 bg-slate-50 p-3 text-xs text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-white/50">
+                  <div className="rounded-2xl border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-subtle)] p-3 text-xs text-slate-500 dark:text-white/50">
                     {t("controls.knowledgePickerEmpty")}
                   </div>
                 ) : (
@@ -1020,10 +1025,10 @@ function ControlsContainer() {
                           key={file.id}
                           type="button"
                           className={cn(
-                            "flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left transition-colors",
+                            "flex w-full items-center justify-between gap-2 rounded-2xl border px-3 py-2 text-left transition-colors",
                             isSelected
-                              ? "bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-200"
-                              : "hover:bg-slate-100/80 dark:hover:bg-white/10"
+                              ? "border-sky-200/70 bg-sky-100/90 text-sky-700 dark:border-sky-400/30 dark:bg-sky-500/20 dark:text-sky-200"
+                              : "border-transparent hover:bg-[color:var(--ios-shell-subtle)]"
                           )}
                           onClick={() => handleToggleKnowledgeFile(file.id)}
                         >
@@ -1045,49 +1050,39 @@ function ControlsContainer() {
 
           {isTauriRuntime ? (
             <>
-              <div className="flex items-center rounded-full bg-slate-100/80 p-1 dark:bg-white/5">
+              <ButtonGroup variant="ios" className="gap-1 p-1">
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant={composerMode === 'chat' ? 'ios-segment-active' : 'ios-segment'}
                   size="sm"
                   onClick={() => setComposerMode('chat')}
                   aria-label={t("controls.modeChat")}
-                  className={cn(
-                    "h-8 rounded-full px-3 text-xs transition-colors",
-                    composerMode === 'chat'
-                      ? "bg-white text-slate-900 shadow-sm dark:bg-white dark:text-slate-900"
-                      : "text-slate-600 dark:text-white/70"
-                  )}
+                  className="h-9 px-4 text-xs"
                 >
                   {t("controls.modeChat")}
                 </Button>
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant={composerMode === 'workflow' ? 'ios-segment-active' : 'ios-segment'}
                   size="sm"
                   onClick={() => setComposerMode('workflow')}
                   aria-label={t("controls.modeWorkflow")}
-                  className={cn(
-                    "h-8 rounded-full px-3 text-xs transition-colors",
-                    composerMode === 'workflow'
-                      ? "bg-white text-slate-900 shadow-sm dark:bg-white dark:text-slate-900"
-                      : "text-slate-600 dark:text-white/70"
-                  )}
+                  className="h-9 px-4 text-xs"
                 >
                   {t("controls.modeWorkflow")}
                 </Button>
-              </div>
+              </ButtonGroup>
 
               <Button
                 type="button"
-                variant="ghost"
+                variant="ios"
                 size="sm"
                 onClick={() => {
                   setComposerMode('workflow');
                   void handleGeneratePlan();
                 }}
                 aria-label={t("controls.generatePlan")}
-                className="h-10 rounded-full bg-slate-100/80 px-3 text-xs text-slate-600 dark:bg-white/5 dark:text-white/70 hover:bg-slate-200/70 dark:hover:bg-white/10"
+                className="h-10 px-4 text-xs"
                 disabled={!canGeneratePlan}
               >
                 {isPlanningWorkflow ? (
@@ -1095,18 +1090,18 @@ function ControlsContainer() {
                 ) : (
                   <FileText className="h-4 w-4" />
                 )}
-                <span className="ml-1.5">{t("controls.generatePlan")}</span>
+                <span>{t("controls.generatePlan")}</span>
               </Button>
             </>
           ) : null}
 
           <Button
             type="button"
-            variant="ghost"
+            variant="ios"
             size="icon"
             aria-label={t("input.attachment.add")}
             onClick={handleFileInputClick}
-            className="min-h-[44px] min-w-[44px] size-10 rounded-full bg-slate-100/80 dark:bg-white/5 text-slate-600 dark:text-white/70 hover:bg-slate-200/70 dark:hover:bg-white/10 transition-colors cursor-pointer"
+            className="min-h-[44px] min-w-[44px] size-10 cursor-pointer"
             disabled={isLoading}
           >
             <Paperclip className="w-5 h-5" />
@@ -1114,22 +1109,20 @@ function ControlsContainer() {
         </div>
 
         {/* HUD Controls + Send */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
           <Button
             type="button"
             onClick={handleSendOrCancel}
             disabled={sendButtonDisabled}
-            className={`
-              min-h-[44px] min-w-[44px] size-11 rounded-full bg-slate-900 text-white dark:bg-white/10 dark:text-white
-              hover:bg-slate-800 dark:hover:bg-white dark:hover:text-black transition-all duration-300 active:scale-95 shadow-sm
-              ${
-                isGenerating || canQueuePendingTakeover || canContinueGeneration || !sendButtonDisabled
-                  ? 'cursor-pointer'
-                  : isApprovalBusy
-                    ? 'opacity-80 cursor-wait'
-                    : 'opacity-50 cursor-not-allowed'
-              }
-            `}
+            variant="ios-primary"
+            size="icon-lg"
+            className={cn(
+              "min-h-[46px] min-w-[46px] rounded-full",
+              isApprovalBusy ? "cursor-wait opacity-85" : undefined,
+              sendButtonDisabled && !isGenerating && !canQueuePendingTakeover && !canContinueGeneration
+                ? "opacity-55"
+                : "cursor-pointer",
+            )}
             aria-label={sendButtonAriaLabel}
           >
             {isPlanningWorkflow ? (
