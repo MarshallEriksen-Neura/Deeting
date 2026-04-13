@@ -539,14 +539,15 @@ fn update_finalize_node_status_from_graph(execution_graph: &mut serde_json::Valu
                 .get("status")
                 .and_then(serde_json::Value::as_str)
                 .is_some_and(|status| {
-                    matches!(
-                        status,
-                        "waiting_approval" | "approving" | "approval_failed"
-                    )
+                    matches!(status, "waiting_approval" | "approving" | "approval_failed")
                 })
     });
 
-    let next_status = if has_pending_approval { "pending" } else { "success" };
+    let next_status = if has_pending_approval {
+        "pending"
+    } else {
+        "success"
+    };
     update_finalize_node_status(execution_graph, next_status);
 }
 
@@ -554,7 +555,10 @@ pub(crate) fn mark_approval_gate_approving(
     suspended: &mut SuspendedChatToolExecution,
     call_id: Option<&str>,
 ) -> (String, String) {
-    let resolved_call_id = call_id.unwrap_or(suspended.pending_call_id()).trim().to_string();
+    let resolved_call_id = call_id
+        .unwrap_or(suspended.pending_call_id())
+        .trim()
+        .to_string();
     let gate_node_id = suspended
         .approval_gate_node_id_for_call_id(resolved_call_id.as_str())
         .unwrap_or_else(|| suspended.pending_gate_node_id().to_string());
@@ -594,7 +598,10 @@ pub(super) fn apply_approved_tool_result_to_execution_graph(
     call_id: Option<&str>,
     tool_result: &serde_json::Value,
 ) {
-    let resolved_call_id = call_id.unwrap_or(suspended.pending_call_id()).trim().to_string();
+    let resolved_call_id = call_id
+        .unwrap_or(suspended.pending_call_id())
+        .trim()
+        .to_string();
     let gate_node_id = suspended
         .approval_gate_node_id_for_call_id(resolved_call_id.as_str())
         .unwrap_or_else(|| suspended.pending_gate_node_id().to_string());

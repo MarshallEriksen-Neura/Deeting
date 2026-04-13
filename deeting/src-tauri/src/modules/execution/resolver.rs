@@ -156,7 +156,7 @@ fn resolve_shell(request: &ExecutionRequest, text: &str) -> ExecutionShell {
 
 #[cfg(target_os = "windows")]
 fn auto_shell_for_text(text: &str) -> ExecutionShell {
-    if looks_like_powershell(text) {
+    if looks_like_powershell(text) || contains_non_ascii(text) {
         ExecutionShell::Powershell
     } else {
         ExecutionShell::Cmd
@@ -191,6 +191,11 @@ fn looks_like_powershell(text: &str) -> bool {
     .any(|marker| lowered.contains(marker))
 }
 
+#[cfg(target_os = "windows")]
+fn contains_non_ascii(text: &str) -> bool {
+    text.chars().any(|ch| !ch.is_ascii())
+}
+
 #[cfg(test)]
 mod tests {
     use super::resolve_request;
@@ -212,6 +217,17 @@ mod tests {
     fn resolve_request_prefers_powershell_for_powershell_like_command() {
         let request = ExecutionRequest {
             command: Some("[System.Environment]::Version.ToString()".to_string()),
+            ..ExecutionRequest::default()
+        };
+        let plan = resolve_request(&request).expect("resolve shell plan");
+        assert_eq!(plan.shell_family, Some(ExecutionShell::Powershell));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn resolve_request_prefers_powershell_for_non_ascii_command() {
+        let request = ExecutionRequest {
+            command: Some("echo 你好".to_string()),
             ..ExecutionRequest::default()
         };
         let plan = resolve_request(&request).expect("resolve shell plan");

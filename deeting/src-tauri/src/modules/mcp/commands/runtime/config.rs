@@ -32,7 +32,8 @@ fn normalize_service_key(server_name: &str) -> String {
 }
 
 fn humanize_service_display_name(value: &str) -> String {
-    value.split(['_', '-'])
+    value
+        .split(['_', '-'])
         .filter(|part| !part.trim().is_empty())
         .map(|part| {
             let mut chars = part.chars();
@@ -79,8 +80,12 @@ fn resolve_service_metadata(
     let service_display_name = explicit_display_name
         .map(str::to_string)
         .unwrap_or_else(|| humanize_service_display_name(server_name));
-    let service_description =
-        explicit_description.or_else(|| server_config.description.clone().filter(|value| !value.trim().is_empty()));
+    let service_description = explicit_description.or_else(|| {
+        server_config
+            .description
+            .clone()
+            .filter(|value| !value.trim().is_empty())
+    });
 
     (service_key, service_display_name, service_description)
 }
@@ -571,7 +576,10 @@ pub(crate) async fn apply_config_payload_to_store(
                 "service_display_name".to_string(),
                 serde_json::Value::String(service_display_name.clone()),
             );
-            if let Some(description) = service_description.as_ref().filter(|value| !value.is_empty()) {
+            if let Some(description) = service_description
+                .as_ref()
+                .filter(|value| !value.is_empty())
+            {
                 map.insert(
                     "service_description".to_string(),
                     serde_json::Value::String(description.clone()),

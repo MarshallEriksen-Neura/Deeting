@@ -160,6 +160,7 @@
       "billing": "计费与配额",
       "storage": "存储",
       "knowledge": "知识库",
+      "llmWiki": "LLM Wiki",
       "memory": "用户记忆",
       "assets": "资产"
     }

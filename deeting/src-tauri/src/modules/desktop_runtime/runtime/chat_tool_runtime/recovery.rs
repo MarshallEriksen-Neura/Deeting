@@ -171,7 +171,9 @@ pub(super) async fn persist_resumed_local_chat_assistant_message(
 ) -> Result<(), String> {
     if resumed_response
         .get("execution_graph")
-        .is_some_and(|execution_graph| !pending_approval_gate_ids_from_graph(execution_graph).is_empty())
+        .is_some_and(|execution_graph| {
+            !pending_approval_gate_ids_from_graph(execution_graph).is_empty()
+        })
     {
         return Err(format!(
             "chat step=append_resumed_assistant_message blocked because execution_graph still has pending approval gates session={} ",
@@ -594,7 +596,10 @@ async fn advance_local_chat_execution_from_graph_state(
                         .get("execution_graph")
                         .unwrap_or(&serde_json::Value::Null),
                     approved_tool_result,
-                    build_local_chat_resume_continuation_blocks(&output.response, &continuation_meta),
+                    build_local_chat_resume_continuation_blocks(
+                        &output.response,
+                        &continuation_meta,
+                    ),
                     output
                         .response
                         .get("execution_graph")

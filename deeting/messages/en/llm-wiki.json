@@ -1,0 +1,145 @@
+{
+  "llm-wiki": {
+    "loading": "Loading workspace status...",
+    "desktopOnly": {
+      "title": "Desktop Only",
+      "description": "LLM Wiki workspace setup is currently available only inside the local desktop app."
+    },
+    "hero": {
+      "eyebrow": "Local knowledge workspace",
+      "title": "Turn your Obsidian vault into a maintained LLM Wiki.",
+      "description": "Deeting reads your vault locally, creates a bounded managed workspace, and keeps it synchronized through retrieval, delegated maintenance, and long-term knowledge growth.",
+      "readScope": "Reads the whole vault locally",
+      "writeScope": "Writes only to the managed workspace",
+      "agentFlow": "Delegates maintenance to task agents",
+      "metrics": {
+        "notes": "Markdown Notes",
+        "notesHint": "Vault notes available for local retrieval",
+        "attachments": "Attachments",
+        "attachmentsHint": "Files that can feed summaries and source pages",
+        "workspace": "Workspace Status",
+        "workspaceHint": "{readyCount} scaffold checkpoints ready",
+        "ready": "Ready",
+        "pending": "Pending"
+      }
+    },
+    "binding": {
+      "eyebrow": "Vault binding",
+      "title": "Connect the vault you already use.",
+      "description": "Paste the absolute vault path, then let Deeting scan it locally and reserve a managed workspace inside it.",
+      "refresh": "Refresh",
+      "analyze": "Analyze Vault",
+      "analyzing": "Analyzing...",
+      "safety": {
+        "title": "Read broad, write narrow",
+        "description": "Deeting can read the whole vault for context, but the default write scope stays inside the managed workspace only."
+      },
+      "fields": {
+        "vaultRoot": {
+          "label": "Obsidian Vault Root",
+          "description": "Use the absolute path to your existing Obsidian vault.",
+          "placeholder": "D:\\Obsidian\\My Vault"
+        },
+        "workspacePath": {
+          "label": "Managed Workspace Path",
+          "description": "Relative to the vault root. Deeting writes the LLM Wiki here.",
+          "placeholder": "Deeting Wiki"
+        }
+      },
+      "insights": {
+        "vaultName": "Vault Name",
+        "obsidian": "Obsidian Markers",
+        "candidates": "Candidate Wiki Folders",
+        "directories": "Directories Scanned",
+        "detected": "Detected",
+        "notDetected": "Not Detected"
+      }
+    },
+    "workspace": {
+      "eyebrow": "Workspace scaffold",
+      "title": "Bootstrap the managed wiki, not just an index.",
+      "description": "Deeting creates the minimum files needed for a usable LLM Wiki and personalizes them from the vault scan.",
+      "pathLabel": "Resolved Workspace Path",
+      "pathPlaceholder": "Analyze a vault first to resolve the workspace path.",
+      "bootstrap": "Create Workspace",
+      "bootstrapping": "Creating Workspace...",
+      "metrics": {
+        "ready": "Ready Checkpoints",
+        "workspace": "Workspace",
+        "bootstrappedAt": "Last Bootstrap",
+        "created": "Created",
+        "notCreated": "Not Created",
+        "awaiting": "Awaiting bootstrap"
+      },
+      "lastRun": {
+        "title": "Latest scaffold run",
+        "createdFiles": "{count} files created",
+        "createdDirectories": "{count} directories created",
+        "skippedFiles": "{count} files preserved"
+      }
+    },
+    "lifecycle": {
+      "eyebrow": "Lifecycle engine",
+      "title": "Reuse Deeting's local retrieval and maintenance stack.",
+      "description": "The page is only the product surface. Underneath, Deeting can already reuse hybrid retrieval, lifecycle scoring, and delegated maintenance patterns.",
+      "stepLabel": "Step {step}",
+      "steps": {
+        "scan": {
+          "title": "Index the vault, not the user's memory",
+          "description": "Vault files first become retrieval inputs through local scanning, embeddings, and lexical indexing."
+        },
+        "retrieve": {
+          "title": "Let runtime decide what matters now",
+          "description": "Normal chat stays retrieval-first. Runtime only decides when something deserves a maintenance action."
+        },
+        "delegate": {
+          "title": "Delegate markdown maintenance",
+          "description": "Task agents own the bounded write path so wiki updates remain reviewable and intentional."
+        },
+        "promote": {
+          "title": "Promote only stable conclusions",
+          "description": "User memory stays narrower than the wiki and only receives durable, high-value knowledge."
+        }
+      }
+    },
+    "agent": {
+      "eyebrow": "Agent handoff",
+      "title": "Wire a task agent to maintain the workspace.",
+      "description": "Use the generated prompt as the maintenance contract for a custom task agent, then let Deeting delegate wiki work into a bounded write scope.",
+      "createMaintainer": "Create Maintainer Agent",
+      "updateMaintainer": "Update Maintainer Agent",
+      "copyPrompt": "Copy Maintainer Prompt",
+      "openTaskAgents": "Open Task Agents",
+      "currentAgent": {
+        "label": "Current Maintainer",
+        "none": "No maintainer agent yet",
+        "emptyDescription": "Create one now so Deeting can delegate wiki maintenance into a bounded write scope.",
+        "description": "Maintainer profile synced. Last updated {updatedAt}."
+      },
+      "facts": {
+        "read": "Read Scope",
+        "write": "Write Scope"
+      },
+      "factValues": {
+        "read": "Whole connected vault",
+        "write": "Managed workspace only"
+      },
+      "tip": {
+        "title": "Keep the main runtime clean",
+        "description": "The maintainer agent should update pages, source summaries, and logs. The main chat runtime should stay retrieval-focused and trigger delegation only when needed."
+      }
+    },
+    "toast": {
+      "loadFailed": "Failed to load LLM Wiki state.",
+      "bindingSaved": "Vault binding saved.",
+      "bindingSaveFailed": "Failed to save vault binding.",
+      "workspaceBootstrapped": "Workspace ready. Created {files} files and {directories} directories.",
+      "bootstrapFailed": "Failed to create the managed workspace.",
+      "maintainerAgentReady": "{name} is ready for delegated maintenance.",
+      "maintainerAgentFailed": "Failed to create or update the maintainer agent.",
+      "promptCopied": "Maintainer prompt copied.",
+      "promptCopyFailed": "Could not copy the maintainer prompt.",
+      "noPrompt": "Maintainer prompt is not ready yet."
+    }
+  }
+}

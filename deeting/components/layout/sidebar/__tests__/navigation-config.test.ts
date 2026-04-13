@@ -66,4 +66,20 @@ describe("getUserDashboardNavigation", () => {
       ])
     )
   })
+
+  it("includes the desktop llm wiki route in storage navigation", () => {
+    const items = getUserDashboardNavigation({ isDesktopRuntime: true }).flatMap(
+      (group) => group.items
+    )
+
+    expect(items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "llm-wiki",
+          href: "/dashboard/llm-wiki",
+          label: "nav.llmWiki",
+        }),
+      ])
+    )
+  })
 })

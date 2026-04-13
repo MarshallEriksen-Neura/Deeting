@@ -115,12 +115,8 @@ pub(crate) async fn approve_mcp_tool_payload(
     );
 
     if let Some(execution_id) = requested_execution_id.as_deref() {
-        if let Some(mut suspended) = load_suspended_chat_tool_execution_for_resume(
-            state,
-            token,
-            Some(execution_id),
-        )
-        .await?
+        if let Some(mut suspended) =
+            load_suspended_chat_tool_execution_for_resume(state, token, Some(execution_id)).await?
         {
             if let Some(pending) = pending_before_approval.as_ref() {
                 let resolved_call_id = pending.call_id.as_deref().or(call_id);

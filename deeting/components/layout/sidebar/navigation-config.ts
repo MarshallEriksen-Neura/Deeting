@@ -142,6 +142,12 @@ export const userNavigation: NavGroup[] = [
         icon: "folderOpen",
       },
       {
+        id: "llm-wiki",
+        label: "nav.llmWiki",
+        href: "/dashboard/llm-wiki",
+        icon: "bookOpen",
+      },
+      {
         id: "memory",
         label: "nav.memory",
         href: "/dashboard/memory",

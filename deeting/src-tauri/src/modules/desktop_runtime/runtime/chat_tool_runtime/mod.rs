@@ -37,8 +37,7 @@ use inflight::{
     persistable_inflight_context_from_value,
 };
 pub(crate) use inflight::{
-    list_canonical_pending_local_approval_snapshots,
-    load_suspended_chat_tool_execution_for_resume,
+    list_canonical_pending_local_approval_snapshots, load_suspended_chat_tool_execution_for_resume,
     materialize_pending_local_approval_from_runtime_context,
     persist_suspended_execution_graph_runtime, serialize_inflight_runtime_context,
     InFlightExecutionStage,
@@ -57,9 +56,6 @@ use replay::finalize_tool_round;
 #[cfg(test)]
 use replay::{build_structured_tool_replay_messages, serialize_tool_replay_content};
 pub(crate) use suspended::SuspendedChatToolExecution;
-pub(crate) use tool_meta::{
-    apply_rejected_tool_result_to_execution_graph_value, mark_approval_gate_approving,
-};
 use tool_meta::{
     apply_approved_tool_result_to_execution_graph, attach_graph_metadata_to_pending_tool_meta,
     build_effective_tool_call_meta, build_state_effective_tool_call_meta,
@@ -70,6 +66,9 @@ use tool_meta::{
     resolve_local_tool_call_id, strip_stale_resume_response_metadata,
     summarize_tool_call_meta_results, tool_call_meta_matches_call_id,
     tool_call_meta_with_resolved_ids,
+};
+pub(crate) use tool_meta::{
+    apply_rejected_tool_result_to_execution_graph_value, mark_approval_gate_approving,
 };
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]

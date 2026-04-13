@@ -38,8 +38,7 @@ pub(crate) use chat_completion::{
 };
 pub(crate) use chat_tool_runtime::{
     apply_rejected_tool_result_to_execution_graph_value,
-    list_canonical_pending_local_approval_snapshots,
-    load_suspended_chat_tool_execution_for_resume,
+    list_canonical_pending_local_approval_snapshots, load_suspended_chat_tool_execution_for_resume,
     mark_approval_gate_approving, materialize_pending_local_approval_from_runtime_context,
     persist_suspended_execution_graph_runtime, project_local_chat_approval_state_payload,
     recover_inflight_local_execution_state, recover_local_chat_execution_from_action,

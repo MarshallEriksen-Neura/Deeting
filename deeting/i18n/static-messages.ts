@@ -26,6 +26,7 @@ const namespaces = [
   "memory",
   "plugins",
   "task-agents",
+  "llm-wiki",
 ] as const
 
 type StaticMessageNamespace = (typeof namespaces)[number]

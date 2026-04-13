@@ -278,10 +278,7 @@ pub async fn stop_mcp_tool(state: State<'_, AppState>, tool_id: String) -> Resul
 }
 
 #[tauri::command]
-pub async fn reindex_mcp_tool(
-    state: State<'_, AppState>,
-    tool_id: String,
-) -> Result<(), String> {
+pub async fn reindex_mcp_tool(state: State<'_, AppState>, tool_id: String) -> Result<(), String> {
     let tool = state
         .mcp
         .store

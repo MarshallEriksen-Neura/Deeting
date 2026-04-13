@@ -1640,12 +1640,8 @@ pub(crate) async fn approve_mcp_tool_inner_with_context_and_mode(
             return Err("approval context mismatch (execution_token)".to_string());
         }
     }
-    let pending = update_pending_approval_status(
-        pending_tool_calls,
-        approval_token,
-        "approving",
-    )
-    .await?;
+    let pending =
+        update_pending_approval_status(pending_tool_calls, approval_token, "approving").await?;
 
     if let Some(binding) = resolve_skill_binding_by_ref(
         store,
@@ -1759,8 +1755,7 @@ pub(crate) async fn approve_mcp_tool_inner_with_context_and_mode(
             .await;
             Err(err)
         }
-    }?
-    {
+    }? {
         let pending = remove_pending_approval_entry(pending_tool_calls, approval_token).await?;
         record_successful_tool_execution(
             store,

@@ -1,0 +1,145 @@
+{
+  "llm-wiki": {
+    "loading": "正在加载工作区状态...",
+    "desktopOnly": {
+      "title": "仅桌面端支持",
+      "description": "LLM Wiki 工作区初始化目前仅支持本地桌面端。"
+    },
+    "hero": {
+      "eyebrow": "本地知识工作区",
+      "title": "把你的 Obsidian vault 变成一个可持续维护的 LLM Wiki。",
+      "description": "Deeting 在本地读取你的 vault，在其中创建一个受控工作区，并通过检索、委托维护和长期知识沉淀持续更新它。",
+      "readScope": "本地读取整个 vault",
+      "writeScope": "默认只写入受控工作区",
+      "agentFlow": "把维护任务委托给 task agent",
+      "metrics": {
+        "notes": "Markdown 笔记",
+        "notesHint": "当前可用于本地检索的笔记数",
+        "attachments": "附件",
+        "attachmentsHint": "可用于来源摘要和资料页的文件",
+        "workspace": "工作区状态",
+        "workspaceHint": "当前已完成 {readyCount} 个脚手架检查点",
+        "ready": "已就绪",
+        "pending": "待初始化"
+      }
+    },
+    "binding": {
+      "eyebrow": "Vault 绑定",
+      "title": "先连接你已经在用的 vault。",
+      "description": "填写现有 Obsidian vault 的绝对路径，让 Deeting 在本地扫描并在其中预留一个受控工作区。",
+      "refresh": "刷新",
+      "analyze": "分析 Vault",
+      "analyzing": "分析中...",
+      "safety": {
+        "title": "读广写窄",
+        "description": "Deeting 可以读取整个 vault 作为上下文，但默认只会在受控工作区里写入。"
+      },
+      "fields": {
+        "vaultRoot": {
+          "label": "Obsidian Vault 根目录",
+          "description": "填写你现有 Obsidian vault 的绝对路径。",
+          "placeholder": "D:\\Obsidian\\我的 Vault"
+        },
+        "workspacePath": {
+          "label": "受控工作区路径",
+          "description": "相对于 vault 根目录。Deeting 会在这里维护 LLM Wiki。",
+          "placeholder": "Deeting Wiki"
+        }
+      },
+      "insights": {
+        "vaultName": "Vault 名称",
+        "obsidian": "Obsidian 标记",
+        "candidates": "候选 Wiki 目录",
+        "directories": "扫描目录数",
+        "detected": "已检测到",
+        "notDetected": "未检测到"
+      }
+    },
+    "workspace": {
+      "eyebrow": "工作区脚手架",
+      "title": "先长出一个可用的 wiki，而不只是建索引。",
+      "description": "Deeting 会创建一套最小可用 LLM Wiki 文件结构，并根据 vault 扫描结果给出个性化起点。",
+      "pathLabel": "解析后的工作区路径",
+      "pathPlaceholder": "请先分析 vault，系统会解析工作区路径。",
+      "bootstrap": "创建工作区",
+      "bootstrapping": "创建中...",
+      "metrics": {
+        "ready": "就绪检查点",
+        "workspace": "工作区",
+        "bootstrappedAt": "最近初始化",
+        "created": "已创建",
+        "notCreated": "未创建",
+        "awaiting": "等待初始化"
+      },
+      "lastRun": {
+        "title": "最近一次脚手架执行",
+        "createdFiles": "创建了 {count} 个文件",
+        "createdDirectories": "创建了 {count} 个目录",
+        "skippedFiles": "保留了 {count} 个已有文件"
+      }
+    },
+    "lifecycle": {
+      "eyebrow": "生命周期引擎",
+      "title": "直接复用 Deeting 现有的本地检索与维护能力。",
+      "description": "这个页面只是产品表面。底层已经可以复用混合检索、生命周期评分和委托维护这些能力。",
+      "stepLabel": "步骤 {step}",
+      "steps": {
+        "scan": {
+          "title": "先进入知识索引，而不是用户记忆",
+          "description": "vault 文件先通过本地扫描、embedding 和 lexical 索引进入可检索层。"
+        },
+        "retrieve": {
+          "title": "让 runtime 判断当前是否值得维护",
+          "description": "普通对话仍然以检索为主，runtime 只负责决定何时触发维护动作。"
+        },
+        "delegate": {
+          "title": "把 markdown 维护委托出去",
+          "description": "由 task agent 持有受控写入路径，让 wiki 更新更清晰、更可审查。"
+        },
+        "promote": {
+          "title": "只把稳定结论提升进用户记忆",
+          "description": "用户记忆应比 wiki 更窄，只接收长期有效、高价值的知识。"
+        }
+      }
+    },
+    "agent": {
+      "eyebrow": "Agent 交接",
+      "title": "把这个工作区交给一个 task agent 来维护。",
+      "description": "把下面生成的 prompt 作为维护契约，用于 custom task agent，让 Deeting 在明确边界内委托 wiki 工作。",
+      "createMaintainer": "创建维护 Agent",
+      "updateMaintainer": "更新维护 Agent",
+      "copyPrompt": "复制维护 Prompt",
+      "openTaskAgents": "打开 Task Agents",
+      "currentAgent": {
+        "label": "当前维护 Agent",
+        "none": "还没有维护 Agent",
+        "emptyDescription": "现在创建一个，这样 Deeting 后续就能把 wiki 维护工作委托到受控写入范围里。",
+        "description": "维护 Agent 已同步，最近更新时间 {updatedAt}。"
+      },
+      "facts": {
+        "read": "读取范围",
+        "write": "写入范围"
+      },
+      "factValues": {
+        "read": "整个已连接 vault",
+        "write": "仅受控工作区"
+      },
+      "tip": {
+        "title": "保持主 runtime 简洁",
+        "description": "维护型 agent 负责更新页面、来源摘要和日志；主聊天 runtime 保持以检索和触发委托为主。"
+      }
+    },
+    "toast": {
+      "loadFailed": "加载 LLM Wiki 状态失败。",
+      "bindingSaved": "Vault 绑定已保存。",
+      "bindingSaveFailed": "保存 Vault 绑定失败。",
+      "workspaceBootstrapped": "工作区已就绪，共创建 {files} 个文件和 {directories} 个目录。",
+      "bootstrapFailed": "创建受控工作区失败。",
+      "maintainerAgentReady": "{name} 已可用于委托维护。",
+      "maintainerAgentFailed": "创建或更新维护 Agent 失败。",
+      "promptCopied": "维护 Prompt 已复制。",
+      "promptCopyFailed": "复制维护 Prompt 失败。",
+      "noPrompt": "维护 Prompt 尚未生成。"
+    }
+  }
+}

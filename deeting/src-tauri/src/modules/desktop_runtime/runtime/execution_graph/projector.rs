@@ -309,15 +309,14 @@ fn build_graph_tool_result_block(
         LocalExecutionGraphNodeStatus::Pending
         | LocalExecutionGraphNodeStatus::Queued
         | LocalExecutionGraphNodeStatus::Running => None,
-        LocalExecutionGraphNodeStatus::WaitingApproval | LocalExecutionGraphNodeStatus::Approving => {
-            Some(json!({
-                "type": "tool_result",
-                "callId": call_id,
-                "toolName": tool_name,
-                "status": "requires_approval",
-                "result": node.output_payload.clone().unwrap_or_else(|| json!({})),
-            }))
-        }
+        LocalExecutionGraphNodeStatus::WaitingApproval
+        | LocalExecutionGraphNodeStatus::Approving => Some(json!({
+            "type": "tool_result",
+            "callId": call_id,
+            "toolName": tool_name,
+            "status": "requires_approval",
+            "result": node.output_payload.clone().unwrap_or_else(|| json!({})),
+        })),
         LocalExecutionGraphNodeStatus::Approved | LocalExecutionGraphNodeStatus::Success => {
             Some(json!({
                 "type": "tool_result",

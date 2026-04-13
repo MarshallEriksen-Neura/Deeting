@@ -227,6 +227,8 @@ async fn run_command(
 ) -> Result<RawCommandOutput, ExecutionError> {
     let mut command = Command::new(program);
     configure_background_tokio_command(&mut command);
+    #[cfg(target_os = "windows")]
+    apply_windows_utf8_env_defaults(&mut command, env);
     command
         .args(args)
         .stdout(Stdio::piped())
@@ -252,6 +254,23 @@ async fn run_command(
         args: args.to_vec(),
         diagnostics: Vec::new(),
     })
+}
+
+#[cfg(target_os = "windows")]
+fn apply_windows_utf8_env_defaults(
+    command: &mut Command,
+    env: &std::collections::HashMap<String, String>,
+) {
+    for (key, value) in [
+        ("PYTHONIOENCODING", "utf-8"),
+        ("PYTHONUTF8", "1"),
+        ("LANG", "C.UTF-8"),
+        ("LC_ALL", "C.UTF-8"),
+    ] {
+        if !env.contains_key(key) {
+            command.env(key, value);
+        }
+    }
 }
 
 #[async_trait]

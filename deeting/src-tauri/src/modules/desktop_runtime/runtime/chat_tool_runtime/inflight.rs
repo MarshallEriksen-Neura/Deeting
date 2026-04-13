@@ -166,9 +166,10 @@ fn canonical_waiting_approval_context(
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        let has_matching_token = persisted.pending_approvals.iter().any(|pending| {
-            pending.approval_token.trim() == expected_approval_token
-        });
+        let has_matching_token = persisted
+            .pending_approvals
+            .iter()
+            .any(|pending| pending.approval_token.trim() == expected_approval_token);
         if !has_matching_token {
             return None;
         }
@@ -192,15 +193,13 @@ async fn load_canonical_waiting_approval_context_by_execution_id(
     else {
         return Ok(None);
     };
-    Ok(
-        canonical_waiting_approval_context(
-            context,
-            normalized_execution_id,
-            session_id,
-            approval_token,
-        )
-        .map(|persisted| (normalized_execution_id.to_string(), persisted)),
+    Ok(canonical_waiting_approval_context(
+        context,
+        normalized_execution_id,
+        session_id,
+        approval_token,
     )
+    .map(|persisted| (normalized_execution_id.to_string(), persisted)))
 }
 
 async fn list_canonical_waiting_approval_contexts(
@@ -276,9 +275,9 @@ async fn find_canonical_pending_local_approval_match(
             None,
             Some(normalized_token),
         )
-            .await?
-            .into_iter()
-            .collect::<Vec<_>>()
+        .await?
+        .into_iter()
+        .collect::<Vec<_>>()
     } else {
         list_canonical_waiting_approval_contexts(store, None, Some(normalized_token)).await?
     };
