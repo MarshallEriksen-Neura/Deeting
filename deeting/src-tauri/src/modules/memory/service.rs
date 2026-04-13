@@ -9,21 +9,11 @@ use crate::modules::memory::types::{
     UpdateLocalMemoryRequest, WriteAction, WriteGuardResult,
 };
 use crate::modules::providers::embedding::EmbeddingService;
+use crate::modules::retrieval_kernel::lifecycle::{
+    decide_write_guard_action, touched_vitality, vitality_multiplier, WriteGuardDecision,
+    DEFAULT_VITALITY_RERANK_OVERFETCH_FACTOR,
+};
 use serde_json::Value;
-
-/// Write Guard thresholds (cosine similarity).
-const WRITE_GUARD_NOOP_THRESHOLD: f32 = 0.95;
-const WRITE_GUARD_UPDATE_THRESHOLD: f32 = 0.85;
-
-/// Vitality decay parameters.
-/// final_score = vector_score * (0.7 + 0.3 * vitality * exp(-0.05 * days_since_access))
-const VITALITY_BASE_WEIGHT: f32 = 0.7;
-const VITALITY_DECAY_WEIGHT: f32 = 0.3;
-const VITALITY_DECAY_RATE: f32 = 0.05;
-const VITALITY_TOUCH_INCREMENT: f32 = 0.08;
-
-/// Over-fetch factor for vitality reranking.
-const RERANK_OVERFETCH_FACTOR: usize = 3;
 
 pub struct MemoryService {
     store: Arc<MemoryStore>,
@@ -102,8 +92,11 @@ impl MemoryService {
             .find_top1_similar(embedding.clone(), None, None)
             .await?;
 
-        match top1 {
-            Some((existing_id, existing_content, score)) if score >= WRITE_GUARD_NOOP_THRESHOLD => {
+        match (
+            decide_write_guard_action(top1.as_ref().map(|(_, _, score)| *score)),
+            top1,
+        ) {
+            (WriteGuardDecision::Noop, Some((existing_id, existing_content, score))) => {
                 // NOOP: too similar, discard
                 log::debug!(
                     "write guard: NOOP (score={:.3}) — discarding duplicate of {}",
@@ -128,9 +121,7 @@ impl MemoryService {
                     updated_at: now,
                 })
             }
-            Some((existing_id, existing_content, score))
-                if score >= WRITE_GUARD_UPDATE_THRESHOLD =>
-            {
+            (WriteGuardDecision::Update, Some((existing_id, existing_content, score))) => {
                 // UPDATE: merge content into existing memory
                 log::debug!(
                     "write guard: UPDATE (score={:.3}) — merging into {}",
@@ -233,10 +224,11 @@ impl MemoryService {
             .find_top1_similar(embedding.clone(), None, None)
             .await?;
 
-        match top1 {
-            Some((existing_id, _existing_content, score))
-                if score >= WRITE_GUARD_NOOP_THRESHOLD =>
-            {
+        match (
+            decide_write_guard_action(top1.as_ref().map(|(_, _, score)| *score)),
+            top1,
+        ) {
+            (WriteGuardDecision::Noop, Some((existing_id, _existing_content, score))) => {
                 Ok(WriteGuardResult {
                     action: WriteAction::Noop,
                     item: None,
@@ -244,9 +236,7 @@ impl MemoryService {
                     updated_memory_id: Some(existing_id),
                 })
             }
-            Some((existing_id, existing_content, score))
-                if score >= WRITE_GUARD_UPDATE_THRESHOLD =>
-            {
+            (WriteGuardDecision::Update, Some((existing_id, existing_content, score))) => {
                 let merged = format!("{}\n\n---\n\n{}", existing_content, payload.content.trim());
 
                 let new_embedding = if let Some(ref embedding_svc) = self.embedding {
@@ -397,7 +387,7 @@ impl MemoryService {
         query_vector: Vec<f32>,
     ) -> Result<LocalMemorySearchResult, MemoryError> {
         let limit = query.limit.unwrap_or(10).clamp(1, 100);
-        let overfetch = limit * RERANK_OVERFETCH_FACTOR;
+        let overfetch = limit * DEFAULT_VITALITY_RERANK_OVERFETCH_FACTOR;
 
         let mut items = self
             .store
@@ -739,17 +729,6 @@ fn map_knowledge_search_results(
     hits
 }
 
-/// Parse an RFC3339 timestamp and return days elapsed since that time.
-fn parse_days_since(timestamp: &str, now: time::OffsetDateTime) -> f32 {
-    time::OffsetDateTime::parse(timestamp, &time::format_description::well_known::Rfc3339)
-        .ok()
-        .map(|t| {
-            let duration = now - t;
-            (duration.whole_seconds() as f32 / 86400.0).max(0.0)
-        })
-        .unwrap_or(0.0)
-}
-
 fn serialize_memory_metadata(item: &LocalMemoryItem) -> Result<Option<String>, MemoryError> {
     let metadata = serde_json::json!({
         "meta_info": item.meta_info,
@@ -863,10 +842,6 @@ fn snapshot_restore_payload(
     Ok(request)
 }
 
-fn touched_vitality(current: Option<f32>) -> f32 {
-    (current.unwrap_or(1.0) + VITALITY_TOUCH_INCREMENT).min(1.0)
-}
-
 fn reference_timestamp(item: &crate::modules::memory::types::LocalMemorySearchItem) -> &str {
     item.last_accessed_at
         .as_deref()
@@ -878,10 +853,7 @@ fn apply_vitality_rerank(
     now: time::OffsetDateTime,
 ) {
     for item in items.iter_mut() {
-        let vitality = item.vitality.unwrap_or(1.0);
-        let days_since_access = parse_days_since(reference_timestamp(item), now);
-        let decay = (-VITALITY_DECAY_RATE * days_since_access).exp();
-        item.score *= VITALITY_BASE_WEIGHT + VITALITY_DECAY_WEIGHT * vitality * decay;
+        item.score *= vitality_multiplier(item.vitality, reference_timestamp(item), now);
     }
 }
 

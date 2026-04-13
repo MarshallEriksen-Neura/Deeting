@@ -10,7 +10,7 @@ use tauri::Manager;
 use time::OffsetDateTime;
 
 #[cfg(test)]
-use crate::modules::desktop_runtime::runtime::search_ranking::bm25_asset_match_scores;
+use crate::modules::retrieval_kernel::ranking::bm25_asset_match_scores;
 #[cfg(test)]
 use std::collections::BTreeSet;
 

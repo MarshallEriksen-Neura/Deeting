@@ -20,12 +20,14 @@ use super::config::{
     save_last_bootstrapped_at, PersistedLlmWikiBinding, READ_SCOPE_WHOLE_VAULT,
     WRITE_SCOPE_MANAGED_WORKSPACE,
 };
+use super::corpus::{load_corpus_status, search_corpus, sync_corpus};
 use super::scan::{inspect_workspace, scan_vault};
 use super::templates::{build_bootstrap_files, build_recommended_agent_prompt};
 use super::types::{
     BootstrapLocalLlmWikiWorkspaceResult, CreateOrUpdateLocalLlmWikiMaintainerAgentResult,
     LocalLlmWikiBinding, LocalLlmWikiMaintainerAgentSummary, LocalLlmWikiState,
-    SaveLocalLlmWikiBindingRequest,
+    SaveLocalLlmWikiBindingRequest, SearchLocalLlmWikiCorpusRequest,
+    SearchLocalLlmWikiCorpusResult,
 };
 
 const LLM_WIKI_MAINTAINER_SOURCE_KIND: &str = "llm_wiki_maintainer";
@@ -36,6 +38,7 @@ pub async fn get_local_llm_wiki_state(store: &McpStore) -> Result<LocalLlmWikiSt
             binding: None,
             scan_summary: None,
             workspace_status: None,
+            corpus_status: None,
             maintainer_agent: None,
             recommended_agent_prompt: None,
         });
@@ -198,6 +201,41 @@ pub async fn create_or_update_local_llm_wiki_maintainer_agent(
     Ok(CreateOrUpdateLocalLlmWikiMaintainerAgentResult { state })
 }
 
+pub async fn sync_local_llm_wiki_corpus(
+    app_state: &AppState,
+) -> Result<super::types::SyncLocalLlmWikiCorpusResult, String> {
+    let binding = load_binding(app_state.mcp.store.as_ref())
+        .await
+        .map_err(|err| err.to_string())?
+        .ok_or_else(|| "llm wiki binding has not been configured yet".to_string())?;
+
+    let vault_root = normalize_vault_root(&binding.vault_root)?;
+    let workspace_path = resolve_workspace_path(&vault_root, &binding.workspace_relative_path);
+    let (indexed_files, removed_files, _) =
+        sync_corpus(app_state, &vault_root, &workspace_path).await?;
+
+    let state = build_state_from_binding(app_state.mcp.store.as_ref(), binding).await?;
+    Ok(super::types::SyncLocalLlmWikiCorpusResult {
+        indexed_files,
+        removed_files,
+        state,
+    })
+}
+
+pub async fn search_local_llm_wiki_corpus(
+    app_state: &AppState,
+    payload: SearchLocalLlmWikiCorpusRequest,
+) -> Result<SearchLocalLlmWikiCorpusResult, String> {
+    let _binding = load_binding(app_state.mcp.store.as_ref())
+        .await
+        .map_err(|err| err.to_string())?
+        .ok_or_else(|| "llm wiki binding has not been configured yet".to_string())?;
+
+    let limit = payload.limit.unwrap_or(6).clamp(1, 12);
+    let hits = search_corpus(app_state, &payload.query, limit).await?;
+    Ok(SearchLocalLlmWikiCorpusResult { hits })
+}
+
 async fn build_state_from_binding(
     store: &McpStore,
     binding: PersistedLlmWikiBinding,
@@ -220,6 +258,7 @@ async fn build_state_from_binding(
     })
     .await
     .map_err(|err| format!("workspace inspection task failed: {}", err))?;
+    let corpus_status = load_corpus_status(store, &vault_root, &workspace_path, None).await?;
     let public_binding = build_public_binding(&vault_root, &binding);
     let maintainer_agent = find_existing_maintainer_agent(store, &workspace_path.to_string_lossy())
         .await
@@ -237,6 +276,7 @@ async fn build_state_from_binding(
         binding: Some(public_binding.clone()),
         scan_summary: Some(scan_summary),
         workspace_status: Some(workspace_status),
+        corpus_status: Some(corpus_status),
         maintainer_agent,
         recommended_agent_prompt: Some(build_recommended_agent_prompt(&public_binding)),
     })

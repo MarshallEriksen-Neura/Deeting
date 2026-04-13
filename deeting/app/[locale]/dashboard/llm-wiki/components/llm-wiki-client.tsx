@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { GlassCard, GlassCardContent, GlassCardHeader, GlassCardTitle } from "@/components/ui/glass-card"
 import { LlmWikiAgentCard } from "./llm-wiki-agent-card"
 import { LlmWikiBindingCard } from "./llm-wiki-binding-card"
+import { LlmWikiCorpusCard } from "./llm-wiki-corpus-card"
 import { LlmWikiHero } from "./llm-wiki-hero"
 import { LlmWikiLifecycleCard } from "./llm-wiki-lifecycle-card"
 import { useLlmWiki } from "./use-llm-wiki"
@@ -25,14 +26,23 @@ export function LlmWikiClient() {
     isAnalyzing,
     isBootstrapping,
     isSyncingAgent,
+    isSyncingCorpus,
+    isSearchingCorpus,
     lastBootstrap,
+    corpusQuery,
+    corpusHits,
+    selectedCorpusHit,
     setVaultRoot,
     setWorkspaceRelativePath,
+    setCorpusQuery,
+    setSelectedCorpusHitId,
     refresh,
     analyze,
     bootstrap,
     copyAgentPrompt,
     syncMaintainerAgent,
+    syncCorpus,
+    searchCorpus,
   } = useLlmWiki(t)
 
   if (desktopSupported === null && isLoading) {
@@ -93,7 +103,22 @@ export function LlmWikiClient() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
-        <LlmWikiLifecycleCard t={t} />
+        <div className="grid gap-6">
+          <LlmWikiLifecycleCard t={t} />
+          <LlmWikiCorpusCard
+            t={t}
+            state={state}
+            corpusQuery={corpusQuery}
+            corpusHits={corpusHits}
+            selectedCorpusHit={selectedCorpusHit}
+            isSyncingCorpus={isSyncingCorpus}
+            isSearchingCorpus={isSearchingCorpus}
+            onCorpusQueryChange={setCorpusQuery}
+            onSelectCorpusHit={setSelectedCorpusHitId}
+            onSyncCorpus={syncCorpus}
+            onSearchCorpus={searchCorpus}
+          />
+        </div>
         <LlmWikiAgentCard
           t={t}
           state={state}

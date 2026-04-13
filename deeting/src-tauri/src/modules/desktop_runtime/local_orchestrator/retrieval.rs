@@ -7,7 +7,6 @@ use super::workflow::{
     status_patch, ContextPatch, LocalStepResult, LocalWorkflowContext, LocalWorkflowStep,
     StepResult,
 };
-use crate::modules::desktop_runtime::runtime::search_ranking::reciprocal_rank_fusion;
 use crate::modules::desktop_runtime::runtime::{
     build_runtime_discovery_bundle_with_runtime_query_vector, should_run_semantic_recall,
 };
@@ -18,6 +17,7 @@ use crate::modules::memory::types::{
     KnowledgeSearchResult, LocalMemoryItem, LocalMemoryListQuery, LocalMemorySearchItem,
     LocalMemorySearchQuery,
 };
+use crate::modules::retrieval_kernel::ranking::reciprocal_rank_fusion;
 
 pub(super) struct ContextRetrievalPrefetchStep;
 pub(super) struct SemanticMemoryInjectionStep;

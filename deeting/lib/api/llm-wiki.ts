@@ -47,6 +47,13 @@ export const LocalLlmWikiWorkspaceStatusSchema = z.object({
   lastBootstrappedAt: z.string().nullish(),
 })
 
+export const LocalLlmWikiCorpusStatusSchema = z.object({
+  indexedNoteCount: z.number(),
+  managedWorkspaceNoteCount: z.number(),
+  legacyVaultNoteCount: z.number(),
+  lastSyncedAt: z.string().nullish(),
+})
+
 export const LocalLlmWikiMaintainerAgentSummarySchema = z.object({
   agentId: z.string(),
   name: z.string(),
@@ -60,6 +67,7 @@ export const LocalLlmWikiStateSchema = z.object({
   binding: LocalLlmWikiBindingSchema.nullish(),
   scanSummary: LocalLlmWikiVaultScanSummarySchema.nullish(),
   workspaceStatus: LocalLlmWikiWorkspaceStatusSchema.nullish(),
+  corpusStatus: LocalLlmWikiCorpusStatusSchema.nullish(),
   maintainerAgent: LocalLlmWikiMaintainerAgentSummarySchema.nullish(),
   recommendedAgentPrompt: z.string().nullish(),
 })
@@ -76,6 +84,25 @@ export const CreateOrUpdateLocalLlmWikiMaintainerAgentResultSchema = z.object({
   state: LocalLlmWikiStateSchema,
 })
 
+export const SyncLocalLlmWikiCorpusResultSchema = z.object({
+  indexedFiles: z.number(),
+  removedFiles: z.number(),
+  state: LocalLlmWikiStateSchema,
+})
+
+export const LocalLlmWikiCorpusSearchHitSchema = z.object({
+  assetId: z.string(),
+  relativePath: z.string(),
+  title: z.string(),
+  scope: z.string(),
+  summary: z.string(),
+  score: z.number(),
+})
+
+export const SearchLocalLlmWikiCorpusResultSchema = z.object({
+  hits: z.array(LocalLlmWikiCorpusSearchHitSchema).default([]),
+})
+
 export type LocalLlmWikiBinding = z.infer<typeof LocalLlmWikiBindingSchema>
 export type LocalLlmWikiCandidateFolder = z.infer<
   typeof LocalLlmWikiCandidateFolderSchema
@@ -85,6 +112,9 @@ export type LocalLlmWikiVaultScanSummary = z.infer<
 >
 export type LocalLlmWikiWorkspaceStatus = z.infer<
   typeof LocalLlmWikiWorkspaceStatusSchema
+>
+export type LocalLlmWikiCorpusStatus = z.infer<
+  typeof LocalLlmWikiCorpusStatusSchema
 >
 export type LocalLlmWikiMaintainerAgentSummary = z.infer<
   typeof LocalLlmWikiMaintainerAgentSummarySchema
@@ -96,10 +126,24 @@ export type BootstrapLocalLlmWikiWorkspaceResult = z.infer<
 export type CreateOrUpdateLocalLlmWikiMaintainerAgentResult = z.infer<
   typeof CreateOrUpdateLocalLlmWikiMaintainerAgentResultSchema
 >
+export type SyncLocalLlmWikiCorpusResult = z.infer<
+  typeof SyncLocalLlmWikiCorpusResultSchema
+>
+export type LocalLlmWikiCorpusSearchHit = z.infer<
+  typeof LocalLlmWikiCorpusSearchHitSchema
+>
+export type SearchLocalLlmWikiCorpusResult = z.infer<
+  typeof SearchLocalLlmWikiCorpusResultSchema
+>
 
 export interface SaveLocalLlmWikiBindingPayload {
   vaultRoot: string
   workspaceRelativePath?: string
+}
+
+export interface SearchLocalLlmWikiCorpusPayload {
+  query: string
+  limit?: number
 }
 
 export function supportsLocalLlmWiki(): boolean {
@@ -112,6 +156,7 @@ export async function getLocalLlmWikiState(): Promise<LocalLlmWikiState> {
       binding: null,
       scanSummary: null,
       workspaceStatus: null,
+      corpusStatus: null,
       maintainerAgent: null,
       recommendedAgentPrompt: null,
     })
@@ -143,4 +188,18 @@ export async function createOrUpdateLocalLlmWikiMaintainerAgent(): Promise<Creat
     "create_or_update_local_llm_wiki_maintainer_agent_command",
   )
   return CreateOrUpdateLocalLlmWikiMaintainerAgentResultSchema.parse(data)
+}
+
+export async function syncLocalLlmWikiCorpus(): Promise<SyncLocalLlmWikiCorpusResult> {
+  const data = await invokeTauri<unknown>("sync_local_llm_wiki_corpus_command")
+  return SyncLocalLlmWikiCorpusResultSchema.parse(data)
+}
+
+export async function searchLocalLlmWikiCorpus(
+  payload: SearchLocalLlmWikiCorpusPayload,
+): Promise<SearchLocalLlmWikiCorpusResult> {
+  const data = await invokeTauri<unknown>("search_local_llm_wiki_corpus_command", {
+    payload,
+  })
+  return SearchLocalLlmWikiCorpusResultSchema.parse(data)
 }

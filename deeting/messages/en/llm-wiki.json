@@ -102,6 +102,42 @@
         }
       }
     },
+    "corpus": {
+      "eyebrow": "Managed corpus",
+      "title": "Sync the dedicated LLM Wiki corpus.",
+      "description": "This corpus stays separate from the main knowledge surface. It reuses shared embedding, BM25, hybrid ranking, and lifecycle mechanics for the wiki maintainer agent only.",
+      "sync": "Sync Corpus",
+      "syncing": "Syncing Corpus...",
+      "preview": {
+        "title": "Preview matches",
+        "placeholder": "Search the maintainer corpus...",
+        "empty": "Run a corpus search to inspect what the maintainer agent can see.",
+        "noResults": "No corpus matches for the current query."
+      },
+      "inspector": {
+        "title": "Live inspector",
+        "scope": "Scope",
+        "score": "Rank score",
+        "summary": "Match summary",
+        "empty": "Select a corpus result to inspect what the maintainer agent would receive.",
+        "agentUses": {
+          "title": "Used by the maintainer agent",
+          "description": "This inspector reflects the same dedicated corpus that the wiki maintainer agent can search during delegated work."
+        }
+      },
+      "scopes": {
+        "managed_workspace": "Workspace",
+        "legacy_vault": "Legacy"
+      },
+      "lastSynced": "Last Corpus Sync",
+      "notSynced": "Not synced yet",
+      "note": "The main assistant does not read from this corpus by default. It is reserved for explicit delegation to the wiki maintainer agent.",
+      "metrics": {
+        "indexed": "Indexed Notes",
+        "workspace": "Managed Workspace",
+        "legacy": "Legacy Vault"
+      }
+    },
     "agent": {
       "eyebrow": "Agent handoff",
       "title": "Wire a task agent to maintain the workspace.",
@@ -135,6 +171,9 @@
       "bindingSaveFailed": "Failed to save vault binding.",
       "workspaceBootstrapped": "Workspace ready. Created {files} files and {directories} directories.",
       "bootstrapFailed": "Failed to create the managed workspace.",
+      "corpusSynced": "Corpus synced. Indexed {indexed} files and removed {removed} stale entries.",
+      "corpusSyncFailed": "Failed to sync the LLM Wiki corpus.",
+      "corpusSearchFailed": "Failed to search the LLM Wiki corpus.",
       "maintainerAgentReady": "{name} is ready for delegated maintenance.",
       "maintainerAgentFailed": "Failed to create or update the maintainer agent.",
       "promptCopied": "Maintainer prompt copied.",

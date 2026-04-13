@@ -9,6 +9,14 @@ use crate::modules::desktop_runtime::runtime::capability_toolset::{
 
 use super::skill_actions::ResolvedSkillAction;
 
+#[derive(Debug, Clone)]
+pub(super) struct BuiltinCallableDefinition {
+    pub(super) callable_name: String,
+    pub(super) description: String,
+    pub(super) parameters: Value,
+    pub(super) lane: BoundCallableLane,
+}
+
 /// Provider-visible callable projected back into the custom-task-agent runtime.
 ///
 /// Bound callable names come from runtime truth, not from provider-safe naming rules.
@@ -28,6 +36,7 @@ pub(super) struct BoundCallable {
 pub(super) enum BoundCallableLane {
     McpTool,
     SkillAction,
+    BuiltinAction,
     Unknown,
 }
 
@@ -47,6 +56,7 @@ impl BoundCallablePayload {
     pub(super) fn build(
         mcp_tools: &HashMap<String, McpTool>,
         skill_actions: &HashMap<String, ResolvedSkillAction>,
+        builtin_callables: &[BuiltinCallableDefinition],
     ) -> Self {
         let mut entries = Vec::new();
         let mut bindings_by_provider_name = HashMap::new();
@@ -86,6 +96,18 @@ impl BoundCallablePayload {
                     .input_schema
                     .clone()
                     .unwrap_or_else(|| json!({ "type": "object", "properties": {} })),
+            );
+        }
+
+        for builtin in builtin_callables {
+            push_bound_callable_entry(
+                &mut entries,
+                &mut bindings_by_provider_name,
+                &mut used_provider_names,
+                builtin.callable_name.as_str(),
+                builtin.lane,
+                builtin.description.clone(),
+                builtin.parameters.clone(),
             );
         }
 
@@ -213,7 +235,7 @@ mod tests {
     use mcp_core::types::{McpConflictStatus, McpSourceType, McpTool, McpToolStatus};
     use serde_json::{json, Value};
 
-    use super::{BoundCallableLane, BoundCallablePayload};
+    use super::{BoundCallableLane, BoundCallablePayload, BuiltinCallableDefinition};
     use crate::modules::custom_task_agents::skill_actions::ResolvedSkillAction;
     use crate::modules::desktop_runtime::runtime::capability_toolset::{
         dynamic_capability_alias, PROVIDER_MAX_TOOL_NAME_LEN,
@@ -277,7 +299,7 @@ mod tests {
             ),
         ]);
 
-        let payload = BoundCallablePayload::build(&mcp_tools, &HashMap::new());
+        let payload = BoundCallablePayload::build(&mcp_tools, &HashMap::new(), &[]);
         let tool_payload = payload.tool_payload().expect("tool payload");
         let provider_names = tool_payload
             .get("tools")
@@ -323,7 +345,7 @@ mod tests {
             sample_mcp_tool("firecrawl_search"),
         )]);
 
-        let payload = BoundCallablePayload::build(&mcp_tools, &HashMap::new());
+        let payload = BoundCallablePayload::build(&mcp_tools, &HashMap::new(), &[]);
         let tool_payload = payload.tool_payload().expect("tool payload");
         let provider_name = tool_payload
             .pointer("/tools/0/function/name")
@@ -354,7 +376,7 @@ mod tests {
         let skill_actions =
             HashMap::from([("search_sdk".to_string(), sample_skill_action("search_sdk"))]);
 
-        let payload = BoundCallablePayload::build(&mcp_tools, &skill_actions);
+        let payload = BoundCallablePayload::build(&mcp_tools, &skill_actions, &[]);
         let tool_payload = payload.tool_payload().expect("tool payload");
         let provider_names = tool_payload
             .get("tools")
@@ -401,7 +423,7 @@ mod tests {
             sample_skill_action(long_safe_name),
         )]);
 
-        let payload = BoundCallablePayload::build(&mcp_tools, &skill_actions);
+        let payload = BoundCallablePayload::build(&mcp_tools, &skill_actions, &[]);
         let tool_payload = payload.tool_payload().expect("tool payload");
         let provider_names = tool_payload
             .get("tools")
@@ -417,5 +439,38 @@ mod tests {
             .all(|name| name.len() <= PROVIDER_MAX_TOOL_NAME_LEN));
         assert!(provider_names.contains(&long_safe_name));
         assert!(provider_names.iter().any(|name| *name != long_safe_name));
+    }
+
+    #[test]
+    fn parses_builtin_callable_lane() {
+        let builtins = vec![BuiltinCallableDefinition {
+            callable_name: "llm_wiki_search_corpus".to_string(),
+            description: "Search corpus".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"}
+                },
+                "required": ["query"]
+            }),
+            lane: BoundCallableLane::BuiltinAction,
+        }];
+
+        let payload = BoundCallablePayload::build(&HashMap::new(), &HashMap::new(), &builtins);
+        let response = json!({
+            "tool_calls": [
+                {
+                    "id": "call-corpus",
+                    "name": "llm_wiki_search_corpus",
+                    "arguments": {"query": "context compression"}
+                }
+            ]
+        });
+
+        let callables = payload.parse_tool_calls(&response);
+
+        assert_eq!(callables.len(), 1);
+        assert_eq!(callables[0].name, "llm_wiki_search_corpus");
+        assert_eq!(callables[0].lane, BoundCallableLane::BuiltinAction);
     }
 }

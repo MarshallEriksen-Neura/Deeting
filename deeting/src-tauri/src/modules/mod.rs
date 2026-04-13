@@ -24,6 +24,7 @@ pub mod monitor;
 pub mod providers;
 pub mod relay;
 pub mod render_runtime;
+pub mod retrieval_kernel;
 pub mod sandbox;
 pub mod scan;
 pub mod skill_runtime;

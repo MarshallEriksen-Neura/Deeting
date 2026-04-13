@@ -8,8 +8,11 @@ import {
   createOrUpdateLocalLlmWikiMaintainerAgent,
   getLocalLlmWikiState,
   saveLocalLlmWikiBinding,
+  searchLocalLlmWikiCorpus,
+  syncLocalLlmWikiCorpus,
   supportsLocalLlmWiki,
   type BootstrapLocalLlmWikiWorkspaceResult,
+  type LocalLlmWikiCorpusSearchHit,
   type LocalLlmWikiState,
 } from "@/lib/api/llm-wiki"
 
@@ -28,8 +31,13 @@ export function useLlmWiki(t: Translation) {
   const [isAnalyzing, setIsAnalyzing] = React.useState(false)
   const [isBootstrapping, setIsBootstrapping] = React.useState(false)
   const [isSyncingAgent, setIsSyncingAgent] = React.useState(false)
+  const [isSyncingCorpus, setIsSyncingCorpus] = React.useState(false)
+  const [isSearchingCorpus, setIsSearchingCorpus] = React.useState(false)
   const [lastBootstrap, setLastBootstrap] =
     React.useState<BootstrapLocalLlmWikiWorkspaceResult | null>(null)
+  const [corpusQuery, setCorpusQuery] = React.useState("")
+  const [corpusHits, setCorpusHits] = React.useState<LocalLlmWikiCorpusSearchHit[]>([])
+  const [selectedCorpusHitId, setSelectedCorpusHitId] = React.useState<string | null>(null)
 
   const refresh = React.useCallback(async () => {
     if (!supportsLocalLlmWiki()) {
@@ -138,6 +146,51 @@ export function useLlmWiki(t: Translation) {
     }
   }, [t])
 
+  const syncCorpus = React.useCallback(async () => {
+    try {
+      setIsSyncingCorpus(true)
+      const result = await syncLocalLlmWikiCorpus()
+      setState(result.state)
+      toast.success(
+        t("toast.corpusSynced", {
+          indexed: result.indexedFiles,
+          removed: result.removedFiles,
+        }),
+      )
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : t("toast.corpusSyncFailed"),
+      )
+    } finally {
+      setIsSyncingCorpus(false)
+    }
+  }, [t])
+
+  const searchCorpus = React.useCallback(async () => {
+    const query = corpusQuery.trim()
+    if (!query) {
+      setCorpusHits([])
+      setSelectedCorpusHitId(null)
+      return
+    }
+
+    try {
+      setIsSearchingCorpus(true)
+      const result = await searchLocalLlmWikiCorpus({ query, limit: 6 })
+      setCorpusHits(result.hits)
+      setSelectedCorpusHitId(result.hits[0]?.assetId ?? null)
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : t("toast.corpusSearchFailed"),
+      )
+    } finally {
+      setIsSearchingCorpus(false)
+    }
+  }, [corpusQuery, t])
+
+  const selectedCorpusHit =
+    corpusHits.find((hit) => hit.assetId === selectedCorpusHitId) ?? null
+
   return {
     desktopSupported,
     state,
@@ -147,13 +200,22 @@ export function useLlmWiki(t: Translation) {
     isAnalyzing,
     isBootstrapping,
     isSyncingAgent,
+    isSyncingCorpus,
+    isSearchingCorpus,
     lastBootstrap,
+    corpusQuery,
+    corpusHits,
+    selectedCorpusHit,
     setVaultRoot,
     setWorkspaceRelativePath,
+    setCorpusQuery,
+    setSelectedCorpusHitId,
     refresh,
     analyze,
     bootstrap,
     copyAgentPrompt,
     syncMaintainerAgent,
+    syncCorpus,
+    searchCorpus,
   }
 }

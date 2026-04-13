@@ -19,17 +19,21 @@ use crate::state::AppState;
 use mcp_core::types::{LocalChatInputMessage, McpTool};
 use tauri::{AppHandle, Manager};
 
-use super::bound_callables::{BoundCallableLane, BoundCallablePayload};
+use super::bound_callables::{BoundCallableLane, BoundCallablePayload, BuiltinCallableDefinition};
 use super::skill_actions::{execute_skill_action, load_callable_skill_actions};
 use super::types::{
     CustomTaskAgentInvocationKind, CustomTaskAgentPreviewRequest, CustomTaskAgentPreviewResponse,
     CustomTaskAgentProfile,
 };
+use crate::modules::llm_wiki::service::search_local_llm_wiki_corpus;
+use crate::modules::llm_wiki::types::SearchLocalLlmWikiCorpusRequest;
 use crate::modules::voice_capabilities::tts::request_provider_text_to_speech;
 use crate::modules::voice_capabilities::types::TtsRequest;
 
 const MAX_CUSTOM_TASK_AGENT_TOOL_ROUNDS: usize = 4;
 const MAX_GUIDANCE_SKILL_DOCS: usize = 3;
+const LLM_WIKI_MAINTAINER_SOURCE_KIND: &str = "llm_wiki_maintainer";
+const LLM_WIKI_SEARCH_CALLABLE_NAME: &str = "llm_wiki_search_corpus";
 pub(crate) const IMAGE_AGENT_INPUT_REQUIRED_CODE: &str = "IMAGE_AGENT_INPUT_REQUIRED";
 pub(crate) const IMAGE_AGENT_INPUT_LIMIT_EXCEEDED_CODE: &str = "IMAGE_AGENT_INPUT_LIMIT_EXCEEDED";
 pub(crate) const IMAGE_AGENT_UPSTREAM_INPUT_LIMIT_EXCEEDED_CODE: &str =
@@ -270,7 +274,9 @@ pub(crate) async fn preview_custom_task_agent(
     let skill_actions = load_callable_skill_actions(app_state, &profile.callable_skill_action_refs)
         .await
         .map_err(CustomTaskAgentRuntimeError::from)?;
-    let callable_payload = BoundCallablePayload::build(&mcp_tools, &skill_actions);
+    let builtin_callables = builtin_callables_for_profile(profile);
+    let callable_payload =
+        BoundCallablePayload::build(&mcp_tools, &skill_actions, &builtin_callables);
     let mut messages = build_initial_messages(profile, message, &guidance_skills);
     let mut tool_trace = Vec::<Value>::new();
     let max_rounds = request
@@ -411,6 +417,35 @@ pub(crate) async fn preview_custom_task_agent(
                                 "lane": "skill_action",
                                 "skill_id": action.skill_id,
                                 "action_id": action.action_id,
+                                "status": "error",
+                                "error": err,
+                            });
+                            tool_trace.push(meta.clone());
+                            action_results.push(meta);
+                        }
+                    }
+                    continue;
+                }
+                BoundCallableLane::BuiltinAction => {
+                    match execute_builtin_callable(app_state, &callable.name, &callable.arguments)
+                        .await
+                    {
+                        Ok(result) => {
+                            let meta = json!({
+                                "id": callable.id,
+                                "name": callable.name,
+                                "lane": "builtin",
+                                "status": "success",
+                                "result": result,
+                            });
+                            tool_trace.push(meta.clone());
+                            action_results.push(meta);
+                        }
+                        Err(err) => {
+                            let meta = json!({
+                                "id": callable.id,
+                                "name": callable.name,
+                                "lane": "builtin",
                                 "status": "error",
                                 "error": err,
                             });
@@ -744,6 +779,59 @@ async fn load_guidance_skill_docs(
     Ok(sections.join("\n\n"))
 }
 
+fn builtin_callables_for_profile(
+    profile: &CustomTaskAgentProfile,
+) -> Vec<BuiltinCallableDefinition> {
+    if profile.source_kind.as_deref() != Some(LLM_WIKI_MAINTAINER_SOURCE_KIND) {
+        return Vec::new();
+    }
+
+    vec![BuiltinCallableDefinition {
+        callable_name: LLM_WIKI_SEARCH_CALLABLE_NAME.to_string(),
+        description: "Search the dedicated LLM Wiki corpus owned by this maintainer agent. Use this to inspect managed workspace and legacy vault notes without touching the main assistant retrieval path.".to_string(),
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "query": { "type": "string", "description": "Search query for the LLM Wiki corpus." },
+                "limit": { "type": "integer", "description": "Optional result limit between 1 and 12." }
+            },
+            "required": ["query"]
+        }),
+        lane: BoundCallableLane::BuiltinAction,
+    }]
+}
+
+async fn execute_builtin_callable(
+    app_state: &AppState,
+    callable_name: &str,
+    arguments: &Value,
+) -> Result<Value, String> {
+    match callable_name {
+        LLM_WIKI_SEARCH_CALLABLE_NAME => {
+            let query = arguments
+                .get("query")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| "llm wiki corpus search requires a non-empty query".to_string())?;
+            let limit = arguments
+                .get("limit")
+                .and_then(Value::as_u64)
+                .map(|value| value as usize);
+            let result = search_local_llm_wiki_corpus(
+                app_state,
+                SearchLocalLlmWikiCorpusRequest {
+                    query: query.to_string(),
+                    limit,
+                },
+            )
+            .await?;
+            serde_json::to_value(result).map_err(|err| err.to_string())
+        }
+        _ => Err(format!("unsupported builtin callable '{}'", callable_name)),
+    }
+}
+
 fn build_initial_messages(
     profile: &CustomTaskAgentProfile,
     message: &str,
@@ -767,6 +855,12 @@ fn build_initial_messages(
     if !guidance_skills.trim().is_empty() {
         system_lines.push("");
         system_lines.push(guidance_skills.trim());
+    }
+    if profile.source_kind.as_deref() == Some(LLM_WIKI_MAINTAINER_SOURCE_KIND) {
+        system_lines.push("");
+        system_lines.push("## Managed Corpus");
+        system_lines.push("A builtin callable `llm_wiki_search_corpus` is available for searching the dedicated LLM Wiki corpus owned by this maintainer.");
+        system_lines.push("Use that callable when you need more evidence from the managed corpus.");
     }
     vec![
         LocalChatInputMessage {

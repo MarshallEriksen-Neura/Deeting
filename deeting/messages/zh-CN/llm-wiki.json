@@ -102,6 +102,42 @@
         }
       }
     },
+    "corpus": {
+      "eyebrow": "受控语料",
+      "title": "同步独立的 LLM Wiki corpus。",
+      "description": "这块 corpus 不属于主知识面。它只为 wiki maintainer agent 服务，但底层复用同一套 embedding、BM25、混合排序和生命周期机制。",
+      "sync": "同步 Corpus",
+      "syncing": "同步中...",
+      "preview": {
+        "title": "命中预览",
+        "placeholder": "搜索 maintainer corpus...",
+        "empty": "先执行一次 corpus 搜索，查看 maintainer agent 能看到什么。",
+        "noResults": "当前查询没有命中 corpus 结果。"
+      },
+      "inspector": {
+        "title": "实时检查面板",
+        "scope": "范围",
+        "score": "排序分数",
+        "summary": "命中摘要",
+        "empty": "选择一条 corpus 结果，查看 maintainer agent 会收到什么上下文。",
+        "agentUses": {
+          "title": "会被 maintainer agent 使用",
+          "description": "这个 inspector 对应的就是 wiki maintainer agent 在被委托工作时可搜索的独立 corpus。"
+        }
+      },
+      "scopes": {
+        "managed_workspace": "工作区",
+        "legacy_vault": "旧 Vault"
+      },
+      "lastSynced": "最近一次 Corpus 同步",
+      "notSynced": "尚未同步",
+      "note": "主 assistant 默认不会读取这个 corpus，它只用于显式委托给 wiki maintainer agent 的场景。",
+      "metrics": {
+        "indexed": "已索引笔记",
+        "workspace": "受控工作区",
+        "legacy": "旧 Vault 笔记"
+      }
+    },
     "agent": {
       "eyebrow": "Agent 交接",
       "title": "把这个工作区交给一个 task agent 来维护。",
@@ -135,6 +171,9 @@
       "bindingSaveFailed": "保存 Vault 绑定失败。",
       "workspaceBootstrapped": "工作区已就绪，共创建 {files} 个文件和 {directories} 个目录。",
       "bootstrapFailed": "创建受控工作区失败。",
+      "corpusSynced": "Corpus 已同步，新增索引 {indexed} 个文件，移除过期条目 {removed} 个。",
+      "corpusSyncFailed": "同步 LLM Wiki corpus 失败。",
+      "corpusSearchFailed": "搜索 LLM Wiki corpus 失败。",
       "maintainerAgentReady": "{name} 已可用于委托维护。",
       "maintainerAgentFailed": "创建或更新维护 Agent 失败。",
       "promptCopied": "维护 Prompt 已复制。",

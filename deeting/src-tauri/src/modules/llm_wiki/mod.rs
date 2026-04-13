@@ -1,5 +1,6 @@
 pub mod commands;
 mod config;
+mod corpus;
 mod scan;
 pub mod service;
 mod templates;

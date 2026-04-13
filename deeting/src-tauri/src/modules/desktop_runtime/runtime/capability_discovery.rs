@@ -6,12 +6,12 @@ use super::search_feedback::{
     compute_feedback_boost, historical_affinity_from_rows, query_affinity_from_rows,
     SearchFeedbackContext,
 };
-use super::search_ranking::{
-    asset_score_key, bm25_asset_match_scores, normalize_score_map, reciprocal_rank_fusion,
-};
 use super::should_run_semantic_recall;
 use crate::modules::mcp::commands::runtime::capability_catalog::{
     build_capability_registry, CapabilityRegistryEntry, RegistryAvailability, ToolContractSource,
+};
+use crate::modules::retrieval_kernel::ranking::{
+    asset_score_key, bm25_asset_match_scores, normalize_score_map, reciprocal_rank_fusion,
 };
 
 const MAX_LIMIT: usize = 20;
