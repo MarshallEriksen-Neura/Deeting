@@ -31,6 +31,7 @@ interface ServerCardProps {
   tool: MCPTool
   platform?: ServerCardPlatform
   toggleMode?: McpUiToggleMode
+  density?: "default" | "compact"
   onToggle?: (tool: MCPTool, enabled: boolean) => void
   onPrimaryAction?: () => void
   onResolveConflict?: () => void
@@ -133,6 +134,7 @@ export function ServerCard({
   tool,
   platform = "cloud",
   toggleMode = "runtime",
+  density = "default",
   onToggle,
   onPrimaryAction,
   onResolveConflict,
@@ -164,15 +166,19 @@ export function ServerCard({
   const toggleActionLabelKey = toggleChecked ? "actions.stop" : "actions.start"
   const deleteActionLabelKey = platform === "desktop" ? "actions.delete" : "server.actions.delete"
   const deleteDialogKeyPrefix = platform === "desktop" ? "tool.delete" : "server.delete"
+  const isCompact = density === "compact"
 
   return (
     <GlassCard
       blur="lg"
       theme={showConflict || showUpdate ? "primary" : "default"}
-      hover="lift"
+      hover={isCompact ? "none" : "lift"}
       padding="none"
       className={cn(
         "group cursor-pointer transition-all duration-300",
+        isCompact
+          ? "rounded-[1.35rem] border-white/35 bg-white/75 shadow-[0_14px_36px_-28px_rgba(15,23,42,0.28)]"
+          : "",
         (showConflict || showUpdate) && "ring-2 ring-amber-400/30"
       )}
     >
@@ -185,7 +191,7 @@ export function ServerCard({
         )}
       />
 
-      <div className="p-5 flex flex-col gap-3">
+      <div className={cn("flex flex-col", isCompact ? "gap-2 p-4" : "gap-3 p-5")}>
         {/* Header: Icon + Info + Actions */}
         <div className="flex items-start gap-3">
           {/* Icon - tinted by status when running, or by source type */}
@@ -194,7 +200,8 @@ export function ServerCard({
               <TooltipTrigger asChild>
                 <div
                   className={cn(
-                    "relative p-2.5 rounded-xl border backdrop-blur-sm transition-all duration-300 shrink-0",
+                    "relative shrink-0 border backdrop-blur-sm transition-all duration-300",
+                    isCompact ? "rounded-lg p-2" : "rounded-xl p-2.5",
                     isActive
                       ? theme.iconBg
                       : isSynced
@@ -223,7 +230,7 @@ export function ServerCard({
           {/* Name + Compact meta line */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <h3 className="font-semibold text-[var(--foreground)] truncate">{tool.name}</h3>
+              <h3 className={cn("truncate font-semibold text-[var(--foreground)]", isCompact ? "text-[15px]" : "")}>{tool.name}</h3>
               {/* Alert badges - only the most important one */}
               {showConflict && (
                 <Badge
@@ -296,12 +303,18 @@ export function ServerCard({
               >
                 {isSynced ? t("tool.badges.synced") : t("tool.badges.local")}
               </span>
+              {isCompact && tool.capabilities.length > 0 && (
+                <>
+                  <span className="text-[var(--border)]">·</span>
+                  <span className="truncate text-[11px] text-[var(--muted)]">{tool.capabilities.slice(0, 2).join(" · ")}</span>
+                </>
+              )}
             </div>
           </div>
 
           {/* Actions - switch always visible, others on hover */}
           <div
-            className="flex items-center gap-2 shrink-0"
+            className={cn("shrink-0 flex items-center", isCompact ? "gap-1.5" : "gap-2")}
             data-mcp-action
             onClick={(event) => {
               event.stopPropagation()
@@ -316,6 +329,7 @@ export function ServerCard({
               <GlassButton
                 size="sm"
                 variant={tool.recommendedAction === "review" ? "secondary" : "outline"}
+                className={cn(isCompact ? "h-7 rounded-lg px-2.5 text-[11px]" : "")}
                 onClick={(event) => {
                   event.stopPropagation()
                   onPrimaryAction?.()
@@ -331,7 +345,10 @@ export function ServerCard({
                   onToggle?.(tool, checked)
                 }}
                 disabled={toggleDisabled}
-                className="data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-purple-600 data-[state=checked]:to-purple-500"
+                className={cn(
+                  "data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-purple-600 data-[state=checked]:to-purple-500",
+                  isCompact ? "scale-90" : ""
+                )}
               />
             )}
             {isSynced && onSync && (
@@ -431,27 +448,29 @@ export function ServerCard({
         </div>
 
         {/* Description */}
-        <div className="min-h-[2em]">
-          <p className="text-sm text-[var(--muted)] line-clamp-2 leading-relaxed">{tool.description}</p>
+        <div className={cn(isCompact ? "min-h-[1.5rem]" : "min-h-[2em]")}>
+          <p className={cn("text-[var(--muted)] leading-relaxed", isCompact ? "line-clamp-1 text-[13px]" : "line-clamp-2 text-sm")}>
+            {tool.description}
+          </p>
           {tool.runtimeStatusReason && runtimeHintKey && (
-            <div className="mt-2 text-slate-600 text-xs bg-slate-50/80 backdrop-blur-sm border border-slate-200/60 px-3 py-1.5 rounded-lg shadow-sm">
+            <div className={cn("mt-2 text-slate-600 bg-slate-50/80 backdrop-blur-sm border border-slate-200/60 shadow-sm", isCompact ? "rounded-md px-2.5 py-1 text-[11px]" : "rounded-lg px-3 py-1.5 text-xs")}>
               <span className="font-semibold">{t("tool.labels.runtime")}:</span> {t(runtimeLabelKey)}
             </div>
           )}
           {tool.indexStatus === "missing" && (
-            <div className="mt-2 text-purple-700 text-xs bg-purple-50/80 backdrop-blur-sm border border-purple-200/60 px-3 py-1.5 rounded-lg shadow-sm">
+            <div className={cn("mt-2 text-purple-700 bg-purple-50/80 backdrop-blur-sm border border-purple-200/60 shadow-sm", isCompact ? "rounded-md px-2.5 py-1 text-[11px]" : "rounded-lg px-3 py-1.5 text-xs")}>
               <span className="font-semibold">{t("tool.labels.index")}:</span> {t(indexLabelKey)}
             </div>
           )}
           {(tool.status === "crashed" || tool.status === "error") && tool.error && (
-            <div className="mt-2 text-red-600 font-mono text-xs bg-red-50/80 backdrop-blur-sm border border-red-200/50 px-3 py-1.5 rounded-lg shadow-sm">
+            <div className={cn("mt-2 text-red-600 font-mono bg-red-50/80 backdrop-blur-sm border border-red-200/50 shadow-sm", isCompact ? "rounded-md px-2.5 py-1 text-[11px]" : "rounded-lg px-3 py-1.5 text-xs")}>
               <span className="font-semibold">{t("tool.labels.error")}:</span> {tool.error}
             </div>
           )}
         </div>
 
         {/* Footer: Capability chips */}
-        {tool.capabilities.length > 0 && (
+        {tool.capabilities.length > 0 && !isCompact && (
           <div className="flex items-center gap-1.5 pt-2.5 border-t border-[var(--border)]/20">
             {tool.capabilities.map((cap) => (
               <span

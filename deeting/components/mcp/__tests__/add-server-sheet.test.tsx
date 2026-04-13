@@ -95,6 +95,7 @@ describe("AddServerSheet", () => {
             command: "npx",
             args: [],
             env: {},
+            service_key: "filesystem",
           },
         },
       },
@@ -146,6 +147,39 @@ describe("AddServerSheet", () => {
               type: "sse",
               url: "https://example.com/sse",
               sse_url: "https://example.com/sse",
+              service_key: "tavily",
+            },
+          },
+        },
+      })
+    })
+  })
+
+  it("includes service display metadata when provided in the wizard", async () => {
+    const onCreate = jest.fn().mockResolvedValue(true)
+
+    render(<AddServerSheet open onOpenChange={jest.fn()} onCreate={onCreate} />)
+
+    fillWizardFields()
+    fireEvent.change(screen.getByPlaceholderText("addServer.placeholders.serviceDisplayName"), {
+      target: { value: "Filesystem" },
+    })
+    fireEvent.change(screen.getByPlaceholderText("addServer.placeholders.serviceDescription"), {
+      target: { value: "Browse local files safely" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "addServer.save" }))
+
+    await waitFor(() => {
+      expect(onCreate).toHaveBeenCalledWith({
+        config: {
+          mcpServers: {
+            filesystem: {
+              command: "npx",
+              args: [],
+              env: {},
+              service_key: "filesystem",
+              service_display_name: "Filesystem",
+              service_description: "Browse local files safely",
             },
           },
         },

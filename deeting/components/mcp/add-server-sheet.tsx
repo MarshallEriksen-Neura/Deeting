@@ -56,6 +56,8 @@ export function AddServerSheet({ children, onCreate, open, onOpenChange }: AddSe
   const [activeTab, setActiveTab] = useState<"wizard" | "json">("wizard")
   const [transport, setTransport] = useState<ManualTransport>("stdio")
   const [name, setName] = useState("")
+  const [serviceDisplayName, setServiceDisplayName] = useState("")
+  const [serviceDescription, setServiceDescription] = useState("")
   const [command, setCommand] = useState("")
   const [sseUrl, setSseUrl] = useState("")
   const [args, setArgs] = useState("")
@@ -76,6 +78,8 @@ export function AddServerSheet({ children, onCreate, open, onOpenChange }: AddSe
     setActiveTab("wizard")
     setTransport("stdio")
     setName("")
+    setServiceDisplayName("")
+    setServiceDescription("")
     setCommand("")
     setSseUrl("")
     setArgs("")
@@ -85,10 +89,22 @@ export function AddServerSheet({ children, onCreate, open, onOpenChange }: AddSe
 
   const wizardPayload = useMemo(() => {
     const trimmedName = name.trim()
+    const trimmedServiceDisplayName = serviceDisplayName.trim()
+    const trimmedServiceDescription = serviceDescription.trim()
     const trimmedCommand = command.trim()
     const trimmedSseUrl = sseUrl.trim()
 
     if (!trimmedName) return null
+
+    const serviceMetadata: Record<string, unknown> = {
+      service_key: trimmedName,
+    }
+    if (trimmedServiceDisplayName) {
+      serviceMetadata.service_display_name = trimmedServiceDisplayName
+    }
+    if (trimmedServiceDescription) {
+      serviceMetadata.service_description = trimmedServiceDescription
+    }
 
     if (transport === "sse") {
       if (!trimmedSseUrl) return null
@@ -98,6 +114,7 @@ export function AddServerSheet({ children, onCreate, open, onOpenChange }: AddSe
             type: "sse",
             url: trimmedSseUrl,
             sse_url: trimmedSseUrl,
+            ...serviceMetadata,
           },
         },
       }
@@ -111,10 +128,11 @@ export function AddServerSheet({ children, onCreate, open, onOpenChange }: AddSe
           command: trimmedCommand,
           args: parseArgs(args),
           env: parseEnvLines(envText),
+          ...serviceMetadata,
         },
       },
     }
-  }, [args, command, envText, name, sseUrl, transport])
+  }, [args, command, envText, name, serviceDescription, serviceDisplayName, sseUrl, transport])
 
   const handleSave = async () => {
     if (isSubmitting) return
@@ -211,6 +229,26 @@ export function AddServerSheet({ children, onCreate, open, onOpenChange }: AddSe
                       placeholder={t("addServer.placeholders.name")}
                       value={name}
                       onChange={(event) => setName(event.target.value)}
+                      disabled={isSubmitting}
+                    />
+                </div>
+
+                <div className="space-y-2">
+                    <Label>{t("addServer.fields.serviceDisplayName")}</Label>
+                    <Input
+                      placeholder={t("addServer.placeholders.serviceDisplayName")}
+                      value={serviceDisplayName}
+                      onChange={(event) => setServiceDisplayName(event.target.value)}
+                      disabled={isSubmitting}
+                    />
+                </div>
+
+                <div className="space-y-2">
+                    <Label>{t("addServer.fields.serviceDescription")}</Label>
+                    <Textarea
+                      placeholder={t("addServer.placeholders.serviceDescription")}
+                      value={serviceDescription}
+                      onChange={(event) => setServiceDescription(event.target.value)}
                       disabled={isSubmitting}
                     />
                 </div>

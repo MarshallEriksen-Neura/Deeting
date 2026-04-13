@@ -9,6 +9,9 @@ use std::collections::{HashMap, HashSet};
 struct ToolUpsertSpec {
     identifier: String,
     name: String,
+    service_key: String,
+    service_display_name: String,
+    service_description: Option<String>,
     capabilities: Vec<String>,
     description: String,
     command: Option<String>,
@@ -17,6 +20,69 @@ struct ToolUpsertSpec {
     config_json: String,
     config_hash: String,
     is_read_only: bool,
+}
+
+fn normalize_service_key(server_name: &str) -> String {
+    let sanitized = sanitize_callable_name(server_name);
+    if sanitized.trim().is_empty() {
+        "mcp".to_string()
+    } else {
+        sanitized
+    }
+}
+
+fn humanize_service_display_name(value: &str) -> String {
+    value.split(['_', '-'])
+        .filter(|part| !part.trim().is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => {
+                    let mut word = first.to_uppercase().collect::<String>();
+                    word.push_str(chars.as_str());
+                    word
+                }
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn resolve_service_metadata(
+    server_name: &str,
+    server_config: &McpToolConfigPayload,
+) -> (String, String, Option<String>) {
+    let explicit_service_key = server_config
+        .extra
+        .get("service_key")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let explicit_display_name = server_config
+        .extra
+        .get("service_display_name")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let explicit_description = server_config
+        .extra
+        .get("service_description")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+
+    let service_key = explicit_service_key
+        .map(normalize_service_key)
+        .unwrap_or_else(|| normalize_service_key(server_name));
+    let service_display_name = explicit_display_name
+        .map(str::to_string)
+        .unwrap_or_else(|| humanize_service_display_name(server_name));
+    let service_description =
+        explicit_description.or_else(|| server_config.description.clone().filter(|value| !value.trim().is_empty()));
+
+    (service_key, service_display_name, service_description)
 }
 
 fn legacy_server_identifier(source: &McpSource, server_name: &str) -> String {
@@ -55,6 +121,9 @@ async fn upsert_or_refresh_tool(
                     source_id: source.id.clone(),
                     identifier: Some(spec.identifier),
                     name: spec.name,
+                    service_key: Some(spec.service_key),
+                    service_display_name: Some(spec.service_display_name),
+                    service_description: spec.service_description,
                     source_type: source.source_type.clone(),
                     status: McpToolStatus::Healthy,
                     ping_ms: None,
@@ -81,6 +150,9 @@ async fn upsert_or_refresh_tool(
                     source_id: source.id.clone(),
                     identifier: Some(spec.identifier),
                     name: spec.name,
+                    service_key: Some(spec.service_key),
+                    service_display_name: Some(spec.service_display_name),
+                    service_description: spec.service_description,
                     source_type: source.source_type.clone(),
                     status: McpToolStatus::Healthy,
                     ping_ms: None,
@@ -105,6 +177,9 @@ async fn upsert_or_refresh_tool(
 
 fn build_discovered_tool_config_json(
     server_name: &str,
+    service_key: &str,
+    service_display_name: &str,
+    service_description: Option<&str>,
     transport: &str,
     server_config: &McpToolConfigPayload,
     discovered: &RemoteDiscoveredTool,
@@ -136,6 +211,20 @@ fn build_discovered_tool_config_json(
         "source_entry_name".to_string(),
         serde_json::Value::String(server_name.to_string()),
     );
+    map.insert(
+        "service_key".to_string(),
+        serde_json::Value::String(service_key.to_string()),
+    );
+    map.insert(
+        "service_display_name".to_string(),
+        serde_json::Value::String(service_display_name.to_string()),
+    );
+    if let Some(description) = service_description.filter(|value| !value.is_empty()) {
+        map.insert(
+            "service_description".to_string(),
+            serde_json::Value::String(description.to_string()),
+        );
+    }
     if transport.eq_ignore_ascii_case("sse") {
         let sse_url = server_config.remote_sse_url().ok_or_else(|| {
             McpError::Validation(format!(
@@ -227,11 +316,20 @@ async fn upsert_remote_sse_tool(
     })?;
     let sanitized_name = sanitize_callable_name(&discovered.name);
     let identifier = discovered_tool_identifier(source, "remote", server_name, &sanitized_name);
+    let (service_key, service_display_name, service_description) =
+        resolve_service_metadata(server_name, server_config);
     let existing_tool = store
         .get_tool_by_source_identifier(&source.id, &identifier)
         .await?;
-    let config_json =
-        build_discovered_tool_config_json(server_name, "sse", server_config, discovered)?;
+    let config_json = build_discovered_tool_config_json(
+        server_name,
+        &service_key,
+        &service_display_name,
+        service_description.as_deref(),
+        "sse",
+        server_config,
+        discovered,
+    )?;
     let config_hash = hash_config(&config_json);
     let capabilities = server_config.capabilities.clone().unwrap_or_default();
     let description = discovered
@@ -247,6 +345,9 @@ async fn upsert_remote_sse_tool(
         ToolUpsertSpec {
             identifier,
             name: sanitized_name,
+            service_key,
+            service_display_name,
+            service_description,
             capabilities,
             description,
             command: None,
@@ -323,11 +424,20 @@ async fn upsert_local_stdio_tool(
     })?;
     let sanitized_name = sanitize_callable_name(&discovered.name);
     let identifier = discovered_tool_identifier(source, "stdio", server_name, &sanitized_name);
+    let (service_key, service_display_name, service_description) =
+        resolve_service_metadata(server_name, server_config);
     let existing_tool = store
         .get_tool_by_source_identifier(&source.id, &identifier)
         .await?;
-    let config_json =
-        build_discovered_tool_config_json(server_name, "stdio", server_config, discovered)?;
+    let config_json = build_discovered_tool_config_json(
+        server_name,
+        &service_key,
+        &service_display_name,
+        service_description.as_deref(),
+        "stdio",
+        server_config,
+        discovered,
+    )?;
     let config_hash = hash_config(&config_json);
     let capabilities = server_config.capabilities.clone().unwrap_or_default();
     let description = discovered
@@ -345,6 +455,9 @@ async fn upsert_local_stdio_tool(
         ToolUpsertSpec {
             identifier,
             name: sanitized_name,
+            service_key,
+            service_display_name,
+            service_description,
             capabilities,
             description,
             command: Some(command),
@@ -444,8 +557,28 @@ pub(crate) async fn apply_config_payload_to_store(
         }
 
         let identifier = legacy_server_identifier(source, &name);
+        let (service_key, service_display_name, service_description) =
+            resolve_service_metadata(&name, &config);
         let existing_tool = store.get_tool_by_source_name(&source.id, &name).await?;
-        let config_json = serde_json::to_string(&config).unwrap();
+        let mut config_value =
+            serde_json::to_value(&config).unwrap_or(serde_json::Value::Object(Default::default()));
+        if let Some(map) = config_value.as_object_mut() {
+            map.insert(
+                "service_key".to_string(),
+                serde_json::Value::String(service_key.clone()),
+            );
+            map.insert(
+                "service_display_name".to_string(),
+                serde_json::Value::String(service_display_name.clone()),
+            );
+            if let Some(description) = service_description.as_ref().filter(|value| !value.is_empty()) {
+                map.insert(
+                    "service_description".to_string(),
+                    serde_json::Value::String(description.clone()),
+                );
+            }
+        }
+        let config_json = serde_json::to_string(&config_value).unwrap();
         let config_hash = hash_config(&config_json);
 
         let tool = upsert_or_refresh_tool(
@@ -455,6 +588,9 @@ pub(crate) async fn apply_config_payload_to_store(
             ToolUpsertSpec {
                 identifier,
                 name: name,
+                service_key,
+                service_display_name,
+                service_description,
                 capabilities: config.capabilities.unwrap_or_default(),
                 description: config.description.unwrap_or_default(),
                 command: config.command,

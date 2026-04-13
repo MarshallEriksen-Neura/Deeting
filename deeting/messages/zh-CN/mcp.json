@@ -10,14 +10,31 @@
     "addSource": "添加来源"
   },
   "runtime": {
-    "title": "运行矩阵",
+    "title": "MCP 列表",
+    "summary": "{visible} / {total} 个 MCP",
     "tabs": {
       "all": "全部",
       "running": "运行中",
       "stopped": "已停止",
       "conflicts": "待处理"
     },
-    "empty": "当前筛选条件下没有找到服务。",
+    "workspace": {
+      "back": "返回列表",
+      "summary": "{name} · {count} 个工具",
+      "tools": "工具空间",
+      "subtitle": "当前 MCP 下共有 {count} 个工具"
+    },
+    "server": {
+      "toolCount": "个工具",
+      "conflicts": "冲突",
+      "source": "来源",
+      "running": "运行中",
+      "review": "检查",
+      "expand": "展开工具",
+      "collapse": "收起工具",
+      "noDescription": "该 MCP 暂无描述。"
+    },
+    "empty": "当前筛选条件下没有找到 MCP。",
     "sync": "同步工具",
     "syncing": "同步中"
   },
@@ -134,6 +151,8 @@
     },
     "fields": {
       "name": "名称",
+      "serviceDisplayName": "展示名",
+      "serviceDescription": "说明",
       "transport": "传输方式",
       "command": "命令",
       "sseUrl": "SSE 地址",
@@ -143,6 +162,8 @@
     },
     "placeholders": {
       "name": "例如：本地工具",
+      "serviceDisplayName": "例如：Firecrawl",
+      "serviceDescription": "给这个 MCP 服务写一段便于识别的说明",
       "command": "例如：npx、python、docker",
       "sseUrl": "https://example.com/sse",
       "args": "例如：-y @modelcontextprotocol/server-filesystem",

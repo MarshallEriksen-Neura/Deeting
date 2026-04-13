@@ -49,6 +49,9 @@ describe("registry import", () => {
           server_type: "stdio",
           is_enabled: false,
           draft_config: {
+            service_key: "localB",
+            service_display_name: undefined,
+            service_description: undefined,
             command: "node",
             args: ["server.js", "--watch"],
             env: { API_KEY: "", DEBUG: "" },
@@ -73,6 +76,39 @@ describe("registry import", () => {
           sse_url: "https://example.com/stream",
           auth_type: "none",
           is_enabled: true,
+        },
+      ],
+    })
+  })
+
+  it("preserves explicit MCP service metadata during import parsing", () => {
+    expect(parseMcpRegistryImportConfig({
+      mcpServers: {
+        firecrawl: {
+          command: "npx",
+          args: ["-y", "@mendable/firecrawl-mcp"],
+          env: { FIRECRAWL_API_KEY: "secret" },
+          service_key: "firecrawl",
+          service_display_name: "Firecrawl",
+          service_description: "Scrape and search the web",
+        },
+      },
+    })).toEqual({
+      kind: "ok",
+      requests: [
+        {
+          name: "Firecrawl",
+          description: "Scrape and search the web",
+          server_type: "stdio",
+          is_enabled: false,
+          draft_config: {
+            service_key: "firecrawl",
+            service_display_name: "Firecrawl",
+            service_description: "Scrape and search the web",
+            command: "npx",
+            args: ["-y", "@mendable/firecrawl-mcp"],
+            env: { FIRECRAWL_API_KEY: "" },
+          },
         },
       ],
     })

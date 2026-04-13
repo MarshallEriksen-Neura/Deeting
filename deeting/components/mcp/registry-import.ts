@@ -82,6 +82,18 @@ const toImportRequest = (name: string, config: unknown): McpServerCreateRequest 
   if (!isRecord(config)) return null
 
   const command = typeof config.command === "string" ? config.command : undefined
+  const serviceKey =
+    typeof config.service_key === "string" && config.service_key.trim().length > 0
+      ? config.service_key.trim()
+      : name
+  const serviceDisplayName =
+    typeof config.service_display_name === "string" && config.service_display_name.trim().length > 0
+      ? config.service_display_name.trim()
+      : undefined
+  const serviceDescription =
+    typeof config.service_description === "string" && config.service_description.trim().length > 0
+      ? config.service_description.trim()
+      : undefined
   const args = Array.isArray(config.args)
     ? config.args.filter((item): item is string => typeof item === "string")
     : []
@@ -101,7 +113,8 @@ const toImportRequest = (name: string, config: unknown): McpServerCreateRequest 
 
   if (sseUrl) {
     return {
-      name: displayName,
+      name: serviceDisplayName || displayName,
+      description: serviceDescription ?? undefined,
       server_type: remoteServerType ?? "sse",
       sse_url: sseUrl,
       auth_type: "none",
@@ -111,10 +124,14 @@ const toImportRequest = (name: string, config: unknown): McpServerCreateRequest 
 
   if (command) {
     return {
-      name: displayName,
+      name: serviceDisplayName || displayName,
+      description: serviceDescription ?? undefined,
       server_type: "stdio",
       is_enabled: false,
       draft_config: {
+        service_key: serviceKey,
+        service_display_name: serviceDisplayName,
+        service_description: serviceDescription,
         command,
         args,
         env,

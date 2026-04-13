@@ -10,14 +10,31 @@
     "addSource": "Add Source"
   },
   "runtime": {
-    "title": "The Runtime Grid",
+    "title": "MCP List",
+    "summary": "{visible} / {total} MCPs",
     "tabs": {
-      "all": "All Servers",
+      "all": "All MCPs",
       "running": "Running",
       "stopped": "Stopped",
       "conflicts": "Conflicts"
     },
-    "empty": "No servers found for this filter.",
+    "workspace": {
+      "back": "Back to list",
+      "summary": "{name} · {count} tools",
+      "tools": "Tool workspace",
+      "subtitle": "{count} tools are available under this MCP"
+    },
+    "server": {
+      "toolCount": "tools",
+      "conflicts": "conflicts",
+      "source": "Source",
+      "running": "Running",
+      "review": "Review",
+      "expand": "Expand tools",
+      "collapse": "Collapse tools",
+      "noDescription": "No description for this MCP yet."
+    },
+    "empty": "No MCPs found for this filter.",
     "sync": "Sync tools",
     "syncing": "Syncing"
   },
@@ -134,6 +151,8 @@
     },
     "fields": {
       "name": "Name",
+      "serviceDisplayName": "Display Name",
+      "serviceDescription": "Description",
       "transport": "Transport",
       "command": "Command",
       "sseUrl": "SSE Endpoint",
@@ -143,6 +162,8 @@
     },
     "placeholders": {
       "name": "e.g. My Local Tool",
+      "serviceDisplayName": "e.g. Firecrawl",
+      "serviceDescription": "Add a short description for this MCP service",
       "command": "e.g. npx, python, docker",
       "sseUrl": "https://example.com/sse",
       "args": "e.g. -y @modelcontextprotocol/server-filesystem",

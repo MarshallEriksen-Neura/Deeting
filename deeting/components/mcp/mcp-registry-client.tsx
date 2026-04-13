@@ -46,13 +46,13 @@ const SupplyChainSection = dynamic(
   () => import("./supply-chain-section").then((mod) => mod.SupplyChainSection),
   { loading: () => <McpSectionSkeleton cardCount={3} columnsClassName="md:grid-cols-3" /> }
 )
-const RuntimeGridSection = dynamic(
-  () => import("./runtime-grid-section").then((mod) => mod.RuntimeGridSection),
+const RuntimeServerListSection = dynamic(
+  () => import("./runtime-server-list-section").then((mod) => mod.RuntimeServerListSection),
   {
     loading: () => (
       <McpSectionSkeleton
-        cardCount={6}
-        columnsClassName="lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+        cardCount={4}
+        columnsClassName="grid-cols-1"
       />
     ),
   }
@@ -99,9 +99,10 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
 
   const mapTool = useCallback((tool: McpToolRecord): MCPTool => mapDesktopToolRecordToTool(tool, t("conflict.warningDescription")), [t])
 
-  const { serverById, editServerTools, runtimeTools, conflictCount } = useMcpRegistryViewModel({
+  const { serverById, editServerTools, runtimeGroups, conflictCount } = useMcpRegistryViewModel({
     isTauri,
     servers: mcpServers.data,
+    sources,
     toolRecords: mcpTools.data,
     editServer,
     tools,
@@ -263,21 +264,23 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
         </div>
 
         <div className="animate-glass-card-in stagger-3">
-          <RuntimeGridSection
-            tools={runtimeTools}
-            conflictCount={conflictCount}
-            platform={isTauri ? "desktop" : "cloud"}
-            toggleMode={isTauri ? "runtime" : "desired"}
-            onToggleTool={isTauri ? (tool, enabled) => handleToggleTool(tool, enabled) : handleToggleServerEnabled}
-            onPrimaryAction={handlePrimaryAction}
-            onResolveConflict={isTauri ? handleOpenConflict : undefined}
-            onEditServer={!isTauri ? handleOpenEditServer : undefined}
-            onDeleteServer={isTauri ? handleDeleteTool : handleDeleteServer}
-            onSyncAll={!isTauri ? handleSyncServers : undefined}
-            syncAllLoading={syncingServers}
-            onSyncTool={!isTauri ? handleSyncServer : undefined}
-            syncingToolIds={!isTauri ? syncingServerIds : undefined}
-          />
+          <div className="mcp-runtime-shell rounded-[2rem] border border-white/40 bg-[linear-gradient(180deg,rgba(255,255,255,0.66),rgba(248,250,252,0.94))] p-4 shadow-[0_32px_80px_-36px_rgba(15,23,42,0.34)] sm:p-5 lg:p-6">
+            <RuntimeServerListSection
+              groups={runtimeGroups}
+              conflictCount={conflictCount}
+              platform={isTauri ? "desktop" : "cloud"}
+              toggleMode={isTauri ? "runtime" : "desired"}
+              onToggleTool={isTauri ? (tool, enabled) => handleToggleTool(tool, enabled) : handleToggleServerEnabled}
+              onPrimaryAction={handlePrimaryAction}
+              onResolveConflict={isTauri ? handleOpenConflict : undefined}
+              onEditServer={!isTauri ? handleOpenEditServer : undefined}
+              onDeleteServer={isTauri ? handleDeleteTool : handleDeleteServer}
+              onSyncAll={!isTauri ? handleSyncServers : undefined}
+              syncAllLoading={syncingServers}
+              onSyncTool={!isTauri ? handleSyncServer : undefined}
+              syncingToolIds={!isTauri ? syncingServerIds : undefined}
+            />
+          </div>
         </div>
       </div>
 

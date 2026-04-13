@@ -202,6 +202,9 @@ impl McpStore {
               source_id TEXT NOT NULL,
               identifier TEXT,
               name TEXT NOT NULL,
+              service_key TEXT,
+              service_display_name TEXT,
+              service_description TEXT,
               source_type TEXT NOT NULL,
               status TEXT NOT NULL,
               ping_ms INTEGER,
@@ -529,6 +532,27 @@ impl McpStore {
             "mcp_tools",
             "is_new",
             "ALTER TABLE mcp_tools ADD COLUMN is_new INTEGER NOT NULL DEFAULT 0;",
+        )
+        .await?;
+
+        self.ensure_column(
+            "mcp_tools",
+            "service_key",
+            "ALTER TABLE mcp_tools ADD COLUMN service_key TEXT;",
+        )
+        .await?;
+
+        self.ensure_column(
+            "mcp_tools",
+            "service_display_name",
+            "ALTER TABLE mcp_tools ADD COLUMN service_display_name TEXT;",
+        )
+        .await?;
+
+        self.ensure_column(
+            "mcp_tools",
+            "service_description",
+            "ALTER TABLE mcp_tools ADD COLUMN service_description TEXT;",
         )
         .await?;
 

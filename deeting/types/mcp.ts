@@ -55,6 +55,9 @@ export interface McpToolRecord {
   id: string
   identifier?: string | null
   name: string
+  service_key?: string | null
+  service_display_name?: string | null
+  service_description?: string | null
   source_type: MCPSourceType
   source_id?: string | null
   status: MCPToolStatus
@@ -104,6 +107,9 @@ export interface MCPTool {
   id: string
   identifier?: string
   name: string
+  serviceKey?: string
+  serviceDisplayName?: string
+  serviceDescription?: string
   source: MCPSourceType
   sourceId?: string
   status: MCPToolStatus

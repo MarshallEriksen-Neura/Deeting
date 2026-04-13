@@ -11,7 +11,7 @@ impl McpStore {
     pub async fn list_tools(&self) -> Result<Vec<McpTool>, McpError> {
         let rows = sqlx::query(
             r#"
-            SELECT id, source_id, identifier, name, source_type, status, ping_ms, capabilities, description,
+            SELECT id, source_id, identifier, name, service_key, service_display_name, service_description, source_type, status, ping_ms, capabilities, description,
                    error, command, args, env, config_json, config_hash, pending_config_json,
                    pending_config_hash, conflict_status, is_read_only, is_new, created_at, updated_at
             FROM mcp_tools
@@ -32,7 +32,7 @@ impl McpStore {
     pub async fn get_tool(&self, id: &str) -> Result<Option<McpTool>, McpError> {
         let row = sqlx::query(
             r#"
-            SELECT id, source_id, identifier, name, source_type, status, ping_ms, capabilities, description,
+            SELECT id, source_id, identifier, name, service_key, service_display_name, service_description, source_type, status, ping_ms, capabilities, description,
                    error, command, args, env, config_json, config_hash, pending_config_json,
                    pending_config_hash, conflict_status, is_read_only, is_new, created_at, updated_at
             FROM mcp_tools
@@ -83,7 +83,7 @@ impl McpStore {
     ) -> Result<Option<McpTool>, McpError> {
         let row = sqlx::query(
             r#"
-            SELECT id, source_id, identifier, name, source_type, status, ping_ms, capabilities, description,
+            SELECT id, source_id, identifier, name, service_key, service_display_name, service_description, source_type, status, ping_ms, capabilities, description,
                    error, command, args, env, config_json, config_hash, pending_config_json,
                    pending_config_hash, conflict_status, is_read_only, is_new, created_at, updated_at
             FROM mcp_tools
@@ -107,7 +107,7 @@ impl McpStore {
     ) -> Result<Option<McpTool>, McpError> {
         let row = sqlx::query(
             r#"
-            SELECT id, source_id, identifier, name, source_type, status, ping_ms, capabilities, description,
+            SELECT id, source_id, identifier, name, service_key, service_display_name, service_description, source_type, status, ping_ms, capabilities, description,
                    error, command, args, env, config_json, config_hash, pending_config_json,
                    pending_config_hash, conflict_status, is_read_only, is_new, created_at, updated_at
             FROM mcp_tools
@@ -415,16 +415,19 @@ impl McpStore {
         sqlx::query(
             r#"
             INSERT INTO mcp_tools
-              (id, source_id, identifier, name, source_type, status, ping_ms, capabilities, description,
+              (id, source_id, identifier, name, service_key, service_display_name, service_description, source_type, status, ping_ms, capabilities, description,
                error, command, args, env, config_json, config_hash, pending_config_json,
                pending_config_hash, conflict_status, is_read_only, is_new, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             "#,
         )
         .bind(&id)
         .bind(&tool.source_id)
         .bind(&tool.identifier)
         .bind(&tool.name)
+        .bind(&tool.service_key)
+        .bind(&tool.service_display_name)
+        .bind(&tool.service_description)
         .bind(tool.source_type.as_str())
         .bind(tool.status.as_str())
         .bind(tool.ping_ms)
@@ -454,7 +457,7 @@ impl McpStore {
         sqlx::query(
             r#"
             UPDATE mcp_tools
-            SET source_id = ?, identifier = ?, name = ?, source_type = ?, status = ?, ping_ms = ?,
+            SET source_id = ?, identifier = ?, name = ?, service_key = ?, service_display_name = ?, service_description = ?, source_type = ?, status = ?, ping_ms = ?,
                 capabilities = ?, description = ?, error = ?, command = ?, args = ?, env = ?,
                 config_json = ?, config_hash = ?, pending_config_json = ?, pending_config_hash = ?,
                 conflict_status = ?, is_read_only = ?, is_new = ?, updated_at = ?
@@ -464,6 +467,9 @@ impl McpStore {
         .bind(&tool.source_id)
         .bind(&tool.identifier)
         .bind(&tool.name)
+        .bind(&tool.service_key)
+        .bind(&tool.service_display_name)
+        .bind(&tool.service_description)
         .bind(tool.source_type.as_str())
         .bind(tool.status.as_str())
         .bind(tool.ping_ms)
