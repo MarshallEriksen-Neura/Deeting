@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::HashMap;
 
 use base64::Engine;
@@ -34,6 +35,10 @@ const MAX_CUSTOM_TASK_AGENT_TOOL_ROUNDS: usize = 4;
 const MAX_GUIDANCE_SKILL_DOCS: usize = 3;
 const LLM_WIKI_MAINTAINER_SOURCE_KIND: &str = "llm_wiki_maintainer";
 const LLM_WIKI_SEARCH_CALLABLE_NAME: &str = "llm_wiki_search_corpus";
+const LLM_WIKI_CORPUS_ASSET_TYPE: &str = "llm_wiki_note";
+const LLM_WIKI_CORPUS_SOURCE_TYPE: &str = "llm_wiki_corpus";
+const MAX_MAINTAINER_CORPUS_PREVIEW_ITEMS: usize = 4;
+const MAX_MAINTAINER_CORPUS_PREVIEW_SUMMARY_CHARS: usize = 180;
 pub(crate) const IMAGE_AGENT_INPUT_REQUIRED_CODE: &str = "IMAGE_AGENT_INPUT_REQUIRED";
 pub(crate) const IMAGE_AGENT_INPUT_LIMIT_EXCEEDED_CODE: &str = "IMAGE_AGENT_INPUT_LIMIT_EXCEEDED";
 pub(crate) const IMAGE_AGENT_UPSTREAM_INPUT_LIMIT_EXCEEDED_CODE: &str =
@@ -45,6 +50,16 @@ pub(crate) const IMAGE_AGENT_INPUT_RESOLUTION_FAILED_CODE: &str =
 pub(crate) struct CustomTaskAgentRuntimeError {
     pub(crate) code: Option<String>,
     pub(crate) message: String,
+}
+
+#[derive(Debug, Clone)]
+struct MaintainerCorpusPreviewHit {
+    title: String,
+    relative_path: String,
+    scope: String,
+    summary: String,
+    vitality: f64,
+    updated_at: String,
 }
 
 impl CustomTaskAgentRuntimeError {
@@ -277,7 +292,13 @@ pub(crate) async fn preview_custom_task_agent(
     let builtin_callables = builtin_callables_for_profile(profile);
     let callable_payload =
         BoundCallablePayload::build(&mcp_tools, &skill_actions, &builtin_callables);
-    let mut messages = build_initial_messages(profile, message, &guidance_skills);
+    let maintainer_corpus_preview = load_maintainer_corpus_preview(app_state, profile).await;
+    let mut messages = build_initial_messages(
+        profile,
+        message,
+        &guidance_skills,
+        maintainer_corpus_preview.as_deref(),
+    );
     let mut tool_trace = Vec::<Value>::new();
     let max_rounds = request
         .max_rounds
@@ -836,31 +857,44 @@ fn build_initial_messages(
     profile: &CustomTaskAgentProfile,
     message: &str,
     guidance_skills: &str,
+    maintainer_corpus_preview: Option<&str>,
 ) -> Vec<LocalChatInputMessage> {
     let mut system_lines = vec![
-        "## Custom Task Agent Runtime",
-        "You are a delegated custom task agent.",
-        "You only execute the single task assigned in the current request.",
-        "Guidance skills are documentation-only context. Read them, but do not treat them as directly callable tools.",
-        "Callable MCP tools and callable skill actions are separate execution lanes.",
-        "Use only the callable MCP tools and callable skill actions explicitly bound to this custom task agent.",
-        "If a guidance skill describes a CLI or terminal workflow, and one of your bound callable MCP tools can execute host commands, translate the documented workflow into that callable tool instead of blocking on the absence of a dedicated skill action.",
-        "Do not require a bespoke skill action name when the delegated task can be completed through a bound shell or host-execution tool.",
-        "Do not perform extra search, search_sdk, route planning, or orchestration on your own.",
-        "If you are blocked, explain the blocker briefly and stop.",
-        "",
-        "## Agent Task Prompt",
-        profile.task_prompt.trim(),
+        "## Custom Task Agent Runtime".to_string(),
+        "You are a delegated custom task agent.".to_string(),
+        "You only execute the single task assigned in the current request.".to_string(),
+        "Guidance skills are documentation-only context. Read them, but do not treat them as directly callable tools.".to_string(),
+        "Callable MCP tools and callable skill actions are separate execution lanes.".to_string(),
+        "Use only the callable MCP tools and callable skill actions explicitly bound to this custom task agent.".to_string(),
+        "If a guidance skill describes a CLI or terminal workflow, and one of your bound callable MCP tools can execute host commands, translate the documented workflow into that callable tool instead of blocking on the absence of a dedicated skill action.".to_string(),
+        "Do not require a bespoke skill action name when the delegated task can be completed through a bound shell or host-execution tool.".to_string(),
+        "Do not perform extra search, search_sdk, route planning, or orchestration on your own.".to_string(),
+        "If you are blocked, explain the blocker briefly and stop.".to_string(),
+        String::new(),
+        "## Agent Task Prompt".to_string(),
+        profile.task_prompt.trim().to_string(),
     ];
     if !guidance_skills.trim().is_empty() {
-        system_lines.push("");
-        system_lines.push(guidance_skills.trim());
+        system_lines.push(String::new());
+        system_lines.push(guidance_skills.trim().to_string());
     }
     if profile.source_kind.as_deref() == Some(LLM_WIKI_MAINTAINER_SOURCE_KIND) {
-        system_lines.push("");
-        system_lines.push("## Managed Corpus");
-        system_lines.push("A builtin callable `llm_wiki_search_corpus` is available for searching the dedicated LLM Wiki corpus owned by this maintainer.");
-        system_lines.push("Use that callable when you need more evidence from the managed corpus.");
+        system_lines.push(String::new());
+        system_lines.push("## Managed Corpus".to_string());
+        system_lines.push("A builtin callable `llm_wiki_search_corpus` is available for searching the dedicated LLM Wiki corpus owned by this maintainer.".to_string());
+        system_lines.push(
+            "Use that callable when you need more evidence from the managed corpus.".to_string(),
+        );
+        system_lines.push("Treat the startup preview below as read-only orientation. Run a fresh corpus search before making or editing wiki content.".to_string());
+
+        if let Some(preview) = maintainer_corpus_preview
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            system_lines.push(String::new());
+            system_lines.push("### Initial Corpus Preview".to_string());
+            system_lines.push(preview.to_string());
+        }
     }
     vec![
         LocalChatInputMessage {
@@ -878,6 +912,145 @@ fn build_initial_messages(
             name: None,
         },
     ]
+}
+
+async fn load_maintainer_corpus_preview(
+    app_state: &AppState,
+    profile: &CustomTaskAgentProfile,
+) -> Option<String> {
+    if profile.source_kind.as_deref() != Some(LLM_WIKI_MAINTAINER_SOURCE_KIND) {
+        return None;
+    }
+
+    let assets = match app_state.memory.service.list_assets_catalog().await {
+        Ok(assets) => assets,
+        Err(_) => {
+            return Some(
+                "Corpus preview is unavailable right now. Use `llm_wiki_search_corpus` when you need fresh local wiki evidence.".to_string(),
+            )
+        }
+    };
+
+    let mut hits = assets
+        .into_iter()
+        .filter(is_llm_wiki_corpus_asset)
+        .filter_map(build_maintainer_corpus_preview_hit)
+        .collect::<Vec<_>>();
+
+    if hits.is_empty() {
+        return Some(
+            "No synced LLM Wiki corpus entries are available yet. Sync the dedicated corpus before relying on local wiki evidence.".to_string(),
+        );
+    }
+
+    hits.sort_by(|left, right| {
+        maintainer_scope_rank(&left.scope)
+            .cmp(&maintainer_scope_rank(&right.scope))
+            .then_with(|| {
+                right
+                    .vitality
+                    .partial_cmp(&left.vitality)
+                    .unwrap_or(Ordering::Equal)
+            })
+            .then_with(|| right.updated_at.cmp(&left.updated_at))
+            .then_with(|| left.relative_path.cmp(&right.relative_path))
+    });
+    hits.truncate(MAX_MAINTAINER_CORPUS_PREVIEW_ITEMS);
+
+    Some(format_maintainer_corpus_preview(&hits))
+}
+
+fn is_llm_wiki_corpus_asset(asset: &Value) -> bool {
+    asset.get("asset_type").and_then(Value::as_str) == Some(LLM_WIKI_CORPUS_ASSET_TYPE)
+        && asset.get("source_type").and_then(Value::as_str) == Some(LLM_WIKI_CORPUS_SOURCE_TYPE)
+}
+
+fn build_maintainer_corpus_preview_hit(asset: Value) -> Option<MaintainerCorpusPreviewHit> {
+    let metadata = asset.get("metadata");
+    let relative_path = metadata
+        .and_then(|value| value.get("relative_path"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?
+        .to_string();
+
+    Some(MaintainerCorpusPreviewHit {
+        title: asset
+            .get("name")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("Untitled Corpus Note")
+            .to_string(),
+        relative_path,
+        scope: metadata
+            .and_then(|value| value.get("scope"))
+            .and_then(Value::as_str)
+            .unwrap_or("legacy_vault")
+            .to_string(),
+        summary: asset
+            .get("description")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("No summary available.")
+            .to_string(),
+        vitality: metadata
+            .and_then(|value| value.get("vitality"))
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0),
+        updated_at: asset
+            .get("updated_at")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+    })
+}
+
+fn maintainer_scope_rank(scope: &str) -> u8 {
+    match scope {
+        "managed_workspace" => 0,
+        "legacy_vault" => 1,
+        _ => 2,
+    }
+}
+
+fn format_maintainer_corpus_preview(hits: &[MaintainerCorpusPreviewHit]) -> String {
+    hits.iter()
+        .enumerate()
+        .map(|(index, hit)| {
+            format!(
+                "{}. [{}] {} ({})\n   Summary: {}",
+                index + 1,
+                maintainer_scope_label(&hit.scope),
+                hit.title,
+                hit.relative_path,
+                trim_maintainer_preview_text(&hit.summary)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn maintainer_scope_label(scope: &str) -> &'static str {
+    match scope {
+        "managed_workspace" => "Workspace",
+        "legacy_vault" => "Legacy Vault",
+        _ => "Corpus",
+    }
+}
+
+fn trim_maintainer_preview_text(summary: &str) -> String {
+    let trimmed = summary.trim();
+    if trimmed.chars().count() <= MAX_MAINTAINER_CORPUS_PREVIEW_SUMMARY_CHARS {
+        return trimmed.to_string();
+    }
+
+    let shortened = trimmed
+        .chars()
+        .take(MAX_MAINTAINER_CORPUS_PREVIEW_SUMMARY_CHARS)
+        .collect::<String>();
+    format!("{}...", shortened.trim_end())
 }
 
 fn validate_image_generation_detail(
@@ -925,7 +1098,10 @@ fn merge_tts_extra_params(speed: Option<f64>, extra_params: Option<Value>) -> Op
 
 #[cfg(test)]
 mod tests {
-    use super::{build_initial_messages, validate_image_generation_detail};
+    use super::{
+        build_initial_messages, format_maintainer_corpus_preview, validate_image_generation_detail,
+        MaintainerCorpusPreviewHit,
+    };
     use crate::modules::custom_task_agents::types::{
         CustomTaskAgentInvocationKind, CustomTaskAgentProfile,
     };
@@ -1001,6 +1177,7 @@ mod tests {
             &profile,
             "Check whether a CLI tool is installed.",
             "## Guidance Skill skill.cli-docs\nDocs: use the CLI in a terminal.",
+            None,
         );
         let system = messages
             .first()
@@ -1012,5 +1189,65 @@ mod tests {
         assert!(system.contains("bound callable MCP tools can execute host commands"));
         assert!(system.contains("absence of a dedicated skill action"));
         assert!(system.contains("bound shell or host-execution tool"));
+    }
+
+    #[test]
+    fn build_initial_messages_includes_maintainer_preview_when_available() {
+        let profile = CustomTaskAgentProfile {
+            id: "agent-1".to_string(),
+            name: "Wiki Maintainer".to_string(),
+            description: Some("Maintains the managed wiki".to_string()),
+            task_prompt: "Maintain the wiki carefully.".to_string(),
+            invocation_kind: CustomTaskAgentInvocationKind::Chat,
+            preferred_for_image_generation: false,
+            model_config: None,
+            callable_mcp_tool_ids: vec![],
+            guidance_skill_ids: vec![],
+            callable_skill_action_refs: vec![],
+            bound_asset_id: None,
+            tags: vec![],
+            discoverable: true,
+            is_enabled: true,
+            is_deleted: false,
+            source_kind: Some("llm_wiki_maintainer".to_string()),
+            source_path: Some("D:/Vault/Deeting Wiki".to_string()),
+            source_repo: None,
+            source_ref: None,
+            source_hash: None,
+            created_at: "2026-04-13T00:00:00Z".to_string(),
+            updated_at: "2026-04-13T00:00:00Z".to_string(),
+        };
+
+        let messages = build_initial_messages(
+            &profile,
+            "Refresh the concept pages.",
+            "",
+            Some("1. [Workspace] Home (Deeting Wiki/Home.md)\n   Summary: Overview page."),
+        );
+        let system = messages
+            .first()
+            .map(|message| message.content.clone())
+            .unwrap_or_default();
+
+        assert!(system.contains("## Managed Corpus"));
+        assert!(system.contains("### Initial Corpus Preview"));
+        assert!(system.contains("Overview page."));
+        assert!(system.contains("llm_wiki_search_corpus"));
+    }
+
+    #[test]
+    fn format_maintainer_corpus_preview_compacts_hits() {
+        let preview = format_maintainer_corpus_preview(&[MaintainerCorpusPreviewHit {
+            title: "Home".to_string(),
+            relative_path: "Deeting Wiki/Home.md".to_string(),
+            scope: "managed_workspace".to_string(),
+            summary: "A concise overview of the managed wiki workspace.".to_string(),
+            vitality: 1.0,
+            updated_at: "2026-04-13T00:00:00Z".to_string(),
+        }]);
+
+        assert!(preview.contains("[Workspace] Home"));
+        assert!(preview.contains("Deeting Wiki/Home.md"));
+        assert!(preview.contains("A concise overview"));
     }
 }

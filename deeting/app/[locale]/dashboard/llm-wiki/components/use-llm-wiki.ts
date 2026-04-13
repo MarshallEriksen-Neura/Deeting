@@ -38,6 +38,44 @@ export function useLlmWiki(t: Translation) {
   const [corpusQuery, setCorpusQuery] = React.useState("")
   const [corpusHits, setCorpusHits] = React.useState<LocalLlmWikiCorpusSearchHit[]>([])
   const [selectedCorpusHitId, setSelectedCorpusHitId] = React.useState<string | null>(null)
+  const [hasSearchedCorpus, setHasSearchedCorpus] = React.useState(false)
+  const [corpusSearchError, setCorpusSearchError] = React.useState<string | null>(null)
+
+  const clearCorpusInspector = React.useCallback(() => {
+    setCorpusHits([])
+    setSelectedCorpusHitId(null)
+    setHasSearchedCorpus(false)
+    setCorpusSearchError(null)
+  }, [])
+
+  const runCorpusSearch = React.useCallback(
+    async (nextQuery: string) => {
+      const query = nextQuery.trim()
+      if (!query) {
+        clearCorpusInspector()
+        return
+      }
+
+      try {
+        setIsSearchingCorpus(true)
+        setHasSearchedCorpus(true)
+        setCorpusSearchError(null)
+        const result = await searchLocalLlmWikiCorpus({ query, limit: 6 })
+        setCorpusHits(result.hits)
+        setSelectedCorpusHitId(result.hits[0]?.assetId ?? null)
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : t("toast.corpusSearchFailed")
+        setCorpusHits([])
+        setSelectedCorpusHitId(null)
+        setCorpusSearchError(message)
+        toast.error(message)
+      } finally {
+        setIsSearchingCorpus(false)
+      }
+    },
+    [clearCorpusInspector, t],
+  )
 
   const refresh = React.useCallback(async () => {
     if (!supportsLocalLlmWiki()) {
@@ -77,6 +115,7 @@ export function useLlmWiki(t: Translation) {
       })
       setState(next)
       setLastBootstrap(null)
+      clearCorpusInspector()
       toast.success(t("toast.bindingSaved"))
     } catch (error) {
       toast.error(
@@ -85,7 +124,7 @@ export function useLlmWiki(t: Translation) {
     } finally {
       setIsAnalyzing(false)
     }
-  }, [t, vaultRoot, workspaceRelativePath])
+  }, [clearCorpusInspector, t, vaultRoot, workspaceRelativePath])
 
   const bootstrap = React.useCallback(async () => {
     try {
@@ -157,6 +196,11 @@ export function useLlmWiki(t: Translation) {
           removed: result.removedFiles,
         }),
       )
+      if (corpusQuery.trim()) {
+        await runCorpusSearch(corpusQuery)
+      } else {
+        clearCorpusInspector()
+      }
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : t("toast.corpusSyncFailed"),
@@ -164,29 +208,22 @@ export function useLlmWiki(t: Translation) {
     } finally {
       setIsSyncingCorpus(false)
     }
-  }, [t])
+  }, [clearCorpusInspector, corpusQuery, runCorpusSearch, t])
 
   const searchCorpus = React.useCallback(async () => {
-    const query = corpusQuery.trim()
-    if (!query) {
-      setCorpusHits([])
-      setSelectedCorpusHitId(null)
-      return
-    }
+    await runCorpusSearch(corpusQuery)
+  }, [corpusQuery, runCorpusSearch])
 
-    try {
-      setIsSearchingCorpus(true)
-      const result = await searchLocalLlmWikiCorpus({ query, limit: 6 })
-      setCorpusHits(result.hits)
-      setSelectedCorpusHitId(result.hits[0]?.assetId ?? null)
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : t("toast.corpusSearchFailed"),
-      )
-    } finally {
-      setIsSearchingCorpus(false)
-    }
-  }, [corpusQuery, t])
+  const updateCorpusQuery = React.useCallback(
+    (value: string) => {
+      setCorpusQuery(value)
+      setCorpusSearchError(null)
+      if (!value.trim()) {
+        clearCorpusInspector()
+      }
+    },
+    [clearCorpusInspector],
+  )
 
   const selectedCorpusHit =
     corpusHits.find((hit) => hit.assetId === selectedCorpusHitId) ?? null
@@ -206,9 +243,11 @@ export function useLlmWiki(t: Translation) {
     corpusQuery,
     corpusHits,
     selectedCorpusHit,
+    hasSearchedCorpus,
+    corpusSearchError,
     setVaultRoot,
     setWorkspaceRelativePath,
-    setCorpusQuery,
+    setCorpusQuery: updateCorpusQuery,
     setSelectedCorpusHitId,
     refresh,
     analyze,

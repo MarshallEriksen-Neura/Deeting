@@ -23,6 +23,40 @@
         "pending": "Pending"
       }
     },
+    "journey": {
+      "eyebrow": "Three-step journey",
+      "title": "Move from local vault binding to explicit wiki delegation.",
+      "description": "Keep the system bounded: connect the vault, bootstrap the managed workspace and dedicated corpus, then verify the maintainer-only retrieval path before handing off wiki work.",
+      "stepLabel": "Step {step}",
+      "boundary": "The main assistant still stays off this corpus by default. The maintainer path only becomes active after an explicit handoff.",
+      "status": {
+        "pending": "Pending",
+        "active": "Next",
+        "working": "Working",
+        "complete": "Ready"
+      },
+      "stages": {
+        "connect": {
+          "title": "Connect Vault",
+          "description": "Bind the existing Obsidian vault and confirm the local read boundary before Deeting touches anything else.",
+          "ready": "{vaultName} is connected and {count} markdown notes are visible for local scan.",
+          "pending": "Analyze the vault root first so Deeting can confirm the scan scope and managed workspace target."
+        },
+        "bootstrap": {
+          "title": "Bootstrap + Sync",
+          "description": "Create the bounded wiki scaffold, then sync the dedicated corpus that only the maintainer agent will use.",
+          "ready": "Workspace is ready at {path} and the dedicated corpus has {count} indexed notes.",
+          "pending": "Create the managed workspace and run at least one corpus sync before the maintainer can search local wiki evidence."
+        },
+        "handoff": {
+          "title": "Inspect + Handoff",
+          "description": "Exercise the corpus inspector, then sync the maintainer agent so delegated wiki work stays visible and bounded.",
+          "ready": "Inspector has been exercised with {count} visible result(s), and {name} is ready for delegated maintenance.",
+          "pending": "Run a corpus query and sync the maintainer agent before delegating wiki work.",
+          "pendingWithMaintainer": "{name} is ready. Run a corpus query once to verify exactly what maintainer-only context it will see."
+        }
+      }
+    },
     "binding": {
       "eyebrow": "Vault binding",
       "title": "Connect the vault you already use.",
@@ -111,6 +145,7 @@
       "preview": {
         "title": "Preview matches",
         "placeholder": "Search the maintainer corpus...",
+        "loading": "Searching the dedicated corpus...",
         "empty": "Run a corpus search to inspect what the maintainer agent can see.",
         "noResults": "No corpus matches for the current query."
       },

@@ -25,6 +25,8 @@ export function LlmWikiCorpusCard({
   corpusQuery,
   corpusHits,
   selectedCorpusHit,
+  hasSearchedCorpus,
+  corpusSearchError,
   isSyncingCorpus,
   isSearchingCorpus,
   onCorpusQueryChange,
@@ -37,6 +39,8 @@ export function LlmWikiCorpusCard({
   corpusQuery: string
   corpusHits: LocalLlmWikiCorpusSearchHit[]
   selectedCorpusHit: LocalLlmWikiCorpusSearchHit | null
+  hasSearchedCorpus: boolean
+  corpusSearchError: string | null
   isSyncingCorpus: boolean
   isSearchingCorpus: boolean
   onCorpusQueryChange: (value: string) => void
@@ -45,6 +49,8 @@ export function LlmWikiCorpusCard({
   onSearchCorpus: () => void
 }) {
   const corpus = state?.corpusStatus
+  const searchDisabled =
+    isSearchingCorpus || !state?.binding || !corpusQuery.trim()
 
   return (
     <GlassCard
@@ -104,7 +110,15 @@ export function LlmWikiCorpusCard({
                 {t("corpus.preview.title")}
               </div>
             </div>
-            <div className="flex gap-2">
+            <form
+              className="flex gap-2"
+              onSubmit={(event) => {
+                event.preventDefault()
+                if (!searchDisabled) {
+                  onSearchCorpus()
+                }
+              }}
+            >
               <Input
                 value={corpusQuery}
                 onChange={(event) => onCorpusQueryChange(event.target.value)}
@@ -112,8 +126,8 @@ export function LlmWikiCorpusCard({
                 className="h-11 rounded-2xl border-white/70 bg-white/90"
               />
               <Button
-                onClick={onSearchCorpus}
-                disabled={isSearchingCorpus || !state?.binding}
+                type="submit"
+                disabled={searchDisabled}
                 className="h-11 rounded-2xl bg-slate-950 px-4 text-white"
               >
                 {isSearchingCorpus ? (
@@ -122,11 +136,20 @@ export function LlmWikiCorpusCard({
                   <Search className="size-4" />
                 )}
               </Button>
-            </div>
+            </form>
+
+            {isSearchingCorpus ? (
+              <div className="inline-flex items-center gap-2 rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700">
+                <RefreshCw className="size-3.5 animate-spin" />
+                {t("corpus.preview.loading")}
+              </div>
+            ) : null}
 
             <div className="space-y-2">
-              {corpusHits.length === 0 ? (
-                <EmptyPreviewState t={t} hasQuery={Boolean(corpusQuery.trim())} />
+              {corpusSearchError ? (
+                <PreviewErrorState message={corpusSearchError} />
+              ) : corpusHits.length === 0 ? (
+                <EmptyPreviewState t={t} hasSearched={hasSearchedCorpus} />
               ) : (
                 corpusHits.map((hit) => {
                   const selected = selectedCorpusHit?.assetId === hit.assetId
@@ -170,7 +193,11 @@ export function LlmWikiCorpusCard({
               </div>
             </div>
 
-            {selectedCorpusHit ? (
+            {corpusSearchError ? (
+              <div className="rounded-2xl border border-rose-400/20 bg-rose-400/10 p-6 text-sm leading-6 text-rose-50">
+                {corpusSearchError}
+              </div>
+            ) : selectedCorpusHit ? (
               <div className="space-y-3">
                 <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
                   <div className="text-base font-semibold text-white">
@@ -293,14 +320,26 @@ function InspectorMetric({
 
 function EmptyPreviewState({
   t,
-  hasQuery,
+  hasSearched,
 }: {
   t: Translation
-  hasQuery: boolean
+  hasSearched: boolean
 }) {
   return (
     <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 text-sm leading-6 text-slate-500">
-      {hasQuery ? t("corpus.preview.noResults") : t("corpus.preview.empty")}
+      {hasSearched ? t("corpus.preview.noResults") : t("corpus.preview.empty")}
+    </div>
+  )
+}
+
+function PreviewErrorState({
+  message,
+}: {
+  message: string
+}) {
+  return (
+    <div className="rounded-2xl border border-rose-200 bg-rose-50/90 p-4 text-sm leading-6 text-rose-700">
+      {message}
     </div>
   )
 }

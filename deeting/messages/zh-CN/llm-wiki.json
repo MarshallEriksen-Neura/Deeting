@@ -23,6 +23,40 @@
         "pending": "待初始化"
       }
     },
+    "journey": {
+      "eyebrow": "三阶段旅程",
+      "title": "从本地 vault 绑定走到显式 wiki 委托。",
+      "description": "先把边界立住：连接 vault，再启动受控工作区和独立 corpus，最后验证 maintainer-only 检索视图，再把 wiki 工作交出去。",
+      "stepLabel": "步骤 {step}",
+      "boundary": "主 assistant 默认仍然不会进入这块 corpus。只有显式 handoff 之后，maintainer 路径才会开始工作。",
+      "status": {
+        "pending": "待处理",
+        "active": "下一步",
+        "working": "进行中",
+        "complete": "已就绪"
+      },
+      "stages": {
+        "connect": {
+          "title": "连接 Vault",
+          "description": "先绑定现有 Obsidian vault，确认本地读取边界，再进入后续的 wiki 维护流程。",
+          "ready": "{vaultName} 已连接，本地扫描可见 {count} 条 markdown 笔记。",
+          "pending": "先分析 vault 根目录，让 Deeting 确认扫描范围和受控工作区目标。"
+        },
+        "bootstrap": {
+          "title": "启动 + 同步",
+          "description": "创建受控 wiki 脚手架，再同步只供 maintainer agent 使用的独立 corpus。",
+          "ready": "工作区已在 {path} 就绪，独立 corpus 当前已有 {count} 条索引笔记。",
+          "pending": "先创建受控工作区并完成至少一次 corpus 同步，maintainer 才能搜索本地 wiki 证据。"
+        },
+        "handoff": {
+          "title": "检查 + 交接",
+          "description": "先用 inspector 看清 maintainer-only 语料视图，再同步 maintainer agent，让 wiki 委托保持可见、可控。",
+          "ready": "Inspector 已经验证过 {count} 条结果，{name} 现在可用于委托维护。",
+          "pending": "先执行一次 corpus 查询并同步 maintainer agent，再开始委托 wiki 工作。",
+          "pendingWithMaintainer": "{name} 已准备好。再跑一次 corpus 查询，确认它实际会看到什么 maintainer-only 上下文。"
+        }
+      }
+    },
     "binding": {
       "eyebrow": "Vault 绑定",
       "title": "先连接你已经在用的 vault。",
@@ -111,6 +145,7 @@
       "preview": {
         "title": "命中预览",
         "placeholder": "搜索 maintainer corpus...",
+        "loading": "正在搜索独立 corpus...",
         "empty": "先执行一次 corpus 搜索，查看 maintainer agent 能看到什么。",
         "noResults": "当前查询没有命中 corpus 结果。"
       },

@@ -9,6 +9,7 @@ import { LlmWikiAgentCard } from "./llm-wiki-agent-card"
 import { LlmWikiBindingCard } from "./llm-wiki-binding-card"
 import { LlmWikiCorpusCard } from "./llm-wiki-corpus-card"
 import { LlmWikiHero } from "./llm-wiki-hero"
+import { LlmWikiJourneyCard } from "./llm-wiki-journey-card"
 import { LlmWikiLifecycleCard } from "./llm-wiki-lifecycle-card"
 import { useLlmWiki } from "./use-llm-wiki"
 import { LlmWikiWorkspaceCard } from "./llm-wiki-workspace-card"
@@ -32,6 +33,8 @@ export function LlmWikiClient() {
     corpusQuery,
     corpusHits,
     selectedCorpusHit,
+    hasSearchedCorpus,
+    corpusSearchError,
     setVaultRoot,
     setWorkspaceRelativePath,
     setCorpusQuery,
@@ -79,6 +82,17 @@ export function LlmWikiClient() {
   return (
     <div className="space-y-6">
       <LlmWikiHero t={t} state={state} />
+      <LlmWikiJourneyCard
+        t={t}
+        state={state}
+        hasSearchedCorpus={hasSearchedCorpus}
+        corpusHitCount={corpusHits.length}
+        isAnalyzing={isAnalyzing}
+        isBootstrapping={isBootstrapping}
+        isSyncingCorpus={isSyncingCorpus}
+        isSearchingCorpus={isSearchingCorpus}
+        isSyncingAgent={isSyncingAgent}
+      />
 
       <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
         <LlmWikiBindingCard
@@ -111,6 +125,8 @@ export function LlmWikiClient() {
             corpusQuery={corpusQuery}
             corpusHits={corpusHits}
             selectedCorpusHit={selectedCorpusHit}
+            hasSearchedCorpus={hasSearchedCorpus}
+            corpusSearchError={corpusSearchError}
             isSyncingCorpus={isSyncingCorpus}
             isSearchingCorpus={isSearchingCorpus}
             onCorpusQueryChange={setCorpusQuery}

@@ -2567,3 +2567,299 @@ That ordering is important.
 It means the evaluator is upstream of attribution, but downstream of execution truth.
 
 It never directly touches the learning substrate.
+
+## End-of-Task Learning Pipeline
+
+At this point the architecture can be described as one full post-task pipeline.
+
+This is the cleanest way to see how the loop closes.
+
+### Step 1: Build `TaskFingerprint`
+
+Before meaningful execution begins, the runtime builds the task fingerprint.
+
+This gives the system:
+
+- task family
+- scope shape
+- risk class
+- discovery pressure
+- execution pressure
+- verification demand
+
+This is the reference frame for all later judgment.
+
+### Step 2: Make route and execution decisions with layered priors
+
+The runtime uses current policy priors at the correct decision layers:
+
+- router-level route priors
+- in-loop policy queries for discovery, capability attach, and execution escalation
+- verification priors at completion gate time
+
+This produces a concrete execution path.
+
+### Step 3: Collect raw trace
+
+During execution, the system records raw observable evidence:
+
+- route chosen
+- tools called
+- discovery attempts
+- capability attach attempts
+- retries
+- errors
+- execution duration/cost class
+- verification signals
+- user response signals
+
+This is still not learning data.
+
+It is only raw material.
+
+### Step 4: Build mechanical trace summary
+
+Before any evaluator call happens, the runtime should condense raw trace into a structured summary.
+
+This step should remain mechanical.
+
+Why:
+
+- it keeps evaluator inputs grounded
+- it reduces noise
+- it prevents the LLM from seeing unnecessary raw transcript clutter
+
+The trace summary should be just rich enough to support classification.
+
+### Step 5: Run constrained evaluator on judgment fields only
+
+The constrained evaluator is invoked only for narrow classification questions.
+
+It should classify:
+
+- `route_judgment`
+- `discovery_judgment`
+- `execution_judgment`
+- evaluator confidence
+
+It should not produce:
+
+- advice
+- policy changes
+- fingerprint verdicts
+- counterfactual claims
+
+This step enriches the outcome without taking over the loop.
+
+### Step 6: Assemble `EvaluatedOutcome`
+
+Now the runtime combines:
+
+- mechanical outcome fields
+- constrained evaluator judgments
+- verification and user-response signals
+
+into one complete `EvaluatedOutcome`.
+
+This is the first point where the system has a legitimate, learning-grade account of what happened.
+
+### Step 7: Check `learning_eligibility`
+
+Before attribution or delta computation, the system asks:
+
+- should this task update the brain at all?
+
+If the answer is no, the pipeline stops here.
+
+This is a critical guardrail.
+
+It prevents:
+
+- trivial tasks
+- ambiguous tasks
+- environment-dominated failures
+- weakly evaluated pseudo-successes
+
+from entering the learning channel.
+
+### Step 8: Run attribution
+
+If the task is learning-eligible, attribution consumes the evaluated outcome and chooses:
+
+- one `primary_blame_stage`
+- zero or more `secondary_evidence` annotations
+
+Only the primary blame stage is allowed to influence priors directly.
+
+This is what keeps the loop from amplifying every downstream symptom.
+
+### Step 9: Decide whether delta is `none`, `provisional`, or `confirmed`
+
+At this stage the system should decide not just what direction a delta points in, but what maturity level it has.
+
+Possible outcomes:
+
+- `none`
+- `provisional`
+- `confirmed`
+
+This depends on:
+
+- outcome confidence
+- evidence count
+- repetition
+- delayed correction status
+
+This is the transition point between judgment and learning.
+
+### Step 10: Compute `PolicyDelta`
+
+Only now does the system compute the bounded prior mutation.
+
+That delta should be:
+
+- small by default
+- confidence-weighted
+- repetition-sensitive
+- tied to one decision point
+- decay-aware
+- revisable later
+
+This is the actual learning payload.
+
+### Step 11: Update `policy_store`
+
+The delta is written into the policy store at:
+
+- fingerprint family
+- decision point
+
+The write should preserve:
+
+- updated weight
+- confidence
+- evidence count
+- provisional/confirmed state
+- timestamp for future decay
+
+This is how the brain persists change.
+
+### Step 12: Re-open for delayed revision
+
+The pipeline should not treat the write as final forever.
+
+Later signals may:
+
+- reinforce the delta
+- downgrade it
+- reverse it
+- leave it untouched
+
+This delayed revision path is what prevents the loop from hardening too early around incomplete evidence.
+
+## Why This Pipeline Closes The Loop
+
+This pipeline closes the loop because every stage has a defined role:
+
+- fingerprint defines task identity
+- execution produces observable evidence
+- evaluator classifies only what requires judgment
+- outcome consolidates truth
+- eligibility protects the channel
+- attribution localizes blame
+- delta computes bounded learning
+- store persists bias for future decisions
+- delayed revision keeps the system corrigible
+
+That is a genuine self-learning loop.
+
+Not because the model changes itself.
+
+But because the runtime re-enters the next similar task with altered decision priors produced by the previous one.
+
+## Current Desktop Feedback Gap
+
+The desktop chat UI already exposes explicit user feedback through thumbs up and thumbs down.
+
+That is important, because delayed user correction and post-response evaluation are central to the learning loop.
+
+However, the current desktop-local implementation is only partially connected.
+
+### What exists today
+
+The current chain is roughly:
+
+- chat message actions render like/dislike controls
+- the frontend reads `trace_id` from assistant message metadata
+- the frontend submits `create_local_trace_feedback`
+- the local store writes a `trace_feedback` row
+- the frontend updates local `feedback_score` in message meta for UI state
+
+This means the system already has:
+
+- explicit user feedback capture
+- trace-linked local persistence
+- local UI reflection of the feedback state
+
+### What is missing today
+
+The desktop-local runtime does **not** yet appear to connect that feedback into the learning spine defined in this document.
+
+In particular, the current local thumbs feedback does not yet flow into:
+
+- `EvaluatedOutcome` revision
+- delayed feedback-based verification correction
+- attribution re-evaluation
+- `PolicyDelta` recomputation
+- `policy_store` updates for route/discovery/capability/execution/verification priors
+
+So, at present, desktop thumbs feedback behaves more like:
+
+- feedback capture
+
+not yet:
+
+- feedback-driven learning
+
+### Why this matters
+
+In this architecture, one of the strongest signals is delayed user correction.
+
+Thumbs down is exactly the kind of signal that should be able to say:
+
+- the apparent success was not a true success
+- verification may have been too weak
+- the path may have been wasteful or misleading
+
+But if feedback stops at persistence, none of that learning happens.
+
+The runtime records sentiment without revising future behavior.
+
+### What this implies for the architecture
+
+The current desktop thumbs feature should be treated as:
+
+- an existing signal source
+- not yet an integrated learning mechanism
+
+It already solves the first half of the problem:
+
+- explicit user feedback collection
+
+It does not yet solve the second half:
+
+- feeding that signal back into the post-task learning pipeline
+
+### Architectural consequence
+
+When this signal is eventually integrated, it should not bypass the learning spine.
+
+It should enter at the delayed-feedback layer and influence the loop through the same path as any other correction signal:
+
+- `trace_feedback`
+-> delayed revision of `EvaluatedOutcome`
+-> possible attribution revision
+-> possible `PolicyDelta` revision
+-> updated prior in `policy_store`
+
+That keeps thumbs feedback inside the same causal structure as the rest of the architecture instead of creating a parallel ad hoc learning path.

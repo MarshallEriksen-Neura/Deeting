@@ -271,3 +271,133 @@ Only after this pass is complete should the next phase begin:
 - scheduled lint suggestions
 
 That phase must remain delegation-first, not hidden-autonomy-first.
+
+## Follow-up Hooks Spec
+
+The next phase should explicitly split automation into two layers.
+
+### Layer 1: Helpful Event-Driven Triggers
+
+This layer is the "good to use" phase.
+
+These hooks should favor:
+
+- visibility
+- suggested actions
+- bounded automation
+- low-risk state refresh
+
+The expected hooks are:
+
+#### `on vault bound`
+
+Behavior:
+
+- automatically prompt or trigger the first corpus sync
+
+Expected outcome:
+
+- the user does not need to discover corpus sync manually after binding
+
+#### `on workspace bootstrapped`
+
+Behavior:
+
+- automatically suggest creating the maintainer agent
+
+Expected outcome:
+
+- the user moves naturally from scaffold creation into delegated ownership
+
+#### `on corpus sync completed`
+
+Behavior:
+
+- automatically refresh corpus health and preview results
+
+Expected outcome:
+
+- the inspector stays live without requiring a second manual refresh step
+
+#### `on session end`
+
+Behavior:
+
+- generate a crystallization candidate
+
+Expected outcome:
+
+- useful work done in chat can be proposed for wiki maintenance without silently writing it back
+
+#### `on schedule`
+
+Behavior:
+
+- trigger lint suggestions
+- trigger stale checks
+- trigger corpus refresh suggestions
+
+Expected outcome:
+
+- the LLM Wiki stays maintainable and visible without surprise edits
+
+### Layer 2: Stronger Automation Loop
+
+This layer should only start after Layer 1 is stable.
+
+These hooks are more powerful and require stronger review and product controls.
+
+The expected hooks are:
+
+#### `on new source`
+
+Behavior:
+
+- automatically ingest the source into the dedicated corpus
+- then trigger ingest delegation to the maintainer agent
+
+Expected outcome:
+
+- source arrival shortens the path to maintained wiki updates
+
+#### `on valuable answer`
+
+Behavior:
+
+- automatically form a wiki update candidate
+
+Expected outcome:
+
+- high-value answers stop disappearing into chat history
+
+#### `on maintenance schedule`
+
+Behavior:
+
+- automatically delegate lint
+- automatically delegate repair
+- automatically delegate supersession review
+
+Expected outcome:
+
+- the wiki becomes self-maintaining in a bounded, agent-owned way
+
+#### `on repeated stable conclusion`
+
+Behavior:
+
+- promote the conclusion into user memory
+
+Expected outcome:
+
+- only repeated, stable, higher-confidence knowledge enters long-term memory
+
+## Hook Guardrails
+
+All future hooks must preserve the current architecture boundaries:
+
+1. Hooks may trigger delegation, but they must not silently widen main runtime default retrieval.
+2. Hooks may update the managed workspace, but they must not silently rewrite unrelated vault notes.
+3. Hooks may promote to user memory only after stronger confidence and repetition signals.
+4. Hooks must remain visible to the user through status, suggestions, or audit surfaces.
+5. Hooks must preserve the dedicated-corpus ownership model instead of collapsing LLM Wiki into the main knowledge surface.

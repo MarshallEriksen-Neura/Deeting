@@ -186,7 +186,7 @@ pub(crate) async fn search_corpus(
     app_state: &AppState,
     query: &str,
     limit: usize,
-) -> Result<Vec<LlmWikiCorpusSearchHit>, String> {
+) -> Result<Vec<LocalLlmWikiCorpusSearchHit>, String> {
     let normalized_query = query.trim();
     if normalized_query.is_empty() {
         return Ok(Vec::new());
@@ -241,7 +241,7 @@ pub(crate) async fn search_corpus(
                 .unwrap_or("1970-01-01T00:00:00Z");
             let score = base_score * vitality_multiplier(vitality, reference_timestamp, now) as f64;
 
-            Some(LlmWikiCorpusSearchHit {
+            Some(LocalLlmWikiCorpusSearchHit {
                 asset_id: key,
                 relative_path: metadata
                     .and_then(|value| value.get("relative_path"))
@@ -400,7 +400,7 @@ async fn search_semantic_scores(
 
 async fn touch_search_hits(
     app_state: &AppState,
-    hits: &[LlmWikiCorpusSearchHit],
+    hits: &[LocalLlmWikiCorpusSearchHit],
 ) -> Result<(), String> {
     for hit in hits.iter().take(3) {
         let Some(asset) = app_state

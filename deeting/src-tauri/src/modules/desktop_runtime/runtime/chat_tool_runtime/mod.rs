@@ -928,20 +928,6 @@ async fn process_chat_tool_calls(
                         state.capability_name
                     ));
                     capability_update = Some(LocalCapabilityTransition::Activate(state));
-                    let bandit_store = app_state.providers.store.clone();
-                    tauri::async_runtime::spawn(async move {
-                        if let Err(e) = bandit_store
-                            .record_feedback_simple(
-                                "router:assistant",
-                                &activated_capability_id,
-                                true,
-                                None,
-                            )
-                            .await
-                        {
-                            log::warn!("bandit feedback failed for router:assistant: {}", e);
-                        }
-                    });
                 }
                 Err(err) => {
                     let meta = serde_json::json!({"id":call_id.as_str(),"name":tool_name,"status":"error","error_code":"CAPABILITY_ATTACH_FAILED","error":err});
@@ -951,21 +937,6 @@ async fn process_chat_tool_calls(
                     tool_call_meta.push(meta);
                     results.push(format!("Expert capability attach failed: {}", err));
                     synthesized = true;
-                    let bandit_store = app_state.providers.store.clone();
-                    let bandit_capability_id = capability_id.to_string();
-                    tauri::async_runtime::spawn(async move {
-                        if let Err(e) = bandit_store
-                            .record_feedback_simple(
-                                "router:assistant",
-                                &bandit_capability_id,
-                                false,
-                                None,
-                            )
-                            .await
-                        {
-                            log::warn!("bandit feedback failed for router:assistant: {}", e);
-                        }
-                    });
                 }
             }
         } else if tool_name == "detach_capability" {
