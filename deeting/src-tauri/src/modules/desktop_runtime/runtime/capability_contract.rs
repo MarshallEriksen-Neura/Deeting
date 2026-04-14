@@ -1,10 +1,18 @@
 use serde_json::{json, Value};
 
+const RESERVED_RUNTIME_META_TOOLS: &[&str] = &["query_task_policy"];
+
 fn sanitize_contract_allowed_tools(allowed_tools: Vec<String>) -> Vec<String> {
-    allowed_tools
+    let mut sanitized = allowed_tools
         .into_iter()
         .filter(|tool_name| tool_name != "execute_code_plan")
-        .collect()
+        .collect::<Vec<_>>();
+    for tool_name in RESERVED_RUNTIME_META_TOOLS {
+        if !sanitized.iter().any(|existing| existing == tool_name) {
+            sanitized.push((*tool_name).to_string());
+        }
+    }
+    sanitized
 }
 
 #[derive(Debug, Clone, PartialEq)]

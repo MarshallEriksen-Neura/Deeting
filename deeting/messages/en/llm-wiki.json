@@ -200,6 +200,97 @@
         "description": "The maintainer agent should update pages, source summaries, and logs. The main chat runtime should stay retrieval-focused and trigger delegation only when needed."
       }
     },
+    "automation": {
+      "eyebrow": "Visible hooks",
+      "title": "Keep automation explicit, bounded, and reviewable.",
+      "description": "Low-risk refreshes can run automatically. Stronger actions stay visible as suggestions, workflow runs, or memory promotions instead of disappearing into hidden background behavior.",
+      "settings": {
+        "title": "Trigger settings",
+        "autoSyncOnVaultBound": {
+          "title": "Auto-sync corpus on vault bind",
+          "description": "When a vault is bound, run the first dedicated corpus sync automatically."
+        },
+        "suggestMaintainerOnWorkspaceBootstrap": {
+          "title": "Suggest maintainer after bootstrap",
+          "description": "After the workspace scaffold is ready, suggest creating or syncing the maintainer agent."
+        },
+        "autoRefreshInspectorOnCorpusSync": {
+          "title": "Refresh inspector after sync",
+          "description": "After corpus sync, create a visible inspector follow-up so the user can review the new retrieval surface."
+        },
+        "createCrystallizationCandidatesOnSessionEnd": {
+          "title": "Create session-end crystallization candidates",
+          "description": "When a conversation closes or archives, surface a candidate for wiki crystallization instead of silently writing back."
+        },
+        "enableScheduleSuggestions": {
+          "title": "Enable schedule suggestions",
+          "description": "Run a periodic review that suggests stale checks, lint passes, and corpus refreshes."
+        },
+        "suggestOnValuableAnswer": {
+          "title": "Suggest wiki capture for valuable answers",
+          "description": "When an answer looks durable, create a visible wiki-maintenance candidate."
+        },
+        "autoDelegateNewSources": {
+          "title": "Auto-delegate new-source review",
+          "description": "When new source material appears in the dedicated corpus, automatically start a maintainer workflow."
+        },
+        "autoDelegateMaintenanceSchedule": {
+          "title": "Auto-delegate maintenance schedule",
+          "description": "On periodic schedule checks, automatically start a maintainer review workflow."
+        },
+        "promoteRepeatedStableConclusionsToMemory": {
+          "title": "Promote repeated stable conclusions to memory",
+          "description": "If the same durable conclusion repeats, allow the hook layer to write it into local memory with the write guard."
+        }
+      },
+      "suggestions": {
+        "title": "Pending suggestions",
+        "empty": "No visible automation suggestions are waiting right now.",
+        "execute": "Run",
+        "executing": "Running...",
+        "dismiss": "Dismiss"
+      },
+      "audit": {
+        "title": "Recent automation audit",
+        "empty": "No hook activity has been recorded yet."
+      },
+      "boundary": {
+        "title": "Boundary remains intact",
+        "description": "These hooks may refresh corpus state, open review workflows, or create local-memory candidates. They do not widen the main assistant's default retrieval path."
+      },
+      "actions": {
+        "sync_corpus": "Sync corpus",
+        "create_maintainer_agent": "Sync maintainer",
+        "inspect_corpus": "Inspect corpus",
+        "run_maintenance_review": "Maintenance review",
+        "crystallize_session_summary": "Crystallize session",
+        "promote_to_memory": "Promote to memory"
+      },
+      "triggers": {
+        "on_vault_bound": "On vault bound",
+        "on_workspace_bootstrapped": "On workspace bootstrapped",
+        "on_corpus_sync_completed": "On corpus sync completed",
+        "on_session_end": "On session end",
+        "on_valuable_answer": "On valuable answer",
+        "on_maintenance_schedule": "On maintenance schedule",
+        "on_new_source": "On new source",
+        "on_repeated_stable_conclusion": "On repeated stable conclusion"
+      },
+      "dispositions": {
+        "settings_updated": "Settings updated",
+        "suggestion_dismissed": "Suggestion dismissed",
+        "executed": "Executed",
+        "acknowledged": "Acknowledged",
+        "auto_executed": "Auto-executed",
+        "auto_failed": "Auto-failed",
+        "observed": "Observed",
+        "suggested": "Suggested",
+        "scheduled": "Scheduled",
+        "disabled": "Disabled",
+        "skipped": "Skipped",
+        "noop": "No action"
+      }
+    },
     "toast": {
       "loadFailed": "Failed to load LLM Wiki state.",
       "bindingSaved": "Vault binding saved.",
@@ -213,7 +304,10 @@
       "maintainerAgentFailed": "Failed to create or update the maintainer agent.",
       "promptCopied": "Maintainer prompt copied.",
       "promptCopyFailed": "Could not copy the maintainer prompt.",
-      "noPrompt": "Maintainer prompt is not ready yet."
+      "noPrompt": "Maintainer prompt is not ready yet.",
+      "automationSettingsFailed": "Failed to update LLM Wiki automation settings.",
+      "automationExecutionFailed": "Failed to execute the automation suggestion.",
+      "automationDismissFailed": "Failed to dismiss the automation suggestion."
     }
   }
 }

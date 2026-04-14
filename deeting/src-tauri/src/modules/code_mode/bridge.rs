@@ -684,6 +684,7 @@ fn built_in_contract_profile(
         "list_local_memories"
         | "list_user_memories"
         | "search_user_memories"
+        | "query_task_policy"
         | "list_mcp_tools"
         | "list_tools"
         | "list_local_provider_instances"
@@ -1174,6 +1175,26 @@ async fn dispatch_tool_call(
                 .map_err(|err| ("LOCAL_MEMORY_ERROR".to_string(), err.to_string()))?;
             serde_json::to_value(result)
                 .map_err(|err| ("LOCAL_MEMORY_ERROR".to_string(), err.to_string()))
+        }
+        "query_task_policy" => {
+            let query = value_to_string(arguments.get("query")).ok_or_else(|| {
+                (
+                    "TASK_POLICY_INVALID_ARGUMENTS".to_string(),
+                    "query_task_policy requires a non-empty query".to_string(),
+                )
+            })?;
+            let decision_point = value_to_string(arguments.get("decision_point"))
+                .unwrap_or_else(|| "route".to_string());
+            let limit = value_to_i64(arguments.get("limit")).unwrap_or(4).max(1) as usize;
+            let result = crate::modules::desktop_runtime::runtime::query_task_policy_hint(
+                state.deps.mcp.store.as_ref(),
+                &query,
+                &decision_point,
+                limit,
+            )
+            .await;
+            serde_json::to_value(result)
+                .map_err(|err| ("TASK_POLICY_ERROR".to_string(), err.to_string()))
         }
         "append_local_memory" | "add_knowledge_chunk" => {
             let content = value_to_string(arguments.get("content")).unwrap_or_default();

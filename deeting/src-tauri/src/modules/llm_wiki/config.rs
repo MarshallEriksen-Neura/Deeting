@@ -5,9 +5,12 @@ use serde::{Deserialize, Serialize};
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::store::McpStore;
 
+use super::types::LocalLlmWikiAutomationState;
+
 pub(super) const LLM_WIKI_CONFIG_KEY: &str = "llm_wiki.binding.v1";
 pub(super) const LLM_WIKI_LAST_BOOTSTRAPPED_AT_KEY: &str = "llm_wiki.last_bootstrapped_at";
 pub(super) const LLM_WIKI_LAST_CORPUS_SYNC_AT_KEY: &str = "llm_wiki.last_corpus_sync_at";
+pub(super) const LLM_WIKI_AUTOMATION_STATE_KEY: &str = "llm_wiki.automation_state.v1";
 pub(super) const DEFAULT_WORKSPACE_RELATIVE_PATH: &str = "Deeting Wiki";
 pub(super) const READ_SCOPE_WHOLE_VAULT: &str = "whole_vault";
 pub(super) const WRITE_SCOPE_MANAGED_WORKSPACE: &str = "managed_workspace";
@@ -124,4 +127,38 @@ pub(super) fn normalize_workspace_relative_path(raw: Option<&str>) -> Result<Str
 
 pub(super) fn resolve_workspace_path(vault_root: &Path, relative_path: &str) -> PathBuf {
     vault_root.join(relative_path)
+}
+
+pub(super) async fn load_automation_state(
+    store: &McpStore,
+) -> Result<LocalLlmWikiAutomationState, McpError> {
+    let Some(raw) = store
+        .get_desktop_config(LLM_WIKI_AUTOMATION_STATE_KEY)
+        .await?
+    else {
+        return Ok(LocalLlmWikiAutomationState::default());
+    };
+
+    if raw.trim().is_empty() {
+        return Ok(LocalLlmWikiAutomationState::default());
+    }
+
+    serde_json::from_str::<LocalLlmWikiAutomationState>(&raw).map_err(|err| {
+        McpError::Storage(format!("invalid llm wiki automation state config: {}", err))
+    })
+}
+
+pub(super) async fn save_automation_state(
+    store: &McpStore,
+    state: &LocalLlmWikiAutomationState,
+) -> Result<(), McpError> {
+    let raw = serde_json::to_string(state).map_err(|err| {
+        McpError::Storage(format!(
+            "serialize llm wiki automation state failed: {}",
+            err
+        ))
+    })?;
+    store
+        .set_desktop_config(LLM_WIKI_AUTOMATION_STATE_KEY, &raw)
+        .await
 }

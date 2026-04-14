@@ -8,10 +8,10 @@ use uuid::Uuid;
 use crate::modules::desktop_runtime::runtime::{
     apply_desktop_execution_policy_overrides, build_local_control_plane_result,
     build_local_control_plane_status_meta, build_local_execution_policy,
-    build_runtime_discovery_bundle_with_runtime_query_vector,
+    build_runtime_discovery_bundle_with_runtime_query_vector, build_task_fingerprint,
     maybe_override_route_with_custom_task_agent_query_vector, render_local_route_prompt,
-    select_local_route_with_evidence, LocalControlPlaneResult, LocalExecutionPolicy,
-    LocalRouteDecision, RuntimeDiscoveryBundle,
+    route_hint_status_meta, select_local_route_with_evidence, LocalControlPlaneResult,
+    LocalExecutionPolicy, LocalRouteDecision, RuntimeDiscoveryBundle, TaskFingerprint,
 };
 use crate::state::AppState;
 use mcp_core::types::LocalChatInputMessage;
@@ -174,6 +174,7 @@ pub(crate) enum ContextPatch {
     SetExecutionPolicy(Option<LocalExecutionPolicy>),
     SetControlPlaneResult(Option<LocalControlPlaneResult>),
     SetSelectedPromptVariant(Option<String>),
+    SetTaskFingerprint(Option<TaskFingerprint>),
     SetRequestQueryEmbedding {
         embedding: Option<Vec<f32>>,
         attempted: bool,
@@ -493,6 +494,7 @@ pub(super) struct LocalWorkflowContext {
     pub(super) status_meta: Option<Value>,
     pub(super) selected_knowledge_file_ids: Vec<String>,
     pub(super) latest_user_query: Option<String>,
+    pub(super) task_fingerprint: Option<TaskFingerprint>,
     pub(super) request_query_embedding: Option<Vec<f32>>,
     pub(super) request_query_embedding_attempted: bool,
     pub(super) prefetched_retrievals: PrefetchedRetrievals,
@@ -537,6 +539,7 @@ impl LocalWorkflowContext {
             status_meta: None,
             selected_knowledge_file_ids: input.selected_knowledge_file_ids.clone(),
             latest_user_query,
+            task_fingerprint: None,
             request_query_embedding: None,
             request_query_embedding_attempted: false,
             prefetched_retrievals: PrefetchedRetrievals::default(),
@@ -751,6 +754,9 @@ impl LocalWorkflowContext {
             ContextPatch::SetSelectedPromptVariant(selected_prompt_variant) => {
                 self.selected_prompt_variant = selected_prompt_variant;
             }
+            ContextPatch::SetTaskFingerprint(task_fingerprint) => {
+                self.task_fingerprint = task_fingerprint;
+            }
             ContextPatch::SetRequestQueryEmbedding {
                 embedding,
                 attempted,
@@ -907,6 +913,7 @@ fn context_patch_conflict_key(patch: &ContextPatch) -> Option<&'static str> {
         ContextPatch::SetExecutionPolicy(_) => Some("set_execution_policy"),
         ContextPatch::SetControlPlaneResult(_) => Some("set_control_plane_result"),
         ContextPatch::SetSelectedPromptVariant(_) => Some("set_selected_prompt_variant"),
+        ContextPatch::SetTaskFingerprint(_) => Some("set_task_fingerprint"),
         ContextPatch::SetRequestQueryEmbedding { .. } => Some("set_request_query_embedding"),
         ContextPatch::SetPrefetchedRetrievals(_) => Some("set_prefetched_retrievals"),
         ContextPatch::PrependMessages(_) | ContextPatch::EmitStatus(_) => None,
@@ -1115,10 +1122,11 @@ impl LocalWorkflowStep<LocalWorkflowContext> for RouteSelectionStep {
             let Some(query) = ctx.latest_user_query().map(str::to_string) else {
                 return Ok(StepResult::skipped());
             };
+            let task_fingerprint = build_task_fingerprint(&query);
 
             let (discovery_bundle, runtime_discovery_patch) =
                 resolve_runtime_discovery_bundle(ctx, &query).await;
-            let decision = maybe_override_route_with_custom_task_agent_query_vector(
+            let base_decision = maybe_override_route_with_custom_task_agent_query_vector(
                 &ctx.app_state,
                 ctx.explicit_task_agent_id.as_deref(),
                 &query,
@@ -1126,6 +1134,18 @@ impl LocalWorkflowStep<LocalWorkflowContext> for RouteSelectionStep {
                 select_local_route_with_evidence(&query, discovery_bundle.route_evidence.clone()),
             )
             .await?;
+            let route_prior_application =
+                crate::modules::desktop_runtime::runtime::apply_route_prior(
+                    base_decision,
+                    crate::modules::desktop_runtime::runtime::query_task_policy_hint(
+                        ctx.app_state.mcp.store.as_ref(),
+                        &query,
+                        "route",
+                        4,
+                    )
+                    .await,
+                );
+            let decision = route_prior_application.decision.clone();
             let execution_policy = apply_desktop_execution_policy_overrides(
                 ctx.app_state.mcp.store.as_ref(),
                 build_local_execution_policy(&decision),
@@ -1138,6 +1158,7 @@ impl LocalWorkflowStep<LocalWorkflowContext> for RouteSelectionStep {
                 result = result.with_patch(patch);
             }
             Ok(result
+                .with_patch(ContextPatch::SetTaskFingerprint(Some(task_fingerprint)))
                 .with_patch(ContextPatch::SetRouteDecision(Some(decision.clone())))
                 .with_patch(ContextPatch::SetExecutionPolicy(Some(
                     execution_policy.clone(),
@@ -1147,10 +1168,13 @@ impl LocalWorkflowStep<LocalWorkflowContext> for RouteSelectionStep {
                     Some("route_selection"),
                     "success",
                     "runtime.route.selected",
-                    Some(build_local_control_plane_status_meta(
-                        &decision,
-                        &execution_policy,
-                    )),
+                    Some(serde_json::json!({
+                        "route_status": build_local_control_plane_status_meta(
+                            &decision,
+                            &execution_policy,
+                        ),
+                        "task_learning": route_hint_status_meta(&route_prior_application),
+                    })),
                 )))
         })
     }

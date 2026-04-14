@@ -336,6 +336,14 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         .await;
     });
 
+    let llm_wiki_automation_state = sync_state.clone();
+    tauri::async_runtime::spawn(async move {
+        crate::modules::llm_wiki::automation::start_local_llm_wiki_automation_worker(
+            llm_wiki_automation_state,
+        )
+        .await;
+    });
+
     let periodic_worker_state = sync_state.clone();
     tauri::async_runtime::spawn(async move {
         crate::modules::conversations::summary_workers::start_local_periodic_worker(

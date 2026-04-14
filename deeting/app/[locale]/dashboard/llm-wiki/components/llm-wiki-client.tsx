@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import { GlassCard, GlassCardContent, GlassCardHeader, GlassCardTitle } from "@/components/ui/glass-card"
 import { LlmWikiAgentCard } from "./llm-wiki-agent-card"
+import { LlmWikiAutomationCard } from "./llm-wiki-automation-card"
 import { LlmWikiBindingCard } from "./llm-wiki-binding-card"
 import { LlmWikiCorpusCard } from "./llm-wiki-corpus-card"
 import { LlmWikiHero } from "./llm-wiki-hero"
@@ -35,6 +36,10 @@ export function LlmWikiClient() {
     selectedCorpusHit,
     hasSearchedCorpus,
     corpusSearchError,
+    automation,
+    isUpdatingAutomationSettings,
+    executingSuggestionId,
+    dismissingSuggestionId,
     setVaultRoot,
     setWorkspaceRelativePath,
     setCorpusQuery,
@@ -46,6 +51,9 @@ export function LlmWikiClient() {
     syncMaintainerAgent,
     syncCorpus,
     searchCorpus,
+    setAutomationSetting,
+    executeAutomationSuggestion,
+    dismissAutomationSuggestion,
   } = useLlmWiki(t)
 
   if (desktopSupported === null && isLoading) {
@@ -115,6 +123,19 @@ export function LlmWikiClient() {
           onBootstrap={bootstrap}
         />
       </div>
+
+      <LlmWikiAutomationCard
+        t={t}
+        settings={automation?.settings ?? null}
+        suggestions={automation?.suggestions ?? []}
+        audit={automation?.audit ?? []}
+        isUpdatingSettings={isUpdatingAutomationSettings}
+        executingSuggestionId={executingSuggestionId}
+        dismissingSuggestionId={dismissingSuggestionId}
+        onToggleSetting={setAutomationSetting}
+        onExecuteSuggestion={executeAutomationSuggestion}
+        onDismissSuggestion={dismissAutomationSuggestion}
+      />
 
       <div className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
         <div className="grid gap-6">

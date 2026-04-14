@@ -91,7 +91,6 @@ impl MemoryService {
             .store
             .find_top1_similar(embedding.clone(), None, None)
             .await?;
-
         match (
             decide_write_guard_action(top1.as_ref().map(|(_, _, score)| *score)),
             top1,
@@ -223,6 +222,7 @@ impl MemoryService {
             .store
             .find_top1_similar(embedding.clone(), None, None)
             .await?;
+        let fallback_score = top1.as_ref().map(|(_, _, s)| *s);
 
         match (
             decide_write_guard_action(top1.as_ref().map(|(_, _, score)| *score)),
@@ -276,7 +276,6 @@ impl MemoryService {
                 })
             }
             _ => {
-                let score = top1.as_ref().map(|(_, _, s)| *s);
                 let item = self
                     .store
                     .append_with_embedding(payload, embedding, Some("auto".to_string()))
@@ -284,7 +283,7 @@ impl MemoryService {
                 Ok(WriteGuardResult {
                     action: WriteAction::Add,
                     item: Some(item),
-                    similarity_score: score,
+                    similarity_score: fallback_score,
                     updated_memory_id: None,
                 })
             }

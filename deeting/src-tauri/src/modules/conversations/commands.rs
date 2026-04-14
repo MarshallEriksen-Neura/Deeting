@@ -200,12 +200,30 @@ pub async fn archive_local_conversation_session(
     state: State<'_, AppState>,
     session_id: String,
 ) -> Result<LocalConversationArchiveResponse, String> {
-    state
+    let response = state
         .mcp
         .store
         .update_local_conversation_status(&session_id, LocalConversationStatus::Archived)
         .await
-        .map_err(to_string)
+        .map_err(to_string)?;
+    let app_state = state.inner().clone();
+    let session_id_for_hook = session_id.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(err) = crate::modules::llm_wiki::automation::handle_session_end(
+            &app_state,
+            &session_id_for_hook,
+            "archived",
+        )
+        .await
+        {
+            log::warn!(
+                "llm wiki session-end hook failed session={} status=archived err={}",
+                session_id_for_hook,
+                err
+            );
+        }
+    });
+    Ok(response)
 }
 
 #[tauri::command]
@@ -213,12 +231,30 @@ pub async fn close_local_conversation(
     state: State<'_, AppState>,
     session_id: String,
 ) -> Result<LocalConversationArchiveResponse, String> {
-    state
+    let response = state
         .mcp
         .store
         .update_local_conversation_status(&session_id, LocalConversationStatus::Closed)
         .await
-        .map_err(to_string)
+        .map_err(to_string)?;
+    let app_state = state.inner().clone();
+    let session_id_for_hook = session_id.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(err) = crate::modules::llm_wiki::automation::handle_session_end(
+            &app_state,
+            &session_id_for_hook,
+            "closed",
+        )
+        .await
+        {
+            log::warn!(
+                "llm wiki session-end hook failed session={} status=closed err={}",
+                session_id_for_hook,
+                err
+            );
+        }
+    });
+    Ok(response)
 }
 
 #[tauri::command]
@@ -278,12 +314,38 @@ pub async fn append_local_conversation_message(
     state: State<'_, AppState>,
     payload: CreateConversationMessageRequest,
 ) -> Result<LocalConversationHistoryMessage, String> {
-    state
+    let session_id = payload.session_id.clone();
+    let role = payload.role.clone();
+    let content = payload.content.clone();
+    let meta_info = payload.meta_info.clone();
+    let result = state
         .mcp
         .store
         .append_local_conversation_message(payload)
         .await
-        .map_err(to_string)
+        .map_err(to_string)?;
+
+    if role.eq_ignore_ascii_case("assistant") {
+        let app_state = state.inner().clone();
+        tauri::async_runtime::spawn(async move {
+            if let Err(err) = crate::modules::llm_wiki::automation::handle_valuable_answer(
+                &app_state,
+                &session_id,
+                &content,
+                meta_info.as_ref(),
+            )
+            .await
+            {
+                log::warn!(
+                    "llm wiki valuable-answer hook failed session={} err={}",
+                    session_id,
+                    err
+                );
+            }
+        });
+    }
+
+    Ok(result)
 }
 
 #[tauri::command]

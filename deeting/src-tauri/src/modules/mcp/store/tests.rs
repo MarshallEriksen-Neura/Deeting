@@ -865,6 +865,53 @@ async fn upsert_tool_query_affinity_clamps_rows_per_tool() {
 }
 
 #[tokio::test]
+async fn apply_task_policy_delta_upserts_and_accumulates_prior_weight() {
+    let store = create_test_store("task-policy-priors").await;
+    store.init().await.expect("init store");
+
+    store
+        .apply_task_policy_delta(
+            "fingerprint-a",
+            "route",
+            "worker",
+            0.25,
+            "provisional",
+            0.6,
+            Some("run-1"),
+        )
+        .await
+        .expect("insert prior");
+    store
+        .apply_task_policy_delta(
+            "fingerprint-a",
+            "route",
+            "worker",
+            0.15,
+            "confirmed",
+            0.8,
+            Some("run-2"),
+        )
+        .await
+        .expect("update prior");
+
+    let rows = store
+        .list_task_policy_prior_rows("fingerprint-a", "route", 8)
+        .await
+        .expect("list task policy priors");
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].action_key, "worker");
+    assert!(
+        (rows[0].weight - 0.4).abs() < 1e-6,
+        "weight={}",
+        rows[0].weight
+    );
+    assert_eq!(rows[0].evidence_count, 2);
+    assert_eq!(rows[0].maturity, "confirmed");
+    assert!((rows[0].confidence - 0.8).abs() < 1e-6);
+}
+
+#[tokio::test]
 async fn record_asset_execution_persists_session_and_asset_id() {
     let store = create_test_store("asset-execution-history").await;
     store.init().await.expect("init store");

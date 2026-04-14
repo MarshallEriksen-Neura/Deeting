@@ -1,3 +1,4 @@
+pub mod automation;
 pub mod commands;
 mod config;
 mod corpus;

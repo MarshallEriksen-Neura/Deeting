@@ -6,21 +6,27 @@ import { toast } from "sonner"
 import {
   bootstrapLocalLlmWikiWorkspace,
   createOrUpdateLocalLlmWikiMaintainerAgent,
+  dismissLocalLlmWikiAutomationSuggestion,
+  executeLocalLlmWikiAutomationSuggestion,
   getLocalLlmWikiState,
   saveLocalLlmWikiBinding,
   searchLocalLlmWikiCorpus,
   syncLocalLlmWikiCorpus,
   supportsLocalLlmWiki,
+  updateLocalLlmWikiAutomationSettings,
+  type LocalLlmWikiAutomationSuggestion,
   type BootstrapLocalLlmWikiWorkspaceResult,
   type LocalLlmWikiCorpusSearchHit,
   type LocalLlmWikiState,
 } from "@/lib/api/llm-wiki"
+import { useOpenWorkflow } from "@/hooks/use-open-workflow"
 
 type Translation = (key: string, values?: Record<string, string | number>) => string
 
 const DEFAULT_WORKSPACE_RELATIVE_PATH = "Deeting Wiki"
 
 export function useLlmWiki(t: Translation) {
+  const openWorkflow = useOpenWorkflow()
   const [desktopSupported, setDesktopSupported] = React.useState<boolean | null>(null)
   const [state, setState] = React.useState<LocalLlmWikiState | null>(null)
   const [vaultRoot, setVaultRoot] = React.useState("")
@@ -40,6 +46,9 @@ export function useLlmWiki(t: Translation) {
   const [selectedCorpusHitId, setSelectedCorpusHitId] = React.useState<string | null>(null)
   const [hasSearchedCorpus, setHasSearchedCorpus] = React.useState(false)
   const [corpusSearchError, setCorpusSearchError] = React.useState<string | null>(null)
+  const [isUpdatingAutomationSettings, setIsUpdatingAutomationSettings] = React.useState(false)
+  const [executingSuggestionId, setExecutingSuggestionId] = React.useState<string | null>(null)
+  const [dismissingSuggestionId, setDismissingSuggestionId] = React.useState<string | null>(null)
 
   const clearCorpusInspector = React.useCallback(() => {
     setCorpusHits([])
@@ -214,6 +223,75 @@ export function useLlmWiki(t: Translation) {
     await runCorpusSearch(corpusQuery)
   }, [corpusQuery, runCorpusSearch])
 
+  const setAutomationSetting = React.useCallback(
+    async (
+      key:
+        | "autoSyncOnVaultBound"
+        | "suggestMaintainerOnWorkspaceBootstrap"
+        | "autoRefreshInspectorOnCorpusSync"
+        | "createCrystallizationCandidatesOnSessionEnd"
+        | "enableScheduleSuggestions"
+        | "suggestOnValuableAnswer"
+        | "autoDelegateNewSources"
+        | "autoDelegateMaintenanceSchedule"
+        | "promoteRepeatedStableConclusionsToMemory",
+      value: boolean,
+    ) => {
+      try {
+        setIsUpdatingAutomationSettings(true)
+        const next = await updateLocalLlmWikiAutomationSettings({ [key]: value })
+        setState(next)
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : t("toast.automationSettingsFailed"),
+        )
+      } finally {
+        setIsUpdatingAutomationSettings(false)
+      }
+    },
+    [t],
+  )
+
+  const executeAutomationSuggestion = React.useCallback(
+    async (suggestion: LocalLlmWikiAutomationSuggestion) => {
+      try {
+        setExecutingSuggestionId(suggestion.id)
+        const result = await executeLocalLlmWikiAutomationSuggestion(suggestion.id)
+        setState(result.state)
+        if (result.workflowRunId) {
+          openWorkflow({ runId: result.workflowRunId })
+        }
+        if (result.message) {
+          toast.success(result.message)
+        }
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : t("toast.automationExecutionFailed"),
+        )
+      } finally {
+        setExecutingSuggestionId(null)
+      }
+    },
+    [openWorkflow, t],
+  )
+
+  const dismissAutomationSuggestion = React.useCallback(
+    async (suggestionId: string) => {
+      try {
+        setDismissingSuggestionId(suggestionId)
+        const next = await dismissLocalLlmWikiAutomationSuggestion(suggestionId)
+        setState(next)
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : t("toast.automationDismissFailed"),
+        )
+      } finally {
+        setDismissingSuggestionId(null)
+      }
+    },
+    [t],
+  )
+
   const updateCorpusQuery = React.useCallback(
     (value: string) => {
       setCorpusQuery(value)
@@ -245,6 +323,10 @@ export function useLlmWiki(t: Translation) {
     selectedCorpusHit,
     hasSearchedCorpus,
     corpusSearchError,
+    automation: state?.automation ?? null,
+    isUpdatingAutomationSettings,
+    executingSuggestionId,
+    dismissingSuggestionId,
     setVaultRoot,
     setWorkspaceRelativePath,
     setCorpusQuery: updateCorpusQuery,
@@ -256,5 +338,8 @@ export function useLlmWiki(t: Translation) {
     syncMaintainerAgent,
     syncCorpus,
     searchCorpus,
+    setAutomationSetting,
+    executeAutomationSuggestion,
+    dismissAutomationSuggestion,
   }
 }

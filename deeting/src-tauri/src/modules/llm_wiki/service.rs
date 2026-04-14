@@ -3,6 +3,12 @@ use std::path::Path;
 
 use mcp_storage::helpers::now_rfc3339;
 
+use super::automation::{
+    dismiss_suggestion as dismiss_llm_wiki_automation_suggestion_inner,
+    execute_suggestion as execute_llm_wiki_automation_suggestion_inner,
+    handle_corpus_sync_completed, handle_vault_bound, handle_workspace_bootstrapped,
+    update_automation_settings as update_llm_wiki_automation_settings_inner,
+};
 use crate::modules::custom_task_agents::service::{
     create_custom_task_agent_service, update_custom_task_agent_service,
 };
@@ -15,7 +21,7 @@ use crate::modules::mcp::store::McpStore;
 use crate::state::AppState;
 
 use super::config::{
-    load_binding, load_last_bootstrapped_at, normalize_vault_root,
+    load_automation_state, load_binding, load_last_bootstrapped_at, normalize_vault_root,
     normalize_workspace_relative_path, resolve_workspace_path, save_binding,
     save_last_bootstrapped_at, PersistedLlmWikiBinding, READ_SCOPE_WHOLE_VAULT,
     WRITE_SCOPE_MANAGED_WORKSPACE,
@@ -25,9 +31,9 @@ use super::scan::{inspect_workspace, scan_vault};
 use super::templates::{build_bootstrap_files, build_recommended_agent_prompt};
 use super::types::{
     BootstrapLocalLlmWikiWorkspaceResult, CreateOrUpdateLocalLlmWikiMaintainerAgentResult,
-    LocalLlmWikiBinding, LocalLlmWikiMaintainerAgentSummary, LocalLlmWikiState,
-    SaveLocalLlmWikiBindingRequest, SearchLocalLlmWikiCorpusRequest,
-    SearchLocalLlmWikiCorpusResult,
+    LocalLlmWikiAutomationExecutionResult, LocalLlmWikiBinding, LocalLlmWikiMaintainerAgentSummary,
+    LocalLlmWikiState, SaveLocalLlmWikiBindingRequest, SearchLocalLlmWikiCorpusRequest,
+    SearchLocalLlmWikiCorpusResult, UpdateLocalLlmWikiAutomationSettingsRequest,
 };
 
 const LLM_WIKI_MAINTAINER_SOURCE_KIND: &str = "llm_wiki_maintainer";
@@ -41,6 +47,9 @@ pub async fn get_local_llm_wiki_state(store: &McpStore) -> Result<LocalLlmWikiSt
             corpus_status: None,
             maintainer_agent: None,
             recommended_agent_prompt: None,
+            automation: load_automation_state(store)
+                .await
+                .map_err(|err| err.to_string())?,
         });
     };
 
@@ -48,9 +57,10 @@ pub async fn get_local_llm_wiki_state(store: &McpStore) -> Result<LocalLlmWikiSt
 }
 
 pub async fn save_local_llm_wiki_binding(
-    store: &McpStore,
+    app_state: &AppState,
     payload: SaveLocalLlmWikiBindingRequest,
 ) -> Result<LocalLlmWikiState, String> {
+    let store = app_state.mcp.store.as_ref();
     let vault_root = normalize_vault_root(&payload.vault_root)?;
     let workspace_relative_path =
         normalize_workspace_relative_path(payload.workspace_relative_path.as_deref())?;
@@ -63,12 +73,14 @@ pub async fn save_local_llm_wiki_binding(
     save_binding(store, &binding)
         .await
         .map_err(|err| err.to_string())?;
+    handle_vault_bound(app_state).await?;
     build_state_from_binding(store, binding).await
 }
 
 pub async fn bootstrap_local_llm_wiki_workspace(
-    store: &McpStore,
+    app_state: &AppState,
 ) -> Result<BootstrapLocalLlmWikiWorkspaceResult, String> {
+    let store = app_state.mcp.store.as_ref();
     let binding = load_binding(store)
         .await
         .map_err(|err| err.to_string())?
@@ -98,6 +110,7 @@ pub async fn bootstrap_local_llm_wiki_workspace(
     save_last_bootstrapped_at(store, &now_for_task)
         .await
         .map_err(|err| err.to_string())?;
+    handle_workspace_bootstrapped(app_state).await?;
 
     let state = build_state_from_binding(store, binding.clone()).await?;
 
@@ -213,6 +226,7 @@ pub async fn sync_local_llm_wiki_corpus(
     let workspace_path = resolve_workspace_path(&vault_root, &binding.workspace_relative_path);
     let (indexed_files, removed_files, _) =
         sync_corpus(app_state, &vault_root, &workspace_path).await?;
+    handle_corpus_sync_completed(app_state, indexed_files, removed_files).await?;
 
     let state = build_state_from_binding(app_state.mcp.store.as_ref(), binding).await?;
     Ok(super::types::SyncLocalLlmWikiCorpusResult {
@@ -234,6 +248,29 @@ pub async fn search_local_llm_wiki_corpus(
     let limit = payload.limit.unwrap_or(6).clamp(1, 12);
     let hits = search_corpus(app_state, &payload.query, limit).await?;
     Ok(SearchLocalLlmWikiCorpusResult { hits })
+}
+
+pub async fn update_local_llm_wiki_automation_settings(
+    store: &McpStore,
+    payload: UpdateLocalLlmWikiAutomationSettingsRequest,
+) -> Result<LocalLlmWikiState, String> {
+    update_llm_wiki_automation_settings_inner(store, payload).await?;
+    get_local_llm_wiki_state(store).await
+}
+
+pub async fn dismiss_local_llm_wiki_automation_suggestion(
+    store: &McpStore,
+    suggestion_id: String,
+) -> Result<LocalLlmWikiState, String> {
+    dismiss_llm_wiki_automation_suggestion_inner(store, &suggestion_id).await?;
+    get_local_llm_wiki_state(store).await
+}
+
+pub async fn execute_local_llm_wiki_automation_suggestion(
+    app_state: &AppState,
+    suggestion_id: String,
+) -> Result<LocalLlmWikiAutomationExecutionResult, String> {
+    execute_llm_wiki_automation_suggestion_inner(app_state, &suggestion_id).await
 }
 
 async fn build_state_from_binding(
@@ -279,6 +316,9 @@ async fn build_state_from_binding(
         corpus_status: Some(corpus_status),
         maintainer_agent,
         recommended_agent_prompt: Some(build_recommended_agent_prompt(&public_binding)),
+        automation: load_automation_state(store)
+            .await
+            .map_err(|err| err.to_string())?,
     })
 }
 

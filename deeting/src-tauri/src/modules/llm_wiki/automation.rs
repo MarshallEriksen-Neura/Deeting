@@ -1,0 +1,1229 @@
+use std::time::Duration;
+
+use mcp_storage::helpers::{now_rfc3339, parse_rfc3339_to_unix_epoch};
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+
+use crate::modules::conversations::summary_format::build_local_summary_from_window;
+use crate::modules::custom_task_agents::store::list_custom_task_agents as list_custom_task_agents_inner;
+use crate::modules::memory::types::CreateLocalMemoryRequest;
+use crate::modules::workflow::types::QuickWorkflowRequest;
+use crate::state::{global_app_handle, AppState};
+
+use super::config::{
+    load_automation_state, load_binding, normalize_vault_root, resolve_workspace_path,
+    save_automation_state, PersistedLlmWikiBinding,
+};
+use super::corpus::sync_corpus;
+use super::service::{create_or_update_local_llm_wiki_maintainer_agent, get_local_llm_wiki_state};
+use super::types::{
+    LocalLlmWikiAutomationAuditEntry, LocalLlmWikiAutomationExecutionResult,
+    LocalLlmWikiAutomationSettings, LocalLlmWikiAutomationState, LocalLlmWikiAutomationSuggestion,
+    UpdateLocalLlmWikiAutomationSettingsRequest,
+};
+
+const LLM_WIKI_MAINTAINER_SOURCE_KIND: &str = "llm_wiki_maintainer";
+
+const TRIGGER_VAULT_BOUND: &str = "on_vault_bound";
+const TRIGGER_WORKSPACE_BOOTSTRAPPED: &str = "on_workspace_bootstrapped";
+const TRIGGER_CORPUS_SYNC_COMPLETED: &str = "on_corpus_sync_completed";
+const TRIGGER_SESSION_END: &str = "on_session_end";
+const TRIGGER_VALUABLE_ANSWER: &str = "on_valuable_answer";
+const TRIGGER_MAINTENANCE_SCHEDULE: &str = "on_maintenance_schedule";
+const TRIGGER_NEW_SOURCE: &str = "on_new_source";
+const TRIGGER_REPEATED_STABLE_CONCLUSION: &str = "on_repeated_stable_conclusion";
+
+const ACTION_SYNC_CORPUS: &str = "sync_corpus";
+const ACTION_CREATE_MAINTAINER_AGENT: &str = "create_maintainer_agent";
+const ACTION_INSPECT_CORPUS: &str = "inspect_corpus";
+const ACTION_RUN_MAINTENANCE_REVIEW: &str = "run_maintenance_review";
+const ACTION_CRYSTALLIZE_SESSION_SUMMARY: &str = "crystallize_session_summary";
+const ACTION_PROMOTE_TO_MEMORY: &str = "promote_to_memory";
+
+const STATUS_PENDING: &str = "pending";
+const STATUS_COMPLETED: &str = "completed";
+const STATUS_DISMISSED: &str = "dismissed";
+
+const MAX_AUDIT_ENTRIES: usize = 32;
+const MAX_SUGGESTIONS: usize = 16;
+const VALUABLE_ANSWER_MIN_CHARS: usize = 220;
+const MEMORY_PROMOTION_REPEAT_THRESHOLD: i64 = 2;
+const MAINTENANCE_SCHEDULE_INTERVAL_SECS: i64 = 6 * 60 * 60;
+
+pub(crate) async fn update_automation_settings(
+    store: &crate::modules::mcp::store::McpStore,
+    payload: UpdateLocalLlmWikiAutomationSettingsRequest,
+) -> Result<LocalLlmWikiAutomationState, String> {
+    let mut state = load_automation_state(store)
+        .await
+        .map_err(|err| err.to_string())?;
+
+    apply_settings_patch(&mut state.settings, payload);
+    let now = now_rfc3339().map_err(|err| err.to_string())?;
+    push_audit(
+        &mut state,
+        TRIGGER_MAINTENANCE_SCHEDULE,
+        "info",
+        "settings_updated",
+        "LLM Wiki automation settings updated.",
+        now.as_str(),
+        None,
+    );
+    save_automation_state(store, &state)
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok(state)
+}
+
+pub(crate) async fn dismiss_suggestion(
+    store: &crate::modules::mcp::store::McpStore,
+    suggestion_id: &str,
+) -> Result<LocalLlmWikiAutomationState, String> {
+    let mut state = load_automation_state(store)
+        .await
+        .map_err(|err| err.to_string())?;
+    let normalized_id = suggestion_id.trim();
+    if normalized_id.is_empty() {
+        return Err("suggestion_id is required".to_string());
+    }
+
+    let now = now_rfc3339().map_err(|err| err.to_string())?;
+    if let Some(index) = state
+        .suggestions
+        .iter()
+        .position(|item| item.id == normalized_id)
+    {
+        let title = state.suggestions[index].title.clone();
+        let trigger = state.suggestions[index].trigger.clone();
+        let action_kind = state.suggestions[index].action_kind.clone();
+        state.suggestions[index].status = STATUS_DISMISSED.to_string();
+        state.suggestions[index].updated_at = now.clone();
+        push_audit(
+            &mut state,
+            trigger.as_str(),
+            "info",
+            "suggestion_dismissed",
+            format!("Dismissed automation suggestion: {}", title),
+            now.as_str(),
+            Some(json!({
+                "suggestionId": normalized_id,
+                "actionKind": action_kind,
+            })),
+        );
+    } else {
+        return Err("llm wiki automation suggestion not found".to_string());
+    }
+
+    save_automation_state(store, &state)
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok(state)
+}
+
+pub(crate) async fn execute_suggestion(
+    app_state: &AppState,
+    suggestion_id: &str,
+) -> Result<LocalLlmWikiAutomationExecutionResult, String> {
+    let store = app_state.mcp.store.as_ref();
+    let mut automation = load_automation_state(store)
+        .await
+        .map_err(|err| err.to_string())?;
+    let normalized_id = suggestion_id.trim();
+    if normalized_id.is_empty() {
+        return Err("suggestion_id is required".to_string());
+    }
+
+    let index = automation
+        .suggestions
+        .iter()
+        .position(|item| item.id == normalized_id)
+        .ok_or_else(|| "llm wiki automation suggestion not found".to_string())?;
+    let suggestion = automation.suggestions[index].clone();
+    let binding = load_binding(store).await.map_err(|err| err.to_string())?;
+    let now = now_rfc3339().map_err(|err| err.to_string())?;
+
+    let mut workflow_run_id = None;
+    let mut memory_action = None;
+    let message = match suggestion.action_kind.as_str() {
+        ACTION_SYNC_CORPUS => {
+            let binding = binding
+                .ok_or_else(|| "llm wiki binding has not been configured yet".to_string())?;
+            let vault_root = normalize_vault_root(&binding.vault_root)?;
+            let workspace_path =
+                resolve_workspace_path(&vault_root, &binding.workspace_relative_path);
+            let (indexed_files, removed_files, _) =
+                sync_corpus(app_state, &vault_root, &workspace_path).await?;
+            push_audit(
+                &mut automation,
+                suggestion.trigger.as_str(),
+                "info",
+                "executed",
+                format!(
+                    "Executed corpus sync suggestion. Indexed {} files and removed {} stale entries.",
+                    indexed_files, removed_files
+                ),
+                now.as_str(),
+                Some(json!({
+                    "suggestionId": suggestion.id,
+                    "indexedFiles": indexed_files,
+                    "removedFiles": removed_files,
+                })),
+            );
+            Some(format!(
+                "Corpus synced. Indexed {} files and removed {} stale entries.",
+                indexed_files, removed_files
+            ))
+        }
+        ACTION_CREATE_MAINTAINER_AGENT => {
+            let result = create_or_update_local_llm_wiki_maintainer_agent(app_state).await?;
+            let name = result
+                .state
+                .maintainer_agent
+                .as_ref()
+                .map(|item| item.name.clone())
+                .unwrap_or_else(|| "Maintainer".to_string());
+            push_audit(
+                &mut automation,
+                suggestion.trigger.as_str(),
+                "info",
+                "executed",
+                format!("Maintainer agent synchronized through automation: {}", name),
+                now.as_str(),
+                Some(json!({
+                    "suggestionId": suggestion.id,
+                    "agentName": name,
+                })),
+            );
+            Some(format!("Maintainer agent is ready: {}", name))
+        }
+        ACTION_RUN_MAINTENANCE_REVIEW | ACTION_CRYSTALLIZE_SESSION_SUMMARY => {
+            let metadata = suggestion.metadata.as_ref().and_then(Value::as_object);
+            let goal = metadata
+                .and_then(|value| value.get("goal"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| "automation suggestion is missing a workflow goal".to_string())?;
+            let worker_ref = resolve_maintainer_worker_ref(store).await?;
+            let app_handle = global_app_handle()
+                .ok_or_else(|| "global app handle is not available".to_string())?;
+            let result = crate::modules::workflow::service::quick_workflow_run(
+                &app_handle,
+                app_state,
+                QuickWorkflowRequest {
+                    goal: goal.to_string(),
+                    worker_ref: Some(worker_ref),
+                    inject_into_chat: false,
+                },
+            )
+            .await?;
+            workflow_run_id = Some(result.run.id.clone());
+            push_audit(
+                &mut automation,
+                suggestion.trigger.as_str(),
+                "info",
+                "executed",
+                format!(
+                    "Started maintainer workflow from automation suggestion: {}",
+                    suggestion.title
+                ),
+                now.as_str(),
+                Some(json!({
+                    "suggestionId": suggestion.id,
+                    "workflowRunId": result.run.id,
+                    "succeeded": result.succeeded,
+                })),
+            );
+            Some("Maintainer workflow started.".to_string())
+        }
+        ACTION_PROMOTE_TO_MEMORY => {
+            let metadata = suggestion.metadata.as_ref().and_then(Value::as_object);
+            let memory_content = metadata
+                .and_then(|value| value.get("memoryContent"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| "automation suggestion is missing memory content".to_string())?;
+            let session_id = metadata
+                .and_then(|value| value.get("sessionId"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string);
+
+            let result = app_state
+                .memory
+                .service
+                .append_guarded(CreateLocalMemoryRequest {
+                    content: memory_content.to_string(),
+                    session_id,
+                    capability_id: Some("llm_wiki".to_string()),
+                    meta_info: Some(json!({
+                        "source": "llm_wiki_automation",
+                        "suggestion_id": suggestion.id,
+                    })),
+                    category: Some("llm_wiki".to_string()),
+                    source: Some("llm_wiki_automation".to_string()),
+                    tags: Some(vec![
+                        "llm-wiki".to_string(),
+                        "stable-conclusion".to_string(),
+                    ]),
+                })
+                .await
+                .map_err(|err| err.to_string())?;
+            memory_action = Some(format!("{:?}", result.action).to_ascii_lowercase());
+            push_audit(
+                &mut automation,
+                suggestion.trigger.as_str(),
+                "info",
+                "executed",
+                "Promoted a repeated stable conclusion into local memory.",
+                now.as_str(),
+                Some(json!({
+                    "suggestionId": suggestion.id,
+                    "memoryAction": memory_action,
+                })),
+            );
+            Some("Repeated stable conclusion promoted to memory.".to_string())
+        }
+        ACTION_INSPECT_CORPUS => {
+            push_audit(
+                &mut automation,
+                suggestion.trigger.as_str(),
+                "info",
+                "acknowledged",
+                format!("Inspector suggestion acknowledged: {}", suggestion.title),
+                now.as_str(),
+                Some(json!({
+                    "suggestionId": suggestion.id,
+                })),
+            );
+            Some("Inspector suggestion acknowledged.".to_string())
+        }
+        other => return Err(format!("unsupported llm wiki automation action: {}", other)),
+    };
+
+    automation.suggestions[index].status = STATUS_COMPLETED.to_string();
+    automation.suggestions[index].updated_at = now.clone();
+    save_automation_state(store, &automation)
+        .await
+        .map_err(|err| err.to_string())?;
+
+    let state = get_local_llm_wiki_state(store).await?;
+    Ok(LocalLlmWikiAutomationExecutionResult {
+        state,
+        workflow_run_id,
+        memory_action,
+        message,
+    })
+}
+
+pub(crate) async fn handle_vault_bound(app_state: &AppState) -> Result<(), String> {
+    let store = app_state.mcp.store.as_ref();
+    let Some(binding) = load_binding(store).await.map_err(|err| err.to_string())? else {
+        return Ok(());
+    };
+    let mut state = load_automation_state(store)
+        .await
+        .map_err(|err| err.to_string())?;
+    let now = now_rfc3339().map_err(|err| err.to_string())?;
+
+    if state.settings.auto_sync_on_vault_bound {
+        let vault_root = normalize_vault_root(&binding.vault_root)?;
+        let workspace_path = resolve_workspace_path(&vault_root, &binding.workspace_relative_path);
+        match sync_corpus(app_state, &vault_root, &workspace_path).await {
+            Ok((indexed_files, removed_files, _)) => {
+                push_audit(
+                    &mut state,
+                    TRIGGER_VAULT_BOUND,
+                    "info",
+                    "auto_executed",
+                    format!(
+                        "Auto-synced the dedicated corpus after vault binding. Indexed {} files and removed {} stale entries.",
+                        indexed_files, removed_files
+                    ),
+                    now.as_str(),
+                    Some(json!({
+                        "indexedFiles": indexed_files,
+                        "removedFiles": removed_files,
+                    })),
+                );
+                handle_corpus_sync_followups(
+                    app_state,
+                    &binding,
+                    &mut state,
+                    indexed_files,
+                    removed_files,
+                )
+                .await?;
+            }
+            Err(error) => {
+                push_audit(
+                    &mut state,
+                    TRIGGER_VAULT_BOUND,
+                    "error",
+                    "auto_failed",
+                    format!("Auto-sync after vault binding failed: {}", error),
+                    now.as_str(),
+                    None,
+                );
+            }
+        }
+    } else {
+        upsert_suggestion(
+            &mut state,
+            TRIGGER_VAULT_BOUND,
+            ACTION_SYNC_CORPUS,
+            suggestion_fingerprint(TRIGGER_VAULT_BOUND, "initial-corpus-sync"),
+            "Run the first corpus sync",
+            "The vault is bound. Sync the dedicated LLM Wiki corpus so maintainer-only retrieval is ready.",
+            now.as_str(),
+            None,
+        );
+    }
+
+    save_automation_state(store, &state)
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+pub(crate) async fn handle_workspace_bootstrapped(app_state: &AppState) -> Result<(), String> {
+    let store = app_state.mcp.store.as_ref();
+    let Some(_binding) = load_binding(store).await.map_err(|err| err.to_string())? else {
+        return Ok(());
+    };
+    let mut state = load_automation_state(store)
+        .await
+        .map_err(|err| err.to_string())?;
+    let now = now_rfc3339().map_err(|err| err.to_string())?;
+
+    if state.settings.suggest_maintainer_on_workspace_bootstrap {
+        if resolve_existing_maintainer_agent(store).await?.is_none() {
+            upsert_suggestion(
+                &mut state,
+                TRIGGER_WORKSPACE_BOOTSTRAPPED,
+                ACTION_CREATE_MAINTAINER_AGENT,
+                suggestion_fingerprint(TRIGGER_WORKSPACE_BOOTSTRAPPED, "maintainer-agent"),
+                "Create the maintainer agent",
+                "The workspace scaffold is ready. Create or sync the dedicated maintainer agent before delegating wiki upkeep.",
+                now.as_str(),
+                None,
+            );
+        } else {
+            push_audit(
+                &mut state,
+                TRIGGER_WORKSPACE_BOOTSTRAPPED,
+                "info",
+                "noop",
+                "Workspace bootstrap completed, and a maintainer agent already exists.",
+                now.as_str(),
+                None,
+            );
+        }
+    }
+
+    save_automation_state(store, &state)
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+pub(crate) async fn handle_corpus_sync_completed(
+    app_state: &AppState,
+    indexed_files: i64,
+    removed_files: i64,
+) -> Result<(), String> {
+    let store = app_state.mcp.store.as_ref();
+    let Some(binding) = load_binding(store).await.map_err(|err| err.to_string())? else {
+        return Ok(());
+    };
+    let mut state = load_automation_state(store)
+        .await
+        .map_err(|err| err.to_string())?;
+    handle_corpus_sync_followups(
+        app_state,
+        &binding,
+        &mut state,
+        indexed_files,
+        removed_files,
+    )
+    .await?;
+    save_automation_state(store, &state)
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+pub(crate) async fn handle_session_end(
+    app_state: &AppState,
+    session_id: &str,
+    next_status: &str,
+) -> Result<(), String> {
+    let normalized_session_id = session_id.trim();
+    if normalized_session_id.is_empty() {
+        return Ok(());
+    }
+    let store = app_state.mcp.store.as_ref();
+    let mut state = load_automation_state(store)
+        .await
+        .map_err(|err| err.to_string())?;
+    let now = now_rfc3339().map_err(|err| err.to_string())?;
+    if !state
+        .settings
+        .create_crystallization_candidates_on_session_end
+    {
+        push_audit(
+            &mut state,
+            TRIGGER_SESSION_END,
+            "info",
+            "disabled",
+            format!(
+                "Skipped session-end crystallization for session {} because the hook is disabled.",
+                normalized_session_id
+            ),
+            now.as_str(),
+            Some(json!({ "sessionId": normalized_session_id, "status": next_status })),
+        );
+        save_automation_state(store, &state)
+            .await
+            .map_err(|err| err.to_string())?;
+        return Ok(());
+    }
+
+    let summary = load_conversation_summary_excerpt(app_state, normalized_session_id).await?;
+    let Some(summary) = summary else {
+        push_audit(
+            &mut state,
+            TRIGGER_SESSION_END,
+            "warning",
+            "skipped",
+            format!(
+                "Session {} ended without summary text available for crystallization.",
+                normalized_session_id
+            ),
+            now.as_str(),
+            Some(json!({ "sessionId": normalized_session_id, "status": next_status })),
+        );
+        save_automation_state(store, &state)
+            .await
+            .map_err(|err| err.to_string())?;
+        return Ok(());
+    };
+
+    let goal = format!(
+        "Review the closed conversation summary below and crystallize any durable wiki-worthy conclusions into the Deeting-managed LLM Wiki workspace. Keep writes inside the managed workspace only.\n\nSession summary:\n{}",
+        summary
+    );
+
+    upsert_suggestion(
+        &mut state,
+        TRIGGER_SESSION_END,
+        ACTION_CRYSTALLIZE_SESSION_SUMMARY,
+        suggestion_fingerprint(TRIGGER_SESSION_END, normalized_session_id),
+        "Crystallize the closed session",
+        "A conversation just ended. Review its summary and decide whether it should become a maintained wiki page or analysis note.",
+        now.as_str(),
+        Some(json!({
+            "sessionId": normalized_session_id,
+            "status": next_status,
+            "summary": summary,
+            "goal": goal,
+        })),
+    );
+    push_audit(
+        &mut state,
+        TRIGGER_SESSION_END,
+        "info",
+        "suggested",
+        format!(
+            "Created a crystallization candidate after session {} moved to {}.",
+            normalized_session_id, next_status
+        ),
+        now.as_str(),
+        Some(json!({ "sessionId": normalized_session_id, "status": next_status })),
+    );
+    save_automation_state(store, &state)
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+pub(crate) async fn handle_valuable_answer(
+    app_state: &AppState,
+    session_id: &str,
+    content: &str,
+    meta_info: Option<&Value>,
+) -> Result<(), String> {
+    let normalized_session_id = session_id.trim();
+    let normalized_content = content.trim();
+    if normalized_session_id.is_empty() || normalized_content.len() < VALUABLE_ANSWER_MIN_CHARS {
+        return Ok(());
+    }
+
+    if !looks_like_valuable_answer(normalized_content, meta_info) {
+        return Ok(());
+    }
+
+    let store = app_state.mcp.store.as_ref();
+    let mut state = load_automation_state(store)
+        .await
+        .map_err(|err| err.to_string())?;
+    let now = now_rfc3339().map_err(|err| err.to_string())?;
+
+    if !state.settings.suggest_on_valuable_answer {
+        push_audit(
+            &mut state,
+            TRIGGER_VALUABLE_ANSWER,
+            "info",
+            "disabled",
+            "Skipped valuable-answer candidate creation because the hook is disabled.",
+            now.as_str(),
+            Some(json!({ "sessionId": normalized_session_id })),
+        );
+        save_automation_state(store, &state)
+            .await
+            .map_err(|err| err.to_string())?;
+        return Ok(());
+    }
+
+    let summary = trim_preview_text(normalized_content, 600);
+    let repeat_count = upsert_suggestion(
+        &mut state,
+        TRIGGER_VALUABLE_ANSWER,
+        ACTION_CRYSTALLIZE_SESSION_SUMMARY,
+        suggestion_fingerprint(TRIGGER_VALUABLE_ANSWER, normalized_content),
+        "Capture a valuable answer",
+        "A recent assistant answer looks durable enough to review for the managed wiki.",
+        now.as_str(),
+        Some(json!({
+            "sessionId": normalized_session_id,
+            "summary": summary,
+            "goal": format!(
+                "Review the valuable answer below and capture any durable wiki-worthy conclusions inside the Deeting-managed LLM Wiki workspace.\n\nAnswer:\n{}",
+                summary
+            ),
+        })),
+    );
+
+    push_audit(
+        &mut state,
+        TRIGGER_VALUABLE_ANSWER,
+        "info",
+        "suggested",
+        "Created or refreshed a valuable-answer wiki candidate.",
+        now.as_str(),
+        Some(json!({
+            "sessionId": normalized_session_id,
+            "repeatCount": repeat_count,
+        })),
+    );
+
+    if state.settings.promote_repeated_stable_conclusions_to_memory
+        && repeat_count >= MEMORY_PROMOTION_REPEAT_THRESHOLD
+    {
+        let fingerprint = suggestion_fingerprint(TRIGGER_VALUABLE_ANSWER, normalized_content);
+        maybe_promote_repeated_conclusion_to_memory(
+            app_state,
+            &mut state,
+            normalized_session_id,
+            fingerprint.as_str(),
+            summary.as_str(),
+            now.as_str(),
+        )
+        .await?;
+    }
+
+    save_automation_state(store, &state)
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+pub(crate) async fn run_schedule_tick(
+    app_state: &AppState,
+    trigger_source: &str,
+) -> Result<(), String> {
+    let store = app_state.mcp.store.as_ref();
+    let Some(binding) = load_binding(store).await.map_err(|err| err.to_string())? else {
+        return Ok(());
+    };
+
+    let mut state = load_automation_state(store)
+        .await
+        .map_err(|err| err.to_string())?;
+    if !state.settings.enable_schedule_suggestions {
+        return Ok(());
+    }
+
+    let now = now_rfc3339().map_err(|err| err.to_string())?;
+    if let Some(last_run_at) = state.last_schedule_run_at.as_deref() {
+        let now_epoch = parse_rfc3339_to_unix_epoch(&now)
+            .ok_or_else(|| "could not parse current schedule timestamp".to_string())?;
+        let previous_epoch = parse_rfc3339_to_unix_epoch(last_run_at)
+            .ok_or_else(|| "could not parse last schedule timestamp".to_string())?;
+        if now_epoch.saturating_sub(previous_epoch) < MAINTENANCE_SCHEDULE_INTERVAL_SECS {
+            return Ok(());
+        }
+    }
+
+    let workspace_path = {
+        let vault_root = normalize_vault_root(&binding.vault_root)?;
+        resolve_workspace_path(&vault_root, &binding.workspace_relative_path)
+            .to_string_lossy()
+            .to_string()
+    };
+    let maintainer = resolve_existing_maintainer_agent(store).await?;
+    let state_snapshot = get_local_llm_wiki_state(store).await?;
+    let corpus_status = state_snapshot.corpus_status;
+
+    if let Some(corpus) = corpus_status.as_ref() {
+        let last_synced_at = corpus.last_synced_at.as_deref().unwrap_or_default();
+        let stale = if last_synced_at.is_empty() {
+            true
+        } else {
+            let now_epoch = parse_rfc3339_to_unix_epoch(&now)
+                .ok_or_else(|| "could not parse current sync timestamp".to_string())?;
+            let sync_epoch = parse_rfc3339_to_unix_epoch(last_synced_at)
+                .ok_or_else(|| "could not parse corpus sync timestamp".to_string())?;
+            now_epoch.saturating_sub(sync_epoch) > MAINTENANCE_SCHEDULE_INTERVAL_SECS
+        };
+        if stale {
+            upsert_suggestion(
+                &mut state,
+                TRIGGER_MAINTENANCE_SCHEDULE,
+                ACTION_SYNC_CORPUS,
+                suggestion_fingerprint(TRIGGER_MAINTENANCE_SCHEDULE, "stale-corpus-sync"),
+                "Refresh the dedicated corpus",
+                "The dedicated LLM Wiki corpus looks stale. Run a sync before the next wiki maintenance pass.",
+                now.as_str(),
+                None,
+            );
+        }
+    }
+
+    let review_goal = format!(
+        "Run a maintenance review for the Deeting-managed LLM Wiki workspace at {}. Check for stale pages, lint-worthy inconsistencies, supersession candidates, and missing source summaries. Keep writes inside the managed workspace and record notable findings in log.md.",
+        workspace_path
+    );
+
+    if maintainer.is_some() {
+        if state.settings.auto_delegate_maintenance_schedule {
+            let worker_ref = resolve_maintainer_worker_ref(store).await?;
+            let app_handle = global_app_handle()
+                .ok_or_else(|| "global app handle is not available".to_string())?;
+            match crate::modules::workflow::service::quick_workflow_run(
+                &app_handle,
+                app_state,
+                QuickWorkflowRequest {
+                    goal: review_goal.clone(),
+                    worker_ref: Some(worker_ref),
+                    inject_into_chat: false,
+                },
+            )
+            .await
+            {
+                Ok(result) => {
+                    push_audit(
+                        &mut state,
+                        TRIGGER_MAINTENANCE_SCHEDULE,
+                        "info",
+                        "auto_executed",
+                        "Started an automated maintenance review workflow for the LLM Wiki.",
+                        now.as_str(),
+                        Some(json!({
+                            "workflowRunId": result.run.id,
+                            "triggerSource": trigger_source,
+                        })),
+                    );
+                }
+                Err(error) => {
+                    push_audit(
+                        &mut state,
+                        TRIGGER_MAINTENANCE_SCHEDULE,
+                        "error",
+                        "auto_failed",
+                        format!("Automatic maintenance review failed: {}", error),
+                        now.as_str(),
+                        Some(json!({ "triggerSource": trigger_source })),
+                    );
+                }
+            }
+        } else {
+            upsert_suggestion(
+                &mut state,
+                TRIGGER_MAINTENANCE_SCHEDULE,
+                ACTION_RUN_MAINTENANCE_REVIEW,
+                suggestion_fingerprint(TRIGGER_MAINTENANCE_SCHEDULE, "maintenance-review"),
+                "Run a maintenance review",
+                "Schedule a bounded maintainer pass for lint, stale checks, and supersession review.",
+                now.as_str(),
+                Some(json!({
+                    "goal": review_goal,
+                    "workspacePath": workspace_path,
+                })),
+            );
+        }
+    }
+
+    state.last_schedule_run_at = Some(now.clone());
+    push_audit(
+        &mut state,
+        TRIGGER_MAINTENANCE_SCHEDULE,
+        "info",
+        "scheduled",
+        "Evaluated the periodic LLM Wiki maintenance schedule.",
+        now.as_str(),
+        Some(json!({ "triggerSource": trigger_source })),
+    );
+    save_automation_state(store, &state)
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+pub(crate) async fn start_local_llm_wiki_automation_worker(app_state: AppState) {
+    let mut interval = tokio::time::interval(Duration::from_secs(60));
+    loop {
+        interval.tick().await;
+        if let Err(err) = run_schedule_tick(&app_state, "periodic_worker").await {
+            log::warn!("llm wiki automation worker error: {}", err);
+        }
+    }
+}
+
+fn apply_settings_patch(
+    settings: &mut LocalLlmWikiAutomationSettings,
+    payload: UpdateLocalLlmWikiAutomationSettingsRequest,
+) {
+    if let Some(value) = payload.auto_sync_on_vault_bound {
+        settings.auto_sync_on_vault_bound = value;
+    }
+    if let Some(value) = payload.suggest_maintainer_on_workspace_bootstrap {
+        settings.suggest_maintainer_on_workspace_bootstrap = value;
+    }
+    if let Some(value) = payload.auto_refresh_inspector_on_corpus_sync {
+        settings.auto_refresh_inspector_on_corpus_sync = value;
+    }
+    if let Some(value) = payload.create_crystallization_candidates_on_session_end {
+        settings.create_crystallization_candidates_on_session_end = value;
+    }
+    if let Some(value) = payload.enable_schedule_suggestions {
+        settings.enable_schedule_suggestions = value;
+    }
+    if let Some(value) = payload.suggest_on_valuable_answer {
+        settings.suggest_on_valuable_answer = value;
+    }
+    if let Some(value) = payload.auto_delegate_new_sources {
+        settings.auto_delegate_new_sources = value;
+    }
+    if let Some(value) = payload.auto_delegate_maintenance_schedule {
+        settings.auto_delegate_maintenance_schedule = value;
+    }
+    if let Some(value) = payload.promote_repeated_stable_conclusions_to_memory {
+        settings.promote_repeated_stable_conclusions_to_memory = value;
+    }
+}
+
+async fn handle_corpus_sync_followups(
+    app_state: &AppState,
+    binding: &PersistedLlmWikiBinding,
+    state: &mut LocalLlmWikiAutomationState,
+    indexed_files: i64,
+    removed_files: i64,
+) -> Result<(), String> {
+    let now = now_rfc3339().map_err(|err| err.to_string())?;
+    push_audit(
+        state,
+        TRIGGER_CORPUS_SYNC_COMPLETED,
+        "info",
+        "observed",
+        format!(
+            "Corpus sync completed. Indexed {} files and removed {} stale entries.",
+            indexed_files, removed_files
+        ),
+        now.as_str(),
+        Some(json!({
+            "indexedFiles": indexed_files,
+            "removedFiles": removed_files,
+        })),
+    );
+
+    if state.settings.auto_refresh_inspector_on_corpus_sync {
+        upsert_suggestion(
+            state,
+            TRIGGER_CORPUS_SYNC_COMPLETED,
+            ACTION_INSPECT_CORPUS,
+            suggestion_fingerprint(TRIGGER_CORPUS_SYNC_COMPLETED, "inspect-after-sync"),
+            "Inspect the refreshed corpus",
+            "The dedicated corpus changed. Review a few hits in the inspector before you hand off to the maintainer.",
+            now.as_str(),
+            Some(json!({ "query": "workspace" })),
+        );
+    }
+
+    if indexed_files > 0 {
+        let workspace_path = {
+            let vault_root = normalize_vault_root(&binding.vault_root)?;
+            resolve_workspace_path(&vault_root, &binding.workspace_relative_path)
+                .to_string_lossy()
+                .to_string()
+        };
+
+        if state.settings.auto_delegate_new_sources
+            && resolve_existing_maintainer_agent(app_state.mcp.store.as_ref())
+                .await?
+                .is_some()
+        {
+            let worker_ref = resolve_maintainer_worker_ref(app_state.mcp.store.as_ref()).await?;
+            let app_handle = global_app_handle()
+                .ok_or_else(|| "global app handle is not available".to_string())?;
+            let goal = format!(
+                "New source material appears to have entered the dedicated LLM Wiki corpus. Review the freshest corpus changes, then update the managed workspace at {} if the new source deserves durable wiki coverage. Keep writes inside the managed workspace only.",
+                workspace_path
+            );
+            match crate::modules::workflow::service::quick_workflow_run(
+                &app_handle,
+                app_state,
+                QuickWorkflowRequest {
+                    goal,
+                    worker_ref: Some(worker_ref),
+                    inject_into_chat: false,
+                },
+            )
+            .await
+            {
+                Ok(result) => push_audit(
+                    state,
+                    TRIGGER_NEW_SOURCE,
+                    "info",
+                    "auto_executed",
+                    "Started an automatic new-source maintainer review workflow.",
+                    now.as_str(),
+                    Some(json!({
+                        "workflowRunId": result.run.id,
+                        "indexedFiles": indexed_files,
+                    })),
+                ),
+                Err(error) => push_audit(
+                    state,
+                    TRIGGER_NEW_SOURCE,
+                    "error",
+                    "auto_failed",
+                    format!("Automatic new-source review failed: {}", error),
+                    now.as_str(),
+                    Some(json!({ "indexedFiles": indexed_files })),
+                ),
+            }
+        } else {
+            upsert_suggestion(
+                state,
+                TRIGGER_NEW_SOURCE,
+                ACTION_RUN_MAINTENANCE_REVIEW,
+                suggestion_fingerprint(TRIGGER_NEW_SOURCE, "review-new-sources"),
+                "Review newly indexed sources",
+                "The corpus gained new material. Ask the maintainer to inspect the fresh sources and decide whether the managed workspace needs updates.",
+                now.as_str(),
+                Some(json!({
+                    "goal": "Review the newly indexed source material in the dedicated LLM Wiki corpus and update the managed workspace if the new material deserves durable coverage.",
+                    "indexedFiles": indexed_files,
+                })),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+async fn maybe_promote_repeated_conclusion_to_memory(
+    app_state: &AppState,
+    state: &mut LocalLlmWikiAutomationState,
+    session_id: &str,
+    fingerprint: &str,
+    summary: &str,
+    now: &str,
+) -> Result<(), String> {
+    let suggestion = state
+        .suggestions
+        .iter()
+        .find(|item| item.fingerprint == fingerprint)
+        .cloned();
+    let Some(suggestion) = suggestion else {
+        return Ok(());
+    };
+
+    let metadata = suggestion.metadata.as_ref().and_then(Value::as_object);
+    let repeat_count = metadata
+        .and_then(|value| value.get("repeatCount"))
+        .and_then(Value::as_i64)
+        .unwrap_or(1);
+    if repeat_count < MEMORY_PROMOTION_REPEAT_THRESHOLD {
+        return Ok(());
+    }
+
+    let already_promoted = metadata
+        .and_then(|value| value.get("memoryPromoted"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if already_promoted {
+        return Ok(());
+    }
+
+    let result = app_state
+        .memory
+        .service
+        .append_guarded(CreateLocalMemoryRequest {
+            content: summary.to_string(),
+            session_id: Some(session_id.to_string()),
+            capability_id: Some("llm_wiki".to_string()),
+            meta_info: Some(json!({
+                "source": "llm_wiki_automation",
+                "fingerprint": fingerprint,
+            })),
+            category: Some("llm_wiki".to_string()),
+            source: Some("llm_wiki_automation".to_string()),
+            tags: Some(vec![
+                "llm-wiki".to_string(),
+                "stable-conclusion".to_string(),
+            ]),
+        })
+        .await
+        .map_err(|err| err.to_string())?;
+
+    if let Some(item) = state
+        .suggestions
+        .iter_mut()
+        .find(|item| item.fingerprint == fingerprint)
+    {
+        let mut metadata = item
+            .metadata
+            .as_ref()
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
+        metadata.insert("memoryPromoted".to_string(), json!(true));
+        metadata.insert(
+            "memoryAction".to_string(),
+            json!(format!("{:?}", result.action).to_ascii_lowercase()),
+        );
+        item.metadata = Some(Value::Object(metadata));
+        item.updated_at = now.to_string();
+    }
+
+    push_audit(
+        state,
+        TRIGGER_REPEATED_STABLE_CONCLUSION,
+        "info",
+        "auto_executed",
+        "Promoted a repeated stable conclusion into local memory.",
+        now,
+        Some(json!({
+            "fingerprint": fingerprint,
+            "sessionId": session_id,
+            "memoryAction": format!("{:?}", result.action).to_ascii_lowercase(),
+        })),
+    );
+
+    if format!("{:?}", result.action).to_ascii_lowercase() != "noop" {
+        upsert_suggestion(
+            state,
+            TRIGGER_REPEATED_STABLE_CONCLUSION,
+            ACTION_PROMOTE_TO_MEMORY,
+            suggestion_fingerprint(TRIGGER_REPEATED_STABLE_CONCLUSION, fingerprint),
+            "Review the promoted conclusion",
+            "A repeated stable conclusion was strong enough to enter local memory. Review the memory promotion outcome if needed.",
+            now,
+            Some(json!({
+                "sessionId": session_id,
+                "memoryContent": summary,
+            })),
+        );
+    }
+
+    Ok(())
+}
+
+async fn resolve_existing_maintainer_agent(
+    store: &crate::modules::mcp::store::McpStore,
+) -> Result<Option<crate::modules::custom_task_agents::types::CustomTaskAgentProfile>, String> {
+    let profiles = list_custom_task_agents_inner(store)
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok(profiles.into_iter().find(|profile| {
+        profile.source_kind.as_deref() == Some(LLM_WIKI_MAINTAINER_SOURCE_KIND)
+            && profile.is_enabled
+    }))
+}
+
+async fn resolve_maintainer_worker_ref(
+    store: &crate::modules::mcp::store::McpStore,
+) -> Result<String, String> {
+    let profile = resolve_existing_maintainer_agent(store)
+        .await?
+        .ok_or_else(|| "llm wiki maintainer agent is not available".to_string())?;
+    Ok(format!("user_worker_profile:{}", profile.id))
+}
+
+async fn load_conversation_summary_excerpt(
+    app_state: &AppState,
+    session_id: &str,
+) -> Result<Option<String>, String> {
+    if let Some(summary) = app_state
+        .mcp
+        .store
+        .get_latest_local_conversation_summary(session_id)
+        .await
+        .map_err(|err| err.to_string())?
+    {
+        return Ok(Some(trim_preview_text(summary.as_str(), 900)));
+    }
+
+    let window = app_state
+        .mcp
+        .store
+        .load_local_conversation_runtime_window(session_id)
+        .await
+        .map_err(|err| err.to_string())?;
+    if window.messages.is_empty() {
+        return Ok(None);
+    }
+    let summary = build_local_summary_from_window(&window.messages);
+    let trimmed = summary.trim();
+    if trimmed.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(trim_preview_text(trimmed, 900)))
+    }
+}
+
+fn looks_like_valuable_answer(content: &str, meta_info: Option<&Value>) -> bool {
+    if content.len() >= 480 {
+        return true;
+    }
+
+    meta_info
+        .and_then(|value| value.get("execution_tree"))
+        .and_then(Value::as_object)
+        .and_then(|value| value.get("terminal_status"))
+        .and_then(Value::as_str)
+        .map(|value| value.eq_ignore_ascii_case("succeeded"))
+        .unwrap_or(false)
+}
+
+fn upsert_suggestion(
+    state: &mut LocalLlmWikiAutomationState,
+    trigger: &str,
+    action_kind: &str,
+    fingerprint: String,
+    title: &str,
+    description: &str,
+    now: &str,
+    metadata: Option<Value>,
+) -> i64 {
+    if let Some(existing) = state
+        .suggestions
+        .iter_mut()
+        .find(|item| item.fingerprint == fingerprint)
+    {
+        let next_repeat_count = existing
+            .metadata
+            .as_ref()
+            .and_then(Value::as_object)
+            .and_then(|value| value.get("repeatCount"))
+            .and_then(Value::as_i64)
+            .unwrap_or(1)
+            + 1;
+        existing.trigger = trigger.to_string();
+        existing.action_kind = action_kind.to_string();
+        existing.title = title.to_string();
+        existing.description = description.to_string();
+        existing.status = STATUS_PENDING.to_string();
+        existing.updated_at = now.to_string();
+        existing.metadata = Some(merge_metadata(
+            existing.metadata.as_ref(),
+            metadata.as_ref(),
+            next_repeat_count,
+        ));
+        return next_repeat_count;
+    }
+
+    let suggestion = LocalLlmWikiAutomationSuggestion {
+        id: uuid::Uuid::new_v4().to_string(),
+        fingerprint,
+        trigger: trigger.to_string(),
+        action_kind: action_kind.to_string(),
+        title: title.to_string(),
+        description: description.to_string(),
+        status: STATUS_PENDING.to_string(),
+        created_at: now.to_string(),
+        updated_at: now.to_string(),
+        metadata: Some(merge_metadata(None, metadata.as_ref(), 1)),
+    };
+    state.suggestions.insert(0, suggestion);
+    if state.suggestions.len() > MAX_SUGGESTIONS {
+        state.suggestions.truncate(MAX_SUGGESTIONS);
+    }
+    1
+}
+
+fn merge_metadata(existing: Option<&Value>, incoming: Option<&Value>, repeat_count: i64) -> Value {
+    let mut object = existing
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    if let Some(incoming) = incoming.and_then(Value::as_object) {
+        for (key, value) in incoming {
+            object.insert(key.clone(), value.clone());
+        }
+    }
+    object.insert("repeatCount".to_string(), json!(repeat_count));
+    Value::Object(object)
+}
+
+fn push_audit(
+    state: &mut LocalLlmWikiAutomationState,
+    trigger: &str,
+    level: &str,
+    disposition: &str,
+    message: impl Into<String>,
+    now: &str,
+    metadata: Option<Value>,
+) {
+    state.audit.insert(
+        0,
+        LocalLlmWikiAutomationAuditEntry {
+            id: uuid::Uuid::new_v4().to_string(),
+            trigger: trigger.to_string(),
+            level: level.to_string(),
+            disposition: disposition.to_string(),
+            message: message.into(),
+            created_at: now.to_string(),
+            metadata,
+        },
+    );
+    if state.audit.len() > MAX_AUDIT_ENTRIES {
+        state.audit.truncate(MAX_AUDIT_ENTRIES);
+    }
+}
+
+fn suggestion_fingerprint(prefix: &str, seed: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(prefix.as_bytes());
+    hasher.update(b"::");
+    hasher.update(seed.trim().to_ascii_lowercase().as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+fn trim_preview_text(value: &str, limit: usize) -> String {
+    let single_line = value
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    if single_line.len() <= limit {
+        single_line
+    } else {
+        format!("{}...", &single_line[..limit])
+    }
+}

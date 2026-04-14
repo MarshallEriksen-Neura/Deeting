@@ -55,6 +55,18 @@ pub struct AssetQueryAffinityRow {
     pub last_matched_at_unix_ms: i64,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct TaskPolicyPriorRow {
+    pub fingerprint_key: String,
+    pub decision_point: String,
+    pub action_key: String,
+    pub weight: f64,
+    pub confidence: f64,
+    pub evidence_count: i64,
+    pub maturity: String,
+    pub updated_at_unix_ms: i64,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ToolApprovalRuleRow {
     pub key: String,
@@ -487,6 +499,37 @@ impl McpStore {
               last_matched_at_unix_ms INTEGER NOT NULL,
               PRIMARY KEY (query_text, asset_id)
             );
+            "#,
+        )
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS task_policy_priors (
+              fingerprint_key TEXT NOT NULL,
+              decision_point TEXT NOT NULL,
+              action_key TEXT NOT NULL,
+              weight REAL NOT NULL DEFAULT 0,
+              confidence REAL NOT NULL DEFAULT 0,
+              evidence_count INTEGER NOT NULL DEFAULT 0,
+              maturity TEXT NOT NULL DEFAULT 'provisional',
+              last_run_id TEXT,
+              created_at_unix_ms INTEGER NOT NULL,
+              updated_at_unix_ms INTEGER NOT NULL,
+              PRIMARY KEY (fingerprint_key, decision_point, action_key)
+            );
+            "#,
+        )
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_task_policy_priors_lookup
+            ON task_policy_priors(fingerprint_key, decision_point, updated_at_unix_ms DESC);
             "#,
         )
         .execute(&self.write_pool)
@@ -1155,6 +1198,139 @@ impl McpStore {
                 })
             })
             .collect()
+    }
+
+    pub async fn list_task_policy_prior_rows(
+        &self,
+        fingerprint_key: &str,
+        decision_point: &str,
+        limit: usize,
+    ) -> Result<Vec<TaskPolicyPriorRow>, McpError> {
+        let normalized_fingerprint_key = fingerprint_key.trim();
+        let normalized_decision_point = decision_point.trim().to_ascii_lowercase();
+        if normalized_fingerprint_key.is_empty() || normalized_decision_point.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let rows = sqlx::query(
+            r#"
+            SELECT
+              fingerprint_key,
+              decision_point,
+              action_key,
+              weight,
+              confidence,
+              evidence_count,
+              maturity,
+              updated_at_unix_ms
+            FROM task_policy_priors
+            WHERE fingerprint_key = ?
+              AND decision_point = ?
+            ORDER BY updated_at_unix_ms DESC, ABS(weight) DESC, action_key ASC
+            LIMIT ?
+            "#,
+        )
+        .bind(normalized_fingerprint_key)
+        .bind(normalized_decision_point.as_str())
+        .bind(limit.max(1) as i64)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        rows.into_iter()
+            .map(|row| {
+                Ok(TaskPolicyPriorRow {
+                    fingerprint_key: row
+                        .try_get::<String, _>("fingerprint_key")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    decision_point: row
+                        .try_get::<String, _>("decision_point")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    action_key: row
+                        .try_get::<String, _>("action_key")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    weight: row
+                        .try_get::<f64, _>("weight")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    confidence: row
+                        .try_get::<f64, _>("confidence")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    evidence_count: row
+                        .try_get::<i64, _>("evidence_count")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    maturity: row
+                        .try_get::<String, _>("maturity")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    updated_at_unix_ms: row
+                        .try_get::<i64, _>("updated_at_unix_ms")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                })
+            })
+            .collect()
+    }
+
+    pub async fn apply_task_policy_delta(
+        &self,
+        fingerprint_key: &str,
+        decision_point: &str,
+        action_key: &str,
+        weight_delta: f64,
+        maturity: &str,
+        confidence: f64,
+        last_run_id: Option<&str>,
+    ) -> Result<(), McpError> {
+        let normalized_fingerprint_key = fingerprint_key.trim();
+        let normalized_decision_point = decision_point.trim().to_ascii_lowercase();
+        let normalized_action_key = action_key.trim().to_ascii_lowercase();
+        let normalized_maturity = maturity.trim().to_ascii_lowercase();
+        if normalized_fingerprint_key.is_empty()
+            || normalized_decision_point.is_empty()
+            || normalized_action_key.is_empty()
+        {
+            return Ok(());
+        }
+
+        let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+        sqlx::query(
+            r#"
+            INSERT INTO task_policy_priors (
+              fingerprint_key,
+              decision_point,
+              action_key,
+              weight,
+              confidence,
+              evidence_count,
+              maturity,
+              last_run_id,
+              created_at_unix_ms,
+              updated_at_unix_ms
+            ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+            ON CONFLICT(fingerprint_key, decision_point, action_key) DO UPDATE SET
+              weight = task_policy_priors.weight + excluded.weight,
+              confidence = MAX(task_policy_priors.confidence, excluded.confidence),
+              evidence_count = task_policy_priors.evidence_count + 1,
+              maturity = excluded.maturity,
+              last_run_id = excluded.last_run_id,
+              updated_at_unix_ms = excluded.updated_at_unix_ms
+            "#,
+        )
+        .bind(normalized_fingerprint_key)
+        .bind(normalized_decision_point.as_str())
+        .bind(normalized_action_key.as_str())
+        .bind(weight_delta)
+        .bind(confidence.clamp(0.0, 1.0))
+        .bind(if normalized_maturity.is_empty() {
+            "provisional"
+        } else {
+            normalized_maturity.as_str()
+        })
+        .bind(last_run_id.map(str::trim).filter(|value| !value.is_empty()))
+        .bind(now as i64)
+        .bind(now as i64)
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        Ok(())
     }
 
     pub async fn record_asset_execution(

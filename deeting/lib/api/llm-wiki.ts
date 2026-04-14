@@ -63,6 +63,48 @@ export const LocalLlmWikiMaintainerAgentSummarySchema = z.object({
   isEnabled: z.boolean(),
 })
 
+export const LocalLlmWikiAutomationSettingsSchema = z.object({
+  autoSyncOnVaultBound: z.boolean(),
+  suggestMaintainerOnWorkspaceBootstrap: z.boolean(),
+  autoRefreshInspectorOnCorpusSync: z.boolean(),
+  createCrystallizationCandidatesOnSessionEnd: z.boolean(),
+  enableScheduleSuggestions: z.boolean(),
+  suggestOnValuableAnswer: z.boolean(),
+  autoDelegateNewSources: z.boolean(),
+  autoDelegateMaintenanceSchedule: z.boolean(),
+  promoteRepeatedStableConclusionsToMemory: z.boolean(),
+})
+
+export const LocalLlmWikiAutomationSuggestionSchema = z.object({
+  id: z.string(),
+  fingerprint: z.string(),
+  trigger: z.string(),
+  actionKind: z.string(),
+  title: z.string(),
+  description: z.string(),
+  status: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+})
+
+export const LocalLlmWikiAutomationAuditEntrySchema = z.object({
+  id: z.string(),
+  trigger: z.string(),
+  level: z.string(),
+  disposition: z.string(),
+  message: z.string(),
+  createdAt: z.string(),
+  metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+})
+
+export const LocalLlmWikiAutomationStateSchema = z.object({
+  settings: LocalLlmWikiAutomationSettingsSchema,
+  suggestions: z.array(LocalLlmWikiAutomationSuggestionSchema).default([]),
+  audit: z.array(LocalLlmWikiAutomationAuditEntrySchema).default([]),
+  lastScheduleRunAt: z.string().nullish(),
+})
+
 export const LocalLlmWikiStateSchema = z.object({
   binding: LocalLlmWikiBindingSchema.nullish(),
   scanSummary: LocalLlmWikiVaultScanSummarySchema.nullish(),
@@ -70,6 +112,7 @@ export const LocalLlmWikiStateSchema = z.object({
   corpusStatus: LocalLlmWikiCorpusStatusSchema.nullish(),
   maintainerAgent: LocalLlmWikiMaintainerAgentSummarySchema.nullish(),
   recommendedAgentPrompt: z.string().nullish(),
+  automation: LocalLlmWikiAutomationStateSchema,
 })
 
 export const BootstrapLocalLlmWikiWorkspaceResultSchema = z.object({
@@ -103,6 +146,13 @@ export const SearchLocalLlmWikiCorpusResultSchema = z.object({
   hits: z.array(LocalLlmWikiCorpusSearchHitSchema).default([]),
 })
 
+export const LocalLlmWikiAutomationExecutionResultSchema = z.object({
+  state: LocalLlmWikiStateSchema,
+  workflowRunId: z.string().nullable().optional(),
+  memoryAction: z.string().nullable().optional(),
+  message: z.string().nullable().optional(),
+})
+
 export type LocalLlmWikiBinding = z.infer<typeof LocalLlmWikiBindingSchema>
 export type LocalLlmWikiCandidateFolder = z.infer<
   typeof LocalLlmWikiCandidateFolderSchema
@@ -118,6 +168,18 @@ export type LocalLlmWikiCorpusStatus = z.infer<
 >
 export type LocalLlmWikiMaintainerAgentSummary = z.infer<
   typeof LocalLlmWikiMaintainerAgentSummarySchema
+>
+export type LocalLlmWikiAutomationSettings = z.infer<
+  typeof LocalLlmWikiAutomationSettingsSchema
+>
+export type LocalLlmWikiAutomationSuggestion = z.infer<
+  typeof LocalLlmWikiAutomationSuggestionSchema
+>
+export type LocalLlmWikiAutomationAuditEntry = z.infer<
+  typeof LocalLlmWikiAutomationAuditEntrySchema
+>
+export type LocalLlmWikiAutomationState = z.infer<
+  typeof LocalLlmWikiAutomationStateSchema
 >
 export type LocalLlmWikiState = z.infer<typeof LocalLlmWikiStateSchema>
 export type BootstrapLocalLlmWikiWorkspaceResult = z.infer<
@@ -135,6 +197,9 @@ export type LocalLlmWikiCorpusSearchHit = z.infer<
 export type SearchLocalLlmWikiCorpusResult = z.infer<
   typeof SearchLocalLlmWikiCorpusResultSchema
 >
+export type LocalLlmWikiAutomationExecutionResult = z.infer<
+  typeof LocalLlmWikiAutomationExecutionResultSchema
+>
 
 export interface SaveLocalLlmWikiBindingPayload {
   vaultRoot: string
@@ -144,6 +209,18 @@ export interface SaveLocalLlmWikiBindingPayload {
 export interface SearchLocalLlmWikiCorpusPayload {
   query: string
   limit?: number
+}
+
+export interface UpdateLocalLlmWikiAutomationSettingsPayload {
+  autoSyncOnVaultBound?: boolean
+  suggestMaintainerOnWorkspaceBootstrap?: boolean
+  autoRefreshInspectorOnCorpusSync?: boolean
+  createCrystallizationCandidatesOnSessionEnd?: boolean
+  enableScheduleSuggestions?: boolean
+  suggestOnValuableAnswer?: boolean
+  autoDelegateNewSources?: boolean
+  autoDelegateMaintenanceSchedule?: boolean
+  promoteRepeatedStableConclusionsToMemory?: boolean
 }
 
 export function supportsLocalLlmWiki(): boolean {
@@ -159,6 +236,22 @@ export async function getLocalLlmWikiState(): Promise<LocalLlmWikiState> {
       corpusStatus: null,
       maintainerAgent: null,
       recommendedAgentPrompt: null,
+      automation: {
+        settings: {
+          autoSyncOnVaultBound: true,
+          suggestMaintainerOnWorkspaceBootstrap: true,
+          autoRefreshInspectorOnCorpusSync: true,
+          createCrystallizationCandidatesOnSessionEnd: true,
+          enableScheduleSuggestions: true,
+          suggestOnValuableAnswer: true,
+          autoDelegateNewSources: false,
+          autoDelegateMaintenanceSchedule: false,
+          promoteRepeatedStableConclusionsToMemory: false,
+        },
+        suggestions: [],
+        audit: [],
+        lastScheduleRunAt: null,
+      },
     })
   }
 
@@ -202,4 +295,34 @@ export async function searchLocalLlmWikiCorpus(
     payload,
   })
   return SearchLocalLlmWikiCorpusResultSchema.parse(data)
+}
+
+export async function updateLocalLlmWikiAutomationSettings(
+  payload: UpdateLocalLlmWikiAutomationSettingsPayload,
+): Promise<LocalLlmWikiState> {
+  const data = await invokeTauri<unknown>(
+    "update_local_llm_wiki_automation_settings_command",
+    { payload },
+  )
+  return LocalLlmWikiStateSchema.parse(data)
+}
+
+export async function dismissLocalLlmWikiAutomationSuggestion(
+  suggestionId: string,
+): Promise<LocalLlmWikiState> {
+  const data = await invokeTauri<unknown>(
+    "dismiss_local_llm_wiki_automation_suggestion_command",
+    { suggestionId },
+  )
+  return LocalLlmWikiStateSchema.parse(data)
+}
+
+export async function executeLocalLlmWikiAutomationSuggestion(
+  suggestionId: string,
+): Promise<LocalLlmWikiAutomationExecutionResult> {
+  const data = await invokeTauri<unknown>(
+    "execute_local_llm_wiki_automation_suggestion_command",
+    { suggestionId },
+  )
+  return LocalLlmWikiAutomationExecutionResultSchema.parse(data)
 }

@@ -117,6 +117,45 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
             example_arguments: json!({"query": "search web tools", "limit": 8, "detail_level": "summary"}),
         },
         CoreToolContract {
+            name: "query_task_policy",
+            description: "Read bounded task-learning priors for one decision point under the current task fingerprint. Use this at explicit decision gates such as route choice, whether to call search_sdk early, whether to attach a capability, whether execute_code_plan is justified, or whether stronger verification is needed. This is read-only policy retrieval, not execution.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "Natural-language task query used to build the task fingerprint." },
+                    "decision_point": {
+                        "type": "string",
+                        "description": "Decision layer to inspect.",
+                        "enum": ["route", "discovery", "capability_attach", "execution", "verification"]
+                    },
+                    "limit": { "type": "integer", "description": "Maximum priors to return (1-8).", "default": 4 }
+                },
+                "required": ["query", "decision_point"]
+            }),
+            output_schema: json!({
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "decision_point": {"type": "string"},
+                    "fingerprint_key": {"type": "string"},
+                    "task_fingerprint": {"type": "object"},
+                    "recommended_action": {"type": ["string", "null"]},
+                    "priors": {"type": "array"},
+                    "guidance": {"type": ["string", "null"]}
+                },
+                "required": ["query", "decision_point", "fingerprint_key", "task_fingerprint", "priors"]
+            }),
+            permission_scope: &["local_catalog_read", "task_policy_read"],
+            read_only: true,
+            mutating: false,
+            risk_level: "LOW",
+            example_arguments: json!({
+                "query": "Investigate the current desktop runtime route boundary",
+                "decision_point": "discovery",
+                "limit": 4
+            }),
+        },
+        CoreToolContract {
             name: "get_tool_schema",
             description: "Return the full callable contract for a selected direct tool, including input schema, typed parameter docs, example arguments, and risk metadata. Use this after search_sdk summary results when you need exact invocation details for one chosen tool.",
             input_schema: json!({

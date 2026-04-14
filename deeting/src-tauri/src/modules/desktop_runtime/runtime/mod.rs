@@ -16,6 +16,7 @@ pub mod route_selector;
 pub mod search_feedback;
 pub mod search_ranking;
 pub mod semantic_recall;
+pub mod task_learning;
 pub mod tool_catalog;
 pub mod tool_feedback;
 pub mod tool_result_blocks;
@@ -68,6 +69,10 @@ pub(crate) use route_selector::{
     render_local_route_prompt, select_local_route_with_evidence, LocalRouteDecision, LocalRouteKind,
 };
 pub(crate) use semantic_recall::should_run_semantic_recall;
+pub(crate) use task_learning::{
+    apply_policy_delta, apply_route_prior, build_task_fingerprint, evaluate_task_learning,
+    query_task_policy_hint, route_hint_status_meta, TaskFingerprint,
+};
 #[cfg(test)]
 pub(crate) use tool_catalog::{
     build_local_runtime_tools, build_local_sdk_search_result_with_runtime,

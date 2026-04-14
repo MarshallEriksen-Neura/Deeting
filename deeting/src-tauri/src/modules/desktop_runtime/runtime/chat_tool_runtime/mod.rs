@@ -896,6 +896,50 @@ async fn process_chat_tool_calls(
                 query,
                 serde_json::to_string_pretty(&search_res).unwrap()
             ));
+        } else if tool_name == "query_task_policy" {
+            realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call_id.as_str(),"toolName":tool_name,"status":"running"})]);
+            let query = call
+                .arguments
+                .get("query")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let decision_point = call
+                .arguments
+                .get("decision_point")
+                .and_then(|v| v.as_str())
+                .unwrap_or("route");
+            let limit = call
+                .arguments
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+                .unwrap_or(4);
+            let policy_hint = crate::modules::desktop_runtime::runtime::query_task_policy_hint(
+                app_state.mcp.store.as_ref(),
+                query,
+                decision_point,
+                limit,
+            )
+            .await;
+            let policy_hint_value =
+                serde_json::to_value(&policy_hint).unwrap_or_else(|_| serde_json::json!({}));
+            synthesized = true;
+            let meta = serde_json::json!({
+                "id":call_id.as_str(),
+                "name":tool_name,
+                "status":"success",
+                "result":policy_hint_value
+            });
+            let mut streamed_blocks = Vec::new();
+            append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+            realtime_emitter.emit_blocks(streamed_blocks);
+            tool_call_meta.push(meta);
+            results.push(format!(
+                "Task policy hint for '{}' at '{}':\n{}",
+                query,
+                decision_point,
+                serde_json::to_string_pretty(&policy_hint).unwrap_or_else(|_| "{}".to_string())
+            ));
         } else if tool_name == "attach_capability" {
             realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call_id.as_str(),"toolName":tool_name,"status":"running"})]);
             let capability_id = call

@@ -23,10 +23,10 @@ use crate::modules::desktop_runtime::runtime::route_selector::{
     select_local_route, LocalRouteKind,
 };
 use crate::modules::desktop_runtime::runtime::{
-    build_default_local_execution_policy, mark_local_assistant_postprocess_completed,
-    persist_local_assistant_turn, project_execution_graph_blocks_from_value,
-    resolve_local_model_pool_connection, resolve_provider_model_connection,
-    run_local_execution_plane, LocalExecutionRequest,
+    apply_policy_delta, build_default_local_execution_policy, evaluate_task_learning,
+    mark_local_assistant_postprocess_completed, persist_local_assistant_turn,
+    project_execution_graph_blocks_from_value, resolve_local_model_pool_connection,
+    resolve_provider_model_connection, run_local_execution_plane, LocalExecutionRequest,
 };
 #[cfg(test)]
 use crate::modules::desktop_runtime::runtime::{
@@ -571,7 +571,7 @@ pub async fn execute_local_orchestrated_chat(
     );
 
     let assistant_meta = build_assistant_meta(
-        assistant_blocks,
+        assistant_blocks.clone(),
         &model_id,
         &provider_model_id,
         Some(runtime_metrics_value),
@@ -742,6 +742,56 @@ pub async fn execute_local_orchestrated_chat(
         }],
     });
     ctx.enrich_payload(&mut response);
+
+    if !input.compare_only {
+        if let Some(task_fingerprint) = ctx.task_fingerprint.as_ref() {
+            let finish_reason = derive_local_finish_reason(
+                &response_json,
+                response_text_was_synthesized_from_error,
+            );
+            let evaluation = evaluate_task_learning(
+                task_fingerprint,
+                ctx.route_decision.as_ref(),
+                &execution_policy,
+                &response_text,
+                response_text_was_synthesized_from_error,
+                &finish_reason,
+                total_latency_ms,
+                &assistant_blocks,
+                delegated_execution.is_some(),
+            );
+            if let Some(delta) = evaluation.policy_delta.as_ref() {
+                if let Err(err) = apply_policy_delta(
+                    store.as_ref(),
+                    &task_fingerprint.key(),
+                    delta,
+                    input.request_id.as_deref(),
+                )
+                .await
+                {
+                    log::warn!(
+                        "task learning delta persist failed session={} err={}",
+                        session_id,
+                        err
+                    );
+                }
+            }
+            ctx.emit_status(
+                "remember",
+                Some("task_learning"),
+                "success",
+                "task.learning.evaluated",
+                Some(json!({
+                    "fingerprint_key": task_fingerprint.key(),
+                    "learning_eligible": evaluation.learning_eligible,
+                    "delta_state": evaluation.delta_state,
+                    "outcome": evaluation.outcome,
+                    "attribution": evaluation.attribution,
+                    "policy_delta": evaluation.policy_delta,
+                })),
+            );
+        }
+    }
     Ok(response)
 }
 
