@@ -23,7 +23,8 @@ use crate::modules::desktop_runtime::runtime::route_selector::{
     select_local_route, LocalRouteKind,
 };
 use crate::modules::desktop_runtime::runtime::{
-    apply_policy_delta, build_default_local_execution_policy, evaluate_task_learning,
+    apply_policy_delta, apply_task_learning_revision, build_default_local_execution_policy,
+    evaluate_task_learning_with_runtime, infer_followup_user_response_signal,
     mark_local_assistant_postprocess_completed, persist_local_assistant_turn,
     project_execution_graph_blocks_from_value, resolve_local_model_pool_connection,
     resolve_provider_model_connection, run_local_execution_plane, LocalExecutionRequest,
@@ -37,7 +38,9 @@ use crate::modules::memory::types::LocalMemoryItem;
 use crate::modules::providers::model_guard::ensure_required_local_models_configured;
 use crate::modules::render_runtime::resolve_response_rendering;
 use crate::state::AppState;
-use mcp_session::conversation::CreateConversationMessageRequest;
+use mcp_session::conversation::{
+    CreateConversationMessageRequest, LocalConversationHistoryMessage,
+};
 #[cfg(test)]
 use std::collections::HashMap;
 
@@ -91,6 +94,24 @@ pub struct LocalOrchestratorInput {
     pub stream: bool,
     pub status_stream: bool,
     pub selected_knowledge_file_ids: Vec<String>,
+}
+
+fn extract_latest_assistant_trace_id(
+    messages: &[LocalConversationHistoryMessage],
+) -> Option<String> {
+    messages.iter().rev().find_map(|message| {
+        if !message.role.eq_ignore_ascii_case("assistant") {
+            return None;
+        }
+        message
+            .meta_info
+            .as_ref()
+            .and_then(|value| value.get("trace_id"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    })
 }
 
 pub async fn execute_local_orchestrated_chat(
@@ -171,7 +192,7 @@ pub async fn execute_local_orchestrated_chat(
             .append_local_conversation_message(CreateConversationMessageRequest {
                 session_id: session_id.clone(),
                 role: "user".to_string(),
-                content: user_content,
+                content: user_content.clone(),
                 name: None,
                 meta_info: None,
                 is_truncated: Some(false),
@@ -189,6 +210,44 @@ pub async fn execute_local_orchestrated_chat(
             .load_local_conversation_runtime_window(&session_id)
             .await
             .map_err(|e| e.to_string())?;
+        if let Some(signal) = infer_followup_user_response_signal(&user_content) {
+            if let Some(previous_trace_id) =
+                extract_latest_assistant_trace_id(&runtime_window.messages)
+            {
+                match store
+                    .get_latest_task_learning_run_by_trace_id(previous_trace_id.as_str())
+                    .await
+                {
+                    Ok(Some(run)) => {
+                        if let Err(err) = apply_task_learning_revision(
+                            store.as_ref(),
+                            run.run_id.as_str(),
+                            signal.as_str(),
+                            "followup_user_message",
+                            Some(user_content.as_str()),
+                        )
+                        .await
+                        {
+                            log::warn!(
+                                "followup task learning revision failed session={} trace_id={} err={}",
+                                session_id,
+                                previous_trace_id,
+                                err
+                            );
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(err) => {
+                        log::warn!(
+                            "lookup task learning run for followup signal failed session={} trace_id={} err={}",
+                            session_id,
+                            previous_trace_id,
+                            err
+                        );
+                    }
+                }
+            }
+        }
         let capability_id = input
             .capability_id
             .clone()
@@ -749,7 +808,10 @@ pub async fn execute_local_orchestrated_chat(
                 &response_json,
                 response_text_was_synthesized_from_error,
             );
-            let evaluation = evaluate_task_learning(
+            let evaluation = evaluate_task_learning_with_runtime(
+                app_state,
+                &model_connection,
+                ctx.latest_user_query(),
                 task_fingerprint,
                 ctx.route_decision.as_ref(),
                 &execution_policy,
@@ -759,13 +821,61 @@ pub async fn execute_local_orchestrated_chat(
                 total_latency_ms,
                 &assistant_blocks,
                 delegated_execution.is_some(),
-            );
+                None,
+            )
+            .await;
+            let fingerprint_key = task_fingerprint.key();
+            let task_fingerprint_json =
+                serde_json::to_string(task_fingerprint).unwrap_or_else(|_| "{}".to_string());
+            let route_decision_json = ctx
+                .route_decision
+                .as_ref()
+                .and_then(|value| serde_json::to_string(value).ok());
+            let execution_policy_json =
+                serde_json::to_string(&execution_policy).unwrap_or_else(|_| "{}".to_string());
+            let outcome_json =
+                serde_json::to_string(&evaluation.outcome).unwrap_or_else(|_| "{}".to_string());
+            let attribution_json =
+                serde_json::to_string(&evaluation.attribution).unwrap_or_else(|_| "{}".to_string());
+            let policy_delta_json = evaluation
+                .policy_delta
+                .as_ref()
+                .and_then(|value| serde_json::to_string(value).ok());
+            let task_learning_run_id = match store
+                .record_task_learning_run(
+                    &session_id,
+                    input.request_id.as_deref(),
+                    Some(&trace_id),
+                    &fingerprint_key,
+                    &task_fingerprint_json,
+                    route_decision_json.as_deref(),
+                    &execution_policy_json,
+                    &outcome_json,
+                    &attribution_json,
+                    policy_delta_json.as_deref(),
+                    evaluation.learning_eligible,
+                    &evaluation.delta_state,
+                )
+                .await
+            {
+                Ok(run_id) => Some(run_id),
+                Err(err) => {
+                    log::warn!(
+                        "task learning run persist failed session={} err={}",
+                        session_id,
+                        err
+                    );
+                    None
+                }
+            };
             if let Some(delta) = evaluation.policy_delta.as_ref() {
                 if let Err(err) = apply_policy_delta(
                     store.as_ref(),
-                    &task_fingerprint.key(),
+                    &fingerprint_key,
                     delta,
-                    input.request_id.as_deref(),
+                    task_learning_run_id
+                        .as_deref()
+                        .or(input.request_id.as_deref()),
                 )
                 .await
                 {
@@ -782,7 +892,8 @@ pub async fn execute_local_orchestrated_chat(
                 "success",
                 "task.learning.evaluated",
                 Some(json!({
-                    "fingerprint_key": task_fingerprint.key(),
+                    "fingerprint_key": fingerprint_key,
+                    "run_id": task_learning_run_id,
                     "learning_eligible": evaluation.learning_eligible,
                     "delta_state": evaluation.delta_state,
                     "outcome": evaluation.outcome,

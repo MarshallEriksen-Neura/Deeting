@@ -1,40 +1,56 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
 import {
   bootstrapLocalLlmWikiWorkspace,
+  confirmLocalLlmWikiAdoption,
   createOrUpdateLocalLlmWikiMaintainerAgent,
   dismissLocalLlmWikiAutomationSuggestion,
   executeLocalLlmWikiAutomationSuggestion,
   getLocalLlmWikiState,
+  ingestLocalLlmWikiSelection,
+  previewLocalLlmWikiAdoption,
+  runLocalLlmWikiLint,
   saveLocalLlmWikiBinding,
   searchLocalLlmWikiCorpus,
   syncLocalLlmWikiCorpus,
   supportsLocalLlmWiki,
   updateLocalLlmWikiAutomationSettings,
+  type IngestLocalLlmWikiSelectionResult,
+  type LocalLlmWikiAdoptionPreview,
   type LocalLlmWikiAutomationSuggestion,
+  type LocalLlmWikiLintReport,
   type BootstrapLocalLlmWikiWorkspaceResult,
   type LocalLlmWikiCorpusSearchHit,
   type LocalLlmWikiState,
 } from "@/lib/api/llm-wiki"
 import { useOpenWorkflow } from "@/hooks/use-open-workflow"
+import { saveLlmWikiTaskAgentHandoff } from "@/lib/llm-wiki-handoff"
 
 type Translation = (key: string, values?: Record<string, string | number>) => string
 
 const DEFAULT_WORKSPACE_RELATIVE_PATH = "Deeting Wiki"
+const MODE_MANAGED_WORKSPACE = "managed_workspace"
+const MODE_ADOPT_EXISTING_FOLDER = "adopt_existing_folder"
 
 export function useLlmWiki(t: Translation) {
   const openWorkflow = useOpenWorkflow()
+  const router = useRouter()
   const [desktopSupported, setDesktopSupported] = React.useState<boolean | null>(null)
   const [state, setState] = React.useState<LocalLlmWikiState | null>(null)
   const [vaultRoot, setVaultRoot] = React.useState("")
   const [workspaceRelativePath, setWorkspaceRelativePath] = React.useState(
     DEFAULT_WORKSPACE_RELATIVE_PATH,
   )
+  const [bindingMode, setBindingMode] = React.useState(MODE_MANAGED_WORKSPACE)
+  const [adoptFolderRelativePath, setAdoptFolderRelativePath] = React.useState("")
   const [isLoading, setIsLoading] = React.useState(true)
   const [isAnalyzing, setIsAnalyzing] = React.useState(false)
+  const [isPreviewingAdoption, setIsPreviewingAdoption] = React.useState(false)
+  const [isConfirmingAdoption, setIsConfirmingAdoption] = React.useState(false)
   const [isBootstrapping, setIsBootstrapping] = React.useState(false)
   const [isSyncingAgent, setIsSyncingAgent] = React.useState(false)
   const [isSyncingCorpus, setIsSyncingCorpus] = React.useState(false)
@@ -46,6 +62,13 @@ export function useLlmWiki(t: Translation) {
   const [selectedCorpusHitId, setSelectedCorpusHitId] = React.useState<string | null>(null)
   const [hasSearchedCorpus, setHasSearchedCorpus] = React.useState(false)
   const [corpusSearchError, setCorpusSearchError] = React.useState<string | null>(null)
+  const [adoptionPreview, setAdoptionPreview] =
+    React.useState<LocalLlmWikiAdoptionPreview | null>(null)
+  const [ingestSelectionInput, setIngestSelectionInput] = React.useState("")
+  const [isIngestingSelection, setIsIngestingSelection] = React.useState(false)
+  const [lastIngestResult, setLastIngestResult] =
+    React.useState<IngestLocalLlmWikiSelectionResult | null>(null)
+  const [isRunningLint, setIsRunningLint] = React.useState(false)
   const [isUpdatingAutomationSettings, setIsUpdatingAutomationSettings] = React.useState(false)
   const [executingSuggestionId, setExecutingSuggestionId] = React.useState<string | null>(null)
   const [dismissingSuggestionId, setDismissingSuggestionId] = React.useState<string | null>(null)
@@ -101,6 +124,8 @@ export function useLlmWiki(t: Translation) {
       if (next.binding) {
         setVaultRoot(next.binding.vaultRoot)
         setWorkspaceRelativePath(next.binding.workspaceRelativePath)
+        setBindingMode(next.binding.mode ?? MODE_MANAGED_WORKSPACE)
+        setAdoptFolderRelativePath(next.binding.adoptedFolderRelativePath ?? "")
       }
     } catch (error) {
       toast.error(
@@ -115,16 +140,41 @@ export function useLlmWiki(t: Translation) {
     refresh()
   }, [refresh])
 
+  React.useEffect(() => {
+    setAdoptionPreview(null)
+  }, [adoptFolderRelativePath, bindingMode])
+
   const analyze = React.useCallback(async () => {
+    if (bindingMode === MODE_ADOPT_EXISTING_FOLDER) {
+      try {
+        setIsPreviewingAdoption(true)
+        const preview = await previewLocalLlmWikiAdoption({
+          vaultRoot,
+          folderRelativePath: adoptFolderRelativePath,
+        })
+        setAdoptionPreview(preview)
+        toast.success(preview.summaryMessage)
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : t("toast.adoptionPreviewFailed"),
+        )
+      } finally {
+        setIsPreviewingAdoption(false)
+      }
+      return
+    }
+
     try {
       setIsAnalyzing(true)
       const next = await saveLocalLlmWikiBinding({
         vaultRoot,
         workspaceRelativePath,
+        mode: bindingMode,
       })
       setState(next)
       setLastBootstrap(null)
       clearCorpusInspector()
+      setAdoptionPreview(null)
       toast.success(t("toast.bindingSaved"))
     } catch (error) {
       toast.error(
@@ -133,7 +183,14 @@ export function useLlmWiki(t: Translation) {
     } finally {
       setIsAnalyzing(false)
     }
-  }, [clearCorpusInspector, t, vaultRoot, workspaceRelativePath])
+  }, [
+    adoptFolderRelativePath,
+    bindingMode,
+    clearCorpusInspector,
+    t,
+    vaultRoot,
+    workspaceRelativePath,
+  ])
 
   const bootstrap = React.useCallback(async () => {
     try {
@@ -155,6 +212,26 @@ export function useLlmWiki(t: Translation) {
       setIsBootstrapping(false)
     }
   }, [t])
+
+  const confirmAdoption = React.useCallback(async () => {
+    try {
+      setIsConfirmingAdoption(true)
+      const next = await confirmLocalLlmWikiAdoption({
+        vaultRoot,
+        folderRelativePath: adoptFolderRelativePath,
+      })
+      setState(next)
+      setLastBootstrap(null)
+      clearCorpusInspector()
+      toast.success(t("toast.adoptionConfirmed"))
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : t("toast.adoptionConfirmFailed"),
+      )
+    } finally {
+      setIsConfirmingAdoption(false)
+    }
+  }, [adoptFolderRelativePath, clearCorpusInspector, t, vaultRoot])
 
   const copyAgentPrompt = React.useCallback(async () => {
     const prompt = state?.recommendedAgentPrompt?.trim()
@@ -292,6 +369,73 @@ export function useLlmWiki(t: Translation) {
     [t],
   )
 
+  const openTaskAgentHandoff = React.useCallback(() => {
+    const maintainer = state?.maintainerAgent
+    if (maintainer?.agentId) {
+      router.push(`/dashboard/user/task-agents?handoff=llm-wiki&agentId=${encodeURIComponent(maintainer.agentId)}`)
+      return
+    }
+
+    const binding = state?.binding
+    saveLlmWikiTaskAgentHandoff({
+      mode: "create",
+      name: binding ? `${binding.vaultName} Wiki Maintainer` : "Wiki Maintainer",
+      description: binding
+        ? `Maintains the Deeting-managed LLM Wiki workspace at ${binding.workspaceRelativePath}`
+        : "Maintains the Deeting-managed LLM Wiki workspace",
+      taskPrompt: state?.recommendedAgentPrompt ?? "",
+      sourceKind: "llm_wiki_maintainer",
+      sourcePath: state?.workspaceStatus?.resolvedWorkspacePath ?? "",
+      tags: ["llm-wiki", "obsidian", "maintainer"],
+    })
+    router.push("/dashboard/user/task-agents?handoff=llm-wiki")
+  }, [router, state])
+
+  const ingestSelection = React.useCallback(async () => {
+    const selectedRelativePaths = ingestSelectionInput
+      .split(/\r?\n|,/)
+      .map((value) => value.trim())
+      .filter(Boolean)
+    if (selectedRelativePaths.length === 0) {
+      toast.error(t("toast.ingestSelectionEmpty"))
+      return
+    }
+
+    try {
+      setIsIngestingSelection(true)
+      const result = await ingestLocalLlmWikiSelection({ selectedRelativePaths })
+      setState(result.state)
+      setLastIngestResult(result)
+      toast.success(
+        t("toast.ingestCompleted", {
+          ingested: result.ingestedPaths.length,
+          copied: result.rawFilesCopied.length,
+        }),
+      )
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("toast.ingestFailed"))
+    } finally {
+      setIsIngestingSelection(false)
+    }
+  }, [ingestSelectionInput, t])
+
+  const runLint = React.useCallback(async () => {
+    try {
+      setIsRunningLint(true)
+      const report: LocalLlmWikiLintReport = await runLocalLlmWikiLint()
+      setState((current) => (current ? { ...current, lastLintReport: report } : current))
+      toast.success(
+        t("toast.lintCompleted", {
+          count: report.findingCount,
+        }),
+      )
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("toast.lintFailed"))
+    } finally {
+      setIsRunningLint(false)
+    }
+  }, [t])
+
   const updateCorpusQuery = React.useCallback(
     (value: string) => {
       setCorpusQuery(value)
@@ -311,8 +455,13 @@ export function useLlmWiki(t: Translation) {
     state,
     vaultRoot,
     workspaceRelativePath,
+    bindingMode,
+    adoptFolderRelativePath,
+    adoptionPreview,
     isLoading,
     isAnalyzing,
+    isPreviewingAdoption,
+    isConfirmingAdoption,
     isBootstrapping,
     isSyncingAgent,
     isSyncingCorpus,
@@ -323,16 +472,25 @@ export function useLlmWiki(t: Translation) {
     selectedCorpusHit,
     hasSearchedCorpus,
     corpusSearchError,
+    ingestSelectionInput,
+    isIngestingSelection,
+    lastIngestResult,
+    isRunningLint,
     automation: state?.automation ?? null,
+    lastLintReport: state?.lastLintReport ?? null,
     isUpdatingAutomationSettings,
     executingSuggestionId,
     dismissingSuggestionId,
     setVaultRoot,
     setWorkspaceRelativePath,
+    setBindingMode,
+    setAdoptFolderRelativePath,
     setCorpusQuery: updateCorpusQuery,
     setSelectedCorpusHitId,
+    setIngestSelectionInput,
     refresh,
     analyze,
+    confirmAdoption,
     bootstrap,
     copyAgentPrompt,
     syncMaintainerAgent,
@@ -341,5 +499,8 @@ export function useLlmWiki(t: Translation) {
     setAutomationSetting,
     executeAutomationSuggestion,
     dismissAutomationSuggestion,
+    openTaskAgentHandoff,
+    ingestSelection,
+    runLint,
   }
 }

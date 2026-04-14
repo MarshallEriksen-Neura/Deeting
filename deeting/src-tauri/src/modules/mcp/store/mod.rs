@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use serde_json::Value;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use sqlx::Row;
 
@@ -65,6 +66,42 @@ pub struct TaskPolicyPriorRow {
     pub evidence_count: i64,
     pub maturity: String,
     pub updated_at_unix_ms: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TaskLearningRunRow {
+    pub run_id: String,
+    pub session_id: String,
+    pub request_id: Option<String>,
+    pub trace_id: Option<String>,
+    pub fingerprint_key: String,
+    pub task_fingerprint_json: String,
+    pub route_decision_json: Option<String>,
+    pub execution_policy_json: String,
+    pub outcome_json: String,
+    pub attribution_json: String,
+    pub policy_delta_json: Option<String>,
+    pub learning_eligible: bool,
+    pub delta_state: String,
+    pub revision_count: i64,
+    pub last_signal: Option<String>,
+    pub created_at_unix_ms: i64,
+    pub last_revision_at_unix_ms: Option<i64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TaskLearningRevisionRow {
+    pub id: String,
+    pub run_id: String,
+    pub revision_index: i64,
+    pub trigger_source: String,
+    pub user_response_signal: String,
+    pub note: Option<String>,
+    pub outcome_json: String,
+    pub attribution_json: String,
+    pub policy_delta_json: Option<String>,
+    pub delta_state: String,
+    pub created_at_unix_ms: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -538,6 +575,74 @@ impl McpStore {
 
         sqlx::query(
             r#"
+            CREATE TABLE IF NOT EXISTS task_learning_runs (
+              run_id TEXT PRIMARY KEY,
+              session_id TEXT NOT NULL,
+              request_id TEXT,
+              trace_id TEXT,
+              fingerprint_key TEXT NOT NULL,
+              task_fingerprint_json TEXT NOT NULL,
+              route_decision_json TEXT,
+              execution_policy_json TEXT NOT NULL,
+              outcome_json TEXT NOT NULL,
+              attribution_json TEXT NOT NULL,
+              policy_delta_json TEXT,
+              learning_eligible INTEGER NOT NULL DEFAULT 0,
+              delta_state TEXT NOT NULL DEFAULT 'none',
+              last_signal TEXT,
+              revision_count INTEGER NOT NULL DEFAULT 0,
+              last_revision_at_unix_ms INTEGER,
+              created_at_unix_ms INTEGER NOT NULL
+            );
+            "#,
+        )
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_task_learning_runs_session
+            ON task_learning_runs(session_id, created_at_unix_ms DESC);
+            "#,
+        )
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS task_learning_revisions (
+              id TEXT PRIMARY KEY,
+              run_id TEXT NOT NULL,
+              revision_index INTEGER NOT NULL,
+              trigger_source TEXT NOT NULL,
+              user_response_signal TEXT NOT NULL,
+              note TEXT,
+              outcome_json TEXT NOT NULL,
+              attribution_json TEXT NOT NULL,
+              policy_delta_json TEXT,
+              delta_state TEXT NOT NULL DEFAULT 'none',
+              created_at_unix_ms INTEGER NOT NULL
+            );
+            "#,
+        )
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_task_learning_revisions_run
+            ON task_learning_revisions(run_id, revision_index DESC, created_at_unix_ms DESC);
+            "#,
+        )
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
             CREATE INDEX IF NOT EXISTS idx_asset_query_affinity_last_matched
             ON asset_query_affinity(last_matched_at_unix_ms DESC);
             "#,
@@ -589,6 +694,27 @@ impl McpStore {
             "mcp_tools",
             "service_display_name",
             "ALTER TABLE mcp_tools ADD COLUMN service_display_name TEXT;",
+        )
+        .await?;
+
+        self.ensure_column(
+            "task_learning_runs",
+            "last_signal",
+            "ALTER TABLE task_learning_runs ADD COLUMN last_signal TEXT;",
+        )
+        .await?;
+
+        self.ensure_column(
+            "task_learning_runs",
+            "revision_count",
+            "ALTER TABLE task_learning_runs ADD COLUMN revision_count INTEGER NOT NULL DEFAULT 0;",
+        )
+        .await?;
+
+        self.ensure_column(
+            "task_learning_runs",
+            "last_revision_at_unix_ms",
+            "ALTER TABLE task_learning_runs ADD COLUMN last_revision_at_unix_ms INTEGER;",
         )
         .await?;
 
@@ -1269,7 +1395,113 @@ impl McpStore {
             .collect()
     }
 
-    pub async fn apply_task_policy_delta(
+    pub async fn count_task_policy_priors(
+        &self,
+        fingerprint_key: Option<&str>,
+        decision_point: Option<&str>,
+    ) -> Result<i64, McpError> {
+        let normalized_fingerprint_key = fingerprint_key
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let normalized_decision_point = decision_point
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_ascii_lowercase());
+        let row = sqlx::query(
+            r#"
+            SELECT COUNT(*) AS total
+            FROM task_policy_priors
+            WHERE (? IS NULL OR fingerprint_key = ?)
+              AND (? IS NULL OR decision_point = ?)
+            "#,
+        )
+        .bind(normalized_fingerprint_key)
+        .bind(normalized_fingerprint_key)
+        .bind(normalized_decision_point.as_deref())
+        .bind(normalized_decision_point.as_deref())
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        row.try_get::<i64, _>("total")
+            .map_err(|err| McpError::Storage(err.to_string()))
+    }
+
+    pub async fn list_task_policy_priors(
+        &self,
+        fingerprint_key: Option<&str>,
+        decision_point: Option<&str>,
+        skip: usize,
+        limit: usize,
+    ) -> Result<Vec<TaskPolicyPriorRow>, McpError> {
+        let normalized_fingerprint_key = fingerprint_key
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let normalized_decision_point = decision_point
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_ascii_lowercase());
+        let rows = sqlx::query(
+            r#"
+            SELECT
+              fingerprint_key,
+              decision_point,
+              action_key,
+              weight,
+              confidence,
+              evidence_count,
+              maturity,
+              updated_at_unix_ms
+            FROM task_policy_priors
+            WHERE (? IS NULL OR fingerprint_key = ?)
+              AND (? IS NULL OR decision_point = ?)
+            ORDER BY updated_at_unix_ms DESC, ABS(weight) DESC, action_key ASC
+            LIMIT ?
+            OFFSET ?
+            "#,
+        )
+        .bind(normalized_fingerprint_key)
+        .bind(normalized_fingerprint_key)
+        .bind(normalized_decision_point.as_deref())
+        .bind(normalized_decision_point.as_deref())
+        .bind(limit.max(1) as i64)
+        .bind(skip as i64)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        rows.into_iter()
+            .map(|row| {
+                Ok(TaskPolicyPriorRow {
+                    fingerprint_key: row
+                        .try_get::<String, _>("fingerprint_key")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    decision_point: row
+                        .try_get::<String, _>("decision_point")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    action_key: row
+                        .try_get::<String, _>("action_key")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    weight: row
+                        .try_get::<f64, _>("weight")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    confidence: row
+                        .try_get::<f64, _>("confidence")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    evidence_count: row
+                        .try_get::<i64, _>("evidence_count")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    maturity: row
+                        .try_get::<String, _>("maturity")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    updated_at_unix_ms: row
+                        .try_get::<i64, _>("updated_at_unix_ms")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                })
+            })
+            .collect()
+    }
+
+    pub async fn adjust_task_policy_prior(
         &self,
         fingerprint_key: &str,
         decision_point: &str,
@@ -1278,6 +1510,7 @@ impl McpStore {
         maturity: &str,
         confidence: f64,
         last_run_id: Option<&str>,
+        evidence_delta: i64,
     ) -> Result<(), McpError> {
         let normalized_fingerprint_key = fingerprint_key.trim();
         let normalized_decision_point = decision_point.trim().to_ascii_lowercase();
@@ -1304,11 +1537,11 @@ impl McpStore {
               last_run_id,
               created_at_unix_ms,
               updated_at_unix_ms
-            ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(fingerprint_key, decision_point, action_key) DO UPDATE SET
               weight = task_policy_priors.weight + excluded.weight,
               confidence = MAX(task_policy_priors.confidence, excluded.confidence),
-              evidence_count = task_policy_priors.evidence_count + 1,
+              evidence_count = MAX(0, task_policy_priors.evidence_count + excluded.evidence_count),
               maturity = excluded.maturity,
               last_run_id = excluded.last_run_id,
               updated_at_unix_ms = excluded.updated_at_unix_ms
@@ -1319,6 +1552,7 @@ impl McpStore {
         .bind(normalized_action_key.as_str())
         .bind(weight_delta)
         .bind(confidence.clamp(0.0, 1.0))
+        .bind(evidence_delta)
         .bind(if normalized_maturity.is_empty() {
             "provisional"
         } else {
@@ -1327,6 +1561,750 @@ impl McpStore {
         .bind(last_run_id.map(str::trim).filter(|value| !value.is_empty()))
         .bind(now as i64)
         .bind(now as i64)
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        Ok(())
+    }
+
+    pub async fn apply_task_policy_delta(
+        &self,
+        fingerprint_key: &str,
+        decision_point: &str,
+        action_key: &str,
+        weight_delta: f64,
+        maturity: &str,
+        confidence: f64,
+        last_run_id: Option<&str>,
+    ) -> Result<(), McpError> {
+        let normalized_fingerprint_key = fingerprint_key.trim();
+        let normalized_decision_point = decision_point.trim().to_ascii_lowercase();
+        let normalized_action_key = action_key.trim().to_ascii_lowercase();
+        let normalized_maturity = maturity.trim().to_ascii_lowercase();
+        if normalized_fingerprint_key.is_empty()
+            || normalized_decision_point.is_empty()
+            || normalized_action_key.is_empty()
+        {
+            return Ok(());
+        }
+
+        self.adjust_task_policy_prior(
+            normalized_fingerprint_key,
+            normalized_decision_point.as_str(),
+            normalized_action_key.as_str(),
+            weight_delta,
+            if normalized_maturity.is_empty() {
+                "provisional"
+            } else {
+                normalized_maturity.as_str()
+            },
+            confidence,
+            last_run_id,
+            1,
+        )
+        .await
+    }
+
+    pub async fn record_task_learning_run(
+        &self,
+        session_id: &str,
+        request_id: Option<&str>,
+        trace_id: Option<&str>,
+        fingerprint_key: &str,
+        task_fingerprint_json: &str,
+        route_decision_json: Option<&str>,
+        execution_policy_json: &str,
+        outcome_json: &str,
+        attribution_json: &str,
+        policy_delta_json: Option<&str>,
+        learning_eligible: bool,
+        delta_state: &str,
+    ) -> Result<String, McpError> {
+        let normalized_session_id = session_id.trim();
+        let normalized_fingerprint_key = fingerprint_key.trim();
+        let normalized_task_fingerprint_json = task_fingerprint_json.trim();
+        let normalized_execution_policy_json = execution_policy_json.trim();
+        let normalized_outcome_json = outcome_json.trim();
+        let normalized_attribution_json = attribution_json.trim();
+        let last_signal = serde_json::from_str::<Value>(normalized_outcome_json)
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("user_response_signal")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+            });
+        if normalized_session_id.is_empty()
+            || normalized_fingerprint_key.is_empty()
+            || normalized_task_fingerprint_json.is_empty()
+            || normalized_execution_policy_json.is_empty()
+            || normalized_outcome_json.is_empty()
+            || normalized_attribution_json.is_empty()
+        {
+            return Err(McpError::validation(
+                "task learning run requires non-empty session_id, fingerprint, policy, outcome, and attribution payloads",
+            ));
+        }
+
+        let run_id = uuid::Uuid::new_v4().to_string();
+        let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+        sqlx::query(
+            r#"
+            INSERT INTO task_learning_runs (
+              run_id,
+              session_id,
+              request_id,
+              trace_id,
+              fingerprint_key,
+              task_fingerprint_json,
+              route_decision_json,
+              execution_policy_json,
+              outcome_json,
+              attribution_json,
+              policy_delta_json,
+              learning_eligible,
+              delta_state,
+              last_signal,
+              revision_count,
+              last_revision_at_unix_ms,
+              created_at_unix_ms
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)
+            "#,
+        )
+        .bind(run_id.as_str())
+        .bind(normalized_session_id)
+        .bind(request_id.map(str::trim).filter(|value| !value.is_empty()))
+        .bind(trace_id.map(str::trim).filter(|value| !value.is_empty()))
+        .bind(normalized_fingerprint_key)
+        .bind(normalized_task_fingerprint_json)
+        .bind(
+            route_decision_json
+                .map(str::trim)
+                .filter(|value| !value.is_empty()),
+        )
+        .bind(normalized_execution_policy_json)
+        .bind(normalized_outcome_json)
+        .bind(normalized_attribution_json)
+        .bind(
+            policy_delta_json
+                .map(str::trim)
+                .filter(|value| !value.is_empty()),
+        )
+        .bind(if learning_eligible { 1_i64 } else { 0_i64 })
+        .bind(delta_state.trim())
+        .bind(last_signal.as_deref())
+        .bind(now as i64)
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        Ok(run_id)
+    }
+
+    pub async fn count_task_learning_runs(
+        &self,
+        session_id: Option<&str>,
+        fingerprint_key: Option<&str>,
+        decision_point: Option<&str>,
+        user_response_signal: Option<&str>,
+        learning_eligible: Option<bool>,
+    ) -> Result<i64, McpError> {
+        let normalized_session_id = session_id.map(str::trim).filter(|value| !value.is_empty());
+        let normalized_fingerprint_key = fingerprint_key
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let normalized_decision_point = decision_point
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let normalized_user_response_signal = user_response_signal
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let learning_eligible_flag =
+            learning_eligible.map(|value| if value { 1_i64 } else { 0_i64 });
+        let row = sqlx::query(
+            r#"
+            SELECT COUNT(*) AS total
+            FROM task_learning_runs
+            WHERE (? IS NULL OR session_id = ?)
+              AND (? IS NULL OR fingerprint_key = ?)
+              AND (
+                    ? IS NULL OR
+                    COALESCE(
+                      json_extract(policy_delta_json, '$.decision_point'),
+                      json_extract(attribution_json, '$.primary_stage')
+                    ) = ?
+                  )
+              AND (? IS NULL OR json_extract(outcome_json, '$.user_response_signal') = ?)
+              AND (? IS NULL OR learning_eligible = ?)
+            "#,
+        )
+        .bind(normalized_session_id)
+        .bind(normalized_session_id)
+        .bind(normalized_fingerprint_key)
+        .bind(normalized_fingerprint_key)
+        .bind(normalized_decision_point)
+        .bind(normalized_decision_point)
+        .bind(normalized_user_response_signal)
+        .bind(normalized_user_response_signal)
+        .bind(learning_eligible_flag)
+        .bind(learning_eligible_flag)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        row.try_get::<i64, _>("total")
+            .map_err(|err| McpError::Storage(err.to_string()))
+    }
+
+    pub async fn list_task_learning_runs(
+        &self,
+        session_id: Option<&str>,
+        fingerprint_key: Option<&str>,
+        decision_point: Option<&str>,
+        user_response_signal: Option<&str>,
+        learning_eligible: Option<bool>,
+        skip: usize,
+        limit: usize,
+    ) -> Result<Vec<TaskLearningRunRow>, McpError> {
+        let normalized_session_id = session_id.map(str::trim).filter(|value| !value.is_empty());
+        let normalized_fingerprint_key = fingerprint_key
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let normalized_decision_point = decision_point
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let normalized_user_response_signal = user_response_signal
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let learning_eligible_flag =
+            learning_eligible.map(|value| if value { 1_i64 } else { 0_i64 });
+
+        let rows = sqlx::query(
+            r#"
+            SELECT
+              run_id,
+              session_id,
+              request_id,
+              trace_id,
+              fingerprint_key,
+              task_fingerprint_json,
+              route_decision_json,
+              execution_policy_json,
+              outcome_json,
+              attribution_json,
+              policy_delta_json,
+              learning_eligible,
+              delta_state,
+              revision_count,
+              last_signal,
+              created_at_unix_ms,
+              last_revision_at_unix_ms
+            FROM task_learning_runs
+            WHERE (? IS NULL OR session_id = ?)
+              AND (? IS NULL OR fingerprint_key = ?)
+              AND (
+                    ? IS NULL OR
+                    COALESCE(
+                      json_extract(policy_delta_json, '$.decision_point'),
+                      json_extract(attribution_json, '$.primary_stage')
+                    ) = ?
+                  )
+              AND (? IS NULL OR json_extract(outcome_json, '$.user_response_signal') = ?)
+              AND (? IS NULL OR learning_eligible = ?)
+            ORDER BY COALESCE(last_revision_at_unix_ms, created_at_unix_ms) DESC, created_at_unix_ms DESC
+            LIMIT ?
+            OFFSET ?
+            "#,
+        )
+        .bind(normalized_session_id)
+        .bind(normalized_session_id)
+        .bind(normalized_fingerprint_key)
+        .bind(normalized_fingerprint_key)
+        .bind(normalized_decision_point)
+        .bind(normalized_decision_point)
+        .bind(normalized_user_response_signal)
+        .bind(normalized_user_response_signal)
+        .bind(learning_eligible_flag)
+        .bind(learning_eligible_flag)
+        .bind(limit.max(1) as i64)
+        .bind(skip as i64)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        rows.into_iter()
+            .map(|row| {
+                Ok(TaskLearningRunRow {
+                    run_id: row
+                        .try_get::<String, _>("run_id")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    session_id: row
+                        .try_get::<String, _>("session_id")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    request_id: row
+                        .try_get::<Option<String>, _>("request_id")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    trace_id: row
+                        .try_get::<Option<String>, _>("trace_id")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    fingerprint_key: row
+                        .try_get::<String, _>("fingerprint_key")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    task_fingerprint_json: row
+                        .try_get::<String, _>("task_fingerprint_json")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    route_decision_json: row
+                        .try_get::<Option<String>, _>("route_decision_json")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    execution_policy_json: row
+                        .try_get::<String, _>("execution_policy_json")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    outcome_json: row
+                        .try_get::<String, _>("outcome_json")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    attribution_json: row
+                        .try_get::<String, _>("attribution_json")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    policy_delta_json: row
+                        .try_get::<Option<String>, _>("policy_delta_json")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    learning_eligible: row
+                        .try_get::<i64, _>("learning_eligible")
+                        .map_err(|err| McpError::Storage(err.to_string()))?
+                        > 0,
+                    delta_state: row
+                        .try_get::<String, _>("delta_state")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    revision_count: row
+                        .try_get::<i64, _>("revision_count")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    last_signal: row
+                        .try_get::<Option<String>, _>("last_signal")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    created_at_unix_ms: row
+                        .try_get::<i64, _>("created_at_unix_ms")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    last_revision_at_unix_ms: row
+                        .try_get::<Option<i64>, _>("last_revision_at_unix_ms")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                })
+            })
+            .collect()
+    }
+
+    pub async fn get_task_learning_run(
+        &self,
+        run_id: &str,
+    ) -> Result<Option<TaskLearningRunRow>, McpError> {
+        let normalized_run_id = run_id.trim();
+        if normalized_run_id.is_empty() {
+            return Ok(None);
+        }
+        let row = sqlx::query(
+            r#"
+            SELECT
+              run_id,
+              session_id,
+              request_id,
+              trace_id,
+              fingerprint_key,
+              task_fingerprint_json,
+              route_decision_json,
+              execution_policy_json,
+              outcome_json,
+              attribution_json,
+              policy_delta_json,
+              learning_eligible,
+              delta_state,
+              revision_count,
+              last_signal,
+              created_at_unix_ms,
+              last_revision_at_unix_ms
+            FROM task_learning_runs
+            WHERE run_id = ?
+            LIMIT 1
+            "#,
+        )
+        .bind(normalized_run_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        row.map(|row| {
+            Ok(TaskLearningRunRow {
+                run_id: row
+                    .try_get::<String, _>("run_id")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                session_id: row
+                    .try_get::<String, _>("session_id")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                request_id: row
+                    .try_get::<Option<String>, _>("request_id")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                trace_id: row
+                    .try_get::<Option<String>, _>("trace_id")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                fingerprint_key: row
+                    .try_get::<String, _>("fingerprint_key")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                task_fingerprint_json: row
+                    .try_get::<String, _>("task_fingerprint_json")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                route_decision_json: row
+                    .try_get::<Option<String>, _>("route_decision_json")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                execution_policy_json: row
+                    .try_get::<String, _>("execution_policy_json")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                outcome_json: row
+                    .try_get::<String, _>("outcome_json")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                attribution_json: row
+                    .try_get::<String, _>("attribution_json")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                policy_delta_json: row
+                    .try_get::<Option<String>, _>("policy_delta_json")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                learning_eligible: row
+                    .try_get::<i64, _>("learning_eligible")
+                    .map_err(|err| McpError::Storage(err.to_string()))?
+                    > 0,
+                delta_state: row
+                    .try_get::<String, _>("delta_state")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                revision_count: row
+                    .try_get::<i64, _>("revision_count")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                last_signal: row
+                    .try_get::<Option<String>, _>("last_signal")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                created_at_unix_ms: row
+                    .try_get::<i64, _>("created_at_unix_ms")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                last_revision_at_unix_ms: row
+                    .try_get::<Option<i64>, _>("last_revision_at_unix_ms")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+            })
+        })
+        .transpose()
+    }
+
+    pub async fn get_latest_task_learning_run_by_trace_id(
+        &self,
+        trace_id: &str,
+    ) -> Result<Option<TaskLearningRunRow>, McpError> {
+        let normalized_trace_id = trace_id.trim();
+        if normalized_trace_id.is_empty() {
+            return Ok(None);
+        }
+        let row = sqlx::query(
+            r#"
+            SELECT
+              run_id,
+              session_id,
+              request_id,
+              trace_id,
+              fingerprint_key,
+              task_fingerprint_json,
+              route_decision_json,
+              execution_policy_json,
+              outcome_json,
+              attribution_json,
+              policy_delta_json,
+              learning_eligible,
+              delta_state,
+              revision_count,
+              last_signal,
+              created_at_unix_ms,
+              last_revision_at_unix_ms
+            FROM task_learning_runs
+            WHERE trace_id = ?
+            ORDER BY COALESCE(last_revision_at_unix_ms, created_at_unix_ms) DESC, created_at_unix_ms DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(normalized_trace_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        row.map(|row| {
+            Ok(TaskLearningRunRow {
+                run_id: row
+                    .try_get::<String, _>("run_id")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                session_id: row
+                    .try_get::<String, _>("session_id")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                request_id: row
+                    .try_get::<Option<String>, _>("request_id")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                trace_id: row
+                    .try_get::<Option<String>, _>("trace_id")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                fingerprint_key: row
+                    .try_get::<String, _>("fingerprint_key")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                task_fingerprint_json: row
+                    .try_get::<String, _>("task_fingerprint_json")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                route_decision_json: row
+                    .try_get::<Option<String>, _>("route_decision_json")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                execution_policy_json: row
+                    .try_get::<String, _>("execution_policy_json")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                outcome_json: row
+                    .try_get::<String, _>("outcome_json")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                attribution_json: row
+                    .try_get::<String, _>("attribution_json")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                policy_delta_json: row
+                    .try_get::<Option<String>, _>("policy_delta_json")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                learning_eligible: row
+                    .try_get::<i64, _>("learning_eligible")
+                    .map_err(|err| McpError::Storage(err.to_string()))?
+                    > 0,
+                delta_state: row
+                    .try_get::<String, _>("delta_state")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                revision_count: row
+                    .try_get::<i64, _>("revision_count")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                last_signal: row
+                    .try_get::<Option<String>, _>("last_signal")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                created_at_unix_ms: row
+                    .try_get::<i64, _>("created_at_unix_ms")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                last_revision_at_unix_ms: row
+                    .try_get::<Option<i64>, _>("last_revision_at_unix_ms")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+            })
+        })
+        .transpose()
+    }
+
+    pub async fn append_task_learning_revision(
+        &self,
+        run_id: &str,
+        trigger_source: &str,
+        user_response_signal: &str,
+        note: Option<&str>,
+        outcome_json: &str,
+        attribution_json: &str,
+        policy_delta_json: Option<&str>,
+        delta_state: &str,
+    ) -> Result<TaskLearningRevisionRow, McpError> {
+        let normalized_run_id = run_id.trim();
+        let normalized_trigger_source = trigger_source.trim();
+        let normalized_user_response_signal = user_response_signal.trim().to_ascii_lowercase();
+        let normalized_outcome_json = outcome_json.trim();
+        let normalized_attribution_json = attribution_json.trim();
+        if normalized_run_id.is_empty()
+            || normalized_trigger_source.is_empty()
+            || normalized_user_response_signal.is_empty()
+            || normalized_outcome_json.is_empty()
+            || normalized_attribution_json.is_empty()
+        {
+            return Err(McpError::validation(
+                "task learning revision requires run_id, trigger_source, user_response_signal, outcome_json, and attribution_json",
+            ));
+        }
+
+        let revision_index = sqlx::query_scalar::<_, i64>(
+            "SELECT COALESCE(MAX(revision_index), 0) + 1 FROM task_learning_revisions WHERE run_id = ?",
+        )
+        .bind(normalized_run_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let created_at_unix_ms =
+            (time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000) as i64;
+        let normalized_note = note.map(str::trim).filter(|value| !value.is_empty());
+
+        sqlx::query(
+            r#"
+            INSERT INTO task_learning_revisions (
+              id,
+              run_id,
+              revision_index,
+              trigger_source,
+              user_response_signal,
+              note,
+              outcome_json,
+              attribution_json,
+              policy_delta_json,
+              delta_state,
+              created_at_unix_ms
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(id.as_str())
+        .bind(normalized_run_id)
+        .bind(revision_index)
+        .bind(normalized_trigger_source)
+        .bind(normalized_user_response_signal.as_str())
+        .bind(normalized_note)
+        .bind(normalized_outcome_json)
+        .bind(normalized_attribution_json)
+        .bind(
+            policy_delta_json
+                .map(str::trim)
+                .filter(|value| !value.is_empty()),
+        )
+        .bind(delta_state.trim())
+        .bind(created_at_unix_ms)
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        Ok(TaskLearningRevisionRow {
+            id,
+            run_id: normalized_run_id.to_string(),
+            revision_index,
+            trigger_source: normalized_trigger_source.to_string(),
+            user_response_signal: normalized_user_response_signal,
+            note: normalized_note.map(str::to_string),
+            outcome_json: normalized_outcome_json.to_string(),
+            attribution_json: normalized_attribution_json.to_string(),
+            policy_delta_json: policy_delta_json
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string),
+            delta_state: delta_state.trim().to_string(),
+            created_at_unix_ms,
+        })
+    }
+
+    pub async fn list_task_learning_revisions(
+        &self,
+        run_id: &str,
+    ) -> Result<Vec<TaskLearningRevisionRow>, McpError> {
+        let normalized_run_id = run_id.trim();
+        if normalized_run_id.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let rows = sqlx::query(
+            r#"
+            SELECT
+              id,
+              run_id,
+              revision_index,
+              trigger_source,
+              user_response_signal,
+              note,
+              outcome_json,
+              attribution_json,
+              policy_delta_json,
+              delta_state,
+              created_at_unix_ms
+            FROM task_learning_revisions
+            WHERE run_id = ?
+            ORDER BY revision_index DESC, created_at_unix_ms DESC
+            "#,
+        )
+        .bind(normalized_run_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        rows.into_iter()
+            .map(|row| {
+                Ok(TaskLearningRevisionRow {
+                    id: row
+                        .try_get::<String, _>("id")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    run_id: row
+                        .try_get::<String, _>("run_id")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    revision_index: row
+                        .try_get::<i64, _>("revision_index")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    trigger_source: row
+                        .try_get::<String, _>("trigger_source")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    user_response_signal: row
+                        .try_get::<String, _>("user_response_signal")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    note: row
+                        .try_get::<Option<String>, _>("note")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    outcome_json: row
+                        .try_get::<String, _>("outcome_json")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    attribution_json: row
+                        .try_get::<String, _>("attribution_json")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    policy_delta_json: row
+                        .try_get::<Option<String>, _>("policy_delta_json")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    delta_state: row
+                        .try_get::<String, _>("delta_state")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    created_at_unix_ms: row
+                        .try_get::<i64, _>("created_at_unix_ms")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                })
+            })
+            .collect()
+    }
+
+    pub async fn update_task_learning_run_revision_state(
+        &self,
+        run_id: &str,
+        outcome_json: &str,
+        attribution_json: &str,
+        policy_delta_json: Option<&str>,
+        learning_eligible: bool,
+        delta_state: &str,
+        last_signal: Option<&str>,
+        revision_count: i64,
+        last_revision_at_unix_ms: i64,
+    ) -> Result<(), McpError> {
+        let normalized_run_id = run_id.trim();
+        let normalized_outcome_json = outcome_json.trim();
+        let normalized_attribution_json = attribution_json.trim();
+        if normalized_run_id.is_empty()
+            || normalized_outcome_json.is_empty()
+            || normalized_attribution_json.is_empty()
+        {
+            return Err(McpError::validation(
+                "task learning revision update requires run_id, outcome_json, and attribution_json",
+            ));
+        }
+
+        sqlx::query(
+            r#"
+            UPDATE task_learning_runs
+            SET outcome_json = ?,
+                attribution_json = ?,
+                policy_delta_json = ?,
+                learning_eligible = ?,
+                delta_state = ?,
+                last_signal = ?,
+                revision_count = ?,
+                last_revision_at_unix_ms = ?
+            WHERE run_id = ?
+            "#,
+        )
+        .bind(normalized_outcome_json)
+        .bind(normalized_attribution_json)
+        .bind(
+            policy_delta_json
+                .map(str::trim)
+                .filter(|value| !value.is_empty()),
+        )
+        .bind(if learning_eligible { 1_i64 } else { 0_i64 })
+        .bind(delta_state.trim())
+        .bind(last_signal.map(str::trim).filter(|value| !value.is_empty()))
+        .bind(revision_count.max(0))
+        .bind(last_revision_at_unix_ms)
+        .bind(normalized_run_id)
         .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;

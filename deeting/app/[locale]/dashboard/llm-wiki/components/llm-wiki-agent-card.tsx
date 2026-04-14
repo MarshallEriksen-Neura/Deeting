@@ -1,6 +1,4 @@
 "use client"
-
-import Link from "next/link"
 import { Bot, Copy, RefreshCw, Sparkles } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -23,15 +21,18 @@ export function LlmWikiAgentCard({
   isSyncingAgent,
   onCopyPrompt,
   onSyncMaintainerAgent,
+  onOpenTaskAgents,
 }: {
   t: Translation
   state: LocalLlmWikiState | null
   isSyncingAgent: boolean
   onCopyPrompt: () => void
   onSyncMaintainerAgent: () => void
+  onOpenTaskAgents: () => void
 }) {
   const prompt = state?.recommendedAgentPrompt ?? ""
   const maintainer = state?.maintainerAgent
+  const workspacePath = state?.workspaceStatus?.resolvedWorkspacePath ?? null
 
   return (
     <GlassCard
@@ -56,24 +57,72 @@ export function LlmWikiAgentCard({
       </GlassCardHeader>
 
       <GlassCardContent className="space-y-4 pt-6">
-        <div className="grid gap-3 rounded-[1.75rem] border border-white/70 bg-white/78 p-4 shadow-[0_20px_45px_-32px_rgba(15,23,42,0.32)] sm:grid-cols-2">
-          <AgentFact label={t("agent.facts.read")} value={t("agent.factValues.read")} />
-          <AgentFact label={t("agent.facts.write")} value={t("agent.factValues.write")} />
-        </div>
-
-        <div className="rounded-[1.5rem] border border-white/70 bg-slate-50/85 p-4 text-sm text-slate-700">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-            {t("agent.currentAgent.label")}
+        <div className="rounded-[1.75rem] border border-white/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.9),rgba(236,248,255,0.82))] p-4 shadow-[0_20px_45px_-32px_rgba(15,23,42,0.32)]">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                {t("agent.currentAgent.label")}
+              </div>
+              <div className="text-lg font-semibold text-slate-900">
+                {maintainer?.name ?? t("agent.currentAgent.none")}
+              </div>
+            </div>
+            <span
+              className={[
+                "rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]",
+                maintainer
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border-amber-200 bg-amber-50 text-amber-700",
+              ].join(" ")}
+            >
+              {maintainer ? t("agent.status.ready") : t("agent.status.pending")}
+            </span>
           </div>
-          <div className="mt-2 text-base font-semibold text-slate-900">
-            {maintainer?.name ?? t("agent.currentAgent.none")}
-          </div>
-          <div className="mt-1 text-xs leading-5 text-slate-500">
+          <div className="mt-3 text-sm leading-6 text-slate-600">
             {maintainer
               ? t("agent.currentAgent.description", {
                   updatedAt: maintainer.updatedAt,
                 })
               : t("agent.currentAgent.emptyDescription")}
+          </div>
+          {workspacePath ? (
+            <div className="mt-4 rounded-2xl border border-white/70 bg-white/75 px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                {t("agent.workspacePath")}
+              </div>
+              <div className="mt-1 break-all text-sm font-medium text-slate-800">
+                {workspacePath}
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="grid gap-3 rounded-[1.75rem] border border-white/70 bg-white/78 p-4 shadow-[0_20px_45px_-32px_rgba(15,23,42,0.32)] sm:grid-cols-2">
+          <AgentFact label={t("agent.facts.read")} value={t("agent.factValues.read")} />
+          <AgentFact label={t("agent.facts.write")} value={t("agent.factValues.write")} />
+        </div>
+
+        <div className="rounded-[1.5rem] border border-sky-200/70 bg-sky-50/80 p-4 text-sm text-sky-950">
+          <div className="flex items-start gap-3">
+            <Sparkles className="mt-0.5 size-4 shrink-0 text-sky-600" />
+            <div className="space-y-2">
+              <div className="font-semibold">{t("agent.tip.title")}</div>
+              <div className="text-sky-900/85">{t("agent.tip.description")}</div>
+              <div className="grid gap-2 pt-1">
+                <HandoffStep
+                  title={t("agent.handoff.stepOne.title")}
+                  description={t("agent.handoff.stepOne.description")}
+                />
+                <HandoffStep
+                  title={t("agent.handoff.stepTwo.title")}
+                  description={t("agent.handoff.stepTwo.description")}
+                />
+                <HandoffStep
+                  title={t("agent.handoff.stepThree.title")}
+                  description={t("agent.handoff.stepThree.description")}
+                />
+              </div>
+            </div>
           </div>
         </div>
 
@@ -82,16 +131,6 @@ export function LlmWikiAgentCard({
           readOnly
           className="min-h-[260px] rounded-[1.75rem] border-white/70 bg-slate-950/[0.95] p-5 font-mono text-xs leading-6 text-slate-100 shadow-[0_32px_70px_-42px_rgba(15,23,42,0.58)]"
         />
-
-        <div className="rounded-[1.5rem] border border-sky-200/70 bg-sky-50/80 p-4 text-sm text-sky-950">
-          <div className="flex items-start gap-3">
-            <Sparkles className="mt-0.5 size-4 shrink-0 text-sky-600" />
-            <div className="space-y-1">
-              <div className="font-semibold">{t("agent.tip.title")}</div>
-              <div className="text-sky-900/85">{t("agent.tip.description")}</div>
-            </div>
-          </div>
-        </div>
       </GlassCardContent>
 
       <GlassCardFooter className="border-t border-white/60 pt-5">
@@ -116,13 +155,14 @@ export function LlmWikiAgentCard({
           {t("agent.copyPrompt")}
         </Button>
 
-        <Link
-          href="/dashboard/user/task-agents"
+        <button
+          type="button"
+          onClick={onOpenTaskAgents}
           className="inline-flex h-11 items-center justify-center rounded-full border border-white/70 bg-white/80 px-5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-white"
         >
           <Bot className="mr-2 size-4 text-sky-600" />
           {t("agent.openTaskAgents")}
-        </Link>
+        </button>
       </GlassCardFooter>
     </GlassCard>
   )
@@ -141,6 +181,21 @@ function AgentFact({
         {label}
       </div>
       <div className="mt-1 text-sm font-semibold text-slate-900">{value}</div>
+    </div>
+  )
+}
+
+function HandoffStep({
+  title,
+  description,
+}: {
+  title: string
+  description: string
+}) {
+  return (
+    <div className="rounded-2xl border border-sky-200 bg-white/70 px-3 py-3">
+      <div className="text-sm font-semibold text-sky-950">{title}</div>
+      <div className="mt-1 text-xs leading-5 text-sky-900/80">{description}</div>
     </div>
   )
 }

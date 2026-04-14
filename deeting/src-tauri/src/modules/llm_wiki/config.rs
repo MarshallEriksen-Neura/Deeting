@@ -5,20 +5,31 @@ use serde::{Deserialize, Serialize};
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::store::McpStore;
 
-use super::types::LocalLlmWikiAutomationState;
+use super::types::{LocalLlmWikiAutomationState, LocalLlmWikiLintReport};
 
 pub(super) const LLM_WIKI_CONFIG_KEY: &str = "llm_wiki.binding.v1";
 pub(super) const LLM_WIKI_LAST_BOOTSTRAPPED_AT_KEY: &str = "llm_wiki.last_bootstrapped_at";
 pub(super) const LLM_WIKI_LAST_CORPUS_SYNC_AT_KEY: &str = "llm_wiki.last_corpus_sync_at";
 pub(super) const LLM_WIKI_AUTOMATION_STATE_KEY: &str = "llm_wiki.automation_state.v1";
+pub(super) const LLM_WIKI_LAST_LINT_REPORT_KEY: &str = "llm_wiki.last_lint_report.v1";
 pub(super) const DEFAULT_WORKSPACE_RELATIVE_PATH: &str = "Deeting Wiki";
 pub(super) const READ_SCOPE_WHOLE_VAULT: &str = "whole_vault";
 pub(super) const WRITE_SCOPE_MANAGED_WORKSPACE: &str = "managed_workspace";
+pub(super) const LLM_WIKI_MODE_MANAGED_WORKSPACE: &str = "managed_workspace";
+pub(super) const LLM_WIKI_MODE_ADOPT_EXISTING_FOLDER: &str = "adopt_existing_folder";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct PersistedLlmWikiBinding {
     pub(super) vault_root: String,
     pub(super) workspace_relative_path: String,
+    #[serde(default = "default_binding_mode")]
+    pub(super) mode: String,
+    #[serde(default)]
+    pub(super) adopted_folder_relative_path: Option<String>,
+}
+
+fn default_binding_mode() -> String {
+    LLM_WIKI_MODE_MANAGED_WORKSPACE.to_string()
 }
 
 pub(super) async fn load_binding(
@@ -125,6 +136,14 @@ pub(super) fn normalize_workspace_relative_path(raw: Option<&str>) -> Result<Str
     Ok(normalized.to_string_lossy().to_string())
 }
 
+pub(super) fn normalize_required_relative_path(raw: &str) -> Result<String, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("relative path is required".to_string());
+    }
+    normalize_workspace_relative_path(Some(trimmed))
+}
+
 pub(super) fn resolve_workspace_path(vault_root: &Path, relative_path: &str) -> PathBuf {
     vault_root.join(relative_path)
 }
@@ -160,5 +179,34 @@ pub(super) async fn save_automation_state(
     })?;
     store
         .set_desktop_config(LLM_WIKI_AUTOMATION_STATE_KEY, &raw)
+        .await
+}
+
+pub(super) async fn load_last_lint_report(
+    store: &McpStore,
+) -> Result<Option<LocalLlmWikiLintReport>, McpError> {
+    let Some(raw) = store
+        .get_desktop_config(LLM_WIKI_LAST_LINT_REPORT_KEY)
+        .await?
+    else {
+        return Ok(None);
+    };
+    if raw.trim().is_empty() {
+        return Ok(None);
+    }
+    serde_json::from_str::<LocalLlmWikiLintReport>(&raw)
+        .map(Some)
+        .map_err(|err| McpError::Storage(format!("invalid llm wiki lint report config: {}", err)))
+}
+
+pub(super) async fn save_last_lint_report(
+    store: &McpStore,
+    report: &LocalLlmWikiLintReport,
+) -> Result<(), McpError> {
+    let raw = serde_json::to_string(report).map_err(|err| {
+        McpError::Storage(format!("serialize llm wiki lint report failed: {}", err))
+    })?;
+    store
+        .set_desktop_config(LLM_WIKI_LAST_LINT_REPORT_KEY, &raw)
         .await
 }

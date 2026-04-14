@@ -1,0 +1,60 @@
+{
+  "title": "任务学习",
+  "description": "查看桌面本地 task-learning 的评估结果、延迟修订和策略先验。",
+  "stats": {
+    "totalRuns": "当前 Runs",
+    "revisedRuns": "已修订 Runs",
+    "signaledRuns": "有后验信号",
+    "activePriors": "活跃 Priors"
+  },
+  "filters": {
+    "sessionPlaceholder": "按 session id 过滤",
+    "signal": {
+      "all": "全部信号",
+      "accepted": "accepted",
+      "corrected": "corrected",
+      "rejected": "rejected",
+      "silent": "silent"
+    }
+  },
+  "actions": {
+    "refresh": "刷新",
+    "markAccepted": "标记 Accepted",
+    "markCorrected": "标记 Corrected",
+    "markRejected": "标记 Rejected",
+    "replay": "重算 Delta"
+  },
+  "runs": {
+    "title": "最近 Runs",
+    "empty": "当前过滤条件下没有 task-learning run。",
+    "revisions": "{count} 次修订"
+  },
+  "detail": {
+    "title": "Inspector",
+    "loading": "加载中…",
+    "empty": "选择一条 run 查看当前 outcome、revision 和 replay 状态。",
+    "status": "运行状态",
+    "signal": "后验信号",
+    "current": "当前快照",
+    "revisions": "修订历史",
+    "noRevisions": "这条 run 还没有 revision。",
+    "notePlaceholder": "手动修订或 replay 之前，可选填写一条运营备注。"
+  },
+  "priors": {
+    "title": "策略先验",
+    "columns": {
+      "fingerprint": "Fingerprint",
+      "decision": "Decision",
+      "action": "Action",
+      "weight": "Weight / Confidence",
+      "evidence": "Evidence",
+      "updated": "更新时间"
+    }
+  },
+  "feedback": {
+    "loadFailed": "加载 task-learning 数据失败。",
+    "actionFailed": "task-learning 操作失败。",
+    "replayed": "已重算当前 task-learning run。",
+    "revised": "已写入手动 {signal} 修订。"
+  }
+}

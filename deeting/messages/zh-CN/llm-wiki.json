@@ -78,6 +78,36 @@
           "label": "受控工作区路径",
           "description": "相对于 vault 根目录。Deeting 会在这里维护 LLM Wiki。",
           "placeholder": "Deeting Wiki"
+        },
+        "adoptFolder": {
+          "label": "要接管的已有文件夹",
+          "description": "先预览这个文件夹的分类结果，确认后 Deeting 才会开始维护。",
+          "placeholder": "Research Wiki"
+        }
+      },
+      "modes": {
+        "managed": {
+          "title": "受控工作区",
+          "description": "在 vault 内创建或维护一个边界清晰的 Deeting Wiki 工作区。"
+        },
+        "adopt": {
+          "title": "接管已有文件夹",
+          "description": "先预览已有文件夹，再在分类结果可靠后确认接管。"
+        }
+      },
+      "adoption": {
+        "candidates": "候选已有文件夹",
+        "preview": "预览接管",
+        "previewing": "预览中...",
+        "confirm": "确认接管",
+        "previewTitle": "接管预览",
+        "buckets": {
+          "workspace_marker": "工作区标记文件",
+          "wiki_page": "Wiki 页面",
+          "source_page": "来源摘要页",
+          "raw_source": "Raw 来源",
+          "unmanaged_note": "未管理笔记",
+          "attachment": "附件"
         }
       },
       "insights": {
@@ -87,6 +117,41 @@
         "directories": "扫描目录数",
         "detected": "已检测到",
         "notDetected": "未检测到"
+      }
+    },
+    "maintenance": {
+      "eyebrow": "维护",
+      "title": "把这套 wiki 当成受维护工作区来运营。",
+      "description": "在 LLM Wiki 页面内完成重新扫描、来源导入、专用索引重建、lint 检查和最近生命周期动作回看。",
+      "actions": {
+        "rescan": "重新扫描 Vault",
+        "rebuildIndex": "重建索引",
+        "runLint": "运行 Lint"
+      },
+      "ingest": {
+        "title": "导入选择内容",
+        "description": "把 vault 中已有路径注册进受控 wiki。Markdown 会生成来源页，文件会复制到 raw 来源层。",
+        "placeholder": "research/meeting-notes.md\nattachments/roadmap.pdf",
+        "hint": "输入一个或多个相对 vault 的路径，可用换行或逗号分隔。",
+        "action": "导入选择内容",
+        "lastRun": "最近一次导入",
+        "stats": {
+          "ingested": "已导入 {count} 条路径",
+          "sourcePages": "创建了 {count} 个来源页",
+          "rawCopies": "复制了 {count} 个 raw 文件"
+        }
+      },
+      "lint": {
+        "title": "Lint 与 Claim 检查",
+        "description": "检测 stale summary、弱链接、重复标题、孤儿页和 supersession 候选，并明确给出置信度。",
+        "summary": "最近一次 lint 于 {generatedAt} 产出 {count} 条发现。",
+        "empty": "最近一次 lint 没有发现问题。",
+        "notRun": "还没有运行过 lint。"
+      },
+      "lifecycle": {
+        "title": "最近生命周期动作",
+        "description": "最近的维护、自动化和结晶动作记录。",
+        "empty": "当前还没有生命周期动作记录。"
       }
     },
     "workspace": {
@@ -105,6 +170,7 @@
         "notCreated": "未创建",
         "awaiting": "等待初始化"
       },
+      "adoptModeNote": "当前是接管已有文件夹，不是生成脚手架。请先在绑定区确认接管，之后通过维护动作继续推进，而不是再执行 bootstrap。",
       "lastRun": {
         "title": "最近一次脚手架执行",
         "createdFiles": "创建了 {count} 个文件",
@@ -187,6 +253,11 @@
         "emptyDescription": "现在创建一个，这样 Deeting 后续就能把 wiki 维护工作委托到受控写入范围里。",
         "description": "维护 Agent 已同步，最近更新时间 {updatedAt}。"
       },
+      "status": {
+        "ready": "已就绪",
+        "pending": "待创建"
+      },
+      "workspacePath": "受维护工作区路径",
       "facts": {
         "read": "读取范围",
         "write": "写入范围"
@@ -198,6 +269,20 @@
       "tip": {
         "title": "保持主 runtime 简洁",
         "description": "维护型 agent 负责更新页面、来源摘要和日志；主聊天 runtime 保持以检索和触发委托为主。"
+      },
+      "handoff": {
+        "stepOne": {
+          "title": "打开维护 Agent 工作台",
+          "description": "直接跳到 task-agent 面板，并带上已经准备好的 maintainer 上下文。"
+        },
+        "stepTwo": {
+          "title": "确认维护契约",
+          "description": "这个 prompt 已经包含读写边界和 Deeting Wiki 的所有权规则。"
+        },
+        "stepThree": {
+          "title": "保存后通过正常工作流委托",
+          "description": "保存之后，这个 agent 就可以承担 crystallization、source review 和持续维护。"
+        }
       }
     },
     "automation": {
@@ -305,6 +390,14 @@
       "promptCopied": "维护 Prompt 已复制。",
       "promptCopyFailed": "复制维护 Prompt 失败。",
       "noPrompt": "维护 Prompt 尚未生成。",
+      "adoptionPreviewFailed": "预览已有文件夹接管失败。",
+      "adoptionConfirmed": "已有文件夹接管已确认。",
+      "adoptionConfirmFailed": "确认已有文件夹接管失败。",
+      "ingestSelectionEmpty": "请至少提供一条相对 vault 的导入路径。",
+      "ingestCompleted": "导入完成，共处理 {ingested} 条路径并复制 {copied} 个 raw 文件。",
+      "ingestFailed": "导入所选路径失败。",
+      "lintCompleted": "Lint 完成，共发现 {count} 条问题。",
+      "lintFailed": "运行 LLM Wiki lint 失败。",
       "automationSettingsFailed": "LLM Wiki 自动化设置更新失败。",
       "automationExecutionFailed": "自动化建议执行失败。",
       "automationDismissFailed": "自动化建议忽略失败。"

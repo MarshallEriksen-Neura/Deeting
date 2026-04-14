@@ -283,6 +283,24 @@ pub async fn clear_local_conversation_session(
     state: State<'_, AppState>,
     session_id: String,
 ) -> Result<LocalConversationClearResponse, String> {
+    let app_state = state.inner().clone();
+    let session_id_for_hook = session_id.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(err) = crate::modules::llm_wiki::automation::handle_session_end(
+            &app_state,
+            &session_id_for_hook,
+            "cleared",
+        )
+        .await
+        {
+            log::warn!(
+                "llm wiki session-end hook failed session={} status=cleared err={}",
+                session_id_for_hook,
+                err
+            );
+        }
+    });
+
     state
         .mcp
         .store

@@ -22,6 +22,8 @@ export interface NavItem {
   disabled?: boolean
   /** Hide this item in the desktop build */
   desktopHidden?: boolean
+  /** Hide this item outside the desktop build */
+  desktopOnly?: boolean
   /** Sub-items for nested navigation */
   children?: NavItem[]
 }
@@ -117,6 +119,13 @@ export const userNavigation: NavGroup[] = [
         label: "nav.monitoring",
         href: "/dashboard/monitoring",
         icon: "activity",
+      },
+      {
+        id: "task-learning",
+        label: "nav.taskLearning",
+        href: "/dashboard/task-learning",
+        icon: "brainCircuit",
+        desktopOnly: true,
       },
       {
         id: "scan-reviews",
@@ -365,6 +374,11 @@ export function getUserDashboardNavigation(options?: {
 }): NavGroup[] {
   if (!options?.isDesktopRuntime) {
     return userNavigation
+      .map((group) => ({
+        ...group,
+        items: group.items.filter((item) => !item.desktopOnly),
+      }))
+      .filter((group) => group.items.length > 0)
   }
 
   return userNavigation

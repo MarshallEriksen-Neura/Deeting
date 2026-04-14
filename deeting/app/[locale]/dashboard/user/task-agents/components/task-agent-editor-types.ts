@@ -21,6 +21,8 @@ export type TaskAgentDraft = {
   callable_mcp_tool_ids: string[]
   guidance_skill_ids: string[]
   bound_asset_id: string
+  source_kind: string
+  source_path: string
   tags_input: string
   discoverable: boolean
   is_enabled: boolean

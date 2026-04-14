@@ -21,6 +21,12 @@ pub struct MemoryService {
     snapshots: Option<Arc<SnapshotStore>>,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum WriteGuardScopeMode {
+    Global,
+    PayloadFilters,
+}
+
 impl MemoryService {
     pub fn new(store: Arc<MemoryStore>) -> Self {
         Self {
@@ -195,7 +201,9 @@ impl MemoryService {
         if let Some(ref embedding_svc) = self.embedding {
             match embedding_svc.embed_text(&payload.content).await {
                 Ok(vector) => {
-                    return self.append_guarded_inner(payload, vector).await;
+                    return self
+                        .append_guarded_inner(payload, vector, WriteGuardScopeMode::Global)
+                        .await;
                 }
                 Err(e) => {
                     log::warn!("memory auto-embedding failed: {}", e);
@@ -212,15 +220,45 @@ impl MemoryService {
         })
     }
 
+    /// Append with namespace-aware Write Guard using the payload filters as the
+    /// candidate search boundary.
+    ///
+    /// This is useful when a caller needs deduplication inside a narrower
+    /// logical corpus such as a specific workspace or source namespace, rather
+    /// than global memory-wide merging.
+    pub async fn append_guarded_scoped(
+        &self,
+        payload: CreateLocalMemoryRequest,
+    ) -> Result<WriteGuardResult, MemoryError> {
+        if let Some(ref embedding_svc) = self.embedding {
+            match embedding_svc.embed_text(&payload.content).await {
+                Ok(vector) => {
+                    return self
+                        .append_guarded_inner(payload, vector, WriteGuardScopeMode::PayloadFilters)
+                        .await;
+                }
+                Err(e) => {
+                    log::warn!("memory scoped auto-embedding failed: {}", e);
+                }
+            }
+        }
+        let item = self.store.append(payload).await?;
+        Ok(WriteGuardResult {
+            action: WriteAction::Add,
+            item: Some(item),
+            similarity_score: None,
+            updated_memory_id: None,
+        })
+    }
+
     async fn append_guarded_inner(
         &self,
         payload: CreateLocalMemoryRequest,
         embedding: Vec<f32>,
+        scope_mode: WriteGuardScopeMode,
     ) -> Result<WriteGuardResult, MemoryError> {
-        // Search globally for dedup (not scoped by session/capability).
         let top1 = self
-            .store
-            .find_top1_similar(embedding.clone(), None, None)
+            .find_top1_for_write_guard(&payload, embedding.clone(), scope_mode)
             .await?;
         let fallback_score = top1.as_ref().map(|(_, _, s)| *s);
 
@@ -286,6 +324,38 @@ impl MemoryService {
                     similarity_score: fallback_score,
                     updated_memory_id: None,
                 })
+            }
+        }
+    }
+
+    async fn find_top1_for_write_guard(
+        &self,
+        payload: &CreateLocalMemoryRequest,
+        embedding: Vec<f32>,
+        scope_mode: WriteGuardScopeMode,
+    ) -> Result<Option<(String, String, f32)>, MemoryError> {
+        match scope_mode {
+            WriteGuardScopeMode::Global => {
+                self.store.find_top1_similar(embedding, None, None).await
+            }
+            WriteGuardScopeMode::PayloadFilters => {
+                let matches = self
+                    .store
+                    .search_memories(
+                        embedding,
+                        1,
+                        payload.session_id.as_deref(),
+                        payload.capability_id.as_deref(),
+                        payload.category.as_deref(),
+                        payload.source.as_deref(),
+                        payload.tags.as_deref(),
+                    )
+                    .await?;
+                let candidate = matches
+                    .into_iter()
+                    .next()
+                    .map(|item| (item.id, item.content, item.score));
+                Ok(candidate)
             }
         }
     }
@@ -860,7 +930,7 @@ fn apply_vitality_rerank(
 mod tests {
     use super::*;
     use crate::modules::memory::snapshot_store::SnapshotStore;
-    use crate::modules::memory::store::MemoryStore;
+    use crate::modules::memory::store::{MemoryStore, DEFAULT_MEMORY_EMBEDDING_DIM};
     use crate::modules::memory::types::LocalMemorySearchItem;
     use std::sync::Arc;
 
@@ -883,6 +953,13 @@ mod tests {
         let mut service = MemoryService::new(store);
         service.set_snapshot_store(snapshots);
         service
+    }
+
+    fn test_embedding() -> Vec<f32> {
+        let mut embedding = vec![0.0; DEFAULT_MEMORY_EMBEDDING_DIM as usize];
+        embedding[0] = 0.9;
+        embedding[1] = 0.1;
+        embedding
     }
 
     #[tokio::test]
@@ -1005,6 +1082,66 @@ mod tests {
                 .and_then(|value| value.get("is_boot")),
             None
         );
+    }
+
+    #[tokio::test]
+    async fn scoped_write_guard_candidate_search_respects_payload_namespace() {
+        let service = create_service_with_snapshots().await;
+        service
+            .store
+            .append_with_embedding(
+                CreateLocalMemoryRequest {
+                    content: "workspace one stable conclusion".into(),
+                    session_id: None,
+                    capability_id: Some("llm_wiki".into()),
+                    meta_info: None,
+                    category: Some("llm_wiki".into()),
+                    source: Some("llm_wiki_automation::workspace-1".into()),
+                    tags: Some(vec!["llm-wiki".into(), "workspace:workspace-1".into()]),
+                },
+                test_embedding(),
+                Some("test".into()),
+            )
+            .await
+            .expect("insert workspace one memory");
+        service
+            .store
+            .append_with_embedding(
+                CreateLocalMemoryRequest {
+                    content: "workspace two stable conclusion".into(),
+                    session_id: None,
+                    capability_id: Some("llm_wiki".into()),
+                    meta_info: None,
+                    category: Some("llm_wiki".into()),
+                    source: Some("llm_wiki_automation::workspace-2".into()),
+                    tags: Some(vec!["llm-wiki".into(), "workspace:workspace-2".into()]),
+                },
+                test_embedding(),
+                Some("test".into()),
+            )
+            .await
+            .expect("insert workspace two memory");
+
+        let candidate = service
+            .find_top1_for_write_guard(
+                &CreateLocalMemoryRequest {
+                    content: "workspace one stable conclusion".into(),
+                    session_id: None,
+                    capability_id: Some("llm_wiki".into()),
+                    meta_info: None,
+                    category: Some("llm_wiki".into()),
+                    source: Some("llm_wiki_automation::workspace-1".into()),
+                    tags: Some(vec!["llm-wiki".into(), "workspace:workspace-1".into()]),
+                },
+                test_embedding(),
+                WriteGuardScopeMode::PayloadFilters,
+            )
+            .await
+            .expect("scoped search");
+
+        let (id, content, _) = candidate.expect("matching candidate");
+        assert!(!id.is_empty());
+        assert_eq!(content, "workspace one stable conclusion");
     }
 
     #[test]

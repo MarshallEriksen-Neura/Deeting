@@ -18,7 +18,10 @@ use mcp_session::admin::{
     LocalConversationSummaryJobQuery, LocalConversationSummaryQueueStats, LocalGatewayLogItem,
     LocalGatewayLogListResponse, LocalGatewayLogQuery, LocalGatewayLogStatsResponse,
     LocalMaintenanceActionRequest, LocalMaintenanceLogItem, LocalMaintenanceLogListResponse,
-    LocalMaintenanceLogQuery, LocalTraceFeedback, LocalTraceFeedbackRequest,
+    LocalMaintenanceLogQuery, LocalTaskLearningManualRevisionRequest,
+    LocalTaskLearningReplayRequest, LocalTaskLearningRunDetail, LocalTaskLearningRunListResponse,
+    LocalTaskLearningRunQuery, LocalTaskPolicyPriorListResponse, LocalTaskPolicyPriorQuery,
+    LocalTraceFeedback, LocalTraceFeedbackRequest,
 };
 
 fn to_string(error: impl std::fmt::Display) -> String {
@@ -83,12 +86,138 @@ pub async fn create_local_trace_feedback(
     state: State<'_, AppState>,
     payload: LocalTraceFeedbackRequest,
 ) -> Result<LocalTraceFeedback, String> {
-    state
+    let feedback = state
         .mcp
         .store
         .create_local_trace_feedback(payload)
         .await
-        .map_err(to_string)
+        .map_err(to_string)?;
+    let inferred_signal = if feedback.score >= 0.2 {
+        Some("accepted")
+    } else if feedback.score <= -0.2 {
+        let comment = feedback.comment.as_deref().unwrap_or_default();
+        if crate::modules::desktop_runtime::runtime::infer_followup_user_response_signal(comment)
+            .as_deref()
+            == Some("corrected")
+        {
+            Some("corrected")
+        } else {
+            Some("rejected")
+        }
+    } else {
+        None
+    };
+    if let Some(signal) = inferred_signal {
+        match state
+            .mcp
+            .store
+            .get_latest_task_learning_run_by_trace_id(feedback.trace_id.as_str())
+            .await
+        {
+            Ok(Some(run)) => {
+                if let Err(err) =
+                    crate::modules::desktop_runtime::runtime::apply_task_learning_revision(
+                        state.mcp.store.as_ref(),
+                        run.run_id.as_str(),
+                        signal,
+                        "trace_feedback",
+                        feedback.comment.as_deref(),
+                    )
+                    .await
+                {
+                    log::warn!(
+                        "trace feedback task learning revision failed trace_id={} err={}",
+                        feedback.trace_id,
+                        err
+                    );
+                }
+            }
+            Ok(None) => {}
+            Err(err) => {
+                log::warn!(
+                    "trace feedback run lookup failed trace_id={} err={}",
+                    feedback.trace_id,
+                    err
+                );
+            }
+        }
+    }
+    Ok(feedback)
+}
+
+#[tauri::command]
+pub async fn list_local_task_learning_runs(
+    state: State<'_, AppState>,
+    query: LocalTaskLearningRunQuery,
+) -> Result<LocalTaskLearningRunListResponse, String> {
+    crate::modules::desktop_runtime::runtime::list_task_learning_runs_for_query(
+        state.mcp.store.as_ref(),
+        &query,
+    )
+    .await
+    .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn get_local_task_learning_run(
+    state: State<'_, AppState>,
+    run_id: String,
+) -> Result<LocalTaskLearningRunDetail, String> {
+    crate::modules::desktop_runtime::runtime::load_task_learning_run_detail(
+        state.mcp.store.as_ref(),
+        &run_id,
+    )
+    .await
+    .map_err(to_string)?
+    .ok_or_else(|| format!("task learning run not found: {}", run_id))
+}
+
+#[tauri::command]
+pub async fn list_local_task_policy_priors(
+    state: State<'_, AppState>,
+    query: LocalTaskPolicyPriorQuery,
+) -> Result<LocalTaskPolicyPriorListResponse, String> {
+    crate::modules::desktop_runtime::runtime::list_task_policy_priors_for_query(
+        state.mcp.store.as_ref(),
+        &query,
+    )
+    .await
+    .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn revise_local_task_learning_run(
+    state: State<'_, AppState>,
+    payload: LocalTaskLearningManualRevisionRequest,
+) -> Result<LocalTaskLearningRunDetail, String> {
+    crate::modules::desktop_runtime::runtime::apply_task_learning_revision(
+        state.mcp.store.as_ref(),
+        payload.run_id.as_str(),
+        payload.user_response_signal.as_str(),
+        payload
+            .trigger_source
+            .as_deref()
+            .unwrap_or("admin_manual_revision"),
+        payload.note.as_deref(),
+    )
+    .await
+    .map_err(to_string)?
+    .ok_or_else(|| format!("task learning run not found: {}", payload.run_id))
+}
+
+#[tauri::command]
+pub async fn replay_local_task_learning_run(
+    state: State<'_, AppState>,
+    payload: LocalTaskLearningReplayRequest,
+) -> Result<LocalTaskLearningRunDetail, String> {
+    crate::modules::desktop_runtime::runtime::replay_task_learning_run(
+        state.mcp.store.as_ref(),
+        payload.run_id.as_str(),
+        payload.note.as_deref(),
+    )
+    .await
+    .map_err(to_string)?
+    .ok_or_else(|| format!("task learning run not found: {}", payload.run_id))
 }
 
 #[tauri::command]

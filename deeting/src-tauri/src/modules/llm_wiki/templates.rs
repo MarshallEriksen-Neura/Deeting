@@ -60,13 +60,17 @@ Write scope:
 - Do not rewrite unrelated legacy notes outside that workspace unless the user explicitly asks.
 
 Operational rules:
+- Treat retrieval lifecycle as internal runtime behavior: broad read, indexing, scoped retrieval, and candidate dedup stay outside page bodies.
+- Treat markdown maintenance as a separate lifecycle: page structure and page-body merges remain the maintainer agent's responsibility.
 - Treat `raw/` as immutable source material.
 - Update `wiki/entities/`, `wiki/concepts/`, `wiki/sources/`, and `wiki/analyses/` incrementally.
 - Update `index.md` whenever new maintained pages are added.
 - Append meaningful maintenance events to `log.md`.
 - When an answer has long-term value, crystallize it into `wiki/analyses/`.
+- Promote to local memory only after a stronger repeated-stability filter than ordinary wiki writes.
 - Prefer updating existing pages over creating duplicate pages.
 - Flag contradictions and stale conclusions instead of silently hiding them.
+- Do not treat generic write-guard merge behavior as page merge policy.
 
 Goal:
 - Keep the managed workspace current, structured, and useful over time."#
@@ -136,14 +140,18 @@ This workspace is maintained by Deeting inside the connected Obsidian vault.
 
 - `raw/` contains source material and should be treated as immutable.
 - `wiki/` contains maintained markdown knowledge that may be updated over time.
+- lifecycle metadata, embeddings, retrieval state, and promotion ledgers stay in Deeting internals rather than in noisy page bodies.
 
 ## Maintenance Rules
 
+- Retrieval lifecycle and markdown maintenance lifecycle are different layers. Use internal retrieval state to find candidates; do not confuse that with page truth.
 - Prefer updating existing pages over creating duplicate pages.
 - Keep `index.md` in sync with maintained pages.
 - Append meaningful ingest, crystallization, lint, and supersession events to `log.md`.
 - When an answer has long-term value, write it back into `wiki/analyses/`.
+- Promote to local memory only after stronger repeated-stability filtering than ordinary wiki writes.
 - When new evidence weakens an existing conclusion, mark the older conclusion as stale or superseded instead of silently dropping it.
+- Keep page merge decisions inside the maintainer workflow; do not treat generic dedup merge behavior as page-body policy.
 - Keep pages concise, linked, and readable in Obsidian.
 "#,
         workspace = binding.workspace_relative_path.replace('\\', "/")

@@ -3,14 +3,19 @@ use tauri::State;
 use crate::state::AppState;
 
 use super::service::{
-    bootstrap_local_llm_wiki_workspace, create_or_update_local_llm_wiki_maintainer_agent,
-    dismiss_local_llm_wiki_automation_suggestion, execute_local_llm_wiki_automation_suggestion,
-    get_local_llm_wiki_state, save_local_llm_wiki_binding, search_local_llm_wiki_corpus,
-    sync_local_llm_wiki_corpus, update_local_llm_wiki_automation_settings,
+    bootstrap_local_llm_wiki_workspace, confirm_local_llm_wiki_adoption,
+    create_or_update_local_llm_wiki_maintainer_agent, dismiss_local_llm_wiki_automation_suggestion,
+    execute_local_llm_wiki_automation_suggestion, get_local_llm_wiki_state,
+    ingest_local_llm_wiki_selection, preview_local_llm_wiki_adoption, run_local_llm_wiki_lint,
+    save_local_llm_wiki_binding, search_local_llm_wiki_corpus, sync_local_llm_wiki_corpus,
+    update_local_llm_wiki_automation_settings,
 };
 use super::types::{
-    BootstrapLocalLlmWikiWorkspaceResult, CreateOrUpdateLocalLlmWikiMaintainerAgentResult,
-    LocalLlmWikiAutomationExecutionResult, LocalLlmWikiState, SaveLocalLlmWikiBindingRequest,
+    BootstrapLocalLlmWikiWorkspaceResult, ConfirmLocalLlmWikiAdoptionRequest,
+    CreateOrUpdateLocalLlmWikiMaintainerAgentResult, IngestLocalLlmWikiSelectionRequest,
+    IngestLocalLlmWikiSelectionResult, LocalLlmWikiAdoptionPreview,
+    LocalLlmWikiAutomationExecutionResult, LocalLlmWikiLintReport, LocalLlmWikiState,
+    PreviewLocalLlmWikiAdoptionRequest, SaveLocalLlmWikiBindingRequest,
     SearchLocalLlmWikiCorpusRequest, SearchLocalLlmWikiCorpusResult, SyncLocalLlmWikiCorpusResult,
     UpdateLocalLlmWikiAutomationSettingsRequest,
 };
@@ -81,4 +86,34 @@ pub async fn execute_local_llm_wiki_automation_suggestion_command(
     suggestion_id: String,
 ) -> Result<LocalLlmWikiAutomationExecutionResult, String> {
     execute_local_llm_wiki_automation_suggestion(state.inner(), suggestion_id).await
+}
+
+#[tauri::command]
+pub async fn preview_local_llm_wiki_adoption_command(
+    payload: PreviewLocalLlmWikiAdoptionRequest,
+) -> Result<LocalLlmWikiAdoptionPreview, String> {
+    preview_local_llm_wiki_adoption(payload).await
+}
+
+#[tauri::command]
+pub async fn confirm_local_llm_wiki_adoption_command(
+    state: State<'_, AppState>,
+    payload: ConfirmLocalLlmWikiAdoptionRequest,
+) -> Result<LocalLlmWikiState, String> {
+    confirm_local_llm_wiki_adoption(state.inner(), payload).await
+}
+
+#[tauri::command]
+pub async fn ingest_local_llm_wiki_selection_command(
+    state: State<'_, AppState>,
+    payload: IngestLocalLlmWikiSelectionRequest,
+) -> Result<IngestLocalLlmWikiSelectionResult, String> {
+    ingest_local_llm_wiki_selection(state.inner(), payload).await
+}
+
+#[tauri::command]
+pub async fn run_local_llm_wiki_lint_command(
+    state: State<'_, AppState>,
+) -> Result<LocalLlmWikiLintReport, String> {
+    run_local_llm_wiki_lint(state.inner()).await
 }

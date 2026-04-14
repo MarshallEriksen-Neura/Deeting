@@ -2385,6 +2385,46 @@ impl McpStore {
         })
     }
 
+    pub async fn list_local_trace_feedback_by_trace_id(
+        &self,
+        trace_id: &str,
+    ) -> Result<Vec<LocalTraceFeedback>, McpError> {
+        let normalized_trace_id = trace_id.trim().to_string();
+        if normalized_trace_id.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let rows = sqlx::query(
+            r#"
+            SELECT id, trace_id, user_id, score, comment, tags, created_at, updated_at
+            FROM trace_feedback
+            WHERE trace_id = ?
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(&normalized_trace_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        rows.into_iter()
+            .map(|row| {
+                let tags_text: Option<String> = row.try_get("tags")?;
+                Ok(LocalTraceFeedback {
+                    id: row.try_get("id")?,
+                    trace_id: row.try_get("trace_id")?,
+                    user_id: row.try_get("user_id")?,
+                    score: row.try_get("score")?,
+                    comment: row.try_get("comment")?,
+                    tags: deserialize_json::<Vec<String>>(tags_text).ok().flatten(),
+                    created_at: row.try_get("created_at")?,
+                    updated_at: row.try_get("updated_at")?,
+                })
+            })
+            .collect::<Result<Vec<_>, sqlx::Error>>()
+            .map_err(|err| McpError::Storage(err.to_string()))
+    }
+
     pub async fn create_local_gateway_log(
         &self,
         trace_id: Option<&str>,

@@ -154,6 +154,30 @@ async fn process_next_local_conversation_summary_job_inner(
                     job_context, err
                 ))
             })?;
+
+        if let Some(app_state) = app_state {
+            let session_status = window
+                .meta
+                .as_ref()
+                .and_then(|value| value.get("status"))
+                .and_then(|value| value.as_str())
+                .unwrap_or("active");
+            if let Err(err) = crate::modules::llm_wiki::automation::handle_summary_generated(
+                app_state,
+                &job.session_id,
+                &summary,
+                session_status,
+                "summary_worker",
+            )
+            .await
+            {
+                log::warn!(
+                    "summary worker step=llm_wiki_hook {} err={}",
+                    job_context,
+                    err
+                );
+            }
+        }
         Ok::<(), McpError>(())
     }
     .await;

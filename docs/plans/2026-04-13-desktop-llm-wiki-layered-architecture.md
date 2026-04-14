@@ -280,6 +280,45 @@ In other words:
 - `wiki` is broader, more user-visible, and more revisable
 - `memory` is narrower, more stable, and more strongly promoted
 
+## Lifecycle Split
+
+Three lifecycle concepts should remain separate even when they reuse one engine:
+
+- `retrieval lifecycle`: indexing, retrieval, vitality, candidate dedup, access-touch
+- `wiki maintenance lifecycle`: markdown updates, lint, crystallization, supersession review
+- `memory promotion lifecycle`: stronger filtering for repeated stable conclusions entering local memory
+
+This means:
+
+- retrieval vitality is not the same thing as claim confidence
+- generic write-guard merge is not page merge policy
+- crystallization and promotion are related but distinct operations
+
+## Machine-Readable Lifecycle Ledger
+
+The shared retrieval kernel and llm wiki corpus should preserve machine-readable lifecycle metadata in Deeting internals rather than burying it in markdown prose.
+
+Minimum internal fields:
+
+- `workspace_id`
+- `page_id`
+- `claim_id`
+- `source_refs`
+- `repeat_count`
+- `confidence`
+- `last_validated_at`
+- `superseded_by`
+- `promotion_state`
+- `manual_override`
+- `pinned`
+
+These fields are the durable bridge between:
+
+- lint and supersession review
+- promotion decisions
+- audit and rollback
+- future confidence semantics
+
 ## Ownership by Operation
 
 ### Operation: Connect and Scan Vault
@@ -361,6 +400,12 @@ Examples:
 - cross-session preference
 - high-confidence durable fact
 - reusable procedural pattern
+
+Guard boundary:
+
+- promotion dedup must be namespace-aware
+- scope at least by workspace or corpus namespace plus category and source
+- do not run broad global write-guard merging across unrelated wiki corpora
 
 ## Hooks: Where They Should Attach
 

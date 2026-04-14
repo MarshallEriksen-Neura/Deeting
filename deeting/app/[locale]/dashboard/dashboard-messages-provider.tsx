@@ -19,6 +19,7 @@ const DASHBOARD_MESSAGE_NAMESPACES: readonly StaticMessageNamespace[] = [
   "logs",
   "knowledge",
   "llm-wiki",
+  "task-learning",
 ]
 
 export async function DashboardMessagesProvider({

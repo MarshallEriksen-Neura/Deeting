@@ -14,6 +14,8 @@ export const LocalLlmWikiBindingSchema = z.object({
   vaultRoot: z.string(),
   vaultName: z.string(),
   workspaceRelativePath: z.string(),
+  mode: z.string(),
+  adoptedFolderRelativePath: z.string().nullish(),
   readScope: z.string(),
   writeScope: z.string(),
   isProbableObsidianVault: z.boolean(),
@@ -113,6 +115,24 @@ export const LocalLlmWikiStateSchema = z.object({
   maintainerAgent: LocalLlmWikiMaintainerAgentSummarySchema.nullish(),
   recommendedAgentPrompt: z.string().nullish(),
   automation: LocalLlmWikiAutomationStateSchema,
+  lastLintReport: z
+    .object({
+      generatedAt: z.string(),
+      findingCount: z.number(),
+      findings: z.array(
+        z.object({
+          id: z.string(),
+          category: z.string(),
+          severity: z.string(),
+          confidence: z.string(),
+          title: z.string(),
+          detail: z.string(),
+          relativePath: z.string().nullish(),
+          relatedPaths: z.array(z.string()).default([]),
+        }),
+      ),
+    })
+    .nullish(),
 })
 
 export const BootstrapLocalLlmWikiWorkspaceResultSchema = z.object({
@@ -151,6 +171,44 @@ export const LocalLlmWikiAutomationExecutionResultSchema = z.object({
   workflowRunId: z.string().nullable().optional(),
   memoryAction: z.string().nullable().optional(),
   message: z.string().nullable().optional(),
+})
+
+export const LocalLlmWikiAdoptionPreviewSchema = z.object({
+  targetRelativePath: z.string(),
+  canAdopt: z.boolean(),
+  summaryMessage: z.string(),
+  bucketedCounts: z.array(
+    z.object({
+      kind: z.string(),
+      count: z.number(),
+      examples: z.array(z.string()).default([]),
+    }),
+  ),
+})
+
+export const IngestLocalLlmWikiSelectionResultSchema = z.object({
+  ingestedPaths: z.array(z.string()).default([]),
+  skippedPaths: z.array(z.string()).default([]),
+  sourcePagesCreated: z.array(z.string()).default([]),
+  rawFilesCopied: z.array(z.string()).default([]),
+  state: LocalLlmWikiStateSchema,
+})
+
+export const LocalLlmWikiLintReportSchema = z.object({
+  generatedAt: z.string(),
+  findingCount: z.number(),
+  findings: z.array(
+    z.object({
+      id: z.string(),
+      category: z.string(),
+      severity: z.string(),
+      confidence: z.string(),
+      title: z.string(),
+      detail: z.string(),
+      relativePath: z.string().nullish(),
+      relatedPaths: z.array(z.string()).default([]),
+    }),
+  ),
 })
 
 export type LocalLlmWikiBinding = z.infer<typeof LocalLlmWikiBindingSchema>
@@ -200,10 +258,19 @@ export type SearchLocalLlmWikiCorpusResult = z.infer<
 export type LocalLlmWikiAutomationExecutionResult = z.infer<
   typeof LocalLlmWikiAutomationExecutionResultSchema
 >
+export type LocalLlmWikiAdoptionPreview = z.infer<
+  typeof LocalLlmWikiAdoptionPreviewSchema
+>
+export type IngestLocalLlmWikiSelectionResult = z.infer<
+  typeof IngestLocalLlmWikiSelectionResultSchema
+>
+export type LocalLlmWikiLintReport = z.infer<typeof LocalLlmWikiLintReportSchema>
 
 export interface SaveLocalLlmWikiBindingPayload {
   vaultRoot: string
   workspaceRelativePath?: string
+  mode?: string
+  adoptedFolderRelativePath?: string
 }
 
 export interface SearchLocalLlmWikiCorpusPayload {
@@ -221,6 +288,20 @@ export interface UpdateLocalLlmWikiAutomationSettingsPayload {
   autoDelegateNewSources?: boolean
   autoDelegateMaintenanceSchedule?: boolean
   promoteRepeatedStableConclusionsToMemory?: boolean
+}
+
+export interface PreviewLocalLlmWikiAdoptionPayload {
+  vaultRoot: string
+  folderRelativePath: string
+}
+
+export interface ConfirmLocalLlmWikiAdoptionPayload {
+  vaultRoot: string
+  folderRelativePath: string
+}
+
+export interface IngestLocalLlmWikiSelectionPayload {
+  selectedRelativePaths: string[]
 }
 
 export function supportsLocalLlmWiki(): boolean {
@@ -252,6 +333,7 @@ export async function getLocalLlmWikiState(): Promise<LocalLlmWikiState> {
         audit: [],
         lastScheduleRunAt: null,
       },
+      lastLintReport: null,
     })
   }
 
@@ -264,7 +346,14 @@ export async function saveLocalLlmWikiBinding(
 ): Promise<LocalLlmWikiState> {
   const data = await invokeTauri<unknown>(
     "save_local_llm_wiki_binding_command",
-    { payload },
+    {
+      payload: {
+        vaultRoot: payload.vaultRoot,
+        workspaceRelativePath: payload.workspaceRelativePath ?? null,
+        mode: payload.mode ?? null,
+        adoptedFolderRelativePath: payload.adoptedFolderRelativePath ?? null,
+      },
+    },
   )
   return LocalLlmWikiStateSchema.parse(data)
 }
@@ -325,4 +414,36 @@ export async function executeLocalLlmWikiAutomationSuggestion(
     { suggestionId },
   )
   return LocalLlmWikiAutomationExecutionResultSchema.parse(data)
+}
+
+export async function previewLocalLlmWikiAdoption(
+  payload: PreviewLocalLlmWikiAdoptionPayload,
+): Promise<LocalLlmWikiAdoptionPreview> {
+  const data = await invokeTauri<unknown>("preview_local_llm_wiki_adoption_command", {
+    payload,
+  })
+  return LocalLlmWikiAdoptionPreviewSchema.parse(data)
+}
+
+export async function confirmLocalLlmWikiAdoption(
+  payload: ConfirmLocalLlmWikiAdoptionPayload,
+): Promise<LocalLlmWikiState> {
+  const data = await invokeTauri<unknown>("confirm_local_llm_wiki_adoption_command", {
+    payload,
+  })
+  return LocalLlmWikiStateSchema.parse(data)
+}
+
+export async function ingestLocalLlmWikiSelection(
+  payload: IngestLocalLlmWikiSelectionPayload,
+): Promise<IngestLocalLlmWikiSelectionResult> {
+  const data = await invokeTauri<unknown>("ingest_local_llm_wiki_selection_command", {
+    payload,
+  })
+  return IngestLocalLlmWikiSelectionResultSchema.parse(data)
+}
+
+export async function runLocalLlmWikiLint(): Promise<LocalLlmWikiLintReport> {
+  const data = await invokeTauri<unknown>("run_local_llm_wiki_lint_command")
+  return LocalLlmWikiLintReportSchema.parse(data)
 }

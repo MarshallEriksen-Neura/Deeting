@@ -7,6 +7,8 @@ pub struct LocalLlmWikiBinding {
     pub vault_root: String,
     pub vault_name: String,
     pub workspace_relative_path: String,
+    pub mode: String,
+    pub adopted_folder_relative_path: Option<String>,
     pub read_scope: String,
     pub write_scope: String,
     pub is_probable_obsidian_vault: bool,
@@ -145,6 +147,27 @@ impl Default for LocalLlmWikiAutomationState {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct LocalLlmWikiLintFinding {
+    pub id: String,
+    pub category: String,
+    pub severity: String,
+    pub confidence: String,
+    pub title: String,
+    pub detail: String,
+    pub relative_path: Option<String>,
+    pub related_paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalLlmWikiLintReport {
+    pub generated_at: String,
+    pub finding_count: i64,
+    pub findings: Vec<LocalLlmWikiLintFinding>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LocalLlmWikiState {
     pub binding: Option<LocalLlmWikiBinding>,
     pub scan_summary: Option<LocalLlmWikiVaultScanSummary>,
@@ -153,6 +176,7 @@ pub struct LocalLlmWikiState {
     pub maintainer_agent: Option<LocalLlmWikiMaintainerAgentSummary>,
     pub recommended_agent_prompt: Option<String>,
     pub automation: LocalLlmWikiAutomationState,
+    pub last_lint_report: Option<LocalLlmWikiLintReport>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -160,6 +184,8 @@ pub struct LocalLlmWikiState {
 pub struct SaveLocalLlmWikiBindingRequest {
     pub vault_root: String,
     pub workspace_relative_path: Option<String>,
+    pub mode: Option<String>,
+    pub adopted_folder_relative_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -208,6 +234,53 @@ pub struct LocalLlmWikiCorpusSearchHit {
 #[serde(rename_all = "camelCase")]
 pub struct SearchLocalLlmWikiCorpusResult {
     pub hits: Vec<LocalLlmWikiCorpusSearchHit>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalLlmWikiAdoptionBucket {
+    pub kind: String,
+    pub count: i64,
+    pub examples: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewLocalLlmWikiAdoptionRequest {
+    pub vault_root: String,
+    pub folder_relative_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalLlmWikiAdoptionPreview {
+    pub target_relative_path: String,
+    pub can_adopt: bool,
+    pub summary_message: String,
+    pub bucketed_counts: Vec<LocalLlmWikiAdoptionBucket>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfirmLocalLlmWikiAdoptionRequest {
+    pub vault_root: String,
+    pub folder_relative_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IngestLocalLlmWikiSelectionRequest {
+    pub selected_relative_paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IngestLocalLlmWikiSelectionResult {
+    pub ingested_paths: Vec<String>,
+    pub skipped_paths: Vec<String>,
+    pub source_pages_created: Vec<String>,
+    pub raw_files_copied: Vec<String>,
+    pub state: LocalLlmWikiState,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

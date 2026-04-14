@@ -1,0 +1,60 @@
+{
+  "title": "Task Learning",
+  "description": "Inspect desktop-local evaluated outcomes, delayed revisions, and policy priors for the task-learning loop.",
+  "stats": {
+    "totalRuns": "Visible Runs",
+    "revisedRuns": "Revised Runs",
+    "signaledRuns": "Signaled Runs",
+    "activePriors": "Active Priors"
+  },
+  "filters": {
+    "sessionPlaceholder": "Filter by session id",
+    "signal": {
+      "all": "All signals",
+      "accepted": "Accepted",
+      "corrected": "Corrected",
+      "rejected": "Rejected",
+      "silent": "Silent"
+    }
+  },
+  "actions": {
+    "refresh": "Refresh",
+    "markAccepted": "Mark Accepted",
+    "markCorrected": "Mark Corrected",
+    "markRejected": "Mark Rejected",
+    "replay": "Replay Delta"
+  },
+  "runs": {
+    "title": "Recent Runs",
+    "empty": "No task-learning runs found for the current filter.",
+    "revisions": "{count} revisions"
+  },
+  "detail": {
+    "title": "Inspector",
+    "loading": "Loading…",
+    "empty": "Select a run to inspect its current outcome, revisions, and replay state.",
+    "status": "Run Status",
+    "signal": "Posterior Signal",
+    "current": "Current Snapshot",
+    "revisions": "Revision History",
+    "noRevisions": "This run has not been revised yet.",
+    "notePlaceholder": "Add an optional operator note before manual revise/replay."
+  },
+  "priors": {
+    "title": "Policy Priors",
+    "columns": {
+      "fingerprint": "Fingerprint",
+      "decision": "Decision",
+      "action": "Action",
+      "weight": "Weight / Confidence",
+      "evidence": "Evidence",
+      "updated": "Updated"
+    }
+  },
+  "feedback": {
+    "loadFailed": "Failed to load task-learning data.",
+    "actionFailed": "Task-learning action failed.",
+    "replayed": "Replayed current task-learning run.",
+    "revised": "Applied manual {signal} revision."
+  }
+}

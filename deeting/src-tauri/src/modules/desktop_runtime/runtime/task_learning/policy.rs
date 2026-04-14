@@ -227,8 +227,8 @@ mod tests {
     use super::apply_route_prior;
     use super::normalize_decision_point;
     use super::TaskPolicyHint;
-    use crate::modules::desktop_runtime::runtime::{LocalRouteDecision, LocalRouteKind};
     use crate::modules::desktop_runtime::runtime::task_learning::build_task_fingerprint;
+    use crate::modules::desktop_runtime::runtime::{LocalRouteDecision, LocalRouteKind};
     use mcp_runtime::route::{RouteEvidence, TaskProfile};
 
     fn test_decision(route: LocalRouteKind) -> LocalRouteDecision {

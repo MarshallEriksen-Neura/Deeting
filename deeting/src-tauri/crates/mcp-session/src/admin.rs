@@ -22,6 +22,125 @@ pub struct LocalTraceFeedback {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LocalTaskLearningRunQuery {
+    pub skip: Option<i64>,
+    pub limit: Option<i64>,
+    pub session_id: Option<String>,
+    pub fingerprint_key: Option<String>,
+    pub decision_point: Option<String>,
+    pub user_response_signal: Option<String>,
+    pub learning_eligible: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalTaskLearningRunListItem {
+    pub run_id: String,
+    pub session_id: String,
+    pub request_id: Option<String>,
+    pub trace_id: Option<String>,
+    pub fingerprint_key: String,
+    pub decision_point: Option<String>,
+    pub learning_eligible: bool,
+    pub delta_state: String,
+    pub final_status: Option<String>,
+    pub verification_result: Option<String>,
+    pub user_response_signal: Option<String>,
+    pub confidence: Option<f64>,
+    pub revision_count: i64,
+    pub last_signal: Option<String>,
+    pub created_at_unix_ms: i64,
+    pub last_revision_at_unix_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalTaskLearningRunListResponse {
+    pub total: i64,
+    pub skip: i64,
+    pub limit: i64,
+    pub items: Vec<LocalTaskLearningRunListItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalTaskLearningRevisionItem {
+    pub id: String,
+    pub run_id: String,
+    pub revision_index: i64,
+    pub trigger_source: String,
+    pub user_response_signal: String,
+    pub note: Option<String>,
+    pub outcome: Value,
+    pub attribution: Value,
+    pub policy_delta: Option<Value>,
+    pub delta_state: String,
+    pub created_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalTaskLearningRunDetail {
+    pub run_id: String,
+    pub session_id: String,
+    pub request_id: Option<String>,
+    pub trace_id: Option<String>,
+    pub fingerprint_key: String,
+    pub task_fingerprint: Value,
+    pub route_decision: Option<Value>,
+    pub execution_policy: Value,
+    pub outcome: Value,
+    pub attribution: Value,
+    pub policy_delta: Option<Value>,
+    pub learning_eligible: bool,
+    pub delta_state: String,
+    pub revision_count: i64,
+    pub last_signal: Option<String>,
+    pub created_at_unix_ms: i64,
+    pub last_revision_at_unix_ms: Option<i64>,
+    pub revisions: Vec<LocalTaskLearningRevisionItem>,
+    pub trace_feedback: Vec<LocalTraceFeedback>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalTaskLearningManualRevisionRequest {
+    pub run_id: String,
+    pub user_response_signal: String,
+    pub note: Option<String>,
+    pub trigger_source: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalTaskLearningReplayRequest {
+    pub run_id: String,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LocalTaskPolicyPriorQuery {
+    pub skip: Option<i64>,
+    pub limit: Option<i64>,
+    pub fingerprint_key: Option<String>,
+    pub decision_point: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalTaskPolicyPriorItem {
+    pub fingerprint_key: String,
+    pub decision_point: String,
+    pub action_key: String,
+    pub weight: f64,
+    pub confidence: f64,
+    pub evidence_count: i64,
+    pub maturity: String,
+    pub updated_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalTaskPolicyPriorListResponse {
+    pub total: i64,
+    pub skip: i64,
+    pub limit: i64,
+    pub items: Vec<LocalTaskPolicyPriorItem>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LocalGatewayLogQuery {
     pub skip: Option<i64>,
     pub limit: Option<i64>,

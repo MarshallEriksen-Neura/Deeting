@@ -224,22 +224,76 @@ The intended steady-state product loop is:
 
 The user should experience Deeting as a maintainer, not just a bootstrap wizard.
 
-## Lifecycle Reuse Decision
+## Retrieval Lifecycle Reuse
 
-The current desktop-local lifecycle machinery should be reused as the backend maintenance kernel.
+The current desktop-local retrieval lifecycle machinery should be reused as the backend retrieval kernel.
 
 This repo already has relevant primitives for:
 
 - semantic memory retrieval
 - scoped knowledge retrieval
 - vitality / access-based decay
-- write-guard deduplication
-- snapshot / rollback
+- candidate deduplication
+- snapshot / rollback hooks
 - session summary generation
 - retention cleanup
 - document-scoped semantic search
 
 These should not be copied into a separate LLM Wiki engine if the existing local machinery can be generalized.
+
+However this reuse must be described precisely:
+
+- `retrieval lifecycle` is about indexing, retrieval, reranking, access-touch, and candidate-level dedup
+- it is not the same thing as claim confidence, supersession semantics, or page truth
+
+That distinction matters because current `vitality` is retrieval-weighting, not a durable truth-confidence model.
+
+## Wiki Maintenance Lifecycle
+
+The wiki maintenance lifecycle is the markdown-visible lifecycle for the managed workspace.
+
+This lifecycle owns:
+
+- ingesting or classifying source material
+- deciding which pages should exist
+- updating `wiki/entities/`, `wiki/concepts/`, `wiki/sources/`, and `wiki/analyses/`
+- keeping `index.md` and `log.md` in sync
+- flagging stale conclusions and supersession candidates
+- deciding page-body merge behavior
+
+This lifecycle should be owned by the maintainer agent and bounded workspace write flow.
+
+It should explicitly not inherit generic memory-item merge semantics.
+
+The current local memory write guard can help with:
+
+- candidate deduplication
+- near-duplicate detection
+- snapshot hooks
+
+It should not define how markdown page bodies are merged.
+
+## Memory Promotion Lifecycle
+
+Memory promotion is a third lifecycle, narrower than the wiki.
+
+This lifecycle owns:
+
+- deciding whether a wiki conclusion is stable enough to become local memory
+- stronger filtering than ordinary wiki write
+- repeated-stability or confidence gates
+- writing promoted conclusions into local memory
+- preserving promotion metadata and audit trail
+
+The product should model this explicitly as:
+
+`wiki conclusion -> stronger filter -> local memory`
+
+Not:
+
+- `wiki write == memory write`
+- `crystallize == promote`
+- `retrieval vitality == claim confidence`
 
 ## Reuse Boundary
 
@@ -257,6 +311,46 @@ In other words:
 - Deeting writes page updates back into the vault
 
 This avoids building a second hidden wiki while still reusing the current lifecycle stack.
+
+## Machine-Readable Lifecycle Metadata
+
+The internal lifecycle state should not remain prompt-only.
+
+Deeting should keep a machine-readable lifecycle ledger in local runtime/storage so maintenance, lint, supersession review, and memory promotion do not depend only on free-form markdown or prompt inference.
+
+Minimum metadata shape:
+
+- `workspace_id`
+- `page_id`
+- `claim_id`
+- `source_refs`
+- `repeat_count`
+- `confidence`
+- `last_validated_at`
+- `superseded_by`
+- `promotion_state`
+- `manual_override`
+- `pinned`
+
+Rules:
+
+- page bodies stay readable and mostly markdown-first
+- lifecycle facts live in Deeting internals
+- the ledger can back lint, supersession review, and promotion decisions
+- the first production version can populate unknown fields as null, but the keys should be explicit
+
+## Scoped Guard Rules
+
+The wiki corpus must not reuse the current memory write guard as an unscoped global merge rule.
+
+The safe rule is:
+
+- use namespace-aware guard boundaries
+- at minimum scope by workspace or corpus namespace plus category and source
+- use candidate deduplication to identify near matches
+- leave page-body merge decisions to the maintainer agent
+
+This prevents cross-workspace or cross-domain accidental merging when multiple wiki-like corpora share the same local memory infrastructure.
 
 ## Read / Write Ownership
 
@@ -291,6 +385,12 @@ Advanced mode can later allow selective write-back into user-selected legacy fol
 ## Lifecycle Model for the Wiki Workspace
 
 The product should map the LLM Wiki maintenance model onto a small set of user-visible operations.
+
+These operations sit on top of three different internal layers:
+
+- `retrieval lifecycle`: indexing, retrieval, vitality, dedup candidates
+- `wiki maintenance lifecycle`: markdown synthesis, lint, supersession review
+- `memory promotion lifecycle`: narrower stable-conclusion promotion into local memory
 
 ### Ingest
 
@@ -329,18 +429,28 @@ Important conversations or investigations should be converted into:
 - `wiki/analyses/*.md`
 - extracted facts that strengthen existing pages
 
+### Promote to Memory
+
+When a wiki conclusion becomes repeated and stable enough:
+
+- treat promotion as a separate operation from crystallization
+- apply a stronger filter than ordinary wiki write
+- write the promoted conclusion into local memory
+- preserve machine-readable promotion metadata and audit state
+- keep the wiki page and the promoted memory linked, but distinct
+
 ## What the Product Should Reuse First
 
 The first version should reuse the existing system in this order:
 
 1. vault scanning and file selection primitives
 2. knowledge indexing and chunk retrieval
-3. local memory write-guard and vitality scoring
+3. retrieval lifecycle primitives: scoped search, vitality scoring, candidate dedup, snapshot hooks
 4. snapshot / rollback audit trail
 5. conversation summary and retention workers
 6. custom task agent handoff
 
-This order keeps the first version useful without requiring a full new graph layer.
+This order keeps the first version useful without requiring a full new graph layer or a second hidden wiki engine.
 
 ## Explicit Non-Goals for V1
 
@@ -432,4 +542,3 @@ V1 is successful if:
 
 - add adopt-existing-folder flow
 - add stronger lint / supersession / claim-confidence semantics
-

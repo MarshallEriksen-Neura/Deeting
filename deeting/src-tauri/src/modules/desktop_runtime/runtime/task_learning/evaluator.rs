@@ -6,8 +6,26 @@ use super::types::{
     DECISION_POINT_DISCOVERY, DECISION_POINT_EXECUTION, DECISION_POINT_ROUTE,
     DECISION_POINT_VERIFICATION,
 };
+use crate::modules::ai_upstream::types::LocalModelConnection;
+use crate::modules::desktop_runtime::runtime::request_provider_chat_completion;
 use crate::modules::desktop_runtime::runtime::{LocalExecutionPolicy, LocalRouteDecision};
+use crate::state::AppState;
+use mcp_core::types::LocalChatInputMessage;
+use serde::Deserialize;
 use serde_json::Value;
+
+const ROUTE_JUDGMENTS: &[&str] = &["good", "acceptable", "wasteful", "wrong"];
+const DISCOVERY_JUDGMENTS: &[&str] = &["sufficient", "shallow", "excessive", "skipped_when_needed"];
+const EXECUTION_JUDGMENTS: &[&str] = &["justified", "unnecessary", "fragile", "failed"];
+const USER_RESPONSE_SIGNALS: &[&str] = &["accepted", "silent", "corrected", "rejected", "unknown"];
+
+#[derive(Debug, Deserialize)]
+struct ConstrainedJudgmentOutput {
+    route_judgment: String,
+    discovery_judgment: String,
+    execution_judgment: String,
+    confidence: f64,
+}
 
 fn tool_trace_result_blocks(tool_trace_blocks: &[Value]) -> impl Iterator<Item = &Value> {
     tool_trace_blocks
@@ -403,16 +421,357 @@ fn compute_policy_delta(
         DECISION_POINT_VERIFICATION => Some(PolicyDelta {
             decision_point: DECISION_POINT_VERIFICATION.to_string(),
             action_key: ACTION_VERIFICATION_STRONGER_CHECKS.to_string(),
-            direction: "strengthen".to_string(),
-            magnitude,
+            direction: if outcome.user_response_signal == "accepted"
+                && outcome.verification_result == "passed"
+            {
+                "weaken".to_string()
+            } else {
+                "strengthen".to_string()
+            },
+            magnitude: if outcome.user_response_signal == "accepted"
+                && outcome.verification_result == "passed"
+            {
+                (magnitude * 0.6).clamp(0.05, 0.28)
+            } else {
+                magnitude
+            },
             state,
             rationale: format!(
-                "Verification judgment '{}' raised the completion-check prior.",
-                outcome.verification_result
+                "Verification judgment '{}' with user signal '{}' updated the completion-check prior.",
+                outcome.verification_result, outcome.user_response_signal
             ),
         }),
         _ => None,
     }
+}
+
+fn learning_eligible_from_outcome(outcome: &EvaluatedOutcome) -> bool {
+    let has_posterior_signal = matches!(
+        outcome.user_response_signal.as_str(),
+        "accepted" | "corrected" | "rejected"
+    );
+    (outcome.confidence >= 0.45 || has_posterior_signal)
+        && outcome.final_status != "blocked"
+        && outcome.error_profile != "environment_blocked"
+}
+
+fn primary_stage_from_outcome(
+    fingerprint: &TaskFingerprint,
+    outcome: &EvaluatedOutcome,
+    signals: &TaskLearningSignals,
+) -> Option<String> {
+    if !learning_eligible_from_outcome(outcome) {
+        return None;
+    }
+    if matches!(
+        outcome.user_response_signal.as_str(),
+        "corrected" | "rejected"
+    ) {
+        return Some(DECISION_POINT_VERIFICATION.to_string());
+    }
+    if matches!(outcome.route_judgment.as_str(), "wrong" | "wasteful") {
+        return Some(DECISION_POINT_ROUTE.to_string());
+    }
+    if matches!(
+        outcome.discovery_judgment.as_str(),
+        "skipped_when_needed" | "excessive"
+    ) {
+        return Some(DECISION_POINT_DISCOVERY.to_string());
+    }
+    if signals.attach_capability_errors > 0
+        || (signals.used_attach_capability && outcome.final_status == "success")
+    {
+        return Some(DECISION_POINT_CAPABILITY_ATTACH.to_string());
+    }
+    if signals.used_execute_code_plan {
+        return Some(DECISION_POINT_EXECUTION.to_string());
+    }
+    if matches!(outcome.verification_result.as_str(), "weak_pass" | "failed")
+        || fingerprint.verification_demand == "strict"
+    {
+        return Some(DECISION_POINT_VERIFICATION.to_string());
+    }
+    Some(DECISION_POINT_ROUTE.to_string())
+}
+
+pub(crate) fn rebuild_task_learning_evaluation_from_outcome(
+    fingerprint: &TaskFingerprint,
+    route_decision: Option<&LocalRouteDecision>,
+    execution_policy: &LocalExecutionPolicy,
+    finish_reason: &str,
+    signals: &TaskLearningSignals,
+    outcome: EvaluatedOutcome,
+) -> TaskLearningEvaluation {
+    let learning_eligible = learning_eligible_from_outcome(&outcome);
+    let attribution = TaskAttribution {
+        primary_stage: primary_stage_from_outcome(fingerprint, &outcome, signals),
+        secondary_evidence: build_secondary_evidence(
+            route_decision,
+            execution_policy,
+            signals,
+            finish_reason,
+        ),
+    };
+    let policy_delta = if learning_eligible {
+        compute_policy_delta(fingerprint, route_decision, &outcome, &attribution, signals)
+    } else {
+        None
+    };
+    let delta_state = policy_delta
+        .as_ref()
+        .map(|delta| delta.state.clone())
+        .unwrap_or_else(|| "none".to_string());
+
+    TaskLearningEvaluation {
+        outcome,
+        attribution,
+        policy_delta,
+        learning_eligible,
+        delta_state,
+    }
+}
+
+pub(crate) fn normalize_task_learning_user_response_signal(value: Option<&str>) -> String {
+    let normalized = value
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .unwrap_or("silent")
+        .to_ascii_lowercase();
+    if USER_RESPONSE_SIGNALS.contains(&normalized.as_str()) {
+        normalized
+    } else {
+        "unknown".to_string()
+    }
+}
+
+fn extract_text_content(value: &Value) -> String {
+    match value {
+        Value::String(text) => text.trim().to_string(),
+        Value::Array(items) => items
+            .iter()
+            .filter_map(|item| {
+                item.get("text")
+                    .and_then(Value::as_str)
+                    .or_else(|| item.get("content").and_then(Value::as_str))
+                    .map(str::trim)
+                    .filter(|text| !text.is_empty())
+                    .map(str::to_string)
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+        Value::Object(object) => object
+            .get("text")
+            .and_then(Value::as_str)
+            .or_else(|| object.get("content").and_then(Value::as_str))
+            .map(str::trim)
+            .unwrap_or_default()
+            .to_string(),
+        _ => String::new(),
+    }
+}
+
+fn parse_jsonish<T>(raw: &str) -> Option<T>
+where
+    T: serde::de::DeserializeOwned,
+{
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Ok(parsed) = serde_json::from_str::<T>(trimmed) {
+        return Some(parsed);
+    }
+    let fence_trimmed = trimmed
+        .strip_prefix("```json")
+        .or_else(|| trimmed.strip_prefix("```"))
+        .map(str::trim_start)
+        .and_then(|value| value.strip_suffix("```"))
+        .map(str::trim);
+    if let Some(candidate) = fence_trimmed {
+        if let Ok(parsed) = serde_json::from_str::<T>(candidate) {
+            return Some(parsed);
+        }
+    }
+    let start = trimmed.find('{')?;
+    let end = trimmed.rfind('}')?;
+    serde_json::from_str::<T>(&trimmed[start..=end]).ok()
+}
+
+fn valid_enum(value: &str, allowed: &[&str]) -> bool {
+    allowed.iter().any(|candidate| candidate == &value)
+}
+
+fn build_constrained_trace_summary(tool_trace_blocks: &[Value]) -> Vec<Value> {
+    tool_trace_result_blocks(tool_trace_blocks)
+        .take(8)
+        .map(|block| {
+            serde_json::json!({
+                "tool_name": block.get("toolName").and_then(Value::as_str).unwrap_or_default(),
+                "status": block.get("status").and_then(Value::as_str).unwrap_or_default(),
+                "error_code": block.pointer("/result/error_code").and_then(Value::as_str),
+            })
+        })
+        .collect()
+}
+
+async fn run_constrained_judgment_pass(
+    app_state: &AppState,
+    model_connection: &LocalModelConnection,
+    query: Option<&str>,
+    fingerprint: &TaskFingerprint,
+    route_decision: Option<&LocalRouteDecision>,
+    execution_policy: &LocalExecutionPolicy,
+    response_text: &str,
+    finish_reason: &str,
+    tool_trace_blocks: &[Value],
+    signals: &TaskLearningSignals,
+    user_response_signal: &str,
+) -> Option<ConstrainedJudgmentOutput> {
+    let query = query.map(str::trim).filter(|value| !value.is_empty())?;
+    let evidence = serde_json::json!({
+        "task_query": query,
+        "task_fingerprint": fingerprint,
+        "route_decision": route_decision,
+        "execution_policy": {
+            "route": execution_policy.route.as_str(),
+            "plane": execution_policy.plane.as_str(),
+        },
+        "response_summary": {
+            "finish_reason": finish_reason,
+            "response_empty": response_text.trim().is_empty(),
+            "response_length": response_text.trim().chars().count(),
+        },
+        "signals": {
+            "tool_call_count": signals.tool_call_count,
+            "tool_error_count": signals.tool_error_count,
+            "requires_approval_count": signals.requires_approval_count,
+            "search_sdk_calls": signals.search_sdk_calls,
+            "used_attach_capability": signals.used_attach_capability,
+            "attach_capability_errors": signals.attach_capability_errors,
+            "used_execute_code_plan": signals.used_execute_code_plan,
+            "successful_execute_code_plan": signals.successful_execute_code_plan,
+            "delegated_execution": signals.delegated_execution,
+            "observed_error_codes": signals.observed_error_codes,
+        },
+        "trace_summary": build_constrained_trace_summary(tool_trace_blocks),
+        "user_response_signal": user_response_signal,
+    });
+    let messages = vec![
+        LocalChatInputMessage {
+            role: "system".to_string(),
+            content: concat!(
+                "You are a constrained evaluator for Deeting desktop task learning.\n",
+                "Classify only the observed path. Do not give advice. Do not speculate about unobserved counterfactuals.\n",
+                "Return one JSON object with exactly these fields:\n",
+                "- route_judgment: one of good|acceptable|wasteful|wrong\n",
+                "- discovery_judgment: one of sufficient|shallow|excessive|skipped_when_needed\n",
+                "- execution_judgment: one of justified|unnecessary|fragile|failed\n",
+                "- confidence: float between 0 and 1\n",
+                "Output JSON only."
+            )
+            .to_string(),
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
+        },
+        LocalChatInputMessage {
+            role: "user".to_string(),
+            content: serde_json::to_string_pretty(&evidence).ok()?,
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
+        },
+    ];
+    let response = request_provider_chat_completion(
+        app_state,
+        &model_connection.provider_model_id,
+        &model_connection.model_id,
+        messages,
+        None,
+        Some(0.0),
+        Some(220),
+        None,
+        None,
+    )
+    .await
+    .ok()?;
+    let content = extract_text_content(response.get("content").unwrap_or(&Value::Null));
+    let parsed = parse_jsonish::<ConstrainedJudgmentOutput>(&content)?;
+    if !valid_enum(parsed.route_judgment.as_str(), ROUTE_JUDGMENTS)
+        || !valid_enum(parsed.discovery_judgment.as_str(), DISCOVERY_JUDGMENTS)
+        || !valid_enum(parsed.execution_judgment.as_str(), EXECUTION_JUDGMENTS)
+    {
+        return None;
+    }
+    Some(ConstrainedJudgmentOutput {
+        route_judgment: parsed.route_judgment,
+        discovery_judgment: parsed.discovery_judgment,
+        execution_judgment: parsed.execution_judgment,
+        confidence: parsed.confidence.clamp(0.0, 1.0),
+    })
+}
+
+pub(crate) async fn evaluate_task_learning_with_runtime(
+    app_state: &AppState,
+    model_connection: &LocalModelConnection,
+    query: Option<&str>,
+    fingerprint: &TaskFingerprint,
+    route_decision: Option<&LocalRouteDecision>,
+    execution_policy: &LocalExecutionPolicy,
+    response_text: &str,
+    response_text_was_synthesized_from_error: bool,
+    finish_reason: &str,
+    total_latency_ms: i64,
+    tool_trace_blocks: &[Value],
+    had_delegated_execution: bool,
+    user_response_signal: Option<&str>,
+) -> TaskLearningEvaluation {
+    let signals = collect_task_learning_signals(tool_trace_blocks, had_delegated_execution);
+    let mut outcome = evaluate_task_learning(
+        fingerprint,
+        route_decision,
+        execution_policy,
+        response_text,
+        response_text_was_synthesized_from_error,
+        finish_reason,
+        total_latency_ms,
+        tool_trace_blocks,
+        had_delegated_execution,
+    )
+    .outcome;
+    outcome.user_response_signal =
+        normalize_task_learning_user_response_signal(user_response_signal);
+
+    if let Some(judgment) = run_constrained_judgment_pass(
+        app_state,
+        model_connection,
+        query,
+        fingerprint,
+        route_decision,
+        execution_policy,
+        response_text,
+        finish_reason,
+        tool_trace_blocks,
+        &signals,
+        outcome.user_response_signal.as_str(),
+    )
+    .await
+    {
+        outcome.route_judgment = judgment.route_judgment;
+        outcome.discovery_judgment = judgment.discovery_judgment;
+        outcome.execution_judgment = judgment.execution_judgment;
+        outcome.confidence = ((outcome.confidence + judgment.confidence) / 2.0).clamp(0.0, 1.0);
+        outcome.judgment_mode = "constrained_llm".to_string();
+    }
+
+    rebuild_task_learning_evaluation_from_outcome(
+        fingerprint,
+        route_decision,
+        execution_policy,
+        finish_reason,
+        &signals,
+        outcome,
+    )
 }
 
 pub(crate) fn evaluate_task_learning(
@@ -446,6 +805,7 @@ pub(crate) fn evaluate_task_learning(
         final_status: final_status.clone(),
         verification_result: verification_result.clone(),
         user_response_signal: "silent".to_string(),
+        judgment_mode: "heuristic".to_string(),
         route_judgment: route_judgment.clone(),
         discovery_judgment: discovery_judgment.clone(),
         execution_judgment: execution_judgment.clone(),
@@ -461,64 +821,14 @@ pub(crate) fn evaluate_task_learning(
         had_delegated_execution,
         observed_error_codes: signals.observed_error_codes.clone(),
     };
-
-    let learning_eligible = outcome.confidence >= 0.45
-        && outcome.final_status != "blocked"
-        && outcome.error_profile != "environment_blocked";
-    let primary_stage = if !learning_eligible {
-        None
-    } else if matches!(outcome.route_judgment.as_str(), "wrong" | "wasteful") {
-        Some(DECISION_POINT_ROUTE.to_string())
-    } else if matches!(
-        outcome.discovery_judgment.as_str(),
-        "skipped_when_needed" | "excessive"
-    ) {
-        Some(DECISION_POINT_DISCOVERY.to_string())
-    } else if signals.attach_capability_errors > 0
-        || (signals.used_attach_capability && final_status == "success")
-    {
-        Some(DECISION_POINT_CAPABILITY_ATTACH.to_string())
-    } else if signals.used_execute_code_plan {
-        Some(DECISION_POINT_EXECUTION.to_string())
-    } else if matches!(outcome.verification_result.as_str(), "weak_pass" | "failed")
-        || fingerprint.verification_demand == "strict"
-    {
-        Some(DECISION_POINT_VERIFICATION.to_string())
-    } else {
-        Some(DECISION_POINT_ROUTE.to_string())
-    };
-    let attribution = TaskAttribution {
-        primary_stage,
-        secondary_evidence: build_secondary_evidence(
-            route_decision,
-            execution_policy,
-            &signals,
-            finish_reason,
-        ),
-    };
-    let policy_delta = if learning_eligible {
-        compute_policy_delta(
-            fingerprint,
-            route_decision,
-            &outcome,
-            &attribution,
-            &signals,
-        )
-    } else {
-        None
-    };
-    let delta_state = policy_delta
-        .as_ref()
-        .map(|delta| delta.state.clone())
-        .unwrap_or_else(|| "none".to_string());
-
-    TaskLearningEvaluation {
+    rebuild_task_learning_evaluation_from_outcome(
+        fingerprint,
+        route_decision,
+        execution_policy,
+        finish_reason,
+        &signals,
         outcome,
-        attribution,
-        policy_delta,
-        learning_eligible,
-        delta_state,
-    }
+    )
 }
 
 #[cfg(test)]

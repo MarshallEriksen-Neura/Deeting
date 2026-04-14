@@ -50,6 +50,13 @@ const VALUABLE_ANSWER_MIN_CHARS: usize = 220;
 const MEMORY_PROMOTION_REPEAT_THRESHOLD: i64 = 2;
 const MAINTENANCE_SCHEDULE_INTERVAL_SECS: i64 = 6 * 60 * 60;
 
+#[derive(Debug, Clone)]
+struct WorkspaceLifecycleContext {
+    workspace_id: String,
+    workspace_relative_path: String,
+    memory_source_scope: String,
+}
+
 pub(crate) async fn update_automation_settings(
     store: &crate::modules::mcp::store::McpStore,
     payload: UpdateLocalLlmWikiAutomationSettingsRequest,
@@ -141,6 +148,12 @@ pub(crate) async fn execute_suggestion(
     let suggestion = automation.suggestions[index].clone();
     let binding = load_binding(store).await.map_err(|err| err.to_string())?;
     let now = now_rfc3339().map_err(|err| err.to_string())?;
+    let lifecycle_context = suggestion
+        .metadata
+        .as_ref()
+        .and_then(Value::as_object)
+        .and_then(workspace_lifecycle_context_from_metadata)
+        .or_else(|| build_workspace_lifecycle_context(binding.as_ref()));
 
     let mut workflow_run_id = None;
     let mut memory_action = None;
@@ -250,28 +263,38 @@ pub(crate) async fn execute_suggestion(
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .map(str::to_string);
+            let repeat_count = metadata
+                .and_then(|value| value.get("repeatCount"))
+                .and_then(Value::as_i64)
+                .unwrap_or(MEMORY_PROMOTION_REPEAT_THRESHOLD);
 
             let result = app_state
                 .memory
                 .service
-                .append_guarded(CreateLocalMemoryRequest {
-                    content: memory_content.to_string(),
-                    session_id,
-                    capability_id: Some("llm_wiki".to_string()),
-                    meta_info: Some(json!({
-                        "source": "llm_wiki_automation",
-                        "suggestion_id": suggestion.id,
-                    })),
-                    category: Some("llm_wiki".to_string()),
-                    source: Some("llm_wiki_automation".to_string()),
-                    tags: Some(vec![
-                        "llm-wiki".to_string(),
-                        "stable-conclusion".to_string(),
-                    ]),
-                })
+                .append_guarded_scoped(build_memory_promotion_request(
+                    lifecycle_context.as_ref(),
+                    memory_content,
+                    session_id.as_deref(),
+                    suggestion.fingerprint.as_str(),
+                    Some(suggestion.id.as_str()),
+                    repeat_count,
+                    now.as_str(),
+                ))
                 .await
                 .map_err(|err| err.to_string())?;
-            memory_action = Some(format!("{:?}", result.action).to_ascii_lowercase());
+            let action = format!("{:?}", result.action).to_ascii_lowercase();
+            memory_action = Some(action.clone());
+            update_memory_promotion_metadata(
+                &mut automation.suggestions[index].metadata,
+                now.as_str(),
+                action.as_str(),
+                result
+                    .item
+                    .as_ref()
+                    .map(|item| item.id.as_str())
+                    .or(result.updated_memory_id.as_deref()),
+                repeat_count,
+            );
             push_audit(
                 &mut automation,
                 suggestion.trigger.as_str(),
@@ -282,6 +305,9 @@ pub(crate) async fn execute_suggestion(
                 Some(json!({
                     "suggestionId": suggestion.id,
                     "memoryAction": memory_action,
+                    "workspaceId": lifecycle_context
+                        .as_ref()
+                        .map(|value| value.workspace_id.as_str()),
                 })),
             );
             Some("Repeated stable conclusion promoted to memory.".to_string())
@@ -469,6 +495,8 @@ pub(crate) async fn handle_session_end(
         .await
         .map_err(|err| err.to_string())?;
     let now = now_rfc3339().map_err(|err| err.to_string())?;
+    let binding = load_binding(store).await.map_err(|err| err.to_string())?;
+    let lifecycle_context = build_workspace_lifecycle_context(binding.as_ref());
     if !state
         .settings
         .create_crystallization_candidates_on_session_end
@@ -511,37 +539,13 @@ pub(crate) async fn handle_session_end(
         return Ok(());
     };
 
-    let goal = format!(
-        "Review the closed conversation summary below and crystallize any durable wiki-worthy conclusions into the Deeting-managed LLM Wiki workspace. Keep writes inside the managed workspace only.\n\nSession summary:\n{}",
-        summary
-    );
-
-    upsert_suggestion(
+    record_session_end_candidate(
         &mut state,
-        TRIGGER_SESSION_END,
-        ACTION_CRYSTALLIZE_SESSION_SUMMARY,
-        suggestion_fingerprint(TRIGGER_SESSION_END, normalized_session_id),
-        "Crystallize the closed session",
-        "A conversation just ended. Review its summary and decide whether it should become a maintained wiki page or analysis note.",
+        lifecycle_context.as_ref(),
+        normalized_session_id,
+        next_status,
+        summary.as_str(),
         now.as_str(),
-        Some(json!({
-            "sessionId": normalized_session_id,
-            "status": next_status,
-            "summary": summary,
-            "goal": goal,
-        })),
-    );
-    push_audit(
-        &mut state,
-        TRIGGER_SESSION_END,
-        "info",
-        "suggested",
-        format!(
-            "Created a crystallization candidate after session {} moved to {}.",
-            normalized_session_id, next_status
-        ),
-        now.as_str(),
-        Some(json!({ "sessionId": normalized_session_id, "status": next_status })),
     );
     save_automation_state(store, &state)
         .await
@@ -570,6 +574,8 @@ pub(crate) async fn handle_valuable_answer(
         .await
         .map_err(|err| err.to_string())?;
     let now = now_rfc3339().map_err(|err| err.to_string())?;
+    let binding = load_binding(store).await.map_err(|err| err.to_string())?;
+    let lifecycle_context = build_workspace_lifecycle_context(binding.as_ref());
 
     if !state.settings.suggest_on_valuable_answer {
         push_audit(
@@ -588,50 +594,110 @@ pub(crate) async fn handle_valuable_answer(
     }
 
     let summary = trim_preview_text(normalized_content, 600);
-    let repeat_count = upsert_suggestion(
+    let repeat_count = record_valuable_answer_candidate(
         &mut state,
-        TRIGGER_VALUABLE_ANSWER,
-        ACTION_CRYSTALLIZE_SESSION_SUMMARY,
-        suggestion_fingerprint(TRIGGER_VALUABLE_ANSWER, normalized_content),
-        "Capture a valuable answer",
-        "A recent assistant answer looks durable enough to review for the managed wiki.",
+        lifecycle_context.as_ref(),
+        normalized_session_id,
+        summary.as_str(),
         now.as_str(),
-        Some(json!({
-            "sessionId": normalized_session_id,
-            "summary": summary,
-            "goal": format!(
-                "Review the valuable answer below and capture any durable wiki-worthy conclusions inside the Deeting-managed LLM Wiki workspace.\n\nAnswer:\n{}",
-                summary
-            ),
-        })),
-    );
-
-    push_audit(
-        &mut state,
-        TRIGGER_VALUABLE_ANSWER,
-        "info",
-        "suggested",
-        "Created or refreshed a valuable-answer wiki candidate.",
-        now.as_str(),
-        Some(json!({
-            "sessionId": normalized_session_id,
-            "repeatCount": repeat_count,
-        })),
     );
 
     if state.settings.promote_repeated_stable_conclusions_to_memory
         && repeat_count >= MEMORY_PROMOTION_REPEAT_THRESHOLD
     {
-        let fingerprint = suggestion_fingerprint(TRIGGER_VALUABLE_ANSWER, normalized_content);
+        let fingerprint = suggestion_fingerprint(TRIGGER_VALUABLE_ANSWER, summary.as_str());
         maybe_promote_repeated_conclusion_to_memory(
             app_state,
             &mut state,
+            lifecycle_context.as_ref(),
             normalized_session_id,
             fingerprint.as_str(),
             summary.as_str(),
             now.as_str(),
         )
         .await?;
+    }
+
+    save_automation_state(store, &state)
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+pub(crate) async fn handle_summary_generated(
+    app_state: &AppState,
+    session_id: &str,
+    summary_text: &str,
+    session_status: &str,
+    trigger_source: &str,
+) -> Result<(), String> {
+    let normalized_session_id = session_id.trim();
+    let normalized_summary = summary_text.trim();
+    if normalized_session_id.is_empty() || normalized_summary.is_empty() {
+        return Ok(());
+    }
+
+    let store = app_state.mcp.store.as_ref();
+    let mut state = load_automation_state(store)
+        .await
+        .map_err(|err| err.to_string())?;
+    let now = now_rfc3339().map_err(|err| err.to_string())?;
+    let binding = load_binding(store).await.map_err(|err| err.to_string())?;
+    let lifecycle_context = build_workspace_lifecycle_context(binding.as_ref());
+
+    if !session_status.eq_ignore_ascii_case("active")
+        && state
+            .settings
+            .create_crystallization_candidates_on_session_end
+    {
+        record_session_end_candidate(
+            &mut state,
+            lifecycle_context.as_ref(),
+            normalized_session_id,
+            session_status,
+            normalized_summary,
+            now.as_str(),
+        );
+        push_audit(
+            &mut state,
+            TRIGGER_SESSION_END,
+            "info",
+            "observed",
+            "Summary worker refreshed a non-active session and reinforced the session-end crystallization candidate.",
+            now.as_str(),
+            Some(json!({
+                "sessionId": normalized_session_id,
+                "status": session_status,
+                "triggerSource": trigger_source,
+            })),
+        );
+    }
+
+    if state.settings.suggest_on_valuable_answer && looks_like_summary_candidate(normalized_summary)
+    {
+        let repeat_count = record_valuable_answer_candidate(
+            &mut state,
+            lifecycle_context.as_ref(),
+            normalized_session_id,
+            normalized_summary,
+            now.as_str(),
+        );
+
+        if state.settings.promote_repeated_stable_conclusions_to_memory
+            && repeat_count >= MEMORY_PROMOTION_REPEAT_THRESHOLD
+        {
+            let fingerprint = suggestion_fingerprint(TRIGGER_VALUABLE_ANSWER, normalized_summary);
+            maybe_promote_repeated_conclusion_to_memory(
+                app_state,
+                &mut state,
+                lifecycle_context.as_ref(),
+                normalized_session_id,
+                fingerprint.as_str(),
+                normalized_summary,
+                now.as_str(),
+            )
+            .await?;
+        }
     }
 
     save_automation_state(store, &state)
@@ -825,6 +891,108 @@ fn apply_settings_patch(
     }
 }
 
+fn record_session_end_candidate(
+    state: &mut LocalLlmWikiAutomationState,
+    lifecycle_context: Option<&WorkspaceLifecycleContext>,
+    session_id: &str,
+    next_status: &str,
+    summary: &str,
+    now: &str,
+) {
+    let claim_id = suggestion_fingerprint(TRIGGER_SESSION_END, session_id);
+    let goal = format!(
+        "Review the closed conversation summary below and crystallize any durable wiki-worthy conclusions into the Deeting-managed LLM Wiki workspace. Keep writes inside the managed workspace only.\n\nSession summary:\n{}",
+        summary
+    );
+
+    upsert_suggestion(
+        state,
+        TRIGGER_SESSION_END,
+        ACTION_CRYSTALLIZE_SESSION_SUMMARY,
+        claim_id.clone(),
+        "Crystallize the closed session",
+        "A conversation just ended. Review its summary and decide whether it should become a maintained wiki page or analysis note.",
+        now,
+        Some(json!({
+            "sessionId": session_id,
+            "status": next_status,
+            "summary": summary,
+            "goal": goal,
+            "lifecycle": build_lifecycle_metadata(
+                lifecycle_context,
+                claim_id.as_str(),
+                Some(session_id),
+                "session_summary",
+                now,
+                1,
+                "candidate",
+            ),
+        })),
+    );
+    push_audit(
+        state,
+        TRIGGER_SESSION_END,
+        "info",
+        "suggested",
+        format!(
+            "Created a crystallization candidate after session {} moved to {}.",
+            session_id, next_status
+        ),
+        now,
+        Some(json!({ "sessionId": session_id, "status": next_status })),
+    );
+}
+
+fn record_valuable_answer_candidate(
+    state: &mut LocalLlmWikiAutomationState,
+    lifecycle_context: Option<&WorkspaceLifecycleContext>,
+    session_id: &str,
+    summary: &str,
+    now: &str,
+) -> i64 {
+    let claim_id = suggestion_fingerprint(TRIGGER_VALUABLE_ANSWER, summary);
+    let repeat_count = upsert_suggestion(
+        state,
+        TRIGGER_VALUABLE_ANSWER,
+        ACTION_CRYSTALLIZE_SESSION_SUMMARY,
+        claim_id.clone(),
+        "Capture a valuable answer",
+        "A recent assistant answer looks durable enough to review for the managed wiki.",
+        now,
+        Some(json!({
+            "sessionId": session_id,
+            "summary": summary,
+            "goal": format!(
+                "Review the valuable answer below and capture any durable wiki-worthy conclusions inside the Deeting-managed LLM Wiki workspace.\n\nAnswer:\n{}",
+                summary
+            ),
+            "lifecycle": build_lifecycle_metadata(
+                lifecycle_context,
+                claim_id.as_str(),
+                Some(session_id),
+                "valuable_answer",
+                now,
+                1,
+                "candidate",
+            ),
+        })),
+    );
+
+    push_audit(
+        state,
+        TRIGGER_VALUABLE_ANSWER,
+        "info",
+        "suggested",
+        "Created or refreshed a valuable-answer wiki candidate.",
+        now,
+        Some(json!({
+            "sessionId": session_id,
+            "repeatCount": repeat_count,
+        })),
+    );
+    repeat_count
+}
+
 async fn handle_corpus_sync_followups(
     app_state: &AppState,
     binding: &PersistedLlmWikiBinding,
@@ -938,6 +1106,7 @@ async fn handle_corpus_sync_followups(
 async fn maybe_promote_repeated_conclusion_to_memory(
     app_state: &AppState,
     state: &mut LocalLlmWikiAutomationState,
+    lifecycle_context: Option<&WorkspaceLifecycleContext>,
     session_id: &str,
     fingerprint: &str,
     summary: &str,
@@ -972,21 +1141,15 @@ async fn maybe_promote_repeated_conclusion_to_memory(
     let result = app_state
         .memory
         .service
-        .append_guarded(CreateLocalMemoryRequest {
-            content: summary.to_string(),
-            session_id: Some(session_id.to_string()),
-            capability_id: Some("llm_wiki".to_string()),
-            meta_info: Some(json!({
-                "source": "llm_wiki_automation",
-                "fingerprint": fingerprint,
-            })),
-            category: Some("llm_wiki".to_string()),
-            source: Some("llm_wiki_automation".to_string()),
-            tags: Some(vec![
-                "llm-wiki".to_string(),
-                "stable-conclusion".to_string(),
-            ]),
-        })
+        .append_guarded_scoped(build_memory_promotion_request(
+            lifecycle_context,
+            summary,
+            Some(session_id),
+            fingerprint,
+            None,
+            repeat_count,
+            now,
+        ))
         .await
         .map_err(|err| err.to_string())?;
 
@@ -995,18 +1158,18 @@ async fn maybe_promote_repeated_conclusion_to_memory(
         .iter_mut()
         .find(|item| item.fingerprint == fingerprint)
     {
-        let mut metadata = item
-            .metadata
-            .as_ref()
-            .and_then(Value::as_object)
-            .cloned()
-            .unwrap_or_default();
-        metadata.insert("memoryPromoted".to_string(), json!(true));
-        metadata.insert(
-            "memoryAction".to_string(),
-            json!(format!("{:?}", result.action).to_ascii_lowercase()),
+        let action = format!("{:?}", result.action).to_ascii_lowercase();
+        update_memory_promotion_metadata(
+            &mut item.metadata,
+            now,
+            action.as_str(),
+            result
+                .item
+                .as_ref()
+                .map(|memory| memory.id.as_str())
+                .or(result.updated_memory_id.as_deref()),
+            repeat_count,
         );
-        item.metadata = Some(Value::Object(metadata));
         item.updated_at = now.to_string();
     }
 
@@ -1021,6 +1184,9 @@ async fn maybe_promote_repeated_conclusion_to_memory(
             "fingerprint": fingerprint,
             "sessionId": session_id,
             "memoryAction": format!("{:?}", result.action).to_ascii_lowercase(),
+            "workspaceId": lifecycle_context
+                .as_ref()
+                .map(|value| value.workspace_id.as_str()),
         })),
     );
 
@@ -1036,6 +1202,15 @@ async fn maybe_promote_repeated_conclusion_to_memory(
             Some(json!({
                 "sessionId": session_id,
                 "memoryContent": summary,
+                "lifecycle": build_lifecycle_metadata(
+                    lifecycle_context,
+                    fingerprint,
+                    Some(session_id),
+                    "valuable_answer",
+                    now,
+                    repeat_count,
+                    "promoted",
+                ),
             })),
         );
     }
@@ -1101,6 +1276,19 @@ fn looks_like_valuable_answer(content: &str, meta_info: Option<&Value>) -> bool 
         return true;
     }
 
+    let has_structure = content
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .count()
+        >= 5
+        && (content.contains("## ")
+            || content.contains("# ")
+            || content.contains("- ")
+            || content.contains("1. "));
+    if has_structure && content.len() >= 180 {
+        return true;
+    }
+
     meta_info
         .and_then(|value| value.get("execution_tree"))
         .and_then(Value::as_object)
@@ -1108,6 +1296,14 @@ fn looks_like_valuable_answer(content: &str, meta_info: Option<&Value>) -> bool 
         .and_then(Value::as_str)
         .map(|value| value.eq_ignore_ascii_case("succeeded"))
         .unwrap_or(false)
+}
+
+fn looks_like_summary_candidate(summary: &str) -> bool {
+    let lines = summary
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .count();
+    summary.len() >= 200 || (summary.len() >= 140 && lines >= 4)
 }
 
 fn upsert_suggestion(
@@ -1143,6 +1339,7 @@ fn upsert_suggestion(
             existing.metadata.as_ref(),
             metadata.as_ref(),
             next_repeat_count,
+            now,
         ));
         return next_repeat_count;
     }
@@ -1157,7 +1354,7 @@ fn upsert_suggestion(
         status: STATUS_PENDING.to_string(),
         created_at: now.to_string(),
         updated_at: now.to_string(),
-        metadata: Some(merge_metadata(None, metadata.as_ref(), 1)),
+        metadata: Some(merge_metadata(None, metadata.as_ref(), 1, now)),
     };
     state.suggestions.insert(0, suggestion);
     if state.suggestions.len() > MAX_SUGGESTIONS {
@@ -1166,7 +1363,12 @@ fn upsert_suggestion(
     1
 }
 
-fn merge_metadata(existing: Option<&Value>, incoming: Option<&Value>, repeat_count: i64) -> Value {
+fn merge_metadata(
+    existing: Option<&Value>,
+    incoming: Option<&Value>,
+    repeat_count: i64,
+    now: &str,
+) -> Value {
     let mut object = existing
         .and_then(Value::as_object)
         .cloned()
@@ -1177,7 +1379,206 @@ fn merge_metadata(existing: Option<&Value>, incoming: Option<&Value>, repeat_cou
         }
     }
     object.insert("repeatCount".to_string(), json!(repeat_count));
+    refresh_lifecycle_metadata(&mut object, repeat_count, now);
     Value::Object(object)
+}
+
+fn build_workspace_lifecycle_context(
+    binding: Option<&PersistedLlmWikiBinding>,
+) -> Option<WorkspaceLifecycleContext> {
+    let binding = binding?;
+    let workspace_relative_path = binding.workspace_relative_path.replace('\\', "/");
+    let workspace_seed = format!("{}::{}", binding.vault_root.trim(), workspace_relative_path);
+    let workspace_id = suggestion_fingerprint("llm_wiki_workspace", workspace_seed.as_str());
+    Some(WorkspaceLifecycleContext {
+        memory_source_scope: format!("llm_wiki_automation::{}", workspace_id),
+        workspace_id,
+        workspace_relative_path,
+    })
+}
+
+fn workspace_lifecycle_context_from_metadata(
+    metadata: &serde_json::Map<String, Value>,
+) -> Option<WorkspaceLifecycleContext> {
+    let lifecycle = metadata.get("lifecycle")?.as_object()?;
+    let workspace_id = lifecycle
+        .get("workspaceId")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?
+        .to_string();
+    let memory_source_scope = lifecycle
+        .get("memorySourceScope")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("llm_wiki_automation")
+        .to_string();
+    let workspace_relative_path = lifecycle
+        .get("workspaceRelativePath")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_string();
+    Some(WorkspaceLifecycleContext {
+        workspace_id,
+        workspace_relative_path,
+        memory_source_scope,
+    })
+}
+
+fn build_lifecycle_metadata(
+    lifecycle_context: Option<&WorkspaceLifecycleContext>,
+    claim_id: &str,
+    session_id: Option<&str>,
+    source_kind: &str,
+    now: &str,
+    repeat_count: i64,
+    promotion_state: &str,
+) -> Value {
+    let mut source_refs = Vec::new();
+    if let Some(session_id) = session_id.map(str::trim).filter(|value| !value.is_empty()) {
+        source_refs.push(json!({
+            "kind": "session",
+            "id": session_id,
+            "source": source_kind,
+        }));
+    }
+    if let Some(context) = lifecycle_context {
+        source_refs.push(json!({
+            "kind": "workspace",
+            "id": context.workspace_id,
+            "relativePath": context.workspace_relative_path,
+        }));
+    }
+
+    json!({
+        "workspaceId": lifecycle_context.map(|value| value.workspace_id.as_str()),
+        "workspaceRelativePath": lifecycle_context.map(|value| value.workspace_relative_path.as_str()),
+        "memorySourceScope": lifecycle_context.map(|value| value.memory_source_scope.as_str()),
+        "pageId": Value::Null,
+        "claimId": claim_id,
+        "sourceRefs": source_refs,
+        "repeatCount": repeat_count,
+        "confidence": lifecycle_confidence(repeat_count, promotion_state),
+        "lastValidatedAt": now,
+        "supersededBy": Value::Null,
+        "promotionState": promotion_state,
+        "manualOverride": false,
+        "pinned": false,
+    })
+}
+
+fn lifecycle_confidence(repeat_count: i64, promotion_state: &str) -> f64 {
+    let base = if promotion_state.eq_ignore_ascii_case("promoted") {
+        0.78
+    } else {
+        0.52
+    };
+    let reinforcement = (repeat_count.saturating_sub(1) as f64 * 0.12).min(0.24);
+    (base + reinforcement).clamp(0.0, 0.95)
+}
+
+fn refresh_lifecycle_metadata(
+    metadata: &mut serde_json::Map<String, Value>,
+    repeat_count: i64,
+    now: &str,
+) {
+    let Some(lifecycle) = ensure_object_field(metadata, "lifecycle") else {
+        return;
+    };
+    let promotion_state = lifecycle
+        .get("promotionState")
+        .and_then(Value::as_str)
+        .unwrap_or("candidate")
+        .to_string();
+    lifecycle.insert("repeatCount".to_string(), json!(repeat_count));
+    lifecycle.insert(
+        "confidence".to_string(),
+        json!(lifecycle_confidence(repeat_count, promotion_state.as_str())),
+    );
+    lifecycle.insert("lastValidatedAt".to_string(), json!(now));
+}
+
+fn update_memory_promotion_metadata(
+    metadata: &mut Option<Value>,
+    now: &str,
+    action: &str,
+    memory_id: Option<&str>,
+    repeat_count: i64,
+) {
+    let mut object = metadata
+        .as_ref()
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    object.insert("memoryPromoted".to_string(), json!(true));
+    object.insert("memoryAction".to_string(), json!(action));
+    if let Some(lifecycle) = ensure_object_field(&mut object, "lifecycle") {
+        lifecycle.insert("promotionState".to_string(), json!("promoted"));
+        lifecycle.insert("repeatCount".to_string(), json!(repeat_count));
+        lifecycle.insert(
+            "confidence".to_string(),
+            json!(lifecycle_confidence(repeat_count, "promoted")),
+        );
+        lifecycle.insert("lastValidatedAt".to_string(), json!(now));
+        if let Some(memory_id) = memory_id.filter(|value| !value.trim().is_empty()) {
+            lifecycle.insert("promotedMemoryId".to_string(), json!(memory_id));
+        }
+    }
+    *metadata = Some(Value::Object(object));
+}
+
+fn build_memory_promotion_request(
+    lifecycle_context: Option<&WorkspaceLifecycleContext>,
+    content: &str,
+    session_id: Option<&str>,
+    claim_id: &str,
+    suggestion_id: Option<&str>,
+    repeat_count: i64,
+    now: &str,
+) -> CreateLocalMemoryRequest {
+    let mut tags = vec!["llm-wiki".to_string(), "stable-conclusion".to_string()];
+    if let Some(context) = lifecycle_context {
+        tags.push(format!("workspace:{}", context.workspace_id));
+    }
+
+    CreateLocalMemoryRequest {
+        content: content.to_string(),
+        session_id: session_id.map(str::to_string),
+        capability_id: Some("llm_wiki".to_string()),
+        meta_info: Some(json!({
+            "source": "llm_wiki_automation",
+            "fingerprint": claim_id,
+            "suggestionId": suggestion_id,
+            "lifecycle": build_lifecycle_metadata(
+                lifecycle_context,
+                claim_id,
+                session_id,
+                "valuable_answer",
+                now,
+                repeat_count,
+                "promoted",
+            ),
+        })),
+        category: Some("llm_wiki".to_string()),
+        source: Some(
+            lifecycle_context
+                .map(|value| value.memory_source_scope.clone())
+                .unwrap_or_else(|| "llm_wiki_automation".to_string()),
+        ),
+        tags: Some(tags),
+    }
+}
+
+fn ensure_object_field<'a>(
+    object: &'a mut serde_json::Map<String, Value>,
+    key: &str,
+) -> Option<&'a mut serde_json::Map<String, Value>> {
+    if !object.get(key).map(Value::is_object).unwrap_or(false) {
+        object.insert(key.to_string(), Value::Object(serde_json::Map::new()));
+    }
+    object.get_mut(key).and_then(Value::as_object_mut)
 }
 
 fn push_audit(
@@ -1225,5 +1626,130 @@ fn trim_preview_text(value: &str, limit: usize) -> String {
         single_line
     } else {
         format!("{}...", &single_line[..limit])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        build_lifecycle_metadata, looks_like_summary_candidate, looks_like_valuable_answer,
+        merge_metadata, record_valuable_answer_candidate, suggestion_fingerprint,
+        trim_preview_text, LocalLlmWikiAutomationState, WorkspaceLifecycleContext,
+    };
+    use serde_json::json;
+
+    #[test]
+    fn record_valuable_answer_candidate_reuses_existing_suggestion_and_bumps_repeat_count() {
+        let mut state = LocalLlmWikiAutomationState::default();
+        let context = WorkspaceLifecycleContext {
+            workspace_id: "workspace-1".into(),
+            workspace_relative_path: "Deeting Wiki".into(),
+            memory_source_scope: "llm_wiki_automation::workspace-1".into(),
+        };
+        let first = record_valuable_answer_candidate(
+            &mut state,
+            Some(&context),
+            "session-1",
+            "Durable summary content for the workspace",
+            "2026-04-14T00:00:00Z",
+        );
+        let second = record_valuable_answer_candidate(
+            &mut state,
+            Some(&context),
+            "session-1",
+            "Durable summary content for the workspace",
+            "2026-04-14T00:01:00Z",
+        );
+
+        assert_eq!(first, 1);
+        assert_eq!(second, 2);
+        assert_eq!(state.suggestions.len(), 1);
+        let repeat_count = state.suggestions[0]
+            .metadata
+            .as_ref()
+            .and_then(|value| value.get("repeatCount"))
+            .and_then(|value| value.as_i64());
+        assert_eq!(repeat_count, Some(2));
+        let lifecycle_repeat_count = state.suggestions[0]
+            .metadata
+            .as_ref()
+            .and_then(|value| value.get("lifecycle"))
+            .and_then(|value| value.get("repeatCount"))
+            .and_then(|value| value.as_i64());
+        assert_eq!(lifecycle_repeat_count, Some(2));
+    }
+
+    #[test]
+    fn merge_metadata_refreshes_nested_lifecycle_confidence() {
+        let context = WorkspaceLifecycleContext {
+            workspace_id: "workspace-1".into(),
+            workspace_relative_path: "Deeting Wiki".into(),
+            memory_source_scope: "llm_wiki_automation::workspace-1".into(),
+        };
+        let merged = merge_metadata(
+            None,
+            Some(&json!({
+                "lifecycle": build_lifecycle_metadata(
+                    Some(&context),
+                    "claim-1",
+                    Some("session-1"),
+                    "valuable_answer",
+                    "2026-04-14T00:00:00Z",
+                    1,
+                    "candidate",
+                )
+            })),
+            3,
+            "2026-04-14T01:00:00Z",
+        );
+        assert_eq!(
+            merged
+                .get("lifecycle")
+                .and_then(|value| value.get("repeatCount"))
+                .and_then(|value| value.as_i64()),
+            Some(3)
+        );
+        assert_eq!(
+            merged
+                .get("lifecycle")
+                .and_then(|value| value.get("workspaceId"))
+                .and_then(|value| value.as_str()),
+            Some("workspace-1")
+        );
+    }
+
+    #[test]
+    fn looks_like_valuable_answer_accepts_successful_execution_tree() {
+        let meta = json!({
+            "execution_tree": {
+                "terminal_status": "succeeded"
+            }
+        });
+        assert!(looks_like_valuable_answer(
+            "short but successful",
+            Some(&meta)
+        ));
+    }
+
+    #[test]
+    fn looks_like_summary_candidate_requires_meaningful_density() {
+        assert!(looks_like_summary_candidate(
+            "Line one\nLine two\nLine three\nLine four\nLine five with enough detail."
+        ));
+        assert!(!looks_like_summary_candidate("tiny summary"));
+    }
+
+    #[test]
+    fn trim_preview_text_compacts_lines() {
+        let value = trim_preview_text("A\n\nB\nC", 20);
+        assert_eq!(value, "A B C");
+    }
+
+    #[test]
+    fn suggestion_fingerprint_is_case_insensitive() {
+        assert_eq!(
+            suggestion_fingerprint("trigger", "Hello"),
+            suggestion_fingerprint("trigger", " hello ")
+        );
     }
 }

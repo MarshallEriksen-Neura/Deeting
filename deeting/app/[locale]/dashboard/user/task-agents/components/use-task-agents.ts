@@ -3,7 +3,7 @@
 import * as React from "react"
 import useSWR from "swr"
 import { useLocale } from "next-intl"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 
 import {
@@ -26,6 +26,10 @@ import {
   type UpsertCustomTaskAgentPayload,
 } from "@/lib/api/custom-task-agents"
 import { listLocalAssets, type LocalAsset } from "@/lib/api/local-assets"
+import {
+  clearLlmWikiTaskAgentHandoff,
+  loadLlmWikiTaskAgentHandoff,
+} from "@/lib/llm-wiki-handoff"
 import { useChatModels } from "@/hooks/use-chat-models"
 import {
   applyTaskAgentImageConfigToModelConfig,
@@ -62,6 +66,7 @@ type Translation = (key: string, values?: Record<string, string | number>) => st
 export function useTaskAgents(t: Translation) {
   const locale = useLocale()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [desktopSupport, setDesktopSupport] = React.useState<boolean | null>(null)
   const isDesktop = desktopSupport === true
   const deferredLocale = React.useDeferredValue(locale)
@@ -101,6 +106,7 @@ export function useTaskAgents(t: Translation) {
   const [claudeImportError, setClaudeImportError] = React.useState<string | null>(null)
   const pendingNavigationRef = React.useRef<(() => void) | null>(null)
   const hydratedSelectionRef = React.useRef<string | null>(null)
+  const llmWikiHandoffAppliedRef = React.useRef(false)
 
   // ── Desktop support detection ────────────────────────────────────────
 
@@ -166,6 +172,41 @@ export function useTaskAgents(t: Translation) {
       setCreateFlowStep(agents[0] ? "editor" : "starter")
     }
   }, [agents, isDesktop, selectedAgentId])
+
+  React.useEffect(() => {
+    if (!isDesktop || llmWikiHandoffAppliedRef.current) return
+    const handoff = searchParams?.get("handoff")?.trim()
+    if (handoff !== "llm-wiki") return
+    llmWikiHandoffAppliedRef.current = true
+
+    const explicitAgentId = searchParams?.get("agentId")?.trim()
+    if (explicitAgentId) {
+      setSelectedAgentId(explicitAgentId)
+      setCreateFlowStep("editor")
+      clearLlmWikiTaskAgentHandoff()
+      return
+    }
+
+    const bundle = loadLlmWikiTaskAgentHandoff()
+    if (!bundle) return
+
+    hydratedSelectionRef.current = NEW_AGENT_ID
+    setSelectedAgentId(NEW_AGENT_ID)
+    setCreateFlowStep("editor")
+    setDraft({
+      ...createEmptyDraft(),
+      name: bundle.name ?? "",
+      description: bundle.description ?? "",
+      task_prompt: bundle.taskPrompt ?? "",
+      source_kind: bundle.sourceKind ?? "",
+      source_path: bundle.sourcePath ?? "",
+      tags_input: (bundle.tags ?? []).join(", "),
+    })
+    setPreviewDraft(defaultPreviewDraft)
+    setPreviewResult(null)
+    setPreviewError(null)
+    clearLlmWikiTaskAgentHandoff()
+  }, [isDesktop, searchParams])
 
   // ── Hydrate draft from selected agent ────────────────────────────────
 
@@ -409,6 +450,8 @@ export function useTaskAgents(t: Translation) {
         callable_mcp_tool_ids: [...sourceDraft.callable_mcp_tool_ids],
         guidance_skill_ids: [...sourceDraft.guidance_skill_ids],
         bound_asset_id: sourceDraft.bound_asset_id.trim(),
+        source_kind: sourceDraft.source_kind.trim() || null,
+        source_path: sourceDraft.source_path.trim() || null,
         tags: parseTagsInput(sourceDraft.tags_input),
         discoverable: sourceDraft.discoverable,
         is_enabled: sourceDraft.is_enabled,
@@ -465,6 +508,7 @@ export function useTaskAgents(t: Translation) {
         hasImageConfigValues || hasVoiceConfigValues ||
         draft.model_config_json.trim() || draft.callable_mcp_tool_ids.length ||
         draft.guidance_skill_ids.length || draft.bound_asset_id.trim() ||
+        draft.source_kind.trim() || draft.source_path.trim() ||
         parseTagsInput(draft.tags_input).length ||
         draft.preferred_for_image_generation !== false ||
         draft.discoverable !== true || draft.is_enabled !== true,

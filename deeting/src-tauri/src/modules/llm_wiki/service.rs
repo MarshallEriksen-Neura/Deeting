@@ -3,12 +3,14 @@ use std::path::Path;
 
 use mcp_storage::helpers::now_rfc3339;
 
+use super::adoption::{normalize_confirm_adoption_payload, preview_adoption};
 use super::automation::{
     dismiss_suggestion as dismiss_llm_wiki_automation_suggestion_inner,
     execute_suggestion as execute_llm_wiki_automation_suggestion_inner,
     handle_corpus_sync_completed, handle_vault_bound, handle_workspace_bootstrapped,
     update_automation_settings as update_llm_wiki_automation_settings_inner,
 };
+use super::maintenance::{ingest_selection as ingest_llm_wiki_selection_inner, run_lint};
 use crate::modules::custom_task_agents::service::{
     create_custom_task_agent_service, update_custom_task_agent_service,
 };
@@ -21,18 +23,22 @@ use crate::modules::mcp::store::McpStore;
 use crate::state::AppState;
 
 use super::config::{
-    load_automation_state, load_binding, load_last_bootstrapped_at, normalize_vault_root,
-    normalize_workspace_relative_path, resolve_workspace_path, save_binding,
-    save_last_bootstrapped_at, PersistedLlmWikiBinding, READ_SCOPE_WHOLE_VAULT,
+    load_automation_state, load_binding, load_last_bootstrapped_at, load_last_lint_report,
+    normalize_required_relative_path, normalize_vault_root, normalize_workspace_relative_path,
+    resolve_workspace_path, save_binding, save_last_bootstrapped_at, PersistedLlmWikiBinding,
+    LLM_WIKI_MODE_ADOPT_EXISTING_FOLDER, LLM_WIKI_MODE_MANAGED_WORKSPACE, READ_SCOPE_WHOLE_VAULT,
     WRITE_SCOPE_MANAGED_WORKSPACE,
 };
 use super::corpus::{load_corpus_status, search_corpus, sync_corpus};
 use super::scan::{inspect_workspace, scan_vault};
 use super::templates::{build_bootstrap_files, build_recommended_agent_prompt};
 use super::types::{
-    BootstrapLocalLlmWikiWorkspaceResult, CreateOrUpdateLocalLlmWikiMaintainerAgentResult,
-    LocalLlmWikiAutomationExecutionResult, LocalLlmWikiBinding, LocalLlmWikiMaintainerAgentSummary,
-    LocalLlmWikiState, SaveLocalLlmWikiBindingRequest, SearchLocalLlmWikiCorpusRequest,
+    BootstrapLocalLlmWikiWorkspaceResult, ConfirmLocalLlmWikiAdoptionRequest,
+    CreateOrUpdateLocalLlmWikiMaintainerAgentResult, IngestLocalLlmWikiSelectionRequest,
+    IngestLocalLlmWikiSelectionResult, LocalLlmWikiAdoptionPreview,
+    LocalLlmWikiAutomationExecutionResult, LocalLlmWikiBinding, LocalLlmWikiLintReport,
+    LocalLlmWikiMaintainerAgentSummary, LocalLlmWikiState, PreviewLocalLlmWikiAdoptionRequest,
+    SaveLocalLlmWikiBindingRequest, SearchLocalLlmWikiCorpusRequest,
     SearchLocalLlmWikiCorpusResult, UpdateLocalLlmWikiAutomationSettingsRequest,
 };
 
@@ -50,6 +56,9 @@ pub async fn get_local_llm_wiki_state(store: &McpStore) -> Result<LocalLlmWikiSt
             automation: load_automation_state(store)
                 .await
                 .map_err(|err| err.to_string())?,
+            last_lint_report: load_last_lint_report(store)
+                .await
+                .map_err(|err| err.to_string())?,
         });
     };
 
@@ -62,12 +71,37 @@ pub async fn save_local_llm_wiki_binding(
 ) -> Result<LocalLlmWikiState, String> {
     let store = app_state.mcp.store.as_ref();
     let vault_root = normalize_vault_root(&payload.vault_root)?;
-    let workspace_relative_path =
-        normalize_workspace_relative_path(payload.workspace_relative_path.as_deref())?;
+    let mode = payload
+        .mode
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(LLM_WIKI_MODE_MANAGED_WORKSPACE);
+    let adopted_folder_relative_path = payload
+        .adopted_folder_relative_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(normalize_required_relative_path)
+        .transpose()?;
+    let workspace_relative_path = if mode == LLM_WIKI_MODE_ADOPT_EXISTING_FOLDER {
+        let adopted = adopted_folder_relative_path
+            .clone()
+            .ok_or_else(|| "adopted folder path is required for adopt mode".to_string())?;
+        let adopted_target = vault_root.join(&adopted);
+        if !adopted_target.exists() || !adopted_target.is_dir() {
+            return Err("adopted folder must exist inside the vault root".to_string());
+        }
+        adopted
+    } else {
+        normalize_workspace_relative_path(payload.workspace_relative_path.as_deref())?
+    };
 
     let binding = PersistedLlmWikiBinding {
         vault_root: vault_root.to_string_lossy().to_string(),
         workspace_relative_path,
+        mode: mode.to_string(),
+        adopted_folder_relative_path,
     };
 
     save_binding(store, &binding)
@@ -250,6 +284,54 @@ pub async fn search_local_llm_wiki_corpus(
     Ok(SearchLocalLlmWikiCorpusResult { hits })
 }
 
+pub async fn preview_local_llm_wiki_adoption(
+    payload: PreviewLocalLlmWikiAdoptionRequest,
+) -> Result<LocalLlmWikiAdoptionPreview, String> {
+    preview_adoption(payload)
+}
+
+pub async fn confirm_local_llm_wiki_adoption(
+    app_state: &AppState,
+    payload: ConfirmLocalLlmWikiAdoptionRequest,
+) -> Result<LocalLlmWikiState, String> {
+    let store = app_state.mcp.store.as_ref();
+    let (vault_root, folder_relative_path) = normalize_confirm_adoption_payload(payload)?;
+    let binding = PersistedLlmWikiBinding {
+        vault_root: vault_root.to_string_lossy().to_string(),
+        workspace_relative_path: folder_relative_path.clone(),
+        mode: LLM_WIKI_MODE_ADOPT_EXISTING_FOLDER.to_string(),
+        adopted_folder_relative_path: Some(folder_relative_path),
+    };
+
+    save_binding(store, &binding)
+        .await
+        .map_err(|err| err.to_string())?;
+    handle_vault_bound(app_state).await?;
+    build_state_from_binding(store, binding).await
+}
+
+pub async fn ingest_local_llm_wiki_selection(
+    app_state: &AppState,
+    payload: IngestLocalLlmWikiSelectionRequest,
+) -> Result<IngestLocalLlmWikiSelectionResult, String> {
+    let (ingested_paths, skipped_paths, source_pages_created, raw_files_copied) =
+        ingest_llm_wiki_selection_inner(app_state, payload).await?;
+    let state = get_local_llm_wiki_state(app_state.mcp.store.as_ref()).await?;
+    Ok(IngestLocalLlmWikiSelectionResult {
+        ingested_paths,
+        skipped_paths,
+        source_pages_created,
+        raw_files_copied,
+        state,
+    })
+}
+
+pub async fn run_local_llm_wiki_lint(
+    app_state: &AppState,
+) -> Result<LocalLlmWikiLintReport, String> {
+    run_lint(app_state).await
+}
+
 pub async fn update_local_llm_wiki_automation_settings(
     store: &McpStore,
     payload: UpdateLocalLlmWikiAutomationSettingsRequest,
@@ -319,6 +401,9 @@ async fn build_state_from_binding(
         automation: load_automation_state(store)
             .await
             .map_err(|err| err.to_string())?,
+        last_lint_report: load_last_lint_report(store)
+            .await
+            .map_err(|err| err.to_string())?,
     })
 }
 
@@ -337,6 +422,11 @@ fn build_public_binding(
         vault_root: vault_root.to_string_lossy().to_string(),
         vault_name,
         workspace_relative_path: binding.workspace_relative_path.replace('\\', "/"),
+        mode: binding.mode.clone(),
+        adopted_folder_relative_path: binding
+            .adopted_folder_relative_path
+            .as_ref()
+            .map(|value| value.replace('\\', "/")),
         read_scope: READ_SCOPE_WHOLE_VAULT.to_string(),
         write_scope: WRITE_SCOPE_MANAGED_WORKSPACE.to_string(),
         is_probable_obsidian_vault: vault_root.join(".obsidian").is_dir(),

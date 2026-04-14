@@ -1,7 +1,9 @@
+mod adoption;
 pub mod automation;
 pub mod commands;
 mod config;
 mod corpus;
+mod maintenance;
 mod scan;
 pub mod service;
 mod templates;

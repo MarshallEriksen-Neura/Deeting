@@ -72,6 +72,7 @@ pub(crate) struct EvaluatedOutcome {
     pub(crate) final_status: String,
     pub(crate) verification_result: String,
     pub(crate) user_response_signal: String,
+    pub(crate) judgment_mode: String,
     pub(crate) route_judgment: String,
     pub(crate) discovery_judgment: String,
     pub(crate) execution_judgment: String,

@@ -912,6 +912,177 @@ async fn apply_task_policy_delta_upserts_and_accumulates_prior_weight() {
 }
 
 #[tokio::test]
+async fn record_task_learning_run_persists_learning_snapshot() {
+    let store = create_test_store("task-learning-runs").await;
+    store.init().await.expect("init store");
+
+    let run_id = store
+        .record_task_learning_run(
+            "session-1",
+            Some("request-1"),
+            Some("trace-1"),
+            "fingerprint-1",
+            r#"{"goalShape":"repair"}"#,
+            Some(r#"{"route":"worker"}"#),
+            r#"{"route":"worker","plane":"worker_reasoning"}"#,
+            r#"{"finalStatus":"success"}"#,
+            r#"{"primaryStage":"execution"}"#,
+            Some(r#"{"decisionPoint":"execution"}"#),
+            true,
+            "confirmed",
+        )
+        .await
+        .expect("record task learning run");
+
+    let row = sqlx::query(
+        "SELECT session_id, request_id, trace_id, fingerprint_key, learning_eligible, delta_state FROM task_learning_runs WHERE run_id = ?",
+    )
+    .bind(run_id)
+    .fetch_one(&store.pool)
+    .await
+    .expect("read task learning run");
+
+    assert_eq!(
+        row.try_get::<String, _>("session_id").expect("session_id"),
+        "session-1"
+    );
+    assert_eq!(
+        row.try_get::<String, _>("request_id").expect("request_id"),
+        "request-1"
+    );
+    assert_eq!(
+        row.try_get::<String, _>("trace_id").expect("trace_id"),
+        "trace-1"
+    );
+    assert_eq!(
+        row.try_get::<String, _>("fingerprint_key")
+            .expect("fingerprint_key"),
+        "fingerprint-1"
+    );
+    assert_eq!(
+        row.try_get::<i64, _>("learning_eligible")
+            .expect("learning_eligible"),
+        1
+    );
+    assert_eq!(
+        row.try_get::<String, _>("delta_state")
+            .expect("delta_state"),
+        "confirmed"
+    );
+}
+
+#[tokio::test]
+async fn adjust_task_policy_prior_can_revise_without_incrementing_evidence_count() {
+    let store = create_test_store("task-policy-prior-revision").await;
+    store.init().await.expect("init store");
+
+    store
+        .adjust_task_policy_prior(
+            "fingerprint-r",
+            "verification",
+            "stronger_checks",
+            0.3,
+            "provisional",
+            0.6,
+            Some("run-1"),
+            1,
+        )
+        .await
+        .expect("seed prior");
+    store
+        .adjust_task_policy_prior(
+            "fingerprint-r",
+            "verification",
+            "stronger_checks",
+            -0.1,
+            "confirmed",
+            0.9,
+            Some("run-1-revision"),
+            0,
+        )
+        .await
+        .expect("revise prior without new evidence");
+
+    let rows = store
+        .list_task_policy_prior_rows("fingerprint-r", "verification", 4)
+        .await
+        .expect("list priors");
+
+    assert_eq!(rows.len(), 1);
+    assert!((rows[0].weight - 0.2).abs() < 1e-6);
+    assert_eq!(rows[0].evidence_count, 1);
+    assert_eq!(rows[0].maturity, "confirmed");
+}
+
+#[tokio::test]
+async fn append_task_learning_revision_persists_revision_history() {
+    let store = create_test_store("task-learning-revisions").await;
+    store.init().await.expect("init store");
+
+    let run_id = store
+        .record_task_learning_run(
+            "session-r",
+            Some("request-r"),
+            Some("trace-r"),
+            "fingerprint-r",
+            r#"{"goal_shape":"repair"}"#,
+            Some(r#"{"route":"direct"}"#),
+            r#"{"route":"direct","plane":"response_only"}"#,
+            r#"{"final_status":"success","user_response_signal":"silent"}"#,
+            r#"{"primary_stage":"route"}"#,
+            Some(r#"{"decision_point":"route","action_key":"direct"}"#),
+            true,
+            "provisional",
+        )
+        .await
+        .expect("record run");
+
+    let revision = store
+        .append_task_learning_revision(
+            run_id.as_str(),
+            "trace_feedback",
+            "rejected",
+            Some("thumbs down"),
+            r#"{"final_status":"failed","user_response_signal":"rejected"}"#,
+            r#"{"primary_stage":"verification"}"#,
+            Some(r#"{"decision_point":"verification","action_key":"stronger_checks"}"#),
+            "confirmed",
+        )
+        .await
+        .expect("append revision");
+    store
+        .update_task_learning_run_revision_state(
+            run_id.as_str(),
+            r#"{"final_status":"failed","user_response_signal":"rejected"}"#,
+            r#"{"primary_stage":"verification"}"#,
+            Some(r#"{"decision_point":"verification","action_key":"stronger_checks"}"#),
+            true,
+            "confirmed",
+            Some("rejected"),
+            1,
+            revision.created_at_unix_ms,
+        )
+        .await
+        .expect("update run state");
+
+    let revisions = store
+        .list_task_learning_revisions(run_id.as_str())
+        .await
+        .expect("list revisions");
+    assert_eq!(revisions.len(), 1);
+    assert_eq!(revisions[0].trigger_source, "trace_feedback");
+    assert_eq!(revisions[0].user_response_signal, "rejected");
+
+    let updated = store
+        .get_task_learning_run(run_id.as_str())
+        .await
+        .expect("load updated run")
+        .expect("run");
+    assert_eq!(updated.revision_count, 1);
+    assert_eq!(updated.last_signal.as_deref(), Some("rejected"));
+}
+
+#[tokio::test]
 async fn record_asset_execution_persists_session_and_asset_id() {
     let store = create_test_store("asset-execution-history").await;
     store.init().await.expect("init store");

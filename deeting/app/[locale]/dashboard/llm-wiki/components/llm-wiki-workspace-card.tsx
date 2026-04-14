@@ -33,17 +33,20 @@ const scaffoldPreview = [
 export function LlmWikiWorkspaceCard({
   t,
   state,
+  bindingMode,
   lastBootstrap,
   isBootstrapping,
   onBootstrap,
 }: {
   t: Translation
   state: LocalLlmWikiState | null
+  bindingMode: string
   lastBootstrap: BootstrapLocalLlmWikiWorkspaceResult | null
   isBootstrapping: boolean
   onBootstrap: () => void
 }) {
   const workspace = state?.workspaceStatus
+  const isAdoptMode = bindingMode === "adopt_existing_folder"
 
   return (
     <GlassCard
@@ -138,18 +141,24 @@ export function LlmWikiWorkspaceCard({
       </GlassCardContent>
 
       <GlassCardFooter className="border-t border-white/60 pt-5">
-        <Button
-          onClick={onBootstrap}
-          disabled={isBootstrapping || !state?.binding}
-          className="h-11 rounded-full bg-[linear-gradient(135deg,#065f46,#10b981)] px-6 text-white shadow-[0_20px_40px_-24px_rgba(16,185,129,0.65)]"
-        >
-          {isBootstrapping ? (
-            <RefreshCw className="mr-2 size-4 animate-spin" />
-          ) : (
-            <FolderTree className="mr-2 size-4" />
-          )}
-          {isBootstrapping ? t("workspace.bootstrapping") : t("workspace.bootstrap")}
-        </Button>
+        {isAdoptMode ? (
+          <div className="text-sm leading-6 text-slate-500">
+            {t("workspace.adoptModeNote")}
+          </div>
+        ) : (
+          <Button
+            onClick={onBootstrap}
+            disabled={isBootstrapping || !state?.binding}
+            className="h-11 rounded-full bg-[linear-gradient(135deg,#065f46,#10b981)] px-6 text-white shadow-[0_20px_40px_-24px_rgba(16,185,129,0.65)]"
+          >
+            {isBootstrapping ? (
+              <RefreshCw className="mr-2 size-4 animate-spin" />
+            ) : (
+              <FolderTree className="mr-2 size-4" />
+            )}
+            {isBootstrapping ? t("workspace.bootstrapping") : t("workspace.bootstrap")}
+          </Button>
+        )}
       </GlassCardFooter>
     </GlassCard>
   )

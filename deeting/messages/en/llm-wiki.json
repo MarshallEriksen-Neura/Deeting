@@ -78,6 +78,36 @@
           "label": "Managed Workspace Path",
           "description": "Relative to the vault root. Deeting writes the LLM Wiki here.",
           "placeholder": "Deeting Wiki"
+        },
+        "adoptFolder": {
+          "label": "Existing Folder To Adopt",
+          "description": "Pick the folder Deeting should preview as an existing wiki area before it begins maintenance.",
+          "placeholder": "Research Wiki"
+        }
+      },
+      "modes": {
+        "managed": {
+          "title": "Managed Workspace",
+          "description": "Create or maintain a bounded Deeting Wiki workspace inside the vault."
+        },
+        "adopt": {
+          "title": "Adopt Existing Folder",
+          "description": "Preview an existing folder first, then confirm adoption only after classification looks correct."
+        }
+      },
+      "adoption": {
+        "candidates": "Candidate Existing Folders",
+        "preview": "Preview Adoption",
+        "previewing": "Previewing...",
+        "confirm": "Confirm Adoption",
+        "previewTitle": "Adoption Preview",
+        "buckets": {
+          "workspace_marker": "Workspace Markers",
+          "wiki_page": "Wiki Pages",
+          "source_page": "Source Pages",
+          "raw_source": "Raw Sources",
+          "unmanaged_note": "Unmanaged Notes",
+          "attachment": "Attachments"
         }
       },
       "insights": {
@@ -87,6 +117,41 @@
         "directories": "Directories Scanned",
         "detected": "Detected",
         "notDetected": "Not Detected"
+      }
+    },
+    "maintenance": {
+      "eyebrow": "Maintenance",
+      "title": "Operate the wiki like a maintained workspace.",
+      "description": "Rescan the vault, ingest source material, rebuild the dedicated index, run lint, and review recent lifecycle actions without leaving the LLM Wiki surface.",
+      "actions": {
+        "rescan": "Rescan Vault",
+        "rebuildIndex": "Rebuild Index",
+        "runLint": "Run Lint"
+      },
+      "ingest": {
+        "title": "Ingest Selection",
+        "description": "Register existing vault paths into the managed wiki. Markdown becomes source pages; files are copied into raw sources.",
+        "placeholder": "research/meeting-notes.md\nattachments/roadmap.pdf",
+        "hint": "Enter one or more vault-relative paths, separated by new lines or commas.",
+        "action": "Ingest Selection",
+        "lastRun": "Latest ingest run",
+        "stats": {
+          "ingested": "{count} paths ingested",
+          "sourcePages": "{count} source pages created",
+          "rawCopies": "{count} raw files copied"
+        }
+      },
+      "lint": {
+        "title": "Lint And Claim Review",
+        "description": "Detect stale summaries, weak links, duplicate titles, orphan pages, and candidate supersession with explicit confidence levels.",
+        "summary": "{count} finding(s) in the latest lint run at {generatedAt}.",
+        "empty": "No findings were produced in the latest lint run.",
+        "notRun": "Lint has not been run yet."
+      },
+      "lifecycle": {
+        "title": "Recent Lifecycle Actions",
+        "description": "Latest visible maintenance, automation, and crystallization actions.",
+        "empty": "No lifecycle actions have been recorded yet."
       }
     },
     "workspace": {
@@ -105,6 +170,7 @@
         "notCreated": "Not Created",
         "awaiting": "Awaiting bootstrap"
       },
+      "adoptModeNote": "This folder is being adopted rather than scaffolded. Confirm adoption in the binding section, then use maintenance actions instead of bootstrap.",
       "lastRun": {
         "title": "Latest scaffold run",
         "createdFiles": "{count} files created",
@@ -187,6 +253,11 @@
         "emptyDescription": "Create one now so Deeting can delegate wiki maintenance into a bounded write scope.",
         "description": "Maintainer profile synced. Last updated {updatedAt}."
       },
+      "status": {
+        "ready": "Ready",
+        "pending": "Pending"
+      },
+      "workspacePath": "Maintained Workspace Path",
       "facts": {
         "read": "Read Scope",
         "write": "Write Scope"
@@ -198,6 +269,20 @@
       "tip": {
         "title": "Keep the main runtime clean",
         "description": "The maintainer agent should update pages, source summaries, and logs. The main chat runtime should stay retrieval-focused and trigger delegation only when needed."
+      },
+      "handoff": {
+        "stepOne": {
+          "title": "Open the maintainer workspace",
+          "description": "Jump into the task-agent dashboard with the maintainer context already prepared."
+        },
+        "stepTwo": {
+          "title": "Review the maintenance contract",
+          "description": "The prompt already carries the read/write boundary and the Deeting Wiki ownership model."
+        },
+        "stepThree": {
+          "title": "Save and delegate through normal work",
+          "description": "Once saved, the agent can handle crystallization, source review, and ongoing wiki maintenance."
+        }
       }
     },
     "automation": {
@@ -305,6 +390,14 @@
       "promptCopied": "Maintainer prompt copied.",
       "promptCopyFailed": "Could not copy the maintainer prompt.",
       "noPrompt": "Maintainer prompt is not ready yet.",
+      "adoptionPreviewFailed": "Failed to preview the existing folder adoption.",
+      "adoptionConfirmed": "Existing folder adoption confirmed.",
+      "adoptionConfirmFailed": "Failed to confirm the existing folder adoption.",
+      "ingestSelectionEmpty": "Provide at least one vault-relative path to ingest.",
+      "ingestCompleted": "Ingest finished. Processed {ingested} paths and copied {copied} raw files.",
+      "ingestFailed": "Failed to ingest the selected paths.",
+      "lintCompleted": "Lint completed with {count} finding(s).",
+      "lintFailed": "Failed to run the LLM Wiki lint pass.",
       "automationSettingsFailed": "Failed to update LLM Wiki automation settings.",
       "automationExecutionFailed": "Failed to execute the automation suggestion.",
       "automationDismissFailed": "Failed to dismiss the automation suggestion."

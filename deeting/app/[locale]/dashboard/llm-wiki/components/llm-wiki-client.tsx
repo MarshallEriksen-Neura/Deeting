@@ -12,6 +12,7 @@ import { LlmWikiCorpusCard } from "./llm-wiki-corpus-card"
 import { LlmWikiHero } from "./llm-wiki-hero"
 import { LlmWikiJourneyCard } from "./llm-wiki-journey-card"
 import { LlmWikiLifecycleCard } from "./llm-wiki-lifecycle-card"
+import { LlmWikiMaintenanceCard } from "./llm-wiki-maintenance-card"
 import { useLlmWiki } from "./use-llm-wiki"
 import { LlmWikiWorkspaceCard } from "./llm-wiki-workspace-card"
 
@@ -24,8 +25,13 @@ export function LlmWikiClient() {
     state,
     vaultRoot,
     workspaceRelativePath,
+    bindingMode,
+    adoptFolderRelativePath,
+    adoptionPreview,
     isLoading,
     isAnalyzing,
+    isPreviewingAdoption,
+    isConfirmingAdoption,
     isBootstrapping,
     isSyncingAgent,
     isSyncingCorpus,
@@ -36,16 +42,25 @@ export function LlmWikiClient() {
     selectedCorpusHit,
     hasSearchedCorpus,
     corpusSearchError,
+    ingestSelectionInput,
+    isIngestingSelection,
+    lastIngestResult,
+    isRunningLint,
     automation,
+    lastLintReport,
     isUpdatingAutomationSettings,
     executingSuggestionId,
     dismissingSuggestionId,
     setVaultRoot,
     setWorkspaceRelativePath,
+    setBindingMode,
+    setAdoptFolderRelativePath,
     setCorpusQuery,
     setSelectedCorpusHitId,
+    setIngestSelectionInput,
     refresh,
     analyze,
+    confirmAdoption,
     bootstrap,
     copyAgentPrompt,
     syncMaintainerAgent,
@@ -54,6 +69,9 @@ export function LlmWikiClient() {
     setAutomationSetting,
     executeAutomationSuggestion,
     dismissAutomationSuggestion,
+    openTaskAgentHandoff,
+    ingestSelection,
+    runLint,
   } = useLlmWiki(t)
 
   if (desktopSupported === null && isLoading) {
@@ -108,16 +126,25 @@ export function LlmWikiClient() {
           state={state}
           vaultRoot={vaultRoot}
           workspaceRelativePath={workspaceRelativePath}
+          bindingMode={bindingMode}
+          adoptFolderRelativePath={adoptFolderRelativePath}
+          adoptionPreview={adoptionPreview}
           isAnalyzing={isAnalyzing}
+          isPreviewingAdoption={isPreviewingAdoption}
+          isConfirmingAdoption={isConfirmingAdoption}
           onVaultRootChange={setVaultRoot}
           onWorkspaceRelativePathChange={setWorkspaceRelativePath}
+          onBindingModeChange={setBindingMode}
+          onAdoptFolderRelativePathChange={setAdoptFolderRelativePath}
           onAnalyze={analyze}
+          onConfirmAdoption={confirmAdoption}
           onRefresh={refresh}
         />
 
         <LlmWikiWorkspaceCard
           t={t}
           state={state}
+          bindingMode={bindingMode}
           lastBootstrap={lastBootstrap}
           isBootstrapping={isBootstrapping}
           onBootstrap={bootstrap}
@@ -135,6 +162,23 @@ export function LlmWikiClient() {
         onToggleSetting={setAutomationSetting}
         onExecuteSuggestion={executeAutomationSuggestion}
         onDismissSuggestion={dismissAutomationSuggestion}
+      />
+
+      <LlmWikiMaintenanceCard
+        t={t}
+        ingestSelectionInput={ingestSelectionInput}
+        onIngestSelectionInputChange={setIngestSelectionInput}
+        onRefresh={refresh}
+        onRebuildIndex={syncCorpus}
+        onIngestSelection={ingestSelection}
+        onRunLint={runLint}
+        isRefreshing={isLoading}
+        isRebuildingIndex={isSyncingCorpus}
+        isIngestingSelection={isIngestingSelection}
+        isRunningLint={isRunningLint}
+        lastIngestResult={lastIngestResult}
+        lastLintReport={lastLintReport}
+        recentLifecycleActions={(automation?.audit ?? []).slice(0, 6)}
       />
 
       <div className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
@@ -162,6 +206,7 @@ export function LlmWikiClient() {
           isSyncingAgent={isSyncingAgent}
           onCopyPrompt={copyAgentPrompt}
           onSyncMaintainerAgent={syncMaintainerAgent}
+          onOpenTaskAgents={openTaskAgentHandoff}
         />
       </div>
 
