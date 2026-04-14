@@ -324,7 +324,9 @@ pub(crate) async fn execute_suggestion(
                         .map(|value| value.workspace_id.as_str()),
                 })),
             );
-            Ok(Some("Repeated stable conclusion promoted to memory.".to_string()))
+            Ok(Some(
+                "Repeated stable conclusion promoted to memory.".to_string(),
+            ))
         }
         ACTION_INSPECT_CORPUS => {
             push_audit(
@@ -810,8 +812,7 @@ pub(crate) async fn run_schedule_tick(
         } else {
             expire_suggestion_by_fingerprint(
                 &mut state,
-                suggestion_fingerprint(TRIGGER_MAINTENANCE_SCHEDULE, "stale-corpus-sync")
-                    .as_str(),
+                suggestion_fingerprint(TRIGGER_MAINTENANCE_SCHEDULE, "stale-corpus-sync").as_str(),
                 now.as_str(),
             );
         }
@@ -1368,7 +1369,14 @@ fn upsert_suggestion(
     now: &str,
     metadata: Option<Value>,
 ) -> i64 {
-    supersede_related_pending_suggestions(state, trigger, action_kind, &fingerprint, metadata.as_ref(), now);
+    supersede_related_pending_suggestions(
+        state,
+        trigger,
+        action_kind,
+        &fingerprint,
+        metadata.as_ref(),
+        now,
+    );
     if let Some(existing) = state
         .suggestions
         .iter_mut()

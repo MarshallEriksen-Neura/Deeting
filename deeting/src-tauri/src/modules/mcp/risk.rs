@@ -71,6 +71,31 @@ impl ApprovalBoundaryClass {
     }
 }
 
+fn normalized_approval_key_tail_segment<'a>(
+    parts: &'a [&'a str],
+    offset_from_end: usize,
+) -> &'a str {
+    parts
+        .len()
+        .checked_sub(offset_from_end)
+        .and_then(|index| parts.get(index))
+        .copied()
+        .filter(|segment| !segment.is_empty())
+        .unwrap_or("unknown")
+}
+
+pub fn approval_classes_from_key(value: &str) -> (String, String, String) {
+    // Older approval rows could prepend human-readable segments before the
+    // canonical class tuple. The stable contract is that the final three
+    // segments are operation, target, and boundary.
+    let parts: Vec<_> = value.split('|').map(str::trim).collect();
+    (
+        normalized_approval_key_tail_segment(&parts, 3).to_string(),
+        normalized_approval_key_tail_segment(&parts, 2).to_string(),
+        normalized_approval_key_tail_segment(&parts, 1).to_string(),
+    )
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ToolRiskAssessment {
     pub requires_approval: bool,
@@ -944,5 +969,31 @@ mod tests {
         assert_eq!(grant.target_class, RiskTargetClass::PublicInternet);
         assert_eq!(grant.boundary_class, ApprovalBoundaryClass::SoftBoundary);
         assert_eq!(grant.created_at_unix_ms, 1234);
+    }
+
+    #[test]
+    fn approval_classes_from_key_reads_canonical_tail_tuple() {
+        assert_eq!(
+            approval_classes_from_key("fingerprint-1|network_read|public_internet|soft_boundary"),
+            (
+                "network_read".to_string(),
+                "public_internet".to_string(),
+                "soft_boundary".to_string(),
+            )
+        );
+    }
+
+    #[test]
+    fn approval_classes_from_key_ignores_legacy_prefix_segments() {
+        assert_eq!(
+            approval_classes_from_key(
+                "shell_execute|Select-Object FullName, Name, PSIsContainer|ConvertTo-Json -Depth 3|process_exec|host|soft_boundary"
+            ),
+            (
+                "process_exec".to_string(),
+                "host".to_string(),
+                "soft_boundary".to_string(),
+            )
+        );
     }
 }

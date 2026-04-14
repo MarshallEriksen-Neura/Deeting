@@ -13,6 +13,7 @@ use crate::modules::desktop_runtime::runtime::execution_graph_store::init_execut
 use crate::modules::mcp::commands::runtime::capability_registry_cache::CapabilityRegistryBaseCache;
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::policy::PersistedApprovalAction;
+use crate::modules::mcp::risk::approval_classes_from_key;
 use crate::modules::providers::store::secret_store::SecretStore;
 use crate::modules::render_runtime::store::init_render_runtime_tables;
 use crate::modules::skills::store_init::init_skill_tables;
@@ -1189,10 +1190,8 @@ impl McpStore {
                 let suffix = row
                     .try_get::<String, _>("suffix")
                     .map_err(|err| McpError::Storage(err.to_string()))?;
-                let mut parts = suffix.split('|');
-                let operation_class = parts.next().unwrap_or("unknown").to_string();
-                let target_class = parts.next().unwrap_or("unknown").to_string();
-                let boundary_class = parts.next().unwrap_or("unknown").to_string();
+                let (operation_class, target_class, boundary_class) =
+                    approval_classes_from_key(&suffix);
                 Ok(ToolApprovalLearningSummaryRow {
                     operation_class,
                     target_class,

@@ -162,10 +162,9 @@ impl McpStore {
             .await?
         {
             self.update_tool(&existing_by_name.id, tool.clone()).await?;
-            let updated = self
-                .get_tool(&existing_by_name.id)
-                .await?
-                .ok_or_else(|| McpError::NotFound("tool missing after name-based update".to_string()))?;
+            let updated = self.get_tool(&existing_by_name.id).await?.ok_or_else(|| {
+                McpError::NotFound("tool missing after name-based update".to_string())
+            })?;
             self.sync_mcp_tool_registry_entry(&updated).await?;
             return Ok(updated);
         }

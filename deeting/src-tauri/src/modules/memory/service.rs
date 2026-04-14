@@ -127,98 +127,97 @@ impl MemoryService {
                 self.store
                     .append_with_embedding(payload, embedding, Some("auto".to_string()))
                     .await
-            }
-            /*
-            (WriteGuardDecision::Noop, Some((existing_id, existing_content, score))) => {
-                // NOOP: too similar, discard
-                log::debug!(
-                    "write guard: NOOP (score={:.3}) — discarding duplicate of {}",
-                    score,
-                    existing_id
-                );
-                // Return a synthetic item based on the payload but not persisted
-                let now = now_rfc3339();
-                Ok(LocalMemoryItem {
-                    id: existing_id,
-                    content: existing_content,
-                    session_id: payload.session_id,
-                    capability_id: payload.capability_id,
-                    meta_info: payload.meta_info,
-                    embedding_model: None,
-                    category: payload.category,
-                    source: payload.source,
-                    tags: payload.tags,
-                    vitality: Some(1.0),
-                    last_accessed_at: None,
-                    created_at: now.clone(),
-                    updated_at: now,
-                })
-            }
-            (WriteGuardDecision::Update, Some((existing_id, existing_content, score))) => {
-                // UPDATE: merge content into existing memory
-                log::debug!(
-                    "write guard: UPDATE (score={:.3}) — merging into {}",
-                    score,
-                    existing_id
-                );
-                let merged_content =
-                    format!("{}\n\n---\n\n{}", existing_content, payload.content.trim());
+            } /*
+              (WriteGuardDecision::Noop, Some((existing_id, existing_content, score))) => {
+                  // NOOP: too similar, discard
+                  log::debug!(
+                      "write guard: NOOP (score={:.3}) — discarding duplicate of {}",
+                      score,
+                      existing_id
+                  );
+                  // Return a synthetic item based on the payload but not persisted
+                  let now = now_rfc3339();
+                  Ok(LocalMemoryItem {
+                      id: existing_id,
+                      content: existing_content,
+                      session_id: payload.session_id,
+                      capability_id: payload.capability_id,
+                      meta_info: payload.meta_info,
+                      embedding_model: None,
+                      category: payload.category,
+                      source: payload.source,
+                      tags: payload.tags,
+                      vitality: Some(1.0),
+                      last_accessed_at: None,
+                      created_at: now.clone(),
+                      updated_at: now,
+                  })
+              }
+              (WriteGuardDecision::Update, Some((existing_id, existing_content, score))) => {
+                  // UPDATE: merge content into existing memory
+                  log::debug!(
+                      "write guard: UPDATE (score={:.3}) — merging into {}",
+                      score,
+                      existing_id
+                  );
+                  let merged_content =
+                      format!("{}\n\n---\n\n{}", existing_content, payload.content.trim());
 
-                // Re-embed the merged content
-                let new_embedding = if let Some(ref embedding_svc) = self.embedding {
-                    match embedding_svc.embed_text(&merged_content).await {
-                        Ok(v) => Some(v),
-                        Err(e) => {
-                            log::warn!("write guard: re-embed merged content failed: {}", e);
-                            None
-                        }
-                    }
-                } else {
-                    None
-                };
+                  // Re-embed the merged content
+                  let new_embedding = if let Some(ref embedding_svc) = self.embedding {
+                      match embedding_svc.embed_text(&merged_content).await {
+                          Ok(v) => Some(v),
+                          Err(e) => {
+                              log::warn!("write guard: re-embed merged content failed: {}", e);
+                              None
+                          }
+                      }
+                  } else {
+                      None
+                  };
 
-                // Record snapshot before update
-                if let Some(ref snap) = self.snapshots {
-                    let _ = snap
-                        .record(
-                            &existing_id,
-                            "update",
-                            Some(&existing_content),
-                            Some(&merged_content),
-                            None,
-                            None,
-                        )
-                        .await
-                        .map_err(|e| log::warn!("snapshot record failed: {}", e));
-                }
+                  // Record snapshot before update
+                  if let Some(ref snap) = self.snapshots {
+                      let _ = snap
+                          .record(
+                              &existing_id,
+                              "update",
+                              Some(&existing_content),
+                              Some(&merged_content),
+                              None,
+                              None,
+                          )
+                          .await
+                          .map_err(|e| log::warn!("snapshot record failed: {}", e));
+                  }
 
-                let updated = self
-                    .store
-                    .update_memory_content(
-                        &existing_id,
-                        &merged_content,
-                        new_embedding,
-                        Some("auto".to_string()),
-                    )
-                    .await?;
+                  let updated = self
+                      .store
+                      .update_memory_content(
+                          &existing_id,
+                          &merged_content,
+                          new_embedding,
+                          Some("auto".to_string()),
+                      )
+                      .await?;
 
-                match updated {
-                    Some(item) => Ok(item),
-                    None => {
-                        // Existing memory vanished, fall through to ADD
-                        self.store
-                            .append_with_embedding(payload, embedding, Some("auto".to_string()))
-                            .await
-                    }
-                }
-            }
-            _ => {
-                // ADD: new distinct memory
-                self.store
-                    .append_with_embedding(payload, embedding, Some("auto".to_string()))
-                    .await
-            }
-            */
+                  match updated {
+                      Some(item) => Ok(item),
+                      None => {
+                          // Existing memory vanished, fall through to ADD
+                          self.store
+                              .append_with_embedding(payload, embedding, Some("auto".to_string()))
+                              .await
+                      }
+                  }
+              }
+              _ => {
+                  // ADD: new distinct memory
+                  self.store
+                      .append_with_embedding(payload, embedding, Some("auto".to_string()))
+                      .await
+              }
+              */
         }
     }
 

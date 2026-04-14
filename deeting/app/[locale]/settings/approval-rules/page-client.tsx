@@ -39,6 +39,7 @@ import { Container } from "@/components/ui/container"
 
 type RuleFilter = "all" | "allow" | "deny"
 type ConfirmAction = null | "clear-all" | "clear-allow" | "reset-learning"
+type ApprovalClassLabels = Record<string, string>
 
 function formatDate(value?: number | null) {
   if (!value) return "—"
@@ -50,6 +51,42 @@ function classifyRuleSource(rule: ToolApprovalRule) {
   if (rule.action === "allow_always" && rule.auto_promoted) return "autoPromoted"
   if (rule.action === "allow_always") return "explicitAllow"
   return "observed"
+}
+
+function toApprovalClassLabels(value: unknown): ApprovalClassLabels {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {}
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string"
+    )
+  )
+}
+
+function humanizeApprovalClassValue(value: string, fallback: string) {
+  const normalized = value.trim()
+  if (!normalized) return fallback
+  if (!/^[A-Za-z0-9_-]+$/.test(normalized)) return normalized
+
+  const words = normalized
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/[_-\s]+/)
+    .filter(Boolean)
+    .map((word) => {
+      const lower = word.toLowerCase()
+      return `${lower.charAt(0).toUpperCase()}${lower.slice(1)}`
+    })
+
+  return words.length > 0 ? words.join(" ") : fallback
+}
+
+function resolveApprovalClassLabel(
+  labels: ApprovalClassLabels,
+  value: string,
+  fallback: string
+) {
+  const normalized = value.trim()
+  if (!normalized) return fallback
+  return labels[normalized] ?? humanizeApprovalClassValue(normalized, fallback)
 }
 
 function getLearningStatus(row: ToolApprovalLearningSummaryRow) {
@@ -86,6 +123,18 @@ function RuleChip({
 
 export function ApprovalRulesClient() {
   const t = useTranslations("approval-rules")
+  const operationLabels = React.useMemo(
+    () => toApprovalClassLabels(t.raw("classes.operation")),
+    [t]
+  )
+  const targetLabels = React.useMemo(
+    () => toApprovalClassLabels(t.raw("classes.target")),
+    [t]
+  )
+  const boundaryLabels = React.useMemo(
+    () => toApprovalClassLabels(t.raw("classes.boundary")),
+    [t]
+  )
   const [rules, setRules] = React.useState<ToolApprovalRule[]>([])
   const [summaryRows, setSummaryRows] = React.useState<ToolApprovalLearningSummaryRow[]>([])
   const [filter, setFilter] = React.useState<RuleFilter>("all")
@@ -183,6 +232,15 @@ export function ApprovalRulesClient() {
     deny: explicitRules.filter((rule) => rule.action === "deny_always").length,
     learning: summaryRows.length,
   }
+  const operationFallback = operationLabels.unknown ?? "Unknown operation"
+  const targetFallback = targetLabels.unknown ?? "Unknown target"
+  const boundaryFallback = boundaryLabels.none ?? boundaryLabels.unknown ?? "Unknown boundary"
+  const getOperationLabel = (value: string) =>
+    resolveApprovalClassLabel(operationLabels, value, operationFallback)
+  const getTargetLabel = (value: string) =>
+    resolveApprovalClassLabel(targetLabels, value, targetFallback)
+  const getBoundaryLabel = (value: string) =>
+    resolveApprovalClassLabel(boundaryLabels, value, boundaryFallback)
 
   const content = (
     <>
@@ -326,11 +384,11 @@ export function ApprovalRulesClient() {
                       <div className="mt-5 grid gap-3 md:grid-cols-2">
                         <div className="rounded-2xl border border-white/10 bg-white/60 p-3 dark:bg-white/5">
                           <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">
-                            {t("classes.operation." + rule.operation_class)}
+                            {getOperationLabel(rule.operation_class)}
                           </div>
                           <div className="mt-2 text-sm text-slate-700 dark:text-slate-300">
-                            {t("classes.target." + rule.target_class)} ·{" "}
-                            {t("classes.boundary." + rule.boundary_class)}
+                            {getTargetLabel(rule.target_class)} ·{" "}
+                            {getBoundaryLabel(rule.boundary_class)}
                           </div>
                         </div>
                         <div className="rounded-2xl border border-white/10 bg-white/60 p-3 dark:bg-white/5">
@@ -395,11 +453,11 @@ export function ApprovalRulesClient() {
                         <div className="flex items-start justify-between gap-4">
                           <div>
                             <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                              {t(`classes.operation.${row.operation_class}`)} ·{" "}
-                              {t(`classes.target.${row.target_class}`)}
+                              {getOperationLabel(row.operation_class)} ·{" "}
+                              {getTargetLabel(row.target_class)}
                             </div>
                             <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                              {t(`classes.boundary.${row.boundary_class}`)}
+                              {getBoundaryLabel(row.boundary_class)}
                             </div>
                           </div>
                           <RuleChip

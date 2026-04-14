@@ -16,6 +16,7 @@ use crate::modules::desktop_runtime::runtime::{
 };
 use crate::modules::mcp::commands::common_impl::to_string;
 use crate::modules::mcp::policy::PersistedApprovalAction;
+use crate::modules::mcp::risk::approval_classes_from_key;
 use std::collections::HashSet;
 
 fn parse_approve_persist_mode(value: Option<String>) -> ApprovePersistMode {
@@ -445,11 +446,8 @@ pub async fn list_tool_approval_rules(state: State<'_, AppState>) -> Result<Vec<
     Ok(rows
         .into_iter()
         .map(|row| {
-            let mut parts = row.key.split('|');
-            let _tool_fingerprint = parts.next();
-            let operation_class = parts.next().unwrap_or("unknown").to_string();
-            let target_class = parts.next().unwrap_or("unknown").to_string();
-            let boundary_class = parts.next().unwrap_or("unknown").to_string();
+            let (operation_class, target_class, boundary_class) =
+                approval_classes_from_key(&row.key);
             serde_json::json!({
                 "key": row.key,
                 "action": row.action.as_str(),
