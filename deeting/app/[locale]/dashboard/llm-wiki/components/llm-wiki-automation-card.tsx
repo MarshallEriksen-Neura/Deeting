@@ -83,7 +83,7 @@ export function LlmWikiAutomationCard({
   const pendingSuggestions = suggestions.filter((item) => item.status === "pending")
   const auditEntries = audit.slice(0, 6)
 
-  const toggles = [
+  const toggles: { key: Parameters<typeof onToggleSetting>[0]; title: string; description: string; tone: "safe" | "risky" }[] = [
     {
       key: "autoSyncOnVaultBound" as const,
       title: t("automation.settings.autoSyncOnVaultBound.title"),

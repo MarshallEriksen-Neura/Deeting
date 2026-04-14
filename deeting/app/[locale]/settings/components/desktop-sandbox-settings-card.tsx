@@ -112,13 +112,7 @@ export function DesktopSandboxSettingsCard({
   const readinessKey = data?.status ?? "unsupported"
   const runtimeKey = data?.runtime_mode ?? "disabled"
   const executionProbeKey = data?.execution_probe.status ?? "skipped"
-  const pythonSummary = data?.python
-    ? !data.python.installed
-      ? t("agent.sandbox.pythonMissing")
-      : data.python.supported
-        ? data.python.abi ?? t("agent.sandbox.pythonMissing")
-        : `${data.python.abi ?? t("agent.sandbox.pythonMissing")} · ${t("agent.sandbox.pythonUnsupported")}`
-    : null
+  const pythonSummary = null
 
   return (
     <div className="rounded-2xl border border-border/40 bg-card/50 transition-colors hover:bg-card/70 dark:bg-card/30 dark:hover:bg-card/40">

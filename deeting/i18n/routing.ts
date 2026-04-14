@@ -55,6 +55,10 @@ export const routing = defineRouting({
       "zh-CN": "/island",
       en: "/island",
     },
+    "/dashboard/approval-rules": {
+      "zh-CN": "/dashboard/approval-rules",
+      en: "/dashboard/approval-rules",
+    },
   },
 })
 

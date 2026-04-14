@@ -6,6 +6,7 @@ import {
   FileText,
   FileSpreadsheet,
   FileCode,
+  FileImage,
   File,
   Folder,
   ArrowUpDown,
@@ -62,6 +63,10 @@ const FILE_ICON_MAP: Record<FileType, { icon: typeof File; className: string }> 
   xlsx: { icon: FileSpreadsheet, className: "text-emerald-500" },
   html: { icon: FileCode, className: "text-orange-500" },
   json: { icon: FileCode, className: "text-yellow-500" },
+  png: { icon: FileImage, className: "text-pink-500" },
+  jpg: { icon: FileImage, className: "text-pink-500" },
+  jpeg: { icon: FileImage, className: "text-pink-500" },
+  webp: { icon: FileImage, className: "text-pink-500" },
 }
 
 function getFileIcon(type: FileType) {

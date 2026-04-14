@@ -18,6 +18,7 @@ export type BlockDisplayMode = 'bubble' | 'widget' | 'canvas'
 export interface BaseBlock {
   id: string
   type: BlockType
+  callId?: string
   streamState?: BlockStreamState
   displayMode?: BlockDisplayMode
 }

@@ -277,7 +277,7 @@ export function canonicalizeMessageBlockOrder(blocks: MessageBlock[]): MessageBl
     }
 
     const anchor = normalized.find(
-      (candidate) =>
+      (candidate): candidate is InternalMessageBlock & { type: "tool_call" } =>
         candidate.type === "tool_call" && candidate.callId === deferredPlacement.callId,
     )
     if (!anchor || isActiveToolCallStatus(anchor.status)) {

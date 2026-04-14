@@ -43,7 +43,7 @@ import { shouldSuggestWorkflowPlanning } from '@/lib/chat/workflow-planning-sugg
 
 type ComposerMode = 'chat' | 'workflow';
 
-function buildWorkflowPlanningHints(agent?: CustomTaskAgentProfile | null) {
+function buildWorkflowPlanningHints(agent?: { id: string; name: string } | null) {
   if (!agent) return undefined;
   return [
     `Preferred executor / phase owner: @${agent.name} (agent id: ${agent.id}).`,

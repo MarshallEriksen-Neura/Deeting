@@ -1,6 +1,6 @@
 import { parseMessageContent } from "@/lib/chat/message-content"
 import type { ConversationMessage } from "@/lib/api/conversations"
-import type { Message, MessageMetaInfo, ToolCall } from "@/lib/chat/message-types"
+import type { Message, MessageMetaInfo, MessageRole, ToolCall } from "@/lib/chat/message-types"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
 import { buildExecutionLifecycleBlock } from "@/lib/chat/execution-tree"
 import { canonicalizeMessageBlockOrder } from "@/lib/chat/message-blocks"
@@ -307,7 +307,7 @@ export function normalizeConversationMessages(
       normalizedRole === "assistant" ? "" : normalizedText
     return {
       id: messageId,
-      role: normalizedRole === "assistant" ? "assistant" : normalizedRole === "system" ? "system" : "user",
+      role: normalizedRole as MessageRole,
       content: resolvedContent,
       attachments: parsed.attachments.length ? parsed.attachments : undefined,
       createdAt: resolveCreatedAt(msg, index, total),

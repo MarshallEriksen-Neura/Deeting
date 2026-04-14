@@ -56,7 +56,7 @@ function extractFollowUpTextsFromApprovalResult(result: unknown): string[] {
       (block): block is { type?: unknown; content?: unknown } =>
         Boolean(block && typeof block === "object")
     )
-    .filter((block) => block.type === "text" && typeof block.content === "string")
+    .filter((block): block is { type: "text"; content: string } => block.type === "text" && typeof block.content === "string")
     .map((block) => block.content.trim())
     .filter((value) => value.length > 0)
 

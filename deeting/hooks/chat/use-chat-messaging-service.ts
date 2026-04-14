@@ -36,6 +36,7 @@ import {
   useChatStore,
   type CompareCandidate,
   type Message,
+  type PendingTakeoverRequestedAction,
 } from "@/store/chat-store"
 import { useChatRuntimeStore } from "@/store/chat-runtime-store"
 import { useWorkspaceStore } from "@/store/workspace-store"
