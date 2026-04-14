@@ -126,6 +126,26 @@ export function LlmWikiAgentCard({
           </div>
         </div>
 
+        <div className="rounded-[1.5rem] border border-amber-200/70 bg-amber-50/90 p-4 text-sm text-amber-950">
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <div className="font-semibold">{t("agent.prerequisite.title")}</div>
+              <div className="leading-6 text-amber-900/85">
+                {t("agent.prerequisite.description")}
+              </div>
+            </div>
+            <Button asChild variant="outline" size="sm" className="rounded-full border-amber-300 bg-white/80 text-amber-900 hover:bg-white">
+              <a
+                href="https://mcp-obsidian.org/install/"
+                target="_blank"
+                rel="noreferrer"
+              >
+                {t("agent.prerequisite.docs")}
+              </a>
+            </Button>
+          </div>
+        </div>
+
         <Textarea
           value={prompt}
           readOnly

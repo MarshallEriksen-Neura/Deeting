@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WriteGuardDecision {
     Add,
@@ -5,7 +6,9 @@ pub(crate) enum WriteGuardDecision {
     Noop,
 }
 
+#[allow(dead_code)]
 pub(crate) const DEFAULT_WRITE_GUARD_NOOP_THRESHOLD: f32 = 0.95;
+#[allow(dead_code)]
 pub(crate) const DEFAULT_WRITE_GUARD_UPDATE_THRESHOLD: f32 = 0.85;
 
 pub(crate) const DEFAULT_VITALITY_BASE_WEIGHT: f32 = 0.7;
@@ -14,6 +17,7 @@ pub(crate) const DEFAULT_VITALITY_DECAY_RATE: f32 = 0.05;
 pub(crate) const DEFAULT_VITALITY_TOUCH_INCREMENT: f32 = 0.08;
 pub(crate) const DEFAULT_VITALITY_RERANK_OVERFETCH_FACTOR: usize = 3;
 
+#[allow(dead_code)]
 pub(crate) fn decide_write_guard_action(score: Option<f32>) -> WriteGuardDecision {
     match score {
         Some(value) if value >= DEFAULT_WRITE_GUARD_NOOP_THRESHOLD => WriteGuardDecision::Noop,

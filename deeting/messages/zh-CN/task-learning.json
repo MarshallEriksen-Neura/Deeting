@@ -1,47 +1,134 @@
 {
   "title": "任务学习",
   "description": "查看桌面本地 task-learning 的评估结果、延迟修订和策略先验。",
+  "hero": {
+    "eyebrow": "AI 成长记录",
+    "title": "看看 AI 做了什么，帮它做得更好。",
+    "description": "每次 AI 帮你处理任务时，它会记录自己的决策过程。你可以在这里回顾这些记录，告诉它哪些做得好、哪些需要改进，它会据此不断学习进步。",
+    "steps": {
+      "review": "回顾 AI 做了什么",
+      "feedback": "告诉它做得好不好",
+      "learn": "AI 自动学习改进"
+    }
+  },
   "stats": {
-    "totalRuns": "当前 Runs",
-    "revisedRuns": "已修订 Runs",
-    "signaledRuns": "有后验信号",
-    "activePriors": "活跃 Priors"
+    "totalRuns": "任务记录",
+    "totalRunsHint": "AI 完成并记录下来的任务次数",
+    "revisedRuns": "已评价",
+    "revisedRunsHint": "你已经给过反馈的任务数",
+    "signaledRuns": "有明确结论",
+    "signaledRunsHint": "被标记为「做对了」或「需要改」的任务数",
+    "activePriors": "已学到的经验",
+    "activePriorsHint": "AI 从你的反馈中总结出的决策规则"
   },
   "filters": {
-    "sessionPlaceholder": "按 session id 过滤",
+    "sessionPlaceholder": "按会话搜索…",
     "signal": {
-      "all": "全部信号",
-      "accepted": "accepted",
-      "corrected": "corrected",
-      "rejected": "rejected",
-      "silent": "silent"
+      "all": "全部状态",
+      "accepted": "做对了",
+      "corrected": "需要改进",
+      "rejected": "做错了",
+      "silent": "未评价"
     }
   },
   "actions": {
     "refresh": "刷新",
-    "markAccepted": "标记 Accepted",
-    "markCorrected": "标记 Corrected",
-    "markRejected": "标记 Rejected",
-    "replay": "重算 Delta"
+    "markAccepted": "做对了",
+    "markCorrected": "需要改进",
+    "markRejected": "做错了",
+    "acceptedHint": "这次处理得很好，以后继续",
+    "correctedHint": "方向对，但有些地方需要调整",
+    "rejectedHint": "这次不太对，以后别这样",
+    "replay": "重新评估"
   },
   "runs": {
-    "title": "最近 Runs",
-    "empty": "当前过滤条件下没有 task-learning run。",
-    "revisions": "{count} 次修订"
+    "title": "任务记录",
+    "description": "点击任意一条记录，查看 AI 当时是怎么做的。",
+    "empty": "当前筛选条件下没有任务记录。",
+    "revisions": "{count} 次评价",
+    "taskLabel": "任务 #{id}",
+    "noDecision": "自动处理",
+    "viewing": "正在查看",
+    "signals": {
+      "accepted": "做对了",
+      "corrected": "需改进",
+      "rejected": "做错了",
+      "silent": "未评价",
+      "unknown": "未知"
+    }
   },
   "detail": {
-    "title": "Inspector",
+    "title": "评审面板",
+    "description": "选中一条任务记录后，分三步完成评审。",
     "loading": "加载中…",
-    "empty": "选择一条 run 查看当前 outcome、revision 和 replay 状态。",
-    "status": "运行状态",
-    "signal": "后验信号",
+    "emptyTitle": "还没有选中任务",
+    "empty": "从左侧列表选一条任务记录，看看 AI 做了什么、然后给个评价。",
+    "status": "处理状态",
+    "signal": "你的评价",
     "current": "当前快照",
     "revisions": "修订历史",
-    "noRevisions": "这条 run 还没有 revision。",
-    "notePlaceholder": "手动修订或 replay 之前，可选填写一条运营备注。"
+    "noRevisions": "这条任务还没有收到过评价。",
+    "notePlaceholder": "想说点什么？可以写下你的想法或建议（可选）",
+    "toggleSnapshot": "查看完整技术细节",
+    "revisionSource": "来源：{source}"
+  },
+  "guide": {
+    "step0": "看一看",
+    "step1": "给评价",
+    "step2": "看历史",
+    "step0Hint": "先看看 AI 这次任务的处理状态和结果。如果想了解更多细节，可以展开技术快照。",
+    "step1Hint": "现在轮到你了！看完之后，告诉 AI 这次做得怎么样。你的每次反馈都会帮助它在下次做得更好。",
+    "step2Hint": "这里展示了你之前给过的所有评价记录，可以回顾 AI 是如何被一步步纠正和改进的。",
+    "nextStep": "下一步",
+    "prevStep": "上一步"
+  },
+  "deltaStates": {
+    "provisional": "待确认",
+    "applied": "已生效",
+    "superseded": "已更新",
+    "rejected": "已拒绝"
+  },
+  "snapshot": {
+    "title": "AI 是怎么处理这个任务的",
+    "taskNature": "任务特征",
+    "goal": "目标类型",
+    "output": "输出形式",
+    "risk": "风险等级",
+    "routeDecision": "处理方式",
+    "route": "选择的路径",
+    "reasons": "选择原因",
+    "toolsUsed": "使用的工具",
+    "noTools": "没有使用额外工具",
+    "goals": {
+      "answer": "回答问题",
+      "action": "执行操作",
+      "analysis": "分析研究",
+      "generation": "生成内容",
+      "transformation": "转换数据"
+    },
+    "outputs": {
+      "explanation": "解释说明",
+      "code": "代码",
+      "data": "数据结果",
+      "artifact": "文件产物",
+      "message": "消息回复"
+    },
+    "risks": {
+      "low": "低风险",
+      "medium": "中等风险",
+      "high": "高风险"
+    },
+    "routes": {
+      "Direct": "直接执行",
+      "Worker": "交给专门助手",
+      "Planner": "先规划再执行",
+      "Hybrid": "混合模式"
+    }
   },
   "priors": {
-    "title": "策略先验",
+    "title": "AI 学到了什么",
+    "description": "这些是 AI 从你的反馈中总结出来的决策规则。经验越丰富、置信度越高，AI 下次遇到同类任务时就越有把握。",
+    "empty": "AI 还没有积累到足够的经验。多给几次反馈，它就会开始总结规律。",
     "columns": {
       "fingerprint": "Fingerprint",
       "decision": "Decision",
@@ -49,12 +136,23 @@
       "weight": "Weight / Confidence",
       "evidence": "Evidence",
       "updated": "更新时间"
+    },
+    "actionLabel": "执行动作：{action}",
+    "confidence": "把握程度",
+    "evidenceCount": "基于 {count} 次经验",
+    "maturityLabels": {
+      "mature": "已成熟",
+      "developing": "学习中",
+      "nascent": "刚起步",
+      "emerging": "初步形成",
+      "provisional": "待确认",
+      "confirmed": "已确认"
     }
   },
   "feedback": {
-    "loadFailed": "加载 task-learning 数据失败。",
-    "actionFailed": "task-learning 操作失败。",
-    "replayed": "已重算当前 task-learning run。",
-    "revised": "已写入手动 {signal} 修订。"
+    "loadFailed": "加载任务学习数据失败。",
+    "actionFailed": "操作失败，请稍后再试。",
+    "replayed": "已重新评估这条任务记录。",
+    "revised": "已记录你的 {signal} 评价，AI 会据此调整策略。"
   }
 }

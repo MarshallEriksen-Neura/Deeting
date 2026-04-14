@@ -62,6 +62,7 @@ pub async fn get_custom_task_agent_binding_catalog(
             name: tool.name,
             description: tool.description,
             status: tool.status.as_str().to_string(),
+            server_name: tool.service_display_name,
         })
         .collect::<Vec<_>>();
     mcp_tools.sort_by(|left, right| left.name.cmp(&right.name));

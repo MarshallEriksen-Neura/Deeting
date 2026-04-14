@@ -26,6 +26,7 @@ const namespaces = [
   "memory",
   "plugins",
   "task-agents",
+  "task-learning",
   "llm-wiki",
 ] as const
 

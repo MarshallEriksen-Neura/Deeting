@@ -1,47 +1,134 @@
 {
   "title": "Task Learning",
   "description": "Inspect desktop-local evaluated outcomes, delayed revisions, and policy priors for the task-learning loop.",
+  "hero": {
+    "eyebrow": "AI Growth Journal",
+    "title": "See what AI did, and help it do better.",
+    "description": "Every time AI handles a task for you, it records its decision process. Review those records here, tell it what went well and what needs fixing — it learns and improves from every piece of feedback.",
+    "steps": {
+      "review": "Review what AI did",
+      "feedback": "Share your verdict",
+      "learn": "AI learns automatically"
+    }
+  },
   "stats": {
-    "totalRuns": "Visible Runs",
-    "revisedRuns": "Revised Runs",
-    "signaledRuns": "Signaled Runs",
-    "activePriors": "Active Priors"
+    "totalRuns": "Task Records",
+    "totalRunsHint": "How many tasks AI has completed and logged",
+    "revisedRuns": "Reviewed",
+    "revisedRunsHint": "Tasks you have already given feedback on",
+    "signaledRuns": "With Verdict",
+    "signaledRunsHint": "Tasks marked as \"good\" or \"needs work\"",
+    "activePriors": "Lessons Learned",
+    "activePriorsHint": "Decision rules AI has learned from your feedback"
   },
   "filters": {
-    "sessionPlaceholder": "Filter by session id",
+    "sessionPlaceholder": "Search by session…",
     "signal": {
-      "all": "All signals",
-      "accepted": "Accepted",
-      "corrected": "Corrected",
-      "rejected": "Rejected",
-      "silent": "Silent"
+      "all": "All statuses",
+      "accepted": "Got it right",
+      "corrected": "Needs improvement",
+      "rejected": "Got it wrong",
+      "silent": "Not reviewed"
     }
   },
   "actions": {
     "refresh": "Refresh",
-    "markAccepted": "Mark Accepted",
-    "markCorrected": "Mark Corrected",
-    "markRejected": "Mark Rejected",
-    "replay": "Replay Delta"
+    "markAccepted": "Got it right",
+    "markCorrected": "Needs improvement",
+    "markRejected": "Got it wrong",
+    "acceptedHint": "This was handled well — keep it up",
+    "correctedHint": "Right direction, but some parts need tweaking",
+    "rejectedHint": "This wasn't right — don't do it this way",
+    "replay": "Re-evaluate"
   },
   "runs": {
-    "title": "Recent Runs",
-    "empty": "No task-learning runs found for the current filter.",
-    "revisions": "{count} revisions"
+    "title": "Task Records",
+    "description": "Click any record to see how AI handled it.",
+    "empty": "No task records found for the current filter.",
+    "revisions": "{count} reviews",
+    "taskLabel": "Task #{id}",
+    "noDecision": "Auto-handled",
+    "viewing": "Viewing now",
+    "signals": {
+      "accepted": "Got it right",
+      "corrected": "Needs work",
+      "rejected": "Got it wrong",
+      "silent": "Not reviewed",
+      "unknown": "Unknown"
+    }
   },
   "detail": {
-    "title": "Inspector",
+    "title": "Review Panel",
+    "description": "Select a task record, then follow three steps to review it.",
     "loading": "Loading…",
-    "empty": "Select a run to inspect its current outcome, revisions, and replay state.",
-    "status": "Run Status",
-    "signal": "Posterior Signal",
+    "emptyTitle": "No task selected",
+    "empty": "Pick a task record from the list on the left to see what AI did and give your feedback.",
+    "status": "Status",
+    "signal": "Your Verdict",
     "current": "Current Snapshot",
     "revisions": "Revision History",
-    "noRevisions": "This run has not been revised yet.",
-    "notePlaceholder": "Add an optional operator note before manual revise/replay."
+    "noRevisions": "This task hasn't received any feedback yet.",
+    "notePlaceholder": "Want to add a comment? Share your thoughts or suggestions (optional)",
+    "toggleSnapshot": "View full technical details",
+    "revisionSource": "Source: {source}"
+  },
+  "guide": {
+    "step0": "Look",
+    "step1": "Evaluate",
+    "step2": "History",
+    "step0Hint": "Start by reviewing how AI handled this task and what the outcome was. Expand the technical snapshot for more details if needed.",
+    "step1Hint": "Your turn! After reviewing, tell AI how it did. Every piece of feedback helps it make better decisions next time.",
+    "step2Hint": "Here you can see all previous feedback for this task — a trail of how AI was gradually corrected and improved.",
+    "nextStep": "Next step",
+    "prevStep": "Previous"
+  },
+  "deltaStates": {
+    "provisional": "Pending",
+    "applied": "Applied",
+    "superseded": "Updated",
+    "rejected": "Rejected"
+  },
+  "snapshot": {
+    "title": "How AI handled this task",
+    "taskNature": "Task Nature",
+    "goal": "Goal type",
+    "output": "Output form",
+    "risk": "Risk level",
+    "routeDecision": "How it was handled",
+    "route": "Chosen path",
+    "reasons": "Why this path",
+    "toolsUsed": "Tools used",
+    "noTools": "No extra tools used",
+    "goals": {
+      "answer": "Answer a question",
+      "action": "Execute an action",
+      "analysis": "Analyze & research",
+      "generation": "Generate content",
+      "transformation": "Transform data"
+    },
+    "outputs": {
+      "explanation": "Explanation",
+      "code": "Code",
+      "data": "Data result",
+      "artifact": "File artifact",
+      "message": "Message reply"
+    },
+    "risks": {
+      "low": "Low risk",
+      "medium": "Medium risk",
+      "high": "High risk"
+    },
+    "routes": {
+      "Direct": "Direct execution",
+      "Worker": "Delegated to worker",
+      "Planner": "Plan then execute",
+      "Hybrid": "Hybrid mode"
+    }
   },
   "priors": {
-    "title": "Policy Priors",
+    "title": "What AI Has Learned",
+    "description": "These are decision rules AI has learned from your feedback. The more experience and confidence it has, the better it handles similar tasks next time.",
+    "empty": "AI hasn't gathered enough experience yet. Give it a few more reviews and it will start recognizing patterns.",
     "columns": {
       "fingerprint": "Fingerprint",
       "decision": "Decision",
@@ -49,12 +136,23 @@
       "weight": "Weight / Confidence",
       "evidence": "Evidence",
       "updated": "Updated"
+    },
+    "actionLabel": "Action taken: {action}",
+    "confidence": "Confidence",
+    "evidenceCount": "Based on {count} experiences",
+    "maturityLabels": {
+      "mature": "Mature",
+      "developing": "Developing",
+      "nascent": "Just started",
+      "emerging": "Emerging",
+      "provisional": "Provisional",
+      "confirmed": "Confirmed"
     }
   },
   "feedback": {
-    "loadFailed": "Failed to load task-learning data.",
-    "actionFailed": "Task-learning action failed.",
-    "replayed": "Replayed current task-learning run.",
-    "revised": "Applied manual {signal} revision."
+    "loadFailed": "Failed to load task learning data.",
+    "actionFailed": "Action failed. Please try again.",
+    "replayed": "Re-evaluated the current task record.",
+    "revised": "Recorded your {signal} feedback — AI will adjust accordingly."
   }
 }

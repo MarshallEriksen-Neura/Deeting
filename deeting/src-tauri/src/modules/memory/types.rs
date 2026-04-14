@@ -26,6 +26,22 @@ pub struct WriteGuardResult {
     /// The id of the existing memory that was updated (for Update action).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updated_memory_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decision_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top1_score: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top2_score: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub score_gap: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub score_ratio: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effective_update_threshold: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effective_noop_threshold: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protected_existing: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

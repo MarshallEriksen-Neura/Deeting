@@ -2,18 +2,23 @@ use mcp_session::context::LocalConversationRuntimeWindow;
 use mcp_session::conversation::{
     LocalConversationCompareFinalizeRequest, LocalConversationCompareFinalizeResponse,
 };
+use mcp_storage::helpers::now_rfc3339;
 use mcp_storage::helpers::now_unix_epoch;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 
 use crate::modules::memory::fact_extractor::FactExtractionOutcome;
 use crate::modules::memory::service::MemoryService;
-use crate::modules::memory::types::{LocalMemoryItem, LocalMemoryListQuery};
+use crate::modules::memory::types::{
+    LocalMemoryItem, LocalMemoryListQuery, UpdateLocalMemoryRequest,
+};
 use crate::state::AppState;
 
 const FACT_EXTRACTION_LAST_HASH_KEY_PREFIX: &str = "fact_extraction.last_hash";
 const FACT_EXTRACTION_LAST_RUN_AT_KEY_PREFIX: &str = "fact_extraction.last_run_at";
 const FACT_EXTRACTION_COMPARE_FINALIZE_COOLDOWN_SECONDS: i64 = 120;
+const FACT_EXTRACTION_STALE_DELETE_AFTER_ROUNDS: i64 = 2;
 
 fn build_fact_extraction_last_hash_key(session_id: &str) -> String {
     format!("{}.{}", FACT_EXTRACTION_LAST_HASH_KEY_PREFIX, session_id)
@@ -134,19 +139,6 @@ async fn refresh_session_auto_extracted_facts_with_source(
         return Ok(FactExtractionOutcome::Skipped);
     }
 
-    let deleted = clear_session_auto_extraction_memories(
-        app_state.memory.service.as_ref(),
-        &normalized_session_id,
-    )
-    .await?;
-    if deleted > 0 {
-        log::info!(
-            "fact extraction refresh cleared {} auto-extracted memories for session {}",
-            deleted,
-            normalized_session_id
-        );
-    }
-
     let outcome =
         crate::modules::memory::fact_extractor::extract_and_store_facts_with_secretary_model(
             &app_state,
@@ -156,6 +148,22 @@ async fn refresh_session_auto_extracted_facts_with_source(
             runtime_window.assistant_id.as_deref(),
         )
         .await?;
+
+    let reconciled = reconcile_session_auto_extraction_memories(
+        app_state.memory.service.as_ref(),
+        &normalized_session_id,
+        touched_memory_ids_from_outcome(&outcome),
+    )
+    .await?;
+    if reconciled.marked_stale > 0 || reconciled.deleted > 0 || reconciled.reactivated > 0 {
+        log::info!(
+            "fact extraction reconcile session={} reactivated={} marked_stale={} deleted={}",
+            normalized_session_id,
+            reconciled.reactivated,
+            reconciled.marked_stale,
+            reconciled.deleted
+        );
+    }
 
     if let Err(err) = app_state
         .mcp
@@ -187,6 +195,154 @@ async fn refresh_session_auto_extracted_facts_with_source(
     Ok(outcome)
 }
 
+#[derive(Debug, Default)]
+struct FactReconcileSummary {
+    reactivated: usize,
+    marked_stale: usize,
+    deleted: usize,
+}
+
+async fn reconcile_session_auto_extraction_memories(
+    memory_service: &MemoryService,
+    session_id: &str,
+    touched_memory_ids: HashSet<String>,
+) -> Result<FactReconcileSummary, String> {
+    let mut summary = FactReconcileSummary::default();
+    let now = now_rfc3339().map_err(|err| err.to_string())?;
+    let existing_items = list_session_auto_extraction_memories(memory_service, session_id).await?;
+
+    for item in existing_items {
+        let touched = touched_memory_ids.contains(item.id.as_str());
+        let mut metadata = item
+            .meta_info
+            .clone()
+            .and_then(|value| value.as_object().cloned())
+            .unwrap_or_default();
+        metadata
+            .entry("source".to_string())
+            .or_insert_with(|| Value::String("auto_extraction".to_string()));
+        let auto_extraction = metadata
+            .entry("auto_extraction".to_string())
+            .or_insert_with(|| Value::Object(serde_json::Map::new()));
+        let Some(auto_extraction) = auto_extraction.as_object_mut() else {
+            continue;
+        };
+
+        if touched {
+            auto_extraction.insert("state".to_string(), Value::String("active".to_string()));
+            auto_extraction.insert("stale_rounds".to_string(), Value::from(0));
+            auto_extraction.insert("last_reconciled_at".to_string(), Value::String(now.clone()));
+            if auto_extraction
+                .get("stale_candidate_at")
+                .is_some_and(|value| !value.is_null())
+            {
+                auto_extraction.insert("stale_candidate_at".to_string(), Value::Null);
+                memory_service
+                    .update(
+                        &item.id,
+                        UpdateLocalMemoryRequest {
+                            content: item.content.clone(),
+                            meta_info: Some(Value::Object(metadata)),
+                            category: item.category.clone(),
+                            source: item.source.clone(),
+                            tags: item.tags.clone(),
+                        },
+                    )
+                    .await
+                    .map_err(|err| err.to_string())?;
+                summary.reactivated += 1;
+            }
+            continue;
+        }
+
+        let stale_rounds = auto_extraction
+            .get("stale_rounds")
+            .and_then(Value::as_i64)
+            .unwrap_or(0)
+            + 1;
+        if stale_rounds >= FACT_EXTRACTION_STALE_DELETE_AFTER_ROUNDS {
+            let deleted = memory_service
+                .delete(&item.id)
+                .await
+                .map_err(|err| err.to_string())?;
+            if deleted {
+                summary.deleted += 1;
+            }
+            continue;
+        }
+
+        auto_extraction.insert("state".to_string(), Value::String("stale".to_string()));
+        auto_extraction.insert("stale_rounds".to_string(), Value::from(stale_rounds));
+        auto_extraction.insert("stale_candidate_at".to_string(), Value::String(now.clone()));
+        auto_extraction.insert("last_reconciled_at".to_string(), Value::String(now.clone()));
+        memory_service
+            .update(
+                &item.id,
+                UpdateLocalMemoryRequest {
+                    content: item.content.clone(),
+                    meta_info: Some(Value::Object(metadata)),
+                    category: item.category.clone(),
+                    source: item.source.clone(),
+                    tags: item.tags.clone(),
+                },
+            )
+            .await
+            .map_err(|err| err.to_string())?;
+        summary.marked_stale += 1;
+    }
+
+    Ok(summary)
+}
+
+fn touched_memory_ids_from_outcome(outcome: &FactExtractionOutcome) -> HashSet<String> {
+    match outcome {
+        FactExtractionOutcome::Processed(summary) => summary
+            .touched_memory_ids
+            .iter()
+            .cloned()
+            .collect::<HashSet<_>>(),
+        FactExtractionOutcome::NoFacts | FactExtractionOutcome::Skipped => HashSet::new(),
+    }
+}
+
+async fn list_session_auto_extraction_memories(
+    memory_service: &MemoryService,
+    session_id: &str,
+) -> Result<Vec<LocalMemoryItem>, String> {
+    let normalized_session_id = session_id.trim();
+    if normalized_session_id.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut items = Vec::new();
+    let mut cursor = None;
+    loop {
+        let page = memory_service
+            .list(LocalMemoryListQuery {
+                cursor: cursor.clone(),
+                limit: Some(200),
+                session_id: Some(normalized_session_id.to_string()),
+                capability_id: None,
+            })
+            .await
+            .map_err(|err| err.to_string())?;
+
+        for item in page.items {
+            if is_auto_extracted_memory(&item) {
+                items.push(item);
+            }
+        }
+
+        if !page.has_more {
+            break;
+        }
+        cursor = page.next_cursor;
+    }
+
+    Ok(items)
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) async fn clear_session_auto_extraction_memories(
     memory_service: &MemoryService,
     session_id: &str,

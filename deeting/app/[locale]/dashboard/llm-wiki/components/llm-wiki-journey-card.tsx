@@ -2,11 +2,13 @@
 
 import { Bot, CheckCircle2, DatabaseZap, FolderSearch, LoaderCircle } from "lucide-react"
 
+import { Button } from "@/components/ui/button"
 import { GlassCard, GlassCardDescription, GlassCardHeader, GlassCardTitle } from "@/components/ui/glass-card"
 import type { LocalLlmWikiState } from "@/lib/api/llm-wiki"
 
 type Translation = (key: string, values?: Record<string, string | number>) => string
 type JourneyStageStatus = "pending" | "active" | "working" | "complete"
+type JourneyTabValue = "setup" | "corpus" | "agent"
 
 export function LlmWikiJourneyCard({
   t,
@@ -18,6 +20,7 @@ export function LlmWikiJourneyCard({
   isSyncingCorpus,
   isSearchingCorpus,
   isSyncingAgent,
+  onNavigateTab,
 }: {
   t: Translation
   state: LocalLlmWikiState | null
@@ -28,6 +31,7 @@ export function LlmWikiJourneyCard({
   isSyncingCorpus: boolean
   isSearchingCorpus: boolean
   isSyncingAgent: boolean
+  onNavigateTab: (tab: JourneyTabValue) => void
 }) {
   const binding = state?.binding
   const scan = state?.scanSummary
@@ -68,6 +72,7 @@ export function LlmWikiJourneyCard({
       status: stage1Status,
       title: t("journey.stages.connect.title"),
       description: t("journey.stages.connect.description"),
+      targetTab: "setup" as const,
       evidence: stage1Ready
         ? t("journey.stages.connect.ready", {
             vaultName: binding?.vaultName ?? "Vault",
@@ -81,6 +86,7 @@ export function LlmWikiJourneyCard({
       status: stage2Status,
       title: t("journey.stages.bootstrap.title"),
       description: t("journey.stages.bootstrap.description"),
+      targetTab: workspace?.workspaceExists ? "corpus" : "setup",
       evidence: stage2Ready
         ? t("journey.stages.bootstrap.ready", {
             path: workspace?.resolvedWorkspacePath ?? "",
@@ -94,6 +100,7 @@ export function LlmWikiJourneyCard({
       status: stage3Status,
       title: t("journey.stages.handoff.title"),
       description: t("journey.stages.handoff.description"),
+      targetTab: hasSearchedCorpus ? "agent" : "corpus",
       evidence: stage3Ready
         ? t("journey.stages.handoff.ready", {
             count: corpusHitCount,
@@ -144,7 +151,9 @@ export function LlmWikiJourneyCard({
             status={stage.status}
             title={stage.title}
             description={stage.description}
+            targetTab={stage.targetTab}
             evidence={stage.evidence}
+            onNavigateTab={onNavigateTab}
           />
         ))}
       </div>
@@ -163,7 +172,9 @@ function JourneyStageCard({
   status,
   title,
   description,
+  targetTab,
   evidence,
+  onNavigateTab,
 }: {
   t: Translation
   step: number
@@ -171,7 +182,9 @@ function JourneyStageCard({
   status: JourneyStageStatus
   title: string
   description: string
+  targetTab: JourneyTabValue
   evidence: string
+  onNavigateTab: (tab: JourneyTabValue) => void
 }) {
   const palette = journeyPalette(status)
 
@@ -194,7 +207,11 @@ function JourneyStageCard({
             <div className="text-base font-semibold text-slate-900">{title}</div>
           </div>
         </div>
-        <JourneyStatusPill t={t} status={status} />
+        <JourneyStatusPill
+          t={t}
+          status={status}
+          onClick={status === "working" ? undefined : () => onNavigateTab(targetTab)}
+        />
       </div>
 
       <div className="mt-4 text-sm leading-6 text-slate-600">{description}</div>
@@ -208,23 +225,34 @@ function JourneyStageCard({
 function JourneyStatusPill({
   t,
   status,
+  onClick,
 }: {
   t: Translation
   status: JourneyStageStatus
+  onClick?: () => void
 }) {
   const palette = journeyPalette(status)
   const Icon = status === "working" ? LoaderCircle : CheckCircle2
+  const isInteractive = Boolean(onClick) && status !== "working"
 
   return (
-    <span
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      onClick={onClick}
+      disabled={!isInteractive}
       className={[
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]",
+        "h-auto rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] shadow-none",
         palette.pill,
+        isInteractive
+          ? "cursor-pointer hover:-translate-y-0.5 hover:brightness-[1.02]"
+          : "cursor-default opacity-100 hover:bg-transparent",
       ].join(" ")}
     >
       <Icon className={["size-3.5", status === "working" ? "animate-spin" : ""].join(" ")} />
       {t(`journey.status.${status}`)}
-    </span>
+    </Button>
   )
 }
 

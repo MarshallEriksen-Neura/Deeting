@@ -253,7 +253,7 @@
       "assetDescription": "Choose a saved local HTML asset to auto-display whenever this agent runs.",
       "clearAsset": "Clear",
       "assetBound": "Bound",
-      "searchToolsPlaceholder": "Search tools by name, id, or status...",
+      "searchToolsPlaceholder": "Search tools by name, server, or status...",
       "searchSkillsPlaceholder": "Search skills by id, version, or runtime...",
       "selectedOnly": "Selected only",
       "noAssets": "No saved local HTML assets available.",
@@ -263,7 +263,8 @@
       "noFilteredSkills": "No skills match the current filter.",
       "skillMeta": "Version {version} · Runtime {runtime}",
       "unknownVersion": "unknown",
-      "unknownRuntime": "unknown"
+      "unknownRuntime": "unknown",
+      "unknownServer": "Unknown Server"
     },
     "preview": {
       "title": "Live Preview",

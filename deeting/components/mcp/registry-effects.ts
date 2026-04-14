@@ -7,6 +7,17 @@ import { mapMcpSourceRecordToSource } from "@/lib/mcp/registry-mappers"
 import type { McpServerToolRecord } from "@/lib/swr/use-mcp-tools"
 import type { MCPLogEntry, MCPSource, MCPTool, McpSourceRecord, McpToolRecord } from "@/types/mcp"
 
+export const MCP_TOOL_INDEX_PROGRESS_EVENT = "mcp-tool-index-progress"
+
+export interface McpToolIndexProgressEvent {
+  phase: string
+  total: number
+  processed: number
+  indexed: number
+  failed: number
+  current?: string | null
+}
+
 export const appendMcpRegistryLogEntry = (
   existing: MCPLogEntry[],
   entry: MCPLogEntry,
@@ -216,4 +227,44 @@ export const useMcpRegistryToolLogs = ({
       }
     }
   }, [isTauri, logsOpen, onLoadError, pushLog, selectedToolId, setLogsByTool])
+}
+
+export const useMcpRegistryIndexProgress = ({
+  isTauri,
+  onProgress,
+  onCompleted,
+}: {
+  isTauri: boolean
+  onProgress: (payload: McpToolIndexProgressEvent) => void
+  onCompleted?: (payload: McpToolIndexProgressEvent) => void
+}) => {
+  useEffect(() => {
+    if (!isTauri) {
+      return
+    }
+
+    let active = true
+    let unlisten: UnlistenFn | null = null
+
+    const setup = async () => {
+      unlisten = await listen<McpToolIndexProgressEvent>(MCP_TOOL_INDEX_PROGRESS_EVENT, (event) => {
+        if (!active) {
+          return
+        }
+        onProgress(event.payload)
+        if (event.payload.phase === "completed") {
+          onCompleted?.(event.payload)
+        }
+      })
+    }
+
+    void setup()
+
+    return () => {
+      active = false
+      if (unlisten) {
+        unlisten()
+      }
+    }
+  }, [isTauri, onCompleted, onProgress])
 }

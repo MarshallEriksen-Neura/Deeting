@@ -301,7 +301,7 @@ export function useTaskAgents(t: Translation) {
       .filter((tool: (typeof bindingCatalog.mcp_tools)[number]) => {
         if (showSelectedToolsOnly && !draft.callable_mcp_tool_ids.includes(tool.id)) return false
         if (!normalized) return true
-        return [tool.name, tool.description, tool.id, tool.status]
+        return [tool.name, tool.description, tool.id, tool.status, tool.server_name ?? ""]
           .join(" ")
           .toLowerCase()
           .includes(normalized)
@@ -310,6 +310,8 @@ export function useTaskAgents(t: Translation) {
         const ls = draft.callable_mcp_tool_ids.includes(left.id)
         const rs = draft.callable_mcp_tool_ids.includes(right.id)
         if (ls !== rs) return ls ? -1 : 1
+        const sn = (left.server_name ?? "").localeCompare(right.server_name ?? "", undefined, { sensitivity: "base" })
+        if (sn !== 0) return sn
         const rd = (statusRank(left.status) - statusRank(right.status))
         if (rd !== 0) return rd
         return left.name.localeCompare(right.name, undefined, { sensitivity: "base" })

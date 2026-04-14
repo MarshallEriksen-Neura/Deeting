@@ -57,6 +57,7 @@ export const CustomTaskAgentBindableToolSchema = z.object({
   name: z.string(),
   description: z.string(),
   status: z.string(),
+  server_name: z.string().nullish(),
 })
 
 export const CustomTaskAgentBindableSkillSchema = z.object({

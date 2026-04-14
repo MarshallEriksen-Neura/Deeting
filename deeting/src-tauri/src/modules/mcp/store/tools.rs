@@ -157,6 +157,19 @@ impl McpStore {
             return Ok(updated);
         }
 
+        if let Some(existing_by_name) = self
+            .get_tool_by_source_name(tool.source_id.as_str(), tool.name.as_str())
+            .await?
+        {
+            self.update_tool(&existing_by_name.id, tool.clone()).await?;
+            let updated = self
+                .get_tool(&existing_by_name.id)
+                .await?
+                .ok_or_else(|| McpError::NotFound("tool missing after name-based update".to_string()))?;
+            self.sync_mcp_tool_registry_entry(&updated).await?;
+            return Ok(updated);
+        }
+
         self.insert_tool(tool.clone()).await?;
         let created = self
             .find_tool_id_by_source_identifier(tool.source_id.as_str(), tool.identifier.as_deref())

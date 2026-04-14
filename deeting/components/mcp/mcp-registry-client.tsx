@@ -24,9 +24,11 @@ import {
 import {
   useMcpRegistryClearLogsAction,
   useMcpRegistryHydration,
+  useMcpRegistryIndexProgress,
   useMcpRegistryLoadErrorEffect,
   useMcpRegistryRefreshAll,
   useMcpRegistryToolLogs,
+  type McpToolIndexProgressEvent,
 } from "./registry-effects"
 import { useMcpRegistryViewModel } from "@/components/mcp/registry-view-model"
 import { RegistryHeader } from "./registry-header"
@@ -99,6 +101,7 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
   const [editServer, setEditServer] = useState<McpServer | null>(null)
   const [editServerOpen, setEditServerOpen] = useState(false)
   const [reindexingMissingTools, setReindexingMissingTools] = useState(false)
+  const [indexProgress, setIndexProgress] = useState<McpToolIndexProgressEvent | null>(null)
 
   const mapTool = useCallback((tool: McpToolRecord): MCPTool => mapDesktopToolRecordToTool(tool, t("conflict.warningDescription")), [t])
 
@@ -154,6 +157,15 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
     setLogsByTool,
     onLoadError: handleLoadError,
     maxLogLines: MAX_LOG_LINES,
+  })
+
+  useMcpRegistryIndexProgress({
+    isTauri,
+    onProgress: setIndexProgress,
+    onCompleted: () => {
+      void refreshAll()
+      setTimeout(() => setIndexProgress(null), 1200)
+    },
   })
 
   const updateToolList = useCallback((updater: (tools: MCPTool[]) => MCPTool[]) => {
@@ -324,6 +336,25 @@ export function MCPRegistryClient({ initialTools, initialSources }: MCPRegistryC
 
         <div className="animate-glass-card-in stagger-3">
           <div className="mcp-runtime-shell rounded-[2rem] border border-white/40 bg-[linear-gradient(180deg,rgba(255,255,255,0.66),rgba(248,250,252,0.94))] p-4 shadow-[0_32px_80px_-36px_rgba(15,23,42,0.34)] sm:p-5 lg:p-6">
+            {isTauri && indexProgress && indexProgress.total > 0 && (
+              <div className="mb-4 rounded-xl border border-sky-200/80 bg-sky-50/70 p-3">
+                <div className="mb-1 flex items-center justify-between text-[12px] text-sky-700">
+                  <span>{t("actions.reindexingMissing")}</span>
+                  <span>{indexProgress.processed}/{indexProgress.total}</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-sky-100">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-sky-400 to-cyan-400 transition-all duration-300"
+                    style={{ width: `${indexProgress.total > 0 ? Math.min(100, Math.round((indexProgress.processed / indexProgress.total) * 100)) : 100}%` }}
+                  />
+                </div>
+                <div className="mt-1 text-[11px] text-sky-700/90">
+                  {indexProgress.phase === "completed"
+                    ? `${t("tool.labels.index")}: ${indexProgress.indexed}/${indexProgress.total}`
+                    : `${t("tool.labels.index")}: ${indexProgress.indexed}/${indexProgress.total}${indexProgress.current ? ` - ${indexProgress.current}` : ""}`}
+                </div>
+              </div>
+            )}
             <RuntimeServerListSection
               groups={runtimeGroups}
               conflictCount={conflictCount}

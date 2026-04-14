@@ -18,6 +18,7 @@ use crate::modules::memory::types::{
     CreateLocalMemoryRequest, LocalMemoryClearRequest, LocalMemoryItem, LocalMemoryListQuery,
     LocalMemoryListResponse, LocalMemorySearchItem, UpdateLocalMemoryRequest,
 };
+use crate::modules::retrieval_kernel::write_guard::WriteGuardCandidate;
 
 const LOCAL_MEMORY_TABLE: &str = "local_memories";
 const LOCAL_ASSET_TABLE: &str = "local_assets";
@@ -187,6 +188,55 @@ impl MemoryStore {
             metadata,
         )
         .await
+    }
+
+    pub async fn update_asset_metadata(
+        &self,
+        id: &str,
+        metadata: Option<serde_json::Value>,
+    ) -> Result<bool, MemoryError> {
+        let normalized_id = id.trim();
+        if normalized_id.is_empty() {
+            return Err(MemoryError::validation("asset id is required"));
+        }
+
+        let table = self.conn.open_table(LOCAL_ASSET_TABLE).execute().await?;
+        let batches = table
+            .query()
+            .only_if(format!("id = '{}'", sql_escape(normalized_id)))
+            .limit(1)
+            .execute()
+            .await?
+            .try_collect::<Vec<_>>()
+            .await?;
+
+        let batch = match batches.first() {
+            Some(batch) if batch.num_rows() > 0 => batch,
+            _ => return Ok(false),
+        };
+
+        let id_col = as_string_col(batch, "id")?;
+        let name_col = as_string_col(batch, "name")?;
+        let description_col = as_string_col(batch, "description")?;
+        let asset_type_col = as_string_col(batch, "asset_type")?;
+        let source_type_col = as_string_col(batch, "source_type")?;
+        let pkg_name_col = as_string_col(batch, "pkg_name")?;
+        let vector = extract_asset_vector(batch, 0)?;
+
+        self.upsert_asset_into_table(
+            LOCAL_ASSET_TABLE,
+            id_col.value(0).to_string(),
+            name_col.value(0).to_string(),
+            description_col.value(0).to_string(),
+            asset_type_col.value(0).to_string(),
+            source_type_col.value(0).to_string(),
+            nullable_string(pkg_name_col, 0),
+            vector,
+            metadata,
+        )
+        .await?;
+
+        Ok(true)
     }
 
     pub async fn upsert_knowledge_chunk_asset(
@@ -1050,6 +1100,59 @@ impl MemoryStore {
         .await
     }
 
+    pub(crate) async fn search_memories_for_write_guard(
+        &self,
+        query_embedding: Vec<f32>,
+        limit: usize,
+        session_id: Option<&str>,
+        capability_id: Option<&str>,
+        category: Option<&str>,
+        source: Option<&str>,
+        tags: Option<&[String]>,
+    ) -> Result<Vec<WriteGuardCandidate>, MemoryError> {
+        let filter =
+            build_memory_search_filter_sql(session_id, capability_id, category, source, tags, true);
+        let table = self.table().await?;
+
+        let mut vector_query = table.vector_search(query_embedding.clone())?.limit(limit);
+        if !filter.is_empty() {
+            vector_query = vector_query.only_if(filter.clone());
+        }
+
+        match vector_query.execute().await {
+            Ok(stream) => {
+                let batches = stream.try_collect::<Vec<_>>().await?;
+                match read_write_guard_candidate_batches(&batches, &query_embedding) {
+                    Ok(results) if !results.is_empty() => return Ok(results),
+                    Ok(_) => {}
+                    Err(error) => {
+                        log::warn!(
+                            "write guard exact rerank unavailable from vector batches, falling back to linear: {}",
+                            error
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!(
+                    "write guard vector search unavailable, falling back to linear: {}",
+                    e
+                );
+            }
+        }
+
+        self.search_memories_for_write_guard_linear_fallback(
+            query_embedding,
+            limit,
+            session_id,
+            capability_id,
+            category,
+            source,
+            tags,
+        )
+        .await
+    }
+
     async fn search_memories_linear_fallback(
         &self,
         query_embedding: Vec<f32>,
@@ -1170,6 +1273,31 @@ impl MemoryStore {
         }
 
         results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
+        if results.len() > limit {
+            results.truncate(limit);
+        }
+        Ok(results)
+    }
+
+    async fn search_memories_for_write_guard_linear_fallback(
+        &self,
+        query_embedding: Vec<f32>,
+        limit: usize,
+        session_id: Option<&str>,
+        capability_id: Option<&str>,
+        category: Option<&str>,
+        source: Option<&str>,
+        tags: Option<&[String]>,
+    ) -> Result<Vec<WriteGuardCandidate>, MemoryError> {
+        let filter =
+            build_memory_search_filter_sql(session_id, capability_id, category, source, tags, true);
+        let table = self.table().await?;
+        let mut stmt = table.query();
+        if !filter.is_empty() {
+            stmt = stmt.only_if(filter);
+        }
+        let batches = stmt.execute().await?.try_collect::<Vec<_>>().await?;
+        let mut results = read_write_guard_candidate_batches(&batches, &query_embedding)?;
         if results.len() > limit {
             results.truncate(limit);
         }
@@ -1315,88 +1443,20 @@ impl MemoryStore {
         session_id: Option<&str>,
         capability_id: Option<&str>,
     ) -> Result<Option<(String, String, f32)>, MemoryError> {
-        let filter = build_filter_sql(session_id, capability_id, true);
-        let table = self.table().await?;
-
-        // Try native vector search first
-        let mut vector_query = table.vector_search(query_embedding.clone())?.limit(1);
-        if !filter.is_empty() {
-            vector_query = vector_query.only_if(filter.clone());
-        }
-
-        match vector_query.execute().await {
-            Ok(stream) => {
-                let batches = stream.try_collect::<Vec<_>>().await?;
-                if let Some(result) = extract_top1_from_batches(&batches)? {
-                    return Ok(Some(result));
-                }
-            }
-            Err(e) => {
-                log::warn!(
-                    "write guard vector search unavailable, falling back to linear: {}",
-                    e
-                );
-            }
-        }
-
-        // Linear fallback
-        let mut stmt = table.query();
-        if !filter.is_empty() {
-            stmt = stmt.only_if(filter);
-        }
-        let batches = stmt.execute().await?.try_collect::<Vec<_>>().await?;
-
-        let mut best: Option<(String, String, f32)> = None;
-        for batch in &batches {
-            let id_col = as_string_col(batch, "id")?;
-            let content_col = as_string_col(batch, "content")?;
-            let embedding_col = match batch
-                .column_by_name("embedding")
-                .and_then(|c| c.as_any().downcast_ref::<FixedSizeListArray>())
-            {
-                Some(col) => col,
-                None => continue,
-            };
-            let values_col = match embedding_col
-                .values()
-                .as_any()
-                .downcast_ref::<Float32Array>()
-            {
-                Some(col) => col,
-                None => continue,
-            };
-            let value_len = usize::try_from(embedding_col.value_length())
-                .map_err(|_| MemoryError::Storage("invalid embedding value length".into()))?;
-
-            for row in 0..batch.num_rows() {
-                if embedding_col.is_null(row) {
-                    continue;
-                }
-                let start = row.saturating_mul(value_len);
-                let end = start.saturating_add(value_len);
-                if end > values_col.len() {
-                    continue;
-                }
-                let candidate: Vec<f32> = (start..end)
-                    .map(|idx| {
-                        if values_col.is_null(idx) {
-                            0.0
-                        } else {
-                            values_col.value(idx)
-                        }
-                    })
-                    .collect();
-                let score = cosine_similarity(&query_embedding, &candidate);
-                if best.as_ref().map_or(true, |(_, _, s)| score > *s) {
-                    best = Some((
-                        required_string(id_col, row, "id")?,
-                        required_string(content_col, row, "content")?,
-                        score,
-                    ));
-                }
-            }
-        }
-        Ok(best)
+        Ok(self
+            .search_memories_for_write_guard(
+                query_embedding,
+                1,
+                session_id,
+                capability_id,
+                None,
+                None,
+                None,
+            )
+            .await?
+            .into_iter()
+            .next()
+            .map(|candidate| (candidate.id, candidate.content, candidate.exact_score)))
     }
 
     /// Update a memory's content (for Write Guard UPDATE action).
@@ -1823,6 +1883,7 @@ fn read_asset_search_batches(
 }
 
 /// Extract (id, content, similarity_score) from vector search result batches.
+#[allow(dead_code)]
 fn extract_top1_from_batches(
     batches: &[RecordBatch],
 ) -> Result<Option<(String, String, f32)>, MemoryError> {
@@ -1847,6 +1908,82 @@ fn extract_top1_from_batches(
     Ok(None)
 }
 
+fn read_write_guard_candidate_batches(
+    batches: &[RecordBatch],
+    query_embedding: &[f32],
+) -> Result<Vec<WriteGuardCandidate>, MemoryError> {
+    let mut results = Vec::new();
+    for batch in batches {
+        let id_col = as_string_col(batch, "id")?;
+        let content_col = as_string_col(batch, "content")?;
+        let session_col = as_string_col(batch, "session_id")?;
+        let assistant_col = as_string_col(batch, "capability_id")?;
+        let meta_col = as_string_col(batch, "meta_info_json")?;
+        let created_col = as_string_col(batch, "created_at")?;
+        let updated_col = as_string_col(batch, "updated_at")?;
+        let category_col = batch
+            .column_by_name("category")
+            .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+        let source_col = batch
+            .column_by_name("source")
+            .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+        let tags_col = batch
+            .column_by_name("tags_json")
+            .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+        let vitality_col = batch
+            .column_by_name("vitality")
+            .and_then(|c| c.as_any().downcast_ref::<Float32Array>());
+        let last_accessed_col = batch
+            .column_by_name("last_accessed_at")
+            .and_then(|c| c.as_any().downcast_ref::<StringArray>());
+
+        for row in 0..batch.num_rows() {
+            let candidate = extract_memory_embedding(batch, row)?;
+            let exact_score = cosine_similarity(query_embedding, &candidate);
+            let meta_info = nullable_string(meta_col, row)
+                .map(|raw| serde_json::from_str(&raw))
+                .transpose()?;
+            let category = category_col.and_then(|col| nullable_string(col, row));
+            let source = source_col.and_then(|col| nullable_string(col, row));
+            let tags = tags_col
+                .and_then(|col| nullable_string(col, row))
+                .and_then(|raw| serde_json::from_str::<Vec<String>>(&raw).ok());
+            let vitality = vitality_col.and_then(|col| {
+                if col.is_null(row) {
+                    None
+                } else {
+                    Some(col.value(row))
+                }
+            });
+            let last_accessed_at = last_accessed_col.and_then(|col| nullable_string(col, row));
+
+            results.push(WriteGuardCandidate {
+                id: required_string(id_col, row, "id")?,
+                content: required_string(content_col, row, "content")?,
+                session_id: nullable_string(session_col, row),
+                capability_id: nullable_string(assistant_col, row),
+                meta_info,
+                category,
+                source,
+                tags,
+                vitality,
+                last_accessed_at,
+                created_at: required_string(created_col, row, "created_at")?,
+                updated_at: required_string(updated_col, row, "updated_at")?,
+                exact_score,
+            });
+        }
+    }
+
+    results.sort_by(|left, right| {
+        right
+            .exact_score
+            .partial_cmp(&left.exact_score)
+            .unwrap_or(Ordering::Equal)
+    });
+    Ok(results)
+}
+
 fn cosine_similarity(query: &[f32], candidate: &[f32]) -> f32 {
     if query.is_empty() || candidate.is_empty() || query.len() != candidate.len() {
         return 0.0;
@@ -1863,6 +2000,72 @@ fn cosine_similarity(query: &[f32], candidate: &[f32]) -> f32 {
         return 0.0;
     }
     dot / (query_norm.sqrt() * candidate_norm.sqrt())
+}
+
+fn extract_memory_embedding(batch: &RecordBatch, row: usize) -> Result<Vec<f32>, MemoryError> {
+    let embedding_col = batch
+        .column_by_name("embedding")
+        .and_then(|c| c.as_any().downcast_ref::<FixedSizeListArray>())
+        .ok_or_else(|| MemoryError::Storage("missing or invalid embedding column".into()))?;
+    if embedding_col.is_null(row) {
+        return Err(MemoryError::Storage("embedding column is null".into()));
+    }
+    let values_col = embedding_col
+        .values()
+        .as_any()
+        .downcast_ref::<Float32Array>()
+        .ok_or_else(|| MemoryError::Storage("invalid embedding values column".into()))?;
+    let value_len = usize::try_from(embedding_col.value_length())
+        .map_err(|_| MemoryError::Storage("invalid embedding value length".into()))?;
+    let start = row.saturating_mul(value_len);
+    let end = start.saturating_add(value_len);
+    if end > values_col.len() {
+        return Err(MemoryError::Storage(
+            "embedding vector length exceeds values column".into(),
+        ));
+    }
+    Ok((start..end)
+        .map(|idx| {
+            if values_col.is_null(idx) {
+                0.0
+            } else {
+                values_col.value(idx)
+            }
+        })
+        .collect())
+}
+
+fn extract_asset_vector(batch: &RecordBatch, row: usize) -> Result<Vec<f32>, MemoryError> {
+    let vector_col = batch
+        .column_by_name("vector")
+        .and_then(|c| c.as_any().downcast_ref::<FixedSizeListArray>())
+        .ok_or_else(|| MemoryError::Storage("missing or invalid vector column".into()))?;
+    if vector_col.is_null(row) {
+        return Err(MemoryError::Storage("asset vector column is null".into()));
+    }
+    let values_col = vector_col
+        .values()
+        .as_any()
+        .downcast_ref::<Float32Array>()
+        .ok_or_else(|| MemoryError::Storage("invalid asset vector values column".into()))?;
+    let value_len = usize::try_from(vector_col.value_length())
+        .map_err(|_| MemoryError::Storage("invalid asset vector value length".into()))?;
+    let start = row.saturating_mul(value_len);
+    let end = start.saturating_add(value_len);
+    if end > values_col.len() {
+        return Err(MemoryError::Storage(
+            "asset vector length exceeds values column".into(),
+        ));
+    }
+    Ok((start..end)
+        .map(|idx| {
+            if values_col.is_null(idx) {
+                0.0
+            } else {
+                values_col.value(idx)
+            }
+        })
+        .collect())
 }
 
 fn build_asset_search_filter_sql(

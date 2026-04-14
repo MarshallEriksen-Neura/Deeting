@@ -391,36 +391,55 @@ export function ChatTaskAgentEditor({
                 ) : filteredBindingTools.length === 0 ? (
                   <p className="text-sm text-[var(--muted)]">{t("bindings.noFilteredTools")}</p>
                 ) : (
-                  filteredBindingTools.map((tool) => (
-                    <label
-                      key={tool.id}
-                      className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 p-3 transition-colors hover:bg-white/[0.03]"
-                    >
-                      <Checkbox
-                        checked={draft.callable_mcp_tool_ids.includes(tool.id)}
-                        onCheckedChange={(checked) =>
-                          toggleBinding("tool", tool.id, checked === true)
-                        }
-                        className="mt-0.5"
-                      />
-                      <div className="min-w-0 space-y-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-medium text-[var(--foreground)]">
-                            {tool.name}
+                  (() => {
+                    const groups = new Map<string, typeof filteredBindingTools>()
+                    for (const tool of filteredBindingTools) {
+                      const key = tool.server_name || t("bindings.unknownServer")
+                      const list = groups.get(key)
+                      if (list) list.push(tool)
+                      else groups.set(key, [tool])
+                    }
+                    return Array.from(groups.entries()).map(([serverName, tools]) => (
+                      <div key={serverName} className="space-y-2">
+                        <p className="sticky top-0 z-10 bg-white/[0.03] px-1 py-1.5 text-xs font-medium uppercase tracking-[0.12em] text-[var(--muted)]">
+                          {serverName}
+                          <span className="ml-1.5 text-[11px] font-normal tabular-nums opacity-60">
+                            ({tools.length})
                           </span>
-                          <span
-                            className={cn(
-                              "rounded-full border px-2 py-0.5 text-[11px]",
-                              statusToneClass(tool.status),
-                            )}
+                        </p>
+                        {tools.map((tool) => (
+                          <label
+                            key={tool.id}
+                            className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 p-3 transition-colors hover:bg-white/[0.03]"
                           >
-                            {tool.status}
-                          </span>
-                        </div>
-                        <p className="text-sm text-[var(--muted)]">{tool.description || "—"}</p>
+                            <Checkbox
+                              checked={draft.callable_mcp_tool_ids.includes(tool.id)}
+                              onCheckedChange={(checked) =>
+                                toggleBinding("tool", tool.id, checked === true)
+                              }
+                              className="mt-0.5"
+                            />
+                            <div className="min-w-0 space-y-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-sm font-medium text-[var(--foreground)]">
+                                  {tool.name}
+                                </span>
+                                <span
+                                  className={cn(
+                                    "rounded-full border px-2 py-0.5 text-[11px]",
+                                    statusToneClass(tool.status),
+                                  )}
+                                >
+                                  {tool.status}
+                                </span>
+                              </div>
+                              <p className="text-sm text-[var(--muted)]">{tool.description || "—"}</p>
+                            </div>
+                          </label>
+                        ))}
                       </div>
-                    </label>
-                  ))
+                    ))
+                  })()
                 )}
               </div>
             </ScrollArea>

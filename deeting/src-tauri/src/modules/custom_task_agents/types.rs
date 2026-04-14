@@ -156,6 +156,7 @@ pub struct CustomTaskAgentBindableMcpTool {
     pub name: String,
     pub description: String,
     pub status: String,
+    pub server_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -7,6 +7,7 @@ use sha2::{Digest, Sha256};
 use crate::modules::conversations::summary_format::build_local_summary_from_window;
 use crate::modules::custom_task_agents::store::list_custom_task_agents as list_custom_task_agents_inner;
 use crate::modules::memory::types::CreateLocalMemoryRequest;
+use crate::modules::retrieval_kernel::write_guard::WriteGuardProfile;
 use crate::modules::workflow::types::QuickWorkflowRequest;
 use crate::state::{global_app_handle, AppState};
 
@@ -43,6 +44,16 @@ const ACTION_PROMOTE_TO_MEMORY: &str = "promote_to_memory";
 const STATUS_PENDING: &str = "pending";
 const STATUS_COMPLETED: &str = "completed";
 const STATUS_DISMISSED: &str = "dismissed";
+#[allow(dead_code)]
+const STATUS_FAILED: &str = "failed";
+#[allow(dead_code)]
+#[allow(dead_code)]
+const STATUS_STALE: &str = "stale";
+#[allow(dead_code)]
+const STATUS_SUPERSEDED: &str = "superseded";
+const STATUS_PROMOTED: &str = "promoted";
+#[allow(dead_code)]
+const STATUS_EXPIRED: &str = "expired";
 
 const MAX_AUDIT_ENTRIES: usize = 32;
 const MAX_SUGGESTIONS: usize = 16;
@@ -157,7 +168,7 @@ pub(crate) async fn execute_suggestion(
 
     let mut workflow_run_id = None;
     let mut memory_action = None;
-    let message = match suggestion.action_kind.as_str() {
+    let execution_result: Result<Option<String>, String> = match suggestion.action_kind.as_str() {
         ACTION_SYNC_CORPUS => {
             let binding = binding
                 .ok_or_else(|| "llm wiki binding has not been configured yet".to_string())?;
@@ -182,10 +193,10 @@ pub(crate) async fn execute_suggestion(
                     "removedFiles": removed_files,
                 })),
             );
-            Some(format!(
+            Ok(Some(format!(
                 "Corpus synced. Indexed {} files and removed {} stale entries.",
                 indexed_files, removed_files
-            ))
+            )))
         }
         ACTION_CREATE_MAINTAINER_AGENT => {
             let result = create_or_update_local_llm_wiki_maintainer_agent(app_state).await?;
@@ -207,7 +218,7 @@ pub(crate) async fn execute_suggestion(
                     "agentName": name,
                 })),
             );
-            Some(format!("Maintainer agent is ready: {}", name))
+            Ok(Some(format!("Maintainer agent is ready: {}", name)))
         }
         ACTION_RUN_MAINTENANCE_REVIEW | ACTION_CRYSTALLIZE_SESSION_SUMMARY => {
             let metadata = suggestion.metadata.as_ref().and_then(Value::as_object);
@@ -247,7 +258,7 @@ pub(crate) async fn execute_suggestion(
                     "succeeded": result.succeeded,
                 })),
             );
-            Some("Maintainer workflow started.".to_string())
+            Ok(Some("Maintainer workflow started.".to_string()))
         }
         ACTION_PROMOTE_TO_MEMORY => {
             let metadata = suggestion.metadata.as_ref().and_then(Value::as_object);
@@ -271,15 +282,18 @@ pub(crate) async fn execute_suggestion(
             let result = app_state
                 .memory
                 .service
-                .append_guarded_scoped(build_memory_promotion_request(
-                    lifecycle_context.as_ref(),
-                    memory_content,
-                    session_id.as_deref(),
-                    suggestion.fingerprint.as_str(),
-                    Some(suggestion.id.as_str()),
-                    repeat_count,
-                    now.as_str(),
-                ))
+                .append_guarded_with_profile(
+                    build_memory_promotion_request(
+                        lifecycle_context.as_ref(),
+                        memory_content,
+                        session_id.as_deref(),
+                        suggestion.fingerprint.as_str(),
+                        Some(suggestion.id.as_str()),
+                        repeat_count,
+                        now.as_str(),
+                    ),
+                    WriteGuardProfile::WikiPromotion,
+                )
                 .await
                 .map_err(|err| err.to_string())?;
             let action = format!("{:?}", result.action).to_ascii_lowercase();
@@ -310,7 +324,7 @@ pub(crate) async fn execute_suggestion(
                         .map(|value| value.workspace_id.as_str()),
                 })),
             );
-            Some("Repeated stable conclusion promoted to memory.".to_string())
+            Ok(Some("Repeated stable conclusion promoted to memory.".to_string()))
         }
         ACTION_INSPECT_CORPUS => {
             push_audit(
@@ -324,12 +338,40 @@ pub(crate) async fn execute_suggestion(
                     "suggestionId": suggestion.id,
                 })),
             );
-            Some("Inspector suggestion acknowledged.".to_string())
+            Ok(Some("Inspector suggestion acknowledged.".to_string()))
         }
-        other => return Err(format!("unsupported llm wiki automation action: {}", other)),
+        other => Err(format!("unsupported llm wiki automation action: {}", other)),
     };
 
-    automation.suggestions[index].status = STATUS_COMPLETED.to_string();
+    let message = match execution_result {
+        Ok(message) => message,
+        Err(error) => {
+            automation.suggestions[index].status = STATUS_FAILED.to_string();
+            automation.suggestions[index].updated_at = now.clone();
+            push_audit(
+                &mut automation,
+                suggestion.trigger.as_str(),
+                "error",
+                "execution_failed",
+                format!("Automation suggestion execution failed: {}", error),
+                now.as_str(),
+                Some(json!({
+                    "suggestionId": suggestion.id,
+                    "actionKind": suggestion.action_kind,
+                })),
+            );
+            save_automation_state(store, &automation)
+                .await
+                .map_err(|err| err.to_string())?;
+            return Err(error);
+        }
+    };
+
+    automation.suggestions[index].status = if suggestion.action_kind == ACTION_PROMOTE_TO_MEMORY {
+        STATUS_PROMOTED.to_string()
+    } else {
+        STATUS_COMPLETED.to_string()
+    };
     automation.suggestions[index].updated_at = now.clone();
     save_automation_state(store, &automation)
         .await
@@ -765,6 +807,13 @@ pub(crate) async fn run_schedule_tick(
                 now.as_str(),
                 None,
             );
+        } else {
+            expire_suggestion_by_fingerprint(
+                &mut state,
+                suggestion_fingerprint(TRIGGER_MAINTENANCE_SCHEDULE, "stale-corpus-sync")
+                    .as_str(),
+                now.as_str(),
+            );
         }
     }
 
@@ -1141,15 +1190,18 @@ async fn maybe_promote_repeated_conclusion_to_memory(
     let result = app_state
         .memory
         .service
-        .append_guarded_scoped(build_memory_promotion_request(
-            lifecycle_context,
-            summary,
-            Some(session_id),
-            fingerprint,
-            None,
-            repeat_count,
-            now,
-        ))
+        .append_guarded_with_profile(
+            build_memory_promotion_request(
+                lifecycle_context,
+                summary,
+                Some(session_id),
+                fingerprint,
+                None,
+                repeat_count,
+                now,
+            ),
+            WriteGuardProfile::WikiPromotion,
+        )
         .await
         .map_err(|err| err.to_string())?;
 
@@ -1316,6 +1368,7 @@ fn upsert_suggestion(
     now: &str,
     metadata: Option<Value>,
 ) -> i64 {
+    supersede_related_pending_suggestions(state, trigger, action_kind, &fingerprint, metadata.as_ref(), now);
     if let Some(existing) = state
         .suggestions
         .iter_mut()
@@ -1361,6 +1414,87 @@ fn upsert_suggestion(
         state.suggestions.truncate(MAX_SUGGESTIONS);
     }
     1
+}
+
+fn supersede_related_pending_suggestions(
+    state: &mut LocalLlmWikiAutomationState,
+    trigger: &str,
+    action_kind: &str,
+    fingerprint: &str,
+    metadata: Option<&Value>,
+    now: &str,
+) {
+    let session_id = metadata
+        .and_then(Value::as_object)
+        .and_then(|value| value.get("sessionId"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+
+    let Some(session_id) = session_id else {
+        return;
+    };
+
+    for suggestion in &mut state.suggestions {
+        if suggestion.fingerprint == fingerprint
+            || suggestion.trigger != trigger
+            || suggestion.action_kind != action_kind
+            || suggestion.status != STATUS_PENDING
+        {
+            continue;
+        }
+
+        let same_session = suggestion
+            .metadata
+            .as_ref()
+            .and_then(Value::as_object)
+            .and_then(|value| value.get("sessionId"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .map(|value| value.eq_ignore_ascii_case(session_id.as_str()))
+            .unwrap_or(false);
+        if !same_session {
+            continue;
+        }
+
+        suggestion.status = STATUS_SUPERSEDED.to_string();
+        suggestion.updated_at = now.to_string();
+        if let Some(metadata) = suggestion
+            .metadata
+            .as_mut()
+            .and_then(Value::as_object_mut)
+            .and_then(|value| ensure_object_field(value, "lifecycle"))
+        {
+            metadata.insert("supersededBy".to_string(), json!(fingerprint));
+            metadata.insert("lastValidatedAt".to_string(), json!(now));
+        }
+    }
+}
+
+fn expire_suggestion_by_fingerprint(
+    state: &mut LocalLlmWikiAutomationState,
+    fingerprint: &str,
+    now: &str,
+) {
+    let Some(suggestion) = state
+        .suggestions
+        .iter_mut()
+        .find(|item| item.fingerprint == fingerprint && item.status == STATUS_PENDING)
+    else {
+        return;
+    };
+
+    suggestion.status = STATUS_EXPIRED.to_string();
+    suggestion.updated_at = now.to_string();
+    if let Some(lifecycle) = suggestion
+        .metadata
+        .as_mut()
+        .and_then(Value::as_object_mut)
+        .and_then(|value| ensure_object_field(value, "lifecycle"))
+    {
+        lifecycle.insert("lastValidatedAt".to_string(), json!(now));
+    }
 }
 
 fn merge_metadata(

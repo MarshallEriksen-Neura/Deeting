@@ -3,7 +3,9 @@ use std::sync::Arc;
 use crate::modules::memory::service::MemoryService;
 use crate::modules::memory::types::{CreateLocalMemoryRequest, WriteAction};
 use crate::modules::providers::model_guard::resolve_local_secretary_model_connection;
+use crate::modules::retrieval_kernel::write_guard::WriteGuardProfile;
 use crate::state::AppState;
+use sha2::{Digest, Sha256};
 
 const FACT_EXTRACTION_PROMPT_TEMPLATE: &str = r#"You are a fact extraction system. Analyze the following conversation and extract key facts about the user that would be useful to remember for future conversations.
 
@@ -23,22 +25,23 @@ Respond with ONLY a JSON array of fact strings, no other text."#;
 const FACT_EXTRACTION_CONVERSATION_MAX_CHARS: usize = 4000;
 const FACT_EXTRACTION_MAX_TOKENS: u32 = 512;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct FactExtractionWriteSummary {
     pub extracted: usize,
     pub added: usize,
     pub updated: usize,
     pub noop: usize,
     pub failed: usize,
+    pub touched_memory_ids: Vec<String>,
 }
 
 impl FactExtractionWriteSummary {
-    pub(crate) fn successful_count(self) -> usize {
+    pub(crate) fn successful_count(&self) -> usize {
         self.added + self.updated + self.noop
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum FactExtractionOutcome {
     Processed(FactExtractionWriteSummary),
     NoFacts,
@@ -46,7 +49,7 @@ pub(crate) enum FactExtractionOutcome {
 }
 
 impl FactExtractionOutcome {
-    pub(crate) fn should_mark_processed(self) -> bool {
+    pub(crate) fn should_mark_processed(&self) -> bool {
         matches!(self, Self::Processed(_) | Self::NoFacts)
     }
 }
@@ -119,25 +122,47 @@ pub(crate) async fn extract_and_store_facts(
         }
 
         let payload = CreateLocalMemoryRequest {
-            content: fact_trimmed,
+            content: fact_trimmed.clone(),
             session_id: Some(session_id.to_string()),
             capability_id: capability_id.map(|s| s.to_string()),
-            meta_info: Some(serde_json::json!({ "source": "auto_extraction" })),
+            meta_info: Some(serde_json::json!({
+                "source": "auto_extraction",
+                "fact_fingerprint": fact_fingerprint(&fact_trimmed),
+                "auto_extraction": {
+                    "state": "active",
+                    "stale_rounds": 0
+                }
+            })),
             category: Some("fact".to_string()),
             source: Some("auto_extraction".to_string()),
             tags: None,
         };
 
-        match memory_service.append_guarded(payload).await {
+        match memory_service
+            .append_guarded_with_profile(payload, WriteGuardProfile::AutoExtractedFact)
+            .await
+        {
             Ok(result) => match result.action {
                 WriteAction::Add => {
                     summary.added = summary.added.saturating_add(1);
+                    if let Some(item) = result.item.as_ref() {
+                        summary.touched_memory_ids.push(item.id.clone());
+                    }
                 }
                 WriteAction::Update => {
                     summary.updated = summary.updated.saturating_add(1);
+                    if let Some(item) = result.item.as_ref() {
+                        summary.touched_memory_ids.push(item.id.clone());
+                    }
+                    if let Some(memory_id) = result.updated_memory_id.as_ref() {
+                        summary.touched_memory_ids.push(memory_id.clone());
+                    }
                 }
                 WriteAction::Noop => {
                     summary.noop = summary.noop.saturating_add(1);
+                    if let Some(memory_id) = result.updated_memory_id.as_ref() {
+                        summary.touched_memory_ids.push(memory_id.clone());
+                    }
                 }
             },
             Err(e) => {
@@ -229,6 +254,12 @@ fn parse_json_fact_array(raw: &str) -> Option<Vec<String>> {
         .take(5)
         .collect();
     Some(facts)
+}
+
+fn fact_fingerprint(value: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(value.trim().to_ascii_lowercase().as_bytes());
+    format!("{:x}", hasher.finalize())
 }
 
 fn take_last_chars(input: &str, max_chars: usize) -> String {
@@ -374,6 +405,7 @@ mod tests {
             updated: 1,
             noop: 0,
             failed: 0,
+            touched_memory_ids: Vec::new(),
         });
 
         assert!(outcome.should_mark_processed());
@@ -387,6 +419,7 @@ mod tests {
             updated: 1,
             noop: 1,
             failed: 0,
+            touched_memory_ids: Vec::new(),
         };
 
         assert_eq!(summary.successful_count(), 3);

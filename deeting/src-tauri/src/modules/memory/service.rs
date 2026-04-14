@@ -10,8 +10,11 @@ use crate::modules::memory::types::{
 };
 use crate::modules::providers::embedding::EmbeddingService;
 use crate::modules::retrieval_kernel::lifecycle::{
-    decide_write_guard_action, touched_vitality, vitality_multiplier, WriteGuardDecision,
-    DEFAULT_VITALITY_RERANK_OVERFETCH_FACTOR,
+    touched_vitality, vitality_multiplier, DEFAULT_VITALITY_RERANK_OVERFETCH_FACTOR,
+};
+use crate::modules::retrieval_kernel::write_guard::{
+    decide_write_guard, policy_for_profile, WriteGuardCoreAction, WriteGuardDecisionDetail,
+    WriteGuardProfile, WriteGuardScopeMode,
 };
 use serde_json::Value;
 
@@ -19,12 +22,6 @@ pub struct MemoryService {
     store: Arc<MemoryStore>,
     embedding: Option<EmbeddingService>,
     snapshots: Option<Arc<SnapshotStore>>,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum WriteGuardScopeMode {
-    Global,
-    PayloadFilters,
 }
 
 impl MemoryService {
@@ -69,10 +66,19 @@ impl MemoryService {
         &self,
         payload: CreateLocalMemoryRequest,
     ) -> Result<LocalMemoryItem, MemoryError> {
+        self.append_with_profile(payload, WriteGuardProfile::ManualMemory)
+            .await
+    }
+
+    async fn append_with_profile(
+        &self,
+        payload: CreateLocalMemoryRequest,
+        profile: WriteGuardProfile,
+    ) -> Result<LocalMemoryItem, MemoryError> {
         if let Some(ref embedding_svc) = self.embedding {
             match embedding_svc.embed_text(&payload.content).await {
                 Ok(vector) => {
-                    return self.append_with_write_guard(payload, vector).await;
+                    return self.append_with_write_guard(payload, vector, profile).await;
                 }
                 Err(e) => {
                     log::warn!(
@@ -90,17 +96,39 @@ impl MemoryService {
         &self,
         payload: CreateLocalMemoryRequest,
         embedding: Vec<f32>,
+        profile: WriteGuardProfile,
     ) -> Result<LocalMemoryItem, MemoryError> {
-        // Find the most similar existing memory (search globally, not scoped by
-        // session/capability, so that cross-session duplicates are detected).
-        let top1 = self
-            .store
-            .find_top1_similar(embedding.clone(), None, None)
+        let candidates = self
+            .find_candidates_for_write_guard(
+                &payload,
+                embedding.clone(),
+                policy_for_profile(profile).scope_mode,
+            )
             .await?;
-        match (
-            decide_write_guard_action(top1.as_ref().map(|(_, _, score)| *score)),
-            top1,
-        ) {
+        let detail = decide_write_guard(
+            profile,
+            &payload,
+            &candidates,
+            time::OffsetDateTime::now_utc(),
+        );
+        match detail.action {
+            WriteGuardCoreAction::Noop => Ok(candidates
+                .first()
+                .map(|candidate| candidate.to_memory_item())
+                .unwrap_or_else(|| fallback_payload_item(&payload))),
+            WriteGuardCoreAction::Update => {
+                let existing = candidates.first().ok_or_else(|| {
+                    MemoryError::Validation("write guard update target missing".to_string())
+                })?;
+                self.update_from_write_guard(existing, payload, detail)
+                    .await
+            }
+            WriteGuardCoreAction::Add | WriteGuardCoreAction::Ambiguous => {
+                self.store
+                    .append_with_embedding(payload, embedding, Some("auto".to_string()))
+                    .await
+            }
+            /*
             (WriteGuardDecision::Noop, Some((existing_id, existing_content, score))) => {
                 // NOOP: too similar, discard
                 log::debug!(
@@ -190,6 +218,7 @@ impl MemoryService {
                     .append_with_embedding(payload, embedding, Some("auto".to_string()))
                     .await
             }
+            */
         }
     }
 
@@ -198,26 +227,8 @@ impl MemoryService {
         &self,
         payload: CreateLocalMemoryRequest,
     ) -> Result<WriteGuardResult, MemoryError> {
-        if let Some(ref embedding_svc) = self.embedding {
-            match embedding_svc.embed_text(&payload.content).await {
-                Ok(vector) => {
-                    return self
-                        .append_guarded_inner(payload, vector, WriteGuardScopeMode::Global)
-                        .await;
-                }
-                Err(e) => {
-                    log::warn!("memory auto-embedding failed: {}", e);
-                }
-            }
-        }
-        // No embedding: always ADD
-        let item = self.store.append(payload).await?;
-        Ok(WriteGuardResult {
-            action: WriteAction::Add,
-            item: Some(item),
-            similarity_score: None,
-            updated_memory_id: None,
-        })
+        self.append_guarded_with_profile(payload, WriteGuardProfile::ManualMemory)
+            .await
     }
 
     /// Append with namespace-aware Write Guard using the payload filters as the
@@ -230,15 +241,22 @@ impl MemoryService {
         &self,
         payload: CreateLocalMemoryRequest,
     ) -> Result<WriteGuardResult, MemoryError> {
+        self.append_guarded_with_profile(payload, WriteGuardProfile::ManualMemory)
+            .await
+    }
+
+    pub(crate) async fn append_guarded_with_profile(
+        &self,
+        payload: CreateLocalMemoryRequest,
+        profile: WriteGuardProfile,
+    ) -> Result<WriteGuardResult, MemoryError> {
         if let Some(ref embedding_svc) = self.embedding {
             match embedding_svc.embed_text(&payload.content).await {
                 Ok(vector) => {
-                    return self
-                        .append_guarded_inner(payload, vector, WriteGuardScopeMode::PayloadFilters)
-                        .await;
+                    return self.append_guarded_inner(payload, vector, profile).await;
                 }
                 Err(e) => {
-                    log::warn!("memory scoped auto-embedding failed: {}", e);
+                    log::warn!("memory guarded auto-embedding failed: {}", e);
                 }
             }
         }
@@ -248,6 +266,14 @@ impl MemoryService {
             item: Some(item),
             similarity_score: None,
             updated_memory_id: None,
+            decision_reason: Some("embedding_unavailable_fallback".to_string()),
+            top1_score: None,
+            top2_score: None,
+            score_gap: None,
+            score_ratio: None,
+            effective_update_threshold: None,
+            effective_noop_threshold: None,
+            protected_existing: Some(false),
         })
     }
 
@@ -255,107 +281,164 @@ impl MemoryService {
         &self,
         payload: CreateLocalMemoryRequest,
         embedding: Vec<f32>,
-        scope_mode: WriteGuardScopeMode,
+        profile: WriteGuardProfile,
     ) -> Result<WriteGuardResult, MemoryError> {
-        let top1 = self
-            .find_top1_for_write_guard(&payload, embedding.clone(), scope_mode)
+        let candidates = self
+            .find_candidates_for_write_guard(
+                &payload,
+                embedding.clone(),
+                policy_for_profile(profile).scope_mode,
+            )
             .await?;
-        let fallback_score = top1.as_ref().map(|(_, _, s)| *s);
+        let detail = decide_write_guard(
+            profile,
+            &payload,
+            &candidates,
+            time::OffsetDateTime::now_utc(),
+        );
+        let fallback_score = candidates.first().map(|candidate| candidate.exact_score);
 
-        match (
-            decide_write_guard_action(top1.as_ref().map(|(_, _, score)| *score)),
-            top1,
-        ) {
-            (WriteGuardDecision::Noop, Some((existing_id, _existing_content, score))) => {
-                Ok(WriteGuardResult {
-                    action: WriteAction::Noop,
-                    item: None,
-                    similarity_score: Some(score),
-                    updated_memory_id: Some(existing_id),
-                })
-            }
-            (WriteGuardDecision::Update, Some((existing_id, existing_content, score))) => {
-                let merged = format!("{}\n\n---\n\n{}", existing_content, payload.content.trim());
-
-                let new_embedding = if let Some(ref embedding_svc) = self.embedding {
-                    embedding_svc.embed_text(&merged).await.ok()
-                } else {
-                    None
-                };
-
-                if let Some(ref snap) = self.snapshots {
-                    let _ = snap
-                        .record(
-                            &existing_id,
-                            "update",
-                            Some(&existing_content),
-                            Some(&merged),
-                            None,
-                            None,
-                        )
-                        .await;
-                }
-
+        match detail.action {
+            WriteGuardCoreAction::Noop => Ok(build_guard_result(
+                WriteAction::Noop,
+                None,
+                detail.selected_existing_id.clone(),
+                fallback_score,
+                &detail,
+            )),
+            WriteGuardCoreAction::Update => {
+                let existing = candidates.first().ok_or_else(|| {
+                    MemoryError::Validation("write guard update target missing".to_string())
+                })?;
                 let updated = self
-                    .store
-                    .update_memory_content(
-                        &existing_id,
-                        &merged,
-                        new_embedding,
-                        Some("auto".to_string()),
-                    )
+                    .update_from_write_guard(existing, payload, detail.clone())
                     .await?;
-
-                Ok(WriteGuardResult {
-                    action: WriteAction::Update,
-                    item: updated,
-                    similarity_score: Some(score),
-                    updated_memory_id: Some(existing_id),
-                })
+                Ok(build_guard_result(
+                    WriteAction::Update,
+                    Some(updated),
+                    detail.selected_existing_id.clone(),
+                    fallback_score,
+                    &detail,
+                ))
             }
-            _ => {
+            WriteGuardCoreAction::Add | WriteGuardCoreAction::Ambiguous => {
                 let item = self
                     .store
                     .append_with_embedding(payload, embedding, Some("auto".to_string()))
                     .await?;
-                Ok(WriteGuardResult {
-                    action: WriteAction::Add,
-                    item: Some(item),
-                    similarity_score: fallback_score,
-                    updated_memory_id: None,
-                })
+                Ok(build_guard_result(
+                    WriteAction::Add,
+                    Some(item),
+                    None,
+                    fallback_score,
+                    &detail,
+                ))
             }
         }
     }
 
-    async fn find_top1_for_write_guard(
+    async fn find_candidates_for_write_guard(
         &self,
         payload: &CreateLocalMemoryRequest,
         embedding: Vec<f32>,
         scope_mode: WriteGuardScopeMode,
-    ) -> Result<Option<(String, String, f32)>, MemoryError> {
+    ) -> Result<Vec<crate::modules::retrieval_kernel::write_guard::WriteGuardCandidate>, MemoryError>
+    {
         match scope_mode {
             WriteGuardScopeMode::Global => {
-                self.store.find_top1_similar(embedding, None, None).await
+                self.store
+                    .search_memories_for_write_guard(embedding, 4, None, None, None, None, None)
+                    .await
             }
             WriteGuardScopeMode::PayloadFilters => {
-                let matches = self
-                    .store
-                    .search_memories(
+                self.store
+                    .search_memories_for_write_guard(
                         embedding,
-                        1,
+                        4,
                         payload.session_id.as_deref(),
                         payload.capability_id.as_deref(),
                         payload.category.as_deref(),
                         payload.source.as_deref(),
                         payload.tags.as_deref(),
                     )
-                    .await?;
-                let candidate = matches
-                    .into_iter()
-                    .next()
-                    .map(|item| (item.id, item.content, item.score));
-                Ok(candidate)
+                    .await
+            }
+        }
+    }
+
+    async fn update_from_write_guard(
+        &self,
+        existing: &crate::modules::retrieval_kernel::write_guard::WriteGuardCandidate,
+        payload: CreateLocalMemoryRequest,
+        detail: WriteGuardDecisionDetail,
+    ) -> Result<LocalMemoryItem, MemoryError> {
+        let merged_content = format!("{}\n\n---\n\n{}", existing.content, payload.content.trim());
+
+        let new_embedding = if let Some(ref embedding_svc) = self.embedding {
+            match embedding_svc.embed_text(&merged_content).await {
+                Ok(vector) => Some(vector),
+                Err(error) => {
+                    log::warn!("write guard: re-embed merged content failed: {}", error);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        if let Some(ref snap) = self.snapshots {
+            let _ = snap
+                .record(
+                    &existing.id,
+                    "update",
+                    Some(&existing.content),
+                    Some(&merged_content),
+                    None,
+                    None,
+                )
+                .await
+                .map_err(|error| log::warn!("snapshot record failed: {}", error));
+        }
+
+        let updated = self
+            .store
+            .update_memory_content(
+                &existing.id,
+                &merged_content,
+                new_embedding,
+                Some("auto".to_string()),
+            )
+            .await?;
+
+        match updated {
+            Some(item) => Ok(item),
+            None => {
+                if matches!(detail.action, WriteGuardCoreAction::Update) {
+                    self.store
+                        .append_with_embedding(
+                            payload,
+                            self.embedding
+                                .as_ref()
+                                .ok_or_else(|| {
+                                    MemoryError::Validation(
+                                        "embedding service unavailable for write guard fallback"
+                                            .to_string(),
+                                    )
+                                })?
+                                .embed_text(&merged_content)
+                                .await
+                                .map_err(|error| {
+                                    MemoryError::Storage(format!(
+                                        "failed to re-embed merged write guard content: {}",
+                                        error
+                                    ))
+                                })?,
+                            Some("auto".to_string()),
+                        )
+                        .await
+                } else {
+                    Ok(fallback_payload_item(&payload))
+                }
             }
         }
     }
@@ -597,6 +680,14 @@ impl MemoryService {
             .await
     }
 
+    pub async fn update_asset_metadata(
+        &self,
+        id: &str,
+        metadata: Option<serde_json::Value>,
+    ) -> Result<bool, MemoryError> {
+        self.store.update_asset_metadata(id, metadata).await
+    }
+
     pub async fn search_assets(
         &self,
         vector: Vec<f32>,
@@ -743,6 +834,48 @@ impl MemoryService {
         self.store
             .update_memory_embedding(id, vector, Some("backfill".to_string()))
             .await
+    }
+}
+
+fn fallback_payload_item(payload: &CreateLocalMemoryRequest) -> LocalMemoryItem {
+    let now = now_rfc3339();
+    LocalMemoryItem {
+        id: uuid::Uuid::new_v4().to_string(),
+        content: payload.content.trim().to_string(),
+        session_id: payload.session_id.clone(),
+        capability_id: payload.capability_id.clone(),
+        meta_info: payload.meta_info.clone(),
+        embedding_model: None,
+        category: payload.category.clone(),
+        source: payload.source.clone(),
+        tags: payload.tags.clone(),
+        vitality: Some(1.0),
+        last_accessed_at: None,
+        created_at: now.clone(),
+        updated_at: now,
+    }
+}
+
+fn build_guard_result(
+    action: WriteAction,
+    item: Option<LocalMemoryItem>,
+    updated_memory_id: Option<String>,
+    similarity_score: Option<f32>,
+    detail: &WriteGuardDecisionDetail,
+) -> WriteGuardResult {
+    WriteGuardResult {
+        action,
+        item,
+        similarity_score,
+        updated_memory_id,
+        decision_reason: Some(detail.reason.clone()),
+        top1_score: detail.top1_score,
+        top2_score: detail.top2_score,
+        score_gap: detail.score_gap,
+        score_ratio: detail.score_ratio,
+        effective_update_threshold: Some(detail.effective_update_threshold),
+        effective_noop_threshold: Some(detail.effective_noop_threshold),
+        protected_existing: Some(detail.protected_existing),
     }
 }
 
@@ -1122,8 +1255,8 @@ mod tests {
             .await
             .expect("insert workspace two memory");
 
-        let candidate = service
-            .find_top1_for_write_guard(
+        let candidates = service
+            .find_candidates_for_write_guard(
                 &CreateLocalMemoryRequest {
                     content: "workspace one stable conclusion".into(),
                     session_id: None,
@@ -1139,7 +1272,9 @@ mod tests {
             .await
             .expect("scoped search");
 
-        let (id, content, _) = candidate.expect("matching candidate");
+        let candidate = candidates.first().expect("matching candidate");
+        let id = candidate.id.clone();
+        let content = candidate.content.clone();
         assert!(!id.is_empty());
         assert_eq!(content, "workspace one stable conclusion");
     }

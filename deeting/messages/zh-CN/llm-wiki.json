@@ -50,12 +50,18 @@
         },
         "handoff": {
           "title": "检查 + 交接",
-          "description": "先用 inspector 看清 maintainer-only 语料视图，再同步 maintainer agent，让 wiki 委托保持可见、可控。",
+          "description": "先到“语料与检视”标签页里看清资料命中，再同步维护助手，让 wiki 委托保持可见、可控。",
           "ready": "Inspector 已经验证过 {count} 条结果，{name} 现在可用于委托维护。",
-          "pending": "先执行一次 corpus 查询并同步 maintainer agent，再开始委托 wiki 工作。",
-          "pendingWithMaintainer": "{name} 已准备好。再跑一次 corpus 查询，确认它实际会看到什么 maintainer-only 上下文。"
+          "pending": "先切到“语料与检视”标签页，查一次资料并同步维护助手，再开始委托 wiki 工作。",
+          "pendingWithMaintainer": "{name} 已准备好。再到“语料与检视”标签页查一次资料，确认它实际会看到什么上下文。"
         }
       }
+    },
+    "tabs": {
+      "setup": "接入与工作区",
+      "operations": "自动化与维护",
+      "corpus": "语料与检视",
+      "agent": "Agent 交接"
     },
     "binding": {
       "eyebrow": "Vault 绑定",
@@ -203,36 +209,39 @@
       }
     },
     "corpus": {
-      "eyebrow": "受控语料",
-      "title": "同步独立的 LLM Wiki corpus。",
-      "description": "这块 corpus 不属于主知识面。它只为 wiki maintainer agent 服务，但底层复用同一套 embedding、BM25、混合排序和生命周期机制。",
-      "sync": "同步 Corpus",
-      "syncing": "同步中...",
+      "eyebrow": "专用资料",
+      "title": "同步并检查这组专用资料。",
+      "description": "这组资料不属于主知识面。它只给 wiki 维护助手使用，但底层仍复用同一套检索和生命周期机制。",
+      "sync": "更新资料",
+      "syncing": "更新中...",
       "preview": {
-        "title": "命中预览",
-        "placeholder": "搜索 maintainer corpus...",
-        "loading": "正在搜索独立 corpus...",
-        "empty": "先执行一次 corpus 搜索，查看 maintainer agent 能看到什么。",
-        "noResults": "当前查询没有命中 corpus 结果。"
+        "title": "资料命中预览",
+        "placeholder": "搜索这组专用资料...",
+        "search": "开始查询",
+        "searching": "查询中...",
+        "hint": "输入关键词后点击“开始查询”，或直接按回车。",
+        "loading": "正在搜索资料...",
+        "empty": "先做一次资料查询，看看维护助手能看到什么。",
+        "noResults": "当前关键词没有命中资料。"
       },
       "inspector": {
-        "title": "实时检查面板",
+        "title": "资料检查面板",
         "scope": "范围",
         "score": "排序分数",
         "summary": "命中摘要",
-        "empty": "选择一条 corpus 结果，查看 maintainer agent 会收到什么上下文。",
+        "empty": "选择一条结果，查看维护助手会收到什么上下文。",
         "agentUses": {
-          "title": "会被 maintainer agent 使用",
-          "description": "这个 inspector 对应的就是 wiki maintainer agent 在被委托工作时可搜索的独立 corpus。"
+          "title": "这些内容会被维护助手看到",
+          "description": "这里展示的就是 wiki 维护助手在被委托工作时能搜索到的专用资料。"
         }
       },
       "scopes": {
         "managed_workspace": "工作区",
         "legacy_vault": "旧 Vault"
       },
-      "lastSynced": "最近一次 Corpus 同步",
+      "lastSynced": "最近一次资料更新",
       "notSynced": "尚未同步",
-      "note": "主 assistant 默认不会读取这个 corpus，它只用于显式委托给 wiki maintainer agent 的场景。",
+      "note": "主 assistant 默认不会读取这组专用资料，它只用于显式委托给 wiki 维护助手的场景。",
       "metrics": {
         "indexed": "已索引笔记",
         "workspace": "受控工作区",
@@ -266,18 +275,23 @@
         "read": "整个已连接 vault",
         "write": "仅受控工作区"
       },
-      "tip": {
-        "title": "保持主 runtime 简洁",
-        "description": "维护型 agent 负责更新页面、来源摘要和日志；主聊天 runtime 保持以检索和触发委托为主。"
-      },
-      "handoff": {
-        "stepOne": {
-          "title": "打开维护 Agent 工作台",
-          "description": "直接跳到 task-agent 面板，并带上已经准备好的 maintainer 上下文。"
+        "tip": {
+          "title": "保持主 runtime 简洁",
+          "description": "维护型 agent 负责更新页面、来源摘要和日志；主聊天 runtime 保持以检索和触发委托为主。"
         },
-        "stepTwo": {
-          "title": "确认维护契约",
-          "description": "这个 prompt 已经包含读写边界和 Deeting Wiki 的所有权规则。"
+        "prerequisite": {
+          "title": "先完成 Obsidian MCP 配置",
+          "description": "要让维护助手真正回到 Obsidian 里读写页面，请先按官方文档配置好 Obsidian MCP，并让它指向当前 vault。这个页面会创建维护助手档案，但不会替你自动安装或连接 Obsidian MCP。",
+          "docs": "查看官方配置说明"
+        },
+        "handoff": {
+          "stepOne": {
+            "title": "打开维护 Agent 工作台",
+            "description": "先确认 Obsidian MCP 已连到当前 vault，再跳到 task-agent 面板继续配置。"
+          },
+          "stepTwo": {
+            "title": "确认维护契约",
+            "description": "这个 prompt 已经包含读写边界和 Deeting Wiki 的所有权规则。"
         },
         "stepThree": {
           "title": "保存后通过正常工作流委托",
@@ -286,96 +300,168 @@
       }
     },
     "automation": {
-      "eyebrow": "可见 Hooks",
-      "title": "让自动化保持显式、受控、可审计。",
-      "description": "低风险刷新可以自动执行；更强的动作保持为可见建议、workflow 运行或 memory promotion，而不是悄悄在后台发生。",
+      "eyebrow": "自动整理",
+      "title": "让整理建议清楚、可控、看得见。",
+      "description": "系统会在合适的时候提醒你同步资料、检查更新或交给维护助手处理，不会在后台悄悄改动这套 wiki。",
       "settings": {
-        "title": "触发设置",
+        "title": "自动处理开关",
         "autoSyncOnVaultBound": {
-          "title": "绑定 vault 后自动同步 corpus",
-          "description": "当 vault 完成绑定后，自动执行第一次专用 corpus 同步。"
+          "title": "连接后自动准备资料",
+          "description": "连接笔记库后，自动做第一次资料同步，让后续整理马上可用。"
         },
         "suggestMaintainerOnWorkspaceBootstrap": {
-          "title": "bootstrap 后建议创建 maintainer",
-          "description": "当工作区脚手架完成后，建议创建或同步 maintainer agent。"
+          "title": "工作区就绪后提醒设置维护助手",
+          "description": "工作区准备好后，提示你创建或更新专门负责整理 wiki 的维护助手。"
         },
         "autoRefreshInspectorOnCorpusSync": {
-          "title": "sync 后刷新 inspector",
-          "description": "在 corpus sync 之后生成一个可见的 inspector 后续动作，让用户检查新的检索面。"
+          "title": "资料更新后提醒我检查",
+          "description": "同步完成后，给出一个可见提醒，让你先看几条最新命中。"
         },
         "createCrystallizationCandidatesOnSessionEnd": {
-          "title": "会话结束时生成 crystallization 候选",
-          "description": "当会话关闭或归档时，生成可见的 wiki crystallization 候选，而不是静默写回。"
+          "title": "会话结束后生成整理建议",
+          "description": "当一段对话结束时，生成可见建议，判断是否值得整理进 wiki。"
         },
         "enableScheduleSuggestions": {
-          "title": "启用周期性建议",
-          "description": "周期性运行维护检查，生成 stale check、lint pass 和 corpus refresh 建议。"
+          "title": "定期提醒我做例行检查",
+          "description": "按周期生成更新资料、检查过期内容和运行 lint 的提醒。"
         },
         "suggestOnValuableAnswer": {
-          "title": "高价值回答生成 wiki 建议",
-          "description": "当回答看起来足够稳定且有价值时，生成可见的 wiki 维护候选。"
+          "title": "发现高价值回答时提醒整理",
+          "description": "当回答看起来值得长期保留时，生成一条 wiki 整理建议。"
         },
         "autoDelegateNewSources": {
-          "title": "新来源自动委托 review",
-          "description": "当专用 corpus 中出现新来源材料时，自动启动 maintainer workflow。"
+          "title": "发现新资料时自动交给维护助手",
+          "description": "专用资料区出现新内容后，自动发起一次维护检查。"
         },
         "autoDelegateMaintenanceSchedule": {
-          "title": "周期维护自动委托",
-          "description": "在周期维护检查时，自动启动 maintainer review workflow。"
+          "title": "例行检查时自动交给维护助手",
+          "description": "到达例行检查时间后，自动发起一次维护任务。"
         },
         "promoteRepeatedStableConclusionsToMemory": {
-          "title": "重复稳定结论写入 memory",
-          "description": "当同一个稳定结论反复出现时，允许 hook 层通过 write guard 把它写入本地 memory。"
+          "title": "稳定结论自动写入长期记忆",
+          "description": "同一个稳定结论反复出现时，允许系统把它写入本地长期记忆。"
         }
       },
       "suggestions": {
-        "title": "待处理建议",
-        "empty": "当前没有待处理的可见自动化建议。",
-        "execute": "执行",
-        "executing": "执行中...",
-        "dismiss": "忽略"
+        "title": "建议处理",
+        "empty": "当前没有需要你处理的自动整理建议。",
+        "execute": "立即处理",
+        "executing": "处理中...",
+        "dismiss": "先忽略"
       },
-      "audit": {
-        "title": "最近自动化审计",
-        "empty": "当前还没有记录到 hook 活动。"
+      "suggestionCopy": {
+        "initialCorpusSync": {
+          "title": "先同步一次资料",
+          "description": "你刚连接了笔记库。先把专用资料区准备好，后续整理和检索才会更完整。"
+        },
+        "createMaintainerAgent": {
+          "title": "设置 wiki 维护助手",
+          "description": "工作区已经建好。先准备一个专门负责整理 wiki 的维护助手，再把后续维护交给它。"
+        },
+        "refreshCorpus": {
+          "title": "刷新一下专用资料区",
+          "description": "这批专用资料有点旧了。先做一次更新，再进行下一轮 wiki 维护会更稳妥。"
+        },
+        "maintenanceReview": {
+          "title": "安排一次例行维护",
+          "description": "可以让维护助手跑一轮例行检查，看看是否有过时页面、缺失来源摘要或需要合并的内容。"
+        },
+        "sessionCrystallization": {
+          "title": "整理刚结束的会话",
+          "description": "一段对话刚刚结束。可以回看摘要，判断是否值得沉淀成 wiki 页面或分析笔记。"
+        },
+        "valuableAnswer": {
+          "title": "把有价值的回答整理出来",
+          "description": "最近有一条回答看起来值得长期保留。可以把它整理进 wiki，避免以后重复说明。"
+        },
+        "inspectAfterSync": {
+          "title": "先看一下刚更新的资料",
+          "description": "资料刚更新过。先在检查面板里看几条命中，确认内容没问题，再继续后续维护。"
+        },
+        "reviewNewSources": {
+          "title": "检查新加入的资料",
+          "description": "检测到新的资料进入专用资料区。建议让维护助手先看一遍，再判断是否需要更新 wiki 页面。"
+        },
+        "memoryPromotion": {
+          "title": "查看长期记忆更新结果",
+          "description": "系统检测到一个反复出现且比较稳定的结论，并已写入本地长期记忆。你可以检查这次写入是否合适。"
+        }
       },
-      "boundary": {
-        "title": "边界仍然成立",
-        "description": "这些 hooks 可能刷新 corpus 状态、打开 review workflow 或创建 local-memory 候选，但不会扩大主 assistant 的默认检索路径。"
-      },
+        "audit": {
+          "title": "最近处理记录",
+          "empty": "当前还没有自动整理记录。"
+        },
+        "auditCopy": {
+          "settingsUpdated": "自动整理设置已更新。",
+          "suggestionDismissed": "已忽略一条自动整理建议。",
+          "vaultBoundAutoExecuted": "连接笔记库后，系统已自动同步资料。新增 {indexedFiles} 条，清理 {removedFiles} 条过期内容。",
+          "vaultBoundAutoFailed": "连接笔记库后自动准备资料失败。",
+          "workspaceBootstrapNoop": "工作区已经准备好，而且维护助手已存在，无需重复设置。",
+          "sessionEndDisabled": "会话结束后的整理提醒已关闭，这次没有生成整理建议。",
+          "sessionEndSkipped": "这段会话没有可用于整理的摘要，因此没有生成整理建议。",
+          "sessionEndObserved": "这段已结束会话的摘要刚刚更新，系统已补强对应的整理建议。",
+          "sessionEndSuggested": "系统已为刚结束的会话生成一条整理建议。",
+          "valuableAnswerDisabled": "高价值回答提醒已关闭，这次没有生成整理建议。",
+          "valuableAnswerSuggested": "系统已为一条高价值回答生成整理建议。",
+          "corpusSyncObserved": "资料更新完成。新增 {indexedFiles} 条，清理 {removedFiles} 条过期内容。",
+          "newSourceAutoExecuted": "发现新资料后，系统已自动发起一次维护任务。",
+          "newSourceAutoFailed": "发现新资料后自动发起维护失败。",
+          "maintenanceAutoExecuted": "系统已自动发起一次例行维护任务。",
+          "maintenanceAutoFailed": "自动发起例行维护失败。",
+          "maintenanceScheduled": "系统刚完成一轮例行检查评估。",
+          "stableConclusionAutoExecuted": "系统已把重复出现的稳定结论写入本地长期记忆。",
+          "suggestionExecutedSync": "已按建议更新资料。新增 {indexedFiles} 条，清理 {removedFiles} 条过期内容。",
+          "suggestionExecutedCreateAgent": "已按建议设置维护助手：{name}。",
+          "suggestionExecutedWorkflow": "已按建议发起一项维护任务。",
+          "suggestionExecutedMemory": "已按建议把稳定结论写入长期记忆。",
+          "suggestionExecutedGeneric": "已处理这条自动整理建议。",
+          "suggestionAcknowledged": "已确认这条查看资料的建议。",
+          "executionFailed": "处理这条自动整理建议时失败了。",
+          "autoFailed": "自动处理失败。"
+        },
+        "boundary": {
+          "title": "默认边界不会变",
+          "description": "这些自动整理只会刷新资料、生成提醒或发起维护，不会扩大主聊天的默认检索范围。"
+        },
       "actions": {
-        "sync_corpus": "同步 corpus",
-        "create_maintainer_agent": "同步 maintainer",
-        "inspect_corpus": "检查 corpus",
-        "run_maintenance_review": "维护 review",
-        "crystallize_session_summary": "结晶会话",
-        "promote_to_memory": "写入 memory"
+        "sync_corpus": "更新资料",
+        "create_maintainer_agent": "设置维护助手",
+        "inspect_corpus": "查看资料",
+        "run_maintenance_review": "发起维护",
+        "crystallize_session_summary": "整理内容",
+        "promote_to_memory": "写入长期记忆"
       },
       "triggers": {
-        "on_vault_bound": "绑定 vault",
-        "on_workspace_bootstrapped": "工作区 bootstrap 完成",
-        "on_corpus_sync_completed": "corpus sync 完成",
-        "on_session_end": "会话结束",
+        "on_vault_bound": "已连接笔记库",
+        "on_workspace_bootstrapped": "工作区已准备好",
+        "on_corpus_sync_completed": "资料刚更新",
+        "on_session_end": "会话刚结束",
         "on_valuable_answer": "高价值回答",
-        "on_maintenance_schedule": "维护周期",
-        "on_new_source": "新来源到达",
+        "on_maintenance_schedule": "例行检查",
+        "on_new_source": "发现新资料",
         "on_repeated_stable_conclusion": "重复稳定结论"
+      },
+      "levels": {
+        "info": "记录",
+        "warning": "提醒",
+        "error": "错误"
       },
       "dispositions": {
         "settings_updated": "设置已更新",
         "suggestion_dismissed": "建议已忽略",
         "executed": "已执行",
         "acknowledged": "已确认",
-        "auto_executed": "自动执行",
-        "auto_failed": "自动执行失败",
-        "observed": "已记录",
-        "suggested": "已生成建议",
-        "scheduled": "已调度",
-        "disabled": "已禁用",
-        "skipped": "已跳过",
-        "noop": "无需动作"
-      }
-    },
+          "auto_executed": "自动执行",
+          "auto_failed": "自动执行失败",
+          "observed": "已记录",
+          "suggested": "已生成建议",
+          "scheduled": "已调度",
+          "execution_failed": "执行失败",
+          "disabled": "已禁用",
+          "skipped": "已跳过",
+          "noop": "无需动作"
+        }
+      },
     "toast": {
       "loadFailed": "加载 LLM Wiki 状态失败。",
       "bindingSaved": "Vault 绑定已保存。",

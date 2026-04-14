@@ -415,22 +415,6 @@ async fn touch_search_hits(
         let Some(metadata) = asset.get("metadata").and_then(Value::as_object).cloned() else {
             continue;
         };
-        let Some(absolute_path) = metadata
-            .get("absolute_path")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        else {
-            continue;
-        };
-        let content = match fs::read_to_string(absolute_path) {
-            Ok(content) => content,
-            Err(_) => continue,
-        };
-        let vector = match app_state.providers.embedding.embed_text(&content).await {
-            Ok(vector) => vector,
-            Err(_) => continue,
-        };
         let current_vitality = metadata
             .get("vitality")
             .and_then(Value::as_f64)
@@ -450,24 +434,7 @@ async fn touch_search_hits(
         app_state
             .memory
             .service
-            .upsert_asset(
-                hit.asset_id.clone(),
-                asset
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .to_string(),
-                asset
-                    .get("description")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .to_string(),
-                LLM_WIKI_CORPUS_ASSET_TYPE.to_string(),
-                LLM_WIKI_CORPUS_SOURCE_TYPE.to_string(),
-                None,
-                vector,
-                Some(Value::Object(next_metadata)),
-            )
+            .update_asset_metadata(&hit.asset_id, Some(Value::Object(next_metadata)))
             .await
             .map_err(|err| err.to_string())?;
     }

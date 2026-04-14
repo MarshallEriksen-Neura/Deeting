@@ -50,12 +50,18 @@
         },
         "handoff": {
           "title": "Inspect + Handoff",
-          "description": "Exercise the corpus inspector, then sync the maintainer agent so delegated wiki work stays visible and bounded.",
+          "description": "Open the Corpus & Inspector tab, review the material hits, then sync the maintenance agent so delegated wiki work stays visible and bounded.",
           "ready": "Inspector has been exercised with {count} visible result(s), and {name} is ready for delegated maintenance.",
-          "pending": "Run a corpus query and sync the maintainer agent before delegating wiki work.",
-          "pendingWithMaintainer": "{name} is ready. Run a corpus query once to verify exactly what maintainer-only context it will see."
+          "pending": "Open the Corpus & Inspector tab, run one material search, and sync the maintenance agent before delegating wiki work.",
+          "pendingWithMaintainer": "{name} is ready. Go to the Corpus & Inspector tab and run one more material search to verify the context it will see."
         }
       }
+    },
+    "tabs": {
+      "setup": "Setup & Workspace",
+      "operations": "Automation & Maintenance",
+      "corpus": "Corpus & Inspector",
+      "agent": "Agent Handoff"
     },
     "binding": {
       "eyebrow": "Vault binding",
@@ -203,36 +209,39 @@
       }
     },
     "corpus": {
-      "eyebrow": "Managed corpus",
-      "title": "Sync the dedicated LLM Wiki corpus.",
-      "description": "This corpus stays separate from the main knowledge surface. It reuses shared embedding, BM25, hybrid ranking, and lifecycle mechanics for the wiki maintainer agent only.",
-      "sync": "Sync Corpus",
-      "syncing": "Syncing Corpus...",
+      "eyebrow": "Dedicated materials",
+      "title": "Refresh and inspect the dedicated source set.",
+      "description": "This source set stays separate from the main knowledge surface. It exists for the wiki maintenance agent, while reusing the same retrieval and lifecycle stack underneath.",
+      "sync": "Refresh materials",
+      "syncing": "Refreshing...",
       "preview": {
-        "title": "Preview matches",
-        "placeholder": "Search the maintainer corpus...",
-        "loading": "Searching the dedicated corpus...",
-        "empty": "Run a corpus search to inspect what the maintainer agent can see.",
-        "noResults": "No corpus matches for the current query."
+        "title": "Material matches",
+        "placeholder": "Search these dedicated materials...",
+        "search": "Search",
+        "searching": "Searching...",
+        "hint": "Enter a keyword, then click Search or press Enter.",
+        "loading": "Searching the materials...",
+        "empty": "Run one search to inspect what the maintenance agent can see.",
+        "noResults": "No matches for the current keyword."
       },
       "inspector": {
-        "title": "Live inspector",
+        "title": "Material inspector",
         "scope": "Scope",
         "score": "Rank score",
         "summary": "Match summary",
-        "empty": "Select a corpus result to inspect what the maintainer agent would receive.",
+        "empty": "Select a result to inspect what the maintenance agent would receive.",
         "agentUses": {
-          "title": "Used by the maintainer agent",
-          "description": "This inspector reflects the same dedicated corpus that the wiki maintainer agent can search during delegated work."
+          "title": "Visible to the maintenance agent",
+          "description": "This view reflects the same dedicated material set that the wiki maintenance agent can search during delegated work."
         }
       },
       "scopes": {
         "managed_workspace": "Workspace",
         "legacy_vault": "Legacy"
       },
-      "lastSynced": "Last Corpus Sync",
+      "lastSynced": "Last material refresh",
       "notSynced": "Not synced yet",
-      "note": "The main assistant does not read from this corpus by default. It is reserved for explicit delegation to the wiki maintainer agent.",
+      "note": "The main assistant does not read from this dedicated material set by default. It is reserved for explicit delegation to the wiki maintenance agent.",
       "metrics": {
         "indexed": "Indexed Notes",
         "workspace": "Managed Workspace",
@@ -266,18 +275,23 @@
         "read": "Whole connected vault",
         "write": "Managed workspace only"
       },
-      "tip": {
-        "title": "Keep the main runtime clean",
-        "description": "The maintainer agent should update pages, source summaries, and logs. The main chat runtime should stay retrieval-focused and trigger delegation only when needed."
-      },
-      "handoff": {
-        "stepOne": {
-          "title": "Open the maintainer workspace",
-          "description": "Jump into the task-agent dashboard with the maintainer context already prepared."
+        "tip": {
+          "title": "Keep the main runtime clean",
+          "description": "The maintainer agent should update pages, source summaries, and logs. The main chat runtime should stay retrieval-focused and trigger delegation only when needed."
         },
-        "stepTwo": {
-          "title": "Review the maintenance contract",
-          "description": "The prompt already carries the read/write boundary and the Deeting Wiki ownership model."
+        "prerequisite": {
+          "title": "Configure Obsidian MCP first",
+          "description": "To let the maintenance agent actually read and write pages back into Obsidian, first configure Obsidian MCP for this vault using the official guide. This page creates the maintenance-agent profile, but it does not install or connect Obsidian MCP for you.",
+          "docs": "Open the official setup guide"
+        },
+        "handoff": {
+          "stepOne": {
+            "title": "Open the maintainer workspace",
+            "description": "Make sure Obsidian MCP is connected to this vault first, then jump into the task-agent dashboard to continue setup."
+          },
+          "stepTwo": {
+            "title": "Review the maintenance contract",
+            "description": "The prompt already carries the read/write boundary and the Deeting Wiki ownership model."
         },
         "stepThree": {
           "title": "Save and delegate through normal work",
@@ -286,96 +300,168 @@
       }
     },
     "automation": {
-      "eyebrow": "Visible hooks",
-      "title": "Keep automation explicit, bounded, and reviewable.",
-      "description": "Low-risk refreshes can run automatically. Stronger actions stay visible as suggestions, workflow runs, or memory promotions instead of disappearing into hidden background behavior.",
+      "eyebrow": "Automation",
+      "title": "Keep maintenance suggestions visible and easy to act on.",
+      "description": "The system can remind you to refresh materials, review updates, or hand work to the maintenance agent without quietly changing the wiki in the background.",
       "settings": {
-        "title": "Trigger settings",
+        "title": "Automation switches",
         "autoSyncOnVaultBound": {
-          "title": "Auto-sync corpus on vault bind",
-          "description": "When a vault is bound, run the first dedicated corpus sync automatically."
+          "title": "Prepare materials after connect",
+          "description": "When a vault is connected, run the first sync automatically so maintenance can start immediately."
         },
         "suggestMaintainerOnWorkspaceBootstrap": {
-          "title": "Suggest maintainer after bootstrap",
-          "description": "After the workspace scaffold is ready, suggest creating or syncing the maintainer agent."
+          "title": "Prompt for a maintenance agent after setup",
+          "description": "Once the workspace is ready, suggest creating or updating the dedicated wiki maintenance agent."
         },
         "autoRefreshInspectorOnCorpusSync": {
-          "title": "Refresh inspector after sync",
-          "description": "After corpus sync, create a visible inspector follow-up so the user can review the new retrieval surface."
+          "title": "Prompt me to review after sync",
+          "description": "After new materials are synced, surface a visible reminder to inspect a few fresh hits."
         },
         "createCrystallizationCandidatesOnSessionEnd": {
-          "title": "Create session-end crystallization candidates",
-          "description": "When a conversation closes or archives, surface a candidate for wiki crystallization instead of silently writing back."
+          "title": "Create a review suggestion after each session",
+          "description": "When a conversation ends, surface a visible suggestion so you can decide whether it belongs in the wiki."
         },
         "enableScheduleSuggestions": {
-          "title": "Enable schedule suggestions",
-          "description": "Run a periodic review that suggests stale checks, lint passes, and corpus refreshes."
+          "title": "Show routine maintenance reminders",
+          "description": "On a schedule, suggest refreshing materials, checking stale pages, and running lint."
         },
         "suggestOnValuableAnswer": {
-          "title": "Suggest wiki capture for valuable answers",
-          "description": "When an answer looks durable, create a visible wiki-maintenance candidate."
+          "title": "Suggest capturing valuable answers",
+          "description": "When an answer looks worth keeping long term, surface a wiki suggestion for review."
         },
         "autoDelegateNewSources": {
-          "title": "Auto-delegate new-source review",
-          "description": "When new source material appears in the dedicated corpus, automatically start a maintainer workflow."
+          "title": "Auto-delegate new materials",
+          "description": "When fresh material arrives in the dedicated wiki source set, automatically start a maintenance pass."
         },
         "autoDelegateMaintenanceSchedule": {
-          "title": "Auto-delegate maintenance schedule",
-          "description": "On periodic schedule checks, automatically start a maintainer review workflow."
+          "title": "Auto-delegate routine checks",
+          "description": "When the routine check window arrives, automatically start a maintenance task."
         },
         "promoteRepeatedStableConclusionsToMemory": {
-          "title": "Promote repeated stable conclusions to memory",
-          "description": "If the same durable conclusion repeats, allow the hook layer to write it into local memory with the write guard."
+          "title": "Write repeated stable conclusions to long-term memory",
+          "description": "If the same stable conclusion appears again and again, allow the system to save it into local long-term memory."
         }
       },
       "suggestions": {
-        "title": "Pending suggestions",
-        "empty": "No visible automation suggestions are waiting right now.",
-        "execute": "Run",
-        "executing": "Running...",
-        "dismiss": "Dismiss"
+        "title": "Suggested actions",
+        "empty": "There are no automation suggestions waiting for you right now.",
+        "execute": "Handle now",
+        "executing": "Handling...",
+        "dismiss": "Ignore for now"
       },
-      "audit": {
-        "title": "Recent automation audit",
-        "empty": "No hook activity has been recorded yet."
+      "suggestionCopy": {
+        "initialCorpusSync": {
+          "title": "Run the first materials sync",
+          "description": "You just connected the vault. Prepare the dedicated source set first so later maintenance and search are more complete."
+        },
+        "createMaintainerAgent": {
+          "title": "Set up the wiki maintenance agent",
+          "description": "The workspace is ready. Create the dedicated agent that keeps the wiki organized before you hand maintenance over to it."
+        },
+        "refreshCorpus": {
+          "title": "Refresh the dedicated source set",
+          "description": "These materials look a little stale. Refresh them before the next wiki maintenance pass."
+        },
+        "maintenanceReview": {
+          "title": "Schedule a routine maintenance pass",
+          "description": "Ask the maintenance agent to run a bounded review for stale pages, missing source summaries, and content that may need merging."
+        },
+        "sessionCrystallization": {
+          "title": "Review the session that just ended",
+          "description": "A conversation just finished. Check its summary and decide whether it should become a wiki page or analysis note."
+        },
+        "valuableAnswer": {
+          "title": "Capture a valuable answer",
+          "description": "A recent answer looks worth keeping. Review it and decide whether it should be turned into a maintained wiki entry."
+        },
+        "inspectAfterSync": {
+          "title": "Inspect the newly refreshed materials",
+          "description": "The source set just changed. Review a few hits in the inspector before you continue with maintenance."
+        },
+        "reviewNewSources": {
+          "title": "Review new source material",
+          "description": "Fresh material entered the dedicated source set. Let the maintenance agent inspect it before deciding whether the wiki needs updates."
+        },
+        "memoryPromotion": {
+          "title": "Review the long-term memory update",
+          "description": "The system detected a repeated stable conclusion and saved it into local long-term memory. Review the outcome if needed."
+        }
       },
-      "boundary": {
-        "title": "Boundary remains intact",
-        "description": "These hooks may refresh corpus state, open review workflows, or create local-memory candidates. They do not widen the main assistant's default retrieval path."
-      },
+        "audit": {
+          "title": "Recent activity",
+          "empty": "No automation activity has been recorded yet."
+        },
+        "auditCopy": {
+          "settingsUpdated": "Automation settings were updated.",
+          "suggestionDismissed": "An automation suggestion was dismissed.",
+          "vaultBoundAutoExecuted": "After the vault was connected, the system refreshed the dedicated materials automatically. Added {indexedFiles} item(s) and cleared {removedFiles} stale item(s).",
+          "vaultBoundAutoFailed": "Automatic material preparation after vault connect failed.",
+          "workspaceBootstrapNoop": "The workspace is already ready and a maintenance agent already exists, so nothing else was needed.",
+          "sessionEndDisabled": "Session-end organization is turned off, so no suggestion was created this time.",
+          "sessionEndSkipped": "This session did not have a usable summary, so no organization suggestion was created.",
+          "sessionEndObserved": "A summary for this finished session was refreshed, and the related organization suggestion was reinforced.",
+          "sessionEndSuggested": "The system created an organization suggestion for a session that just ended.",
+          "valuableAnswerDisabled": "Valuable-answer suggestions are turned off, so no suggestion was created this time.",
+          "valuableAnswerSuggested": "The system created an organization suggestion for a valuable answer.",
+          "corpusSyncObserved": "Material refresh completed. Added {indexedFiles} item(s) and cleared {removedFiles} stale item(s).",
+          "newSourceAutoExecuted": "After new material was detected, the system automatically started a maintenance task.",
+          "newSourceAutoFailed": "Automatic maintenance after detecting new material failed.",
+          "maintenanceAutoExecuted": "The system automatically started a routine maintenance task.",
+          "maintenanceAutoFailed": "Automatic routine maintenance failed.",
+          "maintenanceScheduled": "The system just completed a routine maintenance evaluation.",
+          "stableConclusionAutoExecuted": "The system saved a repeated stable conclusion into local long-term memory.",
+          "suggestionExecutedSync": "The suggested material refresh was completed. Added {indexedFiles} item(s) and cleared {removedFiles} stale item(s).",
+          "suggestionExecutedCreateAgent": "The suggested maintenance agent was set up: {name}.",
+          "suggestionExecutedWorkflow": "The suggested maintenance task was started.",
+          "suggestionExecutedMemory": "The suggested stable conclusion was saved into long-term memory.",
+          "suggestionExecutedGeneric": "The automation suggestion was handled.",
+          "suggestionAcknowledged": "The review-materials suggestion was acknowledged.",
+          "executionFailed": "Handling this automation suggestion failed.",
+          "autoFailed": "Automatic handling failed."
+        },
+        "boundary": {
+          "title": "The default boundary still holds",
+          "description": "These automations can refresh materials, create reminders, or start maintenance work, but they do not widen the main chat assistant's default retrieval scope."
+        },
       "actions": {
-        "sync_corpus": "Sync corpus",
-        "create_maintainer_agent": "Sync maintainer",
-        "inspect_corpus": "Inspect corpus",
-        "run_maintenance_review": "Maintenance review",
-        "crystallize_session_summary": "Crystallize session",
-        "promote_to_memory": "Promote to memory"
+        "sync_corpus": "Refresh materials",
+        "create_maintainer_agent": "Set up maintenance agent",
+        "inspect_corpus": "Review materials",
+        "run_maintenance_review": "Start maintenance",
+        "crystallize_session_summary": "Organize content",
+        "promote_to_memory": "Save to long-term memory"
       },
       "triggers": {
-        "on_vault_bound": "On vault bound",
-        "on_workspace_bootstrapped": "On workspace bootstrapped",
-        "on_corpus_sync_completed": "On corpus sync completed",
-        "on_session_end": "On session end",
-        "on_valuable_answer": "On valuable answer",
-        "on_maintenance_schedule": "On maintenance schedule",
-        "on_new_source": "On new source",
-        "on_repeated_stable_conclusion": "On repeated stable conclusion"
+        "on_vault_bound": "Vault connected",
+        "on_workspace_bootstrapped": "Workspace ready",
+        "on_corpus_sync_completed": "Materials refreshed",
+        "on_session_end": "Session ended",
+        "on_valuable_answer": "Valuable answer detected",
+        "on_maintenance_schedule": "Routine check",
+        "on_new_source": "New material detected",
+        "on_repeated_stable_conclusion": "Stable conclusion repeated"
+      },
+      "levels": {
+        "info": "Info",
+        "warning": "Warning",
+        "error": "Error"
       },
       "dispositions": {
         "settings_updated": "Settings updated",
         "suggestion_dismissed": "Suggestion dismissed",
         "executed": "Executed",
         "acknowledged": "Acknowledged",
-        "auto_executed": "Auto-executed",
-        "auto_failed": "Auto-failed",
-        "observed": "Observed",
-        "suggested": "Suggested",
-        "scheduled": "Scheduled",
-        "disabled": "Disabled",
-        "skipped": "Skipped",
-        "noop": "No action"
-      }
-    },
+          "auto_executed": "Auto-executed",
+          "auto_failed": "Auto-failed",
+          "observed": "Observed",
+          "suggested": "Suggested",
+          "scheduled": "Scheduled",
+          "execution_failed": "Execution failed",
+          "disabled": "Disabled",
+          "skipped": "Skipped",
+          "noop": "No action"
+        }
+      },
     "toast": {
       "loadFailed": "Failed to load LLM Wiki state.",
       "bindingSaved": "Vault binding saved.",

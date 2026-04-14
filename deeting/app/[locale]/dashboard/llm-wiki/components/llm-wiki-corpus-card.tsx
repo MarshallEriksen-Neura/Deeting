@@ -111,7 +111,7 @@ export function LlmWikiCorpusCard({
               </div>
             </div>
             <form
-              className="flex gap-2"
+              className="flex flex-col gap-2 sm:flex-row"
               onSubmit={(event) => {
                 event.preventDefault()
                 if (!searchDisabled) {
@@ -128,15 +128,21 @@ export function LlmWikiCorpusCard({
               <Button
                 type="submit"
                 disabled={searchDisabled}
-                className="h-11 rounded-2xl bg-slate-950 px-4 text-white"
+                className="h-11 rounded-2xl bg-slate-950 px-4 text-white sm:min-w-[120px]"
               >
                 {isSearchingCorpus ? (
-                  <RefreshCw className="size-4 animate-spin" />
+                  <RefreshCw className="mr-2 size-4 animate-spin" />
                 ) : (
-                  <Search className="size-4" />
+                  <Search className="mr-2 size-4" />
                 )}
+                {isSearchingCorpus
+                  ? t("corpus.preview.searching")
+                  : t("corpus.preview.search")}
               </Button>
             </form>
+            <div className="text-xs leading-5 text-slate-500">
+              {t("corpus.preview.hint")}
+            </div>
 
             {isSearchingCorpus ? (
               <div className="inline-flex items-center gap-2 rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700">
