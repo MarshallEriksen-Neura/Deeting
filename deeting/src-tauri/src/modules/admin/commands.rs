@@ -92,22 +92,45 @@ pub async fn create_local_trace_feedback(
         .create_local_trace_feedback(payload)
         .await
         .map_err(to_string)?;
-    let inferred_signal = if feedback.score >= 0.2 {
-        Some("accepted")
-    } else if feedback.score <= -0.2 {
-        let comment = feedback.comment.as_deref().unwrap_or_default();
-        if crate::modules::desktop_runtime::runtime::infer_followup_user_response_signal(comment)
-            .as_deref()
-            == Some("corrected")
-        {
-            Some("corrected")
-        } else {
-            Some("rejected")
-        }
-    } else {
-        None
-    };
-    if let Some(signal) = inferred_signal {
+    let posterior_signal = crate::modules::desktop_runtime::runtime::resolve_posterior_signal(
+        &crate::modules::desktop_runtime::runtime::PosteriorSignalInput {
+            trace_id: Some(feedback.trace_id.clone()),
+            feedback_score: Some(feedback.score),
+            feedback_comment: feedback.comment.clone(),
+            ..Default::default()
+        },
+    );
+    let posterior_signal_input_json = serde_json::to_string(
+        &crate::modules::desktop_runtime::runtime::PosteriorSignalInput {
+            trace_id: Some(feedback.trace_id.clone()),
+            feedback_score: Some(feedback.score),
+            feedback_comment: feedback.comment.clone(),
+            ..Default::default()
+        },
+    )
+    .ok();
+    if let Err(err) = state
+        .mcp
+        .store
+        .record_posterior_signal_event(
+            None,
+            None,
+            Some(feedback.trace_id.as_str()),
+            posterior_signal.source.as_str(),
+            posterior_signal.signal.as_str(),
+            posterior_signal.confidence,
+            posterior_signal_input_json.as_deref(),
+            feedback.comment.as_deref(),
+        )
+        .await
+    {
+        log::warn!(
+            "posterior signal event persist failed trace_id={} err={}",
+            feedback.trace_id,
+            err
+        );
+    }
+    if crate::modules::desktop_runtime::runtime::should_apply_posterior_signal(&posterior_signal) {
         match state
             .mcp
             .store
@@ -119,7 +142,7 @@ pub async fn create_local_trace_feedback(
                     crate::modules::desktop_runtime::runtime::apply_task_learning_revision(
                         state.mcp.store.as_ref(),
                         run.run_id.as_str(),
-                        signal,
+                        posterior_signal.signal.as_str(),
                         "trace_feedback",
                         feedback.comment.as_deref(),
                     )

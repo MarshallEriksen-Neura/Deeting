@@ -10,6 +10,7 @@ pub mod control_plane;
 pub mod execution_graph;
 pub mod execution_graph_store;
 pub mod execution_plane;
+pub mod posterior_signal;
 pub mod prompt_assets;
 pub mod prompt_plan;
 pub mod route_selector;
@@ -65,16 +66,19 @@ pub(crate) use execution_graph_store::{
     persist_execution_graph_snapshot,
 };
 pub(crate) use execution_plane::{run_local_execution_plane, LocalExecutionRequest};
+pub(crate) use posterior_signal::{
+    resolve_posterior_signal, should_apply_posterior_signal, PosteriorSignalDecision,
+    PosteriorSignalInput, PosteriorSignalKind, PosteriorSignalSource,
+};
 pub(crate) use route_selector::{
     render_local_route_prompt, select_local_route_with_evidence, LocalRouteDecision, LocalRouteKind,
 };
 pub(crate) use semantic_recall::should_run_semantic_recall;
 pub(crate) use task_learning::{
     apply_policy_delta, apply_route_prior, apply_task_learning_revision, build_task_fingerprint,
-    evaluate_task_learning_with_runtime, infer_followup_user_response_signal,
-    list_task_learning_runs_for_query, list_task_policy_priors_for_query,
-    load_task_learning_run_detail, query_task_policy_hint, replay_task_learning_run,
-    route_hint_status_meta, TaskFingerprint, TaskPolicyHint,
+    evaluate_task_learning_with_runtime, list_task_learning_runs_for_query,
+    list_task_policy_priors_for_query, load_task_learning_run_detail, query_task_policy_hint,
+    replay_task_learning_run, route_hint_status_meta, TaskFingerprint, TaskPolicyHint,
 };
 #[cfg(test)]
 pub(crate) use tool_catalog::{

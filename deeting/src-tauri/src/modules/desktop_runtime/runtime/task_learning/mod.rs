@@ -10,8 +10,7 @@ pub(crate) use policy::{
     apply_policy_delta, apply_route_prior, query_task_policy_hint, route_hint_status_meta,
 };
 pub(crate) use revision::{
-    apply_task_learning_revision, infer_followup_user_response_signal,
-    list_task_learning_runs_for_query, list_task_policy_priors_for_query,
-    load_task_learning_run_detail, replay_task_learning_run,
+    apply_task_learning_revision, list_task_learning_runs_for_query,
+    list_task_policy_priors_for_query, load_task_learning_run_detail, replay_task_learning_run,
 };
 pub(crate) use types::{TaskFingerprint, TaskPolicyHint};

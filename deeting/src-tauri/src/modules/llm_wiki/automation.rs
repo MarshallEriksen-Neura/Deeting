@@ -403,6 +403,13 @@ pub(crate) async fn handle_vault_bound(app_state: &AppState) -> Result<(), Strin
         let workspace_path = resolve_workspace_path(&vault_root, &binding.workspace_relative_path);
         match sync_corpus(app_state, &vault_root, &workspace_path).await {
             Ok((indexed_files, removed_files, _)) => {
+                transition_suggestion_status_by_fingerprint(
+                    &mut state,
+                    suggestion_fingerprint(TRIGGER_VAULT_BOUND, "initial-corpus-sync").as_str(),
+                    STATUS_EXPIRED,
+                    now.as_str(),
+                    None,
+                );
                 push_audit(
                     &mut state,
                     TRIGGER_VAULT_BOUND,
@@ -481,6 +488,13 @@ pub(crate) async fn handle_workspace_bootstrapped(app_state: &AppState) -> Resul
                 None,
             );
         } else {
+            transition_suggestion_status_by_fingerprint(
+                &mut state,
+                suggestion_fingerprint(TRIGGER_WORKSPACE_BOOTSTRAPPED, "maintainer-agent").as_str(),
+                STATUS_EXPIRED,
+                now.as_str(),
+                None,
+            );
             push_audit(
                 &mut state,
                 TRIGGER_WORKSPACE_BOOTSTRAPPED,
@@ -840,6 +854,14 @@ pub(crate) async fn run_schedule_tick(
             .await
             {
                 Ok(result) => {
+                    transition_suggestion_status_by_fingerprint(
+                        &mut state,
+                        suggestion_fingerprint(TRIGGER_MAINTENANCE_SCHEDULE, "maintenance-review")
+                            .as_str(),
+                        STATUS_EXPIRED,
+                        now.as_str(),
+                        None,
+                    );
                     push_audit(
                         &mut state,
                         TRIGGER_MAINTENANCE_SCHEDULE,
@@ -880,6 +902,14 @@ pub(crate) async fn run_schedule_tick(
                 })),
             );
         }
+    } else {
+        transition_suggestion_status_by_fingerprint(
+            &mut state,
+            suggestion_fingerprint(TRIGGER_MAINTENANCE_SCHEDULE, "maintenance-review").as_str(),
+            STATUS_EXPIRED,
+            now.as_str(),
+            None,
+        );
     }
 
     state.last_schedule_run_at = Some(now.clone());
@@ -1078,6 +1108,14 @@ async fn handle_corpus_sync_followups(
             now.as_str(),
             Some(json!({ "query": "workspace" })),
         );
+    } else {
+        transition_suggestion_status_by_fingerprint(
+            state,
+            suggestion_fingerprint(TRIGGER_CORPUS_SYNC_COMPLETED, "inspect-after-sync").as_str(),
+            STATUS_EXPIRED,
+            now.as_str(),
+            None,
+        );
     }
 
     if indexed_files > 0 {
@@ -1111,18 +1149,27 @@ async fn handle_corpus_sync_followups(
             )
             .await
             {
-                Ok(result) => push_audit(
-                    state,
-                    TRIGGER_NEW_SOURCE,
-                    "info",
-                    "auto_executed",
-                    "Started an automatic new-source maintainer review workflow.",
-                    now.as_str(),
-                    Some(json!({
-                        "workflowRunId": result.run.id,
-                        "indexedFiles": indexed_files,
-                    })),
-                ),
+                Ok(result) => {
+                    transition_suggestion_status_by_fingerprint(
+                        state,
+                        suggestion_fingerprint(TRIGGER_NEW_SOURCE, "review-new-sources").as_str(),
+                        STATUS_EXPIRED,
+                        now.as_str(),
+                        None,
+                    );
+                    push_audit(
+                        state,
+                        TRIGGER_NEW_SOURCE,
+                        "info",
+                        "auto_executed",
+                        "Started an automatic new-source maintainer review workflow.",
+                        now.as_str(),
+                        Some(json!({
+                            "workflowRunId": result.run.id,
+                            "indexedFiles": indexed_files,
+                        })),
+                    )
+                }
                 Err(error) => push_audit(
                     state,
                     TRIGGER_NEW_SOURCE,
@@ -1148,6 +1195,14 @@ async fn handle_corpus_sync_followups(
                 })),
             );
         }
+    } else {
+        transition_suggestion_status_by_fingerprint(
+            state,
+            suggestion_fingerprint(TRIGGER_NEW_SOURCE, "review-new-sources").as_str(),
+            STATUS_STALE,
+            now.as_str(),
+            None,
+        );
     }
 
     Ok(())
@@ -1485,6 +1540,16 @@ fn expire_suggestion_by_fingerprint(
     fingerprint: &str,
     now: &str,
 ) {
+    transition_suggestion_status_by_fingerprint(state, fingerprint, STATUS_EXPIRED, now, None);
+}
+
+fn transition_suggestion_status_by_fingerprint(
+    state: &mut LocalLlmWikiAutomationState,
+    fingerprint: &str,
+    status: &str,
+    now: &str,
+    superseded_by: Option<&str>,
+) {
     let Some(suggestion) = state
         .suggestions
         .iter_mut()
@@ -1493,7 +1558,7 @@ fn expire_suggestion_by_fingerprint(
         return;
     };
 
-    suggestion.status = STATUS_EXPIRED.to_string();
+    suggestion.status = status.to_string();
     suggestion.updated_at = now.to_string();
     if let Some(lifecycle) = suggestion
         .metadata
@@ -1502,6 +1567,9 @@ fn expire_suggestion_by_fingerprint(
         .and_then(|value| ensure_object_field(value, "lifecycle"))
     {
         lifecycle.insert("lastValidatedAt".to_string(), json!(now));
+        if let Some(superseded_by) = superseded_by {
+            lifecycle.insert("supersededBy".to_string(), json!(superseded_by));
+        }
     }
 }
 

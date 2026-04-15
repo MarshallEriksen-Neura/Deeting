@@ -14,6 +14,9 @@ export interface MemoryItem {
   memory_tier?: string | null
   is_core?: boolean | null
   is_boot?: boolean | null
+  claim_state?: string | null
+  superseded_by?: string | null
+  supersedes?: string[] | null
   created_at?: string
   updated_at?: string
   score?: number

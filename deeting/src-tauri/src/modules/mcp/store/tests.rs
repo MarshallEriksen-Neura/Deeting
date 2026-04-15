@@ -1083,6 +1083,48 @@ async fn append_task_learning_revision_persists_revision_history() {
 }
 
 #[tokio::test]
+async fn record_posterior_signal_event_persists_trace_scoped_signal() {
+    let store = create_test_store("posterior-signal-events").await;
+    store.init().await.expect("init store");
+
+    store
+        .record_posterior_signal_event(
+            Some("run-1"),
+            Some("session-1"),
+            Some("trace-1"),
+            "trace_feedback",
+            "corrected",
+            0.93,
+            Some(r#"{"feedback_score":-1}"#),
+            Some("wrong answer"),
+        )
+        .await
+        .expect("record posterior signal event");
+
+    let row = sqlx::query(
+        "SELECT source, signal, confidence, trace_id FROM posterior_signal_events WHERE trace_id = ?",
+    )
+    .bind("trace-1")
+    .fetch_one(&store.pool)
+    .await
+    .expect("read posterior signal event");
+
+    assert_eq!(
+        row.try_get::<String, _>("source").expect("source"),
+        "trace_feedback"
+    );
+    assert_eq!(
+        row.try_get::<String, _>("signal").expect("signal"),
+        "corrected"
+    );
+    assert_eq!(
+        row.try_get::<String, _>("trace_id").expect("trace_id"),
+        "trace-1"
+    );
+    assert!(row.try_get::<f64, _>("confidence").expect("confidence") > 0.9);
+}
+
+#[tokio::test]
 async fn record_asset_execution_persists_session_and_asset_id() {
     let store = create_test_store("asset-execution-history").await;
     store.init().await.expect("init store");

@@ -1616,6 +1616,34 @@ impl MemoryStore {
         }))
     }
 
+    pub async fn update_memory_metadata(
+        &self,
+        id: &str,
+        meta_info: Option<serde_json::Value>,
+    ) -> Result<Option<LocalMemoryItem>, MemoryError> {
+        let existing = self.get(id).await?;
+        let Some(existing) = existing else {
+            return Ok(None);
+        };
+
+        let current_embedding_model = existing.embedding_model.clone();
+        let preserved_embedding = self.read_memory_embedding(id).await?;
+
+        self.update_memory(
+            id,
+            UpdateLocalMemoryRequest {
+                content: existing.content.clone(),
+                meta_info,
+                category: existing.category.clone(),
+                source: existing.source.clone(),
+                tags: existing.tags.clone(),
+            },
+            preserved_embedding,
+            current_embedding_model,
+        )
+        .await
+    }
+
     /// Batch-update vitality and last_accessed_at for a set of memory IDs.
     pub async fn update_vitality_batch(
         &self,
@@ -1641,6 +1669,26 @@ impl MemoryStore {
             }
         }
         Ok(count)
+    }
+
+    async fn read_memory_embedding(&self, id: &str) -> Result<Option<Vec<f32>>, MemoryError> {
+        let table = self.table().await?;
+        let batches = table
+            .query()
+            .only_if(format!("id = '{}' AND is_deleted = false", sql_escape(id)))
+            .limit(1)
+            .execute()
+            .await?
+            .try_collect::<Vec<_>>()
+            .await?;
+
+        let Some(batch) = batches.first() else {
+            return Ok(None);
+        };
+        match extract_memory_embedding(batch, 0) {
+            Ok(embedding) => Ok(Some(embedding)),
+            Err(_) => Ok(None),
+        }
     }
 }
 

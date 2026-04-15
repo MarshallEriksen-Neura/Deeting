@@ -644,6 +644,36 @@ impl McpStore {
 
         sqlx::query(
             r#"
+            CREATE TABLE IF NOT EXISTS posterior_signal_events (
+              id TEXT PRIMARY KEY,
+              run_id TEXT,
+              session_id TEXT,
+              trace_id TEXT,
+              source TEXT NOT NULL,
+              signal TEXT NOT NULL,
+              confidence REAL NOT NULL DEFAULT 0,
+              input_json TEXT,
+              note TEXT,
+              created_at_unix_ms INTEGER NOT NULL
+            );
+            "#,
+        )
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_posterior_signal_events_trace
+            ON posterior_signal_events(trace_id, created_at_unix_ms DESC);
+            "#,
+        )
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
             CREATE INDEX IF NOT EXISTS idx_asset_query_affinity_last_matched
             ON asset_query_affinity(last_matched_at_unix_ms DESC);
             "#,
@@ -2304,6 +2334,55 @@ impl McpStore {
         .bind(revision_count.max(0))
         .bind(last_revision_at_unix_ms)
         .bind(normalized_run_id)
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        Ok(())
+    }
+
+    pub async fn record_posterior_signal_event(
+        &self,
+        run_id: Option<&str>,
+        session_id: Option<&str>,
+        trace_id: Option<&str>,
+        source: &str,
+        signal: &str,
+        confidence: f64,
+        input_json: Option<&str>,
+        note: Option<&str>,
+    ) -> Result<(), McpError> {
+        let normalized_source = source.trim();
+        let normalized_signal = signal.trim();
+        if normalized_source.is_empty() || normalized_signal.is_empty() {
+            return Ok(());
+        }
+        let now = (time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000) as i64;
+        sqlx::query(
+            r#"
+            INSERT INTO posterior_signal_events (
+              id,
+              run_id,
+              session_id,
+              trace_id,
+              source,
+              signal,
+              confidence,
+              input_json,
+              note,
+              created_at_unix_ms
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(uuid::Uuid::new_v4().to_string())
+        .bind(run_id.map(str::trim).filter(|value| !value.is_empty()))
+        .bind(session_id.map(str::trim).filter(|value| !value.is_empty()))
+        .bind(trace_id.map(str::trim).filter(|value| !value.is_empty()))
+        .bind(normalized_source)
+        .bind(normalized_signal)
+        .bind(confidence.clamp(0.0, 1.0))
+        .bind(input_json.map(str::trim).filter(|value| !value.is_empty()))
+        .bind(note.map(str::trim).filter(|value| !value.is_empty()))
+        .bind(now)
         .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;

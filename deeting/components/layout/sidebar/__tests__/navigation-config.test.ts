@@ -35,6 +35,11 @@ describe("getUserDashboardNavigation", () => {
     expect(flattenNavIds(true)).not.toContain("credits")
   })
 
+  it("shows task learning only in desktop runtime", () => {
+    expect(flattenNavIds(true)).toContain("task-learning")
+    expect(flattenNavIds(false)).not.toContain("task-learning")
+  })
+
   it("keeps the dashboard overview item on exact matching so child routes do not double-highlight it", () => {
     const dashboardItem = findNavItem("dashboard")
 

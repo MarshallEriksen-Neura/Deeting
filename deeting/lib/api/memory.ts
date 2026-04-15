@@ -53,6 +53,17 @@ function readBooleanField(payload: Record<string, unknown> | null | undefined, k
   return typeof value === "boolean" ? value : null
 }
 
+function readLifecycleField(
+  payload: Record<string, unknown> | null | undefined,
+  key: string
+): unknown {
+  const lifecycle = payload?.lifecycle
+  if (!lifecycle || typeof lifecycle !== "object" || Array.isArray(lifecycle)) {
+    return null
+  }
+  return (lifecycle as Record<string, unknown>)[key] ?? null
+}
+
 function buildDesktopMetaInfo(data: MemoryUpdateRequest) {
   const metaInfo: Record<string, unknown> = {}
 
@@ -108,6 +119,24 @@ export function toMemoryItem(item: DesktopMemoryLike): MemoryItem {
     memory_tier: readStringField(payload, "memory_tier"),
     is_core: readBooleanField(payload, "is_core"),
     is_boot: readBooleanField(payload, "is_boot"),
+    claim_state:
+      (typeof readLifecycleField(payload, "claim_state") === "string"
+        ? (readLifecycleField(payload, "claim_state") as string)
+        : typeof readLifecycleField(payload, "claimState") === "string"
+          ? (readLifecycleField(payload, "claimState") as string)
+          : null),
+    superseded_by:
+      (typeof readLifecycleField(payload, "superseded_by") === "string"
+        ? (readLifecycleField(payload, "superseded_by") as string)
+        : typeof readLifecycleField(payload, "supersededBy") === "string"
+          ? (readLifecycleField(payload, "supersededBy") as string)
+          : null),
+    supersedes:
+      (Array.isArray(readLifecycleField(payload, "supersedes"))
+        ? (readLifecycleField(payload, "supersedes") as unknown[]).filter(
+            (value): value is string => typeof value === "string"
+          )
+        : null),
     created_at: item.created_at,
     updated_at: item.updated_at,
     score: "score" in item ? item.score : undefined,

@@ -24,10 +24,11 @@ use crate::modules::desktop_runtime::runtime::route_selector::{
 };
 use crate::modules::desktop_runtime::runtime::{
     apply_policy_delta, apply_task_learning_revision, build_default_local_execution_policy,
-    evaluate_task_learning_with_runtime, infer_followup_user_response_signal,
-    mark_local_assistant_postprocess_completed, persist_local_assistant_turn,
-    project_execution_graph_blocks_from_value, resolve_local_model_pool_connection,
-    resolve_provider_model_connection, run_local_execution_plane, LocalExecutionRequest,
+    evaluate_task_learning_with_runtime, mark_local_assistant_postprocess_completed,
+    persist_local_assistant_turn, project_execution_graph_blocks_from_value,
+    resolve_local_model_pool_connection, resolve_posterior_signal,
+    resolve_provider_model_connection, run_local_execution_plane, should_apply_posterior_signal,
+    LocalExecutionRequest, PosteriorSignalInput,
 };
 #[cfg(test)]
 use crate::modules::desktop_runtime::runtime::{
@@ -210,10 +211,41 @@ pub async fn execute_local_orchestrated_chat(
             .load_local_conversation_runtime_window(&session_id)
             .await
             .map_err(|e| e.to_string())?;
-        if let Some(signal) = infer_followup_user_response_signal(&user_content) {
-            if let Some(previous_trace_id) =
-                extract_latest_assistant_trace_id(&runtime_window.messages)
-            {
+        let previous_trace_id = extract_latest_assistant_trace_id(&runtime_window.messages);
+        let posterior_signal = resolve_posterior_signal(&PosteriorSignalInput {
+            session_id: Some(session_id.clone()),
+            trace_id: previous_trace_id.clone(),
+            user_text: Some(user_content.clone()),
+            ..Default::default()
+        });
+        let posterior_signal_input_json = serde_json::to_string(&PosteriorSignalInput {
+            session_id: Some(session_id.clone()),
+            trace_id: previous_trace_id.clone(),
+            user_text: Some(user_content.clone()),
+            ..Default::default()
+        })
+        .ok();
+        if let Err(err) = store
+            .record_posterior_signal_event(
+                None,
+                Some(session_id.as_str()),
+                previous_trace_id.as_deref(),
+                posterior_signal.source.as_str(),
+                posterior_signal.signal.as_str(),
+                posterior_signal.confidence,
+                posterior_signal_input_json.as_deref(),
+                Some("followup_user_message"),
+            )
+            .await
+        {
+            log::warn!(
+                "posterior signal event persist failed session={} err={}",
+                session_id,
+                err
+            );
+        }
+        if should_apply_posterior_signal(&posterior_signal) {
+            if let Some(previous_trace_id) = previous_trace_id {
                 match store
                     .get_latest_task_learning_run_by_trace_id(previous_trace_id.as_str())
                     .await
@@ -222,7 +254,7 @@ pub async fn execute_local_orchestrated_chat(
                         if let Err(err) = apply_task_learning_revision(
                             store.as_ref(),
                             run.run_id.as_str(),
-                            signal.as_str(),
+                            posterior_signal.signal.as_str(),
                             "followup_user_message",
                             Some(user_content.as_str()),
                         )

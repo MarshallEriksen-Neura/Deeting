@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 
 import { MemoryCard } from "@/app/[locale]/dashboard/memory/components/memory-card"
 import type { MemoryItem } from "@/types/memory"
@@ -48,5 +48,40 @@ describe("MemoryCard", () => {
 
     expect(screen.getByText("source.autoExtracted")).toBeInTheDocument()
     expect(screen.getByText("custom")).toBeInTheDocument()
+  })
+
+  it("renders supersession affordances for replaced and replacing memories", () => {
+    const onHistory = jest.fn()
+
+    const { rerender } = render(
+      <MemoryCard
+        item={makeItem({
+          claim_state: "superseded",
+          superseded_by: "memory-2",
+        })}
+        onEdit={jest.fn()}
+        onDelete={jest.fn()}
+        onHistory={onHistory}
+      />
+    )
+
+    expect(screen.getByText("Superseded")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: /view replacing memory/i }))
+    expect(onHistory).toHaveBeenCalledWith("memory-2")
+
+    rerender(
+      <MemoryCard
+        item={makeItem({
+          supersedes: ["memory-0"],
+        })}
+        onEdit={jest.fn()}
+        onDelete={jest.fn()}
+        onHistory={onHistory}
+      />
+    )
+
+    expect(screen.getByText("Supersedes")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: /view previous memory/i }))
+    expect(onHistory).toHaveBeenCalledWith("memory-0")
   })
 })

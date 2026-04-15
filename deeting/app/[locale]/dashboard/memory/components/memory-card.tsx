@@ -52,6 +52,32 @@ export const MemoryCard = memo(function MemoryCard({
   const recallWhen = item.recall_when ?? (typeof item.payload?.recall_when === "string" ? item.payload.recall_when : null)
   const isCore = item.is_core ?? (typeof item.payload?.is_core === "boolean" ? item.payload.is_core : false)
   const isBoot = item.is_boot ?? (typeof item.payload?.is_boot === "boolean" ? item.payload.is_boot : false)
+  const claimState =
+    item.claim_state ??
+    (typeof item.payload?.lifecycle === "object" &&
+    item.payload?.lifecycle &&
+    !Array.isArray(item.payload.lifecycle) &&
+    typeof (item.payload.lifecycle as Record<string, unknown>).claimState === "string"
+      ? ((item.payload.lifecycle as Record<string, unknown>).claimState as string)
+      : null)
+  const supersededBy =
+    item.superseded_by ??
+    (typeof item.payload?.lifecycle === "object" &&
+    item.payload?.lifecycle &&
+    !Array.isArray(item.payload.lifecycle) &&
+    typeof (item.payload.lifecycle as Record<string, unknown>).supersededBy === "string"
+      ? ((item.payload.lifecycle as Record<string, unknown>).supersededBy as string)
+      : null)
+  const supersedes = item.supersedes ?? (
+    typeof item.payload?.lifecycle === "object" &&
+    item.payload?.lifecycle &&
+    !Array.isArray(item.payload.lifecycle) &&
+    Array.isArray((item.payload.lifecycle as Record<string, unknown>).supersedes)
+      ? ((item.payload.lifecycle as Record<string, unknown>).supersedes as unknown[]).filter(
+          (value): value is string => typeof value === "string"
+        )
+      : null
+  )
   const categoryColor = category ? CATEGORY_COLORS[category] ?? CATEGORY_COLORS.fact : null
   const categoryLabel = category
     ? {
@@ -140,6 +166,44 @@ export const MemoryCard = memo(function MemoryCard({
           <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
             <p className="text-[10px] uppercase tracking-wider text-gray-400">{t("fields.recallWhen")}</p>
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-300 line-clamp-2">{recallWhen}</p>
+          </div>
+        )}
+
+        {claimState === "superseded" && (
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 space-y-2">
+            <p className="text-[10px] uppercase tracking-wider text-amber-300">Superseded</p>
+            <p className="text-xs text-amber-100/80">
+              This memory has been replaced by a newer claim.
+            </p>
+            {supersededBy && onHistory && (
+              <GlassButton
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-amber-200 hover:bg-amber-500/10"
+                onClick={() => onHistory(supersededBy)}
+              >
+                View replacing memory
+              </GlassButton>
+            )}
+          </div>
+        )}
+
+        {supersedes && supersedes.length > 0 && (
+          <div className="rounded-xl border border-sky-500/20 bg-sky-500/10 px-3 py-2 space-y-2">
+            <p className="text-[10px] uppercase tracking-wider text-sky-300">Supersedes</p>
+            <p className="text-xs text-sky-100/80">
+              This memory replaced {supersedes.length} earlier claim{supersedes.length > 1 ? "s" : ""}.
+            </p>
+            {onHistory && (
+              <GlassButton
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-sky-200 hover:bg-sky-500/10"
+                onClick={() => onHistory(supersedes[0])}
+              >
+                View previous memory
+              </GlassButton>
+            )}
           </div>
         )}
 

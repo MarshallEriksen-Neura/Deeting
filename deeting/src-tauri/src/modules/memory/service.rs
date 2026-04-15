@@ -12,6 +12,10 @@ use crate::modules::providers::embedding::EmbeddingService;
 use crate::modules::retrieval_kernel::lifecycle::{
     touched_vitality, vitality_multiplier, DEFAULT_VITALITY_RERANK_OVERFETCH_FACTOR,
 };
+use crate::modules::retrieval_kernel::supersession::{
+    candidate_is_superseded, find_supersession_target, mark_existing_memory_as_superseded,
+    mark_new_memory_as_superseding, supersession_rank_multiplier,
+};
 use crate::modules::retrieval_kernel::write_guard::{
     decide_write_guard, policy_for_profile, WriteGuardCoreAction, WriteGuardDecisionDetail,
     WriteGuardProfile, WriteGuardScopeMode,
@@ -111,12 +115,22 @@ impl MemoryService {
             &candidates,
             time::OffsetDateTime::now_utc(),
         );
+        let supersession = find_supersession_target(profile, &payload, &candidates);
         match detail.action {
             WriteGuardCoreAction::Noop => Ok(candidates
                 .first()
                 .map(|candidate| candidate.to_memory_item())
                 .unwrap_or_else(|| fallback_payload_item(&payload))),
             WriteGuardCoreAction::Update => {
+                if supersession.is_some() {
+                    let created = self
+                        .store
+                        .append_with_embedding(payload, embedding, Some("auto".to_string()))
+                        .await?;
+                    return self
+                        .apply_supersession_if_needed(created, supersession)
+                        .await;
+                }
                 let existing = candidates.first().ok_or_else(|| {
                     MemoryError::Validation("write guard update target missing".to_string())
                 })?;
@@ -124,8 +138,11 @@ impl MemoryService {
                     .await
             }
             WriteGuardCoreAction::Add | WriteGuardCoreAction::Ambiguous => {
-                self.store
+                let created = self
+                    .store
                     .append_with_embedding(payload, embedding, Some("auto".to_string()))
+                    .await?;
+                self.apply_supersession_if_needed(created, supersession)
                     .await
             } /*
               (WriteGuardDecision::Noop, Some((existing_id, existing_content, score))) => {
@@ -296,6 +313,7 @@ impl MemoryService {
             time::OffsetDateTime::now_utc(),
         );
         let fallback_score = candidates.first().map(|candidate| candidate.exact_score);
+        let supersession = find_supersession_target(profile, &payload, &candidates);
 
         match detail.action {
             WriteGuardCoreAction::Noop => Ok(build_guard_result(
@@ -306,6 +324,22 @@ impl MemoryService {
                 &detail,
             )),
             WriteGuardCoreAction::Update => {
+                if supersession.is_some() {
+                    let item = self
+                        .store
+                        .append_with_embedding(payload, embedding, Some("auto".to_string()))
+                        .await?;
+                    let item = self
+                        .apply_supersession_if_needed(item, supersession)
+                        .await?;
+                    return Ok(build_guard_result(
+                        WriteAction::Add,
+                        Some(item),
+                        None,
+                        fallback_score,
+                        &detail,
+                    ));
+                }
                 let existing = candidates.first().ok_or_else(|| {
                     MemoryError::Validation("write guard update target missing".to_string())
                 })?;
@@ -324,6 +358,9 @@ impl MemoryService {
                 let item = self
                     .store
                     .append_with_embedding(payload, embedding, Some("auto".to_string()))
+                    .await?;
+                let item = self
+                    .apply_supersession_if_needed(item, supersession)
                     .await?;
                 Ok(build_guard_result(
                     WriteAction::Add,
@@ -345,12 +382,18 @@ impl MemoryService {
     {
         match scope_mode {
             WriteGuardScopeMode::Global => {
-                self.store
+                let candidates = self
+                    .store
                     .search_memories_for_write_guard(embedding, 4, None, None, None, None, None)
-                    .await
+                    .await?;
+                Ok(candidates
+                    .into_iter()
+                    .filter(|candidate| !candidate_is_superseded(candidate.meta_info.as_ref()))
+                    .collect())
             }
             WriteGuardScopeMode::PayloadFilters => {
-                self.store
+                let candidates = self
+                    .store
                     .search_memories_for_write_guard(
                         embedding,
                         4,
@@ -360,7 +403,11 @@ impl MemoryService {
                         payload.source.as_deref(),
                         payload.tags.as_deref(),
                     )
-                    .await
+                    .await?;
+                Ok(candidates
+                    .into_iter()
+                    .filter(|candidate| !candidate_is_superseded(candidate.meta_info.as_ref()))
+                    .collect())
             }
         }
     }
@@ -440,6 +487,46 @@ impl MemoryService {
                 }
             }
         }
+    }
+
+    async fn apply_supersession_if_needed(
+        &self,
+        created: LocalMemoryItem,
+        supersession: Option<crate::modules::retrieval_kernel::supersession::SupersessionDecision>,
+    ) -> Result<LocalMemoryItem, MemoryError> {
+        let Some(supersession) = supersession else {
+            return Ok(created);
+        };
+
+        let now = now_rfc3339();
+        let updated_new_meta = mark_new_memory_as_superseding(
+            created.meta_info.as_ref(),
+            supersession.target_memory_id.as_str(),
+            supersession.claim_key.as_str(),
+            supersession.reason.as_str(),
+            now.as_str(),
+        );
+        let created = self
+            .store
+            .update_memory_metadata(&created.id, Some(updated_new_meta))
+            .await?
+            .unwrap_or(created);
+
+        if let Some(existing) = self.store.get(&supersession.target_memory_id).await? {
+            let updated_old_meta = mark_existing_memory_as_superseded(
+                existing.meta_info.as_ref(),
+                created.id.as_str(),
+                supersession.claim_key.as_str(),
+                supersession.reason.as_str(),
+                now.as_str(),
+            );
+            let _ = self
+                .store
+                .update_memory_metadata(existing.id.as_str(), Some(updated_old_meta))
+                .await?;
+        }
+
+        Ok(created)
     }
 
     pub async fn list(
@@ -552,6 +639,8 @@ impl MemoryService {
                 query.tags.as_deref(),
             )
             .await?;
+
+        items.retain(|item| !candidate_is_superseded(item.meta_info.as_ref()));
 
         apply_vitality_rerank(&mut items, time::OffsetDateTime::now_utc());
 
@@ -1055,6 +1144,7 @@ fn apply_vitality_rerank(
 ) {
     for item in items.iter_mut() {
         item.score *= vitality_multiplier(item.vitality, reference_timestamp(item), now);
+        item.score *= supersession_rank_multiplier(item.meta_info.as_ref());
     }
 }
 
