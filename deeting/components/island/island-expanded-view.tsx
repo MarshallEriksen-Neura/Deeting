@@ -21,6 +21,10 @@ import { IslandQuickReply } from "./island-quick-reply";
 import { IslandSeedLogo } from "./island-seed-logo";
 import { IslandStatusTimeline } from "./island-status-timeline";
 import { useIslandContext } from "./island-context";
+import type {
+  IslandBrowserLookupHit,
+  IslandBrowserLookupPayload,
+} from "./browser-lookup-types";
 
 const containerVariants: Variants = {
   hidden: {},
@@ -141,6 +145,133 @@ function IslandAssistantPanel({
   );
 }
 
+function buildBrowserLookupPrompt(
+  lookup: IslandBrowserLookupPayload,
+  hit: IslandBrowserLookupHit,
+) {
+  const sourceLabel = hit.source === "wiki" ? "wiki" : "memory"
+  return [
+    `Please use this local ${sourceLabel} context while helping me understand the current page.`,
+    `Source title: ${hit.title}`,
+    hit.subtitle ? `Source detail: ${hit.subtitle}` : null,
+    `Summary: ${hit.summary}`,
+    `Current page: ${lookup.pageContext.title || lookup.pageContext.url}`,
+  ]
+    .filter(Boolean)
+    .join("\n")
+}
+
+function buildAskCurrentPagePrompt(lookup: IslandBrowserLookupPayload) {
+  return [
+    "Please explain the current page using the attached browser page context.",
+    `Current page: ${lookup.pageContext.title || lookup.pageContext.url}`,
+    lookup.pageContext.headingsSummary.length > 0
+      ? `Visible headings: ${lookup.pageContext.headingsSummary.join(" | ")}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join("\n")
+}
+
+function IslandBrowserLookupCard({
+  lookup,
+  onAttach,
+  onDismiss,
+  title,
+  attachLabel,
+  dismissLabel,
+}: {
+  lookup: IslandBrowserLookupPayload
+  onAttach: (lookupId: string, prompt: string) => void
+  onDismiss: (lookupId: string) => void
+  title: string
+  attachLabel: string
+  dismissLabel: string
+}) {
+  const isAskCurrentPage = lookup.kind === "ask_current_page"
+
+  return (
+    <div className="rounded-[26px] border border-white/40 bg-white/42 p-3 shadow-[0_18px_42px_-34px_rgba(0,0,0,0.35)] dark:border-white/8 dark:bg-white/4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground/44">
+            {title}
+          </div>
+          <div className="mt-1 text-[12px] leading-5 text-foreground/65">
+            {lookup.pageContext.title || lookup.pageContext.url}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => onDismiss(lookup.lookupId)}
+          className="rounded-full border border-white/40 px-2.5 py-1 text-[11px] text-foreground/55 transition-colors hover:bg-white/55 dark:border-white/10 dark:hover:bg-white/8"
+        >
+          {dismissLabel}
+        </button>
+      </div>
+      {isAskCurrentPage ? (
+        <div className="rounded-[20px] border border-white/35 bg-[linear-gradient(180deg,rgba(255,255,255,0.78),rgba(245,239,230,0.52))] px-3 py-3 dark:border-white/8 dark:bg-[linear-gradient(180deg,rgba(55,45,31,0.78),rgba(24,22,20,0.92))]">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-foreground/40">
+                current page
+              </div>
+              <div className="mt-1 text-[13px] font-semibold leading-5 text-foreground/86">
+                {lookup.pageContext.title || lookup.pageContext.url}
+              </div>
+              <div className="mt-2 text-[12px] leading-5 text-foreground/68">
+                Bring this page into chat with its transient browser context attached.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => onAttach(lookup.lookupId, buildAskCurrentPagePrompt(lookup))}
+              className="shrink-0 rounded-full bg-[linear-gradient(180deg,rgba(229,216,197,0.72),rgba(245,239,230,0.48))] px-3 py-1.5 text-[11px] font-semibold text-island-gold shadow-[0_10px_22px_-16px_rgba(0,0,0,0.32)] transition-transform hover:scale-[1.02] dark:bg-[linear-gradient(180deg,rgba(60,47,32,0.82),rgba(32,26,21,0.96))]"
+            >
+              {attachLabel}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="grid gap-2.5">
+          {lookup.hits.slice(0, 3).map((hit) => (
+            <div
+              key={hit.id}
+              className="rounded-[20px] border border-white/35 bg-[linear-gradient(180deg,rgba(255,255,255,0.78),rgba(245,239,230,0.52))] px-3 py-3 dark:border-white/8 dark:bg-[linear-gradient(180deg,rgba(55,45,31,0.78),rgba(24,22,20,0.92))]"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-foreground/40">
+                    {hit.source}
+                  </div>
+                  <div className="mt-1 text-[13px] font-semibold leading-5 text-foreground/86">
+                    {hit.title}
+                  </div>
+                  {hit.subtitle ? (
+                    <div className="mt-1 text-[11px] text-foreground/45">
+                      {hit.subtitle}
+                    </div>
+                  ) : null}
+                  <div className="mt-2 text-[12px] leading-5 text-foreground/68">
+                    {hit.summary}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onAttach(lookup.lookupId, buildBrowserLookupPrompt(lookup, hit))}
+                  className="shrink-0 rounded-full bg-[linear-gradient(180deg,rgba(229,216,197,0.72),rgba(245,239,230,0.48))] px-3 py-1.5 text-[11px] font-semibold text-island-gold shadow-[0_10px_22px_-16px_rgba(0,0,0,0.32)] transition-transform hover:scale-[1.02] dark:bg-[linear-gradient(180deg,rgba(60,47,32,0.82),rgba(32,26,21,0.96))]"
+                >
+                  {attachLabel}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function IslandExpandedView({
   headerDragRegion = false,
 }: {
@@ -150,6 +281,7 @@ export function IslandExpandedView({
     statusLabel,
     recentMessages,
     pendingApproval,
+    browserLookup,
     isBusy,
     errorMessage,
     statusStage,
@@ -161,6 +293,8 @@ export function IslandExpandedView({
     approvePendingApproval,
     rejectPendingApproval,
     restoreWorkspace,
+    attachBrowserLookup,
+    dismissBrowserLookup,
   } = useIslandContext();
   const t = useI18n("chat");
 
@@ -242,6 +376,20 @@ export function IslandExpandedView({
         className="min-h-0 flex-1 overflow-y-auto island-content-scrollbar"
       >
         <motion.div variants={itemVariants} className="space-y-3 px-3.5 pb-3">
+          {browserLookup ? (
+            <IslandBrowserLookupCard
+              lookup={browserLookup}
+              onAttach={(lookupId, prompt) => {
+                void attachBrowserLookup(lookupId, prompt)
+              }}
+              onDismiss={(lookupId) => {
+                void dismissBrowserLookup(lookupId)
+              }}
+              title={t("island.lookup.title")}
+              attachLabel={t("island.lookup.attach")}
+              dismissLabel={t("island.lookup.dismiss")}
+            />
+          ) : null}
           {showTimeline ? (
             <div className="rounded-[26px] border border-white/40 bg-white/42 p-2.5 shadow-[0_18px_42px_-34px_rgba(0,0,0,0.35)] dark:border-white/8 dark:bg-white/4">
               <IslandStatusTimeline

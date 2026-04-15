@@ -1,6 +1,7 @@
 import type { ChatImageAttachment } from "@/lib/chat/message-content"
 import { deriveAssistantActivityState } from "@/lib/chat/assistant-activity"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
+import type { ChatPageContextAttachment } from "@/lib/browser/page-context"
 import type {
   PendingChatTakeover,
   PendingTakeoverRequestedAction,
@@ -10,6 +11,7 @@ type PendingTakeoverDraftInput = {
   input: string
   attachments: ChatImageAttachment[]
   selectedKnowledgeFileIds: string[]
+  pageContext?: ChatPageContextAttachment | null
 }
 
 export type PendingTakeoverDispatchDraft = PendingTakeoverDraftInput
@@ -33,6 +35,7 @@ export function normalizePendingTakeoverDraft(
           .filter((value) => value.length > 0)
       )
     ),
+    pageContext: draft.pageContext ?? null,
   }
 }
 
@@ -43,6 +46,7 @@ export function buildPendingTakeoverDispatchDraft(
     input: pendingTakeover.input,
     attachments: pendingTakeover.attachments,
     selectedKnowledgeFileIds: pendingTakeover.selectedKnowledgeFileIds,
+    pageContext: pendingTakeover.pageContext,
   }
 }
 

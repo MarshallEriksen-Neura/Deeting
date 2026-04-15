@@ -2,7 +2,9 @@ use reqwest::Url;
 use serde_json::{json, Value};
 
 use crate::modules::browser_agent::bridge::BrowserAgentBridgeState;
-use crate::modules::browser_agent::types::{BrowserAgentBridgeStatus, BrowserAgentElementLocator};
+use crate::modules::browser_agent::types::{
+    BrowserAgentBridgeStatus, BrowserAgentElementLocator, BrowserAgentPageContext,
+};
 use crate::modules::mcp::store::McpStore;
 
 pub const BROWSER_AGENT_BRIDGE_URL_KEY: &str = "browser_agent.bridge_url";
@@ -166,6 +168,16 @@ impl BrowserAgentService {
                 },
             )
             .await
+    }
+
+    pub async fn get_active_page(
+        &self,
+        store: &McpStore,
+    ) -> Result<Option<BrowserAgentPageContext>, String> {
+        let (bridge_url, _source) = self.get_bridge_url(store).await?;
+        self.bridge.ensure_started(&bridge_url).await?;
+        let snapshot = self.bridge.snapshot().await;
+        Ok(snapshot.active_page)
     }
 
     pub async fn wait_for_element(

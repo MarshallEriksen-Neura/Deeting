@@ -218,6 +218,7 @@ describe("IslandShell", () => {
       lastReplyText: "",
       recentMessages: [],
       pendingApproval: null,
+      browserLookup: null,
       isBusy: false,
       errorMessage: null,
       statusStage: null,
@@ -421,5 +422,71 @@ describe("IslandShell", () => {
     render(<IslandShell />);
 
     expect(screen.getByText(longAssistantReply)).toBeInTheDocument();
+  });
+
+  it("renders browser lookup results inside the expanded island view", () => {
+    useIslandStore.setState({
+      mode: "expanded",
+      browserLookup: {
+        lookupId: "lookup-1",
+        kind: "search_wiki",
+        queryText: "linear algebra",
+        pageContext: {
+          tabId: 42,
+          title: "MIT 18.06",
+          url: "https://example.com/docs",
+          host: "example.com",
+          headingsSummary: ["Lecture 1"],
+          mainTextSnippet: "Main content",
+          visibleTextSnippet: "Visible content",
+        },
+        hits: [
+          {
+            id: "hit-1",
+            source: "wiki",
+            title: "Lecture 1 Notes",
+            summary: "Key summary",
+            subtitle: "wiki/lecture-1.md",
+            score: 0.91,
+          },
+        ],
+        createdAt: 1,
+      },
+    });
+
+    render(<IslandShell />);
+
+    expect(screen.getByText("island.lookup.title")).toBeInTheDocument();
+    expect(screen.getByText("Lecture 1 Notes")).toBeInTheDocument();
+    expect(screen.getByText("island.lookup.attach")).toBeInTheDocument();
+  });
+
+  it("renders an ask-current-page card inside the expanded island view", () => {
+    useIslandStore.setState({
+      mode: "expanded",
+      browserLookup: {
+        lookupId: "lookup-ask-1",
+        kind: "ask_current_page",
+        queryText: "mit 18.06",
+        pageContext: {
+          tabId: 42,
+          title: "MIT 18.06",
+          url: "https://example.com/docs",
+          host: "example.com",
+          headingsSummary: ["Lecture 1"],
+          mainTextSnippet: "Main content",
+          visibleTextSnippet: "Visible content",
+        },
+        hits: [],
+        createdAt: 1,
+      },
+    });
+
+    render(<IslandShell />);
+
+    expect(screen.getAllByText("MIT 18.06").length).toBeGreaterThan(0);
+    expect(
+      screen.getByText("Bring this page into chat with its transient browser context attached.")
+    ).toBeInTheDocument();
   });
 });

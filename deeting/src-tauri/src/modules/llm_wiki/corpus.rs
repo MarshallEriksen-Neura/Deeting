@@ -5,6 +5,7 @@ use std::path::Path;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
+use crate::modules::conversations::text_utils::truncate_text_chars;
 use crate::modules::retrieval_kernel::lifecycle::{touched_vitality, vitality_multiplier};
 use crate::modules::retrieval_kernel::ranking::{
     bm25_asset_match_scores, normalize_score_map, reciprocal_rank_fusion,
@@ -327,11 +328,7 @@ fn collect_indexable_notes(
             if trimmed.is_empty() {
                 continue;
             }
-            let truncated = if trimmed.len() > MAX_INDEXED_NOTE_BYTES {
-                &trimmed[..MAX_INDEXED_NOTE_BYTES]
-            } else {
-                trimmed
-            };
+            let truncated = truncate_to_byte_limit(trimmed, MAX_INDEXED_NOTE_BYTES);
 
             let relative_path = path
                 .strip_prefix(vault_root)
@@ -467,11 +464,19 @@ fn summarize_markdown(content: &str) -> String {
         .take(4)
         .collect::<Vec<_>>()
         .join(" ");
-    if single_line.len() > 220 {
-        format!("{}...", &single_line[..220])
-    } else {
-        single_line
+    truncate_text_chars(&single_line, 220)
+}
+
+fn truncate_to_byte_limit(content: &str, max_bytes: usize) -> &str {
+    if content.len() <= max_bytes {
+        return content;
     }
+
+    let mut end = max_bytes;
+    while end > 0 && !content.is_char_boundary(end) {
+        end -= 1;
+    }
+    &content[..end]
 }
 
 fn hash_text(text: &str) -> String {
@@ -482,7 +487,7 @@ fn hash_text(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{collect_indexable_notes, summarize_markdown};
+    use super::{collect_indexable_notes, summarize_markdown, MAX_INDEXED_NOTE_BYTES};
     use std::fs;
 
     fn temp_root(label: &str) -> std::path::PathBuf {
@@ -517,5 +522,40 @@ mod tests {
         );
         assert!(summary.contains("# Title"));
         assert!(summary.contains("This is a note."));
+    }
+
+    #[test]
+    fn summarize_markdown_handles_multibyte_char_boundaries() {
+        let summary = summarize_markdown(&format!(
+            "## 一、系统架构总览\n{}\n结尾说明",
+            "─".repeat(240)
+        ));
+        assert!(summary.starts_with("## 一、系统架构总览"));
+        assert!(summary.ends_with("..."));
+        assert_eq!(summary.chars().count(), 223);
+    }
+
+    #[test]
+    fn collect_indexable_notes_truncates_multibyte_content_safely() {
+        let root = temp_root("multibyte-truncate");
+        let workspace = root.join("Deeting Wiki");
+        fs::create_dir_all(&workspace).expect("create workspace");
+        fs::write(
+            workspace.join("Long.md"),
+            format!(
+                "# 标题\n\n{}",
+                "中".repeat((MAX_INDEXED_NOTE_BYTES / 3) + 10)
+            ),
+        )
+        .expect("write long note");
+
+        let notes = collect_indexable_notes(&root, &workspace).expect("collect notes");
+        let note = notes
+            .iter()
+            .find(|note| note.relative_path == "Deeting Wiki/Long.md")
+            .expect("long note indexed");
+
+        assert!(note.content.len() <= MAX_INDEXED_NOTE_BYTES);
+        assert!(std::str::from_utf8(note.content.as_bytes()).is_ok());
     }
 }

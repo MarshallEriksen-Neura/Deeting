@@ -50,6 +50,28 @@ describe("useChatStore session state", () => {
     expect(useChatStore.getState().isLoading).toBe(false)
   })
 
+  it("tracks and clears transient page context without persisting it into config state", () => {
+    useChatStore.getState().setPageContext({
+      tabId: 42,
+      title: "Example Docs",
+      url: "https://example.com/docs",
+      host: "example.com",
+      headingsSummary: ["Example Docs"],
+      mainTextSnippet: "Main content",
+      visibleTextSnippet: "Visible content",
+      capturedAt: 1,
+    })
+
+    expect(useChatStore.getState().pageContext).toMatchObject({
+      tabId: 42,
+      title: "Example Docs",
+    })
+
+    useChatStore.getState().clearPageContext()
+
+    expect(useChatStore.getState().pageContext).toBeNull()
+  })
+
   it("setMessageBlocks should keep assistant content empty even when text blocks exist", () => {
     useChatStore.setState({
       messages: [

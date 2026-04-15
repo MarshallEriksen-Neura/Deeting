@@ -44,6 +44,7 @@ function resetStore() {
     lastReplyAt: 2,
     recentMessages: [{ role: "assistant", content: "Previous answer", createdAt: 2 }],
     pendingApproval: null,
+    browserLookup: null,
     isBusy: false,
     errorMessage: null,
     sessionId: "session-1",
@@ -172,5 +173,53 @@ describe("useIslandWindowStore", () => {
     expect(emit).toHaveBeenCalledWith("island:action-completed", {
       sessionId: "session-new",
     })
+  })
+
+  it("emits attach and dismiss events when a browser lookup result is brought into chat", async () => {
+    useIslandWindowStore.setState({
+      browserLookup: {
+        lookupId: "lookup-1",
+        kind: "search_wiki",
+        queryText: "linear algebra",
+        pageContext: {
+          tabId: 42,
+          title: "MIT 18.06",
+          url: "https://example.com/docs",
+          host: "example.com",
+          headingsSummary: ["Lecture 1"],
+          mainTextSnippet: "Main content",
+          visibleTextSnippet: "Visible content",
+        },
+        hits: [
+          {
+            id: "hit-1",
+            source: "wiki",
+            title: "Lecture 1 Notes",
+            summary: "Key summary",
+            subtitle: "wiki/lecture-1.md",
+            score: 0.91,
+          },
+        ],
+        createdAt: 1,
+      },
+    })
+
+    await useIslandWindowStore.getState().attachBrowserLookup(
+      "lookup-1",
+      "Please use this local wiki note."
+    )
+
+    expect(emit).toHaveBeenCalledWith("browser-agent-lookup-attach-request", {
+      lookupId: "lookup-1",
+      prompt: "Please use this local wiki note.",
+      pageContext: expect.objectContaining({
+        tabId: 42,
+        title: "MIT 18.06",
+      }),
+    })
+    expect(emit).toHaveBeenCalledWith("browser-agent-lookup-dismissed", {
+      lookupId: "lookup-1",
+    })
+    expect(useIslandWindowStore.getState().browserLookup).toBeNull()
   })
 })

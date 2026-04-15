@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowUp, Sliders, MessageSquarePlus, Paperclip, X, Square, FileText, Play, Check, Loader2 } from 'lucide-react';
+import { ArrowUp, Sliders, MessageSquarePlus, Paperclip, X, Square, FileText, Play, Check, Loader2, Globe } from 'lucide-react';
 import { useMemo, useRef, useState, useCallback, useEffect, memo } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
@@ -23,7 +23,11 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Slider } from '@/components/ui/slider';
 import { cn } from '@/lib/utils';
 import { formatFileSize } from '@/lib/utils/file';
-import { getLocalBrowserAgentPageSnapshot } from '@/lib/api/browser-agent';
+import {
+  getLocalBrowserAgentActivePage,
+  getLocalBrowserAgentPageSnapshot,
+} from '@/lib/api/browser-agent';
+import { buildChatPageContextAttachment } from '@/lib/browser/page-context';
 import { buildPageInspectionResult, isPageInspectionPrompt } from '@/lib/browser/page-inspection';
 import { buildChatAttachments, UPLOAD_ERROR_CODES, ATTACHMENT_INVALID_ERROR_CODES } from '@/lib/chat/attachments';
 import { createConversation } from '@/lib/api/conversations';
@@ -96,6 +100,7 @@ function ControlsContainer() {
   const [dismissedRecoveryMessageIds, setDismissedRecoveryMessageIds] = useState<string[]>([]);
   const [composerMode, setComposerMode] = useState<ComposerMode>('chat');
   const [isPlanningWorkflow, setIsPlanningWorkflow] = useState(false);
+  const [isAttachingPageContext, setIsAttachingPageContext] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const t = useI18n('chat');
   const openWorkflow = useOpenWorkflow();
@@ -105,6 +110,7 @@ function ControlsContainer() {
     messages,
     sessionId,
     selectedKnowledgeFileIds,
+    pageContext,
     setInput,
     setMessages,
     loadHistory,
@@ -114,6 +120,8 @@ function ControlsContainer() {
     addAttachments,
     removeAttachment,
     clearAttachments,
+    setPageContext,
+    clearPageContext,
     toggleSelectedKnowledgeFileId,
     clearSelectedKnowledgeFileIds,
   } = useChatStore(
@@ -123,6 +131,7 @@ function ControlsContainer() {
       messages: state.messages,
       sessionId: state.sessionId,
       selectedKnowledgeFileIds: state.selectedKnowledgeFileIds,
+      pageContext: state.pageContext,
       setInput: state.setInput,
       setMessages: state.setMessages,
       loadHistory: state.loadHistory,
@@ -132,6 +141,8 @@ function ControlsContainer() {
       addAttachments: state.addAttachments,
       removeAttachment: state.removeAttachment,
       clearAttachments: state.clearAttachments,
+      setPageContext: state.setPageContext,
+      clearPageContext: state.clearPageContext,
       toggleSelectedKnowledgeFileId: state.toggleSelectedKnowledgeFileId,
       clearSelectedKnowledgeFileIds: state.clearSelectedKnowledgeFileIds,
     }))
@@ -586,6 +597,28 @@ function ControlsContainer() {
     clearSelectedKnowledgeFileIds();
   }, [clearSelectedKnowledgeFileIds]);
 
+  const handleAttachCurrentPageContext = useCallback(async () => {
+    if (!isTauriRuntime) return;
+
+    setIsAttachingPageContext(true);
+    try {
+      const activePage = await getLocalBrowserAgentActivePage();
+      if (!activePage?.tabId) {
+        toast.error(t("controls.pageContextUnavailable"));
+        return;
+      }
+
+      const snapshot = await getLocalBrowserAgentPageSnapshot(activePage.tabId);
+      setPageContext(buildChatPageContextAttachment(snapshot, activePage));
+      toast.success(t("controls.pageContextAttached"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error(message);
+    } finally {
+      setIsAttachingPageContext(false);
+    }
+  }, [isTauriRuntime, setPageContext, t]);
+
   useEffect(() => {
     setDismissedRecoveryMessageIds((previous) =>
       previous.filter((messageId) => messages.some((message) => message.id === messageId))
@@ -933,6 +966,29 @@ function ControlsContainer() {
         </div>
       ) : null}
 
+      {pageContext ? (
+        <div className="flex flex-wrap items-center gap-2 px-1">
+          <div className="group relative flex h-8 max-w-[360px] shrink-0 items-center gap-2 rounded-full border border-emerald-200/80 bg-emerald-50 px-3 text-xs text-emerald-700 dark:border-emerald-400/30 dark:bg-emerald-500/10 dark:text-emerald-200">
+            <Globe className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">
+              {pageContext.title || pageContext.host || pageContext.url}
+            </span>
+            <button
+              type="button"
+              className="inline-flex h-4 w-4 items-center justify-center rounded-full hover:bg-emerald-200/60 dark:hover:bg-emerald-500/30"
+              onClick={clearPageContext}
+              aria-label={t("controls.pageContextRemove")}
+              disabled={isLoading}
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+          <span className="text-[11px] text-slate-500 dark:text-white/45">
+            {t("controls.pageContextHint")}
+          </span>
+        </div>
+      ) : null}
+
       {attachmentError ? (
         <div className="text-center text-xs font-medium text-red-500/90 dark:text-red-400/90">{attachmentError}</div>
       ) : null}
@@ -1046,6 +1102,31 @@ function ControlsContainer() {
                 )}
               </PopoverContent>
             </Popover>
+          ) : null}
+
+          {isTauriRuntime ? (
+            <Button
+              type="button"
+              variant="ios"
+              size="sm"
+              aria-label={t("controls.attachCurrentPage")}
+              className="h-10 px-4 text-xs"
+              onClick={() => {
+                void handleAttachCurrentPageContext();
+              }}
+              disabled={isLoading || isAttachingPageContext}
+            >
+              {isAttachingPageContext ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Globe className="h-4 w-4" />
+              )}
+              <span>
+                {isAttachingPageContext
+                  ? t("controls.attachingCurrentPage")
+                  : t("controls.attachCurrentPage")}
+              </span>
+            </Button>
           ) : null}
 
           {isTauriRuntime ? (

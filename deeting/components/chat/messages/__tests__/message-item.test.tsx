@@ -122,4 +122,29 @@ describe("MessageItem user bubble layout", () => {
     expect(timestamp).toHaveClass("chat-user-bubble-meta")
     expect(bubble).not.toContainElement(timestamp)
   })
+
+  it("renders a page-context badge for user messages that used browser context", () => {
+    const userMessage = {
+      id: "user-2",
+      role: "user",
+      content: "Explain the key point on this page.",
+      createdAt: "2026-04-15T08:31:00.000Z",
+      fromHistory: false,
+      attachments: [],
+      blocks: [],
+      metaInfo: {
+        page_context: {
+          title: "MIT 18.06 Linear Algebra Notes",
+          url: "https://linalg.apachecn.org/chapter01/",
+          host: "linalg.apachecn.org",
+        },
+      },
+    } as MessageRecord
+
+    render(<MessageItem message={userMessage} />)
+
+    expect(
+      screen.getByText("controls.pageContextUsed:MIT 18.06 Linear Algebra Notes")
+    ).toBeInTheDocument()
+  })
 })

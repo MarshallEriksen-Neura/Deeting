@@ -307,6 +307,7 @@ mod tests {
         mark_new_memory_as_superseding, supersession_rank_multiplier, WriteGuardCandidate,
         WriteGuardProfile,
     };
+    use crate::modules::memory::types::CreateLocalMemoryRequest;
     use serde_json::json;
 
     fn candidate(id: &str, content: &str, score: f32) -> WriteGuardCandidate {

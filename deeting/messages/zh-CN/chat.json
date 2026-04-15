@@ -393,6 +393,13 @@
       "knowledgeRefresh": "刷新",
       "knowledgeRemove": "移除知识文件",
       "knowledgeClear": "清空选择",
+      "attachCurrentPage": "附带当前页面",
+      "attachingCurrentPage": "正在附带页面",
+      "pageContextAttached": "已将当前页面附带到下一次回复上下文。",
+      "pageContextUnavailable": "暂时没有可用的当前浏览器页面。",
+      "pageContextRemove": "移除当前页面上下文",
+      "pageContextHint": "仅会在下一次回复中作为请求级上下文使用，不会写入知识库。",
+      "pageContextUsed": "已使用页面上下文：{value}",
       "workflowRouting": "Workflow 编排",
       "workflowRoutingOn": "已开启",
       "workflowRoutingOff": "已关闭",
@@ -507,6 +514,11 @@
       "modeDescription": "你可以直接在这里审批、继续、翻译，或发送一句短回复，不必重新打开完整面板。",
       "workspaceTitle": "工作区",
       "workspaceDescription": "只有当你需要更完整的上下文或更长的编辑时，再回到完整工作区。",
+      "lookup": {
+        "title": "浏览器检索结果",
+        "attach": "带入聊天",
+        "dismiss": "忽略"
+      },
       "decisionTitle": "等待你的决定",
       "decisionDescription": "当前任务暂停在这里。你可以立刻批准、拒绝，或者先在灵动岛补一句说明再继续。",
       "hints": {

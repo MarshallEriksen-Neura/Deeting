@@ -166,6 +166,65 @@ describe("useChatMessagingService pending takeover orchestration", () => {
     delete windowWithTauri.__TAURI_INTERNALS__
   })
 
+  it("injects transient browser page context into the outgoing local request and user message meta", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI_INTERNALS__ = {}
+    mockStreamDesktopLocalChatCompletion.mockResolvedValueOnce("")
+
+    useChatStore.setState({
+      models: [
+        {
+          id: "qwen-local",
+          provider_model_id: "provider-local-1",
+          request_route: "local_invoke",
+          runtime_source: "desktop_local",
+        } as any,
+      ],
+      config: {
+        model: "qwen-local",
+        temperature: 0.7,
+        topP: 1,
+        maxTokens: null,
+      },
+      input: "What is this page explaining?",
+      pageContext: {
+        tabId: 42,
+        title: "MIT 18.06 Linear Algebra Notes",
+        url: "https://linalg.apachecn.org/chapter01/",
+        host: "linalg.apachecn.org",
+        headingsSummary: ["第一讲：方程组的几何解释"],
+        mainTextSnippet: "上图是我们都很熟悉的直角坐标系中两直线相交的情况。",
+        visibleTextSnippet: "我们把第一个向量称作 col1。",
+        capturedAt: 1,
+      },
+    })
+    useChatRuntimeStore.setState({ sessionId: "session-local-ctx-1", isLoading: false })
+
+    const { result } = renderHook(() => useChatMessagingService())
+
+    await act(async () => {
+      await result.current.sendMessage()
+    })
+
+    const payload = mockStreamDesktopLocalChatCompletion.mock.calls[0]?.[0]
+    expect(payload?.messages?.[0]).toMatchObject({
+      role: "system",
+    })
+    expect(JSON.stringify(payload?.messages?.[0]?.content ?? "")).toContain(
+      "MIT 18.06 Linear Algebra Notes"
+    )
+    expect(useChatStore.getState().messages[0]?.metaInfo).toMatchObject({
+      page_context: {
+        title: "MIT 18.06 Linear Algebra Notes",
+        url: "https://linalg.apachecn.org/chapter01/",
+        host: "linalg.apachecn.org",
+      },
+    })
+    expect(useChatStore.getState().pageContext).toBeNull()
+
+    delete windowWithTauri.__TAURI_INTERNALS__
+  })
+
   it("keeps approval-required status active after a local request pauses for tool approval", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI_INTERNALS__ = {}

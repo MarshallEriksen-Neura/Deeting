@@ -175,6 +175,23 @@ export const MessageItem = React.memo<MessageItemProps>(
           : ""
       return displayContent || message.content
     }, [message.content, messageMetaInfo, message.role])
+    const userPageContextLabel = React.useMemo(() => {
+      if (message.role !== "user") return null
+      const pageContext =
+        messageMetaInfo?.page_context && typeof messageMetaInfo.page_context === "object"
+          ? (messageMetaInfo.page_context as Record<string, unknown>)
+          : null
+      const title =
+        typeof pageContext?.title === "string" && pageContext.title.trim().length > 0
+          ? pageContext.title.trim()
+          : ""
+      const host =
+        typeof pageContext?.host === "string" && pageContext.host.trim().length > 0
+          ? pageContext.host.trim()
+          : ""
+      if (!title && !host) return null
+      return title || host
+    }, [message.role, messageMetaInfo])
     const excludedModelKeys = React.useMemo(() => {
       if (compareState) {
         return Object.keys(compareState.candidates)
@@ -301,6 +318,13 @@ export const MessageItem = React.memo<MessageItemProps>(
               />
             </div>
             <div className="chat-user-bubble-meta px-1 text-right text-[11px]">
+              {userPageContextLabel ? (
+                <div className="mb-1 inline-flex max-w-full items-center gap-1 rounded-full border border-emerald-200/80 bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-700 dark:border-emerald-400/30 dark:bg-emerald-500/10 dark:text-emerald-200">
+                  <span className="truncate">
+                    {t("controls.pageContextUsed", { value: userPageContextLabel })}
+                  </span>
+                </div>
+              ) : null}
               {new Date(message.createdAt).toLocaleTimeString([], {
                 hour: "2-digit",
                 minute: "2-digit",
@@ -323,6 +347,8 @@ export const MessageItem = React.memo<MessageItemProps>(
       assistantContentUnchanged &&
       prevProps.message.metaInfo?.display_content ===
         nextProps.message.metaInfo?.display_content &&
+      (prevProps.message.metaInfo as Record<string, unknown> | undefined)?.page_context ===
+        (nextProps.message.metaInfo as Record<string, unknown> | undefined)?.page_context &&
       prevProps.message.blocks === nextProps.message.blocks
 
     // 附件未变化

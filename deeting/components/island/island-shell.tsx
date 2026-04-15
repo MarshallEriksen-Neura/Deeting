@@ -13,6 +13,11 @@ import { isTauriRuntime as detectTauriRuntime } from "@/lib/runtime/tauri";
 import { useChatStore } from "@/store/chat-store";
 import { useChatRuntimeStore } from "@/store/chat-runtime-store";
 import { useBridgeApprovalStore } from "@/lib/chat/bridge-approval-store";
+import type {
+  IslandBrowserLookupAttachPayload,
+  IslandBrowserLookupDismissPayload,
+  IslandBrowserLookupPayload,
+} from "./browser-lookup-types";
 
 type IslandActionCompletedPayload = {
   sessionId?: string | null;
@@ -31,6 +36,7 @@ export function IslandShell() {
       lastReplyAt: s.lastReplyAt,
       recentMessages: s.recentMessages,
       pendingApproval: s.pendingApproval,
+      browserLookup: s.browserLookup,
       isBusy: s.isBusy,
       errorMessage: s.errorMessage,
       statusStage: s.statusStage,
@@ -47,6 +53,9 @@ export function IslandShell() {
       rejectPendingApproval: s.rejectPendingApproval,
     })),
   );
+  const presentBrowserLookup = useIslandStore((s) => s.presentBrowserLookup);
+  const clearBrowserLookup = useIslandStore((s) => s.clearBrowserLookup);
+  const attachBrowserLookup = useIslandStore((s) => s.attachBrowserLookup);
 
   const { mode } = storeValues;
   const autoCollapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -235,6 +244,7 @@ export function IslandShell() {
           lastReplyAt: state.lastReplyAt,
           recentMessages: state.recentMessages,
           pendingApproval: state.pendingApproval,
+          browserLookup: state.browserLookup,
           isBusy: state.isBusy,
           errorMessage: state.errorMessage,
           statusStage: state.statusStage,
@@ -310,10 +320,61 @@ export function IslandShell() {
     };
   }, [resyncChat]);
 
+  useEffect(() => {
+    let unlistenLookup: (() => void) | undefined;
+    let unlistenAttach: (() => void) | undefined;
+    let unlistenDismiss: (() => void) | undefined;
+
+    (async () => {
+      try {
+        const { listen, emit } = await import("@tauri-apps/api/event");
+        unlistenLookup = await listen<IslandBrowserLookupPayload>(
+          "browser-agent-lookup",
+          (event) => {
+            presentBrowserLookup(event.payload);
+          },
+        );
+        unlistenAttach = await listen<IslandBrowserLookupAttachPayload>(
+          "browser-agent-lookup-attach-request",
+          async (event) => {
+            await attachBrowserLookup(
+              event.payload.lookupId,
+              event.payload.prompt,
+            );
+            await emit("browser-agent-lookup-dismissed", {
+              lookupId: event.payload.lookupId,
+            } satisfies IslandBrowserLookupDismissPayload);
+          },
+        );
+        unlistenDismiss = await listen<IslandBrowserLookupDismissPayload>(
+          "browser-agent-lookup-dismissed",
+          (event) => {
+            clearBrowserLookup(event.payload.lookupId);
+          },
+        );
+      } catch {
+        // non-Tauri env
+      }
+    })();
+
+    return () => {
+      unlistenLookup?.();
+      unlistenAttach?.();
+      unlistenDismiss?.();
+    };
+  }, [attachBrowserLookup, clearBrowserLookup, presentBrowserLookup]);
+
   if (mode === "hidden") return null;
 
   return (
-    <IslandProvider value={{ ...storeValues, collapsedHighlight }}>
+    <IslandProvider
+      value={{
+        ...storeValues,
+        attachBrowserLookup,
+        dismissBrowserLookup: clearBrowserLookup,
+        collapsedHighlight,
+      }}
+    >
       <motion.div
         initial={{ opacity: 0, y: -30, scale: 0.85 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}

@@ -1,5 +1,6 @@
 import {
   clickLocalBrowserAgentElement,
+  getLocalBrowserAgentActivePage,
   getLocalBrowserAgentBridgeStatus,
   getLocalBrowserAgentBridgeUrl,
   getLocalBrowserAgentPageSnapshot,
@@ -63,6 +64,12 @@ describe("browser agent api", () => {
       .mockResolvedValueOnce("ws://127.0.0.1:31937/bridge" as unknown)
       .mockResolvedValueOnce("ws://127.0.0.1:31938/bridge" as unknown)
       .mockResolvedValueOnce({
+        tabId: 42,
+        title: "Example Docs",
+        url: "https://example.com/docs",
+        host: "example.com",
+      } as unknown)
+      .mockResolvedValueOnce({
         url: "https://example.com/docs",
         title: "Example Docs",
         documentReadyState: "complete",
@@ -117,6 +124,7 @@ describe("browser agent api", () => {
     const status = await getLocalBrowserAgentBridgeStatus()
     const currentUrl = await getLocalBrowserAgentBridgeUrl()
     const savedUrl = await setLocalBrowserAgentBridgeUrl("ws://127.0.0.1:31938/bridge")
+    const activePage = await getLocalBrowserAgentActivePage()
     const snapshot = await getLocalBrowserAgentPageSnapshot(42)
     const clickResult = await clickLocalBrowserAgentElement(42, { text: "Continue" })
     const typeResult = await typeLocalBrowserAgentElement(
@@ -152,6 +160,7 @@ describe("browser agent api", () => {
     expect(status.connected_sessions).toBe(1)
     expect(currentUrl).toBe("ws://127.0.0.1:31937/bridge")
     expect(savedUrl).toBe("ws://127.0.0.1:31938/bridge")
+    expect(activePage?.tabId).toBe(42)
     expect(snapshot.title).toBe("Example Docs")
     expect(clickResult.ok).toBe(true)
     expect(typeResult.ok).toBe(true)
@@ -179,26 +188,31 @@ describe("browser agent api", () => {
     )
     expect(mockInvoke).toHaveBeenNthCalledWith(
       4,
+      "get_local_browser_agent_active_page",
+      undefined
+    )
+    expect(mockInvoke).toHaveBeenNthCalledWith(
+      5,
       "get_local_browser_agent_page_snapshot",
       { tabId: 42 }
     )
     expect(mockInvoke).toHaveBeenNthCalledWith(
-      5,
+      6,
       "click_local_browser_agent_element",
       { tabId: 42, target: { text: "Continue" } }
     )
     expect(mockInvoke).toHaveBeenNthCalledWith(
-      6,
+      7,
       "type_local_browser_agent_element",
       { tabId: 42, target: { selector: "input[name='q']" }, text: "browser agent" }
     )
     expect(mockInvoke).toHaveBeenNthCalledWith(
-      7,
+      8,
       "query_local_browser_agent_dom",
       { tabId: 42, selector: ".result", textQuery: null }
     )
     expect(mockInvoke).toHaveBeenNthCalledWith(
-      8,
+      9,
       "wait_for_local_browser_agent_element",
       {
         tabId: 42,
@@ -208,7 +222,7 @@ describe("browser agent api", () => {
       }
     )
     expect(mockInvoke).toHaveBeenNthCalledWith(
-      9,
+      10,
       "wait_for_local_browser_agent_navigation",
       {
         tabId: 42,
@@ -219,7 +233,7 @@ describe("browser agent api", () => {
       }
     )
     expect(mockInvoke).toHaveBeenNthCalledWith(
-      10,
+      11,
       "scroll_local_browser_agent_element_into_view",
       {
         tabId: 42,
@@ -228,7 +242,7 @@ describe("browser agent api", () => {
       }
     )
     expect(mockInvoke).toHaveBeenNthCalledWith(
-      11,
+      12,
       "retry_local_browser_agent_with_relocate",
       {
         tabId: 42,
@@ -241,12 +255,12 @@ describe("browser agent api", () => {
       }
     )
     expect(mockInvoke).toHaveBeenNthCalledWith(
-      12,
+      13,
       "navigate_local_browser_agent_tab",
       { tabId: 42, url: "https://example.com/search" }
     )
     expect(mockInvoke).toHaveBeenNthCalledWith(
-      13,
+      14,
       "open_local_browser_agent_tab",
       { url: "https://example.com/docs" }
     )
@@ -281,5 +295,19 @@ describe("browser agent api", () => {
     expect(mockInvoke).toHaveBeenCalledWith("get_local_browser_agent_page_snapshot", {
       tabId: 42,
     })
+  })
+
+  it("returns null when the desktop browser agent has no active page", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValueOnce(null as unknown)
+
+    const activePage = await getLocalBrowserAgentActivePage()
+
+    expect(activePage).toBeNull()
+    expect(mockInvoke).toHaveBeenCalledWith(
+      "get_local_browser_agent_active_page",
+      undefined
+    )
   })
 })

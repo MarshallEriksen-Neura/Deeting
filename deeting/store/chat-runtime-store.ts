@@ -74,6 +74,7 @@ interface ChatRuntimeStore {
     input: string
     attachments: PendingChatTakeover["attachments"]
     selectedKnowledgeFileIds: string[]
+    pageContext?: PendingChatTakeover["pageContext"]
   } | null) => void
   setPendingTakeoverRequestedAction: (action: PendingTakeoverRequestedAction | null) => void
   clearPendingTakeover: () => void
@@ -198,6 +199,7 @@ export const useChatRuntimeStore = create<ChatRuntimeStore>()((set, get) => ({
               input: "",
               attachments: [],
               selectedKnowledgeFileIds: [],
+              pageContext: null,
               compareByMessageId: {},
             }
           : {}),
@@ -274,6 +276,7 @@ export const useChatRuntimeStore = create<ChatRuntimeStore>()((set, get) => ({
       input: "",
       attachments: [],
       selectedKnowledgeFileIds: [],
+      pageContext: null,
     })
     set({
       ...emptyRuntimeState,
@@ -380,6 +383,7 @@ export const useChatRuntimeStore = create<ChatRuntimeStore>()((set, get) => ({
                   .filter((value) => value.length > 0)
               )
             ),
+            pageContext: draft.pageContext ?? null,
             createdAt: Date.now(),
             updatedAt: Date.now(),
           }

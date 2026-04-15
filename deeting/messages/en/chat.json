@@ -337,6 +337,13 @@
       "knowledgeRefresh": "Refresh",
       "knowledgeRemove": "Remove knowledge file",
       "knowledgeClear": "Clear",
+      "attachCurrentPage": "Attach current page",
+      "attachingCurrentPage": "Attaching page",
+      "pageContextAttached": "Current page attached for the next reply.",
+      "pageContextUnavailable": "No active browser page is available yet.",
+      "pageContextRemove": "Remove current page context",
+      "pageContextHint": "The next reply will use this page as request-scoped context only.",
+      "pageContextUsed": "Used page context: {value}",
       "workflowRouting": "Workflow Routing",
       "workflowRoutingOn": "On",
       "workflowRoutingOff": "Off",
@@ -451,6 +458,11 @@
       "modeDescription": "Approve, continue, translate, or send a short follow-up without leaving the capsule.",
       "workspaceTitle": "Workspace",
       "workspaceDescription": "Reopen the full canvas only when you need broader context or longer edits.",
+      "lookup": {
+        "title": "Browser lookup results",
+        "attach": "Bring into chat",
+        "dismiss": "Dismiss"
+      },
       "decisionTitle": "Decision point",
       "decisionDescription": "The task is paused right here. Approve now, reject it, or keep a short note in the island before moving on.",
       "hints": {

@@ -31,6 +31,7 @@ export function resolveChatRequestContext({
   return { assistantId: undefined, sessionStorageKey: WEB_SESSION_STORAGE_KEY }
 }
 import { resolveSessionIdFromBrowser } from "@/lib/chat/session-storage"
+import { buildChatPageContextSystemPrompt } from "@/lib/browser/page-context"
 import type { ConversationMessage } from "@/lib/api/conversations"
 import {
   useChatStore,
@@ -162,6 +163,22 @@ function buildRequestMetadata(
         }
       : {}),
   }
+}
+
+function pageContextsMatch(
+  left: PendingTakeoverDispatchDraft["pageContext"],
+  right: PendingTakeoverDispatchDraft["pageContext"]
+) {
+  if (left === right) return true
+  if (!left || !right) return false
+  if (left.tabId !== right.tabId) return false
+  if (left.title !== right.title) return false
+  if (left.url !== right.url) return false
+  if (left.host !== right.host) return false
+  if (left.mainTextSnippet !== right.mainTextSnippet) return false
+  if (left.visibleTextSnippet !== right.visibleTextSnippet) return false
+  if (left.headingsSummary.length !== right.headingsSummary.length) return false
+  return left.headingsSummary.every((heading, index) => heading === right.headingsSummary[index])
 }
 
 function resolveExecutionRootForFollowup(message: Message | undefined | null) {
@@ -481,6 +498,7 @@ export function useChatMessagingService() {
     input,
     attachments,
     selectedKnowledgeFileIds,
+    pageContext,
     messages,
     config,
     models,
@@ -488,6 +506,7 @@ export function useChatMessagingService() {
     setInput,
     setSelectedKnowledgeFileIds,
     clearAttachments,
+    clearPageContext,
     setMessages,
     mergeMessageMeta,
     appendMessageBlocks,
@@ -804,6 +823,7 @@ export function useChatMessagingService() {
       input: currentState.input,
       attachments: currentState.attachments,
       selectedKnowledgeFileIds: currentState.selectedKnowledgeFileIds,
+      pageContext: currentState.pageContext,
     })
     const normalizedDraft = normalizePendingTakeoverDraft(draft)
     if (!normalizedCurrent || !normalizedDraft) return false
@@ -828,16 +848,20 @@ export function useChatMessagingService() {
     ) {
       return false
     }
-    return normalizedCurrent.selectedKnowledgeFileIds.every(
+    if (!normalizedCurrent.selectedKnowledgeFileIds.every(
       (value, index) => value === normalizedDraft.selectedKnowledgeFileIds[index]
-    )
+    )) {
+      return false
+    }
+    return pageContextsMatch(normalizedCurrent.pageContext, normalizedDraft.pageContext)
   }, [])
 
   const clearComposer = useCallback(() => {
     setInput("")
     clearAttachments()
     setSelectedKnowledgeFileIds([])
-  }, [setInput, clearAttachments, setSelectedKnowledgeFileIds])
+    clearPageContext()
+  }, [setInput, clearAttachments, setSelectedKnowledgeFileIds, clearPageContext])
 
   const dispatchDraft = useCallback(async ({
     draft,
@@ -898,12 +922,25 @@ export function useChatMessagingService() {
       content: effectiveInput,
       attachments: draft.attachments.length ? draft.attachments : undefined,
       createdAt: Date.now(),
-      metaInfo:
-        displayInput !== effectiveInput
+      metaInfo: {
+        ...(displayInput !== effectiveInput
           ? {
               display_content: displayInput,
             }
-          : undefined,
+          : {}),
+        ...(draft.pageContext
+          ? {
+              page_context: {
+                title: draft.pageContext.title,
+                url: draft.pageContext.url,
+                host: draft.pageContext.host,
+              },
+            }
+          : {}),
+      },
+    }
+    if (userMessage.metaInfo && Object.keys(userMessage.metaInfo).length === 0) {
+      delete userMessage.metaInfo
     }
     let outgoingUserMessage = userMessage
     if (draft.attachments.length) {
@@ -949,7 +986,7 @@ export function useChatMessagingService() {
       // Local route: Rust orchestrator injects assistant persona; skip frontend prepend to avoid duplication.
       const requestMessages = buildChatMessages(
         [...currentMessages, outgoingUserMessage],
-        undefined,
+        draft.pageContext ? buildChatPageContextSystemPrompt(draft.pageContext) : undefined,
       )
       const payload = {
         model: selectedModel.id,
@@ -1051,11 +1088,12 @@ export function useChatMessagingService() {
         input,
         attachments,
         selectedKnowledgeFileIds,
+        pageContext,
       },
       sessionIdOverride,
       clearComposerMode: "always",
     })
-  }, [dispatchDraft, input, attachments, selectedKnowledgeFileIds])
+  }, [dispatchDraft, input, attachments, selectedKnowledgeFileIds, pageContext])
 
   const dispatchRenderRefresh = useCallback(async (refreshSpec: HtmlRuntimeRefreshSpec) => {
     if (refreshSpec.kind !== "chat_replay") return false
@@ -1083,6 +1121,7 @@ export function useChatMessagingService() {
         input: inputValue,
         attachments: [],
         selectedKnowledgeFileIds: refreshKnowledgeFileIds,
+        pageContext: null,
       },
       clearComposerMode: "never",
       explicitTaskAgentIdOverride: explicitTaskAgentId || undefined,
@@ -1097,6 +1136,7 @@ export function useChatMessagingService() {
       input: currentState.input,
       attachments: currentState.attachments,
       selectedKnowledgeFileIds: currentState.selectedKnowledgeFileIds,
+      pageContext: currentState.pageContext,
     })
     if (!normalizedDraft) return
     setPendingTakeover(normalizedDraft)

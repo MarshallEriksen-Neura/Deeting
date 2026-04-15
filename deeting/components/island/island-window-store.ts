@@ -14,6 +14,11 @@ import { loadConversationHistoryPage } from "@/lib/chat/history-loader";
 import { isTauriRuntime as detectTauriRuntime } from "@/lib/runtime/tauri";
 
 import type { IslandApproval, IslandMode, IslandRecentMessage } from "./island-store";
+import type {
+  IslandBrowserLookupAttachPayload,
+  IslandBrowserLookupDismissPayload,
+  IslandBrowserLookupPayload,
+} from "./browser-lookup-types";
 import {
   buildIslandWindowDerivedState,
   truncateIslandText,
@@ -31,6 +36,7 @@ interface IslandWindowState {
   lastReplyAt: number | null;
   recentMessages: IslandRecentMessage[];
   pendingApproval: IslandApproval | null;
+  browserLookup: IslandBrowserLookupPayload | null;
   isBusy: boolean;
   errorMessage: string | null;
   sessionId: string | null;
@@ -47,9 +53,12 @@ interface IslandWindowState {
   toggleExpand: () => void;
   restoreWorkspace: () => void;
   syncFromEvent: (payload: IslandSyncPayload) => void;
+  presentBrowserLookup: (payload: IslandBrowserLookupPayload) => void;
+  clearBrowserLookup: (lookupId?: string | null) => void;
   sendQuickReply: (text: string) => Promise<void>;
   approvePendingApproval: () => Promise<void>;
   rejectPendingApproval: () => Promise<void>;
+  attachBrowserLookup: (lookupId: string, prompt: string) => Promise<void>;
 }
 
 export interface IslandSyncPayload {
@@ -60,6 +69,7 @@ export interface IslandSyncPayload {
   lastReplyAt: number | null;
   recentMessages: IslandRecentMessage[];
   pendingApproval: IslandApproval | null;
+  browserLookup?: IslandBrowserLookupPayload | null;
   isBusy: boolean;
   errorMessage: string | null;
   sessionId: string | null;
@@ -152,6 +162,7 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
   lastReplyAt: null,
   recentMessages: [],
   pendingApproval: null,
+  browserLookup: null,
   isBusy: false,
   errorMessage: null,
   sessionId: null,
@@ -201,6 +212,7 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
       lastReplyAt: payload.lastReplyAt,
       recentMessages: payload.recentMessages,
       pendingApproval: payload.pendingApproval,
+      browserLookup: payload.browserLookup ?? null,
       isBusy: payload.isBusy,
       errorMessage: payload.errorMessage,
       sessionId: payload.sessionId,
@@ -211,6 +223,21 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
       stageHistory: payload.stageHistory ?? [],
     });
   },
+  presentBrowserLookup: (payload) =>
+    set({
+      mode: "expanded",
+      browserLookup: payload,
+      statusLabel: "Ready",
+      errorMessage: null,
+    }),
+  clearBrowserLookup: (lookupId) =>
+    set((state) => ({
+      browserLookup:
+        !state.browserLookup ||
+        (lookupId && state.browserLookup.lookupId !== lookupId)
+          ? state.browserLookup
+          : null,
+    })),
 
   sendQuickReply: async (text) => {
     const trimmed = text.trim();
@@ -420,5 +447,20 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
         suspendRemoteSync: false,
       });
     }
+  },
+  attachBrowserLookup: async (lookupId, prompt) => {
+    const lookup = get().browserLookup;
+    if (!lookup || lookup.lookupId !== lookupId) return;
+    const { emit } = await import("@tauri-apps/api/event");
+    await emit("browser-agent-lookup-attach-request", {
+      lookupId,
+      prompt,
+      pageContext: lookup.pageContext,
+    } satisfies IslandBrowserLookupAttachPayload);
+    await emit("browser-agent-lookup-dismissed", {
+      lookupId,
+    } satisfies IslandBrowserLookupDismissPayload);
+    set({ browserLookup: null });
+    await get().restoreWorkspace();
   },
 }));

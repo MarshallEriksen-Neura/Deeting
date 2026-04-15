@@ -1,7 +1,7 @@
 # Browser Extension ↔ Desktop Bridge Expansion Plan
 
 > Created: 2026-04-15
-> Status: Draft / Future Enrichment
+> Status: V1 Scope Confirmed (Session Context Injection First)
 
 ## Background
 
@@ -19,7 +19,35 @@ Desktop ──Command──▶ Extension ──Result──▶ Desktop
 
 ---
 
+## V1 决策（已确认）
+
+本计划的第一版目标已经收敛为：**先提升 AI 回答准确率，不做知识落库扩张**。
+
+### V1 In Scope
+
+- 用户显式触发（截图提问 / "Discuss this page"）时，注入页面会话上下文给当前对话
+- 注入内容以轻量结构为主：`url`、`title`、`headingsSummary`、`mainTextSnippet`、可选截图
+- 上下文仅用于当前会话回答，不写入 `memory` / `llm_wiki` / `knowledge`
+- UI 侧可见“当前回答使用了页面上下文”的提示，并允许用户移除
+
+### V1 Out Of Scope
+
+- 自动持续采集浏览行为并长期建模
+- 自动写入知识库、自动触发 corpus sync
+- 浏览器内反向知识查询面板
+- 矛盾检测、知识叠加层、自主研究 agent、定时浏览工作流
+
+### V1 验收标准（产品向）
+
+- 在用户提供截图但文字描述不足时，AI 能结合页面上下文回答“当前页面在讲什么/用户卡在哪”
+- 不开启额外配置时，不产生任何持久化知识写入
+- 用户可以明确感知上下文已附带，并可一键关闭本次注入
+
+---
+
 ## Phase 1 — 上行通道：浏览上下文感知（P0）
+
+> 状态：V1 暂不启用自动推送，仅保留能力设计
 
 ### 目标
 
@@ -56,9 +84,34 @@ Desktop ──Command──▶ Extension ──Result──▶ Desktop
 
 ## Phase 2 — 反向查询通道：浏览器内触达桌面知识（P1）
 
+> 状态：Post-V1
+
 ### 目标
 
-用户在浏览器内工作时，无需切窗口即可查询桌面端的知识/记忆。
+用户在浏览器内工作时，可以**手动**查询桌面端的 wiki / memory，而不是依赖自动阈值触发。
+
+### 当前产品决策
+
+这一阶段优先采用：
+
+- **插件显式按钮触发**，不做自动阈值弹出
+- **桌面端作为检索 owner**，不把 wiki / memory 检索逻辑复制到插件里
+- **结果优先联动到 Island**，不先做插件内复杂结果面板
+
+这意味着第一版的体验会是：
+
+1. 用户在浏览器插件中点击 `查 wiki` / `查记忆`
+2. 插件把当前页轻量上下文发到桌面端
+3. 桌面端执行检索
+4. Island 浮出轻量结果卡
+5. 用户再决定 `带入聊天` / `展开查看`
+
+### 为什么这样做
+
+- 手动按钮比自动阈值触发更稳，用户意图明确，噪声更低
+- 桌面端已经是 `wiki` / `memory` 的真实 owner，避免两套检索逻辑
+- Island 适合作为“轻结果承接层”，插件只做入口，不背复杂状态和渲染
+- 这个形态更符合当前产品边界：显式入口优先，不让系统过度替用户判断
 
 ### 协议扩展
 
@@ -89,8 +142,12 @@ interface QueryResultMessage {
 
 ### 插件侧
 
-- Popup 或 Side Panel 中提供搜索 UI
-- 用户输入查询 → 构造 `QueryMessage` → 通过 WebSocket 发送 → 等待 `QueryResultMessage` → 渲染结果
+- Popup 或 Side Panel 中提供三个显式动作：
+  - `问当前页`
+  - `查 wiki`
+  - `查记忆`
+- `查 wiki` / `查记忆` 只发起请求，不在插件内承担复杂结果渲染
+- 发送内容以当前页轻量上下文为主：`url`、`title`、`headingsSummary`、`mainTextSnippet`
 
 ### 桌面端
 
@@ -101,9 +158,31 @@ interface QueryResultMessage {
   - `search_knowledge` → `knowledge` 语义搜索
   - `search_memory` → `memory::search_local_memories`
 
+### Island 联动
+
+- 检索结果默认由 Island 承接，而不是插件内展示完整列表
+- Island 卡片只展示最相关的 3 到 5 条结果
+- 每条结果展示：
+  - 标题
+  - 一句摘要
+  - 来源类型（wiki / memory）
+- 卡片提供动作：
+  - `带入聊天`
+  - `展开查看`
+  - `忽略`
+
+### 验收标准（P1）
+
+- 用户能在插件内一键发起 `查 wiki` / `查记忆`
+- 检索结果在桌面端 Island 中轻量出现，不打断主流程
+- 用户可以选择将某条结果带入当前对话，而不是被系统自动注入
+- 没有结果时只给轻提示，不出现重弹窗
+
 ---
 
 ## Phase 3 — 浏览事件驱动 llm_wiki 自动化（P1）
+
+> 状态：Post-V1
 
 ### 目标
 
@@ -131,6 +210,8 @@ interface QueryResultMessage {
 
 ## Phase 4 — 页面上下文注入对话（P2）
 
+> 状态：V1 主路径（提前为 P0 执行）
+
 ### 目标
 
 用户在浏览器内看到内容，可以直接和 Deeting AI 讨论"当前页面"。
@@ -150,6 +231,8 @@ interface QueryResultMessage {
 ---
 
 ## Phase 5 — Vault 文件变更监听 → 自动 Corpus Sync（P2）
+
+> 状态：Post-V1
 
 ### 目标
 

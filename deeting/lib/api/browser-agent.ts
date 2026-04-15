@@ -22,6 +22,13 @@ export const BrowserAgentBridgeStatusSchema = z.object({
   status_reason: z.string(),
 })
 
+export const BrowserAgentActivePageSchema = z.object({
+  tabId: z.number(),
+  title: z.string(),
+  url: z.string(),
+  host: z.string(),
+})
+
 export const BrowserAgentOpenTabResultSchema = z.object({
   tabId: z.number().nullable().optional(),
   url: z.string(),
@@ -116,6 +123,7 @@ export const BrowserAgentPageSnapshotSchema = z.object({
 })
 
 export type BrowserAgentBridgeStatus = z.infer<typeof BrowserAgentBridgeStatusSchema>
+export type BrowserAgentActivePage = z.infer<typeof BrowserAgentActivePageSchema>
 export type BrowserAgentElementLocator = z.infer<typeof BrowserAgentElementLocatorSchema>
 export type BrowserAgentOpenTabResult = z.infer<typeof BrowserAgentOpenTabResultSchema>
 export type BrowserAgentNavigateTabResult = z.infer<typeof BrowserAgentNavigateTabResultSchema>
@@ -207,6 +215,17 @@ export async function getLocalBrowserAgentPageSnapshot(
   }
   const data = await invokeTauri<unknown>("get_local_browser_agent_page_snapshot", { tabId })
   return parseBrowserAgentPageSnapshot(data)
+}
+
+export async function getLocalBrowserAgentActivePage(): Promise<BrowserAgentActivePage | null> {
+  if (!isTauriRuntime()) {
+    return null
+  }
+  const data = await invokeTauri<unknown>("get_local_browser_agent_active_page")
+  if (data == null) {
+    return null
+  }
+  return BrowserAgentActivePageSchema.parse(data)
 }
 
 export async function queryLocalBrowserAgentDom(

@@ -7,6 +7,7 @@ import { useChatRuntimeStore } from "@/store/chat-runtime-store"
 import { useBrowserModeStore } from "@/store/browser-mode-store"
 import { useWorkspaceStore } from "@/store/workspace-store"
 import { useChatMessaging } from "@/hooks/chat/use-chat-messaging"
+import { getLocalBrowserAgentActivePage } from "@/lib/api/browser-agent"
 import { getLocalBrowserAgentPageSnapshot } from "@/lib/api/browser-agent"
 import { recoverDesktopLocalChatExecution } from "@/lib/api/mcp-desktop"
 import { generateWorkflowProposal } from "@/lib/workflow/commands"
@@ -47,6 +48,7 @@ jest.mock("@/hooks/chat/use-chat-messaging", () => ({
 }))
 
 jest.mock("@/lib/api/browser-agent", () => ({
+  getLocalBrowserAgentActivePage: jest.fn(),
   getLocalBrowserAgentPageSnapshot: jest.fn(),
 }))
 
@@ -77,6 +79,10 @@ const mockUseChatMessaging = useChatMessaging as jest.MockedFunction<
 const mockGetLocalBrowserAgentPageSnapshot =
   getLocalBrowserAgentPageSnapshot as jest.MockedFunction<
     typeof getLocalBrowserAgentPageSnapshot
+  >
+const mockGetLocalBrowserAgentActivePage =
+  getLocalBrowserAgentActivePage as jest.MockedFunction<
+    typeof getLocalBrowserAgentActivePage
   >
 const mockRecoverDesktopLocalChatExecution =
   recoverDesktopLocalChatExecution as jest.MockedFunction<
@@ -195,6 +201,7 @@ describe("ControlsContainer", () => {
       isLoading: false,
       models: [{ id: "model-1", provider_model_id: "model-1" }],
       selectedAssistant: null,
+      pageContext: null,
     })
     useChatRuntimeStore.setState({
       isLoading: false,
@@ -207,6 +214,7 @@ describe("ControlsContainer", () => {
     })
     useBrowserModeStore.getState().reset()
     useWorkspaceStore.getState().closeAll()
+    mockGetLocalBrowserAgentActivePage.mockReset()
     mockGetLocalBrowserAgentPageSnapshot.mockReset()
     mockRecoverDesktopLocalChatExecution.mockReset()
     mockRecoverDesktopLocalChatExecution.mockResolvedValue({ status: "ok" } as never)
@@ -907,5 +915,42 @@ describe("ControlsContainer", () => {
         }),
       ])
     )
+  })
+
+  it("attaches the current browser page as transient chat context and lets the user remove it", async () => {
+    enableTauriRuntime()
+    mockGetLocalBrowserAgentActivePage.mockResolvedValueOnce({
+      tabId: 42,
+      title: "Order Dashboard",
+      url: "https://example.com/admin/orders",
+      host: "example.com",
+    })
+    mockGetLocalBrowserAgentPageSnapshot.mockResolvedValueOnce(
+      buildBrowserAgentPageSnapshot({
+        url: "https://example.com/admin/orders",
+        title: "Order Dashboard",
+        mainText: "Pending orders 12 Failed payments 3",
+        visibleText: "Pending orders 12 Failed payments 3",
+        headings: [{ level: 1, text: "Order Dashboard" }],
+      })
+    )
+
+    render(<ControlsContainer />)
+    fireEvent.click(screen.getByLabelText("controls.attachCurrentPage"))
+
+    await waitFor(() => {
+      expect(mockGetLocalBrowserAgentActivePage).toHaveBeenCalledTimes(1)
+      expect(mockGetLocalBrowserAgentPageSnapshot).toHaveBeenCalledWith(42)
+    })
+
+    expect(useChatStore.getState().pageContext).toMatchObject({
+      tabId: 42,
+      title: "Order Dashboard",
+      url: "https://example.com/admin/orders",
+    })
+    expect(screen.getByText("controls.pageContextHint")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText("controls.pageContextRemove"))
+    expect(useChatStore.getState().pageContext).toBeNull()
   })
 })

@@ -16,6 +16,7 @@ describe("chat takeover helpers", () => {
       input: "follow-up prompt",
       attachments: [{ id: "attachment-1", kind: "image" }],
       selectedKnowledgeFileIds: ["doc-1", "doc-2"],
+      pageContext: null,
     })
   })
 

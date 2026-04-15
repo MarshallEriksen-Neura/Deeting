@@ -3,6 +3,7 @@
 import { createContext, useContext } from "react";
 import type { IslandApproval, IslandMode, IslandRecentMessage } from "./island-store";
 import type { IslandStatusStep } from "./island-runtime-status";
+import type { IslandBrowserLookupPayload } from "./browser-lookup-types";
 
 export interface IslandContextValue {
   mode: IslandMode;
@@ -12,6 +13,7 @@ export interface IslandContextValue {
   lastReplyAt: number | null;
   recentMessages: IslandRecentMessage[];
   pendingApproval: IslandApproval | null;
+  browserLookup: IslandBrowserLookupPayload | null;
   isBusy: boolean;
   errorMessage: string | null;
   statusStage: string | null;
@@ -34,6 +36,8 @@ export interface IslandContextValue {
   sendQuickReply: (text: string) => Promise<void>;
   approvePendingApproval: () => Promise<void>;
   rejectPendingApproval: () => Promise<void>;
+  attachBrowserLookup: (lookupId: string, prompt: string) => Promise<void> | void;
+  dismissBrowserLookup: (lookupId: string) => Promise<void> | void;
 }
 
 const IslandContext = createContext<IslandContextValue | null>(null);

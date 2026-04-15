@@ -62,6 +62,17 @@ pub async fn get_local_browser_agent_page_snapshot(
 }
 
 #[tauri::command]
+pub async fn get_local_browser_agent_active_page(
+    state: State<'_, AppState>,
+) -> Result<Option<crate::modules::browser_agent::types::BrowserAgentPageContext>, String> {
+    state
+        .browser_agent
+        .service
+        .get_active_page(state.mcp.store.as_ref())
+        .await
+}
+
+#[tauri::command]
 pub async fn wait_for_local_browser_agent_element(
     state: State<'_, AppState>,
     tab_id: i64,

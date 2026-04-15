@@ -5,6 +5,7 @@ import { persist, createJSONStorage } from "zustand/middleware"
 import type { ChatImageAttachment } from "@/lib/chat/message-content"
 import type { Message, MessageRole } from "@/lib/chat/message-types"
 import type { ModelInfo } from "@/lib/api/models"
+import type { ChatPageContextAttachment } from "@/lib/browser/page-context"
 import { loadConversationHistoryPage } from "@/lib/chat/history-loader"
 import type { MessageBlock, ToolResultBlock } from "@/lib/chat/message-protocol"
 import {
@@ -71,6 +72,7 @@ export interface PendingChatTakeover {
   input: string
   attachments: ChatImageAttachment[]
   selectedKnowledgeFileIds: string[]
+  pageContext?: ChatPageContextAttachment | null
   createdAt: number
   updatedAt: number
 }
@@ -163,6 +165,7 @@ interface ChatStore {
   input: string
   attachments: ChatImageAttachment[]
   selectedKnowledgeFileIds: string[]
+  pageContext: ChatPageContextAttachment | null
   pendingTakeover: PendingChatTakeover | null
   pendingTakeoverRequestedAction: PendingTakeoverRequestedAction | null
 
@@ -210,10 +213,13 @@ interface ChatStore {
   setSelectedKnowledgeFileIds: (fileIds: string[]) => void
   toggleSelectedKnowledgeFileId: (fileId: string) => void
   clearSelectedKnowledgeFileIds: () => void
+  setPageContext: (pageContext: ChatPageContextAttachment | null) => void
+  clearPageContext: () => void
   setPendingTakeover: (draft: {
     input: string
     attachments: ChatImageAttachment[]
     selectedKnowledgeFileIds: string[]
+    pageContext?: ChatPageContextAttachment | null
   }) => void
   setPendingTakeoverRequestedAction: (
     action: PendingTakeoverRequestedAction | null
@@ -260,6 +266,7 @@ export const useChatStore = create<ChatStore>()(
       input: "",
       attachments: [],
       selectedKnowledgeFileIds: [],
+      pageContext: null,
       pendingTakeover: null,
       pendingTakeoverRequestedAction: null,
 
@@ -315,6 +322,7 @@ export const useChatStore = create<ChatStore>()(
             input: "",
             attachments: [],
             selectedKnowledgeFileIds: [],
+            pageContext: null,
             pendingTakeover: null,
             pendingTakeoverRequestedAction: null,
             errorMessage: null,
@@ -607,6 +615,10 @@ export const useChatStore = create<ChatStore>()(
 
       clearSelectedKnowledgeFileIds: () => set({ selectedKnowledgeFileIds: [] }),
 
+      setPageContext: (pageContext) => set({ pageContext }),
+
+      clearPageContext: () => set({ pageContext: null }),
+
       setPendingTakeover: (draft) =>
         set({
           pendingTakeover: {
@@ -619,6 +631,7 @@ export const useChatStore = create<ChatStore>()(
                   .filter((value) => value.length > 0)
               )
             ),
+            pageContext: draft.pageContext ?? null,
             createdAt: Date.now(),
             updatedAt: Date.now(),
           },
@@ -757,6 +770,7 @@ export const useChatStore = create<ChatStore>()(
           input: "",
           attachments: [],
           selectedKnowledgeFileIds: [],
+          pageContext: null,
           pendingTakeover: null,
           pendingTakeoverRequestedAction: null,
           sessionId: null,
@@ -779,6 +793,7 @@ export const useChatStore = create<ChatStore>()(
           input: "",
           attachments: [],
           selectedKnowledgeFileIds: [],
+          pageContext: null,
           pendingTakeover: null,
           pendingTakeoverRequestedAction: null,
           initialized: false,
@@ -853,6 +868,7 @@ export const useChatInput = () =>
     input: state.input,
     attachments: state.attachments,
     selectedKnowledgeFileIds: state.selectedKnowledgeFileIds,
+    pageContext: state.pageContext,
     setInput: state.setInput,
     setAttachments: state.setAttachments,
     addAttachments: state.addAttachments,
@@ -861,4 +877,6 @@ export const useChatInput = () =>
     setSelectedKnowledgeFileIds: state.setSelectedKnowledgeFileIds,
     toggleSelectedKnowledgeFileId: state.toggleSelectedKnowledgeFileId,
     clearSelectedKnowledgeFileIds: state.clearSelectedKnowledgeFileIds,
+    setPageContext: state.setPageContext,
+    clearPageContext: state.clearPageContext,
   }))

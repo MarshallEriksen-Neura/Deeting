@@ -20,6 +20,9 @@ import {
   type IslandStatusStep,
   resolveIslandRuntimeStatus,
 } from "./island-runtime-status";
+import type {
+  IslandBrowserLookupPayload,
+} from "./browser-lookup-types";
 
 export interface IslandRecentMessage {
   role: "user" | "assistant";
@@ -60,6 +63,7 @@ interface IslandState {
   lastReplyAt: number | null;
   recentMessages: IslandRecentMessage[];
   pendingApproval: IslandApproval | null;
+  browserLookup: IslandBrowserLookupPayload | null;
   isBusy: boolean;
   errorMessage: string | null;
   statusStage: string | null;
@@ -73,9 +77,12 @@ interface IslandState {
   toggleExpand: () => void;
   restoreWorkspace: () => void;
   hydrateFromChat: (snapshot: IslandChatSnapshot) => void;
+  presentBrowserLookup: (payload: IslandBrowserLookupPayload) => void;
+  clearBrowserLookup: (lookupId?: string | null) => void;
   sendQuickReply: (text: string) => Promise<void>;
   approvePendingApproval: () => Promise<void>;
   rejectPendingApproval: () => Promise<void>;
+  attachBrowserLookup: (lookupId: string, prompt: string) => Promise<void>;
 }
 
 const DEFAULT_LAST_REPLY = "No replies yet.";
@@ -271,6 +278,7 @@ export const useIslandStore = create<IslandState>((set) => ({
   lastReplyAt: null,
   recentMessages: [],
   pendingApproval: null,
+  browserLookup: null,
   isBusy: false,
   errorMessage: null,
   statusStage: null,
@@ -306,6 +314,21 @@ export const useIslandStore = create<IslandState>((set) => ({
     };
     });
   },
+  presentBrowserLookup: (payload) =>
+    set((state) => ({
+      mode: state.mode === "hidden" ? "expanded" : "expanded",
+      browserLookup: payload,
+      statusLabel: "Ready",
+      errorMessage: null,
+    })),
+  clearBrowserLookup: (lookupId) =>
+    set((state) => ({
+      browserLookup:
+        !state.browserLookup ||
+        (lookupId && state.browserLookup.lookupId !== lookupId)
+          ? state.browserLookup
+          : null,
+    })),
   sendQuickReply: async (text) => {
     const trimmed = text.trim();
     if (!trimmed) return;
@@ -448,5 +471,25 @@ export const useIslandStore = create<IslandState>((set) => ({
     } finally {
       set({ isBusy: false });
     }
+  },
+  attachBrowserLookup: async (lookupId, prompt) => {
+    const lookup = useIslandStore.getState().browserLookup;
+    if (!lookup || lookup.lookupId !== lookupId) return;
+
+    const chatState = useChatStore.getState();
+    const existingInput = chatState.input.trim();
+    const nextInput = existingInput ? `${existingInput}\n\n${prompt}` : prompt;
+    chatState.setInput(nextInput);
+    chatState.setPageContext({
+      tabId: lookup.pageContext.tabId,
+      title: lookup.pageContext.title,
+      url: lookup.pageContext.url,
+      host: lookup.pageContext.host,
+      headingsSummary: lookup.pageContext.headingsSummary,
+      mainTextSnippet: lookup.pageContext.mainTextSnippet,
+      visibleTextSnippet: lookup.pageContext.visibleTextSnippet,
+      capturedAt: Date.now(),
+    });
+    set({ browserLookup: null, mode: "expanded" });
   },
 }));

@@ -13,6 +13,10 @@ import {
   useIslandWindowStore,
   type IslandSyncPayload,
 } from "./island-window-store";
+import type {
+  IslandBrowserLookupDismissPayload,
+  IslandBrowserLookupPayload,
+} from "./browser-lookup-types";
 
 const COLLAPSED_SIZE = { width: 372, height: 64 };
 const EXPANDED_SIZE = { width: 592, height: 548 };
@@ -113,6 +117,7 @@ export function IslandWindowShell() {
       lastReplyAt: s.lastReplyAt,
       recentMessages: s.recentMessages,
       pendingApproval: s.pendingApproval,
+      browserLookup: s.browserLookup,
       isBusy: s.isBusy,
       errorMessage: s.errorMessage,
       statusStage: s.statusStage,
@@ -124,6 +129,8 @@ export function IslandWindowShell() {
       hide: s.hide,
       toggleExpand: s.toggleExpand,
       restoreWorkspace: s.restoreWorkspace,
+      attachBrowserLookup: s.attachBrowserLookup,
+      dismissBrowserLookup: s.clearBrowserLookup,
       sendQuickReply: s.sendQuickReply,
       approvePendingApproval: s.approvePendingApproval,
       rejectPendingApproval: s.rejectPendingApproval,
@@ -131,6 +138,8 @@ export function IslandWindowShell() {
   );
 
   const syncFromEvent = useIslandWindowStore((s) => s.syncFromEvent);
+  const presentBrowserLookup = useIslandWindowStore((s) => s.presentBrowserLookup);
+  const clearBrowserLookup = useIslandWindowStore((s) => s.clearBrowserLookup);
   const mode = store.mode;
   const autoCollapseTimerRef = React.useRef<ReturnType<
     typeof setTimeout
@@ -263,6 +272,8 @@ export function IslandWindowShell() {
   // Listen for state sync events from main window
   useEffect(() => {
     let unlisten: (() => void) | undefined;
+    let unlistenLookup: (() => void) | undefined;
+    let unlistenDismiss: (() => void) | undefined;
 
     (async () => {
       const { listen } = await import("@tauri-apps/api/event");
@@ -272,12 +283,26 @@ export function IslandWindowShell() {
           syncFromEvent(event.payload);
         },
       );
+      unlistenLookup = await listen<IslandBrowserLookupPayload>(
+        "browser-agent-lookup",
+        (event) => {
+          presentBrowserLookup(event.payload);
+        },
+      );
+      unlistenDismiss = await listen<IslandBrowserLookupDismissPayload>(
+        "browser-agent-lookup-dismissed",
+        (event) => {
+          clearBrowserLookup(event.payload.lookupId);
+        },
+      );
     })();
 
     return () => {
       unlisten?.();
+      unlistenLookup?.();
+      unlistenDismiss?.();
     };
-  }, [syncFromEvent]);
+  }, [clearBrowserLookup, presentBrowserLookup, syncFromEvent]);
 
   // Resize window when mode changes
   useEffect(() => {
