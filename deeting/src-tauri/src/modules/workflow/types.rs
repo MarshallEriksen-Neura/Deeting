@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::modules::custom_task_agents::types::CustomTaskAgentProfile;
+use crate::modules::desktop_runtime::runtime::worker_dispatch::WorkerTaskPacket;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
@@ -368,7 +369,7 @@ pub struct ExpectedOutput {
     pub result_schema_hint: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CompiledPhase {
     pub phase_id: String,
     pub title: String,
@@ -377,6 +378,8 @@ pub struct CompiledPhase {
     pub depends_on: Vec<String>,
     pub goal: String,
     pub expected_output: Option<ExpectedOutput>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) worker_task_packet: Option<WorkerTaskPacket>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -394,7 +397,7 @@ impl Default for SnapshotPolicy {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ExecutionSnapshot {
     pub run_id: String,
     pub proposal_version: i64,
@@ -412,7 +415,7 @@ pub struct CompilerError {
     pub message: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct CompileResult {
     pub snapshot: Option<ExecutionSnapshot>,
     #[serde(default)]
@@ -437,16 +440,18 @@ pub struct RegenerateProposalRequest {
     pub feedback: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ContextPacket {
     pub run_id: String,
     pub phase_id: String,
     pub phase_title: String,
     pub context_md: String,
     pub context_json: ContextJson,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) worker_task_packet: Option<WorkerTaskPacket>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ContextJson {
     pub run_id: String,
     pub phase_id: String,
@@ -458,6 +463,8 @@ pub struct ContextJson {
     pub constraints: ContextConstraints,
     pub inputs: ContextInputs,
     pub expected_output: Option<ExpectedOutput>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) worker_task_packet: Option<WorkerTaskPacket>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -692,6 +699,9 @@ pub struct QuickWorkflowRequest {
     pub goal: String,
     pub worker_ref: Option<String>,
     pub inject_into_chat: bool,
+    pub user_notes: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) worker_task_packet: Option<WorkerTaskPacket>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

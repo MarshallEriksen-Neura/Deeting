@@ -35,6 +35,7 @@ const MAX_CUSTOM_TASK_AGENT_TOOL_ROUNDS: usize = 4;
 const MAX_GUIDANCE_SKILL_DOCS: usize = 3;
 const LLM_WIKI_MAINTAINER_SOURCE_KIND: &str = "llm_wiki_maintainer";
 const LLM_WIKI_SEARCH_CALLABLE_NAME: &str = "llm_wiki_search_corpus";
+const DITING_THINK_CALLABLE_NAME: &str = "diting_think";
 const LLM_WIKI_CORPUS_ASSET_TYPE: &str = "llm_wiki_note";
 const LLM_WIKI_CORPUS_SOURCE_TYPE: &str = "llm_wiki_corpus";
 const MAX_MAINTAINER_CORPUS_PREVIEW_ITEMS: usize = 4;
@@ -130,9 +131,10 @@ pub(crate) async fn preview_custom_task_agent(
     }
 
     let message = request.message.trim();
-    if message.is_empty() {
+    let worker_task_packet = request.worker_task_packet.clone();
+    if message.is_empty() && worker_task_packet.is_none() {
         return Err(CustomTaskAgentRuntimeError::new(
-            "preview message is required",
+            "preview message or worker task packet is required",
         ));
     }
 
@@ -290,28 +292,38 @@ pub(crate) async fn preview_custom_task_agent(
         .await
         .map_err(CustomTaskAgentRuntimeError::from)?;
     let builtin_callables = builtin_callables_for_profile(profile);
-    let callable_payload =
-        BoundCallablePayload::build(&mcp_tools, &skill_actions, &builtin_callables);
+    let base_payload = BoundCallablePayload::build(&mcp_tools, &skill_actions, &builtin_callables);
+    let mut round0_builtins = builtin_callables.clone();
+    round0_builtins.push(diting_think_builtin_callable());
+    let round0_payload = BoundCallablePayload::build(&mcp_tools, &skill_actions, &round0_builtins);
     let maintainer_corpus_preview = load_maintainer_corpus_preview(app_state, profile).await;
     let mut messages = build_initial_messages(
         profile,
         message,
         &guidance_skills,
         maintainer_corpus_preview.as_deref(),
+        worker_task_packet.as_ref(),
     );
     let mut tool_trace = Vec::<Value>::new();
+    let mut captured_reasoning: Option<String> = None;
+    let mut diting_think_consumed = false;
     let max_rounds = request
         .max_rounds
         .map(|value| value.max(1) as usize)
         .unwrap_or(MAX_CUSTOM_TASK_AGENT_TOOL_ROUNDS);
 
     for round in 0..max_rounds {
+        let active_payload = if round == 0 && !diting_think_consumed {
+            &round0_payload
+        } else {
+            &base_payload
+        };
         let response = request_provider_chat_completion(
             app_state,
             &model_connection.provider_model_id,
             &model_connection.model_id,
             messages.clone(),
-            callable_payload.tool_payload(),
+            active_payload.tool_payload(),
             request.temperature,
             request.max_tokens,
             None,
@@ -319,7 +331,7 @@ pub(crate) async fn preview_custom_task_agent(
         )
         .await
         .map_err(CustomTaskAgentRuntimeError::from)?;
-        let callables = callable_payload.parse_tool_calls(&response);
+        let callables = active_payload.parse_tool_calls(&response);
         if callables.is_empty() {
             return Ok(CustomTaskAgentPreviewResponse {
                 status: "completed".to_string(),
@@ -334,7 +346,8 @@ pub(crate) async fn preview_custom_task_agent(
                 reasoning_content: response
                     .get("reasoning_content")
                     .and_then(|value| value.as_str())
-                    .map(str::to_string),
+                    .map(str::to_string)
+                    .or_else(|| captured_reasoning.clone()),
                 tool_calls: response
                     .get("tool_calls")
                     .and_then(|value| value.as_array())
@@ -448,6 +461,22 @@ pub(crate) async fn preview_custom_task_agent(
                     continue;
                 }
                 BoundCallableLane::BuiltinAction => {
+                    if callable.name == DITING_THINK_CALLABLE_NAME {
+                        let reasoning = format_diting_think_reasoning(&callable.arguments);
+                        diting_think_consumed = true;
+                        captured_reasoning = Some(reasoning.clone());
+                        let meta = json!({
+                            "id": callable.id,
+                            "name": callable.name,
+                            "lane": "builtin",
+                            "status": "success",
+                            "result": "Deep reasoning complete. Proceed with execution based on your plan.",
+                            "reasoning": reasoning,
+                        });
+                        tool_trace.push(meta.clone());
+                        action_results.push(meta);
+                        continue;
+                    }
                     match execute_builtin_callable(app_state, &callable.name, &callable.arguments)
                         .await
                     {
@@ -800,6 +829,73 @@ async fn load_guidance_skill_docs(
     Ok(sections.join("\n\n"))
 }
 
+fn diting_think_builtin_callable() -> BuiltinCallableDefinition {
+    BuiltinCallableDefinition {
+        callable_name: DITING_THINK_CALLABLE_NAME.to_string(),
+        description: "Structured deep-reasoning tool. Call this ONCE before executing any other tool when the task involves multi-step execution, ambiguous intent, or coordination across multiple capabilities. Analyze the user intent against the currently available tools and context, then output a concrete execution plan. Do NOT call this for trivial single-tool tasks.".to_string(),
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "intent": {
+                    "type": "string",
+                    "description": "One-sentence summary of the user's core intent."
+                },
+                "context_assessment": {
+                    "type": "string",
+                    "description": "Relevant context already available: injected memories, prior conversation state, discovered capabilities."
+                },
+                "tool_plan": {
+                    "type": "string",
+                    "description": "Which tools to call, in what order, with what arguments. Be specific."
+                },
+                "constraints": {
+                    "type": "string",
+                    "description": "Key risks, edge cases, permission boundaries, or scope limits."
+                }
+            },
+            "required": ["intent", "tool_plan"]
+        }),
+        lane: BoundCallableLane::BuiltinAction,
+    }
+}
+
+fn format_diting_think_reasoning(arguments: &Value) -> String {
+    let mut parts = Vec::new();
+    if let Some(intent) = arguments
+        .get("intent")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        parts.push(format!("[意图] {}", intent));
+    }
+    if let Some(context) = arguments
+        .get("context_assessment")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        parts.push(format!("[上下文] {}", context));
+    }
+    if let Some(plan) = arguments
+        .get("tool_plan")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        parts.push(format!("[执行计划] {}", plan));
+    }
+    if let Some(constraints) = arguments
+        .get("constraints")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        parts.push(format!("[约束] {}", constraints));
+    }
+    parts.join("\n")
+}
+
 fn builtin_callables_for_profile(
     profile: &CustomTaskAgentProfile,
 ) -> Vec<BuiltinCallableDefinition> {
@@ -858,6 +954,7 @@ fn build_initial_messages(
     message: &str,
     guidance_skills: &str,
     maintainer_corpus_preview: Option<&str>,
+    worker_task_packet: Option<&Value>,
 ) -> Vec<LocalChatInputMessage> {
     let mut system_lines = vec![
         "## Custom Task Agent Runtime".to_string(),
@@ -896,22 +993,50 @@ fn build_initial_messages(
             system_lines.push(preview.to_string());
         }
     }
-    vec![
-        LocalChatInputMessage {
+    let mut messages = vec![LocalChatInputMessage {
+        role: "system".to_string(),
+        content: system_lines.join("\n"),
+        tool_calls: vec![],
+        tool_call_id: None,
+        name: None,
+    }];
+
+    if let Some(packet) = worker_task_packet {
+        let packet_json = serde_json::to_string_pretty(packet).unwrap_or_else(|_| "{}".to_string());
+        messages.push(LocalChatInputMessage {
             role: "system".to_string(),
-            content: system_lines.join("\n"),
+            content: "## Worker Task Packet\nThe next user message is a canonical WorkerTaskPacket JSON object authored by the desktop runtime. Treat it as authoritative for scope, constraints, capabilities, and completion criteria. Execute the packet directly, do not self-route, and do not widen scope.".to_string(),
             tool_calls: vec![],
             tool_call_id: None,
             name: None,
-        },
-        LocalChatInputMessage {
+        });
+        messages.push(LocalChatInputMessage {
             role: "user".to_string(),
-            content: message.to_string(),
+            content: packet_json,
             tool_calls: vec![],
             tool_call_id: None,
             name: None,
-        },
-    ]
+        });
+        if !message.trim().is_empty() {
+            messages.push(LocalChatInputMessage {
+                role: "user".to_string(),
+                content: format!("Raw user phrasing:\n{}", message.trim()),
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
+            });
+        }
+        return messages;
+    }
+
+    messages.push(LocalChatInputMessage {
+        role: "user".to_string(),
+        content: message.to_string(),
+        tool_calls: vec![],
+        tool_call_id: None,
+        name: None,
+    });
+    messages
 }
 
 async fn load_maintainer_corpus_preview(
@@ -1106,6 +1231,7 @@ mod tests {
         CustomTaskAgentInvocationKind, CustomTaskAgentProfile,
     };
     use crate::modules::image_generation::types::LocalImageGenerationTaskDetail;
+    use serde_json::json;
 
     fn make_detail(
         status: &str,
@@ -1178,6 +1304,7 @@ mod tests {
             "Check whether a CLI tool is installed.",
             "## Guidance Skill skill.cli-docs\nDocs: use the CLI in a terminal.",
             None,
+            None,
         );
         let system = messages
             .first()
@@ -1223,6 +1350,7 @@ mod tests {
             "Refresh the concept pages.",
             "",
             Some("1. [Workspace] Home (Deeting Wiki/Home.md)\n   Summary: Overview page."),
+            None,
         );
         let system = messages
             .first()
@@ -1233,6 +1361,58 @@ mod tests {
         assert!(system.contains("### Initial Corpus Preview"));
         assert!(system.contains("Overview page."));
         assert!(system.contains("llm_wiki_search_corpus"));
+    }
+
+    #[test]
+    fn build_initial_messages_includes_worker_task_packet_when_available() {
+        let profile = CustomTaskAgentProfile {
+            id: "agent-1".to_string(),
+            name: "Research Worker".to_string(),
+            description: Some("Handles delegated analysis tasks".to_string()),
+            task_prompt: "Follow the delegated packet.".to_string(),
+            invocation_kind: CustomTaskAgentInvocationKind::Chat,
+            preferred_for_image_generation: false,
+            model_config: None,
+            callable_mcp_tool_ids: vec!["tool.search".to_string()],
+            guidance_skill_ids: vec![],
+            callable_skill_action_refs: vec![],
+            bound_asset_id: None,
+            tags: vec!["analysis".to_string()],
+            discoverable: true,
+            is_enabled: true,
+            is_deleted: false,
+            source_kind: None,
+            source_path: None,
+            source_repo: None,
+            source_ref: None,
+            source_hash: None,
+            created_at: "2026-04-15T00:00:00Z".to_string(),
+            updated_at: "2026-04-15T00:00:00Z".to_string(),
+        };
+
+        let packet = json!({
+            "schema_version": 1,
+            "goal": "Analyze the worker route",
+            "packet_hash": "hash-123",
+        });
+
+        let messages = build_initial_messages(
+            &profile,
+            "Analyze the worker route",
+            "",
+            None,
+            Some(&packet),
+        );
+
+        assert_eq!(messages.len(), 4);
+        assert_eq!(messages[1].role, "system");
+        assert!(messages[1].content.contains("WorkerTaskPacket"));
+        assert_eq!(messages[2].role, "user");
+        assert!(messages[2]
+            .content
+            .contains("\"packet_hash\": \"hash-123\""));
+        assert_eq!(messages[3].role, "user");
+        assert!(messages[3].content.contains("Raw user phrasing"));
     }
 
     #[test]

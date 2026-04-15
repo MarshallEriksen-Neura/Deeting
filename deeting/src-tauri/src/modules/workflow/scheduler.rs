@@ -483,6 +483,7 @@ mod tests {
             depends_on: vec![],
             goal: "Find stuff".into(),
             expected_output: None,
+            worker_task_packet: None,
         }
     }
 
@@ -520,6 +521,7 @@ mod tests {
             depends_on: vec!["phase-1".to_string()],
             goal: "Review results".to_string(),
             expected_output: None,
+            worker_task_packet: None,
         };
         assert!(is_approval_gate(&phase));
     }
@@ -565,6 +567,7 @@ mod tests {
             depends_on: vec!["phase-1".to_string()],
             goal: "Approve security scope".to_string(),
             expected_output: None,
+            worker_task_packet: None,
         };
 
         let payload = build_approval_payload(&phase, "step-123").expect("build payload");

@@ -1,9 +1,9 @@
 use super::{
     build_delegated_result_feedback_messages, run_policy_scoped_chat_completion,
     DelegatedExecutionAction, DelegatedExecutionChildRecord, DelegatedExecutionKind,
-    DelegatedExecutionRecord, DelegatedExecutionSelection, DelegatedExecutionSession,
-    DelegatedExecutionStatus, DelegatedExecutionTarget, LocalExecutionOutcome,
-    LocalExecutionRequest,
+    DelegatedExecutionPacketReceipt, DelegatedExecutionRecord, DelegatedExecutionSelection,
+    DelegatedExecutionSession, DelegatedExecutionStatus, DelegatedExecutionTarget,
+    LocalExecutionOutcome, LocalExecutionRequest,
 };
 use crate::modules::audio::result_blocks::build_audio_result_block;
 use crate::modules::chat_assets::resolve_chat_assets_dir;
@@ -15,6 +15,10 @@ use crate::modules::custom_task_agents::types::{
     CustomTaskAgentProfile,
 };
 use crate::modules::desktop_runtime::runtime::control_plane::LocalExecutionPlane;
+use crate::modules::desktop_runtime::runtime::worker_dispatch::{
+    build_worker_task_packet, render_worker_task_packet_notes, WorkerTargetSelection,
+    WorkerTaskPacketInput,
+};
 use crate::modules::desktop_runtime::runtime::{
     build_local_tool_trace_blocks, delete_execution_graph_runtime_context,
     persist_execution_graph_runtime_context, persist_execution_graph_snapshot,
@@ -95,11 +99,33 @@ where
         .filter(|value| !value.is_empty())
         .map(str::to_string)
         .unwrap_or_else(|| Uuid::new_v4().to_string());
-    let execution_selection = build_execution_selection(
-        request.explicit_task_agent_id.as_deref(),
-        selection.score,
-        selection.reason.as_str(),
+    let task_packet = build_worker_task_packet(
+        &selection,
+        WorkerTaskPacketInput {
+            task_id: execution_id.clone(),
+            route: request.execution_policy.route.as_str().to_string(),
+            goal: query.clone(),
+            user_query: if !latest_input.raw_text.trim().is_empty() {
+                latest_input.raw_text.clone()
+            } else {
+                query.clone()
+            },
+            raw_user_text: (!latest_input.raw_text.trim().is_empty())
+                .then(|| latest_input.raw_text.clone()),
+            image_urls: latest_input.image_urls.clone(),
+            parent_allowed_tool_names: request.execution_policy.allowed_tool_names.clone(),
+            prefer_workflow_runtime: request.execution_policy.prefer_workflow_runtime,
+            explicit_task_agent_id: request.explicit_task_agent_id.clone(),
+        },
     );
+    let packet_receipt = Some(DelegatedExecutionPacketReceipt {
+        packet_hash: task_packet.packet_hash.clone(),
+        task_kind: task_packet.task_kind.clone(),
+        deliverable_kind: task_packet.deliverable_kind.clone(),
+        selected_profile_id: selection.profile.id.clone(),
+    });
+    let execution_selection =
+        build_execution_selection(request.explicit_task_agent_id.as_deref(), &selection);
     emit_delegation_lifecycle(
         emit_status,
         "worker_delegation",
@@ -126,6 +152,9 @@ where
             "agent_name": selection.profile.name,
             "selection_score": selection.score,
             "selection_reason": selection.reason,
+            "packet_hash": task_packet.packet_hash,
+            "candidate_count": selection.candidate_count,
+            "selected_from_top_k": selection.selected_from_top_k,
         })),
     );
 
@@ -170,6 +199,8 @@ where
                 goal: query.clone(),
                 worker_ref: Some(worker_ref.clone()),
                 inject_into_chat: true,
+                user_notes: Some(render_worker_task_packet_notes(&task_packet)),
+                worker_task_packet: Some(task_packet.clone()),
             },
         )
         .await
@@ -190,7 +221,13 @@ where
                         "score": execution_selection.score,
                         "reason_codes": execution_selection.reason_codes,
                         "reason_text": execution_selection.reason_text,
+                        "candidate_count": execution_selection.candidate_count,
+                        "selected_from_top_k": execution_selection.selected_from_top_k,
+                        "callable_coverage_score": execution_selection.callable_coverage_score,
+                        "modality_fit_score": execution_selection.modality_fit_score,
+                        "profile_prior_score": execution_selection.profile_prior_score,
                     },
+                    "packet_receipt": packet_receipt.clone(),
                     "children": [],
                 });
                 let execution_graph = project_execution_graph_snapshot(GraphProjectionInput {
@@ -317,6 +354,7 @@ where
                             execution_id.clone(),
                             selection.profile.clone(),
                             execution_selection.clone(),
+                            packet_receipt.clone(),
                             worker_ref,
                             Ok(result),
                         )
@@ -353,6 +391,7 @@ where
                             execution_id.clone(),
                             selection.profile.clone(),
                             execution_selection.clone(),
+                            packet_receipt.clone(),
                             worker_ref,
                             Err(err),
                         )
@@ -391,6 +430,7 @@ where
                     execution_id.clone(),
                     selection.profile.clone(),
                     execution_selection.clone(),
+                    packet_receipt.clone(),
                     worker_ref,
                     Err(err),
                 )
@@ -452,11 +492,12 @@ where
         &request.app_state,
         &selection.profile,
         CustomTaskAgentPreviewRequest {
-            message: latest_input.prompt.clone(),
+            message: latest_input.raw_text.clone(),
             image_urls: latest_input.image_urls.clone(),
             temperature: request.temperature,
             max_tokens: request.max_tokens,
             max_rounds: Some(4),
+            worker_task_packet: Some(task_packet.as_value()),
         },
     )
     .await
@@ -504,6 +545,7 @@ where
                 execution_id.clone(),
                 selection.profile.clone(),
                 execution_selection.clone(),
+                packet_receipt.clone(),
                 Ok(result),
                 render_blocks,
             )
@@ -540,6 +582,7 @@ where
                 execution_id,
                 selection.profile.clone(),
                 execution_selection,
+                packet_receipt,
                 Err(err),
                 Vec::new(),
             )
@@ -551,23 +594,21 @@ where
 
 fn build_execution_selection(
     explicit_task_agent_id: Option<&str>,
-    score: i32,
-    reason: &str,
+    selection: &WorkerTargetSelection,
 ) -> DelegatedExecutionSelection {
-    let reason_codes = reason
-        .split(',')
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-        .collect::<Vec<_>>();
     DelegatedExecutionSelection {
         explicit: explicit_task_agent_id
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .is_some(),
-        score: Some(score),
-        reason_codes,
-        reason_text: Some(reason.to_string()).filter(|value| !value.trim().is_empty()),
+        score: Some(selection.score),
+        reason_codes: selection.reason_codes.clone(),
+        reason_text: Some(selection.reason.clone()).filter(|value| !value.trim().is_empty()),
+        candidate_count: selection.candidate_count,
+        selected_from_top_k: selection.selected_from_top_k,
+        callable_coverage_score: Some(selection.callable_coverage_score),
+        modality_fit_score: Some(selection.modality_fit_score),
+        profile_prior_score: Some(selection.profile_prior_score),
     }
 }
 
@@ -727,6 +768,7 @@ fn build_delegated_execution_session(
     execution_id: String,
     profile: CustomTaskAgentProfile,
     selection: DelegatedExecutionSelection,
+    packet_receipt: Option<DelegatedExecutionPacketReceipt>,
     result: Result<CustomTaskAgentPreviewResponse, CustomTaskAgentRuntimeError>,
     render_blocks: Vec<Value>,
 ) -> DelegatedExecutionSession {
@@ -781,6 +823,7 @@ fn build_delegated_execution_session(
                     workflow_run_id: None,
                 },
                 selection,
+                packet_receipt,
                 available_actions: Vec::new(),
                 children: vec![primary_child],
                 summary: summarize_content(result.content.as_str()),
@@ -832,6 +875,7 @@ fn build_delegated_execution_session(
                     workflow_run_id: None,
                 },
                 selection,
+                packet_receipt,
                 available_actions: Vec::new(),
                 children: vec![primary_child],
                 summary: Some(error_text.clone()),
@@ -892,6 +936,7 @@ fn build_workflow_delegated_execution_session(
     execution_id: String,
     profile: CustomTaskAgentProfile,
     selection: DelegatedExecutionSelection,
+    packet_receipt: Option<DelegatedExecutionPacketReceipt>,
     worker_ref: String,
     result: Result<crate::modules::workflow::types::QuickWorkflowResult, String>,
 ) -> DelegatedExecutionSession {
@@ -967,6 +1012,7 @@ fn build_workflow_delegated_execution_session(
                     workflow_run_id: Some(workflow_run_id.clone()),
                 },
                 selection,
+                packet_receipt,
                 available_actions: vec![DelegatedExecutionAction {
                     kind: "open".to_string(),
                 }],
@@ -1018,6 +1064,7 @@ fn build_workflow_delegated_execution_session(
                     workflow_run_id: None,
                 },
                 selection,
+                packet_receipt,
                 available_actions: Vec::new(),
                 children: Vec::new(),
                 summary: Some(error.clone()),

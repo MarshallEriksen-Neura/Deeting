@@ -1,18 +1,14 @@
 use super::prompt_assets::PromptAssets;
 use super::prompt_plan::build_local_prompt_plan;
-use super::should_run_semantic_recall;
+use super::worker_dispatch::select_worker_custom_task_agent_with_query_vector;
 use super::{LocalRouteDecision, LocalRouteKind};
-use crate::modules::custom_task_agents::store::{get_custom_task_agent, list_custom_task_agents};
-use crate::modules::custom_task_agents::types::{
-    CustomTaskAgentInvocationKind, CustomTaskAgentProfile,
-};
+use crate::modules::custom_task_agents::types::CustomTaskAgentInvocationKind;
 use crate::modules::mcp::store::McpStore;
 use crate::modules::memory::service::MemoryService;
 use crate::modules::providers::embedding::EmbeddingService;
 use crate::state::AppState;
 use mcp_core::types::LocalChatInputMessage;
-use serde_json::{json, Value};
-use std::collections::{HashMap, HashSet};
+use serde_json::json;
 
 pub(crate) use mcp_runtime::policy::{
     build_default_local_execution_policy, build_local_control_plane_status_meta,
@@ -23,13 +19,6 @@ pub(crate) use mcp_runtime::policy::{
 
 pub(crate) const WORKFLOW_ROUTE_WORKER_THROUGH_WORKFLOW_KEY: &str =
     "workflow.route_worker_through_workflow";
-
-#[derive(Debug, Clone)]
-pub(crate) struct WorkerTargetSelection {
-    pub(crate) profile: CustomTaskAgentProfile,
-    pub(crate) score: i32,
-    pub(crate) reason: String,
-}
 
 #[allow(dead_code)]
 pub(crate) async fn build_runtime_discovery_bundle_with_runtime(
@@ -220,229 +209,6 @@ pub(crate) async fn maybe_override_route_with_custom_task_agent_query_vector(
     Ok(decision)
 }
 
-pub(crate) async fn select_worker_custom_task_agent(
-    app_state: &AppState,
-    explicit_task_agent_id: Option<&str>,
-    query: &str,
-) -> Result<Option<WorkerTargetSelection>, String> {
-    select_worker_custom_task_agent_with_query_vector(
-        app_state,
-        explicit_task_agent_id,
-        query,
-        None,
-    )
-    .await
-}
-
-pub(crate) async fn select_worker_custom_task_agent_with_query_vector(
-    app_state: &AppState,
-    explicit_task_agent_id: Option<&str>,
-    query: &str,
-    query_vector: Option<Vec<f32>>,
-) -> Result<Option<WorkerTargetSelection>, String> {
-    if let Some(selection) =
-        select_explicit_worker_custom_task_agent(app_state, explicit_task_agent_id).await?
-    {
-        return Ok(Some(selection));
-    }
-
-    let profiles = list_custom_task_agents(app_state.mcp.store.as_ref())
-        .await
-        .map_err(|err| err.to_string())?;
-    let active_profiles = profiles
-        .into_iter()
-        .filter(|profile| profile.discoverable && profile.is_enabled && !profile.is_deleted)
-        .collect::<Vec<_>>();
-    if active_profiles.is_empty() {
-        return Ok(None);
-    }
-
-    let mut semantic_ranks = HashMap::new();
-    let semantic_vector = if let Some(vector) = query_vector {
-        Some(vector)
-    } else if should_run_semantic_recall(query) {
-        app_state.providers.embedding.embed_text(query).await.ok()
-    } else {
-        None
-    };
-    if let Some(vector) = semantic_vector {
-        if let Ok(hits) = app_state
-            .memory
-            .service
-            .search_assets(vector, 5, Some("custom_task_agent"))
-            .await
-        {
-            for (idx, hit) in hits.into_iter().enumerate() {
-                if let Some(id) = hit.get("id").and_then(Value::as_str) {
-                    semantic_ranks.insert(id.to_string(), idx);
-                }
-            }
-        }
-    }
-
-    Ok(select_custom_task_agent_candidate(
-        query,
-        &active_profiles,
-        &semantic_ranks,
-    ))
-}
-
-pub(crate) async fn select_explicit_worker_custom_task_agent(
-    app_state: &AppState,
-    explicit_task_agent_id: Option<&str>,
-) -> Result<Option<WorkerTargetSelection>, String> {
-    let Some(agent_id) = explicit_task_agent_id
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    else {
-        return Ok(None);
-    };
-
-    let Some(profile) = get_custom_task_agent(app_state.mcp.store.as_ref(), agent_id)
-        .await
-        .map_err(|err| err.to_string())?
-    else {
-        return Err(format!("explicit task agent '{}' not found", agent_id));
-    };
-
-    if !profile.is_enabled || profile.is_deleted {
-        return Err(format!(
-            "explicit task agent '{}' is unavailable",
-            profile.name
-        ));
-    }
-
-    Ok(Some(WorkerTargetSelection {
-        profile,
-        score: 10_000,
-        reason: "explicit_task_agent".to_string(),
-    }))
-}
-
-pub(crate) fn select_custom_task_agent_candidate(
-    query: &str,
-    profiles: &[CustomTaskAgentProfile],
-    semantic_ranks: &HashMap<String, usize>,
-) -> Option<WorkerTargetSelection> {
-    let normalized_query = query.trim().to_lowercase();
-    let query_terms = split_match_terms(&normalized_query);
-    let mut best: Option<WorkerTargetSelection> = None;
-
-    for profile in profiles {
-        let mut score = 0i32;
-        let mut reasons = Vec::new();
-        let normalized_name = profile.name.trim().to_lowercase();
-        let normalized_id = profile.id.trim().to_lowercase();
-
-        if !normalized_name.is_empty() && normalized_query.contains(normalized_name.as_str()) {
-            score += 90;
-            reasons.push("name_match");
-        }
-        if !normalized_id.is_empty() && normalized_query.contains(normalized_id.as_str()) {
-            score += 100;
-            reasons.push("id_match");
-        }
-        for tag in &profile.tags {
-            let tag = tag.trim().to_lowercase();
-            if tag.is_empty() {
-                continue;
-            }
-            if normalized_query.contains(tag.as_str()) {
-                score += 35;
-                reasons.push("tag_match");
-            }
-        }
-
-        let profile_terms = split_match_terms(&format!(
-            "{} {} {}",
-            profile.name,
-            profile.description.as_deref().unwrap_or_default(),
-            profile.tags.join(" ")
-        ));
-        let overlap = query_terms
-            .iter()
-            .filter(|term| profile_terms.contains(term.as_str()))
-            .count();
-        if overlap > 0 {
-            score += (overlap.min(4) as i32) * 5;
-            reasons.push("term_overlap");
-        }
-        if let Some(rank) = semantic_ranks.get(&profile.id) {
-            let bonus = match rank {
-                0 => 30,
-                1 => 20,
-                2 => 10,
-                _ => 5,
-            };
-            score += bonus;
-            reasons.push("semantic_rank");
-        }
-        if profile.invocation_kind == CustomTaskAgentInvocationKind::ImageGeneration
-            && query_contains_any(
-                normalized_query.as_str(),
-                &[
-                    "image",
-                    "images",
-                    "picture",
-                    "draw",
-                    "drawing",
-                    "illustration",
-                    "render",
-                    "生成图片",
-                    "画图",
-                    "出图",
-                    "图像",
-                    "插画",
-                ],
-            )
-        {
-            score += 20;
-            reasons.push("image_intent");
-        }
-        if profile.preferred_for_image_generation
-            && profile.invocation_kind == CustomTaskAgentInvocationKind::ImageGeneration
-            && query_contains_any(
-                normalized_query.as_str(),
-                &[
-                    "image",
-                    "images",
-                    "picture",
-                    "draw",
-                    "drawing",
-                    "illustration",
-                    "render",
-                    "生成图片",
-                    "画图",
-                    "出图",
-                    "图像",
-                    "插画",
-                ],
-            )
-        {
-            score += 200;
-            reasons.push("preferred_for_image_generation");
-        }
-
-        if score < 35 {
-            continue;
-        }
-        let candidate = WorkerTargetSelection {
-            profile: profile.clone(),
-            score,
-            reason: reasons.join(","),
-        };
-        let replace = match &best {
-            Some(current) => candidate.score > current.score,
-            None => true,
-        };
-        if replace {
-            best = Some(candidate);
-        }
-    }
-
-    best
-}
-
 #[cfg(test)]
 mod tests {
     use super::parse_desktop_config_bool;
@@ -463,17 +229,4 @@ mod tests {
         assert!(!parse_desktop_config_bool(Some("0")));
         assert!(!parse_desktop_config_bool(Some("disabled")));
     }
-}
-
-fn split_match_terms(input: &str) -> HashSet<String> {
-    input
-        .split(|ch: char| !ch.is_alphanumeric())
-        .map(str::trim)
-        .filter(|value| value.len() >= 2)
-        .map(|value| value.to_lowercase())
-        .collect()
-}
-
-fn query_contains_any(query: &str, needles: &[&str]) -> bool {
-    needles.iter().any(|needle| query.contains(needle))
 }

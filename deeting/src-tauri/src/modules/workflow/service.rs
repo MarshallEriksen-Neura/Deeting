@@ -381,11 +381,16 @@ fn build_quick_workflow_proposal_text(
     goal: &str,
     worker_ref: &str,
     inject_into_chat: bool,
+    user_notes: Option<&str>,
 ) -> String {
     let goal = goal.trim();
     let worker_ref = worker_ref.trim();
+    let user_notes = user_notes
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("");
     format!(
-        "# Workflow Proposal\n\nTitle: Quick Worker Run\nGoal: {goal}\n\n## Global Constraints\n- Mode: quick_workflow_compatibility\n- Inject into chat: {inject_into_chat}\n\n## Phase 1: Execute\n- Worker: {worker_ref}\n- Goal: {goal}\n- Expected output: delegated_result\n- User Notes:\n",
+        "# Workflow Proposal\n\nTitle: Quick Worker Run\nGoal: {goal}\n\n## Global Constraints\n- Mode: quick_workflow_compatibility\n- Inject into chat: {inject_into_chat}\n\n## Phase 1: Execute\n- Worker: {worker_ref}\n- Goal: {goal}\n- Expected output: delegated_result\n- User Notes:\n{user_notes}\n",
         inject_into_chat = if inject_into_chat { "true" } else { "false" },
     )
 }
@@ -431,6 +436,22 @@ pub(crate) fn extract_primary_content(detail: &WorkflowRunDetail) -> Option<Stri
         .map(str::to_string)
 }
 
+fn attach_worker_task_packet_to_snapshot(
+    snapshot: &mut ExecutionSnapshot,
+    worker_task_packet: Option<
+        crate::modules::desktop_runtime::runtime::worker_dispatch::WorkerTaskPacket,
+    >,
+) -> Result<(), String> {
+    let Some(worker_task_packet) = worker_task_packet else {
+        return Ok(());
+    };
+    let phase = snapshot.phases.first_mut().ok_or_else(|| {
+        "Quick workflow snapshot has no phase to receive worker task packet".to_string()
+    })?;
+    phase.worker_task_packet = Some(worker_task_packet);
+    Ok(())
+}
+
 pub(crate) async fn prepare_quick_workflow_run(
     app_handle: &tauri::AppHandle,
     app_state: &AppState,
@@ -448,7 +469,12 @@ pub(crate) async fn prepare_quick_workflow_run(
         .filter(|value| !value.is_empty())
         .unwrap_or("direct_llm:default");
     let title = goal.chars().take(80).collect::<String>();
-    let proposal_text = build_quick_workflow_proposal_text(goal, worker_ref, req.inject_into_chat);
+    let proposal_text = build_quick_workflow_proposal_text(
+        goal,
+        worker_ref,
+        req.inject_into_chat,
+        req.user_notes.as_deref(),
+    );
     let app_data_dir = app_handle.path().app_data_dir().ok();
     let run = persist_generated_proposal(
         app_state.mcp.store.as_ref(),
@@ -461,16 +487,31 @@ pub(crate) async fn prepare_quick_workflow_run(
     .await?;
 
     let compile_result =
-        compile_current_proposal(app_state.mcp.store.as_ref(), app_data_dir, &run.id).await?;
+        compile_current_proposal(app_state.mcp.store.as_ref(), app_data_dir.clone(), &run.id)
+            .await?;
     if !compile_result.errors.is_empty() {
         return Err(format!(
             "Quick workflow compile failed: {}",
             format_compiler_errors(&compile_result.errors)
         ));
     }
-    if compile_result.snapshot.is_none() {
+    let Some(mut snapshot) = compile_result.snapshot else {
         return Err("Quick workflow compile produced no executable snapshot".to_string());
+    };
+    attach_worker_task_packet_to_snapshot(&mut snapshot, req.worker_task_packet)?;
+    if let Some(run_dir) = run.run_dir.as_deref() {
+        run_dir::write_snapshot_file(&PathBuf::from(run_dir), &snapshot)?;
     }
+    let snapshot_value = serde_json::to_value(&snapshot)
+        .map_err(|err| format!("Failed to serialize quick workflow snapshot: {err}"))?;
+    store::update_workflow_run_snapshot(
+        app_state.mcp.store.as_ref(),
+        &run.id,
+        &snapshot_value,
+        snapshot.snapshot_version,
+    )
+    .await
+    .map_err(|err| err.to_string())?;
 
     Ok(run)
 }
@@ -1275,7 +1316,8 @@ mod tests {
     use crate::modules::workflow::store;
     use crate::modules::workflow::types::{
         ApprovalGroup, ApprovalGroupPolicy, ApprovalGroupUpdate, ApprovalItem, ApprovalItemStatus,
-        ApprovalItemUpdate, CreateWorkflowRunRequest, WorkflowRunStatus, WorkflowStepType,
+        ApprovalItemUpdate, CreateWorkflowRunRequest, ExecutionSnapshot, WorkflowRunStatus,
+        WorkflowStepType,
     };
     use uuid::Uuid;
 
@@ -1324,11 +1366,66 @@ Goal: Produce a useful output
 "#;
 
     #[test]
+    fn attach_worker_task_packet_to_snapshot_updates_first_phase() {
+        let mut snapshot = ExecutionSnapshot {
+            run_id: "run-1".to_string(),
+            proposal_version: 1,
+            snapshot_version: 1,
+            compiled_at: "2026-04-15T00:00:00Z".to_string(),
+            goal: "Analyze the worker route".to_string(),
+            phases: vec![crate::modules::workflow::types::CompiledPhase {
+                phase_id: "phase-1".to_string(),
+                title: "Execute".to_string(),
+                worker_ref: "user_worker_profile:research".to_string(),
+                depends_on: Vec::new(),
+                goal: "Analyze the worker route".to_string(),
+                expected_output: None,
+                worker_task_packet: None,
+            }],
+            policy: Default::default(),
+        };
+        let packet = serde_json::from_value(serde_json::json!({
+            "schema_version": 1,
+            "task_id": "exec-1",
+            "route": "worker",
+            "goal": "Analyze the worker route",
+            "user_query": "Analyze the worker route",
+            "task_kind": "analysis",
+            "deliverable_kind": "structured_findings",
+            "context_summary": "runtime-selected worker",
+            "relevant_inputs": {},
+            "required_capabilities": ["tool.search"],
+            "candidate_capabilities": ["search_sdk"],
+            "constraints": ["Stay scoped"],
+            "non_goals": ["Do not reroute"],
+            "allowed_actions": ["Analyze"],
+            "forbidden_actions": ["Reroute"],
+            "output_contract": {"kind":"structured_findings"},
+            "completion_standard": "Return findings",
+            "escalation_policy": "Block explicitly",
+            "packet_hash": "packet-123"
+        }))
+        .expect("worker task packet");
+
+        attach_worker_task_packet_to_snapshot(&mut snapshot, Some(packet))
+            .expect("attach worker task packet");
+
+        assert_eq!(
+            snapshot.phases[0]
+                .worker_task_packet
+                .as_ref()
+                .map(|value| value.packet_hash.as_str()),
+            Some("packet-123")
+        );
+    }
+
+    #[test]
     fn build_quick_workflow_proposal_text_creates_single_phase_worker_plan() {
         let proposal = build_quick_workflow_proposal_text(
             "Summarize the repo structure",
             "user_worker_profile:research-pro",
             true,
+            None,
         );
 
         assert!(proposal.contains("# Workflow Proposal"));
@@ -1341,6 +1438,19 @@ Goal: Produce a useful output
         assert!(proposal.contains("- Worker: user_worker_profile:research-pro"));
         assert!(proposal.contains("- Goal: Summarize the repo structure"));
         assert!(proposal.contains("- Expected output: delegated_result"));
+    }
+
+    #[test]
+    fn build_quick_workflow_proposal_text_includes_user_notes_when_present() {
+        let proposal = build_quick_workflow_proposal_text(
+            "Summarize the repo structure",
+            "user_worker_profile:research-pro",
+            true,
+            Some("packet-hash: abc123"),
+        );
+
+        assert!(proposal.contains("User Notes:"));
+        assert!(proposal.contains("packet-hash: abc123"));
     }
 
     #[test]

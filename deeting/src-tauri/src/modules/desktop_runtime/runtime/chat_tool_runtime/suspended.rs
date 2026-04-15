@@ -86,6 +86,8 @@ impl SuspendedChatToolExecution {
             runtime_metrics: self.runtime_metrics,
             last_capability_snapshot: self.last_capability_snapshot,
             last_response: self.last_response,
+            diting_think_consumed: false,
+            captured_reasoning: None,
             realtime_emitter: LocalRealtimeToolTraceEmitter::new(
                 None,
                 Some(self.trace_id.as_str()),

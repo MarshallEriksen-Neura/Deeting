@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 
 pub(crate) const DECISION_POINT_ROUTE: &str = "route";
+pub(crate) const DECISION_POINT_WORKER_SELECTION: &str = "worker_selection";
 pub(crate) const DECISION_POINT_DISCOVERY: &str = "discovery";
 pub(crate) const DECISION_POINT_CAPABILITY_ATTACH: &str = "capability_attach";
 pub(crate) const DECISION_POINT_EXECUTION: &str = "execution";
@@ -68,12 +69,25 @@ pub(crate) struct TaskPolicyHint {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub(crate) struct TaskLearningDelegatedExecution {
+    pub(crate) kind: String,
+    pub(crate) status: String,
+    pub(crate) selected_profile_id: Option<String>,
+    pub(crate) worker_ref: Option<String>,
+    pub(crate) packet_hash: Option<String>,
+    pub(crate) task_kind: Option<String>,
+    pub(crate) deliverable_kind: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub(crate) struct EvaluatedOutcome {
     pub(crate) final_status: String,
     pub(crate) verification_result: String,
     pub(crate) user_response_signal: String,
     pub(crate) judgment_mode: String,
     pub(crate) route_judgment: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) worker_selection_judgment: Option<String>,
     pub(crate) discovery_judgment: String,
     pub(crate) execution_judgment: String,
     pub(crate) cost_class: String,
@@ -86,6 +100,8 @@ pub(crate) struct EvaluatedOutcome {
     pub(crate) used_attach_capability: bool,
     pub(crate) used_execute_code_plan: bool,
     pub(crate) had_delegated_execution: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) delegated_execution: Option<TaskLearningDelegatedExecution>,
     pub(crate) observed_error_codes: Vec<String>,
 }
 

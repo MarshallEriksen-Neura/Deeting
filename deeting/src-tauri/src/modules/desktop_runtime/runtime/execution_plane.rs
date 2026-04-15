@@ -10,6 +10,7 @@ use crate::modules::ai_upstream::types::LocalModelConnection;
 use crate::state::AppState;
 use mcp_core::types::LocalChatInputMessage;
 use mcp_session::context::LocalConversationChatContext;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::AppHandle;
 use tokio::sync::mpsc::UnboundedSender;
@@ -74,7 +75,24 @@ fn serialize_execution_selection(selection: &DelegatedExecutionSelection) -> Val
         "score": selection.score,
         "reason_codes": selection.reason_codes,
         "reason_text": selection.reason_text,
+        "candidate_count": selection.candidate_count,
+        "selected_from_top_k": selection.selected_from_top_k,
+        "callable_coverage_score": selection.callable_coverage_score,
+        "modality_fit_score": selection.modality_fit_score,
+        "profile_prior_score": selection.profile_prior_score,
     })
+}
+
+fn serialize_packet_receipt(receipt: &Option<DelegatedExecutionPacketReceipt>) -> Value {
+    match receipt {
+        Some(receipt) => json!({
+            "packet_hash": receipt.packet_hash,
+            "task_kind": receipt.task_kind,
+            "deliverable_kind": receipt.deliverable_kind,
+            "selected_profile_id": receipt.selected_profile_id,
+        }),
+        None => Value::Null,
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -92,6 +110,19 @@ pub(crate) struct DelegatedExecutionSelection {
     pub(crate) score: Option<i32>,
     pub(crate) reason_codes: Vec<String>,
     pub(crate) reason_text: Option<String>,
+    pub(crate) candidate_count: usize,
+    pub(crate) selected_from_top_k: usize,
+    pub(crate) callable_coverage_score: Option<f32>,
+    pub(crate) modality_fit_score: Option<f32>,
+    pub(crate) profile_prior_score: Option<f32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct DelegatedExecutionPacketReceipt {
+    pub(crate) packet_hash: String,
+    pub(crate) task_kind: String,
+    pub(crate) deliverable_kind: String,
+    pub(crate) selected_profile_id: String,
 }
 
 #[derive(Debug, Clone)]
@@ -119,6 +150,7 @@ pub(crate) struct DelegatedExecutionRecord {
     pub(crate) status: DelegatedExecutionStatus,
     pub(crate) target: DelegatedExecutionTarget,
     pub(crate) selection: DelegatedExecutionSelection,
+    pub(crate) packet_receipt: Option<DelegatedExecutionPacketReceipt>,
     pub(crate) available_actions: Vec<DelegatedExecutionAction>,
     pub(crate) children: Vec<DelegatedExecutionChildRecord>,
     pub(crate) summary: Option<String>,
@@ -147,6 +179,7 @@ impl DelegatedExecutionRecord {
             "execution_id": self.execution_id,
             "target": serialize_execution_target(&self.target),
             "selection": serialize_execution_selection(&self.selection),
+            "packet_receipt": serialize_packet_receipt(&self.packet_receipt),
             "available_actions": serialize_execution_actions(&self.available_actions),
             "summary": self.summary,
             "steps": serialize_execution_children(&self.children),
@@ -171,6 +204,7 @@ impl DelegatedExecutionRecord {
             "worker_ref": self.target.worker_ref,
             "workflow_run_id": self.target.workflow_run_id,
             "selection": serialize_execution_selection(&self.selection),
+            "packet_receipt": serialize_packet_receipt(&self.packet_receipt),
             "available_actions": serialize_execution_actions(&self.available_actions),
             "children": serialize_execution_children(&self.children),
             "summary": self.summary,
@@ -277,7 +311,13 @@ impl DelegatedExecutionSession {
                     "score": self.record.selection.score,
                     "reason_codes": self.record.selection.reason_codes,
                     "reason_text": self.record.selection.reason_text,
+                    "candidate_count": self.record.selection.candidate_count,
+                    "selected_from_top_k": self.record.selection.selected_from_top_k,
+                    "callable_coverage_score": self.record.selection.callable_coverage_score,
+                    "modality_fit_score": self.record.selection.modality_fit_score,
+                    "profile_prior_score": self.record.selection.profile_prior_score,
                 },
+                "packet_receipt": serialize_packet_receipt(&self.record.packet_receipt),
                 "available_actions": serialize_execution_actions(&self.record.available_actions),
                 "summary": self.record.summary,
                 "error": self.record.error,
@@ -546,7 +586,18 @@ mod tests {
                 score: Some(92),
                 reason_codes: vec!["tag_match".to_string()],
                 reason_text: Some("tag_match".to_string()),
+                candidate_count: 3,
+                selected_from_top_k: 3,
+                callable_coverage_score: Some(0.8),
+                modality_fit_score: Some(1.0),
+                profile_prior_score: Some(0.0),
             },
+            packet_receipt: Some(DelegatedExecutionPacketReceipt {
+                packet_hash: "packet-123".to_string(),
+                task_kind: "analysis".to_string(),
+                deliverable_kind: "structured_findings".to_string(),
+                selected_profile_id: "worker-1".to_string(),
+            }),
             available_actions: vec![DelegatedExecutionAction {
                 kind: "open".to_string(),
             }],
@@ -601,6 +652,13 @@ mod tests {
                 .and_then(Value::as_str),
             Some("run-123")
         );
+        assert_eq!(
+            delegated_result
+                .get("packet_receipt")
+                .and_then(|value| value.get("packet_hash"))
+                .and_then(Value::as_str),
+            Some("packet-123")
+        );
     }
 
     #[test]
@@ -621,7 +679,18 @@ mod tests {
                 score: Some(100),
                 reason_codes: vec!["explicit".to_string()],
                 reason_text: Some("explicit".to_string()),
+                candidate_count: 1,
+                selected_from_top_k: 1,
+                callable_coverage_score: Some(1.0),
+                modality_fit_score: Some(1.0),
+                profile_prior_score: Some(0.0),
             },
+            packet_receipt: Some(DelegatedExecutionPacketReceipt {
+                packet_hash: "packet-image".to_string(),
+                task_kind: "image_generation".to_string(),
+                deliverable_kind: "image_result".to_string(),
+                selected_profile_id: "agent-1".to_string(),
+            }),
             available_actions: Vec::new(),
             children: Vec::new(),
             summary: Some("Generated image".to_string()),

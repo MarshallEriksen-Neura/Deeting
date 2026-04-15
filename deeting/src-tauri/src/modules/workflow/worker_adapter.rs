@@ -68,13 +68,7 @@ async fn execute_via_worker_profile(
     input: &WorkerExecutionInput,
     profile: &CustomTaskAgentProfile,
 ) -> Result<WorkerExecutionResult, String> {
-    let request = CustomTaskAgentPreviewRequest {
-        message: input.context_packet.context_md.clone(),
-        temperature: input.temperature,
-        max_tokens: input.max_tokens,
-        max_rounds: input.max_rounds,
-        image_urls: Vec::new(),
-    };
+    let request = build_worker_profile_preview_request(input);
 
     let response = preview_custom_task_agent(app_handle, app_state, profile, request)
         .await
@@ -94,6 +88,33 @@ async fn execute_via_worker_profile(
             None
         },
     })
+}
+
+fn build_worker_profile_preview_request(
+    input: &WorkerExecutionInput,
+) -> CustomTaskAgentPreviewRequest {
+    let worker_task_packet = input
+        .context_packet
+        .worker_task_packet
+        .as_ref()
+        .and_then(|packet| serde_json::to_value(packet).ok())
+        .or_else(|| {
+            input
+                .context_packet
+                .context_json
+                .worker_task_packet
+                .as_ref()
+                .and_then(|packet| serde_json::to_value(packet).ok())
+        });
+
+    CustomTaskAgentPreviewRequest {
+        message: input.context_packet.context_md.clone(),
+        temperature: input.temperature,
+        max_tokens: input.max_tokens,
+        max_rounds: input.max_rounds,
+        image_urls: Vec::new(),
+        worker_task_packet,
+    }
 }
 
 async fn execute_via_direct_llm(
@@ -170,7 +191,11 @@ fn normalize_execution_status(status: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_execution_status;
+    use super::{build_worker_profile_preview_request, normalize_execution_status};
+    use crate::modules::workflow::types::{
+        ContextConstraints, ContextInputs, ContextJson, ContextPacket, WorkerExecutionInput,
+    };
+    use serde_json::json;
 
     #[test]
     fn resolve_direct_llm_default_prefix() {
@@ -202,5 +227,73 @@ mod tests {
     fn normalize_execution_status_maps_completed_to_succeeded() {
         assert_eq!(normalize_execution_status("completed"), "succeeded");
         assert_eq!(normalize_execution_status("error"), "failed");
+    }
+
+    #[test]
+    fn build_worker_profile_preview_request_forwards_worker_task_packet() {
+        let packet: crate::modules::desktop_runtime::runtime::worker_dispatch::WorkerTaskPacket =
+            serde_json::from_value(json!({
+            "schema_version": 1,
+            "task_id": "exec-1",
+            "route": "worker",
+            "goal": "Analyze findings",
+            "user_query": "Analyze findings",
+            "task_kind": "analysis",
+            "deliverable_kind": "structured_findings",
+            "context_summary": "runtime-selected worker",
+            "relevant_inputs": {},
+            "required_capabilities": ["tool.search"],
+            "candidate_capabilities": ["search_sdk"],
+            "constraints": ["Stay scoped"],
+            "non_goals": ["Do not reroute"],
+            "allowed_actions": ["Analyze"],
+            "forbidden_actions": ["Reroute"],
+            "output_contract": {"kind":"structured_findings"},
+            "completion_standard": "Return findings",
+            "escalation_policy": "Block explicitly",
+            "packet_hash": "packet-123"
+            }))
+            .expect("worker task packet");
+        let input = WorkerExecutionInput {
+            run_id: "run-1".to_string(),
+            phase_id: "phase-1".to_string(),
+            worker_ref: "user_worker_profile:research".to_string(),
+            context_packet: ContextPacket {
+                run_id: "run-1".to_string(),
+                phase_id: "phase-1".to_string(),
+                phase_title: "Research".to_string(),
+                context_md: "## Task".to_string(),
+                context_json: ContextJson {
+                    run_id: "run-1".to_string(),
+                    phase_id: "phase-1".to_string(),
+                    phase_title: "Research".to_string(),
+                    proposal_version: 1,
+                    snapshot_version: 1,
+                    worker_ref: "user_worker_profile:research".to_string(),
+                    goal: "Analyze findings".to_string(),
+                    constraints: ContextConstraints {
+                        timeout_ms: 1000,
+                        allowed_tools: Vec::new(),
+                    },
+                    inputs: ContextInputs::default(),
+                    expected_output: None,
+                    worker_task_packet: Some(packet.clone()),
+                },
+                worker_task_packet: Some(packet),
+            },
+            temperature: Some(0.2),
+            max_tokens: Some(2048),
+            max_rounds: Some(3),
+        };
+
+        let request = build_worker_profile_preview_request(&input);
+        assert_eq!(
+            request
+                .worker_task_packet
+                .as_ref()
+                .and_then(|value| value.get("packet_hash"))
+                .and_then(|value| value.as_str()),
+            Some("packet-123")
+        );
     }
 }

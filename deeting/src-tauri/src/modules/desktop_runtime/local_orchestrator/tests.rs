@@ -1,5 +1,6 @@
 use super::*;
 use crate::modules::desktop_runtime::local_orchestrator::workflow::LayerExecutionMode;
+use crate::modules::desktop_runtime::runtime::worker_dispatch::select_custom_task_agent_candidate;
 use futures_util::future::BoxFuture;
 
 fn layer_mode_label(mode: LayerExecutionMode) -> &'static str {

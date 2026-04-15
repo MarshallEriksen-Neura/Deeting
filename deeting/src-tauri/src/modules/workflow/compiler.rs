@@ -252,6 +252,7 @@ pub fn compile_proposal(
                 result_kind: "text_summary".to_string(),
                 result_schema_hint: Some(value.clone()),
             }),
+            worker_task_packet: None,
         });
     }
 

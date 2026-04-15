@@ -121,6 +121,8 @@ pub struct CustomTaskAgentPreviewRequest {
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
     pub max_rounds: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker_task_packet: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

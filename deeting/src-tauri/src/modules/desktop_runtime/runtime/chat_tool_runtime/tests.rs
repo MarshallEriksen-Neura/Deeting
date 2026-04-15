@@ -626,6 +626,8 @@ fn build_max_rounds_exceeded_response_appends_visible_notice() {
         discovery_gate_forced: false,
         verification_gate_forced: false,
         runtime_metrics: RuntimeMetricsAccumulator::default(),
+        diting_think_consumed: false,
+        captured_reasoning: None,
         last_capability_snapshot: None,
         last_response: Some(serde_json::json!({
             "content": "Shell step finished.",
@@ -689,6 +691,8 @@ fn rewind_round_for_post_approval_continuation_does_not_consume_user_round_budge
         discovery_gate_forced: false,
         verification_gate_forced: false,
         runtime_metrics: RuntimeMetricsAccumulator::default(),
+        diting_think_consumed: false,
+        captured_reasoning: None,
         last_capability_snapshot: None,
         last_response: None,
         realtime_emitter: LocalRealtimeToolTraceEmitter::new(

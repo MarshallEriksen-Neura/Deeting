@@ -71,6 +71,82 @@ pub(crate) use tool_meta::{
     apply_rejected_tool_result_to_execution_graph_value, mark_approval_gate_approving,
 };
 
+const DITING_THINK_TOOL_NAME: &str = "diting_think";
+
+fn inject_diting_think_tool(tools: Option<serde_json::Value>) -> Option<serde_json::Value> {
+    let diting_think_entry = serde_json::json!({
+        "type": "function",
+        "function": {
+            "name": DITING_THINK_TOOL_NAME,
+            "description": "Structured deep-reasoning tool. Call this ONCE before executing any other tool when the task involves multi-step execution, ambiguous intent, or coordination across multiple capabilities. Analyze the user intent against the currently available tools and context, then output a concrete execution plan. Do NOT call this for trivial single-tool tasks. This tool is only available in the first round and disappears afterward.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "intent": {
+                        "type": "string",
+                        "description": "One-sentence summary of the user's core intent."
+                    },
+                    "context_assessment": {
+                        "type": "string",
+                        "description": "Relevant context already available: injected memories, prior conversation state, discovered capabilities. What do you already know that matters?"
+                    },
+                    "tool_plan": {
+                        "type": "string",
+                        "description": "Which tools to call, in what order, with what arguments. Be specific \u{2014} name exact tools and justify the sequence."
+                    },
+                    "constraints": {
+                        "type": "string",
+                        "description": "Key risks, edge cases, permission boundaries, or scope limits that could derail execution."
+                    }
+                },
+                "required": ["intent", "tool_plan"]
+            }
+        }
+    });
+    match tools {
+        Some(mut value) => {
+            if let Some(arr) = value.get_mut("tools").and_then(|v| v.as_array_mut()) {
+                arr.insert(0, diting_think_entry);
+            }
+            Some(value)
+        }
+        None => Some(serde_json::json!({ "tools": [diting_think_entry] })),
+    }
+}
+
+fn format_diting_think_reasoning(arguments: &serde_json::Value) -> String {
+    let mut parts = Vec::new();
+    if let Some(intent) = arguments
+        .get("intent")
+        .and_then(|v| v.as_str())
+        .filter(|v| !v.trim().is_empty())
+    {
+        parts.push(format!("[意图] {}", intent.trim()));
+    }
+    if let Some(context) = arguments
+        .get("context_assessment")
+        .and_then(|v| v.as_str())
+        .filter(|v| !v.trim().is_empty())
+    {
+        parts.push(format!("[上下文] {}", context.trim()));
+    }
+    if let Some(plan) = arguments
+        .get("tool_plan")
+        .and_then(|v| v.as_str())
+        .filter(|v| !v.trim().is_empty())
+    {
+        parts.push(format!("[执行计划] {}", plan.trim()));
+    }
+    if let Some(constraints) = arguments
+        .get("constraints")
+        .and_then(|v| v.as_str())
+        .filter(|v| !v.trim().is_empty())
+    {
+        parts.push(format!("[约束] {}", constraints.trim()));
+    }
+    parts.join("\n")
+}
+
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 struct RuntimeMetricsAccumulator {
     upstream_latency_ms: i64,
@@ -170,6 +246,8 @@ struct LocalChatToolRuntimeState {
     active_capability: Option<LocalCapabilityActivationState>,
     discovery_gate_forced: bool,
     verification_gate_forced: bool,
+    diting_think_consumed: bool,
+    captured_reasoning: Option<String>,
     runtime_metrics: RuntimeMetricsAccumulator,
     last_capability_snapshot: Option<serde_json::Value>,
     last_response: Option<serde_json::Value>,
@@ -178,6 +256,28 @@ struct LocalChatToolRuntimeState {
 
 struct LocalChatToolRuntimeOutput {
     response: serde_json::Value,
+    captured_reasoning: Option<String>,
+}
+
+fn backfill_captured_reasoning(response: &mut serde_json::Value, captured_reasoning: Option<&str>) {
+    let reasoning = match captured_reasoning.map(str::trim).filter(|v| !v.is_empty()) {
+        Some(r) => r,
+        None => return,
+    };
+    let has_native = response
+        .get("reasoning_content")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .is_some();
+    if !has_native {
+        if let Some(obj) = response.as_object_mut() {
+            obj.insert(
+                "reasoning_content".to_string(),
+                serde_json::Value::String(reasoning.to_string()),
+            );
+        }
+    }
 }
 
 fn extract_initial_task_query(messages: &[LocalChatInputMessage]) -> Option<String> {
@@ -334,6 +434,8 @@ pub(crate) async fn run_local_chat_complete_with_tools(
         active_capability: None,
         discovery_gate_forced: false,
         verification_gate_forced: false,
+        diting_think_consumed: false,
+        captured_reasoning: None,
         runtime_metrics: RuntimeMetricsAccumulator::default(),
         last_capability_snapshot: execution_policy.capability_snapshot.clone(),
         last_response: None,
@@ -345,7 +447,10 @@ pub(crate) async fn run_local_chat_complete_with_tools(
     };
     continue_local_chat_complete_with_tools(app, app_state, state)
         .await
-        .map(|output| output.response)
+        .map(|mut output| {
+            backfill_captured_reasoning(&mut output.response, output.captured_reasoning.as_deref());
+            output.response
+        })
 }
 
 #[derive(Debug, Clone)]
@@ -376,6 +481,7 @@ async fn continue_local_chat_complete_with_tools(
             let effective_tool_call_meta = build_state_effective_tool_call_meta(&state);
             let fallback = build_max_rounds_exceeded_response(&state);
             return Ok(LocalChatToolRuntimeOutput {
+                captured_reasoning: state.captured_reasoning.clone(),
                 response: enrich_response_with_tool_trace(
                     fallback,
                     &effective_tool_call_meta,
@@ -392,6 +498,11 @@ async fn continue_local_chat_complete_with_tools(
             &effective_allowed_tool_names,
             state.last_capability_snapshot.as_ref(),
         );
+        let tools = if state.round == 1 && !state.diting_think_consumed {
+            inject_diting_think_tool(tools)
+        } else {
+            tools
+        };
         let response = request_provider_chat_completion(
             app_state,
             &provider_model_id,
@@ -473,6 +584,7 @@ async fn continue_local_chat_complete_with_tools(
                 }
             }
             return Ok(LocalChatToolRuntimeOutput {
+                captured_reasoning: state.captured_reasoning.clone(),
                 response: enrich_response_with_tool_trace(
                     response,
                     &effective_tool_call_meta,
@@ -499,6 +611,8 @@ async fn continue_local_chat_complete_with_tools(
             active_capability: state.active_capability.clone(),
             discovery_gate_forced: state.discovery_gate_forced,
             verification_gate_forced: state.verification_gate_forced,
+            diting_think_consumed: state.diting_think_consumed,
+            captured_reasoning: state.captured_reasoning.clone(),
             runtime_metrics: state.runtime_metrics.clone(),
             last_capability_snapshot: state.last_capability_snapshot.clone(),
             last_response: state.last_response.clone(),
@@ -527,6 +641,18 @@ async fn continue_local_chat_complete_with_tools(
                 tool_call_meta,
                 results,
             } => {
+                if let Some(reasoning) = tool_call_meta.iter().find_map(|item| {
+                    if item.get("name").and_then(|v| v.as_str()) == Some(DITING_THINK_TOOL_NAME) {
+                        item.get("reasoning")
+                            .and_then(|v| v.as_str())
+                            .map(str::to_string)
+                    } else {
+                        None
+                    }
+                }) {
+                    state.diting_think_consumed = true;
+                    state.captured_reasoning = Some(reasoning);
+                }
                 let canonical_tool_call_meta = canonicalize_tool_call_meta_via_graph(
                     &session_id,
                     &state.execution_policy,
@@ -543,6 +669,7 @@ async fn continue_local_chat_complete_with_tools(
                     let mut current_tool_call_meta = build_state_effective_tool_call_meta(&state);
                     current_tool_call_meta.extend(canonical_tool_call_meta.clone());
                     return Ok(LocalChatToolRuntimeOutput {
+                        captured_reasoning: state.captured_reasoning.clone(),
                         response: enrich_response_with_tool_trace(
                             response,
                             &current_tool_call_meta,
@@ -662,6 +789,7 @@ async fn continue_local_chat_complete_with_tools(
                     "content": last_response_content_or_empty(state.last_response.as_ref()),
                 });
                 return Ok(LocalChatToolRuntimeOutput {
+                    captured_reasoning: state.captured_reasoning.clone(),
                     response: enrich_response_with_tool_trace(
                         interrupted,
                         &current_tool_call_meta,
@@ -840,6 +968,28 @@ async fn process_chat_tool_calls(
             resolve_local_tool_call_id(call.id.as_deref(), &tool_name, state.round, call_index);
         let meta_len_before = tool_call_meta.len();
         let approval_count_before = approval_tokens.len();
+
+        if tool_name == DITING_THINK_TOOL_NAME {
+            let reasoning = format_diting_think_reasoning(&call.arguments);
+            realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call_id.as_str(),"toolName":tool_name,"status":"running"})]);
+            synthesized = true;
+            let meta = serde_json::json!({
+                "id": call_id.as_str(),
+                "name": DITING_THINK_TOOL_NAME,
+                "status": "success",
+                "result": "Deep reasoning complete. Proceed with execution based on your plan.",
+                "reasoning": reasoning,
+            });
+            let mut streamed_blocks = Vec::new();
+            append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+            realtime_emitter.emit_blocks(streamed_blocks);
+            tool_call_meta.push(meta);
+            results.push(
+                "Deep reasoning acknowledged. Continue with your planned execution.".to_string(),
+            );
+            continue;
+        }
+
         if !effective_allowed_tool_names
             .iter()
             .any(|item| item == &tool_name)
@@ -888,6 +1038,8 @@ async fn process_chat_tool_calls(
                 runtime_metrics: state.runtime_metrics.clone(),
                 last_capability_snapshot: state.last_capability_snapshot.clone(),
                 last_response: state.last_response.clone(),
+                diting_think_consumed: state.diting_think_consumed,
+                captured_reasoning: state.captured_reasoning.clone(),
                 realtime_emitter: LocalRealtimeToolTraceEmitter::new(
                     None,
                     Some(state.trace_id.as_str()),

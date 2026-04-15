@@ -463,6 +463,118 @@ The runtime may still auto-select one winner.
 
 But the important change is that the winner should be chosen from a real candidate set, not directly from string matching.
 
+### Why not expose all `custom_task_agent` profiles to the main model by default
+
+Current code truth matters here.
+
+Today the runtime already does two things before delegation:
+
+- if `explicit_task_agent_id` is provided, it resolves that profile exactly and bypasses heuristic matching
+- otherwise it runs a heuristic-plus-semantic selection pass over active discoverable profiles
+
+The current heuristic pass uses:
+
+- explicit name match
+- explicit id match
+- tag match
+- term overlap
+- semantic rank from indexed `custom_task_agent` assets
+- image-intent special cases
+
+The indexed profile text already includes:
+
+- `name`
+- `description`
+- `invocation_kind`
+- `tags`
+- `callable_mcp_tools`
+- `guidance_skills`
+- `callable_skill_actions`
+- a `prompt_excerpt`
+
+So the current system is already not "blind".
+
+But that does **not** mean the main model should be given the full list of all profiles by default.
+
+That would be the wrong correction.
+
+#### Problems with full-list exposure
+
+##### A. It shifts dispatch responsibility back into prompt arbitration
+
+If the main model receives the entire profile list every time, the effective dispatch policy becomes:
+
+`runtime discovers everything`
+`->`
+`model reads large profile catalog`
+`->`
+`model improvises selection`
+
+That weakens the runtime-owned boundary.
+
+The current design should move toward stronger runtime dispatch, not toward prompt-only selection.
+
+##### B. It increases noise and ambiguity
+
+As the number of `custom_task_agent` profiles grows, a full list introduces:
+
+- more lexical collisions
+- more similar descriptions
+- more tags with overlapping meaning
+- more cross-modality distraction
+
+That makes the selection problem noisier, not cleaner.
+
+##### C. It mixes discovery with arbitration
+
+The main model should not need to inspect every installed profile in order to make a good delegation choice.
+
+The correct split is:
+
+- runtime performs candidate generation
+- main model may arbitrate among a small structured shortlist
+
+Not:
+
+- runtime dumps the full inventory into prompt context
+
+##### D. It is especially bad across invocation kinds
+
+This repo already supports different `CustomTaskAgentInvocationKind` values such as:
+
+- `Chat`
+- `ImageGeneration`
+- `TextToSpeech`
+
+Exposing the entire mixed inventory to the model by default would make ordinary text-task delegation compete with unrelated image and TTS profiles more often than necessary.
+
+#### Preferred model-facing pattern
+
+The better pattern is:
+
+1. runtime gathers the full profile set
+2. runtime computes a `WorkerCandidateSet`
+3. runtime keeps only a small top-`k` shortlist
+4. the main model sees only that shortlist if model arbitration is needed
+
+Each shortlist entry should be small and structured, for example:
+
+- `profile_id`
+- `name`
+- `invocation_kind`
+- `description`
+- `bound_callable_summary`
+- `reason_codes`
+- `fit scores`
+
+This keeps the model informed without turning it into the primary inventory browser.
+
+#### Exception: explicit user selection
+
+If the user explicitly names or pins a target profile, the runtime should continue to honor that exact profile resolution path directly.
+
+That is a different case from default dispatch.
+
 ### Required new scoring dimensions
 
 Current scorer is already fine for:

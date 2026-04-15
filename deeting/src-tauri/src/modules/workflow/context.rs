@@ -115,6 +115,7 @@ pub fn build_context_packet(
             upstream_phase_ids: phase.depends_on.clone(),
         },
         expected_output: phase.expected_output.clone(),
+        worker_task_packet: phase.worker_task_packet.clone(),
     };
 
     Ok(ContextPacket {
@@ -123,6 +124,7 @@ pub fn build_context_packet(
         phase_title: phase.title.clone(),
         context_md,
         context_json,
+        worker_task_packet: phase.worker_task_packet.clone(),
     })
 }
 
@@ -148,6 +150,7 @@ mod tests {
                     depends_on: vec![],
                     goal: "Find stuff".to_string(),
                     expected_output: None,
+                    worker_task_packet: None,
                 },
                 CompiledPhase {
                     phase_id: "phase-2".to_string(),
@@ -159,6 +162,7 @@ mod tests {
                         result_kind: "json_structured".to_string(),
                         result_schema_hint: Some("analysis.v1".to_string()),
                     }),
+                    worker_task_packet: None,
                 },
             ],
             policy: SnapshotPolicy::default(),
@@ -221,6 +225,65 @@ mod tests {
             .inputs
             .upstream_phase_ids
             .contains(&"phase-1".to_string()));
+
+        std::fs::remove_dir_all(temp_root).ok();
+    }
+
+    #[test]
+    fn build_context_packet_preserves_structured_worker_task_packet() {
+        let temp_root = std::env::temp_dir().join(format!("ctx-packet-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_root).expect("create temp root");
+
+        let mut snapshot = sample_snapshot();
+        snapshot.phases[1].worker_task_packet = Some(
+            serde_json::from_value(serde_json::json!({
+                "schema_version": 1,
+                "task_id": "exec-1",
+                "route": "worker",
+                "goal": "Analyze findings",
+                "user_query": "Analyze findings",
+                "task_kind": "analysis",
+                "deliverable_kind": "structured_findings",
+                "context_summary": "runtime-selected worker",
+                "relevant_inputs": {},
+                "required_capabilities": ["tool.search"],
+                "candidate_capabilities": ["search_sdk"],
+                "constraints": ["Stay scoped"],
+                "non_goals": ["Do not reroute"],
+                "allowed_actions": ["Analyze"],
+                "forbidden_actions": ["Reroute"],
+                "output_contract": {"kind":"structured_findings"},
+                "completion_standard": "Return findings",
+                "escalation_policy": "Block explicitly",
+                "packet_hash": "packet-123"
+            }))
+            .expect("worker task packet"),
+        );
+
+        let packet = build_context_packet(
+            &snapshot,
+            &snapshot.phases[1],
+            &temp_root,
+            "Test goal",
+            "proposal text",
+        )
+        .expect("build context packet");
+
+        assert_eq!(
+            packet
+                .worker_task_packet
+                .as_ref()
+                .map(|value| value.packet_hash.as_str()),
+            Some("packet-123")
+        );
+        assert_eq!(
+            packet
+                .context_json
+                .worker_task_packet
+                .as_ref()
+                .map(|value| value.packet_hash.as_str()),
+            Some("packet-123")
+        );
 
         std::fs::remove_dir_all(temp_root).ok();
     }

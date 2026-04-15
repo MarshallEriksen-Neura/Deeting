@@ -22,6 +22,7 @@ pub mod tool_catalog;
 pub mod tool_feedback;
 pub mod tool_result_blocks;
 pub mod tool_trace;
+pub mod worker_dispatch;
 
 pub(crate) use crate::modules::mcp::commands::runtime::execute_or_queue_mcp_tool_call_with_tool_ref;
 pub(crate) use crate::modules::skills::onboarding::install_local_skill_from_onboarding_request;
@@ -52,8 +53,8 @@ pub(crate) use control_plane::{
     apply_desktop_execution_policy_overrides, build_default_local_execution_policy,
     build_local_control_plane_result, build_local_control_plane_status_meta,
     build_local_execution_policy, build_runtime_discovery_bundle_with_runtime_query_vector,
-    maybe_override_route_with_custom_task_agent_query_vector, select_worker_custom_task_agent,
-    LocalControlPlaneResult, LocalExecutionPolicy, RuntimeDiscoveryBundle,
+    maybe_override_route_with_custom_task_agent_query_vector, LocalControlPlaneResult,
+    LocalExecutionPolicy, RuntimeDiscoveryBundle,
 };
 pub(crate) use execution_graph::{
     project_execution_graph_blocks_from_value, project_execution_graph_snapshot,
@@ -78,7 +79,8 @@ pub(crate) use task_learning::{
     apply_policy_delta, apply_route_prior, apply_task_learning_revision, build_task_fingerprint,
     evaluate_task_learning_with_runtime, list_task_learning_runs_for_query,
     list_task_policy_priors_for_query, load_task_learning_run_detail, query_task_policy_hint,
-    replay_task_learning_run, route_hint_status_meta, TaskFingerprint, TaskPolicyHint,
+    replay_task_learning_run, route_hint_status_meta, TaskFingerprint,
+    TaskLearningDelegatedExecution, TaskPolicyHint,
 };
 #[cfg(test)]
 pub(crate) use tool_catalog::{
@@ -101,3 +103,4 @@ pub(crate) use tool_trace::{
     append_streamable_local_tool_result_blocks, build_local_tool_trace_blocks,
     resolve_tool_trace_call_id,
 };
+pub(crate) use worker_dispatch::select_worker_custom_task_agent;

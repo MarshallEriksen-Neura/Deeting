@@ -96,6 +96,7 @@ pub(crate) async fn execute_monitor_task_agent(
             temperature: None,
             max_tokens: None,
             max_rounds: Some(max_rounds),
+            worker_task_packet: None,
         },
     )
     .await

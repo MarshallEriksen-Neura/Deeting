@@ -138,7 +138,8 @@ fn signals_from_outcome(outcome: &EvaluatedOutcome) -> TaskLearningSignals {
         successful_execute_code_plan: outcome.used_execute_code_plan
             && outcome.execution_judgment == "justified"
             && outcome.final_status == "success",
-        delegated_execution: outcome.had_delegated_execution,
+        delegated_execution: outcome.had_delegated_execution
+            || outcome.delegated_execution.is_some(),
         observed_error_codes: outcome.observed_error_codes.clone(),
     }
 }
@@ -159,12 +160,14 @@ fn revise_outcome_for_signal(
                     "unverified" | "weak_pass"
                 )
             {
-                revised.verification_result =
-                    if revised.tool_call_count > 0 || revised.had_delegated_execution {
-                        "passed".to_string()
-                    } else {
-                        "weak_pass".to_string()
-                    };
+                revised.verification_result = if revised.tool_call_count > 0
+                    || revised.had_delegated_execution
+                    || revised.delegated_execution.is_some()
+                {
+                    "passed".to_string()
+                } else {
+                    "weak_pass".to_string()
+                };
             }
             revised.confidence = (revised.confidence + 0.12).clamp(0.0, 1.0);
         }

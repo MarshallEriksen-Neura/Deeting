@@ -1,10 +1,10 @@
 use super::types::{
-    EvaluatedOutcome, PolicyDelta, TaskAttribution, TaskFingerprint, TaskLearningEvaluation,
-    TaskLearningSignals, ACTION_CAPABILITY_ATTACH, ACTION_DISCOVERY_SEARCH_EARLY,
-    ACTION_EXECUTE_CODE_PLAN, ACTION_ROUTE_DIRECT, ACTION_ROUTE_WORKER,
-    ACTION_VERIFICATION_STRONGER_CHECKS, DECISION_POINT_CAPABILITY_ATTACH,
-    DECISION_POINT_DISCOVERY, DECISION_POINT_EXECUTION, DECISION_POINT_ROUTE,
-    DECISION_POINT_VERIFICATION,
+    EvaluatedOutcome, PolicyDelta, TaskAttribution, TaskFingerprint,
+    TaskLearningDelegatedExecution, TaskLearningEvaluation, TaskLearningSignals,
+    ACTION_CAPABILITY_ATTACH, ACTION_DISCOVERY_SEARCH_EARLY, ACTION_EXECUTE_CODE_PLAN,
+    ACTION_ROUTE_DIRECT, ACTION_ROUTE_WORKER, ACTION_VERIFICATION_STRONGER_CHECKS,
+    DECISION_POINT_CAPABILITY_ATTACH, DECISION_POINT_DISCOVERY, DECISION_POINT_EXECUTION,
+    DECISION_POINT_ROUTE, DECISION_POINT_VERIFICATION, DECISION_POINT_WORKER_SELECTION,
 };
 use crate::modules::ai_upstream::types::LocalModelConnection;
 use crate::modules::desktop_runtime::runtime::request_provider_chat_completion;
@@ -166,6 +166,54 @@ fn derive_route_judgment(
     "good".to_string()
 }
 
+fn delegated_profile_id(
+    delegated_execution: Option<&TaskLearningDelegatedExecution>,
+) -> Option<String> {
+    delegated_execution?
+        .selected_profile_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_ascii_lowercase())
+}
+
+fn derive_worker_selection_judgment(
+    delegated_execution: Option<&TaskLearningDelegatedExecution>,
+    final_status: &str,
+    verification_result: &str,
+    finish_reason: &str,
+    user_response_signal: &str,
+    signals: &TaskLearningSignals,
+) -> Option<String> {
+    let delegated_execution = delegated_execution?;
+    delegated_profile_id(Some(delegated_execution))?;
+
+    let delegated_status = delegated_execution.status.trim().to_ascii_lowercase();
+    if matches!(delegated_status.as_str(), "failed" | "cancelled") {
+        return Some(if final_status == "blocked" {
+            "blocked".to_string()
+        } else {
+            "failed".to_string()
+        });
+    }
+    if final_status == "blocked" {
+        return Some("blocked".to_string());
+    }
+    if final_status == "partial" {
+        return Some("partial".to_string());
+    }
+    if final_status == "failed"
+        || finish_reason == "length"
+        || verification_result == "weak_pass"
+        || matches!(user_response_signal, "corrected" | "rejected")
+        || signals.tool_error_count > 0
+        || signals.requires_approval_count > 0
+    {
+        return Some("unstable".to_string());
+    }
+    Some("success".to_string())
+}
+
 fn derive_discovery_judgment(
     fingerprint: &TaskFingerprint,
     final_status: &str,
@@ -287,6 +335,7 @@ fn derive_confidence(
 fn build_secondary_evidence(
     route_decision: Option<&LocalRouteDecision>,
     execution_policy: &LocalExecutionPolicy,
+    delegated_execution: Option<&TaskLearningDelegatedExecution>,
     signals: &TaskLearningSignals,
     finish_reason: &str,
 ) -> Vec<String> {
@@ -310,6 +359,21 @@ fn build_secondary_evidence(
     }
     if signals.used_attach_capability {
         evidence.push("used_attach_capability".to_string());
+    }
+    if let Some(delegated_execution) = delegated_execution {
+        evidence.push(format!("delegated_kind:{}", delegated_execution.kind));
+        evidence.push(format!("delegated_status:{}", delegated_execution.status));
+        if let Some(profile_id) = delegated_profile_id(Some(delegated_execution)) {
+            evidence.push(format!("delegated_profile:{profile_id}"));
+        }
+        if let Some(worker_ref) = delegated_execution
+            .worker_ref
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            evidence.push(format!("delegated_worker_ref:{worker_ref}"));
+        }
     }
     evidence.extend(
         signals
@@ -371,6 +435,45 @@ fn compute_policy_delta(
                     ),
                 })
             }
+        }
+        DECISION_POINT_WORKER_SELECTION => {
+            let action_key = delegated_profile_id(outcome.delegated_execution.as_ref())?;
+            let delegated_execution = outcome.delegated_execution.as_ref();
+            let judgment = outcome
+                .worker_selection_judgment
+                .as_deref()
+                .unwrap_or("unstable");
+            let adjusted_magnitude = match judgment {
+                "success" => (magnitude * 0.8).clamp(0.05, 0.35),
+                "partial" => (magnitude * 0.65).clamp(0.05, 0.3),
+                "blocked" => (magnitude * 0.85).clamp(0.08, 0.38),
+                "unstable" => (magnitude * 0.5).clamp(0.05, 0.24),
+                _ => magnitude,
+            };
+            let direction = if judgment == "success" {
+                "strengthen"
+            } else {
+                "weaken"
+            };
+            let kind = delegated_execution
+                .map(|value| value.kind.as_str())
+                .unwrap_or("custom_task_agent");
+            let worker_ref = delegated_execution
+                .and_then(|value| value.worker_ref.as_deref())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("user_worker_profile:unknown");
+            Some(PolicyDelta {
+                decision_point: DECISION_POINT_WORKER_SELECTION.to_string(),
+                action_key,
+                direction: direction.to_string(),
+                magnitude: adjusted_magnitude,
+                state,
+                rationale: format!(
+                    "Delegated worker selection via '{}' ({}) evaluated as '{}' for this fingerprint.",
+                    worker_ref, kind, judgment
+                ),
+            })
         }
         DECISION_POINT_DISCOVERY => Some(PolicyDelta {
             decision_point: DECISION_POINT_DISCOVERY.to_string(),
@@ -463,6 +566,9 @@ fn primary_stage_from_outcome(
     if !learning_eligible_from_outcome(outcome) {
         return None;
     }
+    if outcome.delegated_execution.is_some() && outcome.worker_selection_judgment.is_some() {
+        return Some(DECISION_POINT_WORKER_SELECTION.to_string());
+    }
     if matches!(
         outcome.user_response_signal.as_str(),
         "corrected" | "rejected"
@@ -500,14 +606,23 @@ pub(crate) fn rebuild_task_learning_evaluation_from_outcome(
     execution_policy: &LocalExecutionPolicy,
     finish_reason: &str,
     signals: &TaskLearningSignals,
-    outcome: EvaluatedOutcome,
+    mut outcome: EvaluatedOutcome,
 ) -> TaskLearningEvaluation {
+    outcome.worker_selection_judgment = derive_worker_selection_judgment(
+        outcome.delegated_execution.as_ref(),
+        outcome.final_status.as_str(),
+        outcome.verification_result.as_str(),
+        finish_reason,
+        outcome.user_response_signal.as_str(),
+        signals,
+    );
     let learning_eligible = learning_eligible_from_outcome(&outcome);
     let attribution = TaskAttribution {
         primary_stage: primary_stage_from_outcome(fingerprint, &outcome, signals),
         secondary_evidence: build_secondary_evidence(
             route_decision,
             execution_policy,
+            outcome.delegated_execution.as_ref(),
             signals,
             finish_reason,
         ),
@@ -723,9 +838,10 @@ pub(crate) async fn evaluate_task_learning_with_runtime(
     finish_reason: &str,
     total_latency_ms: i64,
     tool_trace_blocks: &[Value],
-    had_delegated_execution: bool,
+    delegated_execution: Option<TaskLearningDelegatedExecution>,
     user_response_signal: Option<&str>,
 ) -> TaskLearningEvaluation {
+    let had_delegated_execution = delegated_execution.is_some();
     let signals = collect_task_learning_signals(tool_trace_blocks, had_delegated_execution);
     let mut outcome = evaluate_task_learning(
         fingerprint,
@@ -736,7 +852,7 @@ pub(crate) async fn evaluate_task_learning_with_runtime(
         finish_reason,
         total_latency_ms,
         tool_trace_blocks,
-        had_delegated_execution,
+        delegated_execution,
     )
     .outcome;
     outcome.user_response_signal =
@@ -783,8 +899,9 @@ pub(crate) fn evaluate_task_learning(
     finish_reason: &str,
     total_latency_ms: i64,
     tool_trace_blocks: &[Value],
-    had_delegated_execution: bool,
+    delegated_execution: Option<TaskLearningDelegatedExecution>,
 ) -> TaskLearningEvaluation {
+    let had_delegated_execution = delegated_execution.is_some();
     let signals = collect_task_learning_signals(tool_trace_blocks, had_delegated_execution);
     let final_status = derive_final_status(
         finish_reason,
@@ -807,6 +924,7 @@ pub(crate) fn evaluate_task_learning(
         user_response_signal: "silent".to_string(),
         judgment_mode: "heuristic".to_string(),
         route_judgment: route_judgment.clone(),
+        worker_selection_judgment: None,
         discovery_judgment: discovery_judgment.clone(),
         execution_judgment: execution_judgment.clone(),
         cost_class: derive_cost_class(total_latency_ms, &signals),
@@ -819,6 +937,7 @@ pub(crate) fn evaluate_task_learning(
         used_attach_capability: signals.used_attach_capability,
         used_execute_code_plan: signals.used_execute_code_plan,
         had_delegated_execution,
+        delegated_execution,
         observed_error_codes: signals.observed_error_codes.clone(),
     };
     rebuild_task_learning_evaluation_from_outcome(
@@ -835,6 +954,7 @@ pub(crate) fn evaluate_task_learning(
 mod tests {
     use super::evaluate_task_learning;
     use crate::modules::desktop_runtime::runtime::task_learning::fingerprint::build_task_fingerprint;
+    use crate::modules::desktop_runtime::runtime::TaskLearningDelegatedExecution;
     use crate::modules::desktop_runtime::runtime::{
         LocalExecutionPolicy, LocalRouteDecision, LocalRouteKind,
     };
@@ -877,6 +997,21 @@ mod tests {
         }
     }
 
+    fn delegated_execution(
+        status: &str,
+        selected_profile_id: &str,
+    ) -> TaskLearningDelegatedExecution {
+        TaskLearningDelegatedExecution {
+            kind: "workflow".to_string(),
+            status: status.to_string(),
+            selected_profile_id: Some(selected_profile_id.to_string()),
+            worker_ref: Some(format!("user_worker_profile:{selected_profile_id}")),
+            packet_hash: Some("packet-1".to_string()),
+            task_kind: Some("analysis".to_string()),
+            deliverable_kind: Some("structured_findings".to_string()),
+        }
+    }
+
     #[test]
     fn evaluate_task_learning_marks_discovery_skip_as_learning_signal() {
         let evaluation = evaluate_task_learning(
@@ -888,7 +1023,7 @@ mod tests {
             "error",
             2_000,
             &[],
-            false,
+            None,
         );
 
         assert_eq!(evaluation.outcome.discovery_judgment, "skipped_when_needed");
@@ -917,7 +1052,7 @@ mod tests {
                     "success": true
                 }
             })],
-            false,
+            None,
         );
 
         assert_eq!(evaluation.outcome.execution_judgment, "justified");
@@ -931,6 +1066,79 @@ mod tests {
                 .as_ref()
                 .map(|delta| delta.action_key.as_str()),
             Some("execute_code_plan")
+        );
+    }
+
+    #[test]
+    fn evaluate_task_learning_strengthens_selected_worker_after_delegated_success() {
+        let evaluation = evaluate_task_learning(
+            &build_task_fingerprint("analyze the desktop worker route"),
+            Some(&route_decision(LocalRouteKind::Worker)),
+            &policy(LocalRouteKind::Worker, LocalExecutionPlane::WorkerReasoning),
+            "Research worker completed the analysis.",
+            false,
+            "stop",
+            6_000,
+            &[serde_json::json!({
+                "type": "tool_result",
+                "toolName": "delegated_execution",
+                "status": "success",
+            })],
+            Some(delegated_execution("succeeded", "research.worker")),
+        );
+
+        assert_eq!(
+            evaluation.outcome.worker_selection_judgment.as_deref(),
+            Some("success")
+        );
+        assert_eq!(
+            evaluation.attribution.primary_stage.as_deref(),
+            Some("worker_selection")
+        );
+        assert_eq!(
+            evaluation.policy_delta.as_ref().map(|delta| (
+                delta.decision_point.as_str(),
+                delta.action_key.as_str(),
+                delta.direction.as_str()
+            )),
+            Some(("worker_selection", "research.worker", "strengthen"))
+        );
+    }
+
+    #[test]
+    fn evaluate_task_learning_weakens_selected_worker_after_delegated_failure() {
+        let evaluation = evaluate_task_learning(
+            &build_task_fingerprint("diagnose the workflow delegation path"),
+            Some(&route_decision(LocalRouteKind::Worker)),
+            &policy(LocalRouteKind::Worker, LocalExecutionPlane::WorkerReasoning),
+            "",
+            true,
+            "error",
+            4_000,
+            &[serde_json::json!({
+                "type": "tool_result",
+                "toolName": "delegated_execution",
+                "status": "error",
+                "result": { "error_code": "DELEGATED_FAILED" }
+            })],
+            Some(delegated_execution("failed", "ops.worker")),
+        );
+
+        assert_eq!(
+            evaluation.outcome.worker_selection_judgment.as_deref(),
+            Some("failed")
+        );
+        assert_eq!(
+            evaluation.attribution.primary_stage.as_deref(),
+            Some("worker_selection")
+        );
+        assert_eq!(
+            evaluation.policy_delta.as_ref().map(|delta| (
+                delta.decision_point.as_str(),
+                delta.action_key.as_str(),
+                delta.direction.as_str()
+            )),
+            Some(("worker_selection", "ops.worker", "weaken"))
         );
     }
 }

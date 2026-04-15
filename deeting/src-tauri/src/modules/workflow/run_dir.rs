@@ -211,6 +211,7 @@ mod tests {
                     result_kind: "text_summary".to_string(),
                     result_schema_hint: Some("notes".to_string()),
                 }),
+                worker_task_packet: None,
             }],
             policy: SnapshotPolicy::default(),
         };

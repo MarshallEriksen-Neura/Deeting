@@ -9,8 +9,6 @@ use crate::modules::custom_task_agents::types::{
     CustomTaskAgentInvocationKind, CustomTaskAgentProfile,
 };
 #[cfg(test)]
-use crate::modules::desktop_runtime::runtime::control_plane::select_custom_task_agent_candidate;
-#[cfg(test)]
 use crate::modules::desktop_runtime::runtime::prompt_assets::PromptAssets;
 #[cfg(test)]
 use crate::modules::desktop_runtime::runtime::prompt_plan::{
@@ -526,7 +524,18 @@ pub async fn execute_local_orchestrated_chat(
                     "score": execution.record.selection.score,
                     "reason_codes": execution.record.selection.reason_codes,
                     "reason_text": execution.record.selection.reason_text,
+                    "candidate_count": execution.record.selection.candidate_count,
+                    "selected_from_top_k": execution.record.selection.selected_from_top_k,
+                    "callable_coverage_score": execution.record.selection.callable_coverage_score,
+                    "modality_fit_score": execution.record.selection.modality_fit_score,
+                    "profile_prior_score": execution.record.selection.profile_prior_score,
                 },
+                "packet_receipt": execution.record.packet_receipt.as_ref().map(|receipt| json!({
+                    "packet_hash": receipt.packet_hash,
+                    "task_kind": receipt.task_kind,
+                    "deliverable_kind": receipt.deliverable_kind,
+                    "selected_profile_id": receipt.selected_profile_id,
+                })),
                 "available_actions": execution
                     .record
                     .available_actions
@@ -805,6 +814,35 @@ pub async fn execute_local_orchestrated_chat(
         }
     }
 
+    let delegated_execution_learning = delegated_execution.as_ref().map(|execution| {
+        crate::modules::desktop_runtime::runtime::TaskLearningDelegatedExecution {
+            kind: execution.record.kind.as_str().to_string(),
+            status: execution.record.status.as_str().to_string(),
+            selected_profile_id: execution
+                .record
+                .packet_receipt
+                .as_ref()
+                .map(|receipt| receipt.selected_profile_id.clone())
+                .or_else(|| Some(execution.record.target.id.clone())),
+            worker_ref: execution.record.target.worker_ref.clone(),
+            packet_hash: execution
+                .record
+                .packet_receipt
+                .as_ref()
+                .map(|receipt| receipt.packet_hash.clone()),
+            task_kind: execution
+                .record
+                .packet_receipt
+                .as_ref()
+                .map(|receipt| receipt.task_kind.clone()),
+            deliverable_kind: execution
+                .record
+                .packet_receipt
+                .as_ref()
+                .map(|receipt| receipt.deliverable_kind.clone()),
+        }
+    });
+
     let created = unix_seconds();
     let mut message = json!({
         "role": "assistant",
@@ -852,7 +890,7 @@ pub async fn execute_local_orchestrated_chat(
                 &finish_reason,
                 total_latency_ms,
                 &assistant_blocks,
-                delegated_execution.is_some(),
+                delegated_execution_learning,
                 None,
             )
             .await;

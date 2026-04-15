@@ -238,6 +238,8 @@ pub(crate) async fn execute_suggestion(
                     goal: goal.to_string(),
                     worker_ref: Some(worker_ref),
                     inject_into_chat: false,
+                    user_notes: None,
+                    worker_task_packet: None,
                 },
             )
             .await?;
@@ -849,6 +851,8 @@ pub(crate) async fn run_schedule_tick(
                     goal: review_goal.clone(),
                     worker_ref: Some(worker_ref),
                     inject_into_chat: false,
+                    user_notes: None,
+                    worker_task_packet: None,
                 },
             )
             .await
@@ -1145,6 +1149,8 @@ async fn handle_corpus_sync_followups(
                     goal,
                     worker_ref: Some(worker_ref),
                     inject_into_chat: false,
+                    user_notes: None,
+                    worker_task_packet: None,
                 },
             )
             .await
