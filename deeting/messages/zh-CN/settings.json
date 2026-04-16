@@ -182,7 +182,7 @@
       "chatHistoryRetentionLabel": "聊天记录保留时长",
       "chatHistoryRetentionForever": "永久保留",
       "chatHistoryRetentionDays": "保留 {days} 天",
-      "chatHistoryRetentionHelp": "按会话最后活跃时间自动清理整段本地聊天。仅影响当前桌面端当前设备，用于控制本地 SQLite 体积。",
+      "chatHistoryRetentionHelp": "按会话最后活跃时间自动清理整段本地聊天，并按创建时间删除过期请求日志。仅影响当前桌面端当前设备，用于控制本地 SQLite 体积。",
       "approvalPolicyLabel": "审批策略",
       "approvalPolicyHigh": "高",
       "approvalPolicyMedium": "中",

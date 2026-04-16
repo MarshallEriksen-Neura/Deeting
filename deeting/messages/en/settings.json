@@ -182,7 +182,7 @@
       "chatHistoryRetentionLabel": "Chat history retention",
       "chatHistoryRetentionForever": "Keep forever",
       "chatHistoryRetentionDays": "Keep {days} days",
-      "chatHistoryRetentionHelp": "Automatically removes full local conversation sessions by last activity time. This only affects the current desktop device and helps control local SQLite growth.",
+      "chatHistoryRetentionHelp": "Automatically removes full local conversation sessions by last activity time and deletes expired request logs by creation time. This only affects the current desktop device and helps control local SQLite growth.",
       "approvalPolicyLabel": "Approval policy",
       "approvalPolicyHigh": "High",
       "approvalPolicyMedium": "Medium",

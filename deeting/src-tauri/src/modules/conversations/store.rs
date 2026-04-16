@@ -1,6 +1,10 @@
 use sqlx::{sqlite::SqliteRow, Row, Sqlite};
 use uuid::Uuid;
 
+use crate::modules::conversations::commands::build_fact_extraction_new_chat_marker_key;
+use crate::modules::conversations::fact_sync::{
+    build_fact_extraction_last_hash_key, build_fact_extraction_last_run_at_key,
+};
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::store::McpStore;
 use mcp_core::types::LocalChatInputMessage;
@@ -29,7 +33,7 @@ const LOCAL_CONVERSATION_SUMMARY_IDLE_SECONDS: i64 = 600;
 const LOCAL_CONVERSATION_IDLE_CHECK_BATCH_SIZE: i64 = 50;
 const LOCAL_PERIODIC_TASK_MAX_ERROR_CHARS: usize = 2000;
 const SQLITE_BUSY_RETRY_DELAYS_MS: [u64; 3] = [150, 400, 900];
-const CHAT_HISTORY_RETENTION_CONFIG_KEY: &str = "chat.history_retention_days";
+pub(crate) const CHAT_HISTORY_RETENTION_CONFIG_KEY: &str = "chat.history_retention_days";
 
 fn is_sqlite_busy_error(err: &McpError) -> bool {
     let text = err.to_string().to_ascii_lowercase();
@@ -46,7 +50,7 @@ fn update_assistant_meta_step_error(step: &str, err: impl std::fmt::Display) -> 
     McpError::Storage(format!("update_assistant_meta step={} err={}", step, err))
 }
 
-fn parse_chat_history_retention_days(value: Option<String>) -> Option<i64> {
+pub(crate) fn parse_chat_history_retention_days(value: Option<String>) -> Option<i64> {
     let raw = value?.trim().to_string();
     if raw.is_empty() {
         return None;
@@ -57,6 +61,14 @@ fn parse_chat_history_retention_days(value: Option<String>) -> Option<i64> {
     } else {
         Some(parsed)
     }
+}
+
+fn build_session_scoped_fact_extraction_marker_keys(session_id: &str) -> [String; 3] {
+    [
+        build_fact_extraction_new_chat_marker_key(session_id),
+        build_fact_extraction_last_hash_key(session_id),
+        build_fact_extraction_last_run_at_key(session_id),
+    ]
 }
 
 fn local_conversation_row_token_estimate(row: &SqliteRow) -> i64 {
@@ -2500,6 +2512,19 @@ impl McpStore {
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
+        for marker_key in build_session_scoped_fact_extraction_marker_keys(&normalized_session_id) {
+            sqlx::query(
+                r#"
+                DELETE FROM desktop_config
+                WHERE key = ?;
+                "#,
+            )
+            .bind(&marker_key)
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+        }
+
         sqlx::query(
             r#"
             UPDATE conversation_session
@@ -4660,6 +4685,18 @@ impl McpStore {
             .execute(&mut *tx)
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
+            for marker_key in build_session_scoped_fact_extraction_marker_keys(&session_id) {
+                sqlx::query(
+                    r#"
+                    DELETE FROM desktop_config
+                    WHERE key = ?;
+                    "#,
+                )
+                .bind(&marker_key)
+                .execute(&mut *tx)
+                .await
+                .map_err(|err| McpError::Storage(err.to_string()))?;
+            }
             sqlx::query(
                 r#"
                 DELETE FROM conversation_message
@@ -4928,7 +4965,10 @@ impl McpStore {
 
 #[cfg(test)]
 mod tests {
-    use super::{McpStore, CHAT_HISTORY_RETENTION_CONFIG_KEY};
+    use super::{
+        build_session_scoped_fact_extraction_marker_keys, McpStore,
+        CHAT_HISTORY_RETENTION_CONFIG_KEY,
+    };
     use mcp_session::conversation::{
         CreateConversationMessageRequest, LocalConversationCreateRequest,
     };
@@ -4952,6 +4992,9 @@ mod tests {
     async fn chat_retention_cleanup_deletes_expired_sessions_and_keeps_recent_ones() {
         let store = create_test_store("chat-retention").await;
         let now = mcp_storage::helpers::now_rfc3339().expect("current time");
+        let expired_marker_keys =
+            build_session_scoped_fact_extraction_marker_keys("expired-session");
+        let recent_marker_keys = build_session_scoped_fact_extraction_marker_keys("recent-session");
 
         store
             .set_desktop_config(CHAT_HISTORY_RETENTION_CONFIG_KEY, "7")
@@ -4999,6 +5042,13 @@ mod tests {
         .await
         .expect("insert expired message");
 
+        for marker_key in &expired_marker_keys {
+            store
+                .set_desktop_config(marker_key, "1")
+                .await
+                .expect("persist expired marker");
+        }
+
         sqlx::query(
             r#"
             INSERT INTO conversation_session (
@@ -5019,6 +5069,13 @@ mod tests {
         .execute(&store.pool)
         .await
         .expect("insert recent session");
+
+        for marker_key in &recent_marker_keys {
+            store
+                .set_desktop_config(marker_key, "1")
+                .await
+                .expect("persist recent marker");
+        }
 
         let deleted = store
             .cleanup_expired_local_conversations_from_retention_config()
@@ -5045,6 +5102,67 @@ mod tests {
                 .await
                 .expect("count remaining expired messages");
         assert_eq!(remaining_message_count, 0);
+
+        let remaining_expired_marker_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM desktop_config WHERE key LIKE ?;")
+                .bind("fact_extraction.%.expired-session")
+                .fetch_one(&store.pool)
+                .await
+                .expect("count remaining expired markers");
+        assert_eq!(remaining_expired_marker_count, 0);
+
+        let remaining_recent_marker_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM desktop_config WHERE key LIKE ?;")
+                .bind("fact_extraction.%.recent-session")
+                .fetch_one(&store.pool)
+                .await
+                .expect("count remaining recent markers");
+        assert_eq!(
+            remaining_recent_marker_count,
+            i64::try_from(recent_marker_keys.len()).expect("recent marker key count")
+        );
+    }
+
+    #[tokio::test]
+    async fn clear_local_conversation_removes_session_fact_extraction_markers() {
+        let store = create_test_store("chat-clear-markers").await;
+        let created = store
+            .create_local_conversation(LocalConversationCreateRequest {
+                assistant_id: None,
+                title: Some("Clear markers".to_string()),
+            })
+            .await
+            .expect("create session");
+        let marker_keys =
+            build_session_scoped_fact_extraction_marker_keys(created.session_id.as_str());
+
+        for marker_key in &marker_keys {
+            store
+                .set_desktop_config(marker_key, "1")
+                .await
+                .expect("persist clear marker");
+        }
+
+        store
+            .clear_local_conversation(created.session_id.as_str())
+            .await
+            .expect("clear local conversation");
+
+        let remaining_marker_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM desktop_config WHERE key LIKE ?;")
+                .bind(format!("fact_extraction.%.{}", created.session_id))
+                .fetch_one(&store.pool)
+                .await
+                .expect("count remaining clear markers");
+        assert_eq!(remaining_marker_count, 0);
+
+        let remaining_session_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM conversation_session WHERE id = ?;")
+                .bind(created.session_id.as_str())
+                .fetch_one(&store.pool)
+                .await
+                .expect("count remaining cleared session");
+        assert_eq!(remaining_session_count, 1);
     }
 
     #[tokio::test]

@@ -18,7 +18,7 @@ fn to_string(error: impl std::fmt::Display) -> String {
     error.to_string()
 }
 
-fn build_fact_extraction_new_chat_marker_key(session_id: &str) -> String {
+pub(crate) fn build_fact_extraction_new_chat_marker_key(session_id: &str) -> String {
     format!(
         "{}.{}",
         FACT_EXTRACTION_NEW_CHAT_TRIGGER_KEY_PREFIX, session_id

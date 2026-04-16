@@ -28,6 +28,21 @@ pub struct MemoryService {
     snapshots: Option<Arc<SnapshotStore>>,
 }
 
+fn optional_log_value(value: Option<&str>) -> &str {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("-")
+}
+
+fn profile_log_label(profile: WriteGuardProfile) -> &'static str {
+    match profile {
+        WriteGuardProfile::ManualMemory => "manual_memory",
+        WriteGuardProfile::AutoExtractedFact => "auto_extracted_fact",
+        WriteGuardProfile::WikiPromotion => "wiki_promotion",
+    }
+}
+
 impl MemoryService {
     pub fn new(store: Arc<MemoryStore>) -> Self {
         Self {
@@ -267,12 +282,45 @@ impl MemoryService {
         profile: WriteGuardProfile,
     ) -> Result<WriteGuardResult, MemoryError> {
         if let Some(ref embedding_svc) = self.embedding {
+            let profile_label = profile_log_label(profile);
+            let session_id = optional_log_value(payload.session_id.as_deref());
+            let capability_id = optional_log_value(payload.capability_id.as_deref());
+            let category = optional_log_value(payload.category.as_deref());
+            let source = optional_log_value(payload.source.as_deref());
+            let content_chars = payload.content.chars().count();
+            log::info!(
+                "memory embedding start profile={} session={} capability={} category={} source={} content_chars={}",
+                profile_label,
+                session_id,
+                capability_id,
+                category,
+                source,
+                content_chars
+            );
             match embedding_svc.embed_text(&payload.content).await {
                 Ok(vector) => {
+                    log::info!(
+                        "memory embedding ok profile={} session={} capability={} category={} source={} vector_dim={}",
+                        profile_label,
+                        session_id,
+                        capability_id,
+                        category,
+                        source,
+                        vector.len()
+                    );
                     return self.append_guarded_inner(payload, vector, profile).await;
                 }
                 Err(e) => {
-                    log::warn!("memory guarded auto-embedding failed: {}", e);
+                    log::warn!(
+                        "memory embedding failed profile={} session={} capability={} category={} source={} content_chars={} err={}",
+                        profile_label,
+                        session_id,
+                        capability_id,
+                        category,
+                        source,
+                        content_chars,
+                        e
+                    );
                 }
             }
         }

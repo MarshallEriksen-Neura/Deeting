@@ -59,6 +59,25 @@ pub(crate) async fn start_local_periodic_worker(state: McpRuntimeState) {
                 );
             }
         }
+        match state
+            .store
+            .cleanup_expired_local_gateway_logs_from_retention_config()
+            .await
+        {
+            Ok(deleted) if deleted > 0 => {
+                log::info!(
+                    "periodic worker cleaned up {} expired local gateway logs",
+                    deleted
+                );
+            }
+            Ok(_) => {}
+            Err(err) => {
+                log::warn!(
+                    "periodic worker cleanup expired gateway logs error: {}",
+                    err
+                );
+            }
+        }
     }
 }
 

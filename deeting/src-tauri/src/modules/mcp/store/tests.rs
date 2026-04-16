@@ -1,4 +1,5 @@
 use super::McpStore;
+use crate::modules::conversations::store::CHAT_HISTORY_RETENTION_CONFIG_KEY;
 use crate::modules::mcp::commands::runtime::capability_catalog::build_capability_registry;
 use mcp_registry::types::LocalCapabilityRegistryUpsert;
 use mcp_session::admin::LocalGatewayLogQuery;
@@ -640,6 +641,97 @@ async fn gateway_log_queries_filter_by_dimensions_and_stats() {
     assert_eq!(stats.avg_duration_ms, 240);
     assert_eq!(stats.total_cost_user, 0.01);
     assert_eq!(stats.error_distribution[0].key, "429");
+}
+
+#[tokio::test]
+async fn gateway_log_retention_cleanup_deletes_expired_rows_and_keeps_recent_ones() {
+    let store = create_test_store("gateway-log-retention").await;
+    store.init().await.expect("init store");
+    let now = mcp_storage::helpers::now_rfc3339().expect("current time");
+
+    store
+        .set_desktop_config(CHAT_HISTORY_RETENTION_CONFIG_KEY, "7")
+        .await
+        .expect("persist retention config");
+
+    store
+        .create_local_gateway_log(
+            Some("trace-old"),
+            Some("user-a"),
+            Some("cred-a"),
+            Some("preset-a"),
+            "gpt-4o",
+            200,
+            100,
+            Some(50),
+            Some("https://example.com/v1/chat/completions"),
+            0,
+            10,
+            20,
+            30,
+            0.01,
+            0.02,
+            false,
+            None,
+            None,
+        )
+        .await
+        .expect("insert old gateway log");
+
+    sqlx::query("UPDATE gateway_log SET created_at = ? WHERE trace_id = ?;")
+        .bind("2024-01-01T00:00:00Z")
+        .bind("trace-old")
+        .execute(&store.write_pool)
+        .await
+        .expect("age old gateway log");
+
+    store
+        .create_local_gateway_log(
+            Some("trace-new"),
+            Some("user-b"),
+            Some("cred-b"),
+            Some("preset-b"),
+            "gpt-4o-mini",
+            200,
+            120,
+            Some(60),
+            Some("https://example.com/v1/chat/completions"),
+            0,
+            4,
+            6,
+            10,
+            0.005,
+            0.01,
+            true,
+            None,
+            None,
+        )
+        .await
+        .expect("insert recent gateway log");
+
+    sqlx::query("UPDATE gateway_log SET created_at = ? WHERE trace_id = ?;")
+        .bind(&now)
+        .bind("trace-new")
+        .execute(&store.write_pool)
+        .await
+        .expect("refresh recent gateway log timestamp");
+
+    let deleted = store
+        .cleanup_expired_local_gateway_logs_from_retention_config()
+        .await
+        .expect("cleanup expired gateway logs");
+
+    assert_eq!(deleted, 1);
+
+    let remaining_trace_ids: Vec<String> =
+        sqlx::query("SELECT trace_id FROM gateway_log ORDER BY created_at DESC, id DESC;")
+            .fetch_all(&store.pool)
+            .await
+            .expect("list remaining gateway logs")
+            .into_iter()
+            .map(|row| row.try_get("trace_id").expect("trace_id"))
+            .collect();
+    assert_eq!(remaining_trace_ids, vec!["trace-new".to_string()]);
 }
 
 #[tokio::test]

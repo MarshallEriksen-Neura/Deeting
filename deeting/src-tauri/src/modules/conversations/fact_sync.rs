@@ -20,11 +20,11 @@ const FACT_EXTRACTION_LAST_RUN_AT_KEY_PREFIX: &str = "fact_extraction.last_run_a
 const FACT_EXTRACTION_COMPARE_FINALIZE_COOLDOWN_SECONDS: i64 = 120;
 const FACT_EXTRACTION_STALE_DELETE_AFTER_ROUNDS: i64 = 2;
 
-fn build_fact_extraction_last_hash_key(session_id: &str) -> String {
+pub(crate) fn build_fact_extraction_last_hash_key(session_id: &str) -> String {
     format!("{}.{}", FACT_EXTRACTION_LAST_HASH_KEY_PREFIX, session_id)
 }
 
-fn build_fact_extraction_last_run_at_key(session_id: &str) -> String {
+pub(crate) fn build_fact_extraction_last_run_at_key(session_id: &str) -> String {
     format!("{}.{}", FACT_EXTRACTION_LAST_RUN_AT_KEY_PREFIX, session_id)
 }
 

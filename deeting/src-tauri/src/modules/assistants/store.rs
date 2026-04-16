@@ -1,5 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
+use crate::modules::conversations::store::{
+    parse_chat_history_retention_days, CHAT_HISTORY_RETENTION_CONFIG_KEY,
+};
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::store::McpStore;
 use mcp_session::admin::{
@@ -21,7 +24,7 @@ use mcp_session::assistant::{
 };
 use mcp_storage::helpers::{
     deserialize_json, normalize_assistant_tag_names, normalize_feedback_tags, now_rfc3339,
-    parse_assistant_routing_feedback_event, round_to_4, serialize_json,
+    now_unix_epoch, parse_assistant_routing_feedback_event, round_to_4, serialize_json,
 };
 use sqlx::sqlite::SqliteRow;
 use sqlx::Row;
@@ -2533,6 +2536,46 @@ impl McpStore {
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
         Ok(())
+    }
+
+    pub async fn cleanup_expired_local_gateway_logs(
+        &self,
+        retention_days: i64,
+    ) -> Result<i64, McpError> {
+        if retention_days <= 0 {
+            return Err(McpError::validation(
+                "retention_days must be greater than 0",
+            ));
+        }
+
+        let retention_seconds = retention_days.saturating_mul(24 * 60 * 60);
+        let threshold_epoch = now_unix_epoch()?.saturating_sub(retention_seconds);
+        let result = sqlx::query(
+            r#"
+            DELETE FROM gateway_log
+            WHERE COALESCE(CAST(strftime('%s', created_at) AS INTEGER), 0) <= ?;
+            "#,
+        )
+        .bind(threshold_epoch)
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        Ok(i64::try_from(result.rows_affected()).unwrap_or(i64::MAX))
+    }
+
+    pub async fn cleanup_expired_local_gateway_logs_from_retention_config(
+        &self,
+    ) -> Result<i64, McpError> {
+        let retention_days = parse_chat_history_retention_days(
+            self.get_desktop_config(CHAT_HISTORY_RETENTION_CONFIG_KEY)
+                .await?,
+        );
+        let Some(retention_days) = retention_days else {
+            return Ok(0);
+        };
+        self.cleanup_expired_local_gateway_logs(retention_days)
+            .await
     }
 
     pub async fn list_local_gateway_logs(
