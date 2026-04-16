@@ -156,6 +156,9 @@ mod tests {
 
         assert_eq!(value["method"], serde_json::json!("execute"));
         assert_eq!(value["request"]["command"], serde_json::json!("python"));
-        assert_eq!(value["request"]["files"][0]["path"], serde_json::json!("main.py"));
+        assert_eq!(
+            value["request"]["files"][0]["path"],
+            serde_json::json!("main.py")
+        );
     }
 }

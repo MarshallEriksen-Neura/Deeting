@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use crate::modules::conversations::text_utils::truncate_text_chars;
-use crate::modules::retrieval_kernel::lifecycle::{touched_vitality, vitality_multiplier};
+use crate::modules::retrieval_kernel::lifecycle::{touched_vitality, wiki_freshness_multiplier};
 use crate::modules::retrieval_kernel::ranking::{
     bm25_asset_match_scores, normalize_score_map, reciprocal_rank_fusion,
 };
@@ -235,12 +235,9 @@ pub(crate) async fn search_corpus(
                 .and_then(|value| value.get("vitality"))
                 .and_then(Value::as_f64)
                 .map(|value| value as f32);
-            let reference_timestamp = metadata
-                .and_then(|value| value.get("last_accessed_at"))
-                .and_then(Value::as_str)
-                .or_else(|| asset.get("updated_at").and_then(Value::as_str))
-                .unwrap_or("1970-01-01T00:00:00Z");
-            let score = base_score * vitality_multiplier(vitality, reference_timestamp, now) as f64;
+            let reference_timestamp = wiki_reference_timestamp(&asset);
+            let score =
+                base_score * wiki_freshness_multiplier(vitality, reference_timestamp, now) as f64;
 
             Some(LocalLlmWikiCorpusSearchHit {
                 asset_id: key,
@@ -467,6 +464,29 @@ fn summarize_markdown(content: &str) -> String {
     truncate_text_chars(&single_line, 220)
 }
 
+fn wiki_reference_timestamp(asset: &Value) -> &str {
+    asset
+        .get("metadata")
+        .and_then(|value| value.get("lifecycle"))
+        .and_then(|value| value.get("lastValidatedAt"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            asset
+                .get("updated_at")
+                .and_then(Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+        })
+        .or_else(|| {
+            asset
+                .get("metadata")
+                .and_then(|value| value.get("last_accessed_at"))
+                .and_then(Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+        })
+        .unwrap_or("1970-01-01T00:00:00Z")
+}
+
 fn truncate_to_byte_limit(content: &str, max_bytes: usize) -> &str {
     if content.len() <= max_bytes {
         return content;
@@ -487,7 +507,11 @@ fn hash_text(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{collect_indexable_notes, summarize_markdown, MAX_INDEXED_NOTE_BYTES};
+    use super::{
+        collect_indexable_notes, summarize_markdown, wiki_reference_timestamp,
+        MAX_INDEXED_NOTE_BYTES,
+    };
+    use serde_json::json;
     use std::fs;
 
     fn temp_root(label: &str) -> std::path::PathBuf {
@@ -557,5 +581,20 @@ mod tests {
 
         assert!(note.content.len() <= MAX_INDEXED_NOTE_BYTES);
         assert!(std::str::from_utf8(note.content.as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn wiki_reference_timestamp_prefers_validation_time_over_access_time() {
+        let asset = json!({
+            "updated_at": "2026-04-14T00:00:00Z",
+            "metadata": {
+                "last_accessed_at": "2026-04-16T00:00:00Z",
+                "lifecycle": {
+                    "lastValidatedAt": "2026-04-15T00:00:00Z"
+                }
+            }
+        });
+
+        assert_eq!(wiki_reference_timestamp(&asset), "2026-04-15T00:00:00Z");
     }
 }

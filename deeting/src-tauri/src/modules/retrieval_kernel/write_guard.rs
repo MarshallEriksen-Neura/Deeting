@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 use crate::modules::memory::types::{CreateLocalMemoryRequest, LocalMemoryItem};
-use crate::modules::retrieval_kernel::lifecycle::vitality_multiplier;
+use crate::modules::retrieval_kernel::lifecycle::memory_recency_multiplier;
 
 const DYNAMIC_THRESHOLD_MAX_BOOST: f32 = 0.04;
 const DYNAMIC_THRESHOLD_TOP2_FLOOR: f32 = 0.70;
@@ -359,19 +359,29 @@ fn candidate_protection(
         .unwrap_or(0.0);
 
     let explicit = explicit_importance.unwrap_or(0.0);
-    let freshness_reference = candidate
-        .last_accessed_at
-        .as_deref()
-        .unwrap_or(candidate.updated_at.as_str());
-    let freshness = vitality_multiplier(candidate.vitality, freshness_reference, now);
-    let freshness_normalized = ((freshness - 0.7) / 0.3).clamp(0.0, 1.0);
+    let freshness_reference = candidate.last_accessed_at.as_deref().unwrap_or_else(|| {
+        if candidate.updated_at.trim().is_empty() {
+            candidate.created_at.as_str()
+        } else {
+            candidate.updated_at.as_str()
+        }
+    });
+    let freshness = memory_recency_multiplier(
+        candidate.vitality,
+        freshness_reference,
+        now,
+        candidate.category.as_deref(),
+        candidate.source.as_deref(),
+        candidate.session_id.as_deref(),
+        candidate.meta_info.as_ref(),
+    );
     let vitality_score = candidate.vitality.unwrap_or(1.0).clamp(0.0, 1.0);
 
     let score = if pinned || manual_override {
         1.0
     } else {
         (explicit * 0.5
-            + freshness_normalized * 0.2
+            + freshness * 0.2
             + vitality_score * 0.1
             + tag_boost
             + category_boost

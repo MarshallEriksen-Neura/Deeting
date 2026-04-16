@@ -10,7 +10,7 @@ use crate::modules::memory::types::{
 };
 use crate::modules::providers::embedding::EmbeddingService;
 use crate::modules::retrieval_kernel::lifecycle::{
-    touched_vitality, vitality_multiplier, DEFAULT_VITALITY_RERANK_OVERFETCH_FACTOR,
+    memory_recency_multiplier, touched_vitality, DEFAULT_VITALITY_RERANK_OVERFETCH_FACTOR,
 };
 use crate::modules::retrieval_kernel::supersession::{
     candidate_is_superseded, find_supersession_target, mark_existing_memory_as_superseded,
@@ -650,7 +650,7 @@ impl MemoryService {
     /// Semantic search with vitality-weighted reranking.
     ///
     /// 1. Over-fetch Top-N * RERANK_OVERFETCH_FACTOR results
-    /// 2. Apply vitality decay: final_score = vector_score * (0.7 + 0.3 * vitality * exp(-decay * days))
+    /// 2. Apply category-aware recency decay so durable memories fade more slowly than ephemeral ones
     /// 3. Re-sort and return Top-K
     /// 4. Touch vitality (update last_accessed_at) for returned results
     pub async fn search(
@@ -1181,9 +1181,13 @@ fn snapshot_restore_payload(
 }
 
 fn reference_timestamp(item: &crate::modules::memory::types::LocalMemorySearchItem) -> &str {
-    item.last_accessed_at
-        .as_deref()
-        .unwrap_or(item.updated_at.as_str())
+    item.last_accessed_at.as_deref().unwrap_or_else(|| {
+        if item.updated_at.trim().is_empty() {
+            item.created_at.as_str()
+        } else {
+            item.updated_at.as_str()
+        }
+    })
 }
 
 fn apply_vitality_rerank(
@@ -1191,7 +1195,15 @@ fn apply_vitality_rerank(
     now: time::OffsetDateTime,
 ) {
     for item in items.iter_mut() {
-        item.score *= vitality_multiplier(item.vitality, reference_timestamp(item), now);
+        item.score *= memory_recency_multiplier(
+            item.vitality,
+            reference_timestamp(item),
+            now,
+            item.category.as_deref(),
+            item.source.as_deref(),
+            item.session_id.as_deref(),
+            item.meta_info.as_ref(),
+        );
         item.score *= supersession_rank_multiplier(item.meta_info.as_ref());
     }
 }

@@ -59,6 +59,9 @@ const MAX_AUDIT_ENTRIES: usize = 32;
 const MAX_SUGGESTIONS: usize = 16;
 const VALUABLE_ANSWER_MIN_CHARS: usize = 220;
 const MEMORY_PROMOTION_REPEAT_THRESHOLD: i64 = 2;
+const MEMORY_PROMOTION_STRONG_REPEAT_THRESHOLD: i64 = 3;
+const MEMORY_PROMOTION_MIN_CONFIDENCE: f64 = 0.72;
+const MEMORY_PROMOTION_MIN_DISTINCT_SESSION_SOURCES: usize = 2;
 const MAINTENANCE_SCHEDULE_INTERVAL_SECS: i64 = 6 * 60 * 60;
 
 #[derive(Debug, Clone)]
@@ -290,6 +293,7 @@ pub(crate) async fn execute_suggestion(
                         memory_content,
                         session_id.as_deref(),
                         suggestion.fingerprint.as_str(),
+                        metadata,
                         Some(suggestion.id.as_str()),
                         repeat_count,
                         now.as_str(),
@@ -1237,7 +1241,7 @@ async fn maybe_promote_repeated_conclusion_to_memory(
         .and_then(|value| value.get("repeatCount"))
         .and_then(Value::as_i64)
         .unwrap_or(1);
-    if repeat_count < MEMORY_PROMOTION_REPEAT_THRESHOLD {
+    if !should_promote_repeated_conclusion(metadata, repeat_count) {
         return Ok(());
     }
 
@@ -1258,6 +1262,7 @@ async fn maybe_promote_repeated_conclusion_to_memory(
                 summary,
                 Some(session_id),
                 fingerprint,
+                metadata,
                 None,
                 repeat_count,
                 now,
@@ -1585,17 +1590,31 @@ fn merge_metadata(
     repeat_count: i64,
     now: &str,
 ) -> Value {
-    let mut object = existing
-        .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_default();
-    if let Some(incoming) = incoming.and_then(Value::as_object) {
+    let existing = existing.and_then(Value::as_object);
+    let incoming = incoming.and_then(Value::as_object);
+    let mut object = existing.cloned().unwrap_or_default();
+    if let Some(incoming) = incoming {
         for (key, value) in incoming {
+            if key == "lifecycle" {
+                continue;
+            }
             object.insert(key.clone(), value.clone());
         }
     }
     object.insert("repeatCount".to_string(), json!(repeat_count));
-    refresh_lifecycle_metadata(&mut object, repeat_count, now);
+    let lifecycle = merge_lifecycle_object(
+        existing
+            .and_then(|value| value.get("lifecycle"))
+            .and_then(Value::as_object),
+        incoming
+            .and_then(|value| value.get("lifecycle"))
+            .and_then(Value::as_object),
+        repeat_count,
+        now,
+    );
+    if !lifecycle.is_empty() {
+        object.insert("lifecycle".to_string(), Value::Object(lifecycle));
+    }
     Value::Object(object)
 }
 
@@ -1643,7 +1662,7 @@ fn workspace_lifecycle_context_from_metadata(
     })
 }
 
-fn build_lifecycle_metadata(
+fn build_lifecycle_metadata_object(
     lifecycle_context: Option<&WorkspaceLifecycleContext>,
     claim_id: &str,
     session_id: Option<&str>,
@@ -1651,8 +1670,12 @@ fn build_lifecycle_metadata(
     now: &str,
     repeat_count: i64,
     promotion_state: &str,
-) -> Value {
+) -> serde_json::Map<String, Value> {
     let mut source_refs = Vec::new();
+    let has_session_ref = session_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .is_some();
     if let Some(session_id) = session_id.map(str::trim).filter(|value| !value.is_empty()) {
         source_refs.push(json!({
             "kind": "session",
@@ -1668,21 +1691,254 @@ fn build_lifecycle_metadata(
         }));
     }
 
-    json!({
-        "workspaceId": lifecycle_context.map(|value| value.workspace_id.as_str()),
-        "workspaceRelativePath": lifecycle_context.map(|value| value.workspace_relative_path.as_str()),
-        "memorySourceScope": lifecycle_context.map(|value| value.memory_source_scope.as_str()),
-        "pageId": Value::Null,
-        "claimId": claim_id,
-        "sourceRefs": source_refs,
-        "repeatCount": repeat_count,
-        "confidence": lifecycle_confidence(repeat_count, promotion_state),
-        "lastValidatedAt": now,
-        "supersededBy": Value::Null,
-        "promotionState": promotion_state,
-        "manualOverride": false,
-        "pinned": false,
-    })
+    let mut lifecycle = serde_json::Map::new();
+    lifecycle.insert(
+        "workspaceId".to_string(),
+        json!(lifecycle_context.map(|value| value.workspace_id.as_str())),
+    );
+    lifecycle.insert(
+        "workspaceRelativePath".to_string(),
+        json!(lifecycle_context.map(|value| value.workspace_relative_path.as_str())),
+    );
+    lifecycle.insert(
+        "memorySourceScope".to_string(),
+        json!(lifecycle_context.map(|value| value.memory_source_scope.as_str())),
+    );
+    lifecycle.insert("pageId".to_string(), Value::Null);
+    lifecycle.insert("claimId".to_string(), json!(claim_id));
+    lifecycle.insert("sourceRefs".to_string(), Value::Array(source_refs));
+    lifecycle.insert(
+        "distinctSessionCount".to_string(),
+        json!(has_session_ref as i64),
+    );
+    lifecycle.insert("repeatCount".to_string(), json!(repeat_count));
+    lifecycle.insert(
+        "confidence".to_string(),
+        json!(lifecycle_confidence(repeat_count, promotion_state)),
+    );
+    lifecycle.insert("lastValidatedAt".to_string(), json!(now));
+    lifecycle.insert("supersededBy".to_string(), Value::Null);
+    lifecycle.insert("promotionState".to_string(), json!(promotion_state));
+    lifecycle.insert("manualOverride".to_string(), json!(false));
+    lifecycle.insert("pinned".to_string(), json!(false));
+    lifecycle
+}
+
+fn build_lifecycle_metadata(
+    lifecycle_context: Option<&WorkspaceLifecycleContext>,
+    claim_id: &str,
+    session_id: Option<&str>,
+    source_kind: &str,
+    now: &str,
+    repeat_count: i64,
+    promotion_state: &str,
+) -> Value {
+    Value::Object(build_lifecycle_metadata_object(
+        lifecycle_context,
+        claim_id,
+        session_id,
+        source_kind,
+        now,
+        repeat_count,
+        promotion_state,
+    ))
+}
+
+fn merge_lifecycle_object(
+    existing: Option<&serde_json::Map<String, Value>>,
+    incoming: Option<&serde_json::Map<String, Value>>,
+    repeat_count: i64,
+    now: &str,
+) -> serde_json::Map<String, Value> {
+    let mut lifecycle = existing.cloned().unwrap_or_default();
+
+    if let Some(incoming) = incoming {
+        for (key, value) in incoming {
+            match key.as_str() {
+                "sourceRefs" => {}
+                "manualOverride" | "pinned" => {
+                    let existing_bool =
+                        lifecycle.get(key).and_then(Value::as_bool).unwrap_or(false);
+                    lifecycle.insert(
+                        key.clone(),
+                        json!(existing_bool || value.as_bool().unwrap_or(false)),
+                    );
+                }
+                "promotionState" => {
+                    let merged = preferred_promotion_state(
+                        lifecycle.get("promotionState").and_then(Value::as_str),
+                        value.as_str(),
+                    );
+                    lifecycle.insert(key.clone(), json!(merged));
+                }
+                _ => {
+                    if !value.is_null() {
+                        lifecycle.insert(key.clone(), value.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    let source_refs = merge_source_refs(existing, incoming);
+    lifecycle.insert("sourceRefs".to_string(), Value::Array(source_refs));
+    lifecycle.insert(
+        "distinctSessionCount".to_string(),
+        json!(count_session_source_refs(&lifecycle) as i64),
+    );
+    lifecycle.insert("repeatCount".to_string(), json!(repeat_count));
+
+    let promotion_state = lifecycle
+        .get("promotionState")
+        .and_then(Value::as_str)
+        .unwrap_or("candidate")
+        .to_string();
+    lifecycle.insert(
+        "confidence".to_string(),
+        json!(lifecycle_confidence(repeat_count, promotion_state.as_str())),
+    );
+    lifecycle.insert("lastValidatedAt".to_string(), json!(now));
+    lifecycle
+}
+
+fn merge_source_refs(
+    existing: Option<&serde_json::Map<String, Value>>,
+    incoming: Option<&serde_json::Map<String, Value>>,
+) -> Vec<Value> {
+    let mut merged = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+
+    for refs in [
+        existing
+            .and_then(|value| value.get("sourceRefs"))
+            .and_then(Value::as_array),
+        incoming
+            .and_then(|value| value.get("sourceRefs"))
+            .and_then(Value::as_array),
+    ] {
+        for value in refs.into_iter().flatten() {
+            let Some(key) = source_ref_key(value) else {
+                continue;
+            };
+            if seen.insert(key) {
+                merged.push(value.clone());
+            }
+        }
+    }
+
+    merged
+}
+
+fn source_ref_key(value: &Value) -> Option<String> {
+    let object = value.as_object()?;
+    let kind = object
+        .get("kind")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default();
+    let id = object
+        .get("id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default();
+    let source = object
+        .get("source")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default();
+    let relative_path = object
+        .get("relativePath")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default();
+    Some(format!("{kind}|{id}|{source}|{relative_path}"))
+}
+
+fn count_session_source_refs(lifecycle: &serde_json::Map<String, Value>) -> usize {
+    lifecycle
+        .get("sourceRefs")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|value| value.as_object())
+                .filter(|value| {
+                    value
+                        .get("kind")
+                        .and_then(Value::as_str)
+                        .map(|kind| kind.eq_ignore_ascii_case("session"))
+                        .unwrap_or(false)
+                })
+                .filter_map(|value| value.get("id").and_then(Value::as_str))
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+        })
+        .unwrap_or(0)
+}
+
+fn preferred_promotion_state(existing: Option<&str>, incoming: Option<&str>) -> String {
+    let existing = existing.unwrap_or("candidate");
+    let incoming = incoming.unwrap_or(existing);
+    if promotion_state_rank(existing) >= promotion_state_rank(incoming) {
+        existing.to_string()
+    } else {
+        incoming.to_string()
+    }
+}
+
+fn promotion_state_rank(value: &str) -> u8 {
+    if value.eq_ignore_ascii_case("promoted") {
+        2
+    } else if value.eq_ignore_ascii_case("candidate") {
+        1
+    } else {
+        0
+    }
+}
+
+fn should_promote_repeated_conclusion(
+    metadata: Option<&serde_json::Map<String, Value>>,
+    repeat_count: i64,
+) -> bool {
+    let lifecycle = metadata
+        .and_then(|value| value.get("lifecycle"))
+        .and_then(Value::as_object);
+
+    let pinned = lifecycle
+        .and_then(|value| value.get("pinned"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let manual_override = lifecycle
+        .and_then(|value| value.get("manualOverride"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if pinned || manual_override {
+        return true;
+    }
+
+    if repeat_count >= MEMORY_PROMOTION_STRONG_REPEAT_THRESHOLD {
+        return true;
+    }
+
+    if repeat_count < MEMORY_PROMOTION_REPEAT_THRESHOLD {
+        return false;
+    }
+
+    let confidence = lifecycle
+        .and_then(|value| value.get("confidence"))
+        .and_then(Value::as_f64)
+        .unwrap_or_else(|| lifecycle_confidence(repeat_count, "candidate"));
+    let distinct_session_count = lifecycle
+        .and_then(|value| value.get("distinctSessionCount"))
+        .and_then(Value::as_i64)
+        .map(|value| value.max(0) as usize)
+        .or_else(|| lifecycle.map(count_session_source_refs))
+        .unwrap_or(0);
+
+    confidence >= MEMORY_PROMOTION_MIN_CONFIDENCE
+        && distinct_session_count >= MEMORY_PROMOTION_MIN_DISTINCT_SESSION_SOURCES
 }
 
 fn lifecycle_confidence(repeat_count: i64, promotion_state: &str) -> f64 {
@@ -1693,27 +1949,6 @@ fn lifecycle_confidence(repeat_count: i64, promotion_state: &str) -> f64 {
     };
     let reinforcement = (repeat_count.saturating_sub(1) as f64 * 0.12).min(0.24);
     (base + reinforcement).clamp(0.0, 0.95)
-}
-
-fn refresh_lifecycle_metadata(
-    metadata: &mut serde_json::Map<String, Value>,
-    repeat_count: i64,
-    now: &str,
-) {
-    let Some(lifecycle) = ensure_object_field(metadata, "lifecycle") else {
-        return;
-    };
-    let promotion_state = lifecycle
-        .get("promotionState")
-        .and_then(Value::as_str)
-        .unwrap_or("candidate")
-        .to_string();
-    lifecycle.insert("repeatCount".to_string(), json!(repeat_count));
-    lifecycle.insert(
-        "confidence".to_string(),
-        json!(lifecycle_confidence(repeat_count, promotion_state.as_str())),
-    );
-    lifecycle.insert("lastValidatedAt".to_string(), json!(now));
 }
 
 fn update_memory_promotion_metadata(
@@ -1750,6 +1985,7 @@ fn build_memory_promotion_request(
     content: &str,
     session_id: Option<&str>,
     claim_id: &str,
+    suggestion_metadata: Option<&serde_json::Map<String, Value>>,
     suggestion_id: Option<&str>,
     repeat_count: i64,
     now: &str,
@@ -1767,15 +2003,22 @@ fn build_memory_promotion_request(
             "source": "llm_wiki_automation",
             "fingerprint": claim_id,
             "suggestionId": suggestion_id,
-            "lifecycle": build_lifecycle_metadata(
-                lifecycle_context,
-                claim_id,
-                session_id,
-                "valuable_answer",
-                now,
+            "lifecycle": Value::Object(merge_lifecycle_object(
+                suggestion_metadata
+                    .and_then(|value| value.get("lifecycle"))
+                    .and_then(Value::as_object),
+                Some(&build_lifecycle_metadata_object(
+                    lifecycle_context,
+                    claim_id,
+                    session_id,
+                    "valuable_answer",
+                    now,
+                    repeat_count,
+                    "promoted",
+                )),
                 repeat_count,
-                "promoted",
-            ),
+                now,
+            )),
         })),
         category: Some("llm_wiki".to_string()),
         source: Some(
@@ -1849,10 +2092,11 @@ fn trim_preview_text(value: &str, limit: usize) -> String {
 mod tests {
     use super::{
         build_lifecycle_metadata, looks_like_summary_candidate, looks_like_valuable_answer,
-        merge_metadata, record_valuable_answer_candidate, suggestion_fingerprint,
-        trim_preview_text, LocalLlmWikiAutomationState, WorkspaceLifecycleContext,
+        merge_metadata, record_valuable_answer_candidate, should_promote_repeated_conclusion,
+        suggestion_fingerprint, trim_preview_text, LocalLlmWikiAutomationState,
+        WorkspaceLifecycleContext,
     };
-    use serde_json::json;
+    use serde_json::{json, Value};
 
     #[test]
     fn record_valuable_answer_candidate_reuses_existing_suggestion_and_bumps_repeat_count() {
@@ -1932,6 +2176,86 @@ mod tests {
                 .and_then(|value| value.as_str()),
             Some("workspace-1")
         );
+    }
+
+    #[test]
+    fn merge_metadata_preserves_distinct_session_source_refs() {
+        let context = WorkspaceLifecycleContext {
+            workspace_id: "workspace-1".into(),
+            workspace_relative_path: "Deeting Wiki".into(),
+            memory_source_scope: "llm_wiki_automation::workspace-1".into(),
+        };
+        let existing = json!({
+            "sessionId": "session-1",
+            "lifecycle": build_lifecycle_metadata(
+                Some(&context),
+                "claim-1",
+                Some("session-1"),
+                "valuable_answer",
+                "2026-04-14T00:00:00Z",
+                1,
+                "candidate",
+            )
+        });
+        let incoming = json!({
+            "sessionId": "session-2",
+            "lifecycle": build_lifecycle_metadata(
+                Some(&context),
+                "claim-1",
+                Some("session-2"),
+                "valuable_answer",
+                "2026-04-14T01:00:00Z",
+                1,
+                "candidate",
+            )
+        });
+
+        let merged = merge_metadata(Some(&existing), Some(&incoming), 2, "2026-04-14T01:00:00Z");
+
+        assert_eq!(
+            merged
+                .get("lifecycle")
+                .and_then(|value| value.get("distinctSessionCount"))
+                .and_then(Value::as_i64),
+            Some(2)
+        );
+        assert_eq!(
+            merged
+                .get("lifecycle")
+                .and_then(|value| value.get("sourceRefs"))
+                .and_then(Value::as_array)
+                .map(|items| items.len()),
+            Some(3)
+        );
+    }
+
+    #[test]
+    fn promotion_gate_requires_cross_session_support_at_repeat_two() {
+        let metadata = json!({
+            "lifecycle": {
+                "repeatCount": 2,
+                "confidence": 0.76,
+                "distinctSessionCount": 2,
+                "manualOverride": false,
+                "pinned": false
+            }
+        });
+        let single_session = json!({
+            "lifecycle": {
+                "repeatCount": 2,
+                "confidence": 0.76,
+                "distinctSessionCount": 1,
+                "manualOverride": false,
+                "pinned": false
+            }
+        });
+
+        assert!(should_promote_repeated_conclusion(metadata.as_object(), 2));
+        assert!(!should_promote_repeated_conclusion(
+            single_session.as_object(),
+            2
+        ));
+        assert!(should_promote_repeated_conclusion(None, 3));
     }
 
     #[test]
